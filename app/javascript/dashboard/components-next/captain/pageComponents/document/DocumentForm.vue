@@ -20,7 +20,6 @@ const props = defineProps({
 
 const emit = defineEmits(['submit', 'cancel']);
 
-const MAX_FILE_SIZE = 40 * 1024 * 1024;
 const UPLOADABLE_FILE_EXTENSIONS = [
   'pdf',
   'docx',
@@ -29,21 +28,8 @@ const UPLOADABLE_FILE_EXTENSIONS = [
   'rtf',
   'xlsx',
   'xls',
-  'csv',
-  'txt',
-  'md',
-  'markdown',
   'html',
   'htm',
-  'xml',
-  'json',
-  'yaml',
-  'yml',
-  'pptx',
-  'ppt',
-  'odp',
-  'ods',
-  'epub',
   'jpg',
   'jpeg',
   'png',
@@ -246,12 +232,6 @@ const handleFileChange = event => {
 
   if (!UPLOADABLE_FILE_EXTENSIONS.includes(extension)) {
     useAlert(t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.INVALID_TYPE'));
-    event.target.value = '';
-    return;
-  }
-
-  if (file.size > MAX_FILE_SIZE) {
-    useAlert(t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.TOO_LARGE'));
     event.target.value = '';
     return;
   }
@@ -595,7 +575,7 @@ const handleSubmit = async () => {
         <input
           ref="fileInputRef"
           type="file"
-          accept=".pdf,.docx,.doc,.odt,.rtf,.xlsx,.xls,.csv,.txt,.md,.markdown,.html,.htm,.xml,.json,.yaml,.yml,.pptx,.ppt,.odp,.ods,.epub,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.tiff,.tif,.bmp"
+          accept=".pdf,.docx,.doc,.odt,.rtf,.xlsx,.xls,.html,.htm,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.tiff,.tif,.bmp"
           class="hidden"
           @change="handleFileChange"
         />

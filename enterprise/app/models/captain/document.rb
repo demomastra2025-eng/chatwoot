@@ -30,12 +30,12 @@ class Captain::Document < ApplicationRecord
   DEFAULT_SOURCE_MODE = 'legacy_url'.freeze
   FILE_PREFIX = 'FILE:'.freeze
   PDF_PREFIX = 'PDF:'.freeze
-  MAX_UPLOAD_SIZE = 40.megabytes
+  FIRECRAWL_DOCUMENT_EXTENSIONS = %w[pdf docx doc odt rtf xlsx xls html htm].freeze
   SUPPORTED_REMOTE_FILE_EXTENSIONS = %w[
-    docx doc odt rtf xlsx xls csv txt md markdown html htm xml json yaml yml pptx ppt odp ods epub
+    docx doc odt rtf xlsx xls html htm
   ].freeze
   SUPPORTED_IMAGE_EXTENSIONS = %w[jpg jpeg png webp gif heic heif tiff tif bmp].freeze
-  SUPPORTED_UPLOAD_EXTENSIONS = (SUPPORTED_REMOTE_FILE_EXTENSIONS + SUPPORTED_IMAGE_EXTENSIONS).freeze
+  SUPPORTED_UPLOAD_EXTENSIONS = (FIRECRAWL_DOCUMENT_EXTENSIONS + SUPPORTED_IMAGE_EXTENSIONS).freeze
 
   belongs_to :assistant, class_name: 'Captain::Assistant'
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :destroy, as: :documentable
@@ -49,9 +49,7 @@ class Captain::Document < ApplicationRecord
   validates :content, length: { maximum: 200_000 }
   validates :pdf_file, presence: true, if: :pdf_upload?
   validate :validate_pdf_format, if: :pdf_upload?
-  validate :validate_pdf_attachment_size, if: :pdf_upload?
   validate :validate_uploaded_source_file_format, if: -> { source_file.attached? }
-  validate :validate_uploaded_source_file_size, if: -> { source_file.attached? }
   validate :validate_remote_source_url, if: :remote_source_mode?
   before_validation :ensure_account_id
   before_validation :set_external_link_for_pdf
@@ -465,27 +463,12 @@ class Captain::Document < ApplicationRecord
     errors.add(:pdf_file, I18n.t('captain.documents.pdf_format_error')) unless pdf_file.blob.content_type == 'application/pdf'
   end
 
-  def validate_pdf_attachment_size
-    return unless pdf_file.attached?
-
-    return unless pdf_file.blob.byte_size > MAX_UPLOAD_SIZE
-
-    errors.add(:pdf_file, I18n.t('captain.documents.pdf_size_error'))
-  end
-
   def validate_uploaded_source_file_format
     return unless source_file.attached?
 
     return if SUPPORTED_UPLOAD_EXTENSIONS.include?(uploaded_source_extension)
 
     errors.add(:source_file, I18n.t('captain.documents.file_upload_format_error'))
-  end
-
-  def validate_uploaded_source_file_size
-    return unless source_file.attached?
-    return unless source_file.blob.byte_size > MAX_UPLOAD_SIZE
-
-    errors.add(:source_file, I18n.t('captain.documents.file_size_error'))
   end
 
   def validate_remote_source_url

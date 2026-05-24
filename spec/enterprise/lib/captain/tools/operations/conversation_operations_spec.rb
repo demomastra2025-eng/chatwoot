@@ -10,10 +10,19 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox) }
   let(:operations) { described_class.new(assistant: assistant, conversation: conversation, actor: actor) }
   let(:signed_blob_id) { account_owned_blob.signed_id }
+  let(:second_signed_blob_id) { second_account_owned_blob.signed_id }
   let(:account_owned_blob) do
     ActiveStorage::Blob.create_and_upload!(
       io: File.open('spec/assets/avatar.png', 'rb'),
       filename: 'avatar.png',
+      content_type: 'image/png',
+      metadata: { 'account_id' => account.id }
+    )
+  end
+  let(:second_account_owned_blob) do
+    ActiveStorage::Blob.create_and_upload!(
+      io: File.open('spec/assets/avatar.png', 'rb'),
+      filename: 'avatar-2.png',
       content_type: 'image/png',
       metadata: { 'account_id' => account.id }
     )
@@ -44,6 +53,30 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
       expect(message).to be_outgoing
       expect(message.content).to be_blank
       expect(message.attachments.first.file_type).to eq('image')
+    end
+
+    it 'splits multiple attachments into sequential WhatsApp messages' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      whatsapp_contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      whatsapp_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact,
+                                                    contact_inbox: whatsapp_contact_inbox)
+      whatsapp_operations = described_class.new(assistant: assistant, conversation: whatsapp_conversation, actor: actor)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: whatsapp_conversation, message_type: 'incoming',
+                       created_at: 1.hour.ago)
+
+      message = whatsapp_operations.send_message_to_conversation(
+        conversation_id: whatsapp_conversation.id,
+        content: 'Here are the files',
+        attachment_ids: [signed_blob_id, second_signed_blob_id]
+      )
+
+      outgoing_messages = whatsapp_conversation.reload.messages.outgoing.where(private: false).last(2)
+      expect(message).to eq(outgoing_messages.first)
+      expect(outgoing_messages.map(&:content)).to eq(['Here are the files', nil])
+      expect(outgoing_messages.map { |outgoing_message| outgoing_message.attachments.size }).to eq([1, 1])
+      expect(outgoing_messages.map { |outgoing_message| outgoing_message.attachments.first.file.filename.to_s })
+        .to eq(%w[avatar.png avatar-2.png])
     end
 
     it 'rejects direct attachment ids that are not scoped to the current account' do

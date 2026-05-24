@@ -35,6 +35,20 @@ class Captain::Tools::FirecrawlService
     post('/scrape', body: scrape_payload(url, options))
   end
 
+  def parse_upload(attachment, options = {})
+    blob = attachment.respond_to?(:blob) ? attachment.blob : attachment
+
+    Tempfile.create(['firecrawl-upload', file_extension(blob)], binmode: true) do |tempfile|
+      blob.download { |chunk| tempfile.write(chunk) }
+      tempfile.flush
+      tempfile.rewind
+
+      File.open(tempfile.path, 'rb') do |file|
+        post_multipart('/parse', body: { file: file, options: parse_options_payload(options).to_json })
+      end
+    end
+  end
+
   def map(url, options = {})
     post('/map', body: map_payload(url, options))
   end
@@ -71,7 +85,20 @@ class Captain::Tools::FirecrawlService
     HTTParty.post(
       "#{@api_url}#{path}",
       body: body,
-      headers: headers
+      headers: json_headers,
+      timeout: request_timeout
+    )
+  rescue StandardError => e
+    raise "Failed Firecrawl request: #{e.message}"
+  end
+
+  def post_multipart(path, body:)
+    HTTParty.post(
+      "#{@api_url}#{path}",
+      body: body,
+      headers: auth_headers,
+      multipart: true,
+      timeout: request_timeout
     )
   rescue StandardError => e
     raise "Failed Firecrawl request: #{e.message}"
@@ -80,18 +107,19 @@ class Captain::Tools::FirecrawlService
   def get(path)
     HTTParty.get(
       "#{@api_url}#{path}",
-      headers: headers
+      headers: auth_headers,
+      timeout: request_timeout
     )
   rescue StandardError => e
     raise "Failed Firecrawl request: #{e.message}"
   end
 
   def scrape_payload(url, options)
-    {
-      url: url,
-      formats: formats_for_options(options),
-      onlyMainContent: options.fetch(:only_main_content, true)
-    }.merge(compact_payload(options.slice(:changeTracking, :waitFor, :actions))).to_json
+    scrape_options_payload(options).merge(url: url).to_json
+  end
+
+  def parse_options_payload(options)
+    scrape_options_payload(options).except(:actions, :waitFor, :changeTracking)
   end
 
   def map_payload(url, options)
@@ -117,20 +145,20 @@ class Captain::Tools::FirecrawlService
       includePaths: Array(options[:include_paths]).presence,
       excludePaths: Array(options[:exclude_paths]).presence,
       maxDiscoveryDepth: options[:max_discovery_depth],
-      scrapeOptions: {
-        onlyMainContent: options.fetch(:only_main_content, true),
-        formats: formats_for_options(options)
-      }
-    }.compact.to_json
+      scrapeOptions: nested_scrape_options_payload(options)
+    }.merge(crawl_root_options_payload(options)).compact.to_json
+  end
+
+  def crawl_root_options_payload(options)
+    {
+      zeroDataRetention: options[:zero_data_retention],
+      integration: options[:integration],
+      origin: options[:origin]
+    }.compact
   end
 
   def batch_scrape_payload(urls, webhook_url, options = {})
-    {
-      urls: urls,
-      webhook: webhook_payload(webhook_url),
-      formats: formats_for_options(options),
-      onlyMainContent: options.fetch(:only_main_content, true)
-    }.to_json
+    scrape_options_payload(options).merge(urls: urls, webhook: webhook_payload(webhook_url)).to_json
   end
 
   def compact_payload(payload)
@@ -138,11 +166,38 @@ class Captain::Tools::FirecrawlService
   end
 
   def formats_for_options(options)
-    formats = ['markdown']
+    formats = Array(options[:formats]).presence || ['markdown']
     return formats unless options[:change_tracking]
 
     formats << change_tracking_format(options)
     formats
+  end
+
+  def scrape_options_payload(options)
+    {
+      formats: formats_for_options(options),
+      onlyMainContent: options.fetch(:only_main_content, true),
+      parsers: options[:parsers],
+      timeout: options[:timeout],
+      includeTags: options[:include_tags],
+      excludeTags: options[:exclude_tags],
+      removeBase64Images: options[:remove_base64_images],
+      skipTlsVerification: options[:skip_tls_verification],
+      blockAds: options[:block_ads],
+      proxy: options[:proxy],
+      maxAge: options[:max_age],
+      minAge: options[:min_age],
+      storeInCache: options[:store_in_cache],
+      zeroDataRetention: options[:zero_data_retention],
+      integration: options[:integration],
+      origin: options[:origin],
+      waitFor: options[:wait_for],
+      actions: options[:actions]
+    }.compact
+  end
+
+  def nested_scrape_options_payload(options)
+    scrape_options_payload(options).except(:zeroDataRetention, :integration, :origin)
   end
 
   def change_tracking_format(options)
@@ -163,11 +218,23 @@ class Captain::Tools::FirecrawlService
     refresh_mode.to_s == 'retry_failed' || source_mode.to_s == 'selected_pages'
   end
 
-  def headers
+  def auth_headers
     {
-      'Authorization' => "Bearer #{@api_key}",
-      'Content-Type' => 'application/json'
-    }
+      'Authorization' => "Bearer #{@api_key}"
+    }.compact
+  end
+
+  def json_headers
+    auth_headers.merge('Content-Type' => 'application/json')
+  end
+
+  def request_timeout
+    ENV.fetch('FIRECRAWL_REQUEST_TIMEOUT', 120).to_i
+  end
+
+  def file_extension(blob)
+    extension = blob.filename.extension_without_delimiter.to_s.downcase
+    extension.present? ? ".#{extension}" : ''
   end
 
   def parse_json_response(response)

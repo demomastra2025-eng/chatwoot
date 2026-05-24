@@ -386,11 +386,11 @@ ru:
       no_selected_pages_error: Не выбраны страницы для импорта
       missing_firecrawl_error: Для PDF по ссылке, файлов по ссылке и загрузки офисных файлов требуется настроенный Firecrawl
       pdf_format_error: должен быть PDF файлом
-      pdf_size_error: должно быть меньше 10МБ
-      file_upload_format_error: должен быть поддерживаемым файлом (.docx, .doc, .odt, .rtf, .xlsx, .xls)
-      file_size_error: должно быть меньше 10МБ
+      pdf_size_error: превышает лимит хранилища аккаунта
+      file_upload_format_error: должен быть поддерживаемым файлом (.pdf, .docx, .doc, .odt, .rtf, .xlsx, .xls, .html, .htm или изображение)
+      file_size_error: превышает лимит хранилища аккаунта
       remote_pdf_url_error: должен указывать на PDF URL, когда выбран режим PDF по ссылке
-      remote_file_url_error: должен указывать на поддерживаемый URL файла (.docx, .doc, .odt, .rtf, .xlsx, .xls), когда выбран режим Файл по ссылке
+      remote_file_url_error: должен указывать на поддерживаемый URL файла (.docx, .doc, .odt, .rtf, .xlsx, .xls, .html, .htm), когда выбран режим Файл по ссылке
       pdf_url_requires_firecrawl: Для импорта PDF по ссылке требуется настроенный Firecrawl
       file_url_requires_firecrawl: Для импорта файла по ссылке требуется настроенный Firecrawl
       file_upload_requires_firecrawl: Для загрузки офисных файлов требуется настроенный Firecrawl

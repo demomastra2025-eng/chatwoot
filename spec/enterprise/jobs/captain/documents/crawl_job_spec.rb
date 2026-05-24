@@ -198,8 +198,7 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
       before do
         allow(Captain::Tools::FirecrawlService).to receive(:new).and_return(firecrawl_service)
         allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
-        allow(file_document).to receive(:display_url).and_return('https://storage.example.com/report.xlsx')
-        allow(firecrawl_service).to receive(:scrape).and_return(
+        allow(firecrawl_service).to receive(:parse_upload).and_return(
           double(
             parsed_response: {
               'data' => {
@@ -211,17 +210,40 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
         )
       end
 
-      it 'uses Firecrawl scrape against the uploaded file url and stores markdown content' do
+      it 'uses Firecrawl parse upload and stores markdown content' do
         described_class.perform_now(file_document)
 
-        expect(firecrawl_service).to have_received(:scrape).with(
-          'https://storage.example.com/report.xlsx',
+        expect(firecrawl_service).to have_received(:parse_upload).with(
+          file_document.source_file,
           hash_including(only_main_content: true)
         )
         expect(file_document.reload).to be_available
         expect(file_document.name).to eq('Uploaded report')
         expect(file_document.source_text).to eq('## Uploaded report')
         expect(file_document.content).to eq('## Uploaded report')
+        expect(file_document.metadata.dig('source_text', 'provider')).to eq('firecrawl')
+        expect(file_document.metadata.dig('firecrawl', 'operation')).to eq('parse')
+      end
+    end
+
+    context 'when importing an uploaded image' do
+      let(:image_document) do
+        build(:captain_document, assistant: document.assistant, account: document.account, external_link: nil).tap do |doc|
+          doc.source_file.attach(
+            io: File.open(Rails.root.join('spec/assets/avatar.png'), 'rb'),
+            filename: 'avatar.png',
+            content_type: 'image/png'
+          )
+          doc.save!
+        end
+      end
+
+      it 'marks image uploads completed without source text parsing' do
+        described_class.perform_now(image_document)
+
+        expect(image_document.reload).to be_available
+        expect(image_document.sync_status).to eq('completed')
+        expect(image_document.metadata.dig('source_text', 'status')).to eq('skipped')
       end
     end
 
@@ -286,6 +308,7 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
       end
 
       it 'processes PDF using PdfProcessingService' do
+        allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
         pdf_service = instance_double(Captain::Llm::PdfProcessingService)
         expect(Captain::Llm::PdfProcessingService).to receive(:new).with(pdf_document).and_return(pdf_service)
         expect(pdf_service).to receive(:process)
@@ -295,6 +318,7 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
       end
 
       it 'handles PDF processing errors' do
+        allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
         allow(Captain::Llm::PdfProcessingService).to receive(:new).and_raise(StandardError, 'Processing failed')
 
         expect { described_class.perform_now(pdf_document) }.to raise_error(StandardError, 'Processing failed')

@@ -4,6 +4,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   MAX_MESSAGE_LENGTH = 10_000
   MAX_RESPONSE_ARTIFACT_ATTACHMENTS = 10
+  SINGLE_ATTACHMENT_MESSAGE_CHANNELS = %w[Channel::Whatsapp Channel::WhatsappWeb].freeze
   AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
   AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
@@ -348,11 +349,33 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def create_messages(attachment_ids: [])
     validate_message_content!(@response['response'], attachment_ids: attachment_ids)
+    return create_split_attachment_messages(attachment_ids) if split_response_attachments?(attachment_ids)
+
     create_outgoing_message(
       @response['response'],
       agent_name: @response['agent_name'],
       attachment_ids: attachment_ids
     )
+  end
+
+  def create_split_attachment_messages(attachment_ids)
+    first_attachment_id, *remaining_attachment_ids = Array(attachment_ids)
+    first_message = create_outgoing_message(
+      @response['response'],
+      agent_name: @response['agent_name'],
+      attachment_ids: [first_attachment_id]
+    )
+
+    remaining_attachment_ids.each do |attachment_id|
+      create_outgoing_message(
+        nil,
+        agent_name: @response['agent_name'],
+        attachment_ids: [attachment_id],
+        include_trace: false
+      )
+    end
+
+    first_message
   end
 
   def create_provider_error_private_note
@@ -372,22 +395,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     raise ArgumentError, 'Message content cannot be blank' if content.blank? && attachment_ids.blank?
   end
 
-  def create_outgoing_message(message_content, agent_name: nil, preserve_waiting_since: false, attachment_ids: [])
-    additional_attrs = {}
-    if agent_name.present?
-      additional_attrs[:agent_name] = agent_name
-      display_agent_name = display_agent_name_for(agent_name)
-      additional_attrs[:agentName] = display_agent_name if display_agent_name.present?
-    end
-    additional_attrs[:captain_trace] = @response['captain_trace'] if @response&.dig('captain_trace').present?
-
+  def create_outgoing_message(message_content, agent_name: nil, preserve_waiting_since: false, attachment_ids: [], include_trace: true)
     message = @conversation.messages.build(
       message_type: :outgoing,
       account_id: account.id,
       inbox_id: inbox.id,
       sender: @assistant,
       content: message_content,
-      additional_attributes: additional_attrs,
+      additional_attributes: additional_message_attributes(agent_name: agent_name, include_trace: include_trace),
       preserve_waiting_since: preserve_waiting_since
     )
 
@@ -397,6 +412,25 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     message.save!
     message
+  end
+
+  def additional_message_attributes(agent_name:, include_trace:)
+    {}.tap do |attributes|
+      add_agent_name_attributes(attributes, agent_name)
+      attributes[:captain_trace] = @response['captain_trace'] if include_trace && @response&.dig('captain_trace').present?
+    end
+  end
+
+  def add_agent_name_attributes(attributes, agent_name)
+    return if agent_name.blank?
+
+    attributes[:agent_name] = agent_name
+    display_agent_name = display_agent_name_for(agent_name)
+    attributes[:agentName] = display_agent_name if display_agent_name.present?
+  end
+
+  def split_response_attachments?(attachment_ids)
+    Array(attachment_ids).many? && SINGLE_ATTACHMENT_MESSAGE_CHANNELS.include?(inbox.channel_type)
   end
 
   def build_message_attachment(message, attachment_id)

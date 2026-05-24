@@ -30,6 +30,8 @@ class Captain::Documents::CrawlJob < ApplicationJob
   include Captain::FirecrawlHelper
 
   def perform_pdf_processing(document)
+    return perform_firecrawl_upload_parse(document, attachment: document.pdf_file) if Captain::Tools::FirecrawlService.configured?
+
     Captain::Llm::PdfProcessingService.new(document).process
     document.update!(status: :available)
   rescue StandardError => e
@@ -60,13 +62,24 @@ class Captain::Documents::CrawlJob < ApplicationJob
 
     raise I18n.t('captain.documents.file_upload_requires_firecrawl') unless Captain::Tools::FirecrawlService.configured?
 
-    perform_firecrawl_scrape(document, target_url: document.display_url)
+    perform_firecrawl_upload_parse(document, attachment: document.source_file)
   end
 
   def mark_uploaded_image_available(document)
     document.update!(
       status: :available,
       metadata: (document.metadata || {}).deep_merge(
+        'firecrawl' => document.firecrawl_metadata.deep_merge(
+          'provider' => 'attachment',
+          'sync' => document.firecrawl_sync.merge(
+            'status' => 'completed',
+            'pages_total' => 1,
+            'pages_processed' => 1,
+            'processed_urls' => [document.external_link],
+            'last_error' => nil,
+            'last_synced_at' => Time.current.iso8601
+          )
+        ),
         'source_text' => {
           'provider' => 'attachment',
           'status' => 'skipped',
@@ -109,13 +122,11 @@ class Captain::Documents::CrawlJob < ApplicationJob
 
     response = Captain::Tools::FirecrawlService.new.scrape(
       target_url,
-      only_main_content: import_profile(document).fetch('only_main_content', true),
-      **change_tracking_options(document)
+      **firecrawl_document_options(document), **change_tracking_options(document)
     )
 
-    payload = response.parsed_response.with_indifferent_access
-    data = payload[:data] || {}
-    metadata = data[:metadata] || {}
+    data = firecrawl_response_data!(response)
+    data[:metadata] || {}
     change_tracking = data[:changeTracking] || {}
 
     if delta_refresh?(document)
@@ -132,25 +143,19 @@ class Captain::Documents::CrawlJob < ApplicationJob
       end
     end
 
-    document.update!(
-      name: metadata[:title].presence || document.name,
-      source_text: data[:markdown].to_s,
-      content: Captain::Documents::SourceTextExtractor.preview(data[:markdown]),
-      status: :available,
-      metadata: (document.metadata || {}).deep_merge(
-        'firecrawl' => document.firecrawl_metadata.deep_merge(
-          'provider' => 'firecrawl',
-          'sync' => document.firecrawl_sync.merge(
-            'status' => 'completed',
-            'pages_total' => 1,
-            'pages_processed' => 1,
-            'processed_urls' => [document.external_link],
-            'last_error' => nil,
-            'last_synced_at' => Time.current.iso8601
-          )
-        )
-      )
+    store_firecrawl_document_result!(document, data, source_url: target_url, operation: 'scrape')
+  end
+
+  def perform_firecrawl_upload_parse(document, attachment:)
+    document.mark_import_processing!
+
+    response = Captain::Tools::FirecrawlService.new.parse_upload(
+      attachment,
+      **firecrawl_document_options(document)
     )
+
+    data = firecrawl_response_data!(response)
+    store_firecrawl_document_result!(document, data, source_url: document.external_link, operation: 'parse')
   end
 
   def perform_simple_crawl(document)
@@ -239,8 +244,30 @@ class Captain::Documents::CrawlJob < ApplicationJob
       ignore_query_parameters: profile.fetch('ignore_query_parameters', true),
       only_main_content: profile.fetch('only_main_content', true),
       sitemap: profile.fetch('sitemap', 'include'),
-      max_discovery_depth: profile['max_discovery_depth']
+      max_discovery_depth: profile['max_discovery_depth'],
+      timeout: profile['timeout'],
+      remove_base64_images: profile['remove_base64_images'],
+      zero_data_retention: profile['zero_data_retention'],
+      store_in_cache: profile['store_in_cache'],
+      proxy: profile['proxy']
     }
+  end
+
+  def firecrawl_document_options(document)
+    firecrawl_options(document).merge(pdf_parser_options(document)).compact
+  end
+
+  def pdf_parser_options(document)
+    return {} unless document.pdf_document?
+
+    profile = import_profile(document)
+    parser = {
+      type: 'pdf',
+      mode: profile['pdf_parser_mode'].presence || 'auto',
+      maxPages: profile['pdf_max_pages'].presence&.to_i
+    }.compact
+
+    { parsers: [parser] }
   end
 
   def import_profile(document)
@@ -259,5 +286,61 @@ class Captain::Documents::CrawlJob < ApplicationJob
       change_tracking_tag: "captain-document-#{document.id}",
       change_tracking_modes: ['git-diff']
     }
+  end
+
+  def firecrawl_response_data!(response)
+    payload = response.parsed_response
+    payload = JSON.parse(payload) if payload.is_a?(String)
+    payload = payload.with_indifferent_access if payload.respond_to?(:with_indifferent_access)
+    payload ||= {}
+
+    error_message = payload[:error].presence || payload.dig(:data, :metadata, :error).presence
+    unsuccessful = response.respond_to?(:success?) && !response.success?
+    raise "Firecrawl import failed: #{error_message || response.code}" if unsuccessful || payload[:success] == false
+
+    data = (payload[:data].presence || payload).with_indifferent_access
+    raise 'Firecrawl did not return markdown content' if data[:markdown].blank?
+
+    data
+  rescue JSON::ParserError => e
+    raise "Firecrawl returned invalid JSON: #{e.message}"
+  end
+
+  def store_firecrawl_document_result!(document, data, source_url:, operation:)
+    markdown = data[:markdown].to_s
+    metadata = (data[:metadata] || {}).with_indifferent_access
+
+    document.update!(
+      name: metadata[:title].presence || metadata[:sourceFile].presence || document.name,
+      source_text: markdown,
+      content: Captain::Documents::SourceTextExtractor.preview(markdown),
+      status: :available,
+      metadata: firecrawl_result_metadata(document, metadata, markdown, source_url, operation)
+    )
+  end
+
+  def firecrawl_result_metadata(document, metadata, markdown, source_url, operation)
+    (document.metadata || {}).deep_merge(
+      'firecrawl' => document.firecrawl_metadata.deep_merge(
+        'provider' => 'firecrawl',
+        'operation' => operation,
+        'document_metadata' => metadata.to_h,
+        'sync' => document.firecrawl_sync.merge(
+          'status' => 'completed',
+          'pages_total' => 1,
+          'pages_processed' => 1,
+          'processed_urls' => [source_url],
+          'last_error' => nil,
+          'last_synced_at' => Time.current.iso8601
+        )
+      ),
+      'source_text' => {
+        'provider' => 'firecrawl',
+        'operation' => operation,
+        'status' => 'completed',
+        'bytes' => markdown.bytesize,
+        'extracted_at' => Time.current.iso8601
+      }
+    )
   end
 end

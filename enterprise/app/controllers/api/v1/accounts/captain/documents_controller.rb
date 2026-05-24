@@ -144,6 +144,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
       :source_mode,
       :faq_generation_enabled,
       import_profile: [:sitemap, :max_pages, :max_discovery_depth, :allow_subdomains, :ignore_query_parameters, :only_main_content,
+                       :timeout, :pdf_parser_mode, :pdf_max_pages, :remove_base64_images, :zero_data_retention, :store_in_cache, :proxy,
                        { include_paths: [], exclude_paths: [] }],
       selected_urls: []
     )
@@ -189,7 +190,14 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
       'ignore_query_parameters' => boolean_or_default(profile['ignore_query_parameters'], true),
       'only_main_content' => boolean_or_default(profile['only_main_content'], true),
       'include_paths' => Array(profile['include_paths']).reject(&:blank?),
-      'exclude_paths' => Array(profile['exclude_paths']).reject(&:blank?)
+      'exclude_paths' => Array(profile['exclude_paths']).reject(&:blank?),
+      'timeout' => positive_integer(profile['timeout']),
+      'pdf_parser_mode' => pdf_parser_mode(profile['pdf_parser_mode']),
+      'pdf_max_pages' => positive_integer(profile['pdf_max_pages']),
+      'remove_base64_images' => boolean_or_nil(profile['remove_base64_images']),
+      'zero_data_retention' => boolean_or_nil(profile['zero_data_retention']),
+      'store_in_cache' => boolean_or_nil(profile['store_in_cache']),
+      'proxy' => profile['proxy'].presence
     }.compact
   end
 
@@ -233,6 +241,22 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
     return default if value.nil?
 
     ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def boolean_or_nil(value)
+    return if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def positive_integer(value)
+    integer = value.presence&.to_i
+    integer if integer&.positive?
+  end
+
+  def pdf_parser_mode(value)
+    mode = value.to_s
+    mode if %w[fast auto ocr].include?(mode)
   end
 
   def requested_source_mode

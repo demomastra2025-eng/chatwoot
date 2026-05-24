@@ -76,8 +76,8 @@ RSpec.describe Captain::Tools::FirecrawlService do
         allowSubdomains: false,
         ignoreQueryParameters: true,
         scrapeOptions: {
-          onlyMainContent: true,
-          formats: ['markdown']
+          formats: ['markdown'],
+          onlyMainContent: true
         }
       }.to_json
     end
@@ -190,6 +190,31 @@ RSpec.describe Captain::Tools::FirecrawlService do
 
       expect(service.failed_urls_for_job('job-123', 'selected_pages'))
         .to eq(['https://example.com/fail-1', 'https://example.com/blocked'])
+    end
+  end
+
+  describe '#parse_upload' do
+    let(:service) { described_class.new }
+    let(:blob) do
+      ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new('Spreadsheet content'),
+        filename: 'report.xlsx',
+        content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      )
+    end
+
+    it 'uploads the file to the Firecrawl parse endpoint as multipart form data' do
+      stub_request(:post, "#{default_api_url}/parse")
+        .to_return(status: 200, body: { success: true, data: { markdown: '## Report' } }.to_json)
+
+      service.parse_upload(blob, only_main_content: false)
+
+      expect(WebMock).to have_requested(:post, "#{default_api_url}/parse")
+        .with(headers: { 'Authorization' => "Bearer #{api_key}" }) do |request|
+          request.body.include?('name="file"') &&
+            request.body.include?('name="options"') &&
+            request.body.include?('"onlyMainContent":false')
+        end
     end
   end
 end

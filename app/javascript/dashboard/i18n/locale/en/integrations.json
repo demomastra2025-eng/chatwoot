@@ -1830,17 +1830,17 @@
           "LABEL": "PDF File",
           "CHOOSE_FILE": "Choose PDF file",
           "ERROR": "Please select a PDF file",
-          "HELP_TEXT": "Maximum file size: 40MB",
+          "HELP_TEXT": "File size is limited by the account storage quota.",
           "INVALID_TYPE": "Please select a valid PDF file",
-          "TOO_LARGE": "File size exceeds 40MB limit"
+          "TOO_LARGE": "File size exceeds the account storage limit"
         },
         "UPLOAD_FILE": {
           "LABEL": "File",
           "CHOOSE_FILE": "Choose file",
           "ERROR": "Please select a supported file",
-          "HELP_TEXT": "Supported formats: PDF, office files, text files, and images. Maximum file size: 40MB",
+          "HELP_TEXT": "Supported formats: PDF, office documents, spreadsheets, HTML, and images. File size is limited by the account storage quota.",
           "INVALID_TYPE": "Please select a supported file, document, or image",
-          "TOO_LARGE": "File size exceeds 40MB limit"
+          "TOO_LARGE": "File size exceeds the account storage limit"
         },
         "NAME": {
           "LABEL": "Document Name (Optional)",

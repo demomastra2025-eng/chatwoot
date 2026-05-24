@@ -301,7 +301,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
                params: {
                  document: {
                    name: 'Unsupported File',
-                   external_link: 'https://example.com/page.html',
+                   external_link: 'https://example.com/page.csv',
                    assistant_id: assistant.id,
                    source_mode: 'file_url'
                  }

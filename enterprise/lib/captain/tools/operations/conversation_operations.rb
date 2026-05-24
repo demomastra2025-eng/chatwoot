@@ -1,4 +1,6 @@
 class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Operations::BaseOperation
+  SINGLE_ATTACHMENT_MESSAGE_CHANNELS = %w[Channel::Whatsapp Channel::WhatsappWeb].freeze
+
   def add_contact_note(note:)
     raise ArgumentError, 'A contact note is required' if note.blank?
     raise ArgumentError, 'Current contact is not available' if current_contact.blank?
@@ -74,17 +76,33 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
       private_note: private_message
     )
 
-    params = {
-      content: sanitized_content.presence,
-      private: private_message,
+    if split_outgoing_attachments?(
+      conversation: target_conversation,
+      content_kind: normalized_content_kind,
+      private_message: private_message,
       attachments: selected_attachment_ids
-    }
-    params[:template_params] = normalized_template_params if normalized_content_kind == 'channel_template'
-    params[:content_attributes] = { in_reply_to: in_reply_to_message_id } if in_reply_to_message_id.present?
+    )
+      return create_split_attachment_messages(
+        conversation: target_conversation,
+        content: sanitized_content,
+        attachment_ids: selected_attachment_ids,
+        in_reply_to_message_id: in_reply_to_message_id,
+        delivery_policy: delivery_policy
+      )
+    end
 
-    message = ::Messages::MessageBuilder.new(actor, target_conversation, params.compact).perform
-    annotate_delivery_policy!(message, delivery_policy)
-    message
+    create_delivery_message(
+      conversation: target_conversation,
+      message_options: {
+        content: sanitized_content.presence,
+        private_message: private_message,
+        attachments: selected_attachment_ids,
+        template_params: normalized_template_params,
+        content_kind: normalized_content_kind,
+        in_reply_to_message_id: in_reply_to_message_id
+      },
+      delivery_policy: delivery_policy
+    )
   end
 
   def edit_message(message_id:, content:)
@@ -168,6 +186,58 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
 
   def materialized_attachment_ids(attachment_ids:, artifact_ids:)
     attachment_resolver.resolve(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
+  end
+
+  def split_outgoing_attachments?(conversation:, content_kind:, private_message:, attachments:)
+    !private_message &&
+      content_kind == 'free_text' &&
+      Array(attachments).many? &&
+      SINGLE_ATTACHMENT_MESSAGE_CHANNELS.include?(conversation.inbox.channel_type)
+  end
+
+  def create_split_attachment_messages(conversation:, content:, attachment_ids:, in_reply_to_message_id:, delivery_policy:)
+    first_attachment_id, *remaining_attachment_ids = Array(attachment_ids)
+    first_message = create_split_attachment_message(conversation, delivery_policy, first_attachment_id, content.presence, in_reply_to_message_id)
+
+    remaining_attachment_ids.each do |attachment_id|
+      create_split_attachment_message(conversation, delivery_policy, attachment_id, nil, nil)
+    end
+
+    first_message
+  end
+
+  def create_split_attachment_message(conversation, delivery_policy, attachment_id, content, in_reply_to_message_id)
+    create_delivery_message(
+      conversation: conversation,
+      message_options: {
+        content: content,
+        private_message: false,
+        attachments: [attachment_id],
+        template_params: {},
+        content_kind: 'free_text',
+        in_reply_to_message_id: in_reply_to_message_id
+      },
+      delivery_policy: delivery_policy
+    )
+  end
+
+  def create_delivery_message(conversation:, message_options:, delivery_policy: nil)
+    params = delivery_message_params(message_options)
+    message = ::Messages::MessageBuilder.new(actor, conversation, params.compact).perform
+    annotate_delivery_policy!(message, delivery_policy) if delivery_policy.present?
+    message
+  end
+
+  def delivery_message_params(message_options)
+    params = {
+      content: message_options[:content],
+      private: message_options[:private_message],
+      attachments: message_options[:attachments]
+    }
+    params[:template_params] = message_options[:template_params] if message_options[:content_kind] == 'channel_template'
+    in_reply_to_message_id = message_options[:in_reply_to_message_id]
+    params[:content_attributes] = { in_reply_to: in_reply_to_message_id } if in_reply_to_message_id.present?
+    params
   end
 
   def attachment_resolver

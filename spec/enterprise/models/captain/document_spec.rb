@@ -80,7 +80,7 @@ RSpec.describe Captain::Document, type: :model do
           :captain_document,
           assistant: assistant,
           account: account,
-          external_link: 'https://example.com/report.html',
+          external_link: 'https://example.com/report.csv',
           metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
         )
 
@@ -88,7 +88,9 @@ RSpec.describe Captain::Document, type: :model do
         expect(remote_file.errors[:external_link]).to include(I18n.t('captain.documents.remote_file_url_error'))
       end
 
-      it 'validates PDF file size' do
+      it 'validates PDF uploads against the account storage limit' do
+        account.update!(limits: { storage_bytes: 10.megabytes })
+
         doc = build(:captain_document, assistant: assistant, account: account)
         doc.pdf_file.attach(
           io: StringIO.new('x' * 11.megabytes),
@@ -97,7 +99,7 @@ RSpec.describe Captain::Document, type: :model do
         )
         doc.external_link = nil
         expect(doc).not_to be_valid
-        expect(doc.errors[:pdf_file]).to include(I18n.t('captain.documents.pdf_size_error'))
+        expect(doc.errors[:pdf_file]).to include(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE)
       end
     end
 
@@ -122,6 +124,16 @@ RSpec.describe Captain::Document, type: :model do
         doc = build(
           :captain_document,
           external_link: 'https://example.com/document.docx',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
+        )
+
+        expect(doc.remote_file_url?).to be true
+      end
+
+      it 'returns true for supported HTML file urls' do
+        doc = build(
+          :captain_document,
+          external_link: 'https://example.com/document.html',
           metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
         )
 

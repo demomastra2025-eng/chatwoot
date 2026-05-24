@@ -464,6 +464,32 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(public_message.attachments).to be_empty
     end
 
+    it 'splits several response attachments into sequential WhatsApp messages' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      create(:captain_inbox, captain_assistant: assistant, inbox: whatsapp_inbox)
+      whatsapp_conversation = create(:conversation, inbox: whatsapp_inbox, account: account, status: :pending)
+      create(:message, conversation: whatsapp_conversation, content: 'вышли файлы', message_type: :incoming)
+      whatsapp_conversation.update!(status: :pending)
+
+      first_document = create_sendable_document(name: 'First', filename: 'first.pdf')
+      second_document = create_sendable_document(name: 'Second', filename: 'second.pdf')
+
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'Отправляю файлы.',
+          'artifact_ids' => [document_artifact_payload(first_document), document_artifact_payload(second_document)]
+        }
+      )
+
+      described_class.perform_now(whatsapp_conversation, assistant)
+
+      public_messages = whatsapp_conversation.reload.messages.outgoing.where(private: false).last(2)
+      expect(public_messages.map(&:content)).to eq(['Отправляю файлы.', nil])
+      expect(public_messages.map { |message| message.attachments.size }).to eq([1, 1])
+      expect(public_messages.map { |message| message.attachments.first.file.filename.to_s }).to eq(%w[first.pdf second.pdf])
+    end
+
     it 'sends the text response without attachment when an artifact id expired' do
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {
