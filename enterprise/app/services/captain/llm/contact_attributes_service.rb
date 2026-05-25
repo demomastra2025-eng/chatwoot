@@ -52,6 +52,14 @@ class Captain::Llm::ContactAttributesService < Llm::BaseAiService
     Captain::Llm::SystemPromptsService.attributes_generator
   end
 
+  def llm_feature_key
+    :assistant
+  end
+
+  def llm_model_account
+    @conversation.account
+  end
+
   def parse_response(content)
     return [] unless content.is_a?(Hash)
 

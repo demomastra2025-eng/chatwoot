@@ -11,6 +11,8 @@ class Captain::Tools::Copilot::UpdateWebhookService < Captain::Tools::Copilot::B
   param :inbox_id, type: :integer, desc: 'Updated inbox ID', required: false
 
   def execute(webhook_id:, url: nil, subscriptions: nil, name: nil, inbox_id: nil)
+    ensure_account_administrator!
+
     webhook = account.webhooks.find(webhook_id)
     attrs = {}
     attrs[:url] = url.to_s.strip unless url.nil?

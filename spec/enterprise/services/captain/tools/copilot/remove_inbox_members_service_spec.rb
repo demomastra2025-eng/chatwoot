@@ -48,4 +48,18 @@ RSpec.describe Captain::Tools::Copilot::RemoveInboxMembersService do
     expect(payload['message']).to include('Operator confirmation is required')
     expect(inbox.reload.members).to contain_exactly(member)
   end
+
+  it 'enforces admin permission inside execute before mutating inbox members' do
+    agent = create(:user, account: account)
+    non_admin_service = described_class.new(assistant, user: agent)
+    inbox = create(:inbox, account: account)
+    member = create(:user, account: account)
+    create(:inbox_member, inbox: inbox, user: member)
+
+    allow(non_admin_service).to receive(:active?).and_return(true)
+    result = non_admin_service.execute(inbox_id: inbox.id, user_ids: member.id.to_s)
+
+    expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
+    expect(inbox.reload.members).to contain_exactly(member)
+  end
 end

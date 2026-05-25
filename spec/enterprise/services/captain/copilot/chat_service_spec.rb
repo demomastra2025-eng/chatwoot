@@ -168,6 +168,20 @@ RSpec.describe Captain::Copilot::ChatService do
       described_class.new(assistant, config).generate_response('Hello')
     end
 
+    it 'passes the account and resolved model into the reusable chat runner' do
+      account.update!(captain_models: { 'copilot' => 'gpt-5.2' })
+      runner = instance_double(Llm::ChatRequestRunner, call: mock_response)
+
+      expect(Llm::ChatRequestRunner).to receive(:new).with(
+        hash_including(
+          account: account,
+          model: 'gpt-5.2'
+        )
+      ).and_return(runner)
+
+      described_class.new(assistant, config).generate_response('Hello')
+    end
+
     it 'applies thinking policy when configured for the account' do
       account.update!(captain_runtime: { 'copilot_thinking_effort' => 'high' })
 

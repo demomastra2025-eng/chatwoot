@@ -235,6 +235,22 @@ RSpec.describe 'Captain native ops tools' do
       )
       expect(Scheduling::Appointments::FinanceSyncService).to have_received(:new)
     end
+
+    it 'enforces admin permission inside execute before adding appointment payments' do
+      account.enable_features!('scheduling', 'scheduling_finance')
+      agent = create(:user, account: account)
+      appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
+      allow(Captain::ContextFields).to receive(:appointment_for).and_return(appointment)
+      finance_service = instance_double(Scheduling::Appointments::FinanceSyncService, add_payment!: appointment)
+      allow(Scheduling::Appointments::FinanceSyncService).to receive(:new).and_return(finance_service)
+      service = described_class.new(assistant, user: agent, conversation: conversation, copilot_thread: copilot_thread)
+
+      allow(service).to receive(:active?).and_return(true)
+      result = service.execute(payment_method: 'cash', amount: 1500)
+
+      expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
+      expect(Scheduling::Appointments::FinanceSyncService).not_to have_received(:new)
+    end
   end
 
   describe Captain::Tools::Copilot::ExecuteMacroService do
@@ -295,6 +311,17 @@ RSpec.describe 'Captain native ops tools' do
       expect(account.labels.find_by(title: 'vip')).to be_present
     end
 
+    it 'does not mutate until the backend confirmation gate permits execution' do
+      allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
+
+      payload = JSON.parse(service.execute(title: 'VIP', color: '#ff0000'))
+
+      expect(payload['message']).to include('Operator confirmation is required')
+      expect(payload.dig('data', 'confirmation_required')).to be(true)
+      expect(account.labels.find_by(title: 'vip')).to be_blank
+    end
+
     it 'blocks non-admin execution before mutating labels' do
       agent = create(:user, account: account)
       service = described_class.new(assistant, user: agent, conversation: conversation)
@@ -302,6 +329,17 @@ RSpec.describe 'Captain native ops tools' do
       result = service.execute(title: 'VIP', color: '#ff0000')
 
       expect(result).to include('Account administrator permission is required')
+      expect(account.labels.find_by(title: 'vip')).to be_blank
+    end
+
+    it 'enforces admin permission inside execute before creating labels' do
+      agent = create(:user, account: account)
+      service = described_class.new(assistant, user: agent, conversation: conversation)
+
+      allow(service).to receive(:active?).and_return(true)
+      result = service.execute(title: 'VIP', color: '#ff0000')
+
+      expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
       expect(account.labels.find_by(title: 'vip')).to be_blank
     end
   end
@@ -316,6 +354,30 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload['action']).to eq('update_label')
       expect(payload.dig('label', 'title')).to eq('priority')
       expect(label.reload.title).to eq('priority')
+    end
+
+    it 'enforces admin permission inside execute before updating labels' do
+      agent = create(:user, account: account)
+      label = create(:label, account: account, title: 'vip')
+      service = described_class.new(assistant, user: agent, conversation: conversation)
+
+      allow(service).to receive(:active?).and_return(true)
+      result = service.execute(label_id: label.id, title: 'priority')
+
+      expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
+      expect(label.reload.title).to eq('vip')
+    end
+
+    it 'does not mutate until the backend confirmation gate permits execution' do
+      allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
+      label = create(:label, account: account, title: 'vip')
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
+
+      payload = JSON.parse(service.execute(label_id: label.id, title: 'priority'))
+
+      expect(payload['message']).to include('Operator confirmation is required')
+      expect(payload.dig('data', 'confirmation_required')).to be(true)
+      expect(label.reload.title).to eq('vip')
     end
   end
 
@@ -445,6 +507,17 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload.dig('webhook', 'secret')).to be_nil
       expect(account.webhooks.find_by(url: 'https://example.com/hook')).to be_present
     end
+
+    it 'enforces admin permission inside execute before creating webhooks' do
+      agent = create(:user, account: account)
+      service = described_class.new(assistant, user: agent, conversation: conversation, copilot_thread: copilot_thread)
+
+      allow(service).to receive(:active?).and_return(true)
+      result = service.execute(url: 'https://example.com/hook', subscriptions: %w[conversation_created message_created], name: 'Captain Hook')
+
+      expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
+      expect(account.webhooks.find_by(url: 'https://example.com/hook')).to be_blank
+    end
   end
 
   describe Captain::Tools::Copilot::UpdateWebhookService do
@@ -465,6 +538,18 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload.dig('webhook', 'url')).to be_nil
       expect(payload.dig('webhook', 'secret')).to be_nil
       expect(webhook.reload.url).to eq('https://new.example.com')
+    end
+
+    it 'enforces admin permission inside execute before updating webhooks' do
+      agent = create(:user, account: account)
+      webhook = create(:webhook, account: account, inbox: nil, url: 'https://old.example.com')
+      service = described_class.new(assistant, user: agent, conversation: conversation, copilot_thread: copilot_thread)
+
+      allow(service).to receive(:active?).and_return(true)
+      result = service.execute(webhook_id: webhook.id, url: 'https://new.example.com', subscriptions: %w[conversation_updated])
+
+      expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
+      expect(webhook.reload.url).to eq('https://old.example.com')
     end
   end
 

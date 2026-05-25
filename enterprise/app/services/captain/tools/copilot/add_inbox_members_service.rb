@@ -10,6 +10,8 @@ class Captain::Tools::Copilot::AddInboxMembersService < Captain::Tools::Copilot:
   param :user_ids, type: :string, desc: 'Comma-separated account user IDs to add as inbox members', required: true
 
   def execute(inbox_id:, user_ids:)
+    ensure_account_administrator!
+
     inbox = account.inboxes.active.find(inbox_id)
     users = account_users!(user_ids)
     ids_to_add = users.map(&:id) - inbox.members.pluck(:id)

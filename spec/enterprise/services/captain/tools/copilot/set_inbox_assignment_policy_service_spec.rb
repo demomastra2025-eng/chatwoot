@@ -55,6 +55,19 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
     expect(inbox.reload.assignment_policy).to be_nil
   end
 
+  it 'enforces admin permission inside execute before mutating' do
+    agent = create(:user, account: account)
+    non_admin_service = described_class.new(assistant, user: agent)
+    inbox = create(:inbox, account: account)
+    policy = create(:assignment_policy, account: account)
+
+    allow(non_admin_service).to receive(:active?).and_return(true)
+    result = non_admin_service.execute(inbox_id: inbox.id, assignment_policy_id: policy.id)
+
+    expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
+    expect(inbox.reload.assignment_policy).to be_nil
+  end
+
   it 'is active only for account administrators' do
     agent = create(:user, account: account)
 

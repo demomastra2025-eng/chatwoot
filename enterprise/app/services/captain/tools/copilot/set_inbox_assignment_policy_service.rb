@@ -10,6 +10,8 @@ class Captain::Tools::Copilot::SetInboxAssignmentPolicyService < Captain::Tools:
   param :assignment_policy_id, type: :number, desc: 'Account assignment policy ID to attach to the inbox', required: true
 
   def execute(inbox_id:, assignment_policy_id:)
+    ensure_account_administrator!
+
     inbox = account.inboxes.active.find(inbox_id)
     policy = account.assignment_policies.find(assignment_policy_id)
 

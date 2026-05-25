@@ -10,6 +10,8 @@ class Captain::Tools::Copilot::CreateWebhookService < Captain::Tools::Copilot::B
   param :inbox_id, type: :integer, desc: 'Optional inbox ID for inbox-scoped webhooks', required: false
 
   def execute(url:, subscriptions:, name: nil, inbox_id: nil)
+    ensure_account_administrator!
+
     webhook = account.webhooks.create!(
       url: url.to_s.strip,
       name: name.to_s.strip.presence,

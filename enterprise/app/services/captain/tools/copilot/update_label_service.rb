@@ -11,6 +11,8 @@ class Captain::Tools::Copilot::UpdateLabelService < Captain::Tools::Copilot::Bas
   param :show_on_sidebar, type: :boolean, desc: 'Updated sidebar visibility', required: false
 
   def execute(label_id:, title: nil, description: nil, color: nil, show_on_sidebar: nil)
+    ensure_account_administrator!
+
     label = account.labels.find(label_id)
     update_attributes = {}
     update_attributes[:title] = title.to_s.strip.downcase unless title.nil?

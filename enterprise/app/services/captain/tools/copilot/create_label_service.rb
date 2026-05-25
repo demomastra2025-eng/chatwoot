@@ -10,6 +10,8 @@ class Captain::Tools::Copilot::CreateLabelService < Captain::Tools::Copilot::Bas
   param :show_on_sidebar, type: :boolean, desc: 'Whether to show the label in the sidebar', required: false
 
   def execute(title:, description: nil, color: nil, show_on_sidebar: nil)
+    ensure_account_administrator!
+
     label = account.labels.create!(
       title: title.to_s.strip.downcase,
       description: description.to_s.strip.presence,

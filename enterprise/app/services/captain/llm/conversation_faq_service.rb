@@ -151,6 +151,14 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
     Captain::Llm::SystemPromptsService.conversation_faq_generator(account_language)
   end
 
+  def llm_feature_key
+    :assistant
+  end
+
+  def llm_model_account
+    @conversation.account
+  end
+
   def parse_response(response)
     return [] unless response.is_a?(Hash)
 

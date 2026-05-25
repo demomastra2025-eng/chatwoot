@@ -2022,7 +2022,8 @@ class Captain::ToolRegistry
           icon: 'tag',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::CreateLabelService,
-          risk_level: 'medium'
+          risk_level: 'medium',
+          requires_confirmation: true
         ),
         definition(
           id: 'update_label',
@@ -2032,7 +2033,8 @@ class Captain::ToolRegistry
           icon: 'tag',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::UpdateLabelService,
-          risk_level: 'medium'
+          risk_level: 'medium',
+          requires_confirmation: true
         ),
         definition(
           id: 'remove_label_from_conversation',

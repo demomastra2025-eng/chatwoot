@@ -11,6 +11,8 @@ class Captain::Tools::Copilot::AddAppointmentPaymentService < Captain::Tools::Co
         required: false
 
   def execute(payment_method:, amount: nil)
+    ensure_account_administrator!
+
     appointment = appointment_operations.add_payment_to_current_appointment(amount: amount, payment_method: payment_method)
 
     formatted_payload(::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'add_appointment_payment', appointment: appointment))

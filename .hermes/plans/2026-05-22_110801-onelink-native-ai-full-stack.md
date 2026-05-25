@@ -1650,3 +1650,277 @@ Next coding slice:
 
 1. Add high-risk confirmed mutation tools for inbox routing/AI settings after these catalogs: `update_captain_inbox_auto_reply_mode` and `set_inbox_assignment_policy`.
 2. Keep backend confirmation and execute-time account-admin gate as non-negotiable for those writes.
+
+## 2026-05-25 Etapa 6/7 inbox routing mutation safety completion slice
+
+Status: **Implemented.**
+
+Sources used from plan:
+
+- Primary: OneLink product runtime, permission and confirmation policy.
+- Secondary reference: `ruby_llm`/tool semantics only where they map to existing Captain tool execution.
+- Current code remains source of truth for acceptance.
+
+Implemented:
+
+- Verified the next Etapa 6/7 slice from the previous plan status: account-admin inbox routing/AI settings mutation tools.
+- Confirmed `update_captain_inbox_auto_reply_mode` already had execute-time `ensure_account_administrator!` before mutation.
+- Added execute-time `ensure_account_administrator!` to `set_inbox_assignment_policy` before any inbox/policy lookup or transaction.
+- Added a regression spec that forces the service past catalog/`active?` visibility and proves the `execute` body itself blocks non-admin mutation.
+- No runtime deploy/restart performed.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/set_inbox_assignment_policy_service_spec.rb:58
+# RED before fix: 1 example, 1 failure; non-admin mutation returned real set_inbox_assignment_policy payload
+# GREEN after fix: 1 example, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/set_inbox_assignment_policy_service_spec.rb spec/enterprise/services/captain/tools/copilot/update_captain_inbox_auto_reply_mode_service_spec.rb spec/enterprise/services/captain/tools/copilot/account_directory_tools_spec.rb spec/enterprise/lib/captain/tool_registry_spec.rb --format progress
+# 34 examples, 0 failures
+
+ruby -c enterprise/app/services/captain/tools/copilot/set_inbox_assignment_policy_service.rb
+ruby -c spec/enterprise/services/captain/tools/copilot/set_inbox_assignment_policy_service_spec.rb
+# Syntax OK
+
+bundle exec rubocop --force-exclusion --fail-level E enterprise/app/services/captain/tools/copilot/set_inbox_assignment_policy_service.rb spec/enterprise/services/captain/tools/copilot/set_inbox_assignment_policy_service_spec.rb
+# 2 files inspected, no offenses detected
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 6/7 admin/runtime tools review: user/team/role, inbox settings/working hours, automation/macro/scenario/custom-tool admin mutations.
+2. For each mutation: prove assistant-only/customer-agent denial, execute-time account-admin guard, runtime confirmation gate, structured compact payload, and targeted specs.
+3. Then resume later open etapas: Etapa 8 model routing, Etapa 9 Knowledge/RAG, Etapa 10 AI Voice parity, Etapa 11 eval production hardening, Etapa 12 UI evidence, Etapa 13 scale budgets.
+
+## 2026-05-25 Etapa 6/7 admin mutation execute-time guard sweep
+
+Status: **Implemented.**
+
+Scope:
+
+- Finished the next Etapa 6/7 admin/runtime guard slice after `set_inbox_assignment_policy`.
+- Audited direct admin-only Copilot mutation services with `active?` gated by `account_administrator?` and no execute-time guard.
+- Also checked inherited admin tool families (`AccountAdminPeopleTool`, `AutomationRuleAdminTool`, `CaptainAssistantAdminTool`, `CampaignAdminTool`, `SupportContentAdminTool`): current subclasses already call `ensure_account_administrator!` in `execute`.
+
+Implemented execute-time admin guards before mutation for:
+
+- `add_appointment_payment`
+- `add_inbox_members`
+- `remove_inbox_members`
+- `create_label`
+- `update_label`
+- `create_webhook`
+- `update_webhook`
+
+Regression coverage added:
+
+- Each tool now has a direct-execute non-admin regression that forces the service past `active?` visibility and proves the `execute` body blocks before mutation.
+- Existing confirmation-gate tests for inbox member writes remain intact.
+- No runtime deploy/restart performed.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/add_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/remove_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb --format progress
+# RED before fix: 41 examples, 7 failures; each non-admin direct-execute regression produced a real mutation payload
+# GREEN after fix: 41 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/add_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/remove_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb spec/enterprise/services/captain/tools/copilot/set_inbox_assignment_policy_service_spec.rb spec/enterprise/services/captain/tools/copilot/update_captain_inbox_auto_reply_mode_service_spec.rb spec/enterprise/services/captain/tools/copilot/account_directory_tools_spec.rb spec/enterprise/lib/captain/tool_registry_spec.rb --format progress
+# 75 examples, 0 failures
+
+ruby -c enterprise/app/services/captain/tools/copilot/add_appointment_payment_service.rb
+ruby -c enterprise/app/services/captain/tools/copilot/add_inbox_members_service.rb
+ruby -c enterprise/app/services/captain/tools/copilot/create_label_service.rb
+ruby -c enterprise/app/services/captain/tools/copilot/create_webhook_service.rb
+ruby -c enterprise/app/services/captain/tools/copilot/remove_inbox_members_service.rb
+ruby -c enterprise/app/services/captain/tools/copilot/update_label_service.rb
+ruby -c enterprise/app/services/captain/tools/copilot/update_webhook_service.rb
+ruby -c spec/enterprise/services/captain/tools/copilot/add_inbox_members_service_spec.rb
+ruby -c spec/enterprise/services/captain/tools/copilot/remove_inbox_members_service_spec.rb
+ruby -c spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# Syntax OK
+
+bundle exec rubocop --force-exclusion --fail-level E enterprise/app/services/captain/tools/copilot/add_appointment_payment_service.rb enterprise/app/services/captain/tools/copilot/add_inbox_members_service.rb enterprise/app/services/captain/tools/copilot/create_label_service.rb enterprise/app/services/captain/tools/copilot/create_webhook_service.rb enterprise/app/services/captain/tools/copilot/remove_inbox_members_service.rb enterprise/app/services/captain/tools/copilot/update_label_service.rb enterprise/app/services/captain/tools/copilot/update_webhook_service.rb spec/enterprise/services/captain/tools/copilot/add_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/remove_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# exit 0 with --fail-level E; existing C-level offenses remain in long param description, update_label ABC size, and native_ops describe string
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 6/7 with confirmation metadata/runtime-gate audit for the same high-risk mutation categories: inbox membership, labels, webhooks, appointment payment, campaigns, automation, macros, assistant settings, user/team/role.
+2. Prove each high-risk assistant-scope mutation is either explicitly confirmation-required or intentionally exempt, and direct runtime execution without `copilot_thread` blocks instead of mutating.
+3. Then move to Etapa 8 model routing once Etapa 6/7 safety gates have no uncovered mutation classes.
+
+## 2026-05-25 Etapa 6/7 confirmation metadata/runtime-gate audit
+
+Status: **Implemented.**
+
+Scope:
+
+- Audited the high-risk assistant-scope mutation families against registry metadata, catalog policy, and runtime gate behavior: inbox membership/settings, labels, webhooks, appointment payment, campaigns, automation rules, macros/canned responses, assistant settings, and user/team/role admin tools.
+- Confirmed runtime fallback already gates high-risk assistant tools without explicit registry confirmation (`create_deal`) and does not over-gate read-only tools (`search_contacts`).
+- Confirmed target high-risk/admin mutation IDs all resolve to `requires_confirmation=true` at registry/catalog runtime policy level.
+
+Gap fixed:
+
+- `create_label` and `update_label` were account-admin mutations but registry metadata left `requires_confirmation` unset, so direct execution with a `copilot_thread` could mutate without a pending operator confirmation.
+- Added explicit `requires_confirmation: true` for both label account-admin mutations.
+- Added regression coverage proving label create/update do not mutate until `ToolConfirmationGate` requests operator confirmation, plus catalog coverage proving both label tools are confirmation-required in assistant scope.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb spec/enterprise/lib/captain/tool_catalog_spec.rb --format progress
+# RED before metadata fix: 53 examples, 3 failures (create_label/update_label mutated; catalog had requires_confirmation=nil)
+# GREEN after fix: 53 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/tool_catalog_spec.rb spec/enterprise/lib/captain/copilot/tool_confirmation_gate_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb spec/enterprise/services/captain/tools/copilot/add_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/remove_inbox_members_service_spec.rb spec/enterprise/services/captain/tools/copilot/set_inbox_assignment_policy_service_spec.rb spec/enterprise/services/captain/tools/copilot/update_captain_inbox_auto_reply_mode_service_spec.rb spec/enterprise/services/captain/tools/copilot/captain_assistant_admin_tools_spec.rb spec/enterprise/services/captain/tools/copilot/support_content_tools_spec.rb spec/enterprise/services/captain/tools/copilot/campaign_tools_spec.rb spec/enterprise/services/captain/tools/copilot/automation_rule_tools_spec.rb spec/enterprise/services/captain/tools/copilot/account_directory_tools_spec.rb --format progress
+# 166 examples, 0 failures
+
+ruby -c enterprise/lib/captain/tool_registry.rb
+ruby -c spec/enterprise/lib/captain/tool_catalog_spec.rb
+ruby -c spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# Syntax OK
+
+bundle exec rubocop --force-exclusion --fail-level E enterprise/lib/captain/tool_registry.rb spec/enterprise/lib/captain/tool_catalog_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# exit 0 with --fail-level E; existing C-level offenses remain in tool_registry class/method size + long descriptions and native_ops describe string
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Etapa 6/7 final safety pass: scan all assistant-scope mutation tools for `requires_confirmation: false` / medium-risk intentional no-confirmation cases and document which are intentionally conversation/CRM operational vs account-admin config mutations.
+2. If no safety gaps remain, move to Etapa 8 model routing; otherwise add the smallest registry/runtime/spec fix per uncovered mutation class.
+3. Still no deploy/restart until explicitly approved.
+
+## 2026-05-25 Etapa 6/7 final assistant-scope safety pass
+
+Status: **Implemented — no additional code gap found.**
+
+Scope:
+
+- Scanned assistant-scope registry definitions for explicit `requires_confirmation: false`, high-risk implicit confirmation, and medium-risk no-confirmation tools.
+- Compared the medium/no-confirmation set against the intended policy boundary:
+  - allowed: conversation/contact/CRM operational mutations protected by normal entity permissions;
+  - allowed: Kaspi Pay connect/status/reconcile/sync helpers covered by the Kaspi tooling contract;
+  - not allowed: account-admin configuration mutations without explicit confirmation.
+
+Findings:
+
+- Explicit `requires_confirmation: false` is limited to confirmation-management tools only:
+  - `request_confirmation`
+  - `resolve_confirmation`
+- Medium-risk no-confirmation tools are intentionally operational, not account-admin config:
+  - Conversations: `add_contact_note`, `add_label_to_conversation`, `add_private_note`, `assign_conversation`, `handoff`, `remove_label_from_conversation`, `resolve_conversation`, `send_notification`, `update_priority`
+  - Contacts/companies: `create_contact`, `update_contact`, `update_company`
+  - CRM: `update_deal`, `add_deal_comment`, `update_task`, `complete_task`, `add_task_comment`
+  - Payments: `start_kaspi_pay_connection`, `send_kaspi_pay_phone`, `get_kaspi_pay_payment_status`, `get_kaspi_pay_payment`, `sync_kaspi_pay_payment_status`, `reconcile_kaspi_pay_payment`
+- Account-admin/config mutation families are explicit-confirmation covered after the previous slices: assistant/scenario/knowledge/custom-tool admin, user/team/role, inbox settings/members/assignment/auto-reply, support content, macros, automation rules, campaign controls, webhooks, labels, appointment payment, Kaspi Pay high-risk payment actions, message send/edit/retry, WhatsApp reconnect.
+- High-risk assistant-scope tools without explicit registry `requires_confirmation` remain covered by catalog/runtime auto-inference; existing regression coverage includes `create_deal` as the representative high-risk fallback case and `search_contacts` as read-only no-over-gating case.
+- No new production code change was needed in this final pass.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec rails runner /tmp/final_safety_audit.rb
+# explicit requires_confirmation:false: request_confirmation, resolve_confirmation only
+# high-risk auto-inferred confirmation count: 15
+# explicit requires_confirmation:true count: 66
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec rails runner /tmp/audit_captain_tools.rb
+# medium no-confirmation list matched only operational groups above; no account-admin config mutation gap found
+```
+
+Next coding slice:
+
+1. Move from Etapa 6/7 safety gates to Etapa 8 model routing.
+2. Before Etapa 8 code, define the smallest routing acceptance slice: account/provider/model precedence, no hidden OpenAI fallback, and targeted specs for chat/Captain surfaces.
+3. Still no deploy/restart until explicitly approved.
+
+## 2026-05-25 Etapa 8 first routing slice — Captain chat runner account/model propagation
+
+Status: **Implemented, targeted verified.**
+
+Scope:
+
+- Minimal routing gap selected: Captain live chat/Copilot built the `RubyLLM::Chat` with the resolved account model, but then called `Llm::ChatRequestRunner` without passing `model:` / `account:`.
+- Risk: downstream runner capability checks, multimodal checks, tool/schema checks, and `Llm::ChatClient.ask` could lose account-aware model metadata even though the chat was already constructed with the right model/context.
+- Fix: `Captain::ChatHelper#request_chat_completion` now passes `model: model` and `account: llm_model_account` into `Llm::ChatRequestRunner.new`.
+- Regression: `spec/enterprise/services/captain/copilot/chat_service_spec.rb` now asserts the resolved account copilot model and account are handed into the reusable runner.
+- Spec alignment: `spec/lib/llm/config_spec.rb` now reflects the current explicit OpenRouter embeddings implementation: `help_center_search` stays on `text-embedding-3-small` via OpenRouter and does not pick the dynamic chat lookalike `openai/text-embedding-3-small`.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec ruby -c enterprise/app/helpers/captain/chat_helper.rb
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec ruby -c spec/enterprise/services/captain/copilot/chat_service_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec ruby -c spec/lib/llm/config_spec.rb
+# all Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec rspec spec/enterprise/services/captain/copilot/chat_service_spec.rb:171 --format documentation
+# 1 example, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec rspec spec/enterprise/services/captain/copilot/chat_service_spec.rb spec/lib/llm/chat_request_runner_spec.rb spec/lib/llm/chat_client_spec.rb spec/lib/llm/config_spec.rb spec/enterprise/services/captain/llm/embedding_service_spec.rb --format progress
+# 88 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bundle exec rubocop --fail-level E enterprise/app/helpers/captain/chat_helper.rb spec/enterprise/services/captain/copilot/chat_service_spec.rb spec/lib/llm/config_spec.rb
+# exit 0; only existing C-level offenses remain in touched files
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 8 by auditing remaining non-Captain chat surfaces and preferences/registry metadata for missing `account:` threading.
+2. Prioritize any surface where model selection is account-aware but execution/metadata uses global provider/model state.
+3. Still no deploy/restart until explicitly approved.
+
+## 2026-05-25 Etapa 8 second routing slice — Captain generation services account/model propagation
+
+Status: **Implemented, targeted verified.**
+
+Scope:
+
+- Minimal routing gap selected after the Captain chat runner slice: Captain generation/indexing services that inherit `Llm::BaseAiService` but did not set `llm_feature_key` / `llm_model_account` consistently.
+- Risk: contact notes, contact attributes, conversation FAQ, and article search-term generation could build `Llm::ChatClient` without the conversation/article account and without the assistant feature model. Under OpenRouter-default/no-hidden-OpenAI-fallback routing, article search terms could skip even when the account/admin OpenAI assistant model was available.
+- Fix: route these services through the assistant feature and current account:
+  - `Captain::Llm::ContactNotesService`
+  - `Captain::Llm::ContactAttributesService`
+  - `Captain::Llm::ConversationFaqService`
+  - `Captain::Llm::ArticleSearchTermsService`
+- Regression: added `spec/enterprise/services/captain/llm/account_routing_spec.rb` proving contact notes/attributes/conversation FAQ call `Llm::ChatClient.build` and `Llm::ChatClient.ask` with the resolved account model and account.
+- Existing article search-term spec now also proves the assistant feature route keeps OpenAI-key fallback working when OpenRouter is not configured for that account/test case.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/services/captain/llm/account_routing_spec.rb --format documentation'
+# 3 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/services/captain/llm/article_search_terms_service_spec.rb --format documentation'
+# 6 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/services/captain/llm/account_routing_spec.rb spec/enterprise/services/captain/llm/article_search_terms_service_spec.rb spec/enterprise/services/captain/llm/embedding_service_spec.rb spec/enterprise/services/llm/base_ai_service_spec.rb spec/enterprise/services/captain/copilot/chat_service_spec.rb spec/lib/llm/chat_request_runner_spec.rb spec/lib/llm/chat_client_spec.rb spec/lib/llm/config_spec.rb --format progress'
+# 99 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)" && bundle exec rubocop --force-exclusion --fail-level E enterprise/app/services/captain/llm/contact_notes_service.rb enterprise/app/services/captain/llm/contact_attributes_service.rb enterprise/app/services/captain/llm/conversation_faq_service.rb enterprise/app/services/captain/llm/article_search_terms_service.rb spec/enterprise/services/captain/llm/account_routing_spec.rb'
+# 5 files inspected, no offenses detected
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 8 by auditing remaining `Llm::BaseAiService` descendants outside the now-covered generation/chat services: onboarding website analyzer, image recognition, audio/transcription surfaces, and any service using direct `Llm::Config`/`Llm::Models` without account context.
+2. Prioritize surfaces where selected feature model/provider differs from runtime request provider or where account-specific hooks should override installation fallback.
+3. Still no deploy/restart until explicitly approved.

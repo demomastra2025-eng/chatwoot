@@ -8,6 +8,8 @@ module Captain::ChatHelper
     response = with_agent_session do
       Llm::ChatRequestRunner.new(
         chat: chat(model: model, temperature: temperature, thinking: llm_thinking_options),
+        model: model,
+        account: llm_model_account,
         messages: @messages,
         tools: @tools,
         schema: response_schema,

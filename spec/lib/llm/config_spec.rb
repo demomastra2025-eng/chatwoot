@@ -225,7 +225,7 @@ RSpec.describe Llm::Config do
       expect(described_class.provider_for_model(described_class.model_for(feature: 'audio_transcription'))).to eq('openrouter')
     end
 
-    it 'keeps help center search on explicit embedding configuration instead of inventing an OpenRouter embedding model' do
+    it 'keeps help center search on the explicit OpenRouter embedding default instead of dynamic chat lookalikes' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/text-embedding-3-small' => {
@@ -235,7 +235,9 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'help_center_search')).to be_nil
+      expect(described_class.model_for(feature: 'help_center_search')).to eq('text-embedding-3-small')
+      expect(described_class.provider_for_model('text-embedding-3-small')).to eq('openrouter')
+      expect(described_class.model_for(feature: 'help_center_search')).not_to eq('openai/text-embedding-3-small')
     end
   end
 

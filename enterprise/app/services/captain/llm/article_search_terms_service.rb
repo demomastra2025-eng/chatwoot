@@ -61,6 +61,10 @@ class Captain::Llm::ArticleSearchTermsService < Llm::BaseAiService
     false
   end
 
+  def llm_feature_key
+    :assistant
+  end
+
   def llm_model_account
     article.account
   end

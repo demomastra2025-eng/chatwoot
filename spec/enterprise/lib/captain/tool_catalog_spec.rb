@@ -61,6 +61,16 @@ RSpec.describe Captain::ToolCatalog do
       )
     end
 
+    it 'marks account-admin label mutations as confirmation-required assistant tools' do
+      assistant_tools = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
+
+      %w[create_label update_label].each do |tool_id|
+        expect(assistant_tools.find { |tool| tool[:id] == tool_id }).to include(
+          requires_confirmation: true
+        )
+      end
+    end
+
     it 'includes enabled custom tools for the requested scope' do
       custom_tool = create(:captain_custom_tool, account: account)
 
