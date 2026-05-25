@@ -242,7 +242,9 @@ const stepOutput = step =>
   step.output ?? step.outputPreview ?? step.output_preview ?? step.result;
 
 export const buildCaptainToolTraceMessages = additionalAttributes => {
-  const toolSteps = additionalAttributes?.captainTrace?.toolSteps;
+  const captainTrace =
+    additionalAttributes?.captainTrace || additionalAttributes?.captain_trace;
+  const toolSteps = captainTrace?.toolSteps || captainTrace?.tool_steps;
 
   if (!Array.isArray(toolSteps) || toolSteps.length === 0) {
     return [];

@@ -46,9 +46,6 @@ const fetchDataForRoute = async (routeName, assistantId) => {
     captain_assistants_scenarios_index: async () => {
       await store.dispatch('captainScenarios/get', { assistantId });
     },
-    captain_assistants_playground_index: () => {
-      // Playground doesn't need pre-fetching, it loads on interaction
-    },
     captain_assistants_channels_index: async () => {
       await store.dispatch('inboxes/get');
       await store.dispatch('captainAssistants/show', assistantId);

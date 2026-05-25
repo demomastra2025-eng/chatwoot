@@ -52,6 +52,36 @@ describe('buildCaptainToolTraceMessages', () => {
     ]);
   });
 
+  it('maps snake_case stored traces from Rails payloads', () => {
+    expect(
+      buildCaptainToolTraceMessages({
+        captain_trace: {
+          tool_steps: [
+            {
+              id: 'tool:finish:1',
+              tool_name: 'search_deals',
+              status: 'completed',
+              content: 'Completed search_deals',
+              input_preview: { query: 'VIP' },
+              output_preview: { returned_count: 1 },
+            },
+          ],
+        },
+      })
+    ).toEqual([
+      {
+        id: 'tool:finish:1',
+        message: {
+          content: 'Completed search_deals',
+          toolName: 'search_deals',
+          status: 'finish',
+          input: 'Query: VIP',
+          output: 'Найдено: 1',
+        },
+      },
+    ]);
+  });
+
   it('normalizes JSON strings inside tool details for readable panels', () => {
     const [{ message }] = buildCaptainToolTraceMessages({
       captainTrace: {

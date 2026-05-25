@@ -7,7 +7,6 @@ import { useStore } from 'dashboard/composables/store';
 import { useMapGetter } from 'dashboard/composables/store';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
-import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantRulesManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantRulesManager.vue';
 import AssistantScenariosManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue';
@@ -124,7 +123,6 @@ const onPromptTabChanged = tab => {
 
 <template>
   <PageLayout
-    :header-title="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPTS.LABEL')"
     :is-fetching="isFetching"
     :show-pagination-footer="false"
     :show-know-more="false"
@@ -141,12 +139,6 @@ const onPromptTabChanged = tab => {
             <div
               class="instructions-card rounded-2xl bg-n-solid-1 p-5 md:p-6 flex h-full flex-col gap-6"
             >
-              <SettingsHeader
-                :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPTS.LABEL')"
-                :description="
-                  t('CAPTAIN.ASSISTANTS.SETTINGS.INSTRUCTIONS.DESCRIPTION')
-                "
-              />
               <AssistantBasicSettingsForm
                 ref="promptDescriptionFormRef"
                 :assistant="assistant"

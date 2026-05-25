@@ -29,6 +29,11 @@ const mountComponent = props =>
           template:
             '<button type="button" @click="$emit(\'click\')">{{ label }}</button>',
         },
+        CaptainToolExecutionGroup: {
+          props: ['additionalAttributes'],
+          template:
+            '<div data-test-id="tool-trace">{{ additionalAttributes.captain_trace?.tool_steps?.[0]?.content }}</div>',
+        },
       },
       directives: {
         dompurifyHtml: (el, binding) => {
@@ -54,5 +59,26 @@ describe('CopilotAssistantMessage', () => {
     expect(wrapper.emitted('uiAction')?.[0]).toEqual([
       { type: 'open_contact', label: 'Open contact', targetId: '42' },
     ]);
+  });
+
+  it('passes assistant tool trace details to the reusable tool execution group', () => {
+    const wrapper = mountComponent({
+      message: {
+        content: 'I checked CRM.',
+        reply_suggestion: false,
+        captain_trace: {
+          tool_steps: [
+            {
+              content: 'Completed search_deals',
+              tool_name: 'search_deals',
+            },
+          ],
+        },
+      },
+    });
+
+    expect(wrapper.find('[data-test-id="tool-trace"]').text()).toBe(
+      'Completed search_deals'
+    );
   });
 });

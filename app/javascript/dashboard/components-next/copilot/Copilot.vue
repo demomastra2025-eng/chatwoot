@@ -3,6 +3,7 @@ import { nextTick, ref, watch, computed } from 'vue';
 import { useTrack } from 'dashboard/composables';
 import { COPILOT_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useRoute } from 'vue-router';
 
 import CopilotInput from './CopilotInput.vue';
 import CopilotLoader from './CopilotLoader.vue';
@@ -36,6 +37,8 @@ const props = defineProps({
 const emit = defineEmits(['sendMessage', 'reset', 'setAssistant', 'uiAction']);
 
 const { t } = useI18n();
+const route = useRoute();
+const CAPTAIN_COPILOT_CLOSED_SESSION_KEY = 'captain_copilot_panel_closed';
 
 const sendMessage = message => {
   emit('sendMessage', message);
@@ -89,6 +92,10 @@ const isLastMessageFromAssistant = computed(() => {
 const { updateUISettings } = useUISettings();
 
 const closeCopilotPanel = () => {
+  if (String(route.name || '').startsWith('captain_')) {
+    window.sessionStorage.setItem(CAPTAIN_COPILOT_CLOSED_SESSION_KEY, 'true');
+  }
+
   updateUISettings({
     is_copilot_panel_open: false,
     is_contact_sidebar_open: false,

@@ -10,6 +10,7 @@ import MessageFormatter from 'shared/helpers/MessageFormatter.js';
 import { normalizeCaptainUiActions } from 'dashboard/helper/captainUiActions';
 
 import Button from 'dashboard/components-next/button/Button.vue';
+import CaptainToolExecutionGroup from 'dashboard/components-next/message/CaptainToolExecutionGroup.vue';
 
 const props = defineProps({
   isLastMessage: {
@@ -47,6 +48,10 @@ const uiActions = computed(() =>
     props.message?.ui_actions || props.message?.uiActions
   )
 );
+
+const toolTraceAttributes = computed(() => ({
+  captain_trace: props.message?.captain_trace || props.message?.captainTrace,
+}));
 
 const handleUiAction = action => {
   emit('uiAction', action);
@@ -98,5 +103,9 @@ const useCopilotResponse = () => {
         @click="handleUiAction(action)"
       />
     </div>
+    <CaptainToolExecutionGroup
+      :additional-attributes="toolTraceAttributes"
+      class="mt-2"
+    />
   </div>
 </template>

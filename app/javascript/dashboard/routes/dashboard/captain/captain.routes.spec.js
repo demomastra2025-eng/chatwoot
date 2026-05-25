@@ -17,4 +17,23 @@ describe('captain routes', () => {
     expect(evaluationRoute.path).toContain('/captain/evaluations');
     expect(evaluationRoute.meta.permissions).toEqual(['administrator']);
   });
+
+  it('redirects the hidden playground page to prompts', () => {
+    const playgroundRoute = flattenRoutes(routes).find(
+      route => route.name === 'captain_assistants_playground_index'
+    );
+
+    expect(playgroundRoute).toBeTruthy();
+    expect(playgroundRoute.component).toBeUndefined();
+    expect(
+      playgroundRoute.redirect({
+        params: { accountId: '1', assistantId: '2' },
+        query: { source: 'sidebar' },
+      })
+    ).toEqual({
+      name: 'captain_assistants_prompts_index',
+      params: { accountId: '1', assistantId: '2' },
+      query: { source: 'sidebar' },
+    });
+  });
 });

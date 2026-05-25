@@ -306,6 +306,27 @@ RSpec.describe Captain::Copilot::ChatService do
       )
       expect(persisted_message).not_to have_key('usage')
     end
+
+    it 'persists the final assistant message with the tool trace for Copilot reloads' do
+      trace_step = Captain::ToolTraceBuilder.step(
+        tool_name: 'list_deal_pipelines',
+        event: 'complete',
+        sequence: 1,
+        input: { filters: { active: true } },
+        output: { returned_count: 4 }
+      )
+      service.instance_variable_set(:@tool_trace_steps, [trace_step])
+
+      response = service.generate_response('Hello')
+      persisted_message = copilot_thread.reload.copilot_messages.assistant.last.message
+
+      expect(response['captain_trace']).to eq(
+        'version' => Captain::ToolTraceBuilder::VERSION,
+        'tool_steps' => [trace_step]
+      )
+      expect(persisted_message['captain_trace']).to eq(response['captain_trace'])
+      expect(persisted_message).not_to have_key('usage')
+    end
   end
 
   describe 'user setup behavior' do

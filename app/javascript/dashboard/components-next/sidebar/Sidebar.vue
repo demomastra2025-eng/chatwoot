@@ -1023,15 +1023,6 @@ const menuItems = computed(() => {
               navigationPath: 'captain_assistants_documents_index',
             }),
           },
-          {
-            name: 'Playground',
-            visibilityKey: 'Captain:Playground',
-            label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
-            activeOn: ['captain_assistants_playground_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_playground_index',
-            }),
-          },
         ],
       },
       {

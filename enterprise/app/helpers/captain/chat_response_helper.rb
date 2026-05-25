@@ -10,9 +10,9 @@ module Captain::ChatResponseHelper
     parsed = normalize_ui_actions_payload(parsed)
     parsed = moderate_response_payload(parsed) if respond_to?(:moderate_response_payload, true)
     parsed['usage'] = usage_payload(response)
+    attach_tool_trace(parsed)
 
     persist_message(persistable_response(parsed), 'assistant')
-    attach_tool_trace(parsed)
     parsed
   end
 
@@ -21,9 +21,9 @@ module Captain::ChatResponseHelper
     parsed = normalize_ui_actions_payload(parsed)
     parsed = moderate_response_payload(parsed) if respond_to?(:moderate_response_payload, true)
     parsed['usage'] ||= zero_usage_payload
+    attach_tool_trace(parsed)
 
     persist_message(persistable_response(parsed), 'assistant')
-    attach_tool_trace(parsed)
     parsed
   end
 
@@ -61,7 +61,7 @@ module Captain::ChatResponseHelper
   end
 
   def persistable_response(parsed_response)
-    parsed_response.except('usage', 'captain_trace')
+    parsed_response.except('usage')
   end
 
   def persist_thinking_message(tool_call)
