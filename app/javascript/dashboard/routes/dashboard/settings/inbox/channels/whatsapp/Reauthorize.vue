@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import InboxReconnectionRequired from '../../components/InboxReconnectionRequired.vue';
-import whatsappChannel from 'dashboard/api/channel/whatsappChannel';
 import {
   setupFacebookSdk,
   initWhatsAppEmbeddedSignup,
@@ -23,9 +23,11 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+const store = useStore();
 
 const isRequestingAuthorization = ref(false);
 const isLoadingFacebook = ref(true);
+let signupMessageHandler = null;
 
 const whatsappAppId = computed(() => window.chatwootConfig.whatsappAppId);
 const whatsappConfigurationId = computed(
@@ -36,35 +38,46 @@ const actionLabel = computed(() => {
   if (props.whatsappRegistrationIncomplete) {
     return t('INBOX_MGMT.COMPLETE_REGISTRATION');
   }
-  return '';
+  return t('INBOX.REAUTHORIZE.BUTTON_TEXT');
 });
 
 const description = computed(() => {
   if (props.whatsappRegistrationIncomplete) {
     return t('INBOX_MGMT.WHATSAPP_REGISTRATION_INCOMPLETE');
   }
-  return '';
+  return t('INBOX.REAUTHORIZE.PRESERVE_DATA_DESCRIPTION');
 });
 
 const reauthorizeWhatsApp = async params => {
   isRequestingAuthorization.value = true;
 
   try {
-    const response = await whatsappChannel.reauthorizeWhatsApp({
+    const updatedInbox = await store.dispatch('inboxes/reauthorizeWhatsApp', {
       inboxId: props.inbox.id,
       ...params,
     });
 
-    if (response.data.success) {
+    if (updatedInbox?.id) {
       useAlert(t('INBOX.REAUTHORIZE.SUCCESS'));
     } else {
-      useAlert(response.data.message || t('INBOX.REAUTHORIZE.ERROR'));
+      useAlert(t('INBOX.REAUTHORIZE.ERROR'));
     }
   } catch (error) {
-    useAlert(error.message || t('INBOX.REAUTHORIZE.ERROR'));
+    useAlert(
+      error?.response?.data?.error ||
+        error.message ||
+        t('INBOX.REAUTHORIZE.ERROR')
+    );
   } finally {
     isRequestingAuthorization.value = false;
   }
+};
+
+const removeSignupMessageListener = () => {
+  if (!signupMessageHandler) return;
+
+  window.removeEventListener('message', signupMessageHandler);
+  signupMessageHandler = null;
 };
 
 const handleEmbeddedSignupEvents = async (data, authCode) => {
@@ -83,6 +96,7 @@ const handleEmbeddedSignupEvents = async (data, authCode) => {
         waba_id: businessData.waba_id,
         phone_number_id: businessData.phone_number_id,
       });
+      removeSignupMessageListener();
     } else {
       useAlert(
         t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.INVALID_BUSINESS_DATA')
@@ -90,9 +104,11 @@ const handleEmbeddedSignupEvents = async (data, authCode) => {
     }
   } else if (data.event === 'CANCEL') {
     isRequestingAuthorization.value = false;
+    removeSignupMessageListener();
     useAlert(t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.CANCELLED'));
   } else if (data.event === 'error') {
     isRequestingAuthorization.value = false;
+    removeSignupMessageListener();
     useAlert(
       data.error_message ||
         t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.SIGNUP_ERROR')
@@ -101,10 +117,11 @@ const handleEmbeddedSignupEvents = async (data, authCode) => {
 };
 
 const startEmbeddedSignup = authCode => {
-  const messageHandler = createMessageHandler(data =>
+  removeSignupMessageListener();
+  signupMessageHandler = createMessageHandler(data =>
     handleEmbeddedSignupEvents(data, authCode)
   );
-  window.addEventListener('message', messageHandler);
+  window.addEventListener('message', signupMessageHandler);
 };
 
 const handleLoginAndReauthorize = async () => {
@@ -191,6 +208,10 @@ onMounted(async () => {
   } finally {
     isLoadingFacebook.value = false;
   }
+});
+
+onUnmounted(() => {
+  removeSignupMessageListener();
 });
 
 // Expose requestAuthorization function for parent components

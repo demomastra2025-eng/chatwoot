@@ -63,7 +63,10 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
 
   def fetch_whatsapp_templates(url)
     response = HTTParty.get(url, headers: api_headers, timeout: request_timeout)
-    return nil unless response.success?
+    unless response.success?
+      record_provider_authorization_error(response)
+      return nil
+    end
 
     next_url = next_url(response)
     data = response['data'] || []
@@ -84,6 +87,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
 
   def validate_provider_config?
     response = HTTParty.get("#{business_account_path}/message_templates", headers: api_headers, timeout: request_timeout)
+    record_provider_authorization_error(response) unless response.success?
     response.success?
   end
 

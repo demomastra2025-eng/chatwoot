@@ -26,7 +26,7 @@ class Whatsapp::ReauthorizationService
   private
 
   def update_channel_config(channel, access_token, phone_info)
-    current_config = channel.provider_config || {}
+    current_config = channel.provider_config.to_h.except(*Channel::Whatsapp::AUTHORIZATION_FAILURE_CONFIG_KEYS)
     capability_config = {
       'calling_capable' => phone_info[:calling_capable],
       'calling_capabilities' => phone_info[:calling_capabilities]

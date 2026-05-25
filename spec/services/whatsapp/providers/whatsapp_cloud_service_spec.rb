@@ -49,13 +49,43 @@ describe Whatsapp::Providers::WhatsappCloudService do
               context: {
                 message_id: message.source_id
               },
-              to: '+123456789',
+              to: '+123****6789',
               text: { body: message_with_reply.content },
               type: 'text'
             }.to_json
           )
           .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
-        expect(service.send_message('+123456789', message_with_reply)).to eq 'message_id'
+        expect(service.send_message('+123****6789', message_with_reply)).to eq 'message_id'
+      end
+
+      it 'marks the channel for reauthorization when Meta returns an invalid token error' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(
+            status: 401,
+            body: {
+              error: {
+                message: 'Error validating access token: Session has expired',
+                type: 'OAuthException',
+                code: 190,
+                fbtrace_id: 'trace-190'
+              }
+            }.to_json,
+            headers: response_headers
+          )
+
+        expect(service.send_message('+123****6789', message)).to be_nil
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to include('Error validating access token')
+        expect(whatsapp_channel.reload.reauthorization_required?).to be(true)
+        expect(whatsapp_channel.provider_config).to include(
+          'authorization_status' => 'reauthorization_required',
+          'authorization_error' => hash_including(
+            'code' => 190,
+            'type' => 'OAuthException',
+            'message' => include('Error validating access token')
+          )
+        )
       end
 
       it 'calls message endpoints for image attachment message messages' do

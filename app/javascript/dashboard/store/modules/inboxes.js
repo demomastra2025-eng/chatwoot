@@ -661,6 +661,36 @@ export const actions = {
       throw error;
     }
   },
+  reauthorizeWhatsApp: async ({ commit, getters: inboxGetters }, params) => {
+    const response = await WhatsappChannel.reauthorizeWhatsApp(params);
+    const currentInbox = inboxGetters?.getInbox
+      ? inboxGetters.getInbox(params.inboxId)
+      : null;
+    const responseProviderConfig = response.data?.provider_config;
+    const currentProviderConfig = currentInbox?.provider_config;
+    const providerConfig =
+      responseProviderConfig || currentProviderConfig
+        ? {
+            ...(currentProviderConfig || {}),
+            ...(responseProviderConfig || {}),
+          }
+        : currentProviderConfig;
+    if (providerConfig) {
+      delete providerConfig.authorization_status;
+      delete providerConfig.authorization_error;
+    }
+    const updatedInbox = {
+      ...currentInbox,
+      ...response.data,
+      reauthorization_required: false,
+      provider_config: currentProviderConfig
+        ? providerConfig
+        : currentProviderConfig,
+    };
+
+    commit(types.default.EDIT_INBOXES, updatedInbox);
+    return updatedInbox;
+  },
   ...channelActions,
   // TODO: Extract other create channel methods to separate files to reduce file size
   // - createChannel

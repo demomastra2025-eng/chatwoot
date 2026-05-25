@@ -64,4 +64,45 @@ RSpec.describe Whatsapp::ReauthorizationService do
       )
     end
   end
+
+  context 'when the existing channel is flagged for reauthorization' do
+    let(:existing_provider_config) do
+      {
+        'source' => 'embedded_signup',
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => {
+          'code' => 190,
+          'message' => 'Expired token',
+          'recorded_at' => 1.hour.ago.iso8601
+        }
+      }
+    end
+
+    it 'refreshes credentials on the same inbox/channel and preserves conversation data' do
+      conversation = create(:conversation, account: account, inbox: inbox)
+      message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'Preserve me')
+
+      channel.prompt_reauthorization!
+
+      result = described_class.new(
+        account: account,
+        inbox_id: inbox.id,
+        phone_number_id: 'phone-1',
+        business_id: 'waba-1'
+      ).perform('new-token', phone_info)
+
+      expect(result.id).to eq(channel.id)
+      expect(inbox.reload.channel).to eq(channel)
+      expect(conversation.reload.inbox).to eq(inbox)
+      expect(message.reload.conversation).to eq(conversation)
+      expect(channel.reload.reauthorization_required?).to be(false)
+      expect(channel.provider_config).to include(
+        'api_key' => 'new-token',
+        'phone_number_id' => 'phone-1',
+        'business_account_id' => 'waba-1'
+      )
+      expect(channel.provider_config).not_to include('authorization_status')
+      expect(channel.provider_config).not_to include('authorization_error')
+    end
+  end
 end

@@ -57,13 +57,17 @@ class Whatsapp::HealthService
 
   def handle_response(response)
     unless response.success?
+      error_payload = response.parsed_response if response.respond_to?(:parsed_response)
+      @channel.record_provider_authorization_error!(error_payload) if @channel.respond_to?(:record_provider_authorization_error!)
       error_message = "WhatsApp API request failed: #{response.code} - #{response.body}"
       Rails.logger.error "[WHATSAPP HEALTH] #{error_message}"
       raise error_message
     end
 
     data = response.parsed_response
-    format_health_response(data)
+    formatted_response = format_health_response(data)
+    clear_authorization_failure_if_healthy(formatted_response)
+    formatted_response
   end
 
   def format_health_response(response)
@@ -91,5 +95,19 @@ class Whatsapp::HealthService
     return nil if frontend_url.blank?
 
     "#{frontend_url}/webhooks/whatsapp/#{@channel.phone_number}"
+  end
+
+  def clear_authorization_failure_if_healthy(health_data)
+    return unless @channel.respond_to?(:reauthorization_required?) && @channel.reauthorization_required?
+    return unless @channel.respond_to?(:provider_authorization_error_recorded?) && @channel.provider_authorization_error_recorded?
+    return if channel_in_pending_state?(health_data)
+
+    @channel.reauthorized!
+    @channel.clear_provider_authorization_error! if @channel.respond_to?(:clear_provider_authorization_error!)
+  end
+
+  def channel_in_pending_state?(health_data)
+    health_data[:platform_type] == 'NOT_APPLICABLE' ||
+      health_data.dig(:throughput, 'level') == 'NOT_APPLICABLE'
   end
 end

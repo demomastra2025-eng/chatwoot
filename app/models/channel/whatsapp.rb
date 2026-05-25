@@ -26,6 +26,8 @@ class Channel::Whatsapp < ApplicationRecord
 
   # default at the moment is 360dialog lets change later.
   PROVIDERS = %w[default whatsapp_cloud].freeze
+  AUTHORIZATION_FAILURE_CONFIG_KEYS = %w[authorization_status authorization_error].freeze
+  AUTHORIZATION_ERROR_CODE = 190
   before_validation :ensure_webhook_verify_token
 
   validates :provider, inclusion: { in: PROVIDERS }
@@ -80,6 +82,63 @@ class Channel::Whatsapp < ApplicationRecord
   rescue StandardError => e
     Rails.logger.error "[WHATSAPP] Webhook setup failed: #{e.message}"
     prompt_reauthorization!
+  end
+
+  def record_provider_authorization_error!(payload)
+    error_payload = self.class.provider_authorization_error(payload)
+    return false unless error_payload
+
+    already_requires_reauthorization = reauthorization_required?
+    update_column(
+      :provider_config,
+      provider_config.to_h.merge(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => error_payload
+      )
+    )
+    prompt_reauthorization! unless already_requires_reauthorization
+    true
+  end
+
+  def provider_authorization_error_recorded?
+    provider_config.to_h['authorization_status'] == 'reauthorization_required' &&
+      provider_config.to_h['authorization_error'].present?
+  end
+
+  def clear_provider_authorization_error!
+    return false if provider_config.to_h.slice(*AUTHORIZATION_FAILURE_CONFIG_KEYS).empty?
+
+    update_column(:provider_config, provider_config.to_h.except(*AUTHORIZATION_FAILURE_CONFIG_KEYS))
+    true
+  end
+
+  def self.provider_authorization_error(payload)
+    error = normalize_provider_error(payload)
+    return nil unless provider_authorization_error?(error)
+
+    {
+      'code' => error['code'],
+      'type' => error['type'],
+      'message' => error['message'],
+      'fbtrace_id' => error['fbtrace_id'],
+      'recorded_at' => Time.current.iso8601
+    }.compact
+  end
+
+  def self.normalize_provider_error(payload)
+    return {} if payload.blank?
+    return {} unless payload.respond_to?(:to_h)
+
+    payload = payload.to_h.with_indifferent_access
+    error = payload[:error] || payload['error'] || payload
+    error.to_h.stringify_keys
+  end
+
+  def self.provider_authorization_error?(error)
+    return true if error['code'].to_i == AUTHORIZATION_ERROR_CODE
+    return false unless error['type'] == 'OAuthException'
+
+    error['message'].to_s.match?(/access token|session has expired|validating access token/i)
   end
 
   private

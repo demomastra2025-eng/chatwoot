@@ -296,4 +296,55 @@ RSpec.describe Channel::Whatsapp do
       expect(channel.voice_enabled?).to be false
     end
   end
+
+  describe '.provider_authorization_error' do
+    it 'normalizes Meta invalid-token errors as reauthorization errors' do
+      error = described_class.provider_authorization_error(
+        error: {
+          'message' => 'Error validating access token: Session has expired',
+          'type' => 'OAuthException',
+          'code' => 190,
+          'fbtrace_id' => 'trace-190'
+        }
+      )
+
+      expect(error).to include(
+        'code' => 190,
+        'type' => 'OAuthException',
+        'message' => include('Error validating access token'),
+        'fbtrace_id' => 'trace-190'
+      )
+    end
+
+    it 'does not treat unrelated OAuth errors as reauthorization errors' do
+      error = described_class.provider_authorization_error(
+        error: {
+          'message' => 'Unsupported post request. Object with ID does not exist',
+          'type' => 'OAuthException',
+          'code' => 100
+        }
+      )
+
+      expect(error).to be_nil
+    end
+  end
+
+  describe '#record_provider_authorization_error!' do
+    it 'does not prompt reauthorization again when the channel is already flagged' do
+      channel = create(:channel_whatsapp, validate_provider_config: false, sync_templates: false)
+      channel.prompt_reauthorization!
+      allow(channel).to receive(:prompt_reauthorization!)
+
+      channel.record_provider_authorization_error!(
+        error: {
+          'message' => 'Error validating access token: Session has expired',
+          'type' => 'OAuthException',
+          'code' => 190
+        }
+      )
+
+      expect(channel).not_to have_received(:prompt_reauthorization!)
+      expect(channel.reload.provider_authorization_error_recorded?).to be(true)
+    end
+  end
 end

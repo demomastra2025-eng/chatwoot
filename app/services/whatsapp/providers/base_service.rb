@@ -51,6 +51,7 @@ class Whatsapp::Providers::BaseService
 
   def handle_error(response, message)
     Rails.logger.error response.body
+    record_provider_authorization_error(response)
     return if message.blank?
 
     # https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes/#sample-response
@@ -60,6 +61,14 @@ class Whatsapp::Providers::BaseService
     message.external_error = error_message
     message.status = :failed
     message.save!
+  end
+
+  def record_provider_authorization_error(response)
+    return unless whatsapp_channel.respond_to?(:record_provider_authorization_error!)
+
+    whatsapp_channel.record_provider_authorization_error!(response.parsed_response)
+  rescue StandardError => e
+    Rails.logger.error "[WHATSAPP] Failed to record authorization error: #{e.message}"
   end
 
   def create_buttons(items)
