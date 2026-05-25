@@ -99,7 +99,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::CopilotThreads', type: :request do
           expect(response).to have_http_status(:success)
 
           expect(CopilotMessage.last.message['content']).to eq(
-            'You are out of Copilot credits. You can buy more credits from the billing section.'
+            'You are out of Assistant credits. You can buy more credits from the billing section.'
           )
         end
 

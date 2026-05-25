@@ -45,15 +45,27 @@ class Campaigns::TemplateParamsValidator
     when Hash
       component_values[name].blank? && component_values[name.to_sym].blank?
     when Array
-      component_values.none? { |item| value_present_in_button?(item, name) }
+      missing_array_param?(component_values, name)
     else
       true
     end
   end
 
+  def missing_array_param?(component_values, name)
+    return component_values[name.to_i].then { |item| !button_parameter_present?(item) } if name.to_s.match?(/\A\d+\z/)
+
+    component_values.none? { |item| value_present_in_button?(item, name) }
+  end
+
   def value_present_in_button?(item, name)
     values = normalized_hash(item)
-    values[name].present? || values[name.to_sym].present? || values['parameter'].present? || values[:parameter].present?
+    values[name].present? || values[name.to_sym].present? ||
+      ((values['key'].to_s == name.to_s || values[:key].to_s == name.to_s) && button_parameter_present?(values))
+  end
+
+  def button_parameter_present?(item)
+    values = normalized_hash(item)
+    values['parameter'].present? || values[:parameter].present?
   end
 
   def normalized_hash(value)

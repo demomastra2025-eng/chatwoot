@@ -13,6 +13,23 @@ RSpec.describe Campaigns::TemplateParamsValidator do
           'category' => 'MARKETING',
           'language' => 'en',
           'components' => [{ 'type' => 'BODY', 'text' => 'Hi {{name}}, ticket {{ticket_id}} is updated' }]
+        },
+        {
+          'name' => 'ticket_action_buttons',
+          'status' => 'approved',
+          'category' => 'MARKETING',
+          'language' => 'en',
+          'components' => [
+            { 'type' => 'BODY', 'text' => 'Ticket action available' },
+            {
+              'type' => 'BUTTONS',
+              'buttons' => [
+                { 'type' => 'QUICK_REPLY', 'text' => 'Later' },
+                { 'type' => 'URL', 'url' => 'https://example.com/tickets/{{1}}' },
+                { 'type' => 'COPY_CODE' }
+              ]
+            }
+          ]
         }
       ]
     )
@@ -55,5 +72,31 @@ RSpec.describe Campaigns::TemplateParamsValidator do
         }
       )
     end.to raise_error(ArgumentError, /body.ticket_id/)
+  end
+
+  it 'requires each dynamic button parameter by button position' do
+    expect do
+      described_class.validate!(
+        inbox: whatsapp_inbox,
+        template_params: {
+          name: 'ticket_action_buttons',
+          language: 'en',
+          processed_params: { buttons: [nil, { parameter: 'TRACK-123' }] }
+        }
+      )
+    end.to raise_error(ArgumentError, /buttons.2/)
+  end
+
+  it 'accepts approved templates with all dynamic button parameters' do
+    expect do
+      described_class.validate!(
+        inbox: whatsapp_inbox,
+        template_params: {
+          name: 'ticket_action_buttons',
+          language: 'en',
+          processed_params: { buttons: [nil, { parameter: 'TRACK-123' }, { parameter: 'SAVE20' }] }
+        }
+      )
+    end.not_to raise_error
   end
 end

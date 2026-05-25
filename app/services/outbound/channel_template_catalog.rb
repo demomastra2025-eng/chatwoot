@@ -162,8 +162,29 @@ class Outbound::ChannelTemplateCatalog
           example: whatsapp_param_example(template, component_type, param_name)
         }.compact
       end
-      text_params + media_header_params(component)
+      text_params + media_header_params(component) + button_params(component)
     end
+  end
+
+  def button_params(component)
+    return [] unless component['type'].to_s.casecmp('BUTTONS').zero?
+
+    params = []
+    Array(component['buttons']).each_with_index do |button, index|
+      next unless button_param_required?(button)
+
+      params << {
+        component: 'buttons',
+        name: index.to_s,
+        type: button['type'].to_s.downcase
+      }.compact
+    end
+    params
+  end
+
+  def button_param_required?(button)
+    button_type = button['type'].to_s.upcase
+    button_type == 'COPY_CODE' || (button_type == 'URL' && button['url'].to_s.include?('{{'))
   end
 
   def media_header_params(component)
