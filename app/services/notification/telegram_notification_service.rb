@@ -35,6 +35,22 @@ class Notification::TelegramNotificationService
   end
 
   def push_url
-    app_account_conversation_url(account_id: notification.account_id, id: notification.conversation_display_id)
+    case notification.primary_actor
+    when Conversation
+      app_account_conversation_url(account_id: notification.account_id, id: notification.conversation_display_id)
+    when Crm::Task
+      frontend_url("/app/accounts/#{notification.account_id}/crm/tasks?taskId=#{notification.primary_actor.id}")
+    when Crm::Deal
+      frontend_url("/app/accounts/#{notification.account_id}/crm/deals?dealId=#{notification.primary_actor.id}")
+    when Scheduling::Appointment
+      frontend_url("/app/accounts/#{notification.account_id}/scheduling/calendar?appointmentId=#{notification.primary_actor.id}")
+    end
+  end
+
+  def frontend_url(path)
+    base_url = ENV.fetch('FRONTEND_URL', nil).presence || ENV.fetch('INSTALLATION_URL', nil).presence
+    return path if base_url.blank?
+
+    "#{base_url}#{path}"
   end
 end

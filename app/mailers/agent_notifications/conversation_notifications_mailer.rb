@@ -55,14 +55,66 @@ class AgentNotifications::ConversationNotificationsMailer < ApplicationMailer
     send_mail_with_liquid(to: @agent.email, subject: subject) and return
   end
 
+  def task_assignment(task, agent, actor = nil)
+    assignment_notification(
+      record: task,
+      agent: agent,
+      actor: actor,
+      label: 'task',
+      path: "/app/accounts/#{task.account_id}/crm/tasks?taskId=#{task.id}"
+    )
+  end
+
+  def appointment_assignment(appointment, agent, actor = nil)
+    assignment_notification(
+      record: appointment,
+      agent: agent,
+      actor: actor,
+      label: 'appointment',
+      path: "/app/accounts/#{appointment.account_id}/scheduling/calendar?appointmentId=#{appointment.id}"
+    )
+  end
+
+  def deal_assignment(deal, agent, actor = nil)
+    assignment_notification(
+      record: deal,
+      agent: agent,
+      actor: actor,
+      label: 'deal',
+      path: "/app/accounts/#{deal.account_id}/crm/deals?dealId=#{deal.id}"
+    )
+  end
+
   private
+
+  def assignment_notification(record:, agent:, actor:, label:, path:)
+    return unless smtp_config_set_or_development?
+
+    @agent = agent
+    @record = record
+    @actor = actor
+    @assignment_label = label
+    @action_url = frontend_url(path)
+    subject = "#{@agent.available_name}, a #{label} [ID - #{record.id}] has been assigned to you."
+    send_mail_with_liquid(to: @agent.email, subject: subject) and return
+  end
+
+  def frontend_url(path)
+    base_url = ENV.fetch('FRONTEND_URL', nil).presence || ENV.fetch('INSTALLATION_URL', nil).presence
+    return path if base_url.blank?
+
+    "#{base_url}#{path}"
+  end
 
   def liquid_droppables
     super.merge({
                   user: @agent,
                   conversation: @conversation,
-                  inbox: @conversation.inbox,
-                  message: @message
+                  inbox: @conversation&.inbox,
+                  message: @message,
+                  record: @record,
+                  actor: @actor,
+                  assignment_label: @assignment_label
                 })
   end
 end

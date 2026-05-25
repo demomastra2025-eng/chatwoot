@@ -16,6 +16,7 @@ class Scheduling::Appointments::UpsertService
       validate_availability!
       new_record = appointment.new_record?
       appointment.save!
+      notify_assignment!(new_record: new_record)
       auto_apply_default_touch_plan! if new_record
       sync_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
@@ -323,6 +324,18 @@ class Scheduling::Appointments::UpsertService
     Reminders::DefaultPlanService.new(
       account: account,
       remindable: appointment,
+      actor: actor
+    ).perform
+  end
+
+  def notify_assignment!(new_record:)
+    return unless new_record || appointment.previous_changes.key?('resource_id')
+
+    ::Crm::AssignmentNotificationService.new(
+      account: account,
+      record: appointment,
+      user: appointment.resource&.user,
+      notification_type: 'appointment_assignment',
       actor: actor
     ).perform
   end

@@ -34,6 +34,18 @@ export const NOTIFICATION_TYPES = [
     label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.TYPES.SLA_MISSED_RESOLUTION',
     value: 'sla_missed_resolution',
   },
+  {
+    label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.TYPES.TASK_ASSIGNED',
+    value: 'task_assignment',
+  },
+  {
+    label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.TYPES.APPOINTMENT_ASSIGNED',
+    value: 'appointment_assignment',
+  },
+  {
+    label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.TYPES.DEAL_ASSIGNED',
+    value: 'deal_assignment',
+  },
 ];
 
 export const NOTIFICATION_CHANNELS = [

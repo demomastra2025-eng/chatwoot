@@ -69,6 +69,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         contacts_changed: contacts_changed
       )
       write_event!(new_record: new_record, contacts_changed: contacts_changed)
+      notify_assignment!(new_record: new_record)
 
       deal.reload
     end
@@ -209,6 +210,18 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         primary_contact_id: deal.primary_contact_id
       }
     )
+  end
+
+  def notify_assignment!(new_record:)
+    return unless new_record || deal.previous_changes.key?('owner_id')
+
+    ::Crm::AssignmentNotificationService.new(
+      account: account,
+      record: deal,
+      user: deal.owner,
+      notification_type: 'deal_assignment',
+      actor: actor
+    ).perform
   end
 
   def realtime_event_name_for(new_record:, contacts_changed:)

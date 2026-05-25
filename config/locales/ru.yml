@@ -206,6 +206,9 @@ ru:
       sla_missed_first_response: Целевой показатель SLA - пропущенный первый ответ для разговора (#%{display_id})
       sla_missed_next_response: SLA целевой следующий ответ, пропущенный для разговора (#%{display_id})
       sla_missed_resolution: Пропущен срок выполнения SLA для разговора (#%{display_id})
+      task_assignment: Вам назначена задача (#%{display_id})
+      appointment_assignment: Вам назначена запись (#%{display_id})
+      deal_assignment: Вам назначена сделка (#%{display_id})
     attachment: Вложение
     no_content: Нет содержимого
   conversations:

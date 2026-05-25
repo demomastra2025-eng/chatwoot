@@ -233,6 +233,9 @@ en:
       sla_missed_next_response: 'SLA target next response missed for conversation (#%{display_id})'
       sla_missed_resolution: 'SLA target resolution missed for conversation (#%{display_id})'
       captain_notification: 'Captain notification for conversation (#%{display_id})'
+      task_assignment: 'Task (#%{display_id}) has been assigned to you'
+      appointment_assignment: 'Appointment (#%{display_id}) has been assigned to you'
+      deal_assignment: 'Deal (#%{display_id}) has been assigned to you'
     attachment: 'Attachment'
     no_content: 'No content'
   conversations:

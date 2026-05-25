@@ -179,6 +179,10 @@
         "EMPTY_FILTERED": "No tasks match the current quick filters.",
         "SEARCH_PLACEHOLDER": "Filter tasks..."
       },
+      "SCOPE": {
+        "ALL": "All",
+        "MY": "My tasks"
+      },
       "FORM": {
         "ASSIGNEE": "Assignee",
         "BASICS": "Task details",

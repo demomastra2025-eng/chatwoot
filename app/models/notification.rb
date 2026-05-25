@@ -44,7 +44,10 @@ class Notification < ApplicationRecord
     sla_missed_first_response: 6,
     sla_missed_next_response: 7,
     sla_missed_resolution: 8,
-    captain_notification: 9
+    captain_notification: 9,
+    task_assignment: 10,
+    appointment_assignment: 11,
+    deal_assignment: 12
   }.freeze
 
   enum notification_type: NOTIFICATION_TYPES
@@ -55,7 +58,7 @@ class Notification < ApplicationRecord
   after_destroy_commit :dispatch_destroy_event
   after_update_commit :dispatch_update_event
 
-  PRIMARY_ACTORS = ['Conversation'].freeze
+  PRIMARY_ACTORS = ['Conversation', 'Crm::Task', 'Scheduling::Appointment', 'Crm::Deal'].freeze
   RENDER_SNAPSHOT_KEY = 'render_snapshot'.freeze
 
   def push_event_data
@@ -103,7 +106,9 @@ class Notification < ApplicationRecord
   end
 
   def primary_actor_payload
-    primary_actor&.push_event_data || snapshot_value('primary_actor') || default_primary_actor_payload
+    return primary_actor.push_event_data if primary_actor.respond_to?(:push_event_data)
+
+    snapshot_value('primary_actor') || default_primary_actor_payload
   end
 
   def secondary_actor_payload
@@ -232,7 +237,9 @@ class Notification < ApplicationRecord
   end
 
   def build_primary_actor_snapshot
-    primary_actor&.push_event_data || default_primary_actor_payload
+    return primary_actor.push_event_data if primary_actor.respond_to?(:push_event_data)
+
+    default_primary_actor_payload
   end
 
   def build_conversation_snapshot
@@ -286,7 +293,10 @@ class Notification < ApplicationRecord
       'sla_missed_first_response' => 'notifications.notification_title.sla_missed_first_response',
       'sla_missed_next_response' => 'notifications.notification_title.sla_missed_next_response',
       'sla_missed_resolution' => 'notifications.notification_title.sla_missed_resolution',
-      'captain_notification' => 'notifications.notification_title.captain_notification'
+      'captain_notification' => 'notifications.notification_title.captain_notification',
+      'task_assignment' => 'notifications.notification_title.task_assignment',
+      'appointment_assignment' => 'notifications.notification_title.appointment_assignment',
+      'deal_assignment' => 'notifications.notification_title.deal_assignment'
     }[notification_type]
   end
 

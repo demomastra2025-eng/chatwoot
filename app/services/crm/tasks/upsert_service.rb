@@ -54,6 +54,7 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       reposition_task!(requested_position) if requested_position.present?
 
       write_event!(new_record: new_record)
+      notify_assignment!(new_record: new_record)
 
       task.reload
     end
@@ -147,6 +148,18 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       event_type: new_record ? 'task_created' : 'task_updated',
       meta: { changes: filtered_previous_changes }
     )
+  end
+
+  def notify_assignment!(new_record:)
+    return unless new_record || task.previous_changes.key?('assignee_id')
+
+    ::Crm::AssignmentNotificationService.new(
+      account: account,
+      record: task,
+      user: task.assignee,
+      notification_type: 'task_assignment',
+      actor: actor
+    ).perform
   end
 
   def auto_apply_default_touch_plan!

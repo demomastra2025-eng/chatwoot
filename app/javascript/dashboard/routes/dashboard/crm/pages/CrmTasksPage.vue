@@ -29,7 +29,6 @@ import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
 import CrmTaskPriorityMenu from 'dashboard/components-next/CRM/CrmTaskPriorityMenu.vue';
 import CrmTaskStatusMenu from 'dashboard/components-next/CRM/CrmTaskStatusMenu.vue';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
-import EntityTouchesCard from 'dashboard/components-next/Outbound/EntityTouchesCard.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
@@ -89,6 +88,7 @@ const MANUAL_BOARD_SORT_KEY = 'position';
 const tasks = ref([]);
 const dealOptions = ref([]);
 const currentPresentation = ref('list');
+const currentTaskScope = ref('mine');
 const currentCalendarView = ref('week');
 const calendarAnchorDate = ref(new Date());
 const drawerOpen = ref(false);
@@ -232,6 +232,10 @@ const currentUserId = computed(() => {
   return Number.isFinite(userId) && userId > 0 ? userId : '';
 });
 
+const effectiveTaskAssigneeId = computed(() =>
+  currentTaskScope.value === 'mine' ? currentUserId.value : filters.assigneeId
+);
+
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
 );
@@ -367,6 +371,11 @@ const viewOptions = computed(() => [
   { label: t('CRM.VIEWS.LIST'), value: 'list' },
   { label: t('CRM.VIEWS.BOARD'), value: 'board' },
   { label: t('SCHEDULING.VIEWS.CALENDAR'), value: 'calendar' },
+]);
+
+const taskScopeOptions = computed(() => [
+  { id: 'crm-tasks-scope-mine', label: t('CRM.TASKS.SCOPE.MY'), value: 'mine' },
+  { id: 'crm-tasks-scope-all', label: t('CRM.TASKS.SCOPE.ALL'), value: 'all' },
 ]);
 
 const boardSortOptions = computed(() => [
@@ -579,6 +588,7 @@ const defaultTasksPreferences = () => ({
   boardSortDirections: {},
   currentCalendarView: 'week',
   currentPresentation: 'list',
+  currentTaskScope: 'mine',
   filters: {
     archived: false,
     assigneeId: '',
@@ -627,6 +637,10 @@ const sanitizeTasksPreferences = preferences => {
     next.currentPresentation = defaults.currentPresentation;
   }
 
+  if (!['mine', 'all'].includes(next.currentTaskScope)) {
+    next.currentTaskScope = defaults.currentTaskScope;
+  }
+
   if (!['day', 'week', 'month'].includes(next.currentCalendarView)) {
     next.currentCalendarView = defaults.currentCalendarView;
   }
@@ -653,6 +667,7 @@ const restoreTasksPreferences = () => {
   const preferences = sanitizeTasksPreferences(stored);
 
   currentPresentation.value = preferences.currentPresentation;
+  currentTaskScope.value = preferences.currentTaskScope;
   currentCalendarView.value = preferences.currentCalendarView;
   listSort.value = { ...preferences.listSort };
   boardSort.key = preferences.boardSort.key;
@@ -674,6 +689,7 @@ const persistTasksPreferences = () => {
       boardSortDirections: { ...boardSortDirections },
       currentCalendarView: currentCalendarView.value,
       currentPresentation: currentPresentation.value,
+      currentTaskScope: currentTaskScope.value,
       filters: { ...filters },
       listQuickFilters: { ...listQuickFilters },
       listSort: { ...listSort.value },
@@ -995,7 +1011,7 @@ const loadTasks = async () => {
   try {
     const query = compactPayload({
       archived: filters.archived,
-      assignee_id: filters.assigneeId || undefined,
+      assignee_id: effectiveTaskAssigneeId.value || undefined,
       custom_attribute_filters: customFieldFilters.value,
       deal_id: filters.dealId || undefined,
       priority: filters.priority || undefined,
@@ -1113,6 +1129,14 @@ const handlePresentationChange = async presentation => {
   await loadTasks();
 };
 
+const selectTaskScope = async scope => {
+  if (currentTaskScope.value === scope) return;
+
+  currentTaskScope.value = scope;
+  listCurrentPage.value = 1;
+  await loadTasks();
+};
+
 const toggleBoardSortDirection = statusId => {
   const key = String(statusId);
   boardSortDirections[key] =
@@ -1122,6 +1146,7 @@ const toggleBoardSortDirection = statusId => {
 watch(
   [
     currentPresentation,
+    currentTaskScope,
     currentCalendarView,
     listSort,
     () => ({ ...boardSort }),
@@ -1662,6 +1687,31 @@ watch(
 <template>
   <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
     <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.TASKS.TITLE')">
+      <template #left>
+        <label
+          v-for="scope in taskScopeOptions"
+          :key="scope.id"
+          class="relative flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-n-weak focus-within:outline-offset-2"
+          :class="
+            currentTaskScope === scope.value
+              ? 'border-n-weak bg-n-solid-1 text-n-slate-12 shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
+              : 'border-transparent bg-transparent text-n-slate-11 hover:bg-n-alpha-black2/60 hover:text-n-slate-12'
+          "
+        >
+          <input
+            :id="scope.id"
+            class="size-3 flex-shrink-0 border-n-slate-6 text-n-slate-12 focus:ring-n-weak focus:ring-offset-0"
+            type="radio"
+            name="crm-tasks-scope"
+            :value="scope.value"
+            :checked="currentTaskScope === scope.value"
+            @change="selectTaskScope(scope.value)"
+          />
+          <span class="text-xs font-medium leading-none">
+            {{ scope.label }}
+          </span>
+        </label>
+      </template>
       <template #actions>
         <SelectMenu
           v-if="currentPresentation === 'board'"
@@ -2153,12 +2203,6 @@ watch(
           :title="$t('CRM.CUSTOM_FIELDS.TITLE')"
           :description="$t('CRM.CUSTOM_FIELDS.DESCRIPTION')"
           @update:model-value="form.customAttributes = $event"
-        />
-
-        <EntityTouchesCard
-          v-if="selectedTask?.id"
-          remindable-type="Crm::Task"
-          :remindable-id="selectedTask.id"
         />
 
         <SchedulingFormFieldGroup
