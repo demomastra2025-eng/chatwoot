@@ -1,4 +1,4 @@
-class Captain::Tools::Copilot::GetCampaignAnalyticsService < Captain::Tools::Copilot::BaseAccountTool
+class Captain::Tools::Copilot::GetCampaignAnalyticsService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'get_campaign_analytics'
   end

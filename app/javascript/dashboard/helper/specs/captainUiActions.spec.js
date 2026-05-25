@@ -42,6 +42,14 @@ describe('captainUiActions helper', () => {
         'open_captain_documents',
         'open_captain_tools',
         'open_captain_observability',
+        'open_assistant_settings',
+        'open_scenario_editor',
+        'open_documents_knowledge_panel',
+        'open_custom_tool_editor',
+        'open_tool_access_panel',
+        'open_prompt_preview',
+        'highlight_config_field',
+        'show_confirmation',
         'create_contact',
         'create_company',
         'create_task',
@@ -107,6 +115,37 @@ describe('captainUiActions helper', () => {
     });
   });
 
+  it('sanitizes target route params and query IDs before routing', () => {
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_contact', targetId: '<b>42</b>\n' },
+        1
+      )
+    ).toEqual({
+      name: 'contacts_edit',
+      params: { accountId: 1, contactId: '42' },
+    });
+
+    expect(
+      routeForCaptainUiAction({ type: 'open_deal', targetId: '<i>55</i>' }, 1)
+    ).toEqual({
+      name: 'crm_deals_index',
+      params: { accountId: 1 },
+      query: { dealId: '55', source: 'captain_ui_action' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_task', targetId: '<span>99</span>' },
+        1
+      )
+    ).toEqual({
+      name: 'crm_tasks_index',
+      params: { accountId: 1 },
+      query: { taskId: '99', source: 'captain_ui_action' },
+    });
+  });
+
   it('normalizes and routes safe create-form UI actions with prefill data', () => {
     const [action] = normalizeCaptainUiActions([
       {
@@ -121,7 +160,7 @@ describe('captainUiActions helper', () => {
       type: 'create_task',
       label: 'Create task',
       targetId:
-        '{"title":"Follow up","description":"<i>Call client</i>","due_at":"2026-05-20T10:00","ignored":"#danger"}',
+        '{"title":"Follow up","description":"Call client","due_at":"2026-05-20T10:00","ignored":"#danger"}',
       prefill: {
         title: 'Follow up',
         description: 'Call client',
@@ -190,6 +229,7 @@ describe('captainUiActions helper', () => {
     ).toEqual({
       name: 'captain_assistants_documents_index',
       params: { accountId: 1, assistantId: '12' },
+      query: { source: 'captain_ui_action' },
     });
 
     expect(
@@ -210,6 +250,81 @@ describe('captainUiActions helper', () => {
     ).toEqual({
       name: 'settings_integrations_kaspi_pay',
       params: { accountId: 1 },
+    });
+  });
+
+  it('builds typed Captain admin UI action routes without DOM selectors', () => {
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_assistant_settings', targetId: '12' },
+        1
+      )
+    ).toEqual({
+      name: 'captain_assistants_settings_index',
+      params: { accountId: 1, assistantId: '12' },
+      query: { source: 'captain_ui_action' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        {
+          type: 'open_scenario_editor',
+          targetId: '{"assistantId":"12","scenarioId":"34"}',
+        },
+        1
+      )
+    ).toEqual({
+      name: 'captain_assistants_scenarios_index',
+      params: { accountId: 1, assistantId: '12' },
+      query: { source: 'captain_ui_action', scenarioId: '34' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        {
+          type: 'open_custom_tool_editor',
+          targetId: '{"assistantId":"12","customToolId":"56"}',
+        },
+        1
+      )
+    ).toEqual({
+      name: 'captain_tools_index',
+      params: { accountId: 1, assistantId: '12' },
+      query: {
+        source: 'captain_ui_action',
+        customToolId: '56',
+        action: 'edit',
+      },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_prompt_preview', targetId: '12' },
+        1
+      )
+    ).toEqual({
+      name: 'captain_assistants_prompts_index',
+      params: { accountId: 1, assistantId: '12' },
+      query: { source: 'captain_ui_action', promptPreview: 'true' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        {
+          type: 'highlight_config_field',
+          targetId:
+            '{"assistantId":"12","field":"<b>temperature</b>","panel":"model"}',
+        },
+        1
+      )
+    ).toEqual({
+      name: 'captain_assistants_settings_index',
+      params: { accountId: 1, assistantId: '12' },
+      query: {
+        source: 'captain_ui_action',
+        highlight: 'temperature',
+        panel: 'model',
+      },
     });
   });
 
@@ -243,5 +358,24 @@ describe('captainUiActions helper', () => {
       name: 'crm_tasks_index',
       params: { accountId: 7 },
     });
+  });
+
+  it('handles confirmation display as a typed callback without router or DOM access', async () => {
+    const router = { push: vi.fn().mockResolvedValue() };
+    const showConfirmation = vi.fn();
+
+    const executed = await executeCaptainUiAction(
+      {
+        type: 'show_confirmation',
+        targetId: '<b>Confirm update_captain_assistant?</b>',
+      },
+      { router, accountId: 7, showConfirmation }
+    );
+
+    expect(executed).toBe(true);
+    expect(showConfirmation).toHaveBeenCalledWith(
+      'Confirm update_captain_assistant?'
+    );
+    expect(router.push).not.toHaveBeenCalled();
   });
 });

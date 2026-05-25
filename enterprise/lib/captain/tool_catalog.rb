@@ -118,7 +118,7 @@ class Captain::ToolCatalog
 
     def tool_requires_confirmation?(tool, include_missing_idempotency: false)
       definition = tool.with_indifferent_access
-      return true if ActiveModel::Type::Boolean.new.cast(definition[:requires_confirmation])
+      return ActiveModel::Type::Boolean.new.cast(definition[:requires_confirmation]) unless definition[:requires_confirmation].nil?
       return true if %w[high custom].include?(definition[:risk_level].to_s)
       return false unless include_missing_idempotency
 

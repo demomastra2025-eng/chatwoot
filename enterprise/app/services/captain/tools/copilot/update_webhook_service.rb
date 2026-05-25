@@ -38,10 +38,10 @@ class Captain::Tools::Copilot::UpdateWebhookService < Captain::Tools::Copilot::B
     {
       id: webhook.id,
       name: webhook.name,
-      url: webhook.url,
+      url_configured: webhook.url.present?,
       account_id: webhook.account_id,
       subscriptions: webhook.subscriptions,
-      secret: webhook.secret,
+      secret_configured: webhook.secret.present?,
       inbox: webhook.inbox.present? ? { id: webhook.inbox.id, name: webhook.inbox.name } : nil,
       created_at: webhook.created_at&.iso8601,
       updated_at: webhook.updated_at&.iso8601

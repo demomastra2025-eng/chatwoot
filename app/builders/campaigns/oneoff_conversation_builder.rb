@@ -1,5 +1,5 @@
 class Campaigns::OneoffConversationBuilder
-  pattr_initialize [:campaign!, :contact!, :source_id, { campaign_run: nil, conversation_attributes: {} }]
+  pattr_initialize [:campaign!, :contact!, :source_id, { campaign_run: nil, conversation_attributes: {}, test_send: false }]
 
   attr_reader :contact_inbox, :conversation, :message
 
@@ -41,6 +41,8 @@ class Campaigns::OneoffConversationBuilder
   end
 
   def existing_campaign_message
+    return if test_send
+
     messages_scope = @conversation.messages.outgoing
                                   .where("additional_attributes ->> 'campaign_id' = ?", campaign.id.to_s)
 
@@ -90,6 +92,7 @@ class Campaigns::OneoffConversationBuilder
                                        content: generated_campaign_content,
                                        campaign_id: campaign.id,
                                        campaign_run_id: campaign_run&.id,
+                                       campaign_test_send: test_send,
                                        preserve_waiting_since: true,
                                        template_params: campaign_template_params
                                      })

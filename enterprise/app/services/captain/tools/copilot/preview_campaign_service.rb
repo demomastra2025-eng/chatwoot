@@ -1,4 +1,6 @@
-class Captain::Tools::Copilot::PreviewCampaignService < Captain::Tools::Copilot::BaseAccountTool
+# frozen_string_literal: true
+
+class Captain::Tools::Copilot::PreviewCampaignService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'preview_campaign'
   end

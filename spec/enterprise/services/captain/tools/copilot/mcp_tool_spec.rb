@@ -20,6 +20,11 @@ RSpec.describe Captain::Tools::Copilot::McpTool do
   end
   let(:tool) { described_class.new(assistant, mcp_server, tool_definition) }
 
+  before do
+    confirmation_gate = instance_double(Captain::Copilot::ToolConfirmationGate, call: nil)
+    allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
+  end
+
   it 'delegates copilot execution to MCP execution service' do
     execution_service = instance_double(Captain::Mcp::ExecutionService, call: '{"ok":true}')
     allow(Captain::Mcp::ExecutionService).to receive(:new).and_return(execution_service)

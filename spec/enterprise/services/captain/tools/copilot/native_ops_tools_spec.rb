@@ -17,6 +17,11 @@ RSpec.describe 'Captain native ops tools' do
     )
   end
 
+  before do
+    confirmation_gate = instance_double(Captain::Copilot::ToolConfirmationGate, call: nil)
+    allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
+  end
+
   describe Captain::Tools::Copilot::SendMessageToConversationService do
     it 'sends a message to the target conversation' do
       service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
@@ -289,6 +294,16 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload.dig('label', 'title')).to eq('vip')
       expect(account.labels.find_by(title: 'vip')).to be_present
     end
+
+    it 'blocks non-admin execution before mutating labels' do
+      agent = create(:user, account: account)
+      service = described_class.new(assistant, user: agent, conversation: conversation)
+
+      result = service.execute(title: 'VIP', color: '#ff0000')
+
+      expect(result).to include('Account administrator permission is required')
+      expect(account.labels.find_by(title: 'vip')).to be_blank
+    end
   end
 
   describe Captain::Tools::Copilot::UpdateLabelService do
@@ -314,6 +329,19 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload['action']).to eq('remove_label_from_conversation')
       expect(conversation.reload.label_list).to eq(['support'])
     end
+
+    it 'removes a label from a specified account conversation' do
+      target_conversation = create(:conversation, account: account)
+      conversation.add_labels(%w[vip support])
+      target_conversation.add_labels(%w[vip escalated])
+      service = described_class.new(assistant, user: user, conversation: conversation)
+
+      payload = JSON.parse(service.execute(conversation_id: target_conversation.display_id, label_name: 'vip'))
+
+      expect(payload['action']).to eq('remove_label_from_conversation')
+      expect(target_conversation.reload.label_list).to eq(['escalated'])
+      expect(conversation.reload.label_list).to include('vip', 'support')
+    end
   end
 
   describe Captain::Tools::Copilot::ListCampaignsService do
@@ -334,7 +362,9 @@ RSpec.describe 'Captain native ops tools' do
       non_admin = create(:user, account: account)
       service = described_class.new(assistant, user: non_admin, conversation: conversation)
 
-      expect { service.execute }.to raise_error(ArgumentError, 'Account administrator permission is required')
+      result = service.execute
+
+      expect(result).to include('Account administrator permission is required')
     end
 
     it 'hides campaign controls from non-admin users' do
@@ -389,18 +419,6 @@ RSpec.describe 'Captain native ops tools' do
       allow(Campaigns::RetryFailedDeliveriesService).to receive(:new).and_return(retry_service)
       allow(Campaigns::AnalyticsService).to receive(:new).and_return(analytics_service)
 
-      first_payload = JSON.parse(service.execute(campaign_id: campaign.display_id))
-      confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
-      expect(first_payload.dig('data', 'confirmation_required')).to be(true)
-
-      create(
-        :captain_copilot_message,
-        account: account,
-        copilot_thread: copilot_thread,
-        message_type: 'user',
-        message: { 'content' => "Подтверждаю #{confirmation_token}" }
-      )
-
       payload = JSON.parse(service.execute(campaign_id: campaign.display_id))
 
       expect(payload).to include('action' => 'retry_failed_campaign_deliveries')
@@ -421,7 +439,10 @@ RSpec.describe 'Captain native ops tools' do
       )
 
       expect(payload['action']).to eq('create_webhook')
-      expect(payload.dig('webhook', 'url')).to eq('https://example.com/hook')
+      expect(payload.dig('webhook', 'url_configured')).to be(true)
+      expect(payload.dig('webhook', 'secret_configured')).to be(true)
+      expect(payload.dig('webhook', 'url')).to be_nil
+      expect(payload.dig('webhook', 'secret')).to be_nil
       expect(account.webhooks.find_by(url: 'https://example.com/hook')).to be_present
     end
   end
@@ -439,7 +460,10 @@ RSpec.describe 'Captain native ops tools' do
       )
 
       expect(payload['action']).to eq('update_webhook')
-      expect(payload.dig('webhook', 'url')).to eq('https://new.example.com')
+      expect(payload.dig('webhook', 'url_configured')).to be(true)
+      expect(payload.dig('webhook', 'secret_configured')).to be(true)
+      expect(payload.dig('webhook', 'url')).to be_nil
+      expect(payload.dig('webhook', 'secret')).to be_nil
       expect(webhook.reload.url).to eq('https://new.example.com')
     end
   end

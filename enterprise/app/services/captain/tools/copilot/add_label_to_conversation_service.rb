@@ -3,11 +3,12 @@ class Captain::Tools::Copilot::AddLabelToConversationService < Captain::Tools::C
     'add_label_to_conversation'
   end
 
-  description 'Add an existing label to the current conversation'
+  description 'Add an existing label to the current or specified account conversation'
+  param :conversation_id, type: :integer, desc: 'Optional conversation display ID or internal ID', required: false
   param :label_name, type: :string, desc: 'The label name', required: true
 
-  def execute(label_name:)
-    conversation = conversation_operations.add_label(label_name: label_name)
+  def execute(label_name:, conversation_id: nil)
+    conversation = conversation_operations.add_label(label_name: label_name, conversation_id: conversation_id)
     formatted_payload(
       action: 'add_label_to_conversation',
       conversation_id: conversation.id,
@@ -20,10 +21,9 @@ class Captain::Tools::Copilot::AddLabelToConversationService < Captain::Tools::C
   end
 
   def active?
-    current_conversation.present? &&
-      (user_has_permission('conversation_manage') ||
-       user_has_permission('conversation_unassigned_manage') ||
-       user_has_permission('conversation_participating_manage'))
+    user_has_permission('conversation_manage') ||
+      user_has_permission('conversation_unassigned_manage') ||
+      user_has_permission('conversation_participating_manage')
   end
 
   private

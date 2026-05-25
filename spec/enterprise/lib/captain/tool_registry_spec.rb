@@ -8,6 +8,27 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids - assistant_tool_ids).to be_empty
       expect(assistant_tool_ids).to include(
+        'list_captain_assistants',
+        'get_captain_assistant',
+        'preview_captain_assistant_prompt',
+        'update_captain_assistant',
+        'list_captain_scenarios',
+        'get_captain_scenario',
+        'create_captain_scenario',
+        'update_captain_scenario',
+        'set_captain_scenario_status',
+        'delete_captain_scenario',
+        'list_captain_knowledge_documents',
+        'get_captain_knowledge_document',
+        'create_captain_knowledge_document',
+        'update_captain_knowledge_document',
+        'resync_captain_knowledge_document',
+        'delete_captain_knowledge_document',
+        'list_captain_knowledge_entries',
+        'get_captain_knowledge_entry',
+        'create_captain_knowledge_entry',
+        'update_captain_knowledge_entry',
+        'delete_captain_knowledge_entry',
         'search_documentation',
         'list_captain_documents',
         'faq_lookup',
@@ -36,6 +57,9 @@ RSpec.describe Captain::ToolRegistry do
         'assign_conversation',
         'search_canned_responses',
         'create_canned_response',
+        'get_canned_response',
+        'update_canned_response',
+        'delete_canned_response',
         'create_contact',
         'complete_task',
         'merge_contacts',
@@ -52,6 +76,11 @@ RSpec.describe Captain::ToolRegistry do
         'sync_kaspi_pay_payment_status',
         'refund_kaspi_pay_payment',
         'reconcile_kaspi_pay_payment',
+        'list_macros',
+        'get_macro',
+        'create_macro',
+        'update_macro',
+        'delete_macro',
         'execute_macro',
         'get_account_health',
         'get_recent_account_errors',
@@ -68,8 +97,17 @@ RSpec.describe Captain::ToolRegistry do
         'update_label',
         'remove_label_from_conversation',
         'list_campaigns',
+        'get_campaign',
         'preview_campaign',
         'get_campaign_analytics',
+        'create_campaign',
+        'update_campaign',
+        'delete_campaign',
+        'launch_campaign',
+        'test_send_campaign',
+        'cancel_campaign',
+        'restart_campaign',
+        'resume_campaign',
         'retry_failed_campaign_deliveries',
         'create_webhook',
         'update_webhook'
@@ -81,7 +119,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(74)
+      expect(agent_tool_ids.size).to eq(expected_agent_business_tool_ids.size)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
@@ -183,6 +221,33 @@ RSpec.describe Captain::ToolRegistry do
 
   def assistant_only_admin_tool_ids
     %w[
+      list_captain_assistants
+      get_captain_assistant
+      preview_captain_assistant_prompt
+      update_captain_assistant
+      list_captain_scenarios
+      get_captain_scenario
+      create_captain_scenario
+      update_captain_scenario
+      set_captain_scenario_status
+      delete_captain_scenario
+      list_captain_knowledge_documents
+      get_captain_knowledge_document
+      create_captain_knowledge_document
+      update_captain_knowledge_document
+      resync_captain_knowledge_document
+      delete_captain_knowledge_document
+      list_captain_knowledge_entries
+      get_captain_knowledge_entry
+      create_captain_knowledge_entry
+      update_captain_knowledge_entry
+      delete_captain_knowledge_entry
+      list_captain_custom_tools
+      get_captain_custom_tool
+      create_captain_custom_tool
+      update_captain_custom_tool
+      set_captain_custom_tool_status
+      delete_captain_custom_tool
       add_appointment_payment
       get_kaspi_pay_integration_status
       start_kaspi_pay_connection
@@ -194,9 +259,43 @@ RSpec.describe Captain::ToolRegistry do
       sync_kaspi_pay_payment_status
       refund_kaspi_pay_payment
       reconcile_kaspi_pay_payment
+      create_canned_response
+      get_canned_response
+      update_canned_response
+      delete_canned_response
+      list_macros
+      get_macro
+      create_macro
+      update_macro
+      delete_macro
       execute_macro
       create_contact
       complete_task
+      create_user_invite
+      update_user_role
+      update_user_availability
+      deactivate_user
+      reactivate_user
+      assign_user_to_team
+      remove_user_from_team
+      create_team
+      update_team
+      archive_team
+      list_inboxes
+      list_assignment_policies
+      set_inbox_assignment_policy
+      get_inbox_settings
+      update_inbox_settings
+      update_inbox_working_hours
+      add_inbox_members
+      remove_inbox_members
+      update_captain_inbox_auto_reply_mode
+      list_automation_rules
+      get_automation_rule
+      create_automation_rule
+      update_automation_rule
+      set_automation_rule_status
+      delete_automation_rule
       list_account_users
       list_teams
       list_inboxes
@@ -209,12 +308,22 @@ RSpec.describe Captain::ToolRegistry do
       get_channel_health
       get_whatsapp_web_diagnostics
       reconnect_whatsapp_web
-      create_label
-      update_label
       list_campaigns
+      get_campaign
       preview_campaign
       get_campaign_analytics
+      create_campaign
+      update_campaign
+      delete_campaign
+      launch_campaign
+      test_send_campaign
+      cancel_campaign
+      restart_campaign
+      resume_campaign
       retry_failed_campaign_deliveries
+      create_label
+      update_label
+
       create_webhook
       update_webhook
     ]

@@ -93,4 +93,8 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   def account_administrator?
     current_account_user&.administrator?
   end
+
+  def ensure_account_administrator!
+    raise ArgumentError, 'Account administrator permission is required' unless account_administrator?
+  end
 end

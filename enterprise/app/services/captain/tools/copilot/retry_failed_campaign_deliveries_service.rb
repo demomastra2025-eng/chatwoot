@@ -1,4 +1,4 @@
-class Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService < Captain::Tools::Copilot::BaseAccountTool
+class Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'retry_failed_campaign_deliveries'
   end

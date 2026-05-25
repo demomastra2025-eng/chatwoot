@@ -3,7 +3,7 @@ module Captain::Tools::Instrumentation
   include Integrations::LlmInstrumentation
 
   def execute(**args)
-    instrument_tool_call(name, args, tool_instrumentation_params(args)) do
+    instrument_tool_call(name, tool_trace_arguments(args), tool_instrumentation_params(args)) do
       confirmation_result = enforce_tool_confirmation(args)
       if confirmation_result.present?
         audit_tool_execution(arguments: args, result: confirmation_result)
@@ -37,6 +37,10 @@ module Captain::Tools::Instrumentation
 
   private
 
+  def tool_trace_arguments(arguments)
+    Captain::ToolTraceRedactor.call(arguments)
+  end
+
   def audit_tool_execution(arguments:, result: nil, error: nil)
     Captain::ToolExecutionAuditService.record(
       assistant: assistant,
@@ -52,6 +56,7 @@ module Captain::Tools::Instrumentation
 
   def enforce_tool_confirmation(arguments)
     return unless tool_scope_name == Captain::ToolAccess::SCOPE_ASSISTANT
+    return inactive_tool_result unless active?
 
     Captain::Copilot::ToolConfirmationGate.new(
       copilot_thread: @copilot_thread,
@@ -59,6 +64,11 @@ module Captain::Tools::Instrumentation
       arguments: arguments,
       user: @user
     ).call
+  end
+
+  def inactive_tool_result
+    message = account_administrator? ? 'Tool is not available for the current operator' : 'Account administrator permission is required'
+    tool_failure(ArgumentError.new(message))
   end
 
   def tool_instrumentation_params(arguments)

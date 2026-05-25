@@ -9,7 +9,7 @@ class Campaigns::PreviewService
     requires_template
   ].freeze
 
-  pattr_initialize [:account!, :inbox!, :audience, :message, :instructions, :text_mode, :template_params, :scheduled_at]
+  pattr_initialize [:account!, :inbox!, :audience, :message, :instructions, :text_mode, :template_params, :scheduled_at, { contact_ids: nil }]
 
   def call
     {
@@ -66,10 +66,18 @@ class Campaigns::PreviewService
   end
 
   def audience_contacts
-    @audience_contacts ||= Campaigns::AudienceResolver.new(
-      account: account,
-      audience: audience
-    ).contacts
+    @audience_contacts ||= begin
+      contacts = if contact_ids.present?
+                   account.contacts.where(id: Array.wrap(contact_ids))
+                 else
+                   Campaigns::AudienceResolver.new(
+                     account: account,
+                     audience: audience
+                   ).contacts
+                 end
+
+      contacts.distinct
+    end
   end
 
   def preview_contact(contact)

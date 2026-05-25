@@ -13,7 +13,23 @@ class Captain::Copilot::ToolConfirmationGate
   /ix
   CONFIRMATION_TTL = 30.minutes
   MAX_ARGUMENT_PREVIEW_LENGTH = 1000
-  SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh)/i
+  SENSITIVE_KEY_PATTERN = /
+    (otp|token|secret|password|credential|authorization|process_?id|session|
+     api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact|
+     auth_?config|template|param_?schema|fixed_?value)
+  /ix
+  KNOWLEDGE_ENTRY_TOOL_IDS = %w[
+    create_captain_knowledge_entry
+    update_captain_knowledge_entry
+    delete_captain_knowledge_entry
+  ].freeze
+  KNOWLEDGE_ENTRY_SENSITIVE_ARGUMENT_KEYS = %w[question answer].freeze
+  SENSITIVE_VALUE_PATTERN = %r{
+    https?://|
+    bearer\s+|
+    authorization\s*[:=]|
+    (?:token|api[_\s-]?key|secret|password|credential|session|webhook|artifact|source[_\s-]?text|content)\s*[:=]?
+  }ix
 
   def initialize(copilot_thread:, tool_definition:, arguments:, user: nil)
     @copilot_thread = copilot_thread
@@ -156,7 +172,13 @@ class Captain::Copilot::ToolConfirmationGate
     normalized_arguments = Captain::EncodingNormalizer.utf8(redacted_arguments)
     @arguments_preview ||= JSON.generate(normalized_arguments).truncate(MAX_ARGUMENT_PREVIEW_LENGTH)
   rescue StandardError
-    @arguments.to_s.truncate(MAX_ARGUMENT_PREVIEW_LENGTH)
+    fallback_arguments_preview
+  end
+
+  def fallback_arguments_preview
+    redact_sensitive_string(Captain::EncodingNormalizer.string(@arguments.to_s)).truncate(MAX_ARGUMENT_PREVIEW_LENGTH)
+  rescue StandardError
+    '[FILTERED]'
   end
 
   def confirmation_token(request)
@@ -188,13 +210,36 @@ class Captain::Copilot::ToolConfirmationGate
       end
     when Array
       value.map { |item| redact_sensitive(item) }
+    when String
+      redact_sensitive_string(value)
     else
       value
     end
   end
 
+  def redact_sensitive_string(value)
+    parsed = parse_json_argument_string(value)
+    return JSON.generate(redact_sensitive(parsed)) if parsed.present?
+    return '[FILTERED]' if value.match?(SENSITIVE_VALUE_PATTERN)
+
+    value
+  end
+
+  def parse_json_argument_string(value)
+    text = value.to_s.strip
+    return nil unless text.start_with?('{', '[')
+
+    JSON.parse(text)
+  rescue JSON::ParserError
+    nil
+  end
+
   def sensitive_key?(key)
-    key.to_s.match?(SENSITIVE_KEY_PATTERN)
+    key.to_s.match?(SENSITIVE_KEY_PATTERN) || knowledge_entry_sensitive_argument_key?(key)
+  end
+
+  def knowledge_entry_sensitive_argument_key?(key)
+    KNOWLEDGE_ENTRY_TOOL_IDS.include?(tool_id) && KNOWLEDGE_ENTRY_SENSITIVE_ARGUMENT_KEYS.include?(key.to_s)
   end
 
   def tool_id

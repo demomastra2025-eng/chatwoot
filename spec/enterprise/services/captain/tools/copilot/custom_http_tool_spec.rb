@@ -38,6 +38,8 @@ RSpec.describe Captain::Tools::Copilot::CustomHttpTool do
   before do
     allow(Resolv).to receive(:getaddresses).and_call_original
     allow(Resolv).to receive(:getaddresses).with('example.com').and_return(['93.184.216.34'])
+    confirmation_gate = instance_double(Captain::Copilot::ToolConfirmationGate, call: nil)
+    allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
     stub_request(:post, 'https://example.com/leads')
       .with(body: '{"lead_name":"Alice","phone":"+1234567890"}')
       .to_return(status: 200, body: '{"ok": true}')
@@ -68,7 +70,7 @@ RSpec.describe Captain::Tools::Copilot::CustomHttpTool do
       result = tool.execute(lead_name: 'Alice')
 
       expect(result).to eq('{"ok": true}')
-      expect(WebMock).to have_requested(:post, 'https://example.com/leads').with { |request|
+      expect(WebMock).to(have_requested(:post, 'https://example.com/leads').with do |request|
         request.headers['X-Chatwoot-Account-Id'] == account.id.to_s &&
           request.headers['X-Chatwoot-Assistant-Id'] == assistant.id.to_s &&
           request.headers['X-Chatwoot-Conversation-Id'] == conversation.id.to_s &&
@@ -76,7 +78,7 @@ RSpec.describe Captain::Tools::Copilot::CustomHttpTool do
           request.headers['X-Chatwoot-Contact-Id'] == contact.id.to_s &&
           request.headers['X-Chatwoot-Contact-Phone'] == contact.phone_number &&
           request.headers['X-Chatwoot-Tool-Slug'] == custom_tool.slug
-      }
+      end)
     end
 
     it 'records tool execution with conversation runtime context' do

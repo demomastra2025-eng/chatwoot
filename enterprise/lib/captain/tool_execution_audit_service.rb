@@ -1,8 +1,22 @@
 class Captain::ToolExecutionAuditService
   MAX_RESULT_PREVIEW_LENGTH = 1000
   SENSITIVE_KEY_PATTERN = /
-    (otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh)
+    (otp|token|secret|password|credential|authorization|process_?id|session|
+     api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact|
+     auth_?config|template|param_?schema|fixed_?value)
   /ix
+  SENSITIVE_VALUE_PATTERN = %r{
+    https?://|
+    bearer\s+|
+    authorization\s*[:=]|
+    (?:token|api[_\s-]?key|secret|password|credential|session|webhook|artifact|source[_\s-]?text|content)\s*[:=]?
+  }ix
+  KNOWLEDGE_ENTRY_TOOL_IDS = %w[
+    create_captain_knowledge_entry
+    update_captain_knowledge_entry
+    delete_captain_knowledge_entry
+  ].freeze
+  KNOWLEDGE_ENTRY_SENSITIVE_ARGUMENT_KEYS = %w[question answer].freeze
 
   class << self
     def record(...)
@@ -56,13 +70,13 @@ class Captain::ToolExecutionAuditService
       arguments: serializable_value(@arguments),
       result_preview: serialized_preview(@result),
       result_success: normalized_result[:success],
-      result_message: normalized_result[:message],
-      result_error: normalized_result[:error],
+      result_message: serializable_value(normalized_result[:message]),
+      result_error: serializable_value(normalized_result[:error]),
       result_retryable: normalized_result[:retryable],
       result_data_preview: serialized_preview(normalized_result[:data]),
       result_audit: serializable_value(normalized_result[:audit]),
       error_class: error&.class&.name,
-      error_message: error&.message,
+      error_message: serializable_value(error&.message),
       conversation_id: @runtime_context[:conversation_id],
       conversation_display_id: @runtime_context[:conversation_display_id],
       source: @runtime_context[:source],
@@ -87,7 +101,7 @@ class Captain::ToolExecutionAuditService
 
     Captain::EncodingNormalizer.utf8(redact_sensitive(serializable))
   rescue StandardError
-    Captain::EncodingNormalizer.string(value.to_s)
+    fallback_redacted_string(value)
   end
 
   def serialized_preview(value)
@@ -103,14 +117,20 @@ class Captain::ToolExecutionAuditService
 
     preview.truncate(MAX_RESULT_PREVIEW_LENGTH)
   rescue StandardError
-    value.to_s.truncate(MAX_RESULT_PREVIEW_LENGTH)
+    fallback_redacted_string(value).truncate(MAX_RESULT_PREVIEW_LENGTH)
+  end
+
+  def fallback_redacted_string(value)
+    redact_sensitive_string(Captain::EncodingNormalizer.string(value.to_s))
+  rescue StandardError
+    '[FILTERED]'
   end
 
   def redacted_string_preview(value)
     parsed = JSON.parse(value)
     JSON.generate(redact_sensitive(parsed))
   rescue JSON::ParserError
-    Captain::EncodingNormalizer.string(value)
+    redact_sensitive_string(Captain::EncodingNormalizer.string(value))
   end
 
   def redact_sensitive(value)
@@ -121,12 +141,35 @@ class Captain::ToolExecutionAuditService
       end
     when Array
       value.map { |item| redact_sensitive(item) }
+    when String
+      redact_sensitive_string(value)
     else
       value
     end
   end
 
+  def redact_sensitive_string(value)
+    parsed = parse_json_argument_string(value)
+    return JSON.generate(redact_sensitive(parsed)) if parsed.present?
+    return '[FILTERED]' if value.match?(SENSITIVE_VALUE_PATTERN)
+
+    value
+  end
+
+  def parse_json_argument_string(value)
+    text = value.to_s.strip
+    return nil unless text.start_with?('{', '[')
+
+    JSON.parse(text)
+  rescue JSON::ParserError
+    nil
+  end
+
   def sensitive_key?(key)
-    key.to_s.match?(SENSITIVE_KEY_PATTERN)
+    key.to_s.match?(SENSITIVE_KEY_PATTERN) || knowledge_entry_sensitive_argument_key?(key)
+  end
+
+  def knowledge_entry_sensitive_argument_key?(key)
+    KNOWLEDGE_ENTRY_TOOL_IDS.include?(tool_id) && KNOWLEDGE_ENTRY_SENSITIVE_ARGUMENT_KEYS.include?(key.to_s)
   end
 end

@@ -26,6 +26,7 @@ RSpec.describe 'Captain account directory copilot tools' do
           'email' => 'aida@example.com',
           'role' => 'agent',
           'availability' => 'online',
+          'auto_offline' => true,
           'team_ids' => [team.id]
         )
       )

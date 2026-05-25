@@ -24,7 +24,8 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     ).perform
   end
 
-  def create_task(title:, description: nil, priority: nil, start_at: nil, due_at: nil, custom_attributes: nil)
+  def create_task(title:, description: nil, priority: nil, start_at: nil, due_at: nil, deal_id: nil, originating_conversation_id: nil,
+                  status_id: nil, assignee_id: nil, team_id: nil, custom_attributes: nil)
     ensure_feature_enabled!('crm_tasks', 'CRM tasks are not enabled for this account')
     bootstrap_crm_defaults!
 
@@ -34,8 +35,11 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
       priority: priority,
       start_at: start_at,
       due_at: due_at,
-      deal_id: current_deal&.id,
-      originating_conversation_id: conversation&.id,
+      deal_id: deal_id.presence || current_deal&.id,
+      originating_conversation_id: resolved_originating_conversation_id(originating_conversation_id) || conversation&.id,
+      status_id: status_id,
+      assignee_id: assignee_id,
+      team_id: team_id,
       custom_attributes: parsed_hash(custom_attributes, field_name: 'custom_attributes')
     }.compact
 
@@ -96,6 +100,15 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     return account.crm_task_statuses.find_by!(name: status_name.to_s.strip) if status_name.present?
 
     raise ArgumentError, 'One of status_id, status_name, or status_code is required'
+  end
+
+  def resolved_originating_conversation_id(conversation_id)
+    return if conversation_id.blank?
+
+    conversation = account.conversations.find_by(display_id: conversation_id) || account.conversations.find_by(id: conversation_id)
+    raise ArgumentError, 'Conversation not found' if conversation.blank?
+
+    conversation.id
   end
 
   def resolve_done_status

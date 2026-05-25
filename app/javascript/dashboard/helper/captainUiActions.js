@@ -68,7 +68,16 @@ const CAPTAIN_ASSISTANT_ROUTE_ACTIONS = {
   open_captain_channels: 'captain_assistants_channels_index',
   open_captain_assistant_settings: 'captain_assistants_settings_index',
   open_captain_prompts: 'captain_assistants_prompts_index',
+  open_assistant_settings: 'captain_assistants_settings_index',
+  open_scenario_editor: 'captain_assistants_scenarios_index',
+  open_documents_knowledge_panel: 'captain_assistants_documents_index',
+  open_custom_tool_editor: 'captain_tools_index',
+  open_tool_access_panel: 'captain_assistants_access_index',
+  open_prompt_preview: 'captain_assistants_prompts_index',
+  highlight_config_field: 'captain_assistants_settings_index',
 };
+
+const NON_ROUTE_ACTIONS = new Set(['show_confirmation']);
 
 const QUERY_TARGET_ROUTE_ACTIONS = {
   open_company: {
@@ -152,6 +161,7 @@ const SUPPORTED_ACTION_TYPES = new Set([
   ...Object.keys(CAPTAIN_ASSISTANT_ROUTE_ACTIONS),
   ...Object.keys(QUERY_TARGET_ROUTE_ACTIONS),
   ...Object.keys(CREATE_ACTION_ROUTES),
+  ...NON_ROUTE_ACTIONS,
   'open_task',
 ]);
 
@@ -203,6 +213,14 @@ const DEFAULT_LABELS = {
   open_captain_channels: 'Open Captain channels',
   open_captain_assistant_settings: 'Open assistant settings',
   open_captain_prompts: 'Open assistant prompts',
+  open_assistant_settings: 'Open assistant settings',
+  open_scenario_editor: 'Open scenario editor',
+  open_documents_knowledge_panel: 'Open documents and knowledge',
+  open_custom_tool_editor: 'Open custom tool editor',
+  open_tool_access_panel: 'Open tool access',
+  open_prompt_preview: 'Open prompt preview',
+  highlight_config_field: 'Show setting',
+  show_confirmation: 'Show confirmation',
   open_captain_observability: 'Open Captain observability',
   create_contact: 'Create contact',
   create_company: 'Create company',
@@ -244,7 +262,7 @@ const actionTargetId = action =>
 
 const safeString = value => stripMarkup(value ?? '').slice(0, 500);
 
-const parseTargetPrefill = action => {
+const parsedTargetObject = action => {
   const rawTarget = actionTargetId(action).toString().trim();
   if (!rawTarget.startsWith('{')) return {};
 
@@ -257,6 +275,8 @@ const parseTargetPrefill = action => {
     return {};
   }
 };
+
+const parseTargetPrefill = action => parsedTargetObject(action);
 
 const actionPrefill = action => {
   const parsedTarget = parseTargetPrefill(action);
@@ -282,7 +302,7 @@ const normalizedActionPayload = action => {
       0,
       80
     ),
-    targetId: actionTargetId(action).toString().trim(),
+    targetId: safeString(actionTargetId(action)),
   };
 
   const prefill = actionPrefill(action);
@@ -310,11 +330,12 @@ const simpleRoute = (name, accountId) => ({
 });
 
 const targetRoute = (action, accountId, routeConfig) => {
-  if (!action.targetId) return null;
+  const targetId = safeString(action.targetId);
+  if (!targetId) return null;
 
   return {
     name: routeConfig.name,
-    params: { accountId, [routeConfig.paramName]: action.targetId },
+    params: { accountId, [routeConfig.paramName]: targetId },
   };
 };
 
@@ -337,13 +358,92 @@ const createActionRoute = (action, accountId) => ({
 });
 
 const queryTargetRoute = (action, accountId, routeConfig) => {
-  const targetId = action.targetId || actionTargetId(action).toString().trim();
+  const targetId = safeString(action.targetId || actionTargetId(action));
   if (!targetId) return null;
 
   return {
     name: routeConfig.name,
     params: { accountId },
     query: { [routeConfig.queryParam]: targetId, source: 'captain_ui_action' },
+  };
+};
+
+const compactUiActionQuery = query =>
+  compactQuery({ source: 'captain_ui_action', ...query });
+
+const compactSafeUiActionQuery = query =>
+  Object.entries(compactUiActionQuery(query)).reduce((result, [key, value]) => {
+    result[key] = safeString(value);
+    return result;
+  }, {});
+
+const assistantRouteTarget = action => {
+  const parsedTarget = parsedTargetObject(action);
+  const targetId = action.targetId || actionTargetId(action).toString().trim();
+  const assistantId =
+    action.assistantId ||
+    action.assistant_id ||
+    parsedTarget.assistantId ||
+    parsedTarget.assistant_id;
+
+  return {
+    assistantId: safeString(
+      assistantId || (targetId.startsWith('{') ? '' : targetId)
+    ),
+    parsedTarget,
+  };
+};
+
+const assistantActionQuery = (action, parsedTarget) => {
+  const query = {};
+
+  if (action.type === 'open_scenario_editor') {
+    query.scenarioId =
+      parsedTarget.scenarioId ||
+      parsedTarget.scenario_id ||
+      action.scenarioId ||
+      action.scenario_id;
+  }
+
+  if (action.type === 'open_custom_tool_editor') {
+    query.customToolId =
+      parsedTarget.customToolId ||
+      parsedTarget.custom_tool_id ||
+      action.customToolId ||
+      action.custom_tool_id;
+    query.action =
+      parsedTarget.action ||
+      action.action ||
+      (query.customToolId ? 'edit' : 'new');
+  }
+
+  if (action.type === 'open_prompt_preview') {
+    query.promptPreview = 'true';
+  }
+
+  if (action.type === 'highlight_config_field') {
+    query.highlight =
+      parsedTarget.field ||
+      parsedTarget.configField ||
+      action.field ||
+      action.configField;
+    query.panel = parsedTarget.panel || action.panel;
+  }
+
+  return compactSafeUiActionQuery(query);
+};
+
+const captainAssistantRoute = (action, accountId) => {
+  const routeName = CAPTAIN_ASSISTANT_ROUTE_ACTIONS[action.type];
+  const { assistantId, parsedTarget } = assistantRouteTarget(action);
+  if (!assistantId) return null;
+
+  const query = assistantActionQuery(action, parsedTarget);
+
+  return {
+    name: routeName,
+    params: { accountId, assistantId },
+    ...(Object.keys(query).length ? { query } : {}),
   };
 };
 
@@ -357,12 +457,7 @@ export const routeForCaptainUiAction = (action, accountId) => {
   }
 
   if (CAPTAIN_ASSISTANT_ROUTE_ACTIONS[action.type]) {
-    if (!action.targetId) return null;
-
-    return {
-      name: CAPTAIN_ASSISTANT_ROUTE_ACTIONS[action.type],
-      params: { accountId, assistantId: action.targetId },
-    };
+    return captainAssistantRoute(action, accountId);
   }
 
   if (QUERY_TARGET_ROUTE_ACTIONS[action.type]) {
@@ -378,19 +473,31 @@ export const routeForCaptainUiAction = (action, accountId) => {
   }
 
   if (action.type === 'open_task') {
-    if (!action.targetId) return null;
+    const targetId = safeString(action.targetId);
+    if (!targetId) return null;
 
     return {
       name: 'crm_tasks_index',
       params: { accountId },
-      query: { taskId: action.targetId, source: 'captain_ui_action' },
+      query: { taskId: targetId, source: 'captain_ui_action' },
     };
   }
 
   return null;
 };
 
-export const executeCaptainUiAction = async (action, { router, accountId }) => {
+export const executeCaptainUiAction = async (
+  action,
+  { router, accountId, showConfirmation } = {}
+) => {
+  if (action.type === 'show_confirmation') {
+    const message = safeString(
+      action.targetId || actionTargetId(action) || action.label
+    );
+    if (showConfirmation && message) showConfirmation(message);
+    return Boolean(message);
+  }
+
   const target = routeForCaptainUiAction(action, accountId);
   if (!target) return false;
 

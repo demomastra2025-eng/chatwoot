@@ -1,4 +1,6 @@
-class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::BaseAccountTool
+# frozen_string_literal: true
+
+class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'list_campaigns'
   end
@@ -25,6 +27,8 @@ class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::B
         campaigns: campaigns.limit(parse_limit(limit))
       )
     )
+  rescue StandardError => e
+    tool_failure(e)
   end
 
   def active?

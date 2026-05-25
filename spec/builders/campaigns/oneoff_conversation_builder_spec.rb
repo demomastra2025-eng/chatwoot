@@ -27,7 +27,7 @@ describe Campaigns::OneoffConversationBuilder do
             'name' => 'ticket_status_updated',
             'language' => 'en',
             'category' => 'UTILITY',
-            'processed_params' => { 'body' => { 'first_name' => 'John' } }
+            'processed_params' => { 'body' => { 'name' => 'John', 'ticket_id' => '2332' } }
           }
         )
       end

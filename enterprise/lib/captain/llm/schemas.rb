@@ -53,7 +53,7 @@ module Captain
                description: "Whitelisted dashboard UI action type. Supported values: #{Captain::UiActionContract::SUPPORTED_TYPES_DESCRIPTION}"
         string :label, description: "Short button label for the support agent, max #{Captain::UiActionContract::MAX_LABEL_LENGTH} characters"
         string :target_id,
-               description: 'Entity ID string, empty for list/settings pages, or compact JSON prefill for create_* form actions'
+               description: 'Entity ID string, empty for list/settings pages, or compact JSON for prefill/admin actions'
       end
 
       class CopilotResponse < RubyLLM::Schema
