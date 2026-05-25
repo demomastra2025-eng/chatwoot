@@ -317,6 +317,7 @@ class ChannelRegistry:
         qr_url = _find_first(
             response,
             "qr_login_url",
+            "qrcode_img_content",
             "qrcode_url",
             "qrcodeUrl",
             "qrCodeUrl",

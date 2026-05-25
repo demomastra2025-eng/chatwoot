@@ -17,6 +17,7 @@ export function useChannelIcon(inbox) {
     'Channel::TwitterProfile': 'i-woot-x',
     'Channel::VkCommunity': 'i-ri-vk-line',
     'Channel::WebWidget': 'i-woot-website',
+    'Channel::Weixin': 'i-ri-wechat-line',
     'Channel::Whatsapp': 'i-woot-whatsapp',
     'Channel::WhatsappWeb': 'i-woot-whatsapp',
     'Channel::Instagram': 'i-woot-instagram',

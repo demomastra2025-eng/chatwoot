@@ -38,6 +38,9 @@ describe('#Inbox Helpers', () => {
     it('should return correct class for Email', () => {
       expect(getInboxClassByType('Channel::Email')).toEqual('mail');
     });
+    it('should return correct class for Weixin', () => {
+      expect(getInboxClassByType(INBOX_TYPES.WEIXIN)).toEqual('brand-wechat');
+    });
     it('should return correct class for TikTok', () => {
       expect(getInboxClassByType(INBOX_TYPES.TIKTOK)).toEqual('brand-tiktok');
     });
@@ -85,6 +88,10 @@ describe('#Inbox Helpers', () => {
         );
       });
 
+      it('returns correct icon for Weixin', () => {
+        expect(getInboxIconByType(INBOX_TYPES.WEIXIN)).toBe('i-ri-wechat-fill');
+      });
+
       it('returns correct icon for Line', () => {
         expect(getInboxIconByType(INBOX_TYPES.LINE)).toBe('i-ri-line-fill');
       });
@@ -119,6 +126,12 @@ describe('#Inbox Helpers', () => {
         expect(
           getInboxIconByType(INBOX_TYPES.TELEGRAM_PERSONAL, null, 'line')
         ).toBe('i-woot-telegram');
+      });
+
+      it('returns correct line icon for Weixin', () => {
+        expect(getInboxIconByType(INBOX_TYPES.WEIXIN, null, 'line')).toBe(
+          'i-ri-wechat-line'
+        );
       });
 
       it('returns correct line icon for TikTok', () => {

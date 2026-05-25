@@ -87,6 +87,12 @@ describe('useChannelIcon', () => {
     expect(icon).toBe('i-woot-website');
   });
 
+  it('returns correct icon for Weixin channel', () => {
+    const inbox = { channel_type: 'Channel::Weixin' };
+    const { value: icon } = useChannelIcon(inbox);
+    expect(icon).toBe('i-ri-wechat-line');
+  });
+
   it('returns correct icon for Instagram channel', () => {
     const inbox = { channel_type: 'Channel::Instagram' };
     const { value: icon } = useChannelIcon(inbox);

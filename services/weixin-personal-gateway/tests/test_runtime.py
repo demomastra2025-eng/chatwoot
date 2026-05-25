@@ -43,7 +43,7 @@ class RuntimeIntegrationTest(unittest.TestCase):
             [
                 {
                     "qrcode": "qr-ticket-1",
-                    "qrcode_url": "https://ilink.example/qr/qr-ticket-1",
+                    "qrcode_img_content": "https://ilink.example/qr/qr-ticket-1",
                     "expires_in": 120,
                 }
             ]

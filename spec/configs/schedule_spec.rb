@@ -28,4 +28,12 @@ RSpec.context 'with valid schedule.yml' do
 
     expect(schedule.dig('whatsapp_call_cleanup_job', 'queue')).to eq('whatsapp_calls')
   end
+
+  it 'syncs Weixin gateway channels every minute' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule.dig('weixin_sync_channels_job', 'cron')).to eq('*/1 * * * *')
+    expect(schedule.dig('weixin_sync_channels_job', 'class')).to eq('Weixin::SyncChannelsJob')
+    expect(schedule.dig('weixin_sync_channels_job', 'queue')).to eq('scheduled_jobs')
+  end
 end
