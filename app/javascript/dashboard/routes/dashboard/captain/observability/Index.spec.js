@@ -9,6 +9,7 @@ const exportMock = vi.fn();
 const updatePreferencesMock = vi.fn();
 const routerReplaceMock = vi.fn();
 const useAlertMock = vi.fn();
+let routeQuery = { tab: 'overview' };
 
 const ButtonStub = defineComponent({
   name: 'NextButtonStub',
@@ -98,7 +99,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({
     name: 'captain_observability',
     params: { accountId: '6' },
-    query: { tab: 'overview' },
+    query: routeQuery,
   }),
   useRouter: () => ({ replace: routerReplaceMock }),
 }));
@@ -251,6 +252,7 @@ describe('Captain observability page', () => {
     updatePreferencesMock.mockReset();
     routerReplaceMock.mockReset();
     useAlertMock.mockReset();
+    routeQuery = { tab: 'overview' };
   });
 
   it('renders bounded runtime health without raw payload details', async () => {
@@ -267,5 +269,71 @@ describe('Captain observability page', () => {
     expect(wrapper.text()).toContain('provider_unavailable (1)');
     expect(wrapper.text()).not.toContain('prompt');
     expect(wrapper.text()).not.toContain('messages');
+  });
+
+  it('renders a compact trace why-summary without exposing raw payload text', async () => {
+    routeQuery = { tab: 'traces' };
+    getMock.mockResolvedValue({
+      data: {
+        ...overviewPayload.data,
+        payload: [
+          {
+            id: 1,
+            created_at: '2026-05-22T11:00:00Z',
+            event_name: 'llm.chat.complete',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'completed',
+            provider: 'openrouter',
+            model: 'anthropic/claude-sonnet-4',
+            trace_id: 'trace-why-1',
+            total_tokens: 120,
+            estimated_cost: 0.0031,
+            details: { prompt: 'sensitive prompt', messages: ['raw message'] },
+          },
+          {
+            id: 2,
+            created_at: '2026-05-22T11:00:01Z',
+            event_name: 'llm.tool.complete',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'completed',
+            provider: 'openrouter',
+            model: 'anthropic/claude-sonnet-4',
+            trace_id: 'trace-why-1',
+            tool_name: 'search_documentation',
+            duration_ms: 250,
+          },
+          {
+            id: 3,
+            created_at: '2026-05-22T11:00:02Z',
+            event_name: 'llm.schema.invalid',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'error',
+            reason: 'schema_invalid',
+            provider: 'openrouter',
+            model: 'anthropic/claude-sonnet-4',
+            trace_id: 'trace-why-1',
+            schema_invalid: true,
+            tool_failure: true,
+            error: true,
+          },
+        ],
+      },
+    });
+
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('CAPTAIN.OBSERVABILITY.TRACES.WHY_TITLE');
+    expect(wrapper.text()).toContain('search_documentation');
+    expect(wrapper.text()).toContain('Schema Invalid');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.OBSERVABILITY.FLAGS.TOOL_FAILURE'
+    );
+    expect(wrapper.text()).toContain('120');
+    expect(wrapper.text()).not.toContain('sensitive prompt');
+    expect(wrapper.text()).not.toContain('raw message');
   });
 });

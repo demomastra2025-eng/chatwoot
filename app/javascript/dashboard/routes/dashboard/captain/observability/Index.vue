@@ -587,6 +587,9 @@ const focusedTraceGroup = computed(() => {
     null
   );
 });
+const focusedTraceSummary = computed(() =>
+  buildTraceWhySummary(focusedTraceGroup.value)
+);
 const metricsEndpoint = computed(() => {
   const query = new URLSearchParams(normalizedParams({ includePage: false }));
   return query.toString()
@@ -1435,6 +1438,42 @@ function eventUsage(event) {
         )}`
       : null,
   ].filter(Boolean);
+}
+
+function numericValue(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildTraceWhySummary(group) {
+  if (!group) return null;
+
+  const events = Array.isArray(group.events) ? group.events : [];
+  const totalTokens = events.reduce(
+    (sum, event) => sum + numericValue(event.total_tokens),
+    0
+  );
+  const estimatedCost = events.reduce(
+    (sum, event) => sum + numericValue(event.estimated_cost),
+    0
+  );
+  const tools = uniqueValues(events.map(event => event.tool_name));
+  const flags = uniqueValues(events.flatMap(event => eventFlags(event)));
+  let status = t('CAPTAIN.OBSERVABILITY.STATUS.COMPLETED');
+  if (group.blockedCount > 0) {
+    status = t('CAPTAIN.OBSERVABILITY.STATUS.BLOCKED');
+  }
+  if (group.errorCount > 0) {
+    status = t('CAPTAIN.OBSERVABILITY.STATUS.ERROR');
+  }
+
+  return {
+    status,
+    tools,
+    flags,
+    totalTokens,
+    estimatedCost,
+  };
 }
 
 function eventFlags(event) {
@@ -2993,6 +3032,66 @@ onMounted(async () => {
               >
                 {{ hop }}
               </span>
+            </div>
+
+            <div
+              v-if="focusedTraceSummary"
+              class="mt-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+            >
+              <div
+                class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_TITLE') }}
+              </div>
+              <p class="mt-1 text-sm text-n-slate-11">
+                {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_DESCRIPTION') }}
+              </p>
+              <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <div class="text-xs text-n-slate-10">
+                    {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_OUTCOME') }}
+                  </div>
+                  <div class="mt-1 text-sm font-medium text-n-slate-12">
+                    {{ focusedTraceSummary.status }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-n-slate-10">
+                    {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_USAGE') }}
+                  </div>
+                  <div class="mt-1 text-sm font-medium text-n-slate-12">
+                    {{
+                      `${formatInteger(focusedTraceSummary.totalTokens)} / ${formatCurrency(
+                        focusedTraceSummary.estimatedCost
+                      )}`
+                    }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-n-slate-10">
+                    {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_TOOLS') }}
+                  </div>
+                  <div class="mt-1 text-sm font-medium text-n-slate-12">
+                    {{
+                      focusedTraceSummary.tools.length
+                        ? focusedTraceSummary.tools.join(', ')
+                        : t('CAPTAIN.OBSERVABILITY.TRACES.WHY_NO_TOOLS')
+                    }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-n-slate-10">
+                    {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_FLAGS') }}
+                  </div>
+                  <div class="mt-1 text-sm font-medium text-n-slate-12">
+                    {{
+                      focusedTraceSummary.flags.length
+                        ? focusedTraceSummary.flags.join(', ')
+                        : t('CAPTAIN.OBSERVABILITY.TRACES.WHY_NO_FLAGS')
+                    }}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

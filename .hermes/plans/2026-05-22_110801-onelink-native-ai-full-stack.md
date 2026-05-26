@@ -2278,3 +2278,47 @@ Next coding slice:
 
 1. Continue Etapa 11 with eval summary/history hardening, unless product chooses to pause code-only gates and run live DEV acceptance.
 2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
+
+## 2026-05-26 Etapa 12 first observability UI slice — Trace why-summary
+
+Status: **Implemented, targeted verified, independently reviewed — Etapa 12 trace why-summary code-slice DONE.**
+
+Scope:
+
+- Added a compact “why summary” card to the Captain Observability trace tab so operators can answer the first-level “why did Captain do this?” question without opening raw event payloads.
+- Summary is built only from persisted/sanitized metadata already present in the event list:
+  - outcome status from trace error/blocked counts;
+  - total tokens and estimated cost;
+  - tool names used in the trace;
+  - flags such as tool failure/schema invalid/error.
+- Added EN/RU i18n labels for the summary card.
+- Added a Vitest regression proving the trace tab renders the summary and does not expose sensitive raw payload text (`prompt`/`messages`) embedded in the mocked event details.
+- No manual browser test, DEV restart, live model eval, or PROD deploy was performed for this code-level slice.
+
+Verification completed:
+
+```bash
+PATH=/opt/node-24/bin:$PATH pnpm exec vitest --no-watch --no-cache --no-coverage app/javascript/dashboard/routes/dashboard/captain/observability/Index.spec.js
+# 1 file / 2 tests passed
+
+PATH=/opt/node-24/bin:$PATH pnpm exec eslint app/javascript/dashboard/routes/dashboard/captain/observability/Index.vue app/javascript/dashboard/routes/dashboard/captain/observability/Index.spec.js
+# exit 0
+
+python3 -m json.tool app/javascript/dashboard/i18n/locale/en/integrations.json >/tmp/en.integrations.json.check
+python3 -m json.tool app/javascript/dashboard/i18n/locale/ru/integrations.json >/tmp/ru.integrations.json.check
+# JSON OK
+
+git diff --check
+# clean
+```
+
+Independent review:
+
+- Read-only delegated review found no blockers.
+- Minor review note about non-numeric token/cost values was fixed with bounded numeric parsing before final verification.
+- Remaining accepted UX nuance: summary status intentionally stays coarse (`Error` > `Blocked` > `Completed`) for the first card; detailed per-event statuses remain available in the timeline.
+
+Next coding slice:
+
+1. Continue Etapa 12 with operator-facing trace usability: deep-link/copy trace context, clearer fallback/retry/schema reason grouping, or a compact per-conversation trace entry point from events.
+2. Keep manual browser checks, live model evals, DEV live acceptance, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
