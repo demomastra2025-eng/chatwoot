@@ -300,6 +300,53 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
+  it 'does not run Captain post-call features when assistant feature flags are absent' do
+    assistant = create(:captain_assistant, account: account, config: {})
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create_voice_call_message!
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new)
+
+    post_finalize_twice(finalize_payload_for('evt-finalize-captain-features-absent-memory-1'))
+
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
+    expect(Captain::Llm::ConversationFaqService).not_to have_received(:new)
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to be_blank
+  end
+
+  it 'does not run Captain post-call features when assistant feature flags are blank' do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => '', 'feature_faq' => '' })
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create_voice_call_message!
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new)
+
+    post_finalize_twice(finalize_payload_for('evt-finalize-captain-features-blank-memory-1'))
+
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
+    expect(Captain::Llm::ConversationFaqService).not_to have_received(:new)
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to be_blank
+  end
+
+  it 'does not run Captain post-call features without voice transcript context' do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create_voice_call_message!
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new)
+
+    post_finalize_twice(
+      finalize_payload_for('evt-finalize-captain-features-empty-transcript-1').except(:final_transcript)
+    )
+
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
+    expect(Captain::Llm::ConversationFaqService).not_to have_received(:new)
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to be_blank
+  end
+
   it 'retries failed Captain post-call features on a duplicate finalize without rerunning completed features', :aggregate_failures do
     assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)

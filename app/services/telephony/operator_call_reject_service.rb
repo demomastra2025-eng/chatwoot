@@ -1,6 +1,6 @@
 class Telephony::OperatorCallRejectService
   TERMINAL_STATUS_EVENT_TYPES = {
-    'rejected' => 'rejected',
+    'rejected' => 'rejected', 'completed' => 'session_completed',
     'no_answer' => 'operator_no_answer',
     'failed' => 'operator_failed',
     'cancelled' => 'caller_hangup'
@@ -220,7 +220,7 @@ class Telephony::OperatorCallRejectService
   end
 
   def default_reason
-    status == 'no_answer' ? 'browser_webphone_not_ready' : 'operator_rejected_from_browser'
+    { 'completed' => 'operator_hangup', 'no_answer' => 'browser_webphone_not_ready' }.fetch(status, 'operator_rejected_from_browser')
   end
 
   def raise_invalid_status!

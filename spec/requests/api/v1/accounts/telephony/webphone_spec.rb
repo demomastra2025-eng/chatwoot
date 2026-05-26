@@ -637,6 +637,58 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'marks an active operator call as completed when the browser hangup releases it' do
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-browser-hangup-1',
+      status: 'in_progress',
+      agent_binding: agent_binding,
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'agent_binding_id' => agent_binding.id
+        }
+      }
+    )
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      terminate_request = stub_request(
+        :post,
+        'https://bridge.example/telephony/webphone/calls/operator-browser-hangup-1/reject'
+      ).with(
+        body: hash_including(
+          reason: 'operator_hangup',
+          actor: 'operator'
+        ),
+        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+           headers: headers,
+           as: :json
+
+      expect(terminate_request).to have_been_requested
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
+    expect(call_session.reload).to have_attributes(
+      status: 'completed',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'operator_hangup'
+    )
+  end
+
   it 'rejects browser release attempts from unregistered operators before a claim' do
     agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
     call_session = create(

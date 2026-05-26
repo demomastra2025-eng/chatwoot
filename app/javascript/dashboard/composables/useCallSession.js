@@ -7,6 +7,8 @@ import Timer from 'dashboard/helper/Timer';
 export function useCallSession() {
   const callsStore = useCallsStore();
   const isJoining = ref(false);
+  const endingCallSids = ref(new Set());
+  const releasingCallSids = ref(new Set());
   const callDuration = ref(0);
   const durationTimer = new Timer(elapsed => {
     callDuration.value = elapsed;
@@ -88,24 +90,64 @@ export function useCallSession() {
     }
   };
 
+  const releaseUnsupportedFonosterJoin = async (
+    callSid,
+    { includeReason = false } = {}
+  ) => {
+    await releaseFonosterIncomingCall(callSid, {
+      status: 'no_answer',
+      reason: 'browser_webphone_not_ready',
+    });
+    callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
+    callsStore.dismissCall(callSid);
+    return {
+      provider: 'fonoster',
+      joinSupported: false,
+      ...(includeReason ? { reason: 'browser_webphone_not_ready' } : {}),
+    };
+  };
+
+  const callReleaseKey = callSid => callSid || Symbol('unknown_call');
+
+  const runOnceForCall = async (lockSetRef, callSid, callback) => {
+    const releaseKey = callReleaseKey(callSid);
+    if (lockSetRef.value.has(releaseKey)) return null;
+
+    lockSetRef.value.add(releaseKey);
+    try {
+      return await callback();
+    } finally {
+      lockSetRef.value.delete(releaseKey);
+    }
+  };
+
   const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
     if (provider === 'fonoster') {
-      await WebphoneClient.endClientCall(provider);
-      const releaseResult = await releaseFonosterIncomingCall(callSid, {
-        status: 'rejected',
-        reason: 'operator_declined',
+      return runOnceForCall(endingCallSids, callSid, async () => {
+        try {
+          await WebphoneClient.endClientCall(provider);
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to end Fonoster browser call:', error);
+        }
+
+        const releaseResult = await releaseFonosterIncomingCall(callSid, {
+          status: 'completed',
+          reason: 'operator_hangup',
+        });
+        if (!releaseResult) return null;
+        durationTimer.stop();
+        callDuration.value = 0;
+        callsStore.dismissCall(callSid);
+        return releaseResult;
       });
-      if (!releaseResult) return;
-      durationTimer.stop();
-      callDuration.value = 0;
-      callsStore.dismissCall(callSid);
-      return;
     }
 
     await VoiceAPI.leaveConference(inboxId, conversationId);
     await WebphoneClient.endClientCall(provider);
     durationTimer.stop();
     callsStore.clearActiveCall();
+    return null;
   };
 
   const joinCall = async ({
@@ -154,11 +196,20 @@ export function useCallSession() {
           };
         }
 
-        const joinResult = await WebphoneClient.joinClientCall({
-          provider: 'fonoster',
-          conversationId,
-          callRef: callSid,
-        });
+        let joinResult = null;
+        try {
+          joinResult = await WebphoneClient.joinClientCall({
+            provider: 'fonoster',
+            conversationId,
+            callRef: callSid,
+          });
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to answer Fonoster incoming call:', error);
+          return releaseUnsupportedFonosterJoin(callSid, {
+            includeReason: true,
+          });
+        }
 
         if (!joinResult) {
           if (webphoneSession.registered === true) {
@@ -169,16 +220,7 @@ export function useCallSession() {
             };
           }
 
-          await releaseFonosterIncomingCall(callSid, {
-            status: 'no_answer',
-            reason: 'browser_webphone_not_ready',
-          });
-          callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
-          callsStore.dismissCall(callSid);
-          return {
-            provider: 'fonoster',
-            joinSupported: false,
-          };
+          return releaseUnsupportedFonosterJoin(callSid);
         }
 
         callsStore.setCallActive(callSid);
@@ -236,17 +278,30 @@ export function useCallSession() {
     const provider = resolveCallProvider(call);
 
     if (provider === 'fonoster') {
-      await WebphoneClient.rejectIncomingCall(provider);
-      const releaseResult = await releaseFonosterIncomingCall(call?.callSid, {
-        status: 'rejected',
-        reason: 'operator_declined',
-      });
-      if (!releaseResult) return;
+      const releaseResult = await runOnceForCall(
+        releasingCallSids,
+        call?.callSid,
+        async () => {
+          try {
+            await WebphoneClient.rejectIncomingCall(provider);
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn('Failed to decline Fonoster browser call:', error);
+          }
+
+          return releaseFonosterIncomingCall(call?.callSid, {
+            status: 'rejected',
+            reason: 'operator_declined',
+          });
+        }
+      );
+      if (!releaseResult) return null;
     } else {
       await WebphoneClient.endClientCall(provider);
     }
 
     callsStore.dismissCall(call?.callSid);
+    return null;
   };
 
   const dismissCall = callSid => {

@@ -163,6 +163,34 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'normalizes call_ended caller_hangup reasons to cancelled' do
+      occurred_at = Time.zone.parse(15.seconds.ago.iso8601)
+      existing_call_session.update!(status: 'in_progress', last_event_at: 1.minute.ago)
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-call-ended-caller-hangup-1',
+          event: 'call_ended',
+          status: 'completed',
+          occurred_at: occurred_at.iso8601,
+          ended_by: 'caller',
+          metadata: { hangup_reason: 'caller_hangup' }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'cancelled',
+        ended_at: occurred_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup'
+      )
+      expect(result.legs.last).to include(
+        'event_key' => 'evt-call-ended-caller-hangup-1',
+        'event_type' => 'call_ended',
+        'status' => 'cancelled'
+      )
+    end
+
     it 'keeps the backend-claimed operator when provider answered metadata is late or ambiguous' do
       claimed_binding = create(:telephony_agent_binding, :registered, account: account, user: create(:user, account: account, role: :agent))
       provider_binding = create(:telephony_agent_binding, :registered, account: account, user: create(:user, account: account, role: :agent))

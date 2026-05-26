@@ -70,8 +70,32 @@ class VoiceApplication {
       accountId: requestPayload.account_id
     });
 
+    let activeRouteDecision = {
+      action: 'unknown',
+      reason: 'caller_hangup_before_route'
+    };
+    const callerHangupTracker = createCallerHangupTracker({
+      app: this,
+      call,
+      session,
+      requestPayload,
+      getRouteDecision: () => activeRouteDecision
+    });
+    const callerHangupResult = async () => {
+      await callerHangupTracker.flush();
+      return {
+        session,
+        decision: activeRouteDecision,
+        mode: 'caller_hangup',
+        completion: Promise.resolve(),
+        reason: 'caller_hangup'
+      };
+    };
+
     const routeDecision = await this.routeInboundSafely(requestPayload, callRef);
+    activeRouteDecision = routeDecision;
     applyRouteScope(session, routeDecision);
+    if (callerHangupTracker.emitted()) return callerHangupResult();
     this.registry?.update?.(callRef, { routeDecision, accountId: session.accountId, state: 'received' });
     void session.safeEvent('app_received_call', correlationPayload(session, requestPayload, routeDecision));
     await this.safeBridgeEvent('session_started', session, requestPayload, routeDecision);
@@ -85,19 +109,33 @@ class VoiceApplication {
       to: requestPayload.ingress_number || requestPayload.to,
       direction: requestPayload.direction || 'inbound'
     });
+    if (callerHangupTracker.emitted()) return callerHangupResult();
     const routeAction = normalizeRouteAction(routeDecision);
     const handleLocallyAsAi = shouldHandleAppRouteLocally(routeDecision, requestPayload);
 
     if (routeAction === 'operator') {
       const answerFailure = await this.answerCallOrFail({ call, session, requestPayload, routeDecision });
-      if (answerFailure) return answerFailure;
+      if (answerFailure) {
+        callerHangupTracker.disarm();
+        return answerFailure;
+      }
+      if (callerHangupTracker.emitted()) return callerHangupResult();
       void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('operator_ringing', session, requestPayload, routeDecision);
       const passiveRecording = await this.startPassiveRecording(call, session, requestPayload, routeDecision);
+      if (callerHangupTracker.emitted()) {
+        await closePassiveRecording(passiveRecording);
+        return callerHangupResult();
+      }
       try {
         const dialResult = await dialOperator(call, routeDecision);
+        if (callerHangupTracker.emitted()) {
+          await closePassiveRecording(passiveRecording);
+          return callerHangupResult();
+        }
         if (dialResult === false) {
           await closePassiveRecording(passiveRecording);
+          callerHangupTracker.disarm();
           const completion = this.handleOperatorFailure(call, session, requestPayload, routeDecision, 'operator_dial_unavailable');
           return { session, decision: routeDecision, mode: 'operator', completion };
         }
@@ -112,9 +150,12 @@ class VoiceApplication {
           registry: this.registry,
           passiveRecording
         });
+        callerHangupTracker.disarm();
         return { session, decision: routeDecision, mode: 'operator', completion };
       } catch (error) {
         await closePassiveRecording(passiveRecording);
+        if (callerHangupTracker.emitted()) return callerHangupResult();
+        callerHangupTracker.disarm();
         const reason = sanitizeReason(error?.message || 'operator_dial_failed');
         const completion = this.handleOperatorFailure(call, session, requestPayload, routeDecision, reason);
         return { session, decision: routeDecision, mode: 'operator', completion, reason };
@@ -122,6 +163,7 @@ class VoiceApplication {
     }
 
     if (routeAction === 'reject') {
+      callerHangupTracker.disarm();
       await this.safeBridgeEvent('session_failed', session, requestPayload, routeDecision, { reason: routeDecision.reason || 'route_rejected' });
       await rejectCall(call, routeDecision);
       this.registry?.update?.(callRef, { routeDecision, state: 'rejected' });
@@ -130,17 +172,32 @@ class VoiceApplication {
 
     if (routeAction === 'app' && !handleLocallyAsAi) {
       const answerFailure = await this.answerCallOrFail({ call, session, requestPayload, routeDecision });
-      if (answerFailure) return answerFailure;
+      if (answerFailure) {
+        callerHangupTracker.disarm();
+        return answerFailure;
+      }
+      if (callerHangupTracker.emitted()) return callerHangupResult();
       void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('app_routing', session, requestPayload, routeDecision);
       const passiveRecording = await this.startPassiveRecording(call, session, requestPayload, routeDecision);
+      if (callerHangupTracker.emitted()) {
+        await closePassiveRecording(passiveRecording);
+        return callerHangupResult();
+      }
       try {
         await handoffToApp(call, routeDecision);
+        if (callerHangupTracker.emitted()) {
+          await closePassiveRecording(passiveRecording);
+          return callerHangupResult();
+        }
         this.registry?.update?.(callRef, { routeDecision, state: 'app' });
         const completion = passiveRecording ? buildPassiveRecordingCompletion({ call, passiveRecording }) : Promise.resolve();
+        callerHangupTracker.disarm();
         return { session, decision: routeDecision, mode: 'app', completion };
       } catch (error) {
         await closePassiveRecording(passiveRecording);
+        if (callerHangupTracker.emitted()) return callerHangupResult();
+        callerHangupTracker.disarm();
         const reason = sanitizeReason(error?.message || 'app_handoff_failed');
         await this.safeBridgeEvent('session_failed', session, requestPayload, routeDecision, { reason, original_reason: 'app_handoff_failed' });
         await hangupSafely(call, reason);
@@ -150,7 +207,11 @@ class VoiceApplication {
     }
 
     const answerFailure = await this.answerCallOrFail({ call, session, requestPayload, routeDecision });
-    if (answerFailure) return answerFailure;
+    if (answerFailure) {
+      callerHangupTracker.disarm();
+      return answerFailure;
+    }
+    if (callerHangupTracker.emitted()) return callerHangupResult();
     void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
 
     let mediaStream;
@@ -176,7 +237,13 @@ class VoiceApplication {
         requestPayload,
         durationMs: this.initialMediaKeepaliveMs
       });
+      if (callerHangupTracker.emitted()) {
+        initialMediaKeepalive?.stop?.('caller_hangup');
+        closeMediaStreamSafely(mediaStream);
+        return callerHangupResult();
+      }
     } catch (error) {
+      callerHangupTracker.disarm();
       return this.handleMediaStreamEstablishmentFailure({
         error,
         call,
@@ -189,8 +256,14 @@ class VoiceApplication {
 
     const context = await session.bootstrap();
     this.registry?.update?.(callRef, { context, state: session.state });
+    if (callerHangupTracker.emitted()) {
+      initialMediaKeepalive?.stop?.('caller_hangup');
+      closeMediaStreamSafely(mediaStream);
+      return callerHangupResult();
+    }
 
     if (session.state === 'fallback') {
+      callerHangupTracker.disarm();
       initialMediaKeepalive?.stop?.('fallback');
       closeMediaStreamSafely(mediaStream);
       this.registry?.close?.(callRef, context?.ai?.reason || 'context_unavailable');
@@ -201,12 +274,20 @@ class VoiceApplication {
     let bridge;
     try {
       bridge = await this.startRealtimeBridge(call, session, context, requestPayload, mediaStream, initialMediaKeepalive);
+      if (callerHangupTracker.emitted()) {
+        initialMediaKeepalive?.stop?.('caller_hangup');
+        closeMediaStreamSafely(bridge?.mediaStream || mediaStream);
+        try { bridge?.realtime?.close?.(); } catch (_error) {}
+        return callerHangupResult();
+      }
+      callerHangupTracker.disarm();
       this.registry?.update?.(callRef, {
         stream_ref: session.streamRef,
         media_session_ref: session.mediaSessionRef,
         state: session.state || 'active'
       });
     } catch (error) {
+      callerHangupTracker.disarm();
       initialMediaKeepalive?.stop?.('realtime_unavailable');
       const reason = sanitizeReason(error?.reason || error?.message || 'realtime_unavailable');
       if (isMediaStreamEstablishmentError(error)) {
@@ -2052,6 +2133,46 @@ function shouldDrainOutput(action) {
   return true;
 }
 
+function createCallerHangupTracker({ app, call, session, requestPayload = {}, getRouteDecision = () => ({}) } = {}) {
+  let active = true;
+  let sent = false;
+  let delivery = Promise.resolve();
+
+  const emitCallerHangup = eventName => {
+    if (!active || sent || session?.closed) return;
+    sent = true;
+    active = false;
+    const now = new Date().toISOString();
+    const metadata = compactPayload({
+      provider_event: eventName,
+      provider_status: eventName,
+      provider_leg: 'caller',
+      source: `call.${eventName}`,
+      reason: 'caller_hangup',
+      hangup_reason: 'caller_hangup',
+      ended_by: 'caller',
+      end_time: now,
+      ended_at: now
+    });
+
+    delivery = Promise.resolve(app?.safeBridgeEvent?.('caller_hangup', session, requestPayload, getRouteDecision?.() || {}, metadata)).catch(() => {});
+    app?.registry?.close?.(session.callRef, 'caller_hangup');
+  };
+
+  const targets = [call, call?.voice].filter(Boolean);
+  for (const target of targets) {
+    for (const eventName of callEndEvents()) {
+      registerOnce(target, eventName, () => emitCallerHangup(eventName));
+    }
+  }
+
+  return {
+    emitted: () => sent,
+    flush: () => delivery,
+    disarm: () => { active = false; }
+  };
+}
+
 function registerCallCompletion(call, finish) {
   const targets = [call, call?.voice].filter(Boolean);
   let registered = false;
@@ -2098,7 +2219,7 @@ function mediaWriteFailureReason(error, fallback) {
 
 function callCompletionAction(eventName) {
   const normalized = String(eventName || '').toLowerCase();
-  if (normalized.includes('hangup') || normalized === 'end' || normalized === 'close') return 'caller_hangup';
+  if (normalized.includes('hangup') || ['end', 'close', 'disconnect', 'disconnected', 'bye'].includes(normalized)) return 'caller_hangup';
   return 'fonoster_call_closed';
 }
 
@@ -2121,7 +2242,7 @@ function registerOnce(target, eventName, handler) {
 }
 
 function callEndEvents() {
-  const events = ['end', 'close', 'hangup', 'completed', 'END', 'CLOSE'];
+  const events = ['end', 'close', 'hangup', 'disconnect', 'disconnected', 'bye', 'completed', 'END', 'CLOSE', 'DISCONNECT', 'DISCONNECTED', 'BYE'];
   try {
     const common = require('@fonoster/common');
     if (common.StreamEvent?.END) events.unshift(common.StreamEvent.END);

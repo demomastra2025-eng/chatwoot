@@ -152,6 +152,69 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(stream.closed, true);
 });
 
+test('VoiceApplication emits one caller_hangup bridge event when caller disconnects before realtime completion is registered', async () => {
+  const stream = new FakeVoiceStream();
+  const bridgeEvents = [];
+  let releaseContext;
+  const contextReady = new Promise(resolve => { releaseContext = resolve; });
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream: () => stream
+  });
+
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', account_id: 42, app_ref: 'ai-app-early' }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => {
+      await contextReady;
+      return {
+        call_ref: 'call-early-hangup',
+        account_id: 42,
+        ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
+        tools: []
+      };
+    },
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' })
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({
+      connect: async () => {},
+      sendText: () => {},
+      sendAudio: () => {},
+      close: () => {}
+    })
+  });
+
+  const resultPromise = app.handleCall(call, {
+    call_ref: 'call-early-hangup',
+    from: '+770****2233',
+    to: '+770****6677'
+  });
+
+  await new Promise(resolve => setImmediate(resolve));
+  call.emit('disconnect');
+  call.emit('close');
+  call.emit('hangup');
+  await new Promise(resolve => setImmediate(resolve));
+
+  const callerHangups = bridgeEvents.filter(payload => payload.event === 'caller_hangup');
+  assert.equal(callerHangups.length, 1);
+  assert.equal(callerHangups[0].event_key, 'runtime:call-early-hangup:caller_hangup');
+  assert.equal(callerHangups[0].call_ref, 'call-early-hangup');
+  assert.equal(callerHangups[0].metadata.ended_by, 'caller');
+  assert.equal(callerHangups[0].metadata.hangup_reason, 'caller_hangup');
+
+  releaseContext();
+  const result = await resultPromise;
+  assert.equal(result.mode, 'caller_hangup');
+  assert.equal(stream.closed, true);
+});
+
 test('VoiceApplication can send initial silence keepalive before Gemini emits first audio', async () => {
   const stream = new FakeVoiceStream();
   const events = [];
@@ -2269,6 +2332,39 @@ test('VoiceApplication emits caller_hangup when the caller disconnects before op
   call.emit('end');
   await result.completion;
 
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'caller_hangup']);
+});
+
+test('VoiceApplication keeps caller_hangup as the only terminal event when caller disconnects while operator dial is pending', async () => {
+  const bridgeEvents = [];
+  let releaseDial;
+  const dialReady = new Promise(resolve => { releaseDial = resolve; });
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      agent_aor: 'sip:1001@example.test',
+      operator_timeout_ms: 1000,
+      reason: 'operator_route'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    async dial() {
+      await dialReady;
+      return false;
+    }
+  });
+  const app = new VoiceApplication({ client });
+
+  const resultPromise = app.handleCall(call, { call_ref: 'call-operator-dial-pending-hangup' });
+  await new Promise(resolve => setImmediate(resolve));
+  call.emit('disconnect');
+  releaseDial();
+
+  const result = await resultPromise;
+  assert.equal(result.mode, 'caller_hangup');
   assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'caller_hangup']);
 });
 

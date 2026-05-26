@@ -174,11 +174,128 @@ describe('useCallSession', () => {
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-active-bridge-release',
       {
+        reason: 'operator_hangup',
+        status: 'completed',
+      }
+    );
+    expect(VoiceAPI.leaveConference).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('still releases an active Fonoster call when the local RTC hangup fails', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-local-hangup-failed',
+      provider: 'fonoster',
+    });
+    callsStore.setCallActive('call-local-hangup-failed');
+    endClientCallMock.mockRejectedValue(new Error('rtc hangup failed'));
+    const callSession = mountUseCallSession();
+
+    await callSession.endCall({
+      conversationId: 6,
+      inboxId: 4083,
+      provider: 'fonoster',
+      callSid: 'call-local-hangup-failed',
+    });
+
+    expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-local-hangup-failed',
+      {
+        reason: 'operator_hangup',
+        status: 'completed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('ignores duplicate active Fonoster hangup clicks while release is in flight', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-double-hangup',
+      provider: 'fonoster',
+    });
+    callsStore.setCallActive('call-double-hangup');
+    let resolveRelease;
+    rejectBackendCallMock.mockReturnValue(
+      new Promise(resolve => {
+        resolveRelease = resolve;
+      })
+    );
+    const callSession = mountUseCallSession();
+    const payload = {
+      conversationId: 6,
+      inboxId: 4083,
+      provider: 'fonoster',
+      callSid: 'call-double-hangup',
+    };
+
+    const firstRelease = callSession.endCall(payload);
+    const secondRelease = callSession.endCall(payload);
+    await secondRelease;
+
+    expect(endClientCallMock).toHaveBeenCalledTimes(1);
+    expect(rejectBackendCallMock).toHaveBeenCalledTimes(1);
+    resolveRelease({ status: 'completed' });
+    await firstRelease;
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('does not block a different Fonoster call while another hangup release is in flight', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({ callSid: 'call-first-hangup', provider: 'fonoster' });
+    callsStore.addCall({ callSid: 'call-second-hangup', provider: 'fonoster' });
+    const releaseResolvers = {};
+    rejectBackendCallMock.mockImplementation(
+      callSid =>
+        new Promise(resolve => {
+          releaseResolvers[callSid] = resolve;
+        })
+    );
+    const callSession = mountUseCallSession();
+
+    const firstRelease = callSession.endCall({
+      conversationId: 6,
+      inboxId: 4083,
+      provider: 'fonoster',
+      callSid: 'call-first-hangup',
+    });
+    const secondRelease = callSession.endCall({
+      conversationId: 7,
+      inboxId: 4083,
+      provider: 'fonoster',
+      callSid: 'call-second-hangup',
+    });
+    await Promise.resolve();
+
+    expect(endClientCallMock).toHaveBeenCalledTimes(2);
+    expect(rejectBackendCallMock).toHaveBeenCalledTimes(2);
+    releaseResolvers['call-first-hangup']({ status: 'completed' });
+    releaseResolvers['call-second-hangup']({ status: 'completed' });
+    await Promise.all([firstRelease, secondRelease]);
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('still releases an incoming Fonoster call when local SIP decline throws', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-local-decline-failed',
+      provider: 'fonoster',
+    });
+    rejectClientCallMock.mockRejectedValue(new Error('sip decline failed'));
+    const callSession = mountUseCallSession();
+
+    await callSession.rejectIncomingCall(callsStore.calls[0]);
+
+    expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-local-decline-failed',
+      {
         reason: 'operator_declined',
         status: 'rejected',
       }
     );
-    expect(VoiceAPI.leaveConference).not.toHaveBeenCalled();
     expect(callsStore.calls).toEqual([]);
   });
 
@@ -206,6 +323,47 @@ describe('useCallSession', () => {
       reason: 'browser_webphone_not_ready',
       status: 'no_answer',
     });
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('releases the backend call when the browser SIP answer fails after claim', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-sip-answer-failed',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'fonoster',
+      callingSupported: true,
+      registered: true,
+    });
+    joinClientCallMock.mockRejectedValue(
+      new Error('microphone permission denied')
+    );
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      callSid: 'call-sip-answer-failed',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'browser_webphone_not_ready',
+    });
+    expect(VoiceAPI.claimIncomingCall).toHaveBeenCalledWith(
+      'call-sip-answer-failed'
+    );
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-sip-answer-failed',
+      {
+        reason: 'browser_webphone_not_ready',
+        status: 'no_answer',
+      }
+    );
     expect(callsStore.calls).toEqual([]);
   });
 

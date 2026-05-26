@@ -1120,8 +1120,8 @@ class Telephony::EventsIngestionService
       transfer_result = nested_payload_value('result', 'status').to_s.strip.downcase
       return normalize_status(transfer_result) if transfer_result.present?
     elsif event_name == 'call_ended'
-      ended_reason = nested_payload_value('reason', 'end_reason', 'endReason').to_s.strip.downcase
-      return 'cancelled' if ended_reason == 'caller_hung_up'
+      ended_reason = resolved_end_reason.to_s.strip.downcase
+      return 'cancelled' if %w[caller_hangup caller_hung_up].include?(ended_reason)
     elsif EVENT_STATUS_MAP.key?(event_name) && EVENT_STATUS_MAP[event_name].present?
       return normalize_status(event_name)
     end
