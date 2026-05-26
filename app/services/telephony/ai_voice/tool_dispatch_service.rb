@@ -375,9 +375,7 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def captain_tool_arguments
-    tool_arguments = arguments.to_h.transform_keys(&:to_sym)
-    tool_arguments[:semantic] = false if tool_name == 'faq_lookup'
-    tool_arguments
+    arguments.to_h.transform_keys(&:to_sym)
   end
 
   def terminate_transport_call

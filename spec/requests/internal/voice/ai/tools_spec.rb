@@ -165,7 +165,58 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     expect(response.parsed_body.dig('result', 'result')).to include("\"display_id\": #{conversation.display_id}")
   end
 
-  it 'runs faq_lookup through lexical-only mode for realtime voice calls' do
+  it 'runs faq_lookup through Captain semantic chunk retrieval for realtime voice calls' do
+    assistant = create(
+      :captain_assistant,
+      account: account,
+      config: {
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['faq_lookup']
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+    document = create(:captain_document, account: account, assistant: assistant)
+    document_chunk = document.document_chunks.create!(
+      account: account,
+      assistant: assistant,
+      chunk_index: 0,
+      content: 'Refund source says refunds are available in 14 days.'
+    )
+    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: document_chunk.id))
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/faq_lookup',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             arguments: { query: 'refund' }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    result = JSON.parse(response.parsed_body.dig('result', 'result'))
+    expect(result).to include('lookup_strategy' => 'semantic_chunk', 'total_count' => 1)
+    expect(result['matches'].first).to include(
+      'type' => 'document_chunk',
+      'answer' => 'Refund source says refunds are available in 14 days.',
+      'document_id' => document.id,
+      'document_chunk_id' => document_chunk.id
+    )
+    expect(result['retrieval_trace']).to include(
+      'strategy' => 'semantic_chunk',
+      'degraded' => false,
+      'semantic_attempted' => true,
+      'document_chunk_ids' => [document_chunk.id]
+    )
+  end
+
+  it 'degrades faq_lookup to lexical fallback when voice semantic lookup is unavailable' do
     assistant = create(
       :captain_assistant,
       account: account,
@@ -180,8 +231,8 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     )
     create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
     create(:captain_assistant_response, assistant: assistant, account: account, question: 'Refund?', answer: 'Refund in 14 days', status: 'approved')
-    expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
-    expect(Captain::AssistantResponse).not_to receive(:search)
+    allow(Captain::DocumentChunk).to receive(:search)
+      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/tools/faq_lookup',
@@ -198,6 +249,13 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     result = JSON.parse(response.parsed_body.dig('result', 'result'))
     expect(result).to include('lookup_strategy' => 'lexical', 'total_count' => 1)
     expect(result['matches'].first).to include('answer' => 'Refund in 14 days')
+    expect(result['retrieval_trace']).to include(
+      'strategy' => 'lexical',
+      'degraded' => true,
+      'semantic_attempted' => true,
+      'fallback_reason' => 'semantic_unavailable',
+      'match_count' => 1
+    )
   end
 
   it 'scopes tool writes by account_id when call_ref collides across accounts' do
