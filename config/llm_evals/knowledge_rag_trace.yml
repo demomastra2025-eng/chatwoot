@@ -1,0 +1,82 @@
+suite: captain.knowledge_rag_trace
+cases:
+  - id: knowledge.semantic_chunk_success
+    description: Knowledge FAQ lookup should use indexed source chunks as the normal successful RAG path.
+    tags: [knowledge, rag, semantic_chunk, trace]
+    result:
+      lookup_strategy: semantic_chunk
+      matches:
+        - type: document_chunk
+          document_chunk_id: 42
+          document_id: 7
+          text: "Доставка занимает один-два дня."
+          source_link: "https://example.test/delivery"
+          embedding_status: indexed
+      retrieval_trace:
+        strategy: semantic_chunk
+        degraded: false
+        semantic_attempted: true
+        match_count: 1
+        document_chunk_ids: [42]
+        document_ids: [7]
+        source_links: ["https://example.test/delivery"]
+        embedding_status_counts:
+          indexed: 1
+    expected:
+      strategy: semantic_chunk
+      degraded: false
+      semantic_attempted: true
+      min_match_count: 1
+      require_document_chunk_ids: true
+      require_document_ids: true
+      require_indexed_chunks: true
+      forbid_lexical_success: true
+
+  - id: knowledge.semantic_failure_degrades_to_lexical
+    description: Embedding/provider failure may fall back to FAQ lexical data, but the trace must mark it degraded with the reason.
+    tags: [knowledge, rag, degraded, lexical_fallback]
+    result:
+      lookup_strategy: lexical
+      matches:
+        - type: faq_response
+          id: 5
+          question: "доставка"
+          answer: "Доставка занимает один-два дня."
+      retrieval_trace:
+        strategy: lexical
+        degraded: true
+        semantic_attempted: true
+        fallback_reason: semantic_unavailable
+        match_count: 1
+        response_ids: [5]
+    expected:
+      strategy: lexical
+      degraded: true
+      semantic_attempted: true
+      fallback_reason: semantic_unavailable
+      min_match_count: 1
+      require_response_ids: true
+
+  - id: knowledge.explicit_nonsemantic_lexical_is_not_degraded
+    description: Explicit semantic-disabled lookup remains traceable as a non-degraded lexical mode rather than pretending semantic RAG ran.
+    tags: [knowledge, lexical, trace]
+    result:
+      lookup_strategy: lexical
+      matches:
+        - type: faq_response
+          id: 9
+          question: "слоган"
+          answer: "акуна матата"
+      retrieval_trace:
+        strategy: lexical
+        degraded: false
+        semantic_attempted: false
+        fallback_reason:
+        match_count: 1
+        response_ids: [9]
+    expected:
+      strategy: lexical
+      degraded: false
+      semantic_attempted: false
+      min_match_count: 1
+      require_response_ids: true

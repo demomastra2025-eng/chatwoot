@@ -77,6 +77,16 @@ class Llm::Evals::PackRegistry
       default_enabled: true
     ),
     Pack.new(
+      id: 'captain.knowledge_rag_trace',
+      label: 'Captain Knowledge/RAG trace integrity',
+      description: 'Offline checks that Knowledge/RAG success uses semantic chunks and degraded fallbacks stay explicit.',
+      suite_class: 'Captain::Evals::KnowledgeRagTraceSuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
       id: 'captain.red_team',
       label: 'Captain red-team attacks',
       description: 'Offline Tribunal red-team prompt generation coverage for Captain safety hardening.',

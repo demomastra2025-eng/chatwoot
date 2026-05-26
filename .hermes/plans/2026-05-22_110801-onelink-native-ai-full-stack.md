@@ -2101,3 +2101,45 @@ Remaining before **full real live PASS**:
 3. Minimal product UI operator visibility added in the document list: each document API payload now includes `embedding_status_summary`, and the dashboard card shows indexed/pending/stale/failed chunk embedding health badges.
 4. Re-check confirmed DEV still has no real embedding provider/key/model configured in systemd env, candidate env files, or `InstallationConfig` (`CAPTAIN_OPENROUTER_API_KEY`, `CAPTAIN_EMBEDDING_MODEL`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY` all absent). Real-provider smoke cannot be run until credentials/model are provided.
 5. PROD remains untouched until explicit deploy approval.
+
+## 2026-05-26 Etapa 11 first quality-gate slice — Knowledge/RAG trace eval pack
+
+Status: **Implemented, targeted verified — Etapa 11 deterministic Knowledge/RAG eval slice DONE.**
+
+Scope:
+
+- Added a deterministic offline eval pack `captain.knowledge_rag_trace` to the default CI/eval runner set.
+- Added fixture cases for:
+  - successful Knowledge/RAG retrieval through `semantic_chunk` with indexed source chunks and chunk/document IDs;
+  - embedding/provider failure degraded to lexical fallback with `fallback_reason: semantic_unavailable`;
+  - explicit non-semantic lexical mode that remains traceable and non-degraded.
+- Added `Captain::Evals::KnowledgeRagTraceSuite` to validate strategy parity, degraded semantics, chunk/source IDs, indexed chunk counts, and unsafe lexical success regressions.
+- Registered the pack in `Llm::Evals::PackRegistry`; `llm:evals:ci` now reports 6 deterministic suites and 24 total cases.
+- No live voice call, DEV runtime restart, or PROD deploy was performed for this code-level slice.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)" && bundle exec ruby -c enterprise/lib/captain/evals/knowledge_rag_trace_suite.rb && bundle exec ruby -c spec/enterprise/lib/captain/evals/knowledge_rag_trace_suite_spec.rb && bundle exec ruby -c lib/llm/evals/pack_registry.rb && bundle exec ruby -c spec/lib/llm/evals/runner_spec.rb && ruby -ryaml -e "YAML.load_file(\"config/llm_evals/knowledge_rag_trace.yml\"); puts \"YAML OK\"'
+# Syntax OK x4; YAML OK
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/evals/knowledge_rag_trace_suite_spec.rb spec/lib/llm/evals/runner_spec.rb --format progress
+# 4 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/evals/runner_spec.rb spec/enterprise/lib/captain/evals/knowledge_rag_trace_suite_spec.rb spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb spec/enterprise/lib/captain/evals/red_team_suite_spec.rb spec/lib/llm/evals/tribunal_dataset_runner_spec.rb spec/lib/llm/evals/run_request_spec.rb spec/jobs/llm/evals/run_job_spec.rb spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb --format progress
+# 42 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rake llm:evals:ci
+# { status: pass, suite_count: 6, total_count: 24, passed_count: 24, failed_count: 0, error_count: 0 }
+
+bundle exec rubocop --fail-level E enterprise/lib/captain/evals/knowledge_rag_trace_suite.rb lib/llm/evals/pack_registry.rb spec/enterprise/lib/captain/evals/knowledge_rag_trace_suite_spec.rb spec/lib/llm/evals/runner_spec.rb
+# 4 files inspected, no offenses detected
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 11 with the next deterministic quality gate: add/import fixture coverage for confirmation safety or AI Voice transcript/tool-result behavior, or harden eval run summaries/history if product needs UI-facing evidence next.
+2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
