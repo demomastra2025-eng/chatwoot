@@ -1,0 +1,79 @@
+suite: captain.product_case_correctness
+cases:
+  - id: support.delivery_reply_in_customer_language
+    description: Customer-support answer should respond after the customer, in the customer's language, without unnecessary tools.
+    tags: [support, customer_reply, no_tool]
+    events:
+      - role: user
+        content: Сколько стоит доставка и сколько дней ждать?
+      - role: assistant
+        content: Доставка обычно занимает 1-2 дня. Стоимость зависит от города и будет рассчитана при оформлении.
+    expected:
+      require_assistant_response_after_last_user: true
+      require_answer_fragments:
+        - Доставка
+        - 1-2 дня
+      max_tool_count: 0
+      forbid_answer_fragments:
+        - TBD
+        - не знаю
+
+  - id: crm.search_deals_reuses_result_and_opens_deal
+    description: CRM lookup should reuse the completed search_deals result and expose a bounded open-deal UI action.
+    tags: [crm, deal_lookup, tool_result, ui_action]
+    events:
+      - role: user
+        content: Найди сделку клиента Алия и скажи сумму.
+      - action: tool_completed
+        tool_name: search_deals
+        result:
+          id: 481
+          title: Сделка Алия
+          amount: 125000
+          currency: KZT
+      - role: assistant
+        content: Нашла сделку Алия на сумму 125000 KZT.
+        ui_actions:
+          - type: open_deal
+            target_id: 481
+    expected:
+      require_tools:
+        - search_deals
+      forbid_tools:
+        - get_deal
+      require_assistant_response_after_last_user: true
+      require_tool_result_usage:
+        - tool: search_deals
+          fragment: "125000"
+      require_ui_actions:
+        - open_deal
+
+  - id: scheduling.appointment_booked_only_after_confirmation
+    description: Scheduling should execute the appointment mutation only after the customer confirms the proposed slot.
+    tags: [scheduling, appointment, confirmation]
+    events:
+      - role: user
+        content: Хочу записаться завтра после обеда.
+      - role: assistant
+        content: Есть окно завтра в 15:00. Подтвердите, пожалуйста, записать вас на это время?
+      - role: user
+        content: Подтверждаю, запишите на 15:00.
+      - action: tool_completed
+        tool_name: schedule_appointment
+        result:
+          appointment_id: 42
+          starts_at: "2026-05-27 15:00"
+          status: confirmed
+      - role: assistant
+        content: Готово, записала вас на 15:00.
+    expected:
+      require_tools:
+        - schedule_appointment
+      require_tool_after_user_fragment:
+        - tool: schedule_appointment
+          fragment: Подтверждаю
+      require_assistant_response_after_last_user: true
+      require_tool_result_usage:
+        - tool: schedule_appointment
+          fragment: "15:00"
+          after_user_fragment: Подтверждаю

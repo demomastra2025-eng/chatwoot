@@ -2230,3 +2230,51 @@ Next coding slice:
 
 1. Continue Etapa 11 with either support/CRM/scheduling correctness fixture pack or eval summary/history hardening.
 2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
+
+## 2026-05-26 Etapa 11 fourth quality-gate slice — Support/CRM/scheduling product correctness eval pack
+
+Status: **Implemented, targeted verified — Etapa 11 deterministic product-case correctness slice DONE.**
+
+Scope:
+
+- Added a deterministic offline eval pack `captain.product_case_correctness` to the default CI/eval runner set.
+- Added fixture cases for:
+  - support delivery reply in the customer's language with no unnecessary tool call;
+  - CRM deal search that reuses `search_deals` tool output and exposes an `open_deal` UI action;
+  - scheduling appointment mutation only after explicit customer confirmation.
+- Added `Captain::Evals::ProductCaseCorrectnessSuite` checks for required/forbidden tools, answer fragments, assistant response after last user turn, tool-result reuse, tool-after-confirmation ordering, and required UI actions.
+- Added negative coverage for malformed/unnamed tool events in no-tool cases, non-completed tool-result false positives, and for a scheduling mutation tool executing before the customer confirmation fragment.
+- Registered the pack in `Llm::Evals::PackRegistry`; `llm:evals:ci` now reports 8 deterministic suites and 33 total cases.
+- No live model eval, DEV runtime restart, or PROD deploy was performed for this code-level slice.
+
+Verification completed:
+
+```bash
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/evals/product_case_correctness_suite_spec.rb spec/lib/llm/evals/runner_spec.rb --format progress
+# RED before implementation: NameError uninitialized constant Captain::Evals::ProductCaseCorrectnessSuite
+# GREEN after implementation: 6 examples, 0 failures
+
+bundle exec ruby -c enterprise/lib/captain/evals/product_case_correctness_suite.rb
+bundle exec ruby -c spec/enterprise/lib/captain/evals/product_case_correctness_suite_spec.rb
+bundle exec ruby -c lib/llm/evals/pack_registry.rb
+bundle exec ruby -c spec/lib/llm/evals/runner_spec.rb
+ruby -ryaml -e "YAML.load_file(%q{config/llm_evals/product_case_correctness.yml}); puts %q{YAML OK}"
+# Syntax OK x4; YAML OK
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/evals/runner_spec.rb spec/enterprise/lib/captain/evals/product_case_correctness_suite_spec.rb spec/enterprise/lib/captain/evals/confirmation_safety_suite_spec.rb spec/enterprise/lib/captain/evals/knowledge_rag_trace_suite_spec.rb spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb spec/enterprise/lib/captain/evals/red_team_suite_spec.rb spec/enterprise/lib/captain/evals/tool_safety_suite_spec.rb spec/lib/llm/evals/tribunal_dataset_runner_spec.rb spec/lib/llm/evals/run_request_spec.rb spec/jobs/llm/evals/run_job_spec.rb spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb --format progress
+# 50 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rake llm:evals:ci
+# { status: pass, suite_count: 8, total_count: 33, passed_count: 33, failed_count: 0, error_count: 0 }
+
+bundle exec rubocop --fail-level E enterprise/lib/captain/evals/product_case_correctness_suite.rb spec/enterprise/lib/captain/evals/product_case_correctness_suite_spec.rb lib/llm/evals/pack_registry.rb spec/lib/llm/evals/runner_spec.rb
+# exit 0; C-level metrics/style offenses remain non-blocking in product_case_correctness_suite, no E-level offenses
+
+git diff --check -- lib/llm/evals/pack_registry.rb spec/lib/llm/evals/runner_spec.rb config/llm_evals/product_case_correctness.yml enterprise/lib/captain/evals/product_case_correctness_suite.rb spec/enterprise/lib/captain/evals/product_case_correctness_suite_spec.rb
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 11 with eval summary/history hardening, unless product chooses to pause code-only gates and run live DEV acceptance.
+2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.

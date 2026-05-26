@@ -97,6 +97,16 @@ class Llm::Evals::PackRegistry
       default_enabled: true
     ),
     Pack.new(
+      id: 'captain.product_case_correctness',
+      label: 'Captain product-case correctness',
+      description: 'Offline checks for support, CRM, and scheduling answer/tool correctness.',
+      suite_class: 'Captain::Evals::ProductCaseCorrectnessSuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
       id: 'captain.red_team',
       label: 'Captain red-team attacks',
       description: 'Offline Tribunal red-team prompt generation coverage for Captain safety hardening.',

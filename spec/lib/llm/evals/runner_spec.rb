@@ -13,6 +13,7 @@ RSpec.describe Llm::Evals::Runner do
       'captain.ai_voice_trace',
       'captain.event_contract_trace',
       'captain.knowledge_rag_trace',
+      'captain.product_case_correctness',
       'captain.red_team',
       'captain.conversation_completion'
     )
@@ -35,6 +36,7 @@ RSpec.describe Llm::Evals::Runner do
     voice = eval_result_double('captain.ai_voice_trace')
     event_contract = eval_result_double('captain.event_contract_trace')
     knowledge = eval_result_double('captain.knowledge_rag_trace')
+    product_cases = eval_result_double('captain.product_case_correctness')
     red_team = eval_result_double('captain.red_team')
 
     allow(Llm::Evals::ModerationSuite).to receive(:new)
@@ -49,6 +51,8 @@ RSpec.describe Llm::Evals::Runner do
       .and_return(instance_double(Captain::Evals::EventContractTraceSuite, call: event_contract))
     allow(Captain::Evals::KnowledgeRagTraceSuite).to receive(:new)
       .and_return(instance_double(Captain::Evals::KnowledgeRagTraceSuite, call: knowledge))
+    allow(Captain::Evals::ProductCaseCorrectnessSuite).to receive(:new)
+      .and_return(instance_double(Captain::Evals::ProductCaseCorrectnessSuite, call: product_cases))
     allow(Captain::Evals::RedTeamSuite).to receive(:new)
       .and_return(instance_double(Captain::Evals::RedTeamSuite, call: red_team))
     allow(Captain::Evals::ConversationCompletionSuite).to receive(:new)
@@ -57,8 +61,8 @@ RSpec.describe Llm::Evals::Runner do
 
     expect(result.to_h).to include(
       status: 'pass',
-      suite_count: 7,
-      total_count: 7
+      suite_count: 8,
+      total_count: 8
     )
     expect(Captain::Evals::ConversationCompletionSuite).not_to have_received(:new)
   end
