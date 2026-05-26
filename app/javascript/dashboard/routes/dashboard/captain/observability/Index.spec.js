@@ -238,6 +238,41 @@ const overviewPayload = {
       top_models: { 'openrouter/anthropic/claude-sonnet-4': 2 },
       recent_error_codes: { provider_unavailable: 1 },
     },
+    performance_budget: {
+      status: 'fail',
+      total_project_cases: 2,
+      uncovered_event_count: 1,
+      cases: [
+        {
+          project_case_id: 'support_reply',
+          event_count: 21,
+          request_count: 20,
+          status: 'pass',
+          checks: [
+            {
+              name: 'p95_duration_ms',
+              status: 'pass',
+              value: 420,
+              budget: 8000,
+            },
+          ],
+        },
+        {
+          project_case_id: 'voice_inbound',
+          event_count: 1,
+          request_count: 1,
+          status: 'fail',
+          checks: [
+            {
+              name: 'request_error_rate',
+              status: 'fail',
+              value: 1,
+              budget: 0.05,
+            },
+          ],
+        },
+      ],
+    },
     alert_delivery_state: {},
     preferences: {},
     payload: [],
@@ -283,6 +318,21 @@ describe('Captain observability page', () => {
     expect(wrapper.text()).toContain('provider_unavailable (1)');
     expect(wrapper.text()).not.toContain('prompt');
     expect(wrapper.text()).not.toContain('messages');
+  });
+
+  it('renders per-case performance budget gates from persisted project case metrics', async () => {
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.TITLE'
+    );
+    expect(wrapper.text()).toContain('CAPTAIN.OBSERVABILITY.STATUS.FAIL');
+    expect(wrapper.text()).toContain('Support Reply');
+    expect(wrapper.text()).toContain('Voice Inbound');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.CHECK_VALUE'
+    );
   });
 
   it('renders a compact trace why-summary without exposing raw payload text', async () => {

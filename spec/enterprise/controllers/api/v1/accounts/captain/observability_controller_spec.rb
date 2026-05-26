@@ -47,6 +47,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
           trace_id: 'trace-1',
           conversation_id: 1001,
           conversation_display_id: 501,
+          project_case_id: 'support_reply',
           total_tokens: 180,
           estimated_cost: 0.0018,
           payload: { trace_id: 'trace-1', stage: 'output', flagged_categories: ['violence'] },
@@ -66,6 +67,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
           request_id: 'request-2',
           session_id: 'session-1',
           trace_id: 'trace-2',
+          project_case_id: 'support_reply',
           tool_name: 'search_documentation',
           tool_failure: true,
           error: true,
@@ -120,6 +122,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
         )
         expect(json_response[:runtime_health][:checks]).to include(
           include(name: 'event_ingestion', status: 'pass')
+        )
+        expect(json_response[:performance_budget]).to include(
+          status: 'pass',
+          total_project_cases: 1,
+          uncovered_event_count: 0
+        )
+        expect(json_response[:performance_budget][:cases]).to include(
+          include(
+            project_case_id: 'support_reply',
+            event_count: 2,
+            request_count: 1,
+            status: 'pass'
+          )
         )
         expect(json_response[:alert_delivery_state]).to include(
           status: 'delivered',

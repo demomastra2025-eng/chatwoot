@@ -26,6 +26,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
       release_gate: release_gate,
       alerts: alerts,
       runtime_health: runtime_health,
+      performance_budget: query.performance_budget,
       alert_delivery_state: Llm::Monitoring::AlertNotifier.state_for(Current.account),
       preferences: observability_preferences,
       payload: query.paginated_events.map { |event| serialize_event(event) },

@@ -2342,6 +2342,15 @@
         "ERROR_CODES": "Recent error codes",
         "EMPTY": "No runtime health checks for the selected scope."
       },
+      "PERFORMANCE_BUDGET": {
+        "TITLE": "Performance budget by case",
+        "DESCRIPTION": "Per-project-case latency, queue, payload, token, cost, and error-rate gates for the current filtered window.",
+        "PROJECT_CASES": "Project cases",
+        "UNCOVERED_EVENTS": "Events without case",
+        "COUNTS": "{events} events · {requests} requests",
+        "CHECK_VALUE": "{name}: {value} / {budget}",
+        "EMPTY": "No project-case performance data for the selected scope."
+      },
       "DISTRIBUTION": {
         "TITLE": "Traffic distribution",
         "DESCRIPTION": "Top features, models, and providers in the current filtered window.",

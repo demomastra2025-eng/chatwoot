@@ -2342,6 +2342,15 @@
         "ERROR_CODES": "Последние коды ошибок",
         "EMPTY": "Для выбранной области runtime health проверок нет."
       },
+      "PERFORMANCE_BUDGET": {
+        "TITLE": "Performance budget по кейсам",
+        "DESCRIPTION": "Пороговые проверки задержки, очереди, payload, токенов, стоимости и ошибок по каждому project case в текущем окне фильтров.",
+        "PROJECT_CASES": "Project cases",
+        "UNCOVERED_EVENTS": "События без кейса",
+        "COUNTS": "{events} событий · {requests} запросов",
+        "CHECK_VALUE": "{name}: {value} / {budget}",
+        "EMPTY": "Для выбранной области нет performance-данных по project case."
+      },
       "DISTRIBUTION": {
         "TITLE": "Распределение трафика",
         "DESCRIPTION": "Топ функций, моделей и провайдеров в текущем отфильтрованном окне.",

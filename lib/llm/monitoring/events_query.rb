@@ -39,6 +39,10 @@ class Llm::Monitoring::EventsQuery
     ).call
   end
 
+  def performance_budget
+    Llm::Monitoring::PerformanceBudgetSnapshot.new(scope: filtered_scope).call
+  end
+
   def paginated_events
     @paginated_events ||= filtered_scope.page(current_page).per(per_page)
   end

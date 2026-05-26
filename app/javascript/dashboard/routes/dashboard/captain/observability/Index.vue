@@ -141,6 +141,7 @@ const overview = reactive({
   releaseGate: {},
   alerts: {},
   runtimeHealth: {},
+  performanceBudget: {},
   alertDeliveryState: {},
   preferences: defaultObservabilityPreferences(),
   events: [],
@@ -358,6 +359,24 @@ const runtimeHealthModelDistribution = computed(() =>
 const runtimeHealthErrorCodeDistribution = computed(() =>
   buildDistribution(runtimeHealth.value.recent_error_codes)
 );
+const performanceBudget = computed(() => overview.performanceBudget || {});
+const performanceBudgetCases = computed(() =>
+  Array.isArray(performanceBudget.value.cases)
+    ? performanceBudget.value.cases
+    : []
+);
+const performanceBudgetSummary = computed(() => [
+  {
+    key: 'project_cases',
+    label: t('CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.PROJECT_CASES'),
+    value: formatInteger(performanceBudget.value.total_project_cases),
+  },
+  {
+    key: 'uncovered_events',
+    label: t('CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.UNCOVERED_EVENTS'),
+    value: formatInteger(performanceBudget.value.uncovered_event_count),
+  },
+]);
 const savedViews = computed(() =>
   Array(overview.preferences.saved_views || [])
 );
@@ -906,6 +925,7 @@ async function loadOverview() {
     overview.releaseGate = response.data.release_gate || {};
     overview.alerts = response.data.alerts || {};
     overview.runtimeHealth = response.data.runtime_health || {};
+    overview.performanceBudget = response.data.performance_budget || {};
     overview.alertDeliveryState = response.data.alert_delivery_state || {};
     applyObservabilityPreferences(response.data.preferences || {});
     overview.events = response.data.payload || [];
@@ -1129,6 +1149,27 @@ function formatRuntimeHealthActual(value) {
   }
 
   return t('GENERAL.NONE');
+}
+
+function formatPerformanceBudgetValue(name, value) {
+  if (value === null || value === undefined) {
+    return t('GENERAL.NONE');
+  }
+
+  if (String(name).includes('cost')) {
+    return formatCurrency(value);
+  }
+  if (String(name).includes('rate')) {
+    return formatPercent(value);
+  }
+  if (
+    String(name).includes('duration') ||
+    String(name).includes('queue_wait')
+  ) {
+    return formatDuration(value);
+  }
+
+  return formatInteger(value);
 }
 
 function buildDistribution(distribution) {
@@ -2165,6 +2206,107 @@ onMounted(async () => {
                 class="flex h-full items-center justify-center rounded-xl bg-n-alpha-2 px-4 text-sm text-n-slate-11"
               >
                 {{ t('CAPTAIN.OBSERVABILITY.TRENDS.NO_DATA') }}
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="grid gap-6">
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="text-base font-medium text-n-slate-12">
+                  {{ t('CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.TITLE') }}
+                </h2>
+                <p class="mt-1 text-sm text-n-slate-11">
+                  {{
+                    t('CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.DESCRIPTION')
+                  }}
+                </p>
+              </div>
+              <span
+                class="rounded-full px-2.5 py-1 text-xs font-medium"
+                :class="statusClass(performanceBudget.status)"
+              >
+                {{ statusLabel(performanceBudget.status) }}
+              </span>
+            </div>
+
+            <div class="mt-5 grid gap-3 md:grid-cols-2">
+              <div
+                v-for="metric in performanceBudgetSummary"
+                :key="metric.key"
+                class="rounded-xl bg-n-alpha-2 p-4"
+              >
+                <div
+                  class="text-xs uppercase tracking-[0.08em] text-n-slate-10"
+                >
+                  {{ metric.label }}
+                </div>
+                <div class="mt-2 text-lg font-semibold text-n-slate-12">
+                  {{ metric.value }}
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-5 grid gap-3">
+              <div
+                v-for="projectCase in performanceBudgetCases"
+                :key="projectCase.project_case_id"
+                class="rounded-xl border border-n-weak bg-n-alpha-2 p-4"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium text-n-slate-12">
+                      {{ humanizeIdentifier(projectCase.project_case_id) }}
+                    </div>
+                    <div class="mt-1 text-xs text-n-slate-10">
+                      {{
+                        t('CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.COUNTS', {
+                          events: formatInteger(projectCase.event_count),
+                          requests: formatInteger(projectCase.request_count),
+                        })
+                      }}
+                    </div>
+                  </div>
+                  <span
+                    class="rounded-full px-2.5 py-1 text-xs font-medium"
+                    :class="statusClass(projectCase.status)"
+                  >
+                    {{ statusLabel(projectCase.status) }}
+                  </span>
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs text-n-slate-11">
+                  <span
+                    v-for="check in projectCase.checks || []"
+                    :key="`${projectCase.project_case_id}-${check.name}`"
+                    class="rounded-full bg-n-alpha-2 px-2.5 py-1"
+                  >
+                    {{
+                      t(
+                        'CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.CHECK_VALUE',
+                        {
+                          name: humanizeIdentifier(check.name),
+                          value: formatPerformanceBudgetValue(
+                            check.name,
+                            check.value
+                          ),
+                          budget: formatPerformanceBudgetValue(
+                            check.name,
+                            check.budget
+                          ),
+                        }
+                      )
+                    }}
+                  </span>
+                </div>
+              </div>
+              <div
+                v-if="performanceBudgetCases.length === 0"
+                class="rounded-xl bg-n-alpha-2 p-4 text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.PERFORMANCE_BUDGET.EMPTY') }}
               </div>
             </div>
           </article>
