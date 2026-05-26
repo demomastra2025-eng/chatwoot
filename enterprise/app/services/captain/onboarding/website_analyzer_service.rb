@@ -2,7 +2,10 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
   MAX_CONTENT_LENGTH = 8000
 
-  def initialize(website_url)
+  attr_reader :account
+
+  def initialize(website_url, account: nil)
+    @account = account
     super()
     @website_url = normalize_url(website_url)
     @website_content = nil
@@ -89,7 +92,7 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
   end
 
   def parse_llm_response(response_text)
-    parsed_response = response_text.is_a?(Hash) ? response_text.with_indifferent_access : {}
+    parsed_response = normalize_llm_response(response_text)
 
     {
       success: true,
@@ -105,6 +108,21 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
     Rails.logger.error "[Captain Onboarding] Structured response parsing error: #{e.message}"
     Rails.logger.error "[Captain Onboarding] Raw response: #{response_text.inspect}"
     error_response('Failed to parse business information from website')
+  end
+
+  def normalize_llm_response(response_text)
+    return response_text.with_indifferent_access if response_text.is_a?(Hash)
+    return JSON.parse(response_text).with_indifferent_access if response_text.is_a?(String)
+
+    {}
+  end
+
+  def llm_feature_key
+    :assistant
+  end
+
+  def llm_model_account
+    account
   end
 
   def error_response(message)

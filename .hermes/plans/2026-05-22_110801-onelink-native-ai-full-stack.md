@@ -1924,3 +1924,38 @@ Next coding slice:
 1. Continue Etapa 8 by auditing remaining `Llm::BaseAiService` descendants outside the now-covered generation/chat services: onboarding website analyzer, image recognition, audio/transcription surfaces, and any service using direct `Llm::Config`/`Llm::Models` without account context.
 2. Prioritize surfaces where selected feature model/provider differs from runtime request provider or where account-specific hooks should override installation fallback.
 3. Still no deploy/restart until explicitly approved.
+
+
+## 2026-05-25 Etapa 8 final routing slice — onboarding analyzer and remaining specialized surfaces
+
+Status: **Implemented, targeted verified — Etapa 8 code-slice DONE.**
+
+Scope:
+
+- Audited all current `Llm::BaseAiService` descendants for `llm_feature_key` / `llm_model_account` and direct `Llm::Config` / `Llm::Models` / `Llm::ChatClient` usage.
+- Remaining gap found in `Captain::Onboarding::WebsiteAnalyzerService`: it inherited `Llm::BaseAiService` but had no account hook, so a caller with account context could not route website analysis through that account's assistant model/provider.
+- Fix: `WebsiteAnalyzerService` now accepts optional `account:`, routes through `:assistant`, and keeps backwards-compatible `new(website_url)` behavior for callers without account context.
+- Compatibility cleanup: website analysis response parsing now supports both structured Hash content and legacy JSON-string content, while invalid JSON still returns the existing parse error.
+- Existing specialized surfaces were verified as already account-aware in code/specs: image recognition, message audio transcription, telephony call recording transcription, FAQ generation, paginated FAQ generation, moderation, chat runner/config/model helpers.
+- No deploy/restart performed.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/services/captain/onboarding/website_analyzer_service_spec.rb --format documentation'
+# RED before fix: 8 examples, 8 failures (initializer did not accept account:)
+# GREEN after fix: 10 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/services/captain/onboarding/website_analyzer_service_spec.rb spec/enterprise/services/captain/llm/account_routing_spec.rb spec/enterprise/services/captain/llm/article_search_terms_service_spec.rb spec/enterprise/services/captain/llm/embedding_service_spec.rb spec/enterprise/services/captain/llm/faq_generator_service_spec.rb spec/enterprise/services/captain/llm/paginated_faq_generator_service_spec.rb spec/enterprise/services/llm/base_ai_service_spec.rb spec/enterprise/services/captain/copilot/chat_service_spec.rb spec/lib/llm/chat_request_runner_spec.rb spec/lib/llm/chat_client_spec.rb spec/lib/llm/config_spec.rb spec/enterprise/services/captain/image_recognition_service_spec.rb spec/enterprise/services/messages/audio_transcription_service_spec.rb spec/services/telephony/call_recording_transcription_service_spec.rb spec/lib/llm/moderation_service_spec.rb --format progress'
+# 151 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)" && bundle exec ruby -c enterprise/app/services/captain/onboarding/website_analyzer_service.rb && bundle exec ruby -c spec/enterprise/services/captain/onboarding/website_analyzer_service_spec.rb && bundle exec rubocop --force-exclusion --fail-level E enterprise/app/services/captain/onboarding/website_analyzer_service.rb spec/enterprise/services/captain/onboarding/website_analyzer_service_spec.rb && git diff --check'
+# Syntax OK; 2 files inspected, no offenses detected; diff check clean
+```
+
+Remaining cross-etapa blockers before full native-AI stack PASS:
+
+1. Etapa 9 Knowledge/RAG still needs semantic/vector search proof, traceable retrieval, and no degraded lexical-only fallback as the final state.
+2. Etapa 10 AI Voice parity still needs live routing/audio/session+recording/finalize proof and shared Captain state/voice-safe tool progress.
+3. Etapa 11 eval production hardening/DEV rollout still needs final path-scoped review, runtime smoke, and commit split.
+4. No PROD deploy/restart has been performed for this Etapa 8 code-slice.
