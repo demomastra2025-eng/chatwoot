@@ -430,7 +430,19 @@
       "PREVIOUS_CONVERSATION": "Предыдущие диалоги",
       "MACROS": "Макросс",
       "LINEAR_ISSUES": "Связанные проблемы",
-      "SHOPIFY_ORDERS": "Заказы Shopify"
+      "SHOPIFY_ORDERS": "Заказы Shopify",
+      "SHARED_FILES": "Вложения"
+    },
+    "SHARED_FILES": {
+      "EMPTY": "Вложений пока нет",
+      "DOWNLOAD": "Скачать файл",
+      "DOWNLOAD_ERROR": "Не удалось скачать файл. Попробуйте ещё раз.",
+      "MEDIA_HEADING": "Медиа",
+      "FILES_HEADING": "Файлы",
+      "VIEW_ALL": "Показать все",
+      "SHOW_LESS": "Свернуть",
+      "MORE_COUNT": "+{count}",
+      "UNTITLED_FILE": "Файл без названия"
     },
     "CRM_ACTIONS": {
       "CREATE_DEAL": "Создать сделку",

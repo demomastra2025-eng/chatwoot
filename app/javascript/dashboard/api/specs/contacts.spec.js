@@ -45,6 +45,14 @@ describe('#ContactsAPI', () => {
       );
     });
 
+    it('#getAttachments', () => {
+      contactAPI.getAttachments(1, 2);
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/contacts/1/attachments',
+        { params: { page: 2 } }
+      );
+    });
+
     it('#getContactableInboxes', () => {
       contactAPI.getContactableInboxes(1);
       expect(axiosMock.get).toHaveBeenCalledWith(
