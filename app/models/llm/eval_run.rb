@@ -42,6 +42,12 @@ class Llm::EvalRun < ApplicationRecord
     api_key token secret password authorization credential prompt input output actual actual_output
     expected expected_output context retrieval_context messages message content response request
   ].freeze
+  COMPACT_RESULT_KEYS = %i[
+    status generated_at suite_count total_count passed_count failed_count error_count
+  ].freeze
+  COMPACT_SUITE_KEYS = %i[
+    suite_id status prompt_id prompt_sha model generated_at total_count passed_count failed_count error_count pass_rate
+  ].freeze
   MAX_STRING_BYTES = 2_000
 
   STATUSES = %w[queued running passed failed].freeze
@@ -86,6 +92,26 @@ class Llm::EvalRun < ApplicationRecord
       return redacted if redacted.bytesize <= MAX_STRING_BYTES
 
       "#{redacted[0, MAX_STRING_BYTES]}...[TRUNCATED]"
+    end
+
+    def compact_result(value)
+      payload = value.is_a?(Hash) ? value : {}
+      compacted = COMPACT_RESULT_KEYS.index_with { |key| value_for(payload, key) }.compact
+      suites = Array(value_for(payload, :suites)).filter_map { |suite| compact_suite_result(suite) }
+      compacted[:suites] = suites if suites.present?
+      compacted
+    end
+
+    private
+
+    def compact_suite_result(value)
+      return unless value.is_a?(Hash)
+
+      COMPACT_SUITE_KEYS.index_with { |key| value_for(value, key) }.compact
+    end
+
+    def value_for(payload, key)
+      payload[key] || payload[key.to_s]
     end
   end
 

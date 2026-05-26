@@ -52,6 +52,7 @@ const selectedScenarioId = ref('release');
 const result = ref(null);
 const evalRuns = ref({ llm_model_enabled: false });
 const evalRun = ref(null);
+const recentEvalRuns = ref([]);
 const tribunal = ref({});
 const budgetCents = ref('100');
 const maxCases = ref('3');
@@ -286,6 +287,7 @@ const fetchCatalog = async () => {
     evalRuns.value = response.data?.eval_runs || { llm_model_enabled: false };
     tribunal.value = response.data?.tribunal || {};
     evalRun.value = response.data?.latest_eval_run || null;
+    recentEvalRuns.value = response.data?.recent_eval_runs || [];
     budgetCents.value = String(
       evalRuns.value.default_budget_cents || budgetCents.value
     );
@@ -314,6 +316,10 @@ const runEvals = async () => {
 
     if (response.data?.run) {
       evalRun.value = response.data.run;
+      recentEvalRuns.value = [
+        response.data.run,
+        ...recentEvalRuns.value.filter(run => run.id !== response.data.run.id),
+      ].slice(0, 10);
       result.value = null;
     } else {
       result.value = response.data?.result || null;
@@ -392,6 +398,11 @@ const refreshEvalRun = async () => {
   try {
     const response = await captainEvaluationsAPI.getRun(evalRun.value.id);
     evalRun.value = response.data?.run || evalRun.value;
+    if (response.data?.run) {
+      recentEvalRuns.value = recentEvalRuns.value.map(run =>
+        run.id === response.data.run.id ? response.data.run : run
+      );
+    }
   } catch (error) {
     errorMessage.value = backendErrorMessage(
       error,
@@ -680,6 +691,72 @@ onMounted(fetchCatalog);
             >
               {{ evalRunSummary.suite_ids.join(', ') }}
             </p>
+          </div>
+        </div>
+
+        <div
+          v-if="recentEvalRuns.length"
+          data-testid="eval-run-history"
+          class="rounded-2xl border border-n-weak bg-n-surface-2 p-5"
+        >
+          <h3 class="text-base font-semibold text-n-slate-12">
+            {{ t('CAPTAIN.EVALUATIONS.RUN.HISTORY') }}
+          </h3>
+          <div class="mt-4 grid gap-2">
+            <div
+              v-for="run in recentEvalRuns"
+              :key="run.id"
+              data-testid="eval-run-history-item"
+              class="rounded-xl border border-n-weak bg-n-alpha-1 p-3 text-sm"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-medium text-n-slate-12">
+                  {{
+                    t('CAPTAIN.EVALUATIONS.RUN.LAST_RUN_WITH_ID', {
+                      id: run.id,
+                    })
+                  }}
+                </span>
+                <span
+                  class="rounded-full px-2 py-0.5 text-xs font-medium"
+                  :class="statusTone(run.status)"
+                >
+                  {{ run.status }}
+                </span>
+              </div>
+              <div
+                v-if="run.result_summary"
+                class="mt-2 flex flex-wrap items-center gap-2 text-xs text-n-slate-10"
+              >
+                <span>
+                  {{
+                    t('CAPTAIN.EVALUATIONS.RUN.HISTORY_SUITES', {
+                      count: run.result_summary.suite_count || 0,
+                    })
+                  }}
+                </span>
+                <span>
+                  {{
+                    t('CAPTAIN.EVALUATIONS.RUN.HISTORY_PASSED', {
+                      count: run.result_summary.passed_count || 0,
+                    })
+                  }}
+                </span>
+                <span>
+                  {{
+                    t('CAPTAIN.EVALUATIONS.RUN.HISTORY_FAILED', {
+                      count: run.result_summary.failed_count || 0,
+                    })
+                  }}
+                </span>
+              </div>
+              <p
+                v-if="run.result_summary?.suite_ids?.length"
+                class="mt-2 text-xs text-n-slate-10"
+              >
+                {{ run.result_summary.suite_ids.join(', ') }}
+              </p>
+            </div>
           </div>
         </div>
 

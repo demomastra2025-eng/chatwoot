@@ -6,6 +6,7 @@ class Api::V1::Accounts::Captain::EvaluationsController < Api::V1::Accounts::Bas
   MAX_DATASET_FILE_BYTES = 256.kilobytes
   MAX_DATASET_CASES = 50
   MAX_WEB_DATASET_CONCURRENCY = 1
+  RECENT_EVAL_RUNS_LIMIT = 10
 
   before_action :check_admin_authorization?
 
@@ -14,7 +15,8 @@ class Api::V1::Accounts::Captain::EvaluationsController < Api::V1::Accounts::Bas
       packs: Llm::Evals::PackRegistry.catalog,
       eval_runs: eval_run_config,
       tribunal: tribunal_config,
-      latest_eval_run: latest_eval_run&.summary
+      latest_eval_run: latest_eval_run&.summary,
+      recent_eval_runs: recent_eval_runs.map(&:summary)
     }
   end
 
@@ -179,7 +181,11 @@ class Api::V1::Accounts::Captain::EvaluationsController < Api::V1::Accounts::Bas
   end
 
   def latest_eval_run
-    Llm::EvalRun.where(account: @current_account).recent.first
+    recent_eval_runs.first
+  end
+
+  def recent_eval_runs
+    @recent_eval_runs ||= Llm::EvalRun.where(account: @current_account).recent.limit(RECENT_EVAL_RUNS_LIMIT)
   end
 
   def tribunal_config

@@ -596,7 +596,11 @@
         "ACKNOWLEDGE_SHORT": "I approve LLM credit usage",
         "LAST_RUN_WITH_ID": "Run #{id}",
         "STATUS_WITH_VALUE": "Status: {status}",
-        "REFRESH": "Refresh"
+        "REFRESH": "Refresh",
+        "HISTORY": "Recent runs",
+        "HISTORY_SUITES": "Suites: {count}",
+        "HISTORY_PASSED": "Passed: {count}",
+        "HISTORY_FAILED": "Failed: {count}"
       }
     },
     "PAYWALL": {

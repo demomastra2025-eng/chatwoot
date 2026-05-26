@@ -19,7 +19,7 @@ class Llm::Evals::RunJob < ApplicationJob
 
     eval_run.update!(
       status: result.passed? ? 'passed' : 'failed',
-      result: ::Llm::EvalRun.sanitize_result(result.to_h),
+      result: ::Llm::EvalRun.compact_result(result.to_h),
       finished_at: Time.current,
       error_message: nil
     )

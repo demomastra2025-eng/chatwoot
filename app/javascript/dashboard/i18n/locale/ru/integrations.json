@@ -596,7 +596,11 @@
         "ACKNOWLEDGE_SHORT": "Подтверждаю расход LLM-кредитов",
         "LAST_RUN_WITH_ID": "Запуск №{id}",
         "STATUS_WITH_VALUE": "Статус: {status}",
-        "REFRESH": "Обновить"
+        "REFRESH": "Обновить",
+        "HISTORY": "Последние запуски",
+        "HISTORY_SUITES": "Наборы: {count}",
+        "HISTORY_PASSED": "Пройдено: {count}",
+        "HISTORY_FAILED": "Провалено: {count}"
       }
     },
     "PAYWALL": {

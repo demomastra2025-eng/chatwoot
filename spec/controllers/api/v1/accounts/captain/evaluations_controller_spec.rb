@@ -60,6 +60,49 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
         suite_ids: ['captain.ai_voice_trace']
       )
     end
+
+    it 'returns a bounded recent eval run history without raw result payloads' do
+      runs = Array.new(12) do |index|
+        Llm::EvalRun.create!(
+          account: account,
+          user: admin,
+          status: index.even? ? 'passed' : 'failed',
+          mode: 'evals',
+          pack_ids: ["captain.history_#{index}"],
+          result: {
+            status: index.even? ? 'pass' : 'fail',
+            suites: [
+              {
+                suite_id: "captain.history_#{index}",
+                status: index.even? ? 'pass' : 'fail',
+                cases: [{ input: "secret prompt #{index}" }]
+              }
+            ]
+          },
+          created_at: index.minutes.ago
+        )
+      end
+      Llm::EvalRun.create!(
+        account: create(:account),
+        status: 'passed',
+        mode: 'evals',
+        pack_ids: ['captain.other_account'],
+        result: { suites: [{ suite_id: 'captain.other_account', status: 'pass' }] }
+      )
+
+      get "/api/v1/accounts/#{account.id}/captain/evaluations", headers: admin.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:recent_eval_runs].size).to eq(10)
+      expect(json_response[:recent_eval_runs].pluck(:id)).to eq(runs.first(10).map(&:id))
+      expect(json_response[:recent_eval_runs].first).to include(
+        id: runs.first.id,
+        status: runs.first.status,
+        result_summary: include(suite_count: 1, suite_ids: ['captain.history_0'])
+      )
+      expect(response.body).not_to include('secret prompt')
+      expect(response.body).not_to include('captain.other_account')
+    end
   end
 
   describe 'POST /api/v1/accounts/{account.id}/captain/evaluations/import_conversation' do

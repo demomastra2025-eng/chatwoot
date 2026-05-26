@@ -314,6 +314,43 @@ describe('Captain evaluations page', () => {
     expect(wrapper.text()).not.toContain('secret customer prompt');
   });
 
+  it('renders compact eval run history from catalog without raw result data', async () => {
+    getMock.mockResolvedValueOnce({
+      data: {
+        ...catalogPayload.data,
+        recent_eval_runs: [
+          {
+            id: 456,
+            status: 'failed',
+            result: { cases: [{ input: 'secret prompt from history' }] },
+            result_summary: {
+              suite_count: 2,
+              passed_count: 1,
+              failed_count: 1,
+              suite_ids: [
+                'captain.ai_voice_trace',
+                'captain.product_case_correctness',
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="eval-run-history"]').exists()).toBe(
+      true
+    );
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RUN.HISTORY');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.RUN.LAST_RUN_WITH_ID'
+    );
+    expect(wrapper.text()).toContain('captain.product_case_correctness');
+    expect(wrapper.text()).not.toContain('secret prompt from history');
+  });
+
   it('shows backend validation errors for eval runs', async () => {
     runMock.mockRejectedValueOnce({
       response: { data: { error: 'llm_model_eval_already_running' } },
