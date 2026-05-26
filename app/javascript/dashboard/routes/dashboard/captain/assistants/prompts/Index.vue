@@ -148,6 +148,7 @@ const onPromptTabChanged = tab => {
                 :show-feature-flags="false"
                 :show-submit-button="false"
                 :description-max-length="PROMPT_INSTRUCTION_MAX_LENGTH"
+                description-min-height="19rem"
               />
             </div>
           </div>

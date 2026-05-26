@@ -49,6 +49,10 @@ const AssistantBasicSettingsFormStub = defineComponent({
       type: Number,
       default: undefined,
     },
+    descriptionMinHeight: {
+      type: String,
+      default: undefined,
+    },
   },
   setup(props, { expose }) {
     expose({
@@ -58,7 +62,14 @@ const AssistantBasicSettingsFormStub = defineComponent({
     });
 
     return () =>
-      h('div', { 'data-max-length': props.descriptionMaxLength }, 'basic-form');
+      h(
+        'div',
+        {
+          'data-max-length': props.descriptionMaxLength,
+          'data-min-height': props.descriptionMinHeight,
+        },
+        'basic-form'
+      );
   },
 });
 
@@ -213,14 +224,14 @@ describe('Captain prompts page', () => {
     });
   });
 
-  it('allows prompt instructions up to 20000 characters', () => {
+  it('renders the real prompts surface with a tall instruction editor', () => {
     const wrapper = buildWrapper();
+    const promptForm = wrapper.findComponent({
+      name: 'AssistantBasicSettingsForm',
+    });
 
-    expect(
-      wrapper
-        .findComponent({ name: 'AssistantBasicSettingsForm' })
-        .props('descriptionMaxLength')
-    ).toBe(20000);
+    expect(promptForm.props('descriptionMaxLength')).toBe(20000);
+    expect(promptForm.props('descriptionMinHeight')).toBe('19rem');
   });
 
   it('shows the rules validation error and skips update when page-level save cannot build the rules payload', async () => {

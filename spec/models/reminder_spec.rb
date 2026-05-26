@@ -21,6 +21,48 @@ RSpec.describe Reminder do
       expect(reminder.scheduled_at.to_i).to eq((conversation.created_at + 1.hour).to_i)
     end
 
+    it 'materializes touch.created_at relative scheduling from current time for new touches' do
+      freeze_time do
+        conversation = create(:conversation)
+        reminder = build(
+          :reminder,
+          account: conversation.account,
+          touch_conversation: conversation,
+          conversation: conversation,
+          remindable: conversation,
+          timing_mode: :relative,
+          relative_anchor: 'touch.created_at',
+          relative_offset_seconds: 180,
+          scheduled_at: nil
+        )
+
+        reminder.validate
+
+        expect(reminder.scheduled_at).to eq(3.minutes.from_now)
+        expect(reminder).to be_pending
+      end
+    end
+
+    it 'does not materialize missing last incoming message anchors' do
+      conversation = create(:conversation)
+      reminder = build(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        timing_mode: :relative,
+        relative_anchor: 'conversation.last_incoming_message_at',
+        relative_offset_seconds: 180,
+        scheduled_at: nil
+      )
+
+      reminder.validate
+
+      expect(reminder.scheduled_at).to be_nil
+      expect(reminder).to be_draft
+    end
+
     it 'materializes scheduled_at from the last outgoing conversation message' do
       conversation = create(:conversation)
       outgoing_message = create(

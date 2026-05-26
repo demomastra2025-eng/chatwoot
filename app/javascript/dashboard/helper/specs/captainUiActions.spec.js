@@ -32,6 +32,8 @@ describe('captainUiActions helper', () => {
         'open_company',
         'open_deal',
         'open_outbound',
+        'open_touches',
+        'open_outbound_personal',
         'open_touch_plans',
         'open_automation_rules',
         'open_inboxes_settings',
@@ -221,6 +223,18 @@ describe('captainUiActions helper', () => {
   });
 
   it('builds router targets for assistant and settings pages', () => {
+    expect(routeForCaptainUiAction({ type: 'open_touches' }, 1)).toEqual({
+      name: 'outbound_touches_index',
+      params: { accountId: 1 },
+    });
+
+    expect(
+      routeForCaptainUiAction({ type: 'open_outbound_personal' }, 1)
+    ).toEqual({
+      name: 'outbound_touches_index',
+      params: { accountId: 1 },
+    });
+
     expect(
       routeForCaptainUiAction(
         { type: 'open_captain_documents', targetId: '12' },

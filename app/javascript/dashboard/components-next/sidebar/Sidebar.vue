@@ -902,8 +902,11 @@ const menuItems = computed(() => {
             name: 'Personal broadcasts',
             visibilityKey: 'Campaigns:PersonalBroadcasts',
             label: t('SIDEBAR.PERSONAL_BROADCASTS'),
-            activeOn: ['outbound_broadcasts_personal_index'],
-            to: accountScopedRoute('outbound_broadcasts_personal_index'),
+            activeOn: [
+              'outbound_touches_index',
+              'outbound_broadcasts_personal_index',
+            ],
+            to: accountScopedRoute('outbound_touches_index'),
           },
           ...(checkPermissions(['administrator'])
             ? [

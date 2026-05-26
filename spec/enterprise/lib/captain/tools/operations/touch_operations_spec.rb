@@ -16,18 +16,31 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
   end
 
   describe '#create_touch' do
-    it 'creates a pending touch for the current conversation by default' do
+    it 'creates a pending relative touch for the current conversation by default' do
+      incoming = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        created_at: 10.minutes.ago
+      )
+
       touch = described_class.new(
         assistant: assistant,
         conversation: conversation,
         actor: user
       ).create_touch(
         body: 'Follow up tomorrow',
-        scheduled_at: 1.day.from_now.iso8601
+        relative_offset_minutes: 15
       )
 
       expect(touch).to be_persisted
       expect(touch.status).to eq('pending')
+      expect(touch.timing_mode).to eq('relative')
+      expect(touch.relative_anchor).to eq('conversation.last_incoming_message_at')
+      expect(touch.relative_offset_seconds).to eq(15.minutes.to_i)
+      expect(touch.scheduled_at).to be_within(1.second).of(incoming.created_at + 15.minutes)
       expect(touch.remindable).to eq(conversation)
       expect(touch.target_inbox).to eq(conversation.inbox)
       expect(touch.metadata['touch_source']).to eq('captain')
@@ -37,15 +50,16 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
 
     it 'persists Captain auto-cancel choice explicitly for customer replies' do
       operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+      create(:message, account: account, conversation: conversation, inbox: conversation.inbox, message_type: :incoming, created_at: 5.minutes.ago)
 
       cancel_on_reply_touch = operation.create_touch(
         body: 'Cancel this if the customer replies',
-        scheduled_at: 1.day.from_now.iso8601,
+        relative_offset_minutes: 10,
         auto_cancel_on_incoming: true
       )
       keep_scheduled_touch = operation.create_touch(
         body: 'Keep this scheduled even if the customer replies',
-        scheduled_at: 2.days.from_now.iso8601,
+        relative_offset_minutes: 20,
         auto_cancel_on_incoming: false
       )
 
@@ -68,17 +82,26 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         body: 'Close date follow-up',
         remindable_kind: 'deal',
         relative_anchor: 'deal.expected_close_on',
-        relative_offset_minutes: -60
+        relative_offset_minutes: 60
       )
 
       expect(touch.remindable).to eq(deal)
       expect(touch.timing_mode).to eq('relative')
       expect(touch.relative_anchor).to eq('deal.expected_close_on')
-      expect(touch.relative_offset_seconds).to eq(-3600)
+      expect(touch.relative_offset_seconds).to eq(3600)
     end
 
-    it 'defaults relative offsets from now to the touch creation time' do
+    it 'defaults conversation relative offsets from the last incoming customer message' do
       freeze_time do
+        incoming = create(
+          :message,
+          account: account,
+          conversation: conversation,
+          inbox: conversation.inbox,
+          message_type: :incoming,
+          created_at: 1.minute.ago
+        )
+
         touch = described_class.new(
           assistant: assistant,
           conversation: conversation,
@@ -88,10 +111,55 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
           relative_offset_minutes: 3
         )
 
-        expect(touch.relative_anchor).to eq('touch.created_at')
+        expect(touch.relative_anchor).to eq('conversation.last_incoming_message_at')
         expect(touch.relative_offset_seconds).to eq(180)
-        expect(touch.scheduled_at).to be_within(1.second).of(3.minutes.from_now)
+        expect(touch.scheduled_at).to be_within(1.second).of(incoming.created_at + 3.minutes)
       end
+    end
+
+    it 'rejects absolute scheduled_at for Captain create_touch' do
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      expect do
+        operation.create_touch(body: 'Absolute follow-up', scheduled_at: 1.day.from_now.iso8601)
+      end.to raise_error(ArgumentError, 'scheduled_at is not supported for create_touch; use relative_offset_minutes and relative_anchor')
+    end
+
+    it 'rejects ambiguous absolute plus relative scheduling' do
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      expect do
+        operation.create_touch(body: 'Ambiguous follow-up', scheduled_at: 1.day.from_now.iso8601, relative_offset_minutes: 3)
+      end.to raise_error(ArgumentError, 'scheduled_at is not supported for create_touch; use relative_offset_minutes and relative_anchor')
+    end
+
+    it 'rejects missing relative_offset_minutes so immediate touches cannot be created' do
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      expect do
+        operation.create_touch(body: 'Missing offset follow-up')
+      end.to raise_error(ArgumentError, 'relative_offset_minutes is required for create_touch')
+    end
+
+    it 'rejects non-positive relative offsets so immediate or backwards touches cannot be created' do
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      expect do
+        operation.create_touch(body: 'Immediate follow-up', relative_offset_minutes: 0)
+      end.to raise_error(ArgumentError, 'relative_offset_minutes must be greater than 0')
+
+      expect do
+        operation.create_touch(body: 'Backwards follow-up', relative_offset_minutes: -1)
+      end.to raise_error(ArgumentError, 'relative_offset_minutes must be greater than 0')
+    end
+
+    it 'falls back to touch creation time when no incoming customer message exists' do
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      touch = operation.create_touch(body: 'No anchor follow-up', relative_offset_minutes: 3)
+
+      expect(touch.relative_anchor).to eq('touch.created_at')
+      expect(touch.scheduled_at).to be_future
     end
 
     it 'uses the same template detection pattern for touch bodies' do
@@ -101,7 +169,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         actor: user
       ).create_touch(
         body: 'Follow up with {{contact.name}}',
-        scheduled_at: 1.day.from_now.iso8601
+        relative_anchor: 'touch.created_at',
+        relative_offset_minutes: 1.day.in_minutes
       )
 
       expect(touch.text_mode).to eq('dynamic')
@@ -114,7 +183,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         actor: user
       ).create_touch(
         body: 'Follow up with a file',
-        scheduled_at: 1.day.from_now.iso8601,
+        relative_anchor: 'touch.created_at',
+        relative_offset_minutes: 1.day.in_minutes,
         attachment_ids: [signed_blob_id]
       )
 
@@ -129,7 +199,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         actor: user
       ).create_touch(
         body: nil,
-        scheduled_at: 1.day.from_now.iso8601,
+        relative_anchor: 'touch.created_at',
+        relative_offset_minutes: 1.day.in_minutes,
         attachment_ids: [signed_blob_id]
       )
 
@@ -151,7 +222,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         actor: user
       ).create_touch(
         body: 'Follow up with selected artifact',
-        scheduled_at: 1.day.from_now.iso8601,
+        relative_anchor: 'touch.created_at',
+        relative_offset_minutes: 1.day.in_minutes,
         artifact_ids: ['opaque-artifact-id']
       )
 
@@ -166,7 +238,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         operation.create_touch(
           body: 'Appointment reminder',
           remindable_kind: 'appointment',
-          scheduled_at: 1.day.from_now.iso8601
+          relative_anchor: 'appointment.starts_at',
+          relative_offset_minutes: 1
         )
       end.to raise_error(ArgumentError, 'Current appointment is not available')
     end
@@ -191,7 +264,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       ).create_touch(
         content_kind: 'channel_template',
         template_params: template_params,
-        scheduled_at: 1.day.from_now.iso8601
+        relative_anchor: 'touch.created_at',
+        relative_offset_minutes: 1.day.in_minutes
       )
 
       expect(touch.content_kind).to eq('channel_template')
@@ -212,7 +286,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       expect do
         operation.create_touch(
           body: 'Scheduled free text',
-          scheduled_at: 25.hours.from_now.iso8601
+          relative_anchor: 'touch.created_at',
+          relative_offset_minutes: 25.hours.in_minutes
         )
       end.to raise_error(ArgumentError, /approved channel_template/)
     end

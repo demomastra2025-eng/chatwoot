@@ -63,7 +63,7 @@ class Scheduling::Resource < ApplicationRecord
   scope :available_for_scheduling, -> { active.not_deleted_from_scheduling }
 
   def deleted_from_scheduling?
-    ActiveModel::Type::Boolean.new.cast(custom_attributes[DELETED_FROM_SCHEDULING_KEY])
+    !!ActiveModel::Type::Boolean.new.cast(custom_attributes[DELETED_FROM_SCHEDULING_KEY])
   end
 
   def archive_from_scheduling!

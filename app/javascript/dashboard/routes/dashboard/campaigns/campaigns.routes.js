@@ -54,9 +54,12 @@ const campaignsRoutes = {
           path: 'broadcasts/personal',
           name: 'outbound_broadcasts_personal_index',
           meta: touchesMeta,
-          component: OutboundCampaignsPage,
-          props: {
-            mode: 'personal',
+          redirect: to => {
+            return {
+              name: 'outbound_touches_index',
+              params: to.params,
+              query: to.query,
+            };
           },
         },
         {
@@ -96,11 +99,9 @@ const campaignsRoutes = {
           path: 'touches',
           name: 'outbound_touches_index',
           meta: touchesMeta,
-          redirect: to => {
-            return {
-              name: 'outbound_broadcasts_personal_index',
-              params: to.params,
-            };
+          component: OutboundCampaignsPage,
+          props: {
+            mode: 'personal',
           },
         },
         {

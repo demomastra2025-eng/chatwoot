@@ -52,6 +52,10 @@ const props = defineProps({
     type: Number,
     default: 10000,
   },
+  descriptionMinHeight: {
+    type: String,
+    default: '10rem',
+  },
   showFeatureFlags: {
     type: Boolean,
     default: true,
@@ -329,6 +333,7 @@ defineExpose({
         :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
         :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
         :max-length="descriptionMaxLength"
+        :min-height="descriptionMinHeight"
         :message="formErrors.description"
         :message-type="formErrors.description ? 'error' : 'info'"
         class="z-0"

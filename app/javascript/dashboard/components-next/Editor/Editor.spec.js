@@ -5,7 +5,7 @@ import Editor from './Editor.vue';
 
 const wootEditorStub = {
   name: 'WootEditor',
-  props: ['modelValue', 'overrideLineBreaks'],
+  props: ['modelValue', 'overrideLineBreaks', 'disabled'],
   emits: ['input', 'focus', 'blur', 'executeCopilotAction'],
   template: '<div data-testid="woot-editor" />',
 };
@@ -38,5 +38,28 @@ describe('Editor', () => {
     expect(
       wrapper.findComponent(wootEditorStub).props('overrideLineBreaks')
     ).toBe(true);
+  });
+
+  it('applies explicit auto-height styles without disabling the editor', () => {
+    const wrapper = buildWrapper({
+      autoHeight: true,
+      editorKey: 'captain:assistant:58:basic-description',
+      minHeight: '19rem',
+      maxHeight: '42rem',
+    });
+
+    const editorWrapper = wrapper.find('.editor-wrapper');
+    const wootEditor = wrapper.findComponent(wootEditorStub);
+
+    expect(editorWrapper.classes()).toContain('editor-wrapper--auto-height');
+    expect(editorWrapper.attributes('style')).toContain(
+      '--editor-min-height: 19rem;'
+    );
+    expect(editorWrapper.attributes('style')).toContain(
+      '--editor-max-height: 42rem;'
+    );
+    expect(wootEditor.classes()).toContain('auto-height-editor-wrapper');
+    expect(wootEditor.props('disabled')).toBe(false);
+    expect(wrapper.find('.cursor-not-allowed').exists()).toBe(false);
   });
 });

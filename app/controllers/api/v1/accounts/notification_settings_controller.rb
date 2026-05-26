@@ -11,8 +11,8 @@ class Api::V1::Accounts::NotificationSettingsController < Api::V1::Accounts::Bas
 
   def disconnect_telegram
     @user.telegram_notification_binding&.disconnect!
-    @notification_setting.selected_telegram_flags = []
-    @notification_setting.save!
+    clear_user_telegram_flags
+    @notification_setting.reload
     @telegram_notification_binding = telegram_notification_binding
     render action: 'show'
   end
@@ -51,6 +51,15 @@ class Api::V1::Accounts::NotificationSettingsController < Api::V1::Accounts::Bas
     @notification_setting.selected_email_flags = permitted_params[:selected_email_flags] if permitted_params.key?(:selected_email_flags)
     @notification_setting.selected_inbox_flags = permitted_params[:selected_inbox_flags] if permitted_params.key?(:selected_inbox_flags)
     @notification_setting.selected_push_flags = permitted_params[:selected_push_flags] if permitted_params.key?(:selected_push_flags)
-    @notification_setting.selected_telegram_flags = permitted_params[:selected_telegram_flags] if permitted_params.key?(:selected_telegram_flags)
+    return unless permitted_params.key?(:selected_telegram_flags)
+
+    @notification_setting.selected_telegram_flags = telegram_notification_binding.connected? ? permitted_params[:selected_telegram_flags] : []
+  end
+
+  def clear_user_telegram_flags
+    @user.notification_settings.find_each do |setting|
+      setting.selected_telegram_flags = []
+      setting.save! if setting.changed?
+    end
   end
 end

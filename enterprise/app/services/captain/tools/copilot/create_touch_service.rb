@@ -4,7 +4,8 @@ class Captain::Tools::Copilot::CreateTouchService < Captain::Tools::Copilot::Bas
   end
 
   description(
-    'Create a scheduled outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+    'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+    'Only relative scheduling is supported: provide a positive relative_offset_minutes; scheduled_at/absolute/immediate sends are rejected. ' \
     'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
   )
   param :body, type: :string, desc: 'Touch message body. Required for free_text touches; optional for channel_template touches', required: false
@@ -13,10 +14,9 @@ class Captain::Tools::Copilot::CreateTouchService < Captain::Tools::Copilot::Bas
   param :template_params, type: :object,
                           desc: 'Approved channel template params for WhatsApp/Twilio WhatsApp touches, including name, language, namespace, and processed_params', required: false
   param :remindable_kind, type: :string, desc: 'Target entity: conversation, deal, task, appointment. Defaults to conversation', required: false
-  param :scheduled_at, type: :string, desc: 'Absolute execution datetime', required: false
   param :relative_anchor, type: :string,
-                          desc: 'Optional relative anchor: touch.created_at, conversation.created_at, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at', required: false
-  param :relative_offset_minutes, type: :number, desc: 'Offset in minutes for relative scheduling', required: false
+                          desc: 'Optional relative anchor: touch.created_at, conversation.created_at, conversation.last_incoming_message_at, conversation.last_activity_at, conversation.last_outgoing_message_at, conversation.waiting_since, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at. Defaults to conversation.last_incoming_message_at for conversation touches, falling back to touch.created_at when no incoming customer message exists.', required: false
+  param :relative_offset_minutes, type: :number, desc: 'positive offset in minutes for relative scheduling', required: true
   param :timezone, type: :string, desc: 'IANA timezone, for example Asia/Almaty', required: false
   param :target_inbox_id, type: :number, desc: 'Optional explicit target inbox/channel ID', required: false
   param :auto_cancel_on_incoming, type: :boolean,
@@ -30,7 +30,6 @@ class Captain::Tools::Copilot::CreateTouchService < Captain::Tools::Copilot::Bas
     content_kind: nil,
     template_params: nil,
     remindable_kind: nil,
-    scheduled_at: nil,
     relative_anchor: nil,
     relative_offset_minutes: nil,
     timezone: nil,
@@ -44,7 +43,6 @@ class Captain::Tools::Copilot::CreateTouchService < Captain::Tools::Copilot::Bas
       content_kind: content_kind,
       template_params: template_params,
       remindable_kind: remindable_kind,
-      scheduled_at: scheduled_at,
       relative_anchor: relative_anchor,
       relative_offset_minutes: relative_offset_minutes,
       timezone: timezone,

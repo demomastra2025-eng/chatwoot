@@ -149,9 +149,7 @@ const statusBadgeClass = status => {
 
 const openTouchesWorkspace = tab => {
   const routeName =
-    tab === 'plans'
-      ? 'outbound_touch_plans_index'
-      : 'outbound_broadcasts_personal_index';
+    tab === 'plans' ? 'outbound_touch_plans_index' : 'outbound_touches_index';
 
   router.push(
     accountScopedRoute(

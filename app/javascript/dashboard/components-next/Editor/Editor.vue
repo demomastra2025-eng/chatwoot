@@ -225,6 +225,7 @@ onBeforeUnmount(() => {
       class="flex flex-col w-full gap-2 px-3 py-3 transition-all duration-500 ease-in-out border rounded-lg editor-wrapper bg-n-alpha-black2"
       :class="[
         {
+          'editor-wrapper--auto-height': autoHeight,
           'cursor-not-allowed opacity-50 pointer-events-none !bg-n-alpha-black2 disabled:border-n-weak dark:disabled:border-n-weak':
             disabled,
           'border-n-brand dark:border-n-brand': isFocused,
@@ -234,6 +235,7 @@ onBeforeUnmount(() => {
             messageType === 'error' && !isFocused,
         },
       ]"
+      :style="autoHeightStyle"
     >
       <WootEditor
         :editor-id="editorKey"
@@ -322,6 +324,15 @@ onBeforeUnmount(() => {
         @apply ltr:left-[-0.188rem] rtl:right-[-0.188rem] !important;
       }
     }
+  }
+}
+
+.editor-wrapper--auto-height {
+  ::v-deep(.ProseMirror.ProseMirror-woot-style) {
+    height: var(--editor-height, 15rem);
+    min-height: var(--editor-min-height, 10rem);
+    max-height: none !important;
+    @apply overflow-auto;
   }
 }
 </style>

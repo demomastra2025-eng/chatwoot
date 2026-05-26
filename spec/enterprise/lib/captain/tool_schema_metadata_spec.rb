@@ -6,9 +6,10 @@ RSpec.describe 'Captain tool schema metadata' do
     assistant_params = Captain::Tools::Copilot::CreateTouchService.parameters
 
     expected_create_touch_description =
-      'Create a scheduled outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+      'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+      'Only relative scheduling is supported: provide a positive relative_offset_minutes; scheduled_at/absolute/immediate sends are rejected. ' \
       'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
-    expected_relative_anchor_description = 'Optional relative anchor: touch.created_at, conversation.created_at, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at'
+    expected_relative_anchor_description = 'Optional relative anchor: touch.created_at, conversation.created_at, conversation.last_incoming_message_at, conversation.last_activity_at, conversation.last_outgoing_message_at, conversation.waiting_since, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at. Defaults to conversation.last_incoming_message_at for conversation touches, falling back to touch.created_at when no incoming customer message exists.'
     expected_auto_cancel_description = 'Set true only when a customer reply in the same conversation should cancel this scheduled touch; set false when the touch must remain scheduled'
 
     expect(Captain::Tools::CreateTouchTool.description).to eq(expected_create_touch_description)
@@ -23,6 +24,12 @@ RSpec.describe 'Captain tool schema metadata' do
     expect(assistant_params[:attachment_ids].type).to eq(:array)
     expect(public_params[:artifact_ids].type).to eq('array')
     expect(assistant_params[:artifact_ids].type).to eq(:array)
+    expect(public_params).not_to have_key(:scheduled_at)
+    expect(assistant_params).not_to have_key(:scheduled_at)
+    expect(public_params[:relative_offset_minutes].required).to be(true)
+    expect(assistant_params[:relative_offset_minutes].required).to be(true)
+    expect(public_params[:relative_offset_minutes].description).to include('positive')
+    expect(assistant_params[:relative_offset_minutes].description).to include('positive')
     expect(public_params[:content_kind].required).to be(false)
     expect(assistant_params[:content_kind].required).to be(false)
     expect(public_params[:template_params].required).to be(false)

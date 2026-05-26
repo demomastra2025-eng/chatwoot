@@ -58,7 +58,17 @@ module Outbound::ToolPayloadBuilder
 
     {
       action: 'cancel_touches',
+      found_count: result[:found_count],
+      cancellable_count: result[:cancellable_count],
       cancelled_count: result[:cancelled_count],
+      already_terminal_count: result[:already_terminal_count],
+      skipped_count: result[:skipped_count],
+      failed_count: result[:failed_count],
+      remaining_open_count: result[:remaining_open_count],
+      cancelled_touch_ids: result[:cancelled_touch_ids],
+      skipped_touches: result[:skipped_touches],
+      failures: result[:failures],
+      scope: result[:scope],
       touch_plan_id: touch_plan&.dig(:id),
       reason: result[:reason].presence || reason.presence,
       remindable: result[:remindable],

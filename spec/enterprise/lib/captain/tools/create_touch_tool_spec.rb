@@ -17,7 +17,9 @@ RSpec.describe Captain::Tools::CreateTouchTool, type: :model do
   end
 
   it 'returns normalized create_touch payload' do
-    payload = JSON.parse(tool.perform(tool_context, body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601,
+    create(:message, account: account, conversation: conversation, inbox: conversation.inbox, message_type: :incoming, created_at: 10.minutes.ago)
+
+    payload = JSON.parse(tool.perform(tool_context, body: 'Ping client tomorrow', relative_offset_minutes: 15,
                                                     auto_cancel_on_incoming: true))
 
     expect(payload).to include(
@@ -25,10 +27,16 @@ RSpec.describe Captain::Tools::CreateTouchTool, type: :model do
       'touch_id' => Reminder.last.id,
       'status' => 'pending',
       'content_kind' => 'free_text',
-      'timing_mode' => 'absolute',
+      'timing_mode' => 'relative',
       'auto_cancel_on_incoming' => true
     )
-    expect(payload['touch']).to include('body' => 'Ping client tomorrow', 'status' => 'pending', 'auto_cancel_on_incoming' => true)
+    expect(payload['touch']).to include(
+      'body' => 'Ping client tomorrow',
+      'status' => 'pending',
+      'auto_cancel_on_incoming' => true,
+      'relative_anchor' => 'conversation.last_incoming_message_at',
+      'relative_offset_seconds' => 15.minutes.to_i
+    )
   end
 
   it 'returns template metadata at the top level for channel_template touches' do
@@ -49,7 +57,8 @@ RSpec.describe Captain::Tools::CreateTouchTool, type: :model do
                            whatsapp_context,
                            content_kind: 'channel_template',
                            template_params: template_params,
-                           scheduled_at: 2.days.from_now.iso8601
+                           relative_anchor: 'touch.created_at',
+                           relative_offset_minutes: 2.days.in_minutes
                          ))
 
     expect(payload).to include(
@@ -67,7 +76,8 @@ RSpec.describe Captain::Tools::CreateTouchTool, type: :model do
     payload = JSON.parse(tool.perform(
                            tool_context,
                            body: 'Ping client with a file',
-                           scheduled_at: 2.days.from_now.iso8601,
+                           relative_anchor: 'touch.created_at',
+                           relative_offset_minutes: 2.days.in_minutes,
                            attachment_ids: [signed_blob_id]
                          ))
 

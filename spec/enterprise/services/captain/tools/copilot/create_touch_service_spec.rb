@@ -17,19 +17,23 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
   end
 
   it 'returns a normalized touch payload wrapper' do
-    payload = JSON.parse(execute_confirmed(body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601, auto_cancel_on_incoming: true))
+    create(:message, account: account, conversation: conversation, inbox: conversation.inbox, message_type: :incoming, created_at: 10.minutes.ago)
+
+    payload = JSON.parse(execute_confirmed(body: 'Ping client tomorrow', relative_offset_minutes: 15, auto_cancel_on_incoming: true))
 
     expect(payload).to include(
       'action' => 'create_touch',
       'touch_id' => Reminder.last.id,
       'status' => 'pending',
       'content_kind' => 'free_text',
-      'timing_mode' => 'absolute',
+      'timing_mode' => 'relative',
       'auto_cancel_on_incoming' => true
     )
     expect(payload.fetch('touch')).to include(
       'body' => 'Ping client tomorrow',
       'status' => 'pending',
+      'relative_anchor' => 'conversation.last_incoming_message_at',
+      'relative_offset_seconds' => 15.minutes.to_i,
       'auto_cancel_on_incoming' => true
     )
   end
@@ -39,7 +43,8 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
 
     payload = JSON.parse(execute_confirmed(
                            body: 'Ping client with a file',
-                           scheduled_at: 2.days.from_now.iso8601,
+                           relative_anchor: 'touch.created_at',
+                           relative_offset_minutes: 2.days.in_minutes,
                            attachment_ids: [signed_blob_id]
                          ))
 
@@ -65,7 +70,8 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
                            whatsapp_service,
                            content_kind: 'channel_template',
                            template_params: template_params,
-                           scheduled_at: 2.days.from_now.iso8601
+                           relative_anchor: 'touch.created_at',
+                           relative_offset_minutes: 2.days.in_minutes
                          ))
 
     expect(payload['action']).to eq('create_touch')

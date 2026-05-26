@@ -88,7 +88,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     ensure_touch_plan_supports!(touch_plan, normalized_kind) if touch_plan.present?
     cancellation_reason = reason.presence || CAPTAIN_CANCEL_REASON
 
-    cancelled_count = ::Reminders::BulkCancelService.new(
+    result = ::Reminders::BulkCancelService.new(
       account: account,
       remindable: remindable,
       reminder_group: touch_plan,
@@ -98,14 +98,13 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
         'cancel_touches_entity_kind' => normalized_kind,
         'touch_plan_id' => touch_plan&.id
       ).compact
-    ).perform
+    ).perform_with_details
 
-    {
-      cancelled_count: cancelled_count,
+    result.merge(
       reason: cancellation_reason,
       remindable: ::Outbound::PayloadBuilder.remindable_payload(remindable),
       touch_plan: touch_plan ? ::Outbound::PayloadBuilder.touch_plan_payload(touch_plan) : nil
-    }
+    )
   end
 
   def create_touch_plan(name:, touches:, description: nil, entity_kinds: nil)
@@ -186,23 +185,18 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
 
     effective_relative_anchor = normalized_relative_anchor(
       relative_anchor,
+      remindable: remindable,
       relative_offset_minutes: relative_offset_minutes,
       scheduled_at: scheduled_at
     )
 
-    if effective_relative_anchor.present?
-      validate_relative_anchor!(effective_relative_anchor, remindable)
-      params.merge!(
-        timing_mode: 'relative',
-        relative_anchor: effective_relative_anchor,
-        relative_offset_seconds: parse_relative_offset_minutes(relative_offset_minutes)
-      )
-    else
-      params.merge!(
-        timing_mode: 'absolute',
-        scheduled_at: parse_scheduled_at!(scheduled_at)
-      )
-    end
+    validate_relative_anchor!(effective_relative_anchor, remindable)
+    params.merge!(
+      timing_mode: 'relative',
+      relative_anchor: effective_relative_anchor,
+      relative_offset_seconds: parse_relative_offset_minutes(relative_offset_minutes)
+    )
+    ensure_relative_schedule_materializes!(params, remindable: remindable)
 
     params.compact
   end
@@ -359,6 +353,15 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     policy_probe.scheduled_at
   end
 
+  def ensure_relative_schedule_materializes!(params, remindable:)
+    scheduled_at = effective_scheduled_at_for_policy(params, remindable: remindable)
+    raise ArgumentError, "relative_anchor #{params[:relative_anchor]} could not be materialized" if scheduled_at.blank?
+
+    return if scheduled_at.future?
+
+    raise ArgumentError, "relative_anchor #{params[:relative_anchor]} materialized to a non-future time"
+  end
+
   def target_inbox_for_policy(target_inbox_id)
     return conversation&.inbox if target_inbox_id.blank?
 
@@ -408,27 +411,38 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     raise ArgumentError, "relative_anchor #{relative_anchor} does not match the selected remindable"
   end
 
-  def normalized_relative_anchor(relative_anchor, relative_offset_minutes:, scheduled_at:)
-    return relative_anchor if relative_anchor.present?
-    return 'touch.created_at' if relative_offset_minutes.present? && scheduled_at.blank?
+  def normalized_relative_anchor(relative_anchor, remindable:, relative_offset_minutes:, scheduled_at:)
+    raise ArgumentError, 'scheduled_at is not supported for create_touch; use relative_offset_minutes and relative_anchor' if scheduled_at.present?
 
-    nil
+    raise ArgumentError, 'relative_offset_minutes is required for create_touch' if relative_offset_minutes.blank?
+
+    return relative_anchor if relative_anchor.present?
+    return default_conversation_relative_anchor(remindable) if remindable.is_a?(Conversation)
+
+    'touch.created_at'
+  end
+
+  def default_conversation_relative_anchor(remindable)
+    return 'conversation.last_incoming_message_at' if incoming_customer_message_exists?(remindable)
+
+    'touch.created_at'
+  end
+
+  def incoming_customer_message_exists?(remindable)
+    remindable.messages.exists?(message_type: Message.message_types.fetch('incoming'), private: false)
   end
 
   def parse_relative_offset_minutes(value)
-    return 0 if value.blank?
+    raise ArgumentError, 'relative_offset_minutes is required for create_touch' if value.blank?
 
-    Integer(value) * 60
-  rescue ArgumentError, TypeError
+    minutes = Integer(value)
+    raise ArgumentError, 'relative_offset_minutes must be greater than 0' unless minutes.positive?
+
+    minutes * 60
+  rescue ArgumentError, TypeError => e
+    raise if e.message == 'relative_offset_minutes must be greater than 0'
+    raise if e.message == 'relative_offset_minutes is required for create_touch'
+
     raise ArgumentError, 'relative_offset_minutes must be a valid integer'
-  end
-
-  def parse_scheduled_at!(value)
-    raise ArgumentError, 'scheduled_at is required for absolute touches' if value.blank?
-
-    parsed = Time.zone.parse(value.to_s)
-    raise ArgumentError, 'scheduled_at must be a valid datetime' if parsed.blank?
-
-    parsed
   end
 end

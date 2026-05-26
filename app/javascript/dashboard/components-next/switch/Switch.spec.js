@@ -23,7 +23,7 @@ vi.mock('reka-ui', () => ({
 }));
 
 describe('Switch', () => {
-  it('moves the checked thumb across the full inner track width', () => {
+  it('moves the checked thumb to the measured checked offset', () => {
     const wrapper = mount(Switch, {
       props: { modelValue: true },
     });
@@ -31,10 +31,18 @@ describe('Switch', () => {
     const thumb = wrapper.find('[data-testid="switch-thumb"]');
 
     expect(thumb.attributes('class')).toContain(
-      'data-[state=checked]:translate-x-[16px]'
+      'data-[state=checked]:translate-x-[14.5px]'
     );
     expect(thumb.attributes('class')).not.toContain(
-      'data-[state=checked]:translate-x-[12px]'
+      'data-[state=checked]:translate-x-[16px]'
     );
+  });
+
+  it('uses a scoped root class instead of the shared items-center utility', () => {
+    const wrapper = mount(Switch);
+    const root = wrapper.find('button');
+
+    expect(root.attributes('class')).toContain('switch-root');
+    expect(root.attributes('class')).not.toContain('items-center');
   });
 });

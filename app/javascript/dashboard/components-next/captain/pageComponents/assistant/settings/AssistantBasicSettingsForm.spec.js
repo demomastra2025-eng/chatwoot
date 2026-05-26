@@ -191,4 +191,23 @@ describe('AssistantBasicSettingsForm', () => {
       description: 'Поприветствуй клиента.',
     });
   });
+
+  it('passes prompt editor height and editability settings to the shared editor', () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Арманище',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: {},
+      },
+      descriptionMinHeight: '19rem',
+    });
+
+    const editor = wrapper.findComponent({ name: 'Editor' });
+
+    expect(editor.props('autoHeight')).toBe(true);
+    expect(editor.props('minHeight')).toBe('19rem');
+    expect(editor.props('disabled')).toBe(false);
+  });
 });

@@ -468,7 +468,7 @@
       "EMPTY_SUBTITLE": "Create a personal campaign for a specific contact and channel.",
       "ACTIONS": {
         "CREATE": "Create personal",
-        "PLANS": "Campaign stages"
+        "PLANS": "Follow-ups"
       },
       "EDITOR": {
         "CREATE_TITLE": "Create personal campaign",
@@ -478,13 +478,13 @@
         "SUCCESS_UPDATED": "Personal campaign updated."
       },
       "PLANS_MODAL": {
-        "TITLE": "Campaign stages",
-        "DESCRIPTION": "Keep reusable stages separate from personal campaigns and open them only when needed.",
-        "CREATE": "Create stage",
-        "CREATE_TITLE": "Create campaign stage",
-        "EDIT_TITLE": "Edit campaign stage",
+        "TITLE": "Follow-ups",
+        "DESCRIPTION": "Keep reusable follow-ups separate from one-off touches and open them only when needed.",
+        "CREATE": "Create follow-up",
+        "CREATE_TITLE": "Create follow-up",
+        "EDIT_TITLE": "Edit follow-up",
         "EDITOR_DESCRIPTION": "Build a reusable sequence of personal campaigns that can be applied later.",
-        "SAVE": "Save stage"
+        "SAVE": "Save follow-up"
       },
       "REFRESH": "Refresh",
       "NO_CONTENT": "No content",
@@ -497,10 +497,10 @@
         "NEEDS_APPROVAL": "Drafts to approve",
         "FAILED": "Need attention",
         "COMPLETED": "Completed",
-        "ACTIVE_PLANS": "Active stages",
-        "TOTAL_STEPS": "Steps in stages",
+        "ACTIVE_PLANS": "Active follow-ups",
+        "TOTAL_STEPS": "Steps in follow-ups",
         "ENTITY_TYPES": "Entity types",
-        "ARCHIVED_PLANS": "Archived stages"
+        "ARCHIVED_PLANS": "Archived follow-ups"
       },
       "ROUTE": {
         "READY": "Route ready",
@@ -514,7 +514,7 @@
       "HERO": {
         "ALL_TITLE": "Manage scheduled touches in one place",
         "ALL_DESCRIPTION": "Review pending and historical touches, update content, and keep execution clean without leaving the outbound workspace.",
-        "PLANS_TITLE": "Build reusable touch plans",
+        "PLANS_TITLE": "Build reusable follow-ups",
         "PLANS_DESCRIPTION": "Create native touch sequences once, then apply them from a deal, task, appointment, or automation rule.",
         "EXECUTION_TITLE": "Watch touch execution",
         "EXECUTION_DESCRIPTION": "Focus on touches that are already processing, completed, cancelled, or failed and quickly inspect operational issues.",
@@ -526,7 +526,7 @@
       },
       "TABS": {
         "ALL": "All touches",
-        "PLANS": "Touch plans",
+        "PLANS": "Follow-ups",
         "EXECUTION": "Execution"
       },
       "STATUS": {
@@ -556,13 +556,13 @@
       },
       "ERRORS": {
         "LOAD_TOUCHES": "Failed to load touches.",
-        "LOAD_PLANS": "Failed to load campaign stages.",
+        "LOAD_PLANS": "Failed to load follow-ups.",
         "APPROVE_TOUCH": "Failed to approve the touch.",
         "CANCEL_TOUCH": "Failed to cancel the touch.",
         "DELETE_TOUCH": "Failed to delete the personal campaign.",
-        "ARCHIVE_PLAN": "Failed to archive the campaign stage.",
-        "APPLY_PLAN": "Failed to apply the campaign stage.",
-        "APPLY_PLAN_REQUIRES_CONTEXT": "Select a conversation, deal, task, or appointment before applying a campaign stage.",
+        "ARCHIVE_PLAN": "Failed to archive the follow-up.",
+        "APPLY_PLAN": "Failed to apply the follow-up.",
+        "APPLY_PLAN_REQUIRES_CONTEXT": "Select a conversation, deal, task, or appointment before applying a follow-up.",
         "CREATE_TOUCH_REQUIRES_CONTEXT": "Open a conversation, deal, task, or appointment first to create a touch in context."
       },
       "ALL": {
@@ -591,19 +591,19 @@
         }
       },
       "PLANS": {
-        "LOADING": "Loading campaign stages...",
-        "EMPTY": "There are no campaign stages yet.",
+        "LOADING": "Loading follow-ups...",
+        "EMPTY": "There are no follow-ups yet.",
         "NO_DESCRIPTION": "No description",
         "ACTIVE": "Active",
         "ARCHIVED": "Archived",
-        "APPLY": "Apply stage",
+        "APPLY": "Apply follow-up",
         "EDIT": "Edit",
         "ARCHIVE": "Archive",
-        "APPLY_SUCCESS": "Campaign stage applied.",
-        "ARCHIVE_SUCCESS": "Campaign stage archived.",
+        "APPLY_SUCCESS": "Follow-up applied.",
+        "ARCHIVE_SUCCESS": "Follow-up archived.",
         "ENTITY_SCOPE_NOTE": "Supported record types",
         "TABLE": {
-          "NAME": "Campaign stage",
+          "NAME": "Follow-up",
           "ENTITIES": "Entities",
           "STEPS": "Steps",
           "STATUS": "Status",
@@ -653,7 +653,7 @@
         "EMPTY": "No upcoming touches yet.",
         "CREATE": "Add touch",
         "VIEW_ALL": "All touches",
-        "OPEN_PLANS": "Apply stage",
+        "OPEN_PLANS": "Apply follow-up",
         "OPEN_EXECUTION": "Open execution",
         "OPEN_NEXT_STEP": "Edit timing or content if this follow-up needs to change.",
         "FAILED_TITLE": "{count} touches need attention",
@@ -755,47 +755,47 @@
         }
       },
       "TOUCH_PLAN_EDITOR": {
-        "CREATE_TITLE": "Create campaign stage",
-        "EDIT_TITLE": "Edit campaign stage",
+        "CREATE_TITLE": "Create follow-up",
+        "EDIT_TITLE": "Edit follow-up",
         "DESCRIPTION": "Build a reusable sequence of personal campaigns and apply it from any supported record.",
-        "CREATE": "Create stage",
-        "SAVE": "Save stage",
+        "CREATE": "Create follow-up",
+        "SAVE": "Save follow-up",
         "ADD_STEP": "Add step",
         "REMOVE_STEP": "Remove step",
         "STEP_TITLE": "Step {index}",
-        "STEP_DESCRIPTION": "Each step becomes a personal campaign when the stage is applied.",
+        "STEP_DESCRIPTION": "Each step becomes a scheduled touch when the follow-up is applied.",
         "ENTITY_KIND_PLACEHOLDER": "Select at least one entity type",
         "COMPATIBILITY_WARNING": "This relative anchor is not available for every selected entity type. If you apply the plan to another type, this step may stay in draft until the route and schedule can be resolved.",
         "FIELDS": {
-          "NAME": "Stage name",
+          "NAME": "Follow-up name",
           "NAME_PLACEHOLDER": "e.g. Appointment reminders",
           "DESCRIPTION": "Description",
-          "DESCRIPTION_PLACEHOLDER": "Explain when this stage should be used and what it is trying to achieve.",
+          "DESCRIPTION_PLACEHOLDER": "Explain when this follow-up should be used and what it is trying to achieve.",
           "ENTITY_KINDS": "Supported entity types",
-          "ENTITY_KINDS_NOTE": "Choose where this stage can be applied.",
-          "ENTITY_KIND_HELP": "This stage can be attached to this record type.",
-          "STEPS": "Stage steps",
-          "STEPS_NOTE": "These steps will be created when the stage is applied to: {entityKinds}."
+          "ENTITY_KINDS_NOTE": "Choose where this follow-up can be applied.",
+          "ENTITY_KIND_HELP": "This follow-up can be attached to this record type.",
+          "STEPS": "Touches in follow-up",
+          "STEPS_NOTE": "These touches will be created when the follow-up is applied to: {entityKinds}."
         },
         "SUCCESS": {
-          "CREATED": "Campaign stage created.",
-          "UPDATED": "Campaign stage updated."
+          "CREATED": "Follow-up created.",
+          "UPDATED": "Follow-up updated."
         },
         "ERRORS": {
-          "SAVE": "Failed to save the campaign stage."
+          "SAVE": "Failed to save the follow-up."
         }
       }
     },
     "TOUCH_PLANS": {
-      "TITLE": "Campaign stages",
-      "DESCRIPTION": "Build reusable stages for personal campaigns and apply them from the right entity context.",
-      "COUNT": "Stages: {n}",
+      "TITLE": "Follow-ups",
+      "DESCRIPTION": "Build reusable follow-up groups and apply them from the right entity context.",
+      "COUNT": "Follow-ups: {n}",
       "CONTEXT_BADGE": "Context: {entity}",
-      "EMPTY_TITLE": "No stages yet.",
+      "EMPTY_TITLE": "No follow-ups yet.",
       "EMPTY_SUBTITLE": "Create a reusable sequence and apply it to conversations, deals, tasks, and appointments.",
       "STEPS_COUNT": "Steps: {count}",
       "ACTIONS": {
-        "CREATE": "Create stage",
+        "CREATE": "Create follow-up",
         "REFRESH": "Refresh"
       }
     },
@@ -834,18 +834,18 @@
       },
       "CONTEXT_TITLE": "Touch context: {entity}",
       "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
-        "ANCHORS": {
-          "TOUCH_CREATED_AT": "Delayed message created",
-          "APPOINTMENT_STARTS_AT": "Appointment starts",
-          "APPOINTMENT_ENDS_AT": "Appointment ends",
-          "TASK_DUE_AT": "Task due at",
-          "DEAL_EXPECTED_CLOSE_ON": "Deal expected close",
-          "CONVERSATION_CREATED_AT": "Conversation created",
-          "CONVERSATION_LAST_ACTIVITY_AT": "Last activity in conversation",
-          "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Last incoming message",
-          "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Last outgoing message",
-          "CONVERSATION_WAITING_SINCE": "Conversation waiting for reply"
-        },
+      "ANCHORS": {
+        "TOUCH_CREATED_AT": "Delayed message created",
+        "APPOINTMENT_STARTS_AT": "Appointment starts",
+        "APPOINTMENT_ENDS_AT": "Appointment ends",
+        "TASK_DUE_AT": "Task due at",
+        "DEAL_EXPECTED_CLOSE_ON": "Deal expected close",
+        "CONVERSATION_CREATED_AT": "Conversation created",
+        "CONVERSATION_LAST_ACTIVITY_AT": "Last activity in conversation",
+        "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Last incoming message",
+        "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Last outgoing message",
+        "CONVERSATION_WAITING_SINCE": "Conversation waiting for reply"
+      },
       "FIELDS": {
         "ACTION_TYPE": "Touch type",
         "ENTITY_TYPE": "Record type",
@@ -905,44 +905,44 @@
       }
     },
     "TOUCH_PLAN_EDITOR": {
-      "CREATE_TITLE": "Create campaign stage",
-      "EDIT_TITLE": "Edit campaign stage",
+      "CREATE_TITLE": "Create follow-up",
+      "EDIT_TITLE": "Edit follow-up",
       "DESCRIPTION": "Build a reusable sequence of personal campaigns and apply it from any supported record.",
-      "CREATE": "Create stage",
-      "SAVE": "Save stage",
+      "CREATE": "Create follow-up",
+      "SAVE": "Save follow-up",
       "ADD_STEP": "Add step",
       "REMOVE_STEP": "Remove step",
       "STEP_TITLE": "Step {index}",
-      "STEP_DESCRIPTION": "Each step becomes a personal campaign when the stage is applied.",
+      "STEP_DESCRIPTION": "Each step becomes a scheduled touch when the follow-up is applied.",
       "ENTITY_KIND_PLACEHOLDER": "Entity types are derived from the steps below",
       "COMPATIBILITY_WARNING": "This relative anchor is not available for every selected entity type. If you apply the plan to another type, this step may stay in draft until the route and schedule can be resolved.",
       "FIELDS": {
-        "NAME": "Stage name",
+        "NAME": "Follow-up name",
         "NAME_PLACEHOLDER": "e.g. Appointment reminders",
         "DESCRIPTION": "Description",
-        "DESCRIPTION_PLACEHOLDER": "Explain when this stage should be used and what it is trying to achieve.",
+        "DESCRIPTION_PLACEHOLDER": "Explain when this follow-up should be used and what it is trying to achieve.",
         "DELIVERY_CHANNEL": "Delivery channel",
         "DELIVERY_CHANNEL_PLACEHOLDER": "Select a delivery channel",
         "DELIVERY_CHANNEL_AUTO": "Automatic from record",
-        "DELIVERY_CHANNEL_NOTE": "Select the channel once for the whole stage. For WhatsApp, this also unlocks template selection with full parameters.",
+        "DELIVERY_CHANNEL_NOTE": "Select the channel once for the whole follow-up. For WhatsApp, this also unlocks template selection with full parameters.",
         "ENTITY_KINDS": "Supported entity types",
         "ENTITY_KINDS_NOTE": "Supported entity types are now derived automatically from the steps below.",
         "ENTITY_KIND": "Step entity type",
         "ENTITY_KIND_PLACEHOLDER": "Select an entity type",
-        "ENTITY_KIND_EMPTY": "These steps do not share a common entity type yet. Align the steps to one scenario so the stage can be applied safely.",
+        "ENTITY_KIND_EMPTY": "These steps do not share a common entity type yet. Align the steps to one scenario so the follow-up can be applied safely.",
         "RELATIVE_AFTER": "After",
         "RELATIVE_BEFORE": "Before",
         "RELATIVE_MODE": "Before/after event",
         "ABSOLUTE_MODE": "Date and time",
-        "STEPS": "Stage steps",
-        "STEPS_NOTE": "These steps will be created when the stage is applied to: {entityKinds}."
+        "STEPS": "Touches in follow-up",
+        "STEPS_NOTE": "These touches will be created when the follow-up is applied to: {entityKinds}."
       },
       "SUCCESS": {
-        "CREATED": "Campaign stage created.",
-        "UPDATED": "Campaign stage updated."
+        "CREATED": "Follow-up created.",
+        "UPDATED": "Follow-up updated."
       },
       "ERRORS": {
-        "SAVE": "Failed to save the campaign stage."
+        "SAVE": "Failed to save the follow-up."
       }
     },
     "TEMPLATES": {

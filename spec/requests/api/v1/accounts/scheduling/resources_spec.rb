@@ -126,12 +126,14 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
   end
 
-  it 'rejects deleting a specialist with active appointments' do
-    create(
+  it 'rejects deleting a specialist with a future active appointment and returns blocking details' do
+    appointment = create(
       :scheduling_appointment,
       account: account,
       resource: resource,
-      status: 'confirmed'
+      status: 'confirmed',
+      starts_at: 1.day.from_now,
+      ends_at: 1.day.from_now + 30.minutes
     )
 
     delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
@@ -140,6 +142,82 @@ RSpec.describe 'Scheduling Resources API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('RESOURCE_HAS_APPOINTMENTS')
+    expect(response_body.dig('details', 'blocking_appointment_count')).to eq(1)
+    expect(response_body.dig('details', 'blocking_appointments', 0)).to include(
+      'id' => appointment.id,
+      'status' => 'confirmed',
+      'payment_status' => 'awaiting_payment'
+    )
+    expect(resource.reload.deleted_from_scheduling?).to be(false)
+  end
+
+  it 'rejects deleting a specialist with an in-progress active appointment' do
+    create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'scheduled',
+      starts_at: 10.minutes.ago,
+      ends_at: 20.minutes.from_now
+    )
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('RESOURCE_HAS_APPOINTMENTS')
+    expect(resource.reload.deleted_from_scheduling?).to be(false)
+  end
+
+  it 'archives a specialist with only a past stale scheduled appointment and preserves the appointment reference' do
+    starts_at = 2.days.ago
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'scheduled',
+      starts_at: starts_at,
+      ends_at: starts_at + 1.hour,
+      payment_status: 'awaiting_payment'
+    )
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(resource.reload.active).to be(false)
+    expect(resource.deleted_from_scheduling?).to be(true)
+    expect(appointment.reload.resource_id).to eq(resource.id)
+    expect(appointment.status).to eq('scheduled')
+  end
+
+  it 'archives a specialist when only terminal appointments remain' do
+    create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'completed',
+      starts_at: 1.day.from_now,
+      ends_at: 1.day.from_now + 30.minutes
+    )
+    create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'no_show',
+      starts_at: 2.days.from_now,
+      ends_at: 2.days.from_now + 30.minutes
+    )
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(resource.reload.active).to be(false)
+    expect(resource.deleted_from_scheduling?).to be(true)
   end
 
   it 'archives a specialist when only cancelled appointments remain' do
@@ -150,6 +228,30 @@ RSpec.describe 'Scheduling Resources API', type: :request do
       status: 'cancelled',
       payment_status: 'cancelled'
     )
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(resource.reload.active).to be(false)
+    expect(resource.deleted_from_scheduling?).to be(true)
+  end
+
+  it 'archives an inactive specialist without appointments' do
+    resource.update!(active: false)
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(resource.reload.active).to be(false)
+    expect(resource.deleted_from_scheduling?).to be(true)
+  end
+
+  it 'keeps deleting from scheduling idempotent for already archived specialists' do
+    resource.archive_from_scheduling!
 
     delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
            headers: headers,

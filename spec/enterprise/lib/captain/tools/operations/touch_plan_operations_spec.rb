@@ -81,7 +81,7 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
   end
 
   describe '#cancel_touches' do
-    it 'bulk cancels draft and pending touches for the current entity with optional touch plan filtering' do
+    it 'bulk cancels non-terminal touches for the current entity with optional touch plan filtering' do
       touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'], touches: [conversation_touch_definition])
       other_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'], touches: [conversation_touch_definition])
       pending_touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, reminder_group: touch_plan,
@@ -89,16 +89,34 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       draft_touch = create(:reminder, :draft, account: account, remindable: conversation, touch_conversation: conversation,
                                               reminder_group: touch_plan, body: 'Draft plan follow-up')
       processing_touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, reminder_group: touch_plan,
-                                           status: :processing, body: 'Processing plan follow-up')
+                                           status: :processing, processing_started_at: 5.minutes.ago, body: 'Processing plan follow-up')
+      completed_touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, reminder_group: touch_plan,
+                                          status: :completed, body: 'Completed plan follow-up')
       other_plan_touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, reminder_group: other_plan,
                                            status: :pending, body: 'Other plan follow-up')
 
       payload = operation.cancel_touches(touch_plan_id: touch_plan.id, reason: 'Stop sequence')
 
-      expect(payload[:cancelled_count]).to eq(2)
+      expect(payload[:found_count]).to eq(3)
+      expect(payload[:cancellable_count]).to eq(3)
+      expect(payload[:cancelled_count]).to eq(3)
+      expect(payload[:cancelled_touch_ids]).to contain_exactly(pending_touch.id, draft_touch.id, processing_touch.id)
+      expect(payload[:skipped_count]).to eq(0)
+      expect(payload[:skipped_touches]).to eq([])
+      expect(payload[:failed_count]).to eq(0)
+      expect(payload[:failures]).to eq([])
+      expect(payload[:already_terminal_count]).to eq(1)
+      expect(payload[:remaining_open_count]).to eq(0)
+      expect(payload[:scope]).to include(
+        account_id: account.id,
+        remindable_type: 'Conversation',
+        remindable_id: conversation.id,
+        reminder_group_id: touch_plan.id
+      )
       expect(pending_touch.reload).to be_cancelled
       expect(draft_touch.reload).to be_cancelled
-      expect(processing_touch.reload).to be_processing
+      expect(processing_touch.reload).to be_cancelled
+      expect(completed_touch.reload).to be_completed
       expect(other_plan_touch.reload).to be_pending
       expect(pending_touch.metadata).to include('cancelled_via' => 'captain_cancel_touches', 'touch_plan_id' => touch_plan.id)
     end

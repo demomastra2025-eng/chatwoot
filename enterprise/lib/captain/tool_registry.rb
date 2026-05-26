@@ -887,7 +887,7 @@ class Captain::ToolRegistry
         definition(
           id: 'create_touch',
           title: 'Create Touch',
-          description: 'Create a scheduled outbound touch with free text, attachments, or an approved official WhatsApp channel template. For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.',
+          description: 'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. Only relative scheduling is supported: provide a positive relative_offset_minutes; scheduled_at/absolute/immediate sends are rejected. For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.',
           group_name: 'Outbound',
           icon: 'clock-plus',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

@@ -1,5 +1,6 @@
 class Reminders::BulkCancelService
-  CANCELLABLE_STATUSES = %w[draft pending].freeze
+  CANCELLABLE_STATUSES = Reminder::OPEN_STATUSES.freeze
+  ACTIVE_STATUSES = Reminder::OPEN_STATUSES.freeze
 
   attr_reader :account, :remindable, :reminder_group, :actor, :reason, :metadata
 
@@ -13,41 +14,137 @@ class Reminders::BulkCancelService
   end
 
   def perform
+    perform_with_details[:cancelled_count]
+  end
+
+  def perform_with_details
     ensure_account_boundary!
 
-    cancelled_count = 0
-    cancellable_scope.find_each do |reminder|
-      cancelled_count += 1 if cancel_reminder(reminder)
+    result = initial_result
+    active_scope.find_each do |reminder|
+      collect_result(result, reminder)
     end
+    result[:remaining_open_count] = active_scope.count
+    result[:skipped_count] = result[:skipped_touches].size
 
-    cancelled_count
+    result
   end
 
   private
 
+  def initial_result
+    {
+      reason: reason,
+      scope: scope_payload,
+      found_count: active_scope.count,
+      cancellable_count: cancellable_scope.count,
+      cancelled_count: 0,
+      cancelled_touch_ids: [],
+      skipped_count: 0,
+      skipped_touches: [],
+      failed_count: 0,
+      failures: [],
+      already_terminal_count: terminal_scope.count,
+      remaining_open_count: nil
+    }
+  end
+
+  def collect_result(result, reminder)
+    original_status = reminder.status
+    cancellation = cancel_reminder(reminder)
+    if cancellation[:cancelled]
+      result[:cancelled_count] += 1
+      result[:cancelled_touch_ids] << reminder.id
+    else
+      result[:skipped_touches] << skipped_touch_payload(reminder, cancellation[:reason], status: cancellation[:status])
+    end
+  rescue StandardError => e
+    result[:failed_count] += 1
+    result[:failures] << skipped_touch_payload(reminder, e.message, status: original_status)
+  end
+
   def cancellable_scope
-    scope = account.reminders.where(remindable: remindable, status: cancellable_status_values)
+    scoped_reminders.where(status: cancellable_status_values)
+  end
+
+  def active_scope
+    scoped_reminders.where(status: active_status_values)
+  end
+
+  def terminal_scope
+    scoped_reminders.where.not(status: active_status_values)
+  end
+
+  def scoped_reminders
+    scope = scoped_remindable_reminders
     return scope if reminder_group.blank?
 
     scope.where(reminder_group: reminder_group)
   end
 
+  def scoped_remindable_reminders
+    base_scope = account.reminders
+    return base_scope.where(remindable: remindable) unless remindable.is_a?(Conversation)
+
+    base_scope.where(remindable: remindable)
+              .or(base_scope.where(conversation_id: remindable.id))
+              .or(base_scope.where(target_conversation_id: remindable.id))
+  end
+
+  def active_status_values
+    status_values(ACTIVE_STATUSES)
+  end
+
   def cancellable_status_values
-    Reminder.statuses.slice(*CANCELLABLE_STATUSES).values
+    status_values(CANCELLABLE_STATUSES)
+  end
+
+  def status_values(statuses)
+    Reminder.statuses.slice(*statuses).values
   end
 
   def cancel_reminder(reminder)
     reminder.with_lock do
-      return false unless reminder.draft? || reminder.pending?
+      next { cancelled: false, status: reminder.status, reason: skip_reason_for(reminder) } unless cancellable_status?(reminder)
 
       reminder.update!(
         status: :cancelled,
         cancelled_at: Time.current,
+        processing_started_at: nil,
         last_error: reason,
         metadata: reminder.metadata.to_h.merge(audit_metadata)
       )
-      true
+      { cancelled: true }
     end
+  end
+
+  def cancellable_status?(reminder)
+    CANCELLABLE_STATUSES.include?(reminder.status)
+  end
+
+  def skip_reason_for(reminder)
+    return 'already_cancelled' if reminder.cancelled?
+    return 'already_completed' if reminder.completed?
+    return 'already_failed' if reminder.failed?
+
+    'status_not_cancellable'
+  end
+
+  def skipped_touch_payload(reminder, reason, status: nil)
+    {
+      touch_id: reminder.id,
+      status: status || reminder.status,
+      reason: reason
+    }
+  end
+
+  def scope_payload
+    {
+      account_id: account.id,
+      remindable_type: remindable.class.name,
+      remindable_id: remindable.id,
+      reminder_group_id: reminder_group&.id
+    }.compact
   end
 
   def audit_metadata

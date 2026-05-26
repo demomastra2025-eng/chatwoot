@@ -75,7 +75,7 @@ const closeTouchSidebar = () => {
 const openTouchesWorkspace = () => {
   router.push(
     accountScopedRoute(
-      'outbound_broadcasts_personal_index',
+      'outbound_touches_index',
       {},
       {
         conversation_id: props.currentChat.id,

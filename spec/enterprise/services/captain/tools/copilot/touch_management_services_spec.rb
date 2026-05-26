@@ -99,7 +99,15 @@ RSpec.describe 'Captain touch management copilot services' do
     )
     expect(apply_payload.dig('meta', 'count')).to eq(1)
     expect(apply_payload['touch_ids']).to contain_exactly(created_touch_id)
-    expect(cancel_payload).to include('action' => 'cancel_touches', 'cancelled_count' => 1, 'touch_plan_id' => touch_plan_id, 'reason' => 'Stop plan')
+    expect(cancel_payload).to include(
+      'action' => 'cancel_touches',
+      'found_count' => 1,
+      'cancelled_count' => 1,
+      'remaining_open_count' => 0,
+      'touch_plan_id' => touch_plan_id,
+      'reason' => 'Stop plan'
+    )
+    expect(cancel_payload['cancelled_touch_ids']).to contain_exactly(created_touch_id)
     expect(archive_payload).to include('action' => 'archive_touch_plan', 'touch_plan_id' => touch_plan_id, 'active' => false)
     expect(archive_payload.dig('touch_plan', 'archived_at')).to be_present
   end

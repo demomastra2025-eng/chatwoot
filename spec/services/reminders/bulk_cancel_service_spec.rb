@@ -36,6 +36,7 @@ RSpec.describe Reminders::BulkCancelService do
       remindable: conversation,
       reminder_group: touch_plan,
       status: 'processing',
+      processing_started_at: 5.minutes.ago,
       body: 'Processing follow-up'
     )
   end
@@ -72,7 +73,7 @@ RSpec.describe Reminders::BulkCancelService do
   end
 
   describe '#perform' do
-    it 'cancels only draft and pending touches scoped to the remindable and touch plan' do
+    it 'cancels draft, pending, and processing touches scoped to the remindable and touch plan' do
       cancelled_count = described_class.new(
         account: account,
         remindable: conversation,
@@ -81,9 +82,11 @@ RSpec.describe Reminders::BulkCancelService do
         metadata: { 'automation_rule_id' => 123, 'cancelled_via' => 'automation_cancel_touches' }
       ).perform
 
-      expect(cancelled_count).to eq(2)
+      expect(cancelled_count).to eq(3)
       expect(draft_touch.reload).to be_cancelled
       expect(pending_touch.reload).to be_cancelled
+      expect(processing_touch.reload).to be_cancelled
+      expect(processing_touch.processing_started_at).to be_nil
       expect(draft_touch.cancelled_at).to be_present
       expect(pending_touch.last_error).to eq('Customer replied')
       expect(pending_touch.metadata).to include(
@@ -92,19 +95,19 @@ RSpec.describe Reminders::BulkCancelService do
         'cancelled_reason' => 'Customer replied'
       )
 
-      expect(processing_touch.reload).to be_processing
       expect(completed_touch.reload).to be_completed
       expect(other_plan_touch.reload).to be_pending
       expect(other_conversation_touch.reload).to be_pending
     end
 
-    it 'cancels all draft and pending touches for the remindable when no touch plan is supplied' do
+    it 'cancels all open touches for the remindable when no touch plan is supplied' do
       cancelled_count = described_class.new(account: account, remindable: conversation).perform
 
-      expect(cancelled_count).to eq(3)
+      expect(cancelled_count).to eq(4)
       expect(draft_touch.reload).to be_cancelled
       expect(pending_touch.reload).to be_cancelled
       expect(other_plan_touch.reload).to be_cancelled
+      expect(processing_touch.reload).to be_cancelled
       expect(other_conversation_touch.reload).to be_pending
     end
 
@@ -115,6 +118,80 @@ RSpec.describe Reminders::BulkCancelService do
       expect do
         described_class.new(account: account, remindable: other_account_conversation).perform
       end.to raise_error(ArgumentError, 'remindable does not belong to account')
+    end
+  end
+
+  describe '#perform_with_details' do
+    it 'returns detailed counts, scoped ids, skipped records, and remaining open touches' do
+      result = described_class.new(
+        account: account,
+        remindable: conversation,
+        reminder_group: touch_plan,
+        reason: 'Customer replied'
+      ).perform_with_details
+
+      expect(result).to include(
+        reason: 'Customer replied',
+        found_count: 3,
+        cancellable_count: 3,
+        cancelled_count: 3,
+        skipped_count: 0,
+        failed_count: 0,
+        already_terminal_count: 1,
+        remaining_open_count: 0
+      )
+      expect(result[:cancelled_touch_ids]).to contain_exactly(draft_touch.id, pending_touch.id, processing_touch.id)
+      expect(result[:skipped_touches]).to eq([])
+      expect(result[:failures]).to eq([])
+      expect(result[:scope]).to include(
+        account_id: account.id,
+        remindable_type: 'Conversation',
+        remindable_id: conversation.id,
+        reminder_group_id: touch_plan.id
+      )
+    end
+
+    it 'continues cancelling and reports individual record failures' do
+      pending_touch.update_column(:timezone, 'Invalid/Zone')
+
+      result = described_class.new(
+        account: account,
+        remindable: conversation,
+        reminder_group: touch_plan,
+        reason: 'Customer replied'
+      ).perform_with_details
+
+      expect(result[:cancelled_count]).to eq(2)
+      expect(result[:cancelled_touch_ids]).to contain_exactly(draft_touch.id, processing_touch.id)
+      expect(result[:skipped_count]).to eq(0)
+      expect(result[:skipped_touches]).to eq([])
+      expect(result[:failed_count]).to eq(1)
+      expect(result[:failures]).to contain_exactly(
+        hash_including(touch_id: pending_touch.id, status: 'pending')
+      )
+      expect(result[:remaining_open_count]).to eq(1)
+      expect(draft_touch.reload).to be_cancelled
+      expect(pending_touch.reload).to be_pending
+      expect(processing_touch.reload).to be_cancelled
+    end
+
+    it 'cancels legacy conversation-scoped touches without a remindable link' do
+      pending_touch.update_columns(remindable_type: nil, remindable_id: nil)
+      draft_touch.update_columns(remindable_type: nil, remindable_id: nil, conversation_id: nil)
+
+      result = described_class.new(
+        account: account,
+        remindable: conversation,
+        reminder_group: touch_plan,
+        reason: 'Customer replied'
+      ).perform_with_details
+
+      expect(result[:cancelled_count]).to eq(3)
+      expect(result[:cancelled_touch_ids]).to contain_exactly(draft_touch.id, pending_touch.id, processing_touch.id)
+      expect(result[:skipped_touches]).to eq([])
+      expect(pending_touch.reload).to be_cancelled
+      expect(draft_touch.reload).to be_cancelled
+      expect(processing_touch.reload).to be_cancelled
     end
   end
 end

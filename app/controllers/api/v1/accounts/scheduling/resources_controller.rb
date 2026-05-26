@@ -1,4 +1,8 @@
 class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Scheduling::BaseController
+  TERMINAL_APPOINTMENT_STATUSES = %w[completed cancelled no_show].freeze
+  BLOCKING_APPOINTMENT_STATUSES = (Scheduling::Constants::APPOINTMENT_STATUSES - TERMINAL_APPOINTMENT_STATUSES).freeze
+  BLOCKING_APPOINTMENT_DETAIL_LIMIT = 10
+
   before_action :check_admin_authorization?, except: [:index, :show]
   before_action :set_resource, only: [:show, :update, :destroy]
 
@@ -70,12 +74,40 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
       )
     end
 
-    return unless @scheduling_resource.appointments.active_statuses.exists?
+    return if @scheduling_resource.deleted_from_scheduling?
+
+    blocking_appointments = blocking_appointments_for_destroy
+    return if blocking_appointments.blank?
 
     raise Scheduling::Error.new(
       code: 'RESOURCE_HAS_APPOINTMENTS',
-      message: 'Specialist with active appointments cannot be deleted',
-      status: :unprocessable_content
+      message: 'Specialist with current or future active appointments cannot be deleted',
+      status: :unprocessable_content,
+      details: blocking_appointments_details(blocking_appointments)
     )
+  end
+
+  def blocking_appointments_for_destroy
+    @scheduling_resource.appointments
+                        .where(status: BLOCKING_APPOINTMENT_STATUSES)
+                        .where(ends_at: Time.current..)
+                        .ordered
+  end
+
+  def blocking_appointments_details(appointments)
+    limited_appointments = appointments.limit(BLOCKING_APPOINTMENT_DETAIL_LIMIT)
+
+    {
+      blocking_appointment_count: appointments.count,
+      blocking_appointments: limited_appointments.map do |appointment|
+        {
+          id: appointment.id,
+          status: appointment.status,
+          payment_status: appointment.payment_status,
+          starts_at: appointment.starts_at&.iso8601,
+          ends_at: appointment.ends_at&.iso8601
+        }
+      end
+    }
   end
 end

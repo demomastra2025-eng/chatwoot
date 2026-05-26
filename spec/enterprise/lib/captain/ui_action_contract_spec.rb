@@ -28,6 +28,22 @@ RSpec.describe Captain::UiActionContract do
       )
     end
 
+    it 'accepts the canonical touches UI action and the legacy personal outbound alias' do
+      expect(
+        described_class.normalize(
+          [
+            { 'type' => 'open_touches', 'label' => 'Open touches' },
+            { 'type' => 'open_outbound_personal', 'label' => 'Open touches' }
+          ]
+        )
+      ).to eq(
+        [
+          { 'type' => 'open_touches', 'label' => 'Open touches', 'target_id' => '' },
+          { 'type' => 'open_outbound_personal', 'label' => 'Open touches', 'target_id' => '' }
+        ]
+      )
+    end
+
     it 'returns an empty array for invalid payload shapes' do
       expect(described_class.normalize('open_contact')).to eq([])
       expect(described_class.normalize([{ 'type' => 'open_contact', 'label' => '', 'target_id' => '42' }])).to eq([])

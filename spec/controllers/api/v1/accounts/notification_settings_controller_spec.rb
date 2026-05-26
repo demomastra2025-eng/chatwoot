@@ -45,6 +45,8 @@ RSpec.describe 'Notification Settings API', type: :request do
       let(:agent) { create(:user, account: account, role: :agent) }
 
       it 'updates the email related notification flags' do
+        create(:telegram_notification_binding, :connected, user: agent)
+
         put "/api/v1/accounts/#{account.id}/notification_settings",
             params: {
               notification_settings: {
@@ -66,11 +68,33 @@ RSpec.describe 'Notification Settings API', type: :request do
         expect(json_response['selected_telegram_flags']).to eq(['telegram_conversation_assignment'])
       end
 
-      it 'disconnects telegram and clears telegram notification flags' do
+      it 'does not persist telegram flags before telegram is connected' do
+        put "/api/v1/accounts/#{account.id}/notification_settings",
+            params: {
+              notification_settings: {
+                selected_telegram_flags: ['telegram_conversation_assignment']
+              }
+            },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        setting = agent.notification_settings.find_by(account_id: account.id)
+        expect(setting.selected_telegram_flags).to eq([])
+        expect(response.parsed_body['selected_telegram_flags']).to eq([])
+        expect(response.parsed_body['telegram_connection']).to include('connected' => false)
+      end
+
+      it 'disconnects telegram and clears telegram notification flags across user accounts' do
         binding = create(:telegram_notification_binding, :connected, user: agent)
         setting = agent.notification_settings.find_by(account_id: account.id)
         setting.selected_telegram_flags = [:telegram_conversation_assignment]
         setting.save!
+        another_account = create(:account)
+        create(:account_user, account: another_account, user: agent)
+        another_setting = agent.notification_settings.find_by(account_id: another_account.id)
+        another_setting.selected_telegram_flags = [:telegram_conversation_assignment]
+        another_setting.save!
 
         delete "/api/v1/accounts/#{account.id}/notification_settings/disconnect_telegram",
                headers: agent.create_new_auth_token,
@@ -79,6 +103,8 @@ RSpec.describe 'Notification Settings API', type: :request do
         expect(response).to have_http_status(:success)
         expect(binding.reload).not_to be_connected
         expect(response.parsed_body['selected_telegram_flags']).to eq([])
+        expect(setting.reload.selected_telegram_flags).to eq([])
+        expect(another_setting.reload.selected_telegram_flags).to eq([])
       end
     end
   end
