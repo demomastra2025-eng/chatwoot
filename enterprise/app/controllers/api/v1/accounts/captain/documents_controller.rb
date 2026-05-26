@@ -14,6 +14,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
     @documents_count = base_query.count
     @documents = base_query.page(@current_page).per(RESULTS_PER_PAGE)
+    @embedding_status_summaries = Captain::Document.embedding_status_summaries_for(@documents)
   end
 
   def show; end

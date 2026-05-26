@@ -11,6 +11,7 @@ json.created_at resource.created_at.to_i
 json.external_link resource.external_link
 json.display_url resource.display_url
 json.failed_urls_count resource.failed_urls_count
+json.embedding_status_summary((@embedding_status_summaries || {})[resource.id] || resource.embedding_status_summary)
 json.file_size resource.file_size
 json.id resource.id
 json.last_error resource.last_error

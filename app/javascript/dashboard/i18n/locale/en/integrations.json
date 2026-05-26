@@ -1789,7 +1789,13 @@
         "CREATED_AT": "Created {time}",
         "PROGRESS": "Progress {value}",
         "FAILED_URLS": "{count} failed pages",
-        "SYNCED_AT": "Synced {time}"
+        "SYNCED_AT": "Synced {time}",
+        "EMBEDDINGS": {
+          "INDEXED": "Embeddings indexed {indexed}/{total}",
+          "PENDING": "Embeddings pending {pending}/{total}",
+          "STALE": "Embeddings stale {stale}/{total}",
+          "FAILED": "Embeddings failed {failed}/{total}"
+        }
       },
       "FORM": {
         "TYPE": {

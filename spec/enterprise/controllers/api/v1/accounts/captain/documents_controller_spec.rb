@@ -96,6 +96,27 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
         end
       end
 
+      context 'with chunk embedding health' do
+        it 'returns embedding status summary for each document' do
+          document = create(:captain_document, assistant: assistant, account: account)
+          create(:captain_document_chunk, document: document, account: account, assistant: assistant, embedding_status: :indexed)
+          create(:captain_document_chunk, document: document, account: account, assistant: assistant, embedding_status: :stale)
+
+          get "/api/v1/accounts/#{account.id}/captain/documents",
+              headers: agent.create_new_auth_token, as: :json
+
+          expect(response).to have_http_status(:ok)
+          expect(json_response[:payload].first[:embedding_status_summary]).to include(
+            total: 2,
+            indexed: 1,
+            pending: 0,
+            failed: 0,
+            stale: 1,
+            degraded: true
+          )
+        end
+      end
+
       context 'with pagination and assistant filter combined' do
         before do
           create_list(:captain_document, 30, assistant: assistant, account: account)

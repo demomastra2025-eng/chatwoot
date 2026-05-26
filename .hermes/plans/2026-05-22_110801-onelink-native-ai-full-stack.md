@@ -2064,3 +2064,40 @@ Remaining before full live PASS:
 1. Deploy/migrate/restart in the target environment.
 2. Run an actual runtime smoke with indexed document chunk embeddings and confirm live Captain answer uses `semantic_chunk` trace rather than lexical fallback.
 3. Add product UI for operator-facing embedding health if the JSON trace/rake reindex output is not considered sufficient operator visibility.
+
+## 2026-05-26 Etapa 9 DEV rollout/smoke status
+
+Status: **DEV migrated/restarted and code/runtime path smoke passed; full real-provider live PASS remains blocked by missing DEV embedding provider credentials.**
+
+Scope:
+
+- Applied DEV `rails db:migrate` against `chatwoot_dev`; no pending migrations remained.
+- Restarted only `onelink-chatwoot-dev.service`; no production deploy/restart was performed.
+- Verified `dev.one-link.kz` Rails and Vite probes after restart:
+  - `/api` -> 200
+  - `/vite-dev/@vite/client` -> 200
+- Cleaned generated annotate/`__pycache__` runtime dirt; worktree was clean before appending this status.
+
+Runtime smoke performed:
+
+- Used account `530` / assistant `616` in `development` / `chatwoot_dev`.
+- Because DEV currently has no `CAPTAIN_OPENROUTER_API_KEY` / `CAPTAIN_EMBEDDING_MODEL`, temporarily installed a local OpenRouter-compatible embeddings endpoint only for the smoke, then removed it.
+- Created a temporary DEV smoke document/chunk, ran `captain:knowledge:reindex_chunks` with `ACCOUNT_ID=530 ASSISTANT_ID=616`, and performed the queued `Captain::Llm::UpdateEmbeddingJob` path.
+- Proof captured before cleanup:
+  - rake output: `Captain document chunk embedding jobs enqueued: 1`
+  - chunk embedding status: `indexed`
+  - direct chunk search returned the smoke chunk id
+  - `faq_lookup` returned `lookup_strategy: semantic_chunk`
+  - `retrieval_trace.strategy: semantic_chunk`
+  - `retrieval_trace.degraded: false`
+  - `retrieval_trace.embedding_status_counts: { indexed: 1 }`
+  - match type: `document_chunk`
+- Temporary smoke document/chunk and temporary provider configs were removed after proof.
+
+Remaining before **full real live PASS**:
+
+1. Configure a real DEV embedding provider/key for `help_center_search` / `CAPTAIN_EMBEDDING_MODEL`.
+2. Re-run the same smoke without the temporary local embeddings endpoint and keep real indexed chunks available for operator inspection.
+3. Minimal product UI operator visibility added in the document list: each document API payload now includes `embedding_status_summary`, and the dashboard card shows indexed/pending/stale/failed chunk embedding health badges.
+4. Re-check confirmed DEV still has no real embedding provider/key/model configured in systemd env, candidate env files, or `InstallationConfig` (`CAPTAIN_OPENROUTER_API_KEY`, `CAPTAIN_EMBEDDING_MODEL`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY` all absent). Real-provider smoke cannot be run until credentials/model are provided.
+5. PROD remains untouched until explicit deploy approval.

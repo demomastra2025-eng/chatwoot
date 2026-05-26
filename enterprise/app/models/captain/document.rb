@@ -232,6 +232,45 @@ class Captain::Document < ApplicationRecord
     nil
   end
 
+  def self.embedding_status_summaries_for(documents)
+    document_ids = Array(documents).filter_map(&:id)
+    return {} if document_ids.blank?
+
+    summaries = document_ids.index_with { empty_embedding_status_summary }
+    chunk_status_counts(document_ids).each do |(document_id, status), count|
+      status_name = embedding_status_name(status)
+      next if status_name.blank?
+
+      summaries[document_id][status_name.to_sym] = count
+    end
+
+    latest_failed_embedding_errors(document_ids).each do |document_id, error|
+      summaries[document_id][:last_error] ||= error
+    end
+
+    summaries.transform_values do |summary|
+      summary[:total] = summary.values_at(:indexed, :pending, :failed, :stale).sum
+      summary[:degraded] = summary.values_at(:pending, :failed, :stale).sum.positive?
+      summary
+    end
+  end
+
+  def self.empty_embedding_status_summary
+    {
+      total: 0,
+      indexed: 0,
+      pending: 0,
+      failed: 0,
+      stale: 0,
+      degraded: false,
+      last_error: nil
+    }
+  end
+
+  def embedding_status_summary
+    self.class.embedding_status_summaries_for([self]).fetch(id, self.class.empty_embedding_status_summary)
+  end
+
   def merge_metadata!(attributes)
     update!(metadata: merged_metadata(attributes))
   end
@@ -444,6 +483,29 @@ class Captain::Document < ApplicationRecord
 
     saved_change_to_status? || saved_change_to_content? || saved_change_to_source_text? || saved_change_to_faq_generation_enabled?
   end
+
+  def self.chunk_status_counts(document_ids)
+    Captain::DocumentChunk.where(document_id: document_ids).group(:document_id, :embedding_status).count
+  end
+
+  def self.latest_failed_embedding_errors(document_ids)
+    Captain::DocumentChunk
+      .where(document_id: document_ids, embedding_status: Captain::DocumentChunk.embedding_statuses[:failed])
+      .where.not(embedding_error: [nil, ''])
+      .order(embedding_updated_at: :desc, updated_at: :desc)
+      .pluck(:document_id, :embedding_error)
+      .each_with_object({}) do |(document_id, error), memo|
+        memo[document_id] ||= error
+      end
+  end
+
+  def self.embedding_status_name(status)
+    return status if Captain::DocumentChunk.embedding_statuses.key?(status.to_s)
+
+    Captain::DocumentChunk.embedding_statuses.key(status.to_i)
+  end
+
+  private_class_method :chunk_status_counts, :latest_failed_embedding_errors, :embedding_status_name
 
   def update_document_usage
     account.update_document_usage

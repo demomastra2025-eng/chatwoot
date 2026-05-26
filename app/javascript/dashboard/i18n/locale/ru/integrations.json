@@ -1789,7 +1789,13 @@
         "CREATED_AT": "Создано {time}",
         "PROGRESS": "Прогресс {value}",
         "FAILED_URLS": "Страниц с ошибками: {count}",
-        "SYNCED_AT": "Синхронизировано {time}"
+        "SYNCED_AT": "Синхронизировано {time}",
+        "EMBEDDINGS": {
+          "INDEXED": "Векторы проиндексированы {indexed}/{total}",
+          "PENDING": "Векторы в очереди {pending}/{total}",
+          "STALE": "Векторы устарели {stale}/{total}",
+          "FAILED": "Ошибки векторов {failed}/{total}"
+        }
       },
       "FORM": {
         "TYPE": {

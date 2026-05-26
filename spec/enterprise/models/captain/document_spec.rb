@@ -41,6 +41,45 @@ RSpec.describe Captain::Document, type: :model do
     end
   end
 
+  describe '#embedding_status_summary' do
+    it 'summarizes chunk embedding health for operator visibility' do
+      document = create(:captain_document, assistant: assistant, account: account)
+      create(:captain_document_chunk, document: document, account: account, assistant: assistant, embedding_status: :indexed)
+      create(:captain_document_chunk, document: document, account: account, assistant: assistant, embedding_status: :pending)
+      create(:captain_document_chunk,
+             document: document,
+             account: account,
+             assistant: assistant,
+             embedding_status: :failed,
+             embedding_error: 'provider unavailable',
+             embedding_updated_at: 1.minute.ago)
+
+      expect(document.embedding_status_summary).to include(
+        total: 3,
+        indexed: 1,
+        pending: 1,
+        failed: 1,
+        stale: 0,
+        degraded: true,
+        last_error: 'provider unavailable'
+      )
+    end
+
+    it 'returns a clean zero-count summary when no chunks exist yet' do
+      document = create(:captain_document, assistant: assistant, account: account)
+
+      expect(document.embedding_status_summary).to eq(
+        total: 0,
+        indexed: 0,
+        pending: 0,
+        failed: 0,
+        stale: 0,
+        degraded: false,
+        last_error: nil
+      )
+    end
+  end
+
   describe 'PDF support' do
     let(:pdf_document) do
       doc = build(:captain_document, assistant: assistant, account: account)

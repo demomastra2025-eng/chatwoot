@@ -55,6 +55,10 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  embeddingStatusSummary: {
+    type: Object,
+    default: () => ({}),
+  },
   lastError: {
     type: String,
     default: '',
@@ -191,6 +195,50 @@ const progressLabel = computed(() => {
   return `${props.pagesProcessed}/${props.pagesTotal}`;
 });
 
+const embeddingHealth = computed(() => {
+  const summary = props.embeddingStatusSummary || {};
+  const total = Number(summary.total || 0);
+  if (!total) return null;
+
+  if (Number(summary.failed || 0) > 0) {
+    return {
+      label: t('CAPTAIN.DOCUMENTS.META.EMBEDDINGS.FAILED', {
+        failed: summary.failed,
+        total,
+      }),
+      className: 'bg-n-ruby-9/10 text-n-ruby-11',
+    };
+  }
+
+  if (Number(summary.stale || 0) > 0) {
+    return {
+      label: t('CAPTAIN.DOCUMENTS.META.EMBEDDINGS.STALE', {
+        stale: summary.stale,
+        total,
+      }),
+      className: 'bg-n-amber-9/10 text-n-amber-11',
+    };
+  }
+
+  if (Number(summary.pending || 0) > 0) {
+    return {
+      label: t('CAPTAIN.DOCUMENTS.META.EMBEDDINGS.PENDING', {
+        pending: summary.pending,
+        total,
+      }),
+      className: 'bg-n-amber-9/10 text-n-amber-11',
+    };
+  }
+
+  return {
+    label: t('CAPTAIN.DOCUMENTS.META.EMBEDDINGS.INDEXED', {
+      indexed: summary.indexed || total,
+      total,
+    }),
+    className: 'bg-n-teal-9/10 text-n-teal-11',
+  };
+});
+
 const handleAction = ({ action, value }) => {
   toggleDropdown(false);
   emit('action', { action, value, id: props.id });
@@ -278,6 +326,13 @@ const handleAction = ({ action, value }) => {
         {{
           t('CAPTAIN.DOCUMENTS.META.FAILED_URLS', { count: failedUrlsCount })
         }}
+      </span>
+      <span
+        v-if="embeddingHealth"
+        class="rounded-full px-2 py-1"
+        :class="embeddingHealth.className"
+      >
+        {{ embeddingHealth.label }}
       </span>
       <span v-if="syncedAt" class="rounded-full bg-n-alpha-2 px-2 py-1">
         {{ t('CAPTAIN.DOCUMENTS.META.SYNCED_AT', { time: syncedAt }) }}

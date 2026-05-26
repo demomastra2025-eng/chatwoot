@@ -314,6 +314,7 @@ watch(
           :pages-processed="doc.pages_processed"
           :pages-total="doc.pages_total"
           :failed-urls-count="doc.failed_urls_count"
+          :embedding-status-summary="doc.embedding_status_summary"
           :last-error="doc.last_error"
           :last-synced-at="doc.last_synced_at"
           :created-at="doc.created_at"
