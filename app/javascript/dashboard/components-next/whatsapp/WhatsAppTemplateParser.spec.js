@@ -38,6 +38,11 @@ const ParserParent = defineComponent({
 const createWrapper = () =>
   mount(ParserParent, {
     global: {
+      directives: {
+        'dompurify-html': (el, binding) => {
+          el.innerHTML = binding.value || '';
+        },
+      },
       stubs: {
         Input: true,
         TemplateParamInput: true,

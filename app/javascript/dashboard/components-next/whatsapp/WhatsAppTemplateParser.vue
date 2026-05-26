@@ -15,6 +15,8 @@ import { useI18n } from 'vue-i18n';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import TemplateParamInput from './TemplateParamInput.vue';
+import TemplatePreview from 'dashboard/components-next/template-preview/TemplatePreview.vue';
+import { PLATFORMS } from 'dashboard/services/TemplateConstants';
 import {
   buildTemplateParameters,
   allKeysRequired,
@@ -147,19 +149,14 @@ const bodyParamEntries = computed(() =>
   }))
 );
 
-const renderedHeader = computed(() => {
-  if (!textHeader.value) {
-    return '';
-  }
-
-  return replaceTemplateVariables(textHeader.value, processedParams.value, {
-    section: 'header',
-  });
-});
-
 const renderedTemplate = computed(() => {
   return replaceTemplateVariables(bodyText.value, processedParams.value);
 });
+
+const previewVariables = computed(() => ({
+  ...(processedParams.value.body || {}),
+  ...(processedParams.value.header || {}),
+}));
 
 const rawRenderedTemplate = computed(() => {
   return replaceTemplateVariables(bodyText.value, processedParams.value, {
@@ -297,19 +294,11 @@ defineExpose({
         </span>
       </div>
 
-      <div class="flex flex-col gap-2">
-        <div class="rounded-md">
-          <div
-            v-if="textHeader"
-            class="mb-2 text-sm font-medium whitespace-pre-wrap text-n-slate-12"
-          >
-            {{ renderedHeader }}
-          </div>
-          <div class="text-sm whitespace-pre-wrap text-n-slate-12">
-            {{ renderedTemplate }}
-          </div>
-        </div>
-      </div>
+      <TemplatePreview
+        :template="template"
+        :variables="previewVariables"
+        :platform="PLATFORMS.WHATSAPP"
+      />
 
       <div class="text-xs text-n-slate-11">
         {{ categoryLabel }}
