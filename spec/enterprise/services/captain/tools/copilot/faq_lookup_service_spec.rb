@@ -16,8 +16,7 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     translate_service = instance_double(Captain::Llm::TranslateQueryService)
     allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translate_service)
     allow(translate_service).to receive(:translate).and_return('refund')
-    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.where(assistant_id: assistant.id,
-                                                                                                      account_id: account.id, status: :approved))
+    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: document_chunk.id))
   end
 
   it 'returns normalized faq matches payload' do
@@ -25,24 +24,26 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
 
     expect(payload['query']).to eq('refund')
     expect(payload['total_count']).to eq(1)
-    expect(payload['lookup_strategy']).to eq('semantic')
+    expect(payload['lookup_strategy']).to eq('semantic_chunk')
     expect(payload['matches'].first).to include(
-      'question' => 'Refund?',
-      'answer' => 'Refund in 14 days',
+      'type' => 'document_chunk',
+      'answer' => 'Refund policy source',
+      'document_id' => document.id,
       'document_chunk_id' => document_chunk.id
     )
     expect(payload['retrieval_trace']).to include(
-      'strategy' => 'semantic',
+      'strategy' => 'semantic_chunk',
       'degraded' => false,
       'semantic_attempted' => true,
       'match_count' => 1,
-      'response_ids' => [payload['matches'].first['id']],
+      'response_ids' => [],
+      'document_ids' => [document.id],
       'document_chunk_ids' => [document_chunk.id]
     )
   end
 
   it 'falls back to keyword matches when semantic lookup is unavailable' do
-    allow(Captain::AssistantResponse).to receive(:search)
+    allow(Captain::DocumentChunk).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(service.execute(query: 'refund'))
@@ -68,7 +69,8 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
   end
 
   it 'falls back to keyword matches when semantic lookup returns no matches' do
-    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.none)
+    document_chunk.update!(embedding_status: :indexed, embedding: Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1))
+    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.none)
 
     payload = JSON.parse(service.execute(query: 'refund'))
 
@@ -94,7 +96,7 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
 
   it 'can skip translation and semantic lookup for realtime voice fallback' do
     expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
-    expect(Captain::AssistantResponse).not_to receive(:search)
+    expect(Captain::DocumentChunk).not_to receive(:search)
 
     payload = JSON.parse(service.execute(query: 'refund', semantic: false))
 

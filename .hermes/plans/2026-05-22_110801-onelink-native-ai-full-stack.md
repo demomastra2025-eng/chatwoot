@@ -2026,3 +2026,41 @@ Remaining Etapa 9 blockers before full Knowledge/RAG PASS:
 2. Prove semantic/vector retrieval with indexed embeddings in runtime-like data, not only existing `Captain::AssistantResponse.search` delegation.
 3. Add reindex/backfill flow and degraded-state operator visibility for embedding failures/stale indexes.
 4. Keep lexical fallback as marked degraded mode only, not the final success state for normal Knowledge/RAG.
+
+
+## 2026-05-26 Etapa 9 final Knowledge/RAG slice — direct chunk-vector retrieval and reindex visibility
+
+Status: **Implemented, targeted verified — Etapa 9 code-slice DONE for direct chunk retrieval/reindex/degraded visibility.**
+
+Scope:
+
+- Added embedding state to `captain_document_chunks`: vector embedding, status (`pending/indexed/failed/stale`), failure message, and update timestamp.
+- `Captain::DocumentChunk.search` now performs direct vector lookup via `Captain::Llm::EmbeddingService` + `nearest_neighbors`, scoped by account and indexed chunks.
+- `Captain::Llm::UpdateEmbeddingJob` now updates chunk embedding status/timestamps on success and marks chunk embedding failures without hiding retryable failures for legacy records; failed chunk updates do not auto-reenqueue until content changes or an explicit reindex task runs.
+- `faq_lookup` public and Copilot paths now prefer direct semantic chunk retrieval (`semantic_chunk`) and return chunk/document ids, sources, and embedding status counts in `retrieval_trace`.
+- Legacy `search_documentation` semantic path now searches source chunks directly and formats source chunk text + source link, with existing approved FAQ lexical fallback kept for degraded mode.
+- Added `Captain::Documents::ChunkEmbeddingBackfillService` and `captain:knowledge:reindex_chunks` rake task for ops reindex/backfill by optional account/assistant filters.
+
+Verification completed:
+
+```bash
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rails db:migrate
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/models/captain/document_chunk_spec.rb spec/enterprise/jobs/captain/llm/update_embedding_job_spec.rb spec/enterprise/services/captain/documents/chunk_embedding_backfill_service_spec.rb spec/enterprise/lib/captain/tools/faq_lookup_tool_spec.rb spec/enterprise/services/captain/tools/copilot/faq_lookup_service_spec.rb spec/enterprise/services/captain/tools/search_documentation_service_spec.rb --format progress
+# 22 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/models/captain/document_chunk_spec.rb spec/enterprise/models/captain/assistant_response_spec.rb spec/enterprise/jobs/captain/llm/update_embedding_job_spec.rb spec/enterprise/jobs/captain/documents/response_builder_job_spec.rb spec/enterprise/services/captain/documents/chunk_embedding_backfill_service_spec.rb spec/enterprise/lib/captain/tools/faq_lookup_tool_spec.rb spec/enterprise/services/captain/tools/copilot/faq_lookup_service_spec.rb spec/enterprise/services/captain/tools/search_documentation_service_spec.rb --format progress
+# 40 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/models/article_spec.rb:217 spec/models/article_spec.rb:229 spec/models/article_spec.rb:237 spec/models/article_spec.rb:251 spec/models/article_spec.rb:261 --format progress
+# 5 examples, 0 failures
+```
+
+Known unrelated surrounding check:
+
+- Full `spec/models/article_spec.rb` currently fails one pre-existing locale expectation (`can't be blank` vs Russian `не может быть пустым`) outside the embedding/search-term examples touched by this slice.
+
+Remaining before full live PASS:
+
+1. Deploy/migrate/restart in the target environment.
+2. Run an actual runtime smoke with indexed document chunk embeddings and confirm live Captain answer uses `semantic_chunk` trace rather than lexical fallback.
+3. Add product UI for operator-facing embedding health if the JSON trace/rake reindex output is not considered sufficient operator visibility.

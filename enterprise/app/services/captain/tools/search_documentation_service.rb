@@ -8,7 +8,7 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
 
   def execute(query:)
     Rails.logger.info { "#{self.class.name}: #{query}" }
-    return 'No FAQs found for the given query' if assistant.responses.approved.none?
+    return 'No FAQs found for the given query' unless knowledge_available?
 
     translated_query = translated_query_for(query)
     responses = lookup_responses(translated_query, query)
@@ -27,6 +27,10 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   end
 
   private
+
+  def knowledge_available?
+    assistant.responses.approved.exists? || assistant.document_chunks.exists?
+  end
 
   def translated_query_for(query)
     Captain::Llm::TranslateQueryService
@@ -54,9 +58,9 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   end
 
   def semantic_responses(query)
-    Captain::AssistantResponse.search(query, account_id: assistant.account_id)
-                              .where(assistant_id: assistant.id, status: Captain::AssistantResponse.statuses[:approved])
-                              .limit(5)
+    Captain::DocumentChunk.search(query, account_id: assistant.account_id)
+                          .where(assistant_id: assistant.id)
+                          .limit(5)
   end
 
   def lexical_fallback_responses(*queries)
@@ -83,6 +87,8 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   end
 
   def format_response(response)
+    return format_document_chunk(response) if response.is_a?(Captain::DocumentChunk)
+
     formatted_response = "
         Question: #{response.question}
         Answer: #{response.answer}
@@ -90,6 +96,19 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
     if response.documentable.present? && response.documentable.try(:external_link)
       formatted_response += "
           Source: #{response.documentable.external_link}
+          "
+    end
+
+    formatted_response
+  end
+
+  def format_document_chunk(chunk)
+    formatted_response = "
+        Source Chunk: #{chunk.content}
+        "
+    if chunk.document.external_link.present?
+      formatted_response += "
+          Source: #{chunk.document.external_link}
           "
     end
 

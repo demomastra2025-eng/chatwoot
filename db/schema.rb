@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_26_055219) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_26_062303) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -465,11 +465,17 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_26_055219) do
     t.string "content_sha256", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.vector "embedding", limit: 1536
+    t.integer "embedding_status", default: 0, null: false
+    t.text "embedding_error"
+    t.datetime "embedding_updated_at"
     t.index ["account_id"], name: "index_captain_document_chunks_on_account_id"
     t.index ["assistant_id"], name: "index_captain_document_chunks_on_assistant_id"
     t.index ["content_sha256"], name: "index_captain_document_chunks_on_content_sha256"
     t.index ["document_id", "chunk_index"], name: "index_captain_document_chunks_on_document_id_and_chunk_index", unique: true
     t.index ["document_id"], name: "index_captain_document_chunks_on_document_id"
+    t.index ["embedding"], name: "vector_idx_captain_document_chunks_embedding", using: :ivfflat
+    t.index ["embedding_status"], name: "index_captain_document_chunks_on_embedding_status"
   end
 
   create_table "captain_documents", force: :cascade do |t|

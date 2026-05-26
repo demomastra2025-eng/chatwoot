@@ -6,6 +6,10 @@
 #  chunk_index    :integer          not null
 #  content        :text             not null
 #  content_sha256 :string           not null
+#  embedding      :vector(1536)
+#  embedding_error :text
+#  embedding_status :integer        default("pending"), not null
+#  embedding_updated_at :datetime
 #  created_at     :datetime         not null
 #  updated_at     :datetime         not null
 #  account_id     :bigint           not null
@@ -27,14 +31,36 @@ class Captain::DocumentChunk < ApplicationRecord
   belongs_to :assistant, class_name: 'Captain::Assistant'
   belongs_to :document, class_name: 'Captain::Document'
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :nullify
+  has_neighbors :embedding, normalize: true
 
   validates :chunk_index, presence: true, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :content, presence: true
   validates :content_sha256, presence: true
   validates :chunk_index, uniqueness: { scope: :document_id }
 
+  enum embedding_status: { pending: 0, indexed: 1, failed: 2, stale: 3 }, _prefix: :embedding
+
   before_validation :ensure_associations
   before_validation :ensure_content_sha256
+  before_validation :ensure_embedding_status
+  before_save :mark_embedding_stale, if: :will_save_change_to_content?
+  after_commit :update_chunk_embedding
+
+  scope :needs_embedding_reindex, lambda {
+    where(embedding_status: [embedding_statuses[:pending], embedding_statuses[:failed], embedding_statuses[:stale]])
+      .or(where(embedding: nil))
+  }
+
+  def self.search(query, account_id: nil)
+    return none if account_id.blank?
+
+    embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(query)
+    nearest_neighbors(:embedding, embedding, distance: 'cosine')
+      .where(account_id: account_id)
+      .where(embedding_status: embedding_statuses[:indexed])
+      .where.not(embedding: nil)
+      .limit(5)
+  end
 
   private
 
@@ -45,5 +71,20 @@ class Captain::DocumentChunk < ApplicationRecord
 
   def ensure_content_sha256
     self.content_sha256 = Digest::SHA256.hexdigest(content.to_s) if content.present?
+  end
+
+  def ensure_embedding_status
+    self.embedding_status ||= :pending
+  end
+
+  def mark_embedding_stale
+    self.embedding_status = :stale if persisted?
+  end
+
+  def update_chunk_embedding
+    return if embedding_failed? && !saved_change_to_content?
+    return unless saved_change_to_content? || embedding.nil? || embedding_pending? || embedding_stale?
+
+    Captain::Llm::UpdateEmbeddingJob.perform_later(self, content)
   end
 end

@@ -28,13 +28,13 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   private
 
   def lookup_responses(query, semantic: true)
-    responses = semantic ? semantic_responses(query) : Captain::AssistantResponse.none
-    lookup_strategy = semantic ? 'semantic' : 'lexical'
+    responses = semantic ? semantic_responses(query) : Captain::DocumentChunk.none
+    lookup_strategy = semantic ? 'semantic_chunk' : 'lexical'
     fallback_reason = nil
 
     if responses.blank?
       responses = lexical_fallback_responses(query)
-      fallback_reason = 'semantic_no_matches' if semantic
+      fallback_reason = fallback_reason_for_empty_semantic if semantic
       lookup_strategy = 'lexical'
     end
 
@@ -42,9 +42,15 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def semantic_responses(query)
-    Captain::AssistantResponse.search(query, account_id: account.id)
-                              .where(assistant_id: assistant.id, status: Captain::AssistantResponse.statuses[:approved])
-                              .limit(5)
+    Captain::DocumentChunk.search(query, account_id: account.id)
+                          .where(assistant_id: assistant.id)
+                          .limit(5)
+  end
+
+  def fallback_reason_for_empty_semantic
+    return 'chunk_embeddings_unindexed' if assistant.document_chunks.needs_embedding_reindex.exists?
+
+    'semantic_no_matches'
   end
 
   def lexical_fallback_responses(query)
@@ -100,29 +106,49 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       semantic_attempted: trace_context[:semantic_attempted],
       fallback_reason: trace_context[:fallback_reason],
       match_count: responses.size,
-      response_ids: responses.map(&:id),
+      response_ids: response_ids_for(responses),
       document_ids: document_ids_for(responses),
       document_chunk_ids: document_chunk_ids_for(responses),
+      embedding_status_counts: embedding_status_counts,
       sources: sources_for(responses)
     }.compact
   end
 
+  def response_ids_for(responses)
+    responses.reject { |response| response.is_a?(Captain::DocumentChunk) }.map(&:id)
+  end
+
   def document_ids_for(responses)
     responses.filter_map do |response|
-      response.documentable_id if response.documentable_type == 'Captain::Document'
+      if response.is_a?(Captain::DocumentChunk)
+        response.document_id
+      elsif response.documentable_type == 'Captain::Document'
+        response.documentable_id
+      end
     end.uniq
   end
 
   def document_chunk_ids_for(responses)
-    responses.filter_map(&:document_chunk_id).uniq
+    responses.filter_map do |response|
+      response.is_a?(Captain::DocumentChunk) ? response.id : response.document_chunk_id
+    end.uniq
+  end
+
+  def embedding_status_counts
+    assistant.document_chunks.group(:embedding_status).count.presence
   end
 
   def sources_for(responses)
-    responses.filter_map { |response| response.documentable&.try(:external_link) }.uniq
+    responses.filter_map do |response|
+      response.is_a?(Captain::DocumentChunk) ? response.document.external_link : response.documentable&.try(:external_link)
+    end.uniq
   end
 
   def response_payload(response)
+    return document_chunk_payload(response) if response.is_a?(Captain::DocumentChunk)
+
     {
+      type: 'faq_response',
       id: response.id,
       question: response.question,
       answer: response.answer,
@@ -130,6 +156,21 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       document_chunk_id: response.document_chunk_id,
       created_at: response.created_at&.iso8601,
       updated_at: response.updated_at&.iso8601
+    }.compact
+  end
+
+  def document_chunk_payload(chunk)
+    {
+      type: 'document_chunk',
+      id: chunk.id,
+      document_id: chunk.document_id,
+      document_chunk_id: chunk.id,
+      chunk_index: chunk.chunk_index,
+      answer: chunk.content,
+      source: chunk.document.external_link,
+      embedding_status: chunk.embedding_status,
+      created_at: chunk.created_at&.iso8601,
+      updated_at: chunk.updated_at&.iso8601
     }.compact
   end
 end

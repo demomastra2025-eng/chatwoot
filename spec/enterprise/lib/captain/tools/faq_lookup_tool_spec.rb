@@ -13,8 +13,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   before do
     create(:captain_assistant_response, assistant: assistant, account: account, documentable: document, document_chunk: document_chunk,
                                         question: 'How to reset password?', answer: 'Click forgot password', status: 'approved')
-    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.where(assistant_id: assistant.id,
-                                                                                                      account_id: account.id, status: :approved))
+    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: document_chunk.id))
   end
 
   it 'returns normalized faq payload' do
@@ -22,20 +21,21 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
 
     expect(payload['query']).to eq('password reset')
     expect(payload['total_count']).to eq(1)
-    expect(payload['matches'].first).to include('question' => 'How to reset password?', 'answer' => 'Click forgot password')
-    expect(payload['matches'].first).to include('document_chunk_id' => document_chunk.id)
+    expect(payload['matches'].first).to include('type' => 'document_chunk', 'answer' => 'Password reset source')
+    expect(payload['matches'].first).to include('document_id' => document.id, 'document_chunk_id' => document_chunk.id)
     expect(payload['retrieval_trace']).to include(
-      'strategy' => 'semantic',
+      'strategy' => 'semantic_chunk',
       'degraded' => false,
       'semantic_attempted' => true,
       'match_count' => 1,
-      'response_ids' => [payload['matches'].first['id']],
+      'response_ids' => [],
+      'document_ids' => [document.id],
       'document_chunk_ids' => [document_chunk.id]
     )
   end
 
   it 'falls back to exact/keyword FAQ lookup when semantic lookup is unavailable' do
-    allow(Captain::AssistantResponse).to receive(:search)
+    allow(Captain::DocumentChunk).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
@@ -60,7 +60,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   end
 
   it 'returns an empty lexical payload when embeddings are unavailable and no keyword matches' do
-    allow(Captain::AssistantResponse).to receive(:search)
+    allow(Captain::DocumentChunk).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(tool.perform(tool_context, query: 'pricing'))
@@ -75,7 +75,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   end
 
   it 'can skip semantic lookup for realtime voice calls' do
-    expect(Captain::AssistantResponse).not_to receive(:search)
+    expect(Captain::DocumentChunk).not_to receive(:search)
 
     payload = JSON.parse(tool.perform(tool_context, query: 'reset password', semantic: false))
 
