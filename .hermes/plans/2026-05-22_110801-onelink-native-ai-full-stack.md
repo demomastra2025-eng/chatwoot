@@ -2188,3 +2188,45 @@ Next coding slice:
 
 1. Continue Etapa 11 with the next deterministic quality gate: AI Voice transcript/tool-result behavior expansion, support/CRM/scheduling correctness fixture pack, or eval summary/history hardening.
 2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
+
+## 2026-05-26 Etapa 11 third quality-gate slice — AI Voice transcript/tool-result behavior expansion
+
+Status: **Implemented, targeted verified — Etapa 11 deterministic AI Voice trace expansion slice DONE.**
+
+Scope:
+
+- Expanded the existing deterministic offline eval pack `captain.ai_voice_trace`; no live call, DEV restart, or PROD deploy was performed.
+- Added eval support for requiring an AI response after the final caller transcript so clipped/stale traces cannot pass only because an earlier assistant message existed.
+- Added eval support for forbidding any use of a specific tool (`forbid_tools`), not only failed-tool events, so conversation 481 can catch unintended `get_deal` follow-up calls.
+- Extended `require_tool_result_usage` with optional `after_caller_fragment` so follow-up questions must reuse completed tool results after the relevant caller turn, not before it.
+- Updated the conversation 481 fixture to require price retention after “Какая цена?” and to forbid `get_deal` usage for that follow-up.
+- Added negative spec coverage for a stale pre-follow-up answer plus forbidden follow-up tool call.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH ruby -c enterprise/lib/captain/evals/ai_voice_trace_suite.rb
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH ruby -c spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb
+ruby -ryaml -e "YAML.load_file('config/llm_evals/ai_voice_trace.yml'); puts 'YAML OK'"
+# Syntax OK x2; YAML OK
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb --format progress
+# 4 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/evals/runner_spec.rb spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb spec/enterprise/lib/captain/evals/confirmation_safety_suite_spec.rb spec/enterprise/lib/captain/evals/knowledge_rag_trace_suite_spec.rb --format progress
+# 10 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rake llm:evals:ci
+# { status: pass, suite_count: 7, total_count: 30, passed_count: 30, failed_count: 0, error_count: 0 }
+
+bundle exec rubocop --fail-level E enterprise/lib/captain/evals/ai_voice_trace_suite.rb spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb
+# exit 0; existing C-level metrics offenses remain in ai_voice_trace_suite, no E-level offenses
+
+git diff --check -- enterprise/lib/captain/evals/ai_voice_trace_suite.rb spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb config/llm_evals/ai_voice_trace.yml
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 11 with either support/CRM/scheduling correctness fixture pack or eval summary/history hardening.
+2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.

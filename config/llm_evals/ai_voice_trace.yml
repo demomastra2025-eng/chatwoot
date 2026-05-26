@@ -21,6 +21,7 @@ cases:
         - pacer_drop
       forbid_failed_tools:
         - search_deals
+      require_ai_response_after_last_caller: true
       require_tool_result_usage:
         - tool: search_deals
           fragment: "250 000"
@@ -71,9 +72,13 @@ cases:
         - pacer_drop
       forbid_failed_tools:
         - get_deal
+      forbid_tools:
+        - get_deal
+      require_ai_response_after_last_caller: true
       require_tool_result_usage:
         - tool: search_deals
           fragment: "250000"
+          after_caller_fragment: Какая цена?
 
   - id: conversation_481_no_audio_pacer_overflow
     description: Regression for conversation 481 clipped speech; normal AI voice output must complete without pacer_drop overflow markers.

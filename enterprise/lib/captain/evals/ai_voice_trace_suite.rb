@@ -61,7 +61,8 @@ class Captain::Evals::AiVoiceTraceSuite
     {
       actions: actions.tally,
       tool_events: tool_events(events),
-      ai_text: ai_text(events)
+      ai_text: ai_text(events),
+      caller_transcripts: caller_transcripts(events)
     }
   end
 
@@ -83,9 +84,18 @@ class Captain::Evals::AiVoiceTraceSuite
       failures << "forbidden failed tool present: #{tool}" if failed
     end
 
+    Array(expected[:forbid_tools]).each do |tool|
+      used = actual[:tool_events].any? { |event| event[:tool_name] == tool.to_s }
+      failures << "forbidden tool present: #{tool}" if used
+    end
+
+    if expected[:require_ai_response_after_last_caller] && !ai_response_after_last_caller?(actual)
+      failures << 'ai response missing after last caller transcript'
+    end
+
     Array(expected[:require_tool_result_usage]).each do |requirement|
       requirement = requirement.to_h.deep_symbolize_keys
-      next if tool_result_used?(actual[:tool_events], actual[:ai_text], requirement)
+      next if tool_result_used?(actual, requirement)
 
       failures << "tool result fragment was not used after #{requirement[:tool]}: #{requirement[:fragment]}"
     end
@@ -93,7 +103,9 @@ class Captain::Evals::AiVoiceTraceSuite
     failures
   end
 
-  def tool_result_used?(tool_events, ai_text, requirement)
+  def tool_result_used?(actual, requirement)
+    tool_events = actual[:tool_events]
+    ai_text = actual[:ai_text]
     fragment = requirement[:fragment].to_s
     return false if fragment.blank?
 
@@ -104,7 +116,23 @@ class Captain::Evals::AiVoiceTraceSuite
     end
     return false unless completed_tool
 
-    ai_text.any? { |event| event[:index] > completed_tool[:index] && event[:text].include?(fragment) }
+    minimum_index = completed_tool[:index]
+    after_caller_fragment = requirement[:after_caller_fragment].to_s
+    if after_caller_fragment.present?
+      caller_turn = actual[:caller_transcripts].reverse.find { |event| event[:text].include?(after_caller_fragment) }
+      return false unless caller_turn
+
+      minimum_index = [minimum_index, caller_turn[:index]].max
+    end
+
+    ai_text.any? { |event| event[:index] > minimum_index && event[:text].include?(fragment) }
+  end
+
+  def ai_response_after_last_caller?(actual)
+    last_caller_turn = actual[:caller_transcripts].last
+    return false unless last_caller_turn
+
+    actual[:ai_text].any? { |event| event[:index] > last_caller_turn[:index] }
   end
 
   def event_action(event)
@@ -132,6 +160,18 @@ class Captain::Evals::AiVoiceTraceSuite
       text = event_text(event)
       next if text.blank?
       next unless role == 'ai' || role == 'assistant' || action.include?('ai_transcript') || action.include?('realtime_audio_out')
+
+      { index: index, text: text }
+    end
+  end
+
+  def caller_transcripts(events)
+    events.map.with_index.filter_map do |event, index|
+      role = (event[:role] || event.dig(:payload, :role)).to_s
+      action = event_action(event).to_s
+      text = event_text(event)
+      next if text.blank?
+      next unless role.in?(%w[caller customer user]) || action.include?('caller_transcript')
 
       { index: index, text: text }
     end
