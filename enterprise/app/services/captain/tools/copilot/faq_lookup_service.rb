@@ -8,9 +8,10 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def execute(query:, semantic: true)
     translated_query = semantic ? translated_query_for(query) : query
-    responses, lookup_strategy = lookup_responses(translated_query, query, semantic: semantic)
+    responses, lookup_strategy, fallback_reason = lookup_responses(translated_query, query, semantic: semantic)
 
-    faq_result_payload(query: query, translated_query: translated_query, responses: responses, lookup_strategy: lookup_strategy)
+    faq_result_payload(query: query, translated_query: translated_query, responses: responses, lookup_strategy: lookup_strategy,
+                       trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason))
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
     log_semantic_unavailable(e)
     translated_query ||= query
@@ -19,7 +20,8 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
       query: query,
       translated_query: translated_query,
       responses: lexical_fallback_responses(translated_query, query),
-      lookup_strategy: 'lexical'
+      lookup_strategy: 'lexical',
+      trace_context: trace_context(semantic_attempted: true, fallback_reason: 'semantic_unavailable')
     )
   rescue StandardError => e
     Rails.logger.error do
@@ -40,30 +42,64 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   def lookup_responses(query, fallback_query = nil, semantic: true)
     if semantic
       responses = semantic_responses(query)
-      return [responses, 'semantic'] if responses.any?
+      return [responses, 'semantic', nil] if responses.any?
     end
 
     responses = lexical_fallback_responses(query, fallback_query)
-    [responses, fallback_lookup_strategy(responses, semantic: semantic)]
+    [responses, 'lexical', fallback_reason_for(semantic: semantic)]
   end
 
-  def fallback_lookup_strategy(responses, semantic: true)
-    return 'lexical' if responses.any?
-
-    semantic ? 'semantic' : 'lexical'
+  def fallback_reason_for(semantic: true)
+    'semantic_no_matches' if semantic
   end
 
-  def faq_result_payload(query:, translated_query:, responses:, lookup_strategy:, error: nil)
+  def faq_result_payload(query:, translated_query:, responses:, lookup_strategy:, trace_context: {})
     payload = {
       query: query,
       translated_query: translated_query,
       total_count: responses.size,
       lookup_strategy: lookup_strategy,
-      error: error,
-      matches: responses.map { |response| response_payload(response) }
+      matches: responses.map { |response| response_payload(response) },
+      retrieval_trace: retrieval_trace(
+        translated_query: translated_query,
+        responses: responses,
+        lookup_strategy: lookup_strategy,
+        trace_context: trace_context
+      )
     }.compact
 
     formatted_payload(payload)
+  end
+
+  def trace_context(semantic_attempted:, fallback_reason: nil)
+    {
+      semantic_attempted: semantic_attempted,
+      fallback_reason: fallback_reason
+    }
+  end
+
+  def retrieval_trace(translated_query:, responses:, lookup_strategy:, trace_context: {})
+    {
+      translated_query: translated_query,
+      strategy: lookup_strategy,
+      degraded: trace_context[:fallback_reason].present?,
+      semantic_attempted: trace_context[:semantic_attempted],
+      fallback_reason: trace_context[:fallback_reason],
+      match_count: responses.size,
+      response_ids: responses.map(&:id),
+      document_ids: document_ids_for(responses),
+      sources: sources_for(responses)
+    }.compact
+  end
+
+  def document_ids_for(responses)
+    responses.filter_map do |response|
+      response.documentable_id if response.documentable_type == 'Captain::Document'
+    end.uniq
+  end
+
+  def sources_for(responses)
+    responses.filter_map { |response| response.documentable&.try(:external_link) }.uniq
   end
 
   def log_semantic_unavailable(error)

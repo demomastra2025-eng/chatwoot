@@ -19,6 +19,13 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(payload['query']).to eq('password reset')
     expect(payload['total_count']).to eq(1)
     expect(payload['matches'].first).to include('question' => 'How to reset password?', 'answer' => 'Click forgot password')
+    expect(payload['retrieval_trace']).to include(
+      'strategy' => 'semantic',
+      'degraded' => false,
+      'semantic_attempted' => true,
+      'match_count' => 1,
+      'response_ids' => [payload['matches'].first['id']]
+    )
   end
 
   it 'falls back to exact/keyword FAQ lookup when semantic lookup is unavailable' do
@@ -31,6 +38,13 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       'query' => 'reset password',
       'total_count' => 1,
       'lookup_strategy' => 'lexical'
+    )
+    expect(payload['retrieval_trace']).to include(
+      'strategy' => 'lexical',
+      'degraded' => true,
+      'semantic_attempted' => true,
+      'fallback_reason' => 'semantic_unavailable',
+      'match_count' => 1
     )
     expect(payload).not_to have_key('error')
     expect(payload['matches'].first).to include(
@@ -63,6 +77,12 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       'query' => 'reset password',
       'total_count' => 1,
       'lookup_strategy' => 'lexical'
+    )
+    expect(payload['retrieval_trace']).to include(
+      'strategy' => 'lexical',
+      'degraded' => false,
+      'semantic_attempted' => false,
+      'match_count' => 1
     )
   end
 end

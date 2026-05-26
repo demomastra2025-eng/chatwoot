@@ -1959,3 +1959,37 @@ Remaining cross-etapa blockers before full native-AI stack PASS:
 2. Etapa 10 AI Voice parity still needs live routing/audio/session+recording/finalize proof and shared Captain state/voice-safe tool progress.
 3. Etapa 11 eval production hardening/DEV rollout still needs final path-scoped review, runtime smoke, and commit split.
 4. No PROD deploy/restart has been performed for this Etapa 8 code-slice.
+
+## 2026-05-26 Etapa 9 first Knowledge/RAG slice — FAQ lookup retrieval trace
+
+Status: **Implemented, targeted verified — Etapa 9 traceability slice DONE.**
+
+Scope:
+
+- Minimal safe Etapa 9 slice selected before broader vector/RAG storage work: make existing Captain FAQ lookup outputs traceable instead of returning opaque matches.
+- `Captain::Tools::FaqLookupTool` and `Captain::Tools::Copilot::FaqLookupService` now include a `retrieval_trace` envelope in the returned JSON payload.
+- Trace fields include strategy, degraded state, semantic-attempt flag, fallback reason, match count, response ids, document ids, and source links when present.
+- Lexical fallback is now explicitly marked degraded when semantic lookup was attempted but failed or returned no matches; realtime/voice `semantic: false` lexical path remains non-degraded and explicitly shows `semantic_attempted: false`.
+- This preserves existing FAQ payload fields and does not remove the current lexical fallback. It closes the first traceability gap only; it is not the full Etapa 9 semantic/vector RAG PASS.
+- No deploy/restart performed.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/lib/captain/tools/faq_lookup_tool_spec.rb spec/enterprise/services/captain/tools/copilot/faq_lookup_service_spec.rb --format progress'
+# RED before fix: 8 examples, 7 failures (payload had no retrieval_trace)
+# GREEN after fix: 8 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/lib/captain/tools/faq_lookup_tool_spec.rb spec/enterprise/services/captain/tools/copilot/faq_lookup_service_spec.rb spec/enterprise/services/captain/tools/search_documentation_service_spec.rb spec/requests/internal/voice/ai/tools_spec.rb --format progress'
+# 24 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)" && bundle exec ruby -c enterprise/lib/captain/tools/faq_lookup_tool.rb && bundle exec ruby -c enterprise/app/services/captain/tools/copilot/faq_lookup_service.rb && bundle exec ruby -c spec/enterprise/lib/captain/tools/faq_lookup_tool_spec.rb && bundle exec ruby -c spec/enterprise/services/captain/tools/copilot/faq_lookup_service_spec.rb && bundle exec rubocop --force-exclusion --fail-level E enterprise/lib/captain/tools/faq_lookup_tool.rb enterprise/app/services/captain/tools/copilot/faq_lookup_service.rb spec/enterprise/lib/captain/tools/faq_lookup_tool_spec.rb spec/enterprise/services/captain/tools/copilot/faq_lookup_service_spec.rb && git diff --check'
+# Syntax OK; 4 files inspected, no offenses detected; diff check clean
+```
+
+Remaining Etapa 9 blockers before full Knowledge/RAG PASS:
+
+1. Persist/query source chunks separately from generated FAQ responses, with explicit source/chunk/embedding IDs in traces.
+2. Prove semantic/vector retrieval with indexed embeddings in runtime-like data, not only existing `Captain::AssistantResponse.search` delegation.
+3. Add reindex/backfill flow and degraded-state operator visibility for embedding failures/stale indexes.
+4. Keep lexical fallback as marked degraded mode only, not the final success state for normal Knowledge/RAG.

@@ -5,23 +5,41 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   def perform(_tool_context, query:, semantic: true)
     log_tool_usage('searching', { query: query })
 
-    responses = semantic ? semantic_responses(query) : Captain::AssistantResponse.none
-    lookup_strategy = semantic ? 'semantic' : 'lexical'
-
-    if responses.blank?
-      responses = lexical_fallback_responses(query)
-      lookup_strategy = 'lexical' if responses.any?
-    end
+    responses, lookup_strategy, fallback_reason = lookup_responses(query, semantic: semantic)
 
     log_tool_usage('found_results', { query: query, count: responses.size, strategy: lookup_strategy })
-    faq_payload(query: query, responses: responses, lookup_strategy: lookup_strategy)
+    faq_payload(
+      query: query,
+      responses: responses,
+      lookup_strategy: lookup_strategy,
+      trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason)
+    )
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
     Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
     responses = lexical_fallback_responses(query)
-    faq_payload(query: query, responses: responses, lookup_strategy: 'lexical')
+    faq_payload(
+      query: query,
+      responses: responses,
+      lookup_strategy: 'lexical',
+      trace_context: trace_context(semantic_attempted: true, fallback_reason: 'semantic_unavailable')
+    )
   end
 
   private
+
+  def lookup_responses(query, semantic: true)
+    responses = semantic ? semantic_responses(query) : Captain::AssistantResponse.none
+    lookup_strategy = semantic ? 'semantic' : 'lexical'
+    fallback_reason = nil
+
+    if responses.blank?
+      responses = lexical_fallback_responses(query)
+      fallback_reason = 'semantic_no_matches' if semantic
+      lookup_strategy = 'lexical'
+    end
+
+    [responses, lookup_strategy, fallback_reason]
+  end
 
   def semantic_responses(query)
     Captain::AssistantResponse.search(query, account_id: account.id)
@@ -52,16 +70,50 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     query.to_s.downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.first(5)
   end
 
-  def faq_payload(query:, responses:, error: nil, lookup_strategy: nil)
+  def faq_payload(query:, responses:, lookup_strategy: nil, trace_context: {})
     payload = {
       query: query,
       total_count: responses.size,
-      matches: responses.map { |response| response_payload(response) }
+      matches: responses.map { |response| response_payload(response) },
+      retrieval_trace: retrieval_trace(
+        responses: responses,
+        lookup_strategy: lookup_strategy,
+        trace_context: trace_context
+      )
     }
     payload[:lookup_strategy] = lookup_strategy if lookup_strategy.present?
-    payload[:error] = error if error.present?
 
     JSON.pretty_generate(payload)
+  end
+
+  def trace_context(semantic_attempted:, fallback_reason: nil)
+    {
+      semantic_attempted: semantic_attempted,
+      fallback_reason: fallback_reason
+    }
+  end
+
+  def retrieval_trace(responses:, lookup_strategy:, trace_context: {})
+    {
+      strategy: lookup_strategy,
+      degraded: trace_context[:fallback_reason].present?,
+      semantic_attempted: trace_context[:semantic_attempted],
+      fallback_reason: trace_context[:fallback_reason],
+      match_count: responses.size,
+      response_ids: responses.map(&:id),
+      document_ids: document_ids_for(responses),
+      sources: sources_for(responses)
+    }.compact
+  end
+
+  def document_ids_for(responses)
+    responses.filter_map do |response|
+      response.documentable_id if response.documentable_type == 'Captain::Document'
+    end.uniq
+  end
+
+  def sources_for(responses)
+    responses.filter_map { |response| response.documentable&.try(:external_link) }.uniq
   end
 
   def response_payload(response)
