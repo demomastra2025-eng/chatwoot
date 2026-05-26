@@ -198,6 +198,21 @@ RSpec.describe 'Api::V1::Accounts::Portals', type: :request do
         expect(portal.channel_web_widget_id).to be_nil
         expect(response.parsed_body['inbox']).to be_nil
       end
+
+      it 'does not attach a web widget inbox from another account' do
+        other_account = create(:account)
+        other_inbox = create(:inbox, account: other_account)
+
+        put "/api/v1/accounts/#{account.id}/portals/#{portal.slug}",
+            params: {
+              portal: { name: portal.name },
+              inbox_id: other_inbox.id
+            },
+            headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:not_found)
+        expect(portal.reload.channel_web_widget_id).to be_nil
+      end
     end
   end
 

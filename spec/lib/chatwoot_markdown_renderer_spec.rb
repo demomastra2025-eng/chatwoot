@@ -84,6 +84,10 @@ RSpec.describe ChatwootMarkdownRenderer do
         expect(renderer.render_message.to_s).to eq("<p>Visit <a href=\"https://example.com\">https://example.com</a> for details</p>\n")
       end
     end
+
+    it 'renders single newlines as hard breaks when requested' do
+      expect(described_class.new("first\nsecond").render_message(hardbreaks: true).to_s).to include("first<br />\nsecond")
+    end
   end
 
   describe '#render_markdown_to_plain_text' do

@@ -106,6 +106,23 @@ RSpec.describe 'Notifications Subscriptions API', type: :request do
         expect(response).to have_http_status(:success)
         expect { subscription.reload }.to raise_exception(ActiveRecord::RecordNotFound)
       end
+
+      it 'does not delete another user notification subscription with the same push token' do
+        other_subscription = create(
+          :notification_subscription,
+          subscription_type: 'fcm',
+          subscription_attributes: { push_token: 'p' },
+          user: create(:user)
+        )
+
+        delete '/api/v1/notification_subscriptions',
+               params: { push_token: 'p' },
+               headers: agent.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(other_subscription.reload).to be_present
+      end
     end
   end
 end

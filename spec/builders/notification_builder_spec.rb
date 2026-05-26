@@ -5,7 +5,7 @@ describe NotificationBuilder do
 
   describe '#perform' do
     let!(:account) { create(:account) }
-    let!(:user) { create(:user, account: account) }
+    let!(:user) { create(:user, account: account, role: :administrator) }
     let!(:primary_actor) { create(:conversation, account: account) }
 
     before do
@@ -24,6 +24,41 @@ describe NotificationBuilder do
           primary_actor: primary_actor
         ).perform
       end.to change { user.notifications.count }.by(1)
+    end
+
+    it 'does not create conversation notifications for agents without conversation access' do
+      restricted_agent = create(:user, account: account, role: :agent)
+      notification_setting = restricted_agent.notification_settings.find_by(account_id: account.id)
+      notification_setting.selected_email_flags = [:email_conversation_creation]
+      notification_setting.selected_push_flags = [:push_conversation_creation]
+      notification_setting.save!
+
+      expect do
+        described_class.new(
+          notification_type: 'conversation_creation',
+          user: restricted_agent,
+          account: account,
+          primary_actor: primary_actor
+        ).perform
+      end.not_to(change { restricted_agent.notifications.count })
+    end
+
+    it 'creates conversation notifications for agents with inbox access' do
+      inbox_agent = create(:user, account: account, role: :agent)
+      create(:inbox_member, user: inbox_agent, inbox: primary_actor.inbox)
+      notification_setting = inbox_agent.notification_settings.find_by(account_id: account.id)
+      notification_setting.selected_email_flags = [:email_conversation_creation]
+      notification_setting.selected_push_flags = [:push_conversation_creation]
+      notification_setting.save!
+
+      expect do
+        described_class.new(
+          notification_type: 'conversation_creation',
+          user: inbox_agent,
+          account: account,
+          primary_actor: primary_actor
+        ).perform
+      end.to change { inbox_agent.notifications.count }.by(1)
     end
 
     it 'creates a notification when only telegram notification is enabled' do

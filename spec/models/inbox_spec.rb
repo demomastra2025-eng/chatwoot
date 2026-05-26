@@ -367,7 +367,7 @@ RSpec.describe Inbox do
   describe '#sanitized_name' do
     context 'when inbox name contains forbidden characters' do
       it 'removes forbidden and spam-trigger characters' do
-        inbox = FactoryBot.build(:inbox, name: 'Test/Name\\With<Bad>@Characters"And\';:Quotes!#$%')
+        inbox = FactoryBot.build(:inbox, name: 'Test/Name\\With<Bad>@Characters"And\';:Quotes!#$%()')
         expect(inbox.sanitized_name).to eq('Test/NameWithBadCharactersAnd\'Quotes')
       end
     end
@@ -491,6 +491,20 @@ RSpec.describe Inbox do
         inbox = FactoryBot.build(:inbox, name: 'Test Name with émojis 🎉')
         expect(inbox.sanitized_name).to eq('Test Name with émojis 🎉')
       end
+    end
+  end
+
+  describe '#sanitized_business_name' do
+    it 'sanitizes business name before using it in email From headers' do
+      inbox = FactoryBot.build(:inbox, name: 'Support Inbox', business_name: 'Giro Crédito - Soporte (Email)')
+
+      expect(inbox.sanitized_business_name).to eq('Giro Crédito - Soporte Email')
+    end
+
+    it 'falls back to sanitized inbox name when business name is blank after sanitization' do
+      inbox = FactoryBot.build(:inbox, name: 'Support Inbox', business_name: '()')
+
+      expect(inbox.sanitized_business_name).to eq('Support Inbox')
     end
   end
 end

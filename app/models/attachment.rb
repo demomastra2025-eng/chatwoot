@@ -117,9 +117,17 @@ class Attachment < ApplicationRecord
     audio_file_data = base_data.merge(file_metadata)
     audio_file_data.merge(
       {
+        # Keep audio playback inline while avoiding the ActiveStorage proxy path.
+        data_url: inline_audio_url,
         transcribed_text: meta&.[]('transcribed_text') || ''
       }
     )
+  end
+
+  def inline_audio_url
+    return '' unless file.attached?
+
+    Rails.application.routes.url_helpers.rails_storage_redirect_url(file, disposition: 'inline')
   end
 
   def file_metadata
@@ -183,6 +191,7 @@ class Attachment < ApplicationRecord
 
     self.extension = File.extname(file.filename.to_s).delete_prefix('.').presence
   end
+
   def should_validate_file?
     return unless file.attached?
     # we are only limiting attachment types in case of website widget

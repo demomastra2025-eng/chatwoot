@@ -152,7 +152,7 @@ RSpec.describe 'Inboxes API', type: :request do
       end
 
       it 'returns imap details in inbox when admin' do
-        email_channel = create(:channel_email, account: account, imap_enabled: true, imap_login: 'test@test.com')
+        email_channel = create(:channel_email, account: account, imap_enabled: true, imap_login: 'test@test.com', imap_authentication: 'login')
         email_inbox = create(:inbox, channel: email_channel, account: account)
 
         imap_connection = double
@@ -167,6 +167,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(data[:imap_enabled]).to be_truthy
         expect(data[:imap_login]).to eq('test@test.com')
+        expect(data[:imap_authentication]).to eq('login')
       end
 
       context 'when it is a Twilio inbox' do
@@ -1206,8 +1207,12 @@ RSpec.describe 'Inboxes API', type: :request do
         email_channel = create(:channel_email, account: account)
         email_inbox = create(:inbox, channel: email_channel, account: account)
 
-        imap_connection = double
-        allow(Mail).to receive(:connection).and_return(imap_connection)
+        imap_connection = instance_double(Net::IMAP, disconnected?: false)
+        allow(Net::IMAP).to receive(:new)
+          .with('imap.gmail.com', port: 993, ssl: true)
+          .and_return(imap_connection)
+        allow(imap_connection).to receive(:authenticate).with('plain', 'imaptest@gmail.com', nil)
+        allow(imap_connection).to receive(:disconnect)
 
         patch "/api/v1/accounts/#{account.id}/inboxes/#{email_inbox.id}",
               headers: admin.create_new_auth_token,
@@ -1216,7 +1221,8 @@ RSpec.describe 'Inboxes API', type: :request do
                   imap_enabled: true,
                   imap_address: 'imap.gmail.com',
                   imap_port: 993,
-                  imap_login: 'imaptest@gmail.com'
+                  imap_login: 'imaptest@gmail.com',
+                  imap_authentication: 'plain'
                 }
               },
               as: :json
@@ -1225,6 +1231,7 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(email_channel.reload.imap_enabled).to be true
         expect(email_channel.reload.imap_address).to eq('imap.gmail.com')
         expect(email_channel.reload.imap_port).to eq(993)
+        expect(email_channel.reload.imap_authentication).to eq('plain')
       end
 
       it 'updates avatar when administrator' do

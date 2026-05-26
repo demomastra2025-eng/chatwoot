@@ -1,0 +1,51 @@
+Delivered-To: test.user@example.com
+Received: by 192.0.2.1 with SMTP id smtp12345;
+        Mon, 14 Jul 2025 15:23:57 -0700 (PDT)
+Return-Path: <sender@example.com>
+From: <sender@example.com>
+To: <test.user@example.com>
+Subject: Test inline image without Content-Disposition
+Date: Mon, 14 Jul 2025 19:23:29 -0300
+Message-ID: <test-message-id@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	boundary="----=_NextPart_000_0001"
+X-Mailer: Microsoft Outlook 16.0
+Content-Language: en-us
+
+This is a multipart message in MIME format.
+
+------=_NextPart_000_0001
+Content-Type: multipart/alternative;
+	boundary="----=_NextPart_001_0002"
+
+------=_NextPart_001_0002
+Content-Type: text/plain;
+	charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+This is a plain text version of the message.
+
+------=_NextPart_001_0002
+Content-Type: text/html;
+	charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+  <body>
+    <p>This is an HTML message with an inline image.</p>
+    <img src="cid:image001.jpg@test">
+  </body>
+</html>
+
+------=_NextPart_001_0002--
+
+------=_NextPart_000_0001
+Content-Type: image/jpeg;
+	filename="image001.jpg"
+Content-Transfer-Encoding: base64
+Content-ID: <image001.jpg@test>
+
+/9j/4AAQSkZJRgABAQEASABIAAD/2w==
+
+------=_NextPart_000_0001--

@@ -58,6 +58,20 @@ RSpec.describe BulkActionsJob do
       expect(conversation_3.reload.status).to eq('snoozed')
     end
 
+    it 'does not update conversations the agent cannot access' do
+      inaccessible_conversation = create(:conversation, account_id: account.id, status: :open)
+      params = {
+        type: 'Conversation',
+        fields: { status: 'snoozed' },
+        ids: [conversation_1.display_id, inaccessible_conversation.display_id]
+      }
+
+      described_class.perform_now(account: account, params: params, user: agent)
+
+      expect(conversation_1.reload.status).to eq('snoozed')
+      expect(inaccessible_conversation.reload.status).to eq('open')
+    end
+
     it 'bulk updates the assignee_id' do
       params = {
         type: 'Conversation',

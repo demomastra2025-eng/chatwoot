@@ -61,8 +61,9 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
   end
 
   def process_attached_logo
-    blob_id = params[:blob_id]
-    blob = ActiveStorage::Blob.find_signed(blob_id)
+    blob = ActiveStorage::Blob.find_signed(params[:blob_id].to_s)
+    return unless blob
+
     released_bytes = @portal.logo.attached? ? @portal.logo.blob.byte_size : 0
     return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?(blob.byte_size,
                                                                                                                                released_bytes)
@@ -92,7 +93,7 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
     return {} unless permitted_params.key?(:inbox_id)
     return { channel_web_widget_id: nil } if permitted_params[:inbox_id].blank?
 
-    inbox = Inbox.find(permitted_params[:inbox_id])
+    inbox = Current.account.inboxes.find(permitted_params[:inbox_id])
     return {} unless inbox.web_widget?
 
     { channel_web_widget_id: inbox.channel.id }
@@ -103,6 +104,8 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
   end
 
   def parsed_custom_domain
+    return @portal.custom_domain if @portal.custom_domain.blank?
+
     domain = URI.parse(@portal.custom_domain)
     domain.is_a?(URI::HTTP) ? domain.host : @portal.custom_domain
   end

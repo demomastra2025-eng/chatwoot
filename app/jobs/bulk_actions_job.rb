@@ -9,6 +9,7 @@ class BulkActionsJob < ApplicationJob
 
   def perform(account:, params:, user:, bulk_action_run_id: nil)
     @account = account
+    @user = user
     Current.user = user
     @params = params.deep_symbolize_keys
     @bulk_action_run = account.bulk_action_runs.find_by(id: bulk_action_run_id) if bulk_action_run_id.present?
@@ -85,7 +86,8 @@ class BulkActionsJob < ApplicationJob
     current_model = @params[:type].camelcase
     return unless MODEL_TYPE.include?(current_model)
 
-    current_model.constantize&.where(account_id: @account.id, display_id: ids)
+    scope = current_model.constantize&.where(account_id: @account.id, display_id: ids)
+    Conversations::PermissionFilterService.new(scope, @user, @account).perform
   end
 
   def flush_progress(processed_count, failed_count)
