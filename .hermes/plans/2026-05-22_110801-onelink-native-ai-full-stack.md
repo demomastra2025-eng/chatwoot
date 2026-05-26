@@ -1993,3 +1993,36 @@ Remaining Etapa 9 blockers before full Knowledge/RAG PASS:
 2. Prove semantic/vector retrieval with indexed embeddings in runtime-like data, not only existing `Captain::AssistantResponse.search` delegation.
 3. Add reindex/backfill flow and degraded-state operator visibility for embedding failures/stale indexes.
 4. Keep lexical fallback as marked degraded mode only, not the final success state for normal Knowledge/RAG.
+
+## 2026-05-26 Etapa 9 second Knowledge/RAG slice — persisted source chunks for generated FAQs
+
+Status: **Implemented, targeted verified — Etapa 9 source-chunk persistence slice DONE.**
+
+Scope:
+
+- Added `captain_document_chunks` as the first durable source-chunk layer for Captain Knowledge documents.
+- `Captain::Document` now owns ordered `document_chunks`; generated `Captain::AssistantResponse` rows can link back to the chunk that produced them through nullable `document_chunk_id`.
+- New source-chunk references are backed by DB foreign keys; response provenance uses `on_delete: :nullify` so deleting chunks cannot leave invalid response references.
+- `Captain::Documents::ResponseBuilderJob` now generates FAQ candidates before destructive changes, then resets stale responses/chunks, persists one chunk per generated FAQ text chunk, and writes linked responses inside a document lock/transaction.
+- Stale generated results are discarded if the document FAQ source fingerprint changes before the locked write step, preventing older jobs from replacing newer source text responses.
+- Each chunk stores account, assistant, document, chunk index, raw chunk content, and a SHA-256 content fingerprint. This gives future retrieval traces stable source/chunk IDs instead of only FAQ response/document IDs.
+- FAQ lookup payloads now expose `document_chunk_id` per match and `document_chunk_ids` in `retrieval_trace` when a generated FAQ response has source-chunk provenance.
+- This preserves existing FAQ generation behavior and does not yet replace FAQ-response vector search with direct source-chunk vector retrieval.
+- No deploy/restart performed.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bash -lc 'eval "$(rbenv init - bash)" && bundle exec rspec spec/enterprise/jobs/captain/documents/response_builder_job_spec.rb:56 --format progress'
+# RED before fix: NoMethodError undefined method `document_chunks` for Captain::Document
+
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH RAILS_ENV=test DISABLE_SPRING=1 bash -lc 'eval "$(rbenv init - bash)" && bundle exec rails db:migrate && bundle exec rspec spec/enterprise/jobs/captain/documents/response_builder_job_spec.rb --format progress'
+# 36 examples, 0 failures
+```
+
+Remaining Etapa 9 blockers before full Knowledge/RAG PASS:
+
+1. Use persisted source chunks for direct chunk retrieval, not only FAQ-response provenance/trace ids.
+2. Prove semantic/vector retrieval with indexed embeddings in runtime-like data, not only existing `Captain::AssistantResponse.search` delegation.
+3. Add reindex/backfill flow and degraded-state operator visibility for embedding failures/stale indexes.
+4. Keep lexical fallback as marked degraded mode only, not the final success state for normal Knowledge/RAG.

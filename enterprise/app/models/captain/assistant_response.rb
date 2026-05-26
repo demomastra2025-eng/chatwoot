@@ -29,6 +29,7 @@ class Captain::AssistantResponse < ApplicationRecord
   belongs_to :assistant, class_name: 'Captain::Assistant'
   belongs_to :account
   belongs_to :documentable, polymorphic: true, optional: true
+  belongs_to :document_chunk, class_name: 'Captain::DocumentChunk', optional: true
   has_neighbors :embedding, normalize: true
 
   validates :question, presence: true

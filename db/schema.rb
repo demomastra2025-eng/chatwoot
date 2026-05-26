@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_22_143000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_26_055219) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -411,8 +411,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_22_143000) do
     t.integer "status", default: 1, null: false
     t.string "documentable_type"
     t.boolean "edited", default: false, null: false
+    t.bigint "document_chunk_id"
     t.index ["account_id"], name: "index_captain_assistant_responses_on_account_id"
     t.index ["assistant_id"], name: "index_captain_assistant_responses_on_assistant_id"
+    t.index ["document_chunk_id"], name: "index_captain_assistant_responses_on_document_chunk_id"
     t.index ["documentable_id", "documentable_type"], name: "idx_cap_asst_resp_on_documentable"
     t.index ["embedding"], name: "vector_idx_knowledge_entries_embedding", using: :ivfflat
     t.index ["status"], name: "index_captain_assistant_responses_on_status"
@@ -452,6 +454,22 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_22_143000) do
     t.index ["account_id", "group_name"], name: "index_captain_custom_tools_on_account_id_and_group_name"
     t.index ["account_id", "slug"], name: "index_captain_custom_tools_on_account_id_and_slug", unique: true
     t.index ["account_id"], name: "index_captain_custom_tools_on_account_id"
+  end
+
+  create_table "captain_document_chunks", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assistant_id", null: false
+    t.bigint "document_id", null: false
+    t.integer "chunk_index", null: false
+    t.text "content", null: false
+    t.string "content_sha256", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_captain_document_chunks_on_account_id"
+    t.index ["assistant_id"], name: "index_captain_document_chunks_on_assistant_id"
+    t.index ["content_sha256"], name: "index_captain_document_chunks_on_content_sha256"
+    t.index ["document_id", "chunk_index"], name: "index_captain_document_chunks_on_document_id_and_chunk_index", unique: true
+    t.index ["document_id"], name: "index_captain_document_chunks_on_document_id"
   end
 
   create_table "captain_documents", force: :cascade do |t|
@@ -2342,6 +2360,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_22_143000) do
   add_foreign_key "campaign_runs", "campaigns"
   add_foreign_key "campaign_runs", "inboxes"
   add_foreign_key "campaigns", "captain_assistants"
+  add_foreign_key "captain_assistant_responses", "captain_document_chunks", column: "document_chunk_id", on_delete: :nullify
+  add_foreign_key "captain_document_chunks", "accounts"
+  add_foreign_key "captain_document_chunks", "captain_assistants", column: "assistant_id"
+  add_foreign_key "captain_document_chunks", "captain_documents", column: "document_id"
   add_foreign_key "captain_mcp_servers", "accounts"
   add_foreign_key "confirmation_requests", "accounts"
   add_foreign_key "confirmation_requests", "contacts"

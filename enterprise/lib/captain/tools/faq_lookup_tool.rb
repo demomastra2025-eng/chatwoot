@@ -102,6 +102,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       match_count: responses.size,
       response_ids: responses.map(&:id),
       document_ids: document_ids_for(responses),
+      document_chunk_ids: document_chunk_ids_for(responses),
       sources: sources_for(responses)
     }.compact
   end
@@ -110,6 +111,10 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     responses.filter_map do |response|
       response.documentable_id if response.documentable_type == 'Captain::Document'
     end.uniq
+  end
+
+  def document_chunk_ids_for(responses)
+    responses.filter_map(&:document_chunk_id).uniq
   end
 
   def sources_for(responses)
@@ -122,6 +127,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       question: response.question,
       answer: response.answer,
       source: response.documentable&.try(:external_link),
+      document_chunk_id: response.document_chunk_id,
       created_at: response.created_at&.iso8601,
       updated_at: response.updated_at&.iso8601
     }.compact

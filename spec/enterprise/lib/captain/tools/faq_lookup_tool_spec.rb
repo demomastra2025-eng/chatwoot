@@ -5,10 +5,14 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:tool) { described_class.new(assistant) }
   let(:tool_context) { Struct.new(:state).new({}) }
+  let(:document) { create(:captain_document, account: account, assistant: assistant) }
+  let(:document_chunk) do
+    document.document_chunks.create!(account: account, assistant: assistant, chunk_index: 0, content: 'Password reset source')
+  end
 
   before do
-    create(:captain_assistant_response, assistant: assistant, account: account, question: 'How to reset password?', answer: 'Click forgot password',
-                                        status: 'approved')
+    create(:captain_assistant_response, assistant: assistant, account: account, documentable: document, document_chunk: document_chunk,
+                                        question: 'How to reset password?', answer: 'Click forgot password', status: 'approved')
     allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.where(assistant_id: assistant.id,
                                                                                                       account_id: account.id, status: :approved))
   end
@@ -19,12 +23,14 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(payload['query']).to eq('password reset')
     expect(payload['total_count']).to eq(1)
     expect(payload['matches'].first).to include('question' => 'How to reset password?', 'answer' => 'Click forgot password')
+    expect(payload['matches'].first).to include('document_chunk_id' => document_chunk.id)
     expect(payload['retrieval_trace']).to include(
       'strategy' => 'semantic',
       'degraded' => false,
       'semantic_attempted' => true,
       'match_count' => 1,
-      'response_ids' => [payload['matches'].first['id']]
+      'response_ids' => [payload['matches'].first['id']],
+      'document_chunk_ids' => [document_chunk.id]
     )
   end
 

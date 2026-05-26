@@ -5,9 +5,14 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
   let(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:service) { described_class.new(assistant, user: user) }
+  let(:document) { create(:captain_document, account: account, assistant: assistant) }
+  let(:document_chunk) do
+    document.document_chunks.create!(account: account, assistant: assistant, chunk_index: 0, content: 'Refund policy source')
+  end
 
   before do
-    create(:captain_assistant_response, assistant: assistant, account: account, question: 'Refund?', answer: 'Refund in 14 days', status: 'approved')
+    create(:captain_assistant_response, assistant: assistant, account: account, documentable: document, document_chunk: document_chunk,
+                                        question: 'Refund?', answer: 'Refund in 14 days', status: 'approved')
     translate_service = instance_double(Captain::Llm::TranslateQueryService)
     allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translate_service)
     allow(translate_service).to receive(:translate).and_return('refund')
@@ -23,14 +28,16 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     expect(payload['lookup_strategy']).to eq('semantic')
     expect(payload['matches'].first).to include(
       'question' => 'Refund?',
-      'answer' => 'Refund in 14 days'
+      'answer' => 'Refund in 14 days',
+      'document_chunk_id' => document_chunk.id
     )
     expect(payload['retrieval_trace']).to include(
       'strategy' => 'semantic',
       'degraded' => false,
       'semantic_attempted' => true,
       'match_count' => 1,
-      'response_ids' => [payload['matches'].first['id']]
+      'response_ids' => [payload['matches'].first['id']],
+      'document_chunk_ids' => [document_chunk.id]
     )
   end
 

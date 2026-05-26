@@ -7,10 +7,15 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
   def perform(document, options = {})
     return unless document.faq_generation_enabled?
 
-    reset_previous_responses(document)
-
+    generation_fingerprint = document_generation_fingerprint(document)
     faqs = generate_faqs(document, options)
-    create_responses_from_faqs(faqs, document)
+    document.with_lock do
+      document.reload
+      if current_generation?(document, generation_fingerprint)
+        reset_previous_responses(document)
+        create_responses_from_faqs(faqs, document)
+      end
+    end
   end
 
   private
@@ -34,15 +39,21 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
     chunks = text_chunks(document.faq_generation_text)
     return [] if chunks.blank?
 
-    faqs = chunks.flat_map do |chunk|
-      Captain::Llm::FaqGeneratorService.new(chunk, document.account.locale_english_name, account_id: document.account_id).generate
+    faqs = chunks.each_with_index.flat_map do |chunk, index|
+      Captain::Llm::FaqGeneratorService.new(
+        chunk,
+        document.account.locale_english_name,
+        account_id: document.account_id
+      ).generate.map do |faq|
+        faq.to_h.merge('source_chunk' => { 'chunk_index' => index, 'content' => chunk })
+      end
     end
     store_text_generation_metadata(document, chunks) if chunks.many?
     deduplicate_faqs(faqs)
   end
 
   def text_chunks(text)
-    text.to_s.scan(/.{1,#{TEXT_CHUNK_SIZE}}/mo).first(MAX_TEXT_CHUNKS)
+    text.to_s.scan(Regexp.new(".{1,#{self.class::TEXT_CHUNK_SIZE}}", Regexp::MULTILINE)).first(MAX_TEXT_CHUNKS)
   end
 
   def store_text_generation_metadata(document, chunks)
@@ -56,6 +67,29 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
         }
       )
     )
+  end
+
+  def current_generation?(document, generation_fingerprint)
+    document.faq_generation_enabled? && document_generation_fingerprint(document) == generation_fingerprint
+  end
+
+  def document_generation_fingerprint(document)
+    Digest::SHA256.hexdigest([document.pdf_document?, document.faq_generation_text.to_s].join(':'))
+  end
+
+  def persist_source_chunks(document, faqs)
+    source_chunks = faqs.filter_map { |faq| faq.to_h.with_indifferent_access[:source_chunk] }
+                        .uniq { |source_chunk| source_chunk.with_indifferent_access[:chunk_index] }
+
+    source_chunks.each_with_object({}) do |source_chunk, chunks_by_index|
+      normalized = source_chunk.with_indifferent_access
+      chunks_by_index[normalized[:chunk_index]] = document.document_chunks.create!(
+        account: document.account,
+        assistant: document.assistant,
+        chunk_index: normalized[:chunk_index],
+        content: normalized[:content]
+      )
+    end
   end
 
   def build_paginated_service(document, options)
@@ -81,7 +115,8 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
   end
 
   def create_responses_from_faqs(faqs, document)
-    faqs.each { |faq| create_response(faq, document) }
+    source_chunks_by_index = persist_source_chunks(document, faqs)
+    faqs.each { |faq| create_response(faq, document, source_chunks_by_index) }
   end
 
   def deduplicate_faqs(faqs)
@@ -98,15 +133,19 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
 
   def reset_previous_responses(response_document)
     response_document.responses.destroy_all
+    response_document.document_chunks.destroy_all
   end
 
-  def create_response(faq, document)
+  def create_response(faq, document, source_chunks_by_index = {})
     normalized = faq.to_h.with_indifferent_access
+    source_chunk = normalized.delete(:source_chunk)
+    document_chunk = source_chunk && source_chunks_by_index[source_chunk.with_indifferent_access[:chunk_index]]
     document.responses.create!(
       question: normalized[:question],
       answer: normalized[:answer],
       assistant: document.assistant,
-      documentable: document
+      documentable: document,
+      document_chunk: document_chunk
     )
   rescue ActiveRecord::RecordInvalid => e
     Rails.logger.error I18n.t('captain.documents.response_creation_error', error: e.message)

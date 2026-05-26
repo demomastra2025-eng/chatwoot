@@ -39,6 +39,7 @@ class Captain::Document < ApplicationRecord
 
   belongs_to :assistant, class_name: 'Captain::Assistant'
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :destroy, as: :documentable
+  has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :destroy, inverse_of: :document
   belongs_to :account
   has_one_attached :pdf_file
   has_one_attached :source_file
