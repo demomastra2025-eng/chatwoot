@@ -57,6 +57,16 @@ class Llm::Evals::PackRegistry
       default_enabled: true
     ),
     Pack.new(
+      id: 'captain.confirmation_safety',
+      label: 'Captain confirmation safety',
+      description: 'Offline checks that risky assistant tools require confirmation and read-only tools are not over-gated.',
+      suite_class: 'Captain::Evals::ConfirmationSafetySuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
       id: 'captain.ai_voice_trace',
       label: 'AI Voice trace integrity',
       description: 'Offline trace checks for clipped speech and unused completed tool results.',

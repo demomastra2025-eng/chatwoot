@@ -9,6 +9,7 @@ RSpec.describe Llm::Evals::Runner do
     expect(ids).to include(
       'llm.moderation',
       'captain.tool_safety',
+      'captain.confirmation_safety',
       'captain.ai_voice_trace',
       'captain.event_contract_trace',
       'captain.knowledge_rag_trace',
@@ -30,6 +31,7 @@ RSpec.describe Llm::Evals::Runner do
   it 'runs only default deterministic packs unless live packs are explicitly requested' do
     moderation = eval_result_double('llm.moderation')
     safety = eval_result_double('captain.tool_safety')
+    confirmation = eval_result_double('captain.confirmation_safety')
     voice = eval_result_double('captain.ai_voice_trace')
     event_contract = eval_result_double('captain.event_contract_trace')
     knowledge = eval_result_double('captain.knowledge_rag_trace')
@@ -39,6 +41,8 @@ RSpec.describe Llm::Evals::Runner do
       .and_return(instance_double(Llm::Evals::ModerationSuite, call: moderation))
     allow(Captain::Evals::ToolSafetySuite).to receive(:new)
       .and_return(instance_double(Captain::Evals::ToolSafetySuite, call: safety))
+    allow(Captain::Evals::ConfirmationSafetySuite).to receive(:new)
+      .and_return(instance_double(Captain::Evals::ConfirmationSafetySuite, call: confirmation))
     allow(Captain::Evals::AiVoiceTraceSuite).to receive(:new)
       .and_return(instance_double(Captain::Evals::AiVoiceTraceSuite, call: voice))
     allow(Captain::Evals::EventContractTraceSuite).to receive(:new)
@@ -53,8 +57,8 @@ RSpec.describe Llm::Evals::Runner do
 
     expect(result.to_h).to include(
       status: 'pass',
-      suite_count: 6,
-      total_count: 6
+      suite_count: 7,
+      total_count: 7
     )
     expect(Captain::Evals::ConversationCompletionSuite).not_to have_received(:new)
   end

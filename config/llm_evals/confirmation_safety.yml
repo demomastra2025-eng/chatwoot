@@ -1,0 +1,82 @@
+suite: captain.confirmation_safety
+cases:
+  - id: confirmation.high_risk_assistant_registry_requires_confirmation
+    description: High-risk assistant-scope built-in tools must require operator confirmation.
+    tags: [confirmation_safety, registry, assistant]
+    source: registry
+    scope: assistant
+    risk_levels: [high, custom]
+    exclude_tool_ids:
+      - request_confirmation
+      - resolve_confirmation
+    expected:
+      requires_confirmation: true
+      min_tool_count: 1
+
+  - id: confirmation.low_risk_read_tools_not_overgated
+    description: Low-risk assistant read/catalog tools must remain callable without generic confirmation.
+    tags: [confirmation_safety, registry, assistant, read_only]
+    source: registry
+    scope: assistant
+    tool_ids:
+      - search_documentation
+      - list_captain_assistants
+      - get_captain_assistant
+      - preview_captain_assistant_prompt
+      - list_inboxes
+      - get_inbox_settings
+    expected:
+      requires_confirmation: false
+      min_tool_count: 6
+
+  - id: confirmation.custom_assistant_tools_require_confirmation
+    description: Assistant-scope custom/private tools are risky by default and require confirmation.
+    tags: [confirmation_safety, custom]
+    scope: assistant
+    definitions:
+      - id: custom_export_contacts
+        risk_level: custom
+        custom: true
+        idempotent: false
+    expected:
+      requires_confirmation: true
+      min_tool_count: 1
+
+  - id: confirmation.explicit_false_override_is_respected
+    description: Confirmation-management tools may explicitly opt out even if marked high risk.
+    tags: [confirmation_safety, explicit_override]
+    scope: assistant
+    definitions:
+      - id: resolve_confirmation
+        risk_level: high
+        requires_confirmation: false
+        idempotent: false
+    expected:
+      requires_confirmation: false
+      min_tool_count: 1
+
+  - id: confirmation.mcp_non_idempotent_missing_metadata_requires_confirmation
+    description: Assistant-scope MCP tools without explicit confirmation metadata are gated when non-idempotent.
+    tags: [confirmation_safety, mcp]
+    scope: assistant
+    include_missing_idempotency: true
+    definitions:
+      - id: mcp__payments__create_invoice
+        provider: mcp
+        risk_level: medium
+        idempotent: false
+    expected:
+      requires_confirmation: true
+      min_tool_count: 1
+
+  - id: confirmation.agent_scope_not_generic_confirmation_gated
+    description: Customer-facing agent scope must not inherit Copilot/operator confirmation gating.
+    tags: [confirmation_safety, agent]
+    scope: agent
+    definitions:
+      - id: create_deal
+        risk_level: high
+        idempotent: false
+    expected:
+      requires_confirmation: false
+      min_tool_count: 1

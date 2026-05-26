@@ -2143,3 +2143,48 @@ Next coding slice:
 
 1. Continue Etapa 11 with the next deterministic quality gate: add/import fixture coverage for confirmation safety or AI Voice transcript/tool-result behavior, or harden eval run summaries/history if product needs UI-facing evidence next.
 2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
+
+## 2026-05-26 Etapa 11 second quality-gate slice — Confirmation safety eval pack
+
+Status: **Implemented, targeted verified — Etapa 11 deterministic confirmation-safety eval slice DONE.**
+
+Scope:
+
+- Added a deterministic offline eval pack `captain.confirmation_safety` to the default CI/eval runner set.
+- Added fixture cases for:
+  - high-risk assistant-scope registry tools requiring operator confirmation;
+  - low-risk read/catalog tools staying non-over-gated;
+  - custom/private assistant tools requiring confirmation by default;
+  - explicit `requires_confirmation: false` override staying respected for confirmation-management style tools;
+  - non-idempotent MCP tools without explicit metadata requiring confirmation;
+  - customer-facing agent scope not inheriting Copilot/operator confirmation gates.
+- Added `Captain::Evals::ConfirmationSafetySuite` to validate registry/fixture tool definitions through the same `Captain::ToolCatalog.requires_confirmation_for_scope?` policy used at runtime.
+- Registered the pack in `Llm::Evals::PackRegistry`; `llm:evals:ci` now reports 7 deterministic suites and 30 total cases.
+- No manual/live voice call, DEV runtime restart, or PROD deploy was performed for this code-level slice.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH bash -lc 'eval "$(rbenv init - bash)"; bundle exec ruby -c enterprise/lib/captain/evals/confirmation_safety_suite.rb; bundle exec ruby -c spec/enterprise/lib/captain/evals/confirmation_safety_suite_spec.rb; bundle exec ruby -c lib/llm/evals/pack_registry.rb; bundle exec ruby -c spec/lib/llm/evals/runner_spec.rb; ruby -ryaml -e "YAML.load_file(\"config/llm_evals/confirmation_safety.yml\"); puts \"YAML OK\"'
+# Syntax OK x4; YAML OK
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/evals/confirmation_safety_suite_spec.rb spec/lib/llm/evals/runner_spec.rb --format progress
+# 4 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/evals/runner_spec.rb spec/enterprise/lib/captain/evals/confirmation_safety_suite_spec.rb spec/enterprise/lib/captain/evals/knowledge_rag_trace_suite_spec.rb spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb spec/enterprise/lib/captain/evals/red_team_suite_spec.rb spec/enterprise/lib/captain/evals/tool_safety_suite_spec.rb spec/lib/llm/evals/tribunal_dataset_runner_spec.rb spec/lib/llm/evals/run_request_spec.rb spec/jobs/llm/evals/run_job_spec.rb spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb --format progress
+# 45 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rake llm:evals:ci
+# { status: pass, suite_count: 7, total_count: 30, passed_count: 30, failed_count: 0, error_count: 0 }
+
+bundle exec rubocop --fail-level E enterprise/lib/captain/evals/confirmation_safety_suite.rb lib/llm/evals/pack_registry.rb spec/enterprise/lib/captain/evals/confirmation_safety_suite_spec.rb spec/lib/llm/evals/runner_spec.rb
+# 4 files inspected, no offenses detected
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 11 with the next deterministic quality gate: AI Voice transcript/tool-result behavior expansion, support/CRM/scheduling correctness fixture pack, or eval summary/history hardening.
+2. Keep live model evals, DEV live calls, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
