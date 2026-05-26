@@ -1400,6 +1400,9 @@
         "OPEN_METRICS": "Open metrics endpoint",
         "VIEW_DETAILS": "View details",
         "FOCUS_TRACE": "Focus trace",
+        "COPY_TRACE_CONTEXT": "Copy trace context",
+        "TRACE_CONTEXT_COPIED": "Trace context copied",
+        "TRACE_CONTEXT_COPY_ERROR": "Failed to copy trace context",
         "VIEW_MATCHING_EVENTS": "View matching events"
       },
       "SAVED_VIEWS": {
@@ -1533,6 +1536,16 @@
         "FOCUSED_RANGE": "{startedAt} to {endedAt}",
         "LATEST_EVENT": "Latest event {time}",
         "DURATION": "Duration: {duration}",
+        "WHY_TITLE": "Why summary",
+        "WHY_DESCRIPTION": "Compact trace outcome, usage, tools, and flags from persisted metadata only.",
+        "WHY_OUTCOME": "Outcome",
+        "WHY_USAGE": "Tokens / cost",
+        "WHY_TOOLS": "Tools used",
+        "WHY_FLAGS": "Flags",
+        "WHY_REASONS": "Reasons",
+        "WHY_NO_TOOLS": "No tools",
+        "WHY_NO_FLAGS": "No flags",
+        "WHY_NO_REASONS": "No reasons",
         "METRICS": {
           "EVENTS": "{count} events",
           "ERRORS": "{count} errors",

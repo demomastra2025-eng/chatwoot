@@ -551,11 +551,13 @@ const traceGroups = computed(() => {
       const providerHops = uniqueValues(
         events.map(event => traceHopLabel(event))
       );
+      const reasons = groupedTraceReasons(events);
 
       return {
         ...group,
         durationMs: traceDuration(group.startedAt, group.latestAt),
         providerHops,
+        reasons,
         providers: uniqueValues(events.map(event => event.provider)),
         models: uniqueValues(events.map(event => event.model)),
         traceId: events.find(event => event.trace_id)?.trace_id || null,
@@ -1459,6 +1461,7 @@ function buildTraceWhySummary(group) {
   );
   const tools = uniqueValues(events.map(event => event.tool_name));
   const flags = uniqueValues(events.flatMap(event => eventFlags(event)));
+  const reasons = groupedTraceReasons(events);
   let status = t('CAPTAIN.OBSERVABILITY.STATUS.COMPLETED');
   if (group.blockedCount > 0) {
     status = t('CAPTAIN.OBSERVABILITY.STATUS.BLOCKED');
@@ -1471,9 +1474,113 @@ function buildTraceWhySummary(group) {
     status,
     tools,
     flags,
+    reasons,
     totalTokens,
     estimatedCost,
   };
+}
+
+function groupedTraceReasons(events) {
+  const reasonCounts = new Map();
+
+  events.forEach(event => {
+    const label = eventReason(event);
+    if (!label) return;
+
+    reasonCounts.set(label, (reasonCounts.get(label) || 0) + 1);
+  });
+
+  return Array.from(reasonCounts.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.label.localeCompare(right.label)
+    );
+}
+
+function formattedTraceReason(reason) {
+  return `${reason.label} (${formatInteger(reason.count)})`;
+}
+
+function traceFilterQuery(traceGroup) {
+  const query = {
+    [ROUTE_QUERY_KEYS.tab]: 'events',
+    [ROUTE_QUERY_KEYS.page]: '1',
+    [ROUTE_QUERY_KEYS.perPage]: String(filters.perPage),
+  };
+
+  Object.entries(traceGroup?.filterHint || {}).forEach(([key, value]) => {
+    const routeKey = ROUTE_QUERY_KEYS[key];
+    if (!routeKey || value === '' || value === null || value === undefined) {
+      return;
+    }
+
+    query[routeKey] = String(value);
+  });
+
+  return query;
+}
+
+function traceDeepLink(traceGroup) {
+  const resolved = router.resolve({
+    name: route.name,
+    params: route.params,
+    query: traceFilterQuery(traceGroup),
+  });
+
+  return `${window.location.origin}${resolved.href}`;
+}
+
+function traceContextLines(traceGroup) {
+  const filterHint = traceGroup?.filterHint || {};
+  const context = [
+    traceGroup?.traceId || filterHint.traceId
+      ? `${t('CAPTAIN.OBSERVABILITY.DETAILS.IDENTIFIERS.TRACE_ID')}: ${traceGroup.traceId || filterHint.traceId}`
+      : null,
+    filterHint.sessionId
+      ? `${t('CAPTAIN.OBSERVABILITY.DETAILS.IDENTIFIERS.SESSION_ID')}: ${filterHint.sessionId}`
+      : null,
+    filterHint.conversationDisplayId
+      ? `${t('CAPTAIN.OBSERVABILITY.DETAILS.IDENTIFIERS.CONVERSATION_DISPLAY_ID')}: ${filterHint.conversationDisplayId}`
+      : null,
+    filterHint.copilotThreadId
+      ? `${t('CAPTAIN.OBSERVABILITY.DETAILS.IDENTIFIERS.COPILOT_THREAD_ID')}: ${filterHint.copilotThreadId}`
+      : null,
+    filterHint.assistantId
+      ? `${t('CAPTAIN.OBSERVABILITY.DETAILS.IDENTIFIERS.ASSISTANT_ID')}: ${filterHint.assistantId}`
+      : null,
+    t('CAPTAIN.OBSERVABILITY.TRACES.METRICS.EVENTS', {
+      count: formatInteger(traceGroup.eventCount),
+    }),
+    t('CAPTAIN.OBSERVABILITY.TRACES.METRICS.ERRORS', {
+      count: formatInteger(traceGroup.errorCount),
+    }),
+    t('CAPTAIN.OBSERVABILITY.TRACES.METRICS.BLOCKED', {
+      count: formatInteger(traceGroup.blockedCount),
+    }),
+    traceGroup.reasons?.length
+      ? `${t('CAPTAIN.OBSERVABILITY.TRACES.WHY_REASONS')}: ${traceGroup.reasons
+          .map(formattedTraceReason)
+          .join(', ')}`
+      : null,
+    t('CAPTAIN.OBSERVABILITY.TRACES.LATEST_EVENT', {
+      time: formatDateTime(traceGroup.latestAt),
+    }),
+    traceDeepLink(traceGroup),
+  ];
+
+  return context.filter(Boolean);
+}
+
+async function copyTraceContext(traceGroup) {
+  try {
+    await navigator.clipboard.writeText(
+      traceContextLines(traceGroup).join('\n')
+    );
+    useAlert(t('CAPTAIN.OBSERVABILITY.ACTIONS.TRACE_CONTEXT_COPIED'));
+  } catch {
+    useAlert(t('CAPTAIN.OBSERVABILITY.ACTIONS.TRACE_CONTEXT_COPY_ERROR'));
+  }
 }
 
 function eventFlags(event) {
@@ -3091,6 +3198,20 @@ onMounted(async () => {
                     }}
                   </div>
                 </div>
+                <div>
+                  <div class="text-xs text-n-slate-10">
+                    {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_REASONS') }}
+                  </div>
+                  <div class="mt-1 text-sm font-medium text-n-slate-12">
+                    {{
+                      focusedTraceSummary.reasons.length
+                        ? focusedTraceSummary.reasons
+                            .map(formattedTraceReason)
+                            .join(', ')
+                        : t('CAPTAIN.OBSERVABILITY.TRACES.WHY_NO_REASONS')
+                    }}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -3168,6 +3289,22 @@ onMounted(async () => {
                       })
                     }}
                   </span>
+                  <span
+                    v-for="reason in group.reasons"
+                    :key="`${group.id}-${reason.label}`"
+                    class="rounded-full bg-n-ruby-3 px-2.5 py-1 text-xs text-n-ruby-11"
+                  >
+                    {{ formattedTraceReason(reason) }}
+                  </span>
+                  <Button
+                    :label="
+                      t('CAPTAIN.OBSERVABILITY.ACTIONS.COPY_TRACE_CONTEXT')
+                    "
+                    variant="outline"
+                    color="slate"
+                    size="sm"
+                    @click="copyTraceContext(group)"
+                  />
                   <Button
                     :label="t('CAPTAIN.OBSERVABILITY.ACTIONS.FOCUS_TRACE')"
                     variant="outline"

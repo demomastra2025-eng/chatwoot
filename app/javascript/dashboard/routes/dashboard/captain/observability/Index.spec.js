@@ -8,7 +8,9 @@ const releaseCheckMock = vi.fn();
 const exportMock = vi.fn();
 const updatePreferencesMock = vi.fn();
 const routerReplaceMock = vi.fn();
+const routerResolveMock = vi.fn();
 const useAlertMock = vi.fn();
+const writeTextMock = vi.fn();
 let routeQuery = { tab: 'overview' };
 
 const ButtonStub = defineComponent({
@@ -101,7 +103,7 @@ vi.mock('vue-router', () => ({
     params: { accountId: '6' },
     query: routeQuery,
   }),
-  useRouter: () => ({ replace: routerReplaceMock }),
+  useRouter: () => ({ replace: routerReplaceMock, resolve: routerResolveMock }),
 }));
 
 vi.mock('dashboard/composables', () => ({
@@ -251,7 +253,19 @@ describe('Captain observability page', () => {
     exportMock.mockReset();
     updatePreferencesMock.mockReset();
     routerReplaceMock.mockReset();
+    routerResolveMock.mockReset();
+    routerResolveMock.mockImplementation(({ query }) => ({
+      href: `/app/accounts/6/captain/observability?${new URLSearchParams(
+        query
+      ).toString()}`,
+    }));
     useAlertMock.mockReset();
+    writeTextMock.mockReset();
+    writeTextMock.mockResolvedValue();
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
     routeQuery = { tab: 'overview' };
   });
 
@@ -335,5 +349,167 @@ describe('Captain observability page', () => {
     expect(wrapper.text()).toContain('120');
     expect(wrapper.text()).not.toContain('sensitive prompt');
     expect(wrapper.text()).not.toContain('raw message');
+  });
+
+  it('groups trace reasons with counts in the focused why-summary and trace card', async () => {
+    routeQuery = { tab: 'traces' };
+    getMock.mockResolvedValue({
+      data: {
+        ...overviewPayload.data,
+        payload: [
+          {
+            id: 11,
+            created_at: '2026-05-22T11:00:00Z',
+            event_name: 'llm.chat.failed',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'error',
+            reason: 'provider_timeout',
+            error: true,
+            trace_id: 'trace-reasons-1',
+          },
+          {
+            id: 12,
+            created_at: '2026-05-22T11:00:01Z',
+            event_name: 'llm.retry.failed',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'error',
+            reason: 'provider_timeout',
+            error: true,
+            trace_id: 'trace-reasons-1',
+          },
+          {
+            id: 13,
+            created_at: '2026-05-22T11:00:02Z',
+            event_name: 'llm.schema.invalid',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'error',
+            reason: 'schema_invalid',
+            error: true,
+            trace_id: 'trace-reasons-1',
+          },
+        ],
+      },
+    });
+
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.OBSERVABILITY.TRACES.WHY_REASONS'
+    );
+    expect(wrapper.text()).toContain('Provider Timeout (2)');
+    expect(wrapper.text()).toContain('Schema Invalid (1)');
+  });
+
+  it('copies trace context with a deep link and grouped reasons', async () => {
+    routeQuery = { tab: 'traces' };
+    getMock.mockResolvedValue({
+      data: {
+        ...overviewPayload.data,
+        payload: [
+          {
+            id: 21,
+            created_at: '2026-05-22T11:00:00Z',
+            event_name: 'llm.chat.failed',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'error',
+            reason: 'provider_timeout',
+            error: true,
+            trace_id: 'trace-copy-1',
+            session_id: 'session-copy-1',
+            conversation_display_id: 42,
+            copilot_thread_id: 'thread-copy-1',
+            assistant_id: 7,
+          },
+          {
+            id: 22,
+            created_at: '2026-05-22T11:00:01Z',
+            event_name: 'llm.retry.failed',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'error',
+            reason: 'provider_timeout',
+            error: true,
+            trace_id: 'trace-copy-1',
+            session_id: 'session-copy-1',
+            conversation_display_id: 42,
+            copilot_thread_id: 'thread-copy-1',
+            assistant_id: 7,
+          },
+        ],
+      },
+    });
+
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    const copyContextButton = wrapper
+      .findAll('button')
+      .find(
+        button =>
+          button.text() === 'CAPTAIN.OBSERVABILITY.ACTIONS.COPY_TRACE_CONTEXT'
+      );
+    expect(copyContextButton).toBeTruthy();
+
+    await copyContextButton.trigger('click');
+    await flushPromises();
+
+    expect(writeTextMock).toHaveBeenCalledTimes(1);
+    const copiedContext = writeTextMock.mock.calls[0][0];
+    expect(copiedContext).toContain('trace-copy-1');
+    expect(copiedContext).toContain('session-copy-1');
+    expect(copiedContext).toContain('42');
+    expect(copiedContext).toContain('Provider Timeout (2)');
+    expect(copiedContext).toContain('trace_id=trace-copy-1');
+    expect(copiedContext).toContain('session_id=session-copy-1');
+    expect(copiedContext).toContain('conversation_display_id=42');
+    expect(useAlertMock).toHaveBeenCalledWith(
+      'CAPTAIN.OBSERVABILITY.ACTIONS.TRACE_CONTEXT_COPIED'
+    );
+  });
+
+  it('alerts when trace context copy fails', async () => {
+    routeQuery = { tab: 'traces' };
+    writeTextMock.mockRejectedValueOnce(new Error('clipboard blocked'));
+    getMock.mockResolvedValue({
+      data: {
+        ...overviewPayload.data,
+        payload: [
+          {
+            id: 31,
+            created_at: '2026-05-22T11:00:00Z',
+            event_name: 'llm.chat.failed',
+            feature: 'assistant',
+            runtime_mode: 'captain_runtime',
+            status: 'error',
+            reason: 'provider_timeout',
+            error: true,
+            trace_id: 'trace-copy-fail-1',
+          },
+        ],
+      },
+    });
+
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    const copyContextButton = wrapper
+      .findAll('button')
+      .find(
+        button =>
+          button.text() === 'CAPTAIN.OBSERVABILITY.ACTIONS.COPY_TRACE_CONTEXT'
+      );
+    expect(copyContextButton).toBeTruthy();
+
+    await copyContextButton.trigger('click');
+    await flushPromises();
+
+    expect(useAlertMock).toHaveBeenCalledWith(
+      'CAPTAIN.OBSERVABILITY.ACTIONS.TRACE_CONTEXT_COPY_ERROR'
+    );
   });
 });

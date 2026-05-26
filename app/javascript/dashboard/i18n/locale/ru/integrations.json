@@ -2250,6 +2250,9 @@
         "OPEN_METRICS": "Открыть metrics endpoint",
         "VIEW_DETAILS": "Открыть детали",
         "FOCUS_TRACE": "Сфокусировать trace",
+        "COPY_TRACE_CONTEXT": "Скопировать контекст trace",
+        "TRACE_CONTEXT_COPIED": "Контекст trace скопирован",
+        "TRACE_CONTEXT_COPY_ERROR": "Не удалось скопировать контекст trace",
         "VIEW_MATCHING_EVENTS": "Открыть подходящие события"
       },
       "SAVED_VIEWS": {
@@ -2389,8 +2392,10 @@
         "WHY_USAGE": "Токены / стоимость",
         "WHY_TOOLS": "Инструменты",
         "WHY_FLAGS": "Флаги",
+        "WHY_REASONS": "Причины",
         "WHY_NO_TOOLS": "Инструменты не использовались",
         "WHY_NO_FLAGS": "Флагов нет",
+        "WHY_NO_REASONS": "Причин нет",
         "METRICS": {
           "EVENTS": "Событий: {count}",
           "ERRORS": "Ошибок: {count}",
