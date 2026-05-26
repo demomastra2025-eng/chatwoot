@@ -107,7 +107,9 @@ describe Whatsapp::OneoffCampaignService do
         expect(created_conversations.pluck(:status).uniq).to eq(['resolved'])
         expect(created_conversations.pluck(:campaign_id).uniq).to eq([nil])
         expect(created_conversations.all? { |conversation| conversation.messages.outgoing.count == 1 }).to be true
-        expect(created_conversations.all? { |conversation| conversation.messages.first.additional_attributes['campaign_id'] == campaign.id }).to be true
+        expect(created_conversations.all? do |conversation|
+          conversation.messages.first.additional_attributes['campaign_id'] == campaign.id
+        end).to be true
         expect(enqueued_jobs.count { |job| job[:job] == SendReplyJob }).to eq(3)
       end
 
@@ -123,6 +125,87 @@ describe Whatsapp::OneoffCampaignService do
         expect(message).to be_present
         expect(message.additional_attributes['campaign_id']).to eq(campaign.id)
         expect(delivery.metadata['message_id']).to eq(message.id)
+      end
+
+      it 'renders liquid variables in template parameters before creating WhatsApp campaign messages' do
+        contact = create(:contact, :with_phone_number, account: account, name: 'Jane Smith', email: 'jane@example.com')
+        contact.update_labels([label1.title])
+        campaign.update!(
+          template_params: template_params.merge(
+            'processed_params' => {
+              'body' => {
+                'name' => '{{contact.name}}',
+                'ticket_id' => 'ticket-{{contact.email}}'
+              }
+            }
+          )
+        )
+
+        described_class.new(campaign: campaign).perform
+
+        message = whatsapp_inbox.messages.outgoing.last
+        body_params = message.additional_attributes.dig('template_params', 'processed_params', 'body')
+        expect(body_params['name']).to eq(ContactDrop.new(contact).name)
+        expect(body_params['ticket_id']).to eq("ticket-#{contact.email}")
+      end
+
+      it 'skips contacts when liquid template parameters resolve to blank values' do
+        contact = create(:contact, :with_phone_number, account: account, name: 'Jane', email: nil)
+        contact.update_labels([label1.title])
+        campaign.update!(
+          template_params: template_params.merge(
+            'processed_params' => { 'body' => { 'name' => '{{contact.name}}', 'ticket_id' => 'ticket-{{contact.email}}' } }
+          )
+        )
+
+        allow(Rails.logger).to receive(:info)
+        expect(Rails.logger).to receive(:info).with("Skipping contact #{contact.name} - liquid variables resolved to blank values")
+
+        described_class.new(campaign: campaign).perform
+
+        delivery = campaign.campaign_deliveries.find_by!(contact: contact)
+        expect(delivery.status).to eq('skipped')
+        expect(delivery.error_message).to eq('WhatsApp template variables resolved to blank values')
+        expect(whatsapp_inbox.messages.outgoing).to be_empty
+      end
+
+      it 'skips only the contact with blank template values and still sends to valid contacts' do
+        blank_contact = create(:contact, :with_phone_number, account: account, name: 'Blank Email', email: nil)
+        valid_contact = create(:contact, :with_phone_number, account: account, name: 'Valid Email', email: 'valid@example.com')
+        blank_contact.update_labels([label1.title])
+        valid_contact.update_labels([label1.title])
+        campaign.update!(
+          template_params: template_params.merge(
+            'processed_params' => { 'body' => { 'name' => '{{contact.name}}', 'ticket_id' => 'ticket-{{contact.email}}' } }
+          )
+        )
+        allow(Rails.logger).to receive(:info)
+
+        described_class.new(campaign: campaign).perform
+
+        expect(campaign.campaign_deliveries.find_by!(contact: blank_contact).status).to eq('skipped')
+        expect(campaign.campaign_deliveries.find_by!(contact: valid_contact).status).to eq('pending')
+        expect(whatsapp_inbox.messages.outgoing.count).to eq(1)
+        body_params = whatsapp_inbox.messages.outgoing.first.additional_attributes.dig('template_params', 'processed_params', 'body')
+        expect(body_params['ticket_id']).to eq("ticket-#{valid_contact.email}")
+      end
+
+      it 'marks contacts failed when liquid processing raises unexpectedly' do
+        contact = create(:contact, :with_phone_number, account: account)
+        contact.update_labels([label1.title])
+        processor = instance_double(Whatsapp::LiquidTemplateProcessorService)
+
+        allow(Whatsapp::LiquidTemplateProcessorService).to receive(:new).and_return(processor)
+        allow(processor).to receive(:process_template_params).and_raise(StandardError, 'processor boom')
+        expect(Rails.logger).to receive(:error).with("Failed to create WhatsApp campaign message for #{contact.phone_number}: processor boom")
+        expect(Rails.logger).to receive(:error).with(/Backtrace:/)
+
+        described_class.new(campaign: campaign).perform
+
+        delivery = campaign.campaign_deliveries.find_by!(contact: contact)
+        expect(delivery.status).to eq('failed')
+        expect(delivery.error_message).to eq('processor boom')
+        expect(whatsapp_inbox.messages.outgoing).to be_empty
       end
 
       it 'skips contacts without phone numbers' do
@@ -163,9 +246,11 @@ describe Whatsapp::OneoffCampaignService do
         builder_error = instance_double(Campaigns::OneoffConversationBuilder)
         builder_success = instance_double(Campaigns::OneoffConversationBuilder)
 
-        allow(Campaigns::OneoffConversationBuilder).to receive(:new) do |campaign:, contact:, campaign_run:|
+        allow(Campaigns::OneoffConversationBuilder).to receive(:new) do |campaign:, contact:, source_id:, campaign_run:, template_params: nil|
           expect(campaign).to eq(expected_campaign)
+          expect(source_id).to eq(Campaigns::TargetResolver.new(inbox: whatsapp_inbox, contact: contact).resolve)
           expect(campaign_run).to be_a(CampaignRun)
+          expect(template_params).to eq(expected_campaign.template_params)
           contact == contact_error ? builder_error : builder_success
         end
         expect(builder_error).to receive(:perform).and_raise(StandardError, error_message)
