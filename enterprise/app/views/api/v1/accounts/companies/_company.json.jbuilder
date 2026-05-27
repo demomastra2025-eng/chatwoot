@@ -3,6 +3,9 @@ json.name company.name
 json.contacts_count company.effective_contacts_count
 json.domain company.domain
 json.description company.description
+json.additional_attributes company.additional_attributes
+json.custom_attributes company.custom_attributes
 json.avatar_url company.avatar_url
+json.last_activity_at company.last_activity_at
 json.created_at company.created_at
 json.updated_at company.updated_at

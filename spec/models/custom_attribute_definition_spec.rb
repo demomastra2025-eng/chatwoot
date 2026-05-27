@@ -6,6 +6,23 @@ RSpec.describe CustomAttributeDefinition do
   let(:account) { create(:account) }
 
   describe 'validations' do
+    it 'supports company custom attributes without widget pre-chat callbacks' do
+      cad = create(:custom_attribute_definition, account: account, attribute_model: :company_attribute, attribute_key: 'company_tier')
+
+      expect(Inboxes::UpdateWidgetPreChatCustomFieldsJob).not_to receive(:perform_later)
+      expect(Inboxes::SyncWidgetPreChatCustomFieldsJob).not_to receive(:perform_later)
+
+      cad.update!(attribute_display_name: 'Company Tier')
+      cad.destroy!
+    end
+
+    it 'rejects company attributes that conflict with standard company fields' do
+      cad = build(:custom_attribute_definition, account: account, attribute_model: :company_attribute, attribute_key: 'domain')
+
+      expect(cad).not_to be_valid
+      expect(cad.errors[:attribute_key]).to be_present
+    end
+
     describe 'attribute_key format' do
       it 'allows alphanumeric keys with underscores' do
         cad = build(:custom_attribute_definition, account: account, attribute_key: 'order_date_1')

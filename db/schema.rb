@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_27_080000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_27_123000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -843,6 +843,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_27_080000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "contacts_count"
+    t.jsonb "additional_attributes", default: {}, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "last_activity_at"
     t.index ["account_id", "domain"], name: "index_companies_on_account_and_domain", unique: true, where: "(domain IS NOT NULL)"
     t.index ["account_id"], name: "index_companies_on_account_id"
     t.index ["name", "account_id"], name: "index_companies_on_name_and_account_id"
