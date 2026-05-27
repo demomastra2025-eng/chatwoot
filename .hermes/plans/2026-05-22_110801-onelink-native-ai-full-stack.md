@@ -880,25 +880,25 @@ Load/canary proof for representative enterprise flows with no resource spike.
 
 ---
 
-## Case Coverage Matrix To Fill During Planning
+## Case Coverage Matrix — Code-Level Status Snapshot 2026-05-27
 
-Each project case must be mapped before final “full stack complete” claim.
+Each project case must be mapped before final “full stack complete” claim. Status terms: `code_done` = implemented and covered by deterministic/targeted checks; `partial` = code exists but at least one code-level slice remains; `live_pending` = code done but DEV/PROD/runtime proof remains.
 
 | Case | Runtime | Tools | Schema | Safety | Eval | Trace | UI | Perf Budget | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Customer support reply | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CRM deal create/update/search | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Scheduling appointment | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Touch/reminder/follow-up | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Campaign/template send | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Knowledge/RAG answer | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| File/artifact send | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| MCP/custom HTTP tool | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Internal assistant/admin operation | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| AI Voice inbound call | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| AI Voice post-call memory/FAQ | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Provider/model fallback failure | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Prompt injection / unsafe request | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Customer support reply | Captain native runtime | Default/capability tools | Structured output policy | moderation/safety policy | event/product-case evals | llm_events + why summary | observability page | snapshot gate | code_done, live_pending |
+| CRM deal create/update/search | Captain/Copilot | CRM registry tools + companions | tool schemas | execution policy + confirmation | product-case + confirmation evals | tool audit/trace | tool trace panels | snapshot gate | code_done, live_pending |
+| Scheduling appointment | Captain/Copilot | scheduling registry tools | tool schemas | execution policy + confirmation | product-case evals | tool audit/trace | observability/tool UI | snapshot gate | code_done, live_pending |
+| Touch/reminder/follow-up | Captain/Copilot | touch/reminder tools | tool schemas | working-hours/cancel scope policy | product-case evals | tool audit/trace | observability/tool UI | snapshot gate | code_done, live_pending |
+| Campaign/template send | Copilot/admin tools | campaign/template tools | tool schemas | admin + confirmation gates | confirmation/product-case coverage | tool audit/trace | tool trace panels | snapshot gate | code_done, live_pending |
+| Knowledge/RAG answer | Captain + voice path | `faq_lookup`, document chunks | retrieval trace contract | degraded fallback marked | `captain.knowledge_rag_trace` | chunk ids/status counts | observability fields | snapshot gate | code_done, real-provider DEV pending |
+| File/artifact send | Captain tools | artifact-aware document/custom tools | artifact ids | scoped artifact ids | targeted specs | tool trace | conversation/tool panels | snapshot gate | partial, live_pending |
+| MCP/custom HTTP tool | Captain registry/catalog | custom HTTP + MCP tools | parameter schemas | account scope + execution policy | confirmation safety eval | audit/trace | MCP/custom admin UI | snapshot gate | partial lifecycle |
+| Internal assistant/admin operation | Copilot assistant scope | admin registry tools | tool schemas | admin + confirmation + execution policy | confirmation safety eval | audit/trace | Copilot/tool trace UI | snapshot gate | code_done, live_pending |
+| AI Voice inbound call | Rails voice context/tool dispatch | voice + Captain agent tools | context/tool JSON | voice-safe tools + execution policy | `captain.ai_voice_trace` | call/tool events | call bubble/observability | snapshot gate | code_done, live call pending |
+| AI Voice post-call memory/FAQ | voice finalize + RAG | `faq_lookup`/summary paths | retrieval trace | degraded fallback | AI voice + RAG evals | call/tool trace | call bubble | snapshot gate | code_done, live call pending |
+| Provider/model fallback failure | LLM config/runner | n/a | failure envelopes | no hidden fallback policy | eval/runner specs | provider/error events | observability alerts | snapshot gate | code_done, live_pending |
+| Prompt injection / unsafe request | moderation/safety policy | tool safety wrappers | structured output policy | safety block/fail modes | red-team/safety evals | safety events | observability alerts | snapshot gate | code_done, live_pending |
 
 ---
 
@@ -935,9 +935,12 @@ Decision points for discussion:
 
 ## Current Plan Status
 
-- Plan file created.
-- No implementation started.
-- Next approved action should be read-only audit only.
+Status: **Code-level mostly closed for core native AI stack as of 2026-05-27; live DEV/PROD PASS remains separate.**
+
+- Etapa 0–13 have implementation/status slices appended below; the old initial “no implementation started” marker is superseded.
+- Core code-level coverage now includes native runtime events, sanitized `llm_events`, OTel/export policy, runtime health/release gates, structured-output hardening, tool registry/confirmation/execution policy, account-aware routing, Knowledge/RAG chunks, AI Voice context/tool parity, deterministic eval gates, observability UI, and performance-budget snapshots.
+- Remaining non-live code-level items are explicitly tracked as partial: file/artifact proof depth and MCP/custom HTTP full lifecycle hardening. Full PASS still requires real-provider RAG smoke, live AI Voice call proof, representative operator UI smoke, measured live performance/cost numbers, and approved rollout/canary.
+- Linked addendum: `.hermes/plans/2026-05-26_102920-onelink-native-ai-full-stack-enterprise-addendum.md`.
 
 ## Pinned First Step
 
@@ -2322,3 +2325,88 @@ Next coding slice:
 
 1. Continue Etapa 12 with operator-facing trace usability: deep-link/copy trace context, clearer fallback/retry/schema reason grouping, or a compact per-conversation trace entry point from events.
 2. Keep manual browser checks, live model evals, DEV live acceptance, and PROD deploy/restart deferred until final acceptance gates are explicitly approved.
+
+## 2026-05-27 Etapa 10 AI Voice parity code slice — Captain scenario context
+
+Status: **Implemented, targeted verified — Etapa 10 Captain scenario context code-slice DONE.**
+
+Scope:
+
+- Exposed enabled Captain scenarios in the internal AI Voice context response under `captain.scenarios`, alongside the existing shared Captain prompt, rules, guidelines, guardrails, and voice-safe tool catalog.
+- Scenario payload is bounded to stable operator/runtime metadata keys only: `id`, `title`, `key`, and `description`.
+- Disabled scenarios stay hidden from the voice runtime context.
+- Scenario ordering is deterministic by database id for stable runtime/debug output.
+- No DEV restart, live call, browser check, or PROD deploy was performed for this code-level slice.
+
+Verification completed:
+
+```bash
+export RBENV_ROOT=/root/.rbenv PATH=/opt/node-24/bin:/root/.rbenv/shims:/root/.rbenv/bin:$PATH
+eval "$(rbenv init - bash)"
+bundle exec rspec spec/requests/internal/voice/ai/context_spec.rb
+# 17 examples, 0 failures
+
+ruby -c app/services/telephony/ai_voice/context_builder.rb
+ruby -c spec/requests/internal/voice/ai/context_spec.rb
+# Syntax OK / Syntax OK
+
+git diff --check
+# clean
+```
+
+Notes:
+
+- Targeted `bundle exec rubocop app/services/telephony/ai_voice/context_builder.rb spec/requests/internal/voice/ai/context_spec.rb` still reports pre-existing metrics/RSpec size offenses in those files; this slice did not attempt a broad refactor.
+
+Remaining before full Etapa 10 PASS:
+
+1. Live AI Voice call proof: routing, audio, session, recording, finalize.
+2. DEV/PROD acceptance gates remain deferred until explicitly approved.
+
+
+## 2026-05-27 Etapa 7/Addendum C code slice — execution-level ToolPolicy gate
+
+Status: **Implemented, targeted verified — enterprise tool execution policy code-slice DONE.**
+
+Scope:
+
+- Kept `Captain::ToolPolicy.runtime_allowed?` as the prompt/visibility gate so existing selected-tool and explicit `tool://...` UX remains backward-compatible.
+- Added `Captain::ToolPolicy.execution_allowed?` and `execution_error_message` as the stricter execution gate for actual tool calls.
+- Execution gate now enforces scope, account feature requirements, required operator/agent permissions, and agent high-risk runtime policy.
+- Wired execution gate into:
+  - `Captain::Tools::Instrumentation` for assistant/Copilot tool services before confirmation and mutation execution;
+  - `Captain::Tools::BasePublicTool` for public agent tools;
+  - `Captain::Tools::Agent::AccountToolAdapter` for delegated registry tools;
+  - `Captain::Tools::HttpTool` for custom HTTP agent tools;
+  - AI Voice Captain tool dispatch, which now returns a structured Captain tool error instead of crashing when policy denies an agent tool.
+- Added regression coverage proving high-risk/permissioned agent tools cannot execute unless account runtime policy allows both permissioned and high-risk access, while low-risk capability tools still execute normally.
+
+Verification completed:
+
+```bash
+./bin/dev-hybrid prepare-test
+ruby -c enterprise/lib/captain/tool_policy.rb
+ruby -c enterprise/app/services/captain/tools/instrumentation.rb
+ruby -c enterprise/lib/captain/tools/base_public_tool.rb
+ruby -c enterprise/lib/captain/tools/agent/account_tool_adapter.rb
+ruby -c enterprise/lib/captain/tools/http_tool.rb
+ruby -c app/services/telephony/ai_voice/tool_dispatch_service.rb
+ruby -c spec/enterprise/lib/captain/tool_policy_spec.rb
+ruby -c spec/enterprise/lib/captain/tool_catalog_spec.rb
+ruby -c spec/requests/internal/voice/ai/tools_spec.rb
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec   spec/enterprise/lib/captain/tool_policy_spec.rb   spec/enterprise/lib/captain/tool_catalog_spec.rb   spec/enterprise/lib/captain/tool_registry_confirmation_spec.rb   spec/enterprise/lib/captain/evals/confirmation_safety_suite_spec.rb   spec/requests/internal/voice/ai/context_spec.rb   spec/requests/internal/voice/ai/tools_spec.rb   --format progress
+# 61 examples, 0 failures
+
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rake llm:evals:ci
+# status: pass, suite_count: 8, total_count: 33, passed_count: 33
+
+bundle exec rubocop --force-exclusion --fail-level E   enterprise/lib/captain/tool_policy.rb   enterprise/app/services/captain/tools/instrumentation.rb   enterprise/lib/captain/tools/base_public_tool.rb   enterprise/lib/captain/tools/agent/account_tool_adapter.rb   enterprise/lib/captain/tools/http_tool.rb   app/services/telephony/ai_voice/tool_dispatch_service.rb   spec/enterprise/lib/captain/tool_policy_spec.rb   spec/enterprise/lib/captain/tool_catalog_spec.rb   spec/requests/internal/voice/ai/tools_spec.rb
+# exit 0; convention-only Metrics offenses remain in existing instrumentation module.
+```
+
+Remaining before full enterprise PASS:
+
+1. Manual/browser/operator explainability smoke for representative real AI runs.
+2. DEV real-provider RAG smoke and AI Voice live call proof.
+3. PROD rollout/canary only after explicit approval.

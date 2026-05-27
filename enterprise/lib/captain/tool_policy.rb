@@ -6,6 +6,14 @@ class Captain::ToolPolicy
       new(tool_definition, assistant: assistant, scope_name: scope_name, user: user).runtime_allowed?
     end
 
+    def execution_allowed?(tool_definition, assistant:, scope_name:, user: nil)
+      new(tool_definition, assistant: assistant, scope_name: scope_name, user: user).execution_allowed?
+    end
+
+    def execution_error_message(tool_definition, assistant:, scope_name:, user: nil)
+      new(tool_definition, assistant: assistant, scope_name: scope_name, user: user).execution_error_message
+    end
+
     def selection_metadata(tool_definition)
       new(tool_definition).selection_metadata
     end
@@ -22,6 +30,22 @@ class Captain::ToolPolicy
     return false unless scope_allowed?
 
     feature_requirements_satisfied?
+  end
+
+  def execution_allowed?
+    scope_allowed? &&
+      feature_requirements_satisfied? &&
+      permission_requirements_satisfied? &&
+      agent_risk_requirements_satisfied?
+  end
+
+  def execution_error_message
+    return 'Tool is not available for the current runtime scope' unless scope_allowed?
+    return 'Required account feature is not enabled for this tool' unless feature_requirements_satisfied?
+    return 'Tool permission is not available for the current operator or agent runtime' unless permission_requirements_satisfied?
+    return 'High-risk agent tool is not enabled for this account' unless agent_risk_requirements_satisfied?
+
+    'Tool is not available for the current runtime policy'
   end
 
   def selection_metadata

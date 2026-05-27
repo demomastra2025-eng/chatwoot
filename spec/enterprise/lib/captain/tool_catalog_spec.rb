@@ -213,6 +213,18 @@ RSpec.describe Captain::ToolCatalog do
       expect(tool.parameters.keys.map(&:to_s)).to include('from', 'to')
     end
 
+    it 'blocks delegated high-risk agent tool execution when runtime policy denies it' do
+      tool = described_class.build_tool(
+        Captain::ToolRegistry.definition_for('create_deal').to_h,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+      tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new({}))
+
+      expect { tool.execute(tool_context, title: 'Blocked deal') }
+        .to raise_error(ArgumentError, 'Tool permission is not available for the current operator or agent runtime')
+    end
+
     it 'builds every built-in customer-facing agent tool with runnable metadata' do
       Captain::ToolRegistry.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).each do |tool_definition|
         tool = described_class.build_tool(

@@ -117,10 +117,22 @@ class Telephony::AiVoice::ContextBuilder
       name: captain_assistant.name,
       system_prompt: system_prompt,
       rules: captain_assistant.system_rule_contents,
+      scenarios: captain_scenarios_payload,
       response_guidelines: captain_assistant.response_guidelines || [],
       guardrails: captain_assistant.guardrails || [],
       handoff_tool_name: captain_assistant.handoff_tool_name
     }
+  end
+
+  def captain_scenarios_payload
+    captain_assistant.scenarios.enabled.order(:id).map do |scenario|
+      {
+        id: scenario.id,
+        title: scenario.title,
+        key: scenario.handoff_key,
+        description: scenario.description
+      }
+    end
   end
 
   def transfer_payload

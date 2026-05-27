@@ -285,6 +285,12 @@ class Telephony::AiVoice::ToolDispatchService
       tool_name: tool_name,
       result: tool.execute(captain_tool_context, **captain_tool_arguments)
     }
+  rescue ArgumentError => e
+    {
+      action: 'captain_tool',
+      tool_name: tool_name,
+      result: Captain::ToolResult.failure_output(error: e)
+    }
   end
 
   def allowed_tool?

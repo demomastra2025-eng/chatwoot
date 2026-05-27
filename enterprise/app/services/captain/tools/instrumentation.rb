@@ -4,6 +4,12 @@ module Captain::Tools::Instrumentation
 
   def execute(**args)
     instrument_tool_call(name, tool_trace_arguments(args), tool_instrumentation_params(args)) do
+      policy_result = enforce_tool_execution_policy
+      if policy_result.present?
+        audit_tool_execution(arguments: args, result: policy_result)
+        return policy_result
+      end
+
       confirmation_result = enforce_tool_confirmation(args)
       if confirmation_result.present?
         audit_tool_execution(arguments: args, result: confirmation_result)
@@ -51,6 +57,26 @@ module Captain::Tools::Instrumentation
       error: error,
       user: @user,
       runtime_context: tool_runtime_context
+    )
+  end
+
+  def enforce_tool_execution_policy
+    return if Captain::ToolPolicy.execution_allowed?(
+      tool_definition,
+      assistant: assistant,
+      scope_name: tool_scope_name,
+      user: @user
+    )
+
+    tool_failure(
+      ArgumentError.new(
+        Captain::ToolPolicy.execution_error_message(
+          tool_definition,
+          assistant: assistant,
+          scope_name: tool_scope_name,
+          user: @user
+        )
+      )
     )
   end
 

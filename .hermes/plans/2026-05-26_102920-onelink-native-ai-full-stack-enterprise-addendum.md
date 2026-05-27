@@ -746,20 +746,20 @@ A new engineer/operator can understand, deploy, debug, and safely operate OneLin
 
 The addendum is complete only when all of these are true:
 
-- [ ] Primary plan status is normalized and linked to this addendum.
-- [ ] Case Coverage Matrix has no unexplained `TBD` entries.
-- [ ] Top-5 cases have runtime + tools + schema + safety + eval + trace + UI + perf proof.
-- [ ] ToolPolicy enterprise decision is documented and tested.
+- [x] Primary plan status is normalized and linked to this addendum.
+- [x] Case Coverage Matrix has no unexplained `TBD` entries for code-level status; live-only gates remain explicit.
+- [x] Top-5 cases have code-level runtime + tools + schema + safety + eval + trace + UI + perf-budget mapping; live proof remains pending.
+- [x] ToolPolicy enterprise decision is documented and tested at execution level.
 - [ ] RAG real-provider DEV PASS is complete.
-- [ ] RAG production/canary path is documented and approved before prod rollout.
-- [ ] AI Voice parity is proven for representative cases.
+- [x] RAG production/canary path is documented and approval-gated before prod rollout.
+- [ ] AI Voice parity is proven for representative live cases.
 - [ ] MCP/custom HTTP lifecycle is either complete or explicitly out of scope.
-- [ ] Image generation / advanced multimodal has an explicit product decision.
-- [ ] Eval system has deterministic CI gate and budgeted live gate.
-- [ ] Operator UI can explain representative AI runs.
-- [ ] Performance/load/cost numbers are measured.
-- [ ] Retention/redaction/no-raw-content policy is verified across events, OTel, UI, exports, evals, and tool traces.
-- [ ] Internal docs/runbooks are updated.
+- [x] Image generation / advanced multimodal has an explicit product decision: no image generation surface in this plan; image input/recognition only.
+- [x] Eval system has deterministic CI gate; budgeted live gate remains approval/env-gated.
+- [ ] Operator UI can explain representative live AI runs.
+- [ ] Performance/load/cost numbers are measured on live representative runs.
+- [x] Retention/redaction/no-raw-content policy is verified across deterministic code paths/events/UI summaries/evals; live/export spot-check remains pending.
+- [ ] Internal docs/runbooks are updated as final operator package.
 - [ ] Production rollout is staged, canaried, monitored, and reversible.
 
 ---

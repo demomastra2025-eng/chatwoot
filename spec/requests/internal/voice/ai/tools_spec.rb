@@ -115,6 +115,7 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
       }
     )
     create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+    account.update!(captain_runtime: { 'agent_high_risk_tool_ids' => [custom_tool.slug] })
     stub_request(:post, 'https://example.com/bookings')
       .to_return(status: 200, body: { status: 'confirmed' }.to_json, headers: { 'Content-Type' => 'application/json' })
 
@@ -147,6 +148,7 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
       }
     )
     create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+    account.update!(captain_runtime: { 'agent_permissioned_tool_ids' => ['get_conversation'] })
 
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/tools/get_conversation',
@@ -163,6 +165,39 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     expect(response.parsed_body.dig('result', 'action')).to eq('captain_tool')
     expect(response.parsed_body.dig('result', 'tool_name')).to eq('get_conversation')
     expect(response.parsed_body.dig('result', 'result')).to include("\"display_id\": #{conversation.display_id}")
+  end
+
+  it 'returns a Captain tool error instead of crashing when agent runtime policy denies execution' do
+    assistant = create(
+      :captain_assistant,
+      account: account,
+      description: 'Use [Get conversation](tool://get_conversation) when caller asks about the current conversation.',
+      config: {
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['get_conversation']
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/get_conversation',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             arguments: { conversation_id: conversation.display_id }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('result', 'action')).to eq('captain_tool')
+    expect(response.parsed_body.dig('result', 'result'))
+      .to include('ERROR: ArgumentError: Tool permission is not available for the current operator or agent runtime')
   end
 
   it 'runs faq_lookup through Captain semantic chunk retrieval for realtime voice calls' do

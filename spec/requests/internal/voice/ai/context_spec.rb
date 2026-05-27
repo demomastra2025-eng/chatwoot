@@ -123,6 +123,48 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(end_call_tool['timeout_ms']).to be >= 5000
   end
 
+  it 'returns enabled Captain scenarios in the voice runtime context' do
+    enabled_scenario = create(
+      :captain_scenario,
+      account: account,
+      assistant: assistant,
+      title: 'Pricing handoff',
+      description: 'Collect budget and product interest before transfer.'
+    )
+    later_enabled_scenario = create(
+      :captain_scenario,
+      account: account,
+      assistant: assistant,
+      title: 'Support handoff',
+      description: 'Route technical support questions after collecting account context.'
+    )
+    create(
+      :captain_scenario,
+      account: account,
+      assistant: assistant,
+      title: 'Disabled scenario',
+      enabled: false
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    scenarios = response.parsed_body.dig('captain', 'scenarios')
+    expect(scenarios.pluck('id')).to eq([enabled_scenario.id, later_enabled_scenario.id])
+    expect(scenarios.first).to include(
+      'id' => enabled_scenario.id,
+      'title' => 'Pricing handoff',
+      'key' => enabled_scenario.handoff_key,
+      'description' => 'Collect budget and product interest before transfer.'
+    )
+    expect(scenarios.pluck('title')).not_to include('Disabled scenario')
+  end
+
   it 'builds the full Captain prompt once per voice context request' do
     builder = Telephony::AiVoice::ContextBuilder.new(
       params: { call_ref: call_session.external_call_ref, account_id: account.id }

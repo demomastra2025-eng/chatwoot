@@ -32,6 +32,7 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   end
 
   def execute(tool_context, **params)
+    ensure_tool_execution_allowed!
     result = invoke_delegate(tool_context, params)
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
     result
@@ -50,6 +51,21 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
 
   def tool_definition
     definition&.to_h || { id: tool_id, title: tool_id.humanize, custom: false }
+  end
+
+  def ensure_tool_execution_allowed!
+    return if Captain::ToolPolicy.execution_allowed?(
+      tool_definition,
+      assistant: assistant,
+      scope_name: Captain::ToolAccess::SCOPE_AGENT
+    )
+
+    raise ArgumentError,
+          Captain::ToolPolicy.execution_error_message(
+            tool_definition,
+            assistant: assistant,
+            scope_name: Captain::ToolAccess::SCOPE_AGENT
+          )
   end
 
   def delegate_class
