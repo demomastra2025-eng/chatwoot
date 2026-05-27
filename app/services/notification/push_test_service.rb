@@ -1,11 +1,13 @@
 class Notification::PushTestService
   pattr_initialize [:user!, :subscription_ids!, :title, :body]
 
+  DEFAULT_INSTALLATION_NAME = 'OneLink'.freeze
+  DEFAULT_FRONTEND_URL = 'https://app.one-link.kz'.freeze
   DEFAULT_TITLE = '%<installation_name>s notification test'.freeze
   DEFAULT_BODY = 'This is a test from our team to check notification delivery on your device. No action needed.'.freeze
 
   def self.default_title
-    format(DEFAULT_TITLE, installation_name: GlobalConfigService.load('INSTALLATION_NAME', 'Chatwoot'))
+    format(DEFAULT_TITLE, installation_name: GlobalConfigService.load('INSTALLATION_NAME', DEFAULT_INSTALLATION_NAME))
   end
 
   def self.default_body
@@ -119,13 +121,13 @@ class Notification::PushTestService
       message: JSON.generate(
         title: resolved_title,
         tag: "super_admin_test_#{Time.zone.now.to_i}",
-        url: ENV.fetch('FRONTEND_URL', 'https://app.chatwoot.com')
+        url: ENV.fetch('FRONTEND_URL', DEFAULT_FRONTEND_URL)
       ),
       endpoint: subscription.subscription_attributes['endpoint'],
       p256dh: subscription.subscription_attributes['p256dh'],
       auth: subscription.subscription_attributes['auth'],
       vapid: {
-        subject: ENV.fetch('FRONTEND_URL', 'https://app.chatwoot.com'),
+        subject: ENV.fetch('FRONTEND_URL', DEFAULT_FRONTEND_URL),
         public_key: VapidService.public_key,
         private_key: VapidService.private_key
       },

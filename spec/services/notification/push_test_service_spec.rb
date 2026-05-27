@@ -10,8 +10,14 @@ RSpec.describe Notification::PushTestService do
   end
 
   describe '.default_title' do
-    it 'uses the installation name' do
-      allow(GlobalConfigService).to receive(:load).with('INSTALLATION_NAME', 'Chatwoot').and_return('OneLink')
+    it 'uses the configured installation name' do
+      allow(GlobalConfigService).to receive(:load).with('INSTALLATION_NAME', 'OneLink').and_return('CustomOneLink')
+
+      expect(described_class.default_title).to eq('CustomOneLink notification test')
+    end
+
+    it 'falls back to OneLink when installation name is not configured' do
+      allow(GlobalConfigService).to receive(:load).with('INSTALLATION_NAME', 'OneLink').and_return('OneLink')
 
       expect(described_class.default_title).to eq('OneLink notification test')
     end
@@ -86,6 +92,23 @@ RSpec.describe Notification::PushTestService do
       expect(result).to include(type: 'browser_push', status: :success, message: 'Web push accepted by endpoint')
       expect(result[:device]).to eq('push.example.test')
       expect(result[:token_tail]).to eq('…n-tail')
+    end
+
+    it 'uses OneLink frontend URL as browser push fallback' do
+      allow(VapidService).to receive(:public_key).and_return('public-key')
+      allow(VapidService).to receive(:private_key).and_return('private-key')
+      allow(WebPush).to receive(:payload_send)
+
+      with_modified_env FRONTEND_URL: nil do
+        perform([browser_subscription.id])
+      end
+
+      expect(WebPush).to have_received(:payload_send).with(
+        hash_including(
+          message: include('https://app.one-link.kz'),
+          vapid: hash_including(subject: 'https://app.one-link.kz')
+        )
+      )
     end
 
     it 'sends FCM directly when Firebase credentials are configured' do
