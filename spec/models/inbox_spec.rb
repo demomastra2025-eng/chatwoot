@@ -270,11 +270,13 @@ RSpec.describe Inbox do
 
     context 'when validating inbox name' do
       it 'does not allow empty string' do
-        inbox.name = ''
-        expect(inbox).not_to be_valid
-        expect(inbox.errors.full_messages[0]).to eq(
-          "Name can't be blank"
-        )
+        I18n.with_locale(:en) do
+          inbox.name = ''
+          expect(inbox).not_to be_valid
+          expect(inbox.errors.full_messages[0]).to eq(
+            "Name can't be blank"
+          )
+        end
       end
 
       it 'does allow special characters except /\@<> in between' do

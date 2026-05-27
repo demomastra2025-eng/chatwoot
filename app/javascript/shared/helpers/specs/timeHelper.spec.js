@@ -9,6 +9,15 @@ import {
   hasOneDayPassed,
 } from 'shared/helpers/timeHelper';
 
+const testTimestamp = 1612971343;
+const testTimestampDate = new Date(testTimestamp * 1000);
+const testTimestampHourMinute = [
+  testTimestampDate.getHours(),
+  testTimestampDate.getMinutes(),
+]
+  .map(value => String(value).padStart(2, '0'))
+  .join(':');
+
 beforeEach(() => {
   process.env.TZ = 'UTC';
   vi.useFakeTimers('modern');
@@ -25,8 +34,10 @@ afterEach(() => {
 
 describe('#messageStamp', () => {
   it('returns correct value', () => {
-    expect(messageStamp(1612971343)).toEqual('15:35');
-    expect(messageStamp(1612971343, 'LLL d, h:mm a')).toEqual('Feb 10 15:35');
+    expect(messageStamp(testTimestamp)).toEqual(testTimestampHourMinute);
+    expect(messageStamp(testTimestamp, 'LLL d, h:mm a')).toEqual(
+      `Feb 10 ${testTimestampHourMinute}`
+    );
   });
 });
 
@@ -35,7 +46,9 @@ describe('#messageTimestamp', () => {
     expect(messageTimestamp(1680777464)).toEqual('Apr 6, 2023');
   });
   it('should return the message date and time in a different format if the message was sent in a different year', () => {
-    expect(messageTimestamp(1612971343)).toEqual('Feb 10, 2021 15:35');
+    expect(messageTimestamp(testTimestamp)).toEqual(
+      `Feb 10, 2021 ${testTimestampHourMinute}`
+    );
   });
 });
 
