@@ -72,6 +72,7 @@ as defined by the routes in the `admin/` namespace
   <div>
     <ul class="my-4">
       <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Monitoring' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-mail-send-fill', url: super_admin_push_diagnostics_url, label: 'Push Diagnostics' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-robot-line', url: super_admin_captain_observability_url, label: 'AI Fleet' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_logs_url, label: 'Logs' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Sidekiq Dashboard' } %>

@@ -517,6 +517,12 @@ ru:
       subject: Завершить настройку %{custom_domain}
     ssl_status:
       custom_domain_not_configured: Пользовательский домен не настроен
+  super_admin:
+    push_diagnostics:
+      user_not_found: Пользователь не найден.
+      no_subscriptions_to_test: Выберите хотя бы одну подписку для теста.
+      no_subscriptions_to_delete: Выберите хотя бы одну подписку для удаления.
+      subscriptions_deleted: "Удалено подписок: %{count}. Устройства пользователя зарегистрируются заново при следующем запуске приложения."
   legal:
     shared:
       last_updated_label: Обновлено
