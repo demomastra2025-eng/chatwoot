@@ -38,6 +38,21 @@ describe('useBulkActions', () => {
     useAlert.mockImplementation(() => {});
   });
 
+  it('removes only one inbox occurrence when deselecting a conversation from the same inbox', () => {
+    const { selectedInboxes, selectConversation, deSelectConversation } =
+      useBulkActions();
+
+    selectConversation(1, 10);
+    selectConversation(2, 10);
+    deSelectConversation(1, 10);
+
+    expect(selectedInboxes.value).toEqual([10]);
+    expect(store.dispatch).toHaveBeenLastCalledWith(
+      'bulkActions/removeSelectedConversationIds',
+      1
+    );
+  });
+
   it('updates selected conversations locally after bulk status change', async () => {
     const { onUpdateConversations } = useBulkActions();
 

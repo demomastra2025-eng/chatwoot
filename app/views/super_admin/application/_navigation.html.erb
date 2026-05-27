@@ -15,6 +15,7 @@ as defined by the routes in the `admin/` namespace
     accounts: 'icon-building-4-line',
     users: 'icon-user-follow-line',
     platform_apps: 'icon-apps-2-line',
+    platform_banners: 'icon-megaphone-line',
     agent_bots: 'icon-robot-line',
   }
 %>
@@ -35,6 +36,7 @@ as defined by the routes in the `admin/` namespace
 
     primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
       next if hidden_primary_nav_resources.include?(resource.resource)
+      next if resource.resource == 'platform_banners' && !ChatwootApp.chatwoot_cloud?
 
       begin
         {
@@ -72,6 +74,7 @@ as defined by the routes in the `admin/` namespace
   <div>
     <ul class="my-4">
       <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Monitoring' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-mail-send-fill', url: super_admin_push_diagnostics_url, label: 'Push Diagnostics' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-robot-line', url: super_admin_captain_observability_url, label: 'AI Fleet' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_logs_url, label: 'Logs' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Sidekiq Dashboard' } %>

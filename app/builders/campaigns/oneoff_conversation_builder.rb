@@ -1,5 +1,5 @@
 class Campaigns::OneoffConversationBuilder
-  pattr_initialize [:campaign!, :contact!, :source_id, { campaign_run: nil, conversation_attributes: {}, test_send: false }]
+  pattr_initialize [:campaign!, :contact!, :source_id, { campaign_run: nil, conversation_attributes: {}, template_params: nil, test_send: false }]
 
   attr_reader :contact_inbox, :conversation, :message
 
@@ -87,6 +87,10 @@ class Campaigns::OneoffConversationBuilder
     campaign.sender
   end
 
+  def message_template_params
+    template_params.presence || campaign_template_params
+  end
+
   def message_params
     ActionController::Parameters.new({
                                        content: generated_campaign_content,
@@ -94,7 +98,7 @@ class Campaigns::OneoffConversationBuilder
                                        campaign_run_id: campaign_run&.id,
                                        campaign_test_send: test_send,
                                        preserve_waiting_since: true,
-                                       template_params: campaign_template_params
+                                       template_params: message_template_params
                                      })
   end
 

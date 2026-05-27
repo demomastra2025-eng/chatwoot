@@ -91,13 +91,27 @@ RSpec.describe DataImportJob do
         expect(invalid_data_import.account.contacts.first.name).to eq(csv_data[0]['name'].encode('UTF-8', 'binary', invalid: :replace,
                                                                                                                     undef: :replace, replace: ''))
       end
+
+      it 'strips UTF-8 BOM before parsing headers' do
+        bom_data_import = create(:data_import,
+                                 import_file: Rack::Test::UploadedFile.new(Rails.root.join('spec/fixtures/data_import/with_bom.csv'),
+                                                                           'text/csv'))
+
+        described_class.perform_now(bom_data_import)
+        expect(bom_data_import.account.contacts.count).to eq(1)
+
+        contact = bom_data_import.account.contacts.first
+        expect(contact.name).to eq('Ahmed')
+        expect(contact.email).to eq('ahmed@example.com')
+        expect(contact.phone_number).to eq('+971555544567')
+      end
     end
 
     context 'when the data contains existing records' do
       let(:existing_data) do
         [
           %w[id name email phone_number company],
-          ['1', 'Clarice Uzzell', 'cuzzell0@mozilla.org', '918080808080', 'Acmecorp'],
+          ['1', 'Clarice Uzzell', 'cuzzell0@mozilla.org', '+918080808080', 'Acmecorp'],
           ['2', 'Marieann Creegan', 'mcreegan1@cornell.edu', '+918080808081', 'Acmecorp'],
           ['3', 'Nancey Windibank', 'nwindibank2@bluehost.com', '+918080808082', 'Acmecorp']
         ]
@@ -116,7 +130,7 @@ RSpec.describe DataImportJob do
           expect(existing_data_import.account.contacts.count).to eq(csv_length)
           contact = Contact.from_email(csv_data[0]['email'])
           expect(contact).to be_present
-          expect(contact.phone_number).to eq("+#{csv_data[0]['phone_number']}")
+          expect(contact.phone_number).to eq(csv_data[0]['phone_number'])
           expect(contact.name).to eq((csv_data[0]['name']).to_s)
           expect(contact.additional_attributes['company']).to eq((csv_data[0]['company']).to_s)
         end
@@ -131,7 +145,7 @@ RSpec.describe DataImportJob do
           described_class.perform_now(existing_data_import)
           expect(existing_data_import.account.contacts.count).to eq(csv_length)
 
-          contact = Contact.find_by(phone_number: "+#{csv_data[0]['phone_number']}")
+          contact = Contact.find_by(phone_number: csv_data[0]['phone_number'])
           expect(contact).to be_present
           expect(contact.email).to eq(csv_data[0]['email'])
           expect(contact.name).to eq((csv_data[0]['name']).to_s)

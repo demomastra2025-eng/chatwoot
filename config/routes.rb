@@ -321,6 +321,19 @@ Rails.application.routes.draw do
             collection do
               get :search
             end
+            member do
+              post :destroy_custom_attributes
+              delete :avatar
+            end
+            scope module: :companies do
+              resources :contacts, only: [:index, :create, :destroy] do
+                collection do
+                  get :search
+                end
+              end
+              resources :conversations, only: [:index]
+              resources :notes, only: [:index]
+            end
           end
           resources :contacts, only: [:index, :show, :update, :create, :destroy] do
             collection do
@@ -340,6 +353,7 @@ Rails.application.routes.draw do
               resources :contact_inboxes, only: [:create]
               resources :labels, only: [:create, :index]
               resources :notes
+              get :attachments, to: 'attachments#index'
               post :call, on: :member, to: 'calls#create' if ChatwootApp.enterprise?
             end
           end
@@ -887,6 +901,9 @@ Rails.application.routes.draw do
       root to: 'dashboard#index'
 
       resource :app_config, only: [:show, :create]
+      resource :push_diagnostics, only: [:show, :create] do
+        post :destroy_subscriptions, on: :collection
+      end
 
       # order of resources affect the order of sidebar navigation in super admin
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
@@ -908,6 +925,7 @@ Rails.application.routes.draw do
         delete :avatar, on: :member, action: :destroy_avatar
       end
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy]
+      resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resource :instance_status, only: [:show]
       resource :monitoring, only: [:show]
       resource :captain_observability, only: [:show], controller: 'captain_observability'

@@ -42,8 +42,11 @@ class Account::ContactsExportJob < ApplicationJob
   def attach_export_file(csv_data)
     return if csv_data.blank?
 
+    # Prepend UTF-8 BOM so spreadsheet apps correctly detect non-ASCII CSV exports.
+    bom = "\xEF\xBB\xBF"
+
     @account.contacts_export.attach(
-      io: StringIO.new(csv_data),
+      io: StringIO.new("#{bom}#{csv_data}"),
       filename: "#{@account.name}_#{@account.id}_contacts.csv",
       content_type: 'text/csv'
     )

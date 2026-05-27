@@ -25,6 +25,21 @@ RSpec.describe Channel::Email do
     expect(channel.name).to eq('Email')
   end
 
+  it 'normalizes blank IMAP auth to plain' do
+    channel = build(:channel_email, imap_authentication: nil)
+
+    channel.validate
+
+    expect(channel.imap_authentication).to eq('plain')
+  end
+
+  it 'validates supported IMAP auth mechanisms' do
+    channel = build(:channel_email, imap_authentication: 'oauthbearer')
+
+    expect(channel).not_to be_valid
+    expect(channel.errors[:imap_authentication]).to be_present
+  end
+
   context 'when microsoft?' do
     it 'returns false' do
       expect(channel.microsoft?).to be(false)

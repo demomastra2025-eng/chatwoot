@@ -64,6 +64,21 @@ RSpec.describe Contacts::CompanyAssociationService, type: :service do
         expect(contact.company).to be_present
         expect(contact.company.contacts_count).to eq(1)
       end
+
+      it 'records company activity from associated contact' do
+        contact = create(:contact, email: nil, account: account, last_activity_at: 3.hours.ago)
+        # rubocop:disable Rails/SkipsModelValidations
+        contact.update_column(:email, 'lead@activitycorp.com')
+        # rubocop:enable Rails/SkipsModelValidations
+
+        valid_email_address = instance_double(ValidEmail2::Address, valid?: true, disposable_domain?: false)
+        allow(ValidEmail2::Address).to receive(:new).with('lead@activitycorp.com').and_return(valid_email_address)
+        allow(EmailProviderInfo).to receive(:call).with('lead@activitycorp.com').and_return(nil)
+
+        service.associate_company_from_email(contact)
+
+        expect(contact.reload.company.last_activity_at.to_i).to eq(contact.last_activity_at.to_i)
+      end
     end
 
     context 'when contact already has a company' do

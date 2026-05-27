@@ -322,6 +322,24 @@ RSpec.describe 'Companies API', type: :request do
         expect(response_body['payload']['domain']).to eq('newcompany.com')
       end
 
+      it 'creates a company with profile attributes' do
+        post "/api/v1/accounts/#{account.id}/companies",
+             params: {
+               company: {
+                 name: 'Profiled Company',
+                 additional_attributes: { 'industry' => 'Healthcare' },
+                 custom_attributes: { 'tier' => 'gold' }
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        payload = response.parsed_body['payload']
+        expect(payload['additional_attributes']).to eq('industry' => 'Healthcare')
+        expect(payload['custom_attributes']).to eq('tier' => 'gold')
+      end
+
       it 'creates multiple companies without domain' do
         auth_headers = admin.create_new_auth_token
 
@@ -406,6 +424,42 @@ RSpec.describe 'Companies API', type: :request do
         expect(response.parsed_body.dig('payload', 'domain')).to be_nil
         expect(company.reload.domain).to be_nil
       end
+
+      it 'merges custom attributes on update' do
+        company.update!(custom_attributes: { 'tier' => 'silver', 'region' => 'kz' })
+
+        patch "/api/v1/accounts/#{account.id}/companies/#{company.id}",
+              params: { company: { custom_attributes: { 'tier' => 'gold' } } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(company.reload.custom_attributes).to eq('tier' => 'gold', 'region' => 'kz')
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/companies/{id}/destroy_custom_attributes' do
+    let(:admin) { create(:user, account: account, role: :administrator) }
+    let(:company) { create(:company, account: account, custom_attributes: { 'tier' => 'gold', 'region' => 'kz' }) }
+
+    it 'removes requested custom attributes' do
+      post "/api/v1/accounts/#{account.id}/companies/#{company.id}/destroy_custom_attributes",
+           params: { custom_attributes: ['tier'] },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(company.reload.custom_attributes).to eq('region' => 'kz')
+    end
+
+    it 'rejects malformed custom attributes payload' do
+      post "/api/v1/accounts/#{account.id}/companies/#{company.id}/destroy_custom_attributes",
+           params: { custom_attributes: 'tier' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 

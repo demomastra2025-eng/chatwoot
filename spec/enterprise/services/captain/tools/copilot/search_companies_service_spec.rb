@@ -6,7 +6,17 @@ RSpec.describe Captain::Tools::Copilot::SearchCompaniesService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:service) { described_class.new(assistant, user: user) }
 
-  let!(:company1) { create(:company, account: account, name: 'OneLink Health', domain: 'onelink.health') }
+  let!(:company1) do
+    create(
+      :company,
+      account: account,
+      name: 'OneLink Health',
+      domain: 'onelink.health',
+      custom_attributes: { 'segment' => 'clinic' },
+      additional_attributes: { 'source' => 'captain' },
+      last_activity_at: Time.zone.parse('2026-05-26 10:00:00')
+    )
+  end
   let!(:company2) { create(:company, account: account, name: 'OneLink Dental', domain: 'onelink.dental') }
 
   describe '#execute' do
@@ -21,7 +31,11 @@ RSpec.describe Captain::Tools::Copilot::SearchCompaniesService do
         'id' => company1.id,
         'account_id' => account.id,
         'name' => 'OneLink Health',
-        'domain' => 'onelink.health'
+        'domain' => 'onelink.health',
+        'contacts_count' => 0,
+        'custom_attributes' => { 'segment' => 'clinic' },
+        'additional_attributes' => { 'source' => 'captain' },
+        'last_activity_at' => company1.last_activity_at.iso8601
       )
     end
   end

@@ -6,6 +6,7 @@
 #  email                     :string           not null
 #  forward_to_email          :string           not null
 #  imap_address              :string           default("")
+#  imap_authentication       :string           default("plain")
 #  imap_enable_ssl           :boolean          default(TRUE)
 #  imap_enabled              :boolean          default(FALSE)
 #  imap_login                :string           default("")
@@ -48,13 +49,16 @@ class Channel::Email < ApplicationRecord
 
   self.table_name = 'channel_email'
   EDITABLE_ATTRS = [:email, :imap_enabled, :imap_login, :imap_password, :imap_address, :imap_port, :imap_enable_ssl,
-                    :smtp_enabled, :smtp_login, :smtp_password, :smtp_address, :smtp_port, :smtp_domain, :smtp_enable_starttls_auto,
-                    :smtp_enable_ssl_tls, :smtp_openssl_verify_mode, :smtp_authentication, :provider, :verified_for_sending].freeze
+                    :imap_authentication, :smtp_enabled, :smtp_login, :smtp_password, :smtp_address, :smtp_port, :smtp_domain,
+                    :smtp_enable_starttls_auto, :smtp_enable_ssl_tls, :smtp_openssl_verify_mode, :smtp_authentication,
+                    :provider, :verified_for_sending].freeze
 
   validates :email, uniqueness: true
   validates :forward_to_email, uniqueness: true
+  validates :imap_authentication, inclusion: { in: Imap::Authentication::USER_CONFIGURABLE_MECHANISMS }
 
   before_validation :ensure_forward_to_email, on: :create
+  before_validation :normalize_imap_authentication
 
   def name
     'Email'
@@ -76,5 +80,9 @@ class Channel::Email < ApplicationRecord
 
   def ensure_forward_to_email
     self.forward_to_email ||= "#{SecureRandom.hex}@#{account.inbound_email_domain}"
+  end
+
+  def normalize_imap_authentication
+    self.imap_authentication = Imap::Authentication.normalize(imap_authentication).to_s.downcase
   end
 end

@@ -21,6 +21,8 @@ class Company < ApplicationRecord
   include Avatarable
   include LlmFormattable
 
+  ACTIVITY_ROLLUP_INTERVAL = 5.minutes
+
   validates :account_id, presence: true
   validates :name, presence: true, length: { maximum: Limits::COMPANY_NAME_LENGTH_LIMIT }
   validates :domain, allow_blank: true, format: {
@@ -29,12 +31,13 @@ class Company < ApplicationRecord
   }
   validates :domain, uniqueness: { scope: :account_id }, if: -> { domain.present? }
   validates :description, length: { maximum: Limits::COMPANY_DESCRIPTION_LENGTH_LIMIT }
+  validates :custom_attributes, jsonb_attributes_length: true
 
   belongs_to :account
   has_many :crm_deals, dependent: :nullify, class_name: '::Crm::Deal'
   has_many :contacts, dependent: :nullify
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
-  before_validation :normalize_domain
+  before_validation :prepare_company_attributes, :normalize_domain
   after_create_commit :fetch_favicon, if: -> { domain.present? }
 
   scope :ordered_by_name, -> { order(:name) }
@@ -53,6 +56,14 @@ class Company < ApplicationRecord
     order(
       Arel::Nodes::SqlLiteral.new(
         sanitize_sql_for_order("#{effective_contacts_count_sql} #{direction}")
+      )
+    )
+  }
+
+  scope :order_on_last_activity_at, lambda { |direction|
+    order(
+      Arel::Nodes::SqlLiteral.new(
+        sanitize_sql_for_order("\"companies\".\"last_activity_at\" #{direction} NULLS LAST")
       )
     )
   }
@@ -85,7 +96,18 @@ class Company < ApplicationRecord
     self.class.where(id: id).pick(Arel.sql(self.class.effective_contacts_count_sql)).to_i
   end
 
+  def record_activity_at!(activity_at)
+    return if last_activity_at.present? && last_activity_at > activity_at - ACTIVITY_ROLLUP_INTERVAL
+
+    update!(last_activity_at: activity_at)
+  end
+
   private
+
+  def prepare_company_attributes
+    self.additional_attributes = {} unless additional_attributes.is_a?(Hash)
+    self.custom_attributes = {} unless custom_attributes.is_a?(Hash)
+  end
 
   def normalize_domain
     self.domain = domain.to_s.strip.downcase.presence

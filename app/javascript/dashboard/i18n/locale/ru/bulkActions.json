@@ -1,12 +1,17 @@
 {
   "BULK_ACTION": {
-    "CONVERSATIONS_SELECTED": "{conversationCount} бесед выбрано",
+    "CONVERSATIONS_SELECTED": "Выбрано: {conversationCount}",
+    "NONE": "Ничего",
+    "CLEAR_SELECTION": "Очистить",
     "AGENT_SELECT_LABEL": "Выбрать сотрудника",
     "ASSIGN_CONFIRMATION_LABEL": "Вы уверены, что хотите назначить {conversationCount} {conversationLabel}",
     "UNASSIGN_CONFIRMATION_LABEL": "Вы уверены, что хотите отменить назначение {conversationCount} {conversationLabel}?",
+    "ASSIGN_AGENT_CONFIRMATION_LABEL": "Назначить {n} диалог сотруднику {agentName}? | Назначить {n} диалога сотруднику {agentName}? | Назначить {n} диалогов сотруднику {agentName}?",
+    "UNASSIGN_AGENT_CONFIRMATION_LABEL": "Снять назначение с {n} диалога? | Снять назначение с {n} диалогов? | Снять назначение с {n} диалогов?",
     "GO_BACK_LABEL": "Вернуться",
     "ASSIGN_LABEL": "Назначить",
     "YES": "Да",
+    "CANCEL": "Отмена",
     "SEARCH_INPUT_PLACEHOLDER": "Поиск",
     "ASSIGN_AGENT_TOOLTIP": "Назначить сотрудника",
     "ASSIGN_TEAM_TOOLTIP": "Назначить команду",
@@ -50,6 +55,8 @@
     "TEAMS": {
       "TEAM_SELECT_LABEL": "Выберите команду",
       "NONE": "Ничего",
+      "ASSIGN_TEAM_CONFIRMATION_LABEL": "Назначить {n} диалог команде {teamName}? | Назначить {n} диалога команде {teamName}? | Назначить {n} диалогов команде {teamName}?",
+      "UNASSIGN_TEAM_CONFIRMATION_LABEL": "Снять команду с {n} диалога? | Снять команду с {n} диалогов? | Снять команду с {n} диалогов?",
       "NO_TEAMS_AVAILABLE": "Нет команд, добавленных в этот workspace.",
       "ASSIGN_SELECTED_TEAMS": "Назначить выбранную команду.",
       "ASSIGN_SUCCESFUL": "Команды, назначены успешно.",

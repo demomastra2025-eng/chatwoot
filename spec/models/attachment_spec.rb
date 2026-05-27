@@ -339,6 +339,18 @@ RSpec.describe Attachment do
     end
   end
 
+  describe 'push_event_data for audio attachments' do
+    it 'returns an inline redirect URL for browser playback' do
+      attachment = message.attachments.new(account_id: message.account_id, file_type: :audio)
+      attachment.file.attach(io: Rails.public_path.join('audio/widget/ding.mp3').open, filename: 'ding.mp3', content_type: 'audio/mpeg')
+      attachment.save!
+
+      event_data = attachment.push_event_data
+      expect(event_data[:content_type]).to eq('audio/mpeg')
+      expect(event_data[:data_url]).to include('disposition=inline')
+    end
+  end
+
   describe 'file size validation' do
     let(:attachment) { message.attachments.new(account_id: message.account_id, file_type: :image) }
 

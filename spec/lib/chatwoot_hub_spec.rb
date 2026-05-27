@@ -53,6 +53,31 @@ describe ChatwootHub do
     end
   end
 
+  context 'when sending push notifications' do
+    let(:fcm_options) { { token: 'device-token', notification: { title: 'Test', body: 'Body' } } }
+    let(:payload) { { fcm_options: fcm_options }.merge(described_class.instance_config).to_json }
+
+    it 'sends push via hub and returns the raw response for diagnostics' do
+      response = instance_double(RestClient::Response)
+      allow(RestClient).to receive(:post).and_return(response)
+
+      expect(described_class.send_push_with_response(fcm_options)).to eq(response)
+      expect(RestClient).to have_received(:post).with(
+        described_class.push_notification_url,
+        payload,
+        { content_type: :json, accept: :json }
+      )
+    end
+
+    it 'keeps legacy send_push rescue behavior while delegating to the response method' do
+      allow(RestClient).to receive(:post).and_raise(RestClient::Exception)
+      allow(Rails.logger).to receive(:error)
+
+      expect { described_class.send_push(fcm_options) }.not_to raise_error
+      expect(Rails.logger).to have_received(:error)
+    end
+  end
+
   context 'when sending events' do
     let(:event_name) { 'sample_event' }
     let(:event_data) { { 'sample_data' => 'sample_data' } }

@@ -59,6 +59,31 @@ describe('storeFactory', () => {
       expect(store.setUIFlag).toBeTypeOf('function');
     });
 
+    it('merges custom Pinia state with the default CRUD state', () => {
+      const API = {
+        get: vi.fn(),
+        show: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      };
+
+      const useTestStore = createStore({
+        name: 'customPiniaState',
+        API,
+        type: 'pinia',
+        state: () => ({ activeCompanyId: null, companyContacts: [] }),
+      });
+
+      const store = useTestStore();
+
+      expect(store.records).toEqual([]);
+      expect(store.meta).toEqual({});
+      expect(store.uiFlags.fetchingList).toBe(false);
+      expect(store.activeCompanyId).toBeNull();
+      expect(store.companyContacts).toEqual([]);
+    });
+
     it('creates Vuex store when type is "vuex"', () => {
       const API = {};
       const store = createStore({

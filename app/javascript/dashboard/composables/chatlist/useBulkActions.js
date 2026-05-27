@@ -24,9 +24,14 @@ export function useBulkActions() {
 
   function deSelectConversation(conversationId, inboxId) {
     store.dispatch('bulkActions/removeSelectedConversationIds', conversationId);
-    selectedInboxes.value = selectedInboxes.value.filter(
-      item => item !== inboxId
-    );
+    const index = selectedInboxes.value.indexOf(inboxId);
+
+    if (index > -1) {
+      selectedInboxes.value = [
+        ...selectedInboxes.value.slice(0, index),
+        ...selectedInboxes.value.slice(index + 1),
+      ];
+    }
   }
 
   function resetBulkActions() {
@@ -142,6 +147,8 @@ export function useBulkActions() {
   }
 
   async function onUpdateConversations(status, snoozedUntil) {
+    if (selectedConversations.value.length === 0) return;
+
     let conversationIds = selectedConversations.value;
     let skippedCount = 0;
 

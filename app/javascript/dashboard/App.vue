@@ -3,6 +3,7 @@ import { mapGetters } from 'vuex';
 import LoadingState from './components/widgets/LoadingState.vue';
 import NetworkNotification from './components/NetworkNotification.vue';
 import PaymentPendingBanner from './components/app/PaymentPendingBanner.vue';
+import StatusBanner from './components/app/StatusBanner.vue';
 import PendingEmailVerificationBanner from './components/app/PendingEmailVerificationBanner.vue';
 import vueActionCable from './helper/actionCable';
 import AuthAPI from './api/auth';
@@ -29,6 +30,7 @@ export default {
     LoadingState,
     NetworkNotification,
     PaymentPendingBanner,
+    StatusBanner,
     WootSnackbarBox,
     PendingEmailVerificationBanner,
   },
@@ -142,6 +144,7 @@ export default {
     :dir="isRTL ? 'rtl' : 'ltr'"
   >
     <!-- Onelink intentionally hides the global update banner in the app chrome. -->
+    <StatusBanner />
     <template v-if="currentAccountId">
       <PendingEmailVerificationBanner v-if="hideOnOnboardingView" />
       <PaymentPendingBanner v-if="hideOnOnboardingView" />

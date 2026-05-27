@@ -23,6 +23,11 @@ export default {
       value: this.selected,
     };
   },
+  watch: {
+    selected(newValue) {
+      this.value = newValue;
+    },
+  },
 };
 </script>
 
@@ -31,7 +36,7 @@ export default {
     <label for="dropdown-select">
       {{ label }}
     </label>
-    <Select
+    <select
       id="dropdown-select"
       v-model="value"
       name="dropdown-select"
@@ -40,6 +45,6 @@ export default {
       <option v-for="option in options" :key="option.key">
         {{ option.value }}
       </option>
-    </Select>
+    </select>
   </div>
 </template>

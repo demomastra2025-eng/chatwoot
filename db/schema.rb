@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_26_062303) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_27_123000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -609,6 +609,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_26_062303) do
     t.jsonb "provider_config", default: {}
     t.string "provider"
     t.boolean "verified_for_sending", default: false, null: false
+    t.string "imap_authentication", default: "plain"
     t.index ["email"], name: "index_channel_email_on_email", unique: true
     t.index ["forward_to_email"], name: "index_channel_email_on_forward_to_email", unique: true
   end
@@ -842,6 +843,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_26_062303) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "contacts_count"
+    t.jsonb "additional_attributes", default: {}, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "last_activity_at"
     t.index ["account_id", "domain"], name: "index_companies_on_account_and_domain", unique: true, where: "(domain IS NOT NULL)"
     t.index ["account_id"], name: "index_companies_on_account_id"
     t.index ["name", "account_id"], name: "index_companies_on_name_and_account_id"
@@ -1697,6 +1701,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_26_062303) do
 
   create_table "platform_apps", force: :cascade do |t|
     t.string "name", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "platform_banners", force: :cascade do |t|
+    t.text "banner_message", null: false
+    t.integer "banner_type", default: 0, null: false
+    t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
   end

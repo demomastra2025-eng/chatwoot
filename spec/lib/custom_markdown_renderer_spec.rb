@@ -238,5 +238,21 @@ describe CustomMarkdownRenderer do
         expect(output).to include('allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"')
       end
     end
+
+    context 'when captured values contain HTML-special characters' do
+      it 'escapes double quotes in captured YouTube video_id' do
+        markdown = "\n[demo](<https://www.youtube.com/watch?v=x\" onload=\"alert(1)>)\n"
+        output = render_markdown(markdown)
+
+        expect(output).not_to include('onload="alert(1)"')
+        expect(output).to include('&quot;')
+      end
+
+      it 'leaves legitimate alphanumeric IDs untouched' do
+        output = render_markdown_link('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+
+        expect(output).to include('src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"')
+      end
+    end
   end
 end

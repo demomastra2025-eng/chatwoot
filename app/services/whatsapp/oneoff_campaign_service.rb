@@ -31,15 +31,30 @@ class Whatsapp::OneoffCampaignService < Campaigns::OneoffBaseService
   end
 
   def perform_delivery(contact:, delivery:, target_identifier:)
-    target_identifier # The base service validates this before WhatsApp conversation creation.
+    processed_template_params = process_liquid_template_params(contact)
+    if processed_template_params.nil?
+      delivery.mark_status!(status: :skipped, error_message: 'WhatsApp template variables resolved to blank values')
+      return delivery
+    end
 
     message = Campaigns::OneoffConversationBuilder.new(
       campaign: campaign,
       contact: contact,
-      campaign_run: current_campaign_run
+      source_id: target_identifier,
+      campaign_run: current_campaign_run,
+      template_params: processed_template_params
     ).perform
     delivery.mark_status!(status: :pending, metadata: { message_id: message.id })
     delivery
+  end
+
+  def process_liquid_template_params(contact)
+    liquid_processor = Whatsapp::LiquidTemplateProcessorService.new(campaign: campaign, contact: contact)
+    processed_template_params = liquid_processor.process_template_params(campaign.template_params)
+
+    Rails.logger.info "Skipping contact #{contact.name} - liquid variables resolved to blank values" if processed_template_params.nil?
+
+    processed_template_params
   end
 
   def log_delivery_failure(contact, error)

@@ -1,6 +1,12 @@
 require 'rails_helper'
 
 describe EmailHelper do
+  describe '#render_email_html' do
+    it 'preserves single newlines as HTML hard breaks' do
+      expect(helper.render_email_html("first\nsecond")).to include("first<br />\nsecond")
+    end
+  end
+
   describe '#normalize_email_with_plus_addressing' do
     context 'when email is passed' do
       it 'normalise if plus addressing is present' do
