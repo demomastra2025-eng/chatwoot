@@ -6,11 +6,6 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAlert } from 'dashboard/composables';
 import { debounce } from '@chatwoot/utils';
 import { useCompaniesStore } from 'dashboard/stores/companies';
-import {
-  companyMatchesSearch,
-  resolveCompaniesPageAfterDelete,
-} from '../helpers';
-
 import CompaniesListLayout from 'dashboard/components-next/Companies/CompaniesListLayout.vue';
 import CompaniesCard from 'dashboard/components-next/Companies/CompaniesCard/CompaniesCard.vue';
 import CreateCompanyDialog from 'dashboard/components-next/Companies/CompanyForm/CreateCompanyDialog.vue';
@@ -24,7 +19,6 @@ const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
 const createCompanyDialogRef = ref(null);
-const expandedCompanyId = ref(null);
 
 const { updateUISettings, uiSettings } = useUISettings();
 
@@ -125,43 +119,26 @@ const openCreateCompanyDialog = prefill => {
   createCompanyDialogRef.value?.openWithPrefill(prefill || null);
 };
 
-const toggleCompany = companyId => {
-  expandedCompanyId.value =
-    expandedCompanyId.value === companyId ? null : companyId;
+const showCompany = companyId => {
+  router.push({
+    name: 'companies_dashboard_show',
+    params: {
+      accountId: route.params.accountId,
+      companyId,
+    },
+  });
 };
 
 const createCompany = async company => {
   try {
     const createdCompany = await companiesStore.create(company);
-    const nextSearch = companyMatchesSearch(createdCompany, searchValue.value)
-      ? searchValue.value
-      : '';
 
     useAlert(t('COMPANIES.FORM.SUCCESS.CREATE'));
     createCompanyDialogRef.value?.onSuccess?.();
-    searchValue.value = nextSearch;
-    await fetchCompanies(1, nextSearch, sortParam.value);
-    expandedCompanyId.value = createdCompany.id;
+    showCompany(createdCompany.id);
   } catch {
     useAlert(t('COMPANIES.FORM.ERROR.CREATE'));
   }
-};
-
-const refreshCompaniesAfterUpdate = async () => {
-  await fetchCompanies(pageNumber.value, searchValue.value, sortParam.value);
-};
-
-const handleCompanyDeleted = async companyId => {
-  if (expandedCompanyId.value === companyId) {
-    expandedCompanyId.value = null;
-  }
-
-  const targetPage = resolveCompaniesPageAfterDelete({
-    currentPage: pageNumber.value,
-    remainingItemsOnPage: companies.value.length,
-  });
-
-  await fetchCompanies(targetPage, searchValue.value, sortParam.value);
 };
 
 const handleSort = async ({ sort, order }) => {
@@ -222,7 +199,8 @@ const consumeCompanyOpenQuery = async () => {
       await companiesStore.show(companyId);
     }
 
-    expandedCompanyId.value = companyId;
+    companiesStore.resetCompanyDetailState?.();
+    showCompany(companyId);
   } catch {
     useAlert(t('COMPANIES.FORM.ERROR.UPDATE'));
   } finally {
@@ -287,7 +265,7 @@ watch(
         t('COMPANIES.EMPTY_STATE.TITLE')
       }}</span>
     </div>
-    <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 items-start">
+    <div v-else class="flex flex-col gap-4">
       <CompaniesCard
         v-for="company in companies"
         :id="company.id"
@@ -295,13 +273,9 @@ watch(
         :name="company.name"
         :domain="company.domain"
         :contacts-count="company.contactsCount || 0"
-        :description="company.description"
         :avatar-url="company.avatarUrl"
-        :updated-at="company.updatedAt"
-        :is-expanded="expandedCompanyId === company.id"
-        @toggle="toggleCompany(company.id)"
-        @updated="refreshCompaniesAfterUpdate"
-        @deleted="handleCompanyDeleted"
+        :last-activity-at="company.lastActivityAt"
+        @show-company="showCompany"
       />
     </div>
   </CompaniesListLayout>

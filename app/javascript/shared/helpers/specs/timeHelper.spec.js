@@ -4,6 +4,7 @@ import {
   dynamicTime,
   dateFormat,
   shortTimestamp,
+  formatDuration,
   getDayDifferenceFromNow,
   hasOneDayPassed,
 } from 'shared/helpers/timeHelper';
@@ -103,6 +104,22 @@ describe('#shortTimestamp', () => {
 
     expect(shortTimestamp(1683284400)).toEqual('1 ч');
     expect(shortTimestamp(1683284400, true)).toEqual('1 ч назад');
+  });
+});
+
+describe('#formatDuration', () => {
+  it('formats seconds into mm:ss or hh:mm:ss', () => {
+    expect(formatDuration(0)).toEqual('00:00');
+    expect(formatDuration(7)).toEqual('00:07');
+    expect(formatDuration(65)).toEqual('01:05');
+    expect(formatDuration(3661)).toEqual('01:01:01');
+  });
+
+  it('returns an empty string for invalid durations', () => {
+    expect(formatDuration()).toEqual('');
+    expect(formatDuration(null)).toEqual('');
+    expect(formatDuration(-1)).toEqual('');
+    expect(formatDuration('invalid')).toEqual('');
   });
 });
 

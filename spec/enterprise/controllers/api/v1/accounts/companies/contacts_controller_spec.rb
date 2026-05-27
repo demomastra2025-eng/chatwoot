@@ -17,7 +17,10 @@ RSpec.describe 'Company contacts API', type: :request do
           as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body['payload'].pluck('id')).to contain_exactly(direct_contact.id, deal_contact.id)
+      contacts_by_id = response.parsed_body['payload'].index_by { |contact| contact['id'] }
+      expect(contacts_by_id.keys).to contain_exactly(direct_contact.id, deal_contact.id)
+      expect(contacts_by_id.dig(direct_contact.id, 'linked_to_current_company')).to be(true)
+      expect(contacts_by_id.dig(deal_contact.id, 'linked_to_current_company')).to be(false)
     end
 
     it 'does not leak contacts from another account' do

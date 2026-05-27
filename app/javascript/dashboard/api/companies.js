@@ -1,20 +1,24 @@
 /* global axios */
 import ApiClient from './ApiClient';
 
-export const buildCompanyParams = (page, sort) => {
-  let params = `page=${page}`;
-  if (sort) {
-    params = `${params}&sort=${sort}`;
-  }
-  return params;
-};
+const encodeParam = value => encodeURIComponent(value);
 
-export const buildSearchParams = (query, page, sort) => {
-  let params = `q=${encodeURIComponent(query)}&page=${page}`;
-  if (sort) {
-    params = `${params}&sort=${sort}`;
-  }
-  return params;
+const buildParams = params =>
+  Object.entries(params)
+    .filter(
+      ([key, value]) => value !== undefined && (value !== '' || key === 'q')
+    )
+    .map(([key, value]) => `${key}=${encodeParam(value)}`)
+    .join('&');
+
+const buildCompanyParams = (page = 1, sort = '') => buildParams({ page, sort });
+
+const buildSearchParams = (query = '', page = 1, sort = '') =>
+  buildParams({ q: query, page, sort });
+
+const wrapCompanyPayload = data => {
+  if (data instanceof FormData || data?.company) return data;
+  return { company: data };
 };
 
 class CompanyAPI extends ApiClient {
@@ -38,12 +42,53 @@ class CompanyAPI extends ApiClient {
   }
 
   create(data) {
-    return axios.post(this.url, { company: data });
+    return axios.post(this.url, wrapCompanyPayload(data));
   }
 
   update(id, data) {
-    return axios.patch(`${this.url}/${id}`, { company: data });
+    return axios.patch(`${this.url}/${id}`, wrapCompanyPayload(data));
+  }
+
+  listContacts(id, page = 1) {
+    return axios.get(`${this.url}/${id}/contacts?${buildParams({ page })}`);
+  }
+
+  listNotes(id) {
+    return axios.get(`${this.url}/${id}/notes`);
+  }
+
+  listConversations(id) {
+    return axios.get(`${this.url}/${id}/conversations`);
+  }
+
+  searchContacts(id, query = '', page = 1) {
+    const requestURL = `${this.url}/${id}/contacts/search?${buildParams({ q: query, page })}`;
+    return axios.get(requestURL);
+  }
+
+  createContact(id, payload) {
+    return axios.post(`${this.url}/${id}/contacts`, payload);
+  }
+
+  removeContact(id, contactId) {
+    return axios.delete(`${this.url}/${id}/contacts/${contactId}`);
+  }
+
+  destroyCustomAttributes(id, customAttributes) {
+    return axios.post(`${this.url}/${id}/destroy_custom_attributes`, {
+      custom_attributes: customAttributes,
+    });
+  }
+
+  destroyAvatar(id) {
+    return axios.delete(`${this.url}/${id}/avatar`);
   }
 }
 
+export {
+  buildCompanyParams,
+  buildParams,
+  buildSearchParams,
+  wrapCompanyPayload,
+};
 export default new CompanyAPI();

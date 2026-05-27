@@ -122,8 +122,11 @@ module Crm::PayloadBuilder
 
     {
       id: company.id,
-      name: company.name
-    }
+      name: company.name,
+      domain: company.domain,
+      contacts_count: company_contacts_count(company),
+      last_activity_at: company.last_activity_at&.iso8601
+    }.compact
   end
 
   def company(company)
@@ -133,6 +136,10 @@ module Crm::PayloadBuilder
       name: company.name,
       domain: company.domain,
       description: company.description,
+      contacts_count: company_contacts_count(company),
+      additional_attributes: company.additional_attributes,
+      custom_attributes: company.custom_attributes,
+      last_activity_at: company.last_activity_at&.iso8601,
       created_at: company.created_at&.iso8601,
       updated_at: company.updated_at&.iso8601
     }
@@ -181,6 +188,12 @@ module Crm::PayloadBuilder
 
   def amount_for(deal)
     Crm::AmountFormatter.major_from_minor(deal.amount_minor)
+  end
+
+  def company_contacts_count(company)
+    return company.effective_contacts_count if company.respond_to?(:effective_contacts_count)
+
+    company.contacts_count.to_i
   end
 
   def compact_user(user)

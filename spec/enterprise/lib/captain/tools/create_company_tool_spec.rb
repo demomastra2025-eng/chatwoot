@@ -16,7 +16,10 @@ RSpec.describe Captain::Tools::CreateCompanyTool, type: :model do
       'account_id' => account.id,
       'name' => 'OneLink',
       'domain' => 'onelink.kz',
-      'description' => 'CRM'
+      'description' => 'CRM',
+      'contacts_count' => 1,
+      'additional_attributes' => {},
+      'custom_attributes' => {}
     )
   end
 end
