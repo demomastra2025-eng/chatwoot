@@ -2,29 +2,74 @@ import axios from 'axios';
 import { actions } from '../../bulkActions';
 import * as types from '../../../mutation-types';
 import payload from './fixtures';
+
 const commit = vi.fn();
+const dispatch = vi.fn();
 global.axios = axios;
 vi.mock('axios');
 
+const bulkActionRun = {
+  id: 42,
+  status: 'completed',
+  action_name: 'assign_agent',
+  total_count: 2,
+  processed_count: 2,
+  failed_count: 0,
+};
+
 describe('#actions', () => {
+  beforeEach(() => {
+    commit.mockClear();
+    dispatch.mockReset();
+    axios.post.mockReset();
+    axios.get.mockReset();
+  });
+
   describe('#create', () => {
     it('sends correct actions if API is success', async () => {
-      axios.post.mockResolvedValue({ data: payload });
-      await actions.process({ commit }, payload);
+      dispatch.mockResolvedValue(bulkActionRun);
+      axios.post.mockResolvedValue({ data: { payload: bulkActionRun } });
+
+      await actions.process({ commit, dispatch }, payload);
+
+      expect(dispatch).toHaveBeenCalledWith('pollRunStatus', bulkActionRun.id);
       expect(commit.mock.calls).toEqual([
         [types.default.SET_BULK_ACTIONS_FLAG, { isUpdating: true }],
+        [types.default.SET_BULK_ACTION_RUN, null],
+        [types.default.SET_BULK_ACTION_RUN, bulkActionRun],
         [types.default.SET_BULK_ACTIONS_FLAG, { isUpdating: false }],
       ]);
     });
+
     it('sends correct actions if API is error', async () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(actions.process({ commit })).rejects.toThrow(Error);
+
+      await expect(
+        actions.process({ commit, dispatch }, payload)
+      ).rejects.toThrow(Error);
+
       expect(commit.mock.calls).toEqual([
         [types.default.SET_BULK_ACTIONS_FLAG, { isUpdating: true }],
+        [types.default.SET_BULK_ACTION_RUN, null],
         [types.default.SET_BULK_ACTIONS_FLAG, { isUpdating: false }],
       ]);
     });
   });
+
+  describe('#pollRunStatus', () => {
+    it('polls and commits completed bulk action run status', async () => {
+      axios.get.mockResolvedValue({ data: { payload: bulkActionRun } });
+
+      await expect(
+        actions.pollRunStatus({ commit }, bulkActionRun.id)
+      ).resolves.toEqual(bulkActionRun);
+
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_BULK_ACTION_RUN, bulkActionRun],
+      ]);
+    });
+  });
+
   describe('#setSelectedConversationIds', () => {
     it('sends correct actions if API is success', async () => {
       await actions.setSelectedConversationIds({ commit }, payload.ids);
@@ -33,6 +78,7 @@ describe('#actions', () => {
       ]);
     });
   });
+
   describe('#removeSelectedConversationIds', () => {
     it('sends correct actions if API is success', async () => {
       await actions.removeSelectedConversationIds({ commit }, payload.ids);
@@ -41,6 +87,7 @@ describe('#actions', () => {
       ]);
     });
   });
+
   describe('#clearSelectedConversationIds', () => {
     it('sends correct actions if API is success', async () => {
       await actions.clearSelectedConversationIds({ commit });

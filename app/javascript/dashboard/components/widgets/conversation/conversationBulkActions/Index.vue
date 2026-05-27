@@ -1,8 +1,10 @@
-<script>
+<script setup>
+import { ref, computed, onMounted, onUnmounted, useAttrs } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { getUnixTime } from 'date-fns';
-import { mapGetters } from 'vuex';
 import { findSnoozeTime } from 'dashboard/helper/snoozeHelpers';
 import { emitter } from 'shared/helpers/mitt';
+import { useMapGetter } from 'dashboard/composables/store';
 import wootConstants from 'dashboard/constants/globals';
 import {
   CMD_BULK_ACTION_SNOOZE_CONVERSATION,
@@ -11,420 +13,285 @@ import {
 } from 'dashboard/helper/commandbar/events';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
-import AgentSelector from './AgentSelector.vue';
-import UpdateActions from './UpdateActions.vue';
-import LabelActions from './LabelActions.vue';
-import TeamActions from './TeamActions.vue';
-import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
-export default {
-  components: {
-    AgentSelector,
-    UpdateActions,
-    LabelActions,
-    TeamActions,
-    CustomSnoozeModal,
-    NextButton,
-    Checkbox,
-  },
-  props: {
-    conversations: {
-      type: Array,
-      default: () => [],
-    },
-    allConversationsSelected: {
-      type: Boolean,
-      default: false,
-    },
-    selectedInboxes: {
-      type: Array,
-      default: () => [],
-    },
-    showOpenAction: {
-      type: Boolean,
-      default: false,
-    },
-    showResolvedAction: {
-      type: Boolean,
-      default: false,
-    },
-    showSnoozedAction: {
-      type: Boolean,
-      default: false,
-    },
-  },
-  emits: [
-    'selectAllConversations',
-    'assignAgent',
-    'updateConversations',
-    'assignLabels',
-    'assignTeam',
-    'markRead',
-    'resolveConversations',
-  ],
-  data() {
-    return {
-      showAgentsList: false,
-      showUpdateActions: false,
-      showLabelActions: false,
-      showTeamsList: false,
-      popoverPositions: {},
-      showCustomTimeSnoozeModal: false,
-    };
-  },
-  computed: {
-    ...mapGetters({
-      uiFlags: 'bulkActions/getUIFlags',
-      bulkActionRun: 'bulkActions/getCurrentBulkActionRun',
-    }),
-    progressPercentage() {
-      return this.bulkActionRun?.progress_percentage || 0;
-    },
-    progressLabel() {
-      if (!this.bulkActionRun) {
-        return '';
-      }
+import BulkAgentActions from './BulkAgentActions.vue';
+import BulkUpdateActions from './BulkUpdateActions.vue';
+import BulkLabelActions from './BulkLabelActions.vue';
+import BulkTeamActions from './BulkTeamActions.vue';
+import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
 
-      const actionName = this.bulkActionRun.action_name;
-      let actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.update');
+const props = defineProps({
+  conversations: {
+    type: Array,
+    default: () => [],
+  },
+  allConversationsSelected: {
+    type: Boolean,
+    default: false,
+  },
+  selectedInboxes: {
+    type: Array,
+    default: () => [],
+  },
+  showOpenAction: {
+    type: Boolean,
+    default: false,
+  },
+  showResolvedAction: {
+    type: Boolean,
+    default: false,
+  },
+  showSnoozedAction: {
+    type: Boolean,
+    default: false,
+  },
+});
 
-      if (actionName === 'add_labels') {
-        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.add_labels');
-      } else if (actionName === 'remove_labels') {
-        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.remove_labels');
-      } else if (actionName === 'assign_agent') {
-        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.assign_agent');
-      } else if (actionName === 'assign_team') {
-        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.assign_team');
-      } else if (actionName === 'update_status') {
-        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.update_status');
-      } else if (actionName === 'mark_read') {
-        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.mark_read');
-      }
+const emit = defineEmits([
+  'selectAllConversations',
+  'assignAgent',
+  'assignLabels',
+  'assignTeam',
+  'updateConversations',
+  'markRead',
+]);
 
-      return this.$t('BULK_ACTION.PROGRESS.TITLE', {
-        action: actionLabel,
-        processedCount: this.bulkActionRun.processed_count || 0,
-        totalCount: this.bulkActionRun.total_count || 0,
-      });
-    },
-    progressMetaLabel() {
-      if (!this.bulkActionRun?.failed_count) {
-        return '';
-      }
+defineOptions({
+  inheritAttrs: false,
+});
 
-      return this.$t('BULK_ACTION.PROGRESS.FAILED', {
-        count: this.bulkActionRun.failed_count,
-      });
-    },
+const attrs = useAttrs();
+const { t } = useI18n();
+
+const bulkActionRun = useMapGetter('bulkActions/getCurrentBulkActionRun');
+const bulkActionUiFlags = useMapGetter('bulkActions/getUIFlags');
+const showCustomTimeSnoozeModal = ref(false);
+
+const allSelected = computed({
+  get: () => props.allConversationsSelected,
+  set: value => {
+    if (bulkActionUiFlags.value.isUpdating) return;
+    emit('selectAllConversations', value);
   },
-  mounted() {
-    emitter.on(
-      CMD_BULK_ACTION_SNOOZE_CONVERSATION,
-      this.onCmdSnoozeConversation
-    );
-    emitter.on(
-      CMD_BULK_ACTION_REOPEN_CONVERSATION,
-      this.onCmdReopenConversation
-    );
-    emitter.on(
-      CMD_BULK_ACTION_RESOLVE_CONVERSATION,
-      this.onCmdResolveConversation
-    );
-  },
-  unmounted() {
-    emitter.off(
-      CMD_BULK_ACTION_SNOOZE_CONVERSATION,
-      this.onCmdSnoozeConversation
-    );
-    emitter.off(
-      CMD_BULK_ACTION_REOPEN_CONVERSATION,
-      this.onCmdReopenConversation
-    );
-    emitter.off(
-      CMD_BULK_ACTION_RESOLVE_CONVERSATION,
-      this.onCmdResolveConversation
-    );
-  },
-  methods: {
-    onCmdSnoozeConversation(snoozeType) {
-      if (snoozeType === wootConstants.SNOOZE_OPTIONS.UNTIL_CUSTOM_TIME) {
-        this.showCustomTimeSnoozeModal = true;
-      } else if (typeof snoozeType === 'number') {
-        this.updateConversations('snoozed', snoozeType);
-      } else {
-        this.updateConversations('snoozed', findSnoozeTime(snoozeType) || null);
-      }
-    },
-    onCmdReopenConversation() {
-      this.updateConversations('open', null);
-    },
-    onCmdResolveConversation() {
-      this.updateConversations('resolved', null);
-    },
-    customSnoozeTime(customSnoozedTime) {
-      this.showCustomTimeSnoozeModal = false;
-      if (customSnoozedTime) {
-        this.updateConversations('snoozed', getUnixTime(customSnoozedTime));
-      }
-    },
-    hideCustomSnoozeModal() {
-      this.showCustomTimeSnoozeModal = false;
-    },
-    selectAll(e) {
-      this.$emit('selectAllConversations', e.target.checked);
-    },
-    submit(agent) {
-      this.$emit('assignAgent', agent);
-    },
-    updateConversations(status, snoozedUntil) {
-      this.$emit('updateConversations', status, snoozedUntil);
-    },
-    assignLabels(labels) {
-      this.$emit('assignLabels', labels);
-    },
-    assignTeam(team) {
-      this.$emit('assignTeam', team);
-    },
-    markRead() {
-      this.$emit('markRead');
-    },
-    resolveConversations() {
-      this.$emit('resolveConversations');
-    },
-    toggleUpdateActions() {
-      this.showUpdateActions = !this.showUpdateActions;
-    },
-    toggleLabelActions() {
-      this.showLabelActions = !this.showLabelActions;
-    },
-    toggleAgentList() {
-      this.showAgentsList = !this.showAgentsList;
-    },
-    toggleTeamsList() {
-      this.showTeamsList = !this.showTeamsList;
-    },
-  },
-};
+});
+
+const progressPercentage = computed(
+  () => bulkActionRun.value?.progress_percentage || 0
+);
+
+const progressLabel = computed(() => {
+  if (!bulkActionRun.value) return '';
+
+  const actionLabels = {
+    add_labels: t('BULK_ACTION.PROGRESS.ACTIONS.add_labels'),
+    remove_labels: t('BULK_ACTION.PROGRESS.ACTIONS.remove_labels'),
+    assign_agent: t('BULK_ACTION.PROGRESS.ACTIONS.assign_agent'),
+    assign_team: t('BULK_ACTION.PROGRESS.ACTIONS.assign_team'),
+    update_status: t('BULK_ACTION.PROGRESS.ACTIONS.update_status'),
+    mark_read: t('BULK_ACTION.PROGRESS.ACTIONS.mark_read'),
+  };
+  const actionName = bulkActionRun.value.action_name;
+  const actionLabel =
+    actionLabels[actionName] || t('BULK_ACTION.PROGRESS.ACTIONS.update');
+
+  return t('BULK_ACTION.PROGRESS.TITLE', {
+    action: actionLabel,
+    processedCount: bulkActionRun.value.processed_count || 0,
+    totalCount: bulkActionRun.value.total_count || 0,
+  });
+});
+
+const progressMetaLabel = computed(() => {
+  if (!bulkActionRun.value?.failed_count) return '';
+
+  return t('BULK_ACTION.PROGRESS.FAILED', {
+    count: bulkActionRun.value.failed_count,
+  });
+});
+
+function updateConversations(status, snoozedUntil = null) {
+  if (bulkActionUiFlags.value.isUpdating) return;
+  emit('updateConversations', status, snoozedUntil);
+}
+
+function assignAgent(agent) {
+  if (bulkActionUiFlags.value.isUpdating) return;
+  emit('assignAgent', agent);
+}
+
+function assignLabels(labels) {
+  if (bulkActionUiFlags.value.isUpdating) return;
+  emit('assignLabels', labels);
+}
+
+function assignTeam(team) {
+  if (bulkActionUiFlags.value.isUpdating) return;
+  emit('assignTeam', team);
+}
+
+function markRead() {
+  if (bulkActionUiFlags.value.isUpdating) return;
+  emit('markRead');
+}
+
+function onCmdSnoozeConversation(snoozeType) {
+  if (snoozeType === wootConstants.SNOOZE_OPTIONS.UNTIL_CUSTOM_TIME) {
+    showCustomTimeSnoozeModal.value = true;
+  } else if (typeof snoozeType === 'number') {
+    updateConversations('snoozed', snoozeType);
+  } else {
+    updateConversations('snoozed', findSnoozeTime(snoozeType) || null);
+  }
+}
+
+function onCmdReopenConversation() {
+  updateConversations('open', null);
+}
+
+function onCmdResolveConversation() {
+  updateConversations('resolved', null);
+}
+
+function customSnoozeTime(customSnoozedTime) {
+  showCustomTimeSnoozeModal.value = false;
+  if (customSnoozedTime) {
+    updateConversations('snoozed', getUnixTime(customSnoozedTime));
+  }
+}
+
+function hideCustomSnoozeModal() {
+  showCustomTimeSnoozeModal.value = false;
+}
+
+onMounted(() => {
+  emitter.on(CMD_BULK_ACTION_SNOOZE_CONVERSATION, onCmdSnoozeConversation);
+  emitter.on(CMD_BULK_ACTION_REOPEN_CONVERSATION, onCmdReopenConversation);
+  emitter.on(CMD_BULK_ACTION_RESOLVE_CONVERSATION, onCmdResolveConversation);
+});
+
+onUnmounted(() => {
+  emitter.off(CMD_BULK_ACTION_SNOOZE_CONVERSATION, onCmdSnoozeConversation);
+  emitter.off(CMD_BULK_ACTION_REOPEN_CONVERSATION, onCmdReopenConversation);
+  emitter.off(CMD_BULK_ACTION_RESOLVE_CONVERSATION, onCmdResolveConversation);
+});
 </script>
 
 <template>
-  <div class="bulk-action__container">
-    <div class="flex items-center justify-between">
-      <label class="flex items-center justify-between bulk-action__panel">
-        <Checkbox
-          :model-value="allConversationsSelected"
-          class="checkbox"
-          :indeterminate="!allConversationsSelected"
-          :disabled="uiFlags.isUpdating"
-          @change="selectAll($event)"
-        />
-        <span>
-          {{
-            $t('BULK_ACTION.CONVERSATIONS_SELECTED', {
-              conversationCount: conversations.length,
-            })
-          }}
-        </span>
-      </label>
-      <div class="flex items-center gap-1 bulk-action__actions">
-        <NextButton
-          v-tooltip="$t('BULK_ACTION.LABELS.ASSIGN_LABELS')"
-          icon="i-lucide-tags"
-          slate
-          xs
-          faded
-          :disabled="uiFlags.isUpdating"
-          @click="toggleLabelActions"
-        />
-        <NextButton
-          v-tooltip="$t('BULK_ACTION.MARK_READ.TOOLTIP')"
-          icon="i-lucide-mail-open"
-          slate
-          xs
-          faded
-          :disabled="uiFlags.isUpdating"
-          @click="markRead"
-        />
-        <NextButton
-          v-tooltip="$t('BULK_ACTION.UPDATE.CHANGE_STATUS')"
-          icon="i-lucide-repeat"
-          slate
-          xs
-          faded
-          :disabled="uiFlags.isUpdating"
-          @click="toggleUpdateActions"
-        />
-        <NextButton
-          v-tooltip="$t('BULK_ACTION.ASSIGN_AGENT_TOOLTIP')"
-          icon="i-lucide-user-round-plus"
-          slate
-          xs
-          faded
-          :disabled="uiFlags.isUpdating"
-          @click="toggleAgentList"
-        />
-        <NextButton
-          v-tooltip="$t('BULK_ACTION.ASSIGN_TEAM_TOOLTIP')"
-          icon="i-lucide-users-round"
-          slate
-          xs
-          faded
-          :disabled="uiFlags.isUpdating"
-          @click="toggleTeamsList"
-        />
-      </div>
-      <transition name="popover-animation">
-        <LabelActions
-          v-if="showLabelActions"
-          class="label-actions-box"
-          @assign="assignLabels"
-          @close="showLabelActions = false"
-        />
-      </transition>
-      <transition name="popover-animation">
-        <UpdateActions
-          v-if="showUpdateActions"
-          class="update-actions-box"
-          :selected-inboxes="selectedInboxes"
-          :conversation-count="conversations.length"
-          :show-resolve="!showResolvedAction"
-          :show-reopen="!showOpenAction"
-          :show-snooze="!showSnoozedAction"
-          @update="updateConversations"
-          @close="showUpdateActions = false"
-        />
-      </transition>
-      <transition name="popover-animation">
-        <AgentSelector
-          v-if="showAgentsList"
-          class="agent-actions-box"
-          :selected-inboxes="selectedInboxes"
-          :conversation-count="conversations.length"
-          @select="submit"
-          @close="showAgentsList = false"
-        />
-      </transition>
-      <transition name="popover-animation">
-        <TeamActions
-          v-if="showTeamsList"
-          class="team-actions-box"
-          @assign-team="assignTeam"
-          @close="showTeamsList = false"
-        />
-      </transition>
-    </div>
-    <div v-if="allConversationsSelected" class="bulk-action__alert">
-      {{ $t('BULK_ACTION.ALL_CONVERSATIONS_SELECTED_ALERT') }}
-    </div>
+  <Transition
+    enter-active-class="transition-all duration-200 ease-out origin-bottom"
+    enter-from-class="opacity-0 scale-95 translate-y-2"
+    enter-to-class="opacity-100 scale-100 translate-y-0"
+    leave-active-class="transition-all duration-150 ease-in origin-bottom"
+    leave-from-class="opacity-100 scale-100 translate-y-0"
+    leave-to-class="opacity-0 scale-95 translate-y-2"
+  >
     <div
-      v-if="uiFlags.isUpdating && bulkActionRun"
-      class="bulk-action__progress"
+      v-if="conversations.length > 0"
+      v-bind="attrs"
+      class="px-2 absolute bottom-20 sm:bottom-4 left-1/2 -translate-x-1/2 z-30 w-full origin-bottom pointer-events-none"
     >
-      <div class="flex items-center justify-between gap-3">
-        <span class="bulk-action__progress-label">
-          {{ progressLabel }}
-        </span>
-        <span v-if="progressMetaLabel" class="bulk-action__progress-meta">
-          {{ progressMetaLabel }}
-        </span>
-      </div>
-      <div class="bulk-action__progress-track">
+      <div class="pointer-events-auto mx-auto max-w-5xl">
         <div
-          class="bulk-action__progress-fill"
-          :style="{ width: `${progressPercentage}%` }"
-        />
+          v-if="allConversationsSelected"
+          class="bg-n-amber-2 outline -outline-offset-1 outline-1 outline-n-amber-5 rounded-lg text-sm mb-2 py-1.5 px-2 text-n-amber-text"
+        >
+          {{ $t('BULK_ACTION.ALL_CONVERSATIONS_SELECTED_ALERT') }}
+        </div>
+        <div
+          class="flex items-center justify-between p-2 bg-n-button-color outline outline-1 -outline-offset-1 rounded-[10px] outline-n-weak shadow-[0_0_12px_0_rgba(27,40,59,0.08)]"
+        >
+          <div class="ltr:ml-0.5 rtl:mr-0.5 flex items-center gap-1">
+            <label class="cursor-pointer flex items-center gap-1.5">
+              <Checkbox
+                v-model="allSelected"
+                :indeterminate="!allConversationsSelected"
+                :disabled="bulkActionUiFlags.isUpdating"
+              />
+              <span class="cursor-pointer text-sm text-n-slate-12">
+                {{
+                  $t('BULK_ACTION.CONVERSATIONS_SELECTED', {
+                    conversationCount: conversations.length,
+                  })
+                }}
+              </span>
+            </label>
+            <div class="w-px h-3 bg-n-weak rounded-lg ltr:ml-1 rtl:mr-1" />
+            <NextButton
+              :label="$t('BULK_ACTION.CLEAR_SELECTION')"
+              ghost
+              class="!text-n-blue-11 !px-1 !h-6"
+              sm
+              :disabled="bulkActionUiFlags.isUpdating"
+              @click="allSelected = false"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <BulkLabelActions
+              :disabled="bulkActionUiFlags.isUpdating"
+              @assign="assignLabels"
+            />
+            <NextButton
+              v-tooltip="$t('BULK_ACTION.MARK_READ.TOOLTIP')"
+              icon="i-lucide-mail-open"
+              slate
+              xs
+              ghost
+              :disabled="bulkActionUiFlags.isUpdating"
+              @click="markRead"
+            />
+            <BulkUpdateActions
+              :show-resolve="!showResolvedAction"
+              :show-reopen="!showOpenAction"
+              :show-snooze="!showSnoozedAction"
+              :disabled="bulkActionUiFlags.isUpdating"
+              @update="updateConversations"
+            />
+            <BulkAgentActions
+              :selected-inboxes="selectedInboxes"
+              :conversation-count="conversations.length"
+              :disabled="bulkActionUiFlags.isUpdating"
+              @select="assignAgent"
+            />
+            <BulkTeamActions
+              :conversation-count="conversations.length"
+              :disabled="bulkActionUiFlags.isUpdating"
+              @select="assignTeam"
+            />
+          </div>
+        </div>
+        <div
+          v-if="bulkActionUiFlags.isUpdating && bulkActionRun"
+          class="mt-2 rounded-lg border border-solid border-n-weak bg-n-alpha-2 px-2.5 py-2"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs font-medium text-n-slate-12">
+              {{ progressLabel }}
+            </span>
+            <span
+              v-if="progressMetaLabel"
+              class="text-[11px] text-n-slate-10 tabular-nums"
+            >
+              {{ progressMetaLabel }}
+            </span>
+          </div>
+          <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-n-alpha-3">
+            <div
+              class="h-full rounded-full bg-n-blue-9 transition-all duration-300 ease-out"
+              :style="{ width: `${progressPercentage}%` }"
+            />
+          </div>
+        </div>
       </div>
     </div>
-    <woot-modal
-      v-model:show="showCustomTimeSnoozeModal"
-      size="w-[calc(100vw-2rem)] max-w-[32rem]"
+  </Transition>
+  <woot-modal
+    v-model:show="showCustomTimeSnoozeModal"
+    size="w-[calc(100vw-2rem)] max-w-[32rem]"
+    @close="hideCustomSnoozeModal"
+  >
+    <CustomSnoozeModal
       @close="hideCustomSnoozeModal"
-    >
-      <CustomSnoozeModal
-        @close="hideCustomSnoozeModal"
-        @choose-time="customSnoozeTime"
-      />
-    </woot-modal>
-  </div>
+      @choose-time="customSnoozeTime"
+    />
+  </woot-modal>
 </template>
-
-<style scoped lang="scss">
-.bulk-action__container {
-  @apply p-3 relative border-b border-solid border-n-strong dark:border-n-weak;
-}
-
-.bulk-action__panel {
-  @apply cursor-pointer;
-
-  span {
-    @apply text-xs my-0 mx-1;
-  }
-
-  input[type='checkbox'] {
-    @apply cursor-pointer m-0;
-  }
-}
-
-.bulk-action__alert {
-  @apply bg-n-amber-3 text-n-amber-12 rounded text-xs mt-2 py-1 px-2 border border-solid border-n-amber-5;
-}
-
-.bulk-action__progress {
-  @apply mt-2 rounded-lg border border-solid border-n-weak bg-n-alpha-2 px-2.5 py-2;
-}
-
-.bulk-action__progress-label {
-  @apply text-xs font-medium text-n-slate-12;
-}
-
-.bulk-action__progress-meta {
-  @apply text-[11px] text-n-slate-10 tabular-nums;
-}
-
-.bulk-action__progress-track {
-  @apply mt-2 h-1.5 overflow-hidden rounded-full bg-n-alpha-3;
-}
-
-.bulk-action__progress-fill {
-  @apply h-full rounded-full bg-n-blue-9 transition-all duration-300 ease-out;
-}
-
-.popover-animation-enter-active,
-.popover-animation-leave-active {
-  transition: transform ease-out 0.1s;
-}
-
-.popover-animation-enter {
-  transform: scale(0.95);
-  @apply opacity-0;
-}
-
-.popover-animation-enter-to {
-  transform: scale(1);
-  @apply opacity-100;
-}
-
-.popover-animation-leave {
-  transform: scale(1);
-  @apply opacity-100;
-}
-
-.popover-animation-leave-to {
-  transform: scale(0.95);
-  @apply opacity-0;
-}
-
-.label-actions-box {
-  --triangle-position: 5.3125rem;
-}
-.update-actions-box {
-  --triangle-position: 3.5rem;
-}
-.agent-actions-box {
-  --triangle-position: 1.75rem;
-}
-.team-actions-box {
-  --triangle-position: 0.125rem;
-}
-</style>
