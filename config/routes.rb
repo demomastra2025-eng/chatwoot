@@ -912,6 +912,7 @@ Rails.application.routes.draw do
         delete :avatar, on: :member, action: :destroy_avatar
       end
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy]
+      resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resource :instance_status, only: [:show]
       resource :monitoring, only: [:show]
       resource :captain_observability, only: [:show], controller: 'captain_observability'

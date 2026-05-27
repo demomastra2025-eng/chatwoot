@@ -15,6 +15,7 @@ as defined by the routes in the `admin/` namespace
     accounts: 'icon-building-4-line',
     users: 'icon-user-follow-line',
     platform_apps: 'icon-apps-2-line',
+    platform_banners: 'icon-megaphone-line',
     agent_bots: 'icon-robot-line',
   }
 %>
@@ -35,6 +36,7 @@ as defined by the routes in the `admin/` namespace
 
     primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
       next if hidden_primary_nav_resources.include?(resource.resource)
+      next if resource.resource == 'platform_banners' && !ChatwootApp.chatwoot_cloud?
 
       begin
         {
