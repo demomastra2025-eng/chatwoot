@@ -285,6 +285,14 @@ export default {
       }
       return MESSAGE_MAX_LENGTH.GENERAL;
     },
+    canUploadAttachmentToTiktok() {
+      if (!this.isATiktokChannel) return true;
+
+      return (
+        this.currentChat?.additional_attributes?.tiktok_capabilities
+          ?.image_send !== false
+      );
+    },
     showFileUpload() {
       if (this.isEditingMessage) return false;
 
@@ -300,7 +308,7 @@ export default {
         this.isAVkCommunityChannel ||
         this.isALineChannel ||
         this.isAnInstagramChannel ||
-        this.isATiktokChannel
+        (this.isATiktokChannel && this.canUploadAttachmentToTiktok)
       );
     },
     replyButtonLabel() {
