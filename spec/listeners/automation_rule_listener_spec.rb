@@ -153,6 +153,35 @@ describe AutomationRuleListener do
     end
   end
 
+  describe 'conversation_transferred_to_ai' do
+    let!(:automation_rule) { create(:automation_rule, event_name: 'conversation_transferred_to_ai', account: account) }
+    let(:event) do
+      Events::Base.new('conversation_transferred_to_ai', Time.zone.now, { conversation: conversation,
+                                                                          changed_attributes: { status: %w[Open Pending] } })
+    end
+
+    context 'when matching rules are present' do
+      it 'calls AutomationRules::ActionService if conditions match' do
+        allow(condition_match).to receive(:present?).and_return(true)
+        listener.conversation_transferred_to_ai(event)
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+      end
+
+      it 'does not call AutomationRules::ActionService if conditions do not match' do
+        allow(condition_match).to receive(:present?).and_return(false)
+        listener.conversation_transferred_to_ai(event)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+      end
+
+      it 'does not call AutomationRules::ActionService if performed by automation' do
+        event.data[:performed_by] = automation_rule
+        allow(condition_match).to receive(:present?).and_return(true)
+        listener.conversation_transferred_to_ai(event)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+      end
+    end
+  end
+
   describe 'conversation_resolved' do
     let!(:automation_rule) { create(:automation_rule, event_name: 'conversation_resolved', account: account) }
     let(:event) do

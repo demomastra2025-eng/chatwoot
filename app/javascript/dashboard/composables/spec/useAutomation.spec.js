@@ -90,6 +90,9 @@ describe('useAutomation', () => {
     });
     useI18n.mockReturnValue({ t: key => key });
     useAlert.mockReturnValue(vi.fn());
+    automationHelper.generateCustomAttributeTypes.mockReturnValue([]);
+    automationHelper.generateManagedCustomAttributeTypes.mockReturnValue([]);
+    automationHelper.generateCustomAttributes.mockReturnValue([]);
 
     // Mock getConditionOptions for different types
     automationHelper.getConditionOptions.mockImplementation(options => {
@@ -301,6 +304,7 @@ describe('useAutomation', () => {
     automationTypes.conversation_updated = { conditions: [] };
     automationTypes.conversation_opened = { conditions: [] };
     automationTypes.conversation_pending = { conditions: [] };
+    automationTypes.conversation_transferred_to_ai = { conditions: [] };
     automationTypes.conversation_resolved = { conditions: [] };
     automationTypes.deal_created = { conditions: [] };
     automationTypes.task_created = { conditions: [] };
@@ -331,6 +335,9 @@ describe('useAutomation', () => {
     expect(automationTypes.conversation_updated.conditions).toHaveLength(0);
     expect(automationTypes.conversation_opened.conditions).toHaveLength(0);
     expect(automationTypes.conversation_pending.conditions).toHaveLength(0);
+    expect(
+      automationTypes.conversation_transferred_to_ai.conditions
+    ).toHaveLength(0);
     expect(automationTypes.conversation_resolved.conditions).toHaveLength(0);
     expect(
       automationTypes.appointment_created.conditions.map(({ key }) => key)
@@ -406,10 +413,11 @@ describe('useAutomation', () => {
     ]);
   });
 
-  it('handles event change correctly', () => {
+  it('handles event change correctly and loads event-specific references', async () => {
+    const crmReferencesStore = useCrmReferencesStore();
     const { onEventChange, automation } = useAutomation();
     automation.value = {
-      event_name: 'message_created',
+      event_name: 'deal_created',
       conditions: [],
       actions: [],
     };
@@ -417,14 +425,18 @@ describe('useAutomation', () => {
     automationHelper.getDefaultConditions.mockReturnValue([{}]);
     automationHelper.getDefaultActions.mockReturnValue([{}]);
 
-    onEventChange();
+    await onEventChange();
 
     expect(automationHelper.getDefaultConditions).toHaveBeenCalledWith(
-      'message_created'
+      'deal_created'
     );
     expect(automationHelper.getDefaultActions).toHaveBeenCalledWith(
-      'message_created'
+      'deal_created'
     );
+    expect(crmReferencesStore.loadFieldDefinitions).toHaveBeenCalledWith(
+      'deal'
+    );
+    expect(crmReferencesStore.loadPipelines).toHaveBeenCalled();
     expect(automation.value.conditions).toHaveLength(1);
     expect(automation.value.actions).toHaveLength(1);
   });

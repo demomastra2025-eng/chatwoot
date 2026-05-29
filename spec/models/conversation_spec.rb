@@ -173,6 +173,87 @@ RSpec.describe Conversation do
                                                                     changed_attributes: status_change, performed_by: nil)
     end
 
+    it 'runs conversation transferred to AI event when a Captain conversation becomes pending' do
+      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: create(:captain_assistant, account: account))
+
+      conversation.update!(status: :pending)
+      status_change = conversation.status_change
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), conversation: conversation, notifiable_assignee_change: false,
+                                                                              changed_attributes: status_change, performed_by: nil)
+    end
+
+    it 'does not run conversation transferred to AI event for an ordinary pending status change' do
+      conversation.update!(status: :pending)
+
+      expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args)
+    end
+
+    it 'runs conversation transferred to AI event when assigned to an agent bot' do
+      agent_bot = create(:agent_bot, account: account)
+      conversation.update!(assignee: nil)
+
+      conversation.update!(assignee_agent_bot: agent_bot)
+      changed_attributes = conversation.previous_changes
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), conversation: conversation, notifiable_assignee_change: false,
+                                                                              changed_attributes: changed_attributes, performed_by: nil)
+    end
+
+    it 'does not run conversation transferred to AI event for ordinary resolved status changes' do
+      conversation.update!(status: :resolved)
+
+      expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args)
+    end
+
+    it 'does not repeat conversation transferred to AI event for later AI messages' do
+      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: create(:captain_assistant, account: account))
+      conversation.update!(status: :pending)
+
+      create(:message, :bot_message, conversation: conversation, account: account, inbox: conversation.inbox)
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
+    end
+
+    it 'does not repeat conversation transferred to AI event when switching between agent bots' do
+      agent_bot = create(:agent_bot, account: account)
+      next_agent_bot = create(:agent_bot, account: account)
+      conversation.update!(assignee: nil)
+
+      conversation.update!(assignee_agent_bot: agent_bot)
+      conversation.update!(assignee_agent_bot: next_agent_bot)
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
+    end
+
+    it 'does not repeat conversation transferred to AI event when a Captain pending conversation gets an agent bot' do
+      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: create(:captain_assistant, account: account))
+      agent_bot = create(:agent_bot, account: account)
+
+      conversation.update!(status: :pending)
+      conversation.update!(assignee_agent_bot: agent_bot)
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
+    end
+
+    it 'does not repeat conversation transferred to AI event when an agent bot conversation becomes pending' do
+      agent_bot = create(:agent_bot, account: account)
+      conversation.update!(assignee: nil)
+
+      conversation.update!(assignee_agent_bot: agent_bot)
+      conversation.update!(status: :pending)
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_TRANSFERRED_TO_AI, kind_of(Time), any_args).once
+    end
+
     it 'does not repeat conversation pending event for later updates while already pending' do
       conversation.update!(status: :pending)
       conversation.update!(custom_attributes: { source: 'automation-test' })

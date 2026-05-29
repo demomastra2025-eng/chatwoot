@@ -94,6 +94,7 @@ const CONVERSATION_EVENTS = [
   'conversation_resolved',
   'conversation_opened',
   'conversation_pending',
+  'conversation_transferred_to_ai',
   'message_created',
 ];
 
@@ -783,6 +784,15 @@ describe('getDefaultConditions', () => {
         custom_attribute_type: '',
       },
     ];
+    const conversationConditionModel = [
+      {
+        attribute_key: 'browser_language',
+        filter_operator: 'equal_to',
+        values: '',
+        query_operator: 'and',
+        custom_attribute_type: '',
+      },
+    ];
     const genericConditionModel = [
       {
         attribute_key: 'status',
@@ -795,6 +805,9 @@ describe('getDefaultConditions', () => {
     expect(helpers.getDefaultConditions('message_created')).toEqual(
       messageCreatedModel
     );
+    expect(
+      helpers.getDefaultConditions('conversation_transferred_to_ai')
+    ).toEqual(conversationConditionModel);
     expect(helpers.getDefaultConditions()).toEqual(genericConditionModel);
   });
 });

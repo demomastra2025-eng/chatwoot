@@ -227,6 +227,7 @@ class Conversation < ApplicationRecord
     return if runtime_events_suppressed?
 
     notify_status_change
+    notify_ai_transfer
     create_activity
     notify_conversation_updation
   end
@@ -329,6 +330,52 @@ class Conversation < ApplicationRecord
     }.each do |event, condition|
       condition.call && dispatcher_dispatch(event, status_change)
     end
+  end
+
+  def notify_ai_transfer
+    return unless ai_transfer_state_entered?
+
+    dispatcher_dispatch(CONVERSATION_TRANSFERRED_TO_AI, ai_transfer_changed_attributes)
+  end
+
+  def ai_transfer_state_entered?
+    ai_pending_state_entered? || ai_assignee_state_entered?
+  end
+
+  def ai_pending_state_entered?
+    saved_change_to_status? && pending? && ai_pending_handler_present? && !assigned_to_agent_bot_before_update?
+  end
+
+  def ai_assignee_state_entered?
+    return false unless saved_change_to_assignee_agent_bot_id? && assignee_agent_bot_id.present?
+
+    previous_changes['assignee_agent_bot_id']&.first.blank? && !already_ai_pending_without_agent_bot?
+  end
+
+  def assigned_to_agent_bot_before_update?
+    assignee_agent_bot_id.present? && !saved_change_to_assignee_agent_bot_id?
+  end
+
+  def already_ai_pending_without_agent_bot?
+    pending? && (inbox_active_bot? || inbox_captain_assistant_present?)
+  end
+
+  def ai_pending_handler_present?
+    assignee_agent_bot_id.present? || inbox_active_bot? || inbox_captain_assistant_present?
+  end
+
+  def inbox_active_bot?
+    inbox.respond_to?(:active_bot?) && inbox.active_bot?
+  end
+
+  def inbox_captain_assistant_present?
+    return false unless Object.const_defined?('CaptainInbox')
+
+    CaptainInbox.exists?(inbox_id: inbox_id)
+  end
+
+  def ai_transfer_changed_attributes
+    ai_pending_state_entered? ? status_change : previous_changes
   end
 
   def dispatcher_dispatch(event_name, changed_attributes = nil)

@@ -60,6 +60,13 @@ RSpec.describe AutomationRule do
       expect(rule.valid?).to be true
     end
 
+    it 'allows conversation transferred to AI automation rules' do
+      params[:event_name] = 'conversation_transferred_to_ai'
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be true
+    end
+
     it 'allows conversation automation rules to cancel all scheduled touches' do
       params[:actions] = [
         {

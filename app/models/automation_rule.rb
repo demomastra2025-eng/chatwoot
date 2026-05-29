@@ -26,6 +26,7 @@ class AutomationRule < ApplicationRecord
     conversation_resolved
     conversation_opened
     conversation_pending
+    conversation_transferred_to_ai
     message_created
   ].freeze
   DEAL_EVENT_NAMES = %w[

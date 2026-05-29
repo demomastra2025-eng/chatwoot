@@ -145,6 +145,7 @@
       "VALUE_MUST_BE_BETWEEN_1_AND_998": "Value must be between 1 and 998",
       "ACTION_PARAMETERS_REQUIRED": "Action parameters are required",
       "CREATE_TOUCH_DELAY_INVALID": "Touch delay must be zero or greater",
+      "STAGE_OPTION_ARCHIVED": "The selected stage is archived or no longer available. Choose an active stage before saving.",
       "ATLEAST_ONE_CONDITION_REQUIRED": "At least one condition is required",
       "ATLEAST_ONE_ACTION_REQUIRED": "At least one action is required"
     },
@@ -157,6 +158,7 @@
       "CONVERSATION_RESOLVED": "Conversation Resolved",
       "CONVERSATION_OPENED": "Conversation Opened",
       "CONVERSATION_PENDING": "Conversation marked pending",
+      "CONVERSATION_TRANSFERRED_TO_AI": "Conversation transferred to AI",
       "APPOINTMENT_CREATED": "Appointment Created",
       "APPOINTMENT_UPDATED": "Appointment Updated",
       "APPOINTMENT_CANCELLED": "Appointment Cancelled",

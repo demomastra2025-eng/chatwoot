@@ -78,14 +78,6 @@ export function useAutomation(startValue = null) {
   );
 
   /**
-   * Handles the event change for an automation.value.
-   */
-  const onEventChange = () => {
-    automation.value.conditions = getDefaultConditions(eventName.value);
-    automation.value.actions = getDefaultActions(eventName.value);
-  };
-
-  /**
    * Appends a new condition to the automation.value.
    */
   const appendNewCondition = () => {
@@ -251,6 +243,7 @@ export function useAutomation(startValue = null) {
       'conversation_updated',
       'conversation_opened',
       'conversation_pending',
+      'conversation_transferred_to_ai',
       'conversation_resolved',
     ].forEach(eventToUpdate => {
       const standardConditions = automationTypes[
@@ -357,6 +350,16 @@ export function useAutomation(startValue = null) {
     }
 
     return Promise.all(jobs);
+  };
+
+  /**
+   * Handles the event change for an automation.value.
+   */
+  const onEventChange = async () => {
+    automation.value.conditions = getDefaultConditions(eventName.value);
+    automation.value.actions = getDefaultActions(eventName.value);
+    await loadAutomationReferences(eventName.value);
+    manifestCustomAttributes();
   };
 
   return {

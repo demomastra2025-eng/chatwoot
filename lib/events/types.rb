@@ -22,6 +22,7 @@ module Events::Types
   CONVERSATION_OPENED = 'conversation.opened'
   CONVERSATION_RESOLVED = 'conversation.resolved'
   CONVERSATION_PENDING = 'conversation.pending'
+  CONVERSATION_TRANSFERRED_TO_AI = 'conversation.transferred_to_ai'
   CONVERSATION_CAPTAIN_INFERENCE_RESOLVED = 'conversation.captain_inference_resolved'
   CONVERSATION_CAPTAIN_INFERENCE_HANDOFF = 'conversation.captain_inference_handoff'
 
