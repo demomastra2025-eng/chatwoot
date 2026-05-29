@@ -491,9 +491,9 @@ defineExpose({ open, close });
           <NextButton
             solid
             blue
-            type="submit"
+            type="button"
             :label="submitLabel"
-            @click="emitSaveAutomation"
+            @click.prevent="emitSaveAutomation"
           />
         </div>
       </div>

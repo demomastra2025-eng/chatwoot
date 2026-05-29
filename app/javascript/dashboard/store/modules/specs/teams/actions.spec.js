@@ -40,7 +40,9 @@ describe('#actions', () => {
     });
     it('sends correct actions if API is error', async () => {
       axios.get.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(actions.get({ commit })).rejects.toThrow(Error);
+      await expect(actions.get({ commit })).rejects.toEqual({
+        message: 'Incorrect header',
+      });
       expect(commit.mock.calls).toEqual([
         [SET_TEAM_UI_FLAG, { isFetching: true }],
         [SET_TEAM_UI_FLAG, { isFetching: false }],
@@ -61,7 +63,9 @@ describe('#actions', () => {
     });
     it('sends correct actions if API is error', async () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(actions.create({ commit })).rejects.toThrow(Error);
+      await expect(actions.create({ commit })).rejects.toEqual({
+        message: 'Incorrect header',
+      });
 
       expect(commit.mock.calls).toEqual([
         [SET_TEAM_UI_FLAG, { isCreating: true }],
@@ -83,9 +87,9 @@ describe('#actions', () => {
     });
     it('sends correct actions if API is error', async () => {
       axios.patch.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(actions.update({ commit }, teamsList[1])).rejects.toThrow(
-        Error
-      );
+      await expect(actions.update({ commit }, teamsList[1])).rejects.toEqual({
+        message: 'Incorrect header',
+      });
       expect(commit.mock.calls).toEqual([
         [SET_TEAM_UI_FLAG, { isUpdating: true }],
         [SET_TEAM_UI_FLAG, { isUpdating: false }],
@@ -105,7 +109,9 @@ describe('#actions', () => {
     });
     it('sends correct actions if API is error', async () => {
       axios.delete.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(actions.delete({ commit }, 1)).rejects.toThrow(Error);
+      await expect(actions.delete({ commit }, 1)).rejects.toEqual({
+        message: 'Incorrect header',
+      });
       expect(commit.mock.calls).toEqual([
         [SET_TEAM_UI_FLAG, { isDeleting: true }],
         [SET_TEAM_UI_FLAG, { isDeleting: false }],

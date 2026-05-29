@@ -38,9 +38,11 @@ export default {
     showAlertMessage(message) {
       // Reset loading, current selected agent
       this.resetPassword.showLoading = false;
+      this.resetPassword.message = message;
       useAlert(message);
     },
     submit() {
+      this.resetPassword.message = '';
       this.resetPassword.showLoading = true;
       resetPassword(this.credentials)
         .then(res => {
@@ -98,11 +100,18 @@ export default {
           :disabled="v$.credentials.email.$invalid || resetPassword.showLoading"
           :is-loading="resetPassword.showLoading"
         />
+        <p
+          v-if="resetPassword.message"
+          class="text-sm font-medium text-n-slate-11"
+          role="status"
+        >
+          {{ resetPassword.message }}
+        </p>
       </div>
       <p class="mt-4 -mb-1 text-sm text-n-slate-11">
         {{ $t('RESET_PASSWORD.GO_BACK_TO_LOGIN') }}
         <router-link to="/auth/login" class="text-link text-n-brand">
-          {{ $t('COMMON.CLICK_HERE') }}.
+          {{ $t('COMMON.CLICK_HERE') }}
         </router-link>
       </p>
     </form>

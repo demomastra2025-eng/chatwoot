@@ -148,7 +148,7 @@ const confirmDeletion = () => {
   <SettingsLayout
     :is-loading="uiFlags.isFetching"
     :loading-message="$t('AGENT_MGMT.LOADING')"
-    :no-records-found="!agentList.length"
+    :no-records-found="!filteredAgentList.length"
     :no-records-message="$t('AGENT_MGMT.LIST.404')"
   >
     <template #header>
@@ -162,7 +162,7 @@ const confirmDeletion = () => {
       >
         <template v-if="agentList?.length" #count>
           <span class="text-body-main text-n-slate-11">
-            {{ $t('AGENT_MGMT.COUNT', { n: agentList.length }) }}
+            {{ $t('AGENT_MGMT.COUNT', { n: filteredAgentList.length }) }}
           </span>
         </template>
         <template #actions>

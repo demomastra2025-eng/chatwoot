@@ -234,7 +234,7 @@ describe('Helper functions', () => {
       };
 
       expect(getAuditLogChannelTypeLabel(auditLogItem, t)).toEqual(
-        'INBOX_MGMT.CHANNELS.TELEGRAM'
+        'INBOX_MGMT.CHANNELS.TELEGRAM_BOT'
       );
     });
 

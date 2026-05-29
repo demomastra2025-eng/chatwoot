@@ -13,6 +13,7 @@ const newAccountInfo = {
 };
 
 const commit = vi.fn();
+const dispatch = vi.fn();
 global.axios = axios;
 vi.mock('axios');
 
@@ -42,7 +43,7 @@ describe('#actions', () => {
       axios.patch.mockResolvedValue({
         data: { id: 1, name: 'John' },
       });
-      await actions.update({ commit, getters }, accountData);
+      await actions.update({ commit, dispatch }, accountData);
       expect(commit.mock.calls).toEqual([
         [types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: true }],
         [types.default.EDIT_ACCOUNT, { id: 1, name: 'John' }],
@@ -52,8 +53,8 @@ describe('#actions', () => {
     it('sends correct actions if API is error', async () => {
       axios.patch.mockRejectedValue({ message: 'Incorrect header' });
       await expect(
-        actions.update({ commit, getters }, accountData)
-      ).rejects.toThrow(Error);
+        actions.update({ commit, dispatch }, accountData)
+      ).rejects.toEqual({ message: 'Incorrect header' });
       expect(commit.mock.calls).toEqual([
         [types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: true }],
         [types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false }],
@@ -113,7 +114,7 @@ describe('#actions', () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });
       await expect(
         actions.toggleDeletion({ commit }, { action_type: 'delete' })
-      ).rejects.toThrow(Error);
+      ).rejects.toEqual({ message: 'Incorrect header' });
       expect(commit.mock.calls).toEqual([
         [types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: true }],
         [types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false }],

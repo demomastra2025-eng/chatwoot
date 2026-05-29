@@ -148,6 +148,28 @@ RSpec.describe Channel::Weixin do
       expect(channel.runtime_state.dig('message_dedup', 'ids')).to eq(['99'])
     end
 
+    it 'clears stale last_error when gateway reports recovered runtime' do
+      channel = create(
+        :channel_weixin,
+        connection_state: 'failed',
+        lifecycle_state: 'failed',
+        last_error: 'ilink_token is required'
+      )
+
+      channel.apply_runtime_update!(
+        connection_state: 'connected',
+        lifecycle_state: 'connected',
+        last_error: nil,
+        runtime_state: { poller_state: 'running' }
+      )
+      channel.reload
+
+      expect(channel.connection_state).to eq('connected')
+      expect(channel.lifecycle_state).to eq('connected')
+      expect(channel.last_error).to be_nil
+      expect(channel.runtime_state['poller_state']).to eq('running')
+    end
+
     it 'does not write sensitive runtime fields to audit logs' do
       channel = create(:channel_weixin)
 

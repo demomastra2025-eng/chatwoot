@@ -129,6 +129,8 @@ export default {
           return this.$t('LOGIN.OAUTH.BUSINESS_ACCOUNTS_ONLY');
         case 'GENERAL.AUTH_SESSION_REPLACED.DESCRIPTION':
           return this.$t('GENERAL.AUTH_SESSION_REPLACED.DESCRIPTION');
+        case 'LOGIN.SAML.API.ERROR_MESSAGE':
+          return this.$t('LOGIN.SAML.API.ERROR_MESSAGE');
         case 'LOGIN.API.UNAUTH':
         default:
           return this.$t('LOGIN.API.UNAUTH');
@@ -163,6 +165,7 @@ export default {
     },
     submitLogin() {
       this.loginApi.hasErrored = false;
+      this.loginApi.message = '';
       this.loginApi.showLoading = true;
 
       const credentials = {
@@ -325,6 +328,13 @@ export default {
               </router-link>
             </p>
           </FormInput>
+          <p
+            v-if="loginApi.hasErrored && loginApi.message"
+            class="text-sm font-medium text-n-ruby-11"
+            role="alert"
+          >
+            {{ loginApi.message }}
+          </p>
           <NextButton
             lg
             type="submit"

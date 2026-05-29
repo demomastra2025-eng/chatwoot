@@ -33,7 +33,7 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
 
 <template>
   <SettingsLayout
-    :no-records-found="!inboxesList.length"
+    :no-records-found="!filteredInboxesList.length"
     :no-records-message="$t('INBOX_MGMT.LIST.404')"
     :is-loading="uiFlags.isFetching"
   >
@@ -48,7 +48,7 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
       >
         <template v-if="inboxesList?.length" #count>
           <span class="text-body-main text-n-slate-11">
-            {{ $t('INBOX_MGMT.COUNT', { n: inboxesList.length }) }}
+            {{ $t('INBOX_MGMT.COUNT', { n: filteredInboxesList.length }) }}
           </span>
         </template>
       </BaseSettingsHeader>

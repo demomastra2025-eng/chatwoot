@@ -17,7 +17,15 @@ export function useCallReconnection() {
 
   const isReconnecting = computed(() => callsStore.isReconnecting);
 
+  const hasAccountScopedRoute = () =>
+    /^\/app\/accounts\/[^/]+(?:\/|$)/.test(window.location.pathname);
+
   const reconnectActiveCall = async () => {
+    // The API client builds account-scoped URLs from /app/accounts/:id.
+    // App-level layouts also mount on / and auth pages; skip there to avoid
+    // probing the non-existent /api/v1/whatsapp_calls/active endpoint.
+    if (!hasAccountScopedRoute()) return;
+
     // Skip if there's already an active or incoming call in the store.
     if (callsStore.hasActiveCall || callsStore.hasIncomingCall) return;
 

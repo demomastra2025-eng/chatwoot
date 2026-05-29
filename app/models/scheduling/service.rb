@@ -30,7 +30,7 @@ class Scheduling::Service < ApplicationRecord
   belongs_to :account
 
   has_many :appointments, class_name: 'Scheduling::Appointment', dependent: :nullify, inverse_of: :service
-  has_many :prices, class_name: 'Scheduling::ServicePrice', dependent: :destroy_async, inverse_of: :service
+  has_many :prices, class_name: 'Scheduling::ServicePrice', dependent: :destroy, inverse_of: :service
 
   validates :name, presence: true
   validates :base_price, numericality: { greater_than_or_equal_to: 0, only_integer: true }

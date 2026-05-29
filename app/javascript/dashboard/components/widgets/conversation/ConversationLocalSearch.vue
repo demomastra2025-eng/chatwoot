@@ -62,6 +62,7 @@ useEmitter('clearSearchInput', () => {
   <div class="relative flex">
     <NextButton
       v-tooltip.right="$t('CHAT_LIST.LOCAL_SEARCH.TOOLTIP_LABEL')"
+      :aria-label="$t('CHAT_LIST.LOCAL_SEARCH.TOOLTIP_LABEL')"
       icon="i-lucide-search"
       slate
       xs

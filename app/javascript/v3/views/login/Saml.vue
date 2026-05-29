@@ -32,6 +32,7 @@ const loginApi = ref({
   showLoading: false,
   hasErrored: false,
 });
+const errorMessage = ref('');
 
 const handleAuthError = () => {
   if (!props.authError) {
@@ -39,6 +40,7 @@ const handleAuthError = () => {
   }
 
   const translatedMessage = t('LOGIN.SAML.API.ERROR_MESSAGE');
+  errorMessage.value = translatedMessage;
   useAlert(translatedMessage);
   loginApi.value.hasErrored = true;
 };
@@ -121,6 +123,13 @@ onMounted(async () => {
           :disabled="loginApi.showLoading"
           :is-loading="loginApi.showLoading"
         />
+        <p
+          v-if="errorMessage"
+          class="text-sm font-medium text-n-ruby-11"
+          role="alert"
+        >
+          {{ errorMessage }}
+        </p>
       </form>
     </section>
     <p class="mt-6 text-sm text-center text-n-slate-11">

@@ -137,7 +137,7 @@ const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const ui = {
   analytics: {
     channel: 'Соцсеть',
-    empty: '{{ ui.analytics.empty }}',
+    empty: 'Выберите соцсеть или пост, затем загрузите аналитику.',
     post: 'Пост',
     selectPost: 'Выберите пост',
   },
@@ -151,7 +151,7 @@ const ui = {
     disabled: 'Отключен',
   },
   composer: {
-    attachMedia: '{{ ui.composer.attachMedia }}',
+    attachMedia: 'Прикрепить медиа',
   },
   filters: {
     allChannels: 'Все соц.сети',
@@ -162,7 +162,7 @@ const ui = {
       'Загрузите файл или URL, чтобы собрать медиабиблиотеку для текущего поста.',
     sessionDescription:
       'Postiz Public API возвращает файл сразу; здесь можно прикрепить его к новому посту.',
-    sessionTitle: '{{ ui.media.sessionTitle }}',
+    sessionTitle: 'Медиа текущей сессии',
     uploadFile: 'Загрузить файл',
   },
   missingContent: 'Missing content',

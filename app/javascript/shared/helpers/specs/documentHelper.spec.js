@@ -13,10 +13,10 @@ describe('documentHelper', () => {
       );
     });
 
-    it('returns false for regular URLs', () => {
+    it('returns true for supported remote PDF URLs and paths', () => {
       expect(isPdfDocument('https://example.com')).toBe(false);
-      expect(isPdfDocument('http://docs.example.com/file.pdf')).toBe(false);
-      expect(isPdfDocument('ftp://files.example.com/document.pdf')).toBe(false);
+      expect(isPdfDocument('http://docs.example.com/file.pdf')).toBe(true);
+      expect(isPdfDocument('ftp://files.example.com/document.pdf')).toBe(true);
     });
 
     it('returns false for empty or null values', () => {
@@ -25,9 +25,9 @@ describe('documentHelper', () => {
       expect(isPdfDocument(undefined)).toBe(false);
     });
 
-    it('returns false for strings that contain PDF but do not start with PDF:', () => {
-      expect(isPdfDocument('document PDF:file.pdf')).toBe(false);
-      expect(isPdfDocument('My PDF:file.pdf')).toBe(false);
+    it('returns true for PDF filenames without the PDF: prefix', () => {
+      expect(isPdfDocument('document PDF:file.pdf')).toBe(true);
+      expect(isPdfDocument('My PDF:file.pdf')).toBe(true);
     });
   });
 

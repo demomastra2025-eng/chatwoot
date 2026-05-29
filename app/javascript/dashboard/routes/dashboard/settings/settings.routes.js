@@ -37,10 +37,11 @@ export default {
         permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
       },
       redirect: to => {
-        if (
-          store.getters.getCurrentRole === 'administrator' &&
-          store.getters.getCurrentCustomRoleId === null
-        ) {
+        const isAdministrator =
+          store.getters.getCurrentRole === 'administrator';
+        const hasNoCustomRole = store.getters.getCurrentCustomRoleId == null;
+
+        if (isAdministrator && hasNoCustomRole) {
           return { name: 'general_settings_index', params: to.params };
         }
 

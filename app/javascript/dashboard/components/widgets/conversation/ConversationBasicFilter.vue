@@ -102,6 +102,7 @@ const handleSortChange = value => {
   <div class="relative flex">
     <NextButton
       v-tooltip.right="$t('CHAT_LIST.SORT_TOOLTIP_LABEL')"
+      :aria-label="$t('CHAT_LIST.SORT_TOOLTIP_LABEL')"
       icon="i-lucide-arrow-up-down"
       slate
       faded

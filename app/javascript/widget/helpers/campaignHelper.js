@@ -1,7 +1,19 @@
 import { URLPattern } from 'urlpattern-polyfill';
 
+const normalizeCampaignPattern = pattern => {
+  if (pattern.startsWith('https://*.')) {
+    return pattern.replace('https://*.', 'https://{*.}?');
+  }
+
+  if (pattern.startsWith('http://*.')) {
+    return pattern.replace('http://*.', 'http://{*.}?');
+  }
+
+  return pattern;
+};
+
 export const isPatternMatchingWithURL = (urlPattern, url) => {
-  let updatedUrlPattern = urlPattern;
+  let updatedUrlPattern = normalizeCampaignPattern(urlPattern);
   const locationObj = new URL(url);
 
   if (updatedUrlPattern.endsWith('/')) {

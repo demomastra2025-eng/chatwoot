@@ -61,7 +61,10 @@ describe('#actions', () => {
       axios.get.mockResolvedValue({
         data: { id: 1, meta: { sender: { id: 1, name: 'Contact 1' } } },
       });
-      await actions.getConversation({ commit }, 1);
+      await actions.getConversation(
+        { commit, state: { allConversations: [{ id: 1 }] } },
+        1
+      );
       expect(commit.mock.calls).toEqual([
         [
           types.UPDATE_CONVERSATION,

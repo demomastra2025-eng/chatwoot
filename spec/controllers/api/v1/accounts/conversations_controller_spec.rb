@@ -35,6 +35,29 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:messages].first[:id]).to eq(message.id)
       end
 
+      it 'does not use private notes as conversation preview messages' do
+        public_message = create(:message, conversation: conversation, account: account, content: 'Customer visible reply')
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          message_type: :outgoing,
+          private: true,
+          content: 'Automatic reply could not be generated. Handoff to human agent was triggered.'
+        )
+
+        get "/api/v1/accounts/#{account.id}/conversations",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        body = JSON.parse(response.body, symbolize_names: true)
+        payload = body[:data][:payload].first
+        expect(payload[:messages].first[:id]).to eq(public_message.id)
+        expect(payload[:messages].first[:content]).to eq('Customer visible reply')
+        expect(payload[:last_non_activity_message][:id]).to eq(public_message.id)
+      end
+
       it 'returns conversations with empty messages array for conversations with out messages' do
         get "/api/v1/accounts/#{account.id}/conversations",
             headers: agent.create_new_auth_token,

@@ -43,7 +43,7 @@ export const login = async ({
       };
     }
     throwErrorMessage(error);
-    return null;
+    throw error;
   }
 };
 

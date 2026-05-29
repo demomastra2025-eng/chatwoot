@@ -5,7 +5,6 @@
 // Constants for document processing
 const PDF_PREFIX = 'PDF:';
 const FILE_PREFIX = 'FILE:';
-const TIMESTAMP_PATTERN = /_\d{14}$/; // Format: _YYYYMMDDHHMMSS at the end of the generated PDF name
 const TIMESTAMPED_FILE_PATTERN = /_\d{14}(?=\.[^.]+$|$)/;
 const SUPPORTED_REMOTE_DOCUMENT_EXTENSIONS = [
   'pdf',
@@ -71,8 +70,8 @@ export const formatDocumentLink = externalLink => {
   if (externalLink.startsWith(PDF_PREFIX)) {
     // Remove 'PDF:' prefix
     const fullName = externalLink.substring(PDF_PREFIX.length).trimStart();
-    // Remove timestamp suffix if present
-    return fullName.replace(TIMESTAMP_PATTERN, '');
+    // Remove timestamp suffix if present before the extension.
+    return fullName.replace(TIMESTAMPED_FILE_PATTERN, '');
   }
 
   if (externalLink.startsWith(FILE_PREFIX)) {

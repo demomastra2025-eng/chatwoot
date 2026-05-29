@@ -61,6 +61,7 @@ const subscribedEvents = computed(() => {
         <div class="flex justify-end gap-3 flex-shrink-0">
           <Button
             v-tooltip.top="$t('INTEGRATION_SETTINGS.WEBHOOK.EDIT.BUTTON_TEXT')"
+            :aria-label="$t('INTEGRATION_SETTINGS.WEBHOOK.EDIT.BUTTON_TEXT')"
             icon="i-woot-edit-pen"
             slate
             sm
@@ -70,6 +71,7 @@ const subscribedEvents = computed(() => {
             v-tooltip.top="
               $t('INTEGRATION_SETTINGS.WEBHOOK.DELETE.BUTTON_TEXT')
             "
+            :aria-label="$t('INTEGRATION_SETTINGS.WEBHOOK.DELETE.BUTTON_TEXT')"
             icon="i-woot-bin"
             slate
             sm

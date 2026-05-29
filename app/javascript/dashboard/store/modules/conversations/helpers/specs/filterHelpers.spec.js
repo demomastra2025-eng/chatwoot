@@ -479,7 +479,7 @@ describe('filterHelpers', () => {
         {
           attribute_key: 'referer',
           filter_operator: 'contains',
-          values: 'chatwoot',
+          values: 'one-link',
           query_operator: 'and',
         },
       ];
@@ -494,7 +494,7 @@ describe('filterHelpers', () => {
         {
           attribute_key: 'referer',
           filter_operator: 'does_not_contain',
-          values: 'chatwoot',
+          values: 'one-link',
           query_operator: 'and',
         },
       ];

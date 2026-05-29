@@ -142,7 +142,13 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   def merge_optional_array_param!(permitted, field_name)
     return unless params[:assistant].key?(field_name)
 
-    permitted[field_name] = params[:assistant][field_name]
+    permitted[field_name] = normalize_optional_array_value(params[:assistant][field_name])
+  end
+
+  def normalize_optional_array_value(value)
+    Array(normalize_optional_config_value(value)).map do |item|
+      item.is_a?(Hash) ? item.to_json : item
+    end
   end
 
   def merge_optional_config_param!(permitted, field_name)

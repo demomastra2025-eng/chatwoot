@@ -83,6 +83,18 @@ RSpec.describe 'Contacts API', type: :request do
         expect(contact_inboxes).to eq([])
       end
 
+      it 'renders contacts when a contact inbox has no inbox' do
+        contact_inbox.update_column(:inbox_id, nil)
+
+        get "/api/v1/accounts/#{account.id}/contacts",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        serialized_contact = response.parsed_body['payload'].find { |payload| payload['id'] == contact.id }
+        expect(serialized_contact['contact_inboxes'].first['inbox']).to be_nil
+      end
+
       it 'returns limited information on inboxes' do
         get "/api/v1/accounts/#{account.id}/contacts?include_contact_inboxes=true",
             headers: admin.create_new_auth_token,

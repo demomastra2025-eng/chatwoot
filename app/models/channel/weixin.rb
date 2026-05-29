@@ -134,9 +134,10 @@ class Channel::Weixin < ApplicationRecord
 
   def apply_runtime_update!(attrs = {})
     next_attrs = attrs.compact
+    next_attrs[:last_error] = nil if attrs.key?(:last_error) && attrs[:last_error].nil?
     next_attrs[:runtime_state] = normalize_runtime_state(next_attrs[:runtime_state]) if next_attrs.key?(:runtime_state)
     next_attrs[:context_tokens] = normalize_context_tokens(next_attrs[:context_tokens]) if next_attrs.key?(:context_tokens)
-    next_attrs[:last_error] = redact_error_message(next_attrs[:last_error]) if next_attrs.key?(:last_error)
+    next_attrs[:last_error] = redact_error_message(next_attrs[:last_error]) if next_attrs.key?(:last_error) && next_attrs[:last_error].present?
     update!(next_attrs)
   end
 

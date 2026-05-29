@@ -374,6 +374,27 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(response).to have_http_status(:success)
       end
 
+      it 'creates assistants with nested response guidelines and guardrails' do
+        attributes_with_nested_arrays = valid_attributes.deep_dup
+        attributes_with_nested_arrays[:assistant][:response_guidelines] = [
+          { title: 'Tone', body: 'Be concise' }
+        ]
+        attributes_with_nested_arrays[:assistant][:guardrails] = [
+          { name: 'Safety', rule: 'Stay on topic' }
+        ]
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/assistants",
+               params: attributes_with_nested_arrays,
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to change(Captain::Assistant, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:response_guidelines]).to eq([{ title: 'Tone', body: 'Be concise' }.to_json])
+        expect(json_response[:guardrails]).to eq([{ name: 'Safety', rule: 'Stay on topic' }.to_json])
+      end
+
       it 'creates assistants with the standard humanlike voice defaults' do
         expect do
           post "/api/v1/accounts/#{account.id}/captain/assistants",

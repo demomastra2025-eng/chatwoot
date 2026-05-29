@@ -382,13 +382,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     create_private_note(provider_error_note_content)
   end
 
-  def provider_error_note_content(error = nil)
-    error_class = error&.class&.name || @response['error_class']
-    error_message = error&.message || @response['error_message'] || @response['reasoning']
-    normalized_message = error_message.to_s.squish.first(MAX_MESSAGE_LENGTH)
-    note = "AI runtime fallback: #{error_class.presence || 'UnknownError'}"
-    note += ": #{normalized_message}" if normalized_message.present?
-    note
+  def provider_error_note_content
+    # This note can surface in agent-side conversation previews. Keep provider
+    # names, exception classes, quota details, and raw prompts out of content.
+    'Automatic reply could not be generated. Handoff to human agent was triggered.'
   end
 
   def validate_message_content!(content, attachment_ids: [])

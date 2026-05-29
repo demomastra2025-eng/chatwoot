@@ -4,7 +4,9 @@ import notesData from './fixtures';
 describe('#getters', () => {
   it('getAllNotesByContact', () => {
     const state = { records: { 1: notesData } };
-    expect(getters.getAllNotesByContact(state)(1)).toEqual(notesData);
+    expect(getters.getAllNotesByContact(state)(1)).toEqual(
+      [...notesData].sort((a, b) => b.id - a.id)
+    );
   });
 
   it('getUIFlags', () => {

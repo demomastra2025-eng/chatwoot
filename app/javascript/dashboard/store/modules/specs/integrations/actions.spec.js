@@ -171,7 +171,9 @@ describe('#actions', () => {
 
     it('sends correct actions if API is error', async () => {
       axios.post.mockRejectedValue(errorMessage);
-      await expect(actions.runHookSync({ commit }, 2)).rejects.toThrow(Error);
+      await expect(actions.runHookSync({ commit }, 2)).rejects.toEqual(
+        errorMessage
+      );
       expect(commit.mock.calls).toEqual([
         [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true }],
         [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: false }],

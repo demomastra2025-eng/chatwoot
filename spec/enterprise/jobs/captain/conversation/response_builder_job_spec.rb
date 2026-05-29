@@ -360,6 +360,23 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
     end
 
+    it 'does not persist raw provider error details in the handoff private note' do
+      allow(agent_runner_service).to receive(:generate_response) do
+        raise StandardError, 'RubyLLM::PaymentRequiredError: OpenRouter credits exhausted for max_tokens=4096'
+      end
+
+      described_class.perform_now(conversation, assistant)
+
+      private_note = conversation.reload.messages.outgoing.where(private: true).last
+      expect(private_note.content).to eq(
+        'Automatic reply could not be generated. Handoff to human agent was triggered.'
+      )
+      expect(private_note.content).not_to include('RubyLLM')
+      expect(private_note.content).not_to include('OpenRouter')
+      expect(private_note.content).not_to include('max_tokens')
+      expect(conversation.status).to eq('open')
+    end
+
     it 'stores captain trace on the outgoing message when provided by the assistant runtime' do
       trace_payload = Captain::ToolTraceBuilder.payload([
                                                           Captain::ToolTraceBuilder.step(
@@ -719,11 +736,15 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
       end
 
-      it 'creates a private note for agents with the provider error reason' do
+      it 'creates a private note for agents without leaking provider error details' do
         described_class.perform_now(conversation, assistant)
 
         private_note = conversation.reload.messages.where(private: true).last
-        expect(private_note.content).to eq('AI runtime fallback: RubyLLM::RateLimitError: Quota exceeded')
+        expect(private_note.content).to eq(
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
+        )
+        expect(private_note.content).not_to include('RubyLLM')
+        expect(private_note.content).not_to include('Quota exceeded')
         expect(private_note.sender).to eq(assistant)
       end
     end
@@ -747,8 +768,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
         private_note = conversation.messages.where(private: true).last
         expect(private_note.content).to eq(
-          'AI runtime fallback: Captain::Assistant::AgentRunnerService::BlankResponseError: Assistant runtime returned a blank response'
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
         )
+        expect(private_note.content).not_to include('BlankResponseError')
       end
     end
 
@@ -1031,7 +1053,11 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         end.not_to(change { conversation.messages.outgoing.where(private: false).count })
 
         private_note = conversation.reload.messages.where(private: true).last
-        expect(private_note.content).to eq('AI runtime fallback: StandardError: Generic error')
+        expect(private_note.content).to eq(
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
+        )
+        expect(private_note.content).not_to include('StandardError')
+        expect(private_note.content).not_to include('Generic error')
       end
 
       it 'ensures Current.executed_by is reset' do

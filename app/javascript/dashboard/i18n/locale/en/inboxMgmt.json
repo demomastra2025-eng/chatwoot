@@ -1705,7 +1705,9 @@
       "API": "API Channel",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
-      "VOICE": "Voice"
+      "VOICE": "Voice",
+      "WEIXIN": "WeChat / Weixin",
+      "UNKNOWN": "Channel"
     },
     "COUNT": "{n} channel | {n} channels",
     "SEARCH_PLACEHOLDER": "Search channels...",

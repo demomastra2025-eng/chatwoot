@@ -34,6 +34,7 @@ const i18nMap = {
   'Channel::Instagram': 'INSTAGRAM',
   'Channel::Tiktok': 'TIKTOK',
   'Channel::Voice': 'VOICE',
+  'Channel::Weixin': 'WEIXIN',
 };
 
 const twilioChannelName = () => {
@@ -50,7 +51,10 @@ const readableChannelName = computed(() => {
   if (props.channelType === 'Channel::TwilioSms') {
     return twilioChannelName();
   }
-  return t(`INBOX_MGMT.CHANNELS.${i18nMap[props.channelType]}`);
+  const i18nKey = i18nMap[props.channelType];
+  return i18nKey
+    ? t(`INBOX_MGMT.CHANNELS.${i18nKey}`)
+    : t('INBOX_MGMT.CHANNELS.UNKNOWN');
 });
 </script>
 

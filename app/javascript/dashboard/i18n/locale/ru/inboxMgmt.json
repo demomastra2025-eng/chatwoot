@@ -1658,7 +1658,9 @@
       "API": "Источник API",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
-      "VOICE": "Звонки"
+      "VOICE": "Звонки",
+      "WEIXIN": "WeChat / Weixin",
+      "UNKNOWN": "Канал"
     },
     "ASSIGNMENT": {
       "TITLE": "Назначение диалогов",

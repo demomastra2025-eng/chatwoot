@@ -101,7 +101,7 @@ onBeforeMount(() => {
   <SettingsLayout
     :is-loading="uiFlags.isFetching"
     :loading-message="$t('LABEL_MGMT.LOADING')"
-    :no-records-found="!records.length"
+    :no-records-found="!filteredRecords.length"
     :no-records-message="$t('LABEL_MGMT.LIST.404')"
   >
     <template #header>
@@ -115,7 +115,7 @@ onBeforeMount(() => {
       >
         <template v-if="records?.length" #count>
           <span class="text-body-main text-n-slate-11">
-            {{ $t('LABEL_MGMT.COUNT', { n: records.length }) }}
+            {{ $t('LABEL_MGMT.COUNT', { n: filteredRecords.length }) }}
           </span>
         </template>
         <template #actions>

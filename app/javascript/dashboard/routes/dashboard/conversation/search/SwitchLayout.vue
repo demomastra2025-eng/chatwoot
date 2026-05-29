@@ -23,6 +23,7 @@ export default {
 <template>
   <NextButton
     v-tooltip.left="$t('CONVERSATION.SWITCH_VIEW_LAYOUT')"
+    :aria-label="$t('CONVERSATION.SWITCH_VIEW_LAYOUT')"
     :icon="
       isOnExpandedLayout
         ? 'i-lucide-arrow-left-to-line'

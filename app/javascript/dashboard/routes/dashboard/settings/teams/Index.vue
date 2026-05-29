@@ -83,7 +83,7 @@ const confirmPlaceHolderText = computed(() =>
   <SettingsLayout
     :is-loading="uiFlags.isFetching"
     :loading-message="$t('TEAMS_SETTINGS.LOADING')"
-    :no-records-found="!teamsList.length"
+    :no-records-found="!filteredTeamsList.length"
     :no-records-message="$t('TEAMS_SETTINGS.LIST.404')"
   >
     <template #header>
@@ -97,7 +97,7 @@ const confirmPlaceHolderText = computed(() =>
       >
         <template v-if="teamsList?.length" #count>
           <span class="text-body-main text-n-slate-11">
-            {{ $t('TEAMS_SETTINGS.COUNT', { n: teamsList.length }) }}
+            {{ $t('TEAMS_SETTINGS.COUNT', { n: filteredTeamsList.length }) }}
           </span>
         </template>
         <template #actions>

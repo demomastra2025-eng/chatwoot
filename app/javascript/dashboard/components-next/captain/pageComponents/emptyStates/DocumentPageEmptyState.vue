@@ -1,16 +1,11 @@
 <script setup>
 import { useAccount } from 'dashboard/composables/useAccount';
-import { useBranding } from 'shared/composables/useBranding';
 import EmptyStateLayout from 'dashboard/components-next/EmptyStateLayout.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import DocumentCard from 'dashboard/components-next/captain/assistant/DocumentCard.vue';
 import FeatureSpotlight from 'dashboard/components-next/feature-spotlight/FeatureSpotlight.vue';
-import { documentsList } from 'dashboard/components-next/captain/pageComponents/emptyStates/captainEmptyStateContent.js';
 
 const emit = defineEmits(['click']);
 const { isOnChatwootCloud } = useAccount();
-
-const { replaceInstallationName } = useBranding();
 
 const onClick = () => {
   emit('click');
@@ -30,20 +25,8 @@ const onClick = () => {
     :title="$t('CAPTAIN.DOCUMENTS.EMPTY_STATE.TITLE')"
     :subtitle="$t('CAPTAIN.DOCUMENTS.EMPTY_STATE.SUBTITLE')"
     :action-perms="['administrator']"
+    :show-backdrop="false"
   >
-    <template #empty-state-item>
-      <div class="grid grid-cols-1 gap-4 p-px overflow-hidden">
-        <DocumentCard
-          v-for="(document, index) in documentsList.slice(0, 5)"
-          :id="document.id"
-          :key="`document-${index}`"
-          :name="replaceInstallationName(document.name)"
-          :assistant="document.assistant"
-          :external-link="document.external_link"
-          :created-at="document.created_at"
-        />
-      </div>
-    </template>
     <template #actions>
       <Button
         :label="$t('CAPTAIN.DOCUMENTS.ADD_NEW')"

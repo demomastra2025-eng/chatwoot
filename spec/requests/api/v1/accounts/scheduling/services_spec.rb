@@ -85,4 +85,14 @@ RSpec.describe 'Scheduling Services API', type: :request do
     expect(response_body['error']).to eq('price must be an integer')
     expect(service.reload.prices.find_by(resource_id: resource.id)).to be_nil
   end
+
+  it 'deletes service prices before deleting the service' do
+    create(:scheduling_service_price, account: account, service: service, resource: resource, price: 21_000)
+
+    delete path, headers: headers, as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(Scheduling::Service.exists?(service.id)).to be(false)
+    expect(Scheduling::ServicePrice.where(service_id: service.id)).to be_empty
+  end
 end
