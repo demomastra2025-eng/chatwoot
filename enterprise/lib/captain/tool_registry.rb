@@ -769,7 +769,8 @@ class Captain::ToolRegistry
         definition(
           id: 'update_deal',
           title: 'Update Deal',
-          description: 'Update the CRM deal linked to current conversation; can move to a pipeline-aware stage using stage_id or pipeline-scoped stage code/name',
+          description: 'Update a CRM deal by deal_id or the deal linked to current conversation; ' \
+                       'can move to a pipeline-aware stage using stage_id or pipeline-scoped stage code/name',
           group_name: 'CRM Deals',
           icon: 'money-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -887,7 +888,10 @@ class Captain::ToolRegistry
         definition(
           id: 'create_touch',
           title: 'Create Touch',
-          description: 'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. Only relative scheduling is supported: provide a positive relative_offset_minutes; scheduled_at/absolute/immediate sends are rejected. For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.',
+          description: 'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+                       'Only relative scheduling is supported: provide a positive relative_offset_minutes; ' \
+                       'scheduled_at/absolute/immediate sends are rejected. For official WhatsApp outside the 24-hour window, ' \
+                       'use channel_template instead of free_text or AI-generated text.',
           group_name: 'Outbound',
           icon: 'clock-plus',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -925,7 +929,7 @@ class Captain::ToolRegistry
         definition(
           id: 'cancel_touches',
           title: 'Cancel Touches',
-          description: 'Cancel draft and pending scheduled outbound touches for the current entity, optionally filtered by touch plan',
+          description: 'Cancel draft, pending, and processing scheduled outbound touches for the current entity, optionally filtered by touch plan',
           group_name: 'Outbound',
           icon: 'clock-x',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1704,7 +1708,8 @@ class Captain::ToolRegistry
         definition(
           id: 'create_kaspi_pay_payment',
           title: 'Create Kaspi Pay Payment',
-          description: 'Create a Kaspi Pay QR payment link or assistant-only remote invoice. Customer-facing agent scope is limited to the current conversation QR flow; assistant scope is account-admin only.',
+          description: 'Create a Kaspi Pay QR payment link or assistant-only remote invoice. ' \
+                       'Customer-facing agent scope is limited to the current conversation QR flow; assistant scope is account-admin only.',
           group_name: 'Payments',
           icon: 'qr-code',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

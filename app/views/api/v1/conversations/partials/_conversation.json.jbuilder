@@ -23,6 +23,7 @@ json.meta do
       json.partial! 'api/v1/models/team', formats: [:json], resource: conversation.team
     end
   end
+  json.current_user_participant conversation.conversation_participants.any? { |participant| participant.user_id == Current.user.id }
   json.hmac_verified conversation.contact_inbox&.hmac_verified
 end
 

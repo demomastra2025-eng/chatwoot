@@ -37,6 +37,30 @@ RSpec.describe 'Custom Attribute Definitions API', type: :request do
 
         expect(response).to have_http_status(:success)
       end
+
+      it 'allows custom-role users with runtime permissions to read attribute definitions' do
+        custom_role = create(:custom_role, account: account, permissions: ['conversation_manage'])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/custom_attribute_definitions",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
+      it 'rejects custom-role users without runtime permissions from reading attribute definitions' do
+        custom_role = create(:custom_role, account: account, permissions: [])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/custom_attribute_definitions",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
     end
   end
 

@@ -28,5 +28,12 @@ RSpec.describe Captain::Tools::Copilot::SearchTasksService do
         'assignee_id' => assignee.id
       )
     end
+
+    it 'ignores zero ID filter placeholders instead of filtering everything out' do
+      payload = JSON.parse(service.execute(assignee_id: 0, deal_id: '0'))
+
+      expect(payload['filters']).not_to include('assignee_id', 'deal_id')
+      expect(payload['tasks'].map { |task| task['id'] }).to include(task1.id, task2.id)
+    end
   end
 end

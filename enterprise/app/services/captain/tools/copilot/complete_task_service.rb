@@ -4,7 +4,7 @@ class Captain::Tools::Copilot::CompleteTaskService < Captain::Tools::Copilot::Ba
   end
 
   description 'Mark an account CRM task as complete by task ID'
-  param :task_id, type: :number, desc: 'The account-scoped CRM task ID to complete', required: true
+  param :task_id, type: :integer, desc: 'Positive account-scoped CRM task ID to complete', required: true
 
   def execute(task_id:)
     task = task_operations.complete_task(task_id: task_id)

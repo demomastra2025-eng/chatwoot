@@ -1,21 +1,21 @@
 class CustomFilterPolicy < ApplicationPolicy
   def create?
-    @account_user.administrator? || @account_user.agent?
+    runtime_access?
   end
 
   def show?
-    @account_user.administrator? || @account_user.agent?
+    runtime_access?
   end
 
   def index?
-    @account_user.administrator? || @account_user.agent?
+    runtime_access?
   end
 
   def update?
-    @account_user.administrator? || @account_user.agent?
+    runtime_access?
   end
 
   def destroy?
-    @account_user.administrator? || @account_user.agent?
+    runtime_access?
   end
 end

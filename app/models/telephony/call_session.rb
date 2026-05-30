@@ -53,7 +53,7 @@
 #  fk_rails_...  (contact_id => contacts.id)
 #  fk_rails_...  (conversation_id => conversations.id) ON DELETE => nullify
 #  fk_rails_...  (inbox_id => inboxes.id) ON DELETE => nullify
-#  fk_rails_...  (number_binding_id => telephony_number_bindings.id) ON DELETE => nullify
+#  fk_rails_...  (number_binding_id => telephony_number_bindings.id)
 #
 class Telephony::CallSession < ApplicationRecord
   self.table_name = 'telephony_call_sessions'

@@ -508,6 +508,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           model: 'gemini-3.1-flash-live-preview',
           voice: 'sulafat',
           language: 'ru-KZ',
+          voice_character_prompt: 'Тембр: тёплый эксперт-наставник, паузы короткие.',
           first_message: 'Сәлеметсіз бе!',
           max_duration_sec: 450,
           interruptions_enabled: false,
@@ -528,6 +529,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'model' => 'gemini-3.1-flash-live-preview',
           'voice' => 'sulafat',
           'language' => 'ru-KZ',
+          'voice_character_prompt' => 'Тембр: тёплый эксперт-наставник, паузы короткие.',
           'first_message' => 'Сәлеметсіз бе!',
           'interruptions_enabled' => false,
           'transfer_message' => 'Қазір операторға қосамын.'
@@ -665,6 +667,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
                       model: 'gemini-3.1-flash-live-preview',
                       voice: 'sulafat',
                       language: 'ru-KZ',
+                      voice_character_prompt: 'Тембр: тёплый эксперт-наставник, паузы короткие.',
                       first_message: 'Сәлеметсіз бе!',
                       max_duration_sec: 450,
                       interruptions_enabled: false,
@@ -688,6 +691,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'model' => 'gemini-3.1-flash-live-preview',
           'voice' => 'sulafat',
           'language' => 'ru-KZ',
+          'voice_character_prompt' => 'Тембр: тёплый эксперт-наставник, паузы короткие.',
           'first_message' => 'Сәлеметсіз бе!',
           'interruptions_enabled' => false,
           'transfer_message' => 'Қазір операторға қосамын.'

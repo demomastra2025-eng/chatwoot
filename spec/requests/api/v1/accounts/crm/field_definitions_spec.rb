@@ -3,6 +3,7 @@ require 'rails_helper'
 RSpec.describe 'CRM Field Definitions API', type: :request do
   let(:account) { create(:account) }
   let(:administrator) { create(:user, account: account, role: :administrator) }
+  let(:agent) { create(:user, account: account, role: :agent) }
   let(:headers) { administrator.create_new_auth_token }
   let(:path) { "/api/v1/accounts/#{account.id}/crm/field_definitions" }
 
@@ -145,6 +146,32 @@ RSpec.describe 'CRM Field Definitions API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
     expect(response.parsed_body.dig('payload', 0, 'entity_kind')).to eq('deal')
+  end
+
+  it 'allows plain agents to read CRM field definitions for enabled runtime features' do
+    create(:crm_field_definition, account: account, entity_kind: 'deal', key: 'deal_field')
+
+    get path, params: { entity_kind: 'deal' }, headers: agent.create_new_auth_token, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 0, 'key')).to eq('deal_field')
+  end
+
+  it 'rejects plain agents from configuring CRM field definitions' do
+    post path,
+         params: {
+           entity_kind: 'deal',
+           key: 'lead_source_code',
+           label: 'Lead source',
+           field_type: 'text',
+           active: true
+         },
+         headers: agent.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:unauthorized)
+    expect(account.crm_field_definitions.where(key: 'lead_source_code')).not_to exist
   end
 
   it 'marks the deal source field as system in API payloads' do

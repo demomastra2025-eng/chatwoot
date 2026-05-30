@@ -1,10 +1,10 @@
 class Crm::TaskStatusPolicy < Crm::BasePolicy
   def index?
-    settings_view_access?
+    task_view_access? || settings_view_access?
   end
 
   def show?
-    settings_view_access?
+    task_view_access? || settings_view_access?
   end
 
   def create?

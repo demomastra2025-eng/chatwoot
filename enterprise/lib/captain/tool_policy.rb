@@ -35,15 +35,13 @@ class Captain::ToolPolicy
   def execution_allowed?
     scope_allowed? &&
       feature_requirements_satisfied? &&
-      permission_requirements_satisfied? &&
-      agent_risk_requirements_satisfied?
+      permission_requirements_satisfied?
   end
 
   def execution_error_message
     return 'Tool is not available for the current runtime scope' unless scope_allowed?
     return 'Required account feature is not enabled for this tool' unless feature_requirements_satisfied?
-    return 'Tool permission is not available for the current operator or agent runtime' unless permission_requirements_satisfied?
-    return 'High-risk agent tool is not enabled for this account' unless agent_risk_requirements_satisfied?
+    return 'Tool permission is not available for the current operator' unless permission_requirements_satisfied?
 
     'Tool is not available for the current runtime policy'
   end
@@ -76,7 +74,10 @@ class Captain::ToolPolicy
 
   def permission_requirements_satisfied?
     return true if required_permissions.blank?
-    return agent_permission_requirements_satisfied? if scope_name == Captain::ToolAccess::SCOPE_AGENT
+    # Customer-facing agents do not have a human AccountUser. Their authority is the
+    # prompt-bound/selected agent tool catalog; ToolWrapper enforces the current
+    # agent's bound tool list at call time.
+    return true if scope_name == Captain::ToolAccess::SCOPE_AGENT
 
     account_user = resolved_account_user
     return false if account_user.blank?
@@ -86,27 +87,6 @@ class Captain::ToolPolicy
     else
       account_user.administrator? || account_user.agent?
     end
-  end
-
-  def agent_permission_requirements_satisfied?
-    return false if assistant.blank?
-    return true if capability_tool?
-
-    Llm::RuntimePolicy.agent_permissioned_tool_allowed?(
-      tool_id,
-      account: assistant.account
-    )
-  end
-
-  def agent_risk_requirements_satisfied?
-    return true unless scope_name == Captain::ToolAccess::SCOPE_AGENT
-    return true unless agent_high_risk?
-    return false if assistant.blank?
-
-    Llm::RuntimePolicy.agent_high_risk_tool_allowed?(
-      tool_id,
-      account: assistant.account
-    )
   end
 
   def confirmation_requirements_satisfied?
@@ -147,9 +127,5 @@ class Captain::ToolPolicy
 
   def requires_confirmation?
     ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation])
-  end
-
-  def capability_tool?
-    ActiveModel::Type::Boolean.new.cast(@tool_definition[:capability_tool])
   end
 end

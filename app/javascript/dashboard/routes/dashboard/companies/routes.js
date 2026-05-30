@@ -1,13 +1,12 @@
 import { frontendURL } from '../../../helper/URLHelper';
+import { FEATURE_FLAGS } from '../../../featureFlags';
 const CompaniesIndex = () => import('./pages/CompaniesIndex.vue');
 const CompanyDetailView = () => import('./pages/CompanyDetailView.vue');
-import { FEATURE_FLAGS } from '../../../featureFlags';
-import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
+import { CONTACT_ACCESS_PERMISSIONS } from '../../../constants/permissions';
 
 const commonMeta = {
   featureFlag: FEATURE_FLAGS.COMPANIES,
-  permissions: ['administrator', 'agent'],
-  installationTypes: [INSTALLATION_TYPES.CLOUD, INSTALLATION_TYPES.ENTERPRISE],
+  permissions: CONTACT_ACCESS_PERMISSIONS,
 };
 
 export const routes = [

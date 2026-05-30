@@ -28,6 +28,11 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
                   status_id: nil, assignee_id: nil, team_id: nil, custom_attributes: nil)
     ensure_feature_enabled!('crm_tasks', 'CRM tasks are not enabled for this account')
     bootstrap_crm_defaults!
+    deal_id = optional_positive_id(deal_id)
+    originating_conversation_id = optional_positive_id(originating_conversation_id)
+    status_id = optional_positive_id(status_id)
+    assignee_id = optional_positive_id(assignee_id)
+    team_id = optional_positive_id(team_id)
 
     create_params = {
       title: title,
@@ -77,6 +82,7 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
 
   def complete_task(task_id:)
     ensure_feature_enabled!('crm_tasks', 'CRM tasks are not enabled for this account')
+    task_id = required_positive_id(task_id, field_name: 'task_id')
 
     task = account.crm_tasks.kept.find_by(id: task_id)
     raise ArgumentError, 'Task not found' if task.blank?
@@ -95,6 +101,8 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
   private
 
   def resolve_status(status_id:, status_name:, status_code:)
+    status_id = optional_positive_id(status_id)
+
     return account.crm_task_statuses.find(status_id) if status_id.present?
     return account.crm_task_statuses.find_by!(code: status_code.to_s.strip) if status_code.present?
     return account.crm_task_statuses.find_by!(name: status_name.to_s.strip) if status_name.present?

@@ -1,31 +1,21 @@
 class CustomAttributeDefinitionPolicy < ApplicationPolicy
   def index?
-    administrator? || agent?
+    runtime_access?
   end
 
   def show?
-    administrator? || agent?
+    runtime_access?
   end
 
   def create?
-    administrator?
+    administrator_access?
   end
 
   def update?
-    administrator?
+    administrator_access?
   end
 
   def destroy?
-    administrator?
-  end
-
-  private
-
-  def administrator?
-    account_user&.administrator?
-  end
-
-  def agent?
-    account_user&.agent?
+    administrator_access?
   end
 end

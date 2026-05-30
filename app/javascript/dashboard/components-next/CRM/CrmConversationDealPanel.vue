@@ -9,7 +9,7 @@ import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { CRM_DEAL_MANAGE_PERMISSION } from 'dashboard/constants/permissions';
+import { CRM_DEAL_MANAGE_PERMISSIONS } from 'dashboard/constants/permissions';
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
@@ -124,10 +124,7 @@ const currentAccountPermissions = computed(() => {
 const canManageConversationDeals = computed(() => {
   return (
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
-    hasPermissions(
-      ['administrator', CRM_DEAL_MANAGE_PERMISSION],
-      currentAccountPermissions.value
-    )
+    hasPermissions(CRM_DEAL_MANAGE_PERMISSIONS, currentAccountPermissions.value)
   );
 });
 
@@ -272,9 +269,17 @@ const upsertCompanyOption = company => {
   return option;
 };
 
+const defaultStageForPipeline = pipeline =>
+  (pipeline?.stages || []).find(stage => stage.default && stage.active) ||
+  (pipeline?.stages || []).find(
+    stage => stage.active && stage.outcome === 'open'
+  ) ||
+  (pipeline?.stages || []).find(stage => stage.active) ||
+  pipeline?.stages?.[0];
+
 const resetForm = () => {
   const resolvedDefaultPipeline = defaultPipeline.value;
-  const defaultStage = resolvedDefaultPipeline?.stages?.[0];
+  const defaultStage = defaultStageForPipeline(resolvedDefaultPipeline);
 
   Object.assign(form, {
     amount: 0,
@@ -713,14 +718,14 @@ watch(
     const pipeline = referencesStore.pipelines.find(
       item => Number(item.id) === Number(pipelineId)
     );
-    const firstStage = pipeline?.stages?.[0];
+    const defaultStage = defaultStageForPipeline(pipeline);
 
     if (
       !pipeline?.stages?.some(
         stage => Number(stage.id) === Number(form.stageId)
       )
     ) {
-      form.stageId = firstStage?.id || '';
+      form.stageId = defaultStage?.id || '';
     }
   }
 );

@@ -26,6 +26,8 @@ RSpec.describe 'Captain tool schema metadata' do
     expect(assistant_params[:artifact_ids].type).to eq(:array)
     expect(public_params).not_to have_key(:scheduled_at)
     expect(assistant_params).not_to have_key(:scheduled_at)
+    expect(public_params).not_to have_key(:timing_mode)
+    expect(assistant_params).not_to have_key(:timing_mode)
     expect(public_params[:relative_offset_minutes].required).to be(true)
     expect(assistant_params[:relative_offset_minutes].required).to be(true)
     expect(public_params[:relative_offset_minutes].description).to include('positive')

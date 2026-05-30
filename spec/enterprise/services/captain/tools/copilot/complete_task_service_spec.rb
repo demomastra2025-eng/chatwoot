@@ -38,5 +38,12 @@ RSpec.describe Captain::Tools::Copilot::CompleteTaskService do
       expect(result).to include('Task not found')
       expect(other_task.reload.completed_at).to be_nil
     end
+
+    it 'returns validation error for zero required task ID placeholders' do
+      result = service.execute(task_id: 0)
+
+      expect(result).to include('task_id is required')
+      expect(result).not_to include('ActiveRecord::RecordNotFound')
+    end
   end
 end

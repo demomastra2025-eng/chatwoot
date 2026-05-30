@@ -45,9 +45,18 @@ module Captain::Runtime::MessageExtractor
     base_message(msg).tap do |message|
       message[:agent_name] = current_agent.name if current_agent
       message[:tool_calls] = msg.tool_calls.values.map(&:to_h) if assistant_tool_calls?(msg)
+      add_thinking_payload(message, msg)
     end
   end
   private_class_method :assistant_message
+
+  def add_thinking_payload(message, msg)
+    return unless msg.respond_to?(:thinking) && msg.thinking
+
+    message[:thinking] = msg.thinking.text if msg.thinking.text.present?
+    message[:thinking_signature] = msg.thinking.signature if msg.thinking.signature.present?
+  end
+  private_class_method :add_thinking_payload
 
   def message_content?(msg)
     msg.content && !content_empty?(msg.content)

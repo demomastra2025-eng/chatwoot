@@ -156,10 +156,14 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
     it 'falls back to touch creation time when no incoming customer message exists' do
       operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
 
-      touch = operation.create_touch(body: 'No anchor follow-up', relative_offset_minutes: 3)
+      freeze_time do
+        touch = operation.create_touch(body: 'No anchor follow-up', relative_offset_minutes: 3)
 
-      expect(touch.relative_anchor).to eq('touch.created_at')
-      expect(touch.scheduled_at).to be_future
+        expect(touch.timing_mode).to eq('relative')
+        expect(touch.relative_anchor).to eq('touch.created_at')
+        expect(touch.relative_offset_seconds).to eq(180)
+        expect(touch.scheduled_at).to eq(3.minutes.from_now)
+      end
     end
 
     it 'uses the same template detection pattern for touch bodies' do

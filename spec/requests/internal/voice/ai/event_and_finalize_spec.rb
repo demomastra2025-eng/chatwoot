@@ -300,6 +300,26 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
+  it 'runs enabled Captain post-call memory without FAQ when only voice memory is enabled' do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => false })
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create_voice_call_message!
+    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new)
+
+    post_finalize_twice(finalize_payload_for('evt-finalize-captain-memory-only-1'))
+
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
+    expect(Captain::Llm::ConversationFaqService).not_to have_received(:new)
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
+      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
+    )
+    expect(call_session.metadata.dig('ai_voice', 'post_call_captain_features', 'faq')).to be_blank
+  end
+
   it 'does not run Captain post-call features when assistant feature flags are absent' do
     assistant = create(:captain_assistant, account: account, config: {})
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)

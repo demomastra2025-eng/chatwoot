@@ -140,7 +140,8 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
 
     validation_error!('pipeline_id', 'must reference an active pipeline') if pipeline.blank?
 
-    pipeline.stages.active.find_by(outcome: 'open') || pipeline.stages.active.ordered.first ||
+    pipeline.stages.active.find_by(default: true) || pipeline.stages.active.find_by(outcome: 'open') ||
+      pipeline.stages.active.ordered.first ||
       validation_error!('stage_id', 'must reference an active stage')
   end
 

@@ -29,7 +29,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            name: 'Waiting for client',
            code: 'waiting_for_client',
            category: 'in_progress',
-           color: '#3B82F6',
+           color: '#3B82F6'
          },
          headers: headers,
          as: :json
@@ -50,7 +50,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            code: 'waiting_for_client',
            category: 'open',
            color: '#123456',
-           default: true,
+           default: true
          },
          headers: headers,
          as: :json
@@ -91,7 +91,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
          params: {
            name: 'В работе',
            category: 'in_progress',
-           color: '#3B82F6',
+           color: '#3B82F6'
          },
          headers: headers,
          as: :json
@@ -109,7 +109,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
          params: {
            name: 'Waiting for approval',
            category: 'open',
-           color: '#14B8A6',
+           color: '#14B8A6'
          },
          headers: headers,
          as: :json
@@ -127,7 +127,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            name: 'Paused',
            category: 'in_progress',
            color: '#3B82F6',
-           active: false,
+           active: false
          },
          headers: headers,
          as: :json
@@ -155,10 +155,25 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     expect(response.parsed_body['code']).to eq('TASK_STATUS_HAS_TASKS')
   end
 
-  it 'rejects plain agents from settings endpoints' do
+  it 'allows plain agents to read task runtime references' do
     get path, headers: agent.create_new_auth_token, as: :json
 
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(3)
+    expect(response.parsed_body.dig('payload', 0, 'code')).to eq('todo')
+  end
+
+  it 'rejects plain agents from configuring task statuses' do
+    post path,
+         params: {
+           name: 'Waiting for client',
+           category: 'in_progress',
+           color: '#3B82F6'
+         },
+         headers: agent.create_new_auth_token,
+         as: :json
+
     expect(response).to have_http_status(:unauthorized)
-    expect(account.crm_task_statuses).to be_empty
+    expect(account.crm_task_statuses.where(code: 'waiting_for_client')).not_to exist
   end
 end

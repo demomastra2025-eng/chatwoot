@@ -7,9 +7,9 @@
 ## Available Context Fields
 {% for group in context_glossary -%}
 ### {{ group.group_name }}
-  {% for entry in group.entries -%}
+{% for entry in group.entries -%}
 - {{ entry.title }} ({{ entry.id }}){% if entry.description != blank %}: {{ entry.description }}{% endif %}
-  {% endfor -%}
+{% endfor -%}
 {% endfor -%}
 {% endif -%}
 
@@ -17,8 +17,8 @@
 ## Available Tools
 {% for group in tool_glossary -%}
 ### {{ group.group_name }}
-  {% for entry in group.entries -%}
+{% for entry in group.entries -%}
 - {{ entry.title }} ({{ entry.id }}): {{ entry.description }}
-  {% endfor -%}
+{% endfor -%}
 {% endfor -%}
 {% endif -%}

@@ -48,8 +48,9 @@ module Captain::ChatResponseHelper
     {
       'prompt_tokens' => response.try(:input_tokens),
       'completion_tokens' => response.try(:output_tokens),
+      'thinking_tokens' => response.try(:thinking_tokens),
       'total_tokens' => response.try(:input_tokens).to_i + response.try(:output_tokens).to_i
-    }
+    }.compact
   end
 
   def zero_usage_payload
@@ -66,35 +67,64 @@ module Captain::ChatResponseHelper
 
   def persist_thinking_message(tool_call)
     tool_name = tool_call.name.to_s
-    append_tool_trace_step(tool_name, 'start')
+    call_id = tool_call_id(tool_call)
+    trace_step = append_tool_trace_step(
+      tool_name,
+      'start',
+      input: tool_call.arguments,
+      tool_call_id: call_id
+    )
 
     return if @copilot_thread.blank?
 
+    persist_tool_trace_message(
+      content: "Using #{tool_name}",
+      tool_name: tool_name,
+      call_id: call_id,
+      status: trace_step['status'],
+      input: trace_step['input']
+    )
+  end
+
+  def persist_tool_completion(result)
+    return unless (tool_call = @pending_tool_calls&.pop)
+
+    tool_name = tool_call.name.to_s
+    call_id = tool_call_id(tool_call)
+    normalized_result = Captain::ToolResult.normalize(result)
+    event = Captain::ToolResult.error?(normalized_result) ? 'failed' : 'finish'
+    trace_step = append_tool_trace_step(
+      tool_name,
+      event,
+      output: normalized_result,
+      tool_call_id: call_id
+    )
+
+    return if @copilot_thread.blank?
+
+    persist_tool_trace_message(
+      content: tool_completion_content(tool_name, event),
+      tool_name: tool_name,
+      call_id: call_id,
+      status: trace_step['status'],
+      output: trace_step['output']
+    )
+  end
+
+  def persist_tool_trace_message(content:, tool_name:, call_id:, status:, **payload)
     persist_message(
       {
-        'content' => "Using #{tool_name}",
-        'function_name' => tool_name
-      },
+        'content' => content,
+        'function_name' => tool_name,
+        'tool_call_id' => call_id,
+        'status' => status
+      }.merge(payload).compact,
       'assistant_thinking'
     )
   end
 
-  def persist_tool_completion
-    tool_call = @pending_tool_calls&.pop
-    return unless tool_call
-
-    tool_name = tool_call.name.to_s
-    append_tool_trace_step(tool_name, 'complete')
-
-    return if @copilot_thread.blank?
-
-    persist_message(
-      {
-        'content' => "Completed #{tool_name}",
-        'function_name' => tool_name
-      },
-      'assistant_thinking'
-    )
+  def tool_completion_content(tool_name, event)
+    event == 'failed' ? "Failed #{tool_name}" : "Completed #{tool_name}"
   end
 
   def attach_tool_trace(parsed_response)
@@ -102,15 +132,24 @@ module Captain::ChatResponseHelper
     parsed_response['captain_trace'] = payload if payload.present?
   end
 
-  def append_tool_trace_step(tool_name, event, input: nil, output: nil)
+  def append_tool_trace_step(tool_name, event, **options)
     @tool_trace_steps ||= []
     @tool_trace_sequence = @tool_trace_sequence.to_i + 1
-    @tool_trace_steps << Captain::ToolTraceBuilder.step(
+    trace_step = Captain::ToolTraceBuilder.step(
       tool_name: tool_name,
       event: event,
       sequence: @tool_trace_sequence,
-      input: input,
-      output: output
+      tool_call_id: options[:tool_call_id],
+      input: options[:input],
+      output: options[:output]
     )
+    @tool_trace_steps << trace_step
+    trace_step
+  end
+
+  def tool_call_id(tool_call)
+    return unless tool_call.respond_to?(:id)
+
+    tool_call.id
   end
 end

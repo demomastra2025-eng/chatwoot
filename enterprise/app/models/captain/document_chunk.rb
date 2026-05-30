@@ -2,27 +2,35 @@
 #
 # Table name: captain_document_chunks
 #
-#  id             :bigint           not null, primary key
-#  chunk_index    :integer          not null
-#  content        :text             not null
-#  content_sha256 :string           not null
-#  embedding      :vector(1536)
-#  embedding_error :text
-#  embedding_status :integer        default("pending"), not null
+#  id                   :bigint           not null, primary key
+#  chunk_index          :integer          not null
+#  content              :text             not null
+#  content_sha256       :string           not null
+#  embedding            :vector(1536)
+#  embedding_error      :text
+#  embedding_status     :integer          default("pending"), not null
 #  embedding_updated_at :datetime
-#  created_at     :datetime         not null
-#  updated_at     :datetime         not null
-#  account_id     :bigint           not null
-#  assistant_id   :bigint           not null
-#  document_id    :bigint           not null
+#  created_at           :datetime         not null
+#  updated_at           :datetime         not null
+#  account_id           :bigint           not null
+#  assistant_id         :bigint           not null
+#  document_id          :bigint           not null
 #
 # Indexes
 #
-#  index_captain_document_chunks_on_account_id               (account_id)
-#  index_captain_document_chunks_on_assistant_id             (assistant_id)
-#  index_captain_document_chunks_on_content_sha256           (content_sha256)
-#  index_captain_document_chunks_on_document_id              (document_id)
+#  index_captain_document_chunks_on_account_id                   (account_id)
+#  index_captain_document_chunks_on_assistant_id                 (assistant_id)
+#  index_captain_document_chunks_on_content_sha256               (content_sha256)
+#  index_captain_document_chunks_on_document_id                  (document_id)
 #  index_captain_document_chunks_on_document_id_and_chunk_index  (document_id,chunk_index) UNIQUE
+#  index_captain_document_chunks_on_embedding_status             (embedding_status)
+#  vector_idx_captain_document_chunks_embedding                  (embedding) USING ivfflat
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (assistant_id => captain_assistants.id)
+#  fk_rails_...  (document_id => captain_documents.id)
 #
 class Captain::DocumentChunk < ApplicationRecord
   self.table_name = 'captain_document_chunks'

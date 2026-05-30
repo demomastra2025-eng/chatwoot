@@ -18,14 +18,14 @@
 - Type: {{ contact.contact_type | default: "visitor" }}
 {% endif -%}
 {% if contact.custom_attributes -%}
-  {% for attribute in contact.custom_attributes -%}
-  {% assign attribute_key = attribute[0] | append: '' -%}
-  {% assign attribute_label = contact_custom_attribute_labels[attribute_key] | default: attribute[0] -%}
+{% for attribute in contact.custom_attributes -%}
+{% assign attribute_key = attribute[0] | append: '' -%}
+{% assign attribute_label = contact_custom_attribute_labels[attribute_key] | default: attribute[0] -%}
 - {{ attribute_label }} ({{ attribute[0] }}): {{ attribute[1] }}
-  {% endfor -%}
+{% endfor -%}
 {% endif -%}
 {% if contact.additional_attributes -%}
-  {% for attribute in contact.additional_attributes -%}
+{% for attribute in contact.additional_attributes -%}
 - {{ attribute[0] }}: {{ attribute[1] }}
-  {% endfor -%}
+{% endfor -%}
 {% endif -%}

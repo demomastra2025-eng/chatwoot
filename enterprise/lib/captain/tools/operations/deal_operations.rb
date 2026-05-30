@@ -14,6 +14,8 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
                   stage_name: nil, stage_code: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     bootstrap_crm_defaults!
+    pipeline_id = optional_positive_id(pipeline_id)
+    stage_id = optional_positive_id(stage_id)
 
     target_stage = if stage_selector?(stage_id: stage_id, stage_name: stage_name, stage_code: stage_code)
                      resolve_stage(
@@ -55,6 +57,9 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     raise ArgumentError, 'Current deal is not available' if current_deal.blank?
 
+    pipeline_id = optional_positive_id(pipeline_id)
+    stage_id = optional_positive_id(stage_id)
+
     if stage_action.present? && explicit_stage_target?(
       stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline_id: pipeline_id, pipeline_code: pipeline_code
     )
@@ -79,12 +84,18 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     transition_deal_to_stage(current_deal, stage)
   end
 
-  def update_current_deal(title: nil, description: nil, amount: nil, currency: nil,
+  def update_current_deal(deal_id: nil, title: nil, description: nil, amount: nil, currency: nil,
                           expected_close_on: nil, win_probability: nil, custom_attributes: nil, pipeline_id: nil,
                           pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
-    deal = current_deal
+    explicit_deal_id = optional_positive_id(deal_id).present?
+    deal = deal_for_update(deal_id)
     raise ArgumentError, 'Current deal is not available' if deal.blank?
+
+    ensure_latest_message_allows_deal_update!(deal, explicit_deal_id: explicit_deal_id)
+
+    pipeline_id = optional_positive_id(pipeline_id)
+    stage_id = optional_positive_id(stage_id)
 
     if explicit_stage_target?(
       stage_id: stage_id,
@@ -132,6 +143,8 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
   end
 
   def resolve_pipeline(pipeline_id: nil, pipeline_code: nil, fallback_pipeline: nil)
+    pipeline_id = optional_positive_id(pipeline_id)
+
     return account.crm_pipelines.active.find(pipeline_id) if pipeline_id.present?
     return account.crm_pipelines.active.find_by!(code: normalized_code(pipeline_code)) if pipeline_code.present?
 
@@ -140,6 +153,8 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
 
   def resolve_stage(stage_id:, stage_name:, stage_code:, pipeline_id: nil, pipeline_code: nil, fallback_pipeline: nil,
                     allow_pipeline_default: false)
+    stage_id = optional_positive_id(stage_id)
+    pipeline_id = optional_positive_id(pipeline_id)
     requested_pipeline = resolve_pipeline(pipeline_id: pipeline_id, pipeline_code: pipeline_code)
     target_pipeline = requested_pipeline || fallback_pipeline
 
@@ -184,7 +199,8 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
   end
 
   def first_active_stage_for_pipeline(pipeline)
-    pipeline.stages.active.where(outcome: 'open').ordered.first ||
+    pipeline.stages.active.find_by(default: true) ||
+      pipeline.stages.active.where(outcome: 'open').ordered.first ||
       pipeline.stages.active.ordered.first ||
       raise(ArgumentError, 'Selected CRM pipeline has no active stages')
   end
@@ -196,6 +212,22 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
       deal: deal,
       actor: actor
     ).perform
+  end
+
+  def deal_for_update(deal_id)
+    normalized_deal_id = optional_positive_id(deal_id)
+    return account.crm_deals.find(normalized_deal_id) if normalized_deal_id.present?
+
+    current_deal
+  end
+
+  def ensure_latest_message_allows_deal_update!(deal, explicit_deal_id:)
+    Captain::Tools::Operations::DealUpdateGuard.new(
+      account: account,
+      conversation: conversation,
+      current_contact: current_contact,
+      current_deal: current_deal
+    ).ensure_allowed!(deal, explicit_deal_id: explicit_deal_id)
   end
 
   def ensure_stage_pipeline_match!(stage, pipeline)
@@ -235,11 +267,11 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
   end
 
   def stage_selector?(stage_id:, stage_name:, stage_code:)
-    stage_id.present? || stage_name.present? || stage_code.present?
+    optional_positive_id(stage_id).present? || stage_name.present? || stage_code.present?
   end
 
   def pipeline_selector?(pipeline_id:, pipeline_code:)
-    pipeline_id.present? || pipeline_code.present?
+    optional_positive_id(pipeline_id).present? || pipeline_code.present?
   end
 
   def explicit_stage_target?(stage_id:, stage_name:, stage_code:, pipeline_id:, pipeline_code:)

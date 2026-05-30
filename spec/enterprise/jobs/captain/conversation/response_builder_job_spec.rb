@@ -577,6 +577,22 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
     end
 
+    it 'stores response reasoning in captain trace even when no tools ran' do
+      job = described_class.new
+      response = {
+        'response' => 'The deal was already up to date.',
+        'reasoning' => 'Checked the current CRM context and no tool call was required.'
+      }
+      job.instance_variable_set(:@response, response)
+
+      job.send(:attach_tool_trace_to_response!, [])
+
+      expect(response['captain_trace']).to eq(
+        'version' => Captain::ToolTraceBuilder::VERSION,
+        'reasoning' => 'Checked the current CRM context and no tool call was required.'
+      )
+    end
+
     it 'creates the configured public handoff message when the V2 handoff tool already opened the conversation' do
       assistant.update!(config: {
                           'handoff_message_enabled' => true,

@@ -83,6 +83,31 @@ RSpec.describe 'Contacts API', type: :request do
         expect(contact_inboxes).to eq([])
       end
 
+      it 'allows custom-role users with contact_manage to list contacts' do
+        custom_role = create(:custom_role, account: account, permissions: ['contact_manage'])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/contacts?include_contact_inboxes=false",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['payload'].pluck('email')).to include(contact.email)
+      end
+
+      it 'rejects custom-role users without contact_manage from contact runtime endpoints' do
+        custom_role = create(:custom_role, account: account, permissions: [])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/contacts?include_contact_inboxes=false",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+
       it 'renders contacts when a contact inbox has no inbox' do
         contact_inbox.update_column(:inbox_id, nil)
 

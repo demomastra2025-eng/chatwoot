@@ -1,6 +1,6 @@
 class Captain::Tools::ChangeTaskStatusTool < Captain::Tools::BasePublicTool
   description 'Change the status of the CRM task linked to the current conversation'
-  param :status_id, type: 'number', desc: 'Target task status ID', required: false
+  param :status_id, type: 'integer', desc: 'Positive target task status ID. Omit when unknown.', required: false
   param :status_name, type: 'string', desc: 'Target task status name', required: false
   param :status_code, type: 'string', desc: 'Target task status code', required: false
 

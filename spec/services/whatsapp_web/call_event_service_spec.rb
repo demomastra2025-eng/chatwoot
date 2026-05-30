@@ -13,6 +13,35 @@ RSpec.describe WhatsappWeb::CallEventService do
 
   let(:channel) { create(:channel_whatsapp_web) }
 
+  def perform_call_event(id:, from:, status:, timestamp:, **attributes)
+    described_class.new(
+      channel: channel,
+      payload: { id: id, from: from, status: status, timestamp: timestamp }.merge(attributes)
+    ).perform
+  end
+
+  def expected_inbound_call_payload(call_id, remote_jid, status: 'completed', is_video: false)
+    {
+      'call_sid' => call_id,
+      'status' => status,
+      'call_direction' => 'inbound',
+      'provider' => 'whatsapp_web',
+      'inbox_id' => channel.inbox.id,
+      'remote_jid' => remote_jid,
+      'is_video' => is_video
+    }
+  end
+
+  def sole_voice_call_data(conversation)
+    conversation.reload.messages.voice_calls.sole.content_attributes['data']
+  end
+
+  def expect_ordered_timestamps(payload, *keys)
+    values = payload.values_at(*keys)
+
+    expect(values).to eq(values.sort)
+  end
+
   describe '#perform' do
     it 'creates a voice_call message for inbound offer events' do
       conversation = described_class.new(
@@ -77,6 +106,73 @@ RSpec.describe WhatsappWeb::CallEventService do
       expect(voice_message.content_attributes.dig('data', 'status')).to eq('completed')
       expect(voice_message.content_attributes.dig('data', 'meta', 'duration')).to eq(42)
       expect(voice_message.content_attributes.dig('data', 'meta', 'ended_at')).to eq(1_717_171_777)
+    end
+
+    it 'records one answered inbound caller-hangup terminal event with ordered payload fields' do
+      call_id = 'call-answered-drop'
+      remote_jid = '15550001111@s.whatsapp.net'
+      perform_call_event(id: call_id, from: remote_jid, status: 'offer', isVideo: false, timestamp: 1_717_171_700)
+      conversation = channel.inbox.conversations.last
+      perform_call_event(id: call_id, from: remote_jid, status: 'accept', timestamp: 1_717_171_710)
+
+      expect do
+        perform_call_event(id: call_id, from: remote_jid, status: 'terminated', durationSeconds: 20, timestamp: 1_717_171_730)
+        perform_call_event(id: call_id, from: remote_jid, status: 'hangup', durationSeconds: 35, timestamp: 1_717_171_745)
+      end.not_to(change { conversation.reload.messages.voice_calls.count })
+
+      data = sole_voice_call_data(conversation)
+      meta = data['meta']
+      expect(data).to include(expected_inbound_call_payload(call_id, remote_jid))
+      expect(meta).to include(
+        'created_at' => 1_717_171_700,
+        'ringing_at' => 1_717_171_700,
+        'started_at' => 1_717_171_710,
+        'ended_at' => 1_717_171_730,
+        'duration' => 20
+      )
+      expect_ordered_timestamps(meta, 'created_at', 'ringing_at', 'started_at', 'ended_at')
+      expect(conversation.reload.additional_attributes).to include(
+        'call_status' => 'completed',
+        'call_direction' => 'inbound',
+        'call_provider' => 'whatsapp_web',
+        'call_source_id' => call_id,
+        'call_started_at' => 1_717_171_710,
+        'call_ended_at' => 1_717_171_730,
+        'call_duration' => 20
+      )
+    end
+
+    it 'records one unanswered inbound caller-hangup terminal event without inventing an answer timestamp' do
+      call_id = 'call-unanswered-drop'
+      remote_jid = '15550002222@s.whatsapp.net'
+      perform_call_event(id: call_id, from: remote_jid, status: 'offer', isVideo: false, timestamp: 1_717_171_800)
+      conversation = channel.inbox.conversations.last
+
+      expect do
+        perform_call_event(id: call_id, from: remote_jid, status: 'terminate', durationSeconds: 0, timestamp: 1_717_171_812)
+        perform_call_event(id: call_id, from: remote_jid, status: 'terminated', durationSeconds: 4, timestamp: 1_717_171_820)
+      end.not_to(change { conversation.reload.messages.voice_calls.count })
+
+      data = sole_voice_call_data(conversation)
+      meta = data['meta']
+      expect(data).to include(expected_inbound_call_payload(call_id, remote_jid))
+      expect(meta).to include(
+        'created_at' => 1_717_171_800,
+        'ringing_at' => 1_717_171_800,
+        'ended_at' => 1_717_171_812,
+        'duration' => 0
+      )
+      expect(meta).not_to have_key('started_at')
+      expect_ordered_timestamps(meta, 'created_at', 'ringing_at', 'ended_at')
+      expect(conversation.reload.additional_attributes).to include(
+        'call_status' => 'completed',
+        'call_direction' => 'inbound',
+        'call_provider' => 'whatsapp_web',
+        'call_source_id' => call_id,
+        'call_ended_at' => 1_717_171_812,
+        'call_duration' => 0
+      )
+      expect(conversation.additional_attributes).not_to have_key('call_started_at')
     end
 
     it 'does not trust outbound call display names for contact naming' do

@@ -3,6 +3,10 @@ require 'rails_helper'
 RSpec.describe 'Companies API', type: :request do
   let(:account) { create(:account) }
 
+  before do
+    account.enable_features!('companies')
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/companies' do
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
@@ -24,6 +28,41 @@ RSpec.describe 'Companies API', type: :request do
         response_body = response.parsed_body
         expect(response_body['payload'].size).to eq(2)
         expect(response_body['payload'].map { |c| c['name'] }).to contain_exactly(company1.name, company2.name)
+      end
+
+      it 'allows custom-role users with contact_manage to list companies' do
+        custom_role = create(:custom_role, account: account, permissions: ['contact_manage'])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/companies",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['payload'].map { |company| company['name'] }).to include(company1.name)
+      end
+
+      it 'rejects custom-role users without contact_manage from company runtime endpoints' do
+        custom_role = create(:custom_role, account: account, permissions: [])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/companies",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+
+      it 'rejects company access when companies feature is disabled' do
+        account.disable_features!('companies')
+
+        get "/api/v1/accounts/#{account.id}/companies",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:unauthorized)
       end
 
       it 'returns companies with pagination' do

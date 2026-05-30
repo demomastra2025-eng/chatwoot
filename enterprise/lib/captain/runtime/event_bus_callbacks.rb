@@ -30,6 +30,7 @@ class Captain::Runtime::EventBusCallbacks
       schema_name: current_chat_state(context_wrapper)[:schema_name],
       prompt_tokens: response.respond_to?(:input_tokens) ? response.input_tokens : nil,
       completion_tokens: response.respond_to?(:output_tokens) ? response.output_tokens : nil,
+      thinking_tokens: thinking_tokens(response),
       total_tokens: total_tokens(response),
       tool_call: response.respond_to?(:tool_call?) ? response.tool_call? : false,
       output_type: response.respond_to?(:content) ? payload_type(response.content) : nil,
@@ -94,6 +95,7 @@ class Captain::Runtime::EventBusCallbacks
       error: result.respond_to?(:error) && result.error.present?,
       output_type: result.respond_to?(:output) ? payload_type(result.output) : nil,
       output_size: result.respond_to?(:output) ? payload_size(result.output) : nil,
+      thinking_tokens: result_usage_thinking_tokens(result),
       usage: usage_payload(result)
     )
   end
@@ -149,14 +151,29 @@ class Captain::Runtime::EventBusCallbacks
     {
       input_tokens: usage.input_tokens,
       output_tokens: usage.output_tokens,
-      total_tokens: usage.total_tokens
-    }
+      total_tokens: usage.total_tokens,
+      thinking_tokens: usage.respond_to?(:thinking_tokens) ? usage.thinking_tokens : nil
+    }.compact
+  end
+
+  def result_usage_thinking_tokens(result)
+    usage = result.respond_to?(:usage) ? result.usage : nil
+    return unless usage.respond_to?(:thinking_tokens)
+
+    usage.thinking_tokens.to_i.then { |tokens| tokens.positive? ? tokens : nil }
   end
 
   def total_tokens(response)
     return unless response.respond_to?(:input_tokens)
 
     (response.input_tokens || 0) + (response.respond_to?(:output_tokens) ? response.output_tokens.to_i : 0)
+  end
+
+  def thinking_tokens(response)
+    tokens = response.thinking_tokens if response.respond_to?(:thinking_tokens)
+    tokens ||= response.reasoning_tokens if response.respond_to?(:reasoning_tokens)
+
+    tokens.to_i.positive? ? tokens.to_i : nil
   end
 
   def tool_error?(result)

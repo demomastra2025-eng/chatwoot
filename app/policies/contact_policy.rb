@@ -1,53 +1,53 @@
 class ContactPolicy < ApplicationPolicy
   def index?
-    true
+    contact_access?
   end
 
   def active?
-    true
+    contact_access?
   end
 
   def import?
-    @account_user.administrator?
+    administrator_access?
   end
 
   def export?
-    @account_user.administrator?
+    administrator_access?
   end
 
   def search?
-    true
+    contact_access?
   end
 
   def filter?
-    true
+    contact_access?
   end
 
   def update?
-    true
+    contact_access?
   end
 
   def contactable_inboxes?
-    true
+    contact_access?
   end
 
   def destroy_custom_attributes?
-    true
+    contact_access?
   end
 
   def show?
-    true
+    contact_access?
   end
 
   def create?
-    true
+    contact_access?
   end
 
   def avatar?
-    true
+    contact_access?
   end
 
   def destroy?
-    @account_user.administrator?
+    administrator_access?
   end
 end

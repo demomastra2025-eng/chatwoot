@@ -91,9 +91,9 @@ RSpec.describe Captain::ToolPolicy do
       expect(allowed).to be(true)
     end
 
-    it 'blocks high-risk permissioned agent tools until account runtime policy allows them' do
+    it 'allows permissioned read-only agent tools once they are runtime-visible' do
       account.enable_features!('crm_deals')
-      tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
+      tool_definition = Captain::ToolRegistry.definition_for('list_deal_pipelines').to_h
 
       allowed = described_class.execution_allowed?(
         tool_definition,
@@ -101,20 +101,11 @@ RSpec.describe Captain::ToolPolicy do
         scope_name: Captain::ToolAccess::SCOPE_AGENT
       )
 
-      expect(allowed).to be(false)
-      expect(described_class.execution_error_message(
-               tool_definition,
-               assistant: assistant,
-               scope_name: Captain::ToolAccess::SCOPE_AGENT
-             )).to eq('Tool permission is not available for the current operator or agent runtime')
+      expect(allowed).to be(true)
     end
 
-    it 'allows high-risk permissioned agent tools when both permission and risk policy allow them' do
+    it 'allows high-risk permissioned agent tools without a second account runtime allowlist' do
       account.enable_features!('crm_deals')
-      account.update!(captain_runtime: {
-                        'agent_permissioned_tool_ids' => ['create_deal'],
-                        'agent_high_risk_tool_ids' => ['create_deal']
-                      })
       tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
 
       allowed = described_class.execution_allowed?(

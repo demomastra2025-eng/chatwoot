@@ -21,14 +21,14 @@
 - Labels: {{ conversation.label_list | join: ", " }}
 {% endif -%}
 {% if conversation.custom_attributes -%}
-  {% for attribute in conversation.custom_attributes -%}
-  {% assign attribute_key = attribute[0] | append: '' -%}
-  {% assign attribute_label = conversation_custom_attribute_labels[attribute_key] | default: attribute[0] -%}
+{% for attribute in conversation.custom_attributes -%}
+{% assign attribute_key = attribute[0] | append: '' -%}
+{% assign attribute_label = conversation_custom_attribute_labels[attribute_key] | default: attribute[0] -%}
 - {{ attribute_label }} ({{ attribute[0] }}): {{ attribute[1] }}
-  {% endfor -%}
+{% endfor -%}
 {% endif -%}
 {% if conversation.additional_attributes -%}
-  {% for attribute in conversation.additional_attributes -%}
+{% for attribute in conversation.additional_attributes -%}
 - {{ attribute[0] }}: {{ attribute[1] }}
-  {% endfor -%}
+{% endfor -%}
 {% endif -%}

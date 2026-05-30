@@ -14,6 +14,6 @@ class Captain::Tools::Copilot::GetCompanyService < Captain::Tools::Copilot::Base
   end
 
   def active?
-    @user.present?
+    user_has_permission('contact_manage')
   end
 end

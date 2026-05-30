@@ -1,21 +1,21 @@
 class LabelPolicy < ApplicationPolicy
   def index?
-    @account_user.administrator? || @account_user.agent?
+    runtime_access?
   end
 
   def update?
-    @account_user.administrator?
+    administrator_access?
   end
 
   def show?
-    @account_user.administrator?
+    administrator_access?
   end
 
   def create?
-    @account_user.administrator?
+    administrator_access?
   end
 
   def destroy?
-    @account_user.administrator?
+    administrator_access?
   end
 end

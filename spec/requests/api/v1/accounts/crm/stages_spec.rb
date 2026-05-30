@@ -3,6 +3,7 @@ require 'rails_helper'
 RSpec.describe 'CRM Stages API', type: :request do
   let(:account) { create(:account) }
   let(:administrator) { create(:user, account: account, role: :administrator) }
+  let(:agent) { create(:user, account: account, role: :agent) }
   let(:headers) { administrator.create_new_auth_token }
 
   before do
@@ -25,6 +26,22 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'color')).to eq('#14B8A6')
     expect(pipeline.stages.find_by!(code: 'negotiation').color).to eq('#14B8A6')
+  end
+
+  it 'rejects plain agents from configuring stages' do
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+
+    post "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages",
+         params: {
+           name: 'Negotiation',
+           color: '#14B8A6',
+           outcome: 'open'
+         },
+         headers: agent.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:unauthorized)
+    expect(pipeline.stages.where(code: 'negotiation')).not_to exist
   end
 
   it 'creates a stage with a russian name and auto-generated code' do

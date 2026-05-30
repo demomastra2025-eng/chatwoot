@@ -18,11 +18,11 @@ import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
-import {
-  CRM_DEAL_MANAGE_PERMISSION,
-  CRM_DEAL_VIEW_PERMISSION,
-} from 'dashboard/constants/permissions';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import {
+  CRM_DEAL_MANAGE_PERMISSIONS,
+  CRM_DEAL_VIEW_PERMISSIONS,
+} from 'dashboard/constants/permissions';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -207,15 +207,10 @@ const isFeatureEnabledonAccount = useMapGetter(
 );
 
 const canManageDeals = computed(() =>
-  checkPermissions(['administrator', CRM_DEAL_MANAGE_PERMISSION])
+  checkPermissions(CRM_DEAL_MANAGE_PERMISSIONS)
 );
 const canViewDeals = computed(() =>
-  checkPermissions([
-    'administrator',
-    'agent',
-    CRM_DEAL_VIEW_PERMISSION,
-    CRM_DEAL_MANAGE_PERMISSION,
-  ])
+  checkPermissions(CRM_DEAL_VIEW_PERMISSIONS)
 );
 const companiesEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
@@ -842,6 +837,14 @@ const upsertCompanyOption = company => {
   return option;
 };
 
+const defaultStageForPipeline = pipeline =>
+  (pipeline?.stages || []).find(stage => stage.default && stage.active) ||
+  (pipeline?.stages || []).find(
+    stage => stage.active && stage.outcome === 'open'
+  ) ||
+  (pipeline?.stages || []).find(stage => stage.active) ||
+  pipeline?.stages?.[0];
+
 const resetForm = () => {
   const defaultPipelineId = resolvePipelineFilterId(filters.pipelineId);
   const resolvedDefaultPipeline =
@@ -850,7 +853,7 @@ const resetForm = () => {
     ) ||
     referencesStore.pipelines.find(pipeline => pipeline.default) ||
     referencesStore.pipelines[0];
-  const defaultStage = resolvedDefaultPipeline?.stages?.[0];
+  const defaultStage = defaultStageForPipeline(resolvedDefaultPipeline);
 
   Object.assign(form, {
     amount: 0,
@@ -1897,14 +1900,14 @@ watch(
     const pipeline = referencesStore.pipelines.find(
       item => Number(item.id) === Number(pipelineId)
     );
-    const firstStage = pipeline?.stages?.[0];
+    const defaultStage = defaultStageForPipeline(pipeline);
 
     if (
       !pipeline?.stages?.some(
         stage => Number(stage.id) === Number(form.stageId)
       )
     ) {
-      form.stageId = firstStage?.id || '';
+      form.stageId = defaultStage?.id || '';
     }
   }
 );
@@ -1985,27 +1988,32 @@ const handleDealUiActionQuery = async () => {
 onMounted(async () => {
   if (!canViewDeals.value) return;
 
-  emitter.on(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
-  restoreDealsPreferences();
+  try {
+    emitter.on(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
+    restoreDealsPreferences();
 
-  if (!agents.value.length) {
-    await store.dispatch('agents/get');
+    if (!agents.value.length) {
+      await store.dispatch('agents/get');
+    }
+
+    if (!teams.value.length) {
+      await store.dispatch('teams/get');
+    }
+
+    await Promise.all([
+      referencesStore.loadPipelines(),
+      referencesStore.loadFieldDefinitions('deal'),
+    ]);
+    ensurePipelineFilterSelection();
+    resetForm();
+    hasRestoredPreferences.value = true;
+    persistDealsPreferences();
+    await loadDeals();
+    await handleDealUiActionQuery();
+  } catch (error) {
+    ui.error = error;
+    useAlert(formatErrorMessage(error));
   }
-
-  if (!teams.value.length) {
-    await store.dispatch('teams/get');
-  }
-
-  await Promise.all([
-    referencesStore.loadPipelines(),
-    referencesStore.loadFieldDefinitions('deal'),
-  ]);
-  ensurePipelineFilterSelection();
-  resetForm();
-  hasRestoredPreferences.value = true;
-  persistDealsPreferences();
-  await loadDeals();
-  await handleDealUiActionQuery();
 });
 
 watch(

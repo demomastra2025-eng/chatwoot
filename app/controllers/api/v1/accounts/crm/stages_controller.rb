@@ -40,7 +40,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   end
 
   def stage_params
-    params.permit(:name, :code, :position, :outcome, :active, :color)
+    params.permit(:name, :code, :position, :outcome, :active, :color, :default)
   end
 
   def ensure_destroyable_stage!

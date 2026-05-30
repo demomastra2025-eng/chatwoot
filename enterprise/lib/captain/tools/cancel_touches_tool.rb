@@ -1,5 +1,5 @@
 class Captain::Tools::CancelTouchesTool < Captain::Tools::BasePublicTool
-  description 'Cancel draft and pending scheduled outbound touches for the current entity, optionally filtered by touch plan'
+  description 'Cancel draft, pending, and processing scheduled outbound touches for the current entity, optionally filtered by touch plan'
   param :remindable_kind, type: 'string', desc: 'Target entity: conversation, deal, task, appointment. Defaults to conversation', required: false
   param :touch_plan_id, type: 'number', desc: 'Optional touch plan ID used to cancel only touches created from that plan', required: false
   param :touch_plan_name, type: 'string', desc: 'Optional touch plan name used when the ID is not known', required: false

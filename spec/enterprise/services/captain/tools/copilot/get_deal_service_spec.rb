@@ -26,4 +26,9 @@ RSpec.describe Captain::Tools::Copilot::GetDealService do
       'stage_id' => stage.id
     )
   end
+
+  it 'rejects invalid deal IDs instead of silently returning not found' do
+    expect { service.execute(deal_id: { name: 'get_deal', parameters: { wrong_id: 52 } }) }
+      .to raise_error(ArgumentError, 'deal_id is required')
+  end
 end

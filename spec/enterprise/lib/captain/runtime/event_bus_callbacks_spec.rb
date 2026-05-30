@@ -43,14 +43,14 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
   it 'publishes normalized runtime events with shared metadata' do
     chat = EventBusCallbacksSpecChat.new('gpt-4.1-mini')
     Llm::StructuredOutputPolicy.bind!(chat: chat, schema: Captain::ConversationCompletionSchema)
-    response = Struct.new(:content, :input_tokens, :output_tokens, :tool_call?) do
+    response = Struct.new(:content, :input_tokens, :output_tokens, :thinking_tokens, :tool_call?) do
       def initialize(...)
         super
       end
-    end.new({ complete: true }, 11, 7, false)
+    end.new({ complete: true }, 11, 7, 2, false)
     result = Captain::Runtime::Result.new(
       output: { response: 'Done' },
-      usage: Struct.new(:input_tokens, :output_tokens, :total_tokens).new(11, 7, 18)
+      usage: Struct.new(:input_tokens, :output_tokens, :total_tokens, :thinking_tokens).new(11, 7, 18, 2)
     )
 
     callbacks.on_run_start('assistant_agent', 'Hello', context_wrapper)
@@ -81,7 +81,17 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
       'conversation_id' => 3,
       'conversation_display_id' => 42,
       'schema_name' => 'Captain::ConversationCompletionSchema',
-      'model' => 'gpt-4.1-mini'
+      'model' => 'gpt-4.1-mini',
+      'thinking_tokens' => 2
+    )
+
+    run_event = events.find { |event| event.name == 'llm.run.complete' }
+    expect(run_event.payload).to include('thinking_tokens' => 2)
+    expect(run_event.payload['usage'].with_indifferent_access).to include(
+      input_tokens: 11,
+      output_tokens: 7,
+      total_tokens: 18,
+      thinking_tokens: 2
     )
   end
 

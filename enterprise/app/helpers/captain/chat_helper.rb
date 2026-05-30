@@ -44,7 +44,7 @@ module Captain::ChatHelper
 
   def handle_tool_result(result)
     end_tool_span(result)
-    persist_tool_completion
+    persist_tool_completion(result)
   end
 
   def build_ruby_llm_content(content)

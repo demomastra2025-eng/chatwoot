@@ -24,6 +24,31 @@ RSpec.describe 'Label API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.body).to include(label.title)
       end
+
+      it 'allows custom-role users with runtime permissions to list labels' do
+        custom_role = create(:custom_role, account: account, permissions: ['conversation_manage'])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/labels",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include(label.title)
+      end
+
+      it 'rejects custom-role users without runtime permissions from listing labels' do
+        custom_role = create(:custom_role, account: account, permissions: [])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/labels",
+            headers: custom_role_user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
     end
   end
 

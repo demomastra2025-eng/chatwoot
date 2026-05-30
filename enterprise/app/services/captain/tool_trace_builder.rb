@@ -44,13 +44,16 @@ class Captain::ToolTraceBuilder
     }.compact
   end
 
-  def self.payload(steps)
-    return if steps.blank?
+  def self.payload(steps = nil, reasoning: nil)
+    normalized_steps = Array(steps).compact
+    normalized_reasoning = reasoning.present? ? safe_payload(reasoning) : nil
+    return if normalized_steps.blank? && normalized_reasoning.blank?
 
     {
       'version' => VERSION,
-      'tool_steps' => steps
-    }
+      'tool_steps' => normalized_steps.presence,
+      'reasoning' => normalized_reasoning
+    }.compact
   end
 
   def self.safe_payload(value)

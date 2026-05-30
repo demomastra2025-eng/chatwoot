@@ -51,5 +51,34 @@ RSpec.describe Captain::PromptRegistry do
 
       expect(prompt).to eq('Hello Captain')
     end
+
+    it 'renders reference glossary headings without inherited list indentation' do
+      prompt = described_class.render_inline!(
+        "{% render 'reference_glossary', context_glossary: context_glossary, tool_glossary: tool_glossary, intro: intro %}",
+        variables: {
+          intro: 'Use these references.',
+          context_glossary: [
+            {
+              group_name: 'Conversation',
+              entries: [
+                { title: 'Conversation ID', id: 'conversation.display_id', description: 'conversation.display_id' }
+              ]
+            }
+          ],
+          tool_glossary: [
+            { group_name: 'Knowledge', entries: [{ title: 'FAQ Lookup', id: 'faq_lookup', description: 'Search FAQ' }] },
+            { group_name: 'Conversations', entries: [{ title: 'Add Note', id: 'add_private_note', description: 'Add note' }] },
+            { group_name: 'Custom tools', entries: [{ title: 'Fetch Order', id: 'custom_fetch-order', description: 'Gets order details' }] }
+          ]
+        },
+        include_snippets: true
+      )
+
+      expect(prompt.lines.select { |line| line.match?(/^\s+#/) }).to be_empty
+      expect(prompt).to include("\n## Available Tools\n")
+      expect(prompt).to include("\n### Knowledge\n- FAQ Lookup")
+      expect(prompt).to include("\n### Conversations\n- Add Note")
+      expect(prompt).to include("\n### Custom tools\n- Fetch Order")
+    end
   end
 end

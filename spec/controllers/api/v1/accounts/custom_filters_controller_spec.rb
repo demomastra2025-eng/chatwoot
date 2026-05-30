@@ -41,6 +41,29 @@ RSpec.describe 'Custom Filters API', type: :request do
         expect(response_body.first['name']).to eq(custom_filter.name)
         expect(response_body.first['query']).to eq(custom_filter.query)
       end
+
+      it 'allows custom-role users with runtime permissions to list their filters' do
+        custom_role = create(:custom_role, account: account, permissions: ['conversation_manage'])
+        user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/custom_filters",
+            headers: user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.first['name']).to eq(custom_filter.name)
+      end
+
+      it 'rejects custom-role users without runtime permissions from listing filters' do
+        custom_role = create(:custom_role, account: account, permissions: [])
+        user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        get "/api/v1/accounts/#{account.id}/custom_filters",
+            headers: user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
     end
   end
 

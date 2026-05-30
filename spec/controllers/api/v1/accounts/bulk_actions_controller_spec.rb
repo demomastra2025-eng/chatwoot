@@ -34,6 +34,12 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
     context 'when it is an authenticated user' do
       let!(:agent) { create(:user, account: account, role: :agent) }
 
+      before do
+        Conversation.all.find_each do |conversation|
+          create(:inbox_member, inbox: conversation.inbox, user: agent)
+        end
+      end
+
       it 'Ignores bulk_actions for wrong type' do
         post "/api/v1/accounts/#{account.id}/bulk_actions",
              headers: agent.create_new_auth_token,
@@ -62,8 +68,10 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
       end
 
       it 'returns the bulk action run status for the current user' do
+        auth_headers = agent.create_new_auth_token
+
         post "/api/v1/accounts/#{account.id}/bulk_actions",
-             headers: agent.create_new_auth_token,
+             headers: auth_headers,
              params: { type: 'Conversation', fields: { status: 'snoozed' }, ids: Conversation.first(2).pluck(:display_id) }
 
         expect(response).to have_http_status(:success)
@@ -71,7 +79,7 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
         run_id = response.parsed_body.dig('payload', 'id')
 
         get "/api/v1/accounts/#{account.id}/bulk_action_runs/#{run_id}",
-            headers: agent.create_new_auth_token
+            headers: auth_headers
 
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('payload', 'resource_type')).to eq('Conversation')
@@ -220,6 +228,12 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
   describe 'POST /api/v1/accounts/{account.id}/bulk_actions' do
     context 'when it is an authenticated user' do
       let!(:agent) { create(:user, account: account, role: :agent) }
+
+      before do
+        Conversation.all.find_each do |conversation|
+          create(:inbox_member, inbox: conversation.inbox, user: agent)
+        end
+      end
 
       it 'Bulk delete conversation labels' do
         Conversation.first.add_labels(%w[support priority_customer])

@@ -28,6 +28,7 @@ module Crm::PayloadBuilder
       position: stage.position,
       outcome: stage.outcome,
       active: stage.active,
+      default: stage.default,
       created_at: stage.created_at&.iso8601,
       updated_at: stage.updated_at&.iso8601
     }

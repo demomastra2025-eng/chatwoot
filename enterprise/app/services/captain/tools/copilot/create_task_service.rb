@@ -9,11 +9,14 @@ class Captain::Tools::Copilot::CreateTaskService < Captain::Tools::Copilot::Base
   param :priority, type: :string, desc: 'Task priority: low, medium, high, or urgent', required: false
   param :start_at, type: :string, desc: 'Task start datetime', required: false
   param :due_at, type: :string, desc: 'Task due datetime', required: false
-  param :deal_id, type: :number, desc: 'Optional account CRM deal ID to link', required: false
-  param :originating_conversation_id, type: :number, desc: 'Optional account conversation display ID or internal ID to link', required: false
-  param :status_id, type: :number, desc: 'Optional account CRM task status ID', required: false
-  param :assignee_id, type: :number, desc: 'Optional account user ID to assign', required: false
-  param :team_id, type: :number, desc: 'Optional account team ID to assign', required: false
+  param :deal_id, type: :integer, desc: 'Optional positive account CRM deal ID to link. Omit when unknown.', required: false
+  param :originating_conversation_id,
+        type: :integer,
+        desc: 'Optional positive account conversation display ID or internal ID to link. Omit when unknown.',
+        required: false
+  param :status_id, type: :integer, desc: 'Optional positive account CRM task status ID. Omit when unknown.', required: false
+  param :assignee_id, type: :integer, desc: 'Optional positive account user ID to assign. Omit when unknown.', required: false
+  param :team_id, type: :integer, desc: 'Optional positive account team ID to assign. Omit when unknown.', required: false
   param :custom_attributes,
         type: :string,
         desc: 'JSON object string for CRM custom attributes. Use the matching list_*_custom_fields tool first; ' \

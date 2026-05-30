@@ -6,6 +6,7 @@
 #  active      :boolean          default(TRUE), not null
 #  code        :string           not null
 #  color       :string           default("#F0F0F3"), not null
+#  default     :boolean          default(FALSE), not null
 #  name        :string           not null
 #  outcome     :string           default("open"), not null
 #  position    :integer          default(0), not null
@@ -18,8 +19,13 @@
 #
 #  index_crm_stages_on_account_id                 (account_id)
 #  index_crm_stages_on_account_pipeline_position  (account_id,pipeline_id,position)
+#  index_crm_stages_on_pipeline_default_active    (pipeline_id) UNIQUE WHERE (("default" = true) AND (active = true))
 #  index_crm_stages_on_pipeline_id                (pipeline_id)
 #  index_crm_stages_on_pipeline_id_and_code       (pipeline_id,code) UNIQUE
+#
+# Check Constraints
+#
+#  crm_stages_default_active_open  ((NOT "default") OR (active AND ((outcome)::text = 'open'::text)))
 #
 # Foreign Keys
 #
@@ -63,6 +69,7 @@ class Crm::Stage < ApplicationRecord
   validates :outcome, inclusion: { in: OUTCOMES }
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :pipeline_belongs_to_account
+  validate :default_stage_must_be_active_open
   validate :standard_color_available_within_pipeline
 
   scope :ordered, -> { order(:position, :id) }
@@ -70,10 +77,12 @@ class Crm::Stage < ApplicationRecord
 
   before_validation :sync_account_id
   before_validation :assign_default_color, on: :create
+  before_validation :assign_default_for_first_open_stage, on: :create
   before_validation :normalize_name
   before_validation :normalize_code
   before_validation :normalize_color
   before_validation :assign_position, on: :create
+  before_save :clear_other_default_stages, if: :default?
 
   private
 
@@ -109,8 +118,24 @@ class Crm::Stage < ApplicationRecord
     errors.add(:pipeline_id, 'must belong to the current account')
   end
 
+  def default_stage_must_be_active_open
+    return unless default?
+    return if active? && outcome_open?
+
+    errors.add(:default, 'must be an active open stage')
+  end
+
   def sync_account_id
     self.account_id = pipeline.account_id if pipeline.present?
+  end
+
+  def assign_default_for_first_open_stage
+    return if default?
+    return unless active? && outcome_open?
+    return if pipeline.blank?
+    return if pipeline.stages.active.exists?(default: true)
+
+    self.default = true
   end
 
   def standard_color_available_within_pipeline
@@ -120,7 +145,7 @@ class Crm::Stage < ApplicationRecord
     sibling_stages = self.class.where(pipeline_id: pipeline_id)
     sibling_stages = sibling_stages.where.not(id: id) if id.present?
 
-    return unless sibling_stages.where('UPPER(color) = ?', color.to_s.upcase).exists?
+    return unless sibling_stages.exists?(['UPPER(color) = ?', color.to_s.upcase])
 
     errors.add(:color, 'has already been taken for this pipeline')
   end
@@ -133,6 +158,14 @@ class Crm::Stage < ApplicationRecord
       value.to_s.strip.upcase
     end
 
-    STANDARD_COLORS.find { |candidate| !used_colors.include?(candidate) } || DEFAULT_COLOR
+    STANDARD_COLORS.find { |candidate| used_colors.exclude?(candidate) } || DEFAULT_COLOR
+  end
+
+  def clear_other_default_stages
+    sibling_defaults = self.class.where(
+      pipeline_id: pipeline_id,
+      default: true
+    ).where.not(id: id)
+    sibling_defaults.find_each { |stage| stage.update!(default: false) }
   end
 end

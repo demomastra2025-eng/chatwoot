@@ -14,19 +14,19 @@ RSpec.describe AccountSamlSettings, type: :model do
     it 'requires sso_url' do
       settings = build(:account_saml_settings, account: account, sso_url: nil)
       expect(settings).not_to be_valid
-      expect(settings.errors[:sso_url]).to include("can't be blank")
+      expect(settings.errors.of_kind?(:sso_url, :blank)).to be true
     end
 
     it 'requires certificate' do
       settings = build(:account_saml_settings, account: account, certificate: nil)
       expect(settings).not_to be_valid
-      expect(settings.errors[:certificate]).to include("can't be blank")
+      expect(settings.errors.of_kind?(:certificate, :blank)).to be true
     end
 
     it 'requires idp_entity_id' do
       settings = build(:account_saml_settings, account: account, idp_entity_id: nil)
       expect(settings).not_to be_valid
-      expect(settings.errors[:idp_entity_id]).to include("can't be blank")
+      expect(settings.errors.of_kind?(:idp_entity_id, :blank)).to be true
     end
   end
 
@@ -61,7 +61,8 @@ RSpec.describe AccountSamlSettings, type: :model do
       settings = build(:account_saml_settings, account: account, sp_entity_id: nil)
       expect(settings).to be_valid
       settings.save!
-      expect(settings.sp_entity_id).to eq("http://localhost:3000/saml/sp/#{account.id}")
+      expected_base_url = GlobalConfigService.load('FRONTEND_URL', 'http://localhost:3000')
+      expect(settings.sp_entity_id).to eq("#{expected_base_url}/saml/sp/#{account.id}")
     end
 
     it 'does not override existing sp_entity_id' do

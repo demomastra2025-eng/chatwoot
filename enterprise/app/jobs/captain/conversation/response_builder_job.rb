@@ -715,10 +715,27 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def attach_tool_trace_to_response!(tool_trace_steps = nil)
     return if @response.blank?
-    return if @response['captain_trace'].present?
 
-    payload = Captain::ToolTraceBuilder.payload(tool_trace_steps)
+    if @response['captain_trace'].present?
+      @response['captain_trace'] = trace_with_reasoning(@response['captain_trace'])
+      return
+    end
+
+    payload = Captain::ToolTraceBuilder.payload(tool_trace_steps, reasoning: @response['reasoning'])
     @response['captain_trace'] = payload if payload.present?
+  end
+
+  def trace_with_reasoning(trace)
+    reasoning = @response['reasoning']
+    return trace if reasoning.blank?
+
+    trace_hash = trace.respond_to?(:to_h) ? trace.to_h : {}
+    return trace if trace_hash['reasoning'].present? || trace_hash[:reasoning].present?
+
+    payload = Captain::ToolTraceBuilder.payload(nil, reasoning: reasoning)
+    return trace if payload.blank?
+
+    trace_hash.merge('version' => trace_hash['version'] || trace_hash[:version] || payload['version'], 'reasoning' => payload['reasoning'])
   end
 
   def conversation_pending?

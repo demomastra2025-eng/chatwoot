@@ -13,6 +13,7 @@ RSpec.describe Captain::Runtime::MessageExtractor do
         RubyLLM::Message.new(
           role: :assistant,
           content: '',
+          thinking: RubyLLM::Thinking.new(text: 'reasoning text', signature: 'sig_123'),
           tool_calls: {
             'call_1' => RubyLLM::ToolCall.new(id: 'call_1', name: 'search_faq', arguments: { query: 'refund' })
           }
@@ -31,6 +32,8 @@ RSpec.describe Captain::Runtime::MessageExtractor do
             role: :assistant,
             content: '',
             agent_name: 'assistant_agent',
+            thinking: 'reasoning text',
+            thinking_signature: 'sig_123',
             tool_calls: [
               { id: 'call_1', name: 'search_faq', arguments: { query: 'refund' } }
             ]

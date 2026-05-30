@@ -34,7 +34,7 @@ class Captain::Assistant::PromptPreviewService
       notes: [
         'Rendered without live conversation context.',
         effective_runtime_tools_note,
-        'High-risk and confirmation policy checks still apply at runtime.'
+        'Scope, feature, integration, safety, and assistant confirmation checks still apply at runtime.'
       ],
       used_field_ids: assistant_used_field_ids,
       used_tool_ids: assistant_used_tool_ids,

@@ -38,4 +38,43 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
     expect(payload).to include('deal_id' => deal.id, 'pipeline_id' => target_pipeline.id, 'stage_id' => target_stage.id)
     expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved deal', 'pipeline_id' => target_pipeline.id, 'stage_id' => target_stage.id)
   end
+
+  it 'updates an explicit deal_id instead of the current conversation deal' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#111111')
+    current_deal = create(
+      :crm_deal,
+      account: account,
+      title: 'Current linked deal',
+      pipeline: pipeline,
+      stage: stage,
+      originating_conversation_id: conversation.id
+    )
+    target_deal = create(:crm_deal, account: account, title: 'Target deal', pipeline: pipeline, stage: stage)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: current_deal.id }, contact: { id: contact.id } })
+
+    payload = JSON.parse(tool.perform(tool_context, deal_id: target_deal.id, title: 'Updated target deal'))
+
+    expect(payload).to include('action' => 'update_deal', 'deal_id' => target_deal.id)
+    expect(payload['deal']).to include('id' => target_deal.id, 'title' => 'Updated target deal')
+    expect(target_deal.reload.title).to eq('Updated target deal')
+    expect(current_deal.reload.title).to eq('Current linked deal')
+  end
+
+  it 'ignores zero pipeline and stage ID placeholders while preserving real numeric field updates' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#111111')
+    deal = create(:crm_deal, account: account, title: 'Old title', pipeline: pipeline, stage: stage, originating_conversation_id: conversation.id)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id }, contact: { id: contact.id } })
+
+    payload = JSON.parse(tool.perform(tool_context, title: 'Zero amount deal', amount: 0, currency: 'KZT', pipeline_id: '0', stage_id: 0))
+
+    expect(payload).to include('action' => 'update_deal', 'deal_id' => deal.id, 'pipeline_id' => pipeline.id, 'stage_id' => stage.id)
+    expect(payload['deal']).to include('id' => deal.id, 'title' => 'Zero amount deal', 'amount' => '0')
+    expect(deal.reload).to have_attributes(pipeline_id: pipeline.id, stage_id: stage.id, amount_minor: 0)
+  end
 end

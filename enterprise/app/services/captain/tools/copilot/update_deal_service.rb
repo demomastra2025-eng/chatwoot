@@ -3,17 +3,27 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
     'update_deal'
   end
 
-  description 'Update the CRM deal linked to the current conversation. Use list_deal_pipelines/list_deal_stages before changing pipeline or stage.'
+  description 'Update a CRM deal by deal_id or the deal linked to the current conversation. ' \
+              'Use list_deal_pipelines/list_deal_stages before changing pipeline or stage.'
+  param :deal_id,
+        type: :integer,
+        desc: 'Optional CRM deal ID to update. Use the ID returned by get_deal/search_deals when updating a specific deal; ' \
+              'omit for the current conversation deal.',
+        required: false
   param :title, type: :string, desc: 'Updated deal title', required: false
   param :description, type: :string, desc: 'Updated deal description', required: false
-  param :pipeline_id, type: :number, desc: 'Pipeline ID for moving the deal; usually pair with stage_id', required: false
+  param :pipeline_id,
+        type: :integer,
+        desc: 'Positive pipeline ID for moving the deal. Omit when unknown; usually pair with stage_id.',
+        required: false
   param :pipeline_code, type: :string, desc: 'Pipeline code for moving the deal; optional alternative to pipeline_id', required: false
-  param :stage_id, type: :number, desc: 'Target stage ID from list_deal_stages/list_deal_pipelines', required: false
+  param :stage_id, type: :integer, desc: 'Positive target stage ID from list_deal_stages/list_deal_pipelines. Omit when unknown.', required: false
   param :stage_name, type: :string, desc: 'Target stage name; only use with pipeline_id/pipeline_code if names repeat', required: false
   param :stage_code, type: :string, desc: 'Target stage code; only use with pipeline_id/pipeline_code if codes repeat', required: false
   param :amount,
         type: :string,
-        desc: 'Updated amount as a whole number in major currency units. Use 200 for 200 KZT; do not multiply by 100. Decimal zero forms like 200.00 are accepted; fractional amounts like 200.50 are rejected.',
+        desc: 'Updated amount as a whole number in major currency units. Use 200 for 200 KZT; do not multiply by 100. ' \
+              'Decimal zero forms like 200.00 are accepted; fractional amounts like 200.50 are rejected.',
         required: false
   param :currency, type: :string, desc: 'Updated ISO currency code', required: false
   param :expected_close_on, type: :string, desc: 'Updated close date in YYYY-MM-DD format', required: false
@@ -24,10 +34,11 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
               'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
-  def execute(title: nil, description: nil, amount: nil, currency: nil, expected_close_on: nil,
+  def execute(deal_id: nil, title: nil, description: nil, amount: nil, currency: nil, expected_close_on: nil,
               win_probability: nil, custom_attributes: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil,
               stage_name: nil, stage_code: nil)
     deal = deal_operations.update_current_deal(
+      deal_id: deal_id,
       title: title,
       description: description,
       amount: amount,

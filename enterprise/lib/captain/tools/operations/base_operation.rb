@@ -59,6 +59,14 @@ class Captain::Tools::Operations::BaseOperation
     raise ArgumentError, "#{field_name} must be valid JSON"
   end
 
+  def optional_positive_id(value)
+    Captain::Tools::InputNormalizer.optional_positive_id(value)
+  end
+
+  def required_positive_id(value, field_name:)
+    Captain::Tools::InputNormalizer.required_positive_id(value, field_name: field_name)
+  end
+
   def with_idempotent_creation(tool_id, params)
     cached_record = Captain::ToolExecutionIdempotency.fetch_record(
       assistant: assistant,

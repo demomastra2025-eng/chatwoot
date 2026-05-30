@@ -1,7 +1,6 @@
 class Captain::Documents::ResponseBuilderJob < ApplicationJob
   queue_as :low
 
-  TEXT_CHUNK_SIZE = 50_000
   MAX_TEXT_CHUNKS = 20
 
   def perform(document, options = {})
@@ -36,7 +35,7 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
   end
 
   def generate_text_faqs(document)
-    chunks = text_chunks(document.faq_generation_text)
+    chunks = text_chunks(document.faq_generation_text, document)
     return [] if chunks.blank?
 
     faqs = chunks.each_with_index.flat_map do |chunk, index|
@@ -52,8 +51,10 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
     deduplicate_faqs(faqs)
   end
 
-  def text_chunks(text)
-    text.to_s.scan(Regexp.new(".{1,#{self.class::TEXT_CHUNK_SIZE}}", Regexp::MULTILINE)).first(MAX_TEXT_CHUNKS)
+  def text_chunks(text, document)
+    chunk_size = Captain::KnowledgeSettings.chunk_size_for(document.account)
+
+    text.to_s.scan(Regexp.new(".{1,#{chunk_size}}", Regexp::MULTILINE)).first(MAX_TEXT_CHUNKS)
   end
 
   def store_text_generation_metadata(document, chunks)
@@ -62,6 +63,7 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
         'faq_generation' => {
           'method' => 'text_chunks',
           'chunks_processed' => chunks.size,
+          'chunk_size' => Captain::KnowledgeSettings.chunk_size_for(document.account),
           'source_text_bytes' => document.faq_generation_text.to_s.bytesize,
           'timestamp' => Time.current.iso8601
         }

@@ -13,15 +13,21 @@
 #  updated_at        :datetime         not null
 #  account_id        :bigint           not null
 #  assistant_id      :bigint           not null
+#  document_chunk_id :bigint
 #  documentable_id   :bigint
 #
 # Indexes
 #
-#  idx_cap_asst_resp_on_documentable                  (documentable_id,documentable_type)
-#  index_captain_assistant_responses_on_account_id    (account_id)
-#  index_captain_assistant_responses_on_assistant_id  (assistant_id)
-#  index_captain_assistant_responses_on_status        (status)
-#  vector_idx_knowledge_entries_embedding             (embedding) USING ivfflat
+#  idx_cap_asst_resp_on_documentable                       (documentable_id,documentable_type)
+#  index_captain_assistant_responses_on_account_id         (account_id)
+#  index_captain_assistant_responses_on_assistant_id       (assistant_id)
+#  index_captain_assistant_responses_on_document_chunk_id  (document_chunk_id)
+#  index_captain_assistant_responses_on_status             (status)
+#  vector_idx_knowledge_entries_embedding                  (embedding) USING ivfflat
+#
+# Foreign Keys
+#
+#  fk_rails_...  (document_chunk_id => captain_document_chunks.id) ON DELETE => nullify
 #
 class Captain::AssistantResponse < ApplicationRecord
   self.table_name = 'captain_assistant_responses'

@@ -99,6 +99,7 @@ RSpec.describe 'Conversations API', type: :request do
 
         expect(response).to have_http_status(:ok)
         expect(response.parsed_body['id']).to eq(conversation.display_id)
+        expect(response.parsed_body.dig('meta', 'current_user_participant')).to be true
       end
     end
   end

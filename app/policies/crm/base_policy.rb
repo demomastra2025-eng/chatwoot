@@ -9,39 +9,31 @@ class Crm::BasePolicy < ApplicationPolicy
 
   private
 
-  def administrator_access?
-    permission_tokens.include?('administrator')
-  end
-
-  def plain_agent_access?
-    permission_tokens.include?('agent')
-  end
-
   def settings_view_access?
-    administrator_access? || permission_tokens.include?('crm_settings_view') || permission_tokens.include?('crm_settings_manage')
+    administrator_access? || has_permission?('crm_settings_view', 'crm_settings_manage')
   end
 
   def settings_manage_access?
-    administrator_access? || permission_tokens.include?('crm_settings_manage')
+    administrator_access? || has_permission?('crm_settings_manage')
   end
 
   def deal_view_access?
-    administrator_access? || permission_tokens.include?('crm_deal_view') || permission_tokens.include?('crm_deal_manage')
+    administrator_access? || plain_agent_access? || has_permission?('crm_deal_view', 'crm_deal_manage')
   end
 
   def deal_manage_access?
-    administrator_access? || permission_tokens.include?('crm_deal_manage')
+    administrator_access? || plain_agent_access? || has_permission?('crm_deal_manage')
   end
 
   def task_view_access?
-    administrator_access? || permission_tokens.include?('crm_task_view') || permission_tokens.include?('crm_task_manage')
+    administrator_access? || plain_agent_access? || has_permission?('crm_task_view', 'crm_task_manage')
   end
 
   def task_manage_access?
-    administrator_access? || permission_tokens.include?('crm_task_manage')
+    administrator_access? || plain_agent_access? || has_permission?('crm_task_manage')
   end
 
-  def permission_tokens
-    Array(account_user&.permissions)
+  def crm_record_view_access?
+    deal_view_access? || task_view_access?
   end
 end

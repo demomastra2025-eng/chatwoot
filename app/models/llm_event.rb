@@ -19,18 +19,15 @@
 #  payload                 :jsonb            not null
 #  payload_bytes           :integer
 #  payload_truncated       :boolean          default(FALSE), not null
-#  project_case_id         :string
 #  prompt_tokens           :integer
 #  provider                :string
 #  queue_wait_ms           :integer
 #  reason                  :string
-#  request_id              :string
 #  retry_count             :integer
 #  runtime_mode            :string
 #  schema_invalid          :boolean          default(FALSE), not null
 #  schema_invalid_count    :integer
 #  schema_name             :string
-#  session_id              :string
 #  source                  :string
 #  status                  :string
 #  thinking_tokens         :integer
@@ -38,7 +35,6 @@
 #  tool_failure            :boolean          default(FALSE), not null
 #  tool_name               :string
 #  total_tokens            :integer
-#  trace_id                :string
 #  created_at              :datetime         not null
 #  updated_at              :datetime         not null
 #  account_id              :integer
@@ -46,6 +42,10 @@
 #  conversation_display_id :integer
 #  conversation_id         :bigint
 #  copilot_thread_id       :bigint
+#  project_case_id         :string
+#  request_id              :string
+#  session_id              :string
+#  trace_id                :string
 #
 # Indexes
 #
@@ -55,11 +55,11 @@
 #  index_llm_events_on_account_model_created_at         (account_id,model,created_at)
 #  index_llm_events_on_account_project_case_created_at  (account_id,project_case_id,created_at) WHERE (project_case_id IS NOT NULL)
 #  index_llm_events_on_account_request_created_at       (account_id,request_id,created_at) WHERE (request_id IS NOT NULL)
-#  index_llm_events_on_account_session_created_at  (account_id,session_id,created_at) WHERE (session_id IS NOT NULL)
-#  index_llm_events_on_account_trace_created_at    (account_id,trace_id,created_at) WHERE (trace_id IS NOT NULL)
-#  index_llm_events_on_assistant_created_at        (assistant_id,created_at)
-#  index_llm_events_on_conversation_created_at     (conversation_id,created_at)
-#  index_llm_events_on_event_name_created_at       (event_name,created_at)
+#  index_llm_events_on_account_session_created_at       (account_id,session_id,created_at) WHERE (session_id IS NOT NULL)
+#  index_llm_events_on_account_trace_created_at         (account_id,trace_id,created_at) WHERE (trace_id IS NOT NULL)
+#  index_llm_events_on_assistant_created_at             (assistant_id,created_at)
+#  index_llm_events_on_conversation_created_at          (conversation_id,created_at)
+#  index_llm_events_on_event_name_created_at            (event_name,created_at)
 #
 
 class LlmEvent < ApplicationRecord

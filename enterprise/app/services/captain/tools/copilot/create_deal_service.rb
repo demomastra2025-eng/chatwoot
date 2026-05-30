@@ -6,9 +6,15 @@ class Captain::Tools::Copilot::CreateDealService < Captain::Tools::Copilot::Base
   description 'Create a CRM deal from the current conversation context. Use list_deal_pipelines/list_deal_stages first when a specific pipeline or stage is needed.'
   param :title, type: :string, desc: 'Deal title', required: true
   param :description, type: :string, desc: 'Deal description', required: false
-  param :pipeline_id, type: :number, desc: 'Pipeline ID from list_deal_pipelines; optional, defaults to account default pipeline', required: false
+  param :pipeline_id,
+        type: :integer,
+        desc: 'Positive pipeline ID from list_deal_pipelines. Omit when unknown; defaults to account default pipeline.',
+        required: false
   param :pipeline_code, type: :string, desc: 'Pipeline code from list_deal_pipelines; optional alternative to pipeline_id', required: false
-  param :stage_id, type: :number, desc: 'Stage ID from list_deal_stages/list_deal_pipelines; preferred when selecting a stage', required: false
+  param :stage_id,
+        type: :integer,
+        desc: 'Positive stage ID from list_deal_stages/list_deal_pipelines. Omit when unknown; preferred when selecting a stage.',
+        required: false
   param :stage_name, type: :string, desc: 'Stage name; only use with pipeline_id/pipeline_code if names repeat', required: false
   param :stage_code, type: :string, desc: 'Stage code; only use with pipeline_id/pipeline_code if codes repeat', required: false
   param :amount,

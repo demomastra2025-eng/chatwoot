@@ -54,7 +54,7 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
       end
 
       it 'persists source text chunks and links generated responses to their source chunk' do
-        stub_const('Captain::Documents::ResponseBuilderJob::TEXT_CHUNK_SIZE', 12)
+        allow(Captain::KnowledgeSettings).to receive(:chunk_size_for).with(document.account).and_return(12)
         document.update!(source_text: 'Alpha chunk. Beta chunk.', content: 'preview')
 
         allow(Captain::Llm::FaqGeneratorService).to receive(:new) do |chunk, language, account_id:|
@@ -91,7 +91,7 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
       end
 
       it 'keeps first chunk provenance when duplicate generated questions are deduplicated' do
-        stub_const('Captain::Documents::ResponseBuilderJob::TEXT_CHUNK_SIZE', 12)
+        allow(Captain::KnowledgeSettings).to receive(:chunk_size_for).with(document.account).and_return(12)
         document.update!(source_text: 'Alpha chunk. Beta chunk.', content: 'preview')
 
         allow(Captain::Llm::FaqGeneratorService).to receive(:new) do |chunk, _language, account_id:|

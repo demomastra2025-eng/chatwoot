@@ -49,6 +49,75 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   let(:tool) { ToolWrapperSpecTool.new }
   let(:wrapper) { described_class.new(tool, context_wrapper) }
 
+  it 'unwraps provider tool call envelopes before tracing and execution' do
+    result = wrapper.call(
+      'result' => {
+        'name' => 'tool_wrapper_spec',
+        'parameters' => { 'result' => 'ok from envelope' }
+      }
+    )
+
+    expect(result).to eq('ok from envelope')
+    expect(events).to include([:start, 'tool_wrapper_spec', { result: 'ok from envelope' }])
+  end
+
+  it 'unwraps top-level provider tool call envelopes' do
+    result = wrapper.call(
+      'name' => 'tool_wrapper_spec',
+      'parameters' => { 'result' => 'ok from top-level envelope' }
+    )
+
+    expect(result).to eq('ok from top-level envelope')
+    expect(events).to include([:start, 'tool_wrapper_spec', { result: 'ok from top-level envelope' }])
+  end
+
+  it 'returns a controlled error when a tool call is not bound to the current agent' do
+    context_wrapper.context[:current_agent] = 'scenario_agent'
+    context_wrapper.context[:captain_v2_bound_tool_gate] = true
+    context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] = {
+      'scenario_agent' => ['allowed_tool']
+    }
+
+    result = wrapper.call({})
+
+    expect(result).to eq('ERROR: Tool is not available for the current agent runtime')
+    expect(events).to include([:start, 'tool_wrapper_spec', {}])
+    expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_spec'])
+    expect(events.last[2]).to include(
+      success: false,
+      error: 'Tool is not available for the current agent runtime',
+      retryable: false
+    )
+  end
+
+  it 'fails closed when the runtime bound-tool gate has no ids for the current agent' do
+    context_wrapper.context[:current_agent] = 'scenario_agent'
+    context_wrapper.context[:captain_v2_bound_tool_gate] = true
+
+    result = wrapper.call({})
+
+    expect(result).to eq('ERROR: Tool is not available for the current agent runtime')
+    expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_spec'])
+    expect(events.last[2]).to include(
+      success: false,
+      error: 'Tool is not available for the current agent runtime',
+      retryable: false
+    )
+  end
+
+  it 'does not fall back to flat bound ids when current agent has a stale scoped catalog' do
+    context_wrapper.context[:current_agent] = 'stale_agent'
+    context_wrapper.context[:captain_v2_bound_tool_gate] = true
+    context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] = {
+      'current_agent' => ['tool_wrapper_spec']
+    }
+    context_wrapper.context[:captain_v2_bound_tool_ids] = ['tool_wrapper_spec']
+
+    result = wrapper.call({})
+
+    expect(result).to eq('ERROR: Tool is not available for the current agent runtime')
+  end
+
   it 'returns a controlled tool error when arguments are blocked by safety policy' do
     allow(Llm::SafetyPolicy).to receive(:check!).and_raise(
       Llm::SafetyPolicy::UnsafeContentError.new(

@@ -26,8 +26,7 @@
 #  index_llm_eval_runs_on_account_id_and_created_at  (account_id,created_at)
 #  index_llm_eval_runs_on_account_id_and_status      (account_id,status)
 #  index_llm_eval_runs_on_user_id                    (user_id)
-#  index_llm_eval_runs_one_active_live_per_account   (account_id) UNIQUE
-#    WHERE status IN ('queued', 'running') AND metadata queued_llm_model_run is true
+#  index_llm_eval_runs_one_active_live_per_account   (account_id) UNIQUE WHERE (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))
 #
 # Foreign Keys
 #

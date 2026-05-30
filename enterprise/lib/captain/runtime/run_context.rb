@@ -12,12 +12,13 @@ module Captain::Runtime
     end
 
     class Usage
-      attr_accessor :input_tokens, :output_tokens, :total_tokens
+      attr_accessor :input_tokens, :output_tokens, :total_tokens, :thinking_tokens
 
       def initialize
         @input_tokens = 0
         @output_tokens = 0
         @total_tokens = 0
+        @thinking_tokens = 0
       end
 
       def add(response)
@@ -25,10 +26,12 @@ module Captain::Runtime
 
         input = response.input_tokens || 0
         output = response.output_tokens || 0
+        thinking = response.respond_to?(:thinking_tokens) ? response.thinking_tokens.to_i : 0
 
         @input_tokens += input
         @output_tokens += output
         @total_tokens += input + output
+        @thinking_tokens += thinking
       end
     end
   end

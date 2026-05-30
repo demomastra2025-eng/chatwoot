@@ -1,22 +1,22 @@
 class CompanyPolicy < ApplicationPolicy
   def index?
-    true
+    company_access?
   end
 
   def search?
-    true
+    company_access?
   end
 
   def show?
-    true
+    company_access?
   end
 
   def create?
-    true
+    company_access?
   end
 
   def update?
-    true
+    company_access?
   end
 
   def avatar?
@@ -28,6 +28,16 @@ class CompanyPolicy < ApplicationPolicy
   end
 
   def destroy?
-    @account_user.administrator?
+    companies_enabled? && administrator_access?
+  end
+
+  private
+
+  def company_access?
+    companies_enabled? && contact_access?
+  end
+
+  def companies_enabled?
+    account&.feature_enabled?('companies')
   end
 end

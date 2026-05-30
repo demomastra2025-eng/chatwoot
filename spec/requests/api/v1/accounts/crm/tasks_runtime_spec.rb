@@ -142,7 +142,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
       key: 'task_tags',
       label: 'Task tags',
       field_type: 'multiselect',
-      options: ['VIP', 'Docs']
+      options: %w[VIP Docs]
     )
 
     matching_task = create(
@@ -213,6 +213,29 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(status.tasks.kept.order(:position, :id).pluck(:id)).to eq(
       [third_task.id, first_task.id, second_task.id]
     )
+  end
+
+  it 'allows plain agents to change task assignee' do
+    agent = create(:user, account: account, role: :agent)
+    next_assignee = create(:user, account: account, role: :agent)
+    task = create(
+      :crm_task,
+      account: account,
+      assignee: agent,
+      status: account.crm_task_statuses.find_by!(code: 'todo')
+    )
+
+    patch "#{path}/#{task.id}",
+          params: {
+            assignee_id: next_assignee.id,
+            lock_version: task.lock_version
+          },
+          headers: agent.create_new_auth_token,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'assignee_id')).to eq(next_assignee.id)
+    expect(task.reload.assignee_id).to eq(next_assignee.id)
   end
 
   it 'blocks moving a task to done when required custom fields are missing' do

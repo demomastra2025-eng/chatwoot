@@ -11,9 +11,15 @@ class Captain::ResponseSchema < RubyLLM::Schema
       'AI handoff message mode is enabled. Return an empty string when no handoff message should be sent.'
     ].join
   ).freeze
+  REASONING_DESCRIPTION = (
+    [
+      'Required non-empty, brief user-visible outcome rationale based on facts and tool results. ',
+      'Do not include hidden chain-of-thought.'
+    ].join
+  ).freeze
 
   string :response, description: 'The message to send to the user'
-  string :reasoning, description: "Agent's thought process"
+  string :reasoning, description: REASONING_DESCRIPTION
   array :artifact_ids, of: :string, description: ARTIFACT_IDS_DESCRIPTION
   string :handoff_message, description: HANDOFF_MESSAGE_DESCRIPTION
 end

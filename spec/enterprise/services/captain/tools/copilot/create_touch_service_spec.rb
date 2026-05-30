@@ -38,6 +38,21 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
     )
   end
 
+  it 'normalizes the default agent call to a relative touch from creation time when no anchor is provided' do
+    freeze_time do
+      payload = JSON.parse(execute_confirmed(body: 'Ping client soon', relative_offset_minutes: 4))
+      touch = Reminder.last
+
+      expect(payload).to include('timing_mode' => 'relative')
+      expect(payload.dig('touch', 'timing_mode')).to eq('relative')
+      expect(payload.dig('touch', 'relative_anchor')).to eq('touch.created_at')
+      expect(touch.timing_mode).to eq('relative')
+      expect(touch.relative_anchor).to eq('touch.created_at')
+      expect(touch.relative_offset_seconds).to eq(4.minutes.to_i)
+      expect(touch.scheduled_at).to eq(4.minutes.from_now)
+    end
+  end
+
   it 'passes selected attachments to the reminder pipeline' do
     signed_blob_id = account_owned_blob.signed_id
 

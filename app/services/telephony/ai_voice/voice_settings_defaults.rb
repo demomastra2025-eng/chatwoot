@@ -8,6 +8,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'api_version' => 'v1beta',
     'voice' => 'sulafat',
     'language' => 'ru-KZ',
+    'voice_character_prompt' => '',
     'temperature' => 0.3,
     'max_output_tokens' => 1024,
     'max_duration_sec' => 900,

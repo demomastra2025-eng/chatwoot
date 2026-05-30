@@ -2,30 +2,39 @@
 #
 # Table name: telephony_routing_policies
 #
-#  id                 :bigint           not null, primary key
-#  ai_app_ref         :string
-#  ai_enabled         :boolean          default(FALSE), not null
-#  business_hours     :jsonb            not null
-#  fallback_message   :text
-#  fallback_mode      :string           default("reject"), not null
-#  mode               :string           default("operator"), not null
-#  operator_agent_aor :string
-#  operator_agent_ref :string
-#  settings           :jsonb            not null
-#  created_at         :datetime         not null
-#  updated_at         :datetime         not null
-#  account_id         :bigint           not null
-#  number_binding_id  :bigint           not null
+#  id                   :bigint           not null, primary key
+#  ai_app_ref           :string
+#  ai_deployment_mode   :string           default("fonoster_managed"), not null
+#  ai_enabled           :boolean          default(FALSE), not null
+#  ai_voice_settings    :jsonb            not null
+#  business_hours       :jsonb            not null
+#  fallback_ai_app_ref  :string
+#  fallback_message     :text
+#  fallback_mode        :string           default("reject"), not null
+#  fonoster_ai_app_ref  :string
+#  mode                 :string           default("operator"), not null
+#  onelink_ai_app_ref   :string
+#  operator_agent_aor   :string
+#  operator_agent_ref   :string
+#  settings             :jsonb            not null
+#  created_at           :datetime         not null
+#  updated_at           :datetime         not null
+#  account_id           :bigint           not null
+#  captain_assistant_id :bigint
+#  number_binding_id    :bigint           not null
 #
 # Indexes
 #
-#  index_telephony_routing_policies_on_account_id         (account_id)
-#  index_telephony_routing_policies_on_account_mode       (account_id,mode)
-#  index_telephony_routing_policies_on_number_binding_id  (number_binding_id) UNIQUE
+#  index_telephony_routing_policies_on_account_ai_deployment  (account_id,ai_deployment_mode)
+#  index_telephony_routing_policies_on_account_id             (account_id)
+#  index_telephony_routing_policies_on_account_mode           (account_id,mode)
+#  index_telephony_routing_policies_on_captain_assistant_id   (captain_assistant_id)
+#  index_telephony_routing_policies_on_number_binding_id      (number_binding_id) UNIQUE
 #
 # Foreign Keys
 #
 #  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (captain_assistant_id => captain_assistants.id)
 #  fk_rails_...  (number_binding_id => telephony_number_bindings.id)
 #
 class Telephony::RoutingPolicy < ApplicationRecord

@@ -37,11 +37,22 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
   end
 
-  it 'rejects plain agents from settings endpoints' do
+  it 'allows plain agents to read deal runtime references' do
     get path, headers: agent.create_new_auth_token, as: :json
 
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 0, 'code')).to eq('sales_pipeline')
+  end
+
+  it 'rejects plain agents from configuring pipelines' do
+    post path,
+         params: { name: 'Enterprise Sales', code: 'enterprise_sales', default: true },
+         headers: agent.create_new_auth_token,
+         as: :json
+
     expect(response).to have_http_status(:unauthorized)
-    expect(account.crm_pipelines).to be_empty
+    expect(account.crm_pipelines.where(code: 'enterprise_sales')).not_to exist
   end
 
   it 'creates a pipeline for administrators' do

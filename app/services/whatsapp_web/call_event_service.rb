@@ -49,12 +49,21 @@ class WhatsappWeb::CallEventService
       activity_at: event_time
     ).perform
 
+    return conversation if duplicate_terminal_event?(conversation)
+
     sync_conversation!(conversation)
     sync_message!(conversation)
     conversation
   end
 
   private
+
+  def duplicate_terminal_event?(conversation)
+    return false unless TERMINAL_STATUSES.include?(normalized_status)
+
+    existing_status = conversation.messages.voice_calls.find_by(source_id: call_id)&.content_attributes&.dig('data', 'status')
+    TERMINAL_STATUSES.include?(existing_status)
+  end
 
   def sync_conversation!(conversation)
     attrs = (conversation.additional_attributes || {}).deep_dup
@@ -199,20 +208,15 @@ class WhatsappWeb::CallEventService
 
   def event_time
     @event_time ||= begin
-      candidates = [
+      parsed_time = [
         payload[:timestamp],
         payload[:t],
         payload[:date],
         payload[:eventTime],
         payload[:messageTimestamp]
-      ]
+      ].filter_map { |value| parse_time(value) }.first
 
-      candidates.each do |value|
-        parsed = parse_time(value)
-        return parsed if parsed.present?
-      end
-
-      Time.current
+      parsed_time || Time.current
     end
   end
 

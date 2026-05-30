@@ -242,6 +242,32 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false })
     end
 
+    it 'surfaces native OpenRouter reasoning from runtime history' do
+      result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => 'Done', 'reasoning' => 'Structured summary' },
+        context: {
+          current_agent: 'assistant_agent',
+          conversation_history: [
+            { role: :user, content: 'Update the deal' },
+            { role: :assistant, content: 'Done', thinking: 'Native OpenRouter reasoning' }
+          ]
+        },
+        error: nil
+      )
+      allow(mock_runner).to receive(:run).and_return(result)
+
+      response = service.generate_response(message_history: message_history)
+
+      expect(response).to include(
+        'response' => 'Done',
+        'reasoning' => 'Native OpenRouter reasoning',
+        'structured_reasoning' => 'Structured summary',
+        'agent_name' => 'assistant_agent',
+        'handoff_tool_called' => false
+      )
+    end
+
     it 'surfaces the V2 handoff tool flag from the runner context' do
       result_context = { captain_v2_handoff_tool_called: true }
       result = instance_double(Captain::Runtime::Result, output: { 'response' => '' }, context: result_context, error: nil)
@@ -344,7 +370,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
-    it 'does not retry blank structured output after non-handoff tools completed' do
+    it 'uses a deterministic public fallback for blank structured output after non-handoff tools completed' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -357,14 +383,33 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       result = service.generate_response(message_history: message_history)
 
       expect(mock_runner).to have_received(:run).once
-      expect(result).to eq(
-        {
-          'response' => described_class::PROVIDER_ERROR_RESPONSE,
-          'reasoning' => 'Provider error occurred: Assistant runtime returned a blank response',
-          'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
-          'error_message' => 'Assistant runtime returned a blank response'
-        }
+      expect(result).to include(
+        'response' => 'Request processed. Completed actions: Create Deal ×1.',
+        'reasoning' => 'Final assistant response failed after completed tool actions; a deterministic tool-result fallback was used.',
+        'agent_name' => 'scenario_agent',
+        'handoff_tool_called' => false,
+        'schema_fallback' => true,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
+        'error_message' => 'Assistant runtime returned a blank response'
       )
+    end
+
+    it 'does not expose unknown raw tool identifiers in deterministic public fallback text' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => '', 'handoff_message' => '' },
+          context: {
+            current_agent: 'scenario_agent',
+            captain_v2_completed_tool_results: [{ tool_name: 'mcp__internal_server__mutate_secret_thing', success: true }]
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result['response']).to eq('Request processed. Completed actions: tool action ×1.')
     end
 
     it 'blocks model-invented response cancellation instead of silently suppressing the reply' do
@@ -400,7 +445,71 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
-    it 'blocks hallucinated artifact ids when no tool completed' do
+    it 'blocks non-text public responses instead of sending schema artifacts to the customer' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => true, 'reasoning' => 'Checked the request.' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'error_message' => 'Model output returned invalid public response true'
+      )
+    end
+
+    it 'blocks schema placeholder public responses' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'response', 'reasoning' => 'Need to search CRM deals.' },
+          context: { current_agent: 'scenario_111_crm_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'error_message' => 'Model output returned invalid public response "response"'
+      )
+    end
+
+    it 'uses deterministic public fallback for semantic output errors after successful tools' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'response', 'reasoning' => 'Need to search CRM deals.' },
+          context: {
+            current_agent: 'scenario_111_crm_agent',
+            captain_v2_completed_tool_results: [{ tool_name: 'search_deals', success: true }]
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(result).to include(
+        'response' => 'Request processed. Completed actions: Search Deals ×1.',
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'schema_fallback' => true,
+        'tool_result_fallback' => true
+      )
+    end
+
+    it 'drops hallucinated artifact ids when no tool completed' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -418,18 +527,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(mock_runner).to have_received(:run).once
       expect(result).to include(
-        'response' => described_class::PROVIDER_ERROR_RESPONSE,
-        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
-        'error_message' => 'Model output referenced artifact_ids without a completed tool result'
+        'response' => 'Here is the file.',
+        'artifact_ids' => []
       )
-      expect(invalid_events.map(&:payload)).to contain_exactly(
-        hash_including(
-          'schema_name' => 'Captain::ResponseSchema',
-          'semantic_error_code' => 'artifact_ids_without_tool',
-          'artifact_ids_count' => 1,
-          'completed_tools_count' => 0
-        )
-      )
+      expect(invalid_events).to be_empty
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
@@ -467,7 +568,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
-    it 'blocks artifact ids that were not exposed by completed tool results' do
+    it 'drops artifact ids that were not exposed by completed tool results' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -488,23 +589,15 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       result = service.generate_response(message_history: message_history)
 
       expect(result).to include(
-        'response' => described_class::PROVIDER_ERROR_RESPONSE,
-        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
-        'error_message' => 'Model output referenced artifact_ids not exposed by completed tool results'
+        'response' => 'Here is the file.',
+        'artifact_ids' => []
       )
-      expect(invalid_events.map(&:payload)).to contain_exactly(
-        hash_including(
-          'semantic_error_code' => 'invalid_artifact_ids',
-          'artifact_ids_count' => 1,
-          'available_artifact_ids_count' => 1,
-          'completed_tools_count' => 1
-        )
-      )
+      expect(invalid_events).to be_empty
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
-    it 'blocks artifact ids when completed tools exposed no artifact ids' do
+    it 'drops artifact ids when completed tools exposed no artifact ids' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -520,9 +613,33 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       result = service.generate_response(message_history: message_history)
 
       expect(result).to include(
-        'response' => described_class::PROVIDER_ERROR_RESPONSE,
-        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
-        'error_message' => 'Model output referenced artifact_ids not exposed by completed tool results'
+        'response' => 'Here is the file.',
+        'artifact_ids' => []
+      )
+    end
+
+    it 'keeps exposed artifact ids and drops model-invented artifact ids' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: {
+            'response' => 'Here is the file.',
+            'artifact_ids' => %w[opaque-tool-artifact-id hallucinated-artifact-id]
+          },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_names: ['list_captain_documents'],
+            captain_v2_artifact_ids: ['opaque-tool-artifact-id']
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => 'Here is the file.',
+        'artifact_ids' => ['opaque-tool-artifact-id']
       )
     end
 
@@ -684,7 +801,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
         expect(result).to eq({
                                'response' => 'Simple string response',
-                               'reasoning' => 'Processed by agent',
+                               'reasoning' => '',
                                'agent_name' => nil,
                                'handoff_tool_called' => false
                              })
@@ -712,6 +829,30 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                'error_class' => 'StandardError',
                                'error_message' => 'Test error'
                              })
+      end
+
+      it 'uses deterministic public fallback when the runner raises after a successful tool callback' do
+        tool_complete_callbacks = []
+        context_wrapper = Struct.new(:context).new({ current_agent: 'crm_agent' })
+        allow(mock_runner).to receive(:on_tool_complete) do |&block|
+          tool_complete_callbacks << block
+          mock_runner
+        end
+        allow(mock_runner).to receive(:run) do
+          tool_complete_callbacks.each do |callback|
+            callback.call('update_deal', Captain::ToolResult.success(message: 'ok'), context_wrapper)
+          end
+          raise error
+        end
+
+        result = service.generate_response(message_history: message_history)
+
+        expect(result).to include(
+          'response' => 'Request processed. Completed actions: Update Deal ×1.',
+          'error_class' => 'StandardError',
+          'error_message' => 'Test error',
+          'tool_result_fallback' => true
+        )
       end
 
       it 'logs error details' do
@@ -760,6 +901,40 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             'error_class' => 'RubyLLM::RateLimitError',
             'error_message' => 'Quota exceeded'
           }
+        )
+      end
+
+      it 'uses a deterministic public fallback when final response generation fails after successful tools' do
+        schema_error = Llm::StructuredOutputPolicy::InvalidStructuredOutputError.new(
+          'Captain response reasoning must be present for schema Captain::ResponseSchema'
+        )
+        allow(mock_runner).to receive(:run).and_return(
+          instance_double(
+            Captain::Runtime::Result,
+            output: nil,
+            context: {
+              current_agent: 'crm_agent',
+              captain_v2_completed_tool_names: %w[search_deals update_deal update_deal],
+              captain_v2_completed_tool_results: [
+                { tool_name: 'search_deals', success: true },
+                { tool_name: 'update_deal', success: true },
+                { tool_name: 'update_deal', success: true }
+              ]
+            },
+            error: schema_error
+          )
+        )
+
+        result = service.generate_response(message_history: message_history)
+
+        expect(result).to include(
+          'response' => 'Request processed. Completed actions: Search Deals ×1, Update Deal ×2.',
+          'reasoning' => 'Final assistant response failed after completed tool actions; a deterministic tool-result fallback was used.',
+          'agent_name' => 'crm_agent',
+          'handoff_tool_called' => false,
+          'schema_fallback' => true,
+          'error_class' => 'Llm::StructuredOutputPolicy::InvalidStructuredOutputError',
+          'error_message' => 'Captain response reasoning must be present for schema Captain::ResponseSchema'
         )
       end
     end
@@ -1169,6 +1344,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
 
       expect(context_wrapper.context[:captain_v2_completed_tool_names]).to eq(['list_captain_documents'])
+      expect(context_wrapper.context[:captain_v2_completed_tool_results]).to contain_exactly(
+        hash_including(
+          tool_name: 'list_captain_documents',
+          success: true,
+          data_type: 'hash'
+        )
+      )
       expect(context_wrapper.context[:captain_v2_artifact_ids]).to contain_exactly(
         'doc-artifact-1',
         'doc-artifact-2',

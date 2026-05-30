@@ -13,7 +13,7 @@ class BulkActionsJob < ApplicationJob
     Current.user = user
     @params = params.deep_symbolize_keys
     @bulk_action_run = account.bulk_action_runs.find_by(id: bulk_action_run_id) if bulk_action_run_id.present?
-    @records = records_to_updated(params[:ids])
+    @records = records_to_updated(@params[:ids])
     @bulk_action_run&.start!(total_count: records.count)
     bulk_update
     @bulk_action_run&.complete!

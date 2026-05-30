@@ -115,6 +115,14 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     raise ArgumentError, "#{field_name} must contain integer IDs"
   end
 
+  def optional_positive_id(value)
+    Captain::Tools::InputNormalizer.optional_positive_id(value)
+  end
+
+  def required_positive_id(value, field_name:)
+    Captain::Tools::InputNormalizer.required_positive_id(value, field_name: field_name)
+  end
+
   def parse_datetime(value, field_name:, required: false)
     if value.blank?
       raise ArgumentError, "#{field_name} is required" if required

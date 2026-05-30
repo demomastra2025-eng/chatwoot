@@ -38,4 +38,17 @@ RSpec.describe Captain::Tools::CreateDealTool, type: :model do
     expect(payload).to include('deal_id' => payload.dig('deal', 'id'), 'pipeline_id' => pipeline.id, 'stage_id' => stage.id)
     expect(payload['deal']).to include('pipeline_id' => pipeline.id, 'stage_id' => stage.id)
   end
+
+  it 'treats zero pipeline and stage ID placeholders as omitted selectors' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    default_pipeline = create(:crm_pipeline, account: account, default: true)
+    default_stage = create(:crm_stage, account: account, pipeline: default_pipeline, default: true, position: 1, color: '#111111')
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
+
+    payload = JSON.parse(tool.perform(tool_context, title: 'Placeholder IDs deal', pipeline_id: 0, stage_id: '0'))
+
+    expect(payload).to include('action' => 'create_deal', 'pipeline_id' => default_pipeline.id, 'stage_id' => default_stage.id)
+    expect(payload['deal']).to include('title' => 'Placeholder IDs deal', 'pipeline_id' => default_pipeline.id, 'stage_id' => default_stage.id)
+  end
 end

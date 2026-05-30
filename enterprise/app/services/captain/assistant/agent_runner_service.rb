@@ -13,6 +13,11 @@ class Captain::Assistant::AgentRunnerService
   MAX_RUNTIME_TURNS = 24
   MAX_BLANK_RESPONSE_RETRIES = 1
   MAX_TOOL_ARTIFACT_SCAN_BYTES = 100_000
+  MAX_COMPLETED_TOOL_RESULT_RECORDS = 50
+  TOOL_RESULT_FALLBACK_REASONING = [
+    'Final assistant response failed after completed tool actions; ',
+    'a deterministic tool-result fallback was used.'
+  ].join.freeze
 
   class BlankResponseError < StandardError; end
 
@@ -76,6 +81,7 @@ class Captain::Assistant::AgentRunnerService
     source_context.deep_dup.tap do |retry_context|
       retry_context.delete(:captain_v2_handoff_tool_called)
       retry_context.delete(:captain_v2_completed_tool_names)
+      retry_context.delete(:captain_v2_completed_tool_results)
     end
   end
 
@@ -137,7 +143,9 @@ class Captain::Assistant::AgentRunnerService
   def process_agent_result(result)
     Rails.logger.info "[Captain V2] Agent result: #{result.inspect}"
     handoff_tool_called = handoff_tool_called_from_context(result.context)
-    return provider_error_response(result.error, handoff_tool_called: handoff_tool_called) if result.respond_to?(:error) && result.error.present?
+    if result.respond_to?(:error) && result.error.present?
+      return final_error_response(result.error, result.context, handoff_tool_called: handoff_tool_called)
+    end
 
     if result.context&.dig(:pending_response_cancellation).present?
       return response_cancellation_response(result.context[:pending_response_cancellation], result.context[:current_agent])
@@ -150,13 +158,18 @@ class Captain::Assistant::AgentRunnerService
     end
 
     output = result.output
-    response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => 'Processed by agent' }
+    response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
     response['agent_name'] = result.context&.dig(:current_agent)
     response['handoff_tool_called'] = handoff_tool_called
-    semantic_error = semantic_output_error(response, result.context)
+    attach_native_reasoning!(response, result.context)
+    sanitize_response_artifact_ids!(response, result.context)
+    semantic_error = semantic_output_error(response)
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
 
-    return provider_error_response(blank_response_error, handoff_tool_called: handoff_tool_called) if blank_public_response?(response)
+    if blank_public_response?(response)
+      error = blank_response_error
+      return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
+    end
 
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     response
@@ -166,8 +179,35 @@ class Captain::Assistant::AgentRunnerService
     blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable')
   end
 
+  def attach_native_reasoning!(response, context)
+    native_reasoning = latest_native_reasoning(context)
+    return if native_reasoning.blank?
+
+    structured_reasoning = response['reasoning'].to_s.strip
+    response['structured_reasoning'] = structured_reasoning if structured_reasoning.present? && structured_reasoning != native_reasoning
+    response['reasoning'] = native_reasoning
+  end
+
+  def latest_native_reasoning(context)
+    Array(context&.dig(:conversation_history)).reverse_each do |message|
+      next unless message_role(message) == 'assistant'
+
+      thinking = message[:thinking] || message['thinking']
+      normalized_thinking = thinking.to_s.strip
+      return normalized_thinking if normalized_thinking.present?
+    end
+
+    nil
+  end
+
+  def message_role(message)
+    (message[:role] || message['role']).to_s
+  end
+
   def error_response(error)
     message = error.respond_to?(:message) ? error.message : error.to_s
+    fallback_response = deterministic_tool_result_fallback_response(error, @last_tool_result_context, handoff_tool_called: false)
+    return fallback_response if fallback_response
 
     {
       'response' => PROVIDER_ERROR_RESPONSE,
@@ -188,19 +228,68 @@ class Captain::Assistant::AgentRunnerService
     response
   end
 
-  def semantic_output_error_response(error, response, context, handoff_tool_called: false)
-    publish_semantic_invalid_event(error, response, context)
-    provider_error_response(error, handoff_tool_called: handoff_tool_called)
+  def final_error_response(error, context, handoff_tool_called: false)
+    deterministic_tool_result_fallback_response(error, context, handoff_tool_called: handoff_tool_called) ||
+      provider_error_response(error, handoff_tool_called: handoff_tool_called)
   end
 
-  def semantic_output_error(response, context)
+  def deterministic_tool_result_fallback_response(error, context, handoff_tool_called: false)
+    successful_records = successful_non_handoff_tool_records(context)
+    return if successful_records.blank?
+
+    publish_tool_result_fallback_event(error, context, successful_records)
+
+    {
+      'response' => tool_result_fallback_message(successful_records),
+      'reasoning' => TOOL_RESULT_FALLBACK_REASONING,
+      'agent_name' => context&.dig(:current_agent),
+      'handoff_tool_called' => handoff_tool_called,
+      'schema_fallback' => true,
+      'tool_result_fallback' => true,
+      'error_class' => error.class.name,
+      'error_message' => error.message
+    }
+  end
+
+  def publish_tool_result_fallback_event(error, context, records)
+    Llm::EventBus.publish(
+      'schema.fallback',
+      schema_name: Captain::ResponseSchema.name,
+      current_agent: context&.dig(:current_agent),
+      status: 'fallback',
+      reason: error.message,
+      error_class: error.class.name,
+      completed_tools_count: records.size,
+      completed_tool_names: tool_result_counts(records).keys,
+      fallback_kind: 'completed_tool_result_summary'
+    )
+  end
+
+  def semantic_output_error_response(error, response, context, handoff_tool_called: false)
+    publish_semantic_invalid_event(error, response, context)
+    final_error_response(error, context, handoff_tool_called: handoff_tool_called)
+  end
+
+  def semantic_output_error(response)
+    return invalid_public_response_error(response) if invalid_public_response?(response)
     return reserved_runtime_action_error(response) if reserved_runtime_action?(response)
     return provider_error_literal_error if provider_error_literal?(response)
     return invalid_handoff_output_error if invalid_handoff_output?(response)
-    return artifact_ids_without_tool_error if artifact_ids_without_completed_tool?(response, context)
-    return invalid_artifact_ids_error if invalid_artifact_ids?(response, context)
 
     nil
+  end
+
+  def invalid_public_response?(response)
+    return false unless response.key?('response')
+
+    Llm::CaptainResponseContentNormalizer.invalid_public_response?(response['response'])
+  end
+
+  def invalid_public_response_error(response)
+    SemanticOutputError.new(
+      'invalid_public_response',
+      Llm::CaptainResponseContentNormalizer.invalid_public_response_message(response['response'])
+    )
   end
 
   def reserved_runtime_action?(response)
@@ -237,27 +326,19 @@ class Captain::Assistant::AgentRunnerService
     )
   end
 
-  def artifact_ids_without_completed_tool?(response, context)
-    response_artifact_ids(response).present? && completed_tool_names(context).blank?
-  end
-
-  def artifact_ids_without_tool_error
-    SemanticOutputError.new(
-      'artifact_ids_without_tool',
-      'Model output referenced artifact_ids without a completed tool result'
-    )
-  end
-
-  def invalid_artifact_ids?(response, context)
+  def sanitize_response_artifact_ids!(response, context)
     artifact_ids = response_artifact_ids(response)
     available_ids = available_artifact_ids(context)
-    artifact_ids.present? && (artifact_ids - available_ids).present?
-  end
+    return if artifact_ids.blank?
 
-  def invalid_artifact_ids_error
-    SemanticOutputError.new(
-      'invalid_artifact_ids',
-      'Model output referenced artifact_ids not exposed by completed tool results'
+    sanitized_ids = artifact_ids & available_ids
+    return if sanitized_ids == artifact_ids
+
+    response['artifact_ids'] = sanitized_ids
+    Rails.logger.warn(
+      '[Captain V2] Dropped model artifact_ids not exposed by completed tool results ' \
+      "assistant=#{@assistant.id} conversation=#{@conversation&.id} " \
+      "requested=#{artifact_ids.size} kept=#{sanitized_ids.size} completed_tools=#{completed_tool_names(context).size}"
     )
   end
 
@@ -275,6 +356,61 @@ class Captain::Assistant::AgentRunnerService
 
   def completed_tool_names(context)
     Array(context&.dig(:captain_v2_completed_tool_names)).filter_map { |tool_name| tool_name.to_s.strip.presence }.uniq
+  end
+
+  def successful_non_handoff_tool_records(context)
+    tool_result_records(context).select do |record|
+      record[:success] && !handoff_tool_name?(record[:tool_name].to_s)
+    end
+  end
+
+  def tool_result_records(context)
+    records = Array(context&.dig(:captain_v2_completed_tool_results))
+    return records.filter_map { |record| normalized_tool_result_record(record) } if records.present?
+
+    completed_tool_names(context).map { |tool_name| { tool_name: tool_name, success: true } }
+  end
+
+  def normalized_tool_result_record(record)
+    hash = record.respond_to?(:to_h) ? record.to_h.with_indifferent_access : {}
+    tool_name = hash[:tool_name].to_s.strip.presence
+    return if tool_name.blank?
+
+    {
+      tool_name: tool_name,
+      success: ActiveModel::Type::Boolean.new.cast(hash[:success]),
+      retryable: hash[:retryable],
+      data_type: hash[:data_type],
+      message_type: hash[:message_type],
+      error_type: hash[:error_type]
+    }.compact
+  end
+
+  def tool_result_fallback_message(records)
+    "Request processed. Completed actions: #{formatted_tool_result_counts(records)}."
+  end
+
+  def formatted_tool_result_counts(records)
+    tool_result_counts(records).map do |tool_name, count|
+      "#{human_tool_name(tool_name)} ×#{count}"
+    end.join(', ')
+  end
+
+  def tool_result_counts(records)
+    records.each_with_object({}) do |record, counts|
+      tool_name = record[:tool_name].to_s
+      counts[tool_name] ||= 0
+      counts[tool_name] += 1
+    end
+  end
+
+  def human_tool_name(tool_name)
+    definition = Captain::ToolRegistry.definition_for(tool_name)
+    return definition.title.to_s if definition&.title.present?
+
+    'tool action'
+  rescue StandardError
+    'tool action'
   end
 
   def available_artifact_ids(context)
@@ -489,11 +625,51 @@ class Captain::Assistant::AgentRunnerService
 
     context_wrapper.context[:captain_v2_completed_tool_names] ||= []
     context_wrapper.context[:captain_v2_completed_tool_names] << tool_name.to_s
+    track_completed_tool_result(tool_name, tool_result, context_wrapper)
     artifact_ids = extract_tool_artifact_ids(tool_result)
-    return if artifact_ids.blank?
+    if artifact_ids.present?
+      context_wrapper.context[:captain_v2_artifact_ids] ||= []
+      context_wrapper.context[:captain_v2_artifact_ids] |= artifact_ids
+    end
+    remember_last_tool_result_context(context_wrapper)
+  end
 
-    context_wrapper.context[:captain_v2_artifact_ids] ||= []
-    context_wrapper.context[:captain_v2_artifact_ids] |= artifact_ids
+  def remember_last_tool_result_context(context_wrapper)
+    @last_tool_result_context = context_wrapper.context.deep_dup
+  rescue StandardError
+    @last_tool_result_context = context_wrapper.context
+  end
+
+  def track_completed_tool_result(tool_name, tool_result, context_wrapper)
+    normalized = Captain::ToolResult.normalize(tool_result)
+    context_wrapper.context[:captain_v2_completed_tool_results] ||= []
+    context_wrapper.context[:captain_v2_completed_tool_results] << completed_tool_result_record(tool_name, normalized)
+    context_wrapper.context[:captain_v2_completed_tool_results] =
+      context_wrapper.context[:captain_v2_completed_tool_results].last(MAX_COMPLETED_TOOL_RESULT_RECORDS)
+  end
+
+  def completed_tool_result_record(tool_name, normalized_result)
+    {
+      tool_name: tool_name.to_s,
+      success: !Captain::ToolResult.error?(normalized_result),
+      retryable: normalized_result[:retryable],
+      data_type: tool_payload_type(normalized_result[:data]),
+      message_type: tool_payload_type(normalized_result[:message]),
+      error_type: tool_payload_type(normalized_result[:error])
+    }.compact
+  end
+
+  def tool_payload_type(value)
+    case value
+    when Hash
+      'hash'
+    when Array
+      'array'
+    when NilClass
+      'nil'
+    else
+      value.class.name.demodulize.underscore
+    end
   end
 
   def extract_tool_artifact_ids(tool_result)

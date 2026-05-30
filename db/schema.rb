@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_27_123000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_29_142000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1175,10 +1175,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_27_123000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "color", default: "#F0F0F3", null: false
+    t.boolean "default", default: false, null: false
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
+    t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
+    t.check_constraint "NOT \"default\" OR active AND outcome::text = 'open'::text", name: "crm_stages_default_active_open"
   end
 
   create_table "crm_task_statuses", force: :cascade do |t|

@@ -18,4 +18,13 @@ RSpec.describe Captain::Tools::Copilot::GetCompanyService do
       'description' => 'CRM'
     )
   end
+
+  describe '#active?' do
+    it 'requires contact management permission for custom-role users' do
+      custom_role = create(:custom_role, account: account, permissions: [])
+      AccountUser.find_by!(user: user, account: account).update!(role: :agent, custom_role: custom_role)
+
+      expect(service.active?).to be false
+    end
+  end
 end
