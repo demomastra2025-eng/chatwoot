@@ -382,6 +382,7 @@ onBeforeUnmount(clearPreviewState);
         {{ t('CAMPAIGN.WHATSAPP.CREATE.FORM.AUDIENCE.LABEL') }}
       </label>
       <TagMultiSelectComboBox
+        id="audience"
         v-model="state.selectedAudience"
         :options="audienceList"
         :label="t('CAMPAIGN.WHATSAPP.CREATE.FORM.AUDIENCE.LABEL')"

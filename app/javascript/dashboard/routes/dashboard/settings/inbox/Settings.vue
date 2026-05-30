@@ -172,6 +172,8 @@ export default {
       isTelegramPersonalRawDiagnosticsVisible: false,
       isWeixinRawDiagnosticsVisible: false,
       isRedirectingMissingInbox: false,
+      showDeleteInboxPopup: false,
+      isDeletingInbox: false,
       whatsappWebConversationPending: false,
       whatsappWebHistoryLookbackDays: 0,
       whatsappWebIgnoreJids: '',
@@ -250,6 +252,20 @@ export default {
     },
     isWhatsappWebDeleting() {
       return isInboxPendingDeletion(this.inbox);
+    },
+    deleteConfirmText() {
+      return `${this.$t('INBOX_MGMT.DELETE.CONFIRM.YES')} ${this.inbox.name}`;
+    },
+    deleteRejectText() {
+      return `${this.$t('INBOX_MGMT.DELETE.CONFIRM.NO')} ${this.inbox.name}`;
+    },
+    confirmDeleteMessage() {
+      return `${this.$t('INBOX_MGMT.DELETE.CONFIRM.MESSAGE')} ${this.inbox.name}?`;
+    },
+    confirmPlaceHolderText() {
+      return this.$t('INBOX_MGMT.DELETE.CONFIRM.PLACE_HOLDER', {
+        inboxName: this.inbox.name,
+      });
     },
     shouldShowTelegramPersonalLifecycleSection() {
       return this.isATelegramPersonalChannel;
@@ -1902,6 +1918,30 @@ export default {
             ? error.message
             : this.$t('INBOX_MGMT.DELETE.API.AVATAR_ERROR_MESSAGE')
         );
+      }
+    },
+    openDeleteInboxPopup() {
+      this.showDeleteInboxPopup = true;
+    },
+    closeDeleteInboxPopup() {
+      this.showDeleteInboxPopup = false;
+    },
+    async confirmInboxDeletion() {
+      try {
+        this.isDeletingInbox = true;
+        await this.$store.dispatch('inboxes/delete', this.inbox.id);
+        useAlert(this.$t('INBOX_MGMT.DELETE.API.SUCCESS_MESSAGE'));
+        await this.$router.replace({
+          name: getInboxFlowRouteName(this.$route, 'list'),
+          params: { accountId: this.$route.params.accountId },
+        });
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.DELETE.API.ERROR_MESSAGE')
+        );
+      } finally {
+        this.isDeletingInbox = false;
+        this.closeDeleteInboxPopup();
       }
     },
     toggleSenderNameType(key) {
@@ -4165,6 +4205,21 @@ export default {
                 @click="updateInbox"
               />
             </div>
+
+            <SettingsFieldSection
+              class="mt-6 rounded-2xl border border-n-ruby-6 bg-n-ruby-3/20 p-4"
+              :label="$t('INBOX_MGMT.DELETE.SETTINGS_TITLE')"
+              :help-text="$t('INBOX_MGMT.DELETE.SETTINGS_HELP_TEXT')"
+            >
+              <NextButton
+                outline
+                ruby
+                icon="i-lucide-trash-2"
+                :label="$t('INBOX_MGMT.DELETE.BUTTON_TEXT')"
+                :is-loading="isDeletingInbox || uiFlags.isDeleting"
+                @click="openDeleteInboxPopup"
+              />
+            </SettingsFieldSection>
           </div>
 
           <div
@@ -4225,5 +4280,17 @@ export default {
         </div>
       </div>
     </section>
+    <woot-confirm-delete-modal
+      v-if="showDeleteInboxPopup"
+      v-model:show="showDeleteInboxPopup"
+      :title="$t('INBOX_MGMT.DELETE.CONFIRM.TITLE')"
+      :message="confirmDeleteMessage"
+      :confirm-text="deleteConfirmText"
+      :reject-text="deleteRejectText"
+      :confirm-value="inbox.name"
+      :confirm-place-holder-text="confirmPlaceHolderText"
+      @on-confirm="confirmInboxDeletion"
+      @on-close="closeDeleteInboxPopup"
+    />
   </div>
 </template>

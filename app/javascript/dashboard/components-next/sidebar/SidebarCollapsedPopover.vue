@@ -38,6 +38,23 @@ const isActive = child => props.activeChildNames.includes(child.name);
 const getAccessibleSubChildren = children =>
   children.filter(c => isAllowed(c.to));
 
+const getAccessibleActionItems = actionItems =>
+  (actionItems || []).filter(
+    action => action.handler || (action.to && isAllowed(action.to))
+  );
+
+const handleActionClick = action => {
+  if (action.handler) {
+    action.handler();
+    emit('close');
+    return;
+  }
+
+  if (action.to) {
+    navigateAndClose(action.to);
+  }
+};
+
 const renderIcon = icon => ({
   component: typeof icon === 'object' ? icon : Icon,
   props: typeof icon === 'string' ? { icon } : null,
@@ -129,23 +146,39 @@ onMounted(async () => {
           <template v-for="child in accessibleChildren" :key="child.name">
             <!-- SubGroup with children -->
             <li v-if="child.children" class="py-0.5">
-              <button
-                class="flex items-center gap-2 px-2 py-1.5 w-full rounded-lg text-n-slate-11 hover:bg-n-alpha-2 transition-colors duration-150 ease-out text-left rtl:text-right"
-                @click="toggleSubGroup(child.name)"
+              <div
+                class="flex items-center gap-1 rounded-lg text-n-slate-11 hover:bg-n-alpha-2 transition-colors duration-150 ease-out"
               >
-                <Icon
-                  v-if="child.icon"
-                  :icon="child.icon"
-                  class="size-4 flex-shrink-0"
-                />
-                <span class="flex-1 truncate text-sm">{{ child.label }}</span>
-                <span
-                  class="size-3 transition-transform i-lucide-chevron-down"
-                  :class="{
-                    'rotate-180': expandedSubGroup === child.name,
-                  }"
-                />
-              </button>
+                <button
+                  class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left rtl:text-right"
+                  @click="toggleSubGroup(child.name)"
+                >
+                  <Icon
+                    v-if="child.icon"
+                    :icon="child.icon"
+                    class="size-4 flex-shrink-0"
+                  />
+                  <span class="flex-1 truncate text-sm">{{ child.label }}</span>
+                  <span
+                    class="size-3 transition-transform i-lucide-chevron-down"
+                    :class="{
+                      'rotate-180': expandedSubGroup === child.name,
+                    }"
+                  />
+                </button>
+                <button
+                  v-for="(action, index) in getAccessibleActionItems(
+                    child.actionItems
+                  )"
+                  :key="action.title || action.icon || index"
+                  type="button"
+                  class="inline-flex flex-shrink-0 items-center justify-center rounded-md p-1 text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12 ltr:mr-1 rtl:ml-1"
+                  :title="action.title"
+                  @click.prevent.stop="handleActionClick(action)"
+                >
+                  <Icon :icon="action.icon" class="size-3.5" />
+                </button>
+              </div>
               <Transition v-bind="transition">
                 <ul
                   v-if="expandedSubGroup === child.name"

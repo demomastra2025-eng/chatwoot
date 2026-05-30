@@ -1,8 +1,7 @@
 import { frontendURL } from '../../helper/URLHelper';
 import {
-  ROLES,
-  CONVERSATION_PERMISSIONS,
-  CONTACT_PERMISSIONS,
+  CONVERSATION_ACCESS_PERMISSIONS,
+  CONTACT_ACCESS_PERMISSIONS,
   PORTAL_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
 
@@ -14,9 +13,8 @@ export const routes = [
     name: 'search',
     meta: {
       permissions: [
-        ...ROLES,
-        ...CONVERSATION_PERMISSIONS,
-        CONTACT_PERMISSIONS,
+        ...CONVERSATION_ACCESS_PERMISSIONS,
+        ...CONTACT_ACCESS_PERMISSIONS,
         PORTAL_PERMISSIONS,
       ],
     },

@@ -31,6 +31,7 @@ const handleButtonClick = button => {
           v-tooltip="button.tooltip"
           :icon="button.icon"
           ghost
+          slate
           sm
           @click="handleButtonClick(button)"
         />
@@ -38,6 +39,7 @@ const handleButtonClick = button => {
           v-tooltip="$t('GENERAL.CLOSE')"
           icon="i-lucide-x"
           ghost
+          slate
           sm
           @click="$emit('close')"
         />

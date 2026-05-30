@@ -11,12 +11,14 @@ import {
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
 import { NOTIFICATION_CHANNELS, NOTIFICATION_TYPES } from './constants';
+import AudioNotifications from './AudioNotifications.vue';
 
 export default {
   components: {
     TableHeaderCell,
     ToggleSwitch,
     CheckBox,
+    AudioNotifications,
   },
   data() {
     return {
@@ -257,6 +259,8 @@ export default {
 
 <template>
   <div id="profile-settings-notifications" class="flex flex-col gap-6">
+    <AudioNotifications />
+
     <!-- Layout for desktop devices -->
     <div class="hidden sm:block">
       <div

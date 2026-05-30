@@ -19,9 +19,9 @@ import ConfirmDeleteCampaignDialog from 'dashboard/components-next/Campaigns/Pag
 import CampaignAnalyticsDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignAnalyticsDialog.vue';
 import OutboundCampaignDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/OutboundCampaign/OutboundCampaignDialog.vue';
 import OutboundCampaignEmptyState from 'dashboard/components-next/Campaigns/EmptyState/OutboundCampaignEmptyState.vue';
-import PersonalCampaignEmptyState from 'dashboard/components-next/Campaigns/EmptyState/PersonalCampaignEmptyState.vue';
 import ConfirmDeleteTouchDialog from 'dashboard/components-next/Outbound/ConfirmDeleteTouchDialog.vue';
 import OutboundWorkspaceLayout from 'dashboard/components-next/Outbound/OutboundWorkspaceLayout.vue';
+import TouchEmptyState from 'dashboard/components-next/Outbound/TouchEmptyState.vue';
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import TouchAnalyticsDialog from 'dashboard/components-next/Outbound/TouchAnalyticsDialog.vue';
 import TouchList from 'dashboard/components-next/Outbound/TouchList.vue';
@@ -32,6 +32,9 @@ const props = defineProps({
     default: '',
   },
 });
+
+const MODE_MASS = 'mass';
+const MODE_TOUCHES = 'touches';
 
 const { t } = useI18n();
 const { checkPermissions } = usePolicy();
@@ -92,22 +95,22 @@ const allTouches = computed(() => {
 });
 
 const currentMode = computed(() => {
-  return props.mode === 'mass' && canManageMassCampaigns.value
-    ? 'mass'
-    : 'personal';
+  return props.mode === MODE_MASS && canManageMassCampaigns.value
+    ? MODE_MASS
+    : MODE_TOUCHES;
 });
 
-const isPersonalMode = computed(() => currentMode.value === 'personal');
+const isTouchesMode = computed(() => currentMode.value === MODE_TOUCHES);
 const selectedTouch = ref(null);
 
 const pageTitle = computed(() => {
-  return isPersonalMode.value
-    ? t('SIDEBAR.PERSONAL_BROADCASTS')
+  return isTouchesMode.value
+    ? t('SIDEBAR.TOUCHES')
     : t('SIDEBAR.MASS_BROADCASTS');
 });
 
 const pageDescription = computed(() => {
-  return isPersonalMode.value
+  return isTouchesMode.value
     ? t('OUTBOUND_WORKSPACE.TOUCHES.DESCRIPTION')
     : t('CAMPAIGN.OUTBOUND.SECTIONS.OUTBOUND_DESCRIPTION');
 });
@@ -117,19 +120,19 @@ const touchEditorSelectionMode = computed(() => {
 });
 
 const totalItems = computed(() => {
-  return isPersonalMode.value
+  return isTouchesMode.value
     ? allTouches.value.length
     : allCampaigns.value.length;
 });
 
 const metaCountLabel = computed(() => {
-  return isPersonalMode.value
+  return isTouchesMode.value
     ? t('OUTBOUND_WORKSPACE.TOUCHES.COUNT', { n: totalItems.value })
     : t('CAMPAIGN.OUTBOUND.COUNT', { n: totalItems.value });
 });
 
 const isBusy = computed(() => {
-  return isPersonalMode.value
+  return isTouchesMode.value
     ? isFetchingTouches.value
     : isFetchingCampaigns.value;
 });
@@ -219,7 +222,7 @@ const fetchTouches = async () => {
   }
 };
 
-const openCreatePersonal = () => {
+const openCreateTouch = () => {
   editingTouch.value = null;
   isTouchEditorOpen.value = true;
 };
@@ -292,9 +295,9 @@ const handleTouchDeleted = async () => {
 };
 
 watch(
-  () => isPersonalMode.value,
-  isPersonal => {
-    if (isPersonal) {
+  () => isTouchesMode.value,
+  isTouches => {
+    if (isTouches) {
       fetchTouches();
       return;
     }
@@ -315,7 +318,7 @@ watch(
 
     <template #actions>
       <Button
-        v-if="!isPersonalMode"
+        v-if="!isTouchesMode"
         size="sm"
         :label="t('CAMPAIGN.OUTBOUND.ACTIONS.MASS_CAMPAIGN')"
         @click="toggleOutboundCampaignDialog(true)"
@@ -324,7 +327,7 @@ watch(
         v-else
         size="sm"
         :label="t('OUTBOUND_WORKSPACE.TOUCHES.ACTIONS.CREATE')"
-        @click="openCreatePersonal"
+        @click="openCreateTouch"
       />
     </template>
 
@@ -335,7 +338,7 @@ watch(
       <Spinner />
     </div>
 
-    <template v-else-if="isPersonalMode">
+    <template v-else-if="isTouchesMode">
       <TouchList
         v-if="allTouches.length"
         :touches="allTouches"
@@ -346,7 +349,7 @@ watch(
         @cancel="cancelTouch"
         @delete="openDeleteTouch"
       />
-      <PersonalCampaignEmptyState
+      <TouchEmptyState
         v-else
         :title="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_TITLE')"
         :subtitle="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_SUBTITLE')"

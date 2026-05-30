@@ -49,18 +49,18 @@
     },
     "LABELS": {
       "CONTACT": {
-        "TITLE": "Contact Labels",
-        "ERROR": "Couldn't update labels"
+        "TITLE": "Contact Tags",
+        "ERROR": "Couldn't update tags"
       },
       "CONVERSATION": {
-        "TITLE": "Conversation Labels",
-        "ADD_BUTTON": "Add Labels"
+        "TITLE": "Conversation Tags",
+        "ADD_BUTTON": "Add Tags"
       },
       "LABEL_SELECT": {
-        "TITLE": "Add Labels",
-        "PLACEHOLDER": "Search labels",
-        "NO_RESULT": "No labels found",
-        "CREATE_LABEL": "Create new label"
+        "TITLE": "Add Tags",
+        "PLACEHOLDER": "Search tags",
+        "NO_RESULT": "No tags found",
+        "CREATE_LABEL": "Create new tag"
       }
     },
     "MERGE_CONTACT": "Merge contact",
@@ -73,7 +73,7 @@
     "EDIT_LABEL": "Edit",
     "SIDEBAR_SECTIONS": {
       "CUSTOM_ATTRIBUTES": "Custom Attributes",
-      "CONTACT_LABELS": "Contact Labels",
+      "CONTACT_LABELS": "Contact Tags",
       "PREVIOUS_CONVERSATIONS": "Previous Conversations",
       "NO_RECORDS_FOUND": "No attributes found"
     }
@@ -604,11 +604,11 @@
     "LOAD_MORE": "Load more"
   },
   "CONTACTS_BULK_ACTIONS": {
-    "ASSIGN_LABELS": "Assign Labels",
-    "ASSIGN_LABELS_SUCCESS": "Labels assigned successfully.",
-    "ASSIGN_LABELS_FAILED": "Failed to assign labels",
-    "DESCRIPTION": "Select the labels you want to add to the selected contacts.",
-    "NO_LABELS_FOUND": "No labels available yet.",
+    "ASSIGN_LABELS": "Assign Tags",
+    "ASSIGN_LABELS_SUCCESS": "Tags assigned successfully.",
+    "ASSIGN_LABELS_FAILED": "Failed to assign tags",
+    "DESCRIPTION": "Select the tags you want to add to the selected contacts.",
+    "NO_LABELS_FOUND": "No tags available yet.",
     "SELECTED_COUNT": "{count} selected",
     "CLEAR_SELECTION": "Clear selection",
     "SELECT_ALL": "Select all ({count})",

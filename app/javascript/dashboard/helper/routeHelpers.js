@@ -5,15 +5,12 @@ import {
 } from './permissionsHelper';
 
 import {
-  ROLES,
-  CONVERSATION_PERMISSIONS,
-  CONTACT_PERMISSIONS,
-  CRM_DEAL_MANAGE_PERMISSION,
-  CRM_DEAL_VIEW_PERMISSION,
+  CONVERSATION_ACCESS_PERMISSIONS,
+  CONTACT_ACCESS_PERMISSIONS,
+  CRM_DEAL_VIEW_PERMISSIONS,
   CRM_SETTINGS_MANAGE_PERMISSION,
   CRM_SETTINGS_VIEW_PERMISSION,
-  CRM_TASK_MANAGE_PERMISSION,
-  CRM_TASK_VIEW_PERMISSION,
+  CRM_TASK_VIEW_PERMISSIONS,
   REPORTS_PERMISSIONS,
   PORTAL_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
@@ -35,19 +32,19 @@ export const defaultRedirectPage = (to, permissions, user = null) => {
 
   const permissionRoutes = [
     {
-      permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+      permissions: CONVERSATION_ACCESS_PERMISSIONS,
       path: 'dashboard',
     },
-    { permissions: [CONTACT_PERMISSIONS], path: 'contacts' },
+    { permissions: CONTACT_ACCESS_PERMISSIONS, path: 'contacts' },
     { permissions: [REPORTS_PERMISSIONS], path: 'reports/overview' },
     { permissions: [PORTAL_PERMISSIONS], path: 'portals' },
     {
-      permissions: [CRM_DEAL_VIEW_PERMISSION, CRM_DEAL_MANAGE_PERMISSION],
+      permissions: CRM_DEAL_VIEW_PERMISSIONS,
       path: 'crm/deals',
       enabled: isFeatureEnabled(currentAccount, FEATURE_FLAGS.CRM_DEALS),
     },
     {
-      permissions: [CRM_TASK_VIEW_PERMISSION, CRM_TASK_MANAGE_PERMISSION],
+      permissions: CRM_TASK_VIEW_PERMISSIONS,
       path: 'crm/tasks',
       enabled: isFeatureEnabled(currentAccount, FEATURE_FLAGS.CRM_TASKS),
     },

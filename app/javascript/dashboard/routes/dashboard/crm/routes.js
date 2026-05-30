@@ -1,10 +1,8 @@
 import { frontendURL } from '../../../helper/URLHelper';
 import { FEATURE_FLAGS } from '../../../featureFlags';
 import {
-  CRM_DEAL_MANAGE_PERMISSION,
-  CRM_DEAL_VIEW_PERMISSION,
-  CRM_TASK_MANAGE_PERMISSION,
-  CRM_TASK_VIEW_PERMISSION,
+  CRM_DEAL_VIEW_PERMISSIONS,
+  CRM_TASK_VIEW_PERMISSIONS,
 } from '../../../constants/permissions';
 import {
   getUserPermissions,
@@ -16,22 +14,12 @@ const CrmDealsPage = () => import('./pages/CrmDealsPage.vue');
 const CrmTasksPage = () => import('./pages/CrmTasksPage.vue');
 const dealsMeta = {
   featureFlag: FEATURE_FLAGS.CRM_DEALS,
-  permissions: [
-    'administrator',
-    'agent',
-    CRM_DEAL_VIEW_PERMISSION,
-    CRM_DEAL_MANAGE_PERMISSION,
-  ],
+  permissions: CRM_DEAL_VIEW_PERMISSIONS,
 };
 
 const tasksMeta = {
   featureFlag: FEATURE_FLAGS.CRM_TASKS,
-  permissions: [
-    'administrator',
-    'agent',
-    CRM_TASK_VIEW_PERMISSION,
-    CRM_TASK_MANAGE_PERMISSION,
-  ],
+  permissions: CRM_TASK_VIEW_PERMISSIONS,
 };
 
 const crmLandingRouteName = accountId => {
@@ -50,30 +38,14 @@ const crmLandingRouteName = accountId => {
 
   if (
     dealsEnabled &&
-    hasPermissions(
-      [
-        'administrator',
-        'agent',
-        CRM_DEAL_VIEW_PERMISSION,
-        CRM_DEAL_MANAGE_PERMISSION,
-      ],
-      userPermissions
-    )
+    hasPermissions(CRM_DEAL_VIEW_PERMISSIONS, userPermissions)
   ) {
     return 'crm_deals_index';
   }
 
   if (
     tasksEnabled &&
-    hasPermissions(
-      [
-        'administrator',
-        'agent',
-        CRM_TASK_VIEW_PERMISSION,
-        CRM_TASK_MANAGE_PERMISSION,
-      ],
-      userPermissions
-    )
+    hasPermissions(CRM_TASK_VIEW_PERMISSIONS, userPermissions)
   ) {
     return 'crm_tasks_index';
   }
@@ -89,14 +61,7 @@ export const routes = [
       params: to.params,
     }),
     meta: {
-      permissions: [
-        'administrator',
-        'agent',
-        CRM_DEAL_VIEW_PERMISSION,
-        CRM_DEAL_MANAGE_PERMISSION,
-        CRM_TASK_VIEW_PERMISSION,
-        CRM_TASK_MANAGE_PERMISSION,
-      ],
+      permissions: [...CRM_DEAL_VIEW_PERMISSIONS, ...CRM_TASK_VIEW_PERMISSIONS],
     },
   },
   {

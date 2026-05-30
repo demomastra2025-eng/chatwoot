@@ -60,7 +60,7 @@
       "DISPLAY_OPTIONS": {
         "SNOOZED": "Snoozed",
         "READ": "Read",
-        "LABELS": "Labels",
+        "LABELS": "Tags",
         "CONVERSATION_ID": "Conversation ID"
       }
     },

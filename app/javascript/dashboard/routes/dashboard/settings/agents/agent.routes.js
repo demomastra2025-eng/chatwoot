@@ -1,12 +1,18 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-const SettingsWrapper = () => import('../SettingsWrapper.vue');
+import { employeeSettingsTabs } from '../employeeSettingsTabs';
+
+const SettingsTabsWrapper = () =>
+  import('../components/SettingsTabsWrapper.vue');
 const AgentHome = () => import('./Index.vue');
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/agents'),
-      component: SettingsWrapper,
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: employeeSettingsTabs,
+      },
       children: [
         {
           path: '',

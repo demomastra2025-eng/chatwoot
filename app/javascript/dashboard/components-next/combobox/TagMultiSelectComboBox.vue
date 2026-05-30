@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, useAttrs } from 'vue';
 import { OnClickOutside } from '@vueuse/components';
 import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
@@ -41,6 +41,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  id: {
+    type: String,
+    default: '',
+  },
   useApiResults: {
     type: Boolean,
     default: false,
@@ -55,6 +59,11 @@ const props = defineProps({
 const emit = defineEmits(['open', 'search', 'update:modelValue']);
 
 const { t } = useI18n();
+const attrs = useAttrs();
+
+defineOptions({
+  inheritAttrs: false,
+});
 
 const selectedValues = ref(props.modelValue);
 const open = ref(false);
@@ -134,6 +143,14 @@ const filteredOptions = computed(() => {
 const selectPlaceholder = computed(() => {
   return props.placeholder || t('COMBOBOX.PLACEHOLDER');
 });
+const triggerId = computed(() => props.id || attrs.id || undefined);
+const rootAttrs = computed(() => {
+  const forwardedAttrs = { ...attrs };
+  delete forwardedAttrs.class;
+  delete forwardedAttrs.style;
+  delete forwardedAttrs.id;
+  return forwardedAttrs;
+});
 
 const selectedTags = computed(() => {
   return selectedValues.value.map(value => {
@@ -206,18 +223,25 @@ defineExpose({
 <template>
   <div
     ref="comboboxRef"
+    v-bind="rootAttrs"
     class="relative w-full min-w-0"
-    :class="{
-      'cursor-not-allowed': disabled,
-      'group/combobox': !disabled,
-    }"
+    :class="[
+      attrs.class,
+      {
+        'cursor-not-allowed': disabled,
+        'group/combobox': !disabled,
+      },
+    ]"
+    :style="attrs.style"
     @click.prevent
   >
     <OnClickOutside
       :options="{ ignore: ['.dashboard-combobox-dropdown'] }"
       @trigger="open = false"
     >
-      <div
+      <button
+        :id="triggerId"
+        type="button"
         class="flex flex-wrap w-full gap-2 px-3 py-2.5 border rounded-lg cursor-pointer bg-n-alpha-black2 min-h-[42px] transition-all duration-500 ease-in-out"
         :class="{
           'border-n-ruby-8': hasError,
@@ -226,6 +250,7 @@ defineExpose({
           'border-n-brand': open,
           'cursor-not-allowed pointer-events-none opacity-50': disabled,
         }"
+        :disabled="disabled"
         @click="toggleDropdown"
       >
         <div
@@ -248,7 +273,7 @@ defineExpose({
         >
           {{ selectPlaceholder }}
         </span>
-      </div>
+      </button>
 
       <ComboBoxDropdown
         ref="dropdownRef"

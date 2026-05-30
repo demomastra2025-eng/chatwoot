@@ -200,15 +200,15 @@
     }
   },
   "LABEL_REPORTS": {
-    "HEADER": "Labels Overview",
-    "DESCRIPTION": "Track label performance with key metrics including conversations, response times, resolution times, and resolved cases. Click a label name for detailed insights.",
+    "HEADER": "Tags Overview",
+    "DESCRIPTION": "Track tag performance with key metrics including conversations, response times, resolution times, and resolved cases. Click a tag name for detailed insights.",
     "LOADING_CHART": "Loading chart data...",
     "NO_ENOUGH_DATA": "We've not received enough data points to generate report, Please try again later.",
-    "DOWNLOAD_LABEL_REPORTS": "Download label reports",
-    "FILTER_DROPDOWN_LABEL": "Select Label",
+    "DOWNLOAD_LABEL_REPORTS": "Download tag reports",
+    "FILTER_DROPDOWN_LABEL": "Select Tag",
     "FILTERS": {
       "INPUT_PLACEHOLDER": {
-        "LABELS": "Search labels"
+        "LABELS": "Search tags"
       }
     },
     "METRICS": {
@@ -603,13 +603,13 @@
         "SLA": "SLA name",
         "AGENTS": "Agent name",
         "INBOXES": "Inbox name",
-        "LABELS": "Label name",
+        "LABELS": "Tag name",
         "TEAMS": "Team name"
       },
       "SLA": "SLA Policy",
       "INBOXES": "Inbox",
       "AGENTS": "Agent",
-      "LABELS": "Label",
+      "LABELS": "Tag",
       "TEAMS": "Team"
     },
     "WITH": "with",
@@ -640,7 +640,7 @@
     "INBOX": "Inbox",
     "AGENT": "Agent",
     "TEAM": "Team",
-    "LABEL": "Label",
+    "LABEL": "Tag",
     "AVG_RESOLUTION_TIME": "Avg. Resolution Time",
     "AVG_FIRST_RESPONSE_TIME": "Avg. First Response Time",
     "AVG_REPLY_TIME": "Avg. Customer Waiting Time",

@@ -1,11 +1,17 @@
 import { frontendURL } from '../../../../helper/URLHelper';
-const SettingsWrapper = () => import('../SettingsWrapper.vue');
+import { conversationSettingsTabs } from '../conversationSettingsTabs';
+
+const SettingsTabsWrapper = () =>
+  import('../components/SettingsTabsWrapper.vue');
 const ConversationWorkflowIndex = () => import('./index.vue');
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/conversation-workflow'),
-      component: SettingsWrapper,
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: conversationSettingsTabs,
+      },
       children: [
         {
           path: '',

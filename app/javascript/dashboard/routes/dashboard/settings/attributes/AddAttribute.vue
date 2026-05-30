@@ -59,13 +59,13 @@ export default {
     models() {
       return ATTRIBUTE_MODELS.map(item => ({
         ...item,
-        option: this.$t(`ATTRIBUTES_MGMT.ATTRIBUTE_MODELS.${item.key}`),
+        option: this.attributeModelLabel(item.key),
       }));
     },
     types() {
       return ATTRIBUTE_TYPES.map(item => ({
         ...item,
-        option: this.$t(`ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.${item.key}`),
+        option: this.attributeTypeLabel(item.key),
       }));
     },
     isTagInputEmpty() {
@@ -128,15 +128,48 @@ export default {
     attributeType() {
       this.tagInputTouched = false;
       this.values = [];
+
+      if (!this.isAttributeTypeText) {
+        this.regexEnabled = false;
+        this.regexPattern = null;
+        this.regexCue = null;
+      }
     },
   },
 
   methods: {
+    attributeModelLabel(key) {
+      switch (key) {
+        case 'CONVERSATION':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_MODELS.CONVERSATION');
+        case 'CONTACT':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_MODELS.CONTACT');
+        case 'COMPANY':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_MODELS.COMPANY');
+        default:
+          return key;
+      }
+    },
+    attributeTypeLabel(key) {
+      switch (key) {
+        case 'TEXT':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.TEXT');
+        case 'NUMBER':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.NUMBER');
+        case 'LINK':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.LINK');
+        case 'DATE':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.DATE');
+        case 'LIST':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.LIST');
+        case 'CHECKBOX':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.CHECKBOX');
+        default:
+          return key;
+      }
+    },
     onDisplayNameChange() {
       this.attributeKey = convertToAttributeSlug(this.displayName);
-    },
-    toggleRegexEnabled() {
-      this.regexEnabled = !this.regexEnabled;
     },
     async addAttributes() {
       this.v$.$touch();
@@ -263,10 +296,13 @@ export default {
               {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.LIST.ERROR') }}
             </label>
           </div>
-          <div v-if="isAttributeTypeText">
-            <Checkbox v-model="regexEnabled" @change="toggleRegexEnabled" />
-            {{ $t('ATTRIBUTES_MGMT.ADD.FORM.ENABLE_REGEX.LABEL') }}
-          </div>
+          <label
+            v-if="isAttributeTypeText"
+            class="mt-2 mb-4 flex items-center gap-3 rounded-xl bg-n-alpha-black2 px-4 py-3 text-sm text-n-slate-12 outline outline-1 outline-n-weak"
+          >
+            <Checkbox v-model="regexEnabled" />
+            <span>{{ $t('ATTRIBUTES_MGMT.ADD.FORM.ENABLE_REGEX.LABEL') }}</span>
+          </label>
           <woot-input
             v-if="isAttributeTypeText && isRegexEnabled"
             v-model="regexPattern"

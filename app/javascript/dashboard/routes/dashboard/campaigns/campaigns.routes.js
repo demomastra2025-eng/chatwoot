@@ -1,8 +1,5 @@
 import { frontendURL } from 'dashboard/helper/URLHelper.js';
-import {
-  ROLES,
-  CONVERSATION_PERMISSIONS,
-} from 'dashboard/constants/permissions.js';
+import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions.js';
 
 const OutboundPageRouteView = () => import('./pages/OutboundPageRouteView.vue');
 const OutboundCampaignsPage = () => import('./pages/OutboundCampaignsPage.vue');
@@ -18,7 +15,7 @@ const campaignsMeta = {
 
 const outboundWorkspaceMeta = {
   featureFlag: FEATURE_FLAGS.CAMPAIGNS,
-  permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+  permissions: CONVERSATION_ACCESS_PERMISSIONS,
 };
 
 const touchesMeta = outboundWorkspaceMeta;
@@ -50,6 +47,8 @@ const campaignsRoutes = {
             mode: 'mass',
           },
         },
+        // Legacy personal-broadcast URL kept as a redirect so existing bookmarks
+        // and saved Captain/UI actions land on the canonical touches route.
         {
           path: 'broadcasts/personal',
           name: 'outbound_broadcasts_personal_index',
@@ -101,7 +100,7 @@ const campaignsRoutes = {
           meta: touchesMeta,
           component: OutboundCampaignsPage,
           props: {
-            mode: 'personal',
+            mode: 'touches',
           },
         },
         {

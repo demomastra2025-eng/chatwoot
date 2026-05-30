@@ -16,7 +16,7 @@ const { t } = useI18n();
 const duration = ref(0);
 const unit = ref(DURATION_UNITS.MINUTES);
 const message = ref('');
-const labelToApply = ref({});
+const labelToApply = ref(null);
 const ignoreWaiting = ref(false);
 const isEnabled = ref(false);
 const isSubmitting = ref(false);
@@ -58,9 +58,9 @@ watch(
     // find the correct label option from the list
     // the single select component expects the full label object
     // in our case, the label id and name are both the same
-    labelToApply.value = labelOptions.value.find(
-      option => option.name === auto_resolve_label
-    );
+    labelToApply.value =
+      labelOptions.value.find(option => option.name === auto_resolve_label) ||
+      null;
 
     // Set unit based on duration and its divisibility
     if (duration.value) {
@@ -152,9 +152,8 @@ const toggleAutoResolve = async () => {
             <DurationInput
               v-model="duration"
               v-model:unit="unit"
-              min="0"
-              max="1438560"
-              class="w-full"
+              :min="0"
+              :max="1438560"
             />
           </div>
         </WithLabel>

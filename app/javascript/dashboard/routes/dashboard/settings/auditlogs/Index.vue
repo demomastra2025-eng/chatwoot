@@ -45,6 +45,15 @@ const fetchAuditLogs = page => {
 const generateLogText = auditLogItem => {
   const payload = generateTranslationPayload(auditLogItem, agentList.value);
   const translationKey = generateLogActionKey(auditLogItem);
+  if (!translationKey) {
+    return [
+      auditLogItem.auditable_type,
+      auditLogItem.action,
+      `#${auditLogItem.auditable_id}`,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
 
   const joinIfArray = value => {
     return Array.isArray(value) ? value.join(', ') : value;

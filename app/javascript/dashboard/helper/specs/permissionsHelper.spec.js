@@ -4,6 +4,22 @@ import {
   hasPermissions,
   filterItemsByPermission,
 } from '../permissionsHelper';
+import {
+  CONTACT_ACCESS_PERMISSIONS,
+  CONTACT_PERMISSIONS,
+  CONVERSATION_ACCESS_PERMISSIONS,
+  CONVERSATION_PERMISSIONS,
+  CRM_DEAL_MANAGE_PERMISSION,
+  CRM_DEAL_MANAGE_PERMISSIONS,
+  CRM_DEAL_VIEW_PERMISSION,
+  CRM_DEAL_VIEW_PERMISSIONS,
+  CRM_TASK_MANAGE_PERMISSION,
+  CRM_TASK_MANAGE_PERMISSIONS,
+  CRM_TASK_VIEW_PERMISSION,
+  CRM_TASK_VIEW_PERMISSIONS,
+  ROLES,
+  SCHEDULING_ACCESS_PERMISSIONS,
+} from '../../constants/permissions';
 
 describe('#getCurrentAccount', () => {
   it('should return the current account', () => {
@@ -149,5 +165,50 @@ describe('filterItemsByPermission', () => {
     expect(result).toContainEqual(
       expect.objectContaining({ key: 'item1', name: 'Item 1' })
     );
+  });
+});
+
+describe('runtime access permission sets', () => {
+  it('includes plain roles and custom-role permissions for conversation access', () => {
+    expect(CONVERSATION_ACCESS_PERMISSIONS).toEqual([
+      ...ROLES,
+      ...CONVERSATION_PERMISSIONS,
+    ]);
+  });
+
+  it('includes plain roles and custom-role permissions for contact access', () => {
+    expect(CONTACT_ACCESS_PERMISSIONS).toEqual([...ROLES, CONTACT_PERMISSIONS]);
+  });
+
+  it('includes plain roles and custom-role permissions for CRM deals', () => {
+    expect(CRM_DEAL_VIEW_PERMISSIONS).toEqual([
+      ...ROLES,
+      CRM_DEAL_VIEW_PERMISSION,
+      CRM_DEAL_MANAGE_PERMISSION,
+    ]);
+    expect(CRM_DEAL_MANAGE_PERMISSIONS).toEqual([
+      ...ROLES,
+      CRM_DEAL_MANAGE_PERMISSION,
+    ]);
+  });
+
+  it('includes plain roles and custom-role permissions for CRM tasks', () => {
+    expect(CRM_TASK_VIEW_PERMISSIONS).toEqual([
+      ...ROLES,
+      CRM_TASK_VIEW_PERMISSION,
+      CRM_TASK_MANAGE_PERMISSION,
+    ]);
+    expect(CRM_TASK_MANAGE_PERMISSIONS).toEqual([
+      ...ROLES,
+      CRM_TASK_MANAGE_PERMISSION,
+    ]);
+  });
+
+  it('keeps scheduling runtime access feature-flag based for every account role type', () => {
+    expect(SCHEDULING_ACCESS_PERMISSIONS).toEqual([
+      'administrator',
+      'agent',
+      'custom_role',
+    ]);
   });
 });

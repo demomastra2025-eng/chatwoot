@@ -3,7 +3,7 @@
     "HEADER": "Custom Attributes",
     "HEADER_BTN_TXT": "Add Custom Attribute",
     "LOADING": "Fetching custom attributes",
-    "DESCRIPTION": "Контактілер, диалогтар, мәмілелер және міндеттер үшін қосымша өрістерді бір жерден басқарыңыз. Оларды негізгі дерек схемасын өзгертпей жұмыс контекстін сақтау үшін пайдаланыңыз.",
+    "DESCRIPTION": "Контактілер, компаниялар, диалогтар, мәмілелер және міндеттер үшін қосымша өрістерді бір жерден басқарыңыз. Оларды негізгі дерек схемасын өзгертпей жұмыс контекстін сақтау үшін пайдаланыңыз.",
     "LEARN_MORE": "Learn more about custom attributes",
     "COUNT": "{n} attribute | {n} attributes",
     "SEARCH_PLACEHOLDER": "Search attributes...",
@@ -13,7 +13,8 @@
     },
     "ATTRIBUTE_MODELS": {
       "CONVERSATION": "Conversation",
-      "CONTACT": "Contact"
+      "CONTACT": "Contact",
+      "COMPANY": "Company"
     },
     "ATTRIBUTE_TYPES": {
       "TEXT": "Text",
@@ -112,7 +113,8 @@
     "TABS": {
       "HEADER": "Custom Attributes",
       "CONVERSATION": "Conversation",
-      "CONTACT": "Contact"
+      "CONTACT": "Contact",
+      "COMPANY": "Company"
     },
     "LIST": {
       "TABLE_HEADER": {

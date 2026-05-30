@@ -1,14 +1,19 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from '../../../../helper/URLHelper';
+import { workspaceSettingsTabs } from '../workspaceSettingsTabs';
 
-const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const SettingsTabsWrapper = () =>
+  import('../components/SettingsTabsWrapper.vue');
 const AuditLogsHome = () => import('./Index.vue');
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/audit-logs'),
-      component: SettingsWrapper,
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: workspaceSettingsTabs,
+      },
       children: [
         {
           path: '',

@@ -30,8 +30,8 @@
       "TITLE": "{action}: {processedCount}/{totalCount}",
       "FAILED": "С ошибками: {count}",
       "ACTIONS": {
-        "add_labels": "Назначаем метки",
-        "remove_labels": "Убираем метки",
+        "add_labels": "Назначаем теги",
+        "remove_labels": "Убираем теги",
         "assign_agent": "Назначаем сотрудника",
         "assign_team": "Назначаем команду",
         "update_status": "Обновляем статус",
@@ -46,11 +46,11 @@
       "UPDATE_FAILED": "Не удалось обновить диалоги, попробуйте еще раз."
     },
     "LABELS": {
-      "ASSIGN_LABELS": "Назначить метки",
-      "NO_LABELS_FOUND": "Метки не найдены",
-      "ASSIGN_SELECTED_LABELS": "Назначить выбранные метки",
-      "ASSIGN_SUCCESFUL": "Метки успешно назначены.",
-      "ASSIGN_FAILED": "Не удалось назначить метки, пожалуйста, попробуйте снова."
+      "ASSIGN_LABELS": "Назначить теги",
+      "NO_LABELS_FOUND": "Теги не найдены",
+      "ASSIGN_SELECTED_LABELS": "Назначить выбранные теги",
+      "ASSIGN_SUCCESFUL": "Теги успешно назначены.",
+      "ASSIGN_FAILED": "Не удалось назначить теги, пожалуйста, попробуйте снова."
     },
     "TEAMS": {
       "TEAM_SELECT_LABEL": "Выберите команду",

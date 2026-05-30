@@ -125,7 +125,6 @@ const GO_TO_COMMANDS = [
   {
     id: 'open_label_settings',
     title: 'COMMAND_BAR.COMMANDS.GO_TO_SETTINGS_LABELS',
-    featureFlag: FEATURE_FLAGS.LABELS,
     section: 'COMMAND_BAR.SECTIONS.SETTINGS',
     icon: ICON_LABELS,
     path: accountId => `accounts/${accountId}/settings/labels/list`,

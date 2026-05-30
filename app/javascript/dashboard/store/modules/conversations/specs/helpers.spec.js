@@ -26,6 +26,13 @@ describe('Conversation Helpers', () => {
       },
     };
 
+    const conversationWithCurrentUserParticipant = {
+      meta: {
+        assignee: null,
+        current_user_participant: true,
+      },
+    };
+
     // Test for administrator role
     it('always returns true for administrator role regardless of permissions', () => {
       const role = 'administrator';
@@ -188,6 +195,17 @@ describe('Conversation Helpers', () => {
             currentUserId
           )
         ).toBe(false);
+      });
+
+      it('returns true for conversations where the user is a participant', () => {
+        expect(
+          applyRoleFilter(
+            conversationWithCurrentUserParticipant,
+            role,
+            permissions,
+            currentUserId
+          )
+        ).toBe(true);
       });
 
       it('returns false for conversations assigned to other users', () => {

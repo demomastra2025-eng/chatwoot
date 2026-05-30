@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
@@ -7,6 +8,7 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ButtonNext from 'next/button/Button.vue';
 import Icon from 'next/icon/Icon.vue';
 import Logo from 'next/icon/Logo.vue';
+import { WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/workspaceSettingsTabs';
 
 import {
   DropdownContainer,
@@ -25,7 +27,8 @@ defineProps({
 const emit = defineEmits(['showCreateAccountModal']);
 
 const { t } = useI18n();
-const { accountId, currentAccount } = useAccount();
+const route = useRoute();
+const { accountId, accountScopedRoute, currentAccount } = useAccount();
 const currentUser = useMapGetter('getCurrentUser');
 const globalConfig = useMapGetter('globalConfig/get');
 
@@ -33,6 +36,14 @@ const userAccounts = useMapGetter('getUserAccounts');
 
 const showAccountSwitcher = computed(
   () => userAccounts.value.length > 1 && currentAccount.value.name
+);
+
+const workspaceSettingsRoute = computed(() =>
+  accountScopedRoute('general_settings_index')
+);
+
+const isWorkspaceSettingsActive = computed(() =>
+  WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES.includes(route.name)
 );
 
 const sortedCurrentUserAccounts = computed(() => {
@@ -71,42 +82,53 @@ const emitNewAccount = () => {
         <Logo v-else class="size-7" />
       </button>
       <!-- Expanded view: Account name trigger -->
-      <button
-        v-else
-        id="sidebar-account-switcher"
-        :data-account-id="accountId"
-        aria-haspopup="listbox"
-        aria-controls="account-options"
-        class="flex items-center gap-2 justify-between w-full rounded-lg px-2"
-        :class="[
-          isOpen && 'bg-n-alpha-1',
-          showAccountSwitcher
-            ? 'hover:bg-n-alpha-1 cursor-pointer'
-            : 'cursor-default',
-        ]"
-        @click="() => showAccountSwitcher && toggle()"
-      >
-        <div class="flex items-center gap-2 min-w-0">
-          <Avatar
-            v-if="currentAccount.logo_url"
-            :src="currentAccount.logo_url"
-            :name="currentAccount.name"
-            :size="24"
-          />
-          <span
-            class="text-sm font-medium leading-5 text-n-slate-12 truncate"
-            aria-live="polite"
-          >
-            {{ currentAccount.name }}
-          </span>
-        </div>
+      <div v-else class="flex items-center gap-1 min-w-0 w-full">
+        <button
+          id="sidebar-account-switcher"
+          :data-account-id="accountId"
+          aria-haspopup="listbox"
+          aria-controls="account-options"
+          class="flex items-center gap-2 justify-between flex-1 rounded-lg px-2 min-w-0"
+          :class="[
+            isOpen && 'bg-n-alpha-1',
+            showAccountSwitcher
+              ? 'hover:bg-n-alpha-1 cursor-pointer'
+              : 'cursor-default',
+          ]"
+          @click="() => showAccountSwitcher && toggle()"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <Avatar
+              v-if="currentAccount.logo_url"
+              :src="currentAccount.logo_url"
+              :name="currentAccount.name"
+              :size="24"
+            />
+            <span
+              class="text-sm font-medium leading-5 text-n-slate-12 truncate"
+              aria-live="polite"
+            >
+              {{ currentAccount.name }}
+            </span>
+          </div>
 
-        <span
-          v-if="showAccountSwitcher"
-          aria-hidden="true"
-          class="i-lucide-chevron-down size-4 text-n-slate-10 flex-shrink-0"
-        />
-      </button>
+          <span
+            v-if="showAccountSwitcher"
+            aria-hidden="true"
+            class="i-lucide-chevron-down size-4 text-n-slate-10 flex-shrink-0"
+          />
+        </button>
+        <RouterLink
+          :to="workspaceSettingsRoute"
+          class="inline-flex items-center justify-center rounded-md size-7 flex-shrink-0 text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12"
+          :class="{
+            'bg-n-alpha-2 text-n-slate-12': isWorkspaceSettingsActive,
+          }"
+          :title="t('SIDEBAR_ITEMS.WORKSPACE_SETTINGS')"
+        >
+          <Icon icon="i-lucide-briefcase-business" class="size-3.5" />
+        </RouterLink>
+      </div>
     </template>
     <DropdownBody
       v-if="showAccountSwitcher || isCollapsed"

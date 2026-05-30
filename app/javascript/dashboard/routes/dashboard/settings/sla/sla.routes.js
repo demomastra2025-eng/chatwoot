@@ -1,8 +1,10 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from '../../../../helper/URLHelper';
+import { conversationSettingsTabs } from '../conversationSettingsTabs';
 
-const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const SettingsTabsWrapper = () =>
+  import('../components/SettingsTabsWrapper.vue');
 const Index = () => import('./Index.vue');
 const meta = {
   featureFlag: FEATURE_FLAGS.SLA,
@@ -14,8 +16,10 @@ export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/sla'),
-      component: SettingsWrapper,
-      props: {},
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: conversationSettingsTabs,
+      },
       children: [
         {
           path: '',

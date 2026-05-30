@@ -2,10 +2,14 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 2;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 4;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
+const TOUCHES_VISIBILITY_KEY = 'Campaigns:Touches';
+// Saved profile UI settings may still contain this pre-touch sidebar key.
+const LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY =
+  'Campaigns:PersonalBroadcasts';
 
 const item = (key, labelKey, children = []) => ({
   key,
@@ -27,7 +31,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   ]),
   item('Campaigns', 'SIDEBAR.OUTBOUND', [
     item('Campaigns:Templates', 'SIDEBAR.TEMPLATES'),
-    item('Campaigns:PersonalBroadcasts', 'SIDEBAR.PERSONAL_BROADCASTS'),
+    item(TOUCHES_VISIBILITY_KEY, 'SIDEBAR.TOUCHES'),
     item('Campaigns:TouchPlans', 'SIDEBAR.TOUCH_PLANS'),
     item('Campaigns:MassBroadcasts', 'SIDEBAR.MASS_BROADCASTS'),
   ]),
@@ -40,6 +44,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
     item('Captain:Documents', 'SIDEBAR.CAPTAIN_DOCUMENTS'),
   ]),
+  item('Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
   item('Contacts', 'SIDEBAR.CONTACTS', [
     item('Contacts:All', 'SIDEBAR.ALL_CONTACTS'),
     item('Contacts:Active', 'SIDEBAR.ACTIVE'),
@@ -81,21 +86,12 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Portals:Locales', 'SIDEBAR.HELP_CENTER.LOCALES'),
     item('Portals:Settings', 'SIDEBAR.HELP_CENTER.SETTINGS'),
   ]),
-  item('Settings', 'SIDEBAR.SETTINGS', [
-    item('Settings:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
-    item('Settings:Agents', 'SIDEBAR.AGENTS'),
-    item('Settings:Teams', 'SIDEBAR.TEAMS'),
-    item('Settings:AgentAssignment', 'SIDEBAR.AGENT_ASSIGNMENT'),
-    item('Settings:Labels', 'SIDEBAR.LABELS'),
+  item('Settings', 'SIDEBAR.ADDITIONAL', [
     item('Settings:CustomAttributes', 'SIDEBAR.CUSTOM_ATTRIBUTES'),
     item('Settings:Automation', 'SIDEBAR.AUTOMATION'),
     item('Settings:AgentBots', 'SIDEBAR.AGENT_BOTS'),
     item('Settings:Macros', 'SIDEBAR.MACROS'),
     item('Settings:Integrations', 'SIDEBAR.INTEGRATIONS'),
-    item('Settings:AuditLogs', 'SIDEBAR.AUDIT_LOGS'),
-    item('Settings:CustomRoles', 'SIDEBAR.CUSTOM_ROLES'),
-    item('Settings:Sla', 'SIDEBAR.SLA'),
-    item('Settings:ConversationWorkflow', 'SIDEBAR.CONVERSATION_WORKFLOW'),
     item('Settings:Billing', 'SIDEBAR.BILLING'),
   ]),
 ]);
@@ -113,8 +109,13 @@ const SIDEBAR_VISIBILITY_ITEM_KEYS = flattenSidebarVisibilityItems(
 const getItemKey = sidebarItem =>
   sidebarItem?.visibilityKey || sidebarItem?.name;
 
-const toHiddenItemsSet = hiddenItems =>
-  new Set(Array.isArray(hiddenItems) ? hiddenItems : []);
+const toHiddenItemsSet = hiddenItems => {
+  if (hiddenItems instanceof Set) {
+    return new Set(hiddenItems);
+  }
+
+  return new Set(Array.isArray(hiddenItems) ? hiddenItems : []);
+};
 
 export const normalizeSidebarHiddenItems = hiddenItems => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
@@ -124,8 +125,7 @@ export const normalizeSidebarHiddenItems = hiddenItems => {
 
 const normalizeLegacyCaptainPromptsVisibility = (hiddenItems, version) => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
-  const shouldMigrateLegacyVisibility =
-    Number(version || 0) < SIDEBAR_VISIBILITY_CURRENT_VERSION;
+  const shouldMigrateLegacyVisibility = Number(version || 0) < 2;
 
   if (!shouldMigrateLegacyVisibility) {
     return hiddenItemsSet;
@@ -146,11 +146,36 @@ const normalizeLegacyCaptainPromptsVisibility = (hiddenItems, version) => {
   return hiddenItemsSet;
 };
 
+const normalizeLegacyTouchesVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldMigrateLegacyVisibility = Number(version || 0) < 3;
+
+  if (!shouldMigrateLegacyVisibility) {
+    return hiddenItemsSet;
+  }
+
+  const legacyPersonalBroadcastsWasHidden = hiddenItemsSet.has(
+    LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY
+  );
+  const touchesWasHidden = hiddenItemsSet.has(TOUCHES_VISIBILITY_KEY);
+
+  hiddenItemsSet.delete(LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY);
+
+  if (legacyPersonalBroadcastsWasHidden || touchesWasHidden) {
+    hiddenItemsSet.add(TOUCHES_VISIBILITY_KEY);
+  }
+
+  return hiddenItemsSet;
+};
+
 export const getSidebarHiddenItems = uiSettings =>
   normalizeSidebarHiddenItems(
     Array.from(
-      normalizeLegacyCaptainPromptsVisibility(
-        uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+      normalizeLegacyTouchesVisibility(
+        normalizeLegacyCaptainPromptsVisibility(
+          uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+          uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+        ),
         uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
       )
     )

@@ -6,8 +6,8 @@ import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
-import PersonalCampaignEmptyState from 'dashboard/components-next/Campaigns/EmptyState/PersonalCampaignEmptyState.vue';
 import OutboundWorkspaceLayout from 'dashboard/components-next/Outbound/OutboundWorkspaceLayout.vue';
+import TouchEmptyState from 'dashboard/components-next/Outbound/TouchEmptyState.vue';
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import TouchList from 'dashboard/components-next/Outbound/TouchList.vue';
 import TouchesAPI from 'dashboard/api/touches';
@@ -331,7 +331,7 @@ watch(
       @approve="approveTouch"
       @cancel="cancelTouch"
     />
-    <PersonalCampaignEmptyState
+    <TouchEmptyState
       v-else
       :title="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_TITLE')"
       :subtitle="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_SUBTITLE')"

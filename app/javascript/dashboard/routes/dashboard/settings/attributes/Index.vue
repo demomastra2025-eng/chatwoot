@@ -54,6 +54,12 @@ const searchQuery = ref('');
 const selectedAttribute = ref({});
 const selectedTabKey = ref('conversation_attribute');
 
+const legacyAttributeTabIndexes = {
+  conversation_attribute: 0,
+  contact_attribute: 1,
+  company_attribute: 2,
+};
+
 const crmFieldForm = reactive({
   active: true,
   contexts: [],
@@ -132,6 +138,10 @@ const availableTabs = computed(() => {
       key: 'contact_attribute',
       name: t('ATTRIBUTES_MGMT.TABS.CONTACT'),
     });
+    tabs.push({
+      key: 'company_attribute',
+      name: t('ATTRIBUTES_MGMT.TABS.COMPANY'),
+    });
   }
 
   if (dealsEnabled.value) {
@@ -195,7 +205,10 @@ const tabsForTabBar = computed(() =>
 );
 
 const isLegacyTab = computed(() =>
-  ['conversation_attribute', 'contact_attribute'].includes(selectedTabKey.value)
+  Object.prototype.hasOwnProperty.call(
+    legacyAttributeTabIndexes,
+    selectedTabKey.value
+  )
 );
 const isCrmTab = computed(() =>
   ['deal', 'task', 'appointment'].includes(selectedTabKey.value)
@@ -435,8 +448,8 @@ const emptyStateMessage = computed(() => {
     : t('ATTRIBUTES_MGMT.LIST.EMPTY_RESULT.404');
 });
 
-const selectedLegacyTabIndex = computed(() =>
-  selectedTabKey.value === 'contact_attribute' ? 1 : 0
+const selectedLegacyTabIndex = computed(
+  () => legacyAttributeTabIndexes[selectedTabKey.value] ?? 0
 );
 
 const crmDialogTitle = computed(() =>

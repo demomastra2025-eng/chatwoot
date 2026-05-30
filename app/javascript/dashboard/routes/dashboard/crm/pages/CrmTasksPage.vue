@@ -11,8 +11,8 @@ import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import {
-  CRM_TASK_MANAGE_PERMISSION,
-  CRM_TASK_VIEW_PERMISSION,
+  CRM_TASK_MANAGE_PERMISSIONS,
+  CRM_TASK_VIEW_PERMISSIONS,
 } from 'dashboard/constants/permissions';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
@@ -169,15 +169,10 @@ const currentUser = useMapGetter('getCurrentUser');
 const teams = useMapGetter('teams/getTeams');
 
 const canManageTasks = computed(() =>
-  checkPermissions(['administrator', CRM_TASK_MANAGE_PERMISSION])
+  checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
 );
 const canViewTasks = computed(() =>
-  checkPermissions([
-    'administrator',
-    'agent',
-    CRM_TASK_VIEW_PERMISSION,
-    CRM_TASK_MANAGE_PERMISSION,
-  ])
+  checkPermissions(CRM_TASK_VIEW_PERMISSIONS)
 );
 
 const taskStatusOptions = computed(() =>
@@ -1641,26 +1636,31 @@ const handleTaskUiActionQuery = async () => {
 onMounted(async () => {
   if (!canViewTasks.value) return;
 
-  restoreTasksPreferences();
+  try {
+    restoreTasksPreferences();
 
-  if (!agents.value.length) {
-    await store.dispatch('agents/get');
+    if (!agents.value.length) {
+      await store.dispatch('agents/get');
+    }
+
+    if (!teams.value.length) {
+      await store.dispatch('teams/get');
+    }
+
+    await Promise.all([
+      referencesStore.loadTaskStatuses(),
+      referencesStore.loadFieldDefinitions('task'),
+      loadDealOptions(),
+    ]);
+    resetForm();
+    hasRestoredPreferences.value = true;
+    persistTasksPreferences();
+    await loadTasks();
+    await handleTaskUiActionQuery();
+  } catch (error) {
+    ui.error = error;
+    useAlert(formatErrorMessage(error));
   }
-
-  if (!teams.value.length) {
-    await store.dispatch('teams/get');
-  }
-
-  await Promise.all([
-    referencesStore.loadTaskStatuses(),
-    referencesStore.loadFieldDefinitions('task'),
-    loadDealOptions(),
-  ]);
-  resetForm();
-  hasRestoredPreferences.value = true;
-  persistTasksPreferences();
-  await loadTasks();
-  await handleTaskUiActionQuery();
 });
 
 watch(

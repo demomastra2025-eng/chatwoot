@@ -47,9 +47,14 @@ const selectedIds = computed(() => {
 });
 
 const selectedItems = computed(() => {
-  // Options has additional properties, so we need to use them directly
+  // Options has additional properties, so we need to use them directly.
+  // If an edit flow references a legacy option that is no longer in the
+  // dropdown list, keep the selected chip visible without re-adding it to the
+  // selectable options.
   if (!hasItems.value) return [];
-  return options.filter(option => selectedIds.value.includes(option.id));
+  return selected.value
+    .map(value => options.find(option => option.id === value.id) || value)
+    .filter(value => value?.name);
 });
 
 const selectedVisibleItems = computed(() => {

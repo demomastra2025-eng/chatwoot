@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORKSPACE_ROOT="$(cd "${APP_DIR}/../.." && pwd)"
+CADDYFILE="${DEV_PROXY_CADDYFILE:-/etc/caddy/Caddyfile}"
+STRICT=0
+QUIET=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --strict)
+      STRICT=1
+      ;;
+    --quiet)
+      QUIET=1
+      ;;
+    *)
+      printf 'Usage: bin/dev-proxy-check [--strict] [--quiet]\n' >&2
+      exit 2
+      ;;
+  esac
+done
+
+log() {
+  if [[ "$QUIET" != "1" ]]; then
+    printf '[dev-proxy-check] %s\n' "$*"
+  fi
+}
+
+fail() {
+  printf '[dev-proxy-check] %s\n' "$*" >&2
+  exit 1
+}
+
+load_env_file() {
+  local file="$1"
+  local line key value
+
+  [[ -f "$file" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" != *=* ]] && continue
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    export "${key}=${value}"
+  done < "$file"
+}
+
+load_env_file "${WORKSPACE_ROOT}/.env.development"
+load_env_file "${APP_DIR}/.env"
+
+should_check_dev_proxy() {
+  if [[ "${DEV_PROXY_GUARD_FORCE:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  [[ "${FRONTEND_URL:-}" == "https://dev.one-link.kz"* || "${VITE_DEV_SERVER_HOST:-}" == "dev.one-link.kz" ]]
+}
+
+if ! should_check_dev_proxy; then
+  log "Skipping: this environment is not dev.one-link.kz"
+  exit 0
+fi
+
+if [[ ! -r "$CADDYFILE" ]]; then
+  if [[ "$STRICT" == "1" ]]; then
+    fail "Cannot read ${CADDYFILE}; cannot verify /vite-dev proxy."
+  fi
+
+  log "Skipping: ${CADDYFILE} is not readable"
+  exit 0
+fi
+
+VITE_PORT="${VITE_DEV_SERVER_PORT:-${VITE_RUBY_PORT:-3037}}"
+
+if ! [[ "$VITE_PORT" =~ ^[0-9]+$ ]]; then
+  fail "Invalid Vite port: ${VITE_PORT}"
+fi
+
+if ! awk -v vite_port="$VITE_PORT" '
+  function count_open(text, copy) {
+    copy = text
+    return gsub(/\{/, "{", copy)
+  }
+
+  function count_close(text, copy) {
+    copy = text
+    return gsub(/\}/, "}", copy)
+  }
+
+  /^[[:space:]]*dev\.one-link\.kz[[:space:]]*\{/ {
+    in_dev_block = 1
+    depth = count_open($0) - count_close($0)
+    next
+  }
+
+  in_dev_block {
+    if ($0 ~ /^[[:space:]]*reverse_proxy[[:space:]]+@vite[[:space:]]+127\.0\.0\.1:/) {
+      vite_route = $0
+      if ($0 ~ "127\\.0\\.0\\.1:" vite_port "([[:space:]]|\\{|$)") {
+        found = 1
+      }
+    }
+
+    depth += count_open($0) - count_close($0)
+    if (depth <= 0) {
+      in_dev_block = 0
+    }
+  }
+
+  END {
+    if (found) {
+      exit 0
+    }
+
+    if (vite_route != "") {
+      print "Wrong /vite-dev route in dev.one-link.kz block: " vite_route > "/dev/stderr"
+      exit 1
+    }
+
+    print "Missing /vite-dev route in dev.one-link.kz block." > "/dev/stderr"
+    exit 1
+  }
+' "$CADDYFILE"; then
+  fail "dev.one-link.kz must proxy /vite-dev to 127.0.0.1:${VITE_PORT}. Fix ${CADDYFILE} and run: caddy reload --config ${CADDYFILE}"
+fi
+
+log "OK: dev.one-link.kz /vite-dev -> 127.0.0.1:${VITE_PORT}"

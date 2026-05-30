@@ -8,8 +8,8 @@ import { useCamelCase } from 'dashboard/composables/useTransformKeys';
 import { generateURLParams, parseURLParams } from '../helpers/searchHelper';
 import {
   ROLES,
-  CONVERSATION_PERMISSIONS,
-  CONTACT_PERMISSIONS,
+  CONVERSATION_ACCESS_PERMISSIONS,
+  CONTACT_ACCESS_PERMISSIONS,
   PORTAL_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
 import { usePolicy } from 'dashboard/composables/usePolicy';
@@ -92,23 +92,22 @@ const { shouldShow, isFeatureFlagEnabled } = usePolicy();
 const TABS_CONFIG = {
   all: {
     permissions: [
-      CONTACT_PERMISSIONS,
-      ...ROLES,
-      ...CONVERSATION_PERMISSIONS,
+      ...CONTACT_ACCESS_PERMISSIONS,
+      ...CONVERSATION_ACCESS_PERMISSIONS,
       PORTAL_PERMISSIONS,
     ],
     count: () => null, // No count for all tab
   },
   contacts: {
-    permissions: [...ROLES, CONTACT_PERMISSIONS],
+    permissions: CONTACT_ACCESS_PERMISSIONS,
     count: () => mappedContacts.value.length,
   },
   conversations: {
-    permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+    permissions: CONVERSATION_ACCESS_PERMISSIONS,
     count: () => mappedConversations.value.length,
   },
   messages: {
-    permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+    permissions: CONVERSATION_ACCESS_PERMISSIONS,
     count: () => mappedMessages.value.length,
   },
   articles: {
@@ -144,11 +143,11 @@ const tabs = computed(() => {
 const totalSearchResultsCount = computed(() => {
   const permissionCounts = [
     {
-      permissions: [...ROLES, CONTACT_PERMISSIONS],
+      permissions: CONTACT_ACCESS_PERMISSIONS,
       count: () => contacts.value.length,
     },
     {
-      permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+      permissions: CONVERSATION_ACCESS_PERMISSIONS,
       count: () => conversations.value.length + messages.value.length,
     },
     {
@@ -390,7 +389,7 @@ onUnmounted(() => {
         <div class="w-full max-w-5xl mx-auto px-4 pb-6">
           <div v-if="showResultsSection">
             <Policy
-              :permissions="[...ROLES, CONTACT_PERMISSIONS]"
+              :permissions="CONTACT_ACCESS_PERMISSIONS"
               class="flex flex-col justify-center"
             >
               <SearchResultContactsList
@@ -413,7 +412,7 @@ onUnmounted(() => {
             </Policy>
 
             <Policy
-              :permissions="[...ROLES, ...CONVERSATION_PERMISSIONS]"
+              :permissions="CONVERSATION_ACCESS_PERMISSIONS"
               class="flex flex-col justify-center"
             >
               <SearchResultMessagesList
@@ -436,7 +435,7 @@ onUnmounted(() => {
             </Policy>
 
             <Policy
-              :permissions="[...ROLES, ...CONVERSATION_PERMISSIONS]"
+              :permissions="CONVERSATION_ACCESS_PERMISSIONS"
               class="flex flex-col justify-center"
             >
               <SearchResultConversationsList

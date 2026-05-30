@@ -24,11 +24,17 @@ const upsertStageInPipelines = (pipelines, stage) => {
       return pipeline;
     }
 
+    const nextStages = upsertRecord(pipeline.stages || [], stage).map(item => {
+      if (!stage.default || Number(item.id) === Number(stage.id)) {
+        return item;
+      }
+
+      return { ...item, default: false };
+    });
+
     return {
       ...pipeline,
-      stages: upsertRecord(pipeline.stages || [], stage).sort(
-        (left, right) => left.position - right.position
-      ),
+      stages: nextStages.sort((left, right) => left.position - right.position),
     };
   });
 };

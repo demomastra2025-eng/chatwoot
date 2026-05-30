@@ -69,10 +69,7 @@ const submitComment = () => {
 
 <template>
   <div class="grid gap-4">
-    <div
-      v-if="canManageComments"
-      class="grid gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-4 outline outline-1 outline-n-weak"
-    >
+    <div v-if="canManageComments" class="grid gap-3 px-4 py-4">
       <TextArea
         :label="$t('CRM.TIMELINE.ADD_COMMENT')"
         :model-value="commentBody"
@@ -109,7 +106,7 @@ const submitComment = () => {
       <article
         v-for="item in sortedItems"
         :key="`${item.itemType}-${item.payload.id}-${item.occurredAt}`"
-        class="grid gap-2 rounded-2xl bg-n-solid-2 px-4 py-4 outline outline-1 outline-n-container shadow-sm"
+        class="grid gap-2 rounded-2xl bg-n-solid-2 px-4 py-3 outline outline-1 outline-n-container shadow-sm"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="grid gap-1">

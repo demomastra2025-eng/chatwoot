@@ -1,4 +1,3 @@
-import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
 
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
@@ -23,7 +22,6 @@ export default {
           path: 'list',
           name: 'labels_list',
           meta: {
-            featureFlag: FEATURE_FLAGS.LABELS,
             permissions: ['administrator'],
           },
           component: Index,

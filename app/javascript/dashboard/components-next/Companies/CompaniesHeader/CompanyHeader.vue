@@ -36,6 +36,7 @@ const emit = defineEmits(['search', 'update:sort', 'create']);
         <Button
           v-if="showCreateButton"
           size="sm"
+          class="!min-w-max shrink-0"
           :label="createButtonLabel || $t('COMPANIES.ACTIONS.ADD')"
           @click="emit('create')"
         />

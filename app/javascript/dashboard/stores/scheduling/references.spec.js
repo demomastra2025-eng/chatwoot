@@ -135,6 +135,35 @@ describe('useSchedulingReferencesStore', () => {
     expect(store.ui.error).toBe(null);
   });
 
+  it('keeps a failed resource delete out of page-level load errors', async () => {
+    const store = useSchedulingReferencesStore();
+    store.resources = [{ id: 72, name: 'Dr. Sam', active: true }];
+
+    const error = {
+      response: {
+        status: 422,
+        data: {
+          code: 'RESOURCE_HAS_APPOINTMENTS',
+          error:
+            'Specialist with current or future active appointments cannot be deleted',
+          details: {
+            blocking_appointment_count: 1,
+            blocking_appointments: [{ id: 4570 }],
+          },
+        },
+      },
+    };
+    deleteResourceMock.mockRejectedValue(error);
+
+    await expect(store.deleteResource(72)).rejects.toBe(error);
+
+    expect(deleteResourceMock).toHaveBeenCalledWith(72);
+    expect(store.resources).toEqual([
+      { id: 72, name: 'Dr. Sam', active: true },
+    ]);
+    expect(store.ui.error).toBe(null);
+  });
+
   it('removes a deleted holiday from the local store state', async () => {
     const store = useSchedulingReferencesStore();
     store.holidays = [

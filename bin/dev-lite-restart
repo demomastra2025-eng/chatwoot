@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COLIMA_SOCKET="${HOME}/.colima/default/docker.sock"
 DOCKER_HOST_CANDIDATE="unix://${COLIMA_SOCKET}"
-APP_PORTS=(3000 3036)
+APP_PORTS=()
 RESTART_INFRA="${RESTART_INFRA:-0}"
 PREPARE_DB="${PREPARE_DB:-0}"
 CW_BOOTSTRAP_ENTERPRISE="${CW_BOOTSTRAP_ENTERPRISE:-1}"
@@ -76,6 +76,28 @@ env_value() {
   fi
 
   printf '%s' "$default_value"
+}
+
+append_app_port() {
+  local candidate="$1"
+  local existing
+
+  [[ "$candidate" =~ ^[0-9]+$ ]] || return 0
+
+  for existing in "${APP_PORTS[@]}"; do
+    if [[ "$existing" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+
+  APP_PORTS+=("$candidate")
+}
+
+configure_app_ports() {
+  APP_PORTS=()
+  append_app_port "$(env_value PORT 3000)"
+  append_app_port "$(env_value VITE_DEV_SERVER_PORT "$(env_value VITE_RUBY_PORT 3036)")"
+  append_app_port "$(env_value VITE_RUBY_PORT '')"
 }
 
 resolve_realpath() {
@@ -414,6 +436,14 @@ bootstrap_enterprise() {
   bundle exec rake chatwoot:instance:unlock_enterprise
 }
 
+ensure_dev_proxy_config() {
+  if [[ "${DEV_PROXY_GUARD:-1}" != "1" ]]; then
+    return 0
+  fi
+
+  "${ROOT_DIR}/bin/dev-proxy-check" --strict
+}
+
 start_app() {
   export DISABLE_MINI_PROFILER="${DISABLE_MINI_PROFILER:-1}"
   export SASS_SILENCE_DEPRECATIONS="${SASS_SILENCE_DEPRECATIONS:-legacy-js-api}"
@@ -425,6 +455,8 @@ main() {
   cd "$ROOT_DIR"
   ensure_rbenv
   ensure_dependencies
+  configure_app_ports
+  ensure_dev_proxy_config
   stop_listeners
 
   if use_existing_infra; then

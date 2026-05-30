@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import Icon from 'next/icon/Icon.vue';
 
 const props = defineProps({
@@ -36,23 +36,60 @@ const props = defineProps({
     type: [Object, String],
     default: '',
   },
+  actionItems: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const router = useRouter();
-const hasActionButton = computed(
-  () => !props.actionLabel && props.actionTo && props.actionIcon
+const route = useRoute();
+
+const singleActionItem = computed(() => {
+  if (!props.actionTo || !props.actionIcon) {
+    return [];
+  }
+
+  return [
+    {
+      to: props.actionTo,
+      title: props.actionTitle,
+      icon: props.actionIcon,
+    },
+  ];
+});
+
+const actionItemsToRender = computed(() =>
+  props.actionItems.length ? props.actionItems : singleActionItem.value
 );
 
-const handleActionClick = async () => {
-  if (!props.actionTo) {
+const hasActionButtons = computed(
+  () => !props.actionLabel && actionItemsToRender.value.length > 0
+);
+
+const isActionActive = action => {
+  if (action.active) return true;
+  if (action.activeOn?.includes(route.name)) return true;
+  if (!action.to) return false;
+
+  return router.resolve(action.to).path === route.path;
+};
+
+const handleActionClick = async action => {
+  if (action.handler) {
+    action.handler();
     return;
   }
 
-  await router.push(props.actionTo);
+  if (!action.to) {
+    return;
+  }
+
+  await router.push(action.to);
 };
 
 const componentType = computed(() =>
-  props.to && !hasActionButton.value ? 'router-link' : 'div'
+  props.to && !hasActionButtons.value ? 'router-link' : 'div'
 );
 
 const handleRootClick = async () => {
@@ -95,14 +132,21 @@ const handleRootClick = async () => {
     >
       {{ actionLabel }}
     </span>
-    <button
-      v-else-if="hasActionButton"
-      type="button"
-      class="inline-flex flex-shrink-0 items-center justify-center rounded-md p-1 transition-all duration-150 text-n-slate-11 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto hover:bg-n-alpha-2 hover:text-n-slate-12"
-      :title="actionTitle"
-      @click.prevent.stop="handleActionClick"
-    >
-      <Icon :icon="actionIcon" class="size-3.5" />
-    </button>
+    <div v-else-if="hasActionButtons" class="flex items-center gap-0.5">
+      <button
+        v-for="(action, index) in actionItemsToRender"
+        :key="action.title || action.icon || index"
+        type="button"
+        class="inline-flex flex-shrink-0 items-center justify-center rounded-md p-1 transition-all duration-150 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto hover:bg-n-alpha-2 hover:text-n-slate-12"
+        :class="{
+          'bg-n-alpha-2 text-n-slate-12': isActionActive(action),
+          'text-n-slate-11': !isActionActive(action),
+        }"
+        :title="action.title"
+        @click.prevent.stop="handleActionClick(action)"
+      >
+        <Icon :icon="action.icon" class="size-3.5" />
+      </button>
+    </div>
   </component>
 </template>

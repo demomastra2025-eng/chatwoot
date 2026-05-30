@@ -1,8 +1,11 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { workspaceSettingsTabs } from '../workspaceSettingsTabs';
 const Index = () => import('./Index.vue');
 const Scheduling = () => import('./Scheduling.vue');
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const SettingsTabsWrapper = () =>
+  import('../components/SettingsTabsWrapper.vue');
 export default {
   routes: [
     {
@@ -10,7 +13,10 @@ export default {
       meta: {
         permissions: ['administrator'],
       },
-      component: SettingsWrapper,
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: workspaceSettingsTabs,
+      },
       children: [
         {
           path: '',

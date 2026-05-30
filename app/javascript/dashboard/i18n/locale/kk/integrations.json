@@ -333,9 +333,9 @@
             "SEARCH": "Search priority"
           },
           "LABEL": {
-            "LABEL": "Label",
-            "PLACEHOLDER": "Select label",
-            "SEARCH": "Search label"
+            "LABEL": "Tag",
+            "PLACEHOLDER": "Select tag",
+            "SEARCH": "Search tag"
           },
           "STATUS": {
             "LABEL": "Status",
@@ -359,7 +359,7 @@
         "STATUS": "Status",
         "PRIORITY": "Priority",
         "ASSIGNEE": "Assignee",
-        "LABELS": "Labels",
+        "LABELS": "Tags",
         "CREATED_AT": "Created at {createdAt}"
       },
       "UNLINK": {
@@ -410,7 +410,29 @@
       "YOU": "You",
       "USE": "Use this",
       "RESET": "Reset",
-      "SHOW_STEPS": "Show steps",
+      "OPEN_MODAL": "Open centered view",
+      "RESIZE_PANEL": "Resize panel",
+      "SHOW_STEPS": "Детали",
+      "TOOL_COUNT": {
+        "ONE": "{count} құрал",
+        "FEW": "{count} құрал",
+        "MANY": "{count} құрал"
+      },
+      "TOOL_STATUS": {
+        "RUNNING": "Орындалуда",
+        "COMPLETED": "Аяқталды",
+        "FAILED": "Қате",
+        "SKIPPED": "Өткізілді"
+      },
+      "TOOL_TRACE": {
+        "INPUT": "Input",
+        "OUTPUT": "Output",
+        "COPY_INPUT": "Copy input",
+        "COPY_OUTPUT": "Copy output",
+        "SCENARIO_HANDOFF": "Scenario handoff: {scenario}",
+        "COPY_SUCCESS": "Copied to clipboard",
+        "COPY_ERROR": "Unable to copy"
+      },
       "SELECT_ASSISTANT": "Select Assistant",
       "PROMPTS": {
         "SUMMARIZE": {
@@ -516,6 +538,27 @@
         "HANDOFF_MESSAGE": {
           "LABEL": "Handoff Message",
           "PLACEHOLDER": "Enter handoff message"
+        },
+        "VOICE_SETTINGS": {
+          "TITLE": "Voice агент баптаулары",
+          "DESCRIPTION": "Телефондағы voice агенттің моделін, дауысын және сөйлесу мінезін баптаңыз.",
+          "PROVIDER": "Провайдер",
+          "MODEL": "Модель",
+          "VOICE": "Дауыс",
+          "LANGUAGE": "Тіл",
+          "SYSTEM_PROMPT": "Голос нұсқаулары",
+          "SYSTEM_PROMPT_PLACEHOLDER": "Мысалы: қысқа сөйле, markdown қолданба, бір уақытта бір сұрақ қой",
+          "SYSTEM_PROMPT_DESCRIPTION": "Тек телефон voice-агентіне арналған қосымша нұсқаулар. Олар Captain негізгі нұсқауларының үстіне қосылады.",
+          "VOICE_CHARACTER_PROMPT": "Дауыс мінезі",
+          "VOICE_CHARACTER_PROMPT_PLACEHOLDER": "Мысалы: жылы наставник, төмен энергия, жұмсақ пауза, күлкісіз",
+          "VOICE_CHARACTER_PROMPT_DESCRIPTION": "Тембр, мінез, эмоция, қарқын, интонация, күлкі, пауза, тыныс, акцент, дикция, энергия және тыйымдар үшін бөлек voice-performance блок.",
+          "FIRST_MESSAGE": "Бірінші хабарлама",
+          "FIRST_MESSAGE_PLACEHOLDER": "Қоңырау басында айтылатын сәлемдесу",
+          "TRANSFER_MESSAGE": "Операторға аудару хабарламасы",
+          "TRANSFER_MESSAGE_PLACEHOLDER": "Операторға қосар алдында айтылатын мәтін",
+          "MAX_DURATION_SEC": "Максималды ұзақтығы (секунд)",
+          "INTERRUPTIONS": "Клиенттің сөзін бөлуіне рұқсат ету",
+          "INTERRUPTIONS_DESCRIPTION": "Қосулы болса, клиент жауап кезінде агентті тоқтата алады."
         },
         "RESOLUTION_MESSAGE": {
           "LABEL": "Resolution Message",
@@ -988,7 +1031,7 @@
               "PROSPECTIVE_BUYER": {
                 "TITLE": "Prospective Buyer",
                 "DESCRIPTION": "Handle customers who are showing interest in purchasing a license",
-                "INSTRUCTION": "If someone is interested in purchasing a license, ask them for the following:\n\n1. How many licenses are they willing to purchase?\n2. Are they migrating from another platform?\n\nOnce these details are collected, do the following steps:\n1. Add a private note with the information you collected using [Add Private Note](tool://add_private_note)\n2. Add label \"sales\" to the conversation using [Add Label to Conversation](tool://add_label_to_conversation)\n3. Reply saying \"one of us will reach out soon\", provide an estimated timeline for the response, and [Handoff to Human](tool://handoff)"
+                "INSTRUCTION": "If someone is interested in purchasing a license, ask them for the following:\n\n1. How many licenses are they willing to purchase?\n2. Are they migrating from another platform?\n\nOnce these details are collected, do the following steps:\n1. Add a private note with the information you collected using [Add Private Note](tool://add_private_note)\n2. Add label \"sales\" to the conversation using [Add Tag to Conversation](tool://add_label_to_conversation)\n3. Reply saying \"one of us will reach out soon\", provide an estimated timeline for the response, and [Handoff to Human](tool://handoff)"
               },
               "BILLING_ISSUE": {
                 "TITLE": "Complex billing issue",
@@ -1656,7 +1699,8 @@
           "TOKENS": "Total tokens",
           "COST": "Estimated cost",
           "PROMPT_TOKENS": "Prompt tokens",
-          "COMPLETION_TOKENS": "Completion tokens"
+          "COMPLETION_TOKENS": "Completion tokens",
+          "THINKING_TOKENS": "Reasoning tokens"
         },
         "IDENTIFIERS": {
           "EVENT_ID": "Event ID",

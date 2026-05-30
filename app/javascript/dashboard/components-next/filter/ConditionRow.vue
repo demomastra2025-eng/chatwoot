@@ -11,9 +11,10 @@ import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { validateSingleFilter } from 'dashboard/helper/validations.js';
 
 // filterTypes: import('vue').ComputedRef<FilterType[]>
-const { filterTypes } = defineProps({
+const { filterTypes, externalErrorMessage } = defineProps({
   showQueryOperator: { type: Boolean, default: false },
   filterTypes: { type: Array, required: true },
+  externalErrorMessage: { type: String, default: '' },
 });
 
 const emit = defineEmits(['remove']);
@@ -213,8 +214,13 @@ defineExpose({ validate, resetValidation });
         @click.stop="emit('remove')"
       />
     </div>
-    <span v-if="showErrors && validationError" class="text-sm text-n-ruby-11">
-      {{ filterErrorTranslations[validationError] || '' }}
+    <span
+      v-if="(showErrors && validationError) || externalErrorMessage"
+      class="text-sm text-n-ruby-11"
+    >
+      {{
+        externalErrorMessage || filterErrorTranslations[validationError] || ''
+      }}
     </span>
   </li>
 </template>

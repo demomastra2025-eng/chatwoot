@@ -49,18 +49,18 @@
     },
     "LABELS": {
       "CONTACT": {
-        "TITLE": "Ярлыки контактов",
-        "ERROR": "Не удалось обновить ярлыки"
+        "TITLE": "Теги контакта",
+        "ERROR": "Не удалось обновить теги"
       },
       "CONVERSATION": {
-        "TITLE": "Категории Диалога",
-        "ADD_BUTTON": "Добавить метки"
+        "TITLE": "Теги диалога",
+        "ADD_BUTTON": "Добавить теги"
       },
       "LABEL_SELECT": {
-        "TITLE": "Добавить метки",
-        "PLACEHOLDER": "Поиск меток",
-        "NO_RESULT": "Метки не найдены",
-        "CREATE_LABEL": "Создать новую метку"
+        "TITLE": "Добавить теги",
+        "PLACEHOLDER": "Поиск тегов",
+        "NO_RESULT": "Теги не найдены",
+        "CREATE_LABEL": "Создать новый тег"
       }
     },
     "MERGE_CONTACT": "Объединить контакты",
@@ -73,7 +73,7 @@
     "EDIT_LABEL": "Редактировать",
     "SIDEBAR_SECTIONS": {
       "CUSTOM_ATTRIBUTES": "Пользовательские атрибуты",
-      "CONTACT_LABELS": "Ярлыки контактов",
+      "CONTACT_LABELS": "Теги контакта",
       "PREVIOUS_CONVERSATIONS": "Предыдущие диалоги",
       "NO_RECORDS_FOUND": "Атрибуты не найдены"
     }
@@ -217,7 +217,7 @@
     }
   },
   "CUSTOM_ATTRIBUTES": {
-    "BUTTON": "Добавить пользовательский атрибут",
+    "BUTTON": "Добавить атрибут",
     "COPY_SUCCESSFUL": "Скопировано в буфер обмена",
     "SHOW_MORE": "Показать все атрибуты",
     "SHOW_LESS": "Скрыть лишние атрибуты",
@@ -604,11 +604,11 @@
     "LOAD_MORE": "Загрузить еще"
   },
   "CONTACTS_BULK_ACTIONS": {
-    "ASSIGN_LABELS": "Назначить метки",
-    "ASSIGN_LABELS_SUCCESS": "Метки успешно назначены.",
-    "ASSIGN_LABELS_FAILED": "Не удалось назначить метки",
-    "DESCRIPTION": "Выберите метки, которые нужно добавить выбранным контактам.",
-    "NO_LABELS_FOUND": "Метки пока недоступны.",
+    "ASSIGN_LABELS": "Назначить теги",
+    "ASSIGN_LABELS_SUCCESS": "Теги успешно назначены.",
+    "ASSIGN_LABELS_FAILED": "Не удалось назначить теги",
+    "DESCRIPTION": "Выберите теги, которые нужно добавить выбранным контактам.",
+    "NO_LABELS_FOUND": "Теги пока недоступны.",
     "SELECTED_COUNT": "Выбрано {count}",
     "CLEAR_SELECTION": "Очистить выбор",
     "SELECT_ALL": "Выбрать все ({count})",

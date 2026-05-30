@@ -2,9 +2,12 @@
 import { computed, watch, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
+import { useAdmin } from 'dashboard/composables/useAdmin';
 
 import LabelItem from 'dashboard/components-next/label/LabelItem.vue';
 import AddLabel from 'dashboard/components-next/label/AddLabel.vue';
+import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
+import EditLabelForm from 'dashboard/routes/dashboard/settings/labels/EditLabel.vue';
 
 const props = defineProps({
   contactId: {
@@ -15,8 +18,11 @@ const props = defineProps({
 
 const store = useStore();
 const route = useRoute();
+const { isAdmin } = useAdmin();
 
-const showDropdown = ref(false);
+const showCreateLabelModal = ref(false);
+const showEditLabelModal = ref(false);
+const selectedLabelForEdit = ref({});
 
 // Store the currently hovered label's ID
 // Using JS state management instead of CSS :hover / group hover
@@ -79,8 +85,6 @@ const handleLabelAction = async ({ value }) => {
       contactId: props.contactId,
       labels: updatedLabels,
     });
-
-    showDropdown.value = false;
   } catch (error) {
     // error
   }
@@ -88,6 +92,26 @@ const handleLabelAction = async ({ value }) => {
 
 const handleRemoveLabel = label => {
   return handleLabelAction({ value: label.id });
+};
+
+const openCreateLabelModal = () => {
+  showCreateLabelModal.value = true;
+};
+
+const closeCreateLabelModal = () => {
+  showCreateLabelModal.value = false;
+};
+
+const openEditLabelModal = ({ value }) => {
+  const selectedLabel = allLabels.value.find(label => label.id === value);
+  if (!selectedLabel) return;
+
+  selectedLabelForEdit.value = selectedLabel;
+  showEditLabelModal.value = true;
+};
+
+const closeEditLabelModal = () => {
+  showEditLabelModal.value = false;
 };
 
 watch(
@@ -130,7 +154,22 @@ const handleLabelHover = labelId => {
     />
     <AddLabel
       :label-menu-items="labelMenuItems"
+      :allow-management="isAdmin"
       @update-label="handleLabelAction"
+      @create-label="openCreateLabelModal"
+      @edit-label="openEditLabelModal"
     />
+    <woot-modal
+      v-model:show="showCreateLabelModal"
+      @close="closeCreateLabelModal"
+    >
+      <AddLabelForm @close="closeCreateLabelModal" />
+    </woot-modal>
+    <woot-modal v-model:show="showEditLabelModal" @close="closeEditLabelModal">
+      <EditLabelForm
+        :selected-response="selectedLabelForEdit"
+        @close="closeEditLabelModal"
+      />
+    </woot-modal>
   </div>
 </template>

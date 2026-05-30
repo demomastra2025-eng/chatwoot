@@ -1,7 +1,7 @@
 {
   "AUTOMATION": {
     "HEADER": "Automation",
-    "DESCRIPTION": "Automation can replace and streamline existing processes that require manual effort, such as adding labels and assigning conversations to the most suitable agent. This allows the team to focus on their strengths while reducing time spent on routine tasks.",
+    "DESCRIPTION": "Automation can replace and streamline existing processes that require manual effort, such as adding tags and assigning conversations to the most suitable agent. This allows the team to focus on their strengths while reducing time spent on routine tasks.",
     "LEARN_MORE": "Learn more about automation",
     "COUNT": "{n} automation | {n} automations",
     "HEADER_BTN_TXT": "Add Automation Rule",
@@ -146,6 +146,7 @@
       "VALUE_MUST_BE_BETWEEN_1_AND_998": "Value must be between 1 and 998",
       "ACTION_PARAMETERS_REQUIRED": "Action parameters are required",
       "CREATE_TOUCH_DELAY_INVALID": "Touch delay must be zero or greater",
+      "STAGE_OPTION_ARCHIVED": "Таңдалған кезең архивтелген немесе енді қолжетімді емес. Сақтамас бұрын белсенді кезеңді таңдаңыз.",
       "ATLEAST_ONE_CONDITION_REQUIRED": "At least one condition is required",
       "ATLEAST_ONE_ACTION_REQUIRED": "At least one action is required"
     },
@@ -177,8 +178,8 @@
       "ASSIGN_TEAM": "Assign a Team",
       "REMOVE_ASSIGNED_AGENT": "Remove Assigned Agent",
       "REMOVE_ASSIGNED_TEAM": "Remove Assigned Team",
-      "ADD_LABEL": "Add a Label",
-      "REMOVE_LABEL": "Remove a Label",
+      "ADD_LABEL": "Add a Tag",
+      "REMOVE_LABEL": "Remove a Tag",
       "SEND_EMAIL_TO_TEAM": "Send an Email to Team",
       "SEND_EMAIL_TRANSCRIPT": "Send an Email Transcript",
       "MUTE_CONVERSATION": "Mute Conversation",
@@ -263,7 +264,7 @@
       "ASSIGNEE_NAME": "Assignee",
       "TEAM_NAME": "Team",
       "PRIORITY": "Priority",
-      "LABELS": "Labels"
+      "LABELS": "Tags"
     }
   }
 }

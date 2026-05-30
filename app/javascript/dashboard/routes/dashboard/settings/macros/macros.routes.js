@@ -1,10 +1,7 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from 'dashboard/helper/URLHelper';
 
-import {
-  ROLES,
-  CONVERSATION_PERMISSIONS,
-} from 'dashboard/constants/permissions.js';
+import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions.js';
 const SettingsContent = () => import('../Wrapper.vue');
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
 const Macros = () => import('./Index.vue');
@@ -21,7 +18,7 @@ export default {
           component: Macros,
           meta: {
             featureFlag: FEATURE_FLAGS.MACROS,
-            permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+            permissions: CONVERSATION_ACCESS_PERMISSIONS,
           },
         },
       ],
@@ -43,7 +40,7 @@ export default {
           component: MacroEditor,
           meta: {
             featureFlag: FEATURE_FLAGS.MACROS,
-            permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+            permissions: CONVERSATION_ACCESS_PERMISSIONS,
           },
         },
         {
@@ -52,7 +49,7 @@ export default {
           component: MacroEditor,
           meta: {
             featureFlag: FEATURE_FLAGS.MACROS,
-            permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+            permissions: CONVERSATION_ACCESS_PERMISSIONS,
           },
         },
       ],

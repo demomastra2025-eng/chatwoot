@@ -1,7 +1,4 @@
-import {
-  ROLES,
-  CONVERSATION_PERMISSIONS,
-} from 'dashboard/constants/permissions';
+import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions';
 import { getUserPermissions } from 'dashboard/helper/permissionsHelper';
 import wootConstants from 'dashboard/constants/globals';
 
@@ -37,7 +34,7 @@ class AudioNotificationStore {
     // Get the user permissions for the current account
     const userPermissions = getUserPermissions(user, currentAccountId);
     // Check if the user has the required permissions
-    const hasRequiredPermission = [...ROLES, ...CONVERSATION_PERMISSIONS].some(
+    const hasRequiredPermission = CONVERSATION_ACCESS_PERMISSIONS.some(
       permission => userPermissions.includes(permission)
     );
     return hasRequiredPermission;

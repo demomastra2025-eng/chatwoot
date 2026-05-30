@@ -9,6 +9,7 @@ import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
 import SidebarSubGroup from './SidebarSubGroup.vue';
 import SidebarGroupEmptyLeaf from './SidebarGroupEmptyLeaf.vue';
 import SidebarCollapsedPopover from './SidebarCollapsedPopover.vue';
+import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
 
 const props = defineProps({
   name: { type: String, required: true },
@@ -251,6 +252,9 @@ const isSubGroupHeaderActive = child => {
   return isMenuItemActive(child);
 };
 
+const getChildDisplayLabel = child =>
+  getSidebarChildDisplayLabel(child, isExpanded.value);
+
 const handleCollapsedClick = () => {
   if (hasChildren.value && hasAccessibleChildren.value) {
     if (props.to) {
@@ -385,11 +389,13 @@ watch(
             :action-to="child.actionTo"
             :action-title="child.actionTitle"
             :action-icon="child.actionIcon"
+            :action-items="child.actionItems"
           />
           <SidebarGroupLeaf
             v-else-if="!child.headerAction && isAllowed(child.to)"
             v-show="isExpanded || activeChildNames.includes(child.name)"
             v-bind="child"
+            :label="getChildDisplayLabel(child)"
             :active="activeChildNames.includes(child.name)"
           />
         </template>

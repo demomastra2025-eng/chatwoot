@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
 import SidebarGroupSeparator from './SidebarGroupSeparator.vue';
+import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
 
 import { useSidebarContext } from './provider';
 import { useEventListener } from '@vueuse/core';
@@ -18,6 +19,7 @@ const props = defineProps({
   actionTo: { type: [Object, String], default: '' },
   actionTitle: { type: String, default: '' },
   actionIcon: { type: [Object, String], default: '' },
+  actionItems: { type: Array, default: () => [] },
 });
 
 const { isAllowed } = useSidebarContext();
@@ -39,6 +41,9 @@ const isScrollable = computed(() => {
 
 const scrollEnd = ref(false);
 
+const getChildDisplayLabel = child =>
+  getSidebarChildDisplayLabel(child, props.isExpanded);
+
 // set scrollEnd to true when the scroll reaches the end
 useEventListener(scrollableContainer, 'scroll', () => {
   const { scrollHeight, scrollTop, clientHeight } = scrollableContainer.value;
@@ -58,6 +63,7 @@ useEventListener(scrollableContainer, 'scroll', () => {
     :action-to="actionTo"
     :action-title="actionTitle"
     :action-icon="actionIcon"
+    :action-items="actionItems"
     class="my-1"
   />
   <ul
@@ -78,6 +84,7 @@ useEventListener(scrollableContainer, 'scroll', () => {
         v-show="isExpanded || activeChildNames.includes(child.name)"
         v-bind="child"
         :key="child.name"
+        :label="getChildDisplayLabel(child)"
         :active="activeChildNames.includes(child.name)"
       />
     </div>

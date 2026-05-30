@@ -182,7 +182,7 @@
       "NEXT_STEP_DEFAULT": "Continue with the next step",
       "INVALID_REPLY_LABEL": "Fallback reply",
       "INVALID_REPLY_PLACEHOLDER": "Reply with one of the available options.",
-      "LABELS_LABEL": "Labels",
+      "LABELS_LABEL": "Tags",
       "TEAM_LABEL": "Team",
       "TEAM_PLACEHOLDER": "Select a team",
       "AGENT_LABEL": "Agent",
@@ -241,14 +241,14 @@
       "NODE_SUMMARY": {
         "EMPTY_BODY": "Add message text in the inspector",
         "EMPTY_MENU": "Add menu prompt and options",
-        "NO_LABELS": "No labels selected",
+        "NO_LABELS": "No tags selected",
         "NOT_SET": "Not set",
         "DELAY": "Wait {seconds}s"
       },
       "CONDITION_FIELDS": {
         "MESSAGE_TEXT": "Message text",
         "CONVERSATION_STATUS": "Conversation status",
-        "HAS_LABEL": "Conversation labels"
+        "HAS_LABEL": "Conversation tags"
       },
       "CONDITION_OPERATORS": {
         "CONTAINS": "Contains",
@@ -257,8 +257,8 @@
       "STEP_HELP": {
         "MESSAGE": "Send a standard bot reply into the conversation.",
         "MENU": "Offer clear choices and branch the flow from the customer's reply.",
-        "ADD_LABEL": "Attach labels for routing, automation, or reporting.",
-        "REMOVE_LABEL": "Clean up labels once the branch no longer needs them.",
+        "ADD_LABEL": "Attach tags for routing, automation, or reporting.",
+        "REMOVE_LABEL": "Clean up tags once the branch no longer needs them.",
         "ASSIGN_TEAM": "Route the conversation to the most relevant team.",
         "ASSIGN_AGENT": "Hand the conversation to a specific teammate.",
         "CHANGE_STATUS": "Update the conversation status without leaving the flow.",
@@ -267,8 +267,8 @@
       "STEPS": {
         "MESSAGE": "Send message",
         "MENU": "Reply menu",
-        "ADD_LABEL": "Add label",
-        "REMOVE_LABEL": "Remove label",
+        "ADD_LABEL": "Add tag",
+        "REMOVE_LABEL": "Remove tag",
         "ASSIGN_TEAM": "Assign team",
         "ASSIGN_AGENT": "Assign agent",
         "CHANGE_STATUS": "Change status",

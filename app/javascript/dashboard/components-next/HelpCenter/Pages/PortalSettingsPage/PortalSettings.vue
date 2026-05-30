@@ -39,6 +39,9 @@ const currentPortalSlug = computed(() => route.params.portalSlug);
 
 const isSwitchingPortal = useMapGetter('portals/isSwitchingPortal');
 const isFetchingSSLStatus = useMapGetter('portals/isFetchingSSLStatus');
+const isFetchingPortalSSLStatus = computed(
+  () => isFetchingSSLStatus.value === true
+);
 
 const activePortal = computed(() => {
   return props.portals?.find(portal => portal.slug === currentPortalSlug.value);
@@ -96,7 +99,7 @@ const handleDeletePortal = () => {
         <PortalConfigurationSettings
           :active-portal="activePortal"
           :is-fetching="isFetching"
-          :is-fetching-status="isFetchingSSLStatus"
+          :is-fetching-status="isFetchingPortalSSLStatus"
           @update-portal-configuration="handleUpdatePortalConfiguration"
           @refresh-status="fetchSSLStatus"
           @send-cname-instructions="handleSendCnameInstructions"

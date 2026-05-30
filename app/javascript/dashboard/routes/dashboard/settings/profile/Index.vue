@@ -17,16 +17,12 @@ import SidebarVisibilitySettings from './SidebarVisibilitySettings.vue';
 import HotKeyCard from './HotKeyCard.vue';
 import ChangePassword from './ChangePassword.vue';
 import NotificationPreferences from './NotificationPreferences.vue';
-import AudioNotifications from './AudioNotifications.vue';
 import SectionLayout from '../account/components/SectionLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import AccessToken from './AccessToken.vue';
 import MfaSettingsCard from './MfaSettingsCard.vue';
 import Policy from 'dashboard/components/policy.vue';
-import {
-  ROLES,
-  CONVERSATION_PERMISSIONS,
-} from 'dashboard/constants/permissions.js';
+import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions.js';
 
 export default {
   components: {
@@ -41,7 +37,6 @@ export default {
     HotKeyCard,
     ChangePassword,
     NotificationPreferences,
-    AudioNotifications,
     AccessToken,
     MfaSettingsCard,
     BaseSettingsHeader,
@@ -92,8 +87,7 @@ export default {
             '/assets/images/dashboard/profile/hot-key-ctrl-enter-dark.svg',
         },
       ],
-      notificationPermissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
-      audioNotificationPermissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+      notificationPermissions: CONVERSATION_ACCESS_PERMISSIONS,
     };
   },
   computed: {
@@ -316,17 +310,6 @@ export default {
       >
         <MfaSettingsCard />
       </SectionLayout>
-      <Policy :permissions="audioNotificationPermissions">
-        <SectionLayout
-          with-border
-          :title="$t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.TITLE')"
-          :description="
-            $t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.NOTE')
-          "
-        >
-          <AudioNotifications />
-        </SectionLayout>
-      </Policy>
       <Policy :permissions="notificationPermissions">
         <SectionLayout
           with-border

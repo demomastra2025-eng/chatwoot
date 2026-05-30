@@ -60,7 +60,7 @@
       "DISPLAY_OPTIONS": {
         "SNOOZED": "Отложено",
         "READ": "Прочитано",
-        "LABELS": "Категории",
+        "LABELS": "Теги",
         "CONVERSATION_ID": "ID диалога"
       }
     },

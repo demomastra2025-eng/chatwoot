@@ -1,9 +1,6 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-import {
-  ROLES,
-  CONVERSATION_PERMISSIONS,
-} from 'dashboard/constants/permissions.js';
+import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions.js';
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
 export default {
   routes: [
@@ -22,7 +19,7 @@ export default {
           name: 'canned_list',
           meta: {
             featureFlag: FEATURE_FLAGS.CANNED_RESPONSES,
-            permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
+            permissions: CONVERSATION_ACCESS_PERMISSIONS,
           },
           redirect: to => {
             return {

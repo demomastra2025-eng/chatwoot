@@ -11,6 +11,40 @@ export function useEditableAutomation() {
   const { getConditionDropdownValues, getActionDropdownValues } =
     useAutomationValues();
 
+  const isStageReference = (eventName, type) =>
+    eventName?.startsWith('deal_') && type === 'stage_id';
+
+  const buildLegacyStageOptions = (selectedIds, dropdownValues) => {
+    const activeIds = new Set(dropdownValues.map(item => String(item.id)));
+
+    return selectedIds
+      .filter(id => !activeIds.has(String(id)))
+      .map(id => ({
+        id,
+        legacy: true,
+        name: `Archived stage #${id}`,
+      }));
+  };
+
+  const hydrateDropdownValues = ({
+    selectedIds,
+    dropdownValues,
+    legacyStage,
+  }) => {
+    const hydratedValues = dropdownValues.filter(item =>
+      selectedIds.map(String).includes(String(item.id))
+    );
+
+    if (!legacyStage) {
+      return hydratedValues;
+    }
+
+    return [
+      ...hydratedValues,
+      ...buildLegacyStageOptions(selectedIds, dropdownValues),
+    ];
+  };
+
   /**
    * This function sets the conditions for automation.
    * It help to format the conditions for the automation when we open the edit automation modal.
@@ -65,9 +99,14 @@ export function useEditableAutomation() {
       return {
         ...condition,
         query_operator: condition.query_operator || 'and',
-        values: [...dropdownValues].filter(item =>
-          [...condition.values].includes(item.id)
-        ),
+        values: hydrateDropdownValues({
+          selectedIds: [...condition.values],
+          dropdownValues,
+          legacyStage: isStageReference(
+            automation.event_name,
+            condition.attribute_key
+          ),
+        }),
       };
     });
   };
@@ -84,9 +123,14 @@ export function useEditableAutomation() {
       item => item.key === action.action_name
     ).inputType;
     if (inputType === 'multi_select' || inputType === 'search_select') {
-      return [
-        ...getActionDropdownValues(action.action_name, automation.event_name),
-      ].filter(item => [...params].includes(item.id));
+      return hydrateDropdownValues({
+        selectedIds: [...params],
+        dropdownValues: getActionDropdownValues(
+          action.action_name,
+          automation.event_name
+        ),
+        legacyStage: action.action_name === 'change_deal_stage',
+      });
     }
     if (inputType === 'team_message') {
       return {

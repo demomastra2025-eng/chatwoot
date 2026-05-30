@@ -98,9 +98,6 @@ export const useSchedulingReferencesStore = defineStore(
               },
             };
           });
-        } catch (error) {
-          this.ui.error = extractSchedulingError(error);
-          throw error;
         } finally {
           this.ui.isSaving = false;
         }

@@ -5,12 +5,16 @@ import { required, minLength } from '@vuelidate/validators';
 import { getRegexp } from 'shared/helpers/Validators';
 import { ATTRIBUTE_TYPES } from './constants';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import WootSelect from 'dashboard/components-next/select/Select.vue';
 import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 
 export default {
   components: {
+    Checkbox,
     NextButton,
     TagInput,
+    WootSelect,
   },
   props: {
     selectedAttribute: {
@@ -62,7 +66,7 @@ export default {
     types() {
       return ATTRIBUTE_TYPES.map(item => ({
         ...item,
-        option: this.$t(`ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.${item.key}`),
+        option: this.attributeTypeLabel(item.key),
       }));
     },
     setAttributeListValue() {
@@ -113,6 +117,24 @@ export default {
     this.setFormValues();
   },
   methods: {
+    attributeTypeLabel(key) {
+      switch (key) {
+        case 'TEXT':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.TEXT');
+        case 'NUMBER':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.NUMBER');
+        case 'LINK':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.LINK');
+        case 'DATE':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.DATE');
+        case 'LIST':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.LIST');
+        case 'CHECKBOX':
+          return this.$t('ATTRIBUTES_MGMT.ATTRIBUTE_TYPES.CHECKBOX');
+        default:
+          return key;
+      }
+    },
     onClose() {
       this.$emit('onClose');
     },
@@ -158,9 +180,6 @@ export default {
       } finally {
         useAlert(this.alertMessage);
       }
-    },
-    toggleRegexEnabled() {
-      this.regexEnabled = !this.regexEnabled;
     },
   },
 };
@@ -209,11 +228,11 @@ export default {
         </label>
         <label :class="{ error: v$.attributeType.$error }">
           {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.LABEL') }}
-          <Select v-model="attributeType" disabled>
+          <WootSelect v-model="attributeType" disabled>
             <option v-for="type in types" :key="type.id" :value="type.id">
               {{ type.option }}
             </option>
-          </Select>
+          </WootSelect>
           <span v-if="v$.attributeType.$error" class="message">
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.ERROR') }}
           </span>
@@ -242,13 +261,13 @@ export default {
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.LIST.ERROR') }}
           </label>
         </div>
-        <div v-if="isAttributeTypeText">
-          <Checkbox
-            v-model="regexEnabled"
-            @change="toggleRegexEnabled"
-          />
-          {{ $t('ATTRIBUTES_MGMT.ADD.FORM.ENABLE_REGEX.LABEL') }}
-        </div>
+        <label
+          v-if="isAttributeTypeText"
+          class="mt-2 mb-4 flex items-center gap-3 rounded-xl bg-n-alpha-black2 px-4 py-3 text-sm text-n-slate-12 outline outline-1 outline-n-weak"
+        >
+          <Checkbox v-model="regexEnabled" />
+          <span>{{ $t('ATTRIBUTES_MGMT.ADD.FORM.ENABLE_REGEX.LABEL') }}</span>
+        </label>
         <woot-input
           v-if="isAttributeTypeText && isRegexEnabled"
           v-model="regexPattern"

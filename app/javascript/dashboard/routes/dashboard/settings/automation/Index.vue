@@ -5,6 +5,7 @@ import EditAutomationRule from './EditAutomationRule.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import { computed, onMounted, ref } from 'vue';
+import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
 import { useI18n } from 'vue-i18n';
 import { useStoreGetters, useStore } from 'dashboard/composables/store';
 import { picoSearch } from '@scmmishra/pico-search';
@@ -128,11 +129,11 @@ const submitAutomation = async (payload, mode) => {
     hideAddPopup();
     hideEditPopup();
   } catch (error) {
-    const errorMessage =
+    const fallbackMessage =
       mode === 'edit'
         ? t('AUTOMATION.EDIT.API.ERROR_MESSAGE')
         : t('AUTOMATION.ADD.API.ERROR_MESSAGE');
-    useAlert(errorMessage);
+    useAlert(parseAPIErrorResponse(error) || fallbackMessage);
   }
 };
 const toggleAutomation = async ({ id, name, status }) => {

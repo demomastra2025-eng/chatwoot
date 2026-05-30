@@ -23,7 +23,7 @@ export const getters = {
   },
   getLabelsOnSidebar(_state) {
     return _state.records
-      .filter(record => record.show_on_sidebar)
+      .slice()
       .sort((a, b) => a.title.localeCompare(b.title));
   },
   getLabelById: _state => id => {

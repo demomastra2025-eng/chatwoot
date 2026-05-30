@@ -158,19 +158,25 @@ export default function useAutomationValues() {
   const taskFieldDefinitions = computed(
     () => crmReferencesStore.taskFieldDefinitions || []
   );
+  const isActiveRecord = record => record?.active !== false;
+
   const crmPipelineOptions = computed(() =>
-    (crmReferencesStore.pipelines || []).map(pipeline => ({
-      id: pipeline.id,
-      name: pipeline.name,
-    }))
+    (crmReferencesStore.pipelines || [])
+      .filter(isActiveRecord)
+      .map(pipeline => ({
+        id: pipeline.id,
+        name: pipeline.name,
+      }))
   );
   const crmStageOptions = computed(() =>
-    (crmReferencesStore.pipelines || []).flatMap(pipeline =>
-      (pipeline.stages || []).map(stage => ({
-        id: stage.id,
-        name: `${pipeline.name} / ${stage.name}`,
-      }))
-    )
+    (crmReferencesStore.pipelines || [])
+      .filter(isActiveRecord)
+      .flatMap(pipeline =>
+        (pipeline.stages || []).filter(isActiveRecord).map(stage => ({
+          id: stage.id,
+          name: `${pipeline.name} / ${stage.name}`,
+        }))
+      )
   );
   const crmTaskStatusOptions = computed(() =>
     (crmReferencesStore.taskStatuses || []).map(status => ({

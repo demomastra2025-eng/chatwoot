@@ -557,7 +557,7 @@ export default {
             :disabled="isCancellingCaptainResponse"
             @click="cancelCaptainResponse"
           >
-            <Icon icon="i-ph-stop" class="size-5 text-current" />
+            <Icon icon="i-ph-stop-fill" class="size-[1.375rem] text-current" />
           </button>
         </div>
       </div>

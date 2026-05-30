@@ -2,14 +2,7 @@
 import { frontendURL } from '../../../helper/URLHelper';
 const ConversationView = () => import('./ConversationView.vue');
 import inboxDialogRoutes from '../settings/inbox/inboxDialog.routes';
-
-const CONVERSATION_PERMISSIONS = [
-  'administrator',
-  'agent',
-  'conversation_manage',
-  'conversation_unassigned_manage',
-  'conversation_participating_manage',
-];
+import { CONVERSATION_ACCESS_PERMISSIONS } from '../../../constants/permissions';
 
 export default {
   routes: [
@@ -17,7 +10,7 @@ export default {
       path: frontendURL('accounts/:accountId/dashboard'),
       name: 'home',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: () => {
@@ -29,7 +22,7 @@ export default {
       path: frontendURL('accounts/:accountId/conversations/:conversation_id'),
       name: 'inbox_conversation',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => {
@@ -40,7 +33,7 @@ export default {
       path: frontendURL('accounts/:accountId/inbox/:inbox_id'),
       name: 'inbox_dashboard',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => {
@@ -53,7 +46,7 @@ export default {
       ),
       name: 'conversation_through_inbox',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => {
@@ -67,7 +60,7 @@ export default {
       path: frontendURL('accounts/:accountId/label/:label'),
       name: 'label_conversations',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({ label: route.params.label }),
@@ -78,7 +71,7 @@ export default {
       ),
       name: 'conversations_through_label',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({
@@ -90,7 +83,7 @@ export default {
       path: frontendURL('accounts/:accountId/team/:teamId'),
       name: 'team_conversations',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({ teamId: route.params.teamId }),
@@ -101,7 +94,7 @@ export default {
       ),
       name: 'conversations_through_team',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({
@@ -113,7 +106,7 @@ export default {
       path: frontendURL('accounts/:accountId/custom_view/:id'),
       name: 'folder_conversations',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({ foldersId: route.params.id }),
@@ -124,7 +117,7 @@ export default {
       ),
       name: 'conversations_through_folders',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({
@@ -136,7 +129,7 @@ export default {
       path: frontendURL('accounts/:accountId/mentions/conversations'),
       name: 'conversation_mentions',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: () => ({ conversationType: 'mention' }),
@@ -147,7 +140,7 @@ export default {
       ),
       name: 'conversation_through_mentions',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({
@@ -159,7 +152,7 @@ export default {
       path: frontendURL('accounts/:accountId/unattended/conversations'),
       name: 'conversation_unattended',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: () => ({ conversationType: 'unattended' }),
@@ -170,7 +163,7 @@ export default {
       ),
       name: 'conversation_through_unattended',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({
@@ -182,7 +175,7 @@ export default {
       path: frontendURL('accounts/:accountId/participating/conversations'),
       name: 'conversation_participating',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: () => ({ conversationType: 'participating' }),
@@ -193,7 +186,7 @@ export default {
       ),
       name: 'conversation_through_participating',
       meta: {
-        permissions: CONVERSATION_PERMISSIONS,
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
       props: route => ({

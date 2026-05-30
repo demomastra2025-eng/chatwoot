@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORTS=(3002 3037)
+PORTS=(3002 3037 4077 8097)
 STARTUP_WAIT_SECONDS="${DEV_HYBRID_RESTART_STARTUP_WAIT_SECONDS:-15}"
 TERMINATE_TIMEOUT_SECONDS="${DEV_HYBRID_RESTART_TERMINATE_TIMEOUT_SECONDS:-10}"
 SELF_PID="$$"
@@ -113,6 +113,8 @@ collect_hybrid_proxy_pids() {
   raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "overmind start -f .*Procfile.dev-hybrid")"
   raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "foreman start -f .*Procfile.dev-hybrid")"
   raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "foreman: master")"
+  raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "sidekiq .* chatwoot \\[")"
+  raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "bundle exec sidekiq -C config/sidekiq")"
 
   printf "%s\n" "${raw_pids}" | sort -u
 }
@@ -140,7 +142,7 @@ wait_for_ports() {
     sleep 1
   done
 
-  log "Warning: not all ports became available within ${timeout_seconds}s: 3002 -> $(read_listening_pids 3002 || true), 3037 -> $(read_listening_pids 3037 || true)"
+  log "Warning: not all ports became available within ${timeout_seconds}s: 3002 -> $(read_listening_pids 3002 || true), 3037 -> $(read_listening_pids 3037 || true), 4077 -> $(read_listening_pids 4077 || true), 8097 -> $(read_listening_pids 8097 || true)"
   return 1
 }
 
@@ -154,7 +156,7 @@ main() {
   kill_pids "${proxy_pids}" "old dev-hybrid foreman processes"
 
   hybrid_pids="$(collect_hybrid_pids_from_ports)"
-  kill_pids "${hybrid_pids}" "stale dev-hybrid listeners on 3002/3037"
+  kill_pids "${hybrid_pids}" "stale dev-hybrid listeners on ${PORTS[*]}"
 
   sleep 1
   setsid nohup ./bin/dev-hybrid start >/dev/null 2>&1 < /dev/null &

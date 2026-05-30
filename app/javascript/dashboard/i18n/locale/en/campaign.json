@@ -127,7 +127,7 @@
           },
           "AUDIENCE": {
             "LABEL": "Audience",
-            "PLACEHOLDER": "Select the customer labels",
+            "PLACEHOLDER": "Select the customer tags",
             "ERROR": "Audience is required"
           },
           "SCHEDULED_AT": {
@@ -198,7 +198,7 @@
           },
           "AUDIENCE": {
             "LABEL": "Audience",
-            "PLACEHOLDER": "Select the customer labels",
+            "PLACEHOLDER": "Select the customer tags",
             "ERROR": "Audience is required"
           },
           "SCHEDULED_AT": {
@@ -303,7 +303,7 @@
           },
           "AUDIENCE": {
             "LABEL": "Audience",
-            "PLACEHOLDER": "Select the customer labels",
+            "PLACEHOLDER": "Select the customer tags",
             "ERROR": "Audience is required"
           },
           "SCHEDULED_AT": {

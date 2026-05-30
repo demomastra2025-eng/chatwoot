@@ -350,8 +350,8 @@
             "SEARCH": "Приоритет поиска"
           },
           "LABEL": {
-            "LABEL": "Метка",
-            "PLACEHOLDER": "Выбрать метку",
+            "LABEL": "Тег",
+            "PLACEHOLDER": "Выбрать тег",
             "SEARCH": "Поиск меток"
           },
           "STATUS": {
@@ -376,7 +376,7 @@
         "STATUS": "Статус",
         "PRIORITY": "Приоритет",
         "ASSIGNEE": "Назначено",
-        "LABELS": "Категории",
+        "LABELS": "Теги",
         "CREATED_AT": "Создано {createdAt}"
       },
       "UNLINK": {
@@ -431,7 +431,29 @@
       "YOU": "Вы",
       "USE": "Использовать это",
       "RESET": "Сброс",
-      "SHOW_STEPS": "Показать шаги",
+      "OPEN_MODAL": "Открыть в центре экрана",
+      "RESIZE_PANEL": "Изменить ширину панели",
+      "SHOW_STEPS": "Детали",
+      "TOOL_COUNT": {
+        "ONE": "{count} инструмент",
+        "FEW": "{count} инструмента",
+        "MANY": "{count} инструментов"
+      },
+      "TOOL_STATUS": {
+        "RUNNING": "Выполняется",
+        "COMPLETED": "Завершено",
+        "FAILED": "Ошибка",
+        "SKIPPED": "Пропущено"
+      },
+      "TOOL_TRACE": {
+        "INPUT": "Входные данные",
+        "OUTPUT": "Результат",
+        "COPY_INPUT": "Скопировать входные данные",
+        "COPY_OUTPUT": "Скопировать результат",
+        "SCENARIO_HANDOFF": "Передача в сценарий: {scenario}",
+        "COPY_SUCCESS": "Скопировано в буфер обмена",
+        "COPY_ERROR": "Не удалось скопировать"
+      },
       "SELECT_ASSISTANT": "Выбрать AI-агента",
       "PROMPTS": {
         "SUMMARIZE": {
@@ -693,6 +715,9 @@
           "SYSTEM_PROMPT": "Голосовые инструкции",
           "SYSTEM_PROMPT_PLACEHOLDER": "Например: говори коротко, без markdown, задавай один вопрос за раз",
           "SYSTEM_PROMPT_DESCRIPTION": "Дополнительные инструкции только для телефонного voice-агента. Они добавляются поверх основных инструкций Captain.",
+          "VOICE_CHARACTER_PROMPT": "Голосовой характер",
+          "VOICE_CHARACTER_PROMPT_PLACEHOLDER": "Например: тёплый наставник, низкая энергия, мягкие паузы, без смеха",
+          "VOICE_CHARACTER_PROMPT_DESCRIPTION": "Отдельный voice-performance блок для тембра, характера, эмоций, темпа, интонации, смеха, пауз, дыхания, акцента, дикции, энергии и запретов.",
           "FIRST_MESSAGE": "Первое сообщение",
           "FIRST_MESSAGE_PLACEHOLDER": "Приветствие в начале звонка",
           "TRANSFER_MESSAGE": "Сообщение перед переводом",
@@ -838,7 +863,7 @@
               "CONTACT_ID": { "TITLE": "ID контакта" },
               "STATUS": { "TITLE": "Статус" },
               "PRIORITY": { "TITLE": "Приоритет" },
-              "LABEL_LIST": { "TITLE": "Метки" }
+              "LABEL_LIST": { "TITLE": "Теги" }
             },
             "DEAL": {
               "ID": { "TITLE": "ID сделки" },
@@ -1000,8 +1025,8 @@
               "DESCRIPTION": "Добавляет внутреннюю заметку в текущий диалог."
             },
             "add_label_to_conversation": {
-              "TITLE": "Добавить метку к диалогу",
-              "DESCRIPTION": "Добавляет метку к текущему диалогу."
+              "TITLE": "Добавить тег к диалогу",
+              "DESCRIPTION": "Добавляет тег к текущему диалогу."
             },
             "update_priority": {
               "TITLE": "Обновить приоритет",
@@ -1021,7 +1046,7 @@
             },
             "search_conversations": {
               "TITLE": "Найти диалоги",
-              "DESCRIPTION": "Ищет диалоги по статусу, приоритету, контакту или меткам."
+              "DESCRIPTION": "Ищет диалоги по статусу, приоритету, контакту или тегам."
             },
             "get_contact": {
               "TITLE": "Открыть контакт",
@@ -1276,16 +1301,16 @@
               "DESCRIPTION": "Переподключает inbox WhatsApp Web."
             },
             "create_label": {
-              "TITLE": "Создать метку",
-              "DESCRIPTION": "Создает новую метку аккаунта."
+              "TITLE": "Создать тег",
+              "DESCRIPTION": "Создает новый тег аккаунта."
             },
             "update_label": {
-              "TITLE": "Обновить метку",
-              "DESCRIPTION": "Обновляет существующую метку аккаунта."
+              "TITLE": "Обновить тег",
+              "DESCRIPTION": "Обновляет существующий тег аккаунта."
             },
             "remove_label_from_conversation": {
-              "TITLE": "Убрать метку из диалога",
-              "DESCRIPTION": "Удаляет метку из текущего диалога."
+              "TITLE": "Убрать тег из диалога",
+              "DESCRIPTION": "Удаляет тег из текущего диалога."
             },
             "list_campaigns": {
               "TITLE": "Список кампаний",
@@ -1659,7 +1684,7 @@
               "PROSPECTIVE_BUYER": {
                 "TITLE": "Потенциальный покупатель",
                 "DESCRIPTION": "Обрабатывайте клиентов, которые проявляют интерес к покупке лицензии",
-                "INSTRUCTION": "Если человек заинтересован в покупке лицензии, спросите у него следующее:\n\n1. Сколько лицензий он планирует приобрести?\n2. Переходит ли он с другой платформы?\n\nКогда эта информация будет собрана, выполните следующие шаги:\n1. Добавьте приватную заметку с собранной информацией через [Add Private Note](tool://add_private_note)\n2. Добавьте к диалогу метку \"sales\" через [Add Label to Conversation](tool://add_label_to_conversation)\n3. Ответьте: \"кто-то из нашей команды скоро свяжется с вами\", укажите примерный срок ответа и выполните [Handoff to Human](tool://handoff)"
+                "INSTRUCTION": "Если человек заинтересован в покупке лицензии, спросите у него следующее:\n\n1. Сколько лицензий он планирует приобрести?\n2. Переходит ли он с другой платформы?\n\nКогда эта информация будет собрана, выполните следующие шаги:\n1. Добавьте приватную заметку с собранной информацией через [Add Private Note](tool://add_private_note)\n2. Добавьте к диалогу тег \"sales\" через [Add Tag to Conversation](tool://add_label_to_conversation)\n3. Ответьте: \"кто-то из нашей команды скоро свяжется с вами\", укажите примерный срок ответа и выполните [Handoff to Human](tool://handoff)"
               },
               "BILLING_ISSUE": {
                 "TITLE": "Сложный вопрос по оплате",
@@ -2515,7 +2540,8 @@
           "TOKENS": "Всего токенов",
           "COST": "Оценочная стоимость",
           "PROMPT_TOKENS": "Prompt токены",
-          "COMPLETION_TOKENS": "Completion токены"
+          "COMPLETION_TOKENS": "Completion токены",
+          "THINKING_TOKENS": "Reasoning токены"
         },
         "IDENTIFIERS": {
           "EVENT_ID": "ID события",

@@ -53,7 +53,7 @@ export default {
     setFormValues() {
       this.title = this.selectedResponse.title;
       this.description = this.selectedResponse.description;
-      this.showOnSidebar = this.selectedResponse.show_on_sidebar;
+      this.showOnSidebar = true;
       this.color = this.selectedResponse.color;
     },
     editLabel() {
@@ -105,12 +105,6 @@ export default {
         <label>
           {{ $t('LABEL_MGMT.FORM.COLOR.LABEL') }}
           <woot-color-picker v-model="color" />
-        </label>
-      </div>
-      <div class="flex items-center w-full gap-2">
-        <Checkbox id="show-on-sidebar" v-model="showOnSidebar" />
-        <label for="show-on-sidebar">
-          {{ $t('LABEL_MGMT.FORM.SHOW_ON_SIDEBAR.LABEL') }}
         </label>
       </div>
       <div class="flex items-center justify-end w-full gap-2 px-0 py-2">

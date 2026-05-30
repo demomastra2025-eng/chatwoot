@@ -4,8 +4,8 @@ import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import {
-  CRM_DEAL_MANAGE_PERMISSION,
-  CRM_TASK_MANAGE_PERMISSION,
+  CRM_DEAL_MANAGE_PERMISSIONS,
+  CRM_TASK_MANAGE_PERMISSIONS,
 } from 'dashboard/constants/permissions';
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import {
@@ -97,7 +97,7 @@ export default {
           FEATURE_FLAGS.CRM_DEALS
         ) &&
         hasPermissions(
-          ['administrator', CRM_DEAL_MANAGE_PERMISSION],
+          CRM_DEAL_MANAGE_PERMISSIONS,
           this.currentAccountPermissions
         )
       );
@@ -109,7 +109,7 @@ export default {
           FEATURE_FLAGS.CRM_TASKS
         ) &&
         hasPermissions(
-          ['administrator', CRM_TASK_MANAGE_PERMISSION],
+          CRM_TASK_MANAGE_PERMISSIONS,
           this.currentAccountPermissions
         )
       );

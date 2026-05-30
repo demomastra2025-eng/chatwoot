@@ -82,7 +82,10 @@ const selectedItem = computed(() => {
   if (!optionToSearch) return null;
   // extract the selected item from the options array
   // this ensures that options like icon is also included
-  return options.find(option => option.id === optionToSearch.id);
+  const selectedOption = options.find(
+    option => option.id === optionToSearch.id
+  );
+  return selectedOption || (optionToSearch.name ? optionToSearch : null);
 });
 
 const toggleSelected = option => {

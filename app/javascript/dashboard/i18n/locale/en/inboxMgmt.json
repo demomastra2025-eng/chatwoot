@@ -915,7 +915,7 @@
         "IGNORE_JIDS_HINT": "One WhatsApp JID per line. Ignored chats are skipped during inbound processing and history sync.",
         "IMPORT_CONTACTS": "Import contacts",
         "IMPORT_MESSAGES": "Import messages",
-        "SYNC_LABELS": "Sync WhatsApp labels",
+        "SYNC_LABELS": "Sync WhatsApp tags",
         "SIGN_MESSAGES": "Sign outgoing messages",
         "SIGN_DELIMITER": "Signature delimiter",
         "SIGN_DELIMITER_PLACEHOLDER": "\\n",
@@ -1143,6 +1143,8 @@
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
+      "SETTINGS_TITLE": "Delete channel",
+      "SETTINGS_HELP_TEXT": "Deleting a channel disconnects it from conversations and removes it from the channel list. This action cannot be undone.",
       "AVATAR_DELETE_BUTTON_TEXT": "Delete Avatar",
       "CONFIRM": {
         "TITLE": "Confirm Deletion",
@@ -1463,12 +1465,12 @@
       "SURVEY_RULE": {
         "LABEL": "Survey rule",
         "DESCRIPTION_PREFIX": "Send the survey if the conversation",
-        "DESCRIPTION_SUFFIX": "any of the labels",
+        "DESCRIPTION_SUFFIX": "any of the tags",
         "OPERATOR": {
           "CONTAINS": "contains",
           "DOES_NOT_CONTAINS": "does not contain"
         },
-        "SELECT_PLACEHOLDER": "select labels"
+        "SELECT_PLACEHOLDER": "select tags"
       },
       "NOTE": "Note: CSAT surveys are sent only once per conversation",
       "WHATSAPP_NOTE": "Note: We will create a template and send it for WhatsApp approval. After being approved, surveys will be sent only once per conversation as per the survey rule.",

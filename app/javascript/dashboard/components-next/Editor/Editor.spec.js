@@ -44,6 +44,7 @@ describe('Editor', () => {
     const wrapper = buildWrapper({
       autoHeight: true,
       editorKey: 'captain:assistant:58:basic-description',
+      initialHeight: 304,
       minHeight: '19rem',
       maxHeight: '42rem',
     });
@@ -52,6 +53,9 @@ describe('Editor', () => {
     const wootEditor = wrapper.findComponent(wootEditorStub);
 
     expect(editorWrapper.classes()).toContain('editor-wrapper--auto-height');
+    expect(editorWrapper.attributes('style')).toContain(
+      '--editor-height: 304px;'
+    );
     expect(editorWrapper.attributes('style')).toContain(
       '--editor-min-height: 19rem;'
     );

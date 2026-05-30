@@ -323,6 +323,7 @@
       },
       "STAGES": {
         "CREATE_TITLE": "Create stage",
+        "DEFAULT_BADGE": "Default",
         "DELETE": "Delete stage",
         "DELETE_CONFIRM": "Delete",
         "DELETE_DESCRIPTION": "You cannot delete stage “{name}” while it still has deals. Move all open and closed deals to another stage first.",
@@ -333,6 +334,8 @@
           "COLOR": "Color",
           "COLOR_UNAVAILABLE": "Already used in this pipeline",
           "CUSTOM_COLOR": "Custom color",
+          "DEFAULT": "Default stage",
+          "DEFAULT_HELP": "New deals in this pipeline start from this active open stage.",
           "DEACTIVATE": "Deactivate stage",
           "NAME": "Name",
           "OUTCOME": "Outcome",

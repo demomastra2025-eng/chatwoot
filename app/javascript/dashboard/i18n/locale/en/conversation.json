@@ -80,8 +80,8 @@
     "FEEDBACK_TITLE": "Feedback",
     "REPLY_MESSAGE_NOT_FOUND": "Message not available",
     "CARD": {
-      "SHOW_LABELS": "Show labels",
-      "HIDE_LABELS": "Hide labels"
+      "SHOW_LABELS": "Show tags",
+      "HIDE_LABELS": "Hide tags"
     },
     "VOICE_CALL": {
       "INCOMING_CALL": "Incoming call",
@@ -181,7 +181,7 @@
         "NEXT_WEEK": "Until next week"
       },
       "ASSIGN_AGENT": "Assign agent",
-      "ASSIGN_LABEL": "Assign label",
+      "ASSIGN_LABEL": "Assign tag",
       "AGENTS_LOADING": "Loading agents...",
       "ASSIGN_TEAM": "Assign team",
       "DELETE": "Delete conversation",
@@ -198,12 +198,12 @@
           "FAILED": "Couldn't assign agent. Please try again."
         },
         "LABEL_ASSIGNMENT": {
-          "SUCCESFUL": "Assigned label #{labelName} to conversation id {conversationId}",
-          "FAILED": "Couldn't assign label. Please try again."
+          "SUCCESFUL": "Assigned tag #{labelName} to conversation id {conversationId}",
+          "FAILED": "Couldn't assign tag. Please try again."
         },
         "LABEL_REMOVAL": {
-          "SUCCESFUL": "Removed label #{labelName} from conversation id {conversationId}",
-          "FAILED": "Couldn't remove label. Please try again."
+          "SUCCESFUL": "Removed tag #{labelName} from conversation id {conversationId}",
+          "FAILED": "Couldn't remove tag. Please try again."
         },
         "TEAM_ASSIGNMENT": {
           "SUCCESFUL": "Assigned team \"{team}\" to conversation id {conversationId}",
@@ -306,8 +306,8 @@
     "CHANGE_STATUS_FAILED": "Conversation status change failed",
     "CHANGE_AGENT": "Conversation Assignee changed",
     "CHANGE_AGENT_FAILED": "Assignee change failed",
-    "ASSIGN_LABEL_SUCCESFUL": "Label assigned successfully",
-    "ASSIGN_LABEL_FAILED": "Label assignment failed",
+    "ASSIGN_LABEL_SUCCESFUL": "Tag assigned successfully",
+    "ASSIGN_LABEL_FAILED": "Tag assignment failed",
     "CHANGE_TEAM": "Conversation team changed",
     "SUCCESS_DELETE_CONVERSATION": "Conversation deleted successfully",
     "FAIL_DELETE_CONVERSATION": "Couldn't delete conversation! Try again",
@@ -393,7 +393,7 @@
     "READ_LATEST_UPDATES": "Read our latest updates",
     "ALL_CONVERSATION": {
       "TITLE": "All your conversations in one place",
-      "DESCRIPTION": "View all the conversations from your customers in one single dashboard. You can filter the conversations by the incoming channel, label and status.",
+      "DESCRIPTION": "View all the conversations from your customers in one single dashboard. You can filter the conversations by the incoming channel, tag and status.",
       "NEW_LINK": "Click here to create an inbox"
     },
     "TEAM_MEMBERS": {
@@ -402,8 +402,8 @@
       "NEW_LINK": "Click here to invite a team member"
     },
     "LABELS": {
-      "TITLE": "Organize conversations with labels",
-      "DESCRIPTION": "Labels provide an easier way to categorize your conversation. Create some labels like #support-enquiry, #billing-question etc., so that you can use them in a conversation later.",
+      "TITLE": "Organize conversations with tags",
+      "DESCRIPTION": "Tags provide an easier way to categorize your conversation. Create some tags like #support-enquiry, #billing-question etc., so that you can use them in a conversation later.",
       "NEW_LINK": "Click here to create tags"
     },
     "CANNED_RESPONSES": {
@@ -422,7 +422,7 @@
     "ACCORDION": {
       "CONTACT_DETAILS": "Contact Details",
       "CONVERSATION_ACTIONS": "Conversation Actions",
-      "CONVERSATION_LABELS": "Conversation Labels",
+      "CONVERSATION_LABELS": "Conversation Tags",
       "CONVERSATION_INFO": "Conversation Information",
       "CONTACT_NOTES": "Contact Notes",
       "CONTACT_ATTRIBUTES": "Contact Attributes",

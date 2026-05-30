@@ -277,6 +277,31 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('ignores duplicate incoming Fonoster reject clicks while release is in flight', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-double-reject',
+      provider: 'fonoster',
+    });
+    let resolveRelease;
+    rejectBackendCallMock.mockReturnValue(
+      new Promise(resolve => {
+        resolveRelease = resolve;
+      })
+    );
+    const callSession = mountUseCallSession();
+
+    const firstRelease = callSession.rejectIncomingCall(callsStore.calls[0]);
+    const secondRelease = callSession.rejectIncomingCall(callsStore.calls[0]);
+    await secondRelease;
+
+    expect(rejectClientCallMock).toHaveBeenCalledTimes(1);
+    expect(rejectBackendCallMock).toHaveBeenCalledTimes(1);
+    resolveRelease({ status: 'rejected' });
+    await firstRelease;
+    expect(callsStore.calls).toEqual([]);
+  });
+
   it('still releases an incoming Fonoster call when local SIP decline throws', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

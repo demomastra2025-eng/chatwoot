@@ -1,5 +1,6 @@
 import { frontendURL } from '../../../helper/URLHelper';
 import { FEATURE_FLAGS } from '../../../featureFlags';
+import { SCHEDULING_ACCESS_PERMISSIONS } from '../../../constants/permissions';
 
 const SchedulingCalendarPage = () =>
   import('./pages/SchedulingCalendarPage.vue');
@@ -12,7 +13,7 @@ const SchedulingServicesPage = () =>
   import('./pages/SchedulingServicesPage.vue');
 const schedulingMeta = {
   featureFlag: FEATURE_FLAGS.SCHEDULING,
-  permissions: ['administrator', 'agent', 'custom_role'],
+  permissions: SCHEDULING_ACCESS_PERMISSIONS,
 };
 
 const schedulingAdminMeta = {

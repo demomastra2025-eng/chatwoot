@@ -256,6 +256,48 @@ describe('useEditableAutomation', () => {
     ]);
   });
 
+  it('keeps archived deal stage references visible as legacy selections', () => {
+    const { formatAutomation } = useEditableAutomation();
+
+    const automation = {
+      event_name: 'deal_created',
+      conditions: [
+        {
+          attribute_key: 'stage_id',
+          filter_operator: 'equal_to',
+          values: [99],
+          query_operator: null,
+          custom_attribute_type: '',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'change_deal_stage',
+          action_params: [99],
+        },
+      ],
+    };
+
+    const automationTypes = {
+      deal_created: {
+        conditions: [
+          { key: 'stage_id', inputType: 'search_select', filterOperators: [] },
+        ],
+      },
+    };
+
+    const formatted = formatAutomation(automation, [], automationTypes, [
+      { key: 'change_deal_stage', inputType: 'search_select' },
+    ]);
+
+    expect(formatted.conditions[0].values).toEqual([
+      { id: 99, legacy: true, name: 'Archived stage #99' },
+    ]);
+    expect(formatted.actions[0].action_params).toEqual([
+      { id: 99, legacy: true, name: 'Archived stage #99' },
+    ]);
+  });
+
   it('rehydrates boolean conditions as a single selected option', () => {
     const { formatAutomation } = useEditableAutomation();
 

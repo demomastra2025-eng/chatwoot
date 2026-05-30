@@ -40,6 +40,7 @@ const props = defineProps({
   medium: { type: String, default: '' },
   overrideLineBreaks: { type: Boolean, default: false },
   autoHeight: { type: Boolean, default: false },
+  initialHeight: { type: Number, default: 240 },
   minHeight: { type: String, default: '10rem' },
   maxHeight: { type: String, default: '32rem' },
 });
@@ -51,13 +52,22 @@ const DEFAULT_EDITOR_HEIGHT = 240;
 const MIN_EDITOR_HEIGHT = 140;
 const MAX_EDITOR_HEIGHT = 1200;
 
+const clampEditorHeight = height =>
+  Math.min(
+    Math.max(Number(height) || DEFAULT_EDITOR_HEIGHT, MIN_EDITOR_HEIGHT),
+    MAX_EDITOR_HEIGHT
+  );
+
 const slots = useSlots();
 
+const initialEditorHeight = computed(() =>
+  clampEditorHeight(props.initialHeight)
+);
 const isFocused = ref(false);
-const editorHeight = ref(DEFAULT_EDITOR_HEIGHT);
+const editorHeight = ref(initialEditorHeight.value);
 const isResizing = ref(false);
 const resizeStartY = ref(0);
-const resizeStartHeight = ref(DEFAULT_EDITOR_HEIGHT);
+const resizeStartHeight = ref(initialEditorHeight.value);
 
 const normalizedModelValue = computed(() => props.modelValue || '');
 const characterCount = computed(() => normalizedModelValue.value.length);
@@ -65,12 +75,6 @@ const storageKey = computed(
   () =>
     `${AUTO_HEIGHT_STORAGE_PREFIX}${props.editorKey || props.label || 'default'}`
 );
-const clampEditorHeight = height =>
-  Math.min(
-    Math.max(Number(height) || DEFAULT_EDITOR_HEIGHT, MIN_EDITOR_HEIGHT),
-    MAX_EDITOR_HEIGHT
-  );
-
 const readStoredEditorHeight = () => {
   try {
     return window.localStorage.getItem(storageKey.value);
@@ -98,7 +102,9 @@ const removeStoredEditorHeight = () => {
 const loadStoredEditorHeight = () => {
   if (!props.autoHeight) return;
   const storedHeight = readStoredEditorHeight();
-  editorHeight.value = clampEditorHeight(storedHeight || DEFAULT_EDITOR_HEIGHT);
+  editorHeight.value = clampEditorHeight(
+    storedHeight || initialEditorHeight.value
+  );
 };
 
 const saveEditorHeight = () => {
@@ -140,7 +146,7 @@ const onResizeEnd = () => {
 
 const resetEditorHeight = () => {
   if (!props.autoHeight) return;
-  editorHeight.value = DEFAULT_EDITOR_HEIGHT;
+  editorHeight.value = initialEditorHeight.value;
   removeStoredEditorHeight();
 };
 
@@ -195,7 +201,10 @@ watch(
   }
 );
 
-watch(() => [props.autoHeight, storageKey.value], loadStoredEditorHeight);
+watch(
+  () => [props.autoHeight, storageKey.value, props.initialHeight],
+  loadStoredEditorHeight
+);
 
 onMounted(() => {
   loadStoredEditorHeight();

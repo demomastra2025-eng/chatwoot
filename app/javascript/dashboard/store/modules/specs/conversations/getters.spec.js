@@ -429,7 +429,7 @@ describe('#getters', () => {
       {
         id: 2,
         status: 'open',
-        meta: {},
+        meta: { current_user_participant: true },
         last_activity_at: 2000,
       },
       {
@@ -601,8 +601,8 @@ describe('#getters', () => {
         rootGetters
       );
 
-      // Should only include conversation assigned to user (id: 1)
-      expect(result).toEqual([mockConversations[0]]);
+      // Should include conversations assigned to the user and where the user participates
+      expect(result).toEqual([mockConversations[1], mockConversations[0]]);
     });
 
     it('filters conversations for custom role with no permissions', () => {
@@ -672,8 +672,8 @@ describe('#getters', () => {
         rootGetters
       );
 
-      // Should only include open conversation assigned to user (id: 1)
-      expect(result).toEqual([mockConversations[0]]);
+      // Should include open conversations assigned to the user and where the user participates
+      expect(result).toEqual([mockConversations[1], mockConversations[0]]);
     });
 
     it('returns empty array when no conversations match filters', () => {

@@ -111,12 +111,47 @@ guard_dev_environment() {
 }
 
 guard_dev_environment
+
+ensure_dev_sidekiq_db_pool() {
+  local required_pool=1
+  local value
+  local variable
+
+  for variable in \
+    SIDEKIQ_CONCURRENCY \
+    CAPTAIN_RUNTIME_SIDEKIQ_CONCURRENCY \
+    OUTBOUND_MESSAGES_SIDEKIQ_CONCURRENCY \
+    REMINDERS_SIDEKIQ_CONCURRENCY \
+    TELEGRAM_PERSONAL_HISTORY_SIDEKIQ_CONCURRENCY \
+    WHATSAPPWEB_INBOUND_SIDEKIQ_CONCURRENCY \
+    WHATSAPPWEB_HISTORY_SIDEKIQ_CONCURRENCY \
+    WHATSAPPWEB_ECHO_SIDEKIQ_CONCURRENCY; do
+    value="${!variable:-}"
+    [[ "${value}" =~ ^[0-9]+$ ]] || continue
+    (( value > required_pool )) && required_pool="${value}"
+  done
+
+  value="${SIDEKIQ_DB_POOL:-}"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]] || (( value < required_pool )); then
+    export SIDEKIQ_DB_POOL="${required_pool}"
+  fi
+}
+
+ensure_dev_sidekiq_db_pool
 setup_dev_hybrid_logging
 cd "${APP_DIR}"
 
 if [[ "${DEV_HYBRID_PRESERVE_DEBUG}" != "1" ]]; then
   unset DEBUG
 fi
+
+ensure_dev_proxy_config() {
+  if [[ "${DEV_PROXY_GUARD:-1}" != "1" ]]; then
+    return 0
+  fi
+
+  "${APP_DIR}/bin/dev-proxy-check" --strict
+}
 
 configure_test_environment() {
   export RAILS_ENV=test
@@ -144,6 +179,8 @@ case "${COMMAND}" in
     exec bundle exec rails db:prepare
     ;;
   start)
+    ensure_dev_proxy_config
+
     if command -v overmind >/dev/null 2>&1; then
       exec overmind start -f "${PROCFILE_PATH}"
     fi
@@ -151,6 +188,7 @@ case "${COMMAND}" in
     exec foreman start -f "${PROCFILE_PATH}"
     ;;
   start-foreman)
+    ensure_dev_proxy_config
     exec foreman start -f "${PROCFILE_PATH}"
     ;;
   rails)
@@ -163,6 +201,7 @@ case "${COMMAND}" in
     exec bundle exec rspec "$@"
     ;;
   vite)
+    ensure_dev_proxy_config
     exec env VITE_RUBY_CONFIG_PATH="${VITE_RUBY_CONFIG_PATH:-config/vite.hybrid.json}" ./node_modules/.bin/vite build --watch --config vite.config.mts
     ;;
   *)

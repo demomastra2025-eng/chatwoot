@@ -15,9 +15,11 @@ describe('sidebarVisibility', () => {
     expect(visibilityState.Inbox).toBe(true);
     expect(visibilityState.Campaigns).toBe(true);
     expect(visibilityState['Campaigns:Templates']).toBe(true);
+    expect(visibilityState['Campaigns:Touches']).toBe(true);
     expect(visibilityState['Captain:Evaluations']).toBe(true);
+    expect(visibilityState.Employees).toBe(true);
     expect(visibilityState.Settings).toBe(true);
-    expect(visibilityState['Settings:Workspace']).toBe(true);
+    expect(visibilityState['Settings:CustomAttributes']).toBe(true);
     expect(visibilityState['Reports:Overview']).toBe(true);
   });
 
@@ -27,11 +29,13 @@ describe('sidebarVisibility', () => {
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
           'Reports',
           'Unknown',
+          'Employees',
+          'Settings:Macros',
           'Settings:Workspace',
           'Reports',
         ],
       })
-    ).toEqual(['Reports', 'Settings:Workspace']);
+    ).toEqual(['Employees', 'Reports', 'Settings:Macros']);
   });
 
   it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {
@@ -59,6 +63,32 @@ describe('sidebarVisibility', () => {
     ).toEqual(['Captain:Prompts']);
   });
 
+  it('migrates the legacy personal broadcasts visibility key to touches', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:PersonalBroadcasts'],
+      })
+    ).toEqual(['Campaigns:Touches']);
+  });
+
+  it('preserves touches visibility once the new schema version is saved', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:Touches'],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+          SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      })
+    ).toEqual(['Campaigns:Touches']);
+
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:PersonalBroadcasts'],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+          SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      })
+    ).toEqual([]);
+  });
+
   it('preserves the current prompts visibility once the new schema version is saved', () => {
     expect(
       getSidebarHiddenItems({
@@ -77,15 +107,15 @@ describe('sidebarVisibility', () => {
           name: 'Settings',
           children: [
             {
-              name: 'Settings Account Settings',
-              visibilityKey: 'Settings:Workspace',
+              name: 'Settings Macros',
+              visibilityKey: 'Settings:Macros',
             },
             { name: 'Settings Agents', visibilityKey: 'Settings:Agents' },
           ],
         },
       ],
       {
-        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:Workspace'],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:Macros'],
       }
     );
 
@@ -105,8 +135,8 @@ describe('sidebarVisibility', () => {
       getSidebarHiddenItemsFromState({
         Inbox: true,
         Campaigns: false,
-        'Settings:Workspace': false,
+        'Settings:Macros': false,
       })
-    ).toEqual(['Campaigns', 'Settings:Workspace']);
+    ).toEqual(['Campaigns', 'Settings:Macros']);
   });
 });

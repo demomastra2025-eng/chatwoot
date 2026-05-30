@@ -350,9 +350,9 @@
             "SEARCH": "Search priority"
           },
           "LABEL": {
-            "LABEL": "Label",
-            "PLACEHOLDER": "Select label",
-            "SEARCH": "Search label"
+            "LABEL": "Tag",
+            "PLACEHOLDER": "Select tag",
+            "SEARCH": "Search tag"
           },
           "STATUS": {
             "LABEL": "Status",
@@ -376,7 +376,7 @@
         "STATUS": "Status",
         "PRIORITY": "Priority",
         "ASSIGNEE": "Assignee",
-        "LABELS": "Labels",
+        "LABELS": "Tags",
         "CREATED_AT": "Created at {createdAt}"
       },
       "UNLINK": {
@@ -431,7 +431,29 @@
       "YOU": "You",
       "USE": "Use this",
       "RESET": "Reset",
-      "SHOW_STEPS": "Show steps",
+      "OPEN_MODAL": "Open centered view",
+      "RESIZE_PANEL": "Resize panel",
+      "SHOW_STEPS": "Details",
+      "TOOL_COUNT": {
+        "ONE": "{count} tool",
+        "FEW": "{count} tools",
+        "MANY": "{count} tools"
+      },
+      "TOOL_STATUS": {
+        "RUNNING": "Running",
+        "COMPLETED": "Completed",
+        "FAILED": "Failed",
+        "SKIPPED": "Skipped"
+      },
+      "TOOL_TRACE": {
+        "INPUT": "Input",
+        "OUTPUT": "Output",
+        "COPY_INPUT": "Copy input",
+        "COPY_OUTPUT": "Copy output",
+        "SCENARIO_HANDOFF": "Scenario handoff: {scenario}",
+        "COPY_SUCCESS": "Copied to clipboard",
+        "COPY_ERROR": "Unable to copy"
+      },
       "SELECT_ASSISTANT": "Select AI Agent",
       "PROMPTS": {
         "SUMMARIZE": {
@@ -693,6 +715,9 @@
           "SYSTEM_PROMPT": "Voice instructions",
           "SYSTEM_PROMPT_PLACEHOLDER": "For example: speak briefly, avoid markdown, ask one question at a time",
           "SYSTEM_PROMPT_DESCRIPTION": "Extra instructions used only by the phone voice agent. They are added on top of the main Captain instructions.",
+          "VOICE_CHARACTER_PROMPT": "Voice character prompt",
+          "VOICE_CHARACTER_PROMPT_PLACEHOLDER": "For example: warm mentor, low energy, soft pauses, no laughter",
+          "VOICE_CHARACTER_PROMPT_DESCRIPTION": "A separate voice-performance block for timbre, character, emotion, tempo, intonation, laughter, pauses, breathing, accent, diction, energy, and things to avoid.",
           "FIRST_MESSAGE": "First message",
           "FIRST_MESSAGE_PLACEHOLDER": "Greeting spoken at the start of the call",
           "TRANSFER_MESSAGE": "Transfer message",
@@ -838,7 +863,7 @@
               "CONTACT_ID": { "TITLE": "Contact ID" },
               "STATUS": { "TITLE": "Status" },
               "PRIORITY": { "TITLE": "Priority" },
-              "LABEL_LIST": { "TITLE": "Labels" }
+              "LABEL_LIST": { "TITLE": "Tags" }
             },
             "DEAL": {
               "ID": { "TITLE": "Deal ID" },
@@ -1000,8 +1025,8 @@
               "DESCRIPTION": "Add an internal note to the current conversation."
             },
             "add_label_to_conversation": {
-              "TITLE": "Add label to conversation",
-              "DESCRIPTION": "Attach a label to the current conversation."
+              "TITLE": "Add tag to conversation",
+              "DESCRIPTION": "Attach a tag to the current conversation."
             },
             "update_priority": {
               "TITLE": "Update priority",
@@ -1021,7 +1046,7 @@
             },
             "search_conversations": {
               "TITLE": "Search conversations",
-              "DESCRIPTION": "Search conversations by status, priority, contact, or labels."
+              "DESCRIPTION": "Search conversations by status, priority, contact, or tags."
             },
             "get_contact": {
               "TITLE": "Open contact",
@@ -1276,16 +1301,16 @@
               "DESCRIPTION": "Reconnect a WhatsApp Web inbox."
             },
             "create_label": {
-              "TITLE": "Create label",
-              "DESCRIPTION": "Create a new account label."
+              "TITLE": "Create tag",
+              "DESCRIPTION": "Create a new account tag."
             },
             "update_label": {
-              "TITLE": "Update label",
-              "DESCRIPTION": "Update an existing account label."
+              "TITLE": "Update tag",
+              "DESCRIPTION": "Update an existing account tag."
             },
             "remove_label_from_conversation": {
-              "TITLE": "Remove label from conversation",
-              "DESCRIPTION": "Remove a label from the current conversation."
+              "TITLE": "Remove tag from conversation",
+              "DESCRIPTION": "Remove a tag from the current conversation."
             },
             "list_campaigns": {
               "TITLE": "List campaigns",
@@ -1659,7 +1684,7 @@
               "PROSPECTIVE_BUYER": {
                 "TITLE": "Prospective Buyer",
                 "DESCRIPTION": "Handle customers who are showing interest in purchasing a license",
-                "INSTRUCTION": "If someone is interested in purchasing a license, ask them for the following:\n\n1. How many licenses are they willing to purchase?\n2. Are they migrating from another platform?\n\nOnce these details are collected, do the following steps:\n1. Add a private note with the information you collected using [Add Private Note](tool://add_private_note)\n2. Add label \"sales\" to the conversation using [Add Label to Conversation](tool://add_label_to_conversation)\n3. Reply saying \"one of us will reach out soon\", provide an estimated timeline for the response, and [Handoff to Human](tool://handoff)"
+                "INSTRUCTION": "If someone is interested in purchasing a license, ask them for the following:\n\n1. How many licenses are they willing to purchase?\n2. Are they migrating from another platform?\n\nOnce these details are collected, do the following steps:\n1. Add a private note with the information you collected using [Add Private Note](tool://add_private_note)\n2. Add label \"sales\" to the conversation using [Add Tag to Conversation](tool://add_label_to_conversation)\n3. Reply saying \"one of us will reach out soon\", provide an estimated timeline for the response, and [Handoff to Human](tool://handoff)"
               },
               "BILLING_ISSUE": {
                 "TITLE": "Complex billing issue",
@@ -2515,7 +2540,8 @@
           "TOKENS": "Total tokens",
           "COST": "Estimated cost",
           "PROMPT_TOKENS": "Prompt tokens",
-          "COMPLETION_TOKENS": "Completion tokens"
+          "COMPLETION_TOKENS": "Completion tokens",
+          "THINKING_TOKENS": "Reasoning tokens"
         },
         "IDENTIFIERS": {
           "EVENT_ID": "Event ID",

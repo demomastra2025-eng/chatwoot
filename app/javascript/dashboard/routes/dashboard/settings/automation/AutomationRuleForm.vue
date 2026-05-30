@@ -278,6 +278,63 @@ watch(
   { deep: true }
 );
 
+const STAGE_OPTION_ARCHIVED = 'STAGE_OPTION_ARCHIVED';
+
+const selectedOptionIds = value => {
+  if (!value) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .map(item => (item && typeof item === 'object' ? item.id : item))
+    .filter(item => item !== null && item !== undefined && item !== '');
+};
+
+const hasInactiveSelectedOption = (selectedValue, options) => {
+  const activeOptionIds = new Set(
+    (options || []).map(option => String(option.id))
+  );
+  return selectedOptionIds(selectedValue).some(
+    id => !activeOptionIds.has(String(id))
+  );
+};
+
+const getStageSelectionErrors = () => {
+  const stageErrors = {};
+  const event = eventName.value;
+
+  if (!event?.startsWith('deal_')) {
+    return stageErrors;
+  }
+
+  const stageConditionOptions = props.getConditionDropdownValues(
+    'stage_id',
+    event
+  );
+  const stageActionOptions = props.getActionDropdownValues(
+    'change_deal_stage',
+    event
+  );
+
+  automation.value.conditions.forEach((condition, index) => {
+    if (
+      condition.attribute_key === 'stage_id' &&
+      hasInactiveSelectedOption(condition.values, stageConditionOptions)
+    ) {
+      stageErrors[`condition_${index}`] = STAGE_OPTION_ARCHIVED;
+    }
+  });
+
+  automation.value.actions.forEach((action, index) => {
+    if (
+      action.action_name === 'change_deal_stage' &&
+      hasInactiveSelectedOption(action.action_params, stageActionOptions)
+    ) {
+      stageErrors[`action_${index}`] = STAGE_OPTION_ARCHIVED;
+    }
+  });
+
+  return stageErrors;
+};
+
 const isConditionsValid = () => {
   if (!conditionsRef.value) return true;
   return conditionsRef.value.every(condition => condition.validate());
@@ -313,17 +370,25 @@ const close = () => {
 const emitSaveAutomation = () => {
   syncCustomAttributeTypes();
   const conditionsValid = isConditionsValid();
-  errors.value = validateAutomation(automation.value);
+  errors.value = {
+    ...validateAutomation(automation.value),
+    ...getStageSelectionErrors(),
+  };
   if (Object.keys(errors.value).length === 0 && conditionsValid) {
     const payload = generateAutomationPayload(automation.value);
     emit('save', payload, props.mode);
   }
 };
 
-const getActionErrorMessage = index => {
-  const errorKey = errors.value[`action_${index}`];
+const getValidationErrorMessage = errorKey => {
   return errorKey ? automationErrorTranslations.value[errorKey] || '' : '';
 };
+
+const getActionErrorMessage = index =>
+  getValidationErrorMessage(errors.value[`action_${index}`]);
+
+const getConditionErrorMessage = index =>
+  getValidationErrorMessage(errors.value[`condition_${index}`]);
 
 defineExpose({ open, close });
 </script>
@@ -403,6 +468,7 @@ defineExpose({ open, close });
               v-model:filter-operator="automation.conditions[i].filter_operator"
               v-model:values="automation.conditions[i].values"
               :filter-types="filterTypes"
+              :external-error-message="getConditionErrorMessage(i)"
               :show-query-operator="false"
               @remove="removeFilter(i)"
             />
@@ -416,6 +482,7 @@ defineExpose({ open, close });
               "
               v-model:values="automation.conditions[i].values"
               :filter-types="filterTypes"
+              :external-error-message="getConditionErrorMessage(i)"
               show-query-operator
               @remove="removeFilter(i)"
             />

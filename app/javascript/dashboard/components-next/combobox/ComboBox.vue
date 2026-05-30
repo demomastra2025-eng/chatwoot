@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, useSlots } from 'vue';
+import { ref, computed, watch, nextTick, useSlots, useAttrs } from 'vue';
 import { OnClickOutside } from '@vueuse/components';
 import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
@@ -23,6 +23,7 @@ const props = defineProps({
   hasError: { type: Boolean, default: false },
   useApiResults: { type: Boolean, default: false }, // useApiResults prop to determine if search is handled by API
   inputLike: { type: Boolean, default: false },
+  id: { type: String, default: '' },
   dropdownPlacement: {
     type: String,
     default: 'bottom',
@@ -34,6 +35,11 @@ const emit = defineEmits(['open', 'update:modelValue', 'search']);
 
 const { t } = useI18n();
 const slots = useSlots();
+const attrs = useAttrs();
+
+defineOptions({
+  inheritAttrs: false,
+});
 
 const selectedValue = ref(props.modelValue);
 const open = ref(false);
@@ -121,6 +127,14 @@ const selectedLabel = computed(() => {
   return selectedOption.value?.label ?? selectPlaceholder.value;
 });
 const selectedIcon = computed(() => selectedOption.value?.icon || '');
+const triggerId = computed(() => props.id || attrs.id || undefined);
+const rootAttrs = computed(() => {
+  const forwardedAttrs = { ...attrs };
+  delete forwardedAttrs.class;
+  delete forwardedAttrs.style;
+  delete forwardedAttrs.id;
+  return forwardedAttrs;
+});
 const triggerColor = computed(() => {
   if (props.hasError && !open.value) return 'ruby';
   if (props.inputLike) return 'slate';
@@ -194,11 +208,16 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
 <template>
   <div
     ref="comboboxRef"
+    v-bind="rootAttrs"
     class="relative w-full min-w-0"
-    :class="{
-      'cursor-not-allowed': disabled,
-      'group/combobox': !disabled,
-    }"
+    :class="[
+      attrs.class,
+      {
+        'cursor-not-allowed': disabled,
+        'group/combobox': !disabled,
+      },
+    ]"
+    :style="attrs.style"
     @click.prevent
   >
     <OnClickOutside
@@ -207,6 +226,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
     >
       <div class="relative">
         <Button
+          :id="triggerId"
           variant="outline"
           :color="triggerColor"
           justify="start"

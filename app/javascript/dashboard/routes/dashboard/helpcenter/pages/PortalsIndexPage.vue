@@ -17,8 +17,20 @@ const isPortalPresent = portalSlug => {
   return !!portals.value.find(portal => portal.slug === portalSlug);
 };
 
-const routeToView = (name, params) => {
-  router.replace({ name, params, replace: true });
+const routesWithLocale = new Set([
+  'portals_articles_index',
+  'portals_categories_index',
+]);
+
+const routeToView = (name, params = {}) => {
+  let routeParams = {};
+  if (routesWithLocale.has(name)) {
+    routeParams = params;
+  } else if (params.portalSlug) {
+    routeParams = { portalSlug: params.portalSlug };
+  }
+
+  router.replace({ name, params: routeParams, replace: true });
 };
 
 const generateRouterParams = () => {

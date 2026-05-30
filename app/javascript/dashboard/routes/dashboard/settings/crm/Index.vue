@@ -80,6 +80,7 @@ const canManage = computed(() =>
 const stageForm = reactive({
   active: true,
   color: DEFAULT_STAGE_COLOR,
+  default: false,
   id: null,
   name: '',
   outcome: 'open',
@@ -136,6 +137,10 @@ const stageOutcomeOptions = computed(() => [
   { label: t('CRM.SETTINGS.STAGES.OUTCOMES.lost'), value: 'lost' },
 ]);
 
+const stageFormCanBeDefault = computed(
+  () => stageForm.active && stageForm.outcome === 'open'
+);
+
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
 
 const syncFromAccount = () => {
@@ -145,6 +150,15 @@ const syncFromAccount = () => {
 };
 
 watch(currentAccount, syncFromAccount, { deep: true, immediate: true });
+
+watch(
+  () => [stageForm.active, stageForm.outcome],
+  () => {
+    if (!stageFormCanBeDefault.value) {
+      stageForm.default = false;
+    }
+  }
+);
 
 function sortStages(stages) {
   return [...(stages || [])].sort(
@@ -455,6 +469,9 @@ const pipelineStagesById = pipelineId => {
   );
 };
 
+const pipelineHasDefaultStage = pipelineId =>
+  pipelineStagesById(pipelineId).some(stage => stage.default && stage.active);
+
 const getStageRows = pipelineId => {
   return stageRowsByPipeline[String(pipelineId)] || [];
 };
@@ -571,6 +588,7 @@ const resetStageForm = () => {
       currentStageId: null,
       pipelineId: firstPipelineId,
     }),
+    default: false,
     id: null,
     name: '',
     outcome: 'open',
@@ -602,6 +620,7 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
           currentStageId: stage.id,
           pipelineId: stage.pipelineId,
         }),
+      default: Boolean(stage.default),
       id: stage.id,
       name: stage.name,
       outcome: stage.outcome || 'open',
@@ -616,6 +635,7 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
       currentStageId: null,
       pipelineId: stageForm.pipelineId,
     });
+    stageForm.default = !pipelineHasDefaultStage(stageForm.pipelineId);
   }
 
   stageDrawerOpen.value = true;
@@ -625,6 +645,8 @@ const handleStagePipelineSelection = pipelineId => {
   stageForm.pipelineId = pipelineId;
 
   if (stageForm.id) return;
+
+  stageForm.default = !pipelineHasDefaultStage(pipelineId);
 
   const normalizedColor = String(stageForm.color || '')
     .trim()
@@ -674,6 +696,7 @@ const saveStage = async () => {
     await referencesStore.saveStage({
       active: stageForm.active,
       color: stageForm.color,
+      default: Boolean(stageForm.default && stageFormCanBeDefault.value),
       id: stageForm.id,
       name: stageForm.name.trim(),
       outcome: stageForm.outcome,
@@ -1049,6 +1072,12 @@ onMounted(async () => {
                                 {{ index + 1 }}
                               </span>
                               <span class="truncate">{{ stage.name }}</span>
+                              <span
+                                v-if="stage.default"
+                                class="inline-flex shrink-0 rounded-full bg-n-brand/10 px-2 py-0.5 text-[10px] font-semibold text-n-brand"
+                              >
+                                {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
+                              </span>
                             </button>
                             <button
                               v-if="canManage && row.active"
@@ -1281,6 +1310,21 @@ onMounted(async () => {
           :options="stageOutcomeOptions"
           @update:model-value="stageForm.outcome = $event"
         />
+        <div class="flex items-center gap-3">
+          <Switch
+            :model-value="stageForm.default"
+            :disabled="!stageFormCanBeDefault"
+            @update:model-value="stageForm.default = $event"
+          />
+          <div class="grid gap-1">
+            <span class="text-sm font-medium text-n-slate-12">
+              {{ $t('CRM.SETTINGS.STAGES.FORM.DEFAULT') }}
+            </span>
+            <span class="text-xs text-n-slate-11">
+              {{ $t('CRM.SETTINGS.STAGES.FORM.DEFAULT_HELP') }}
+            </span>
+          </div>
+        </div>
         <div v-if="stageForm.id" class="flex items-center gap-3">
           <Checkbox
             :model-value="!stageForm.active"

@@ -8,7 +8,13 @@ describe('#getters', () => {
 
   it('getLabelsOnSidebar', () => {
     const state = { records: labels };
-    expect(getters.getLabelsOnSidebar(state)).toEqual([labels[0]]);
+    expect(getters.getLabelsOnSidebar(state)).toEqual([
+      labels[4],
+      labels[0],
+      labels[3],
+      labels[2],
+      labels[1],
+    ]);
   });
 
   it('getUIFlags', () => {

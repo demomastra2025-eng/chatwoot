@@ -1,5 +1,6 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
+import { employeeSettingsTabs } from '../employeeSettingsTabs';
 
 const TeamsIndex = () => import('./Index.vue');
 const CreateStepWrap = () => import('./Create/Index.vue');
@@ -10,12 +11,16 @@ const AddAgents = () => import('./Create/AddAgents.vue');
 const EditAgents = () => import('./Edit/EditAgents.vue');
 const FinishSetup = () => import('./FinishSetup.vue');
 const SettingsContent = () => import('../Wrapper.vue');
-const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const SettingsTabsWrapper = () =>
+  import('../components/SettingsTabsWrapper.vue');
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/teams'),
-      component: SettingsWrapper,
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: employeeSettingsTabs,
+      },
       children: [
         {
           path: '',

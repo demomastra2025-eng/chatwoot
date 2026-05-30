@@ -216,6 +216,7 @@ onBeforeUnmount(clearPreviewState);
         {{ t('CAMPAIGN.SMS.CREATE.FORM.AUDIENCE.LABEL') }}
       </label>
       <TagMultiSelectComboBox
+        id="audience"
         v-model="state.selectedAudience"
         :options="audienceList"
         :label="t('CAMPAIGN.SMS.CREATE.FORM.AUDIENCE.LABEL')"

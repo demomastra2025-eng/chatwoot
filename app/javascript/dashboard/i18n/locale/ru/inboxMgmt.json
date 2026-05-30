@@ -915,7 +915,7 @@
         "IGNORE_JIDS_HINT": "По одному JID WhatsApp в строке. Игнорируемые чаты пропускаются при входящей обработке и синхронизации истории.",
         "IMPORT_CONTACTS": "Импортировать контакты",
         "IMPORT_MESSAGES": "Импортировать сообщения",
-        "SYNC_LABELS": "Синхронизировать ярлыки WhatsApp",
+        "SYNC_LABELS": "Синхронизировать теги WhatsApp",
         "SIGN_MESSAGES": "Подписывать исходящие сообщения",
         "SIGN_DELIMITER": "Разделитель подписи",
         "SIGN_DELIMITER_PLACEHOLDER": "\\n",
@@ -1143,6 +1143,8 @@
     },
     "DELETE": {
       "BUTTON_TEXT": "Удалить",
+      "SETTINGS_TITLE": "Удаление канала",
+      "SETTINGS_HELP_TEXT": "Удаление канала отключит его от диалогов и уберёт из списка каналов. Действие необратимо.",
       "AVATAR_DELETE_BUTTON_TEXT": "Удалить аватар",
       "CONFIRM": {
         "TITLE": "Подтвердите удаление",
@@ -1416,12 +1418,12 @@
       "SURVEY_RULE": {
         "LABEL": "Условие опросы",
         "DESCRIPTION_PREFIX": "Отправить опрос если диалог",
-        "DESCRIPTION_SUFFIX": "метки",
+        "DESCRIPTION_SUFFIX": "теги",
         "OPERATOR": {
           "CONTAINS": "содержит",
           "DOES_NOT_CONTAINS": "не содержит"
         },
-        "SELECT_PLACEHOLDER": "Выбрать метки"
+        "SELECT_PLACEHOLDER": "Выбрать теги"
       },
       "NOTE": "Примечание: опросы CSAT отправляются только один раз для диалога",
       "WHATSAPP_NOTE": "Примечание: мы создадим шаблон и отправим его на одобрение WhatsApp. После одобрения опрос будет отправляться только один раз на диалог согласно правилу опроса.",

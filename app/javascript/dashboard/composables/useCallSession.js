@@ -107,7 +107,8 @@ export function useCallSession() {
     };
   };
 
-  const callReleaseKey = callSid => callSid || Symbol('unknown_call');
+  const unknownCallReleaseKey = Symbol('unknown_call');
+  const callReleaseKey = callSid => callSid || unknownCallReleaseKey;
 
   const runOnceForCall = async (lockSetRef, callSid, callback) => {
     const releaseKey = callReleaseKey(callSid);
