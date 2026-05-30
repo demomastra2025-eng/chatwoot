@@ -42,6 +42,48 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     )
   end
 
+  it 'reranks semantic chunks and exposes rerank scores in the retrieval trace' do
+    second_document = create(:captain_document, account: account, assistant: assistant)
+    second_chunk = second_document.document_chunks.create!(
+      account: account,
+      assistant: assistant,
+      chunk_index: 0,
+      content: 'Warranty refund source'
+    )
+    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [document_chunk.id, second_chunk.id]))
+    reranker = instance_double(Captain::Documents::Reranker)
+    allow(Captain::Documents::Reranker).to receive(:new).with(account: account).and_return(reranker)
+    allow(reranker).to receive(:call).and_return(
+      Captain::Documents::Reranker::Result.new(
+        documents: [second_chunk, document_chunk],
+        trace: {
+          attempted: true,
+          enabled: true,
+          degraded: false,
+          model: 'cohere/rerank-v3.5',
+          scores: [
+            { document_chunk_id: second_chunk.id, relevance_score: 0.91 },
+            { document_chunk_id: document_chunk.id, relevance_score: 0.31 }
+          ]
+        }
+      )
+    )
+
+    payload = JSON.parse(service.execute(query: 'refund'))
+
+    expect(payload['matches'].first).to include('document_chunk_id' => second_chunk.id, 'answer' => 'Warranty refund source')
+    expect(payload['retrieval_trace']['rerank']).to include(
+      'attempted' => true,
+      'enabled' => true,
+      'degraded' => false,
+      'model' => 'cohere/rerank-v3.5'
+    )
+    expect(payload['retrieval_trace']['rerank']['scores']).to include(
+      { 'document_chunk_id' => second_chunk.id, 'relevance_score' => 0.91 },
+      { 'document_chunk_id' => document_chunk.id, 'relevance_score' => 0.31 }
+    )
+  end
+
   it 'falls back to keyword matches when semantic lookup is unavailable' do
     allow(Captain::DocumentChunk).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')

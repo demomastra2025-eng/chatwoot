@@ -14,6 +14,7 @@ class Telephony::AiVoice::ContextBuilder
     Если не уверен, уточни коротким вопросом.
     Для действий с заказами, клиентами, переводом звонка или завершением звонка используй инструменты.
   PROMPT
+  VOICE_CHARACTER_PROMPT_LABEL = 'Voice character prompt'.freeze
   DEFAULT_MAX_DURATION_SEC = 900
 
   def initialize(params:)
@@ -102,11 +103,13 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def ai_payload
-    ai_settings.except('system_prompt', 'recording_enabled').merge(
+    payload = ai_settings.except('system_prompt', 'voice_character_prompt', 'recording_enabled').merge(
       deployment_mode: routing_policy&.ai_deployment_mode || Telephony::RoutingPolicy::AI_DEPLOYMENT_FONOSTER_MANAGED,
       app_ref: routing_policy&.effective_ai_app_ref,
       system_prompt: system_prompt
-    ).compact
+    )
+    payload[:voice_character_prompt] = voice_character_prompt if voice_character_prompt.present?
+    payload.compact
   end
 
   def captain_payload
@@ -167,9 +170,18 @@ class Telephony::AiVoice::ContextBuilder
       base = []
       base << captain_agent_instructions if captain_assistant.present?
       base << ai_settings['system_prompt'] if ai_settings['system_prompt'].present?
+      base << voice_character_prompt_block if voice_character_prompt.present?
       base << DEFAULT_SYSTEM_PROMPT
       base.compact_blank.join("\n")
     end
+  end
+
+  def voice_character_prompt
+    @voice_character_prompt ||= ai_settings['voice_character_prompt'].to_s.strip
+  end
+
+  def voice_character_prompt_block
+    "#{VOICE_CHARACTER_PROMPT_LABEL}:\n#{voice_character_prompt}"
   end
 
   def captain_agent_instructions

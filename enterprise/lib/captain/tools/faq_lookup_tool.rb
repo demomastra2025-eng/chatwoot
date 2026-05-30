@@ -1,18 +1,20 @@
 class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
+  SEMANTIC_RESULT_LIMIT = 5
+
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: 'string', desc: 'The question or topic to search for in the FAQ database'
 
   def perform(_tool_context, query:, semantic: true)
     log_tool_usage('searching', { query: query })
 
-    responses, lookup_strategy, fallback_reason = lookup_responses(query, semantic: semantic)
+    responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(query, semantic: semantic)
 
     log_tool_usage('found_results', { query: query, count: responses.size, strategy: lookup_strategy })
     faq_payload(
       query: query,
       responses: responses,
       lookup_strategy: lookup_strategy,
-      trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason)
+      trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason, rerank: rerank_trace)
     )
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
     Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
@@ -28,7 +30,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   private
 
   def lookup_responses(query, semantic: true)
-    responses = semantic ? semantic_responses(query) : Captain::DocumentChunk.none
+    responses, rerank_trace = semantic ? semantic_responses(query) : [Captain::DocumentChunk.none, nil]
     lookup_strategy = semantic ? 'semantic_chunk' : 'lexical'
     fallback_reason = nil
 
@@ -38,13 +40,20 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       lookup_strategy = 'lexical'
     end
 
-    [responses, lookup_strategy, fallback_reason]
+    [responses, lookup_strategy, fallback_reason, rerank_trace]
   end
 
   def semantic_responses(query)
-    Captain::DocumentChunk.search(query, account_id: account.id)
-                          .where(assistant_id: assistant.id)
-                          .limit(5)
+    candidates = Captain::DocumentChunk.search(query, account_id: account.id)
+                                       .where(assistant_id: assistant.id)
+                                       .limit(SEMANTIC_RESULT_LIMIT)
+                                       .to_a
+    rerank_result = Captain::Documents::Reranker.new(account: account).call(
+      query: query,
+      documents: candidates,
+      top_n: SEMANTIC_RESULT_LIMIT
+    )
+    [rerank_result.documents, rerank_result.trace]
   end
 
   def fallback_reason_for_empty_semantic
@@ -92,11 +101,12 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     JSON.pretty_generate(payload)
   end
 
-  def trace_context(semantic_attempted:, fallback_reason: nil)
+  def trace_context(semantic_attempted:, fallback_reason: nil, rerank: nil)
     {
       semantic_attempted: semantic_attempted,
-      fallback_reason: fallback_reason
-    }
+      fallback_reason: fallback_reason,
+      rerank: rerank
+    }.compact
   end
 
   def retrieval_trace(responses:, lookup_strategy:, trace_context: {})
@@ -110,6 +120,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       document_ids: document_ids_for(responses),
       document_chunk_ids: document_chunk_ids_for(responses),
       embedding_status_counts: embedding_status_counts,
+      rerank: trace_context[:rerank],
       sources: sources_for(responses)
     }.compact
   end

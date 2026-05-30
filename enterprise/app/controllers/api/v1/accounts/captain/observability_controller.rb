@@ -145,7 +145,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
         id created_at event_name feature runtime_mode status reason provider model
         tool_name schema_name request_id trace_id trace_name root_span_id span_id parent_span_id span_kind span_name moderation_stage safety_rule failure_mode flagged_categories current_agent channel_type source session_id assistant_id
         conversation_id conversation_display_id copilot_thread_id prompt_tokens
-        completion_tokens total_tokens duration_ms estimated_cost blocked
+        completion_tokens thinking_tokens total_tokens duration_ms estimated_cost blocked
         moderation_skipped schema_invalid tool_failure error
       ]
 
@@ -184,6 +184,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
           event[:copilot_thread_id],
           event[:prompt_tokens],
           event[:completion_tokens],
+          event[:thinking_tokens],
           event[:total_tokens],
           event[:duration_ms],
           event[:estimated_cost],
@@ -232,6 +233,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
       flagged_categories: event.payload['flagged_categories'],
       prompt_tokens: event.prompt_tokens,
       completion_tokens: event.completion_tokens,
+      thinking_tokens: event.thinking_tokens,
       total_tokens: event.total_tokens,
       duration_ms: event.duration_ms,
       estimated_cost: event.estimated_cost,

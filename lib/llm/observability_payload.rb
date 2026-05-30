@@ -39,14 +39,7 @@ class Llm::ObservabilityPayload
     end
 
     def attach_chat_response!(payload, response)
-      payload['status'] = 'success'
-      payload['error'] = false
-      payload['prompt_tokens'] = token_value(response, :input_tokens)
-      payload['completion_tokens'] = token_value(response, :output_tokens)
-      payload['total_tokens'] = compact_sum(payload['prompt_tokens'], payload['completion_tokens'])
-      payload['tool_call'] = response.tool_call? if response.respond_to?(:tool_call?)
-      payload['output_type'] = payload_type(response.content) if response.respond_to?(:content)
-      payload['output_size'] = payload_size(response.content) if response.respond_to?(:content)
+      payload.merge!(chat_response_payload(response, provider: payload['provider'] || payload[:provider]))
       payload.compact!
       payload
     end
@@ -112,11 +105,93 @@ class Llm::ObservabilityPayload
       response.public_send(method_name) if response.respond_to?(method_name)
     end
 
+    def chat_response_payload(response, provider: nil)
+      prompt_tokens = token_value(response, :input_tokens)
+      completion_tokens = token_value(response, :output_tokens)
+      {
+        'status' => 'success',
+        'error' => false,
+        'prompt_tokens' => prompt_tokens,
+        'completion_tokens' => completion_tokens,
+        'thinking_tokens' => response_thinking_tokens(response),
+        'total_tokens' => compact_sum(prompt_tokens, completion_tokens),
+        'tool_call' => response_tool_call(response),
+        'output_type' => response_output_type(response),
+        'output_size' => response_output_size(response),
+        'openrouter_generation_id' => openrouter_generation_id(response, provider: provider)
+      }
+    end
+
+    def response_tool_call(response)
+      response.tool_call? if response.respond_to?(:tool_call?)
+    end
+
+    def response_output_type(response)
+      payload_type(response.content) if response.respond_to?(:content)
+    end
+
+    def response_output_size(response)
+      payload_size(response.content) if response.respond_to?(:content)
+    end
+
+    def response_thinking_tokens(response)
+      positive_token_value(token_value(response, :thinking_tokens) || token_value(response, :reasoning_tokens))
+    end
+
+    def openrouter_generation_id(response, provider:)
+      return unless provider.to_s == 'openrouter'
+
+      response_generation_id(response)
+    end
+
+    def response_generation_id(response)
+      response_generation_id_from_methods(response) || response_generation_id_from_metadata(response)
+    end
+
+    def response_generation_id_from_methods(response)
+      %i[openrouter_generation_id generation_id id].each do |method_name|
+        next unless response.respond_to?(method_name)
+
+        value = response.public_send(method_name)
+        return value if value.present?
+      end
+      nil
+    end
+
+    def response_generation_id_from_metadata(response)
+      %i[metadata raw to_h].each do |method_name|
+        next unless response.respond_to?(method_name)
+
+        value = nested_generation_id(response.public_send(method_name))
+        return value if value.present?
+      end
+      nil
+    rescue StandardError
+      nil
+    end
+
+    def nested_generation_id(value)
+      return unless value.respond_to?(:to_h)
+
+      data = value.to_h.with_indifferent_access
+      data[:openrouter_generation_id].presence ||
+        data[:generation_id].presence ||
+        data[:id].presence ||
+        nested_generation_id(data[:data])
+    end
+
     def compact_sum(*values)
       compact = values.compact
       return if compact.empty?
 
       compact.sum
+    end
+
+    def positive_token_value(value)
+      tokens = value.to_i
+      return if tokens <= 0
+
+      tokens
     end
 
     def vector_shape(vectors)

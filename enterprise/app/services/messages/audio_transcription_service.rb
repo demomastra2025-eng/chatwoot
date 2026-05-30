@@ -1,8 +1,7 @@
-require 'open3'
-
 class Messages::AudioTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
   SUPPORTED_AUDIO_EXTENSIONS = %w[
+    aac
     flac
     m4a
     mp3
@@ -14,7 +13,6 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     wav
     webm
   ].freeze
-  OPENROUTER_AUDIO_INPUT_FORMATS = %w[mp3 wav].freeze
 
   attr_reader :attachment, :message, :account
 
@@ -115,60 +113,37 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   end
 
   def openrouter_chat_transcription?
-    Llm::Config.provider_for_model(model, account: account) == 'openrouter' && Llm::Models.supports_audio_input?(model, account: account)
+    Llm::Config.provider_for_model(model, account: account) == 'openrouter' &&
+      Llm::Models.type_for(model, account: account) == 'chat' &&
+      Llm::Models.supports_audio_input?(model, account: account)
+  end
+
+  def openrouter_transcription_endpoint?
+    Llm::Config.provider_for_model(model, account: account) == 'openrouter' &&
+      Llm::Models.type_for(model, account: account) == 'transcription'
   end
 
   def audio_file_path_for_provider(temp_file_path)
-    return temp_file_path unless openrouter_chat_transcription?
-    return temp_file_path if openrouter_audio_input_format?(temp_file_path)
-
-    transcode_audio_for_openrouter(temp_file_path)
-  end
-
-  def openrouter_audio_input_format?(file_path)
-    RubyLLM::Attachment.new(file_path).format.in?(OPENROUTER_AUDIO_INPUT_FORMATS)
-  rescue StandardError
-    File.extname(file_path).delete_prefix('.').downcase.in?(OPENROUTER_AUDIO_INPUT_FORMATS)
-  end
-
-  def transcode_audio_for_openrouter(source_file_path)
-    destination_file_path = "#{source_file_path}.openrouter.wav"
-    ffmpeg = ffmpeg_path
-    raise 'Audio transcription converter ffmpeg is not available for OpenRouter audio input' if ffmpeg.blank?
-
-    stdout, stderr, status = Open3.capture3(
-      ffmpeg,
-      '-y', '-nostdin', '-hide_banner', '-loglevel', 'error',
-      '-i', source_file_path,
-      '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
-      destination_file_path
-    )
-
-    if status.success? && File.size?(destination_file_path)
-      Rails.logger.info(
-        'Audio transcription normalized input for OpenRouter ' \
-        "attachment_id=#{attachment.id} message_id=#{message.id} output_format=wav"
+    if openrouter_chat_transcription?
+      return Llm::OpenRouterAudioInput.normalize_for_chat(
+        temp_file_path,
+        logger_context: { attachment_id: attachment.id, message_id: message.id }
       )
-      return destination_file_path
     end
 
-    FileUtils.rm_f(destination_file_path)
-    Rails.logger.warn(
-      'Audio transcription normalization failed ' \
-      "attachment_id=#{attachment.id} message_id=#{message.id} stderr=#{stderr.presence || stdout}"
-    )
-    raise 'Audio transcription normalization failed'
-  end
+    if openrouter_transcription_endpoint?
+      return Llm::OpenRouterAudioInput.normalize_for_transcription(
+        temp_file_path,
+        logger_context: { attachment_id: attachment.id, message_id: message.id }
+      )
+    end
 
-  def ffmpeg_path
-    @ffmpeg_path ||= ENV.fetch('AUDIO_TRANSCODER_FFMPEG_PATH', nil).presence || system_ffmpeg_path
-  end
-
-  def system_ffmpeg_path
-    ENV.fetch('PATH', '').split(File::PATH_SEPARATOR).map { |path| File.join(path, 'ffmpeg') }.find { |path| File.executable?(path) }
+    temp_file_path
   end
 
   def transcribe_with_transcription_endpoint(temp_file_path, observability)
+    return transcribe_with_openrouter_transcription_endpoint(temp_file_path, observability) if openrouter_transcription_endpoint?
+
     provider_name = Llm::Config.provider_for_model(model, account: account)
     Llm::Config.with_api_key(
       api_key,
@@ -186,6 +161,18 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
         observability: observability.merge(runtime_mode: 'audio_transcription')
       )
     end
+  end
+
+  def transcribe_with_openrouter_transcription_endpoint(temp_file_path, observability)
+    Llm::ApiClient.transcribe(
+      temp_file_path,
+      provider: 'openrouter',
+      api_key: api_key,
+      api_base: api_base,
+      model: model,
+      temperature: 0.4,
+      observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter')
+    )
   end
 
   def transcribe_with_openrouter_chat(temp_file_path, observability)

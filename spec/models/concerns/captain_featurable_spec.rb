@@ -149,12 +149,14 @@ RSpec.describe CaptainFeaturable do
         'copilot_thinking_effort' => 'none',
         'assistant_moderation' => false,
         'copilot_moderation' => false,
+        'knowledge_chunk_size' => Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE,
         'trace_input_capture' => true,
         'trace_output_capture' => true
       )
       expect(account.captain_assistant_thinking_effort).to eq('none')
       expect(account.captain_assistant_moderation?).to be false
       expect(account.captain_copilot_moderation?).to be false
+      expect(account.captain_knowledge_chunk_size).to eq(Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE)
       expect(account.captain_trace_input_capture?).to be true
       expect(account.captain_trace_output_capture?).to be true
     end
@@ -163,12 +165,14 @@ RSpec.describe CaptainFeaturable do
       account.update!(captain_runtime: {
                         'assistant_thinking_effort' => 'high',
                         'copilot_moderation' => true,
+                        'knowledge_chunk_size' => 24_000,
                         'trace_input_capture' => false,
                         'trace_output_capture' => false
                       })
 
       expect(account.captain_assistant_thinking_effort).to eq('high')
       expect(account.captain_copilot_moderation?).to be true
+      expect(account.captain_knowledge_chunk_size).to eq(24_000)
       expect(account.captain_trace_input_capture?).to be false
       expect(account.captain_trace_output_capture?).to be false
     end

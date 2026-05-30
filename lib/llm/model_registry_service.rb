@@ -34,7 +34,10 @@ class Llm::ModelRegistryService
     def refresh_openrouter!
       Llm::Config.reset!
       Llm::Config.initialize!
-      Llm::OpenRouterModelCatalog.refresh!
+      model_metadata = Llm::OpenRouterModelCatalog.refresh!
+      endpoint_metadata = refresh_openrouter_endpoints
+
+      model_metadata.merge(endpoints: endpoint_metadata)
     end
 
     def audit_configuration
@@ -62,6 +65,18 @@ class Llm::ModelRegistryService
 
     private
 
+    def refresh_openrouter_endpoints
+      Llm::OpenRouterEndpointCatalog.refresh!(model_ids: Llm::OpenRouterModelCatalog.model_ids)
+    rescue Llm::OpenRouterEndpointCatalog::MissingApiKeyError
+      raise
+    rescue StandardError => e
+      {
+        total_models: Llm::OpenRouterEndpointCatalog.metadata[:total_models],
+        total_endpoints: Llm::OpenRouterEndpointCatalog.metadata[:total_endpoints],
+        last_refresh_error: Llm::OpenRouterEndpointCatalog.sanitize_error_message(e)
+      }
+    end
+
     def defaults_metadata(account)
       installation_default_model = Llm::Config.installation_default_model
       moderation_model = Llm::Config.moderation_model(account: account)
@@ -82,10 +97,14 @@ class Llm::ModelRegistryService
         total_models: runtime_models.count,
         chat_models: runtime_models.count { |model| model.type == 'chat' },
         configured_models: Llm::Models.models(account: account).count,
-        resolved_models: Llm::Models.models(account: account).keys.count { |model_name| Llm::Models.registry_known?(model_name, account: account) },
+        resolved_models: Llm::Models.models(account: account).keys.count do |model_name|
+          Llm::Models.registry_known?(model_name, account: account)
+        end,
         last_refreshed_at: Rails.cache.read(LAST_REFRESH_AT_CACHE_KEY) || @last_refreshed_at,
         last_refresh_error: Rails.cache.read(LAST_REFRESH_ERROR_CACHE_KEY) || @last_refresh_error,
-        openrouter: Llm::OpenRouterModelCatalog.metadata
+        openrouter: Llm::OpenRouterModelCatalog.metadata.merge(
+          endpoints: Llm::OpenRouterEndpointCatalog.metadata
+        )
       }
     end
 
@@ -98,7 +117,11 @@ class Llm::ModelRegistryService
           global_configured: Llm::Config.installation_provider_available?(provider_name),
           custom_endpoint: Llm::Config.custom_api_base_configured?(provider_name, account: account)
         }
-        result[provider_name][:models_api] = Llm::OpenRouterModelCatalog.metadata if provider_name == Llm::OpenRouterModelCatalog::PROVIDER
+        next unless provider_name == Llm::OpenRouterModelCatalog::PROVIDER
+
+        result[provider_name][:models_api] = Llm::OpenRouterModelCatalog.metadata.merge(
+          endpoints: Llm::OpenRouterEndpointCatalog.metadata
+        )
       end
     end
 

@@ -12,7 +12,6 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     runtimeMetadata: {},
     uiFlags: {
       isFetching: false,
-      isRefreshingOpenRouterModels: false,
     },
   }),
 
@@ -30,25 +29,39 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       const models = feature?.models || [];
 
       const providerOrder = {
-        openrouter: 0,
-        openai: 1,
-        anthropic: 2,
-        gemini: 3,
+        openai: 0,
+        anthropic: 1,
+        gemini: 2,
+        openrouter: 3,
+      };
+      const modelSourcePriority = model => {
+        if (model.account_configured) return 0;
+        if (model.provider === 'openrouter' && model.global_configured) {
+          return 1;
+        }
+        if (model.global_configured) return 2;
+        return 3;
       };
 
-      return [...models].sort((a, b) => {
-        // Move coming_soon items to the end
-        if (a.coming_soon && !b.coming_soon) return 1;
-        if (!a.coming_soon && b.coming_soon) return -1;
+      return [...models]
+        .filter(model => model.provider_configured !== false)
+        .sort((a, b) => {
+          // Move coming_soon items to the end
+          if (a.coming_soon && !b.coming_soon) return 1;
+          if (!a.coming_soon && b.coming_soon) return -1;
 
-        // Sort OpenRouter first when its catalog is active, then by provider.
-        const providerA = providerOrder[a.provider] ?? 999;
-        const providerB = providerOrder[b.provider] ?? 999;
-        if (providerA !== providerB) return providerA - providerB;
+          const sourceA = modelSourcePriority(a);
+          const sourceB = modelSourcePriority(b);
+          if (sourceA !== sourceB) return sourceA - sourceB;
 
-        // Sort by credit_multiplier (highest first)
-        return (b.credit_multiplier || 0) - (a.credit_multiplier || 0);
-      });
+          // Prefer direct providers; shared OpenRouter remains the common fallback.
+          const providerA = providerOrder[a.provider] ?? 999;
+          const providerB = providerOrder[b.provider] ?? 999;
+          if (providerA !== providerB) return providerA - providerB;
+
+          // Sort by credit_multiplier (highest first)
+          return (b.credit_multiplier || 0) - (a.credit_multiplier || 0);
+        });
     },
     getDefaultModelForFeature: state => featureKey => {
       const feature = state.features[featureKey];
@@ -83,25 +96,39 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       }
     },
 
-    async updatePreferences(data) {
-      const response = await CaptainPreferencesAPI.updatePreferences(data);
-      this.applyPayload(response.data);
+    patchRuntime(data = {}) {
+      this.runtime = {
+        ...this.runtime,
+        ...data,
+      };
     },
 
-    async refreshOpenRouterModels() {
-      this.uiFlags.isRefreshingOpenRouterModels = true;
-      try {
-        const response = await CaptainPreferencesAPI.refreshOpenRouterModels();
+    patchRuntimeMetadata(data = {}) {
+      this.runtimeMetadata = {
+        ...this.runtimeMetadata,
+        ...data,
+      };
+    },
+
+    patchFeature(featureKey, data = {}) {
+      if (!featureKey || !data) return;
+
+      this.features = {
+        ...this.features,
+        [featureKey]: {
+          ...(this.features[featureKey] || {}),
+          ...data,
+        },
+      };
+    },
+
+    async updatePreferences(data, { applyPayload = true } = {}) {
+      const response = await CaptainPreferencesAPI.updatePreferences(data);
+      if (applyPayload) {
         this.applyPayload(response.data);
-        return response;
-      } catch (error) {
-        if (error?.response?.data) {
-          this.applyPayload(error.response.data);
-        }
-        throw error;
-      } finally {
-        this.uiFlags.isRefreshingOpenRouterModels = false;
       }
+
+      return response;
     },
   },
 });

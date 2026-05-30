@@ -62,6 +62,58 @@ RSpec.describe Llm::ChatClient do
       expect(result).to eq(chat)
     end
 
+    it 'requires OpenRouter providers to support reasoning parameters when thinking is enabled' do
+      openrouter_model = instance_double('RubyLLM::Model::Info', id: 'deepseek/deepseek-v4-pro', provider: 'openrouter')
+
+      allow(Llm::Models).to receive(:supports?).and_call_original
+      allow(Llm::Models).to receive(:supports?).with('deepseek/deepseek-v4-pro', :reasoning, account: nil).and_return(true)
+      allow(Llm::Models).to receive(:runtime_supported?).with('deepseek/deepseek-v4-pro').and_return(false)
+      allow(chat).to receive(:model).and_return(openrouter_model)
+      allow(chat).to receive(:params).and_return(provider: { allow_fallbacks: true })
+
+      expect(RubyLLM).to receive(:chat).with(model: 'deepseek/deepseek-v4-pro').and_return(chat)
+      expect(chat).to receive(:with_params) do |**params|
+        expect(params).to include(
+          models: start_with('deepseek/deepseek-v4-pro'),
+          provider: include(
+            allow_fallbacks: true,
+            data_collection: 'deny',
+            require_parameters: true
+          )
+        )
+        chat
+      end
+      expect(chat).to receive(:with_thinking).with(effort: 'medium').and_return(chat)
+
+      result = described_class.build(
+        model: 'deepseek/deepseek-v4-pro',
+        thinking: { effort: 'medium' }
+      )
+
+      expect(result).to eq(chat)
+    end
+
+    it 'applies OpenRouter reasoning params to existing chats using the explicit model option' do
+      allow(Llm::Models).to receive(:supports?).and_call_original
+      allow(Llm::Models).to receive(:supports?).with('openai/gpt-5.4', :reasoning, account: nil).and_return(true)
+      allow(Llm::Models).to receive(:provider_for).with('openai/gpt-5.4', account: nil).and_return('openrouter')
+      allow(chat).to receive(:model).and_return(nil)
+      allow(chat).to receive(:params).and_return({})
+
+      expect(RubyLLM).not_to receive(:chat)
+      expect(chat).to receive(:with_params).with(
+        models: start_with('openai/gpt-5.4'),
+        provider: include(require_parameters: true)
+      ).and_return(chat)
+      expect(chat).to receive(:with_thinking).with(effort: 'medium').and_return(chat)
+
+      described_class.build(
+        chat: chat,
+        model: 'openai/gpt-5.4',
+        thinking: { effort: 'medium' }
+      )
+    end
+
     it 'builds Anthropic chats with explicit provider fallback when the registry lacks the model id' do
       allow(Llm::Models).to receive(:registry_known?).with('claude-sonnet-4-6').and_return(false)
 
@@ -172,6 +224,7 @@ RSpec.describe Llm::ChatClient do
         content: 'Hello back',
         input_tokens: 5,
         output_tokens: 7,
+        thinking_tokens: 3,
         tool_call?: false
       )
       allow(chat).to receive(:model).and_return(chat_model)
@@ -191,6 +244,7 @@ RSpec.describe Llm::ChatClient do
         'status' => 'success',
         'prompt_tokens' => 5,
         'completion_tokens' => 7,
+        'thinking_tokens' => 3,
         'total_tokens' => 12
       )
     ensure

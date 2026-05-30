@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 class Llm::ChatRequestRunner
-  attr_reader :context, :model, :messages, :schema, :tools, :params, :chat, :account, :on_end_message, :on_tool_call,
-              :on_tool_result, :content_builder, :observability
+  attr_reader :context, :model, :messages, :schema, :tools, :params, :chat, :account, :feature, :on_end_message,
+              :on_tool_call, :on_tool_result, :content_builder, :observability
 
   def initialize(messages:, **options)
     @messages = messages
@@ -13,6 +13,7 @@ class Llm::ChatRequestRunner
     @params = options[:params] || {}
     @chat = options[:chat]
     @account = options[:account]
+    @feature = options[:feature].presence || observability_feature(options[:observability])
     @on_end_message = options[:on_end_message]
     @on_tool_call = options[:on_tool_call]
     @on_tool_result = options[:on_tool_result]
@@ -23,9 +24,11 @@ class Llm::ChatRequestRunner
   def call
     llm_chat = build_chat
 
+    tag_openrouter_routing_metadata(llm_chat)
     apply_system_instructions(llm_chat)
     Llm::CapabilityPolicy.ensure_chat_features_supported!(model: effective_model_name(llm_chat), schema: schema, tools: tools, account: account)
     Llm::StructuredOutputPolicy.bind!(chat: llm_chat, schema: schema) if schema
+    enforce_openrouter_tool_parameters!(llm_chat)
     attach_tools_and_callbacks(llm_chat)
 
     conversation_messages = normalized_conversation_messages
@@ -39,6 +42,12 @@ class Llm::ChatRequestRunner
 
   private
 
+  def observability_feature(payload)
+    return unless payload.respond_to?(:[])
+
+    payload[:feature] || payload['feature'] || payload[:feature_name] || payload['feature_name']
+  end
+
   def build_chat
     llm_chat = Llm::ChatClient.build(**chat_build_kwargs)
     raise ArgumentError, 'Either chat or context/model must be provided' unless llm_chat
@@ -51,7 +60,8 @@ class Llm::ChatRequestRunner
       context: context,
       model: model,
       params: params,
-      chat: chat
+      chat: chat,
+      feature: feature
     }.tap do |kwargs|
       kwargs[:account] = account if account.present?
     end
@@ -89,6 +99,28 @@ class Llm::ChatRequestRunner
     chat.on_end_message { |message| on_end_message.call(chat, message) } if on_end_message
     chat.on_tool_call { |tool_call| on_tool_call.call(tool_call) } if on_tool_call
     chat.on_tool_result { |result| on_tool_result.call(result) } if on_tool_result
+  end
+
+  def enforce_openrouter_tool_parameters!(chat)
+    return if tools.blank?
+
+    Llm::OpenRouterRequestPolicy.require_parameters!(
+      chat,
+      account: account,
+      feature: feature,
+      model: effective_model_name(chat),
+      tools: true,
+      schema: schema.present?
+    )
+  end
+
+  def tag_openrouter_routing_metadata(chat)
+    Llm::OpenRouterRequestPolicy.tag!(
+      chat,
+      feature: feature,
+      account: account,
+      model: effective_model_name(chat)
+    )
   end
 
   def add_conversation_history(chat, history)

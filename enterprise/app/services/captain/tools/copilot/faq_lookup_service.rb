@@ -1,4 +1,6 @@
 class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseAccountTool
+  SEMANTIC_RESULT_LIMIT = 5
+
   def self.name
     'faq_lookup'
   end
@@ -8,10 +10,11 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def execute(query:, semantic: true)
     translated_query = semantic ? translated_query_for(query) : query
-    responses, lookup_strategy, fallback_reason = lookup_responses(translated_query, query, semantic: semantic)
+    responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(translated_query, query, semantic: semantic)
 
     faq_result_payload(query: query, translated_query: translated_query, responses: responses, lookup_strategy: lookup_strategy,
-                       trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason))
+                       trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason,
+                                                    rerank: rerank_trace))
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
     log_semantic_unavailable(e)
     translated_query ||= query
@@ -41,12 +44,12 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def lookup_responses(query, fallback_query = nil, semantic: true)
     if semantic
-      responses = semantic_responses(query)
-      return [responses, 'semantic_chunk', nil] if responses.any?
+      responses, rerank_trace = semantic_responses(query)
+      return [responses, 'semantic_chunk', nil, rerank_trace] if responses.any?
     end
 
     responses = lexical_fallback_responses(query, fallback_query)
-    [responses, 'lexical', fallback_reason_for(semantic: semantic)]
+    [responses, 'lexical', fallback_reason_for(semantic: semantic), rerank_trace]
   end
 
   def fallback_reason_for(semantic: true)
@@ -74,11 +77,12 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     formatted_payload(payload)
   end
 
-  def trace_context(semantic_attempted:, fallback_reason: nil)
+  def trace_context(semantic_attempted:, fallback_reason: nil, rerank: nil)
     {
       semantic_attempted: semantic_attempted,
-      fallback_reason: fallback_reason
-    }
+      fallback_reason: fallback_reason,
+      rerank: rerank
+    }.compact
   end
 
   def retrieval_trace(translated_query:, responses:, lookup_strategy:, trace_context: {})
@@ -93,6 +97,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
       document_ids: document_ids_for(responses),
       document_chunk_ids: document_chunk_ids_for(responses),
       embedding_status_counts: embedding_status_counts,
+      rerank: trace_context[:rerank],
       sources: sources_for(responses)
     }.compact
   end
@@ -134,9 +139,16 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   end
 
   def semantic_responses(query)
-    Captain::DocumentChunk.search(query, account_id: account.id)
-                          .where(assistant_id: assistant.id)
-                          .limit(5)
+    candidates = Captain::DocumentChunk.search(query, account_id: account.id)
+                                       .where(assistant_id: assistant.id)
+                                       .limit(SEMANTIC_RESULT_LIMIT)
+                                       .to_a
+    rerank_result = Captain::Documents::Reranker.new(account: account).call(
+      query: query,
+      documents: candidates,
+      top_n: SEMANTIC_RESULT_LIMIT
+    )
+    [rerank_result.documents, rerank_result.trace]
   end
 
   def lexical_fallback_responses(*queries)

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'set'
 require 'uri'
 
 module Llm::MessageFormat
@@ -10,7 +9,7 @@ module Llm::MessageFormat
     valid_tool_call_ids = Set.new
 
     Array(history).each do |message|
-      message_params = build_message_params(message, valid_tool_call_ids:)
+      message_params = build_message_params(message, valid_tool_call_ids: valid_tool_call_ids)
       next unless message_params
 
       llm_message = RubyLLM::Message.new(**message_params)
@@ -32,6 +31,7 @@ module Llm::MessageFormat
 
     return if add_tool_payload(params, message, role) == :invalid
 
+    add_thinking_payload(params, message, role)
     params
   end
 
@@ -209,5 +209,15 @@ module Llm::MessageFormat
     return :invalid if tool_call_id.blank?
 
     params[:tool_call_id] = tool_call_id
+  end
+
+  def add_thinking_payload(params, message, role)
+    return unless role == :assistant
+
+    thinking = RubyLLM::Thinking.build(
+      text: message[:thinking] || message['thinking'],
+      signature: message[:thinking_signature] || message['thinking_signature']
+    )
+    params[:thinking] = thinking if thinking
   end
 end

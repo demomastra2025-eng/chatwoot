@@ -9,11 +9,10 @@ class Llm::ChatClient
       end
 
       llm_chat = options[:chat] || build_chat(context: options[:context], model: options[:model], account: account)
-      llm_chat = llm_chat.with_temperature(options[:temperature]) unless options[:temperature].nil?
-      llm_chat = llm_chat.with_params(**options[:params]) if options[:params].present?
-      llm_chat = llm_chat.with_headers(**options[:headers]) if options[:headers].present?
-      llm_chat = llm_chat.with_thinking(**options[:thinking]) if options[:thinking].present?
-      llm_chat
+      tag_openrouter_routing_metadata(llm_chat, options, account: account)
+      apply_chat_options(llm_chat, options, account: account).tap do |chat|
+        tag_openrouter_routing_metadata(chat, options, account: account)
+      end
     end
 
     def ask(chat, content, model: nil, observability: nil, account: nil)
@@ -76,6 +75,41 @@ class Llm::ChatClient
 
     def attachment_source(attachment)
       attachment.respond_to?(:source) ? attachment.source : attachment
+    end
+
+    def apply_chat_options(chat, options, account:)
+      chat = chat.with_temperature(options[:temperature]) unless options[:temperature].nil?
+      chat = chat.with_params(**options[:params]) if options[:params].present?
+      chat = apply_reasoning_routing_policy(chat, options, account: account)
+      chat = chat.with_headers(**options[:headers]) if options[:headers].present?
+      chat = chat.with_thinking(**options[:thinking]) if options[:thinking].present?
+      chat
+    end
+
+    def apply_reasoning_routing_policy(chat, options, account:)
+      thinking = options[:thinking]
+      return chat if thinking.blank?
+
+      Llm::OpenRouterRequestPolicy.require_parameters!(
+        chat,
+        account: account,
+        feature: options[:feature],
+        model: options[:model],
+        reasoning: true,
+        tools: false,
+        schema: false,
+        stream: options[:stream]
+      )
+    end
+
+    def tag_openrouter_routing_metadata(chat, options, account:)
+      Llm::OpenRouterRequestPolicy.tag!(
+        chat,
+        feature: options[:feature],
+        account: account,
+        model: resolved_model_name(chat, options[:model]),
+        stream: options[:stream]
+      )
     end
 
     def resolved_model_name(chat, fallback_model)

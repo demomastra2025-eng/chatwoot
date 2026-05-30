@@ -111,12 +111,14 @@ RSpec.describe Llm::ModelRegistryService do
   end
 
   describe '.refresh_openrouter!' do
-    it 'refreshes LLM config and OpenRouter models through the catalog' do
+    it 'refreshes LLM config, OpenRouter models, and OpenRouter endpoints through the catalog' do
       expect(Llm::Config).to receive(:reset!)
       expect(Llm::Config).to receive(:initialize!)
       expect(Llm::OpenRouterModelCatalog).to receive(:refresh!).and_return(total_models: 1)
+      expect(Llm::OpenRouterModelCatalog).to receive(:model_ids).and_return(['openai/gpt-4'])
+      expect(Llm::OpenRouterEndpointCatalog).to receive(:refresh!).with(model_ids: ['openai/gpt-4']).and_return(total_endpoints: 2)
 
-      expect(described_class.refresh_openrouter!).to eq(total_models: 1)
+      expect(described_class.refresh_openrouter!).to eq(total_models: 1, endpoints: { total_endpoints: 2 })
     end
   end
 end

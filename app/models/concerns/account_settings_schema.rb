@@ -29,6 +29,7 @@ module AccountSettingsSchema
             'copilot': { 'type': %w[string null] },
             'label_suggestion': { 'type': %w[string null] },
             'audio_transcription': { 'type': %w[string null] },
+            'image_recognition': { 'type': %w[string null] },
             'help_center_search': { 'type': %w[string null] },
             'moderation': { 'type': %w[string null] }
           },
@@ -55,6 +56,11 @@ module AccountSettingsSchema
             'copilot_moderation': { 'type': %w[boolean null] },
             'moderation_failure_mode': { 'type': %w[string null], 'enum': ['fail_open', 'fail_closed', nil] },
             'audio_transcription_prompt': { 'type': %w[string null] },
+            'knowledge_chunk_size': {
+              'type': %w[integer null],
+              'minimum': Captain::KnowledgeSettings::MIN_CHUNK_SIZE,
+              'maximum': Captain::KnowledgeSettings::MAX_CHUNK_SIZE
+            },
             'trace_input_capture': { 'type': %w[boolean null] },
             'trace_output_capture': { 'type': %w[boolean null] },
             'safety_blocklist': {

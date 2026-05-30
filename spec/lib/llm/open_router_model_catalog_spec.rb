@@ -4,7 +4,8 @@ require 'rails_helper'
 
 RSpec.describe Llm::OpenRouterModelCatalog do
   let(:cache_store) { ActiveSupport::Cache::MemoryStore.new }
-  let(:api_url) { 'https://openrouter.ai/api/v1/models' }
+  let(:api_url) { 'https://openrouter.ai/api/v1/models?output_modalities=all' }
+  let(:embedding_api_url) { 'https://openrouter.ai/api/v1/embeddings/models' }
   let(:api_response) do
     {
       data: [
@@ -17,10 +18,16 @@ RSpec.describe Llm::OpenRouterModelCatalog do
             modality: 'text+image->text'
           },
           context_length: 8192,
-          top_provider: { max_completion_tokens: 4096 },
+          top_provider: {
+            max_completion_tokens: 4096,
+            latency: 420,
+            throughput: 87.5
+          },
           pricing: {
             prompt: '0.000001',
             completion: '0.000002',
+            input_cache_read: '0.0000001',
+            input_cache_write: '0.0000005',
             image: '0',
             request: '0'
           },
@@ -35,6 +42,57 @@ RSpec.describe Llm::OpenRouterModelCatalog do
             modality: 'text->image'
           },
           pricing: {}
+        },
+        {
+          id: 'cohere/rerank-v3.5',
+          name: 'Cohere Rerank 3.5',
+          type: 'rerank',
+          architecture: {
+            input_modalities: ['text'],
+            output_modalities: ['rerank'],
+            modality: 'text->rerank'
+          },
+          context_length: 4096,
+          pricing: {
+            prompt: '0.0000002'
+          }
+        }
+      ]
+    }
+  end
+  let(:embedding_api_response) do
+    {
+      data: [
+        {
+          id: 'openai/text-embedding-3-small',
+          name: 'Text Embedding 3 Small',
+          architecture: {
+            input_modalities: ['text'],
+            output_modalities: ['embeddings'],
+            modality: 'text->embeddings'
+          },
+          context_length: 8192,
+          pricing: {
+            prompt: '0.00000002',
+            completion: '0',
+            image: '0',
+            request: '0'
+          },
+          supported_parameters: []
+        },
+        {
+          id: 'baai/bge-m3',
+          name: 'BGE M3',
+          architecture: {
+            input_modalities: ['text'],
+            output_modalities: ['embeddings'],
+            modality: 'text->embeddings'
+          },
+          context_length: 8192,
+          pricing: {
+            prompt: '0.00000001',
+            completion: '0'
+          }
         }
       ]
     }
@@ -42,6 +100,8 @@ RSpec.describe Llm::OpenRouterModelCatalog do
 
   before do
     allow(Rails).to receive(:cache).and_return(cache_store)
+    stub_request(:get, embedding_api_url)
+      .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
     Rails.cache.clear
     described_class.instance_variable_set(:@last_model_configs, nil)
     described_class.instance_variable_set(:@last_refreshed_at, nil)
@@ -49,6 +109,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
     described_class.instance_variable_set(:@cached_model_configs, nil)
     described_class.instance_variable_set(:@cached_model_configs_refresh_marker, nil)
     described_class.instance_variable_set(:@cached_model_configs_loaded, nil)
+    InstallationConfig.where(name: described_class::INSTALLATION_CONFIG_KEY).delete_all
   end
 
   describe '.model_configs' do
@@ -110,22 +171,140 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       stub_request(:get, api_url)
         .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
         .to_return(status: 200, body: api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+      stub_request(:get, embedding_api_url)
+        .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
+        .to_return(status: 200, body: embedding_api_response.to_json, headers: { 'Content-Type' => 'application/json' })
 
       metadata = described_class.refresh!(api_key: '[REDACTED]')
 
-      expect(metadata).to include(total_models: 1, chat_models: 1, source: 'openrouter_api', using_fallback: false)
+      expect(metadata).to include(total_models: 4, chat_models: 1, embedding_models: 2, rerank_models: 1, source: 'openrouter_api',
+                                  using_fallback: false)
       expect(metadata[:last_refreshed_at]).to match(/\.\d{6}/)
       expect(described_class.model_config('openai/gpt-4')).to include(
         'provider' => 'openrouter',
         'display_name' => 'GPT-4 via OpenRouter',
         'type' => 'chat',
+        'input_modalities' => %w[text image],
+        'output_modalities' => ['text'],
         'context_length' => 8192,
-        'max_output_tokens' => 4096
+        'max_output_tokens' => 4096,
+        'latency_ms' => 420.0,
+        'throughput_tokens_per_second' => 87.5,
+        'pricing' => include(
+          'prompt' => '0.000001',
+          'completion' => '0.000002',
+          'input_cache_read' => '0.0000001',
+          'input_cache_write' => '0.0000005'
+        )
       )
       expect(described_class.model_config('openai/gpt-4')['capabilities']).to include(
         'tool_calling', 'structured_output', 'reasoning', 'multimodal_input', 'image_input', 'text_output', 'streaming'
       )
+      expect(described_class.model_config('openai/text-embedding-3-small')).to include(
+        'provider' => 'openrouter',
+        'display_name' => 'Text Embedding 3 Small',
+        'type' => 'embedding',
+        'input_modalities' => ['text'],
+        'output_modalities' => ['embeddings'],
+        'context_length' => 8192,
+        'embedding_dimensions' => 1536,
+        'requested_embedding_dimensions' => 1536,
+        'pricing' => include('prompt' => '0.00000002')
+      )
+      expect(described_class.model_config('openai/text-embedding-3-small')['capabilities']).to include('embedding', 'text_input')
+      expect(described_class.model_config('baai/bge-m3')).to include(
+        'provider' => 'openrouter',
+        'type' => 'embedding',
+        'embedding_dimensions' => 1536,
+        'requested_embedding_dimensions' => 1536
+      )
+      expect(described_class.model_config('cohere/rerank-v3.5')).to include(
+        'provider' => 'openrouter',
+        'display_name' => 'Cohere Rerank 3.5',
+        'type' => 'rerank',
+        'input_modalities' => ['text'],
+        'output_modalities' => ['rerank'],
+        'context_length' => 4096,
+        'pricing' => include('prompt' => '0.0000002')
+      )
+      expect(described_class.model_config('cohere/rerank-v3.5')['capabilities']).to include('rerank', 'text_input', 'text_output')
       expect(described_class.model_config('image/provider')).to be_nil
+    end
+
+    it 'infers moderation only for explicit moderation or guard models' do
+      stub_request(:get, api_url)
+        .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
+        .to_return(
+          status: 200,
+          body: {
+            data: [
+              {
+                id: 'openai/gpt-5-mini',
+                name: 'GPT-5 Mini',
+                description: 'Fast model with improved safety behavior.',
+                architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+                supported_parameters: ['response_format']
+              },
+              {
+                id: 'meta-llama/llama-guard-4-12b',
+                name: 'Llama Guard 4',
+                architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+                supported_parameters: ['response_format']
+              }
+            ]
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      described_class.refresh!(api_key: '[REDACTED]')
+
+      expect(described_class.model_config('openai/gpt-5-mini')['capabilities']).not_to include('moderation')
+      expect(described_class.model_config('meta-llama/llama-guard-4-12b')['capabilities']).to include('moderation')
+    end
+
+    it 'normalizes dedicated OpenRouter speech-to-text models from the models API' do
+      stub_request(:get, api_url)
+        .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
+        .to_return(
+          status: 200,
+          body: {
+            data: [
+              {
+                id: 'openai/gpt-4o-mini-transcribe',
+                name: 'OpenAI: GPT-4o Mini Transcribe',
+                architecture: {
+                  input_modalities: ['audio'],
+                  output_modalities: ['transcription'],
+                  modality: 'audio->transcription'
+                },
+                context_length: 128_000,
+                pricing: {
+                  prompt: '0.00000125',
+                  completion: '0.000005',
+                  audio: '0.000006'
+                },
+                supported_parameters: %w[response_format structured_outputs temperature]
+              }
+            ]
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      metadata = described_class.refresh!(api_key: '[REDACTED]')
+
+      expect(metadata).to include(total_models: 1, transcription_models: 1, chat_models: 0, embedding_models: 0)
+      expect(described_class.model_config('openai/gpt-4o-mini-transcribe')).to include(
+        'provider' => 'openrouter',
+        'display_name' => 'OpenAI: GPT-4o Mini Transcribe',
+        'type' => 'transcription',
+        'input_modalities' => ['audio'],
+        'output_modalities' => ['transcription'],
+        'context_length' => 128_000,
+        'pricing' => include('prompt' => '0.00000125', 'completion' => '0.000005', 'audio' => '0.000006')
+      )
+      expect(described_class.model_config('openai/gpt-4o-mini-transcribe')['capabilities']).to include(
+        'audio_input', 'transcription', 'structured_output'
+      )
     end
 
     it 'keeps freshly refreshed API models active when the cache store drops writes' do
@@ -137,8 +316,32 @@ RSpec.describe Llm::OpenRouterModelCatalog do
 
       metadata = described_class.refresh!(api_key: '[REDACTED]')
 
-      expect(metadata).to include(total_models: 1, source: 'openrouter_api', using_fallback: false)
+      expect(metadata).to include(
+        total_models: 2,
+        chat_models: 1,
+        rerank_models: 1,
+        source: 'openrouter_api',
+        using_fallback: false
+      )
       expect(described_class.model_config('openai/gpt-4')).to include('source' => 'openrouter_api')
+      expect(described_class.model_config('cohere/rerank-v3.5')).to include('source' => 'openrouter_api')
+    end
+
+    it 'keeps refreshed API models after cache and process memory are reset' do
+      stub_request(:get, api_url)
+        .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
+        .to_return(status: 200, body: api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      described_class.refresh!(api_key: '[REDACTED]')
+      Rails.cache.clear
+      described_class.instance_variable_set(:@last_model_configs, nil)
+      described_class.instance_variable_set(:@last_refreshed_at, nil)
+      described_class.instance_variable_set(:@cached_model_configs, nil)
+      described_class.instance_variable_set(:@cached_model_configs_refresh_marker, nil)
+      described_class.instance_variable_set(:@cached_model_configs_loaded, nil)
+
+      expect(described_class.model_config('openai/gpt-4')).to include('source' => 'openrouter_api')
+      expect(described_class.metadata).to include(source: 'openrouter_api', using_fallback: false)
     end
 
     it 'raises when the OpenRouter API key is missing' do
@@ -183,7 +386,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       expect do
         described_class.refresh!(api_key: '[REDACTED]')
       end.to raise_error(described_class::FetchError, /HTTP 503/)
-      expect(described_class.model_configs.keys).to contain_exactly('openai/gpt-4')
+      expect(described_class.model_configs.keys).to contain_exactly('openai/gpt-4', 'cohere/rerank-v3.5')
       expect(described_class.metadata).to include(source: 'openrouter_api', using_fallback: false)
     end
 

@@ -81,6 +81,13 @@ backfill_llm_event_trace_id_job:
   class: 'Internal::BackfillLlmEventTraceIdJob'
   queue: scheduled_jobs
 
+# executed every 6 hours
+# keeps the shared OpenRouter model catalog warm without blocking account settings pages
+refresh_openrouter_model_catalog_job:
+  cron: '17 */6 * * *'
+  class: 'Internal::RefreshOpenRouterModelCatalogJob'
+  queue: scheduled_jobs
+
 # executed every 30 minutes for assignment_v2
 periodic_assignment_job:
   cron: '*/30 * * * *'

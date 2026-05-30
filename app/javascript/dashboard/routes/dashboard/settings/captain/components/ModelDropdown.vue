@@ -1,41 +1,64 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useAccount } from 'dashboard/composables/useAccount';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
-import DropdownBody from 'dashboard/components-next/dropdown-menu/base/DropdownBody.vue';
-import DropdownItem from 'dashboard/components-next/dropdown-menu/base/DropdownItem.vue';
-import { provideDropdownContext } from 'dashboard/components-next/dropdown-menu/base/provider.js';
+import LobeProviderIcon from './LobeProviderIcon.vue';
 
 const props = defineProps({
   featureKey: {
     type: String,
     required: true,
   },
+  featureTitle: {
+    type: String,
+    default: '',
+  },
+  models: {
+    type: Array,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['change']);
-const { isOnChatwootCloud } = useAccount();
 
-const PROVIDER_ICONS = {
-  openai: 'i-ri-openai-fill',
-  anthropic: 'i-ri-anthropic-line',
-  mistral: 'i-logos-mistral-icon',
-  gemini: 'i-woot-gemini',
-  openrouter: 'i-lucide-route',
+const PROVIDER_DISPLAY_NAMES = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  mistral: 'Mistral',
+  mistralai: 'Mistral',
+  gemini: 'Gemini',
+  google: 'Google',
+  openrouter: 'OpenRouter',
+  'meta-llama': 'Meta Llama',
+  deepseek: 'DeepSeek',
+  qwen: 'Qwen',
+  cohere: 'Cohere',
+  'x-ai': 'xAI',
+  perplexity: 'Perplexity',
+  microsoft: 'Microsoft',
+  amazon: 'Amazon',
 };
 
-const iconForModel = model => {
-  return PROVIDER_ICONS[model.provider] || 'i-lucide-bot';
+const MODALITY_ICONS = {
+  text: 'i-lucide-type',
+  image: 'i-lucide-image',
+  audio: 'i-lucide-volume-2',
+  file: 'i-lucide-file',
+  pdf: 'i-lucide-file-text',
+  video: 'i-lucide-video',
+  embeddings: 'i-lucide-binary',
 };
 
 const { t } = useI18n();
 const captainConfigStore = useCaptainConfigStore();
-const isOpen = ref(false);
+const dialogRef = ref(null);
+const searchInputRef = ref(null);
+const searchQuery = ref('');
 
-const availableModels = computed(() =>
-  captainConfigStore.getModelsForFeature(props.featureKey)
+const availableModels = computed(
+  () => props.models || captainConfigStore.getModelsForFeature(props.featureKey)
 );
 
 const recommendedModelId = computed(() =>
@@ -61,179 +84,543 @@ watch(
 const selectedModelDetails = computed(() => {
   if (!selectedModelId.value) return null;
   return (
-    availableModels.value.find(m => m.id === selectedModelId.value) || null
+    availableModels.value.find(model => model.id === selectedModelId.value) ||
+    null
   );
 });
 
-const getCreditLabel = model => {
-  const multiplier = model.credit_multiplier || 1;
-  return t('CAPTAIN_SETTINGS.MODEL_CONFIG.CREDITS_PER_MESSAGE', {
-    credits: multiplier,
-  });
+const cleanProviderKey = providerKey =>
+  String(providerKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^~+/, '');
+
+const masterProviderKeyForModel = model =>
+  cleanProviderKey(model.provider || 'unknown');
+
+const modelProviderKeyForModel = model => {
+  if (model.provider === 'openrouter' && model.id?.includes('/')) {
+    return cleanProviderKey(model.id.split('/')[0]);
+  }
+
+  return masterProviderKeyForModel(model);
 };
+
+const humanizeProviderKey = providerKey => {
+  return cleanProviderKey(providerKey)
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
+const providerDisplayNameForKey = providerKey => {
+  return (
+    PROVIDER_DISPLAY_NAMES[providerKey] || humanizeProviderKey(providerKey)
+  );
+};
+
+const masterProviderDisplayName = model =>
+  model.provider_display_name ||
+  providerDisplayNameForKey(masterProviderKeyForModel(model));
+
+const modelProviderDisplayName = model =>
+  providerDisplayNameForKey(modelProviderKeyForModel(model));
+
+const hasSeparateModelProvider = model =>
+  modelProviderKeyForModel(model) !== masterProviderKeyForModel(model);
+
+const providerRouteLabel = model =>
+  t('CAPTAIN_SETTINGS.MODEL_CONFIG.PROVIDER_ROUTE_LABEL', {
+    provider: masterProviderDisplayName(model),
+  });
+
+const hasCapability = (model, capability) => {
+  return (model.capabilities || []).includes(capability);
+};
+
+const inferredModalities = (model, direction) => {
+  const capabilities = model.capabilities || [];
+  const modalities = [];
+
+  if (direction === 'input') {
+    if (capabilities.includes('text_input') || model.type === 'chat') {
+      modalities.push('text');
+    }
+    if (capabilities.includes('image_input')) modalities.push('image');
+    if (capabilities.includes('audio_input')) modalities.push('audio');
+    if (capabilities.includes('file_input')) modalities.push('file');
+    return modalities;
+  }
+
+  if (capabilities.includes('text_output') || model.type === 'chat') {
+    modalities.push('text');
+  }
+  if (capabilities.includes('image_output')) modalities.push('image');
+  if (capabilities.includes('audio_output')) modalities.push('audio');
+
+  return modalities;
+};
+
+const modalitiesFor = (model, direction) => {
+  const configured =
+    direction === 'input' ? model.input_modalities : model.output_modalities;
+  const modalities = configured?.length
+    ? configured
+    : inferredModalities(model, direction);
+
+  return [
+    ...new Set(modalities.filter(Boolean).map(value => value.toString())),
+  ];
+};
+
+const modalityLabel = modality => {
+  const normalized = modality.toLowerCase();
+
+  if (normalized === 'text') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODALITIES.TEXT');
+  }
+  if (normalized === 'image') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODALITIES.IMAGE');
+  }
+  if (normalized === 'audio') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODALITIES.AUDIO');
+  }
+  if (normalized === 'file') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODALITIES.FILE');
+  }
+  if (normalized === 'pdf') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODALITIES.PDF');
+  }
+  if (normalized === 'video') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODALITIES.VIDEO');
+  }
+  if (normalized === 'embeddings') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODALITIES.EMBEDDINGS');
+  }
+
+  return modality;
+};
+
+const modalityIcon = modality => {
+  return MODALITY_ICONS[modality.toLowerCase()] || 'i-lucide-circle';
+};
+
+const formatModalities = (model, direction) => {
+  const modalities = modalitiesFor(model, direction);
+  if (!modalities.length) return null;
+
+  return modalities
+    .map(modalityLabel)
+    .join(t('CAPTAIN_SETTINGS.MODEL_CONFIG.METADATA_SEPARATOR'));
+};
+
+const searchableModelText = model => {
+  return [
+    model.id,
+    model.display_name,
+    model.provider,
+    masterProviderDisplayName(model),
+    modelProviderDisplayName(model),
+    ...(model.capabilities || []),
+    ...modalitiesFor(model, 'input'),
+    ...modalitiesFor(model, 'output'),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+};
+
+const filteredModels = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return availableModels.value;
+
+  return availableModels.value.filter(model =>
+    searchableModelText(model).includes(query)
+  );
+});
+
+const groupedFilteredModels = computed(() => {
+  const groupedModels = new Map();
+
+  filteredModels.value.forEach(model => {
+    const key = modelProviderKeyForModel(model);
+    if (!groupedModels.has(key)) {
+      groupedModels.set(key, {
+        key,
+        name: modelProviderDisplayName(model),
+        models: [],
+      });
+    }
+
+    groupedModels.get(key).models.push(model);
+  });
+
+  return [...groupedModels.values()].sort((left, right) =>
+    left.name.localeCompare(right.name)
+  );
+});
 
 const formatTokenCount = value => {
   if (!value) return null;
 
-  return new Intl.NumberFormat().format(value);
+  return t('CAPTAIN_SETTINGS.MODEL_CONFIG.TOKEN_COUNT', {
+    count: new Intl.NumberFormat().format(value),
+  });
 };
 
-const sourceLabel = model => {
-  if (model.source === 'openrouter_api') {
+const formatPricePerMillion = price => {
+  if (price === undefined || price === null || price === '') {
     return null;
   }
 
-  if (model.source === 'config/llm_models.json') {
-    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.SOURCE_LOCAL_FALLBACK');
+  const perMillion = Number(price) * 1_000_000;
+  if (!Number.isFinite(perMillion)) {
+    return null;
   }
 
-  return null;
+  const formattedPrice = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: perMillion < 1 ? 4 : 2,
+  }).format(perMillion);
+
+  return t('CAPTAIN_SETTINGS.MODEL_CONFIG.PRICE_PER_MILLION', {
+    price: formattedPrice,
+  });
 };
 
-const providerDisplayName = model => {
-  return model.provider_display_name || model.provider;
+const formatLatency = value => {
+  if (!value) return null;
+
+  return t('CAPTAIN_SETTINGS.MODEL_CONFIG.LATENCY_VALUE', {
+    count: new Intl.NumberFormat(undefined, {
+      maximumFractionDigits: 0,
+    }).format(value),
+  });
 };
 
-const providerScopeLabel = model => {
-  if (!model.provider_configured) {
-    return t('CAPTAIN_SETTINGS.RUNTIME_STATUS.PROVIDERS.NOT_CONFIGURED');
-  }
+const formatThroughput = value => {
+  if (!value) return null;
 
-  const scopes = [];
-  if (model.account_configured) {
-    scopes.push(
-      t('CAPTAIN_SETTINGS.RUNTIME_STATUS.PROVIDERS.ACCOUNT_CONFIGURED')
-    );
-  }
-  if (model.global_configured) {
-    scopes.push(
-      t('CAPTAIN_SETTINGS.RUNTIME_STATUS.PROVIDERS.GLOBAL_CONFIGURED')
-    );
-  }
-
-  return scopes.join(t('CAPTAIN_SETTINGS.MODEL_CONFIG.METADATA_SEPARATOR'));
+  return t('CAPTAIN_SETTINGS.MODEL_CONFIG.THROUGHPUT_VALUE', {
+    count: new Intl.NumberFormat(undefined, {
+      maximumFractionDigits: 1,
+    }).format(value),
+  });
 };
 
-const modelMetadataLabel = model => {
-  const parts = [providerDisplayName(model)].filter(Boolean);
-  const source = sourceLabel(model);
-  const scope = providerScopeLabel(model);
-  const contextLength = formatTokenCount(model.context_length);
-  const maxOutputTokens = formatTokenCount(model.max_output_tokens);
-
-  if (source) parts.push(source);
-  if (scope) parts.push(scope);
-  if (contextLength) {
-    parts.push(
-      t('CAPTAIN_SETTINGS.MODEL_CONFIG.CONTEXT_TOKENS', {
-        count: contextLength,
-      })
-    );
-  }
-  if (maxOutputTokens) {
-    parts.push(
-      t('CAPTAIN_SETTINGS.MODEL_CONFIG.MAX_OUTPUT_TOKENS', {
-        count: maxOutputTokens,
-      })
-    );
-  }
-
-  return parts.join(t('CAPTAIN_SETTINGS.MODEL_CONFIG.METADATA_SEPARATOR'));
+const formatCacheTokenPrice = pricing => {
+  return formatPricePerMillion(
+    pricing?.input_cache_read ?? pricing?.input_cache_write
+  );
 };
 
-const toggleDropdown = () => {
-  isOpen.value = !isOpen.value;
+const supportLabel = supported => {
+  return supported
+    ? t('CAPTAIN_SETTINGS.MODEL_CONFIG.SUPPORTED')
+    : t('CAPTAIN_SETTINGS.MODEL_CONFIG.NOT_SUPPORTED');
 };
 
-const closeDropdown = () => {
-  isOpen.value = false;
+const metricItems = model =>
+  [
+    {
+      icon: 'i-lucide-log-in',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.INPUT_MODALITIES'),
+      modalities: modalitiesFor(model, 'input'),
+      title: formatModalities(model, 'input'),
+    },
+    {
+      icon: 'i-lucide-log-out',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.OUTPUT_MODALITIES'),
+      modalities: modalitiesFor(model, 'output'),
+      title: formatModalities(model, 'output'),
+    },
+    {
+      icon: 'i-lucide-coins',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.INPUT_TOKEN_PRICE'),
+      value: formatPricePerMillion(model.pricing?.prompt),
+    },
+    {
+      icon: 'i-lucide-circle-dollar-sign',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.OUTPUT_TOKEN_PRICE'),
+      value: formatPricePerMillion(model.pricing?.completion),
+    },
+    {
+      icon: 'i-lucide-archive',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.CACHE_TOKEN_PRICE'),
+      value: formatCacheTokenPrice(model.pricing),
+    },
+    {
+      icon: 'i-lucide-panel-top',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.CONTEXT_SIZE'),
+      value: formatTokenCount(model.context_length),
+    },
+    {
+      icon: 'i-lucide-message-square-text',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.MAX_OUTPUT'),
+      value: formatTokenCount(model.max_output_tokens),
+    },
+    {
+      icon: 'i-lucide-timer',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.LATENCY'),
+      value: formatLatency(model.latency_ms),
+    },
+    {
+      icon: 'i-lucide-gauge',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.THROUGHPUT'),
+      value: formatThroughput(model.throughput_tokens_per_second),
+    },
+    {
+      icon: 'i-lucide-wrench',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.TOOLS'),
+      value: supportLabel(hasCapability(model, 'tool_calling')),
+      muted: !hasCapability(model, 'tool_calling'),
+    },
+    {
+      icon: 'i-lucide-braces',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.STRUCTURED_OUTPUT'),
+      value: supportLabel(hasCapability(model, 'structured_output')),
+      muted: !hasCapability(model, 'structured_output'),
+    },
+    {
+      icon: 'i-lucide-brain',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.REASONING'),
+      value: supportLabel(hasCapability(model, 'reasoning')),
+      muted: !hasCapability(model, 'reasoning'),
+    },
+  ].filter(item => item.value || item.modalities?.length);
+
+const openDialog = () => {
+  dialogRef.value?.open();
+  nextTick(() => searchInputRef.value?.focus());
 };
 
-provideDropdownContext({
-  isOpen,
-  toggle: () => toggleDropdown(),
-  closeMenu: closeDropdown,
-});
+const closeDialog = () => {
+  dialogRef.value?.close();
+};
+
+const handleDialogClose = () => {
+  searchQuery.value = '';
+};
 
 const selectModel = model => {
+  if (model.coming_soon) return;
+
   selectedModelId.value = model.id;
   emit('change', { feature: props.featureKey, model: model.id });
-  closeDropdown();
+  closeDialog();
 };
 </script>
 
 <template>
-  <div v-on-clickaway="closeDropdown" class="relative flex-shrink-0">
+  <div class="flex-shrink-0">
     <button
       type="button"
-      class="flex items-center gap-2 px-3 py-2 text-sm border rounded-lg border-n-weak dark:bg-n-solid-2 dark:hover:bg-n-solid-3 bg-n-alpha-2 hover:bg-n-alpha-1 min-w-[180px] max-w-full justify-between"
-      @click="toggleDropdown"
+      class="flex items-center justify-between gap-2 px-3 py-2 text-sm border rounded-lg border-n-weak dark:bg-n-solid-2 dark:hover:bg-n-solid-3 bg-n-alpha-2 hover:bg-n-alpha-1 min-w-[220px] max-w-full"
+      @click="openDialog"
     >
-      <span
-        v-if="selectedModelDetails"
-        class="text-n-slate-12 truncate min-w-0"
-      >
-        {{ selectedModelDetails.display_name }}
+      <span class="flex items-center min-w-0 gap-2">
+        <Icon
+          v-if="!selectedModelDetails"
+          icon="i-lucide-bot"
+          class="size-4 text-n-slate-11 flex-shrink-0"
+        />
+        <LobeProviderIcon
+          v-else
+          :provider-key="modelProviderKeyForModel(selectedModelDetails)"
+          :title="modelProviderDisplayName(selectedModelDetails)"
+          class="size-4 text-n-slate-11 flex-shrink-0"
+        />
+        <span
+          v-if="selectedModelDetails"
+          class="text-n-slate-12 truncate min-w-0"
+        >
+          {{ selectedModelDetails.display_name }}
+        </span>
+        <span v-else class="text-n-slate-10">
+          {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.SELECT_MODEL') }}
+        </span>
       </span>
-      <span v-else class="text-n-slate-10">
-        {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.SELECT_MODEL') }}
-      </span>
-      <Icon
-        icon="i-lucide-chevron-down"
-        class="size-4 text-n-slate-11 transition-transform"
-        :class="{ 'rotate-180': isOpen }"
-      />
+      <Icon icon="i-lucide-search" class="size-4 text-n-slate-11" />
     </button>
-    <DropdownBody
-      v-if="isOpen"
-      class="absolute right-0 top-full mt-1 min-w-64 z-50 max-h-96 [&>ul]:max-h-96 [&>ul]:overflow-y-scroll"
+
+    <Dialog
+      ref="dialogRef"
+      width="5xl"
+      position="top"
+      overflow-y-auto
+      :title="
+        t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODEL_DIALOG_TITLE', {
+          feature: featureTitle,
+        })
+      "
+      :description="t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODEL_DIALOG_DESCRIPTION')"
+      :show-cancel-button="false"
+      :show-confirm-button="false"
+      @close="handleDialogClose"
     >
-      <DropdownItem
-        v-for="model in availableModels"
-        :key="model.id"
-        :click="() => selectModel(model)"
-        class="rounded-lg dark:hover:bg-n-solid-3 hover:bg-n-alpha-1"
-        :class="{
-          'dark:bg-n-solid-3 bg-n-alpha-1': selectedModelId === model.id,
-          'pointer-events-none opacity-60': model.coming_soon,
-        }"
-      >
-        <div class="flex gap-2 w-full min-w-0">
-          <Icon :icon="iconForModel(model)" class="size-4 flex-shrink-0" />
-          <div class="flex flex-col w-full min-w-0 text-left gap-1">
+      <div class="flex min-h-[34rem] max-h-[78vh] flex-col gap-3">
+        <label class="relative block">
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="search"
+            class="w-full h-10 px-3 text-sm border rounded-lg outline-none bg-n-alpha-2 border-n-weak text-n-slate-12 placeholder:text-n-slate-10 focus:border-n-brand [appearance:textfield] [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
+            :placeholder="
+              t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODEL_SEARCH_PLACEHOLDER')
+            "
+            :aria-label="
+              t('CAPTAIN_SETTINGS.MODEL_CONFIG.MODEL_SEARCH_PLACEHOLDER')
+            "
+          />
+        </label>
+
+        <div
+          v-if="filteredModels.length"
+          class="flex flex-1 min-h-0 flex-col gap-6 pr-1 overflow-y-auto"
+        >
+          <section
+            v-for="group in groupedFilteredModels"
+            :key="group.key"
+            class="flex min-w-0 flex-col gap-3"
+          >
             <div
-              class="text-sm w-full font-medium leading-none text-n-slate-12 flex items-baseline justify-between gap-2 min-w-0"
+              class="flex items-center gap-2 px-1 pt-1 text-sm font-semibold text-n-slate-12"
             >
-              <span class="truncate min-w-0">{{ model.display_name }}</span>
-              <span
-                v-if="model.id === recommendedModelId"
-                class="text-[10px] uppercase text-n-iris-11 border border-1 border-n-iris-10 leading-none rounded-lg px-1 py-0.5 flex-shrink-0"
-              >
-                {{ t('GENERAL.PREFERRED') }}
+              <LobeProviderIcon
+                :provider-key="group.key"
+                :title="group.name"
+                class="size-4 flex-shrink-0 text-n-slate-11"
+              />
+              <span>{{ group.name }}</span>
+              <span class="text-xs font-medium text-n-slate-10">
+                {{ group.models.length }}
               </span>
             </div>
-            <span v-if="model.coming_soon" class="text-xs text-n-slate-11">
-              {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.COMING_SOON') }}
-            </span>
-            <span class="text-xs text-n-slate-11 leading-snug break-words">
-              {{ modelMetadataLabel(model) }}
-            </span>
-            <span
-              v-if="model.capabilities?.length"
-              class="text-xs text-n-slate-11 leading-snug break-words"
+
+            <button
+              v-for="model in group.models"
+              :key="model.id"
+              type="button"
+              class="flex w-full min-w-0 flex-col gap-2 p-2.5 text-left border rounded-lg border-n-weak bg-n-alpha-1 hover:bg-n-alpha-2 hover:border-n-strong transition-colors md:flex-row md:items-start"
+              :class="{
+                'border-n-brand bg-n-brand/5': selectedModelId === model.id,
+                'opacity-60 cursor-not-allowed': model.coming_soon,
+              }"
+              :disabled="model.coming_soon"
+              @click="selectModel(model)"
             >
-              {{
-                t('CAPTAIN_SETTINGS.MODEL_CONFIG.CAPABILITIES', {
-                  capabilities: model.capabilities.join(', '),
-                })
-              }}
-            </span>
-            <span v-if="isOnChatwootCloud" class="text-xs text-n-slate-11">
-              {{ getCreditLabel(model) }}
-            </span>
-          </div>
+              <div
+                class="flex min-w-0 items-start gap-2 md:w-56 md:flex-shrink-0"
+              >
+                <div
+                  class="flex items-center justify-center flex-shrink-0 border rounded-lg size-7 border-n-weak bg-n-solid-1"
+                >
+                  <LobeProviderIcon
+                    :provider-key="modelProviderKeyForModel(model)"
+                    :title="modelProviderDisplayName(model)"
+                    class="size-3.5 text-n-slate-11"
+                  />
+                </div>
+
+                <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span
+                      class="line-clamp-2 min-w-0 text-sm font-medium leading-5 text-n-slate-12"
+                    >
+                      {{ model.display_name }}
+                    </span>
+                    <Icon
+                      v-if="selectedModelId === model.id"
+                      icon="i-lucide-check"
+                      class="size-4 text-n-brand flex-shrink-0"
+                    />
+                  </div>
+                  <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span
+                      v-if="hasSeparateModelProvider(model)"
+                      class="inline-flex max-w-full items-center gap-1 rounded-md border border-n-weak bg-n-solid-1 px-1.5 py-0.5 text-[10px] leading-none text-n-slate-11"
+                    >
+                      <LobeProviderIcon
+                        :provider-key="masterProviderKeyForModel(model)"
+                        :title="masterProviderDisplayName(model)"
+                        class="size-3 flex-shrink-0"
+                      />
+                      {{ providerRouteLabel(model) }}
+                    </span>
+                    <span
+                      v-if="model.id === recommendedModelId"
+                      class="text-[10px] uppercase text-n-iris-11 border border-n-iris-10 leading-none rounded-md px-1.5 py-0.5 flex-shrink-0"
+                    >
+                      {{ t('GENERAL.PREFERRED') }}
+                    </span>
+                    <span
+                      v-if="model.coming_soon"
+                      class="text-[10px] uppercase text-n-slate-11 border border-n-slate-5 leading-none rounded-md px-1.5 py-0.5 flex-shrink-0"
+                    >
+                      {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.COMING_SOON') }}
+                    </span>
+                  </div>
+                  <span class="truncate text-[11px] leading-4 text-n-slate-10">
+                    {{ model.id }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                <div
+                  v-for="item in metricItems(model)"
+                  :key="`${model.id}-${item.label}`"
+                  class="inline-flex max-w-full items-center gap-1 rounded-md border border-n-weak bg-white px-1.5 py-0.5 text-[11px] leading-4 dark:bg-n-solid-1"
+                  :title="item.title || item.value"
+                >
+                  <Icon
+                    :icon="item.icon"
+                    class="size-3.5 flex-shrink-0 text-n-slate-10"
+                  />
+                  <span class="flex min-w-0 items-center gap-1">
+                    <span class="whitespace-nowrap text-[10px] text-n-slate-10">
+                      {{ item.label }}
+                    </span>
+                    <span
+                      v-if="item.modalities?.length"
+                      class="flex items-center gap-0.5 text-n-slate-12"
+                    >
+                      <Icon
+                        v-for="modality in item.modalities"
+                        :key="`${model.id}-${item.label}-${modality}`"
+                        :icon="modalityIcon(modality)"
+                        :title="modalityLabel(modality)"
+                        class="size-3.5"
+                      />
+                    </span>
+                    <span
+                      v-else
+                      class="truncate"
+                      :class="
+                        item.muted ? 'text-n-slate-10' : 'text-n-slate-12'
+                      "
+                    >
+                      {{ item.value }}
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </button>
+          </section>
         </div>
-      </DropdownItem>
-    </DropdownBody>
+
+        <div
+          v-else
+          class="flex flex-1 min-h-[20rem] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-n-weak text-center"
+        >
+          <Icon icon="i-lucide-search-x" class="size-8 text-n-slate-10" />
+          <p class="text-sm text-n-slate-11">
+            {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.NO_MODELS_MATCH') }}
+          </p>
+        </div>
+      </div>
+    </Dialog>
   </div>
 </template>

@@ -263,6 +263,7 @@
     "SUPER_ADMIN_CONSOLE": "Консоль супер администратора",
     "DOCS": "Открыть документацию",
     "CHANGELOG": "Журнал изменений",
+    "WORKSPACE_SETTINGS": "Открыть workspace",
     "LOGOUT": "Выйти из системы"
   },
   "APP_GLOBAL": {
@@ -334,6 +335,7 @@
     "UNATTENDED_CONVERSATIONS": "Неотвеченные",
     "REPORTS": "Отчёты",
     "SETTINGS": "Настройки",
+    "ADDITIONAL": "Дополнительно",
     "CONTACTS": "Контакты",
     "CRM": "Воронки",
     "PIPELINES": "Воронки",
@@ -375,7 +377,8 @@
     "PROFILE_SETTINGS": "Настройки профиля",
     "ACCOUNT_SETTINGS": "Workspace",
     "APPLICATIONS": "Приложения",
-    "LABELS": "Категории",
+    "LABELS": "Теги",
+    "TAG_SETTINGS": "Настройки тегов",
     "CUSTOM_ATTRIBUTES": "Атрибуты",
     "AUTOMATION": "Автоматизация",
     "MACROS": "Макрос",
@@ -384,8 +387,8 @@
     "CUSTOM_VIEWS_FOLDER": "Папки",
     "CUSTOM_VIEWS_SEGMENTS": "Сегменты",
     "ALL_CONTACTS": "Все контакты",
-    "TAGGED_WITH": "С метками",
-    "NEW_LABEL": "Новая метка",
+    "TAGGED_WITH": "С тегом",
+    "NEW_LABEL": "Новый тег",
     "NEW_TEAM": "Новая команда",
     "NEW_INBOX": "Новые канал",
     "REPORTS_CONVERSATION": "Диалоги",
@@ -408,7 +411,7 @@
     "REPORTS_SLA": "SLA",
     "REPORTS_BOT": "Бот",
     "REPORTS_AGENT": "Сотрудники",
-    "REPORTS_LABEL": "Категории",
+    "REPORTS_LABEL": "Теги",
     "REPORTS_INBOX": "Каналы",
     "REPORTS_TEAM": "Команда",
     "AGENT_ASSIGNMENT": "Назначение сотруднику",
@@ -427,7 +430,8 @@
       "SETTINGS": "Настройки"
     },
     "CHANNELS": "Каналы",
-    "ALL_CHANNELS": "Все",
+    "ALL_CHANNELS": "Все каналы",
+    "ALL_TAGS": "Все теги",
     "SET_AUTO_OFFLINE": {
       "TEXT": "Отметить автоматически",
       "INFO_TEXT": "Позволить системе автоматически отмечать вас в автономном режиме, если вы не используете приложение или приборную панель.",
@@ -436,7 +440,7 @@
     "DOCS": "Открыть документацию",
     "SECURITY": "Безопасность",
     "CAPTAIN_AI": "AI-сотрудники",
-    "CONVERSATION_WORKFLOW": "Сценарии диалогов",
+    "CONVERSATION_WORKFLOW": "Настройки диалога",
     "SMM": "SMM",
     "SMM_CALENDAR": "Календарь",
     "SMM_POSTS": "Посты",
@@ -444,6 +448,14 @@
     "SMM_MEDIA": "Медиа",
     "SMM_ANALYTICS": "Аналитика",
     "SMM_SETTINGS": "Настройки"
+  },
+  "EMPLOYEE_SETTINGS": {
+    "TABS": {
+      "EMPLOYEES": "Сотрудники",
+      "TEAM": "Команда",
+      "ROLES": "Роли",
+      "ASSIGNMENT": "Назначение"
+    }
   },
   "BILLING_SETTINGS": {
     "TITLE": "Платёж",
@@ -474,7 +486,7 @@
       "DOCUMENTS": "Документы",
       "RESPONSES": "Ответы",
       "TOKENS": "Токены",
-      "UPGRADE": "AI-агенты недоступны на бесплатном тарифе. Обновите план, чтобы получить доступ к AI-агентам, ассистенту и другим функциям.",
+      "UPGRADE": "AI-агенты недоступны на бесплатном тарифе. Обновите план, чтобы получить доступ к AI-агентам, ИИ ассистенту и другим функциям.",
       "REFRESH_CREDITS": "Обновить"
     },
     "CHAT_WITH_US": {
@@ -637,7 +649,7 @@
         "DESCRIPTION": "Управление загрузкой сотрудников.",
         "FEATURES": [
           "Определить максимальное количество диалогов во входящих",
-          "Создавать исключения, основанные на метках и времени",
+          "Создавать исключения, основанные на тегах и времени",
           "Добавить сотрудника в политику — по одной политике на сотрудника",
           "Добавить агента в политику - по одной политике на агента"
         ]
@@ -852,7 +864,7 @@
           "LABEL": "Правила исключения",
           "DESCRIPTION": "Диалоги, которые удовлетворяют следующим условиям, не будут учитываться в лимите доступной нагрузки сотрудников",
           "TAGS": {
-            "LABEL": "Исключить диалоги со специальными метками",
+            "LABEL": "Исключить диалоги со специальными тегами",
             "ADD_TAG": "добавить тег",
             "DROPDOWN": {
               "SEARCH_PLACEHOLDER": "Поиск и выбор тегов для добавления"
@@ -900,16 +912,15 @@
     "PROVIDER_KEYS": {
       "TITLE": "Ключи провайдеров",
       "DESCRIPTION": "Настройте LLM-ключи на уровне workspace. Секреты хранятся на сервере и никогда не возвращаются в браузер.",
-      "OPENROUTER_TITLE": "Account key OpenRouter",
-      "OPENROUTER_STATUS": "Эффективный источник ключа: {status}",
-      "OPENROUTER_PLACEHOLDER": "Вставьте OpenRouter API key, чтобы переопределить глобальный ключ",
+      "STATUS_LABEL": "Источник ключа: {status}",
+      "PLACEHOLDER": "Вставьте API key {provider}, чтобы переопределить глобальный ключ",
       "SAVE": "Сохранить ключ",
       "REMOVE_ACCOUNT_KEY": "Удалить ключ workspace",
       "SECRET_NOTE": "Текущее значение ключа скрыто. Оставьте поле пустым, чтобы ничего не менять.",
-      "SAVE_SUCCESS": "Ключ OpenRouter для workspace сохранён.",
-      "SAVE_ERROR": "Не удалось сохранить ключ OpenRouter.",
-      "REMOVE_SUCCESS": "Ключ OpenRouter для workspace удалён.",
-      "REMOVE_ERROR": "Не удалось удалить ключ OpenRouter.",
+      "SAVE_SUCCESS": "Ключ провайдера для workspace сохранён.",
+      "SAVE_ERROR": "Не удалось сохранить ключ провайдера.",
+      "REMOVE_SUCCESS": "Ключ провайдера для workspace удалён.",
+      "REMOVE_ERROR": "Не удалось удалить ключ провайдера.",
       "STATUS": {
         "ACCOUNT": "workspace",
         "GLOBAL": "глобальный",
@@ -920,14 +931,63 @@
       "TITLE": "Конфигурация моделей",
       "DESCRIPTION": "Выберите AI-модели для разных функций.",
       "SELECT_MODEL": "Выберите модель",
+      "MODEL_DIALOG_TITLE": "Выберите модель для «{feature}»",
+      "MODEL_DIALOG_DESCRIPTION": "Поиск и выбор совместимой модели.",
+      "MODEL_SEARCH_PLACEHOLDER": "Поиск по модели, провайдеру или возможности",
       "CREDITS_PER_MESSAGE": "{credits} кредит/сообщение",
       "COMING_SOON": "Скоро",
       "SOURCE_OPENROUTER_API": "OpenRouter API",
       "SOURCE_LOCAL_FALLBACK": "локальный fallback",
+      "PROVIDER_ROUTE_LABEL": "через {provider}",
       "CONTEXT_TOKENS": "{count} токенов контекста",
       "CAPABILITIES": "Возможности: {capabilities}",
+      "MORE_CAPABILITIES": "+{count}",
       "METADATA_SEPARATOR": " · ",
-      "NO_COMPATIBLE_MODELS": "Нет совместимой настроенной модели. Добавьте ключ провайдера или обновите каталог OpenRouter.",
+      "TOKEN_COUNT": "{count} токенов",
+      "PRICE_PER_MILLION": "{price} / 1 млн",
+      "INPUT_MODALITIES": "Вход",
+      "OUTPUT_MODALITIES": "Выход",
+      "INPUT_TOKEN_PRICE": "Вход $",
+      "OUTPUT_TOKEN_PRICE": "Выход $",
+      "CACHE_TOKEN_PRICE": "Кэш $",
+      "CONTEXT_SIZE": "Контекст",
+      "MAX_OUTPUT": "Ответ",
+      "LATENCY": "Задержка",
+      "LATENCY_VALUE": "{count} мс",
+      "THROUGHPUT": "Скорость",
+      "THROUGHPUT_VALUE": "{count} ток/с",
+      "TOOLS": "Тулзы",
+      "STRUCTURED_OUTPUT": "Схема",
+      "REASONING": "Рассуждения",
+      "SUPPORTED": "Да",
+      "NOT_SUPPORTED": "Нет",
+      "MODALITIES": {
+        "TEXT": "Текст",
+        "IMAGE": "Картинки",
+        "AUDIO": "Аудио",
+        "FILE": "Файлы",
+        "PDF": "PDF",
+        "VIDEO": "Видео",
+        "EMBEDDINGS": "Векторы"
+      },
+      "NO_MODELS_MATCH": "По запросу ничего не найдено.",
+      "NO_COMPATIBLE_MODELS": "Нет совместимой настроенной модели. Добавьте ключ OpenRouter или дождитесь обновления каталога.",
+      "DIAGNOSTICS": {
+        "TITLE": "Выбранная модель {model} сейчас недоступна",
+        "REASONS": {
+          "MODEL_NOT_FOUND": "Выбранной модели нет в текущем каталоге.",
+          "PROVIDER_NOT_CONFIGURED": "OpenRouter не настроен для этого аккаунта или инсталляции.",
+          "DIRECT_PROVIDER_DISABLED": "Прямые модели провайдера здесь отключены; выберите OpenRouter-эквивалент.",
+          "VOICE_ONLY_PROVIDER": "Прямые модели Gemini доступны только в настройках AI Voice.",
+          "STRUCTURED_OUTPUT_UNSUPPORTED": "Модель не поддерживает структурированный JSON-вывод.",
+          "TOOL_CALLING_UNSUPPORTED": "Модель не поддерживает вызов инструментов.",
+          "MISSING_CAPABILITY": "У модели нет обязательной capability.",
+          "UNSUPPORTED_TYPE": "Тип модели несовместим с этой функцией.",
+          "EMBEDDING_DIMENSION_MISMATCH": "Размерность embeddings не совпадает с индексом знаний One Link.",
+          "CONTEXT_TOO_SMALL": "Контекст модели слишком мал для выбранного размера чанка базы знаний.",
+          "CAPABILITY_DIAGNOSTICS_FAILED": "Диагностика capability не сработала; обновите каталог и попробуйте снова."
+        }
+      },
       "SPECIALIZED_TITLE": "Специализированные AI-модели",
       "SPECIALIZED_DESCRIPTION": "Выбирайте capability-safe модели для модерации, распознавания аудио, распознавания картинок и FAQ embeddings отдельно от chat-модели.",
       "EDITOR": {
@@ -939,7 +999,7 @@
         "DESCRIPTION": "Обрабатывает автоматические ответы, резюме диалогов и умные подсказки для ответов клиентам."
       },
       "COPILOT": {
-        "TITLE": "Ассистент",
+        "TITLE": "ИИ ассистент",
         "DESCRIPTION": "Дает контекстные подсказки в реальном времени, рекомендации из базы знаний и проактивные инсайты во время диалогов."
       },
       "MODERATION": {
@@ -948,15 +1008,29 @@
       },
       "AUDIO_TRANSCRIPTION": {
         "TITLE": "Модель распознавания аудио",
-        "DESCRIPTION": "Транскрибирует голосовые сообщения и записи звонков. OpenRouter-варианты должны поддерживать audio input; endpoint-модели OpenAI остаются опциональными."
+        "DESCRIPTION": "Транскрибирует голосовые сообщения и записи звонков через модели с промптом или нативные STT endpoint-модели.",
+        "ENABLE_TITLE": "Транскрибация",
+        "ENABLE_DESCRIPTION": "Преобразует входящие голосовые сообщения и записи звонков в текст.",
+        "PROMPT_TITLE": "Промпт распознавания",
+        "PROMPT_DESCRIPTION": "Дополнительные инструкции для моделей распознавания с промптом. Нативные STT endpoint-модели OpenRouter работают без промпта.",
+        "PROMPT_PLACEHOLDER": "Например: точно распознавай русский и казахский. Сохраняй имена, номера и названия продуктов.",
+        "SAVE_PROMPT": "Сохранить промпт",
+        "NATIVE_PROMPT_TITLE": "Нативный STT endpoint",
+        "NATIVE_PROMPT_DESCRIPTION": "Эта модель использует нативный endpoint транскрибации OpenRouter, поэтому промпт не отправляется."
       },
       "IMAGE_RECOGNITION": {
         "TITLE": "Модель распознавания картинок",
-        "DESCRIPTION": "Описывает картинки клиентов до передачи сообщения AI-агенту / ассистенту. Дефолты выбираются автоматически, если настроен OpenAI или OpenRouter."
+        "DESCRIPTION": "Описывает картинки клиентов до передачи сообщения AI-агенту / ИИ ассистенту. Дефолты выбираются автоматически, если настроен OpenAI или OpenRouter."
       },
       "EMBEDDINGS": {
         "TITLE": "FAQ / embedding-модель",
-        "DESCRIPTION": "Строит векторы для FAQ и семантического поиска по базе знаний. Если embeddings недоступны, FAQ lookup использует точный keyword fallback."
+        "DESCRIPTION": "Строит векторы для FAQ и семантического поиска по базе знаний. Если embeddings недоступны, FAQ lookup использует точный keyword fallback.",
+        "INDEXING_TITLE": "Индексация поиска",
+        "INDEXING_DESCRIPTION": "Создаёт и обновляет семантический индекс для FAQ lookup.",
+        "CHUNK_SIZE_TITLE": "Размер чанка базы знаний",
+        "CHUNK_SIZE_DESCRIPTION": "Показываются только OpenRouter embedding-модели, которым хватает контекста.",
+        "CHUNK_SIZE_OPTION": "{chars} символов (~{tokens} токенов) · моделей: {count}",
+        "CHUNK_SIZE_OPTION_DISABLED": "{chars} символов (~{tokens} токенов) · нет совместимых моделей"
       }
     },
     "FEATURES": {
@@ -976,21 +1050,21 @@
       },
       "LABEL_SUGGESTION": {
         "TITLE": "Подсказка меток",
-        "DESCRIPTION": "Автоматически предлагает подходящие метки для диалогов на основе анализа содержимого и контекста.",
+        "DESCRIPTION": "Автоматически предлагает подходящие теги для диалогов на основе анализа содержимого и контекста.",
         "MODEL_TITLE": "Модель подсказки меток",
         "MODEL_DESCRIPTION": "Выберите AI-модель для анализа диалогов и подбора подходящих меток"
       }
     },
     "RUNTIME": {
       "TITLE": "Рантайм и безопасность",
-      "DESCRIPTION": "Управляйте глубиной рассуждений и проверками безопасности для AI-агента и внутреннего ассистента.",
+      "DESCRIPTION": "Настройте reasoning и безопасность для AI-агента и ИИ ассистента.",
       "MODERATION": {
         "TITLE": "Модерация",
-        "DESCRIPTION": "Проверяет текст до и после ответа модели. Заблокированные ответы AI-агента переводятся на человека."
+        "DESCRIPTION": "Проверяет вход и ответ AI на безопасность."
       },
       "MODERATION_FAILURE_MODE": {
         "TITLE": "Режим отказа модерации",
-        "DESCRIPTION": "Определяет, должен ли AI-запрос продолжаться или останавливаться, если провайдер модерации недоступен.",
+        "DESCRIPTION": "Что делать, если модерация недоступна.",
         "OPTIONS": {
           "FAIL_OPEN": "Продолжать без модерации",
           "FAIL_CLOSED": "Блокировать запрос"
@@ -998,7 +1072,9 @@
       },
       "THINKING": {
         "TITLE": "Глубина рассуждений",
-        "DESCRIPTION": "Дает reasoning-моделям больше времени на сложные задачи.",
+        "DESCRIPTION": "Глубина reasoning для моделей, которые это поддерживают.",
+        "SUPPORTED": "Выбранная модель поддерживает reasoning",
+        "UNSUPPORTED": "Выбранная модель не поддерживает reasoning",
         "OPTIONS": {
           "NONE": "Отключено",
           "LOW": "Низкая",
@@ -1008,11 +1084,11 @@
       },
       "ASSISTANT": {
         "TITLE": "Рантайм AI-агента",
-        "DESCRIPTION": "Применяется к автоматическим ответам клиентам и handoff по сценариям."
+        "DESCRIPTION": "Для автоматических ответов клиентам."
       },
       "COPILOT": {
-        "TITLE": "Рантайм ассистента",
-        "DESCRIPTION": "Применяется к внутренним чатам copilot и вызовам инструментов оператором."
+        "TITLE": "Рантайм ИИ ассистента",
+        "DESCRIPTION": "Для внутренних чатов ИИ ассистента и инструментов."
       }
     },
     "RUNTIME_STATUS": {
@@ -1021,6 +1097,7 @@
       "TITLE": "Обзор рантайма",
       "DESCRIPTION": "Это итоговое состояние после применения настроек workspace, installation defaults и RubyLLM model registry.",
       "SEPARATOR": "·",
+      "DEFAULTS": "Дефолты",
       "DEFAULT_MODEL": "Модель по умолчанию для инсталляции",
       "MODERATION_MODEL": "Модель модерации",
       "REGISTRY": {
@@ -1067,7 +1144,7 @@
       "FEATURE_LABELS": {
         "EDITOR": "Редактор",
         "ASSISTANT": "AI-агент",
-        "COPILOT": "Ассистент",
+        "COPILOT": "ИИ ассистент",
         "LABEL_SUGGESTION": "Подсказка меток",
         "AUDIO_TRANSCRIPTION": "Транскрибация аудио",
         "HELP_CENTER_SEARCH": "Поиск по справке",
@@ -1083,9 +1160,13 @@
   "CONVERSATION_WORKFLOW": {
     "INDEX": {
       "HEADER": {
-        "TITLE": "Сценарий диалогов",
-        "DESCRIPTION": "Настройте правила и обязательные поля для завершения диалогов."
+        "TITLE": "Завершение диалога",
+        "DESCRIPTION": "Настройте автозавершение, обязательные поля и правила закрытия диалога."
       }
+    },
+    "TABS": {
+      "CLOSURE": "Завершение диалога",
+      "SLA": "SLA"
     },
     "REQUIRED_ATTRIBUTES": {
       "TITLE": "Атрибуты, обязательные при завершении",

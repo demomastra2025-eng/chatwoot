@@ -36,4 +36,12 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('weixin_sync_channels_job', 'class')).to eq('Weixin::SyncChannelsJob')
     expect(schedule.dig('weixin_sync_channels_job', 'queue')).to eq('scheduled_jobs')
   end
+
+  it 'refreshes the shared OpenRouter model catalog on the scheduled jobs queue' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule.dig('refresh_openrouter_model_catalog_job', 'cron')).to eq('17 */6 * * *')
+    expect(schedule.dig('refresh_openrouter_model_catalog_job', 'class')).to eq('Internal::RefreshOpenRouterModelCatalogJob')
+    expect(schedule.dig('refresh_openrouter_model_catalog_job', 'queue')).to eq('scheduled_jobs')
+  end
 end

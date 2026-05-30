@@ -41,20 +41,15 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     @installation_configs = ConfigLoader.new.general_configs.each_with_object({}) do |config_hash, result|
       result[config_hash['name']] = config_hash.except('name')
     end
+    return unless @config == 'captain'
+
+    @openrouter_catalog_metadata = Llm::OpenRouterModelCatalog.metadata.merge(
+      endpoints: Llm::OpenRouterEndpointCatalog.metadata
+    )
   end
 
   def create
-    errors = []
-    params['app_config'].each do |key, value|
-      next unless @allowed_configs.include?(key)
-
-      normalized_value = normalize_app_config_value(key, value, errors)
-      next if normalized_value == :invalid
-
-      i = InstallationConfig.where(name: key).first_or_create(value: normalized_value, locked: false)
-      i.value = normalized_value
-      errors.concat(i.errors.full_messages) unless i.save
-    end
+    errors = persist_app_config
 
     if errors.any?
       redirect_to super_admin_app_config_path(config: @config), alert: errors.join(', ')
@@ -64,7 +59,33 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     end
   end
 
+  def refresh_openrouter_models
+    metadata = Llm::ModelRegistryService.refresh_openrouter!
+    redirect_to super_admin_app_config_path(config: 'captain'), notice: "OpenRouter model catalog refreshed: #{metadata[:total_models]} models"
+  rescue Llm::OpenRouterModelCatalog::MissingApiKeyError => e
+    redirect_to super_admin_app_config_path(config: 'captain'), alert: e.message
+  rescue StandardError => e
+    sanitized_error = Llm::OpenRouterModelCatalog.sanitize_error_message(e)
+    Rails.logger.warn("[SuperAdmin::AppConfigsController] OpenRouter model refresh failed: #{e.class}: #{sanitized_error}")
+    redirect_to super_admin_app_config_path(config: 'captain'), alert: Internal::RefreshOpenRouterModelCatalogJob::REFRESH_FAILED_MESSAGE
+  end
+
   private
+
+  def persist_app_config
+    errors = []
+    params.fetch('app_config', {}).each do |key, value|
+      next unless @allowed_configs.include?(key)
+
+      normalized_value = normalize_app_config_value(key, value, errors)
+      next if normalized_value == :invalid
+
+      i = InstallationConfig.where(name: key).first_or_create(value: normalized_value, locked: false)
+      i.value = normalized_value
+      errors.concat(i.errors.full_messages) unless i.save
+    end
+    errors
+  end
 
   def normalize_app_config_value(key, value, errors)
     return value unless key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG

@@ -34,6 +34,14 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:runtime)
         expect(json_response).to have_key(:observability)
         expect(json_response).to have_key(:runtime_metadata)
+        expect(json_response.dig(:runtime, :knowledge_chunk_size)).to eq(Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE)
+        expect(json_response.dig(:runtime_metadata, :knowledge_indexing)).to include(
+          chunk_size: Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE,
+          vector_dimensions: Captain::KnowledgeSettings::VECTOR_DIMENSIONS
+        )
+        expect(json_response.dig(:runtime_metadata, :knowledge_indexing, :chunk_size_options)).to include(
+          include(value: Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE)
+        )
       end
     end
 
@@ -51,20 +59,16 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:observability)
       end
 
-      it 'includes the latest selectable models in settings payload' do
+      it 'includes OpenRouter models only in the normal Captain settings payload' do
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
-        expect(json_response[:models]).to include(
-          :'gpt-5.4',
-          :'gpt-5.4-mini',
-          :'claude-sonnet-4-6',
-          :'claude-opus-4-6',
-          :'gemini-2.5-pro',
-          :'gemini-2.5-flash'
-        )
+        expect(json_response[:providers].keys).to contain_exactly(:openrouter)
+        expect(json_response[:models].keys).to include(:'openai/gpt-5.4', :'openai/gpt-5.4-mini')
+        expect(json_response[:models].values).to all(include(provider: 'openrouter'))
+        expect(json_response[:models].keys).not_to include(:'gpt-5.4', :'claude-sonnet-4-6', :'gemini-2.5-pro')
       end
 
       it 'includes runtime metadata for resolved providers and feature models' do
@@ -94,6 +98,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           source: 'account'
         )
         expect(response.body).not_to include('account-openrouter-key')
+      end
+
+      it 'reports visible provider credential statuses only' do
+        create(:integrations_hook, account: account, app_id: 'anthropic', access_token: 'account-anthropic-key', settings: {})
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:provider_credentials].keys).to contain_exactly(:openrouter)
+        expect(json_response[:provider_credentials]).not_to have_key(:anthropic)
+        expect(response.body).not_to include('account-anthropic-key')
       end
     end
   end
@@ -128,6 +145,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
               captain_models: {
                 editor: 'gpt-4.1-mini',
                 audio_transcription: 'whisper-1',
+                image_recognition: 'gpt-5.4-mini',
                 help_center_search: 'text-embedding-3-small',
                 moderation: 'openai/gpt-oss-safeguard-20b'
               }
@@ -143,6 +161,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(account.reload.captain_models).to include(
           'editor' => 'gpt-4.1-mini',
           'audio_transcription' => 'whisper-1',
+          'image_recognition' => 'gpt-5.4-mini',
           'help_center_search' => 'text-embedding-3-small',
           'moderation' => 'openai/gpt-oss-safeguard-20b'
         )
@@ -172,6 +191,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
                 assistant_moderation: true,
                 moderation_failure_mode: 'fail_closed',
                 audio_transcription_prompt: 'Recognize customer speech in Russian and Kazakh.',
+                knowledge_chunk_size: '32000',
                 safety_blocklist: ['never disclose api keys'],
                 assistant_safety_blocklist: ['do not discuss payroll'],
                 agent_high_risk_tools: 'disabled',
@@ -191,6 +211,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           assistant_moderation: true,
           moderation_failure_mode: 'fail_closed',
           audio_transcription_prompt: 'Recognize customer speech in Russian and Kazakh.',
+          knowledge_chunk_size: 32_000,
           safety_blocklist: ['never disclose api keys'],
           assistant_safety_blocklist: ['do not discuss payroll'],
           agent_high_risk_tools: 'disabled',
@@ -206,6 +227,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           'assistant_moderation' => true,
           'moderation_failure_mode' => 'fail_closed',
           'audio_transcription_prompt' => 'Recognize customer speech in Russian and Kazakh.',
+          'knowledge_chunk_size' => 32_000,
           'safety_blocklist' => ['never disclose api keys'],
           'assistant_safety_blocklist' => ['do not discuss payroll'],
           'agent_high_risk_tools' => 'disabled',
@@ -216,6 +238,48 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             'max_error_rate' => 0.05
           }
         )
+      end
+
+      it 'replaces an incompatible saved embedding model when the knowledge chunk size changes' do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+          'openai/text-embedding-3-small' => {
+            'provider' => 'openrouter',
+            'display_name' => 'Text Embedding 3 Small',
+            'type' => 'embedding',
+            'capabilities' => %w[embedding text_input],
+            'embedding_dimensions' => 1536,
+            'context_length' => 8192
+          },
+          'openai/text-embedding-long-context' => {
+            'provider' => 'openrouter',
+            'display_name' => 'Long Context Embedding',
+            'type' => 'embedding',
+            'capabilities' => %w[embedding text_input],
+            'embedding_dimensions' => 1536,
+            'context_length' => 10_000
+          }
+        )
+        account.update!(
+          captain_models: { 'help_center_search' => 'openai/text-embedding-3-small' },
+          captain_runtime: { 'knowledge_chunk_size' => 20_000 }
+        )
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_models: { audio_transcription: nil },
+              captain_runtime: { knowledge_chunk_size: '40000' }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:runtime, :knowledge_chunk_size)).to eq(40_000)
+        expect(json_response.dig(:features, :help_center_search, :selected)).to eq('openai/text-embedding-long-context')
+
+        account.reload
+        expect(account.captain_runtime['knowledge_chunk_size']).to eq(40_000)
+        expect(account.captain_models['help_center_search']).to eq('openai/text-embedding-long-context')
       end
 
       it 'merges with existing captain_models' do
@@ -378,110 +442,71 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response.dig(:provider_credentials, :openrouter, :account_configured)).to be false
         expect(response.body).not_to include('account-openrouter-key')
       end
-    end
-  end
 
-  describe 'POST /api/v1/accounts/{account.id}/captain/preferences/refresh_openrouter_models' do
-    after do
-      Rails.cache.delete(Llm::OpenRouterModelCatalog::CACHE_KEY)
-      Rails.cache.delete(Llm::OpenRouterModelCatalog::LAST_REFRESH_AT_CACHE_KEY)
-      Rails.cache.delete(Llm::OpenRouterModelCatalog::LAST_REFRESH_ERROR_CACHE_KEY)
-    end
-
-    context 'when it is an unauthenticated user' do
-      it 'returns unauthorized' do
-        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
-             as: :json
-
-        expect(response).to have_http_status(:unauthorized)
-      end
-    end
-
-    context 'when it is an agent' do
-      it 'returns unauthorized' do
-        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unauthorized)
-      end
-    end
-
-    context 'when it is an admin' do
-      it 'refreshes OpenRouter models and returns updated settings payload' do
-        expect(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_return(total_models: 1)
-
-        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
-             headers: admin.create_new_auth_token,
-             as: :json
+      it 'stores visible provider account keys via provider credentials' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { provider_credentials: { openrouter: { api_key: 'account-openrouter-key' } } },
+            as: :json
 
         expect(response).to have_http_status(:success)
-        expect(json_response).to have_key(:runtime_metadata)
+        hook = account.hooks.find_by!(app_id: 'openrouter')
+        expect(hook.access_token).to eq('account-openrouter-key')
+        expect(hook.settings).not_to include('api_key')
+        expect(json_response.dig(:provider_credentials, :openrouter)).to include(
+          account_configured: true,
+          source: 'account'
+        )
+        expect(response.body).not_to include('account-openrouter-key')
       end
 
-      it 'fetches OpenRouter API models through the refresh endpoint without real network calls' do
-        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
-        stub_request(:get, 'https://openrouter.ai/api/v1/models')
-          .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
-          .to_return(
-            status: 200,
-            body: {
-              data: [
-                {
-                  id: 'openai/gpt-4o',
-                  name: 'GPT-4o via OpenRouter',
-                  architecture: { input_modalities: %w[text image], output_modalities: ['text'] },
-                  context_length: 128_000,
-                  top_provider: { max_completion_tokens: 16_384 },
-                  supported_parameters: %w[tools response_format]
-                }
-              ]
-            }.to_json,
-            headers: { 'Content-Type' => 'application/json' }
-          )
-
-        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
-             headers: admin.create_new_auth_token,
-             as: :json
+      it 'ignores malformed provider credential payload values' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { provider_credentials: { openrouter: 'not-a-credential-hash' } },
+            as: :json
 
         expect(response).to have_http_status(:success)
-        openrouter_model = json_response.dig(:features, :assistant, :models).find { |model| model[:id] == 'openai/gpt-4o' }
-        expect(openrouter_model).to include(
-          provider: 'openrouter',
-          provider_display_name: 'OpenRouter',
-          source: 'openrouter_api',
-          context_length: 128_000,
-          max_output_tokens: 16_384,
-          capabilities: include('image_input')
-        )
+        expect(account.hooks.find_by(app_id: 'openrouter')).to be_nil
+        expect(json_response.dig(:provider_credentials, :openrouter, :account_configured)).to be false
       end
 
-      it 'returns validation error when OpenRouter API key is missing' do
-        allow(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_raise(
-          Llm::OpenRouterModelCatalog::MissingApiKeyError, 'OpenRouter API key is not configured.'
-        )
+      it 'ignores hidden direct provider account keys in normal Captain settings' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { provider_credentials: { openai: { api_key: 'account-openai-key' } } },
+            as: :json
 
-        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
-             headers: admin.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:unprocessable_entity)
-        expect(json_response[:error]).to eq('OpenRouter API key is not configured.')
+        expect(response).to have_http_status(:success)
+        expect(account.hooks.find_by(app_id: 'openai')).to be_nil
+        expect(json_response[:provider_credentials]).not_to have_key(:openai)
+        expect(response.body).not_to include('account-openai-key')
       end
 
-      it 'returns a sanitized gateway error when refresh fails unexpectedly' do
-        allow(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_raise(
-          StandardError, 'upstream leaked Bearer sk-or-v1-secret and api_key=SECRET_VALUE'
-        )
+      it 'removes visible provider account keys via provider credentials' do
+        create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key',
+                                   settings: { api_key: 'account-openrouter-key' })
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { provider_credentials: { openrouter: { remove: true } } },
+            as: :json
 
-        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
-             headers: admin.create_new_auth_token,
-             as: :json
+        expect(response).to have_http_status(:success)
+        expect(account.hooks.find_by(app_id: 'openrouter')).to be_nil
+        expect(json_response.dig(:provider_credentials, :openrouter, :account_configured)).to be false
+      end
 
-        expect(response).to have_http_status(:bad_gateway)
-        expect(json_response[:error]).to eq('OpenRouter models refresh failed.')
-        expect(response.body).not_to include('sk-or-v1-secret')
-        expect(response.body).not_to include('[REDACTED]')
+      it 'does not remove hidden direct provider account keys from normal Captain settings' do
+        hook = create(:integrations_hook, account: account, app_id: 'openai', access_token: 'account-openai-key',
+                                          settings: { api_key: 'account-openai-key' })
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { provider_credentials: { openai: { remove: true } } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.hooks.find_by(app_id: 'openai')).to eq(hook)
+        expect(json_response[:provider_credentials]).not_to have_key(:openai)
       end
     end
   end

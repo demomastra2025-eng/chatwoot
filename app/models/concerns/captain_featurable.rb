@@ -50,6 +50,10 @@ module CaptainFeaturable
     define_method(:captain_audio_transcription_prompt) do
       captain_runtime_with_defaults['audio_transcription_prompt'].to_s.strip.presence
     end
+
+    define_method(:captain_knowledge_chunk_size) do
+      Captain::KnowledgeSettings.normalize_chunk_size(captain_runtime_with_defaults['knowledge_chunk_size'])
+    end
   end
 
   def captain_preferences
@@ -66,11 +70,8 @@ module CaptainFeaturable
     stored_models = captain_models || {}
     Llm::Models.feature_keys.each_with_object({}) do |feature_key, result|
       stored_value = stored_models[feature_key]
-      result[feature_key] = if stored_value.present? && Llm::Models.valid_model_for?(feature_key, stored_value, account: self)
-                              Llm::Models.canonical_model_name(stored_value)
-                            else
-                              Llm::Models.default_model_for(feature_key, account: self)
-                            end
+      result[feature_key] = resolved_captain_model_for(feature_key, stored_value) ||
+                            Llm::Models.default_model_for(feature_key, account: self)
     end
   end
 
@@ -89,7 +90,9 @@ module CaptainFeaturable
 
   def captain_runtime_with_defaults
     stored_runtime = captain_runtime || {}
-    RUNTIME_DEFAULTS.merge(stored_runtime)
+    runtime = Captain::KnowledgeSettings.runtime_defaults.merge(RUNTIME_DEFAULTS).merge(stored_runtime)
+    runtime['knowledge_chunk_size'] = Captain::KnowledgeSettings.normalize_chunk_size(runtime['knowledge_chunk_size'])
+    runtime
   end
 
   def validate_captain_models
@@ -98,15 +101,25 @@ module CaptainFeaturable
     captain_models.each do |feature_key, model_name|
       next if model_name.blank?
 
-      unless Llm::Models.valid_model_for?(feature_key, model_name, account: self)
+      resolved_model = resolved_captain_model_for(feature_key, model_name)
+      if resolved_model.blank?
         allowed_models = Llm::Models.models_for(feature_key, account: self)
         errors.add(:captain_models, "'#{model_name}' is not a valid model for #{feature_key}. Allowed: #{allowed_models.join(', ')}")
         next
       end
 
-      next if Llm::Models.runtime_supported?(model_name, account: self)
+      next if Llm::Models.runtime_supported?(resolved_model, account: self)
 
       errors.add(:captain_models, "'#{model_name}' for #{feature_key} is not available in RubyLLM.models.")
     end
+  end
+
+  def resolved_captain_model_for(feature_key, model_name)
+    return if model_name.blank?
+
+    migrated_model = Llm::OpenRouterModelMigration.resolve(model_name, feature: feature_key, account: self)
+    candidate = migrated_model.presence || Llm::Models.canonical_model_name(model_name)
+    return candidate if Llm::Models.valid_model_for?(feature_key, candidate, account: self)
+    return candidate if Llm::Models.configured_model_for_feature?(feature_key, candidate, account: self)
   end
 end

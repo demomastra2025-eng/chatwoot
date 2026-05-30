@@ -123,6 +123,14 @@ const usageItems = computed(() => {
           ? formatInteger(event.completion_tokens)
           : null,
     },
+    {
+      key: 'thinking_tokens',
+      label: t('CAPTAIN.OBSERVABILITY.DETAILS.USAGE.THINKING_TOKENS'),
+      value:
+        event.thinking_tokens !== null && event.thinking_tokens !== undefined
+          ? formatInteger(event.thinking_tokens)
+          : null,
+    },
   ].filter(item => item.value && item.value !== t('GENERAL.NONE'));
 });
 

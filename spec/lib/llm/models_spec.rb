@@ -5,10 +5,32 @@ require 'rails_helper'
 RSpec.describe Llm::Models do
   describe '.capabilities_for' do
     it 'normalizes upstream registry capabilities to onelink capability names' do
-      registry_info = instance_double('RubyLLM::Model::Info', capabilities: %w[function_calling vision], type: 'chat')
+      registry_info = instance_double(RubyLLM::Model::Info, capabilities: %w[function_calling vision], type: 'chat')
       allow(described_class).to receive(:registry_info_for).with('custom-model').and_return(registry_info)
 
       expect(described_class.capabilities_for('custom-model')).to include('tool_calling', 'multimodal_input')
+    end
+
+    it 'does not merge stale registry capabilities into dynamic OpenRouter models' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5-chat' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[streaming text_input text_output structured_output]
+        }
+      )
+      registry_info = instance_double(
+        RubyLLM::Model::Info,
+        capabilities: %w[structured_output reasoning function_calling],
+        type: 'chat'
+      )
+      allow(described_class).to receive(:registry_info_for).with('openai/gpt-5-chat').and_return(registry_info)
+
+      capabilities = described_class.capabilities_for('openai/gpt-5-chat')
+
+      expect(capabilities).to include('streaming', 'structured_output')
+      expect(capabilities).not_to include('reasoning', 'tool_calling')
     end
   end
 
@@ -65,12 +87,22 @@ RSpec.describe Llm::Models do
   end
 
   describe '.feature_config' do
-    it 'includes provider and capabilities metadata for feature models' do
+    it 'includes provider and capabilities metadata for OpenRouter feature models' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'anthropic/claude-sonnet-4-6' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Claude Sonnet 4.6 via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[reasoning structured_output tool_calling streaming]
+        }
+      )
+
       config = described_class.feature_config(:assistant)
-      claude = config[:models].find { |model| model[:id] == 'claude-sonnet-4-6' }
+      claude = config[:models].find { |model| model[:id] == 'anthropic/claude-sonnet-4-6' }
 
       expect(claude).to include(
-        provider: 'anthropic',
+        provider: 'openrouter',
         type: 'chat'
       )
       expect(claude[:capabilities]).to include('reasoning', 'structured_output', 'tool_calling')
@@ -86,6 +118,11 @@ RSpec.describe Llm::Models do
           'source' => 'openrouter_api',
           'context_length' => 128_000,
           'max_output_tokens' => 16_384,
+          'input_modalities' => %w[text image],
+          'output_modalities' => ['text'],
+          'pricing' => { 'prompt' => '0.000001', 'completion' => '0.000002' },
+          'latency_ms' => 420.0,
+          'throughput_tokens_per_second' => 87.5,
           'capabilities' => %w[structured_output tool_calling image_input streaming]
         },
         'tool/without-image-input' => {
@@ -122,12 +159,83 @@ RSpec.describe Llm::Models do
           source: 'openrouter_api',
           context_length: 128_000,
           max_output_tokens: 16_384,
-          capabilities: include('structured_output', 'tool_calling', 'image_input')
+          input_modalities: %w[text image],
+          output_modalities: ['text'],
+          pricing: { 'prompt' => '0.000001', 'completion' => '0.000002' },
+          latency_ms: 420.0,
+          throughput_tokens_per_second: 87.5,
+          capabilities: include('structured_output', 'tool_calling', 'image_input'),
+          diagnostics: include(allowed: true, reasons: [])
         )
       )
       expect(config[:models]).to include(hash_including(id: 'tool/without-image-input'))
       expect(config[:models]).not_to include(hash_including(id: 'tool/without-structured-output'))
       expect(config[:models]).not_to include(hash_including(id: 'text/only'))
+    end
+
+    it 'keeps empty-requirement text features limited to OpenRouter chat models' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o-mini' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o Mini via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[streaming]
+        },
+        'openai/text-embedding-3-small' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Text Embedding 3 Small via OpenRouter',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding]
+        },
+        'openai/gpt-4o-mini-transcribe' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o Mini Transcribe via OpenRouter',
+          'type' => 'transcription',
+          'capabilities' => %w[audio_input transcription]
+        }
+      )
+
+      editor_config = described_class.feature_config(:editor)
+      label_config = described_class.feature_config(:label_suggestion)
+
+      expect(editor_config[:models]).to include(hash_including(id: 'openai/gpt-4o-mini'))
+      expect(label_config[:models]).to include(hash_including(id: 'openai/gpt-4o-mini'))
+      expect(editor_config[:models]).not_to include(hash_including(id: 'openai/text-embedding-3-small'))
+      expect(editor_config[:models]).not_to include(hash_including(id: 'openai/gpt-4o-mini-transcribe'))
+      expect(label_config[:models]).not_to include(hash_including(id: 'openai/text-embedding-3-small'))
+      expect(label_config[:models]).not_to include(hash_including(id: 'openai/gpt-4o-mini-transcribe'))
+    end
+
+    it 'exposes dynamic OpenRouter rerank models for knowledge rerank' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'cohere/rerank-v3.5' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Cohere Rerank 3.5 via OpenRouter',
+          'type' => 'rerank',
+          'capabilities' => %w[rerank text_input text_output]
+        },
+        'openai/gpt-4o-mini' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o Mini via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[streaming]
+        }
+      )
+
+      config = described_class.feature_config(:knowledge_rerank)
+
+      expect(config[:models]).to include(
+        hash_including(
+          id: 'cohere/rerank-v3.5',
+          provider: 'openrouter',
+          type: 'rerank',
+          capabilities: include('rerank'),
+          diagnostics: include(allowed: true, reasons: [])
+        )
+      )
+      expect(config[:models]).not_to include(hash_including(id: 'openai/gpt-4o-mini'))
     end
 
     it 'filters image recognition OpenRouter models by image input support' do
@@ -154,7 +262,7 @@ RSpec.describe Llm::Models do
       expect(config[:required_capabilities]).to eq(%w[image_input])
     end
 
-    it 'does not include OpenRouter catalog models when OpenRouter is not configured' do
+    it 'does not expose normal Captain fallback models when OpenRouter is not configured' do
       allow(Llm::Config).to receive(:provider_available?).and_return(false)
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => {
@@ -168,7 +276,71 @@ RSpec.describe Llm::Models do
       config = described_class.feature_config(:assistant)
 
       expect(config[:models]).not_to include(hash_including(id: 'openai/gpt-4o'))
-      expect(config[:default]).to eq('gpt-5.4')
+      expect(config[:models]).not_to include(hash_including(provider: 'openai'))
+      expect(config[:models]).not_to include(hash_including(provider: 'anthropic'))
+      expect(config[:models]).not_to include(hash_including(provider: 'gemini'))
+      expect(config[:default]).to be_nil
+    end
+
+    it 'hides account feature models for providers without a configured key' do
+      account = create(:account)
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-5.4 via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling image_input streaming]
+        }
+      )
+
+      config = described_class.feature_config(:assistant, account: account)
+
+      expect(config[:models]).to include(
+        hash_including(
+          id: 'openai/gpt-5.4',
+          provider: 'openrouter',
+          provider_configured: true,
+          account_configured: false,
+          global_configured: true
+        )
+      )
+      expect(config[:models]).not_to include(hash_including(id: 'gpt-5.4'))
+      expect(config[:models]).to all(include(provider_configured: true))
+    end
+
+    it 'hides direct account-key models from normal Captain feature configs' do
+      account = create(:account)
+      create(
+        :integrations_hook,
+        :openai,
+        account: account,
+        access_token: 'account-openai-key',
+        settings: { api_key: 'account-openai-key' }
+      )
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-5.4 via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling streaming]
+        }
+      )
+
+      config = described_class.feature_config(:assistant, account: account)
+
+      expect(config[:models]).to include(
+        hash_including(
+          id: 'openai/gpt-5.4',
+          provider: 'openrouter',
+          provider_configured: true,
+          account_configured: false,
+          global_configured: true
+        )
+      )
+      expect(config[:models]).not_to include(hash_including(id: 'gpt-5.4'))
+      expect(config[:models]).not_to include(hash_including(provider: 'openai'))
     end
 
     it 'uses OpenRouter default equivalents only when the OpenRouter catalog has a capability-compatible model' do
@@ -180,19 +352,31 @@ RSpec.describe Llm::Models do
           'type' => 'chat',
           'capabilities' => %w[structured_output tool_calling image_input streaming]
         },
-        'openai/gpt-audio-mini' => {
+        'openai/gpt-4o-transcribe' => {
           'provider' => 'openrouter',
-          'display_name' => 'GPT Audio Mini via OpenRouter',
-          'type' => 'chat',
-          'capabilities' => %w[audio_input text_output structured_output streaming]
+          'display_name' => 'GPT-4o Transcribe via OpenRouter',
+          'type' => 'transcription',
+          'source' => 'openrouter_api',
+          'input_modalities' => ['audio'],
+          'output_modalities' => ['transcription'],
+          'capabilities' => %w[audio_input transcription]
         }
       )
 
       expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.4')
-      expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-audio-mini')
+      expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-4o-transcribe')
+      expect(described_class.feature_config(:audio_transcription)[:models]).to include(
+        hash_including(
+          id: 'openai/gpt-4o-transcribe',
+          display_name: 'GPT-4o Transcribe via OpenRouter',
+          source: 'openrouter_api',
+          input_modalities: ['audio'],
+          output_modalities: ['transcription']
+        )
+      )
     end
 
-    it 'uses the static OpenRouter alias instead of falling back to a direct OpenAI model when the live catalog lacks a compatible assistant model' do
+    it 'does not use stale static OpenRouter capabilities when the live catalog has an incompatible model with the same id' do
       allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-5.4' => {
@@ -203,7 +387,10 @@ RSpec.describe Llm::Models do
         }
       )
 
-      expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.4')
+      config = described_class.feature_config(:assistant)
+
+      expect(config[:default]).to be_nil
+      expect(config[:models]).not_to include(hash_including(id: 'openai/gpt-5.4'))
     end
 
     it 'offers static capability-safe OpenRouter models for audio transcription, image recognition, and moderation when the live catalog is empty' do
@@ -214,9 +401,10 @@ RSpec.describe Llm::Models do
       image_config = described_class.feature_config(:image_recognition)
       moderation_config = described_class.feature_config(:moderation)
 
-      expect(audio_config[:default]).to eq('openai/gpt-4o-audio-preview')
+      expect(audio_config[:default]).to eq('openai/gpt-4o-mini-transcribe')
       expect(audio_config[:models]).to include(
-        hash_including(id: 'openai/gpt-4o-audio-preview', provider: 'openrouter', capabilities: include('audio_input'))
+        hash_including(id: 'openai/gpt-4o-mini-transcribe', provider: 'openrouter', capabilities: include('audio_input', 'transcription')),
+        hash_including(id: 'openai/gpt-audio-mini', provider: 'openrouter', capabilities: include('audio_input', 'transcription'))
       )
       expect(image_config[:default]).to eq('openai/gpt-5.4-mini')
       expect(image_config[:models]).to include(
@@ -224,8 +412,77 @@ RSpec.describe Llm::Models do
       )
       expect(moderation_config[:default]).to eq('openai/gpt-oss-safeguard-20b')
       expect(moderation_config[:models]).to include(
-        hash_including(id: 'openai/gpt-oss-safeguard-20b', provider: 'openrouter', capabilities: include('structured_output'))
+        hash_including(id: 'openai/gpt-oss-safeguard-20b', provider: 'openrouter', capabilities: include('structured_output', 'moderation'))
       )
+    end
+
+    it 'filters OpenRouter audio recognition models to transcription-capable chat or STT models' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openrouter/auto' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Auto Router',
+          'type' => 'chat',
+          'capabilities' => %w[audio_input text_output structured_output]
+        },
+        'google/gemini-3.1-pro-preview-customtools' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Gemini Custom Tools',
+          'type' => 'chat',
+          'capabilities' => %w[audio_input text_output structured_output]
+        },
+        'openai/gpt-4o-mini-transcribe' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o Mini Transcribe',
+          'type' => 'transcription',
+          'capabilities' => %w[audio_input transcription]
+        },
+        'openai/gpt-audio-mini' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT Audio Mini',
+          'type' => 'chat',
+          'capabilities' => %w[audio_input text_output transcription structured_output]
+        }
+      )
+
+      config = described_class.feature_config(:audio_transcription)
+
+      expect(config[:models]).to include(hash_including(id: 'openai/gpt-4o-mini-transcribe'))
+      expect(config[:models]).to include(hash_including(id: 'openai/gpt-audio-mini'))
+      expect(config[:models]).not_to include(hash_including(id: 'openrouter/auto'))
+      expect(config[:models]).not_to include(hash_including(id: 'google/gemini-3.1-pro-preview-customtools'))
+      expect(config[:required_capabilities]).to eq(%w[audio_input transcription])
+    end
+
+    it 'filters OpenRouter moderation models to safety/moderation-capable structured models' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output structured_output]
+        },
+        'meta-llama/llama-guard-4-12b' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Llama Guard 4',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output structured_output moderation]
+        },
+        'safety/no-structured-output' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Safety Text Only',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output moderation]
+        }
+      )
+
+      config = described_class.feature_config(:moderation)
+
+      expect(config[:models]).to include(hash_including(id: 'meta-llama/llama-guard-4-12b'))
+      expect(config[:models]).not_to include(hash_including(id: 'openai/gpt-4o'))
+      expect(config[:models]).not_to include(hash_including(id: 'safety/no-structured-output'))
+      expect(config[:required_capabilities]).to eq(%w[text_input text_output structured_output moderation])
     end
 
     it 'keeps the configured embedding default when OpenRouter catalog is enabled' do
@@ -236,8 +493,167 @@ RSpec.describe Llm::Models do
 
       expect(help_center_config[:default]).to eq('text-embedding-3-small')
       expect(help_center_config[:models]).to include(
-        hash_including(id: 'text-embedding-3-small', provider: 'openrouter', capabilities: include('embedding'))
+        hash_including(
+          id: 'text-embedding-3-small',
+          provider: 'openrouter',
+          capabilities: include('embedding'),
+          context_length: 8191,
+          embedding_dimensions: 1536
+        )
       )
+      expect(help_center_config[:required_capabilities]).to eq(%w[embedding])
+    end
+
+    it 'includes dynamically fetched OpenRouter embedding models compatible with the knowledge index' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/text-embedding-3-small' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Text Embedding 3 Small',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'input_modalities' => ['text'],
+          'output_modalities' => ['embeddings'],
+          'embedding_dimensions' => 1536,
+          'context_length' => 8192,
+          'pricing' => { 'prompt' => '0.00000002', 'completion' => '0' }
+        },
+        'baai/bge-m3' => {
+          'provider' => 'openrouter',
+          'display_name' => 'BGE M3',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'input_modalities' => ['text'],
+          'output_modalities' => ['embeddings'],
+          'embedding_dimensions' => 1536,
+          'context_length' => 8192
+        },
+        'openai/text-embedding-resizable' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Resizable Embedding',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'embedding_dimensions' => 3072,
+          'requested_embedding_dimensions' => 1536,
+          'context_length' => 8192
+        },
+        'openai/text-embedding-wrong-dimensions' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Wrong Dimensions',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'embedding_dimensions' => 1024,
+          'context_length' => 8192
+        },
+        'openai/text-embedding-too-small' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Too Small Context',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'input_modalities' => ['text'],
+          'output_modalities' => ['embeddings'],
+          'embedding_dimensions' => 1536,
+          'context_length' => 2000
+        },
+        'openai/text-embedding-unknown-context' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Unknown Context',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'input_modalities' => ['text'],
+          'output_modalities' => ['embeddings'],
+          'embedding_dimensions' => 1536
+        },
+        'openai/text-embedding-3-small-chat-lookalike' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Chat Lookalike',
+          'type' => 'chat',
+          'capabilities' => %w[embedding text_input]
+        }
+      )
+
+      help_center_config = described_class.feature_config(:help_center_search)
+      runtime_models = described_class.models_for(:help_center_search)
+
+      expect(help_center_config[:default]).to eq('openai/text-embedding-3-small')
+      expect(help_center_config[:models]).to include(
+        hash_including(
+          id: 'openai/text-embedding-3-small',
+          type: 'embedding',
+          capabilities: include('embedding'),
+          input_modalities: ['text'],
+          output_modalities: ['embeddings'],
+          embedding_dimensions: 1536,
+          context_length: 8192,
+          pricing: { 'prompt' => '0.00000002', 'completion' => '0' }
+        )
+      )
+      expect(help_center_config[:models]).not_to include(hash_including(id: 'text-embedding-3-small'))
+      expect(help_center_config[:models]).to include(hash_including(id: 'baai/bge-m3'))
+      expect(help_center_config[:models]).to include(hash_including(id: 'openai/text-embedding-resizable'))
+      expect(help_center_config[:models]).not_to include(hash_including(id: 'openai/text-embedding-wrong-dimensions'))
+      expect(help_center_config[:models]).to include(hash_including(id: 'openai/text-embedding-too-small'))
+      expect(help_center_config[:models]).to include(hash_including(id: 'openai/text-embedding-unknown-context'))
+      expect(runtime_models).not_to include('openai/text-embedding-too-small')
+      expect(runtime_models).not_to include('openai/text-embedding-unknown-context')
+      expect(runtime_models).not_to include('openai/text-embedding-wrong-dimensions')
+      expect(help_center_config[:models]).not_to include(hash_including(id: 'openai/text-embedding-3-small-chat-lookalike'))
+    end
+
+    it 'keeps embedding model settings visible while enforcing the account knowledge chunk size' do
+      account = create(:account, captain_runtime: { 'knowledge_chunk_size' => 40_000 })
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/text-embedding-3-small' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Text Embedding 3 Small',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'embedding_dimensions' => 1536,
+          'context_length' => 8192
+        },
+        'openai/text-embedding-long-context' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Long Context Embedding',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'embedding_dimensions' => 1536,
+          'context_length' => 16_384
+        }
+      )
+
+      help_center_config = described_class.feature_config(:help_center_search, account: account)
+      runtime_models = described_class.models_for(:help_center_search, account: account)
+
+      expect(help_center_config[:models]).to include(hash_including(id: 'openai/text-embedding-long-context'))
+      expect(help_center_config[:models]).to include(hash_including(id: 'openai/text-embedding-3-small'))
+      expect(help_center_config[:models]).not_to include(hash_including(id: 'text-embedding-3-small'))
+      expect(runtime_models).to include('openai/text-embedding-long-context')
+      expect(runtime_models).not_to include('openai/text-embedding-3-small')
+      expect(described_class.valid_model_for?(:help_center_search, 'openai/text-embedding-3-small', account: account)).to be false
+      expect(help_center_config[:default]).to eq('openai/text-embedding-long-context')
+    end
+
+    it 'exposes chunk size options backed by compatible OpenRouter embedding models' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/text-embedding-3-small' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Text Embedding 3 Small',
+          'type' => 'embedding',
+          'capabilities' => %w[embedding text_input],
+          'embedding_dimensions' => 1536,
+          'context_length' => 8192
+        }
+      )
+
+      options = described_class.knowledge_chunk_size_options
+
+      expect(options).to include(
+        include(value: 20_000, estimated_tokens: 5000, available_model_count: 1, disabled: false),
+        include(value: 32_000, estimated_tokens: 8000, available_model_count: 1, disabled: false)
+      )
+      expect(options).not_to include(include(value: 40_000))
     end
   end
 
@@ -274,7 +690,7 @@ RSpec.describe Llm::Models do
 
     it 'estimates text cost from registry pricing when available' do
       registry_model = instance_double(
-        'RubyLLM::Model::Info',
+        RubyLLM::Model::Info,
         input_price_per_million: 0.5,
         output_price_per_million: 1.5
       )

@@ -86,7 +86,7 @@ const handleThinkingChange = option => {
 
 <template>
   <div
-    class="rounded-xl border border-n-weak bg-n-solid-1 p-4 grid gap-4"
+    class="rounded-xl border border-n-weak bg-n-solid-1 p-4 grid gap-3"
     :class="{ 'opacity-60 pointer-events-none': !isAllowed }"
   >
     <div>
@@ -94,15 +94,15 @@ const handleThinkingChange = option => {
       <p class="text-sm text-n-slate-11 mt-0.5">{{ description }}</p>
     </div>
 
-    <div
-      class="rounded-xl border border-n-weak bg-n-alpha-2 divide-y divide-n-weak"
-    >
-      <div class="p-3 flex items-center justify-between gap-4">
+    <div class="grid gap-2 md:grid-cols-2">
+      <div
+        class="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-n-weak bg-n-alpha-1 p-3"
+      >
         <div class="min-w-0">
-          <h5 class="text-sm font-medium text-n-slate-12">
+          <h5 class="text-xs font-medium text-n-slate-12">
             {{ moderationTitle }}
           </h5>
-          <p class="text-sm text-n-slate-11 mt-0.5">
+          <p class="text-xs text-n-slate-11 mt-0.5">
             {{ moderationDescription }}
           </p>
         </div>
@@ -113,12 +113,14 @@ const handleThinkingChange = option => {
         />
       </div>
 
-      <div class="p-3 flex items-center justify-between gap-4">
+      <div
+        class="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-n-weak bg-n-alpha-1 p-3"
+      >
         <div class="min-w-0">
-          <h5 class="text-sm font-medium text-n-slate-12">
+          <h5 class="text-xs font-medium text-n-slate-12">
             {{ thinkingTitle }}
           </h5>
-          <p class="text-sm text-n-slate-11 mt-0.5">
+          <p class="text-xs text-n-slate-11 mt-0.5">
             {{ thinkingDescription }}
           </p>
         </div>

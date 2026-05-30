@@ -36,8 +36,15 @@ class Llm::BaseAiService
     )
 
     chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: schema) if schema.present?
+    enforce_openrouter_tool_parameters!(chat, tools)
     Array(tools).each { |tool| chat.with_tool(tool) }
     chat
+  end
+
+  def enforce_openrouter_tool_parameters!(chat, tools)
+    return if Array(tools).blank?
+
+    Llm::OpenRouterRequestPolicy.require_parameters!(chat, account: llm_model_account)
   end
 
   def setup_temperature
@@ -51,6 +58,7 @@ class Llm::BaseAiService
       temperature: temperature,
       thinking: thinking
     }.tap do |kwargs|
+      kwargs[:feature] = llm_feature_key if llm_feature_key.present?
       kwargs[:account] = account if account.present?
       context = llm_context_for_model(model, account)
       kwargs[:context] = context if context.present?

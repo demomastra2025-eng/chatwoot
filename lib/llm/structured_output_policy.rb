@@ -2,10 +2,9 @@
 
 require 'json_schemer'
 
-class Llm::StructuredOutputPolicy
+class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
   CHAT_SCHEMA_IVAR = :@onelink_structured_output_schema
-  DEFAULT_MAX_ATTEMPTS = 2
-
+  DEFAULT_MAX_ATTEMPTS = 3
   StructuredOutputError = Class.new(StandardError)
   InvalidStructuredOutputError = Class.new(StructuredOutputError)
 
@@ -15,6 +14,7 @@ class Llm::StructuredOutputPolicy
 
       validate_schema!(schema)
       chat.instance_variable_set(CHAT_SCHEMA_IVAR, schema)
+      enforce_openrouter_required_parameters!(chat)
       chat.with_schema(schema)
     end
 
@@ -27,7 +27,14 @@ class Llm::StructuredOutputPolicy
         response = yield(attempts)
         normalize_response!(chat: chat, response: response)
       rescue InvalidStructuredOutputError => e
-        raise if schema_for(chat).blank? || attempts >= max_attempts
+        raise if schema_for(chat).blank?
+
+        if attempts >= max_attempts
+          fallback_response = fallback_invalid_captain_response!(chat: chat, response: response)
+          return fallback_response if fallback_response
+
+          raise
+        end
 
         prepare_retry!(chat: chat, response: response, error: e, attempt: attempts)
         retry
@@ -38,18 +45,16 @@ class Llm::StructuredOutputPolicy
 
     def normalize_response!(chat:, response:)
       schema = schema_for(chat)
-      return response if schema.blank?
-      return response unless response.respond_to?(:content)
-      return response if halt_result?(response)
-      return response if response.respond_to?(:tool_call?) && response.tool_call?
+      return response unless should_normalize_response?(schema, response)
 
-      normalized_content = normalize_content(response.content)
+      normalized_content = normalize_content(response.content, schema: schema)
       validate_content!(schema, normalized_content)
+      validate_semantic_content!(schema, normalized_content)
       response.content = normalized_content if response.respond_to?(:content=)
       response
     rescue InvalidStructuredOutputError => e
       publish_invalid_event(chat: chat, response: response, error: e)
-      raise InvalidStructuredOutputError, "#{e.message} for schema #{schema_name(schema)}"
+      raise InvalidStructuredOutputError, "#{e.message} for schema #{Llm::StructuredOutputSchema.name_for(schema)}"
     end
 
     def schema_for(chat)
@@ -65,63 +70,53 @@ class Llm::StructuredOutputPolicy
     end
 
     def validate_schema!(schema)
-      schema_instance = schema.is_a?(Class) ? schema.new : schema
-      schema_instance.validate! if schema_instance.respond_to?(:validate!)
-      validate_openai_strict_required_properties!(schema)
+      Llm::StrictStructuredOutputSchemaValidator.validate!(schema)
     end
 
-    def validate_openai_strict_required_properties!(schema)
-      definition = schema_definition_for(schema)
-      return unless definition.is_a?(Hash) && definition['strict'] == true
-
-      validate_required_properties!(definition, schema_name: schema_name(schema), pointer: '$')
+    def enforce_openrouter_required_parameters!(chat)
+      Llm::OpenRouterRequestPolicy.require_structured_output!(chat)
     end
 
-    def validate_required_properties!(definition, schema_name:, pointer:)
-      return unless definition.is_a?(Hash)
-
-      properties = definition['properties']
-      if properties.is_a?(Hash)
-        required = Array(definition['required']).map(&:to_s)
-        missing = properties.keys.map(&:to_s) - required
-        if missing.any?
-          raise ArgumentError,
-                "Strict structured output schema #{schema_name} must include every property in required at #{pointer}. Missing: #{missing.join(', ')}"
-        end
-
-        properties.each do |property_name, property_schema|
-          validate_required_properties!(property_schema, schema_name: schema_name, pointer: "#{pointer}.#{property_name}")
-        end
-      end
-
-      validate_required_properties!(definition['items'], schema_name: schema_name, pointer: "#{pointer}[]") if definition['items'].is_a?(Hash)
-
-      %w[anyOf oneOf allOf].each do |combiner|
-        Array(definition[combiner]).each_with_index do |child_schema, index|
-          validate_required_properties!(child_schema, schema_name: schema_name, pointer: "#{pointer}.#{combiner}[#{index}]")
-        end
-      end
+    def should_normalize_response?(schema, response)
+      schema.present? && response.respond_to?(:content) && !halt_result?(response) &&
+        !(response.respond_to?(:tool_call?) && response.tool_call?)
     end
 
-    def normalize_content(content)
-      return content.with_indifferent_access if content.respond_to?(:with_indifferent_access)
-      return content.to_h.with_indifferent_access if hash_like?(content)
-      return content if content.is_a?(Array)
+    def normalize_content(content, schema:)
+      normalized_content =
+        if content.respond_to?(:with_indifferent_access)
+          content.with_indifferent_access
+        elsif hash_like?(content)
+          content.to_h.with_indifferent_access
+        elsif content.is_a?(Array)
+          content
+        else
+          normalize_json_string(content)
+        end
 
-      normalize_json_string(content)
+      Llm::CaptainResponseContentNormalizer.apply_defaults(schema, normalized_content)
     end
 
     def normalize_json_string(content)
       raise InvalidStructuredOutputError, 'Structured output response was blank' if content.blank?
       raise InvalidStructuredOutputError, 'Structured output response was not JSON' unless content.is_a?(String)
 
-      parsed = JSON.parse(content)
+      parsed = parse_json_content(content)
       return parsed.with_indifferent_access if parsed.is_a?(Hash)
       return parsed if parsed.is_a?(Array)
 
       raise InvalidStructuredOutputError, 'Structured output response was not a JSON object or array'
     rescue JSON::ParserError
       raise InvalidStructuredOutputError, 'Structured output response was not valid JSON'
+    end
+
+    def parse_json_content(content)
+      JSON.parse(content)
+    rescue JSON::ParserError
+      candidate = Llm::JsonDocumentExtractor.call(content)
+      raise if candidate.blank?
+
+      JSON.parse(candidate)
     end
 
     def hash_like?(content)
@@ -131,24 +126,37 @@ class Llm::StructuredOutputPolicy
     end
 
     def validate_content!(schema, content)
-      validation_errors = JSONSchemer.schema(schema_definition_for(schema)).validate(content).to_a
+      validation_errors = JSONSchemer.schema(Llm::StructuredOutputSchema.definition_for(schema)).validate(content).to_a
       return if validation_errors.empty?
 
       raise InvalidStructuredOutputError, "Structured output response did not match schema: #{format_validation_errors(validation_errors)}"
     end
 
-    def schema_definition_for(schema)
-      schema_payload =
-        if schema.is_a?(Class)
-          schema.new.to_json_schema
-        elsif schema.respond_to?(:to_json_schema)
-          schema.to_json_schema
-        else
-          schema
-        end
-      schema_payload = schema_payload.with_indifferent_access if schema_payload.respond_to?(:with_indifferent_access)
-      definition = schema_payload[:schema] || schema_payload['schema'] || schema_payload
-      JSON.parse(definition.to_json)
+    def validate_semantic_content!(schema, content)
+      return unless Llm::CaptainResponseContentNormalizer.applicable?(schema)
+      return unless content.respond_to?(:[])
+
+      if Llm::CaptainResponseContentNormalizer.invalid_public_response?(content['response'])
+        raise InvalidStructuredOutputError,
+              Llm::CaptainResponseContentNormalizer.invalid_public_response_message(content['response'])
+      end
+
+      return if content['reasoning'].to_s.strip.present?
+
+      raise InvalidStructuredOutputError, 'Captain response reasoning must be present'
+    end
+
+    def fallback_invalid_captain_response!(chat:, response:)
+      schema = schema_for(chat)
+      return unless response.respond_to?(:content)
+
+      fallback = Llm::CaptainResponseContentNormalizer.plain_text_fallback(schema, response.content)
+      return if fallback.blank?
+
+      normalized_content = fallback.with_indifferent_access
+      validate_content!(schema, normalized_content)
+      response.content = normalized_content if response.respond_to?(:content=)
+      response
     end
 
     def format_validation_errors(errors)
@@ -177,26 +185,24 @@ class Llm::StructuredOutputPolicy
       <<~PROMPT.squish
         The previous response did not satisfy the required structured output schema.
         Retry the answer and return only valid JSON that exactly matches the schema already provided.
+        Use the completed tool results already present in the conversation when forming the response.
+        If the schema includes a reasoning field, it must be non-empty and user-visible, not hidden chain-of-thought.
+        Do not call another tool while repairing a schema error unless the answer is impossible without new data.
         Do not include markdown, prose, comments, or code fences.
         Attempt: #{attempt + 1}. Validation error: #{error.message}
       PROMPT
-    end
-
-    def schema_name(schema)
-      return schema.name if schema.respond_to?(:name) && schema.name.present?
-
-      schema.class.name
     end
 
     def publish_invalid_event(chat:, response:, error:)
       schema = schema_for(chat)
       Llm::EventBus.publish(
         'schema.invalid',
-        schema_name: schema_name(schema),
+        schema_name: Llm::StructuredOutputSchema.name_for(schema),
         model: resolved_model_name(chat),
         reason: error.message,
         response_type: response.respond_to?(:content) ? response_type(response.content) : nil,
-        response_size: response.respond_to?(:content) ? response_size(response.content) : nil
+        response_size: response.respond_to?(:content) ? response_size(response.content) : nil,
+        **Llm::MessageTokenPayload.for(response)
       )
     end
 
@@ -204,7 +210,7 @@ class Llm::StructuredOutputPolicy
       schema = schema_for(chat)
       Llm::EventBus.publish(
         'schema.repair_requested',
-        schema_name: schema_name(schema),
+        schema_name: Llm::StructuredOutputSchema.name_for(schema),
         model: resolved_model_name(chat),
         attempt: attempt + 1,
         reason: error.message

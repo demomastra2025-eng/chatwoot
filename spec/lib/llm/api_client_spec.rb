@@ -162,5 +162,31 @@ RSpec.describe Llm::ApiClient do
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
+
+    it 'uses the native OpenRouter transcription endpoint for OpenRouter STT models' do
+      response = instance_double(RubyLLM::Transcription, text: 'hello')
+
+      expect(Llm::OpenRouterTranscriptionClient).to receive(:transcribe).with(
+        '/tmp/audio.mp3',
+        model: 'openai/gpt-4o-mini-transcribe',
+        api_key: 'openrouter-key',
+        api_base: 'https://openrouter.ai/api/v1',
+        language: nil,
+        temperature: 0.2,
+        provider: nil
+      ).and_return(response)
+      expect(RubyLLM).not_to receive(:transcribe)
+
+      expect(
+        described_class.transcribe(
+          '/tmp/audio.mp3',
+          provider: 'openrouter',
+          api_key: 'openrouter-key',
+          api_base: 'https://openrouter.ai/api/v1',
+          model: 'openai/gpt-4o-mini-transcribe',
+          temperature: 0.2
+        )
+      ).to eq(response)
+    end
   end
 end

@@ -11,6 +11,7 @@ class Llm::Monitoring::EventRecorder
       llm.run.complete
       llm.run.retry
       llm.safety.blocked
+      llm.schema.fallback
       llm.schema.invalid
       llm.schema.repair_requested
       llm.transcription.complete
@@ -20,8 +21,9 @@ class Llm::Monitoring::EventRecorder
 
   PERSISTED_PAYLOAD_MAX_BYTES = 8.kilobytes
   ESSENTIAL_PAYLOAD_KEYS = %w[
-    canonical_event_name event_name_alias error_class error_code failure_mode payload_bytes payload_budget_bytes
-    project_case_id queue_wait_ms retry_count schema_invalid_count status thinking_tokens tool_calls_count
+    canonical_event_name event_name_alias error_class error_code failure_mode openrouter_generation_id
+    payload_bytes payload_budget_bytes project_case_id queue_wait_ms retry_count schema_invalid_count status
+    thinking_tokens tool_calls_count
   ].freeze
 
   PROMOTED_PAYLOAD_KEYS = Set.new(
@@ -50,7 +52,9 @@ class Llm::Monitoring::EventRecorder
   def record
     return unless PERSISTED_EVENTS.include?(@event_name)
 
-    LlmEvent.create!(event_attributes)
+    event = LlmEvent.create!(event_attributes)
+    enqueue_openrouter_generation_metadata(event)
+    event
   rescue StandardError => e
     Rails.logger.warn("[Llm::Monitoring::EventRecorder] Failed to persist #{@event_name}: #{e.class}: #{e.message}")
     nil
@@ -111,6 +115,20 @@ class Llm::Monitoring::EventRecorder
 
   def summarized_payload
     enforce_payload_budget(@payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).merge(summary_fields).compact)
+  end
+
+  def enqueue_openrouter_generation_metadata(event)
+    generation_id = @payload['openrouter_generation_id'].presence
+    return if generation_id.blank?
+    return unless event.provider.to_s == 'openrouter'
+
+    Internal::FetchOpenRouterGenerationMetadataJob.perform_later(event.id, generation_id)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[Llm::Monitoring::EventRecorder] Failed to enqueue OpenRouter generation metadata for event #{event.id}: " \
+      "#{e.class}: #{e.message}"
+    )
+    nil
   end
 
   def summary_fields

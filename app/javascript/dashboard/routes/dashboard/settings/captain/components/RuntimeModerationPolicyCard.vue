@@ -63,7 +63,7 @@ const handleFailureModeChange = option => {
 
 <template>
   <div
-    class="rounded-xl border border-n-weak bg-n-solid-1 p-4 grid gap-3"
+    class="rounded-xl border border-n-weak bg-n-solid-1 p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
     :class="{ 'opacity-60 pointer-events-none': !isAllowed }"
   >
     <div class="min-w-0">
@@ -77,7 +77,7 @@ const handleFailureModeChange = option => {
       :options="failureModeOptions"
       disable-search
       variant="faded"
-      class="max-w-52"
+      class="max-w-56"
       @update:model-value="handleFailureModeChange"
     />
   </div>

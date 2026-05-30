@@ -251,6 +251,7 @@
     "SUPER_ADMIN_CONSOLE": "SuperAdmin console",
     "DOCS": "Read documentation",
     "CHANGELOG": "Changelog",
+    "WORKSPACE_SETTINGS": "Open workspace",
     "LOGOUT": "Log out"
   },
   "APP_GLOBAL": {
@@ -317,6 +318,7 @@
     "UNATTENDED_CONVERSATIONS": "Unattended",
     "REPORTS": "Reports",
     "SETTINGS": "Settings",
+    "ADDITIONAL": "Қосымша",
     "CONTACTS": "Contacts",
     "ACTIVE": "Active",
     "COMPANIES": "Companies",
@@ -350,9 +352,10 @@
     "CANNED_RESPONSES": "Canned Responses",
     "INTEGRATIONS": "Integrations",
     "PROFILE_SETTINGS": "Profile Settings",
-    "ACCOUNT_SETTINGS": "Workspace Settings",
+    "ACCOUNT_SETTINGS": "Workspace",
     "APPLICATIONS": "Applications",
-    "LABELS": "Labels",
+    "LABELS": "Tags",
+    "TAG_SETTINGS": "Tag settings",
     "CUSTOM_ATTRIBUTES": "Custom Attributes",
     "AUTOMATION": "Automation",
     "MACROS": "Macros",
@@ -362,7 +365,7 @@
     "CUSTOM_VIEWS_SEGMENTS": "Segments",
     "ALL_CONTACTS": "All Contacts",
     "TAGGED_WITH": "Tagged with",
-    "NEW_LABEL": "New label",
+    "NEW_LABEL": "New tag",
     "NEW_TEAM": "New team",
     "NEW_INBOX": "New inbox",
     "REPORTS_CONVERSATION": "Conversations",
@@ -374,10 +377,10 @@
     "OUTBOUND_MASS": "Жаппай",
     "OUTBOUND_PERSONAL": "Жеке",
     "MASS_BROADCASTS": "Жаппай жіберілімдер",
-    "PERSONAL_BROADCASTS": "Жеке жіберілімдер",
+    "PERSONAL_BROADCASTS": "Касания",
     "CAMPAIGNS": "Кампаниалар",
     "AUDIENCES": "Audiences",
-    "TOUCHES": "Жеке",
+    "TOUCHES": "Касания",
     "TOUCH_PLANS": "Дожимы",
     "TEMPLATES": "Templates",
     "ONGOING": "Ongoing",
@@ -385,7 +388,7 @@
     "REPORTS_SLA": "SLA",
     "REPORTS_BOT": "Robot",
     "REPORTS_AGENT": "Employees",
-    "REPORTS_LABEL": "Labels",
+    "REPORTS_LABEL": "Tags",
     "REPORTS_INBOX": "Inbox",
     "REPORTS_TEAM": "Team",
     "AGENT_ASSIGNMENT": "Employee Assignment",
@@ -404,6 +407,8 @@
       "SETTINGS": "Настройки"
     },
     "CHANNELS": "Channels",
+    "ALL_CHANNELS": "Барлық арналар",
+    "ALL_TAGS": "Барлық тегтер",
     "SET_AUTO_OFFLINE": {
       "TEXT": "Mark offline automatically",
       "INFO_TEXT": "Let the system automatically mark you offline when you aren't using the app or dashboard.",
@@ -412,7 +417,15 @@
     "DOCS": "Read docs",
     "SECURITY": "Security",
     "CAPTAIN_AI": "Captain",
-    "CONVERSATION_WORKFLOW": "Conversation Workflow"
+    "CONVERSATION_WORKFLOW": "Диалог баптаулары"
+  },
+  "EMPLOYEE_SETTINGS": {
+    "TABS": {
+      "EMPLOYEES": "Қызметкерлер",
+      "TEAM": "Команда",
+      "ROLES": "Рөлдер",
+      "ASSIGNMENT": "Тағайындау"
+    }
   },
   "CAPTAIN_SETTINGS": {
     "TITLE": "Captain Settings",
@@ -423,16 +436,15 @@
     "PROVIDER_KEYS": {
       "TITLE": "Provider keys",
       "DESCRIPTION": "Configure workspace-level LLM credentials. Secrets are stored server-side and are never returned to the browser.",
-      "OPENROUTER_TITLE": "OpenRouter account key",
-      "OPENROUTER_STATUS": "Effective key source: {status}",
-      "OPENROUTER_PLACEHOLDER": "Paste OpenRouter API key to override the global key",
+      "STATUS_LABEL": "Key source: {status}",
+      "PLACEHOLDER": "Paste {provider} API key to override the global key",
       "SAVE": "Save key",
       "REMOVE_ACCOUNT_KEY": "Remove account key",
       "SECRET_NOTE": "The existing key value is hidden. Leave the input empty to keep it unchanged.",
-      "SAVE_SUCCESS": "OpenRouter account key saved.",
-      "SAVE_ERROR": "Failed to save OpenRouter account key.",
-      "REMOVE_SUCCESS": "OpenRouter account key removed.",
-      "REMOVE_ERROR": "Failed to remove OpenRouter account key.",
+      "SAVE_SUCCESS": "Provider account key saved.",
+      "SAVE_ERROR": "Failed to save provider account key.",
+      "REMOVE_SUCCESS": "Provider account key removed.",
+      "REMOVE_ERROR": "Failed to remove provider account key.",
       "STATUS": {
         "ACCOUNT": "account",
         "GLOBAL": "global",
@@ -443,14 +455,63 @@
       "TITLE": "Model Configuration",
       "DESCRIPTION": "Select AI models for different features.",
       "SELECT_MODEL": "Select model",
+      "MODEL_DIALOG_TITLE": "Select model for {feature}",
+      "MODEL_DIALOG_DESCRIPTION": "Search and select a compatible model.",
+      "MODEL_SEARCH_PLACEHOLDER": "Search by model, provider, or capability",
       "CREDITS_PER_MESSAGE": "{credits} credit/message",
       "COMING_SOON": "Coming soon",
       "SOURCE_OPENROUTER_API": "OpenRouter API",
       "SOURCE_LOCAL_FALLBACK": "local fallback",
+      "PROVIDER_ROUTE_LABEL": "via {provider}",
       "CONTEXT_TOKENS": "{count} context tokens",
       "CAPABILITIES": "Capabilities: {capabilities}",
+      "MORE_CAPABILITIES": "+{count}",
       "METADATA_SEPARATOR": " · ",
-      "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure a provider key or refresh the OpenRouter catalog.",
+      "TOKEN_COUNT": "{count} tokens",
+      "PRICE_PER_MILLION": "{price} / 1M",
+      "INPUT_MODALITIES": "Input",
+      "OUTPUT_MODALITIES": "Output",
+      "INPUT_TOKEN_PRICE": "Input $",
+      "OUTPUT_TOKEN_PRICE": "Output $",
+      "CACHE_TOKEN_PRICE": "Cache $",
+      "CONTEXT_SIZE": "Context",
+      "MAX_OUTPUT": "Max reply",
+      "LATENCY": "Latency",
+      "LATENCY_VALUE": "{count} ms",
+      "THROUGHPUT": "Speed",
+      "THROUGHPUT_VALUE": "{count} tokens/s",
+      "TOOLS": "Tools",
+      "STRUCTURED_OUTPUT": "Schema",
+      "REASONING": "Reasoning",
+      "SUPPORTED": "Yes",
+      "NOT_SUPPORTED": "No",
+      "MODALITIES": {
+        "TEXT": "Text",
+        "IMAGE": "Image",
+        "AUDIO": "Audio",
+        "FILE": "File",
+        "PDF": "PDF",
+        "VIDEO": "Video",
+        "EMBEDDINGS": "Embeddings"
+      },
+      "NO_MODELS_MATCH": "No models match your search.",
+      "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure an OpenRouter key or wait for the catalog refresh to finish.",
+      "DIAGNOSTICS": {
+        "TITLE": "Selected model {model} is not available",
+        "REASONS": {
+          "MODEL_NOT_FOUND": "The selected model is not in the current catalog.",
+          "PROVIDER_NOT_CONFIGURED": "OpenRouter is not configured for this account or installation.",
+          "DIRECT_PROVIDER_DISABLED": "Direct provider models are disabled here; choose the OpenRouter equivalent.",
+          "VOICE_ONLY_PROVIDER": "Gemini direct models are available only in AI Voice settings.",
+          "STRUCTURED_OUTPUT_UNSUPPORTED": "The model does not support structured JSON output.",
+          "TOOL_CALLING_UNSUPPORTED": "The model does not support tool calling.",
+          "MISSING_CAPABILITY": "The model is missing a required capability.",
+          "UNSUPPORTED_TYPE": "The model type is not compatible with this feature.",
+          "EMBEDDING_DIMENSION_MISMATCH": "Embedding dimensions do not match the One Link knowledge index.",
+          "CONTEXT_TOO_SMALL": "The model context is too small for the configured knowledge chunk size.",
+          "CAPABILITY_DIAGNOSTICS_FAILED": "Model capability diagnostics failed; refresh the catalog and try again."
+        }
+      },
       "SPECIALIZED_TITLE": "Specialized AI models",
       "SPECIALIZED_DESCRIPTION": "Choose capability-safe models for moderation, audio recognition, image recognition, and FAQ embeddings separately from the chat model.",
       "EDITOR": {
@@ -462,7 +523,7 @@
         "DESCRIPTION": "Handles automated responses, conversation summaries, and intelligent reply suggestions for customer interactions."
       },
       "COPILOT": {
-        "TITLE": "Co-pilot",
+        "TITLE": "AI Assistant",
         "DESCRIPTION": "Provides real-time contextual suggestions, knowledge base recommendations, and proactive insights during conversations."
       },
       "MODERATION": {
@@ -471,15 +532,29 @@
       },
       "AUDIO_TRANSCRIPTION": {
         "TITLE": "Audio recognition model",
-        "DESCRIPTION": "Transcribes voice messages and call recordings. OpenRouter options must support audio input; OpenAI transcription endpoint models remain optional."
+        "DESCRIPTION": "Transcribes voice messages and call recordings through prompt-aware audio models or native STT endpoint models.",
+        "ENABLE_TITLE": "Transcription",
+        "ENABLE_DESCRIPTION": "Convert incoming voice messages and call recordings into text.",
+        "PROMPT_TITLE": "Recognition prompt",
+        "PROMPT_DESCRIPTION": "Optional instructions for prompt-aware recognition models. Native OpenRouter STT endpoint models work without a prompt.",
+        "PROMPT_PLACEHOLDER": "Example: Transcribe Russian and Kazakh accurately. Preserve names, numbers, and product terms.",
+        "SAVE_PROMPT": "Save prompt",
+        "NATIVE_PROMPT_TITLE": "Native STT endpoint",
+        "NATIVE_PROMPT_DESCRIPTION": "This model uses OpenRouter's native transcription endpoint, so no prompt is sent."
       },
       "IMAGE_RECOGNITION": {
         "TITLE": "Image recognition model",
-        "DESCRIPTION": "Describes customer-shared images before the AI Agent / Assistant processes the message. Defaults are selected automatically when OpenAI or OpenRouter is configured."
+        "DESCRIPTION": "Describes customer-shared images before the AI Agent / AI Assistant processes the message. Defaults are selected automatically when OpenAI or OpenRouter is configured."
       },
       "EMBEDDINGS": {
         "TITLE": "FAQ / embeddings model",
-        "DESCRIPTION": "Builds vectors for FAQ and help-center semantic search. If embeddings are unavailable, FAQ lookup can still use exact keyword fallback."
+        "DESCRIPTION": "Builds vectors for FAQ and help-center semantic search. If embeddings are unavailable, FAQ lookup can still use exact keyword fallback.",
+        "INDEXING_TITLE": "Search indexing",
+        "INDEXING_DESCRIPTION": "Build and update the semantic index for FAQ lookup.",
+        "CHUNK_SIZE_TITLE": "Knowledge chunk size",
+        "CHUNK_SIZE_DESCRIPTION": "Only OpenRouter embedding models that fit this size are shown.",
+        "CHUNK_SIZE_OPTION": "{chars} chars (~{tokens} tokens) · {count} models",
+        "CHUNK_SIZE_OPTION_DISABLED": "{chars} chars (~{tokens} tokens) · no compatible models"
       }
     },
     "FEATURES": {
@@ -498,15 +573,15 @@
         "DESCRIPTION": "Use AI for context aware search inside your help center articles."
       },
       "LABEL_SUGGESTION": {
-        "TITLE": "Label Suggestion",
-        "DESCRIPTION": "Automatically suggest relevant labels and tags for conversations based on content analysis and context.",
-        "MODEL_TITLE": "Label Suggestion Model",
-        "MODEL_DESCRIPTION": "Select the AI model to use for analyzing conversations and suggesting appropriate labels"
+        "TITLE": "Tag Suggestion",
+        "DESCRIPTION": "Automatically suggest relevant tags for conversations based on content analysis and context.",
+        "MODEL_TITLE": "Tag Suggestion Model",
+        "MODEL_DESCRIPTION": "Select the AI model to use for analyzing conversations and suggesting appropriate tags"
       }
     },
     "RUNTIME": {
       "TITLE": "Runtime & Safety",
-      "DESCRIPTION": "Control reasoning depth and safety checks for the customer-facing AI Agent and the internal Assistant.",
+      "DESCRIPTION": "Control reasoning depth and safety checks for the customer-facing AI Agent and the internal AI Assistant.",
       "MODERATION": {
         "TITLE": "Moderation",
         "DESCRIPTION": "Check text safety before and after model responses. Blocked AI Agent replies hand off to a human."
@@ -522,6 +597,8 @@
       "THINKING": {
         "TITLE": "Thinking Effort",
         "DESCRIPTION": "Give reasoning-capable models more deliberation time for harder tasks.",
+        "SUPPORTED": "Selected model supports reasoning",
+        "UNSUPPORTED": "Selected model does not support reasoning",
         "OPTIONS": {
           "NONE": "Disabled",
           "LOW": "Low",
@@ -534,8 +611,8 @@
         "DESCRIPTION": "Applies to automated customer replies and scenario handoffs."
       },
       "COPILOT": {
-        "TITLE": "Assistant Runtime",
-        "DESCRIPTION": "Applies to internal copilot chats and operator-side tool use."
+        "TITLE": "AI Assistant Runtime",
+        "DESCRIPTION": "Applies to internal AI Assistant chats and operator-side tool use."
       }
     },
     "RUNTIME_STATUS": {
@@ -590,8 +667,8 @@
       "FEATURE_LABELS": {
         "EDITOR": "Editor",
         "ASSISTANT": "AI Agent",
-        "COPILOT": "Assistant",
-        "LABEL_SUGGESTION": "Label Suggestion",
+        "COPILOT": "AI Assistant",
+        "LABEL_SUGGESTION": "Tag Suggestion",
         "AUDIO_TRANSCRIPTION": "Audio Transcription",
         "HELP_CENTER_SEARCH": "Help Center Search",
         "IMAGE_RECOGNITION": "Image Recognition",
@@ -740,9 +817,13 @@
   "CONVERSATION_WORKFLOW": {
     "INDEX": {
       "HEADER": {
-        "TITLE": "Conversation Workflows",
-        "DESCRIPTION": "Configure rules and required fields for conversation resolution."
+        "TITLE": "Диалогты аяқтау",
+        "DESCRIPTION": "Диалогтарды автоаяқтау, міндетті өрістер және жабу ережелерін баптаңыз."
       }
+    },
+    "TABS": {
+      "CLOSURE": "Диалогты аяқтау",
+      "SLA": "SLA"
     },
     "REQUIRED_ATTRIBUTES": {
       "TITLE": "Attributes required on resolution",
@@ -846,7 +927,7 @@
         "DESCRIPTION": "Manage workload for agents.",
         "FEATURES": [
           "Define maximum conversations per inbox",
-          "Create exceptions based on labels and time",
+          "Create exceptions based on tags and time",
           "Add agents to a policy - one policy per agent"
         ]
       }
@@ -1060,7 +1141,7 @@
           "LABEL": "Exclusion rules",
           "DESCRIPTION": "Conversations that satisfy the following conditions would not count towards agent capacity",
           "TAGS": {
-            "LABEL": "Exclude conversations tagged with specific labels",
+            "LABEL": "Exclude conversations tagged with specific tags",
             "ADD_TAG": "add tag",
             "DROPDOWN": {
               "SEARCH_PLACEHOLDER": "Search and select tags to add"

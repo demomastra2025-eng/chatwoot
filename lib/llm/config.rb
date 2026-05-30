@@ -8,6 +8,7 @@ module Llm::Config
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
+  RUNTIME_CACHE_KEY = :llm_config_runtime_cache
 
   class << self
     def initialized?
@@ -23,6 +24,18 @@ module Llm::Config
 
     def reset!
       @initialized = false
+    end
+
+    def with_runtime_cache
+      previous_cache = Thread.current[RUNTIME_CACHE_KEY]
+      Thread.current[RUNTIME_CACHE_KEY] = {
+        installation_configs: {},
+        account_provider_hooks: {}
+      }
+
+      yield
+    ensure
+      Thread.current[RUNTIME_CACHE_KEY] = previous_cache
     end
 
     def context(api_key: nil, api_base: nil, provider: nil, model: nil, overrides: nil, account: nil)
@@ -89,7 +102,7 @@ module Llm::Config
       account_model = account_model_for(account, DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE)
       return account_model if account_model.present?
 
-      configured_model = InstallationConfig.find_by(name: 'CAPTAIN_MODERATION_MODEL')&.value.presence
+      configured_model = installation_config_value('CAPTAIN_MODERATION_MODEL').presence
 
       if openrouter_primary?(account: account)
         return configured_model if configured_model.present? && provider_for_model(configured_model, account: account) == 'openrouter'
@@ -118,8 +131,8 @@ module Llm::Config
     end
 
     def installation_default_model
-      InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value.presence ||
-        InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_MODEL')&.value.presence
+      installation_config_value('CAPTAIN_DEFAULT_MODEL').presence ||
+        installation_config_value('CAPTAIN_OPEN_AI_MODEL').presence
     end
 
     def provider_available?(provider, account: nil)
@@ -170,7 +183,7 @@ module Llm::Config
       config_name = provider_config(provider_name)&.fetch('api_base_config', nil)
       return if config_name.blank?
 
-      InstallationConfig.find_by(name: config_name)&.value.presence
+      installation_config_value(config_name).presence
     end
 
     def default_api_base(provider_name)
@@ -243,7 +256,7 @@ module Llm::Config
       config_name = provider_config(provider)&.fetch('api_key_config', nil)
       return if config_name.blank?
 
-      InstallationConfig.find_by(name: config_name)&.value.presence
+      installation_config_value(config_name).presence
     end
 
     def account_api_key(provider, account)
@@ -261,14 +274,23 @@ module Llm::Config
     def account_provider_hook(account, provider)
       return if account.blank? || provider.blank? || !account.respond_to?(:hooks)
 
-      account.hooks.find_by(app_id: provider.to_s, status: 'enabled')
+      cache = runtime_cache
+      return account.hooks.find_by(app_id: provider.to_s, status: 'enabled') if cache.blank? || account.id.blank?
+
+      cache[:account_provider_hooks].fetch([account.id, provider.to_s]) do
+        cache[:account_provider_hooks][[account.id, provider.to_s]] =
+          account.hooks.find_by(app_id: provider.to_s, status: 'enabled')
+      end
     end
 
     def account_model_for(account, feature_key)
       return if account.blank? || feature_key.blank?
 
       model_name = account.captain_models.to_h.with_indifferent_access[feature_key]
-      return unless model_name.present?
+      return if model_name.blank?
+
+      model_name = normal_feature_model_name(feature_key, model_name, account: account)
+      return if model_name.blank?
       return unless feature_model_allowed?(feature_key, model_name, account: account)
 
       canonical_model = Llm::Models.canonical_model_name(model_name)
@@ -284,6 +306,9 @@ module Llm::Config
       model_name = installation_default_model
       return if model_name.blank?
 
+      model_name = normal_feature_model_name(feature_key, model_name, account: account) if feature_key.present?
+      return if model_name.blank?
+
       canonical_model = Llm::Models.canonical_model_name(model_name)
       provider = provider_for_model(canonical_model, account: account)
       return unless provider_available?(provider, account: account)
@@ -297,12 +322,35 @@ module Llm::Config
     end
 
     def feature_model_allowed?(feature_key, model_name, account: nil)
-      Llm::Models.valid_model_for?(feature_key, model_name, account: account) ||
-        Llm::Models.configured_model_for_feature?(feature_key, model_name)
+      return true if Llm::Models.valid_model_for?(feature_key, model_name, account: account)
+      return false if feature_key.to_s == 'help_center_search' && Llm::Models.openrouter_no_fallback_active_for?(feature_key, account: account)
+
+      Llm::Models.configured_model_for_feature?(feature_key, model_name, account: account)
+    end
+
+    def normal_feature_model_name(feature_key, model_name, account: nil)
+      migrated_model = Llm::OpenRouterModelMigration.resolve(model_name, feature: feature_key, account: account)
+      return migrated_model if migrated_model.present?
+      return if Llm::Models.openrouter_no_fallback_active_for?(feature_key, account: account)
+
+      Llm::Models.canonical_model_name(model_name)
     end
 
     def installation_text_config(name)
-      InstallationConfig.find_by(name: name)&.value.to_s.strip.presence
+      installation_config_value(name).to_s.strip.presence
+    end
+
+    def installation_config_value(name)
+      cache = runtime_cache
+      return InstallationConfig.find_by(name: name)&.value if cache.blank?
+
+      cache[:installation_configs].fetch(name) do
+        cache[:installation_configs][name] = InstallationConfig.find_by(name: name)&.value
+      end
+    end
+
+    def runtime_cache
+      Thread.current[RUNTIME_CACHE_KEY]
     end
 
     def runtime_usable_model?(model_name, account: nil)

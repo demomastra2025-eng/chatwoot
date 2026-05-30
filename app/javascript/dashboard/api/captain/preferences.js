@@ -13,10 +13,6 @@ class CaptainPreferences extends ApiClient {
   updatePreferences(data) {
     return axios.put(this.url, data);
   }
-
-  refreshOpenRouterModels() {
-    return axios.post(`${this.url}/refresh_openrouter_models`);
-  }
 }
 
 export default new CaptainPreferences();

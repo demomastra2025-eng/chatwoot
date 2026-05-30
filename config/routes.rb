@@ -70,9 +70,7 @@ Rails.application.routes.draw do
               get :export
               resources :annotations, only: [:index, :create, :destroy], controller: 'observability_annotations'
             end
-            resource :preferences, only: [:show, :update] do
-              post :refresh_openrouter_models
-            end
+            resource :preferences, only: [:show, :update]
             resource :evaluations, only: [:show], controller: 'evaluations' do
               post :run
               get :run_status
@@ -900,7 +898,9 @@ Rails.application.routes.draw do
     namespace :super_admin do
       root to: 'dashboard#index'
 
-      resource :app_config, only: [:show, :create]
+      resource :app_config, only: [:show, :create] do
+        post :refresh_openrouter_models
+      end
       resource :push_diagnostics, only: [:show, :create] do
         post :destroy_subscriptions, on: :collection
       end

@@ -108,4 +108,25 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
   ensure
     FileUtils.rm_f(outside_path) if defined?(outside_path) && outside_path.present?
   end
+
+  it 'uses the native OpenRouter transcription endpoint for dedicated STT models' do
+    service = described_class.new(call_session)
+    allow(service).to receive(:model).and_return('openai/gpt-4o-mini-transcribe')
+    allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o-mini-transcribe', account: account).and_return('openrouter')
+    allow(Llm::Models).to receive(:type_for).with('openai/gpt-4o-mini-transcribe', account: account).and_return('transcription')
+    allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('openrouter-key')
+    allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.ai/api/v1')
+
+    expect(Llm::ApiClient).to receive(:transcribe).with(
+      recording_path.to_s,
+      provider: 'openrouter',
+      api_key: 'openrouter-key',
+      api_base: 'https://openrouter.ai/api/v1',
+      model: 'openai/gpt-4o-mini-transcribe',
+      temperature: 0.2,
+      observability: hash_including(runtime_mode: 'call_recording_transcription')
+    ).and_return(response)
+
+    expect(service.perform).to include(success: true, transcript: transcript)
+  end
 end

@@ -267,7 +267,7 @@ class Llm::ModerationService
     end
 
     def chat_build_kwargs(model:, account:)
-      { model: model, temperature: 0 }.tap do |kwargs|
+      { model: model, temperature: 0, feature: :moderation }.tap do |kwargs|
         next if account.blank?
 
         kwargs[:account] = account

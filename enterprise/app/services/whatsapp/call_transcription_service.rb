@@ -27,14 +27,16 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   private
 
   def can_transcribe?
-    account.feature_enabled?('captain_integration') && account.captain_quota_available?
+    account.feature_enabled?('captain_integration') &&
+      account.captain_audio_transcription_enabled? &&
+      account.captain_quota_available?
   end
 
   # Transcribe per-direction recordings separately when possible so lines can
   # be attributed to Customer vs Agent. Falls back to the combined recording
   # if the media server isn't available or per-side files are missing.
   def transcribe_audio
-    return transcribe_combined if openrouter_chat_transcription?
+    return transcribe_combined if openrouter_chat_transcription? || openrouter_transcription_endpoint?
 
     if call.media_session_id.present?
       diarized = diarized_transcript
@@ -105,6 +107,14 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   def transcribe_file(file_path, temperature:, response_format: nil, timestamp_granularities: nil, observability: {})
     return transcribe_file_with_openrouter_chat(file_path, observability: observability) if openrouter_chat_transcription?
 
+    if openrouter_transcription_endpoint?
+      return transcribe_file_with_openrouter_transcription_endpoint(
+        file_path,
+        temperature: temperature,
+        observability: observability
+      )
+    end
+
     options = {
       context: llm_context,
       model: model,
@@ -130,24 +140,59 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   end
 
   def openrouter_chat_transcription?
-    Llm::Config.provider_for_model(model, account: account) == 'openrouter' && Llm::Models.supports_audio_input?(model, account: account)
+    Llm::Config.provider_for_model(model, account: account) == 'openrouter' &&
+      Llm::Models.type_for(model, account: account) == 'chat' &&
+      Llm::Models.supports_audio_input?(model, account: account)
+  end
+
+  def openrouter_transcription_endpoint?
+    Llm::Config.provider_for_model(model, account: account) == 'openrouter' &&
+      Llm::Models.type_for(model, account: account) == 'transcription'
   end
 
   def transcribe_file_with_openrouter_chat(file_path, observability: {})
+    provider_file_path = Llm::OpenRouterAudioInput.normalize_for_chat(
+      file_path,
+      logger_context: { account_id: account.id, call_id: call.id }
+    )
     response = instrument_audio_transcription(observability) do
       Llm::ChatClient.ask(
         chat(model: model, temperature: 0),
-        RubyLLM::Content.new(openrouter_transcription_prompt, [file_path]),
+        RubyLLM::Content.new(openrouter_transcription_prompt, [provider_file_path]),
         observability: observability.merge(provider: 'openrouter'),
         account: account
       )
     end
 
     TranscriptionResult.new(text: response&.content.to_s, segments: [])
+  ensure
+    FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
+  end
+
+  def transcribe_file_with_openrouter_transcription_endpoint(file_path, temperature:, observability: {})
+    provider_file_path = Llm::OpenRouterAudioInput.normalize_for_transcription(
+      file_path,
+      logger_context: { account_id: account.id, call_id: call.id }
+    )
+    Llm::ApiClient.transcribe(
+      provider_file_path,
+      provider: 'openrouter',
+      api_key: api_key,
+      api_base: api_base,
+      model: model,
+      temperature: temperature,
+      observability: observability.merge(provider: 'openrouter')
+    )
+  ensure
+    FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
   end
 
   def openrouter_transcription_prompt
-    'Transcribe the attached call recording accurately. Return only the transcript text, without markdown or commentary.'
+    [
+      'Transcribe the attached call recording accurately. Return only the transcript text, without markdown or commentary.',
+      'If speaker roles are clear, label them as Клиент and Оператор.',
+      account.captain_audio_transcription_prompt.presence
+    ].compact.join("\n")
   end
 
   def instrumentation_params(file_path, runtime_mode)

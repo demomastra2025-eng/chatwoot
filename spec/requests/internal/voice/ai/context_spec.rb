@@ -106,6 +106,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'max_duration_sec' => 600
     )
     expect(body.dig('ai', 'system_prompt')).to include('Ты голосовой ассистент в телефонном звонке')
+    expect(body.dig('ai', 'system_prompt')).not_to include('Voice character prompt')
+    expect(body['ai']).not_to have_key('voice_character_prompt')
     expect(body.dig('ai', 'system_prompt')).to include('Отвечай максимум 1-2 короткими предложениями')
     expect(body.dig('ai', 'system_prompt')).to include('Answer callers using OneLink account context.')
     expect(body.dig('ai', 'system_prompt')).to include('Answer shortly')
@@ -121,6 +123,33 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
     end_call_tool = body['tools'].find { |tool| tool['name'] == 'end_call' }
     expect(end_call_tool['timeout_ms']).to be >= 5000
+  end
+
+  it 'adds a separate voice character prompt block to the generated voice prompt' do
+    voice_character_prompt = 'Тембр: тёплый эксперт-наставник. Темп спокойный, без смеха.'
+
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        system_prompt: 'Основной сценарий звонка: помогай с записью.',
+        voice_character_prompt: voice_character_prompt
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body
+    system_prompt = body.dig('ai', 'system_prompt')
+
+    expect(body.dig('ai', 'voice_character_prompt')).to eq(voice_character_prompt)
+    expect(system_prompt).to include("Voice character prompt:\n#{voice_character_prompt}")
+    expect(system_prompt.index('Основной сценарий звонка')).to be < system_prompt.index('Voice character prompt')
+    expect(system_prompt.index('Voice character prompt')).to be < system_prompt.index('Ты голосовой ассистент')
   end
 
   it 'returns enabled Captain scenarios in the voice runtime context' do

@@ -117,6 +117,37 @@ RSpec.describe Llm::Config do
     end
   end
 
+  describe '.with_runtime_cache' do
+    it 'reuses installation config lookups inside the block' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+
+      expect(InstallationConfig).to receive(:find_by)
+        .with(name: 'CAPTAIN_OPENROUTER_API_KEY')
+        .once
+        .and_call_original
+
+      described_class.with_runtime_cache do
+        2.times { expect(described_class.api_key('openrouter')).to eq('[REDACTED]') }
+      end
+    end
+
+    it 'reuses account provider hook lookups inside the block' do
+      account = create(:account)
+      create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
+      hooks = account.hooks
+
+      allow(account).to receive(:hooks).and_return(hooks)
+      expect(hooks).to receive(:find_by)
+        .with(app_id: 'openrouter', status: 'enabled')
+        .once
+        .and_call_original
+
+      described_class.with_runtime_cache do
+        2.times { expect(described_class.api_key('openrouter', account: account)).to eq('account-openrouter-key') }
+      end
+    end
+  end
+
   describe '.context' do
     it 'configures the selected provider in an isolated RubyLLM context' do
       yielded_config = Class.new do
@@ -164,18 +195,36 @@ RSpec.describe Llm::Config do
       expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.4')
     end
 
-    it 'prefers the direct provider default when that provider key is configured alongside OpenRouter' do
+    it 'uses the OpenRouter default even when a direct provider key is configured alongside OpenRouter' do
       upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'openai-key')
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-5.4' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling image_input streaming]
+          'capabilities' => %w[structured_output tool_calling streaming]
         }
       )
 
-      expect(described_class.model_for(feature: 'assistant')).to eq('gpt-5.4')
+      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.4')
+    end
+
+    it 'maps legacy account-selected direct model ids to OpenRouter equivalents for normal Captain features' do
+      account = create(:account)
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling streaming]
+        }
+      )
+      account.update!(captain_models: { 'assistant' => 'gpt-5.4' })
+
+      selected_model = described_class.model_for(feature: 'assistant', account: account)
+
+      expect(selected_model).to eq('openai/gpt-5.4')
+      expect(described_class.provider_for_model(selected_model, account: account)).to eq('openrouter')
     end
 
     it 'prefers an account-selected model when that account has provider credentials' do
@@ -211,17 +260,17 @@ RSpec.describe Llm::Config do
       expect(described_class.provider_available?('openrouter', account: account)).to be true
     end
 
-    it 'uses a preferred OpenRouter audio chat model for audio transcription when OpenRouter is configured' do
+    it 'uses a static OpenRouter STT default for audio transcription when OpenRouter is configured' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-audio-mini' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[audio_input text_output structured_output streaming]
+          'capabilities' => %w[audio_input text_output transcription structured_output streaming]
         }
       )
 
-      expect(described_class.model_for(feature: 'audio_transcription')).to eq('openai/gpt-audio-mini')
+      expect(described_class.model_for(feature: 'audio_transcription')).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.provider_for_model(described_class.model_for(feature: 'audio_transcription'))).to eq('openrouter')
     end
 
@@ -248,7 +297,7 @@ RSpec.describe Llm::Config do
         'openai/gpt-oss-safeguard-20b' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[text_input text_output structured_output streaming]
+          'capabilities' => %w[text_input text_output structured_output moderation streaming]
         }
       )
 
@@ -263,7 +312,7 @@ RSpec.describe Llm::Config do
         'openai/gpt-oss-safeguard-20b' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[text_input text_output structured_output streaming]
+          'capabilities' => %w[text_input text_output structured_output moderation streaming]
         }
       )
 

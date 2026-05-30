@@ -52,7 +52,7 @@ RSpec.describe Llm::ModerationService do
       allow(Llm::Config).to receive(:moderation_model).and_return('openai/gpt-oss-safeguard-20b')
       allow(Llm::Config).to receive(:api_key).with('openrouter').and_return('[REDACTED]')
       allow(Llm::Models).to receive(:supports_structured_output?).with('openai/gpt-oss-safeguard-20b').and_return(true)
-      allow(Llm::ChatClient).to receive(:build).with(model: 'openai/gpt-oss-safeguard-20b', temperature: 0).and_return(chat)
+      allow(Llm::ChatClient).to receive(:build).with(model: 'openai/gpt-oss-safeguard-20b', temperature: 0, feature: :moderation).and_return(chat)
       allow(Llm::StructuredOutputPolicy).to receive(:bind!).with(chat: chat, schema: kind_of(Hash)).and_return(chat)
 
       expect(Llm::ApiClient).not_to receive(:moderate)

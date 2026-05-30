@@ -31,6 +31,21 @@ RSpec.describe Llm::MessageFormat do
       expect(params[:content].text).to eq('Please inspect this screenshot')
       expect(params[:content].attachments.first.source.to_s).to eq('https://example.com/error.png')
     end
+
+    it 'restores assistant thinking details for provider continuity' do
+      params = described_class.build_message_params(
+        {
+          role: :assistant,
+          content: 'Done',
+          thinking: 'internal reasoning',
+          thinking_signature: 'sig_123'
+        }
+      )
+
+      expect(params[:thinking]).to be_a(RubyLLM::Thinking)
+      expect(params[:thinking].text).to eq('internal reasoning')
+      expect(params[:thinking].signature).to eq('sig_123')
+    end
   end
 
   describe '.restore_messages' do

@@ -18,6 +18,7 @@ RSpec.describe 'Super Admin Monitoring', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include('Monitoring')
+        expect(response.body).not_to include('OpenRouter model catalog')
         expect(response.body).to include('/monitoring/grafana/d/crafty-production-overview/crafty-production-overview')
       end
     end

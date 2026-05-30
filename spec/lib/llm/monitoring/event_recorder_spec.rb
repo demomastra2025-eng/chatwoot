@@ -200,5 +200,44 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.payload).not_to have_key('details')
       expect(event.payload).not_to have_key('error_class')
     end
+
+    it 'enqueues OpenRouter generation metadata enrichment for persisted OpenRouter chat events' do
+      expect(Internal::FetchOpenRouterGenerationMetadataJob).to receive(:perform_later) do |event_id, generation_id|
+        event = LlmEvent.find(event_id)
+        expect(event.provider).to eq('openrouter')
+        expect(event.payload['openrouter_generation_id']).to eq('gen-123')
+        expect(generation_id).to eq('gen-123')
+      end
+
+      described_class.record_notification(
+        event_name: 'llm.chat.complete',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'provider' => 'openrouter',
+          'model' => 'openai/gpt-4o',
+          'openrouter_generation_id' => 'gen-123'
+        }
+      )
+    end
+
+    it 'does not enqueue generation metadata enrichment for direct-provider events' do
+      expect(Internal::FetchOpenRouterGenerationMetadataJob).not_to receive(:perform_later)
+
+      described_class.record_notification(
+        event_name: 'llm.chat.complete',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'provider' => 'openai',
+          'model' => 'gpt-4.1-mini',
+          'openrouter_generation_id' => 'gen-123'
+        }
+      )
+    end
   end
 end

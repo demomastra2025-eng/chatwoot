@@ -15,6 +15,43 @@
 </style>
 
 <section class="main-content__body">
+  <% if @config == 'captain' %>
+    <div class="mb-8 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div class="font-medium text-slate-900">OpenRouter model catalog</div>
+          <div class="mt-1">
+            Source: <%= @openrouter_catalog_metadata[:source] %>,
+            models: <%= @openrouter_catalog_metadata[:total_models] %>,
+            last refresh: <%= @openrouter_catalog_metadata[:last_refreshed_at].presence || 'never' %>
+          </div>
+          <% endpoint_metadata = @openrouter_catalog_metadata[:endpoints].to_h %>
+          <div class="mt-1">
+            Endpoints: <%= endpoint_metadata[:total_endpoints] || 0 %>
+            across <%= endpoint_metadata[:provider_count] || 0 %> providers
+            <% if endpoint_metadata[:providers].present? %>
+              (<%= endpoint_metadata[:providers].first(5).join(', ') %><%= endpoint_metadata[:providers].size > 5 ? ', …' : '' %>)
+            <% end %>
+          </div>
+          <div class="mt-1 text-slate-500">
+            Refresh uses the global OpenRouter config and updates only the shared model and endpoint catalogs. Workspace keys are not changed.
+          </div>
+          <% if endpoint_metadata[:last_refresh_error].present? %>
+            <div class="mt-1 text-amber-700">Endpoint refresh warning: <%= endpoint_metadata[:last_refresh_error] %></div>
+          <% end %>
+          <% if @openrouter_catalog_metadata[:last_refresh_error].present? %>
+            <div class="mt-1 text-red-700">Last error: <%= @openrouter_catalog_metadata[:last_refresh_error] %></div>
+          <% end %>
+        </div>
+
+        <%= button_to 'Refresh OpenRouter Models',
+                      refresh_openrouter_models_super_admin_app_config_path(config: 'captain'),
+                      method: :post,
+                      class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
+      </div>
+    </div>
+  <% end %>
+
   <%= form_with url: super_admin_app_config_url(config: @config) , method: :post do |form| %>
     <% @allowed_configs.each do |key| %>
       <div class="flex mb-8">

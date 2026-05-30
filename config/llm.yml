@@ -95,21 +95,31 @@ models:
     credit_multiplier: 1
     type: chat
     source: static_openrouter_default
-    capabilities: [text_input, text_output, structured_output]
-  openai/gpt-4o-audio-preview:
+    capabilities: [text_input, text_output, structured_output, moderation]
+  openai/gpt-audio-mini:
     provider: openrouter
-    display_name: 'GPT-4o Audio Preview'
+    display_name: 'GPT Audio Mini'
     credit_multiplier: 1
     type: chat
     source: static_openrouter_default
-    capabilities: [audio_input, text_output]
+    capabilities: [audio_input, text_output, transcription]
   mistralai/voxtral-small-24b-2507:
     provider: openrouter
     display_name: 'Voxtral Small'
     credit_multiplier: 1
     type: chat
     source: static_openrouter_default
-    capabilities: [audio_input, text_output]
+    capabilities: [audio_input, text_output, transcription]
+  openai/gpt-4o-mini-transcribe:
+    provider: openrouter
+    display_name: 'GPT-4o Mini Transcribe'
+    credit_multiplier: 1
+    type: transcription
+    source: static_openrouter_default
+    capabilities: [audio_input, transcription]
+    input_modalities: [audio]
+    output_modalities: [transcription]
+    context_length: 128000
   gpt-5.4-nano:
     provider: openai
     display_name: 'GPT-5.4 Nano'
@@ -182,12 +192,23 @@ models:
     credit_multiplier: 1
     type: transcription
     capabilities: [transcription]
+  omni-moderation-latest:
+    provider: openai
+    display_name: 'Omni Moderation'
+    credit_multiplier: 1
+    type: moderation
+    capabilities: [moderation, text_input]
   text-embedding-3-small:
     provider: openrouter
     display_name: 'Text Embedding 3 Small'
     credit_multiplier: 1
     type: embedding
-    capabilities: [embedding]
+    capabilities: [embedding, text_input]
+    source: static_openrouter_default
+    context_length: 8191
+    input_modalities: [text]
+    output_modalities: [embeddings]
+    embedding_dimensions: 1536
 
 features:
   editor:
@@ -254,7 +275,7 @@ features:
       [gpt-4.1-nano, gpt-4.1-mini, gpt-5-mini, gpt-5.4-nano, gpt-5.4-mini, gemini-2.5-flash-lite, gemini-2.5-flash, claude-haiku-4-5]
     default: gpt-5.4-mini
   audio_transcription:
-    models: [openai/gpt-4o-audio-preview, mistralai/voxtral-small-24b-2507, gpt-4o-transcribe, whisper-1]
+    models: [openai/gpt-4o-mini-transcribe, openai/gpt-audio-mini, mistralai/voxtral-small-24b-2507, gpt-4o-transcribe, whisper-1]
     default: gpt-4o-transcribe
   image_recognition:
     models:
@@ -280,6 +301,9 @@ features:
   help_center_search:
     models: [text-embedding-3-small]
     default: text-embedding-3-small
+  knowledge_rerank:
+    models: []
+    default:
   moderation:
-    models: [openai/gpt-oss-safeguard-20b]
-    default: openai/gpt-oss-safeguard-20b
+    models: [omni-moderation-latest, openai/gpt-oss-safeguard-20b]
+    default: omni-moderation-latest

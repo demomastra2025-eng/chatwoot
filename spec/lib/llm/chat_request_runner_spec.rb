@@ -116,6 +116,38 @@ RSpec.describe Llm::ChatRequestRunner do
     expect(chat).to have_received(:with_params).with(response_format: { type: 'json_object' })
   end
 
+  it 'requires OpenRouter providers to support tool parameters for tools-only requests' do
+    openrouter_model = instance_double(RubyLLM::Model::Info, id: 'deepseek/deepseek-v4-pro', provider: 'openrouter')
+    tool = instance_double(RubyLLM::Tool)
+
+    allow(chat).to receive(:model).and_return(openrouter_model)
+    allow(chat).to receive(:params).and_return(provider: { allow_fallbacks: true })
+    allow(Llm::Models).to receive(:supports?).and_call_original
+    allow(Llm::Models).to receive(:supports?)
+      .with('deepseek/deepseek-v4-pro', :tool_calling, account: nil)
+      .and_return(true)
+
+    expect(chat).to receive(:with_params) do |**params|
+      expect(params).to include(
+        models: start_with('deepseek/deepseek-v4-pro'),
+        provider: include(
+          allow_fallbacks: true,
+          data_collection: 'deny',
+          require_parameters: true
+        )
+      )
+      chat
+    end
+    expect(chat).to receive(:with_tool).with(tool)
+    expect(chat).to receive(:ask).with('Hello').and_return(response)
+
+    described_class.new(
+      chat: chat,
+      messages: [{ role: 'user', content: 'Hello' }],
+      tools: [tool]
+    ).call
+  end
+
   it 'raises when structured output is requested for a model without schema support' do
     allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'whisper-1'))
     schema = Class.new(RubyLLM::Schema) do
@@ -139,9 +171,10 @@ RSpec.describe Llm::ChatRequestRunner do
 
     invalid_response_one = instance_double(RubyLLM::Message, content: 'not-json', tool_call?: false)
     invalid_response_two = instance_double(RubyLLM::Message, content: 'still-not-json', tool_call?: false)
+    invalid_response_three = instance_double(RubyLLM::Message, content: 'final-not-json', tool_call?: false)
 
-    expect(chat).to receive(:with_instructions).with(/return only valid JSON/i, append: true).and_return(chat)
-    expect(chat).to receive(:ask).with('Hello').twice.and_return(invalid_response_one, invalid_response_two)
+    expect(chat).to receive(:with_instructions).with(/return only valid JSON/i, append: true).twice.and_return(chat)
+    expect(chat).to receive(:ask).with('Hello').thrice.and_return(invalid_response_one, invalid_response_two, invalid_response_three)
 
     expect do
       described_class.new(

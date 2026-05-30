@@ -1,4 +1,6 @@
 class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
+  SEMANTIC_RESULT_LIMIT = 5
+
   def self.name
     'search_documentation'
   end
@@ -58,9 +60,15 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   end
 
   def semantic_responses(query)
-    Captain::DocumentChunk.search(query, account_id: assistant.account_id)
-                          .where(assistant_id: assistant.id)
-                          .limit(5)
+    candidates = Captain::DocumentChunk.search(query, account_id: assistant.account_id)
+                                       .where(assistant_id: assistant.id)
+                                       .limit(SEMANTIC_RESULT_LIMIT)
+                                       .to_a
+    Captain::Documents::Reranker.new(account: assistant.account).call(
+      query: query,
+      documents: candidates,
+      top_n: SEMANTIC_RESULT_LIMIT
+    ).documents
   end
 
   def lexical_fallback_responses(*queries)

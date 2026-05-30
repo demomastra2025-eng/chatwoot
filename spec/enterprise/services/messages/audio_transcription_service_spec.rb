@@ -16,8 +16,10 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
   let(:mock_transcription) { instance_double(RubyLLM::Transcription, text: 'Hello world transcription') }
 
   before do
-    # Create required installation configs
-    InstallationConfig.find_or_create_by!(name: 'CAPTAIN_OPEN_AI_API_KEY') { |config| config.value = 'test-api-key' }
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-api-key')
+    InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY')&.destroy!
+    InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.destroy!
+    InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_MODEL')&.destroy!
 
     # Mock usage limits for transcription to be available
     allow(account).to receive(:usage_limits).and_return({ captain: { responses: { current_available: 100 } } })
@@ -166,7 +168,10 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       allow(service).to receive(:instrument_audio_transcription).and_yield
     end
 
-    it 'uses RubyLLM transcription through the shared API client' do
+    it 'uses RubyLLM transcription through the shared API client for legacy direct provider models' do
+      allow(service).to receive(:model).and_return('gpt-4o-transcribe')
+      allow(Llm::Config).to receive(:provider_for_model).with('gpt-4o-transcribe', account: account).and_return('openai')
+
       expect(Llm::ApiClient).to receive(:transcribe).with(
         instance_of(String),
         context: mock_context,
@@ -227,11 +232,11 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
         filename: 'voice-message',
         content_type: 'audio/opus'
       )
-      allow(service).to receive(:model).and_return('openai/gpt-4o-audio-preview')
-      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o-audio-preview', account: account).and_return('openrouter')
-      allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-4o-audio-preview', account: account).and_return(true)
-      allow(service).to receive(:chat).with(model: 'openai/gpt-4o-audio-preview', temperature: 0).and_return(chat)
-      allow(service).to receive(:ffmpeg_path).and_return('/usr/bin/ffmpeg')
+      allow(service).to receive(:model).and_return('openai/gpt-audio-mini')
+      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-audio-mini', account: account).and_return('openrouter')
+      allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-audio-mini', account: account).and_return(true)
+      allow(service).to receive(:chat).with(model: 'openai/gpt-audio-mini', temperature: 0).and_return(chat)
+      allow(Llm::OpenRouterAudioInput).to receive(:ffmpeg_path).and_return('/usr/bin/ffmpeg')
 
       expect(Open3).to receive(:capture3) do |*args|
         destination_file_path = args.last
@@ -251,6 +256,30 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
 
       expect(service.send(:transcribe_audio)).to eq('OpenRouter Opus transcription')
       expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter Opus transcription' })
+    end
+
+    it 'uses the native OpenRouter transcription endpoint for dedicated STT models' do
+      transcription = RubyLLM::Transcription.new(text: 'OpenRouter STT transcription', model: 'openai/gpt-4o-mini-transcribe')
+
+      allow(service).to receive(:model).and_return('openai/gpt-4o-mini-transcribe')
+      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o-mini-transcribe', account: account).and_return('openrouter')
+      allow(Llm::Models).to receive(:type_for).with('openai/gpt-4o-mini-transcribe', account: account).and_return('transcription')
+      allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('openrouter-key')
+      allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.ai/api/v1')
+
+      expect(Llm::ChatClient).not_to receive(:ask)
+      expect(Llm::ApiClient).to receive(:transcribe).with(
+        instance_of(String),
+        provider: 'openrouter',
+        api_key: 'openrouter-key',
+        api_base: 'https://openrouter.ai/api/v1',
+        model: 'openai/gpt-4o-mini-transcribe',
+        temperature: 0.4,
+        observability: hash_including(runtime_mode: 'audio_transcription', provider: 'openrouter')
+      ).and_return(transcription)
+
+      expect(service.send(:transcribe_audio)).to eq('OpenRouter STT transcription')
+      expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter STT transcription' })
     end
   end
 end

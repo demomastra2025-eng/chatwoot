@@ -38,6 +38,9 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response.body).to include('CAPTAIN_OPENROUTER_API_KEY')
         expect(response.body).to include('OpenRouter API Endpoint')
         expect(response.body).to include('CAPTAIN_OPENROUTER_ENDPOINT')
+        expect(response.body).to include('OpenRouter model catalog')
+        expect(response.body).to include('Endpoints:')
+        expect(response.body).to include('Refresh OpenRouter Models')
       end
     end
   end
@@ -110,6 +113,41 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response).to redirect_to(super_admin_settings_path)
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY')&.value).to eq('[REDACTED]')
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_ENDPOINT')&.value).to eq('https://openrouter.example/api/v1')
+      end
+    end
+  end
+
+  describe 'POST /super_admin/app_config/refresh_openrouter_models' do
+    context 'when it is an unauthenticated super admin' do
+      it 'returns unauthorized' do
+        post '/super_admin/app_config/refresh_openrouter_models'
+        expect(response).to have_http_status(:redirect)
+      end
+    end
+
+    context 'when it is an authenticated super admin' do
+      before do
+        sign_in(super_admin, scope: :super_admin)
+      end
+
+      it 'refreshes the OpenRouter model catalog from the captain config page' do
+        expect(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_return(total_models: 10)
+
+        post '/super_admin/app_config/refresh_openrouter_models'
+
+        expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+        expect(flash[:notice]).to include('10 models')
+      end
+
+      it 'returns a sanitized error when refresh fails' do
+        allow(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_raise(
+          StandardError, 'upstream leaked Bearer sk-or-v1-secret'
+        )
+
+        post '/super_admin/app_config/refresh_openrouter_models'
+
+        expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+        expect(flash[:alert]).to eq('OpenRouter model catalog refresh failed')
       end
     end
   end

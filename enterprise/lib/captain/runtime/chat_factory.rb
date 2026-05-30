@@ -27,13 +27,15 @@ class Captain::Runtime::ChatFactory
         temperature: agent.temperature,
         params: merged_params(agent, runtime_params),
         headers: merged_headers(agent, runtime_headers),
-        thinking: thinking_options(agent, context_wrapper, account: account)
+        thinking: thinking_options(agent, context_wrapper, account: account),
+        feature: :captain_agent
       }.tap do |kwargs|
         kwargs[:account] = account if account.present?
       end
     end
 
     def configure(chat, agent, context_wrapper, account: nil)
+      record_bound_agent_tools(agent, context_wrapper)
       agent_tools = build_agent_tools(agent, context_wrapper)
       Llm::CapabilityPolicy.ensure_chat_features_supported!(
         model: agent.model,
@@ -44,6 +46,7 @@ class Captain::Runtime::ChatFactory
 
       system_prompt = agent.get_system_prompt(context_wrapper)
       chat.with_instructions(system_prompt) if system_prompt.present?
+      enforce_openrouter_tool_parameters!(chat, agent_tools, account: account, schema: agent.response_schema)
       chat.with_tools(*agent_tools, replace: true)
       Llm::StructuredOutputPolicy.bind!(chat: chat, schema: agent.response_schema) if agent.response_schema.present?
       chat
@@ -59,6 +62,46 @@ class Captain::Runtime::ChatFactory
       end
 
       handoff_tools + regular_tools
+    end
+
+    def enforce_openrouter_tool_parameters!(chat, agent_tools, account: nil, schema: nil)
+      return if agent_tools.blank?
+
+      Llm::OpenRouterRequestPolicy.require_parameters!(
+        chat,
+        account: account,
+        feature: :captain_agent,
+        model: model_id_for(chat),
+        tools: true,
+        schema: schema.present?
+      )
+    end
+
+    def model_id_for(chat)
+      chat_model = chat.respond_to?(:model) ? chat.model : nil
+      return chat_model.id if chat_model.respond_to?(:id)
+      return chat_model if chat_model.present?
+    end
+
+    def record_bound_agent_tools(agent, context_wrapper)
+      bound_tool_names = (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
+
+      context_wrapper.context[:current_agent] = agent.name
+      context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] ||= {}
+      context_wrapper.context[:captain_v2_bound_tool_ids_by_agent][agent.name.to_s] =
+        bound_tool_names
+      context_wrapper.context[:captain_v2_bound_tool_ids] = bound_tool_names
+      context_wrapper.context[:captain_v2_bound_tool_gate] = true
+    end
+
+    def handoff_tool_names(agent)
+      agent.handoff_agents.map do |target_agent|
+        Captain::HandoffNaming.tool_name_for(target_agent.name)
+      end
+    end
+
+    def regular_tool_names(agent)
+      agent.tools.map { |tool| tool.name.to_s }
     end
 
     def merged_headers(agent, runtime_headers)

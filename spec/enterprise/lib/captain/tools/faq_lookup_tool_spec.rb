@@ -34,6 +34,51 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     )
   end
 
+  it 'reranks semantic chunks and exposes rerank scores in the retrieval trace' do
+    second_document = create(:captain_document, account: account, assistant: assistant)
+    second_chunk = second_document.document_chunks.create!(
+      account: account,
+      assistant: assistant,
+      chunk_index: 0,
+      content: 'Account recovery source'
+    )
+    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [document_chunk.id, second_chunk.id]))
+    reranker = instance_double(Captain::Documents::Reranker)
+    allow(Captain::Documents::Reranker).to receive(:new).with(account: account).and_return(reranker)
+    allow(reranker).to receive(:call) do |query:, documents:, top_n:|
+      expect(query).to eq('password reset')
+      expect(documents).to contain_exactly(document_chunk, second_chunk)
+      expect(top_n).to eq(5)
+      Captain::Documents::Reranker::Result.new(
+        documents: [second_chunk, document_chunk],
+        trace: {
+          attempted: true,
+          enabled: true,
+          degraded: false,
+          model: 'cohere/rerank-v3.5',
+          scores: [
+            { document_chunk_id: second_chunk.id, relevance_score: 0.96 },
+            { document_chunk_id: document_chunk.id, relevance_score: 0.42 }
+          ]
+        }
+      )
+    end
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'password reset'))
+
+    expect(payload['matches'].first).to include('document_chunk_id' => second_chunk.id, 'answer' => 'Account recovery source')
+    expect(payload['retrieval_trace']['rerank']).to include(
+      'attempted' => true,
+      'enabled' => true,
+      'degraded' => false,
+      'model' => 'cohere/rerank-v3.5'
+    )
+    expect(payload['retrieval_trace']['rerank']['scores']).to include(
+      { 'document_chunk_id' => second_chunk.id, 'relevance_score' => 0.96 },
+      { 'document_chunk_id' => document_chunk.id, 'relevance_score' => 0.42 }
+    )
+  end
+
   it 'falls back to exact/keyword FAQ lookup when semantic lookup is unavailable' do
     allow(Captain::DocumentChunk).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
