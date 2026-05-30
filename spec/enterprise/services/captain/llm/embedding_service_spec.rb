@@ -22,33 +22,38 @@ RSpec.describe Captain::Llm::EmbeddingService do
   end
 
   describe '#get_embedding' do
-    it 'delegates OpenRouter embeddings to the native OpenRouter embedding client' do
+    it 'delegates OpenRouter embeddings through the LLM runtime facade' do
       expect(Llm::ApiClient).not_to receive(:embed)
-      expect(Llm::OpenRouterEmbeddingClient).to receive(:embed).with(
-        'hello',
-        hash_including(
+      expect(Llm::OpenRouterEmbeddingClient).not_to receive(:embed)
+      expect(Llm::Runtime).to receive(:embed) do |**kwargs|
+        expect(kwargs).to include(
+          feature: :help_center_search,
           model: LlmConstants::DEFAULT_EMBEDDING_MODEL,
-          dimensions: described_class::VECTOR_DIMENSIONS,
-          api_key: 'test-openrouter-key'
+          input: 'hello',
+          options: { dimensions: described_class::VECTOR_DIMENSIONS }
         )
-      ).and_return(openrouter_result)
+        expect(kwargs[:observability]).to include(
+          provider: 'openrouter',
+          runtime_mode: 'captain_embedding',
+          feature_name: 'embedding'
+        )
+        openrouter_result
+      end
 
       expect(service.get_embedding('hello')).to eq(openrouter_vector)
     end
 
-    it 'passes the configured OpenRouter API base to the embedding client' do
-      upsert_installation_config('CAPTAIN_OPENROUTER_ENDPOINT', 'https://openrouter.ai/api/v1/models')
+    it 'keeps vector dimension validation at the service boundary after runtime delegation' do
+      invalid_result = instance_double(Llm::OpenRouterEmbeddingClient::Result, vectors: [nil])
 
-      expect(Llm::OpenRouterEmbeddingClient).to receive(:embed).with(
-        'hello',
-        hash_including(api_base: 'https://openrouter.ai/api/v1/models')
-      ).and_return(openrouter_result)
+      expect(Llm::Runtime).to receive(:embed).and_return(invalid_result)
 
-      expect(service.get_embedding('hello')).to eq(openrouter_vector)
+      expect { service.get_embedding('hello') }
+        .to raise_error(described_class::EmbeddingsError, /did not include a vector/)
     end
 
     it 'wraps OpenRouter client errors as embedding errors' do
-      allow(Llm::OpenRouterEmbeddingClient).to receive(:embed)
+      allow(Llm::Runtime).to receive(:embed)
         .and_raise(RubyLLM::Error, 'OpenRouter embedding failed: bad model')
 
       expect { service.get_embedding('hello') }
@@ -71,6 +76,7 @@ RSpec.describe Captain::Llm::EmbeddingService do
 
       expect(Llm::ApiClient).not_to receive(:embed)
       expect(Llm::OpenRouterEmbeddingClient).not_to receive(:embed)
+      expect(Llm::Runtime).not_to receive(:embed)
       expect { openrouter_service.get_embedding('hello') }
         .to raise_error(described_class::EmbeddingsUnavailableError, /OpenRouter embeddings are not configured/)
     end
@@ -78,6 +84,7 @@ RSpec.describe Captain::Llm::EmbeddingService do
     it 'returns an empty array when content is blank' do
       expect(Llm::ApiClient).not_to receive(:embed)
       expect(Llm::OpenRouterEmbeddingClient).not_to receive(:embed)
+      expect(Llm::Runtime).not_to receive(:embed)
 
       expect(service.get_embedding('')).to eq([])
     end

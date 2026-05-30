@@ -71,15 +71,15 @@ class Captain::Llm::EmbeddingService
   end
 
   def openrouter_embedding(content, model)
-    api_key = Llm::Config.api_key('openrouter', account: @account)
-    raise embeddings_unavailable_error if api_key.blank?
+    raise embeddings_unavailable_error if Llm::Config.api_key('openrouter', account: @account).blank?
 
-    result = Llm::OpenRouterEmbeddingClient.embed(
-      content,
+    result = Llm::Runtime.embed(
+      feature: :help_center_search,
+      account: @account,
       model: model,
-      dimensions: VECTOR_DIMENSIONS,
-      api_key: api_key,
-      api_base: Llm::Config.api_base('openrouter', account: @account)
+      input: content,
+      observability: instrumentation_params(content, model, 'openrouter').merge(runtime_mode: 'captain_embedding'),
+      options: { dimensions: VECTOR_DIMENSIONS }
     )
     vector = result.vectors.first
     raise EmbeddingsError, 'OpenRouter embedding response did not include a vector.' unless vector.is_a?(Array)

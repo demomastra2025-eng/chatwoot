@@ -490,6 +490,7 @@
       "MODEL_SEARCH_PLACEHOLDER": "Search by model, provider, or capability",
       "CREDITS_PER_MESSAGE": "{credits} credit/message",
       "COMING_SOON": "Coming soon",
+      "NOT_AVAILABLE_FOR_FEATURE": "Not available for this feature",
       "SOURCE_OPENROUTER_API": "OpenRouter API",
       "SOURCE_LOCAL_FALLBACK": "local fallback",
       "PROVIDER_ROUTE_LABEL": "via {provider}",
@@ -528,6 +529,7 @@
       "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure an OpenRouter key or wait for the catalog refresh to finish.",
       "DIAGNOSTICS": {
         "TITLE": "Selected model {model} is not available",
+        "SEARCH_TITLE": "{model} cannot be used for this feature",
         "REASONS": {
           "MODEL_NOT_FOUND": "The selected model is not in the current catalog.",
           "PROVIDER_NOT_CONFIGURED": "OpenRouter is not configured for this account or installation.",
@@ -539,6 +541,8 @@
           "UNSUPPORTED_TYPE": "The model type is not compatible with this feature.",
           "EMBEDDING_DIMENSION_MISMATCH": "Embedding dimensions do not match the One Link knowledge index.",
           "CONTEXT_TOO_SMALL": "The model context is too small for the configured knowledge chunk size.",
+          "ZDR_REQUIRED_UNSUPPORTED": "No refreshed OpenRouter endpoint for this model advertises zero data retention.",
+          "PRIVACY_PROFILE_INVALID": "The selected OpenRouter privacy profile is invalid.",
           "CAPABILITY_DIAGNOSTICS_FAILED": "Model capability diagnostics failed; refresh the catalog and try again."
         }
       },

@@ -18,7 +18,7 @@ class Llm::FeatureRequest
     attachments: [],
     input: nil,
     runtime_preferences: {},
-    privacy_profile: :standard,
+    privacy_profile: nil,
     observability: {},
     options: {}
   )
@@ -32,7 +32,11 @@ class Llm::FeatureRequest
     @attachments = Array(attachments)
     @input = input
     @runtime_preferences = normalize_hash(runtime_preferences)
-    @privacy_profile = privacy_profile.to_s.presence || 'standard'
+    @privacy_profile = Llm::OpenRouterWorkspacePolicy.resolve(
+      account: account,
+      preferences: @runtime_preferences,
+      privacy_profile: privacy_profile
+    ).privacy_profile
     @observability = normalize_hash(observability)
     @options = normalize_hash(options)
 

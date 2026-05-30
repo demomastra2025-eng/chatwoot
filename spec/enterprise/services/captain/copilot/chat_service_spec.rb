@@ -53,7 +53,7 @@ RSpec.describe Captain::Copilot::ChatService do
     allow(mock_chat).to receive(:on_tool_call).and_return(mock_chat)
     allow(mock_chat).to receive(:on_tool_result).and_return(mock_chat)
     allow(mock_chat).to receive(:messages).and_return([])
-    allow(mock_chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'gpt-4.1-mini'))
+    allow(mock_chat).to receive(:model).and_return(instance_double(RubyLLM::Model::Info, id: 'gpt-4.1-mini'))
     allow(mock_chat).to receive(:ask).and_return(mock_response)
     allow(Llm::ApiClient).to receive(:moderate).and_return(instance_double(RubyLLM::Moderation, flagged?: false))
   end
@@ -183,7 +183,10 @@ RSpec.describe Captain::Copilot::ChatService do
     end
 
     it 'applies thinking policy when configured for the account' do
-      account.update!(captain_runtime: { 'copilot_thinking_effort' => 'high' })
+      account.update!(
+        captain_models: { 'copilot' => 'gpt-5.2' },
+        captain_runtime: { 'copilot_thinking_effort' => 'high' }
+      )
 
       expect(mock_chat).to receive(:with_thinking).with(effort: 'high').and_return(mock_chat)
 
@@ -282,8 +285,12 @@ RSpec.describe Captain::Copilot::ChatService do
 
     it 'returns a blocked payload when fail-closed moderation is unavailable' do
       account.update!(captain_runtime: { 'copilot_moderation' => true, 'moderation_failure_mode' => 'fail_closed' })
+      allow(Llm::Config).to receive(:moderation_provider).and_call_original
+      allow(Llm::Config).to receive(:moderation_provider).with(account: account).and_return('openai')
+      allow(Llm::Config).to receive(:moderation_model).and_call_original
+      allow(Llm::Config).to receive(:moderation_model).with(account: account).and_return('openai/gpt-oss-safeguard-20b')
       allow(Llm::Config).to receive(:api_key).and_call_original
-      allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return(nil)
+      allow(Llm::Config).to receive(:api_key).with('openai', account: account).and_return(nil)
 
       expect(service.generate_response('Hello')).to eq(
         {
@@ -340,6 +347,48 @@ RSpec.describe Captain::Copilot::ChatService do
       )
       expect(persisted_message['captain_trace']).to eq(response['captain_trace'])
       expect(persisted_message).not_to have_key('usage')
+    end
+
+    it 'persists copilot tool thinking messages with trace input and output previews' do
+      tool_call = instance_double(
+        RubyLLM::ToolCall,
+        id: 'call_1',
+        name: 'search_deals',
+        arguments: { query: 'VIP', api_token: 'secret' }
+      )
+      result = {
+        success: true,
+        data: { returned_count: 1, api_key: 'secret' }
+      }
+
+      service.send(:persist_thinking_message, tool_call)
+      service.instance_variable_set(:@pending_tool_calls, [tool_call])
+      service.send(:persist_tool_completion, result)
+
+      thinking_messages = copilot_thread
+                          .reload
+                          .copilot_messages
+                          .assistant_thinking
+                          .last(2)
+                          .map(&:message)
+
+      expect(thinking_messages.first).to include(
+        'content' => 'Using search_deals',
+        'function_name' => 'search_deals',
+        'tool_call_id' => 'call_1',
+        'status' => 'start',
+        'input' => { 'query' => 'VIP', 'api_token' => '[REDACTED]' }
+      )
+      expect(thinking_messages.second).to include(
+        'content' => 'Completed search_deals',
+        'function_name' => 'search_deals',
+        'tool_call_id' => 'call_1',
+        'status' => 'finish',
+        'output' => {
+          'success' => true,
+          'data' => { 'returned_count' => 1, 'api_key' => '[REDACTED]' }
+        }
+      )
     end
   end
 

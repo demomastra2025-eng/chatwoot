@@ -936,6 +936,7 @@
       "MODEL_SEARCH_PLACEHOLDER": "Поиск по модели, провайдеру или возможности",
       "CREDITS_PER_MESSAGE": "{credits} кредит/сообщение",
       "COMING_SOON": "Скоро",
+      "NOT_AVAILABLE_FOR_FEATURE": "Недоступна для этой функции",
       "SOURCE_OPENROUTER_API": "OpenRouter API",
       "SOURCE_LOCAL_FALLBACK": "локальный fallback",
       "PROVIDER_ROUTE_LABEL": "через {provider}",
@@ -974,6 +975,7 @@
       "NO_COMPATIBLE_MODELS": "Нет совместимой настроенной модели. Добавьте ключ OpenRouter или дождитесь обновления каталога.",
       "DIAGNOSTICS": {
         "TITLE": "Выбранная модель {model} сейчас недоступна",
+        "SEARCH_TITLE": "{model} нельзя использовать для этой функции",
         "REASONS": {
           "MODEL_NOT_FOUND": "Выбранной модели нет в текущем каталоге.",
           "PROVIDER_NOT_CONFIGURED": "OpenRouter не настроен для этого аккаунта или инсталляции.",
@@ -985,6 +987,8 @@
           "UNSUPPORTED_TYPE": "Тип модели несовместим с этой функцией.",
           "EMBEDDING_DIMENSION_MISMATCH": "Размерность embeddings не совпадает с индексом знаний One Link.",
           "CONTEXT_TOO_SMALL": "Контекст модели слишком мал для выбранного размера чанка базы знаний.",
+          "ZDR_REQUIRED_UNSUPPORTED": "Ни один обновлённый endpoint OpenRouter для этой модели не заявляет zero data retention.",
+          "PRIVACY_PROFILE_INVALID": "Выбранный privacy profile OpenRouter некорректен.",
           "CAPABILITY_DIAGNOSTICS_FAILED": "Диагностика capability не сработала; обновите каталог и попробуйте снова."
         }
       },

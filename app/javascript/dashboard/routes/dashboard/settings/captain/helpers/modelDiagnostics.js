@@ -55,6 +55,16 @@ const localizedDiagnosticReason = (reason, t) => {
         'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.CONTEXT_TOO_SMALL',
         reasonDetails(reason)
       );
+    case 'zdr_required_unsupported':
+      return t(
+        'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.ZDR_REQUIRED_UNSUPPORTED',
+        reasonDetails(reason)
+      );
+    case 'privacy_profile_invalid':
+      return t(
+        'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.PRIVACY_PROFILE_INVALID',
+        reasonDetails(reason)
+      );
     case 'capability_diagnostics_failed':
       return t(
         'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.CAPABILITY_DIAGNOSTICS_FAILED',
@@ -72,10 +82,13 @@ export const hasSelectedModelDiagnostics = feature =>
 export const selectedModelIdForDiagnostics = feature =>
   feature?.selected || feature?.default || '';
 
-export const localizedDiagnosticReasons = (feature, t) =>
-  diagnosticReasons(feature)
+export const localizedDiagnosticReasonsFromDiagnostics = (diagnostics, t) =>
+  (diagnostics?.reasons || [])
     .map(reason => localizedDiagnosticReason(reason, t))
     .filter(Boolean);
+
+export const localizedDiagnosticReasons = (feature, t) =>
+  localizedDiagnosticReasonsFromDiagnostics(selectedDiagnostics(feature), t);
 
 export const isNativeAudioTranscriptionModel = model =>
   model?.type === 'transcription';

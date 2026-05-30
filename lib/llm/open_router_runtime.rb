@@ -12,6 +12,7 @@ class Llm::OpenRouterRuntime
   def chat(request)
     request = normalize_request(request)
     model = resolve_model(request)
+    compiled = compiled_chat_request(request, model)
     runner = Llm::ChatRequestRunner.new(
       context: chat_context(request, model),
       chat: request.options[:chat],
@@ -19,7 +20,9 @@ class Llm::OpenRouterRuntime
       messages: request.messages,
       schema: request.schema,
       tools: request.tools,
-      params: compiled_chat_params(request, model),
+      params: compiled.params,
+      headers: compiled.headers,
+      temperature: request.options[:temperature],
       account: request_account(request),
       feature: request.feature_key,
       observability: runtime_observability(request),
@@ -36,15 +39,17 @@ class Llm::OpenRouterRuntime
     raise ArgumentError, 'input is required for OpenRouter transcription.' if request.input.blank?
 
     model = resolve_model(request)
-    Llm::OpenRouterTranscriptionClient.transcribe(
-      request.input,
-      model: model,
-      api_key: api_key!(request),
-      api_base: api_base(request),
-      language: request.options[:language],
-      temperature: request.options.fetch(:temperature, 0.4),
-      provider: routing_profile(request, model).provider_preferences
-    )
+    observe_native_request(request, model, 'transcription.complete') do
+      Llm::OpenRouterTranscriptionClient.transcribe(
+        request.input,
+        model: model,
+        api_key: api_key!(request),
+        api_base: api_base(request),
+        language: request.options[:language],
+        temperature: request.options.fetch(:temperature, 0.4),
+        provider: routing_profile(request, model).provider_preferences
+      )
+    end
   end
 
   def embed(request)
@@ -52,14 +57,16 @@ class Llm::OpenRouterRuntime
     raise ArgumentError, 'input is required for OpenRouter embeddings.' if request.input.blank?
 
     model = resolve_model(request)
-    Llm::OpenRouterEmbeddingClient.embed(
-      request.input,
-      model: model,
-      dimensions: request.options[:dimensions],
-      api_key: api_key!(request),
-      api_base: api_base(request),
-      provider: routing_profile(request, model).provider_preferences
-    )
+    observe_native_request(request, model, 'embedding.complete') do
+      Llm::OpenRouterEmbeddingClient.embed(
+        request.input,
+        model: model,
+        dimensions: request.options[:dimensions],
+        api_key: api_key!(request),
+        api_base: api_base(request),
+        provider: routing_profile(request, model).provider_preferences
+      )
+    end
   end
 
   def rerank(request)
@@ -129,7 +136,7 @@ class Llm::OpenRouterRuntime
     Llm::Config.model_for(feature: profile.config_feature_key, account: request_account(request), fallback: nil)
   end
 
-  def compiled_chat_params(request, model)
+  def compiled_chat_request(request, model)
     Llm::OpenRouterRequestCompiler.call(
       request: request,
       model: model,
@@ -139,7 +146,40 @@ class Llm::OpenRouterRuntime
       schema: request.requires_schema?,
       tools: request.requires_tools?,
       reasoning: request.reasoning?
-    ).params
+    )
+  end
+
+  def observe_native_request(request, model, event_name)
+    payload = native_observability_payload(request, model)
+    return yield if payload.blank?
+
+    Llm::EventBus.publish(event_name, payload) do |event_payload|
+      response = yield
+      attach_native_response!(event_payload, event_name, response)
+      response
+    rescue StandardError => e
+      Llm::ObservabilityPayload.attach_error!(event_payload, e)
+      raise
+    end
+  end
+
+  def native_observability_payload(request, model)
+    return {} if request.observability.blank?
+
+    Llm::ObservabilityPayload.normalize(
+      runtime_observability(request),
+      model: model,
+      runtime_mode: 'openrouter_runtime'
+    )
+  end
+
+  def attach_native_response!(event_payload, event_name, response)
+    case event_name
+    when 'embedding.complete'
+      Llm::ObservabilityPayload.attach_embedding_response!(event_payload, response)
+    when 'transcription.complete'
+      Llm::ObservabilityPayload.attach_transcription_response!(event_payload, response)
+    end
   end
 
   def chat_context(request, model)
@@ -167,7 +207,9 @@ class Llm::OpenRouterRuntime
     Llm::OpenRouterRoutingProfile.for(
       feature: request.feature_key,
       model: model,
-      account: request_account(request)
+      account: request_account(request),
+      runtime_preferences: request.runtime_preferences,
+      privacy_profile: request.privacy_profile
     )
   end
 

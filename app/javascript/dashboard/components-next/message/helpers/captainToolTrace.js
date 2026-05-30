@@ -42,6 +42,19 @@ const HUMAN_KEY_LABELS = {
   toolName: 'Инструмент',
 };
 
+const LEGACY_REASONING_FALLBACKS = new Set([
+  'Processed by agent',
+  'Model returned plain text instead of structured JSON; runtime wrapped it as a Captain response.',
+  'Модель вернула текст без структурированного JSON; рантайм сохранил ответ и детали инструментов.',
+  'Модель не передала отдельное обоснование. Ответ сохранен, а действия инструментов показаны в деталях.',
+]);
+
+const normalizeTraceReasoning = reasoning => {
+  const text = String(reasoning || '').trim();
+  if (!text) return '';
+  return LEGACY_REASONING_FALLBACKS.has(text) ? '' : text;
+};
+
 const parseStructuredString = value => {
   if (typeof value !== 'string') return value;
 
@@ -228,7 +241,10 @@ export const formatToolTraceDetail = value => {
   }
 };
 
-const stepToolName = step => step.toolName || step.tool_name || 'tool';
+const stepToolName = step =>
+  step.toolName || step.tool_name || step.functionName || step.function_name;
+
+const normalizedStepToolName = step => stepToolName(step) || 'tool';
 
 const stepStatus = step => {
   const status = step.status || step.event || 'progress';
@@ -239,27 +255,219 @@ const stepInput = step =>
   step.input ?? step.inputPreview ?? step.input_preview ?? step.arguments;
 
 const stepOutput = step =>
-  step.output ?? step.outputPreview ?? step.output_preview ?? step.result;
+  step.output ??
+  step.outputPreview ??
+  step.output_preview ??
+  step.result ??
+  step.error;
 
-export const buildCaptainToolTraceMessages = additionalAttributes => {
-  const captainTrace =
-    additionalAttributes?.captainTrace || additionalAttributes?.captain_trace;
-  const toolSteps = captainTrace?.toolSteps || captainTrace?.tool_steps;
+const stepEvent = step => step.event || step.status || 'progress';
 
-  if (!Array.isArray(toolSteps) || toolSteps.length === 0) {
+const stepToolCallId = step => {
+  const explicitId =
+    step.toolCallId ||
+    step.tool_call_id ||
+    step.callId ||
+    step.call_id ||
+    step.requestId ||
+    step.request_id;
+
+  if (explicitId) return explicitId;
+
+  const id = String(step.id || '');
+  const parts = id.split(':');
+  if (parts.length < 4) return '';
+
+  const [toolName, event, sequence, ...toolCallIdParts] = parts;
+  if (toolName !== normalizedStepToolName(step) || event !== stepEvent(step)) {
+    return '';
+  }
+  if (!sequence) return '';
+
+  return toolCallIdParts.join(':');
+};
+
+const isTerminalStatus = status => ['finish', 'failed'].includes(status);
+
+const createTraceGroup = (step, index) => ({
+  id: step.id || `${normalizedStepToolName(step)}-${index}`,
+  message: {
+    content: step.content,
+    toolName: normalizedStepToolName(step),
+    status: stepStatus(step),
+  },
+});
+
+const mergeStepIntoTraceGroup = (group, step) => {
+  const input = formatToolTraceDetail(stepInput(step));
+  const output = formatToolTraceDetail(stepOutput(step));
+
+  group.message.content = step.content || group.message.content;
+  group.message.status = stepStatus(step);
+
+  if (input && !group.message.input) {
+    group.message.input = input;
+  }
+
+  if (output) {
+    group.message.output = output;
+  }
+
+  return group;
+};
+
+const buildGroupedToolTraceMessages = toolSteps => {
+  const groups = [];
+  const groupsByCallId = new Map();
+  const activeGroupsByToolName = new Map();
+
+  toolSteps
+    .filter(step => step?.content)
+    .forEach((step, index) => {
+      const toolName = normalizedStepToolName(step);
+      const status = stepStatus(step);
+      const toolCallId = stepToolCallId(step);
+      const callKey = toolCallId ? `${toolName}:${toolCallId}` : '';
+      let group;
+
+      if (callKey) {
+        group = groupsByCallId.get(callKey);
+        if (!group) {
+          group = createTraceGroup(step, index);
+          groupsByCallId.set(callKey, group);
+          groups.push(group);
+        }
+      } else if (status === 'start') {
+        group = createTraceGroup(step, index);
+        activeGroupsByToolName.set(toolName, group);
+        groups.push(group);
+      } else {
+        group = activeGroupsByToolName.get(toolName);
+
+        if (!group) {
+          group = createTraceGroup(step, index);
+          groups.push(group);
+
+          if (status === 'progress') {
+            activeGroupsByToolName.set(toolName, group);
+          }
+        }
+      }
+
+      mergeStepIntoTraceGroup(group, step);
+
+      if (isTerminalStatus(status)) {
+        if (callKey) {
+          groupsByCallId.delete(callKey);
+        }
+
+        if (activeGroupsByToolName.get(toolName) === group) {
+          activeGroupsByToolName.delete(toolName);
+        }
+      }
+    });
+
+  return groups;
+};
+
+const traceReasoning = captainTrace =>
+  captainTrace?.reasoning || captainTrace?.reasoning_summary;
+
+const buildReasoningTraceMessage = (captainTrace, options = {}) => {
+  const reasoning = normalizeTraceReasoning(traceReasoning(captainTrace));
+  if (!reasoning) return null;
+
+  return {
+    id: 'captain-reasoning',
+    message: {
+      content: options.reasoningLabel || 'Reasoning',
+      reasoning: String(reasoning),
+    },
+  };
+};
+
+const inferCopilotThinkingStatus = message => {
+  if (message.status || message.event) {
+    return stepStatus(message);
+  }
+
+  const content = message.content || '';
+  if (content.startsWith('Completed ')) return 'finish';
+  if (content.startsWith('Failed ')) return 'failed';
+  if (content.startsWith('Using ')) return 'start';
+  return 'progress';
+};
+
+const copilotThinkingToolName = message =>
+  message.toolName ||
+  message.tool_name ||
+  message.functionName ||
+  message.function_name;
+
+const normalizeGenericCopilotThinkingMessage = copilotMessage => ({
+  id: copilotMessage.id,
+  message: copilotMessage.message,
+});
+
+const normalizeCopilotThinkingStep = copilotMessage => {
+  const message = copilotMessage.message || {};
+  const toolName = copilotThinkingToolName(message);
+  if (!toolName) return null;
+
+  return {
+    id: copilotMessage.id,
+    content: message.content,
+    function_name: toolName,
+    status: inferCopilotThinkingStatus(message),
+    input: stepInput(message),
+    output: stepOutput(message),
+    tool_call_id: stepToolCallId(message),
+  };
+};
+
+export const buildCopilotThinkingTraceMessages = messages => {
+  if (!Array.isArray(messages) || messages.length === 0) {
     return [];
   }
 
-  return toolSteps
-    .filter(step => step?.content)
-    .map((step, index) => ({
-      id: step.id || `${stepToolName(step)}-${index}`,
-      message: {
-        content: step.content,
-        toolName: stepToolName(step),
-        status: stepStatus(step),
-        input: formatToolTraceDetail(stepInput(step)),
-        output: formatToolTraceDetail(stepOutput(step)),
-      },
-    }));
+  const result = [];
+  let toolSteps = [];
+  const flushToolSteps = () => {
+    if (toolSteps.length === 0) return;
+
+    result.push(...buildGroupedToolTraceMessages(toolSteps));
+    toolSteps = [];
+  };
+
+  messages.forEach(copilotMessage => {
+    const toolStep = normalizeCopilotThinkingStep(copilotMessage);
+
+    if (toolStep) {
+      toolSteps.push(toolStep);
+      return;
+    }
+
+    flushToolSteps();
+    result.push(normalizeGenericCopilotThinkingMessage(copilotMessage));
+  });
+
+  flushToolSteps();
+  return result;
+};
+
+export const buildCaptainToolTraceMessages = (
+  additionalAttributes,
+  options = {}
+) => {
+  const captainTrace =
+    additionalAttributes?.captainTrace || additionalAttributes?.captain_trace;
+  const toolSteps = captainTrace?.toolSteps || captainTrace?.tool_steps;
+  const reasoningMessage = buildReasoningTraceMessage(captainTrace, options);
+  const messages = reasoningMessage ? [reasoningMessage] : [];
+
+  if (Array.isArray(toolSteps) && toolSteps.length > 0) {
+    messages.push(...buildGroupedToolTraceMessages(toolSteps));
+  }
+
+  return messages;
 };

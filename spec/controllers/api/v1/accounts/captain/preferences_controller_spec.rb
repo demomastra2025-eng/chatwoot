@@ -84,6 +84,42 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response.dig(:runtime_metadata, :features, :assistant)).to include(:selected_model, :provider)
       end
 
+      it 'includes backend diagnostics for searchable OpenRouter models hidden from a feature' do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+          'openai/gpt-5.4' => {
+            'provider' => 'openrouter',
+            'display_name' => 'GPT 5.4',
+            'type' => 'chat',
+            'capabilities' => %w[text_input text_output structured_output tool_calling]
+          },
+          'openai/gpt-text-only' => {
+            'provider' => 'openrouter',
+            'display_name' => 'GPT Text Only',
+            'type' => 'chat',
+            'capabilities' => %w[text_input text_output structured_output]
+          }
+        )
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :assistant, :models)).to include(include(id: 'openai/gpt-5.4'))
+        expect(json_response.dig(:features, :assistant, :models)).not_to include(include(id: 'openai/gpt-text-only'))
+        expect(json_response.dig(:features, :assistant, :diagnostic_models)).to include(
+          include(
+            id: 'openai/gpt-text-only',
+            diagnostic_only: true,
+            diagnostics: include(
+              allowed: false,
+              reasons: include(include(code: 'tool_calling_unsupported'))
+            )
+          )
+        )
+      end
+
       it 'reports OpenRouter credential status without exposing the account key' do
         create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
 
@@ -187,6 +223,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             headers: admin.create_new_auth_token,
             params: {
               captain_runtime: {
+                privacy_profile: 'sensitive',
                 assistant_thinking_effort: 'high',
                 assistant_moderation: true,
                 moderation_failure_mode: 'fail_closed',
@@ -207,6 +244,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:runtime]).to include(
+          privacy_profile: 'sensitive',
           assistant_thinking_effort: 'high',
           assistant_moderation: true,
           moderation_failure_mode: 'fail_closed',
@@ -223,6 +261,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           }
         )
         expect(account.reload.captain_runtime).to include(
+          'privacy_profile' => 'sensitive',
           'assistant_thinking_effort' => 'high',
           'assistant_moderation' => true,
           'moderation_failure_mode' => 'fail_closed',

@@ -5,6 +5,7 @@ import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import LobeProviderIcon from './LobeProviderIcon.vue';
+import { localizedDiagnosticReasonsFromDiagnostics } from '../helpers/modelDiagnostics';
 
 const props = defineProps({
   featureKey: {
@@ -59,6 +60,14 @@ const searchQuery = ref('');
 
 const availableModels = computed(
   () => props.models || captainConfigStore.getModelsForFeature(props.featureKey)
+);
+
+const featureConfig = computed(
+  () => captainConfigStore.features?.[props.featureKey] || {}
+);
+
+const diagnosticModels = computed(
+  () => featureConfig.value.diagnostic_models || []
 );
 
 const recommendedModelId = computed(() =>
@@ -235,9 +244,16 @@ const filteredModels = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
   if (!query) return availableModels.value;
 
-  return availableModels.value.filter(model =>
+  const matchingAvailableModels = availableModels.value.filter(model =>
     searchableModelText(model).includes(query)
   );
+  const availableModelIds = availableModels.value.map(model => model.id);
+  const matchingDiagnosticModels = diagnosticModels.value
+    .filter(model => !availableModelIds.includes(model.id))
+    .filter(model => searchableModelText(model).includes(query))
+    .map(model => ({ ...model, diagnostic_only: true }));
+
+  return [...matchingAvailableModels, ...matchingDiagnosticModels];
 });
 
 const groupedFilteredModels = computed(() => {
@@ -322,6 +338,11 @@ const supportLabel = supported => {
     : t('CAPTAIN_SETTINGS.MODEL_CONFIG.NOT_SUPPORTED');
 };
 
+const isDiagnosticOnlyModel = model => model.diagnostic_only === true;
+
+const diagnosticReasonsForModel = model =>
+  localizedDiagnosticReasonsFromDiagnostics(model.diagnostics, t);
+
 const metricItems = model =>
   [
     {
@@ -405,7 +426,7 @@ const handleDialogClose = () => {
 };
 
 const selectModel = model => {
-  if (model.coming_soon) return;
+  if (model.coming_soon || isDiagnosticOnlyModel(model)) return;
 
   selectedModelId.value = model.id;
   emit('change', { feature: props.featureKey, model: model.id });
@@ -503,12 +524,18 @@ const selectModel = model => {
               v-for="model in group.models"
               :key="model.id"
               type="button"
+              :data-test="
+                isDiagnosticOnlyModel(model)
+                  ? 'diagnostic-model-card'
+                  : 'model-card'
+              "
               class="flex w-full min-w-0 flex-col gap-2 p-2.5 text-left border rounded-lg border-n-weak bg-n-alpha-1 hover:bg-n-alpha-2 hover:border-n-strong transition-colors md:flex-row md:items-start"
               :class="{
                 'border-n-brand bg-n-brand/5': selectedModelId === model.id,
-                'opacity-60 cursor-not-allowed': model.coming_soon,
+                'opacity-60 cursor-not-allowed':
+                  model.coming_soon || isDiagnosticOnlyModel(model),
               }"
-              :disabled="model.coming_soon"
+              :disabled="model.coming_soon || isDiagnosticOnlyModel(model)"
               @click="selectModel(model)"
             >
               <div
@@ -561,10 +588,45 @@ const selectModel = model => {
                     >
                       {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.COMING_SOON') }}
                     </span>
+                    <span
+                      v-if="isDiagnosticOnlyModel(model)"
+                      class="text-[10px] uppercase text-n-amber-11 border border-n-amber-7 bg-n-amber-2 leading-none rounded-md px-1.5 py-0.5 flex-shrink-0"
+                    >
+                      {{
+                        t(
+                          'CAPTAIN_SETTINGS.MODEL_CONFIG.NOT_AVAILABLE_FOR_FEATURE'
+                        )
+                      }}
+                    </span>
                   </div>
                   <span class="truncate text-[11px] leading-4 text-n-slate-10">
                     {{ model.id }}
                   </span>
+                  <div
+                    v-if="
+                      isDiagnosticOnlyModel(model) &&
+                      diagnosticReasonsForModel(model).length
+                    "
+                    data-test="diagnostic-model-reasons"
+                    class="rounded-md border border-n-amber-5 bg-n-amber-2 px-2 py-1 text-[11px] leading-4 text-n-amber-12"
+                  >
+                    <div class="font-medium">
+                      {{
+                        t(
+                          'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.SEARCH_TITLE',
+                          { model: model.id }
+                        )
+                      }}
+                    </div>
+                    <ul class="mt-1 list-disc space-y-0.5 pl-4">
+                      <li
+                        v-for="reason in diagnosticReasonsForModel(model)"
+                        :key="reason"
+                      >
+                        {{ reason }}
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </div>
 

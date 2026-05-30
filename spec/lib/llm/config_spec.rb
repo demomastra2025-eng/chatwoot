@@ -260,9 +260,14 @@ RSpec.describe Llm::Config do
       expect(described_class.provider_available?('openrouter', account: account)).to be true
     end
 
-    it 'uses a static OpenRouter STT default for audio transcription when OpenRouter is configured' do
+    it 'prefers a native OpenRouter transcription model over an audio chat model when OpenRouter is configured' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o-mini-transcribe' => {
+          'provider' => 'openrouter',
+          'type' => 'transcription',
+          'capabilities' => %w[audio_input transcription]
+        },
         'openai/gpt-audio-mini' => {
           'provider' => 'openrouter',
           'type' => 'chat',

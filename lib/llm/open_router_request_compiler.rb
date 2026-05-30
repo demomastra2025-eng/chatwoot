@@ -37,7 +37,7 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def call
-    profile = Llm::OpenRouterRoutingProfile.for(feature: feature_key, model: @model, account: @account)
+    profile = routing_profile
     params = normalized_base_params
     provider_params = merged_provider_params(profile)
     plugins = merged_plugins(params, profile)
@@ -62,6 +62,16 @@ class Llm::OpenRouterRequestCompiler
     Llm::OpenRouterRoutingProfile.normalize_feature(raw_feature)
   end
 
+  def routing_profile
+    Llm::OpenRouterRoutingProfile.for(
+      feature: feature_key,
+      model: @model,
+      account: @account,
+      runtime_preferences: request_value(:runtime_preferences),
+      privacy_profile: request_value(:privacy_profile)
+    )
+  end
+
   def normalized_base_params
     @base_params.deep_dup.tap do |params|
       params.delete(:provider)
@@ -72,7 +82,9 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def merged_provider_params(profile)
-    existing = normalize_provider_keys(extract_hash(@base_params[:provider] || @base_params['provider']))
+    existing = safe_caller_provider_params(
+      normalize_provider_keys(extract_hash(@base_params[:provider] || @base_params['provider']))
+    )
     profile_preferences = normalize_provider_keys(profile.provider_preferences.deep_dup)
 
     existing.delete(:sort) if tool_flow? && price_sort?(existing[:sort])
@@ -146,6 +158,10 @@ class Llm::OpenRouterRequestCompiler
     value.to_h.deep_dup
   rescue StandardError
     {}
+  end
+
+  def safe_caller_provider_params(provider)
+    provider.slice(*PROVIDER_CONTROL_KEYS.map(&:to_sym))
   end
 
   def normalize_provider_keys(provider)

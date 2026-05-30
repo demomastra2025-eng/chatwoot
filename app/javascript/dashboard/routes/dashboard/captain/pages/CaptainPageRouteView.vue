@@ -1,16 +1,15 @@
 <script setup>
-import { onMounted, watch } from 'vue';
+import { watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-
-const CAPTAIN_COPILOT_CLOSED_SESSION_KEY = 'captain_copilot_panel_closed';
+import { wasCaptainCopilotPanelClosed } from 'dashboard/helper/captainCopilotPanel';
 
 const route = useRoute();
 const { uiSettings, updateUISettings } = useUISettings();
 
 const openCaptainCopilotPanelByDefault = () => {
-  if (window.sessionStorage.getItem(CAPTAIN_COPILOT_CLOSED_SESSION_KEY)) return;
   if (uiSettings.value?.is_copilot_panel_open) return;
+  if (wasCaptainCopilotPanelClosed()) return;
 
   updateUISettings({
     is_contact_sidebar_open: false,
@@ -35,9 +34,13 @@ watch(
   { immediate: true }
 );
 
-onMounted(() => {
-  openCaptainCopilotPanelByDefault();
-});
+watch(
+  () => [route.name, route.params.assistantId, route.params.navigationPath],
+  () => {
+    openCaptainCopilotPanelByDefault();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

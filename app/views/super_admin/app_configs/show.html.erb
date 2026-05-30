@@ -16,32 +16,132 @@
 
 <section class="main-content__body">
   <% if @config == 'captain' %>
+    <% diagnostics = @openrouter_diagnostics.to_h %>
+    <% key_status = diagnostics[:key_status].to_h %>
+    <% catalog = diagnostics[:catalog].to_h %>
+    <% endpoints = diagnostics[:endpoints].to_h %>
+    <% workspace_policy = diagnostics[:workspace_policy].to_h %>
+    <% features = diagnostics[:features].to_h %>
+    <% model_eligibility = Array(diagnostics[:model_eligibility]) %>
     <div class="mb-8 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
       <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div class="font-medium text-slate-900">OpenRouter model catalog</div>
-          <div class="mt-1">
-            Source: <%= @openrouter_catalog_metadata[:source] %>,
-            models: <%= @openrouter_catalog_metadata[:total_models] %>,
-            last refresh: <%= @openrouter_catalog_metadata[:last_refreshed_at].presence || 'never' %>
-          </div>
-          <% endpoint_metadata = @openrouter_catalog_metadata[:endpoints].to_h %>
-          <div class="mt-1">
-            Endpoints: <%= endpoint_metadata[:total_endpoints] || 0 %>
-            across <%= endpoint_metadata[:provider_count] || 0 %> providers
-            <% if endpoint_metadata[:providers].present? %>
-              (<%= endpoint_metadata[:providers].first(5).join(', ') %><%= endpoint_metadata[:providers].size > 5 ? ', …' : '' %>)
-            <% end %>
-          </div>
+        <div class="min-w-0 flex-1">
+          <div class="font-medium text-slate-900">OpenRouter diagnostics</div>
           <div class="mt-1 text-slate-500">
-            Refresh uses the global OpenRouter config and updates only the shared model and endpoint catalogs. Workspace keys are not changed.
+            Super admin operations panel for key status, catalog freshness, endpoint/provider health, and model eligibility. API keys are never rendered.
           </div>
-          <% if endpoint_metadata[:last_refresh_error].present? %>
-            <div class="mt-1 text-amber-700">Endpoint refresh warning: <%= endpoint_metadata[:last_refresh_error] %></div>
+
+          <div class="mt-4 grid gap-3 md:grid-cols-4">
+            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Key status</div>
+              <div class="mt-1 font-semibold text-slate-900"><%= key_status[:effective_configured] ? 'Configured' : 'Missing' %></div>
+              <div class="text-xs text-slate-500">
+                Global: <%= key_status[:global_configured] ? 'yes' : 'no' %>, account: <%= key_status[:account_configured] ? 'yes' : 'no' %>
+              </div>
+            </div>
+            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Catalog freshness</div>
+              <div class="mt-1 font-semibold text-slate-900"><%= catalog[:last_refreshed_at].presence || 'never' %></div>
+              <div class="text-xs text-slate-500">Source: <%= catalog[:source] || 'unknown' %><%= catalog[:using_fallback] ? ' (fallback)' : '' %></div>
+            </div>
+            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Model counts</div>
+              <div class="mt-1 font-semibold text-slate-900"><%= catalog[:total_models] || 0 %> models</div>
+              <div class="text-xs text-slate-500"><%= catalog[:counts_by_type].to_h.map { |type, count| "#{type}: #{count}" }.join(', ') %></div>
+            </div>
+            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Endpoints</div>
+              <div class="mt-1 font-semibold text-slate-900"><%= endpoints[:total_endpoints] || 0 %> endpoints</div>
+              <div class="text-xs text-slate-500">Providers: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'none' %></div>
+            </div>
+          </div>
+
+          <% if catalog[:last_refresh_error].present? %>
+            <div class="mt-3 rounded-md bg-red-50 px-3 py-2 text-red-700">Last catalog error: <%= catalog[:last_refresh_error] %></div>
           <% end %>
-          <% if @openrouter_catalog_metadata[:last_refresh_error].present? %>
-            <div class="mt-1 text-red-700">Last error: <%= @openrouter_catalog_metadata[:last_refresh_error] %></div>
+          <% if endpoints[:last_refresh_error].present? %>
+            <div class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-amber-700">Endpoint refresh warning: <%= endpoints[:last_refresh_error] %></div>
           <% end %>
+
+          <div class="mt-4 grid gap-4 lg:grid-cols-3">
+            <div>
+              <div class="text-xs font-medium uppercase text-slate-500">Capability counts</div>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <% catalog[:capability_counts].to_h.each do |capability, count| %>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= capability %>: <%= count %></span>
+                <% end %>
+              </div>
+            </div>
+            <div>
+              <div class="text-xs font-medium uppercase text-slate-500">Endpoint/provider details</div>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <% endpoints[:provider_counts].to_h.first(8).each do |provider, count| %>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= provider %>: <%= count %></span>
+                <% end %>
+              </div>
+            </div>
+            <div>
+              <div class="text-xs font-medium uppercase text-slate-500">Workspace policy</div>
+              <% if workspace_policy[:error].present? %>
+                <div class="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700"><%= workspace_policy[:error] %></div>
+              <% else %>
+                <% provider_preferences = workspace_policy[:provider_preferences].to_h %>
+                <% guardrails = workspace_policy[:guardrails].to_h %>
+                <div class="mt-2 text-xs text-slate-600">
+                  Profile: <%= workspace_policy[:privacy_profile] %>, workspace: <%= workspace_policy[:workspace] %>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <% provider_preferences.each do |key, value| %>
+                    <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= key %>: <%= value %></span>
+                  <% end %>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <% guardrails.each do |guardrail_key, guardrail| %>
+                    <span class="rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-600"><%= guardrail_key %>: <%= guardrail.to_h[:status] %></span>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <div class="text-xs font-medium uppercase text-slate-500">Feature availability</div>
+            <div class="mt-2 grid gap-2 md:grid-cols-2">
+              <% features.each do |feature_key, feature| %>
+                <% selected_diagnostics = feature.to_h[:selected_model_diagnostics].to_h %>
+                <div class="rounded-md border border-slate-100 p-2">
+                  <div class="font-medium text-slate-800"><%= feature_key %></div>
+                  <div class="text-xs text-slate-500">
+                    available: <%= feature.to_h[:available_model_count] || 0 %>, selected: <%= feature.to_h[:selected_model].presence || 'none' %>, default: <%= feature.to_h[:default_model].presence || 'none' %>
+                  </div>
+                  <% if selected_diagnostics[:allowed] == false && selected_diagnostics[:reason_codes].present? %>
+                    <div class="mt-1 text-xs text-amber-700">Selected model warning: <%= selected_diagnostics[:reason_codes].join(', ') %></div>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <div class="text-xs font-medium uppercase text-slate-500">Model eligibility samples</div>
+            <div class="mt-2 grid gap-2 md:grid-cols-2">
+              <% model_eligibility.first(6).each do |model| %>
+                <% hidden_reasons = model.to_h[:features].to_h.values.flat_map { |feature| Array(feature[:reason_codes]) }.uniq.first(5) %>
+                <div class="rounded-md border border-slate-100 p-2">
+                  <div class="truncate font-medium text-slate-800"><%= model[:display_name] || model[:id] %></div>
+                  <div class="truncate text-xs text-slate-500"><%= model[:id] %></div>
+                  <div class="mt-1 text-xs text-slate-500">
+                    type: <%= model[:type].presence || 'unknown' %>, endpoints: <%= model[:endpoint_count] || 0 %>, providers: <%= Array(model[:endpoint_providers]).first(3).join(', ').presence || 'none' %>
+                  </div>
+                  <% if hidden_reasons.present? %>
+                    <div class="mt-1 text-xs text-amber-700">Why hidden: <%= hidden_reasons.join(', ') %></div>
+                  <% else %>
+                    <div class="mt-1 text-xs text-emerald-700">No sampled hidden reasons</div>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          </div>
         </div>
 
         <%= button_to 'Refresh OpenRouter Models',
@@ -133,10 +233,12 @@
                 class: "mt-2 border font-mono text-xs border-slate-100 p-1 rounded-md overflow-scroll"
             %>
           <% elsif @installation_configs[key]&.dig('type') == 'secret' %>
+            <% mask_secret_value = masked_secret_config?(key) && @app_config[key].present? %>
             <div class="relative">
               <%= form.password_field "app_config[#{key}]",
                   id: "app_config_#{key}",
-                  value: @app_config[key],
+                  value: mask_secret_value ? nil : @app_config[key],
+                  placeholder: mask_secret_value ? 'Configured — leave blank to keep current key' : nil,
                   class: "mt-2 border border-slate-100 p-1.5 pr-8 rounded-md w-full"
               %>
               <button

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Llm::ChatRequestRunner
-  attr_reader :context, :model, :messages, :schema, :tools, :params, :chat, :account, :feature, :on_end_message,
+  attr_reader :context, :model, :messages, :schema, :tools, :params, :headers, :chat, :account, :feature, :temperature, :on_end_message,
               :on_tool_call, :on_tool_result, :content_builder, :observability
 
   def initialize(messages:, **options)
@@ -11,9 +11,11 @@ class Llm::ChatRequestRunner
     @schema = options[:schema]
     @tools = options[:tools] || []
     @params = options[:params] || {}
+    @headers = options[:headers] || {}
     @chat = options[:chat]
     @account = options[:account]
     @feature = options[:feature].presence || observability_feature(options[:observability])
+    @temperature = options[:temperature]
     @on_end_message = options[:on_end_message]
     @on_tool_call = options[:on_tool_call]
     @on_tool_result = options[:on_tool_result]
@@ -24,12 +26,12 @@ class Llm::ChatRequestRunner
   def call
     llm_chat = build_chat
 
-    tag_openrouter_routing_metadata(llm_chat)
-    apply_system_instructions(llm_chat)
+    llm_chat = tag_openrouter_routing_metadata(llm_chat)
+    llm_chat = apply_system_instructions(llm_chat)
     Llm::CapabilityPolicy.ensure_chat_features_supported!(model: effective_model_name(llm_chat), schema: schema, tools: tools, account: account)
-    Llm::StructuredOutputPolicy.bind!(chat: llm_chat, schema: schema) if schema
-    enforce_openrouter_tool_parameters!(llm_chat)
-    attach_tools_and_callbacks(llm_chat)
+    llm_chat = Llm::StructuredOutputPolicy.bind!(chat: llm_chat, schema: schema) if schema
+    llm_chat = enforce_openrouter_tool_parameters!(llm_chat)
+    llm_chat = attach_tools_and_callbacks(llm_chat)
 
     conversation_messages = normalized_conversation_messages
     return nil if conversation_messages.empty?
@@ -60,8 +62,10 @@ class Llm::ChatRequestRunner
       context: context,
       model: model,
       params: params,
+      headers: headers,
       chat: chat,
-      feature: feature
+      feature: feature,
+      temperature: temperature
     }.tap do |kwargs|
       kwargs[:account] = account if account.present?
     end
@@ -88,21 +92,34 @@ class Llm::ChatRequestRunner
 
       message_content(message)
     end
-    return if system_messages.blank?
+    return chat if system_messages.blank?
 
     chat.with_instructions(system_messages.join("\n\n"))
   end
 
   def attach_tools_and_callbacks(chat)
-    tools.each { |tool| chat.with_tool(tool) }
+    tools.each { |tool| chat = chained_chat(chat.with_tool(tool), chat) }
 
-    chat.on_end_message { |message| on_end_message.call(chat, message) } if on_end_message
-    chat.on_tool_call { |tool_call| on_tool_call.call(tool_call) } if on_tool_call
-    chat.on_tool_result { |result| on_tool_result.call(result) } if on_tool_result
+    if on_end_message
+      callback_chat = chat
+      chat = chained_chat(
+        chat.on_end_message { |message| on_end_message.call(callback_chat, message) },
+        chat
+      )
+    end
+    chat = chained_chat(chat.on_tool_call { |tool_call| on_tool_call.call(tool_call) }, chat) if on_tool_call
+    chat = chained_chat(chat.on_tool_result { |result| on_tool_result.call(result) }, chat) if on_tool_result
+    chat
+  end
+
+  def chained_chat(candidate, fallback)
+    return candidate if candidate.respond_to?(:ask)
+
+    fallback
   end
 
   def enforce_openrouter_tool_parameters!(chat)
-    return if tools.blank?
+    return chat if tools.blank?
 
     Llm::OpenRouterRequestPolicy.require_parameters!(
       chat,

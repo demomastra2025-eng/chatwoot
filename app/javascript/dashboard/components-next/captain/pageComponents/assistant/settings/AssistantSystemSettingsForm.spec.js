@@ -67,6 +67,7 @@ describe('AssistantSystemSettingsForm', () => {
         voice: 'sulafat',
         language: 'ru-KZ',
         system_prompt: '',
+        voice_character_prompt: '',
         first_message: '',
         transfer_message: '',
         max_duration_sec: 0,
@@ -86,6 +87,8 @@ describe('AssistantSystemSettingsForm', () => {
             voice: 'sulafat',
             language: 'ru-KZ',
             system_prompt: 'Говори коротко, без markdown и списков.',
+            voice_character_prompt:
+              'Тембр: тёплый наставник. Паузы короткие, без смеха.',
             first_message: 'Сәлеметсіз бе!',
             transfer_message: 'Қазір операторға қосамын.',
             max_duration_sec: 450,
@@ -104,10 +107,15 @@ describe('AssistantSystemSettingsForm', () => {
     expect(
       wrapper.find('[data-test-id="assistant-voice-system-prompt"]').exists()
     ).toBe(true);
+    expect(
+      wrapper.find('[data-test-id="assistant-voice-character-prompt"]').exists()
+    ).toBe(true);
 
     wrapper.vm.state.voiceSettings.voice = 'leda';
     wrapper.vm.state.voiceSettings.systemPrompt =
       'Отвечай максимум двумя короткими предложениями.';
+    wrapper.vm.state.voiceSettings.voiceCharacterPrompt =
+      'Тембр: спокойный ночной рассказчик. Интонация мягкая.';
     wrapper.vm.state.voiceSettings.firstMessage = 'Алло!';
     const payload = await wrapper.vm.buildPayload();
 
@@ -117,6 +125,8 @@ describe('AssistantSystemSettingsForm', () => {
       voice: 'leda',
       language: 'ru-KZ',
       system_prompt: 'Отвечай максимум двумя короткими предложениями.',
+      voice_character_prompt:
+        'Тембр: спокойный ночной рассказчик. Интонация мягкая.',
       first_message: 'Алло!',
       transfer_message: 'Қазір операторға қосамын.',
       max_duration_sec: 450,

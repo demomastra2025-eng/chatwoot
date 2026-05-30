@@ -8,10 +8,57 @@ const props = defineProps({
   messages: { type: Array, required: true },
   defaultCollapsed: { type: Boolean, default: false },
 });
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const isExpanded = ref(!props.defaultCollapsed);
 
-const thinkingCount = computed(() => props.messages.length);
+const toolCount = computed(
+  () =>
+    props.messages.filter(copilotMessage => copilotMessage?.message?.toolName)
+      .length
+);
+
+const pluralCategoryKeyMap = {
+  one: 'ONE',
+  few: 'FEW',
+  many: 'MANY',
+  other: 'MANY',
+  zero: 'MANY',
+  two: 'FEW',
+};
+
+const currentLocale = computed(() => locale?.value || locale || 'en');
+
+const toolCountPluralKey = computed(() => {
+  const category = new Intl.PluralRules(currentLocale.value).select(
+    toolCount.value
+  );
+
+  return pluralCategoryKeyMap[category] || 'MANY';
+});
+
+const toolCountLabel = computed(() => {
+  if (!toolCount.value) return '';
+
+  const params = {
+    count: toolCount.value,
+  };
+
+  if (toolCountPluralKey.value === 'ONE') {
+    return t('CAPTAIN.COPILOT.TOOL_COUNT.ONE', params);
+  }
+
+  if (toolCountPluralKey.value === 'FEW') {
+    return t('CAPTAIN.COPILOT.TOOL_COUNT.FEW', params);
+  }
+
+  return t('CAPTAIN.COPILOT.TOOL_COUNT.MANY', params);
+});
+
+const showStepsLabel = computed(() =>
+  [t('CAPTAIN.COPILOT.SHOW_STEPS'), toolCountLabel.value]
+    .filter(Boolean)
+    .join(' - ')
+);
 
 watch(
   () => props.defaultCollapsed,
@@ -33,13 +80,8 @@ watch(
         :icon="isExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
         class="w-4 h-4 transition-transform duration-200 group-hover:scale-110"
       />
-      <span class="flex items-center gap-2">
-        {{ t('CAPTAIN.COPILOT.SHOW_STEPS') }}
-        <span
-          class="inline-flex items-center justify-center h-4 min-w-4 px-1 text-xs font-medium rounded-full bg-n-solid-3 text-n-slate-11"
-        >
-          {{ thinkingCount }}
-        </span>
+      <span class="text-xs font-medium text-n-slate-10">
+        {{ showStepsLabel }}
       </span>
     </button>
     <div

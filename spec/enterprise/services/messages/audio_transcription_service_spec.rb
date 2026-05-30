@@ -198,23 +198,27 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
     end
 
     it 'uses OpenRouter chat audio input when an OpenRouter audio model is selected' do
-      chat = instance_double(RubyLLM::Chat)
       response = instance_double(RubyLLM::Message, content: 'OpenRouter transcription')
 
       allow(service).to receive(:model).and_return('openai/gpt-audio-mini')
       allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-audio-mini', account: account).and_return('openrouter')
       allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-audio-mini', account: account).and_return(true)
-      allow(service).to receive(:chat).with(model: 'openai/gpt-audio-mini', temperature: 0).and_return(chat)
 
       expect(Llm::ApiClient).not_to receive(:transcribe)
+      expect(Llm::ChatClient).not_to receive(:ask)
       expect(Open3).not_to receive(:capture3)
-      expect(Llm::ChatClient).to receive(:ask) do |received_chat, content, observability:, account:|
-        expect(received_chat).to eq(chat)
-        expect(account).to eq(service.account)
+      expect(Llm::Runtime).to receive(:chat) do |**kwargs|
+        expect(kwargs).to include(
+          feature: :audio_transcription,
+          account: service.account,
+          model: 'openai/gpt-audio-mini',
+          options: { temperature: 0 }
+        )
+        content = kwargs.dig(:messages, 0, :content)
         expect(content).to be_a(RubyLLM::Content)
         expect(content.text).to include('Transcribe the attached audio accurately')
         expect(content.attachments.first.type).to eq(:audio)
-        expect(observability).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
+        expect(kwargs[:observability]).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
         response
       end
 
@@ -223,7 +227,6 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
     end
 
     it 'normalizes Ogg Opus audio to WAV before sending it to OpenRouter audio input models' do
-      chat = instance_double(RubyLLM::Chat)
       response = instance_double(RubyLLM::Message, content: 'OpenRouter Opus transcription')
 
       attachment.file.detach
@@ -235,7 +238,6 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       allow(service).to receive(:model).and_return('openai/gpt-audio-mini')
       allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-audio-mini', account: account).and_return('openrouter')
       allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-audio-mini', account: account).and_return(true)
-      allow(service).to receive(:chat).with(model: 'openai/gpt-audio-mini', temperature: 0).and_return(chat)
       allow(Llm::OpenRouterAudioInput).to receive(:ffmpeg_path).and_return('/usr/bin/ffmpeg')
 
       expect(Open3).to receive(:capture3) do |*args|
@@ -245,12 +247,13 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
         File.binwrite(destination_file_path, 'RIFFfake-wav-data')
         ['', '', instance_double(Process::Status, success?: true)]
       end
-      expect(Llm::ChatClient).to receive(:ask) do |_received_chat, content, observability:, account:|
-        expect(account).to eq(service.account)
+      expect(Llm::Runtime).to receive(:chat) do |**kwargs|
+        expect(kwargs).to include(account: service.account, model: 'openai/gpt-audio-mini')
+        content = kwargs.dig(:messages, 0, :content)
         expect(content.attachments.first.type).to eq(:audio)
         expect(content.attachments.first.format).to eq('wav')
         expect(content.attachments.first.source.to_s).to end_with('.openrouter.wav')
-        expect(observability).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
+        expect(kwargs[:observability]).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
         response
       end
 
@@ -264,19 +267,20 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       allow(service).to receive(:model).and_return('openai/gpt-4o-mini-transcribe')
       allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o-mini-transcribe', account: account).and_return('openrouter')
       allow(Llm::Models).to receive(:type_for).with('openai/gpt-4o-mini-transcribe', account: account).and_return('transcription')
-      allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('openrouter-key')
-      allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.ai/api/v1')
 
       expect(Llm::ChatClient).not_to receive(:ask)
-      expect(Llm::ApiClient).to receive(:transcribe).with(
-        instance_of(String),
-        provider: 'openrouter',
-        api_key: 'openrouter-key',
-        api_base: 'https://openrouter.ai/api/v1',
-        model: 'openai/gpt-4o-mini-transcribe',
-        temperature: 0.4,
-        observability: hash_including(runtime_mode: 'audio_transcription', provider: 'openrouter')
-      ).and_return(transcription)
+      expect(Llm::ApiClient).not_to receive(:transcribe)
+      expect(Llm::Runtime).to receive(:transcribe) do |**kwargs|
+        expect(kwargs).to include(
+          feature: :audio_transcription,
+          account: service.account,
+          model: 'openai/gpt-4o-mini-transcribe',
+          input: instance_of(String),
+          options: { temperature: 0.4 }
+        )
+        expect(kwargs[:observability]).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
+        transcription
+      end
 
       expect(service.send(:transcribe_audio)).to eq('OpenRouter STT transcription')
       expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter STT transcription' })

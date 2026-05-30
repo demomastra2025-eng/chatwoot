@@ -32,7 +32,7 @@ RSpec.describe Llm::FeatureRequest do
     expect(request.multimodal?).to be(true)
     expect(request.image?).to be(true)
     expect(request.audio?).to be(false)
-    expect(request.privacy_profile).to eq('standard')
+    expect(request.privacy_profile).to eq('sensitive')
     expect(request.runtime_preferences).to eq(privacy_profile: 'sensitive')
     expect(request.observability).to eq(trace_id: 'trace-1')
     expect(request.options).to eq(stream: false)
@@ -57,6 +57,14 @@ RSpec.describe Llm::FeatureRequest do
     expect(request.feature_key).to eq('embedding')
   end
 
+  it 'inherits privacy profile from account runtime when request preferences are not provided' do
+    stored_account = create(:account, captain_runtime: { 'privacy_profile' => 'sensitive' })
+
+    request = described_class.new(feature: :captain_agent, account: stored_account)
+
+    expect(request.privacy_profile).to eq('sensitive')
+  end
+
   it 'rejects blank and unsupported features' do
     expect { described_class.new(feature: nil, account: account) }
       .to raise_error(ArgumentError, /feature is required/)
@@ -68,6 +76,12 @@ RSpec.describe Llm::FeatureRequest do
   it 'rejects account-scoped requests without an account' do
     expect { described_class.new(feature: :captain_agent, messages: []) }
       .to raise_error(ArgumentError, /account is required/)
+  end
+
+  it 'rejects unsupported privacy profiles' do
+    expect do
+      described_class.new(feature: :captain_agent, account: account, privacy_profile: 'collect_everything')
+    end.to raise_error(ArgumentError, /Unsupported OpenRouter privacy profile/)
   end
 
   it 'rejects schemas and tools that are not runtime-compatible' do

@@ -27,20 +27,36 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response.body).to include(config.value)
       end
 
-      it 'shows OpenRouter captain config fields for enterprise plan' do
+      it 'shows OpenRouter captain config fields and diagnostics for enterprise plan' do
         allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
         sign_in(super_admin, scope: :super_admin)
 
         get '/super_admin/app_config?config=captain'
 
         expect(response).to have_http_status(:success)
-        expect(response.body).to include('OpenRouter API Key')
-        expect(response.body).to include('CAPTAIN_OPENROUTER_API_KEY')
-        expect(response.body).to include('OpenRouter API Endpoint')
-        expect(response.body).to include('CAPTAIN_OPENROUTER_ENDPOINT')
-        expect(response.body).to include('OpenRouter model catalog')
-        expect(response.body).to include('Endpoints:')
-        expect(response.body).to include('Refresh OpenRouter Models')
+        expect(response.body).to include(
+          'OpenRouter API Key',
+          'CAPTAIN_OPENROUTER_API_KEY',
+          'OpenRouter API Endpoint',
+          'CAPTAIN_OPENROUTER_ENDPOINT',
+          'OpenRouter diagnostics',
+          'Catalog freshness',
+          'Workspace policy',
+          'Model eligibility samples',
+          'Refresh OpenRouter Models'
+        )
+      end
+
+      it 'does not render the configured OpenRouter API key value on the captain config page' do
+        allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-openrouter-secret-value')
+        sign_in(super_admin, scope: :super_admin)
+
+        get '/super_admin/app_config?config=captain'
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include('Configured — leave blank to keep current key')
+        expect(response.body).not_to include('test-openrouter-secret-value')
       end
     end
   end
@@ -112,6 +128,25 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response).to have_http_status(:found)
         expect(response).to redirect_to(super_admin_settings_path)
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY')&.value).to eq('[REDACTED]')
+        expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_ENDPOINT')&.value).to eq('https://openrouter.example/api/v1')
+      end
+
+      it 'keeps the existing OpenRouter key when the masked secret field is submitted blank' do
+        allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-openrouter-secret-value')
+        sign_in(super_admin, scope: :super_admin)
+        allow(Llm::Config).to receive(:reset!)
+        allow(Llm::Config).to receive(:initialize!)
+
+        post '/super_admin/app_config?config=captain', params: {
+          app_config: {
+            CAPTAIN_OPENROUTER_API_KEY: '',
+            CAPTAIN_OPENROUTER_ENDPOINT: 'https://openrouter.example/api/v1'
+          }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY')&.value).to eq('test-openrouter-secret-value')
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_ENDPOINT')&.value).to eq('https://openrouter.example/api/v1')
       end
     end

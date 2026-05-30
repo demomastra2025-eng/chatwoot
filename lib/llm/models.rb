@@ -53,6 +53,7 @@ module Llm::Models
       meta-llama/llama-guard-3-8b
     ]
   }.freeze
+  DIAGNOSTIC_MODEL_LIMIT = 120
 
   class << self
     def providers = CONFIG['providers']
@@ -109,11 +110,12 @@ module Llm::Models
       end
     end
 
-    def capability_diagnostics_for(feature, model_name, account: nil, runtime_filtered: true)
+    def capability_diagnostics_for(feature, model_name, account: nil, runtime_preferences: nil, runtime_filtered: true)
       Llm::OpenRouterCapabilityResolver.call(
         model_id: model_name,
         feature: feature,
         account: account,
+        runtime_preferences: runtime_preferences,
         runtime_filtered: runtime_filtered
       )
     end
@@ -266,8 +268,10 @@ module Llm::Models
       return nil unless feature
 
       provider_status = provider_status_by_name(account)
+      runtime_preferences = runtime_preferences_for(account)
+      feature_model_names = feature_config_models_for(feature_key, account: account)
       {
-        models: feature_config_models_for(feature_key, account: account).filter_map do |model_name|
+        models: feature_model_names.filter_map do |model_name|
           canonical_name = canonical_model_name(model_name)
           model = model_config(canonical_name, account: account).to_h
           provider = model['provider']
@@ -279,6 +283,7 @@ module Llm::Models
             feature_key,
             canonical_name,
             account: account,
+            runtime_preferences: runtime_preferences,
             runtime_filtered: feature_key.to_s != 'help_center_search'
           )
 
@@ -308,6 +313,13 @@ module Llm::Models
             diagnostics: diagnostics&.to_h
           }
         end,
+        diagnostic_models: diagnostic_models_for_feature(
+          feature_key,
+          feature_model_names,
+          provider_status,
+          account: account,
+          runtime_preferences: runtime_preferences
+        ),
         default: default_model_for(feature_key, account: account),
         configured_default: configured_default_model_for(feature_key),
         required_capabilities: required_capabilities_for(feature_key)
@@ -376,17 +388,25 @@ module Llm::Models
       required_capabilities = required_capabilities_for(feature_key)
       openrouter_default_candidates(feature_key, configured_default, account: account).find do |candidate|
         candidate_config = model_config(candidate, account: account)
-        dynamic_model_allowed_for_feature?(feature_key, candidate_config, required_capabilities, account: account, model_id: candidate)
+        dynamic_model_allowed_for_feature?(
+          feature_key,
+          candidate_config,
+          required_capabilities,
+          account: account,
+          runtime_preferences: runtime_preferences_for(account),
+          model_id: candidate
+        )
       end
     end
 
-    def openrouter_capability_diagnostics_for(feature_key, model_name, account: nil, runtime_filtered: true)
+    def openrouter_capability_diagnostics_for(feature_key, model_name, account: nil, runtime_preferences: nil, runtime_filtered: true)
       return unless openrouter_only_feature?(feature_key)
 
       capability_diagnostics_for(
         feature_key,
         model_name,
         account: account,
+        runtime_preferences: runtime_preferences,
         runtime_filtered: runtime_filtered
       )
     end
@@ -427,6 +447,7 @@ module Llm::Models
           model_config,
           required_capabilities,
           account: account,
+          runtime_preferences: runtime_preferences_for(account),
           runtime_filtered: runtime_filtered,
           model_id: model_name
         )
@@ -435,7 +456,69 @@ module Llm::Models
       end
     end
 
-    def dynamic_model_allowed_for_feature?(feature_key, model_config, _required_capabilities, account: nil, runtime_filtered: true, model_id: nil)
+    def diagnostic_models_for_feature(feature_key, allowed_model_names, provider_status, account: nil, runtime_preferences: nil)
+      return [] unless openrouter_only_feature?(feature_key)
+
+      allowed_model_ids = allowed_model_names.map { |model_name| canonical_model_name(model_name) }
+      runtime_filtered = feature_key.to_s != 'help_center_search'
+
+      diagnostic_model_candidates(account: account).each_with_object([]) do |canonical_name, result|
+        break result if result.size >= DIAGNOSTIC_MODEL_LIMIT
+        next if allowed_model_ids.include?(canonical_name)
+
+        model = model_config(canonical_name, account: account).to_h
+        provider = model['provider']
+        next unless Llm::ProviderVisibilityPolicy.normal_captain_provider?(provider)
+
+        status = provider_status[provider].to_h
+        next if account.present? && status[:configured] != true
+
+        diagnostics = openrouter_capability_diagnostics_for(
+          feature_key,
+          canonical_name,
+          account: account,
+          runtime_preferences: runtime_preferences,
+          runtime_filtered: runtime_filtered
+        )
+        next if diagnostics.blank? || diagnostics.allowed?
+
+        provider_metadata = provider_config(provider)
+        result << {
+          id: canonical_name,
+          display_name: model['display_name'].presence || canonical_name,
+          provider: provider,
+          provider_display_name: provider_metadata&.fetch('display_name', nil) || provider,
+          provider_configured: status[:configured] == true,
+          account_configured: status[:account_configured] == true,
+          global_configured: status[:global_configured] == true,
+          coming_soon: model['coming_soon'],
+          capabilities: capabilities_for(canonical_name, account: account),
+          type: type_for(canonical_name, account: account),
+          known_to_registry: registry_known?(canonical_name, account: account),
+          source: model['source'],
+          context_length: model['context_length'],
+          max_output_tokens: model['max_output_tokens'],
+          input_modalities: model['input_modalities'],
+          output_modalities: model['output_modalities'],
+          embedding_dimensions: model['embedding_dimensions'],
+          requested_embedding_dimensions: model['requested_embedding_dimensions'],
+          pricing: model['pricing'],
+          latency_ms: model['latency_ms'],
+          throughput_tokens_per_second: model['throughput_tokens_per_second'],
+          diagnostics: diagnostics.to_h,
+          diagnostic_only: true
+        }
+      end
+    rescue StandardError
+      []
+    end
+
+    def diagnostic_model_candidates(account: nil)
+      models(account: account).keys.map { |model_name| canonical_model_name(model_name) }.uniq
+    end
+
+    def dynamic_model_allowed_for_feature?(feature_key, model_config, _required_capabilities, account: nil, runtime_preferences: nil,
+                                           runtime_filtered: true, model_id: nil)
       return false if model_config.blank?
       return false unless model_config['provider'] == OPENROUTER_PROVIDER
 
@@ -443,6 +526,7 @@ module Llm::Models
         model_id: model_id.presence || model_config['id'].presence || dynamic_model_id_for_config(model_config, account: account),
         feature: feature_key,
         account: account,
+        runtime_preferences: runtime_preferences,
         runtime_filtered: runtime_filtered
       )
       return diagnostics.allowed? if diagnostics.model_config.present?
@@ -524,6 +608,15 @@ module Llm::Models
     def dynamic_openrouter_model_config?(model_name, model_config, account: nil)
       model_config.to_h['provider'] == OPENROUTER_PROVIDER &&
         dynamic_model_configs(account: account).key?(canonical_model_name(model_name))
+    end
+
+    def runtime_preferences_for(account)
+      return account.captain_runtime.to_h if account.respond_to?(:captain_runtime)
+      return account.captain_preferences[:runtime].to_h if account.respond_to?(:captain_preferences)
+
+      {}
+    rescue StandardError
+      {}
     end
 
     def provider_status_by_name(account)

@@ -47,5 +47,29 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
                                  model: 'openai/gpt-4o-mini-transcribe').native_endpoint).to eq('/audio/transcriptions')
       expect(described_class.for(feature: :knowledge_rerank, model: 'rerank/model').native_endpoint).to eq('/rerank')
     end
+
+    it 'emits explicit sensitive privacy policy for account runtime preferences' do
+      account = instance_double(Account, captain_preferences: { runtime: { privacy_profile: 'sensitive' } })
+
+      profile = described_class.for(feature: :captain_agent, model: 'moonshotai/kimi-k2.6', account: account)
+
+      expect(profile.provider_preferences).to include(
+        allow_fallbacks: true,
+        data_collection: 'deny',
+        zdr: false
+      )
+    end
+
+    it 'fails closed for ZDR-required account runtime preferences' do
+      account = instance_double(Account, captain_preferences: { runtime: { privacy_profile: 'zdr_required' } })
+
+      profile = described_class.for(feature: :captain_agent, model: 'moonshotai/kimi-k2.6', account: account)
+
+      expect(profile.provider_preferences).to include(
+        allow_fallbacks: false,
+        data_collection: 'deny',
+        zdr: true
+      )
+    end
   end
 end

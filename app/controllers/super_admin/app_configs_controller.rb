@@ -1,4 +1,5 @@
 class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
+  MASKED_SECRET_CONFIG_KEYS = %w[CAPTAIN_OPENROUTER_API_KEY].freeze
   CAPTAIN_CONFIG_KEYS = %w[
     CAPTAIN_OPEN_AI_API_KEY CAPTAIN_DEFAULT_MODEL CAPTAIN_OPEN_AI_ENDPOINT
     CAPTAIN_ANTHROPIC_API_KEY CAPTAIN_ANTHROPIC_ENDPOINT
@@ -29,6 +30,8 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   before_action :set_config
   before_action :allowed_configs
+  helper_method :masked_secret_config?
+
   def show
     # ref: https://github.com/rubocop/rubocop/issues/7767
     # rubocop:disable Style/HashTransformValues
@@ -43,9 +46,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     end
     return unless @config == 'captain'
 
-    @openrouter_catalog_metadata = Llm::OpenRouterModelCatalog.metadata.merge(
-      endpoints: Llm::OpenRouterEndpointCatalog.metadata
-    )
+    @openrouter_diagnostics = Llm::OpenRouterDiagnostics.call
   end
 
   def create
@@ -76,6 +77,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     errors = []
     params.fetch('app_config', {}).each do |key, value|
       next unless @allowed_configs.include?(key)
+      next if preserve_masked_secret_config?(key, value)
 
       normalized_value = normalize_app_config_value(key, value, errors)
       next if normalized_value == :invalid
@@ -110,6 +112,14 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     Llm::Config.initialize!
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin::AppConfigsController] Failed to refresh LLM config: #{e.class}: #{e.message}")
+  end
+
+  def masked_secret_config?(key)
+    MASKED_SECRET_CONFIG_KEYS.include?(key.to_s)
+  end
+
+  def preserve_masked_secret_config?(key, value)
+    masked_secret_config?(key) && value.blank? && InstallationConfig.exists?(name: key)
   end
 
   def set_config

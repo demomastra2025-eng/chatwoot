@@ -2,7 +2,6 @@
 
 class Llm::OpenRouterRoutingProfile
   RESPONSE_HEALING_PLUGIN_ID = 'response-healing'
-  DEFAULT_DATA_COLLECTION_POLICY = 'deny'
 
   FEATURE_ALIASES = {
     'assistant' => 'captain_agent',
@@ -29,12 +28,19 @@ class Llm::OpenRouterRoutingProfile
     'knowledge_rerank' => '/rerank'
   }.freeze
 
-  attr_reader :feature_key, :model, :account, :models, :provider_preferences, :plugins, :headers, :native_endpoint
+  attr_reader :feature_key, :model, :account, :models, :provider_preferences, :plugins, :headers, :native_endpoint,
+              :workspace_policy
 
   class << self
-    def for(feature:, model: nil, account: nil)
+    def for(feature:, model: nil, account: nil, runtime_preferences: nil, privacy_profile: nil)
       feature_key = normalize_feature(feature)
-      new(feature_key: feature_key, model: model, account: account)
+      new(
+        feature_key: feature_key,
+        model: model,
+        account: account,
+        runtime_preferences: runtime_preferences,
+        privacy_profile: privacy_profile
+      )
     end
 
     def normalize_feature(feature)
@@ -43,10 +49,15 @@ class Llm::OpenRouterRoutingProfile
     end
   end
 
-  def initialize(feature_key:, model: nil, account: nil)
+  def initialize(feature_key:, model: nil, account: nil, runtime_preferences: nil, privacy_profile: nil)
     @feature_key = feature_key
     @model = model.to_s.presence
     @account = account
+    @workspace_policy = Llm::OpenRouterWorkspacePolicy.resolve(
+      account: account,
+      preferences: runtime_preferences,
+      privacy_profile: privacy_profile
+    )
     @models = build_models
     @provider_preferences = build_provider_preferences
     @plugins = []
@@ -79,10 +90,7 @@ class Llm::OpenRouterRoutingProfile
   end
 
   def build_provider_preferences
-    base = {
-      allow_fallbacks: true,
-      data_collection: data_collection_policy
-    }
+    base = workspace_policy.provider_preferences.deep_dup
 
     case feature_key
     when 'captain_agent', 'moderation'
@@ -94,19 +102,5 @@ class Llm::OpenRouterRoutingProfile
     else
       base.merge(require_parameters: false)
     end
-  end
-
-  def data_collection_policy
-    runtime_preferences = if account.respond_to?(:captain_preferences)
-                            account.captain_preferences[:runtime].to_h
-                          else
-                            {}
-                          end.with_indifferent_access
-
-    return 'deny' if runtime_preferences[:privacy_profile].to_s.in?(%w[sensitive zdr_required])
-
-    DEFAULT_DATA_COLLECTION_POLICY
-  rescue StandardError
-    DEFAULT_DATA_COLLECTION_POLICY
   end
 end

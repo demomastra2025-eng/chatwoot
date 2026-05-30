@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildCaptainToolTraceMessages } from './captainToolTrace';
+import {
+  buildCaptainToolTraceMessages,
+  buildCopilotThinkingTraceMessages,
+} from './captainToolTrace';
 
 describe('buildCaptainToolTraceMessages', () => {
-  it('maps captain trace tool steps to copilot-style messages with canonical status and details', () => {
+  it('combines start and complete steps into one copilot-style tool message', () => {
     expect(
       buildCaptainToolTraceMessages({
         captainTrace: {
@@ -34,20 +37,66 @@ describe('buildCaptainToolTraceMessages', () => {
       {
         id: 'search:start:1',
         message: {
-          content: 'Using search_documentation',
-          toolName: 'search_documentation',
-          status: 'start',
-          input: 'Query: pricing\nApi Token: [REDACTED]',
-        },
-      },
-      {
-        id: 'search:complete:2',
-        message: {
           content: 'Completed search_documentation',
           toolName: 'search_documentation',
           status: 'finish',
+          input: 'Query: pricing\nApi Token: [REDACTED]',
           output: 'Total: 2',
         },
+      },
+    ]);
+  });
+
+  it('keeps repeated calls to the same tool separate when a call id is present', () => {
+    expect(
+      buildCaptainToolTraceMessages({
+        captainTrace: {
+          toolSteps: [
+            {
+              id: 'faq_lookup:start:1:call-a',
+              toolName: 'faq_lookup',
+              event: 'start',
+              content: 'Using faq_lookup',
+              input: { query: 'price' },
+            },
+            {
+              id: 'faq_lookup:finish:2:call-a',
+              toolName: 'faq_lookup',
+              event: 'finish',
+              content: 'Completed faq_lookup',
+              output: { answer: '1000' },
+            },
+            {
+              id: 'faq_lookup:start:3:call-b',
+              toolName: 'faq_lookup',
+              event: 'start',
+              content: 'Using faq_lookup',
+              input: { query: 'address' },
+            },
+            {
+              id: 'faq_lookup:finish:4:call-b',
+              toolName: 'faq_lookup',
+              event: 'finish',
+              content: 'Completed faq_lookup',
+              output: { answer: 'Main street' },
+            },
+          ],
+        },
+      }).map(({ message }) => ({
+        status: message.status,
+        input: message.input,
+        output: message.output,
+      }))
+    ).toEqual([
+      {
+        status: 'finish',
+        input: 'Query: price',
+        output: 'Answer: 1000',
+      },
+      {
+        status: 'finish',
+        input: 'Query: address',
+        output: 'Answer: Main street',
       },
     ]);
   });
@@ -80,6 +129,85 @@ describe('buildCaptainToolTraceMessages', () => {
         },
       },
     ]);
+  });
+
+  it('adds response reasoning before tool steps', () => {
+    expect(
+      buildCaptainToolTraceMessages(
+        {
+          captain_trace: {
+            reasoning: 'Найдена сделка по ID и обновлена сумма.',
+            tool_steps: [
+              {
+                id: 'tool:finish:1',
+                tool_name: 'update_deal',
+                status: 'completed',
+                content: 'Completed update_deal',
+                output_preview: { deal_id: 52 },
+              },
+            ],
+          },
+        },
+        { reasoningLabel: 'Обоснование ответа' }
+      ).map(({ message }) => ({
+        content: message.content,
+        reasoning: message.reasoning,
+        toolName: message.toolName,
+      }))
+    ).toEqual([
+      {
+        content: 'Обоснование ответа',
+        reasoning: 'Найдена сделка по ID и обновлена сумма.',
+        toolName: undefined,
+      },
+      {
+        content: 'Completed update_deal',
+        reasoning: undefined,
+        toolName: 'update_deal',
+      },
+    ]);
+  });
+
+  it('returns a reasoning-only trace when no tool steps are present', () => {
+    expect(
+      buildCaptainToolTraceMessages(
+        {
+          captain_trace: {
+            reasoning: 'Ответ подготовлен без вызова инструментов.',
+          },
+        },
+        { reasoningLabel: 'Обоснование ответа' }
+      )
+    ).toEqual([
+      {
+        id: 'captain-reasoning',
+        message: {
+          content: 'Обоснование ответа',
+          reasoning: 'Ответ подготовлен без вызова инструментов.',
+        },
+      },
+    ]);
+  });
+
+  it('hides legacy technical fallback reasoning', () => {
+    expect(
+      buildCaptainToolTraceMessages({
+        captain_trace: {
+          reasoning:
+            'Model returned plain text instead of structured JSON; runtime wrapped it as a Captain response.',
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it('hides old backend generated string-response reasoning', () => {
+    expect(
+      buildCaptainToolTraceMessages({
+        captain_trace: {
+          reasoning: 'Processed by agent',
+        },
+      })
+    ).toEqual([]);
   });
 
   it('normalizes JSON strings inside tool details for readable panels', () => {
@@ -165,7 +293,7 @@ describe('buildCaptainToolTraceMessages', () => {
     expect(message.output).toContain('Api Token: [REDACTED]');
   });
 
-  it('normalizes legacy status values from stored traces', () => {
+  it('normalizes and combines legacy status values from stored traces', () => {
     expect(
       buildCaptainToolTraceMessages({
         captainTrace: {
@@ -183,11 +311,79 @@ describe('buildCaptainToolTraceMessages', () => {
           ],
         },
       }).map(({ message }) => message.status)
-    ).toEqual(['progress', 'finish']);
+    ).toEqual(['finish']);
   });
 
   it('returns an empty array when trace data is missing', () => {
     expect(buildCaptainToolTraceMessages({})).toEqual([]);
     expect(buildCaptainToolTraceMessages(null)).toEqual([]);
+  });
+});
+
+describe('buildCopilotThinkingTraceMessages', () => {
+  it('combines live copilot thinking tool start and finish messages', () => {
+    expect(
+      buildCopilotThinkingTraceMessages([
+        {
+          id: 1,
+          message: {
+            content: 'Using search_deals',
+            function_name: 'search_deals',
+            tool_call_id: 'call-1',
+            status: 'start',
+            input: { query: 'VIP' },
+          },
+        },
+        {
+          id: 2,
+          message: {
+            content: 'Completed search_deals',
+            function_name: 'search_deals',
+            tool_call_id: 'call-1',
+            status: 'finish',
+            output: { returned_count: 1 },
+          },
+        },
+      ])
+    ).toEqual([
+      {
+        id: 1,
+        message: {
+          content: 'Completed search_deals',
+          toolName: 'search_deals',
+          status: 'finish',
+          input: 'Query: VIP',
+          output: 'Найдено: 1',
+        },
+      },
+    ]);
+  });
+
+  it('keeps non-tool thinking messages in order around grouped tool calls', () => {
+    expect(
+      buildCopilotThinkingTraceMessages([
+        {
+          id: 1,
+          message: {
+            content: 'Planning answer',
+            reasoning: 'Reading context',
+          },
+        },
+        {
+          id: 2,
+          message: {
+            content: 'Using search_deals',
+            function_name: 'search_deals',
+          },
+        },
+        {
+          id: 3,
+          message: {
+            content: 'Completed search_deals',
+            function_name: 'search_deals',
+          },
+        },
+      ]).map(({ message }) => message.content)
+    ).toEqual(['Planning answer', 'Completed search_deals']);
   });
 });

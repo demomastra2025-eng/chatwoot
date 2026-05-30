@@ -110,6 +110,25 @@ RSpec.describe Llm::RuntimePolicy do
     end
   end
 
+  describe '.trace_input_capture?' do
+    it 'disables trace capture for sensitive privacy profiles even outside production' do
+      expect(
+        described_class.trace_input_capture?(preferences: { 'privacy_profile' => 'sensitive', 'trace_input_capture' => true })
+      ).to be(false)
+      expect(
+        described_class.trace_output_capture?(preferences: { 'privacy_profile' => 'zdr_required', 'trace_output_capture' => true })
+      ).to be(false)
+    end
+
+    it 'keeps account privacy profile when partial trace preferences are supplied' do
+      account.update!(captain_runtime: { 'privacy_profile' => 'sensitive' })
+
+      expect(
+        described_class.trace_input_capture?(account: account, preferences: { 'trace_input_capture' => true })
+      ).to be(false)
+    end
+  end
+
   describe '.agent_high_risk_tool_allowed?' do
     it 'allows only explicitly listed high-risk tool ids by default' do
       account.update!(

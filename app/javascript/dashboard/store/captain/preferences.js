@@ -29,10 +29,10 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       const models = feature?.models || [];
 
       const providerOrder = {
-        openai: 0,
-        anthropic: 1,
-        gemini: 2,
-        openrouter: 3,
+        openrouter: 0,
+        openai: 1,
+        anthropic: 2,
+        gemini: 3,
       };
       const modelSourcePriority = model => {
         if (model.account_configured) return 0;
@@ -54,7 +54,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
           const sourceB = modelSourcePriority(b);
           if (sourceA !== sourceB) return sourceA - sourceB;
 
-          // Prefer direct providers; shared OpenRouter remains the common fallback.
+          // Prefer OpenRouter as the normal Captain provider platform.
           const providerA = providerOrder[a.provider] ?? 999;
           const providerB = providerOrder[b.provider] ?? 999;
           if (providerA !== providerB) return providerA - providerB;

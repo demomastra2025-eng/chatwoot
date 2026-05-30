@@ -56,6 +56,78 @@ RSpec.describe Llm::OpenRouterCapabilityResolver do
       expect(result.to_h).to include(endpoint_count: 1, endpoint_providers: ['Provider A'])
     end
 
+    it 'fails clearly when ZDR-required privacy has no ZDR endpoint' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output structured_output tool_calling streaming],
+          'context_length' => 128_000
+        }
+      )
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).with('openai/gpt-5.4').and_return(
+        'providers' => ['Provider A'],
+        'endpoints' => [
+          {
+            'provider_name' => 'Provider A',
+            'capabilities' => %w[structured_output tool_calling streaming],
+            'zdr' => false
+          }
+        ]
+      )
+
+      result = described_class.call(
+        model_id: 'openai/gpt-5.4',
+        feature: :assistant,
+        runtime_preferences: { privacy_profile: 'zdr_required' }
+      )
+
+      expect(result).not_to be_allowed
+      expect(result.reasons).to include(hash_including(code: 'zdr_required_unsupported'))
+    end
+
+    it 'fails closed when ZDR-required privacy has no refreshed endpoint metadata' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output structured_output tool_calling streaming],
+          'context_length' => 128_000
+        }
+      )
+
+      result = described_class.call(
+        model_id: 'openai/gpt-5.4',
+        feature: :assistant,
+        runtime_preferences: { privacy_profile: 'zdr_required' }
+      )
+
+      expect(result).not_to be_allowed
+      expect(result.reasons).to include(hash_including(code: 'zdr_required_unsupported'))
+    end
+
+    it 'reports invalid privacy profiles without masking the policy error' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output structured_output tool_calling streaming],
+          'context_length' => 128_000
+        }
+      )
+
+      result = described_class.call(
+        model_id: 'openai/gpt-5.4',
+        feature: :assistant,
+        runtime_preferences: { privacy_profile: 'collect_everything' }
+      )
+
+      expect(result).not_to be_allowed
+      expect(result.reasons).to include(
+        hash_including(code: 'privacy_profile_invalid', message: /Unsupported OpenRouter privacy profile/)
+      )
+    end
+
     it 'allows OpenRouter rerank models for knowledge rerank' do
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'cohere/rerank-v3.5' => {

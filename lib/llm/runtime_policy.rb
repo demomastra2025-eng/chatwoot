@@ -167,6 +167,8 @@ class Llm::RuntimePolicy
     end
 
     def trace_capture_enabled?(key, account:, preferences:)
+      return false unless Llm::OpenRouterWorkspacePolicy.trace_capture_allowed?(account: account, preferences: preferences)
+
       boolean_or_default(
         runtime_preferences(account, preferences)[key],
         default: default_trace_capture_enabled?

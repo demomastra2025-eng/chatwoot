@@ -49,9 +49,22 @@ const uiActions = computed(() =>
   )
 );
 
-const toolTraceAttributes = computed(() => ({
-  captain_trace: props.message?.captain_trace || props.message?.captainTrace,
-}));
+const captainTraceAttributes = computed(() => {
+  const additionalAttributes =
+    props.message?.additional_attributes ||
+    props.message?.additionalAttributes ||
+    {};
+  const captainTrace =
+    props.message?.captain_trace ||
+    props.message?.captainTrace ||
+    additionalAttributes.captain_trace ||
+    additionalAttributes.captainTrace;
+
+  return {
+    ...additionalAttributes,
+    captain_trace: captainTrace,
+  };
+});
 
 const handleUiAction = action => {
   emit('uiAction', action);
@@ -84,6 +97,9 @@ const useCopilotResponse = () => {
       v-dompurify-html="messageContent"
       class="prose-sm break-words"
     />
+    <CaptainToolExecutionGroup
+      :additional-attributes="captainTraceAttributes"
+    />
     <div class="flex flex-row mt-1 gap-2 flex-wrap">
       <Button
         v-if="showUseButton"
@@ -103,9 +119,5 @@ const useCopilotResponse = () => {
         @click="handleUiAction(action)"
       />
     </div>
-    <CaptainToolExecutionGroup
-      :additional-attributes="toolTraceAttributes"
-      class="mt-2"
-    />
   </div>
 </template>

@@ -3,6 +3,7 @@
 module CaptainFeaturable
   extend ActiveSupport::Concern
   RUNTIME_DEFAULTS = {
+    'privacy_profile' => Llm::OpenRouterWorkspacePolicy::DEFAULT_PRIVACY_PROFILE,
     'assistant_thinking_effort' => 'none',
     'copilot_thinking_effort' => 'none',
     'assistant_moderation' => false,

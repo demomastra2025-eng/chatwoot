@@ -434,6 +434,7 @@
       "OPEN_MODAL": "Open centered view",
       "RESIZE_PANEL": "Resize panel",
       "SHOW_STEPS": "Details",
+      "REASONING": "Reasoning",
       "TOOL_COUNT": {
         "ONE": "{count} tool",
         "FEW": "{count} tools",

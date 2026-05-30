@@ -25,7 +25,7 @@ RSpec.describe Llm::OpenRouterRuntime do
       schema: schema,
       tools: [tool],
       observability: { trace_id: 'trace-1' },
-      options: { context: context, params: { temperature: 0.2 } }
+      options: { context: context, temperature: 0.2 }
     )
     runner = instance_double(Llm::ChatRequestRunner, call: :response)
 
@@ -38,6 +38,7 @@ RSpec.describe Llm::OpenRouterRuntime do
         tools: [tool],
         account: account,
         feature: 'captain_agent',
+        temperature: 0.2,
         observability: hash_including(trace_id: 'trace-1', provider: 'openrouter', feature: 'captain_agent')
       )
     ).and_return(runner)
@@ -63,6 +64,62 @@ RSpec.describe Llm::OpenRouterRuntime do
         api_key: 'openrouter-key',
         api_base: 'https://openrouter.example/api/v1',
         provider: include(allow_fallbacks: true, data_collection: 'deny')
+      )
+    ).and_return(result)
+
+    expect(runtime.embed(request)).to eq(result)
+  end
+
+  it 'publishes native embedding observability through the runtime facade' do
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.embedding.complete') do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+    request = Llm::FeatureRequest.new(
+      feature: :help_center_search,
+      account: account,
+      model: 'openai/text-embedding-3-small',
+      input: ['hello'],
+      observability: { feature: 'embedding', account_id: 42 },
+      options: { dimensions: 1536 }
+    )
+    result = instance_double(Llm::OpenRouterEmbeddingClient::Result, vectors: [[0.1, 0.2]], input_tokens: 3, model: 'openai/text-embedding-3-small')
+
+    allow(Llm::OpenRouterEmbeddingClient).to receive(:embed).and_return(result)
+
+    expect(runtime.embed(request)).to eq(result)
+    expect(events.size).to eq(1)
+    expect(events.first.payload).to include(
+      'feature' => 'embedding',
+      'provider' => 'openrouter',
+      'runtime_mode' => 'openrouter_runtime',
+      'status' => 'success',
+      'vector_count' => 1,
+      'dimensions' => 2
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  it 'applies request-scoped ZDR policy to native embeddings' do
+    request = Llm::FeatureRequest.new(
+      feature: :help_center_search,
+      account: account,
+      model: 'openai/text-embedding-3-small',
+      input: ['hello'],
+      runtime_preferences: { privacy_profile: 'zdr_required' },
+      options: { dimensions: 1536 }
+    )
+    result = instance_double(Llm::OpenRouterEmbeddingClient::Result, vectors: [[0.1]], input_tokens: 1, model: 'openai/text-embedding-3-small')
+
+    expect(Llm::OpenRouterEmbeddingClient).to receive(:embed).with(
+      ['hello'],
+      hash_including(
+        provider: include(
+          allow_fallbacks: false,
+          data_collection: 'deny',
+          zdr: true
+        )
       )
     ).and_return(result)
 

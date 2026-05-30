@@ -20,6 +20,7 @@ const store = useStore();
 const promptDescriptionFormRef = ref(null);
 const promptRulesManagerRef = ref(null);
 const PROMPT_INSTRUCTION_MAX_LENGTH = 20_000;
+const PROMPT_INSTRUCTION_INITIAL_HEIGHT = 304;
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetching = computed(() => uiFlags.value.fetchingItem);
 const assistantId = computed(() => Number(route.params.assistantId));
@@ -30,17 +31,24 @@ const isInternalAssistant = computed(
   () => assistant.value?.usage_mode === 'internal_assistant'
 );
 const isExternalAgent = computed(() => !isInternalAssistant.value);
+const PROMPT_TAB_RULES = 'rules';
+const PROMPT_TAB_SCENARIOS = 'scenarios';
 const promptTabs = computed(() => [
+  ...(isExternalAgent.value
+    ? [
+        {
+          key: PROMPT_TAB_RULES,
+          label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
+        },
+      ]
+    : []),
   {
-    key: 'rules',
-    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
-  },
-  {
-    key: 'scenarios',
+    key: PROMPT_TAB_SCENARIOS,
     label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.SCENARIOS'),
   },
 ]);
-const activePromptTab = ref(promptTabs.value[0]?.key || 'rules');
+const activePromptTab = ref(PROMPT_TAB_RULES);
+const showPromptTabs = computed(() => promptTabs.value.length > 1);
 
 watch(
   assistantId,
@@ -98,7 +106,7 @@ const handlePromptsSave = async () => {
     const instructionPayload =
       await promptDescriptionFormRef.value?.buildPayload?.();
     const rulesPayload =
-      activePromptTab.value === 'rules'
+      activePromptTab.value === PROMPT_TAB_RULES
         ? await promptRulesManagerRef.value?.buildPayload?.()
         : null;
     const mergedPayload = mergeAssistantPayloads(
@@ -117,8 +125,23 @@ const handlePromptsSave = async () => {
 };
 
 const onPromptTabChanged = tab => {
-  activePromptTab.value = tab?.key || 'rules';
+  const fallbackTab = promptTabs.value[0]?.key || PROMPT_TAB_SCENARIOS;
+  const nextTab = tab?.key || fallbackTab;
+
+  activePromptTab.value = promptTabs.value.some(item => item.key === nextTab)
+    ? nextTab
+    : fallbackTab;
 };
+
+watch(
+  promptTabs,
+  tabs => {
+    if (!tabs.some(tab => tab.key === activePromptTab.value)) {
+      activePromptTab.value = tabs[0]?.key || PROMPT_TAB_SCENARIOS;
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -148,6 +171,7 @@ const onPromptTabChanged = tab => {
                 :show-feature-flags="false"
                 :show-submit-button="false"
                 :description-max-length="PROMPT_INSTRUCTION_MAX_LENGTH"
+                :description-initial-height="PROMPT_INSTRUCTION_INITIAL_HEIGHT"
                 description-min-height="19rem"
               />
             </div>
@@ -164,10 +188,10 @@ const onPromptTabChanged = tab => {
           </div>
         </div>
 
-        <div v-if="isExternalAgent" class="flex flex-col gap-6 pt-2">
+        <div class="flex flex-col gap-6 pt-2">
           <div class="border-t border-n-weak" />
           <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6 flex flex-col gap-5">
-            <div class="flex items-center justify-start">
+            <div v-if="showPromptTabs" class="flex items-center justify-start">
               <TabBar
                 :tabs="promptTabs"
                 :initial-active-tab="
@@ -178,16 +202,16 @@ const onPromptTabChanged = tab => {
             </div>
 
             <AssistantRulesManager
-              v-if="activePromptTab === 'rules'"
+              v-if="activePromptTab === PROMPT_TAB_RULES"
               ref="promptRulesManagerRef"
               :assistant-id="assistantId"
               :assistant="assistant"
               :show-header="false"
             />
             <AssistantScenariosManager
-              v-else
+              v-else-if="activePromptTab === PROMPT_TAB_SCENARIOS"
               :assistant-id="assistantId"
-              :show-header="false"
+              :show-header="!showPromptTabs"
             />
           </div>
         </div>

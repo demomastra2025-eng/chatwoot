@@ -134,6 +134,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   def permitted_captain_runtime
     permitted = params.require(:captain_runtime).permit(
+      :privacy_profile,
       :assistant_thinking_effort,
       :copilot_thinking_effort,
       :assistant_moderation,
@@ -215,7 +216,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
                                Llm::Models.capability_diagnostics_for(
                                  feature_key,
                                  selected_model,
-                                 account: Current.account
+                                 account: Current.account,
+                                 runtime_preferences: preferences[:runtime]
                                ).to_h
                              end
       config.merge(

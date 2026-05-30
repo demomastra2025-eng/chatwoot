@@ -413,6 +413,7 @@
       "OPEN_MODAL": "Open centered view",
       "RESIZE_PANEL": "Resize panel",
       "SHOW_STEPS": "Детали",
+      "REASONING": "Жауап негіздемесі",
       "TOOL_COUNT": {
         "ONE": "{count} құрал",
         "FEW": "{count} құрал",

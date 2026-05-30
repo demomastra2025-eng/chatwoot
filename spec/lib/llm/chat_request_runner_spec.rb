@@ -6,10 +6,12 @@ RSpec.describe Llm::ChatRequestRunner do
   let(:chat) { instance_double(RubyLLM::Chat) }
   let(:context) { instance_double(RubyLLM::Context, chat: chat) }
   let(:response) { instance_double(RubyLLM::Message, content: 'Done') }
-  let(:chat_model) { instance_double('RubyLLM::Model::Info', id: 'gpt-4.1-mini') }
+  let(:chat_model) { instance_double(RubyLLM::Model::Info, id: 'gpt-4.1-mini') }
 
   before do
     allow(chat).to receive(:with_params).and_return(chat)
+    allow(chat).to receive(:with_headers).and_return(chat)
+    allow(chat).to receive(:with_temperature).and_return(chat)
     allow(chat).to receive(:with_instructions).and_return(chat)
     allow(chat).to receive(:with_schema).and_return(chat)
     allow(chat).to receive(:with_tool).and_return(chat)
@@ -116,6 +118,20 @@ RSpec.describe Llm::ChatRequestRunner do
     expect(chat).to have_received(:with_params).with(response_format: { type: 'json_object' })
   end
 
+  it 'applies runtime chat options before asking' do
+    expect(chat).to receive(:with_temperature).with(0).and_return(chat)
+    expect(chat).to receive(:with_headers).with('HTTP-Referer': 'https://one-link.kz').and_return(chat)
+    expect(chat).to receive(:ask).with('Hello').and_return(response)
+
+    described_class.new(
+      context: context,
+      model: 'gpt-4.1-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      temperature: 0,
+      headers: { 'HTTP-Referer': 'https://one-link.kz' }
+    ).call
+  end
+
   it 'requires OpenRouter providers to support tool parameters for tools-only requests' do
     openrouter_model = instance_double(RubyLLM::Model::Info, id: 'deepseek/deepseek-v4-pro', provider: 'openrouter')
     tool = instance_double(RubyLLM::Tool)
@@ -149,7 +165,7 @@ RSpec.describe Llm::ChatRequestRunner do
   end
 
   it 'raises when structured output is requested for a model without schema support' do
-    allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'whisper-1'))
+    allow(chat).to receive(:model).and_return(instance_double(RubyLLM::Model::Info, id: 'whisper-1'))
     schema = Class.new(RubyLLM::Schema) do
       string :message
     end

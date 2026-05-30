@@ -32,7 +32,7 @@ const mountComponent = props =>
         CaptainToolExecutionGroup: {
           props: ['additionalAttributes'],
           template:
-            '<div data-test-id="tool-trace">{{ additionalAttributes.captain_trace?.tool_steps?.[0]?.content }}</div>',
+            '<div data-testid="captain-trace">{{ additionalAttributes.captain_trace?.reasoning }}</div>',
         },
       },
       directives: {
@@ -61,24 +61,20 @@ describe('CopilotAssistantMessage', () => {
     ]);
   });
 
-  it('passes assistant tool trace details to the reusable tool execution group', () => {
+  it('passes final assistant captain trace to the tool trace renderer', () => {
     const wrapper = mountComponent({
       message: {
-        content: 'I checked CRM.',
+        content: 'Checked CRM.',
         reply_suggestion: false,
         captain_trace: {
-          tool_steps: [
-            {
-              content: 'Completed search_deals',
-              tool_name: 'search_deals',
-            },
-          ],
+          reasoning: 'Looked up the deal before answering.',
+          tool_steps: [],
         },
       },
     });
 
-    expect(wrapper.find('[data-test-id="tool-trace"]').text()).toBe(
-      'Completed search_deals'
+    expect(wrapper.find('[data-testid="captain-trace"]').text()).toContain(
+      'Looked up the deal before answering.'
     );
   });
 });

@@ -73,6 +73,9 @@ class Llm::OpenRouterCapabilityResolver
         end
       end
 
+      zdr_reason = zdr_required_reason(endpoint_metadata, account: account, runtime_preferences: runtime_preferences)
+      reasons << zdr_reason if zdr_reason.present?
+
       if embedding_feature?(feature_key)
         embedding_reason = embedding_dimension_reason(model_config)
         reasons << embedding_reason if embedding_reason.present?
@@ -179,6 +182,22 @@ class Llm::OpenRouterCapabilityResolver
         expected: Captain::KnowledgeSettings::VECTOR_DIMENSIONS,
         actual: requested_dimensions.to_i
       )
+    end
+
+    def zdr_required_reason(endpoint_metadata, account:, runtime_preferences:)
+      privacy_policy = Llm::OpenRouterWorkspacePolicy.resolve(account: account, preferences: runtime_preferences)
+      return unless privacy_policy.zdr_required?
+
+      endpoints = Array(endpoint_metadata['endpoints'])
+      unless endpoints.any? { |endpoint| ActiveModel::Type::Boolean.new.cast(endpoint['zdr']) }
+        return reason(
+          'zdr_required_unsupported',
+          'No refreshed OpenRouter endpoint for this model advertises zero data retention.',
+          providers: Array(endpoint_metadata['providers'])
+        )
+      end
+    rescue ArgumentError => e
+      reason('privacy_profile_invalid', e.message)
     end
 
     def context_reason(model_config, account:, runtime_preferences:)

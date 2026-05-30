@@ -164,23 +164,29 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   end
 
   def transcribe_with_openrouter_transcription_endpoint(temp_file_path, observability)
-    Llm::ApiClient.transcribe(
-      temp_file_path,
-      provider: 'openrouter',
-      api_key: api_key,
-      api_base: api_base,
+    Llm::Runtime.transcribe(
+      feature: :audio_transcription,
+      account: account,
       model: model,
-      temperature: 0.4,
-      observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter')
+      input: temp_file_path,
+      observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
+      options: { temperature: 0.4 }
     )
   end
 
   def transcribe_with_openrouter_chat(temp_file_path, observability)
-    response = Llm::ChatClient.ask(
-      chat(model: model, temperature: 0),
-      RubyLLM::Content.new(openrouter_transcription_prompt, [temp_file_path]),
+    response = Llm::Runtime.chat(
+      feature: :audio_transcription,
+      account: account,
+      model: model,
+      messages: [
+        {
+          role: 'user',
+          content: RubyLLM::Content.new(openrouter_transcription_prompt, [temp_file_path])
+        }
+      ],
       observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
-      account: account
+      options: { temperature: 0 }
     )
 
     response&.content.to_s

@@ -50,6 +50,10 @@ module AccountSettingsSchema
         'captain_runtime': {
           'type': %w[object null],
           'properties': {
+            'privacy_profile': {
+              'type': %w[string null],
+              'enum': Llm::OpenRouterWorkspacePolicy::PRIVACY_PROFILES.keys + [nil]
+            },
             'assistant_thinking_effort': { 'type': %w[string null], 'enum': ['none', 'low', 'medium', 'high', nil] },
             'copilot_thinking_effort': { 'type': %w[string null], 'enum': ['none', 'low', 'medium', 'high', nil] },
             'assistant_moderation': { 'type': %w[boolean null] },

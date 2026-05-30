@@ -43,6 +43,7 @@ const DEFAULT_VOICE_SETTINGS = {
   voice: 'sulafat',
   language: 'ru-KZ',
   systemPrompt: '',
+  voiceCharacterPrompt: '',
   firstMessage: '',
   transferMessage: '',
   maxDurationSec: 0,
@@ -132,6 +133,9 @@ const updateStateFromAssistant = assistant => {
     language: voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
     systemPrompt:
       voiceSettings.system_prompt ?? DEFAULT_VOICE_SETTINGS.systemPrompt,
+    voiceCharacterPrompt:
+      voiceSettings.voice_character_prompt ??
+      DEFAULT_VOICE_SETTINGS.voiceCharacterPrompt,
     firstMessage:
       voiceSettings.first_message ?? DEFAULT_VOICE_SETTINGS.firstMessage,
     transferMessage:
@@ -190,6 +194,8 @@ const buildPayload = async () => {
           language:
             state.voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
           system_prompt: state.voiceSettings.systemPrompt || '',
+          voice_character_prompt:
+            state.voiceSettings.voiceCharacterPrompt || '',
           first_message: state.voiceSettings.firstMessage || '',
           transfer_message: state.voiceSettings.transferMessage || '',
           max_duration_sec: normalizeNonNegativeInteger(
@@ -506,6 +512,42 @@ defineExpose({
             :placeholder="
               t(
                 'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SYSTEM_PROMPT_PLACEHOLDER'
+              )
+            "
+            :show-character-count="false"
+            class="z-0 compact-system-message-editor"
+            enable-captain-fields
+            :captain-context-assistant-id="assistant.id"
+          />
+        </div>
+        <div
+          data-test-id="assistant-voice-character-prompt"
+          class="md:col-span-2 flex flex-col gap-2"
+        >
+          <div>
+            <h5 class="text-sm font-medium text-n-slate-12">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_CHARACTER_PROMPT'
+                )
+              }}
+            </h5>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_CHARACTER_PROMPT_DESCRIPTION'
+                )
+              }}
+            </p>
+          </div>
+          <Editor
+            v-model="state.voiceSettings.voiceCharacterPrompt"
+            override-line-breaks
+            auto-height
+            :editor-key="`captain:assistant:${assistant?.id || 'new'}:voice-character-prompt`"
+            :placeholder="
+              t(
+                'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_CHARACTER_PROMPT_PLACEHOLDER'
               )
             "
             :show-character-count="false"

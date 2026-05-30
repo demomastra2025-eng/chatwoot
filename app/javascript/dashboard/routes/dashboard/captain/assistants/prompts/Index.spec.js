@@ -53,6 +53,10 @@ const AssistantBasicSettingsFormStub = defineComponent({
       type: String,
       default: undefined,
     },
+    descriptionInitialHeight: {
+      type: Number,
+      default: undefined,
+    },
   },
   setup(props, { expose }) {
     expose({
@@ -67,6 +71,7 @@ const AssistantBasicSettingsFormStub = defineComponent({
         {
           'data-max-length': props.descriptionMaxLength,
           'data-min-height': props.descriptionMinHeight,
+          'data-initial-height': props.descriptionInitialHeight,
         },
         'basic-form'
       );
@@ -80,7 +85,28 @@ const AssistantRulesManagerStub = defineComponent({
       buildPayload: rulesBuildPayloadMock,
     });
 
-    return () => h('div', 'rules-manager');
+    return () => h('div', { 'data-testid': 'rules-manager' }, 'rules-manager');
+  },
+});
+
+const AssistantScenariosManagerStub = defineComponent({
+  name: 'AssistantScenariosManager',
+  props: {
+    showHeader: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  setup(props) {
+    return () =>
+      h(
+        'div',
+        {
+          'data-testid': 'scenarios-manager',
+          'data-show-header': String(props.showHeader),
+        },
+        'scenarios-manager'
+      );
   },
 });
 
@@ -104,7 +130,7 @@ vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({
     dispatch: dispatchMock,
     getters: {
-      'captainAssistants/getRecord': () => () => assistantRecord,
+      'captainAssistants/getRecord': () => assistantRecord,
     },
   }),
   useMapGetter: key => {
@@ -130,10 +156,7 @@ vi.mock(
 vi.mock(
   'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue',
   () => ({
-    default: defineComponent({
-      name: 'AssistantScenariosManager',
-      template: '<div />',
-    }),
+    default: AssistantScenariosManagerStub,
   })
 );
 vi.mock(
@@ -158,6 +181,7 @@ const buildWrapper = () => mount(PromptsIndex);
 
 describe('Captain prompts page', () => {
   beforeEach(() => {
+    assistantRecord.usage_mode = 'external_agent';
     dispatchMock.mockReset();
     dispatchMock.mockResolvedValue({});
     useAlertMock.mockReset();
@@ -231,7 +255,24 @@ describe('Captain prompts page', () => {
     });
 
     expect(promptForm.props('descriptionMaxLength')).toBe(20000);
+    expect(promptForm.props('descriptionInitialHeight')).toBe(304);
     expect(promptForm.props('descriptionMinHeight')).toBe('19rem');
+  });
+
+  it('shows scenarios as the configuration block for internal assistants', () => {
+    assistantRecord.usage_mode = 'internal_assistant';
+
+    const wrapper = buildWrapper();
+
+    expect(wrapper.find('[data-testid="scenarios-manager"]').exists()).toBe(
+      true
+    );
+    expect(
+      wrapper.find('[data-testid="scenarios-manager"]').attributes()
+    ).toMatchObject({
+      'data-show-header': 'true',
+    });
+    expect(wrapper.find('[data-testid="rules-manager"]').exists()).toBe(false);
   });
 
   it('shows the rules validation error and skips update when page-level save cannot build the rules payload', async () => {
