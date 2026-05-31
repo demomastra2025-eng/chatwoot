@@ -62,7 +62,10 @@ class Captain::DocumentChunk < ApplicationRecord
   def self.search(query, account_id: nil)
     return none if account_id.blank?
 
-    embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(query)
+    embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(
+      query,
+      input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
+    )
     nearest_neighbors(:embedding, embedding, distance: 'cosine')
       .where(account_id: account_id)
       .where(embedding_status: embedding_statuses[:indexed])

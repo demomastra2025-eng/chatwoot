@@ -1,9 +1,9 @@
 class Captain::Llm::UpdateEmbeddingJob < ApplicationJob
   queue_as :low
 
-  def perform(record, content)
+  def perform(record, content, input_type: Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE)
     account_id = record.account_id
-    embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(content)
+    embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(content, input_type: input_type)
     update_embedding_success(record, embedding)
   rescue Captain::Llm::EmbeddingService::EmbeddingsError => e
     update_embedding_failure(record, e)

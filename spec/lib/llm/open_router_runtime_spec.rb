@@ -99,7 +99,7 @@ RSpec.describe Llm::OpenRouterRuntime do
       account: account,
       model: 'openai/text-embedding-3-small',
       input: ['hello'],
-      options: { dimensions: 1536 }
+      options: { dimensions: 1536, input_type: 'search_query' }
     )
     result = instance_double(Llm::OpenRouterEmbeddingClient::Result, vectors: [[0.1]], input_tokens: 1, model: 'openai/text-embedding-3-small')
 
@@ -108,6 +108,7 @@ RSpec.describe Llm::OpenRouterRuntime do
       hash_including(
         model: 'openai/text-embedding-3-small',
         dimensions: 1536,
+        input_type: 'search_query',
         api_key: 'openrouter-key',
         api_base: 'https://openrouter.example/api/v1',
         provider: include(allow_fallbacks: true, data_collection: 'deny')

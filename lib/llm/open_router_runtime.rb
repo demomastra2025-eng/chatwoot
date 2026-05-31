@@ -88,6 +88,7 @@ class Llm::OpenRouterRuntime
         request.input,
         model: model,
         dimensions: request.options[:dimensions],
+        input_type: request.options[:input_type],
         api_key: api_key!(request),
         api_base: api_base(request),
         provider: routing_profile(request, model).provider_preferences

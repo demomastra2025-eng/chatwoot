@@ -8,8 +8,11 @@ RSpec.describe Captain::Llm::UpdateEmbeddingJob do
 
   it 'marks document chunk embeddings as indexed after update' do
     embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.2)
-    embedding_service = instance_double(Captain::Llm::EmbeddingService, get_embedding: embedding)
+    embedding_service = instance_double(Captain::Llm::EmbeddingService)
     allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service)
+    expect(embedding_service).to receive(:get_embedding)
+      .with(chunk.content, input_type: Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE)
+      .and_return(embedding)
 
     described_class.perform_now(chunk, chunk.content)
 

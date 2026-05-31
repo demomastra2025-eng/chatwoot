@@ -30,7 +30,10 @@ RSpec.describe Captain::Llm::EmbeddingService do
           feature: :help_center_search,
           model: LlmConstants::DEFAULT_EMBEDDING_MODEL,
           input: 'hello',
-          options: { dimensions: described_class::VECTOR_DIMENSIONS }
+          options: {
+            dimensions: described_class::VECTOR_DIMENSIONS,
+            input_type: described_class::SEARCH_QUERY_INPUT_TYPE
+          }
         )
         expect(kwargs[:observability]).to include(
           provider: 'openrouter',
@@ -40,7 +43,24 @@ RSpec.describe Captain::Llm::EmbeddingService do
         openrouter_result
       end
 
+      expect(service.get_embedding('hello', input_type: described_class::SEARCH_QUERY_INPUT_TYPE)).to eq(openrouter_vector)
+    end
+
+    it 'omits OpenRouter input_type when no type is provided for compatibility' do
+      expect(Llm::Runtime).to receive(:embed) do |**kwargs|
+        expect(kwargs[:options]).to eq(dimensions: described_class::VECTOR_DIMENSIONS)
+        expect(kwargs[:observability]).not_to include(:input_type)
+        openrouter_result
+      end
+
       expect(service.get_embedding('hello')).to eq(openrouter_vector)
+    end
+
+    it 'rejects unsupported embedding input types before provider calls' do
+      expect(Llm::Runtime).not_to receive(:embed)
+
+      expect { service.get_embedding('hello', input_type: 'classification') }
+        .to raise_error(ArgumentError, /Unsupported embedding input_type: classification/)
     end
 
     it 'keeps vector dimension validation at the service boundary after runtime delegation' do

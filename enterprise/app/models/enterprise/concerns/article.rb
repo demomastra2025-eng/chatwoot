@@ -11,7 +11,10 @@ module Enterprise::Concerns::Article
     add_article_embedding_association
 
     def self.vector_search(params)
-      embedding = Captain::Llm::EmbeddingService.new(account_id: params[:account_id]).get_embedding(params['query'])
+      embedding = Captain::Llm::EmbeddingService.new(account_id: params[:account_id]).get_embedding(
+        params['query'],
+        input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
+      )
       records = joins(
         :category
       ).search_by_category_slug(

@@ -31,8 +31,11 @@ RSpec.describe Captain::DocumentChunk, type: :model do
 
   it 'searches indexed chunk embeddings scoped to account' do
     embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1)
-    embedding_service = instance_double(Captain::Llm::EmbeddingService, get_embedding: embedding)
+    embedding_service = instance_double(Captain::Llm::EmbeddingService)
     expect(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service)
+    expect(embedding_service).to receive(:get_embedding)
+      .with('refund policy', input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
+      .and_return(embedding)
 
     results = described_class.search('refund policy', account_id: account.id)
 

@@ -75,6 +75,33 @@ RSpec.describe Llm::OpenRouterEmbeddingClient do
     expect(result.model).to eq('baai/bge-m3')
   end
 
+  it 'passes OpenRouter embedding input_type when provided' do
+    stub = stub_request(:post, 'https://openrouter.ai/api/v1/embeddings')
+           .with(headers: { 'Authorization' => 'Bearer openrouter-key' }) do |request|
+      body = JSON.parse(request.body)
+      expect(body).to include(
+        'model' => 'baai/bge-m3',
+        'input' => 'refund policy',
+        'dimensions' => dimensions,
+        'input_type' => 'search_query'
+      )
+    end.to_return(
+      status: 200,
+      body: { data: [{ embedding: vector }] }.to_json,
+      headers: { 'Content-Type' => 'application/json' }
+    )
+
+    described_class.embed(
+      'refund policy',
+      model: 'baai/bge-m3',
+      dimensions: dimensions,
+      input_type: 'search_query',
+      api_key: 'openrouter-key'
+    )
+
+    expect(stub).to have_been_requested
+  end
+
   it 'normalizes API bases before posting embeddings' do
     stub = stub_request(:post, 'https://openrouter.ai/api/v1/embeddings')
            .to_return(status: 200, body: { data: [{ embedding: vector }] }.to_json)
