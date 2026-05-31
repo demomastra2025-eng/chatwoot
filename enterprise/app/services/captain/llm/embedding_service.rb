@@ -10,6 +10,8 @@ class Captain::Llm::EmbeddingService
   SEARCH_QUERY_INPUT_TYPE = 'search_query'.freeze
   EMBEDDING_INPUT_TYPES = [SEARCH_DOCUMENT_INPUT_TYPE, SEARCH_QUERY_INPUT_TYPE].freeze
 
+  attr_reader :embedding_model
+
   def initialize(account_id: nil)
     Llm::Config.initialize!
     @account_id = account_id

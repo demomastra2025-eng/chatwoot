@@ -83,7 +83,9 @@ class Llm::ModelCatalogEntry < ApplicationRecord
     {
       'embedding_dimensions' => embedding_profile.default_dimensions,
       'requested_embedding_dimensions' => Captain::KnowledgeSettings::VECTOR_DIMENSIONS,
-      'supported_embedding_dimensions' => embedding_profile.supported_dimensions
+      'supported_embedding_dimensions' => embedding_profile.supported_dimensions,
+      'supports_embedding_dimension_override' => embedding_profile.supports_dimension_override,
+      'supports_embedding_input_type' => embedding_profile.supports_input_type
     }.compact
   end
 

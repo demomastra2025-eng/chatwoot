@@ -694,6 +694,9 @@ class Llm::OpenRouterModelCatalog
       embedding_dimensions = embedding_dimensions_for(model_data)
       return unless embedding_dimensions == VECTOR_DIMENSIONS
 
+      supported_parameters = supported_parameters_for(model_data)
+      supported_dimensions = embedding_dimension_candidates_for(model_data)
+
       [
         model_id,
         {
@@ -704,11 +707,13 @@ class Llm::OpenRouterModelCatalog
           'capabilities' => embedding_capabilities_for(model_data),
           'input_modalities' => input_modalities_for(model_data),
           'output_modalities' => output_modalities_for(model_data),
-          'supported_parameters' => supported_parameters_for(model_data),
+          'supported_parameters' => supported_parameters,
           'context_length' => integer_value(model_data['context_length'] || model_data.dig('top_provider', 'context_length')),
           'embedding_dimensions' => embedding_dimensions,
           'requested_embedding_dimensions' => VECTOR_DIMENSIONS,
-          'supported_embedding_dimensions' => embedding_dimension_candidates_for(model_data),
+          'supported_embedding_dimensions' => supported_dimensions,
+          'supports_embedding_dimension_override' => supports_embedding_dimension_override?(supported_parameters, supported_dimensions),
+          'supports_embedding_input_type' => supported_parameters.include?('input_type'),
           'pricing' => pricing_for(model_data),
           'top_provider' => top_provider_for(model_data),
           'latency_ms' => numeric_value(model_data.dig('top_provider', 'latency_ms') || model_data.dig('top_provider', 'latency') ||

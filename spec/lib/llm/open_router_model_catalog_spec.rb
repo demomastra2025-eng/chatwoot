@@ -214,6 +214,46 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       expect(described_class.metadata).to include(source: 'openrouter_api', using_fallback: false)
     end
 
+    it 'merges DB embedding profile compatibility flags into DB-backed embedding configs' do
+      Llm::ModelCatalogEntry.create!(
+        provider_platform: 'openrouter',
+        model_id: 'openai/text-embedding-3-small',
+        canonical_slug: 'openai/text-embedding-3-small',
+        display_name: 'Text Embedding 3 Small',
+        model_type: 'embedding',
+        input_modalities: ['text'],
+        output_modalities: ['embeddings'],
+        supported_parameters: %w[dimensions input_type],
+        capabilities: %w[embedding text_input],
+        context_length: 8192,
+        pricing: { 'prompt' => '0.00000002' },
+        raw_payload: { 'id' => 'openai/text-embedding-3-small' },
+        source: 'openrouter_api',
+        fetched_at: Time.current
+      )
+      Llm::EmbeddingModelProfile.create!(
+        provider_platform: 'openrouter',
+        model_id: 'openai/text-embedding-3-small',
+        default_dimensions: 1536,
+        supported_dimensions: [1536],
+        min_dimensions: 1536,
+        max_dimensions: 1536,
+        supports_dimension_override: true,
+        supports_input_type: true,
+        supports_text_input: true,
+        probe_status: 'catalog_verified',
+        probed_at: Time.current
+      )
+
+      expect(described_class.model_config('openai/text-embedding-3-small')).to include(
+        'embedding_dimensions' => 1536,
+        'requested_embedding_dimensions' => 1536,
+        'supported_embedding_dimensions' => [1536],
+        'supports_embedding_dimension_override' => true,
+        'supports_embedding_input_type' => true
+      )
+    end
+
     it 'excludes stale DB catalog rows from runtime selectors while preserving them for audit' do
       Llm::ModelCatalogEntry.create!(
         provider_platform: 'openrouter',
@@ -295,6 +335,9 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         'context_length' => 8192,
         'embedding_dimensions' => 1536,
         'requested_embedding_dimensions' => 1536,
+        'supported_embedding_dimensions' => [1536],
+        'supports_embedding_dimension_override' => true,
+        'supports_embedding_input_type' => true,
         'pricing' => include('prompt' => '0.00000002')
       )
       expect(described_class.model_config('openai/text-embedding-3-small')['capabilities']).to include('embedding', 'text_input')
@@ -323,6 +366,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       expect(Llm::EmbeddingModelProfile.find_by!(provider_platform: 'openrouter', model_id: 'openai/text-embedding-3-small')).to have_attributes(
         default_dimensions: 1536,
         supports_dimension_override: true,
+        supports_input_type: true,
         supports_text_input: true,
         supports_image_input: false,
         probe_status: 'catalog_verified'

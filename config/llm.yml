@@ -210,7 +210,12 @@ models:
     context_length: 8191
     input_modalities: [text]
     output_modalities: [embeddings]
+    supported_parameters: [dimensions, input_type]
     embedding_dimensions: 1536
+    requested_embedding_dimensions: 1536
+    supported_embedding_dimensions: [1536]
+    supports_embedding_dimension_override: true
+    supports_embedding_input_type: true
 
 features:
   editor:

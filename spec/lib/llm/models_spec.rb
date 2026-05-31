@@ -531,6 +531,10 @@ RSpec.describe Llm::Models do
           'input_modalities' => ['text'],
           'output_modalities' => ['embeddings'],
           'embedding_dimensions' => 1536,
+          'requested_embedding_dimensions' => 1536,
+          'supported_embedding_dimensions' => [1536],
+          'supports_embedding_dimension_override' => true,
+          'supports_embedding_input_type' => true,
           'context_length' => 8192,
           'pricing' => { 'prompt' => '0.00000002', 'completion' => '0' }
         },
@@ -600,6 +604,10 @@ RSpec.describe Llm::Models do
           input_modalities: ['text'],
           output_modalities: ['embeddings'],
           embedding_dimensions: 1536,
+          requested_embedding_dimensions: 1536,
+          supported_embedding_dimensions: [1536],
+          supports_embedding_dimension_override: true,
+          supports_embedding_input_type: true,
           context_length: 8192,
           pricing: { 'prompt' => '0.00000002', 'completion' => '0' }
         )
