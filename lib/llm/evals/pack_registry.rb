@@ -77,6 +77,16 @@ class Llm::Evals::PackRegistry
       default_enabled: true
     ),
     Pack.new(
+      id: 'captain.voice_scenarios',
+      label: 'AI Voice scenario integrity',
+      description: 'Offline voice scenario checks for interruption handling, latency, transcript fallback, and clipped speech.',
+      suite_class: 'Captain::Evals::VoiceScenarioSuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
       id: 'captain.event_contract_trace',
       label: 'Captain event-contract trace fixtures',
       description: 'Deterministic checks for normalized event names, project case IDs, payload budgets, and raw-content-free traces.',
@@ -121,6 +131,16 @@ class Llm::Evals::PackRegistry
       label: 'Captain live scenario simulation',
       description: 'Queued live multi-turn Captain simulations with user/judge agents, trace artifacts, and budget gates.',
       suite_class: 'Captain::Evals::ScenarioSimulationSuite',
+      requires_account: true,
+      live_model: true,
+      deterministic: false,
+      default_enabled: false
+    ),
+    Pack.new(
+      id: 'captain.scenario_red_team',
+      label: 'Captain adaptive red-team simulation',
+      description: 'Queued live adaptive red-team attacks against the real Captain runtime in isolated accounts.',
+      suite_class: 'Captain::Evals::ScenarioRedTeamSuite',
       requires_account: true,
       live_model: true,
       deterministic: false,

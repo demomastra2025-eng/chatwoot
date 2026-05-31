@@ -531,6 +531,11 @@
           "SHORT": "Real Captain under judge",
           "TOOLTIP": "Runs safe multi-turn simulations through Captain runtime, user simulator, and judge. Requires budget acknowledgement."
         },
+        "RED_TEAM_LIVE": {
+          "TITLE": "Live red-team",
+          "SHORT": "Attack real Captain",
+          "TOOLTIP": "Runs adaptive prompt-injection attacks against the real Captain runtime in the safe queued mode."
+        },
         "COMPLETION": {
           "TITLE": "Conversation closing",
           "SHORT": "Close only solved chats",
@@ -559,6 +564,10 @@
           "LABEL": "AI Voice trace",
           "DESCRIPTION": "Checks voice traces: tool result was used and speech was not clipped."
         },
+        "VOICE_SCENARIOS": {
+          "LABEL": "AI Voice scenarios",
+          "DESCRIPTION": "Checks interruption handling, latency, transcript fallback, and clipped-speech markers."
+        },
         "EVENT_CONTRACT": {
           "LABEL": "Event contract",
           "DESCRIPTION": "Checks normalized event names, payload budgets, and raw-content-free traces."
@@ -578,6 +587,10 @@
         "SCENARIO_SIMULATION": {
           "LABEL": "Captain live simulation",
           "DESCRIPTION": "Live Captain run with user simulator, judge, trace artifacts, and budget limits."
+        },
+        "SCENARIO_RED_TEAM": {
+          "LABEL": "Captain live red-team",
+          "DESCRIPTION": "Adaptive attacks against the real Captain runtime with judge and trace artifacts."
         },
         "OPENROUTER_CONTRACTS": {
           "LABEL": "OpenRouter contract",
@@ -604,7 +617,9 @@
         "ERRORS": "Errors",
         "CASES_COUNT": "Cases: {count}",
         "ISSUES_COUNT": "Issues: {count}",
-        "DURATION_MS": "{ms} ms"
+        "DURATION_MS": "{ms} ms",
+        "TOKENS": "{count} tokens",
+        "COST": "${cost}"
       },
       "RELEASE_GATE": {
         "TITLE": "Release gate",

@@ -10,7 +10,18 @@ class Llm::Evals::Scenario::JudgeRequest
       verdict: { type: 'string', enum: %w[success failure continue inconclusive] },
       reasoning: { type: 'string' },
       passed_criteria: { type: 'array', items: { type: 'string' } },
-      failed_criteria: { type: 'array', items: { type: 'string' } }
+      failed_criteria: { type: 'array', items: { type: 'string' } },
+      trace_tool_calls: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: %w[name arguments],
+          properties: {
+            name: { type: 'string', enum: %w[expand_trace grep_trace] },
+            arguments: { type: 'object' }
+          }
+        }
+      }
     }
   }.freeze
 
@@ -44,6 +55,7 @@ class Llm::Evals::Scenario::JudgeRequest
     @expected = attributes.fetch(:expected)
     @deterministic_failures = attributes.fetch(:deterministic_failures)
     @trace_events = attributes[:trace_events]
+    @trace_tool_results = attributes[:trace_tool_results]
   end
 
   def call
@@ -57,6 +69,7 @@ class Llm::Evals::Scenario::JudgeRequest
       tool_events: compact_tool_events(@input.state.tool_events),
       state_summary: compact_state_summary(@input.state.summary),
       trace_digest: trace_digest,
+      trace_tool_results: @trace_tool_results.presence,
       response_schema: RESPONSE_SCHEMA,
       tools: TRACE_TOOL_SCHEMAS
     }.compact

@@ -11,11 +11,13 @@ RSpec.describe Llm::Evals::Runner do
       'captain.tool_safety',
       'captain.confirmation_safety',
       'captain.ai_voice_trace',
+      'captain.voice_scenarios',
       'captain.event_contract_trace',
       'captain.knowledge_rag_trace',
       'captain.product_case_correctness',
       'captain.scenarios',
       'captain.scenario_simulation',
+      'captain.scenario_red_team',
       'openrouter.contracts',
       'captain.red_team',
       'captain.conversation_completion'
@@ -42,6 +44,7 @@ RSpec.describe Llm::Evals::Runner do
     safety = eval_result_double('captain.tool_safety')
     confirmation = eval_result_double('captain.confirmation_safety')
     voice = eval_result_double('captain.ai_voice_trace')
+    voice_scenarios = eval_result_double('captain.voice_scenarios')
     event_contract = eval_result_double('captain.event_contract_trace')
     knowledge = eval_result_double('captain.knowledge_rag_trace')
     product_cases = eval_result_double('captain.product_case_correctness')
@@ -57,6 +60,8 @@ RSpec.describe Llm::Evals::Runner do
       .and_return(instance_double(Captain::Evals::ConfirmationSafetySuite, call: confirmation))
     allow(Captain::Evals::AiVoiceTraceSuite).to receive(:new)
       .and_return(instance_double(Captain::Evals::AiVoiceTraceSuite, call: voice))
+    allow(Captain::Evals::VoiceScenarioSuite).to receive(:new)
+      .and_return(instance_double(Captain::Evals::VoiceScenarioSuite, call: voice_scenarios))
     allow(Captain::Evals::EventContractTraceSuite).to receive(:new)
       .and_return(instance_double(Captain::Evals::EventContractTraceSuite, call: event_contract))
     allow(Captain::Evals::KnowledgeRagTraceSuite).to receive(:new)
@@ -70,16 +75,18 @@ RSpec.describe Llm::Evals::Runner do
     allow(Captain::Evals::RedTeamSuite).to receive(:new)
       .and_return(instance_double(Captain::Evals::RedTeamSuite, call: red_team))
     allow(Captain::Evals::ScenarioSimulationSuite).to receive(:new)
+    allow(Captain::Evals::ScenarioRedTeamSuite).to receive(:new)
     allow(Captain::Evals::ConversationCompletionSuite).to receive(:new)
 
     result = described_class.new.call
 
     expect(result.to_h).to include(
       status: 'pass',
-      suite_count: 10,
-      total_count: 10
+      suite_count: 11,
+      total_count: 11
     )
     expect(Captain::Evals::ScenarioSimulationSuite).not_to have_received(:new)
+    expect(Captain::Evals::ScenarioRedTeamSuite).not_to have_received(:new)
     expect(Captain::Evals::ConversationCompletionSuite).not_to have_received(:new)
   end
 

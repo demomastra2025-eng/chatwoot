@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'json'
-
 class Llm::Evals::Scenario::JudgeAgent < Llm::Evals::Scenario::AgentAdapter
   def initialize(**attributes)
     super(role: :judge, name: attributes.fetch(:name, 'ScenarioJudge'))
@@ -12,6 +10,7 @@ class Llm::Evals::Scenario::JudgeAgent < Llm::Evals::Scenario::AgentAdapter
     @trace_events = attributes[:trace_events]
     @terminal_on_pass = attributes.fetch(:terminal_on_pass, true)
     @terminal_on_failure = attributes.fetch(:terminal_on_failure, true)
+    @trace_tool_iterations = attributes.fetch(:trace_tool_iterations, 2).to_i.clamp(0, 5)
   end
 
   def call(input)
@@ -73,69 +72,51 @@ class Llm::Evals::Scenario::JudgeAgent < Llm::Evals::Scenario::AgentAdapter
   end
 
   def client_output(input, local_failures)
-    response = @client.call(judge_request(input, local_failures))
-    normalized_response = normalize_response(response)
+    trace_tool_results = []
+    normalized_response = nil
+
+    (@trace_tool_iterations + 1).times do
+      response = @client.call(judge_request(input, local_failures, trace_tool_results: trace_tool_results))
+      normalized_response = normalize_response(response)
+      trace_tool_calls = normalized_response[:trace_tool_calls]
+      break if trace_tool_calls.blank? || (trace_tool_results.present? && trace_tool_results.last[:terminal] == true)
+
+      trace_tool_results.concat(execute_trace_tool_calls(input, trace_tool_calls))
+    end
+
+    normalized_response ||= { verdict: 'inconclusive', reasoning: 'Judge client did not return a verdict.' }
 
     judge_output(
       verdict: terminal_verdict(normalized_response[:verdict]),
       reasoning: normalized_response[:reasoning],
-      details: normalized_response.merge(deterministic_failures: local_failures).compact
+      details: normalized_response.merge(
+        deterministic_failures: local_failures,
+        trace_tool_results_count: trace_tool_results.size
+      ).compact
     )
   end
 
-  def judge_request(input, local_failures)
+  def judge_request(input, local_failures, trace_tool_results: [])
     Llm::Evals::Scenario::JudgeRequest.new(
       input: input,
       criteria: @criteria,
       expected: @expected,
       deterministic_failures: local_failures,
-      trace_events: @trace_events
+      trace_events: @trace_events,
+      trace_tool_results: trace_tool_results
     ).call
   end
 
   def normalize_response(response)
-    attributes = response_attributes(response)
-    verdict = normalize_verdict(attributes[:verdict])
-    reasoning = attributes[:reasoning].to_s.presence || 'Judge client did not provide reasoning.'
-
-    {
-      verdict: verdict,
-      reasoning: reasoning,
-      passed_criteria: Array(attributes[:passed_criteria]).map(&:to_s),
-      failed_criteria: Array(attributes[:failed_criteria]).map(&:to_s)
-    }
+    Llm::Evals::Scenario::JudgeResponse.new(response).call
   end
 
-  def response_attributes(response)
-    case response
-    when Hash
-      response.deep_symbolize_keys
-    when String
-      return { verdict: 'inconclusive', reasoning: 'Judge client returned non-JSON text.' } unless json_like?(response)
-
-      JSON.parse(response).deep_symbolize_keys
-    else
-      response.respond_to?(:to_h) ? response.to_h.deep_symbolize_keys : {}
-    end
-  rescue JSON::ParserError
-    { verdict: 'inconclusive', reasoning: 'Judge client returned non-JSON text.' }
+  def execute_trace_tool_calls(input, calls)
+    Llm::Evals::Scenario::JudgeTraceToolExecutor.new(events: trace_events_for(input)).call(calls)
   end
 
-  def json_like?(value)
-    value.to_s.strip.start_with?('{', '[')
-  end
-
-  def normalize_verdict(verdict)
-    case verdict.to_s
-    when 'pass'
-      'success'
-    when 'fail'
-      'failure'
-    when 'success', 'failure', 'continue', 'inconclusive'
-      verdict.to_s
-    else
-      'inconclusive'
-    end
+  def trace_events_for(input)
+    @trace_events || Array(input.trace_events).presence || input.state.events
   end
 
   def terminal_verdict(verdict)

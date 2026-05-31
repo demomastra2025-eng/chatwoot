@@ -82,6 +82,14 @@ const catalogPayload = {
         default_enabled: true,
       },
       {
+        id: 'captain.voice_scenarios',
+        label: 'AI Voice scenario integrity',
+        description: 'Voice scenarios',
+        deterministic: true,
+        live_model: false,
+        default_enabled: true,
+      },
+      {
         id: 'captain.event_contract_trace',
         label: 'Captain event-contract trace fixtures',
         description: 'Event contract checks',
@@ -101,6 +109,14 @@ const catalogPayload = {
         id: 'captain.scenario_simulation',
         label: 'Captain live scenario simulation',
         description: 'Live scenarios',
+        deterministic: false,
+        live_model: true,
+        default_enabled: false,
+      },
+      {
+        id: 'captain.scenario_red_team',
+        label: 'Captain adaptive red-team simulation',
+        description: 'Live red-team',
         deterministic: false,
         live_model: true,
         default_enabled: false,
@@ -148,6 +164,12 @@ const runPayload = {
               duration_ms: 4,
               tags: ['voice'],
               artifact: {
+                usage: {
+                  providers: ['openrouter'],
+                  models: ['openai/gpt-5.4-mini'],
+                  token_totals: { total_tokens: 42 },
+                  estimated_cost: 0.00012,
+                },
                 timeline: [
                   {
                     index: 0,
@@ -229,6 +251,12 @@ describe('Captain evaluations page', () => {
     expect(wrapper.text()).toContain(
       'CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_SIMULATION.LABEL'
     );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_RED_TEAM.LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.PACK_COPY.VOICE_SCENARIOS.LABEL'
+    );
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACKS.DETERMINISTIC');
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACKS.LLM_MODEL');
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACK_GROUPS.LIVE');
@@ -242,7 +270,11 @@ describe('Captain evaluations page', () => {
     await flushPromises();
 
     expect(runMock).toHaveBeenCalledWith({
-      pack_ids: ['captain.ai_voice_trace', 'captain.event_contract_trace'],
+      pack_ids: [
+        'captain.ai_voice_trace',
+        'captain.voice_scenarios',
+        'captain.event_contract_trace',
+      ],
       acknowledge_llm_cost: false,
       budget_cents: 100,
       max_cases: 3,
@@ -253,6 +285,9 @@ describe('Captain evaluations page', () => {
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RELEASE_GATE.PASS');
     expect(wrapper.text()).toContain('captain.ai_voice_trace');
     expect(wrapper.text()).toContain('voice.trace_healthy');
+    expect(wrapper.text()).toContain('openrouter');
+    expect(wrapper.text()).toContain('openai/gpt-5.4-mini');
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULTS.TOKENS');
   });
 
   it('queues LLM-backed eval packs from the same run button with explicit budget and acknowledgement', async () => {
@@ -264,6 +299,7 @@ describe('Captain evaluations page', () => {
           mode: 'evals',
           pack_ids: [
             'captain.ai_voice_trace',
+            'captain.voice_scenarios',
             'captain.event_contract_trace',
             'captain.conversation_completion',
           ],
@@ -275,7 +311,7 @@ describe('Captain evaluations page', () => {
     await flushPromises();
 
     await wrapper
-      .findAll('[data-testid="eval-pack-checkbox"]')[2]
+      .findAll('[data-testid="eval-pack-checkbox"]')[3]
       .setValue(true);
     await wrapper.find('[data-testid="eval-budget-cents"]').setValue('75');
     await wrapper.find('[data-testid="eval-max-cases"]').setValue('2');
@@ -287,6 +323,7 @@ describe('Captain evaluations page', () => {
     expect(runMock).toHaveBeenCalledWith({
       pack_ids: [
         'captain.ai_voice_trace',
+        'captain.voice_scenarios',
         'captain.event_contract_trace',
         'captain.conversation_completion',
       ],

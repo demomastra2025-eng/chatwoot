@@ -531,6 +531,11 @@
           "SHORT": "Реальный Captain под судьёй",
           "TOOLTIP": "Запускает безопасные multi-turn симуляции через Captain runtime, user simulator и judge. Требует подтверждения бюджета."
         },
+        "RED_TEAM_LIVE": {
+          "TITLE": "Live red-team",
+          "SHORT": "Атаки на реального Captain",
+          "TOOLTIP": "Запускает адаптивные prompt-injection атаки против реального Captain runtime в безопасном queued-режиме."
+        },
         "COMPLETION": {
           "TITLE": "Закрытие диалогов",
           "SHORT": "Закрывать только решённое",
@@ -559,6 +564,10 @@
           "LABEL": "AI Voice trace",
           "DESCRIPTION": "Проверяет голосовые следы: tool result использован, речь не обрезана."
         },
+        "VOICE_SCENARIOS": {
+          "LABEL": "AI Voice сценарии",
+          "DESCRIPTION": "Проверяет interruption, latency, transcript fallback и отсутствие обрезанной речи."
+        },
         "EVENT_CONTRACT": {
           "LABEL": "Контракт событий",
           "DESCRIPTION": "Проверяет единые имена событий, payload budget и отсутствие сырого контента."
@@ -578,6 +587,10 @@
         "SCENARIO_SIMULATION": {
           "LABEL": "Live-симуляция Captain",
           "DESCRIPTION": "Живой прогон Captain с user simulator, judge, trace artifacts и бюджетным лимитом."
+        },
+        "SCENARIO_RED_TEAM": {
+          "LABEL": "Live red-team Captain",
+          "DESCRIPTION": "Адаптивные атаки против реального Captain runtime с judge и trace artifacts."
         },
         "OPENROUTER_CONTRACTS": {
           "LABEL": "Контракт OpenRouter",
@@ -604,7 +617,9 @@
         "ERRORS": "Ошибки",
         "CASES_COUNT": "Кейсов: {count}",
         "ISSUES_COUNT": "Проблем: {count}",
-        "DURATION_MS": "{ms} мс"
+        "DURATION_MS": "{ms} мс",
+        "TOKENS": "{count} токенов",
+        "COST": "${cost}"
       },
       "RELEASE_GATE": {
         "TITLE": "Релизный gate",

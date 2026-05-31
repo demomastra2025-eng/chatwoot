@@ -3,6 +3,7 @@
 class Llm::Evals::OpenRouterContractSuite
   include Llm::Evals::OpenRouterContractRuntimeChecks
   include Llm::Evals::OpenRouterContractPolicyChecks
+  include Llm::Evals::OpenRouterContractCapabilityChecks
   include Llm::Evals::OpenRouterContractGuardrailChecks
 
   SUITE_ID = 'openrouter.contracts'
@@ -38,6 +39,16 @@ class Llm::Evals::OpenRouterContractSuite
       tags: %w[openrouter embeddings audio rerank]
     },
     {
+      id: 'openrouter.embedding_contract',
+      description: 'Embedding vectors must match the OneLink vector index dimensions and reject mismatched responses.',
+      tags: %w[openrouter embeddings dimensions]
+    },
+    {
+      id: 'openrouter.multimodal_contract',
+      description: 'Image and audio features require the correct OpenRouter model capabilities before runtime use.',
+      tags: %w[openrouter multimodal image audio]
+    },
+    {
       id: 'openrouter.privacy_contract',
       description: 'ZDR privacy profile denies data collection and disables fallbacks.',
       tags: %w[openrouter privacy zdr]
@@ -46,6 +57,11 @@ class Llm::Evals::OpenRouterContractSuite
       id: 'openrouter.guardrail_status_contract',
       description: 'Workspace guardrail diagnostics stay explicit and sensitive/ZDR traces stay suppressed.',
       tags: %w[openrouter guardrails privacy diagnostics]
+    },
+    {
+      id: 'openrouter.guardrail_budget_contract',
+      description: 'Workspace budget guardrail stays explicit and guarded profiles compile provider safety preferences.',
+      tags: %w[openrouter guardrails budget]
     },
     {
       id: 'openrouter.feature_request_contract',

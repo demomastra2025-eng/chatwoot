@@ -4,6 +4,7 @@ class Llm::Evals::Scenario::Artifact
   class << self
     def build(result:, trace_events: [])
       case_result = result.respond_to?(:to_case_result) ? result.to_case_result : result.to_h
+      trace_digest = trace_digest_for(trace_events)
 
       {
         case_id: case_result[:id],
@@ -12,7 +13,8 @@ class Llm::Evals::Scenario::Artifact
         reasoning: case_result[:reasoning],
         summary: actual_summary(case_result[:actual]),
         timeline: timeline_for(result),
-        trace_digest: Llm::Evals::TraceDigest.new(events: trace_events).call
+        trace_digest: trace_digest,
+        usage: usage_for(trace_digest)
       }.compact
     end
 
@@ -22,6 +24,22 @@ class Llm::Evals::Scenario::Artifact
       return unless result.respond_to?(:state)
 
       Llm::Evals::Scenario::Timeline.new(state: result.state).call
+    end
+
+    def trace_digest_for(trace_events)
+      Llm::Evals::TraceDigest.new(events: trace_events).call
+    end
+
+    def usage_for(trace_digest)
+      events = Array(trace_digest[:events])
+
+      {
+        providers: events.filter_map { |event| event[:provider] }.uniq,
+        models: events.filter_map { |event| event[:model] }.uniq,
+        token_totals: trace_digest[:token_totals],
+        estimated_cost: trace_digest[:estimated_cost],
+        openrouter_generation_ids: trace_digest[:openrouter_generation_ids]
+      }.compact
     end
 
     def actual_summary(actual)

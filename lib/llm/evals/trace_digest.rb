@@ -26,6 +26,7 @@ class Llm::Evals::TraceDigest
       schema_invalid_count: normalized_events.count { |event| event[:schema_invalid] },
       openrouter_generation_ids: generation_ids(normalized_events),
       token_totals: token_totals(normalized_events),
+      estimated_cost: estimated_cost(normalized_events),
       events: included_events(normalized_events)
     }
   end
@@ -75,12 +76,17 @@ class Llm::Evals::TraceDigest
       prompt_tokens: integer_attribute(attributes, payload, :prompt_tokens),
       completion_tokens: integer_attribute(attributes, payload, :completion_tokens),
       thinking_tokens: integer_attribute(attributes, payload, :thinking_tokens),
-      total_tokens: integer_attribute(attributes, payload, :total_tokens)
+      total_tokens: integer_attribute(attributes, payload, :total_tokens),
+      estimated_cost: decimal_attribute(attributes, payload, :estimated_cost)
     }
   end
 
   def integer_attribute(attributes, payload, key)
     integer_value(value_attribute(attributes, payload, key))
+  end
+
+  def decimal_attribute(attributes, payload, key)
+    decimal_value(value_attribute(attributes, payload, key))
   end
 
   def value_attribute(attributes, payload, key)
@@ -161,5 +167,16 @@ class Llm::Evals::TraceDigest
     %i[prompt_tokens completion_tokens thinking_tokens total_tokens].index_with do |key|
       events.sum { |event| event[key].to_i }
     end.compact
+  end
+
+  def estimated_cost(events)
+    cost = events.sum { |event| decimal_value(event[:estimated_cost]) || BigDecimal(0) }
+    cost.positive? ? cost.to_f.round(8) : nil
+  end
+
+  def decimal_value(value)
+    BigDecimal(value.to_s) if value.present?
+  rescue ArgumentError, TypeError
+    nil
   end
 end

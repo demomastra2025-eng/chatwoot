@@ -17,6 +17,7 @@ const SCENARIO_DEFINITIONS = [
       'captain.tool_safety',
       'captain.confirmation_safety',
       'captain.ai_voice_trace',
+      'captain.voice_scenarios',
       'captain.event_contract_trace',
       'captain.knowledge_rag_trace',
       'captain.product_case_correctness',
@@ -40,7 +41,7 @@ const SCENARIO_DEFINITIONS = [
     id: 'voice',
     icon: 'i-lucide-phone-call',
     color: 'text-n-violet-11 bg-n-violet-3',
-    packIds: ['captain.ai_voice_trace'],
+    packIds: ['captain.ai_voice_trace', 'captain.voice_scenarios'],
   },
   {
     id: 'tools',
@@ -59,6 +60,12 @@ const SCENARIO_DEFINITIONS = [
     icon: 'i-lucide-route',
     color: 'text-n-sky-11 bg-n-sky-3',
     packIds: ['captain.scenario_simulation'],
+  },
+  {
+    id: 'redTeamLive',
+    icon: 'i-lucide-shield-alert',
+    color: 'text-n-ruby-11 bg-n-ruby-3',
+    packIds: ['captain.scenario_red_team'],
   },
   {
     id: 'completion',
@@ -239,6 +246,29 @@ const caseTags = caseResult => (caseResult.tags || []).slice(0, 4);
 const caseTimeline = caseResult =>
   (caseResult.artifact?.timeline || []).slice(-4);
 
+const caseUsage = caseResult => caseResult.artifact?.usage || null;
+
+const hasCaseUsage = caseResult => {
+  const usage = caseUsage(caseResult);
+  return Boolean(
+    usage?.estimated_cost ||
+      usage?.token_totals?.total_tokens ||
+      usage?.providers?.length ||
+      usage?.models?.length
+  );
+};
+
+const usageProviders = caseResult =>
+  (caseUsage(caseResult)?.providers || []).join(', ');
+
+const usageModels = caseResult =>
+  (caseUsage(caseResult)?.models || []).join(', ');
+
+const usageTokens = caseResult =>
+  caseUsage(caseResult)?.token_totals?.total_tokens;
+
+const usageCost = caseResult => caseUsage(caseResult)?.estimated_cost;
+
 const timelineIcon = item => {
   if (item.type === 'tool') return 'i-lucide-wrench';
   if (item.type === 'judge') return 'i-lucide-scale';
@@ -315,6 +345,12 @@ const scenarioCards = computed(() => [
   }),
   withCatalogState({
     ...SCENARIO_DEFINITIONS[5],
+    title: t('CAPTAIN.EVALUATIONS.SCENARIOS.RED_TEAM_LIVE.TITLE'),
+    short: t('CAPTAIN.EVALUATIONS.SCENARIOS.RED_TEAM_LIVE.SHORT'),
+    tooltip: t('CAPTAIN.EVALUATIONS.SCENARIOS.RED_TEAM_LIVE.TOOLTIP'),
+  }),
+  withCatalogState({
+    ...SCENARIO_DEFINITIONS[6],
     title: t('CAPTAIN.EVALUATIONS.SCENARIOS.COMPLETION.TITLE'),
     short: t('CAPTAIN.EVALUATIONS.SCENARIOS.COMPLETION.SHORT'),
     tooltip: t('CAPTAIN.EVALUATIONS.SCENARIOS.COMPLETION.TOOLTIP'),
@@ -335,6 +371,8 @@ const packLabel = pack => {
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.CONFIRMATION.LABEL');
     case 'captain.ai_voice_trace':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.AI_VOICE.LABEL');
+    case 'captain.voice_scenarios':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.VOICE_SCENARIOS.LABEL');
     case 'captain.event_contract_trace':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.EVENT_CONTRACT.LABEL');
     case 'captain.knowledge_rag_trace':
@@ -345,6 +383,8 @@ const packLabel = pack => {
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIOS.LABEL');
     case 'captain.scenario_simulation':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_SIMULATION.LABEL');
+    case 'captain.scenario_red_team':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_RED_TEAM.LABEL');
     case 'openrouter.contracts':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.OPENROUTER_CONTRACTS.LABEL');
     case 'captain.red_team':
@@ -366,6 +406,8 @@ const packDescription = pack => {
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.CONFIRMATION.DESCRIPTION');
     case 'captain.ai_voice_trace':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.AI_VOICE.DESCRIPTION');
+    case 'captain.voice_scenarios':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.VOICE_SCENARIOS.DESCRIPTION');
     case 'captain.event_contract_trace':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.EVENT_CONTRACT.DESCRIPTION');
     case 'captain.knowledge_rag_trace':
@@ -376,6 +418,8 @@ const packDescription = pack => {
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIOS.DESCRIPTION');
     case 'captain.scenario_simulation':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_SIMULATION.DESCRIPTION');
+    case 'captain.scenario_red_team':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_RED_TEAM.DESCRIPTION');
     case 'openrouter.contracts':
       return t(
         'CAPTAIN.EVALUATIONS.PACK_COPY.OPENROUTER_CONTRACTS.DESCRIPTION'
@@ -651,7 +695,7 @@ onMounted(fetchCatalog);
           {{ errorMessage }}
         </div>
 
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
           <button
             v-for="scenario in scenarioCards"
             :key="scenario.id"
@@ -1114,6 +1158,47 @@ onMounted(fetchCatalog);
                     >
                       {{ failure }}
                     </p>
+                  </div>
+                  <div
+                    v-if="hasCaseUsage(caseResult)"
+                    class="mt-3 flex flex-wrap items-center gap-2 border-t border-n-weak pt-3 text-xs text-n-slate-10"
+                  >
+                    <span
+                      v-if="usageProviders(caseResult)"
+                      class="flex items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5"
+                    >
+                      <i class="i-lucide-router size-3" />
+                      {{ usageProviders(caseResult) }}
+                    </span>
+                    <span
+                      v-if="usageModels(caseResult)"
+                      class="flex items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5"
+                    >
+                      <i class="i-lucide-cpu size-3" />
+                      {{ usageModels(caseResult) }}
+                    </span>
+                    <span
+                      v-if="usageTokens(caseResult)"
+                      class="flex items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5"
+                    >
+                      <i class="i-lucide-coins size-3" />
+                      {{
+                        t('CAPTAIN.EVALUATIONS.RESULTS.TOKENS', {
+                          count: usageTokens(caseResult),
+                        })
+                      }}
+                    </span>
+                    <span
+                      v-if="usageCost(caseResult)"
+                      class="flex items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5"
+                    >
+                      <i class="i-lucide-receipt-text size-3" />
+                      {{
+                        t('CAPTAIN.EVALUATIONS.RESULTS.COST', {
+                          cost: usageCost(caseResult),
+                        })
+                      }}
+                    </span>
                   </div>
                   <div
                     v-if="caseTimeline(caseResult).length"

@@ -37,8 +37,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
       expect(response).to have_http_status(:success)
       expect(json_response[:packs]).to include(
         include(id: 'captain.ai_voice_trace', live_model: false, default_enabled: true),
+        include(id: 'captain.voice_scenarios', live_model: false, default_enabled: true),
         include(id: 'captain.event_contract_trace', live_model: false, default_enabled: true),
         include(id: 'captain.scenario_simulation', live_model: true, default_enabled: false),
+        include(id: 'captain.scenario_red_team', live_model: true, default_enabled: false),
         include(id: 'captain.conversation_completion', live_model: true, default_enabled: false)
       )
       expect(json_response[:eval_runs]).to include(
@@ -127,7 +129,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
   end
 
   describe 'POST /api/v1/accounts/{account.id}/captain/evaluations/run_dataset' do
-    it 'runs generic Tribunal datasets and returns the requested report format' do
+    it 'runs generic Tribunal datasets and returns the requested report format', :aggregate_failures do
       post "/api/v1/accounts/#{account.id}/captain/evaluations/run_dataset",
            headers: admin.create_new_auth_token,
            params: {

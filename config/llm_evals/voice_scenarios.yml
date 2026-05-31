@@ -1,0 +1,43 @@
+cases:
+  - id: voice.interruption_stops_audio
+    description: Voice runtime must stop audio output after caller interruption.
+    tags: [ai_voice, scenario, interruption, latency]
+    events:
+      - action: caller_transcript_final
+        role: caller
+        transcript: "Можно перебью?"
+      - action: ai_transcript_turn
+        role: assistant
+        transcript: "Да, слушаю вас."
+        ttfb_ms: 420
+      - action: caller_interrupt
+        role: caller
+        interrupted: true
+      - action: realtime_audio_out
+        role: assistant
+        stopped: true
+        latency_ms: 80
+    expected:
+      require_ai_response_after_last_caller: true
+      require_interruption_stop: true
+      forbid_clip_markers: true
+      max_ttfb_ms: 1200
+      max_p95_latency_ms: 1500
+
+  - id: voice.transcript_fallback_for_audio_judge
+    description: Voice judge can fall back to transcript when audio content cannot be inspected.
+    tags: [ai_voice, scenario, transcript_fallback]
+    events:
+      - action: caller_transcript_final
+        role: caller
+        transcript: "Запишите меня завтра."
+      - action: audio_judge_transcript_fallback
+        fallback: transcript
+      - action: ai_transcript_turn
+        role: assistant
+        transcript: "Уточните, пожалуйста, удобное время."
+        ttfb_ms: 510
+    expected:
+      require_ai_response_after_last_caller: true
+      require_transcript_fallback: true
+      forbid_clip_markers: true

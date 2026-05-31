@@ -11,6 +11,7 @@ RSpec.describe Llm::Evals::TraceDigest do
           tool_name: 'search_deals',
           prompt_tokens: 10,
           completion_tokens: 5,
+          estimated_cost: '0.0015',
           payload: {
             openrouter_generation_id: 'gen_123',
             authorization: 'Bearer secret-token',
@@ -31,7 +32,8 @@ RSpec.describe Llm::Evals::TraceDigest do
       tool_names: ['search_deals'],
       error_count: 1,
       openrouter_generation_ids: ['gen_123'],
-      token_totals: include(prompt_tokens: 10, completion_tokens: 5)
+      token_totals: include(prompt_tokens: 10, completion_tokens: 5),
+      estimated_cost: 0.0015
     )
     expect(digest[:events].first[:payload]).to include(
       authorization: '[REDACTED]',

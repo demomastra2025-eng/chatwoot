@@ -43,6 +43,27 @@ module Llm::Evals::OpenRouterContractPolicyChecks
     }
   end
 
+  def openrouter_guardrail_budget_contract
+    standard_policy = Llm::OpenRouterWorkspacePolicy.resolve(workspace: 'production')
+    sensitive_profile = Llm::OpenRouterRoutingProfile.for(
+      feature: :captain_agent,
+      model: 'openai/gpt-5.4-mini',
+      privacy_profile: 'sensitive'
+    )
+    failures = []
+    failures << 'budget guardrail must stay workspace-required' unless standard_policy.guardrails.dig(:budget, :status) == 'workspace_required'
+    failures << 'sensitive profile must deny data collection' unless sensitive_profile.provider_preferences[:data_collection] == 'deny'
+    failures << 'sensitive profile must suppress trace capture' if sensitive_profile.workspace_policy.trace_capture_allowed?
+
+    {
+      budget_guardrail: standard_policy.guardrails[:budget],
+      sensitive_provider: sensitive_profile.provider_preferences,
+      sensitive_trace_capture_allowed: sensitive_profile.workspace_policy.trace_capture_allowed?,
+      expected: { budget: 'workspace_required', data_collection: 'deny', trace_capture_allowed: false },
+      failures: failures
+    }
+  end
+
   def routing_failures(exacto, auto)
     failures = []
     failures << 'Exacto must disable fallbacks' unless exacto.provider_preferences[:allow_fallbacks] == false

@@ -56,6 +56,45 @@ RSpec.describe Llm::Evals::Scenario::JudgeAgent do
     expect(requests.first[:response_schema].dig(:properties, :verdict, :enum)).to include('success', 'failure')
   end
 
+  it 'executes trace discovery calls and sends sanitized results back to the judge client' do
+    requests = []
+    client = lambda do |request|
+      requests << request
+      if requests.one?
+        {
+          verdict: 'continue',
+          reasoning: 'Need to inspect tool trace.',
+          trace_tool_calls: [
+            { name: 'grep_trace', arguments: { query: 'search_deals', fields: ['tool_name'] } }
+          ]
+        }
+      else
+        {
+          verdict: 'success',
+          reasoning: 'Trace confirms the tool result was available.'
+        }
+      end
+    end
+
+    state = Llm::Evals::Scenario::State.new
+    state.add_user('Найди сделку Хлопок.')
+    trace_events = [
+      { event_name: 'llm.tool.complete', payload: { tool_name: 'search_deals', token: 'secret', total_tokens: 9 } }
+    ]
+
+    output = described_class.new(
+      criteria: ['Inspect trace before verdict.'],
+      client: client,
+      trace_tool_iterations: 1
+    ).call(input_for(state, trace_events: trace_events))
+
+    expect(output.verdict).to eq('success')
+    expect(requests.size).to eq(2)
+    expect(requests.second[:trace_tool_results].first).to include(name: 'grep_trace')
+    expect(requests.second.dig(:trace_tool_results, 0, :result, 0, :payload, :token)).to eq('[REDACTED]')
+    expect(output.events.first.dig(:details, :trace_tool_results_count)).to eq(1)
+  end
+
   it 'uses trace events from the scenario input when explicit trace events are not provided' do
     requests = []
     client = lambda do |request|
