@@ -139,3 +139,106 @@ cases:
           fragment: "Записи и расписание"
       require_ui_actions:
         - open_captain_scenarios
+
+  - id: openrouter.structured_output_healing
+    description: OpenRouter structured output failures must be visible, healed, and followed by a final answer without a live provider call.
+    tags: [openrouter, structured_output, response_healing, deterministic]
+    max_turns: 4
+    script:
+      - user: "Сформируй структурированный ответ по сделке Хлопок."
+      - message:
+          event_name: llm.schema.invalid
+          schema_invalid: true
+          model: openai/gpt-5.4-mini
+          openrouter_generation_id: gen_schema_healed_1
+          error: "invalid JSON before response healing"
+      - assistant:
+          content: "Готово, структурированный ответ восстановлен: сделка Хлопок активна."
+          reasoning: "Healed invalid structured output before showing the final answer."
+          openrouter_generation_id: gen_schema_healed_1
+      - judge: {}
+    expected:
+      require_event_names:
+        - llm.schema.invalid
+      require_event_fragments:
+        - event: llm.schema.invalid
+          fragment: schema_invalid
+      require_assistant_response_after_last_user: true
+      require_answer_fragments:
+        - "структурированный ответ восстановлен"
+      require_reasoning_present: true
+      require_openrouter_generation_id: true
+
+  - id: openrouter.tool_result_requires_final_answer
+    description: OpenRouter tool flow must not stop after a tool result; the final user-facing answer is required.
+    tags: [openrouter, tools, tool_no_final_answer, final_answer]
+    max_turns: 4
+    script:
+      - user: "Проверь сумму сделки Хлопок."
+      - tool_completed:
+          name: search_deals
+          result:
+            title: "Хлопок"
+            amount: 180000
+            currency: KZT
+          openrouter_generation_id: gen_tool_1
+      - assistant:
+          content: "Сумма сделки «Хлопок» — 180 000 KZT."
+          openrouter_generation_id: gen_tool_1
+      - judge: {}
+    expected:
+      require_tools:
+        - search_deals
+      require_assistant_response_after_last_user: true
+      require_tool_result_usage:
+        - tool: search_deals
+          fragment: "180000"
+      require_openrouter_generation_id: true
+
+  - id: openrouter.fallback_model_recorded
+    description: OpenRouter fallback routing must record the fallback model and still produce a final answer.
+    tags: [openrouter, routing, fallback_model]
+    max_turns: 4
+    script:
+      - user: "Проверь, какая модель реально ответила."
+      - message:
+          event_name: llm.openrouter.fallback
+          provider: openrouter
+          model: openai/gpt-5.4-mini
+          fallback_model: openai/gpt-5.4-mini-high
+          openrouter_generation_id: gen_fallback_1
+      - assistant:
+          content: "Ответ сформирован через резервную модель openai/gpt-5.4-mini-high."
+          openrouter_generation_id: gen_fallback_1
+      - judge: {}
+    expected:
+      require_event_names:
+        - llm.openrouter.fallback
+      require_event_fragments:
+        - event: llm.openrouter.fallback
+          fragment: openai/gpt-5.4-mini-high
+      require_answer_fragments:
+        - openai/gpt-5.4-mini-high
+      require_assistant_response_after_last_user: true
+      require_openrouter_generation_id: true
+
+  - id: openrouter.reasoning_presence
+    description: OpenRouter reasoning-capable scenarios must expose native reasoning metadata, not only app fallback text.
+    tags: [openrouter, reasoning]
+    max_turns: 3
+    script:
+      - user: "Объясни коротко, почему сумма сделки корректная."
+      - assistant:
+          content: "Сумма корректная: она совпадает с последним CRM значением 180 000 KZT."
+          reasoning: "Checked CRM amount and matched it against the requested deal."
+          reasoning_details:
+            - type: reasoning.text
+              text: "CRM amount matched"
+          openrouter_generation_id: gen_reasoning_1
+      - judge: {}
+    expected:
+      require_assistant_response_after_last_user: true
+      require_answer_fragments:
+        - "180 000 KZT"
+      require_reasoning_present: true
+      require_openrouter_generation_id: true

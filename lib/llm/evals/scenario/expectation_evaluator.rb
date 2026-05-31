@@ -18,6 +18,7 @@ class Llm::Evals::Scenario::ExpectationEvaluator
     compare_mutations(failures)
     compare_reasoning(failures)
     compare_events(failures)
+    compare_event_fragments(failures)
     compare_openrouter_metadata(failures)
 
     failures
@@ -130,6 +131,14 @@ class Llm::Evals::Scenario::ExpectationEvaluator
     end
   end
 
+  def compare_event_fragments(failures)
+    event_fragment_requirements.each do |requirement|
+      next if event_fragment_present?(requirement)
+
+      failures << "event #{requirement[:event_name] || '*'} missing fragment: #{requirement[:fragment]}"
+    end
+  end
+
   def compare_openrouter_metadata(failures)
     return unless expected[:require_openrouter_generation_id]
     return if state.openrouter_generation_ids.present?
@@ -139,5 +148,38 @@ class Llm::Evals::Scenario::ExpectationEvaluator
 
   def tool_usage_labels
     state.tool_events.map { |event| event[:tool_name].presence || event[:action].presence || 'unknown_tool' }
+  end
+
+  def events_named(event_name)
+    state.events.select { |event| event_names_for(event).include?(event_name.to_s) }
+  end
+
+  def event_fragment_requirements
+    Array(expected[:require_event_fragments]).map do |raw_requirement|
+      requirement = raw_requirement.to_h.deep_symbolize_keys
+      {
+        event_name: requirement[:event].presence || requirement[:name].presence || requirement[:event_name].presence,
+        fragment: requirement[:fragment].to_s
+      }
+    end
+  end
+
+  def event_fragment_present?(requirement)
+    matching_events = requirement[:event_name].present? ? events_named(requirement[:event_name]) : state.events
+    matching_events.any? { |event| text_includes?(event.to_json, requirement[:fragment]) }
+  end
+
+  def event_names_for(event)
+    [event[:name], event[:event_name], event[:event_type], event[:action]].filter_map(&:presence).map(&:to_s)
+  end
+
+  def text_includes?(text, fragment)
+    text = text.to_s
+    fragment = fragment.to_s
+    return true if text.include?(fragment)
+
+    compact_text = text.gsub(/[[:space:]]/, '')
+    compact_fragment = fragment.gsub(/[[:space:]]/, '')
+    compact_fragment.present? && compact_text.include?(compact_fragment)
   end
 end

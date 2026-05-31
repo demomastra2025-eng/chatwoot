@@ -44,12 +44,13 @@ class Llm::EvalRun < ApplicationRecord
     expected expected_output context retrieval_context messages message content response request
   ].freeze
   COMPACT_RESULT_KEYS = %i[
-    status generated_at suite_count total_count passed_count failed_count error_count
+    status generated_at suite_count total_count passed_count failed_count error_count pass_rate duration_ms estimated_cost
   ].freeze
   COMPACT_SUITE_KEYS = %i[
-    suite_id status prompt_id prompt_sha model generated_at total_count passed_count failed_count error_count pass_rate
+    suite_id status prompt_id prompt_sha model generated_at total_count passed_count failed_count error_count pass_rate duration_ms
   ].freeze
   COMPACT_CASE_KEYS = %i[id description tags status duration_ms failures].freeze
+  COMPACT_FAILED_SCENARIO_KEYS = %i[suite_id id description tags status duration_ms failures].freeze
   COMPACT_ARTIFACT_KEYS = %i[case_id status failures usage].freeze
   COMPACT_TIMELINE_KEYS = %i[index type role tool_name action status duration_ms].freeze
   COMPACT_TRACE_DIGEST_KEYS = %i[
@@ -105,6 +106,8 @@ class Llm::EvalRun < ApplicationRecord
     def compact_result(value)
       payload = value.is_a?(Hash) ? value : {}
       compacted = COMPACT_RESULT_KEYS.index_with { |key| value_for(payload, key) }.compact
+      failed_scenarios = compact_failed_scenarios(value_for(payload, :failed_scenarios))
+      compacted[:failed_scenarios] = failed_scenarios if failed_scenarios.present?
       suites = Array(value_for(payload, :suites)).filter_map { |suite| compact_suite_result(suite) }
       compacted[:suites] = suites if suites.present?
       compacted
@@ -128,6 +131,14 @@ class Llm::EvalRun < ApplicationRecord
       artifact = compact_artifact(value_for(value, :artifact))
       compacted[:artifact] = artifact if artifact.present?
       compacted
+    end
+
+    def compact_failed_scenarios(value)
+      Array(value).filter_map do |scenario|
+        next unless scenario.is_a?(Hash)
+
+        COMPACT_FAILED_SCENARIO_KEYS.index_with { |key| sanitize_result(value_for(scenario, key)) }.compact
+      end
     end
 
     def compact_artifact(value)
@@ -192,18 +203,43 @@ class Llm::EvalRun < ApplicationRecord
   private
 
   def result_summary
-    suites = Array(result['suites'] || result[:suites])
+    suites = result_suites
     return if suites.blank?
 
     {
       suite_count: suites.size,
-      passed_count: suites.count { |suite| suite_status(suite) == 'pass' },
-      failed_count: suites.count { |suite| suite_status(suite) != 'pass' },
-      suite_ids: suites.filter_map { |suite| suite['suite_id'] || suite[:suite_id] }
-    }
+      total_count: result_value(:total_count),
+      passed_count: result_value(:passed_count) || passed_suite_count(suites),
+      failed_count: result_value(:failed_count) || failed_suite_count(suites),
+      error_count: result_value(:error_count),
+      pass_rate: result_value(:pass_rate),
+      duration_ms: result_value(:duration_ms),
+      estimated_cost: result_value(:estimated_cost),
+      suite_ids: suites.filter_map { |suite| value_for_suite(suite, :suite_id) }
+    }.compact
+  end
+
+  def result_suites
+    Array(result_value(:suites))
+  end
+
+  def result_value(key)
+    result[key.to_s] || result[key]
+  end
+
+  def passed_suite_count(suites)
+    suites.count { |suite| suite_status(suite) == 'pass' }
+  end
+
+  def failed_suite_count(suites)
+    suites.count { |suite| suite_status(suite) != 'pass' }
   end
 
   def suite_status(suite)
-    (suite['status'] || suite[:status]).to_s
+    value_for_suite(suite, :status).to_s
+  end
+
+  def value_for_suite(suite, key)
+    suite[key.to_s] || suite[key]
   end
 end

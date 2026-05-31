@@ -612,9 +612,14 @@
       },
       "RESULTS": {
         "PASSED": "Passed cases",
+        "PASS_RATE": "Pass rate",
         "SUITES": "Suites",
         "FAILED": "Failed cases",
+        "FAILED_SCENARIOS": "Failed scenarios",
         "ERRORS": "Errors",
+        "DURATION": "Duration",
+        "ESTIMATED_COST": "Cost",
+        "SEPARATOR": "·",
         "CASES_COUNT": "Cases: {count}",
         "ISSUES_COUNT": "Issues: {count}",
         "DURATION_MS": "{ms} ms",
@@ -629,7 +634,8 @@
         "SCHEMA_INVALID": "Schema issues: {count}",
         "TOOL_FAILURE": "Tool failures: {count}",
         "NO_CONTENT": "No-content cases: {count}",
-        "CATALOG_STALE": "Catalog freshness issues: {count}"
+        "CATALOG_STALE": "Catalog freshness issues: {count}",
+        "CRITICAL_FAILURE": "Critical failures: {count}"
       },
       "PACKS": {
         "TITLE": "Check packs",

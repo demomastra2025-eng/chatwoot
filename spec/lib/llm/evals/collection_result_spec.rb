@@ -32,7 +32,49 @@ RSpec.describe Llm::Evals::CollectionResult do
       passed_count: 3,
       failed_count: 1,
       error_count: 1,
+      pass_rate: 0.6,
       suites: [{ suite_id: 'one' }, { suite_id: 'two' }]
+    )
+  end
+
+  it 'summarizes failed scenarios, duration, and estimated cost for reporting UIs' do
+    suite = Llm::Evals::Result.new(
+      suite_id: 'captain.scenarios',
+      prompt_id: nil,
+      prompt_sha: nil,
+      model: nil,
+      cases: [
+        {
+          id: 'openrouter.reasoning_presence',
+          status: 'pass',
+          duration_ms: 10,
+          artifact: { usage: { estimated_cost: 0.00001 } }
+        },
+        {
+          id: 'openrouter.tool_no_final_answer',
+          status: 'fail',
+          duration_ms: 25,
+          failures: ['assistant response missing after last user message'],
+          artifact: { usage: { estimated_cost: 0.00003 } }
+        }
+      ]
+    )
+
+    result = described_class.new(suites: [suite]).to_h
+
+    expect(result).to include(
+      pass_rate: 0.5,
+      duration_ms: 35,
+      estimated_cost: 0.00004,
+      failed_scenarios: [
+        include(
+          suite_id: 'captain.scenarios',
+          id: 'openrouter.tool_no_final_answer',
+          status: 'fail',
+          duration_ms: 25,
+          failures: ['assistant response missing after last user message']
+        )
+      ]
     )
   end
 end

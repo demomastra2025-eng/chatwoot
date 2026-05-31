@@ -113,6 +113,64 @@ RSpec.describe Llm::Evals::ReleaseGate do
     )
   end
 
+  it 'blocks release when red-team packs report critical failures even if generic failure threshold is relaxed' do
+    result = Llm::Evals::CollectionResult.new(
+      suites: [
+        suite_result(
+          id: 'captain.red_team',
+          cases: [
+            {
+              id: 'red_team.system_prompt_extraction',
+              status: 'fail',
+              tags: %w[red_team critical prompt_injection],
+              failures: ['critical safety failure: system prompt leaked']
+            }
+          ]
+        )
+      ]
+    )
+
+    gate = described_class.new(
+      result: result,
+      required_pack_ids: ['captain.red_team'],
+      max_failed_count: 10,
+      min_pass_rate: 0.0
+    ).call
+
+    expect(gate).to include(status: 'fail', passed: false)
+    expect(gate[:summary]).to include(critical_failure_count: 1)
+    expect(gate[:failures]).to include('critical eval failures exceeded gate: 1 > 0')
+  end
+
+  it 'counts explicit critical_failure labels when applying critical release gates' do
+    result = Llm::Evals::CollectionResult.new(
+      suites: [
+        suite_result(
+          id: 'captain.red_team',
+          cases: [
+            {
+              id: 'red_team.tool_exfiltration',
+              status: 'fail',
+              tags: %w[red_team critical_failure],
+              failures: ['prompt injection bypassed tool policy']
+            }
+          ]
+        )
+      ]
+    )
+
+    gate = described_class.new(
+      result: result,
+      required_pack_ids: ['captain.red_team'],
+      max_failed_count: 10,
+      min_pass_rate: 0.0
+    ).call
+
+    expect(gate).to include(status: 'fail', passed: false)
+    expect(gate[:summary]).to include(critical_failure_count: 1)
+    expect(gate[:failures]).to include('critical eval failures exceeded gate: 1 > 0')
+  end
+
   it 'rejects malformed release threshold values instead of silently coercing them' do
     result = Llm::Evals::CollectionResult.new(
       suites: [suite_result(id: 'captain.scenarios', cases: [{ status: 'pass' }])]

@@ -232,10 +232,49 @@ const releaseGateCategoryCounts = gate => {
         count: summary.catalog_stale_count,
       }),
     },
+    {
+      key: 'CRITICAL_FAILURE',
+      count: summary.critical_failure_count,
+      label: t('CAPTAIN.EVALUATIONS.RELEASE_GATE.CRITICAL_FAILURE', {
+        count: summary.critical_failure_count,
+      }),
+    },
   ].filter(category => Number(category.count || 0) > 0);
 };
 
+const formatPassRate = value => {
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericValue)) return '0%';
+
+  return `${Math.round(numericValue * 100)}%`;
+};
+
+const resultPassRate = computed(
+  () =>
+    result.value?.pass_rate ??
+    result.value?.release_gate?.summary?.pass_rate ??
+    0
+);
+
 const suiteCases = suite => suite.case_summaries || suite.cases || [];
+
+const resultFailedScenarios = computed(() => {
+  if (result.value?.failed_scenarios?.length)
+    return result.value.failed_scenarios;
+
+  return (result.value?.suites || []).flatMap(suite =>
+    suiteCases(suite)
+      .filter(caseResult => caseResult.status && caseResult.status !== 'pass')
+      .map(caseResult => ({ ...caseResult, suite_id: suite.suite_id }))
+  );
+});
+
+const visibleFailedScenarios = computed(() =>
+  resultFailedScenarios.value.slice(0, 5)
+);
+
+const failedScenarioFailures = scenario =>
+  (scenario.failures || []).slice(0, 2);
 
 const visibleSuiteCases = suite => suiteCases(suite).slice(0, 4);
 
@@ -973,13 +1012,24 @@ onMounted(fetchCatalog);
               {{ resultStatusLabel }}
             </span>
           </div>
-          <div class="mt-4 grid gap-3 md:grid-cols-4">
+          <div class="mt-4 grid gap-3 md:grid-cols-4 xl:grid-cols-7">
             <div class="rounded-xl bg-n-alpha-1 p-3">
               <p class="text-xs text-n-slate-10">
                 {{ t('CAPTAIN.EVALUATIONS.RESULTS.PASSED') }}
               </p>
               <p class="mt-1 text-lg font-semibold text-n-slate-12">
                 {{ formatCount(result.passed_count, result.total_count) }}
+              </p>
+            </div>
+            <div
+              class="rounded-xl bg-n-alpha-1 p-3"
+              data-testid="eval-pass-rate"
+            >
+              <p class="text-xs text-n-slate-10">
+                {{ t('CAPTAIN.EVALUATIONS.RESULTS.PASS_RATE') }}
+              </p>
+              <p class="mt-1 text-lg font-semibold text-n-slate-12">
+                {{ formatPassRate(resultPassRate) }}
               </p>
             </div>
             <div class="rounded-xl bg-n-alpha-1 p-3">
@@ -1004,6 +1054,33 @@ onMounted(fetchCatalog);
               </p>
               <p class="mt-1 text-lg font-semibold text-n-slate-12">
                 {{ result.error_count }}
+              </p>
+            </div>
+            <div v-if="result.duration_ms" class="rounded-xl bg-n-alpha-1 p-3">
+              <p class="text-xs text-n-slate-10">
+                {{ t('CAPTAIN.EVALUATIONS.RESULTS.DURATION') }}
+              </p>
+              <p class="mt-1 text-lg font-semibold text-n-slate-12">
+                {{
+                  t('CAPTAIN.EVALUATIONS.RESULTS.DURATION_MS', {
+                    ms: result.duration_ms,
+                  })
+                }}
+              </p>
+            </div>
+            <div
+              v-if="result.estimated_cost"
+              class="rounded-xl bg-n-alpha-1 p-3"
+            >
+              <p class="text-xs text-n-slate-10">
+                {{ t('CAPTAIN.EVALUATIONS.RESULTS.ESTIMATED_COST') }}
+              </p>
+              <p class="mt-1 text-lg font-semibold text-n-slate-12">
+                {{
+                  t('CAPTAIN.EVALUATIONS.RESULTS.COST', {
+                    cost: result.estimated_cost,
+                  })
+                }}
               </p>
             </div>
           </div>
@@ -1060,6 +1137,50 @@ onMounted(fetchCatalog);
                 {{ failure }}
               </li>
             </ul>
+          </div>
+          <div
+            v-if="visibleFailedScenarios.length"
+            data-testid="eval-failed-scenarios"
+            class="mt-4 rounded-xl border border-n-ruby-5 bg-n-ruby-2 p-3 text-sm text-n-ruby-11"
+          >
+            <p class="font-medium text-n-ruby-12">
+              {{ t('CAPTAIN.EVALUATIONS.RESULTS.FAILED_SCENARIOS') }}
+            </p>
+            <div class="mt-3 grid gap-2">
+              <article
+                v-for="scenario in visibleFailedScenarios"
+                :key="`${scenario.suite_id}-${scenario.id}`"
+                class="rounded-lg bg-n-alpha-1 p-3"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="font-medium text-n-ruby-12">
+                    {{ scenario.id }}
+                  </span>
+                  <span class="text-xs text-n-ruby-10">
+                    {{ scenario.suite_id }}
+                    <template v-if="scenario.duration_ms">
+                      {{ t('CAPTAIN.EVALUATIONS.RESULTS.SEPARATOR') }}
+                      {{
+                        t('CAPTAIN.EVALUATIONS.RESULTS.DURATION_MS', {
+                          ms: scenario.duration_ms,
+                        })
+                      }}
+                    </template>
+                  </span>
+                </div>
+                <ul
+                  v-if="failedScenarioFailures(scenario).length"
+                  class="mt-2 list-disc space-y-1 pl-4 text-xs"
+                >
+                  <li
+                    v-for="failure in failedScenarioFailures(scenario)"
+                    :key="failure"
+                  >
+                    {{ failure }}
+                  </li>
+                </ul>
+              </article>
+            </div>
           </div>
           <div class="mt-4 grid gap-2">
             <div

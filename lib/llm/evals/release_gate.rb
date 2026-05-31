@@ -8,34 +8,33 @@ class Llm::Evals::ReleaseGate
   DEFAULT_MAX_TOOL_FAILURE_COUNT = 0
   DEFAULT_MAX_NO_CONTENT_COUNT = 0
   DEFAULT_MAX_CATALOG_STALE_COUNT = 0
+  DEFAULT_MAX_CRITICAL_FAILURE_COUNT = 0
   CATEGORY_MATCHERS = {
     schema_invalid: [/schema/i, /structured[\s_-]?output/i, /response_format/i, /json schema/i],
     tool_failure: [/tool/i],
     no_content: [/no[\s_-]?content/i, /blank response/i, /empty response/i],
-    catalog_stale: [/catalog/i, /stale/i]
+    catalog_stale: [/catalog/i, /stale/i],
+    critical_failure: [/critical[\s_-]?failure/i, /\bcritical\b/i]
   }.freeze
   CATEGORY_GATES = [
     [:schema_invalid_count, :max_schema_invalid_count, 'schema invalid eval cases'],
     [:tool_failure_count, :max_tool_failure_count, 'tool failure eval cases'],
     [:no_content_count, :max_no_content_count, 'no-content eval cases'],
-    [:catalog_stale_count, :max_catalog_stale_count, 'catalog stale eval cases']
+    [:catalog_stale_count, :max_catalog_stale_count, 'catalog stale eval cases'],
+    [:critical_failure_count, :max_critical_failure_count, 'critical eval failures']
   ].freeze
 
-  def initialize(result:, required_pack_ids: nil, max_failed_count: DEFAULT_MAX_FAILED_COUNT,
-                 max_error_count: DEFAULT_MAX_ERROR_COUNT, min_pass_rate: DEFAULT_MIN_PASS_RATE,
-                 max_schema_invalid_count: DEFAULT_MAX_SCHEMA_INVALID_COUNT,
-                 max_tool_failure_count: DEFAULT_MAX_TOOL_FAILURE_COUNT,
-                 max_no_content_count: DEFAULT_MAX_NO_CONTENT_COUNT,
-                 max_catalog_stale_count: DEFAULT_MAX_CATALOG_STALE_COUNT)
-    @result = result
-    @required_pack_ids = normalize_ids(required_pack_ids || default_required_pack_ids)
-    @max_failed_count = normalize_non_negative_integer(max_failed_count, 'max_failed_count')
-    @max_error_count = normalize_non_negative_integer(max_error_count, 'max_error_count')
-    @min_pass_rate = normalize_pass_rate(min_pass_rate)
-    @max_schema_invalid_count = normalize_non_negative_integer(max_schema_invalid_count, 'max_schema_invalid_count')
-    @max_tool_failure_count = normalize_non_negative_integer(max_tool_failure_count, 'max_tool_failure_count')
-    @max_no_content_count = normalize_non_negative_integer(max_no_content_count, 'max_no_content_count')
-    @max_catalog_stale_count = normalize_non_negative_integer(max_catalog_stale_count, 'max_catalog_stale_count')
+  def initialize(**attributes)
+    @result = attributes.fetch(:result)
+    @required_pack_ids = normalize_ids(attributes[:required_pack_ids] || default_required_pack_ids)
+    @max_failed_count = normalized_limit(attributes, :max_failed_count, DEFAULT_MAX_FAILED_COUNT)
+    @max_error_count = normalized_limit(attributes, :max_error_count, DEFAULT_MAX_ERROR_COUNT)
+    @min_pass_rate = normalize_pass_rate(attributes.fetch(:min_pass_rate, DEFAULT_MIN_PASS_RATE))
+    @max_schema_invalid_count = normalized_limit(attributes, :max_schema_invalid_count, DEFAULT_MAX_SCHEMA_INVALID_COUNT)
+    @max_tool_failure_count = normalized_limit(attributes, :max_tool_failure_count, DEFAULT_MAX_TOOL_FAILURE_COUNT)
+    @max_no_content_count = normalized_limit(attributes, :max_no_content_count, DEFAULT_MAX_NO_CONTENT_COUNT)
+    @max_catalog_stale_count = normalized_limit(attributes, :max_catalog_stale_count, DEFAULT_MAX_CATALOG_STALE_COUNT)
+    @max_critical_failure_count = normalized_limit(attributes, :max_critical_failure_count, DEFAULT_MAX_CRITICAL_FAILURE_COUNT)
   end
 
   def call
@@ -53,7 +52,8 @@ class Llm::Evals::ReleaseGate
   private
 
   attr_reader :result, :required_pack_ids, :max_failed_count, :max_error_count, :min_pass_rate,
-              :max_schema_invalid_count, :max_tool_failure_count, :max_no_content_count, :max_catalog_stale_count
+              :max_schema_invalid_count, :max_tool_failure_count, :max_no_content_count, :max_catalog_stale_count,
+              :max_critical_failure_count
 
   def gate_failures
     failures = []
@@ -98,7 +98,8 @@ class Llm::Evals::ReleaseGate
       schema_invalid_count: category_count(:schema_invalid),
       tool_failure_count: category_count(:tool_failure),
       no_content_count: category_count(:no_content),
-      catalog_stale_count: category_count(:catalog_stale)
+      catalog_stale_count: category_count(:catalog_stale),
+      critical_failure_count: category_count(:critical_failure)
     }
   end
 
@@ -173,6 +174,10 @@ class Llm::Evals::ReleaseGate
 
   def normalize_ids(ids)
     Array(ids).filter_map { |id| id.to_s.presence }.uniq
+  end
+
+  def normalized_limit(attributes, key, fallback)
+    normalize_non_negative_integer(attributes.fetch(key, fallback), key.to_s)
   end
 
   def normalize_non_negative_integer(value, name)

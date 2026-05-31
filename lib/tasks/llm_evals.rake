@@ -111,7 +111,9 @@ namespace :llm do
       abort('AI eval CI gate failed') unless gate[:passed]
     end
 
-    desc 'Release gate for deterministic offline AI evals. ENV: PACK_IDS, REQUIRED_PACKS, MIN_PASS_RATE, MAX_FAILED, MAX_ERRORS, MAX_SCHEMA_INVALID, MAX_TOOL_FAILURES, MAX_NO_CONTENT, MAX_CATALOG_STALE.'
+    desc 'Release gate for deterministic offline AI evals. ENV: PACK_IDS, REQUIRED_PACKS, MIN_PASS_RATE, ' \
+         'MAX_FAILED, MAX_ERRORS, MAX_SCHEMA_INVALID, MAX_TOOL_FAILURES, MAX_NO_CONTENT, ' \
+         'MAX_CATALOG_STALE, MAX_CRITICAL_FAILURE.'
     task release_gate: :environment do
       pack_ids = ENV['PACK_IDS'].to_s.split(',').filter_map { |id| id.strip.presence }
       required_pack_ids = ENV['REQUIRED_PACKS'].to_s.split(',').filter_map { |id| id.strip.presence }
@@ -125,7 +127,8 @@ namespace :llm do
         max_schema_invalid_count: ENV.fetch('MAX_SCHEMA_INVALID', Llm::Evals::ReleaseGate::DEFAULT_MAX_SCHEMA_INVALID_COUNT),
         max_tool_failure_count: ENV.fetch('MAX_TOOL_FAILURES', Llm::Evals::ReleaseGate::DEFAULT_MAX_TOOL_FAILURE_COUNT),
         max_no_content_count: ENV.fetch('MAX_NO_CONTENT', Llm::Evals::ReleaseGate::DEFAULT_MAX_NO_CONTENT_COUNT),
-        max_catalog_stale_count: ENV.fetch('MAX_CATALOG_STALE', Llm::Evals::ReleaseGate::DEFAULT_MAX_CATALOG_STALE_COUNT)
+        max_catalog_stale_count: ENV.fetch('MAX_CATALOG_STALE', Llm::Evals::ReleaseGate::DEFAULT_MAX_CATALOG_STALE_COUNT),
+        max_critical_failure_count: ENV.fetch('MAX_CRITICAL_FAILURE', Llm::Evals::ReleaseGate::DEFAULT_MAX_CRITICAL_FAILURE_COUNT)
       ).call
 
       puts JSON.pretty_generate(gate)

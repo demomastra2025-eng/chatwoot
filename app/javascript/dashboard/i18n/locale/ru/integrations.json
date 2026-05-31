@@ -612,9 +612,14 @@
       },
       "RESULTS": {
         "PASSED": "Пройдено кейсов",
+        "PASS_RATE": "Процент прохождения",
         "SUITES": "Наборы",
         "FAILED": "Провалено кейсов",
+        "FAILED_SCENARIOS": "Проваленные сценарии",
         "ERRORS": "Ошибки",
+        "DURATION": "Длительность",
+        "ESTIMATED_COST": "Стоимость",
+        "SEPARATOR": "·",
         "CASES_COUNT": "Кейсов: {count}",
         "ISSUES_COUNT": "Проблем: {count}",
         "DURATION_MS": "{ms} мс",
@@ -629,7 +634,8 @@
         "SCHEMA_INVALID": "Проблемы схемы: {count}",
         "TOOL_FAILURE": "Ошибки инструментов: {count}",
         "NO_CONTENT": "Пустые ответы: {count}",
-        "CATALOG_STALE": "Проблемы свежести каталога: {count}"
+        "CATALOG_STALE": "Проблемы свежести каталога: {count}",
+        "CRITICAL_FAILURE": "Критические провалы: {count}"
       },
       "PACKS": {
         "TITLE": "Наборы проверок",

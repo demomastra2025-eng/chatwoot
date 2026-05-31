@@ -65,8 +65,9 @@ module Llm::Evals::Scenario::StateQueries
   end
 
   def event_names
-    events.filter_map { |event| event[:name].presence || event[:event_type].presence || event[:action].presence }
-          .map(&:to_s)
+    events.filter_map do |event|
+      event[:name].presence || event[:event_name].presence || event[:event_type].presence || event[:action].presence
+    end.map(&:to_s)
   end
 
   def summary

@@ -5,6 +5,62 @@ require 'rails_helper'
 RSpec.describe Llm::EvalRun do
   let(:account) { create(:account) }
 
+  let(:raw_failed_scenario) do
+    {
+      suite_id: 'captain.conversation_completion',
+      id: 'case-1',
+      status: 'fail',
+      duration_ms: 25,
+      failures: ['assistant response missing after last user message'],
+      input: 'secret customer prompt'
+    }
+  end
+
+  let(:raw_failed_suite_result) do
+    {
+      suite_id: 'captain.conversation_completion',
+      status: 'fail',
+      prompt_id: 'conversation_completion',
+      prompt_sha: 'abc123',
+      model: 'gpt-test',
+      total_count: 2,
+      passed_count: 1,
+      failed_count: 1,
+      pass_rate: 0.5,
+      cases: [{ id: 'case-1', input: 'secret customer prompt', output: 'raw answer' }]
+    }
+  end
+
+  let(:raw_compact_result_payload) do
+    {
+      status: 'fail',
+      suite_count: 1,
+      total_count: 2,
+      passed_count: 1,
+      failed_count: 1,
+      pass_rate: 0.5,
+      duration_ms: 25,
+      estimated_cost: 0.00003,
+      failed_scenarios: [raw_failed_scenario],
+      suites: [raw_failed_suite_result]
+    }
+  end
+
+  let(:expected_failed_suite_summary) do
+    {
+      suite_id: 'captain.conversation_completion',
+      status: 'fail',
+      prompt_id: 'conversation_completion',
+      prompt_sha: 'abc123',
+      model: 'gpt-test',
+      total_count: 2,
+      passed_count: 1,
+      failed_count: 1,
+      pass_rate: 0.5,
+      case_summaries: [{ id: 'case-1' }]
+    }
+  end
+
   it 'omits full result from default summaries and returns compact result metadata' do
     run = described_class.create!(
       account: account,
@@ -43,51 +99,28 @@ RSpec.describe Llm::EvalRun do
   end
 
   it 'compacts stored eval results to counters without raw case payloads' do
-    compact = described_class.compact_result(
-      status: 'fail',
-      suite_count: 1,
-      total_count: 2,
-      passed_count: 1,
-      failed_count: 1,
-      suites: [
-        {
-          suite_id: 'captain.conversation_completion',
-          status: 'fail',
-          prompt_id: 'conversation_completion',
-          prompt_sha: 'abc123',
-          model: 'gpt-test',
-          total_count: 2,
-          passed_count: 1,
-          failed_count: 1,
-          pass_rate: 0.5,
-          cases: [{ id: 'case-1', input: 'secret customer prompt', output: 'raw answer' }]
-        }
-      ]
-    )
+    compact = described_class.compact_result(**raw_compact_result_payload)
 
     expect(compact).to include(
       status: 'fail',
       suite_count: 1,
       total_count: 2,
       passed_count: 1,
-      failed_count: 1
-    )
-    expect(compact[:suites]).to eq(
-      [
-        {
+      failed_count: 1,
+      pass_rate: 0.5,
+      duration_ms: 25,
+      estimated_cost: 0.00003,
+      failed_scenarios: [
+        include(
           suite_id: 'captain.conversation_completion',
+          id: 'case-1',
           status: 'fail',
-          prompt_id: 'conversation_completion',
-          prompt_sha: 'abc123',
-          model: 'gpt-test',
-          total_count: 2,
-          passed_count: 1,
-          failed_count: 1,
-          pass_rate: 0.5,
-          case_summaries: [{ id: 'case-1' }]
-        }
+          duration_ms: 25,
+          failures: ['assistant response missing after last user message']
+        )
       ]
     )
+    expect(compact[:suites]).to eq([expected_failed_suite_summary])
     expect(compact.to_json).not_to include('secret customer prompt')
     expect(compact.to_json).not_to include('raw answer')
     expect(compact.to_json).not_to include('cases')

@@ -290,6 +290,99 @@ describe('Captain evaluations page', () => {
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULTS.TOKENS');
   });
 
+  it('renders pass rate, failed scenarios, gate categories, cost, and duration in eval reports', async () => {
+    runMock.mockResolvedValueOnce({
+      data: {
+        result: {
+          status: 'fail',
+          suite_count: 1,
+          total_count: 4,
+          passed_count: 3,
+          failed_count: 1,
+          error_count: 0,
+          pass_rate: 0.75,
+          duration_ms: 88,
+          estimated_cost: 0.00042,
+          failed_scenarios: [
+            {
+              suite_id: 'captain.scenarios',
+              id: 'openrouter.tool_result_requires_final_answer',
+              status: 'fail',
+              duration_ms: 31,
+              failures: ['assistant response missing after last user message'],
+            },
+          ],
+          suites: [
+            {
+              suite_id: 'captain.scenarios',
+              status: 'fail',
+              total_count: 4,
+              passed_count: 3,
+              failed_count: 1,
+              error_count: 0,
+              pass_rate: 0.75,
+              cases: [
+                {
+                  id: 'openrouter.tool_result_requires_final_answer',
+                  status: 'fail',
+                  duration_ms: 31,
+                  failures: [
+                    'assistant response missing after last user message',
+                  ],
+                  tags: ['openrouter', 'tool_no_final_answer'],
+                  artifact: {
+                    usage: {
+                      providers: ['openrouter'],
+                      models: ['openai/gpt-5.4-mini'],
+                      token_totals: { total_tokens: 42 },
+                      estimated_cost: 0.00042,
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+          release_gate: {
+            status: 'fail',
+            passed: false,
+            required_pack_ids: ['captain.scenarios'],
+            failures: [
+              'schema invalid eval cases exceeded gate: 1 > 0',
+              'tool failure eval cases exceeded gate: 1 > 0',
+            ],
+            summary: {
+              pass_rate: 0.75,
+              schema_invalid_count: 1,
+              tool_failure_count: 1,
+              no_content_count: 0,
+              catalog_stale_count: 0,
+            },
+          },
+        },
+      },
+    });
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN_EVALS').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="eval-pass-rate"]').text()).toContain(
+      '75%'
+    );
+    expect(
+      wrapper.find('[data-testid="eval-failed-scenarios"]').text()
+    ).toContain('openrouter.tool_result_requires_final_answer');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.RELEASE_GATE.SCHEMA_INVALID'
+    );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.RELEASE_GATE.TOOL_FAILURE'
+    );
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULTS.COST');
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULTS.DURATION_MS');
+  });
+
   it('queues LLM-backed eval packs from the same run button with explicit budget and acknowledgement', async () => {
     runMock.mockResolvedValueOnce({
       data: {
