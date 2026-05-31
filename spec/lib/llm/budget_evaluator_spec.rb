@@ -33,6 +33,17 @@ RSpec.describe Llm::BudgetEvaluator do
       expect(decision.current_spend.to_f).to eq(1.01)
     end
 
+    it 'evaluates OpenRouter budgets with the same provider scope as the usage dashboard' do
+      create(:llm_budget_policy, account: account, daily_budget: 1.0, hard_stop: true)
+      create(:llm_usage_event, account: account, provider: 'gemini', estimated_cost: 5.0, occurred_at: Time.zone.now)
+      create(:llm_usage_event, account: account, provider: 'openrouter', estimated_cost: 0.25, occurred_at: Time.zone.now)
+
+      decision = described_class.evaluate(request: request, model: 'openai/gpt-4o')
+
+      expect(decision).to be_allowed
+      expect(decision.current_spend.to_f).to eq(0.25)
+    end
+
     it 'warns but allows when spend crosses a soft warning threshold' do
       create(:llm_budget_policy, account: account, daily_budget: 1.0, warning_threshold: 0.8, hard_stop: false)
       create(:llm_usage_event, account: account, estimated_cost: 0.81, occurred_at: Time.zone.now)

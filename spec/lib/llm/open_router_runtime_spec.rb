@@ -282,6 +282,41 @@ RSpec.describe Llm::OpenRouterRuntime do
     )
   end
 
+  it 'retries transient native OpenRouter provider errors once and records a retry event' do
+    request = Llm::FeatureRequest.new(
+      feature: :audio_transcription,
+      account: account,
+      model: 'openai/gpt-4o-mini-transcribe',
+      input: '/tmp/audio.ogg'
+    )
+    result = instance_double(RubyLLM::Transcription, text: 'Привет')
+    retry_events = []
+    call_count = 0
+    subscriber = ActiveSupport::Notifications.subscribe('llm.run.retry') do |*args|
+      retry_events << ActiveSupport::Notifications::Event.new(*args)
+    end
+
+    expect(Llm::OpenRouterTranscriptionClient).to receive(:transcribe).twice do
+      call_count += 1
+      raise RubyLLM::Error, 'OpenRouter provider error: 503 upstream unavailable' if call_count == 1
+
+      result
+    end
+
+    expect(runtime.transcribe(request)).to eq(result)
+    expect(retry_events.size).to eq(1)
+    expect(retry_events.first.payload).to include(
+      'feature' => 'audio_transcription',
+      'provider' => 'openrouter',
+      'reason' => 'provider_error',
+      'openrouter_error_category' => 'provider_error',
+      'attempt' => 1,
+      'max_attempts' => 2
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
   it 'routes native rerank requests to the OpenRouter rerank client' do
     request = Llm::FeatureRequest.new(
       feature: :knowledge_rerank,

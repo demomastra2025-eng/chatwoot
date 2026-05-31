@@ -55,5 +55,14 @@ RSpec.describe Llm::OpenRouterErrorClassifier do
       expect(described_class.classify(invalid).category).to eq('provider_invalid_response')
       expect(described_class.classify(empty).category).to eq('no_content_generated')
     end
+
+    it 'classifies invalid tool calls separately from generic provider errors' do
+      error = RubyLLM::Error.new('OpenRouter returned an invalid tool_call payload with malformed tool arguments.')
+
+      expect(described_class.classify(error)).to have_attributes(
+        category: 'tool_call_invalid',
+        retryable: false
+      )
+    end
   end
 end

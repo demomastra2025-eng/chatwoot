@@ -59,6 +59,29 @@ namespace :llm do
       rescue Llm::OpenRouterModelMigration::UnmappedModelsError => e
         abort("OpenRouter model migration blocked: #{e.message}. Run llm:openrouter:model_migration:dry_run and review the report.")
       end
+
+      desc 'Audit stored Captain model IDs after OpenRouter migration and fail when normal Captain features still use legacy direct models'
+      task audit: :environment do
+        report = Llm::OpenRouterModelMigration.audit
+        path = Llm::OpenRouterModelMigration.write_report(report)
+
+        puts JSON.pretty_generate(report[:totals])
+        puts "Report: #{path}"
+        abort('OpenRouter model migration audit failed. Review blocking_issues in the report.') unless report[:passed]
+      end
+
+      desc 'Rollback stored Captain model IDs from a migration JSON report. ' \
+           'Usage: REPORT=logs/openrouter_model_migration-apply-...json rake llm:openrouter:model_migration:rollback'
+      task rollback: :environment do
+        report_path = ENV.fetch('REPORT', nil).presence
+        abort('REPORT=/path/to/openrouter_model_migration-apply-...json is required.') if report_path.blank?
+
+        report = Llm::OpenRouterModelMigration.rollback_from_report!(report_path)
+        path = Llm::OpenRouterModelMigration.write_report(report)
+
+        puts JSON.pretty_generate(report)
+        puts "Report: #{path}"
+      end
     end
   end
 end

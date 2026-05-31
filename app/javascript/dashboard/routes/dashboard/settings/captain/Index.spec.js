@@ -57,6 +57,66 @@ const basePayload = ({ audioModel }) => ({
     audio_transcription_prompt: 'Use the support context.',
     knowledge_chunk_size: 20000,
   },
+  usage: {
+    currency: 'USD',
+    windows: {
+      today: {
+        request_count: 2,
+        estimated_cost: 0.25,
+        total_tokens: 1000,
+        cached_tokens: 100,
+        reasoning_tokens: 50,
+        error_count: 0,
+      },
+      month: {
+        request_count: 10,
+        estimated_cost: 1.5,
+        total_tokens: 12000,
+        cached_tokens: 1200,
+        reasoning_tokens: 300,
+        error_count: 1,
+      },
+    },
+    budgets: {
+      account_policy: {
+        active: true,
+        hard_stop: false,
+        warning_threshold: 0.8,
+        daily_budget: 5,
+        monthly_budget: 100,
+        daily: {
+          spend: 0.25,
+          limit: 5,
+          remaining: 4.75,
+          percent_used: 5,
+          status: 'ok',
+        },
+        monthly: {
+          spend: 1.5,
+          limit: 100,
+          remaining: 98.5,
+          percent_used: 1.5,
+          status: 'ok',
+        },
+      },
+    },
+    runtime_health: {
+      total_events: 3,
+      retry_count: 1,
+      schema_invalid_count: 0,
+      tool_failure_count: 0,
+      last_event_at: '2026-05-31T10:00:00Z',
+    },
+    top_models: [
+      {
+        actual_model: 'openai/gpt-5.4',
+        request_count: 10,
+        total_tokens: 12000,
+        estimated_cost: 1.5,
+      },
+    ],
+    recent_errors: [],
+  },
   runtime_metadata: {
     knowledge_indexing: {
       chunk_size_options: [],
@@ -267,5 +327,91 @@ describe('Captain settings OpenRouter UX', () => {
     expect(embeddingBlock.text()).not.toContain(
       'openai/text-embedding-wrong-dimensions'
     );
+  });
+
+  it('renders OpenRouter usage and budget summary', () => {
+    const store = useCaptainConfigStore();
+    store.applyPayload(
+      basePayload({
+        audioModel: {
+          id: 'openai/gpt-audio-mini',
+          display_name: 'GPT Audio Mini',
+          provider: 'openrouter',
+          provider_configured: true,
+          type: 'chat',
+          capabilities: ['audio_input', 'text_output', 'transcription'],
+        },
+      })
+    );
+
+    const wrapper = mountComponent(store);
+
+    expect(wrapper.find('[data-test="captain-usage-section"]').exists()).toBe(
+      true
+    );
+    expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.TODAY_SPEND');
+    expect(wrapper.text()).toContain('openai/gpt-5.4');
+    expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.NO_RECENT_ERRORS');
+  });
+
+  it('preserves zero budget limits and warning thresholds', () => {
+    const store = useCaptainConfigStore();
+    const payload = basePayload({
+      audioModel: {
+        id: 'openai/gpt-audio-mini',
+        display_name: 'GPT Audio Mini',
+        provider: 'openrouter',
+        provider_configured: true,
+        type: 'chat',
+        capabilities: ['audio_input', 'text_output', 'transcription'],
+      },
+    });
+    payload.usage.budgets.account_policy.warning_threshold = 0;
+    payload.usage.budgets.account_policy.daily.limit = 0;
+    payload.usage.budgets.account_policy.daily_budget = 0;
+    store.applyPayload(payload);
+
+    const wrapper = mountComponent(store);
+
+    expect(wrapper.vm.budgetForm.warningThreshold).toBe(0);
+    expect(wrapper.vm.budgetWindowCards[0].window.limit).toBe(0);
+    expect(wrapper.text()).not.toContain('CAPTAIN_SETTINGS.USAGE.UNLIMITED');
+  });
+
+  it('saves account OpenRouter budget settings', async () => {
+    const store = useCaptainConfigStore();
+    const payload = basePayload({
+      audioModel: {
+        id: 'openai/gpt-audio-mini',
+        display_name: 'GPT Audio Mini',
+        provider: 'openrouter',
+        provider_configured: true,
+        type: 'chat',
+        capabilities: ['audio_input', 'text_output', 'transcription'],
+      },
+    });
+    store.applyPayload(payload);
+    const updateSpy = vi
+      .spyOn(store, 'updatePreferences')
+      .mockResolvedValue({ data: payload });
+
+    const wrapper = mountComponent(store);
+    wrapper.vm.budgetForm.active = true;
+    wrapper.vm.budgetForm.hardStop = true;
+    wrapper.vm.budgetForm.dailyBudget = 2.5;
+    wrapper.vm.budgetForm.monthlyBudget = 50;
+    wrapper.vm.budgetForm.warningThreshold = 75;
+
+    await wrapper.vm.handleBudgetSave();
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      captain_budget: {
+        active: true,
+        hard_stop: true,
+        daily_budget: 2.5,
+        monthly_budget: 50,
+        warning_threshold: 0.75,
+      },
+    });
   });
 });

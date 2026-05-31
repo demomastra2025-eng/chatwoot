@@ -8,6 +8,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     features: {},
     runtime: {},
     observability: {},
+    usage: {},
     providerCredentials: {},
     runtimeMetadata: {},
     uiFlags: {
@@ -21,6 +22,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     getFeatures: state => state.features,
     getRuntime: state => state.runtime,
     getObservability: state => state.observability,
+    getUsage: state => state.usage,
     getProviderCredentials: state => state.providerCredentials,
     getRuntimeMetadata: state => state.runtimeMetadata,
     getUIFlags: state => state.uiFlags,
@@ -80,6 +82,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       this.features = data.features || {};
       this.runtime = data.runtime || {};
       this.observability = data.observability || {};
+      this.usage = data.usage || {};
       this.providerCredentials = data.provider_credentials || {};
       this.runtimeMetadata = data.runtime_metadata || {};
     },

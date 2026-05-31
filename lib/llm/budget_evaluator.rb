@@ -3,6 +3,7 @@
 class Llm::BudgetEvaluator
   ERROR_CODE = 'budget_blocked'
   WARNING_CODE = 'budget_warning'
+  PROVIDER = 'openrouter'
 
   Decision = Struct.new(
     :allowed,
@@ -120,15 +121,11 @@ class Llm::BudgetEvaluator
   def evaluate
     return Decision.new(allowed: true, reason: 'no_policy', feature: feature) if request_account_id.blank?
 
-    policies.each do |policy|
-      decision = limit_decision(policy)
-      return decision if decision.present?
-    end
+    decision = first_limit_decision
+    return decision if decision.present?
 
-    policies.each do |policy|
-      decision = warning_decision(policy)
-      return decision if decision.present?
-    end
+    decision = first_warning_decision
+    return decision if decision.present?
 
     policy = policies.first
     return within_budget_decision(policy) if policy.present?
@@ -139,6 +136,24 @@ class Llm::BudgetEvaluator
   private
 
   attr_reader :request, :model, :estimated_cost, :at
+
+  def first_limit_decision
+    policies.each do |policy|
+      decision = limit_decision(policy)
+      return decision if decision.present?
+    end
+
+    nil
+  end
+
+  def first_warning_decision
+    policies.each do |policy|
+      decision = warning_decision(policy)
+      return decision if decision.present?
+    end
+
+    nil
+  end
 
   def policies
     @policies ||= begin
@@ -184,7 +199,12 @@ class Llm::BudgetEvaluator
 
   def budget_check(policy, period, limit, range)
     limit = decimal_value(limit)
-    current_spend = Llm::UsageLedger.spend(account: request_account_id, range: range, feature: policy.feature.presence)
+    current_spend = Llm::UsageLedger.spend(
+      account: request_account_id,
+      range: range,
+      feature: policy.feature.presence,
+      provider: PROVIDER
+    )
     projected_spend = current_spend + estimated_cost
     {
       period: period,

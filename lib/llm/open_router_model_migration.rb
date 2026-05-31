@@ -78,6 +78,42 @@ class Llm::OpenRouterModelMigration
       report
     end
 
+    def audit(scope: Account.all, timestamp: Time.current)
+      report = build_report(scope: scope, mode: 'audit', timestamp: timestamp)
+      blocking_issues = blocking_issues_for(report)
+
+      report[:passed] = blocking_issues.blank?
+      report[:status] = report[:passed] ? 'passed' : 'failed'
+      report[:blocking_issues] = blocking_issues
+      report[:totals][:blocking_issues] = blocking_issues.size
+      report
+    end
+
+    def rollback_from_report!(path)
+      report = JSON.parse(Pathname.new(path.to_s).read)
+      restored_count = 0
+
+      Account.transaction do
+        Array(report['accounts']).each do |entry|
+          rollback_models = entry['rollback'] || entry['before']
+          next if rollback_models.blank?
+
+          account = Account.find_by(id: entry['account_id'])
+          next if account.blank?
+
+          update_account_models(account, rollback_models)
+          restored_count += 1
+        end
+      end
+
+      {
+        mode: 'rollback',
+        source_report: path.to_s,
+        restored_accounts: restored_count,
+        rolled_back_at: Time.current.iso8601
+      }
+    end
+
     def write_report(report, directory: DEFAULT_REPORT_DIRECTORY, timestamp: Time.current)
       directory = Pathname.new(directory.to_s)
       FileUtils.mkdir_p(directory)
@@ -103,6 +139,29 @@ class Llm::OpenRouterModelMigration
       end
 
       migration_report(mode: mode, timestamp: timestamp, totals: totals, accounts: accounts)
+    end
+
+    def blocking_issues_for(report)
+      Array(report[:accounts]).flat_map do |account_entry|
+        Array(account_entry[:changes]).filter_map do |change|
+          next if change[:status] == 'voice_skipped'
+
+          audit_issue_for(change)
+        end
+      end
+    end
+
+    def audit_issue_for(change)
+      reason = case change[:status]
+               when 'mapped'
+                 'legacy_direct_model_still_stored'
+               when 'unmapped'
+                 'unmapped_legacy_model'
+               else
+                 return
+               end
+
+      change.slice(:account_id, :account_name, :feature, :from, :to, :status, :candidates).merge(reason: reason)
     end
 
     def scan_account(account, totals, accounts)

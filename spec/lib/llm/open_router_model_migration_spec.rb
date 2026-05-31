@@ -149,6 +149,94 @@ RSpec.describe Llm::OpenRouterModelMigration do
     end
   end
 
+  describe '.audit' do
+    it 'passes when normal Captain features only store OpenRouter models while voice keeps Gemini direct models' do
+      stub_full_openrouter_catalog
+      account = create_account_with_captain_models(
+        'assistant' => 'openai/gpt-5.4',
+        'help_center_search' => 'openai/text-embedding-3-small',
+        'voice_settings' => 'gemini-live'
+      )
+
+      report = described_class.audit(scope: Account.where(id: account.id))
+
+      expect(report).to include(
+        mode: 'audit',
+        passed: true,
+        status: 'passed',
+        blocking_issues: []
+      )
+      expect(report[:totals]).to include(
+        blocking_issues: 0,
+        voice_models_unchanged: 1
+      )
+    end
+
+    it 'fails when legacy direct models are still stored for normal Captain features' do
+      stub_full_openrouter_catalog
+      account = create_account_with_captain_models(
+        'assistant' => 'gpt-5.4',
+        'copilot' => 'legacy-direct-only'
+      )
+
+      report = described_class.audit(scope: Account.where(id: account.id))
+
+      expect(report).to include(
+        mode: 'audit',
+        passed: false,
+        status: 'failed'
+      )
+      expect(report[:totals]).to include(blocking_issues: 2)
+      expect(report[:blocking_issues]).to include(
+        include(
+          account_id: account.id,
+          feature: 'assistant',
+          from: 'gpt-5.4',
+          to: 'openai/gpt-5.4',
+          reason: 'legacy_direct_model_still_stored'
+        ),
+        include(
+          account_id: account.id,
+          feature: 'copilot',
+          from: 'legacy-direct-only',
+          to: nil,
+          reason: 'unmapped_legacy_model'
+        )
+      )
+    end
+  end
+
+  describe '.rollback_from_report!' do
+    it 'restores stored Captain models from a migration report' do
+      account = create_account_with_captain_models('assistant' => 'openai/gpt-5.4')
+      report_path = Rails.root.join('tmp/openrouter_model_migration_rollback_spec.json')
+      report_path.write(
+        JSON.pretty_generate(
+          accounts: [
+            {
+              account_id: account.id,
+              rollback: { 'assistant' => 'gpt-5.4', 'voice_settings' => 'gemini-live' }
+            },
+            {
+              account_id: -1,
+              rollback: { 'assistant' => 'missing-account' }
+            }
+          ]
+        )
+      )
+
+      report = described_class.rollback_from_report!(report_path)
+
+      expect(report).to include(mode: 'rollback', restored_accounts: 1, source_report: report_path.to_s)
+      expect(account.reload.captain_models).to include(
+        'assistant' => 'gpt-5.4',
+        'voice_settings' => 'gemini-live'
+      )
+    ensure
+      FileUtils.rm_f(report_path)
+    end
+  end
+
   describe '.write_report' do
     it 'exports a reversible JSON report under the requested directory' do
       report = {

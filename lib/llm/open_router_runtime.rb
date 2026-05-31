@@ -69,15 +69,17 @@ class Llm::OpenRouterRuntime
     model = resolve_model(request)
     enforce_budget!(request, model)
     observe_native_request(request, model, 'transcription.complete') do
-      Llm::OpenRouterTranscriptionClient.transcribe(
-        request.input,
-        model: model,
-        api_key: api_key!(request),
-        api_base: api_base(request),
-        language: request.options[:language],
-        temperature: request.temperature.nil? ? 0.4 : request.temperature,
-        provider: routing_profile(request, model).provider_preferences
-      )
+      with_openrouter_retry(request, model) do
+        Llm::OpenRouterTranscriptionClient.transcribe(
+          request.input,
+          model: model,
+          api_key: api_key!(request),
+          api_base: api_base(request),
+          language: request.options[:language],
+          temperature: request.temperature.nil? ? 0.4 : request.temperature,
+          provider: routing_profile(request, model).provider_preferences
+        )
+      end
     end
   end
 
@@ -88,15 +90,17 @@ class Llm::OpenRouterRuntime
     model = resolve_model(request)
     enforce_budget!(request, model)
     observe_native_request(request, model, 'embedding.complete') do
-      Llm::OpenRouterEmbeddingClient.embed(
-        request.input,
-        model: model,
-        dimensions: request.options[:dimensions],
-        input_type: request.options[:input_type],
-        api_key: api_key!(request),
-        api_base: api_base(request),
-        provider: routing_profile(request, model).provider_preferences
-      )
+      with_openrouter_retry(request, model) do
+        Llm::OpenRouterEmbeddingClient.embed(
+          request.input,
+          model: model,
+          dimensions: request.options[:dimensions],
+          input_type: request.options[:input_type],
+          api_key: api_key!(request),
+          api_base: api_base(request),
+          provider: routing_profile(request, model).provider_preferences
+        )
+      end
     end
   end
 
@@ -113,16 +117,18 @@ class Llm::OpenRouterRuntime
     enforce_budget!(request, model)
 
     observe_native_request(request, model, 'rerank.complete') do
-      Llm::OpenRouterRerankClient.rerank(
-        query: query,
-        documents: documents,
-        model: model,
-        top_n: request.options[:top_n],
-        return_documents: request.options.fetch(:return_documents, true),
-        api_key: api_key!(request),
-        api_base: api_base(request),
-        provider: routing_profile(request, model).provider_preferences
-      )
+      with_openrouter_retry(request, model) do
+        Llm::OpenRouterRerankClient.rerank(
+          query: query,
+          documents: documents,
+          model: model,
+          top_n: request.options[:top_n],
+          return_documents: request.options.fetch(:return_documents, true),
+          api_key: api_key!(request),
+          api_base: api_base(request),
+          provider: routing_profile(request, model).provider_preferences
+        )
+      end
     end
   end
 
@@ -246,6 +252,50 @@ class Llm::OpenRouterRuntime
     when 'transcription.complete'
       Llm::ObservabilityPayload.attach_transcription_response!(event_payload, response)
     end
+  end
+
+  def with_openrouter_retry(request, model)
+    policy = Llm::OpenRouterRetryPolicy.new(
+      provider: OPENROUTER_PROVIDER,
+      model: model,
+      feature: request.feature_key,
+      account: request_account(request),
+      tools: request.tools,
+      stream: request.stream
+    )
+    attempt = 0
+
+    loop do
+      attempt += 1
+      response = yield
+      decision = policy.retryable_response?(response, attempt: attempt)
+      return response unless decision.retryable?
+
+      publish_native_retry_event(request, model, decision, attempt)
+    rescue StandardError => e
+      decision = policy.retryable_error?(e, attempt: attempt)
+      raise unless decision.retryable?
+
+      publish_native_retry_event(request, model, decision, attempt, error: e)
+    end
+  end
+
+  def publish_native_retry_event(request, model, decision, attempt, error: nil)
+    payload = native_observability_payload(request, model).merge(
+      status: 'retrying',
+      error: error.present?,
+      reason: decision.reason,
+      openrouter_error_category: decision.category,
+      retry_after_seconds: decision.retry_after_seconds,
+      attempt: attempt,
+      max_attempts: decision.max_attempts,
+      retry_count: attempt,
+      provider: OPENROUTER_PROVIDER
+    ).compact
+    payload[:error_class] = error.class.name if error
+    payload[:error_message] = error.message if error
+
+    Llm::EventBus.publish('run.retry', payload)
   end
 
   def chat_context(request, model)

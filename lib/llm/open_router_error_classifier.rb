@@ -24,6 +24,7 @@ class Llm::OpenRouterErrorClassifier
     'routing_requirements_unsatisfied' => :routing_requirements_unsatisfied?,
     'context_length_exceeded' => :context_length_exceeded?,
     'schema_invalid' => :schema_invalid?,
+    'tool_call_invalid' => :tool_call_invalid?,
     'guardrail_blocked' => :guardrail_blocked?,
     'moderation_flagged' => :moderation_flagged?,
     'no_content_generated' => :no_content_generated?,
@@ -95,6 +96,10 @@ class Llm::OpenRouterErrorClassifier
 
   def schema_invalid?
     message.match?(/schema invalid|invalid schema|response_format|json schema/i)
+  end
+
+  def tool_call_invalid?
+    message.match?(/invalid tool|tool call|function call|tool arguments|tool_call/i)
   end
 
   def guardrail_blocked?

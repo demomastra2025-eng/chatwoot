@@ -38,7 +38,7 @@ class Llm::ChatRequestRunner
 
     run_observed(llm_chat) do
       add_conversation_history(llm_chat, conversation_messages[0...-1])
-      ask_chat(llm_chat, conversation_messages.last[:content])
+      ask_chat_with_retries(llm_chat, conversation_messages.last[:content])
     end
   end
 
@@ -163,6 +163,84 @@ class Llm::ChatRequestRunner
     kwargs[:account] = account if account.present?
 
     Llm::ChatClient.ask(chat, content, **kwargs)
+  end
+
+  def ask_chat_with_retries(chat, content)
+    policy = retry_policy(chat)
+    attempt = 0
+
+    loop do
+      attempt += 1
+      message_count_before_attempt = chat_message_count(chat)
+
+      begin
+        response = ask_chat(chat, content)
+        decision = policy.retryable_response?(response, attempt: attempt)
+        return response unless decision.retryable?
+
+        restore_chat_messages!(chat, message_count_before_attempt)
+        publish_retry_event(chat, decision, attempt)
+      rescue StandardError => e
+        decision = policy.retryable_error?(e, attempt: attempt)
+        raise unless decision.retryable?
+
+        restore_chat_messages!(chat, message_count_before_attempt)
+        publish_retry_event(chat, decision, attempt, error: e)
+      end
+    end
+  end
+
+  def retry_policy(chat)
+    Llm::OpenRouterRetryPolicy.new(
+      provider: provider_for_retry(chat),
+      model: effective_model_name(chat),
+      feature: feature,
+      account: account,
+      tools: tools,
+      stream: params[:stream] || params['stream']
+    )
+  end
+
+  def provider_for_retry(chat)
+    chat_model = chat.respond_to?(:model) ? chat.model : nil
+    return chat_model.provider if chat_model.respond_to?(:provider)
+
+    Llm::Models.provider_for(effective_model_name(chat), account: account)
+  rescue StandardError
+    nil
+  end
+
+  def chat_message_count(chat)
+    return unless chat.respond_to?(:messages)
+    return unless chat.messages.is_a?(Array)
+
+    chat.messages.length
+  end
+
+  def restore_chat_messages!(chat, message_count)
+    return if message_count.nil?
+    return unless chat.respond_to?(:messages)
+    return unless chat.messages.is_a?(Array)
+
+    chat.messages.pop while chat.messages.length > message_count
+  end
+
+  def publish_retry_event(chat, decision, attempt, error: nil)
+    payload = observability_payload(chat).merge(
+      status: 'retrying',
+      error: error.present?,
+      reason: decision.reason,
+      openrouter_error_category: decision.category,
+      retry_after_seconds: decision.retry_after_seconds,
+      attempt: attempt,
+      max_attempts: decision.max_attempts,
+      retry_count: attempt,
+      provider: 'openrouter'
+    ).compact
+    payload[:error_class] = error.class.name if error
+    payload[:error_message] = error.message if error
+
+    Llm::EventBus.publish('run.retry', payload)
   end
 
   def run_observed(chat)

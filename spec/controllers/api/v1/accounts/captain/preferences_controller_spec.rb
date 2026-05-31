@@ -22,26 +22,12 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
     end
 
     context 'when it is an agent' do
-      it 'returns captain config' do
+      it 'returns unauthorized' do
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: agent.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(json_response).to have_key(:providers)
-        expect(json_response).to have_key(:models)
-        expect(json_response).to have_key(:features)
-        expect(json_response).to have_key(:runtime)
-        expect(json_response).to have_key(:observability)
-        expect(json_response).to have_key(:runtime_metadata)
-        expect(json_response.dig(:runtime, :knowledge_chunk_size)).to eq(Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE)
-        expect(json_response.dig(:runtime_metadata, :knowledge_indexing)).to include(
-          chunk_size: Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE,
-          vector_dimensions: Captain::KnowledgeSettings::VECTOR_DIMENSIONS
-        )
-        expect(json_response.dig(:runtime_metadata, :knowledge_indexing, :chunk_size_options)).to include(
-          include(value: Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE)
-        )
+        expect(response).to have_http_status(:unauthorized)
       end
     end
 
@@ -82,6 +68,53 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response.dig(:runtime_metadata, :providers, :openrouter)).to include(:configured, :display_name, :models_api)
         expect(json_response.dig(:runtime_metadata, :registry, :openrouter)).to include(:total_models, :using_fallback)
         expect(json_response.dig(:runtime_metadata, :features, :assistant)).to include(:selected_model, :provider)
+      end
+
+      it 'includes account OpenRouter usage, budget status, and runtime health summary' do
+        create(:llm_budget_policy, account: account, daily_budget: 1.0, monthly_budget: 10.0, hard_stop: true)
+        create(:llm_usage_event, account: account, feature: 'assistant', actual_model: 'openai/gpt-5.4-mini',
+                                 estimated_cost: 0.25, total_tokens: 120, occurred_at: Time.current)
+        create(:llm_usage_event, account: account, feature: 'help_center_search', actual_model: 'openai/text-embedding-3-small',
+                                 estimated_cost: 0.05, total_tokens: 30, occurred_at: Time.current)
+        create(:llm_usage_event, account: account, status: 'error', error_code: 'provider_error',
+                                 actual_model: 'openai/gpt-5.4-mini', estimated_cost: 0,
+                                 total_tokens: 0, occurred_at: Time.current)
+        create(:llm_event, account: account, provider: 'openrouter', error: true, retry_count: 1, schema_invalid: true)
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:usage]).to include(currency: 'USD')
+        expect(json_response.dig(:usage, :windows, :today)).to include(
+          request_count: 3,
+          estimated_cost: 0.3,
+          total_tokens: 150
+        )
+        expect(json_response.dig(:usage, :budgets, :account_policy)).to include(
+          daily_budget: 1.0,
+          monthly_budget: 10.0,
+          hard_stop: true
+        )
+        expect(json_response.dig(:usage, :budgets, :account_policy, :daily)).to include(
+          spend: 0.3,
+          limit: 1.0,
+          remaining: 0.7,
+          status: 'ok'
+        )
+        expect(json_response.dig(:usage, :top_models)).to include(
+          include(actual_model: 'openai/gpt-5.4-mini', request_count: 2)
+        )
+        expect(json_response.dig(:usage, :recent_errors)).to include(
+          include(error_code: 'provider_error', model: 'openai/gpt-5.4-mini')
+        )
+        expect(json_response.dig(:usage, :runtime_health)).to include(
+          total_events: 1,
+          error_count: 1,
+          retry_count: 1,
+          schema_invalid_count: 1
+        )
       end
 
       it 'includes backend diagnostics for searchable OpenRouter models hidden from a feature' do
@@ -473,6 +506,38 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
         expect(account.reload.captain_observability.dig('saved_views', 0, 'filters')).to include(
           'trace_id' => 'trace-1'
+        )
+      end
+
+      it 'updates the account OpenRouter budget policy' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_budget: {
+                active: true,
+                hard_stop: true,
+                daily_budget: '2.50',
+                monthly_budget: '50',
+                warning_threshold: '0.75'
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        policy = LlmBudgetPolicy.find_by!(account: account, scope_type: 'account', feature: nil)
+        expect(policy).to have_attributes(
+          active: true,
+          hard_stop: true,
+          daily_budget: 2.5,
+          monthly_budget: 50.0,
+          warning_threshold: 0.75
+        )
+        expect(json_response.dig(:usage, :budgets, :account_policy)).to include(
+          active: true,
+          hard_stop: true,
+          daily_budget: 2.5,
+          monthly_budget: 50.0,
+          warning_threshold: 0.75
         )
       end
 

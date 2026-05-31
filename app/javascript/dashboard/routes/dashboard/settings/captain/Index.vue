@@ -33,6 +33,7 @@ const {
   providers,
   runtime,
   runtimeMetadata,
+  usage,
   providerCredentials,
   features,
 } = storeToRefs(captainConfigStore);
@@ -46,7 +47,138 @@ const runtimeThinkingEfforts = ref({
   copilot: 'none',
 });
 const providerApiKeys = reactive({});
+const budgetForm = reactive({
+  active: false,
+  hardStop: false,
+  dailyBudget: '',
+  monthlyBudget: '',
+  warningThreshold: 80,
+});
+const budgetSaveInProgress = ref(false);
 const numberFormatter = new Intl.NumberFormat();
+const compactNumberFormatter = new Intl.NumberFormat(undefined, {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+const currencyFormatter = computed(
+  () =>
+    new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: usage.value?.currency || 'USD',
+      maximumFractionDigits: 4,
+    })
+);
+
+function normalizeBudgetFormValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function normalizeWarningThreshold(value) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return 80;
+
+  return Math.min(100, Math.max(0, Number(numberValue.toFixed(2))));
+}
+
+function warningThresholdPercent(value) {
+  const defaultThreshold = 0.8;
+  const threshold =
+    value === null || value === undefined || value === ''
+      ? defaultThreshold
+      : Number(value);
+
+  return normalizeWarningThreshold(
+    (Number.isFinite(threshold) ? threshold : defaultThreshold) * 100
+  );
+}
+
+function budgetInputValue(value) {
+  if (value === null || value === undefined) return '';
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : '';
+}
+
+function formatCurrency(value) {
+  const numberValue = Number(value || 0);
+  return currencyFormatter.value.format(
+    Number.isFinite(numberValue) ? numberValue : 0
+  );
+}
+
+function formatNumber(value, { compact = false } = {}) {
+  const numberValue = Number(value || 0);
+  const formatter = compact ? compactNumberFormatter : numberFormatter;
+  return formatter.format(Number.isFinite(numberValue) ? numberValue : 0);
+}
+
+function formatPercent(value) {
+  const numberValue = Number(value || 0);
+  if (!Number.isFinite(numberValue)) return '0';
+
+  return numberFormatter.format(Math.min(100, Math.max(0, numberValue)));
+}
+
+function progressWidth(value) {
+  const numberValue = Number(value || 0);
+  if (!Number.isFinite(numberValue)) return '0%';
+
+  return `${Math.min(100, Math.max(0, numberValue))}%`;
+}
+
+function formatDateTime(value) {
+  if (!value) return t('CAPTAIN_SETTINGS.USAGE.NEVER');
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return t('CAPTAIN_SETTINGS.USAGE.NEVER');
+
+  return new Intl.DateTimeFormat(undefined, {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function budgetStatusLabel(status) {
+  switch (status) {
+    case 'ok':
+      return t('CAPTAIN_SETTINGS.USAGE.STATUS.OK');
+    case 'warning':
+      return t('CAPTAIN_SETTINGS.USAGE.STATUS.WARNING');
+    case 'exceeded':
+      return t('CAPTAIN_SETTINGS.USAGE.STATUS.EXCEEDED');
+    default:
+      return t('CAPTAIN_SETTINGS.USAGE.STATUS.NOT_CONFIGURED');
+  }
+}
+
+function budgetStatusClasses(status) {
+  switch (status) {
+    case 'ok':
+      return 'border-n-teal-8 text-n-teal-11 bg-n-teal-2';
+    case 'warning':
+      return 'border-n-amber-8 text-n-amber-11 bg-n-amber-2';
+    case 'exceeded':
+      return 'border-n-ruby-8 text-n-ruby-11 bg-n-ruby-2';
+    default:
+      return 'border-n-weak text-n-slate-11 bg-n-alpha-2';
+  }
+}
+
+function syncBudgetForm(policy = {}) {
+  budgetForm.active = policy.active === true;
+  budgetForm.hardStop = policy.hard_stop === true;
+  budgetForm.dailyBudget = budgetInputValue(policy.daily_budget);
+  budgetForm.monthlyBudget = budgetInputValue(policy.monthly_budget);
+  budgetForm.warningThreshold = warningThresholdPercent(
+    policy.warning_threshold
+  );
+}
 
 const modelFeatures = computed(() => [
   {
@@ -240,6 +372,124 @@ const isHelpCenterSearchEnabled = computed(
 const isLabelSuggestionEnabled = computed(
   () => features.value.label_suggestion?.enabled === true
 );
+const usageWindows = computed(() => usage.value?.windows || {});
+const usageToday = computed(() => usageWindows.value.today || {});
+const usageMonth = computed(() => usageWindows.value.month || {});
+const accountBudgetPolicy = computed(
+  () => usage.value?.budgets?.account_policy || {}
+);
+const budgetDaily = computed(() => accountBudgetPolicy.value.daily || {});
+const budgetMonthly = computed(() => accountBudgetPolicy.value.monthly || {});
+const runtimeHealth = computed(() => usage.value?.runtime_health || {});
+const topUsageModels = computed(() =>
+  Array.isArray(usage.value?.top_models) ? usage.value.top_models : []
+);
+const recentUsageErrors = computed(() =>
+  Array.isArray(usage.value?.recent_errors) ? usage.value.recent_errors : []
+);
+const budgetWindowCards = computed(() => [
+  {
+    key: 'daily',
+    icon: 'i-lucide-calendar-days',
+    title: t('CAPTAIN_SETTINGS.USAGE.DAILY_BUDGET'),
+    window: budgetDaily.value,
+  },
+  {
+    key: 'monthly',
+    icon: 'i-lucide-calendar-range',
+    title: t('CAPTAIN_SETTINGS.USAGE.MONTHLY_BUDGET'),
+    window: budgetMonthly.value,
+  },
+]);
+const runtimeHealthItems = computed(() => [
+  {
+    key: 'events',
+    icon: 'i-lucide-activity',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_EVENTS'),
+    value: formatNumber(runtimeHealth.value.total_events),
+  },
+  {
+    key: 'retries',
+    icon: 'i-lucide-refresh-cw',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_RETRIES'),
+    value: formatNumber(runtimeHealth.value.retry_count),
+  },
+  {
+    key: 'schema',
+    icon: 'i-lucide-braces',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_SCHEMA_ERRORS'),
+    value: formatNumber(runtimeHealth.value.schema_invalid_count),
+  },
+  {
+    key: 'tools',
+    icon: 'i-lucide-wrench',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_TOOL_ERRORS'),
+    value: formatNumber(runtimeHealth.value.tool_failure_count),
+  },
+]);
+const usageMetricCards = computed(() => [
+  {
+    key: 'today_spend',
+    icon: 'i-lucide-wallet-cards',
+    label: t('CAPTAIN_SETTINGS.USAGE.TODAY_SPEND'),
+    value: formatCurrency(usageToday.value.estimated_cost),
+    detail: t('CAPTAIN_SETTINGS.USAGE.REQUESTS_COUNT', {
+      count: formatNumber(usageToday.value.request_count),
+    }),
+  },
+  {
+    key: 'month_spend',
+    icon: 'i-lucide-chart-column',
+    label: t('CAPTAIN_SETTINGS.USAGE.MONTH_SPEND'),
+    value: formatCurrency(usageMonth.value.estimated_cost),
+    detail: t('CAPTAIN_SETTINGS.USAGE.REQUESTS_COUNT', {
+      count: formatNumber(usageMonth.value.request_count),
+    }),
+  },
+  {
+    key: 'month_tokens',
+    icon: 'i-lucide-coins',
+    label: t('CAPTAIN_SETTINGS.USAGE.MONTH_TOKENS'),
+    value: formatNumber(usageMonth.value.total_tokens, { compact: true }),
+    detail: t('CAPTAIN_SETTINGS.USAGE.CACHED_TOKENS_COUNT', {
+      count: formatNumber(usageMonth.value.cached_tokens, { compact: true }),
+    }),
+  },
+  {
+    key: 'month_errors',
+    icon: 'i-lucide-circle-alert',
+    label: t('CAPTAIN_SETTINGS.USAGE.MONTH_ERRORS'),
+    value: formatNumber(usageMonth.value.error_count),
+    detail: t('CAPTAIN_SETTINGS.USAGE.REASONING_TOKENS_COUNT', {
+      count: formatNumber(usageMonth.value.reasoning_tokens, {
+        compact: true,
+      }),
+    }),
+  },
+]);
+const budgetFormSnapshot = computed(() => ({
+  active: budgetForm.active === true,
+  hardStop: budgetForm.hardStop === true,
+  dailyBudget: normalizeBudgetFormValue(budgetForm.dailyBudget),
+  monthlyBudget: normalizeBudgetFormValue(budgetForm.monthlyBudget),
+  warningThreshold: normalizeWarningThreshold(budgetForm.warningThreshold),
+}));
+const savedBudgetSnapshot = computed(() => ({
+  active: accountBudgetPolicy.value.active === true,
+  hardStop: accountBudgetPolicy.value.hard_stop === true,
+  dailyBudget: normalizeBudgetFormValue(accountBudgetPolicy.value.daily_budget),
+  monthlyBudget: normalizeBudgetFormValue(
+    accountBudgetPolicy.value.monthly_budget
+  ),
+  warningThreshold: warningThresholdPercent(
+    accountBudgetPolicy.value.warning_threshold
+  ),
+}));
+const isBudgetFormDirty = computed(
+  () =>
+    JSON.stringify(budgetFormSnapshot.value) !==
+    JSON.stringify(savedBudgetSnapshot.value)
+);
 
 const selectedModelSupportsThinking = featureKey =>
   features.value?.[featureKey]?.selected_supports_thinking === true;
@@ -355,6 +605,8 @@ watch(
   { immediate: true, deep: true }
 );
 
+watch(accountBudgetPolicy, syncBudgetForm, { immediate: true, deep: true });
+
 async function handleFeatureToggle({ feature, enabled }) {
   try {
     await captainConfigStore.updatePreferences({
@@ -388,6 +640,27 @@ async function handleRuntimeChange(runtimeConfig) {
   } catch (error) {
     useAlert(t('CAPTAIN_SETTINGS.API.ERROR'));
     captainConfigStore.fetch();
+  }
+}
+
+async function handleBudgetSave() {
+  budgetSaveInProgress.value = true;
+  try {
+    await captainConfigStore.updatePreferences({
+      captain_budget: {
+        active: budgetFormSnapshot.value.active,
+        hard_stop: budgetFormSnapshot.value.hardStop,
+        daily_budget: budgetFormSnapshot.value.dailyBudget,
+        monthly_budget: budgetFormSnapshot.value.monthlyBudget,
+        warning_threshold: budgetFormSnapshot.value.warningThreshold / 100,
+      },
+    });
+    useAlert(t('CAPTAIN_SETTINGS.USAGE.SAVE_SUCCESS'));
+  } catch (error) {
+    useAlert(t('CAPTAIN_SETTINGS.USAGE.SAVE_ERROR'));
+    captainConfigStore.fetch();
+  } finally {
+    budgetSaveInProgress.value = false;
   }
 }
 
@@ -590,6 +863,349 @@ onMounted(() => {
               <p class="text-xs text-n-slate-11">
                 {{ t('CAPTAIN_SETTINGS.PROVIDER_KEYS.SECRET_NOTE') }}
               </p>
+            </div>
+          </div>
+        </SectionLayout>
+
+        <SectionLayout
+          :title="t('CAPTAIN_SETTINGS.USAGE.TITLE')"
+          :description="t('CAPTAIN_SETTINGS.USAGE.DESCRIPTION')"
+          with-border
+        >
+          <div class="grid gap-5" data-test="captain-usage-section">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div
+                v-for="metric in usageMetricCards"
+                :key="metric.key"
+                class="grid gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-xs font-medium text-n-slate-11">
+                    {{ metric.label }}
+                  </span>
+                  <Icon
+                    :icon="metric.icon"
+                    class="size-4 shrink-0 text-n-slate-11"
+                  />
+                </div>
+                <div class="text-xl font-semibold text-n-slate-12">
+                  {{ metric.value }}
+                </div>
+                <div class="text-xs text-n-slate-11">
+                  {{ metric.detail }}
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+              <div
+                class="grid gap-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              >
+                <div
+                  class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                >
+                  <div class="flex min-w-0 items-start gap-3">
+                    <Icon
+                      icon="i-lucide-gauge"
+                      class="mt-0.5 size-4 shrink-0 text-n-slate-11"
+                    />
+                    <div class="min-w-0">
+                      <div class="text-sm font-medium text-n-slate-12">
+                        {{ t('CAPTAIN_SETTINGS.USAGE.BUDGET_TITLE') }}
+                      </div>
+                      <div class="mt-0.5 text-xs text-n-slate-11">
+                        {{ t('CAPTAIN_SETTINGS.USAGE.BUDGET_DESCRIPTION') }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs text-n-slate-11">
+                      {{ t('CAPTAIN_SETTINGS.USAGE.BUDGET_ACTIVE') }}
+                    </span>
+                    <Switch v-model="budgetForm.active" />
+                  </div>
+                </div>
+
+                <div class="grid gap-3 md:grid-cols-2">
+                  <div
+                    v-for="budgetWindow in budgetWindowCards"
+                    :key="budgetWindow.key"
+                    class="grid gap-2 rounded-lg bg-n-alpha-2 p-3"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2">
+                        <Icon
+                          :icon="budgetWindow.icon"
+                          class="size-3.5 shrink-0 text-n-slate-11"
+                        />
+                        <span class="text-xs font-medium text-n-slate-12">
+                          {{ budgetWindow.title }}
+                        </span>
+                      </div>
+                      <span
+                        class="rounded-md border px-2 py-0.5 text-[11px] font-medium"
+                        :class="budgetStatusClasses(budgetWindow.window.status)"
+                      >
+                        {{ budgetStatusLabel(budgetWindow.window.status) }}
+                      </span>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-3">
+                      <span class="text-sm font-semibold text-n-slate-12">
+                        {{ formatCurrency(budgetWindow.window.spend) }}
+                      </span>
+                      <span class="text-xs text-n-slate-11">
+                        {{
+                          budgetWindow.window.limit != null
+                            ? formatCurrency(budgetWindow.window.limit)
+                            : t('CAPTAIN_SETTINGS.USAGE.UNLIMITED')
+                        }}
+                      </span>
+                    </div>
+                    <div
+                      class="h-1.5 overflow-hidden rounded-full bg-n-alpha-3"
+                    >
+                      <div
+                        class="h-full rounded-full"
+                        :class="{
+                          'bg-n-teal-9': budgetWindow.window.status === 'ok',
+                          'bg-n-amber-9':
+                            budgetWindow.window.status === 'warning',
+                          'bg-n-ruby-9':
+                            budgetWindow.window.status === 'exceeded',
+                          'bg-n-slate-8':
+                            !budgetWindow.window.status ||
+                            budgetWindow.window.status === 'not_configured',
+                        }"
+                        :style="{
+                          width: progressWidth(
+                            budgetWindow.window.percent_used
+                          ),
+                        }"
+                      />
+                    </div>
+                    <div
+                      class="flex justify-between gap-3 text-xs text-n-slate-11"
+                    >
+                      <span>
+                        {{
+                          t('CAPTAIN_SETTINGS.USAGE.USED_PERCENT', {
+                            percent: formatPercent(
+                              budgetWindow.window.percent_used
+                            ),
+                          })
+                        }}
+                      </span>
+                      <span v-if="budgetWindow.window.remaining != null">
+                        {{
+                          t('CAPTAIN_SETTINGS.USAGE.REMAINING', {
+                            amount: formatCurrency(
+                              budgetWindow.window.remaining
+                            ),
+                          })
+                        }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  class="grid gap-3 border-t border-n-weak pt-4 lg:grid-cols-[1fr_1fr_0.9fr]"
+                >
+                  <Input
+                    v-model="budgetForm.dailyBudget"
+                    type="number"
+                    min="0"
+                    size="sm"
+                    :label="t('CAPTAIN_SETTINGS.USAGE.DAILY_BUDGET')"
+                    :placeholder="
+                      t('CAPTAIN_SETTINGS.USAGE.BUDGET_PLACEHOLDER')
+                    "
+                  />
+                  <Input
+                    v-model="budgetForm.monthlyBudget"
+                    type="number"
+                    min="0"
+                    size="sm"
+                    :label="t('CAPTAIN_SETTINGS.USAGE.MONTHLY_BUDGET')"
+                    :placeholder="
+                      t('CAPTAIN_SETTINGS.USAGE.BUDGET_PLACEHOLDER')
+                    "
+                  />
+                  <Input
+                    v-model="budgetForm.warningThreshold"
+                    type="number"
+                    min="0"
+                    max="100"
+                    size="sm"
+                    :label="t('CAPTAIN_SETTINGS.USAGE.WARNING_THRESHOLD')"
+                  />
+                </div>
+
+                <div
+                  class="flex flex-col gap-3 border-t border-n-weak pt-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div class="flex items-center gap-3">
+                    <Switch v-model="budgetForm.hardStop" />
+                    <div>
+                      <div class="text-xs font-medium text-n-slate-12">
+                        {{ t('CAPTAIN_SETTINGS.USAGE.HARD_STOP') }}
+                      </div>
+                      <div class="text-xs text-n-slate-11">
+                        {{ t('CAPTAIN_SETTINGS.USAGE.HARD_STOP_DESCRIPTION') }}
+                      </div>
+                    </div>
+                  </div>
+                  <NextButton
+                    sm
+                    blue
+                    type="button"
+                    :is-loading="budgetSaveInProgress"
+                    :disabled="!isBudgetFormDirty || budgetSaveInProgress"
+                    @click="handleBudgetSave"
+                  >
+                    {{ t('CAPTAIN_SETTINGS.USAGE.SAVE') }}
+                  </NextButton>
+                </div>
+              </div>
+
+              <div
+                class="grid gap-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              >
+                <div class="flex min-w-0 items-start gap-3">
+                  <Icon
+                    icon="i-lucide-activity"
+                    class="mt-0.5 size-4 shrink-0 text-n-slate-11"
+                  />
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium text-n-slate-12">
+                      {{ t('CAPTAIN_SETTINGS.USAGE.RUNTIME_HEALTH_TITLE') }}
+                    </div>
+                    <div class="mt-0.5 text-xs text-n-slate-11">
+                      {{
+                        t('CAPTAIN_SETTINGS.USAGE.RUNTIME_HEALTH_DESCRIPTION')
+                      }}
+                    </div>
+                  </div>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <div
+                    v-for="item in runtimeHealthItems"
+                    :key="item.key"
+                    class="rounded-lg bg-n-alpha-2 p-3"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-xs text-n-slate-11">
+                        {{ item.label }}
+                      </span>
+                      <Icon
+                        :icon="item.icon"
+                        class="size-3.5 shrink-0 text-n-slate-11"
+                      />
+                    </div>
+                    <div class="mt-2 text-lg font-semibold text-n-slate-12">
+                      {{ item.value }}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  class="rounded-lg bg-n-alpha-2 p-3 text-xs text-n-slate-11"
+                >
+                  {{
+                    t('CAPTAIN_SETTINGS.USAGE.LAST_EVENT', {
+                      date: formatDateTime(runtimeHealth.last_event_at),
+                    })
+                  }}
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-4 xl:grid-cols-2">
+              <div
+                class="grid gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <div class="text-sm font-medium text-n-slate-12">
+                    {{ t('CAPTAIN_SETTINGS.USAGE.TOP_MODELS') }}
+                  </div>
+                  <Icon
+                    icon="i-lucide-list-ordered"
+                    class="size-4 shrink-0 text-n-slate-11"
+                  />
+                </div>
+                <div v-if="topUsageModels.length" class="grid gap-2">
+                  <div
+                    v-for="model in topUsageModels"
+                    :key="model.actual_model"
+                    class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-2 p-3"
+                  >
+                    <div class="min-w-0">
+                      <div class="truncate text-xs font-medium text-n-slate-12">
+                        {{ model.actual_model }}
+                      </div>
+                      <div class="mt-0.5 text-xs text-n-slate-11">
+                        {{
+                          t('CAPTAIN_SETTINGS.USAGE.MODEL_USAGE_META', {
+                            requests: formatNumber(model.request_count),
+                            tokens: formatNumber(model.total_tokens, {
+                              compact: true,
+                            }),
+                          })
+                        }}
+                      </div>
+                    </div>
+                    <span class="shrink-0 text-xs font-medium text-n-slate-12">
+                      {{ formatCurrency(model.estimated_cost) }}
+                    </span>
+                  </div>
+                </div>
+                <div
+                  v-else
+                  class="rounded-lg bg-n-alpha-2 p-3 text-xs text-n-slate-11"
+                >
+                  {{ t('CAPTAIN_SETTINGS.USAGE.NO_TOP_MODELS') }}
+                </div>
+              </div>
+
+              <div
+                class="grid gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <div class="text-sm font-medium text-n-slate-12">
+                    {{ t('CAPTAIN_SETTINGS.USAGE.RECENT_ERRORS') }}
+                  </div>
+                  <Icon
+                    icon="i-lucide-triangle-alert"
+                    class="size-4 shrink-0 text-n-slate-11"
+                  />
+                </div>
+                <div v-if="recentUsageErrors.length" class="grid gap-2">
+                  <div
+                    v-for="error in recentUsageErrors"
+                    :key="`${error.occurred_at}-${error.trace_id || error.request_id}`"
+                    class="grid gap-1 rounded-lg bg-n-alpha-2 p-3"
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <span
+                        class="truncate text-xs font-medium text-n-slate-12"
+                      >
+                        {{ error.error_code || error.status }}
+                      </span>
+                      <span class="shrink-0 text-[11px] text-n-slate-11">
+                        {{ formatDateTime(error.occurred_at) }}
+                      </span>
+                    </div>
+                    <div class="truncate text-xs text-n-slate-11">
+                      {{ error.model || error.feature }}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  v-else
+                  class="rounded-lg bg-n-alpha-2 p-3 text-xs text-n-slate-11"
+                >
+                  {{ t('CAPTAIN_SETTINGS.USAGE.NO_RECENT_ERRORS') }}
+                </div>
+              </div>
             </div>
           </div>
         </SectionLayout>

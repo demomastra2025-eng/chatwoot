@@ -280,6 +280,91 @@ RSpec.describe Llm::ChatRequestRunner do
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
+  it 'retries blank OpenRouter responses once when no tools can duplicate side effects' do
+    openrouter_model = instance_double(RubyLLM::Model::Info, id: 'openai/gpt-5.4-mini', provider: 'openrouter')
+    blank_response = instance_double(RubyLLM::Message, content: '', tool_call?: false)
+    final_response = instance_double(RubyLLM::Message, content: 'Done', input_tokens: 3, output_tokens: 4, tool_call?: false)
+    retry_events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.run.retry') do |*args|
+      retry_events << ActiveSupport::Notifications::Event.new(*args)
+    end
+
+    allow(chat).to receive(:model).and_return(openrouter_model)
+    expect(chat).to receive(:ask).with('Hello').twice.and_return(blank_response, final_response)
+
+    result = described_class.new(
+      chat: chat,
+      model: 'openai/gpt-5.4-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      observability: { feature: 'assistant', account_id: 1 }
+    ).call
+
+    expect(result).to eq(final_response)
+    expect(retry_events.size).to eq(1)
+    expect(retry_events.first.payload).to include(
+      'feature' => 'assistant',
+      'provider' => 'openrouter',
+      'reason' => 'blank_response',
+      'openrouter_error_category' => 'no_content_generated',
+      'attempt' => 1,
+      'max_attempts' => 2
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  it 'rolls back failed retry attempts before asking the same chat again' do
+    openrouter_model = instance_double(RubyLLM::Model::Info, id: 'openai/gpt-5.4-mini', provider: 'openrouter')
+    messages = [instance_double(RubyLLM::Message, role: :user, content: 'History')]
+    blank_response = instance_double(RubyLLM::Message, content: '', tool_call?: false)
+    final_response = instance_double(RubyLLM::Message, content: 'Done', tool_call?: false)
+    ask_attempts = 0
+
+    allow(chat).to receive(:model).and_return(openrouter_model)
+    allow(chat).to receive(:messages).and_return(messages)
+    allow(chat).to receive(:ask) do |content|
+      ask_attempts += 1
+      response_for_attempt = ask_attempts == 1 ? blank_response : final_response
+      messages << instance_double(RubyLLM::Message, role: :user, content: content)
+      messages << response_for_attempt
+      response_for_attempt
+    end
+
+    result = described_class.new(
+      chat: chat,
+      model: 'openai/gpt-5.4-mini',
+      messages: [{ role: 'user', content: 'Hello' }]
+    ).call
+
+    expect(result).to eq(final_response)
+    expect(messages.map(&:content)).to eq(%w[History Hello Done])
+  end
+
+  it 'does not retry blank OpenRouter responses for mutating tool flows' do
+    openrouter_model = instance_double(RubyLLM::Model::Info, id: 'openai/gpt-5.4-mini', provider: 'openrouter')
+    blank_response = instance_double(RubyLLM::Message, content: '', tool_call?: false)
+    mutating_tool = Class.new do
+      def name = 'update_deal'
+      def tool_definition = { id: 'update_deal', risk_level: 'high', idempotent: false }
+    end.new
+
+    allow(chat).to receive(:model).and_return(openrouter_model)
+    allow(Llm::Models).to receive(:supports?).and_call_original
+    allow(Llm::Models).to receive(:supports?)
+      .with('openai/gpt-5.4-mini', :tool_calling, account: nil)
+      .and_return(true)
+    expect(chat).to receive(:ask).with('Hello').once.and_return(blank_response)
+
+    result = described_class.new(
+      chat: chat,
+      model: 'openai/gpt-5.4-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      tools: [mutating_tool]
+    ).call
+
+    expect(result).to eq(blank_response)
+  end
+
   it 'supports an already configured chat instance and multimodal content building' do
     content_builder = lambda do |content|
       next content unless content.is_a?(Array)
