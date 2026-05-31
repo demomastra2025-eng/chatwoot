@@ -10,7 +10,9 @@ class Llm::FeatureRequest
   attr_reader :feature, :account, :assistant, :conversation, :session_id, :user_id, :model, :models,
               :messages, :schema, :tools, :tool_choice, :parallel_tool_calls, :stream, :reasoning,
               :max_tokens, :temperature, :attachments, :input, :runtime_preferences, :privacy_profile,
-              :performance_profile, :cost_profile, :routing_intent, :observability, :options
+              :performance_profile, :cost_profile, :routing_intent, :cache_policy, :plugin_policy,
+              :server_tools, :service_tier, :transform_policy, :budget_policy, :observability_mode,
+              :guardrail_profile, :variant_policy, :observability, :options
 
   def initialize(
     feature:,
@@ -37,6 +39,15 @@ class Llm::FeatureRequest
     performance_profile: nil,
     cost_profile: nil,
     routing_intent: nil,
+    cache_policy: nil,
+    plugin_policy: nil,
+    server_tools: nil,
+    service_tier: nil,
+    transform_policy: nil,
+    budget_policy: nil,
+    observability_mode: nil,
+    guardrail_profile: nil,
+    variant_policy: nil,
     observability: {},
     options: {}
   )
@@ -64,6 +75,19 @@ class Llm::FeatureRequest
     @performance_profile = normalize_policy_value(first_present(performance_profile, @runtime_preferences[:performance_profile]))
     @cost_profile = normalize_policy_value(first_present(cost_profile, @runtime_preferences[:cost_profile]))
     @routing_intent = normalize_policy_value(first_present(routing_intent, @runtime_preferences[:routing_intent]))
+    @cache_policy = normalize_policy_value(first_present(cache_policy, runtime_preference(:cache_policy, :openrouter_cache_policy)))
+    @plugin_policy = normalize_policy_value(first_present(plugin_policy, runtime_preference(:plugin_policy, :openrouter_plugin_policy)))
+    @server_tools = normalize_server_tools(first_non_nil(server_tools, runtime_preference(:server_tools, :openrouter_server_tools)))
+    @service_tier = normalize_policy_value(first_present(service_tier, runtime_preference(:service_tier, :openrouter_service_tier)))
+    @transform_policy = normalize_policy_value(first_present(transform_policy, runtime_preference(:transform_policy, :openrouter_transform_policy)))
+    @budget_policy = normalize_policy_value(first_present(budget_policy, runtime_preference(:budget_policy, :openrouter_budget_policy)))
+    @observability_mode = normalize_policy_value(
+      first_present(observability_mode, runtime_preference(:observability_mode, :openrouter_observability_mode))
+    )
+    @guardrail_profile = normalize_policy_value(
+      first_present(guardrail_profile, runtime_preference(:guardrail_profile, :openrouter_guardrail_profile))
+    )
+    @variant_policy = normalize_policy_list(first_non_nil(variant_policy, runtime_preference(:variant_policy, :openrouter_variant_policy)))
     @privacy_profile = Llm::OpenRouterWorkspacePolicy.resolve(
       account: account,
       preferences: @runtime_preferences,
@@ -141,6 +165,15 @@ class Llm::FeatureRequest
     feature_key == 'image_recognition' || reference_has_extension?(IMAGE_EXTENSIONS)
   end
 
+  def openrouter_feature_policy
+    @openrouter_feature_policy ||= Llm::OpenRouterFeaturePolicy.for(
+      feature: feature_key,
+      account: account,
+      runtime_preferences: feature_policy_runtime_preferences,
+      privacy_profile: privacy_profile
+    )
+  end
+
   private
 
   def validate!
@@ -206,6 +239,38 @@ class Llm::FeatureRequest
     return {} unless value.respond_to?(:to_h)
 
     value.to_h.deep_symbolize_keys
+  end
+
+  def runtime_preference(*keys)
+    keys.find { |key| @runtime_preferences.key?(key) }.then { |key| @runtime_preferences[key] if key.present? }
+  end
+
+  def normalize_server_tools(value)
+    Array(value).filter_map do |server_tool|
+      next if server_tool.blank?
+
+      server_tool.respond_to?(:to_h) ? server_tool.to_h.deep_symbolize_keys : server_tool
+    end
+  rescue StandardError
+    []
+  end
+
+  def normalize_policy_list(value)
+    Array(value).filter_map { |entry| entry.to_s.strip.presence }.uniq
+  end
+
+  def feature_policy_runtime_preferences
+    @runtime_preferences.merge(
+      cache_policy: cache_policy,
+      plugin_policy: plugin_policy,
+      server_tools: server_tools,
+      service_tier: service_tier,
+      transform_policy: transform_policy,
+      budget_policy: budget_policy,
+      observability_mode: observability_mode,
+      guardrail_profile: guardrail_profile,
+      variant_policy: variant_policy.presence
+    ).compact
   end
 
   def normalize_models(value)

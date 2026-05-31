@@ -66,6 +66,15 @@ RSpec.describe Llm::FeatureRequest do
       performance_profile: 'fast',
       cost_profile: 'balanced',
       routing_intent: 'tool_reliability',
+      cache_policy: 'session',
+      plugin_policy: 'structured_output_and_overflow_only',
+      server_tools: [{ id: 'datetime' }],
+      service_tier: 'priority',
+      transform_policy: 'overflow_only',
+      budget_policy: 'local_ledger_hard_stop',
+      observability_mode: 'metadata_only',
+      guardrail_profile: 'crm_tool_mutation_safe',
+      variant_policy: %w[exacto thinking],
       observability: { trace_id: 'trace-1' }
     )
 
@@ -84,6 +93,16 @@ RSpec.describe Llm::FeatureRequest do
     expect(request.performance_profile).to eq('fast')
     expect(request.cost_profile).to eq('balanced')
     expect(request.routing_intent).to eq('tool_reliability')
+    expect(request.cache_policy).to eq('session')
+    expect(request.plugin_policy).to eq('structured_output_and_overflow_only')
+    expect(request.server_tools).to eq([{ id: 'datetime' }])
+    expect(request.service_tier).to eq('priority')
+    expect(request.transform_policy).to eq('overflow_only')
+    expect(request.budget_policy).to eq('local_ledger_hard_stop')
+    expect(request.observability_mode).to eq('metadata_only')
+    expect(request.guardrail_profile).to eq('crm_tool_mutation_safe')
+    expect(request.variant_policy).to eq(%w[exacto thinking])
+    expect(request.openrouter_feature_policy.allowed_server_tools).to eq(['openrouter:datetime'])
   end
 
   it 'allows parallel tool calls only for read-only tool flows' do

@@ -24,6 +24,7 @@
     <% catalog_diff = (catalog[:last_refresh_diff] || {}).to_h %>
     <% endpoint_diff = (endpoints[:last_refresh_diff] || {}).to_h %>
     <% workspace_policy = diagnostics[:workspace_policy].to_h %>
+    <% guardrails_summary = diagnostics[:guardrails].to_h %>
     <% features = diagnostics[:features].to_h %>
     <% model_eligibility = Array(diagnostics[:model_eligibility]) %>
     <div class="mb-8 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
@@ -146,6 +147,11 @@
                     <span class="rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-600"><%= guardrail_key %>: <%= guardrail.to_h[:status] %></span>
                   <% end %>
                 </div>
+                <% if guardrails_summary[:status_counts].present? %>
+                  <div class="mt-2 text-xs text-slate-500">
+                    Feature guardrails: <%= guardrails_summary[:status_counts].to_h.map { |status, count| "#{status}: #{count}" }.join(', ') %>
+                  </div>
+                <% end %>
               <% end %>
             </div>
           </div>
@@ -155,11 +161,17 @@
             <div class="mt-2 grid gap-2 md:grid-cols-2">
               <% features.each do |feature_key, feature| %>
                 <% selected_diagnostics = feature.to_h[:selected_model_diagnostics].to_h %>
+                <% feature_policy = feature.to_h[:policy].to_h %>
                 <div class="rounded-md border border-slate-100 p-2">
                   <div class="font-medium text-slate-800"><%= feature_key %></div>
                   <div class="text-xs text-slate-500">
                     available: <%= feature.to_h[:available_model_count] || 0 %>, selected: <%= feature.to_h[:selected_model].presence || 'none' %>, default: <%= feature.to_h[:default_model].presence || 'none' %>
                   </div>
+                  <% if feature_policy.present? %>
+                    <div class="mt-1 text-xs text-slate-500">
+                      policy: cache <%= feature_policy[:cache_policy] || 'disabled' %>, tools <%= Array(feature_policy[:allowed_server_tools]).join(', ').presence || 'blocked' %>, plugins <%= Array(feature_policy[:allowed_plugins]).join(', ').presence || 'blocked' %>
+                    </div>
+                  <% end %>
                   <% if selected_diagnostics[:allowed] == false && selected_diagnostics[:reason_codes].present? %>
                     <div class="mt-1 text-xs text-amber-700">Selected model warning: <%= selected_diagnostics[:reason_codes].join(', ') %></div>
                   <% end %>

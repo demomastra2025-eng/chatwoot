@@ -7,6 +7,7 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
   :tools_required,
   :schema_required,
   :reasoning_required,
+  :server_tools,
   :runtime_preferences,
   :privacy_profile,
   keyword_init: true
@@ -23,6 +24,7 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       tools_required: options.fetch(:tools, false),
       schema_required: options.fetch(:schema, false),
       reasoning_required: options.fetch(:reasoning, false),
+      server_tools: options[:server_tools],
       runtime_preferences: options[:runtime_preferences],
       privacy_profile: options[:privacy_profile]
     )
@@ -266,5 +268,35 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     )
 
     expect(compiled.params[:plugins]).to contain_exactly(id: 'context-compression', mode: 'emergency')
+  end
+
+  it 'does not let read-only feature runtime preferences enable plugins outside feature policy' do
+    compiled = compile(
+      feature: :editor,
+      runtime_preferences: { openrouter_allowed_plugins: ['context_compression'] },
+      base_params: { plugins: [{ id: 'context_compression' }] }
+    )
+
+    expect(compiled.params).not_to include(:plugins)
+  end
+
+  it 'compiles only feature-allowed OpenRouter server tools and strips raw base tools' do
+    compiled = compile(
+      feature: :captain_agent,
+      server_tools: [{ id: 'datetime' }, { id: 'openrouter:web_search' }, { id: 'apply_patch' }],
+      base_params: { tools: [{ id: 'apply_patch' }] }
+    )
+
+    expect(compiled.params[:tools]).to contain_exactly(id: 'openrouter:datetime')
+  end
+
+  it 'compiles service tiers only from feature policy and strips raw caller tiers' do
+    compiled = compile(
+      feature: :editor,
+      runtime_preferences: { openrouter_service_tier: 'priority' },
+      base_params: { service_tier: 'priority' }
+    )
+
+    expect(compiled.params[:service_tier]).to eq('flex')
   end
 end

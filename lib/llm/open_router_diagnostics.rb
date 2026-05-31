@@ -39,6 +39,7 @@ class Llm::OpenRouterDiagnostics
       runtime: runtime_summary,
       usage: usage_summary,
       workspace_policy: workspace_policy_summary,
+      guardrails: guardrail_summary,
       features: feature_summaries,
       model_eligibility: sampled_model_eligibility
     }
@@ -144,6 +145,25 @@ class Llm::OpenRouterDiagnostics
     }
   end
 
+  def guardrail_summary
+    feature_guardrails = DIAGNOSTIC_FEATURES.each_with_object({}) do |feature_key, result|
+      result[feature_key] = feature_policy_for(feature_key).guardrails
+    rescue StandardError => e
+      result[feature_key] = {
+        error: {
+          status: 'diagnostics_failed',
+          enforcement: "#{e.class}: #{Llm::OpenRouterModelCatalog.sanitize_error_message(e)}"
+        }
+      }
+    end
+
+    {
+      workspace: workspace_policy_summary[:guardrails].to_h,
+      features: feature_guardrails,
+      status_counts: guardrail_status_counts(feature_guardrails)
+    }
+  end
+
   def feature_summaries
     DIAGNOSTIC_FEATURES.each_with_object({}) do |feature_key, result|
       feature_config = Llm::Models.feature_config(feature_key, account: account).to_h
@@ -154,6 +174,7 @@ class Llm::OpenRouterDiagnostics
         configured_default: feature_config[:configured_default],
         required_capabilities: Array(feature_config[:required_capabilities]),
         available_model_count: Array(feature_config[:models]).size,
+        policy: feature_policy_for(feature_key).to_h,
         selected_model_diagnostics: selected_model.present? ? eligibility_for(selected_model, feature_key) : nil
       }.compact
     rescue StandardError => e
@@ -161,6 +182,19 @@ class Llm::OpenRouterDiagnostics
         error: "#{e.class}: #{Llm::OpenRouterModelCatalog.sanitize_error_message(e)}"
       }
     end
+  end
+
+  def feature_policy_for(feature_key)
+    Llm::OpenRouterFeaturePolicy.for(feature: feature_key, account: account)
+  end
+
+  def guardrail_status_counts(feature_guardrails)
+    feature_guardrails.values
+                      .flat_map { |guardrails| guardrails.to_h.values }
+                      .filter_map { |guardrail| guardrail.to_h[:status] || guardrail.to_h['status'] }
+                      .tally
+                      .sort_by { |status, count| [-count, status.to_s] }
+                      .to_h
   end
 
   def sampled_model_eligibility

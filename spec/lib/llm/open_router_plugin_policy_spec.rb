@@ -45,4 +45,14 @@ RSpec.describe Llm::OpenRouterPluginPolicy do
 
     expect(filtered).to contain_exactly(id: 'response-healing')
   end
+
+  it 'does not let runtime preferences expand beyond the feature allowlist' do
+    filtered = described_class.filter(
+      plugins: [{ id: 'context_compression' }, { id: 'response_healing' }],
+      runtime_preferences: { openrouter_allowed_plugins: %w[context_compression response_healing] },
+      feature_allowed_ids: ['response-healing']
+    )
+
+    expect(filtered).to contain_exactly(id: 'response-healing')
+  end
 end

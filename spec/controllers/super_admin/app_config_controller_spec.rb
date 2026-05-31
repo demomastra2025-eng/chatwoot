@@ -46,6 +46,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           'Runtime telemetry',
           'Runtime top signals',
           'Workspace policy',
+          'Feature guardrails',
+          'policy: cache',
           'Model eligibility samples',
           'Queue OpenRouter Catalog Refresh'
         )

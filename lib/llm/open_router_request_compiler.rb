@@ -41,15 +41,19 @@ class Llm::OpenRouterRequestCompiler
 
   def call
     profile = routing_profile
+    feature_policy = openrouter_feature_policy(profile)
     params = normalized_base_params
     models = compiled_models(profile)
     provider_params = merged_provider_params(profile)
-    plugins = merged_plugins(params, profile)
+    plugins = merged_plugins(params, profile, feature_policy)
+    server_tools = merged_server_tools(feature_policy)
 
     apply_request_params!(params)
+    apply_feature_policy_params!(params, feature_policy)
     params[:models] = models if models.present?
     params[:provider] = provider_params if provider_params.present?
     params[:plugins] = plugins if plugins.present?
+    params[:tools] = server_tools if server_tools.present?
 
     Compiled.new(
       model: @model,
@@ -77,12 +81,31 @@ class Llm::OpenRouterRequestCompiler
     )
   end
 
+  def openrouter_feature_policy(_profile)
+    return request_value(:openrouter_feature_policy) if request_value(:openrouter_feature_policy).present?
+
+    Llm::OpenRouterFeaturePolicy.for(
+      feature: feature_key,
+      account: @account,
+      runtime_preferences: request_value(:runtime_preferences),
+      privacy_profile: request_value(:privacy_profile)
+    )
+  end
+
   def normalized_base_params
     @base_params.deep_dup.tap do |params|
       params.delete(:provider)
       params.delete('provider')
       params.delete(:plugins)
       params.delete('plugins')
+      params.delete(:tools)
+      params.delete('tools')
+      params.delete(:server_tools)
+      params.delete('server_tools')
+      params.delete(:openrouter_server_tools)
+      params.delete('openrouter_server_tools')
+      params.delete(:service_tier)
+      params.delete('service_tier')
     end
   end
 
@@ -103,6 +126,10 @@ class Llm::OpenRouterRequestCompiler
     set_param_if_present(params, :max_tokens, request_value(:max_tokens))
     set_param_if_present(params, :temperature, request_value(:temperature))
     set_param_if_present(params, :user, request_value(:user_id))
+  end
+
+  def apply_feature_policy_params!(params, feature_policy)
+    set_param_if_present(params, :service_tier, feature_policy.compiled_service_tier)
   end
 
   def set_param_if_present(params, key, value)
@@ -138,7 +165,7 @@ class Llm::OpenRouterRequestCompiler
     end
   end
 
-  def merged_plugins(_params, profile)
+  def merged_plugins(_params, profile, feature_policy)
     plugins = extract_plugins(@base_params[:plugins] || @base_params['plugins'])
     default_allowed_ids = []
 
@@ -147,11 +174,15 @@ class Llm::OpenRouterRequestCompiler
       default_allowed_ids << RESPONSE_HEALING_PLUGIN_ID
     end
 
-    Llm::OpenRouterPluginPolicy.filter(
+    feature_policy.filter_plugins(
       plugins: plugins,
       runtime_preferences: request_value(:runtime_preferences),
       default_allowed_ids: default_allowed_ids
     )
+  end
+
+  def merged_server_tools(feature_policy)
+    feature_policy.filter_server_tools(requested_server_tools)
   end
 
   def response_healing_allowed?(profile)
@@ -232,6 +263,12 @@ class Llm::OpenRouterRequestCompiler
 
   def request_session_id
     request_value(:session_cache_key).presence || request_value(:session_id)
+  end
+
+  def requested_server_tools
+    Array(request_value(:server_tools)) +
+      Array(request_option(:server_tools)) +
+      Array(request_option(:openrouter_server_tools))
   end
 
   def extract_plugins(value)

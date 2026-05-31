@@ -11,10 +11,11 @@ class Llm::OpenRouterPluginPolicy
   ].freeze
 
   class << self
-    def filter(plugins:, runtime_preferences: nil, default_allowed_ids: [])
+    def filter(plugins:, runtime_preferences: nil, default_allowed_ids: [], feature_allowed_ids: nil)
       allowed_ids = allowed_plugin_ids(
         runtime_preferences: runtime_preferences,
-        default_allowed_ids: default_allowed_ids
+        default_allowed_ids: default_allowed_ids,
+        feature_allowed_ids: feature_allowed_ids
       )
 
       filtered = Array(plugins).filter_map do |plugin|
@@ -29,8 +30,11 @@ class Llm::OpenRouterPluginPolicy
       filtered.uniq { |plugin| plugin_id(plugin).to_s }
     end
 
-    def allowed_plugin_ids(runtime_preferences: nil, default_allowed_ids: [])
-      (normalize_ids(default_allowed_ids) + runtime_allowed_plugin_ids(runtime_preferences)).uniq - DENIED_PLUGIN_IDS
+    def allowed_plugin_ids(runtime_preferences: nil, default_allowed_ids: [], feature_allowed_ids: nil)
+      allowed_ids = (normalize_ids(default_allowed_ids) + runtime_allowed_plugin_ids(runtime_preferences)).uniq
+      allowed_ids &= normalize_ids(feature_allowed_ids) unless feature_allowed_ids.nil?
+
+      allowed_ids - DENIED_PLUGIN_IDS
     end
 
     def runtime_allowed_plugin_ids(runtime_preferences)

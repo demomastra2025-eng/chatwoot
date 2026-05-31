@@ -8,8 +8,8 @@ RSpec.describe Llm::Evals::OpenRouterContractSuite do
 
     expect(result.to_h).to include(
       suite_id: 'openrouter.contracts',
-      total_count: 13,
-      passed_count: 13,
+      total_count: 14,
+      passed_count: 14,
       failed_count: 0,
       error_count: 0,
       status: 'pass'
@@ -26,6 +26,7 @@ RSpec.describe Llm::Evals::OpenRouterContractSuite do
       include(id: 'openrouter.privacy_contract', status: 'pass'),
       include(id: 'openrouter.guardrail_status_contract', status: 'pass'),
       include(id: 'openrouter.guardrail_budget_contract', status: 'pass'),
+      include(id: 'openrouter.feature_policy_contract', status: 'pass'),
       include(id: 'openrouter.feature_request_contract', status: 'pass'),
       include(id: 'openrouter.prompt_cache_contract', status: 'pass')
     )

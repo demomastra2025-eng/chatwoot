@@ -64,6 +64,11 @@ class Llm::Evals::OpenRouterContractSuite
       tags: %w[openrouter guardrails budget]
     },
     {
+      id: 'openrouter.feature_policy_contract',
+      description: 'Feature policies declare allowed plugins, server tools, variants, service tiers, and guardrail statuses.',
+      tags: %w[openrouter feature_policy guardrails]
+    },
+    {
       id: 'openrouter.feature_request_contract',
       description: 'FeatureRequest preserves multimodal detection and mutating-tool safety guards.',
       tags: %w[openrouter feature_request multimodal tools]

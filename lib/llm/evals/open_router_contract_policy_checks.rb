@@ -64,6 +64,30 @@ module Llm::Evals::OpenRouterContractPolicyChecks
     }
   end
 
+  def openrouter_feature_policy_contract
+    captain = Llm::OpenRouterFeaturePolicy.for(feature: :assistant)
+    editor = Llm::OpenRouterFeaturePolicy.for(feature: :editor)
+    failures = []
+    failures << 'Captain must allow datetime server tool' unless captain.allowed_server_tools.include?('openrouter:datetime')
+    failures << 'Captain response healing plugin missing' unless captain.allowed_plugins.include?(RESPONSE_HEALING_PLUGIN_ID)
+    failures << 'Captain context compression plugin missing' unless captain.allowed_plugins.include?('context-compression')
+    failures << 'Editor must keep plugins blocked by default' if editor.allowed_plugins.present?
+    failures << 'Editor low-cost tier must compile to flex' unless editor.compiled_service_tier == 'flex'
+    failures << 'Prompt injection must stay evaluation-required' unless captain.guardrails.dig(:prompt_injection, :status) == 'evaluation_required'
+
+    {
+      captain: captain.to_h,
+      editor: editor.to_h,
+      expected: {
+        captain_server_tool: 'openrouter:datetime',
+        captain_plugins: [RESPONSE_HEALING_PLUGIN_ID, 'context-compression'],
+        editor_service_tier: 'flex',
+        prompt_injection: 'evaluation_required'
+      },
+      failures: failures
+    }
+  end
+
   def routing_failures(exacto, auto)
     failures = []
     failures << 'Exacto must disable fallbacks' unless exacto.provider_preferences[:allow_fallbacks] == false

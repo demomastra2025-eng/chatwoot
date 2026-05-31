@@ -162,6 +162,11 @@ RSpec.describe Llm::OpenRouterDiagnostics do
       zdr: false
     )
     expect(diagnostics.dig(:workspace_policy, :guardrails, :prompt_injection)).to include(status: 'evaluation_required')
+    expect(diagnostics.dig(:guardrails, :features, 'assistant', :server_tools)).to include(status: 'allowlist_enforced')
+    expect(diagnostics.dig(:guardrails, :features, 'editor', :plugins)).to include(status: 'blocked_by_default')
+    expect(diagnostics.dig(:guardrails, :status_counts)).to include('evaluation_required')
+    expect(diagnostics.dig(:features, 'assistant', :policy, :allowed_server_tools)).to include('openrouter:datetime')
+    expect(diagnostics.dig(:features, 'editor', :policy, :compiled_service_tier)).to eq('flex')
   end
 
   it 'prioritizes selected models in the model eligibility sample' do
