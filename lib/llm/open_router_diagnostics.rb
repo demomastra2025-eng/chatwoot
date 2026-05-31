@@ -3,6 +3,7 @@
 class Llm::OpenRouterDiagnostics
   PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
   DEFAULT_SAMPLE_LIMIT = 8
+  DEFAULT_RUNTIME_LOOKBACK = 24.hours
   DIAGNOSTIC_FEATURES = Llm::Models::OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.keys.freeze
   COUNTED_CAPABILITIES = %w[
     tool_calling structured_output reasoning image_input audio_input file_input
@@ -10,20 +11,22 @@ class Llm::OpenRouterDiagnostics
   ].freeze
 
   class << self
-    def call(account: nil, sample_limit: DEFAULT_SAMPLE_LIMIT)
+    def call(account: nil, sample_limit: DEFAULT_SAMPLE_LIMIT, event_scope: LlmEvent.all, runtime_lookback: DEFAULT_RUNTIME_LOOKBACK)
       Llm::Config.with_runtime_cache do
         Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
           Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do
-            new(account: account, sample_limit: sample_limit).call
+            new(account: account, sample_limit: sample_limit, event_scope: event_scope, runtime_lookback: runtime_lookback).call
           end
         end
       end
     end
   end
 
-  def initialize(account: nil, sample_limit: DEFAULT_SAMPLE_LIMIT)
+  def initialize(account: nil, sample_limit: DEFAULT_SAMPLE_LIMIT, event_scope: LlmEvent.all, runtime_lookback: DEFAULT_RUNTIME_LOOKBACK)
     @account = account
     @sample_limit = sample_limit.to_i.positive? ? sample_limit.to_i : DEFAULT_SAMPLE_LIMIT
+    @event_scope = event_scope
+    @runtime_lookback = runtime_lookback
     @model_configs = Llm::OpenRouterModelCatalog.model_configs
     @endpoint_configs = Llm::OpenRouterEndpointCatalog.endpoint_configs
   end
@@ -33,6 +36,7 @@ class Llm::OpenRouterDiagnostics
       key_status: key_status,
       catalog: catalog_summary,
       endpoints: endpoint_summary,
+      runtime: runtime_summary,
       workspace_policy: workspace_policy_summary,
       features: feature_summaries,
       model_eligibility: sampled_model_eligibility
@@ -41,7 +45,7 @@ class Llm::OpenRouterDiagnostics
 
   private
 
-  attr_reader :account, :sample_limit, :model_configs, :endpoint_configs
+  attr_reader :account, :sample_limit, :event_scope, :runtime_lookback, :model_configs, :endpoint_configs
 
   def key_status
     {
@@ -91,6 +95,31 @@ class Llm::OpenRouterDiagnostics
       last_refresh_error: metadata[:last_refresh_error],
       last_refresh_diff: refresh_diff_summary(metadata[:last_refresh_diff]),
       sample_models: endpoint_samples
+    }
+  end
+
+  def runtime_summary
+    scoped = runtime_scope
+    chat_events = scoped.chat_completions
+    {
+      provider: PROVIDER,
+      window_started_at: runtime_window.begin,
+      window_ended_at: runtime_window.end,
+      total_events: scoped.count,
+      request_count: chat_events.count,
+      error_count: scoped.error_events.count,
+      provider_failure_count: scoped.where(error_code: Llm::Monitoring::RuntimeHealth::PROVIDER_FAILURE_ERROR_CODES).count,
+      blocked_count: scoped.blocked_events.count,
+      tool_failure_count: scoped.tool_failure_events.count,
+      schema_invalid_count: scoped.schema_invalid_events.count,
+      total_tokens: scoped.sum(:total_tokens),
+      estimated_cost: scoped.sum(:estimated_cost),
+      avg_duration_ms: chat_events.average(:duration_ms)&.to_f,
+      avg_queue_wait_ms: scoped.average(:queue_wait_ms)&.to_f,
+      by_feature: top_counts(compact_counts(scoped.group(:feature).count)),
+      by_model: top_counts(compact_counts(scoped.group(:model).count)),
+      recent_error_codes: top_counts(compact_counts(scoped.error_events.group(:error_code).count)),
+      last_event_at: scoped.maximum(:created_at)
     }
   end
 
@@ -223,5 +252,31 @@ class Llm::OpenRouterDiagnostics
         data_collection: endpoints.filter_map { |endpoint| endpoint['data_collection'].presence }.uniq.sort
       }
     end
+  end
+
+  def runtime_scope
+    scoped = event_scope.where(provider: PROVIDER).for_date_range(runtime_window)
+    account.present? ? scoped.for_account(account.id) : scoped
+  end
+
+  def runtime_window
+    @runtime_window ||= begin
+      ended_at = Time.current
+      (ended_at - runtime_lookback)..ended_at
+    end
+  end
+
+  def compact_counts(counts)
+    counts.each_with_object({}) do |(key, value), result|
+      next if key.blank?
+
+      result[key] = value
+    end
+  end
+
+  def top_counts(counts)
+    counts.sort_by { |key, value| [-value.to_i, key.to_s] }
+          .first(sample_limit)
+          .to_h
   end
 end

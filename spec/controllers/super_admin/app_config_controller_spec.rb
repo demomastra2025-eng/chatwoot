@@ -43,6 +43,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           'Catalog freshness',
           'Catalog diff',
           'Endpoint diff',
+          'Runtime telemetry',
+          'Runtime top signals',
           'Workspace policy',
           'Model eligibility samples',
           'Queue OpenRouter Catalog Refresh'

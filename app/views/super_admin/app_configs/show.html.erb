@@ -20,6 +20,7 @@
     <% key_status = diagnostics[:key_status].to_h %>
     <% catalog = diagnostics[:catalog].to_h %>
     <% endpoints = diagnostics[:endpoints].to_h %>
+    <% runtime = diagnostics[:runtime].to_h %>
     <% catalog_diff = (catalog[:last_refresh_diff] || {}).to_h %>
     <% endpoint_diff = (endpoints[:last_refresh_diff] || {}).to_h %>
     <% workspace_policy = diagnostics[:workspace_policy].to_h %>
@@ -60,6 +61,12 @@
               <div class="mt-1 font-semibold text-slate-900"><%= endpoints[:total_endpoints] || 0 %> endpoints</div>
               <div class="text-xs text-slate-500">Status: <%= endpoints[:refresh_status] || 'unknown' %>, providers: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'none' %></div>
               <div class="text-xs text-slate-400">Stale endpoints: <%= endpoints[:stale_endpoints] || 0 %>, pending refresh: <%= endpoints[:pending_model_count] || 0 %></div>
+            </div>
+            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Runtime telemetry</div>
+              <div class="mt-1 font-semibold text-slate-900"><%= runtime[:total_events] || 0 %> events / <%= runtime[:request_count] || 0 %> requests</div>
+              <div class="text-xs text-slate-500">Errors: <%= runtime[:error_count] || 0 %>, provider failures: <%= runtime[:provider_failure_count] || 0 %></div>
+              <div class="text-xs text-slate-400">Cost: <%= number_with_precision(runtime[:estimated_cost].to_f, precision: 6) %>, last: <%= runtime[:last_event_at].presence || 'never' %></div>
             </div>
           </div>
 
@@ -105,6 +112,17 @@
               <div class="mt-2 flex flex-wrap gap-2">
                 <% endpoints[:provider_counts].to_h.first(8).each do |provider, count| %>
                   <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= provider %>: <%= count %></span>
+                <% end %>
+              </div>
+            </div>
+            <div>
+              <div class="text-xs font-medium uppercase text-slate-500">Runtime top signals</div>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <% runtime[:by_feature].to_h.first(6).each do |feature, count| %>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= feature %>: <%= count %></span>
+                <% end %>
+                <% runtime[:recent_error_codes].to_h.first(4).each do |code, count| %>
+                  <span class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700"><%= code %>: <%= count %></span>
                 <% end %>
               </div>
             </div>
