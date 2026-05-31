@@ -18,7 +18,7 @@ RSpec.describe Article do
 
       article.status = :published
       expect(article).not_to be_valid
-      expect(article.errors[:content]).to include("can't be blank")
+      expect(article.errors.of_kind?(:content, :blank)).to be true
     end
   end
 
@@ -212,7 +212,7 @@ RSpec.describe Article do
     end
 
     context 'when search term generation succeeds' do
-      let(:search_term_service) { instance_double(Captain::Llm::ArticleSearchTermsService, generate: ['billing', 'faq']) }
+      let(:search_term_service) { instance_double(Captain::Llm::ArticleSearchTermsService, generate: %w[billing faq]) }
 
       it 'replaces stored article terms' do
         ArticleEmbedding.create!(article: article, term: 'old')
@@ -231,7 +231,7 @@ RSpec.describe Article do
 
         expect do
           article.generate_and_save_article_seach_terms
-        end.not_to change { article.article_embeddings.reload.pluck(:term) }
+        end.not_to(change { article.article_embeddings.reload.pluck(:term) })
       end
 
       it 'falls back to deterministic article fields when no terms exist yet' do
@@ -263,7 +263,7 @@ RSpec.describe Article do
 
         expect do
           article.generate_and_save_article_seach_terms
-        end.not_to change { article.article_embeddings.reload.pluck(:term) }
+        end.not_to(change { article.article_embeddings.reload.pluck(:term) })
       end
     end
   end
