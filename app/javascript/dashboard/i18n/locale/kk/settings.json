@@ -625,6 +625,17 @@
           "HIGH": "High"
         }
       },
+      "GUARDRAILS": {
+        "TITLE": "Runtime guardrails",
+        "DESCRIPTION": "Prompt шабуылдарын және құпия дерек ағуын модель жалғастырмай тұрып тоқтатады.",
+        "PROMPT_INJECTION": "Prompt шабуылдары",
+        "SENSITIVE_INFO": "Құпиялар",
+        "OPTIONS": {
+          "BLOCK": "Бұғаттау",
+          "FLAG": "Тек жазу",
+          "DISABLED": "Өшіру"
+        }
+      },
       "ASSISTANT": {
         "TITLE": "AI Agent Runtime",
         "DESCRIPTION": "Applies to automated customer replies and scenario handoffs."

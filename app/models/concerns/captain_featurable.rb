@@ -9,6 +9,10 @@ module CaptainFeaturable
     'assistant_moderation' => false,
     'copilot_moderation' => false,
     'moderation_failure_mode' => 'fail_open',
+    'assistant_prompt_injection_guardrail' => 'block',
+    'copilot_prompt_injection_guardrail' => 'block',
+    'assistant_sensitive_info_guardrail' => 'block',
+    'copilot_sensitive_info_guardrail' => 'block',
     'trace_input_capture' => !Rails.env.production?,
     'trace_output_capture' => !Rails.env.production?
   }.freeze

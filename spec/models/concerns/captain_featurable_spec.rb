@@ -149,6 +149,10 @@ RSpec.describe CaptainFeaturable do
         'copilot_thinking_effort' => 'none',
         'assistant_moderation' => false,
         'copilot_moderation' => false,
+        'assistant_prompt_injection_guardrail' => 'block',
+        'copilot_prompt_injection_guardrail' => 'block',
+        'assistant_sensitive_info_guardrail' => 'block',
+        'copilot_sensitive_info_guardrail' => 'block',
         'knowledge_chunk_size' => Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE,
         'trace_input_capture' => true,
         'trace_output_capture' => true

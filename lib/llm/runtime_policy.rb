@@ -3,6 +3,7 @@
 class Llm::RuntimePolicy
   THINKING_EFFORTS = %w[none low medium high].freeze
   MODERATION_FAILURE_MODES = %w[fail_open fail_closed].freeze
+  GUARDRAIL_ACTIONS = Llm::RuntimeGuardrailAction::ACTIONS
   RELEASE_GATE_KEYS = %w[
     enabled
     min_request_count
@@ -69,6 +70,18 @@ class Llm::RuntimePolicy
       feature_specific = normalize_string_list(preferences["#{feature}_safety_blocklist"])
 
       (global + feature_specific).uniq
+    end
+
+    def guardrail_action(guardrail:, feature:, account: nil, preferences: nil)
+      Llm::RuntimeGuardrailAction.for(
+        guardrail: guardrail,
+        feature: feature,
+        preferences: runtime_preferences(account, preferences)
+      )
+    end
+
+    def normalize_guardrail_action(value, default:)
+      Llm::RuntimeGuardrailAction.normalize(value, default: default)
     end
 
     def release_gate_config(account: nil, preferences: nil)

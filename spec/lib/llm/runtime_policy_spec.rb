@@ -88,6 +88,31 @@ RSpec.describe Llm::RuntimePolicy do
     end
   end
 
+  describe '.guardrail_action' do
+    it 'defaults prompt injection and sensitive-info guardrails to block' do
+      expect(described_class.guardrail_action(guardrail: :prompt_injection, feature: :assistant, account: account)).to eq('block')
+      expect(described_class.guardrail_action(guardrail: :sensitive_info, feature: :copilot, account: account)).to eq('block')
+    end
+
+    it 'normalizes feature-specific guardrail action preferences' do
+      account.update!(
+        captain_runtime: {
+          'assistant_prompt_injection_guardrail' => 'flag',
+          'assistant_sensitive_info_guardrail' => false
+        }
+      )
+
+      expect(described_class.guardrail_action(guardrail: :prompt_injection, feature: :assistant, account: account)).to eq('flag')
+      expect(described_class.guardrail_action(guardrail: :sensitive_info, feature: :assistant, account: account)).to eq('disabled')
+    end
+
+    it 'normalizes legacy monitor aliases from runtime preferences' do
+      preferences = { 'assistant_prompt_injection_guardrail' => 'monitor' }
+
+      expect(described_class.guardrail_action(guardrail: :prompt_injection, feature: :assistant, preferences: preferences)).to eq('flag')
+    end
+  end
+
   describe '.release_gate_config' do
     it 'returns normalized release gate configuration from runtime preferences' do
       preferences = {

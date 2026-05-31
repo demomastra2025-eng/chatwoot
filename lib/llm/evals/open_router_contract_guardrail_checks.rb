@@ -5,8 +5,8 @@ module Llm::Evals::OpenRouterContractGuardrailChecks
     budget: 'workspace_required',
     provider: 'routing_profile_enforced',
     model: 'capability_resolver_enforced',
-    prompt_injection: 'evaluation_required',
-    pii: 'evaluation_required'
+    prompt_injection: 'local_enforced',
+    pii: 'local_enforced'
   }.freeze
   EXPECTED_SENSITIVE_TRACE_CAPTURE = { input: false, output: false, policy: false }.freeze
   EXPECTED_ZDR_PROVIDER = { data_collection: 'deny', zdr: true, allow_fallbacks: false }.freeze

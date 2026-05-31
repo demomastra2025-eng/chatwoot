@@ -114,8 +114,8 @@ class Llm::OpenRouterWorkspacePolicy
         provider: guardrail('routing_profile_enforced', 'provider data_collection/ZDR preferences are compiled into every OpenRouter request'),
         model: guardrail('capability_resolver_enforced', 'model eligibility is checked by feature capability diagnostics'),
         zdr: guardrail(zdr_status_for(profile_key), 'OpenRouter provider.zdr controls zero-data-retention routing'),
-        prompt_injection: guardrail('evaluation_required', 'OpenRouter guardrail API not enabled until evaluated with OneLink prompts'),
-        pii: guardrail('evaluation_required', 'OpenRouter PII guardrail API not enabled until false-positive impact is evaluated')
+        prompt_injection: guardrail('local_enforced', 'OneLink runtime blocks prompt-injection patterns before provider dispatch'),
+        pii: guardrail('local_enforced', 'OneLink runtime blocks credential and secret leakage before provider dispatch')
       }
     end
 

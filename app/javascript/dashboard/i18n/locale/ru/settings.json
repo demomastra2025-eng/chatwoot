@@ -1146,6 +1146,17 @@
           "HIGH": "Высокая"
         }
       },
+      "GUARDRAILS": {
+        "TITLE": "Защита рантайма",
+        "DESCRIPTION": "Блокирует prompt-атаки и утечки секретов до продолжения ответа модели.",
+        "PROMPT_INJECTION": "Prompt-атаки",
+        "SENSITIVE_INFO": "Секреты",
+        "OPTIONS": {
+          "BLOCK": "Блокировать",
+          "FLAG": "Только фиксировать",
+          "DISABLED": "Выключено"
+        }
+      },
       "ASSISTANT": {
         "TITLE": "Рантайм AI-агента",
         "DESCRIPTION": "Для автоматических ответов клиентам."

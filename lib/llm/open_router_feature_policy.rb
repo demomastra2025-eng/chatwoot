@@ -134,6 +134,7 @@ class Llm::OpenRouterFeaturePolicy
     :budget_policy,
     :observability_mode,
     :workspace_policy,
+    :runtime_preferences,
     keyword_init: true
   ) do
     def compiled_service_tier
@@ -169,10 +170,13 @@ class Llm::OpenRouterFeaturePolicy
         variants: guardrail(variant_guardrail_status, 'Only transient policy-approved model variants are allowed.', allowed: allowed_variants),
         privacy: guardrail(privacy_guardrail_status, privacy_policy, privacy_profile: privacy_profile),
         prompt_injection: guardrail(
-          'evaluation_required',
-          'Prompt-injection filters require a measured eval rollout before blocking customer content.'
+          runtime_guardrail_status(:prompt_injection),
+          'Prompt-injection filters run in OneLink SafetyPolicy before provider dispatch.'
         ),
-        pii: guardrail('evaluation_required', 'Sensitive-info filters require false-positive evaluation before production blocking.')
+        pii: guardrail(
+          runtime_guardrail_status(:sensitive_info),
+          'Credential and secret leakage filters run in OneLink SafetyPolicy before provider dispatch.'
+        )
       }
     end
 
@@ -192,6 +196,7 @@ class Llm::OpenRouterFeaturePolicy
         guardrail_profile: guardrail_profile,
         budget_policy: budget_policy,
         observability_mode: observability_mode,
+        runtime_preferences: runtime_preferences,
         guardrails: guardrails
       }.compact
     end
@@ -221,6 +226,30 @@ class Llm::OpenRouterFeaturePolicy
     def privacy_guardrail_status
       workspace_policy&.zdr_required? ? 'zdr_fail_closed' : 'workspace_policy_enforced'
     end
+
+    def runtime_guardrail_status(guardrail)
+      action = Llm::RuntimePolicy.guardrail_action(
+        guardrail: guardrail,
+        feature: runtime_guardrail_feature_key,
+        preferences: runtime_guardrail_preferences
+      )
+      case action
+      when 'block'
+        'local_enforced'
+      when 'flag'
+        'local_monitored'
+      else
+        'disabled'
+      end
+    end
+
+    def runtime_guardrail_preferences
+      runtime_preferences || {}
+    end
+
+    def runtime_guardrail_feature_key
+      feature_key.to_s == 'captain_agent' ? 'assistant' : feature_key
+    end
   end
 
   class << self
@@ -248,7 +277,8 @@ class Llm::OpenRouterFeaturePolicy
         privacy_policy: definition[:privacy_policy],
         guardrail_profile: definition[:guardrail_profile],
         budget_policy: definition[:budget_policy],
-        observability_mode: definition[:observability_mode]
+        observability_mode: definition[:observability_mode],
+        runtime_preferences: preferences
       )
     end
 

@@ -59,6 +59,30 @@ module AccountSettingsSchema
             'assistant_moderation': { 'type': %w[boolean null] },
             'copilot_moderation': { 'type': %w[boolean null] },
             'moderation_failure_mode': { 'type': %w[string null], 'enum': ['fail_open', 'fail_closed', nil] },
+            'prompt_injection_guardrail': {
+              'type': %w[string boolean null],
+              'enum': Llm::RuntimePolicy::GUARDRAIL_ACTIONS + [true, false, nil]
+            },
+            'sensitive_info_guardrail': {
+              'type': %w[string boolean null],
+              'enum': Llm::RuntimePolicy::GUARDRAIL_ACTIONS + [true, false, nil]
+            },
+            'assistant_prompt_injection_guardrail': {
+              'type': %w[string boolean null],
+              'enum': Llm::RuntimePolicy::GUARDRAIL_ACTIONS + [true, false, nil]
+            },
+            'assistant_sensitive_info_guardrail': {
+              'type': %w[string boolean null],
+              'enum': Llm::RuntimePolicy::GUARDRAIL_ACTIONS + [true, false, nil]
+            },
+            'copilot_prompt_injection_guardrail': {
+              'type': %w[string boolean null],
+              'enum': Llm::RuntimePolicy::GUARDRAIL_ACTIONS + [true, false, nil]
+            },
+            'copilot_sensitive_info_guardrail': {
+              'type': %w[string boolean null],
+              'enum': Llm::RuntimePolicy::GUARDRAIL_ACTIONS + [true, false, nil]
+            },
             'audio_transcription_prompt': { 'type': %w[string null] },
             'knowledge_chunk_size': {
               'type': %w[integer null],

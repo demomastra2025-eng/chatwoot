@@ -700,6 +700,17 @@
           "HIGH": "High"
         }
       },
+      "GUARDRAILS": {
+        "TITLE": "Runtime Guardrails",
+        "DESCRIPTION": "Block prompt attacks and secret leakage before the model continues.",
+        "PROMPT_INJECTION": "Prompt attacks",
+        "SENSITIVE_INFO": "Secrets",
+        "OPTIONS": {
+          "BLOCK": "Block",
+          "FLAG": "Log only",
+          "DISABLED": "Off"
+        }
+      },
       "ASSISTANT": {
         "TITLE": "AI Agent Runtime",
         "DESCRIPTION": "Applies to customer-facing automated replies."

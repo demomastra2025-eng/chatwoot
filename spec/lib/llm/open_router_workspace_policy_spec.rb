@@ -18,8 +18,8 @@ RSpec.describe Llm::OpenRouterWorkspacePolicy do
         budget: include(status: 'workspace_required'),
         provider: include(status: 'routing_profile_enforced'),
         model: include(status: 'capability_resolver_enforced'),
-        prompt_injection: include(status: 'evaluation_required'),
-        pii: include(status: 'evaluation_required')
+        prompt_injection: include(status: 'local_enforced'),
+        pii: include(status: 'local_enforced')
       )
     end
 

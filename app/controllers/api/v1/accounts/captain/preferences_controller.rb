@@ -23,6 +23,14 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   ].freeze
   RUNTIME_ROUTING_STRATEGY_KEYS = Llm::OpenRouterRoutingProfile::ROUTING_STRATEGY_KEYS.freeze
   RUNTIME_PROVIDER_ORDER_KEYS = Llm::OpenRouterRoutingProfile::PROVIDER_ORDER_KEYS.freeze
+  RUNTIME_GUARDRAIL_ACTION_KEYS = %w[
+    prompt_injection_guardrail
+    sensitive_info_guardrail
+    assistant_prompt_injection_guardrail
+    assistant_sensitive_info_guardrail
+    copilot_prompt_injection_guardrail
+    copilot_sensitive_info_guardrail
+  ].freeze
 
   before_action :current_account
   before_action :authorize_account_update, only: [:show, :update]
@@ -148,6 +156,12 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       :assistant_moderation,
       :copilot_moderation,
       :moderation_failure_mode,
+      :prompt_injection_guardrail,
+      :sensitive_info_guardrail,
+      :assistant_prompt_injection_guardrail,
+      :assistant_sensitive_info_guardrail,
+      :copilot_prompt_injection_guardrail,
+      :copilot_sensitive_info_guardrail,
       :audio_transcription_prompt,
       :knowledge_chunk_size,
       :trace_input_capture,
@@ -407,10 +421,21 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     end
     runtime['audio_transcription_prompt'] = runtime['audio_transcription_prompt'].to_s.strip if runtime.key?('audio_transcription_prompt')
     runtime['knowledge_chunk_size'] = normalize_knowledge_chunk_size(runtime['knowledge_chunk_size']) if runtime.key?('knowledge_chunk_size')
+    RUNTIME_GUARDRAIL_ACTION_KEYS.each { |key| normalize_runtime_guardrail_action!(runtime, key) }
     RUNTIME_ROUTING_STRATEGY_KEYS.each { |key| normalize_runtime_routing_strategy!(runtime, key) }
     RUNTIME_PROVIDER_ORDER_KEYS.each { |key| normalize_runtime_provider_order!(runtime, key) }
     runtime['release_gate'] = normalize_release_gate(runtime['release_gate']) if runtime['release_gate'].present?
     runtime
+  end
+
+  def normalize_runtime_guardrail_action!(runtime, key)
+    return unless runtime.key?(key)
+
+    runtime[key] = normalize_guardrail_action(runtime[key])
+  end
+
+  def normalize_guardrail_action(value)
+    Llm::RuntimePolicy.normalize_guardrail_action(value, default: 'block')
   end
 
   def normalize_runtime_routing_strategy!(runtime, key)

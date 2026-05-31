@@ -46,6 +46,16 @@ const runtimeThinkingEfforts = ref({
   assistant: 'none',
   copilot: 'none',
 });
+const runtimeGuardrailActions = ref({
+  assistant: {
+    prompt_injection: 'block',
+    sensitive_info: 'block',
+  },
+  copilot: {
+    prompt_injection: 'block',
+    sensitive_info: 'block',
+  },
+});
 const providerApiKeys = reactive({});
 const budgetForm = reactive({
   active: false,
@@ -346,6 +356,20 @@ const thinkingOptions = computed(() => [
     label: t('CAPTAIN_SETTINGS.RUNTIME.THINKING.OPTIONS.HIGH'),
   },
 ]);
+const guardrailActionOptions = computed(() => [
+  {
+    value: 'block',
+    label: t('CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.OPTIONS.BLOCK'),
+  },
+  {
+    value: 'flag',
+    label: t('CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.OPTIONS.FLAG'),
+  },
+  {
+    value: 'disabled',
+    label: t('CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.OPTIONS.DISABLED'),
+  },
+]);
 const labelSuggestionModelCount = computed(
   () => captainConfigStore.getModelsForFeature('label_suggestion').length
 );
@@ -639,6 +663,16 @@ watch(
       assistant: value.assistant_thinking_effort || 'none',
       copilot: value.copilot_thinking_effort || 'none',
     };
+    runtimeGuardrailActions.value = {
+      assistant: {
+        prompt_injection: value.assistant_prompt_injection_guardrail || 'block',
+        sensitive_info: value.assistant_sensitive_info_guardrail || 'block',
+      },
+      copilot: {
+        prompt_injection: value.copilot_prompt_injection_guardrail || 'block',
+        sensitive_info: value.copilot_sensitive_info_guardrail || 'block',
+      },
+    };
   },
   { immediate: true, deep: true }
 );
@@ -716,6 +750,13 @@ async function handleRuntimeThinkingChange(featureKey) {
   await handleRuntimeChange({
     [`${featureKey}_thinking_effort`]:
       runtimeThinkingEfforts.value[featureKey] || 'none',
+  });
+}
+
+async function handleRuntimeGuardrailChange(featureKey, guardrailKey) {
+  await handleRuntimeChange({
+    [`${featureKey}_${guardrailKey}_guardrail`]:
+      runtimeGuardrailActions.value[featureKey]?.[guardrailKey] || 'block',
   });
 }
 
@@ -1360,7 +1401,7 @@ onMounted(() => {
                   v-else-if="
                     feature.key === 'assistant' || feature.key === 'copilot'
                   "
-                  class="grid gap-5 border-t border-n-weak pt-4 md:grid-cols-2"
+                  class="grid gap-5 border-t border-n-weak pt-4 xl:grid-cols-3"
                 >
                   <div class="flex min-w-0 items-start gap-3">
                     <Icon
@@ -1418,6 +1459,72 @@ onMounted(() => {
                       :disabled="isRuntimeThinkingDisabled(feature)"
                       @change="handleRuntimeThinkingChange(feature.key)"
                     />
+                  </div>
+
+                  <div class="grid min-w-0 gap-3">
+                    <div class="flex min-w-0 items-start gap-3">
+                      <Icon
+                        icon="i-lucide-shield-ban"
+                        class="mt-0.5 size-4 shrink-0 text-n-slate-11"
+                      />
+                      <div class="min-w-0">
+                        <div class="text-xs font-medium text-n-slate-12">
+                          {{ t('CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.TITLE') }}
+                        </div>
+                        <div class="mt-0.5 text-xs text-n-slate-11">
+                          {{
+                            t('CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.DESCRIPTION')
+                          }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                      <div class="grid min-w-0 gap-1">
+                        <span class="text-[11px] font-medium text-n-slate-11">
+                          {{
+                            t(
+                              'CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.PROMPT_INJECTION'
+                            )
+                          }}
+                        </span>
+                        <NextSelect
+                          v-model="
+                            runtimeGuardrailActions[feature.key]
+                              .prompt_injection
+                          "
+                          :options="guardrailActionOptions"
+                          :disabled="!isFeatureAccessible(feature)"
+                          @change="
+                            handleRuntimeGuardrailChange(
+                              feature.key,
+                              'prompt_injection'
+                            )
+                          "
+                        />
+                      </div>
+                      <div class="grid min-w-0 gap-1">
+                        <span class="text-[11px] font-medium text-n-slate-11">
+                          {{
+                            t(
+                              'CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.SENSITIVE_INFO'
+                            )
+                          }}
+                        </span>
+                        <NextSelect
+                          v-model="
+                            runtimeGuardrailActions[feature.key].sensitive_info
+                          "
+                          :options="guardrailActionOptions"
+                          :disabled="!isFeatureAccessible(feature)"
+                          @change="
+                            handleRuntimeGuardrailChange(
+                              feature.key,
+                              'sensitive_info'
+                            )
+                          "
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </template>

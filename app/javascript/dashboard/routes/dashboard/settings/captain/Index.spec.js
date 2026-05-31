@@ -429,4 +429,38 @@ describe('Captain settings OpenRouter UX', () => {
       },
     });
   });
+
+  it('saves runtime guardrail modes for the AI Agent', async () => {
+    const store = useCaptainConfigStore();
+    const payload = basePayload({
+      audioModel: {
+        id: 'openai/gpt-audio-mini',
+        display_name: 'GPT Audio Mini',
+        provider: 'openrouter',
+        provider_configured: true,
+        type: 'chat',
+        capabilities: ['audio_input', 'text_output', 'transcription'],
+      },
+    });
+    payload.runtime.assistant_prompt_injection_guardrail = 'flag';
+    payload.runtime.assistant_sensitive_info_guardrail = 'block';
+    store.applyPayload(payload);
+    const updateSpy = vi
+      .spyOn(store, 'updatePreferences')
+      .mockResolvedValue({ data: payload });
+
+    const wrapper = mountComponent(store);
+    wrapper.vm.runtimeGuardrailActions.assistant.sensitive_info = 'disabled';
+
+    await wrapper.vm.handleRuntimeGuardrailChange(
+      'assistant',
+      'sensitive_info'
+    );
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      captain_runtime: {
+        assistant_sensitive_info_guardrail: 'disabled',
+      },
+    });
+  });
 });

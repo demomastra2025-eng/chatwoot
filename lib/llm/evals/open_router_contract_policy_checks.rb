@@ -73,7 +73,7 @@ module Llm::Evals::OpenRouterContractPolicyChecks
     failures << 'Captain context compression plugin missing' unless captain.allowed_plugins.include?('context-compression')
     failures << 'Editor must keep plugins blocked by default' if editor.allowed_plugins.present?
     failures << 'Editor low-cost tier must compile to flex' unless editor.compiled_service_tier == 'flex'
-    failures << 'Prompt injection must stay evaluation-required' unless captain.guardrails.dig(:prompt_injection, :status) == 'evaluation_required'
+    failures << 'Prompt injection must be locally enforced' unless captain.guardrails.dig(:prompt_injection, :status) == 'local_enforced'
 
     {
       captain: captain.to_h,
@@ -82,7 +82,7 @@ module Llm::Evals::OpenRouterContractPolicyChecks
         captain_server_tool: 'openrouter:datetime',
         captain_plugins: [RESPONSE_HEALING_PLUGIN_ID, 'context-compression'],
         editor_service_tier: 'flex',
-        prompt_injection: 'evaluation_required'
+        prompt_injection: 'local_enforced'
       },
       failures: failures
     }

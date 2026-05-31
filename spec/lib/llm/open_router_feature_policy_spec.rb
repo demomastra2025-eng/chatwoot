@@ -15,8 +15,23 @@ RSpec.describe Llm::OpenRouterFeaturePolicy do
     expect(policy.guardrails).to include(
       plugins: include(status: 'allowlist_enforced'),
       server_tools: include(status: 'allowlist_enforced'),
-      prompt_injection: include(status: 'evaluation_required'),
-      pii: include(status: 'evaluation_required')
+      prompt_injection: include(status: 'local_enforced'),
+      pii: include(status: 'local_enforced')
+    )
+  end
+
+  it 'reflects runtime guardrail monitoring and disabled modes in diagnostics' do
+    policy = described_class.for(
+      feature: :assistant,
+      runtime_preferences: {
+        assistant_prompt_injection_guardrail: 'flag',
+        assistant_sensitive_info_guardrail: 'disabled'
+      }
+    )
+
+    expect(policy.guardrails).to include(
+      prompt_injection: include(status: 'local_monitored'),
+      pii: include(status: 'disabled')
     )
   end
 
