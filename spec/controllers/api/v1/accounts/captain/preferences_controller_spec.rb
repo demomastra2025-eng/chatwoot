@@ -166,7 +166,40 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           provider_configured: true,
           source: 'account'
         )
+        expect(json_response.dig(:provider_credentials, :openrouter, :health)).to include(
+          status: 'workspace_key_configured',
+          source: 'account'
+        )
         expect(response.body).not_to include('account-openrouter-key')
+      end
+
+      it 'reports cached global OpenRouter key health without exposing key details' do
+        allow(Llm::Config).to receive(:installation_provider_available?).and_call_original
+        allow(Llm::Config).to receive(:installation_provider_available?).with('openrouter').and_return(true)
+        allow(Llm::Config).to receive(:provider_available?).and_call_original
+        allow(Llm::Config).to receive(:provider_available?).with('openrouter', account: account).and_return(true)
+        allow(Llm::OpenRouterKeyHealth).to receive(:metadata).and_return(
+          {
+            status: 'valid',
+            checked_at: '2026-05-31T10:00:00Z',
+            key: { label: 'sk-or-v1-secret', key_type: 'management' },
+            credits: { status: 'available', remaining_credits: 10.5 }
+          }
+        )
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:provider_credentials, :openrouter, :health)).to include(
+          status: 'valid',
+          source: 'global',
+          checked_at: '2026-05-31T10:00:00Z',
+          credits_status: 'available'
+        )
+        expect(response.body).not_to include('sk-or-v1-secret')
+        expect(response.body).not_to include('remaining_credits')
       end
 
       it 'reports visible provider credential statuses only' do

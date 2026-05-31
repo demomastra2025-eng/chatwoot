@@ -913,6 +913,8 @@
       "TITLE": "Ключи провайдеров",
       "DESCRIPTION": "Настройте LLM-ключи на уровне workspace. Секреты хранятся на сервере и никогда не возвращаются в браузер.",
       "STATUS_LABEL": "Источник ключа: {status}",
+      "HEALTH_LABEL": "Состояние OpenRouter: {status}",
+      "CHECKED_AT": " · проверено {date}",
       "PLACEHOLDER": "Вставьте API key {provider}, чтобы переопределить глобальный ключ",
       "SAVE": "Сохранить ключ",
       "REMOVE_ACCOUNT_KEY": "Удалить ключ workspace",
@@ -925,6 +927,19 @@
         "ACCOUNT": "workspace",
         "GLOBAL": "глобальный",
         "MISSING": "отсутствует"
+      },
+      "HEALTH_STATUS": {
+        "VALID": "ключ работает",
+        "NOT_CHECKED": "ещё не проверен",
+        "MISSING": "ключ отсутствует",
+        "INVALID": "ключ невалиден",
+        "EXPIRED": "срок истёк",
+        "UNAVAILABLE": "недоступно",
+        "CREDITS_EXHAUSTED": "кредиты закончились",
+        "CREDITS_UNAVAILABLE": "кредиты недоступны",
+        "KEY_LIMIT_EXHAUSTED": "лимит ключа исчерпан",
+        "MANAGEMENT_KEY_REQUIRED": "нужен management key",
+        "WORKSPACE_KEY_CONFIGURED": "ключ workspace настроен"
       }
     },
     "USAGE": {

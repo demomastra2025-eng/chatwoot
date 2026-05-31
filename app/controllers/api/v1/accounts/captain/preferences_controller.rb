@@ -1,5 +1,6 @@
 class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::BaseController
   HELP_CENTER_SEARCH_FEATURE = 'help_center_search'.freeze
+  OPENROUTER_PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
   RELEASE_GATE_INTEGER_KEYS = %w[
     min_request_count
     max_avg_duration_ms
@@ -291,6 +292,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
         provider_configured: Llm::Config.provider_available?(provider_name, account: Current.account),
         source: provider_credential_source(provider_name, hook)
       }
+      health = provider_health_payload(provider_name, result[provider_name][:source])
+      result[provider_name][:health] = health if health.present?
     end
   end
 
@@ -307,6 +310,30 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     return 'global' if Llm::Config.installation_provider_available?(provider_name)
 
     'missing'
+  end
+
+  def provider_health_payload(provider_name, credential_source)
+    return unless provider_name.to_s == OPENROUTER_PROVIDER
+
+    case credential_source
+    when 'account'
+      { status: 'workspace_key_configured', source: 'account' }
+    when 'global'
+      global_openrouter_health_payload
+    else
+      { status: 'missing', source: 'missing' }
+    end
+  end
+
+  def global_openrouter_health_payload
+    health = Llm::OpenRouterKeyHealth.metadata.to_h.with_indifferent_access
+    credits = health[:credits].to_h.with_indifferent_access
+    {
+      status: health[:status].presence || 'not_checked',
+      source: 'global',
+      checked_at: health[:checked_at],
+      credits_status: credits[:status]
+    }.compact
   end
 
   def provider_account_key_configured?(hook)

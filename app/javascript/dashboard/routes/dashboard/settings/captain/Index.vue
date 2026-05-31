@@ -540,6 +540,44 @@ const providerCredentialStatus = provider => {
       return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.STATUS.MISSING');
   }
 };
+const providerHealthStatus = provider => {
+  const status = provider.credential.health?.status || 'not_checked';
+
+  switch (status) {
+    case 'valid':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.VALID');
+    case 'missing':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.MISSING');
+    case 'invalid':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.INVALID');
+    case 'expired':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.EXPIRED');
+    case 'unavailable':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.UNAVAILABLE');
+    case 'credits_exhausted':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.CREDITS_EXHAUSTED'
+      );
+    case 'credits_unavailable':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.CREDITS_UNAVAILABLE'
+      );
+    case 'key_limit_exhausted':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.KEY_LIMIT_EXHAUSTED'
+      );
+    case 'management_key_required':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.MANAGEMENT_KEY_REQUIRED'
+      );
+    case 'workspace_key_configured':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.WORKSPACE_KEY_CONFIGURED'
+      );
+    default:
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.NOT_CHECKED');
+  }
+};
 const isProviderApiKeyDirty = providerKey =>
   providerApiKeys[providerKey]?.trim().length > 0;
 const selectedKnowledgeChunkOption = computed(() =>
@@ -811,6 +849,25 @@ onMounted(() => {
                           status: providerCredentialStatus(provider),
                         })
                       }}
+                    </div>
+                    <div
+                      v-if="provider.credential.health?.status"
+                      class="mt-1 text-xs text-n-slate-11"
+                    >
+                      {{
+                        t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_LABEL', {
+                          status: providerHealthStatus(provider),
+                        })
+                      }}
+                      <span v-if="provider.credential.health?.checked_at">
+                        {{
+                          t('CAPTAIN_SETTINGS.PROVIDER_KEYS.CHECKED_AT', {
+                            date: formatDateTime(
+                              provider.credential.health.checked_at
+                            ),
+                          })
+                        }}
+                      </span>
                     </div>
                   </div>
                 </div>

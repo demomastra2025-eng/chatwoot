@@ -128,6 +128,11 @@ const basePayload = ({ audioModel }) => ({
       source: 'global',
       account_configured: false,
       global_configured: true,
+      health: {
+        status: 'valid',
+        checked_at: '2026-05-31T10:00:00Z',
+        credits_status: 'available',
+      },
     },
   },
 });
@@ -194,7 +199,11 @@ describe('Captain settings OpenRouter UX', () => {
         gemini: { display_name: 'Gemini' },
       },
       provider_credentials: {
-        openrouter: { display_name: 'OpenRouter', source: 'global' },
+        openrouter: {
+          display_name: 'OpenRouter',
+          source: 'global',
+          health: { status: 'valid', checked_at: '2026-05-31T10:00:00Z' },
+        },
         openai: { display_name: 'OpenAI', source: 'global' },
         anthropic: { display_name: 'Anthropic', source: 'global' },
         gemini: { display_name: 'Gemini', source: 'global' },
@@ -204,6 +213,12 @@ describe('Captain settings OpenRouter UX', () => {
     const wrapper = mountComponent(store);
 
     expect(wrapper.text()).toContain('OpenRouter');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.VALID'
+    );
     expect(wrapper.text()).not.toContain('OpenAI');
     expect(wrapper.text()).not.toContain('Anthropic');
     expect(wrapper.text()).not.toContain('Gemini');

@@ -437,6 +437,8 @@
       "TITLE": "Provider keys",
       "DESCRIPTION": "Configure workspace-level LLM credentials. Secrets are stored server-side and are never returned to the browser.",
       "STATUS_LABEL": "Key source: {status}",
+      "HEALTH_LABEL": "OpenRouter status: {status}",
+      "CHECKED_AT": " · checked {date}",
       "PLACEHOLDER": "Paste {provider} API key to override the global key",
       "SAVE": "Save key",
       "REMOVE_ACCOUNT_KEY": "Remove account key",
@@ -449,6 +451,19 @@
         "ACCOUNT": "account",
         "GLOBAL": "global",
         "MISSING": "missing"
+      },
+      "HEALTH_STATUS": {
+        "VALID": "valid",
+        "NOT_CHECKED": "not checked",
+        "MISSING": "missing",
+        "INVALID": "invalid key",
+        "EXPIRED": "expired",
+        "UNAVAILABLE": "unavailable",
+        "CREDITS_EXHAUSTED": "credits exhausted",
+        "CREDITS_UNAVAILABLE": "credits unavailable",
+        "KEY_LIMIT_EXHAUSTED": "key limit exhausted",
+        "MANAGEMENT_KEY_REQUIRED": "management key required",
+        "WORKSPACE_KEY_CONFIGURED": "workspace key configured"
       }
     },
     "MODEL_CONFIG": {
