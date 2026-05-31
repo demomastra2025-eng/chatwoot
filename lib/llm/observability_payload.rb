@@ -72,6 +72,20 @@ class Llm::ObservabilityPayload
       payload
     end
 
+    def attach_rerank_response!(payload, response)
+      usage = response.respond_to?(:usage) && response.usage.respond_to?(:to_h) ? response.usage.to_h.with_indifferent_access : {}
+
+      payload['status'] = 'success'
+      payload['error'] = false
+      payload['prompt_tokens'] = integer_value(usage[:prompt_tokens] || usage[:input_tokens])
+      payload['completion_tokens'] = integer_value(usage[:completion_tokens] || usage[:output_tokens])
+      payload['total_tokens'] = integer_value(usage[:total_tokens]) || compact_sum(payload['prompt_tokens'], payload['completion_tokens'])
+      payload['estimated_cost'] = usage[:cost] || usage[:estimated_cost]
+      payload['result_count'] = response.results.count if response.respond_to?(:results) && response.results.respond_to?(:count)
+      payload.compact!
+      payload
+    end
+
     def attach_moderation_response!(payload, response)
       payload['status'] = response.respond_to?(:flagged?) && response.flagged? ? 'flagged' : 'allowed'
       payload['error'] = false
@@ -119,6 +133,14 @@ class Llm::ObservabilityPayload
 
     def token_value(response, method_name)
       response.public_send(method_name) if response.respond_to?(method_name)
+    end
+
+    def integer_value(value)
+      return if value.blank?
+
+      Integer(value)
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def chat_response_payload(response, provider: nil)

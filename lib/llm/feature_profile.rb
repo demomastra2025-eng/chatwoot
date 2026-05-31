@@ -155,6 +155,25 @@ class Llm::FeatureProfile
     def supported?(feature)
       FEATURE_DEFINITIONS.key?(normalize_feature(feature))
     end
+
+    def equivalent_feature_keys(feature)
+      canonical_key = normalize_feature(feature)
+      raw_key = feature.to_s.presence
+      return [] if canonical_key.blank? && raw_key.blank?
+
+      definition = FEATURE_DEFINITIONS[canonical_key]
+      ([canonical_key, raw_key, definition&.dig(:config_feature_key)] + aliases_for(canonical_key))
+        .compact
+        .map(&:to_s)
+        .select(&:present?)
+        .uniq
+    end
+
+    private
+
+    def aliases_for(canonical_key)
+      FEATURE_ALIASES.filter_map { |alias_key, target_key| alias_key if target_key == canonical_key }
+    end
   end
 
   def initialize(feature_key:, account:, definition:)

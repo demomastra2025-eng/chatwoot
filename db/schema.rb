@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_31_142916) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_31_154500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1503,6 +1503,24 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_31_142916) do
     t.index ["user_id"], name: "index_leaves_on_user_id"
   end
 
+  create_table "llm_budget_policies", force: :cascade do |t|
+    t.integer "account_id"
+    t.string "scope_type", default: "account", null: false
+    t.string "feature"
+    t.boolean "active", default: true, null: false
+    t.boolean "hard_stop", default: false, null: false
+    t.decimal "daily_budget", precision: 14, scale: 8
+    t.decimal "monthly_budget", precision: 14, scale: 8
+    t.decimal "warning_threshold", precision: 5, scale: 4, default: "0.8"
+    t.string "fallback_profile"
+    t.jsonb "per_feature_caps", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "feature", "active"], name: "idx_llm_budget_policies_account_feature_active"
+    t.index ["scope_type", "active"], name: "idx_llm_budget_policies_scope_active"
+  end
+
   create_table "llm_embedding_model_profiles", force: :cascade do |t|
     t.string "provider_platform", null: false
     t.string "model_id", null: false
@@ -1673,6 +1691,40 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_31_142916) do
     t.index ["provider_platform", "model_id", "endpoint_provider_key", "endpoint_slug"], name: "idx_llm_endpoint_provider_model_key_slug", unique: true
     t.index ["provider_platform", "model_id"], name: "idx_llm_endpoint_provider_model"
     t.index ["provider_platform", "stale_at"], name: "idx_llm_endpoint_provider_stale"
+  end
+
+  create_table "llm_usage_events", force: :cascade do |t|
+    t.integer "account_id"
+    t.bigint "llm_event_id", null: false
+    t.datetime "occurred_at", null: false
+    t.string "event_name", null: false
+    t.string "feature"
+    t.string "provider"
+    t.string "actual_provider"
+    t.string "requested_model"
+    t.string "actual_model"
+    t.string "routing_profile"
+    t.string "status"
+    t.string "error_code"
+    t.integer "prompt_tokens"
+    t.integer "completion_tokens"
+    t.integer "reasoning_tokens"
+    t.integer "cached_tokens"
+    t.integer "total_tokens"
+    t.decimal "estimated_cost", precision: 14, scale: 8
+    t.integer "duration_ms"
+    t.string "generation_id"
+    t.string "trace_id"
+    t.string "session_id"
+    t.string "request_id"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "feature", "occurred_at"], name: "idx_llm_usage_events_account_feature_occurred"
+    t.index ["account_id", "generation_id"], name: "idx_llm_usage_events_account_generation", where: "(generation_id IS NOT NULL)"
+    t.index ["account_id", "occurred_at"], name: "idx_llm_usage_events_account_occurred"
+    t.index ["llm_event_id"], name: "index_llm_usage_events_on_llm_event_id", unique: true
+    t.index ["provider", "occurred_at"], name: "idx_llm_usage_events_provider_occurred"
   end
 
   create_table "macros", force: :cascade do |t|
@@ -2535,6 +2587,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_31_142916) do
   add_foreign_key "llm_event_annotations", "accounts"
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
+  add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
   add_foreign_key "reminder_groups", "accounts"
   add_foreign_key "reminder_groups", "users", column: "creator_id"
   add_foreign_key "reminders", "accounts"

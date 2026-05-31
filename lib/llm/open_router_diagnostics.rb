@@ -37,6 +37,7 @@ class Llm::OpenRouterDiagnostics
       catalog: catalog_summary,
       endpoints: endpoint_summary,
       runtime: runtime_summary,
+      usage: usage_summary,
       workspace_policy: workspace_policy_summary,
       features: feature_summaries,
       model_eligibility: sampled_model_eligibility
@@ -120,6 +121,18 @@ class Llm::OpenRouterDiagnostics
       by_model: top_counts(compact_counts(scoped.group(:model).count)),
       recent_error_codes: top_counts(compact_counts(scoped.error_events.group(:error_code).count)),
       last_event_at: scoped.maximum(:created_at)
+    }
+  end
+
+  def usage_summary
+    Llm::UsageLedger.summary(
+      account: account,
+      range: runtime_window,
+      provider: PROVIDER
+    )
+  rescue StandardError => e
+    {
+      error: "#{e.class}: #{Llm::OpenRouterModelCatalog.sanitize_error_message(e)}"
     }
   end
 

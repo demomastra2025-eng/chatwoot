@@ -79,6 +79,20 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
         'cached_tokens' => 13
       )
     )
+    usage = LlmUsageEvent.find_by!(llm_event_id: event.id)
+    expect(usage).to have_attributes(
+      provider: 'openrouter',
+      actual_provider: 'OpenAI',
+      actual_model: 'openai/gpt-4o-2026-05-30',
+      prompt_tokens: 120,
+      completion_tokens: 40,
+      reasoning_tokens: 7,
+      cached_tokens: 13,
+      total_tokens: 167,
+      duration_ms: 830,
+      generation_id: 'gen-123'
+    )
+    expect(usage.estimated_cost.to_f).to eq(0.00042)
   end
 
   it 'uses the generation id stored in the payload when no explicit id is passed' do

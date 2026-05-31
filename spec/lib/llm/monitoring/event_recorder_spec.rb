@@ -223,6 +223,71 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       )
     end
 
+    it 'mirrors persisted provider events into the local usage ledger' do
+      expect do
+        described_class.record_notification(
+          event_name: 'llm.chat.complete',
+          started_at: Time.current,
+          finished_at: Time.current,
+          payload: {
+            'account_id' => account.id,
+            'feature' => 'assistant',
+            'provider' => 'openrouter',
+            'model' => 'openai/gpt-4o',
+            'prompt_tokens' => 100,
+            'completion_tokens' => 25,
+            'thinking_tokens' => 5,
+            'openrouter_generation_id' => 'gen-ledger',
+            'endpoint_provider' => 'OpenAI'
+          }
+        )
+      end.to change(LlmUsageEvent, :count).by(1)
+
+      usage = LlmUsageEvent.last
+      expect(usage).to have_attributes(
+        account_id: account.id,
+        provider: 'openrouter',
+        actual_provider: 'OpenAI',
+        requested_model: 'openai/gpt-4o',
+        actual_model: 'openai/gpt-4o',
+        prompt_tokens: 100,
+        completion_tokens: 25,
+        reasoning_tokens: 5,
+        generation_id: 'gen-ledger'
+      )
+    end
+
+    it 'persists budget warning events without creating usage ledger rows' do
+      expect do
+        described_class.record_notification(
+          event_name: 'llm.budget.warning',
+          started_at: Time.current,
+          finished_at: Time.current,
+          payload: {
+            'account_id' => account.id,
+            'feature' => 'captain_agent',
+            'provider' => 'openrouter',
+            'model' => 'openai/gpt-4o',
+            'status' => 'warning',
+            'error_code' => Llm::BudgetEvaluator::WARNING_CODE,
+            'budget_decision' => { 'reason' => 'daily_budget_warning' }
+          }
+        )
+      end.to change(LlmEvent, :count).by(1).and not_change(LlmUsageEvent, :count)
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.budget.warning',
+        account_id: account.id,
+        feature: 'captain_agent',
+        status: 'warning',
+        error_code: Llm::BudgetEvaluator::WARNING_CODE,
+        blocked: false,
+        error: false
+      )
+      expect(event.payload['budget_decision']).to include('reason' => 'daily_budget_warning')
+    end
+
     it 'does not enqueue generation metadata enrichment for direct-provider events' do
       expect(Internal::FetchOpenRouterGenerationMetadataJob).not_to receive(:perform_later)
 

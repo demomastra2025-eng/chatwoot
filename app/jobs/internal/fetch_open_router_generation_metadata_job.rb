@@ -12,6 +12,7 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
 
     metadata = fetch_metadata(event, resolved_generation_id)
     event.update!(event_update_attributes(event, metadata))
+    Llm::UsageLedger.record_event!(event.reload)
   rescue StandardError => e
     record_error(event, resolved_generation_id, e) if event.present? && resolved_generation_id.present?
     nil

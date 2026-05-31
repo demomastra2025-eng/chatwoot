@@ -4,12 +4,15 @@ class Llm::Monitoring::EventRecorder
   PERSISTED_EVENTS = Set.new(
     %w[
       llm.agent.handoff
+      llm.budget.blocked
+      llm.budget.warning
       llm.chat.complete
       llm.embedding.complete
       llm.moderation.complete
       llm.moderation.unavailable
       llm.run.complete
       llm.run.retry
+      llm.rerank.complete
       llm.safety.blocked
       llm.schema.fallback
       llm.schema.invalid
@@ -53,6 +56,7 @@ class Llm::Monitoring::EventRecorder
     return unless PERSISTED_EVENTS.include?(@event_name)
 
     event = LlmEvent.create!(event_attributes)
+    record_usage(event)
     enqueue_openrouter_generation_metadata(event)
     event
   rescue StandardError => e
@@ -102,7 +106,7 @@ class Llm::Monitoring::EventRecorder
       completion_tokens: completion_tokens,
       total_tokens: total_tokens,
       duration_ms: duration_ms,
-      credit_multiplier: Llm::Models.credit_multiplier_for(model_name),
+      credit_multiplier: credit_multiplier(model_name),
       estimated_cost: estimated_cost(model_name, prompt_tokens: prompt_tokens, completion_tokens: completion_tokens),
       blocked: blocked?,
       moderation_skipped: moderation_skipped?,
@@ -127,6 +131,15 @@ class Llm::Monitoring::EventRecorder
     Rails.logger.warn(
       "[Llm::Monitoring::EventRecorder] Failed to enqueue OpenRouter generation metadata for event #{event.id}: " \
       "#{e.class}: #{e.message}"
+    )
+    nil
+  end
+
+  def record_usage(event)
+    Llm::UsageLedger.record_event!(event)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[Llm::Monitoring::EventRecorder] Failed to record usage ledger for event #{event.id}: #{e.class}: #{e.message}"
     )
     nil
   end
@@ -222,6 +235,15 @@ class Llm::Monitoring::EventRecorder
     nil
   end
 
+  def credit_multiplier(model_name)
+    return integer_value(@payload['credit_multiplier']) if @payload['credit_multiplier'].present?
+    return if budget_event?
+
+    Llm::Models.credit_multiplier_for(model_name)
+  rescue StandardError
+    nil
+  end
+
   def estimated_cost(model_name, prompt_tokens:, completion_tokens:)
     return @payload['estimated_cost'].to_d if @payload['estimated_cost'].present?
     return if model_name.blank?
@@ -262,6 +284,10 @@ class Llm::Monitoring::EventRecorder
 
   def error?
     boolean_value(@payload['error']) || @event_name == 'llm.moderation.unavailable' || tool_failure?
+  end
+
+  def budget_event?
+    @event_name.start_with?('llm.budget.')
   end
 
   def integer_value(value)

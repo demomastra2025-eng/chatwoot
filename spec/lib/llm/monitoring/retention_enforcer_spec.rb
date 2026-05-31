@@ -11,6 +11,8 @@ RSpec.describe Llm::Monitoring::RetentionEnforcer do
     let!(:global_old_event) { create(:llm_event, account: nil, created_at: 120.days.ago) }
     let!(:old_annotation) { create(:llm_event_annotation, account: account, user: user, llm_event: old_event) }
     let!(:recent_annotation) { create(:llm_event_annotation, account: account, user: user, llm_event: recent_event) }
+    let!(:old_usage_event) { create(:llm_usage_event, account: account, llm_event: old_event, occurred_at: old_event.created_at) }
+    let!(:recent_usage_event) { create(:llm_usage_event, account: account, llm_event: recent_event, occurred_at: recent_event.created_at) }
 
     it 'removes stale llm events and dependent annotations according to retention windows' do
       summary = described_class.new(
@@ -29,6 +31,8 @@ RSpec.describe Llm::Monitoring::RetentionEnforcer do
       expect(LlmEvent.exists?(recent_event.id)).to be(true)
       expect(LlmEventAnnotation.exists?(old_annotation.id)).to be(false)
       expect(LlmEventAnnotation.exists?(recent_annotation.id)).to be(true)
+      expect(LlmUsageEvent.exists?(old_usage_event.id)).to be(false)
+      expect(LlmUsageEvent.exists?(recent_usage_event.id)).to be(true)
     end
   end
 end

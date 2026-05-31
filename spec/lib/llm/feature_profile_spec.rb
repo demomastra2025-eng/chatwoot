@@ -51,6 +51,12 @@ RSpec.describe Llm::FeatureProfile do
     expect(editor.required_capabilities).to include('text_input', 'text_output')
   end
 
+  it 'returns canonical, config, and alias feature keys for accounting policy joins' do
+    expect(described_class.equivalent_feature_keys(:assistant)).to contain_exactly('assistant', 'captain_agent', 'captain')
+    expect(described_class.equivalent_feature_keys(:help_center_search)).to contain_exactly('help_center_search', 'embedding')
+    expect(described_class.equivalent_feature_keys(:knowledge_rerank)).to eq(['knowledge_rerank'])
+  end
+
   it 'rejects unsupported feature keys' do
     expect { described_class.for(:unknown_feature) }
       .to raise_error(ArgumentError, /Unsupported LLM feature/)

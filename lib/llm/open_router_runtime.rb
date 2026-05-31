@@ -12,6 +12,7 @@ class Llm::OpenRouterRuntime
   def chat(request)
     request = normalize_request(request)
     model = resolve_model(request)
+    enforce_budget!(request, model)
     compiled = compiled_chat_request(request, model)
     runner = Llm::ChatRequestRunner.new(
       context: chat_context(request, model),
@@ -57,6 +58,7 @@ class Llm::OpenRouterRuntime
   end
 
   def ask(chat, content, model: nil, observability: nil)
+    enforce_observed_ask_budget!(model: model, observability: observability)
     Llm::ChatClient.ask(chat, content, model: model, observability: observability, account: account)
   end
 
@@ -65,6 +67,7 @@ class Llm::OpenRouterRuntime
     raise ArgumentError, 'input is required for OpenRouter transcription.' if request.input.blank?
 
     model = resolve_model(request)
+    enforce_budget!(request, model)
     observe_native_request(request, model, 'transcription.complete') do
       Llm::OpenRouterTranscriptionClient.transcribe(
         request.input,
@@ -83,6 +86,7 @@ class Llm::OpenRouterRuntime
     raise ArgumentError, 'input is required for OpenRouter embeddings.' if request.input.blank?
 
     model = resolve_model(request)
+    enforce_budget!(request, model)
     observe_native_request(request, model, 'embedding.complete') do
       Llm::OpenRouterEmbeddingClient.embed(
         request.input,
@@ -106,16 +110,20 @@ class Llm::OpenRouterRuntime
     model = resolve_model(request)
     raise ArgumentError, 'model is required for OpenRouter rerank.' if model.blank?
 
-    Llm::OpenRouterRerankClient.rerank(
-      query: query,
-      documents: documents,
-      model: model,
-      top_n: request.options[:top_n],
-      return_documents: request.options.fetch(:return_documents, true),
-      api_key: api_key!(request),
-      api_base: api_base(request),
-      provider: routing_profile(request, model).provider_preferences
-    )
+    enforce_budget!(request, model)
+
+    observe_native_request(request, model, 'rerank.complete') do
+      Llm::OpenRouterRerankClient.rerank(
+        query: query,
+        documents: documents,
+        model: model,
+        top_n: request.options[:top_n],
+        return_documents: request.options.fetch(:return_documents, true),
+        api_key: api_key!(request),
+        api_base: api_base(request),
+        provider: routing_profile(request, model).provider_preferences
+      )
+    end
   end
 
   def metadata(generation_id)
@@ -178,9 +186,8 @@ class Llm::OpenRouterRuntime
 
   def observe_native_request(request, model, event_name)
     payload = native_observability_payload(request, model)
-    return yield if payload.blank?
 
-    Llm::EventBus.publish(event_name, payload) do |event_payload|
+    instrument_native_request(event_name, payload) do |event_payload|
       response = yield
       attach_native_response!(event_payload, event_name, response)
       response
@@ -191,8 +198,6 @@ class Llm::OpenRouterRuntime
   end
 
   def native_observability_payload(request, model)
-    return {} if request.observability.blank?
-
     Llm::ObservabilityPayload.normalize(
       runtime_observability(request),
       model: model,
@@ -200,10 +205,44 @@ class Llm::OpenRouterRuntime
     )
   end
 
+  def instrument_native_request(event_name, payload, &)
+    if native_event_subscribers?(event_name)
+      Llm::EventBus.publish(event_name, payload, &)
+    else
+      record_native_request(event_name, payload, &)
+    end
+  end
+
+  def native_event_subscribers?(event_name)
+    ActiveSupport::Notifications.notifier.listeners_for("llm.#{event_name}").any?
+  end
+
+  def record_native_request(event_name, payload)
+    started_at = Time.current
+    event_payload = payload.stringify_keys.merge('canonical_event_name' => "llm.#{event_name}")
+    response = yield(event_payload)
+    record_native_event(event_name, started_at, event_payload)
+    response
+  rescue StandardError
+    record_native_event(event_name, started_at, event_payload) if event_payload.present?
+    raise
+  end
+
+  def record_native_event(event_name, started_at, event_payload)
+    Llm::Monitoring::EventRecorder.record_notification(
+      event_name: "llm.#{event_name}",
+      started_at: started_at,
+      finished_at: Time.current,
+      payload: event_payload
+    )
+  end
+
   def attach_native_response!(event_payload, event_name, response)
     case event_name
     when 'embedding.complete'
       Llm::ObservabilityPayload.attach_embedding_response!(event_payload, response)
+    when 'rerank.complete'
+      Llm::ObservabilityPayload.attach_rerank_response!(event_payload, response)
     when 'transcription.complete'
       Llm::ObservabilityPayload.attach_transcription_response!(event_payload, response)
     end
@@ -225,11 +264,19 @@ class Llm::OpenRouterRuntime
   def runtime_observability(request)
     request.observability.merge(
       provider: OPENROUTER_PROVIDER,
-      feature: request.feature_key,
+      feature: runtime_observability_feature(request),
+      account_id: request_account(request)&.id,
       session_id: request.session_id,
       user_id: request.user_id,
       runtime_mode: 'openrouter_runtime'
     ).compact
+  end
+
+  def runtime_observability_feature(request)
+    request.observability[:feature].presence ||
+      request.observability[:feature_name].presence ||
+      request.feature.to_s.presence ||
+      request.feature_key
   end
 
   def routing_profile(request, model)
@@ -240,6 +287,36 @@ class Llm::OpenRouterRuntime
       runtime_preferences: request.runtime_preferences,
       privacy_profile: request.privacy_profile
     )
+  end
+
+  def enforce_budget!(request, model)
+    Llm::BudgetEvaluator.evaluate!(request: request, model: model)
+  end
+
+  def enforce_observed_ask_budget!(model:, observability:)
+    return if account.blank?
+
+    feature = observability_feature(observability).presence || 'assistant'
+    request = Llm::FeatureRequest.new(
+      feature: feature,
+      account: account,
+      model: model,
+      observability: observability.respond_to?(:to_h) ? observability.to_h : {},
+      options: { estimated_cost: observability_estimated_cost(observability) }.compact
+    )
+    enforce_budget!(request, model)
+  end
+
+  def observability_feature(observability)
+    return unless observability.respond_to?(:[])
+
+    observability[:feature] || observability['feature'] || observability[:feature_name] || observability['feature_name']
+  end
+
+  def observability_estimated_cost(observability)
+    return unless observability.respond_to?(:[])
+
+    observability[:estimated_cost] || observability['estimated_cost'] || observability[:cost] || observability['cost']
   end
 
   def rerank_query(request)

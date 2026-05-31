@@ -7,7 +7,9 @@ RSpec.describe Llm::OpenRouterRuntime do
   let(:runtime) { described_class.new(account: account) }
 
   before do
+    allow(Llm::Config).to receive(:api_key).and_call_original
     allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('openrouter-key')
+    allow(Llm::Config).to receive(:api_base).and_call_original
     allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.example/api/v1')
   end
 
@@ -44,6 +46,24 @@ RSpec.describe Llm::OpenRouterRuntime do
     ).and_return(runner)
 
     expect(runtime.chat(request)).to eq(:response)
+  end
+
+  it 'blocks chat provider execution when the local account budget is exhausted' do
+    persisted_account = create(:account)
+    budgeted_runtime = described_class.new(account: persisted_account)
+    request = Llm::FeatureRequest.new(
+      feature: :captain_agent,
+      account: persisted_account,
+      model: 'openai/gpt-5.4-mini',
+      messages: [{ role: 'user', content: 'Hello' }]
+    )
+    create(:llm_budget_policy, account: persisted_account, daily_budget: 1.0, hard_stop: true)
+    create(:llm_usage_event, account: persisted_account, estimated_cost: 1.01, occurred_at: Time.zone.now)
+
+    expect(Llm::ChatRequestRunner).not_to receive(:new)
+
+    expect { budgeted_runtime.chat(request) }
+      .to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
   end
 
   it 'builds stateful chats through the compiled OpenRouter runtime profile' do
@@ -93,6 +113,55 @@ RSpec.describe Llm::OpenRouterRuntime do
     expect(runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })).to eq(response)
   end
 
+  it 'blocks budget-exceeded chat requests before provider execution' do
+    budget_account = create(:account)
+    budget_runtime = described_class.new(account: budget_account)
+    create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
+    request = Llm::FeatureRequest.new(
+      feature: :captain_agent,
+      account: budget_account,
+      model: 'openai/gpt-5.4-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      options: { estimated_cost: 0.01 }
+    )
+
+    expect(Llm::ChatRequestRunner).not_to receive(:new)
+
+    expect { budget_runtime.chat(request) }
+      .to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
+  end
+
+  it 'blocks observed stateful asks when the account budget is exhausted' do
+    budget_account = create(:account)
+    budget_runtime = described_class.new(account: budget_account)
+    create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
+    chat = instance_double(RubyLLM::Chat)
+
+    expect(Llm::ChatClient).not_to receive(:ask)
+
+    expect do
+      budget_runtime.ask(
+        chat,
+        'hello',
+        model: 'openai/gpt-5.4-mini',
+        observability: { feature: 'assistant', estimated_cost: 0.01 }
+      )
+    end.to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
+  end
+
+  it 'blocks stateful asks without feature observability when the account budget is exhausted' do
+    budget_account = create(:account)
+    budget_runtime = described_class.new(account: budget_account)
+    create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
+    chat = instance_double(RubyLLM::Chat)
+
+    expect(Llm::ChatClient).not_to receive(:ask)
+
+    expect do
+      budget_runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })
+    end.to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
+  end
+
   it 'routes native embeddings to the OpenRouter embedding client' do
     request = Llm::FeatureRequest.new(
       feature: :help_center_search,
@@ -115,7 +184,15 @@ RSpec.describe Llm::OpenRouterRuntime do
       )
     ).and_return(result)
 
-    expect(runtime.embed(request)).to eq(result)
+    expect { expect(runtime.embed(request)).to eq(result) }
+      .to change(LlmUsageEvent, :count).by(1)
+    expect(LlmUsageEvent.last).to have_attributes(
+      event_name: 'llm.embedding.complete',
+      feature: 'help_center_search',
+      provider: 'openrouter',
+      prompt_tokens: 1,
+      total_tokens: 1
+    )
   end
 
   it 'publishes native embedding observability through the runtime facade' do
@@ -196,7 +273,13 @@ RSpec.describe Llm::OpenRouterRuntime do
       )
     ).and_return(result)
 
-    expect(runtime.transcribe(request)).to eq(result)
+    expect { expect(runtime.transcribe(request)).to eq(result) }
+      .to change(LlmUsageEvent, :count).by(1)
+    expect(LlmUsageEvent.last).to have_attributes(
+      event_name: 'llm.transcription.complete',
+      feature: 'audio_transcription',
+      provider: 'openrouter'
+    )
   end
 
   it 'routes native rerank requests to the OpenRouter rerank client' do
@@ -207,7 +290,11 @@ RSpec.describe Llm::OpenRouterRuntime do
       input: { query: 'refund policy', documents: ['refunds are available', 'shipping policy'] },
       options: { top_n: 1 }
     )
-    result = instance_double(Llm::OpenRouterRerankClient::Result)
+    result = Llm::OpenRouterRerankClient::Result.new(
+      results: [Llm::OpenRouterRerankClient::ResultItem.new(index: 0, relevance_score: 0.9)],
+      model: 'cohere/rerank-v3.5',
+      usage: { 'total_tokens' => 12, 'cost' => '0.00003' }
+    )
 
     expect(Llm::OpenRouterRerankClient).to receive(:rerank).with(
       hash_including(
@@ -222,7 +309,15 @@ RSpec.describe Llm::OpenRouterRuntime do
       )
     ).and_return(result)
 
-    expect(runtime.rerank(request)).to eq(result)
+    expect { expect(runtime.rerank(request)).to eq(result) }
+      .to change(LlmUsageEvent, :count).by(1)
+    expect(LlmUsageEvent.last).to have_attributes(
+      event_name: 'llm.rerank.complete',
+      feature: 'knowledge_rerank',
+      provider: 'openrouter',
+      total_tokens: 12
+    )
+    expect(LlmUsageEvent.last.estimated_cost.to_f).to eq(0.00003)
   end
 
   it 'delegates generation metadata lookup to the OpenRouter generation client' do

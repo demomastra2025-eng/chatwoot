@@ -108,6 +108,16 @@ RSpec.describe Llm::OpenRouterDiagnostics do
     )
     create(:llm_event, provider: 'openai', feature: 'assistant', error: true, created_at: 30.minutes.ago)
     create(:llm_event, provider: 'openrouter', feature: 'assistant', created_at: 2.days.ago)
+    create(
+      :llm_usage_event,
+      provider: 'openrouter',
+      feature: 'assistant',
+      estimated_cost: 0.50,
+      total_tokens: 100,
+      cached_tokens: 10,
+      reasoning_tokens: 4,
+      occurred_at: 30.minutes.ago
+    )
 
     diagnostics = described_class.call(sample_limit: 2)
 
@@ -134,6 +144,11 @@ RSpec.describe Llm::OpenRouterDiagnostics do
     expect(diagnostics.dig(:runtime, :total_tokens)).to eq(1280)
     expect(diagnostics.dig(:runtime, :by_feature)).to include('assistant' => 1, 'knowledge' => 1)
     expect(diagnostics.dig(:runtime, :recent_error_codes)).to include('provider_unavailable' => 1)
+    expect(diagnostics.dig(:usage, :request_count)).to eq(1)
+    expect(diagnostics.dig(:usage, :total_tokens)).to eq(100)
+    expect(diagnostics.dig(:usage, :cached_tokens)).to eq(10)
+    expect(diagnostics.dig(:usage, :reasoning_tokens)).to eq(4)
+    expect(diagnostics.dig(:usage, :estimated_cost)).to eq(0.5)
     expect(diagnostics.to_json).not_to include('test-openrouter-diagnostics-key')
   end
 
