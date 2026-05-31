@@ -434,7 +434,7 @@
       "OPEN_MODAL": "Открыть в центре экрана",
       "RESIZE_PANEL": "Изменить ширину панели",
       "SHOW_STEPS": "Детали",
-      "REASONING": "Обоснование ответа",
+      "REASONING": "Мысли",
       "TOOL_COUNT": {
         "ONE": "{count} инструмент",
         "FEW": "{count} инструмента",

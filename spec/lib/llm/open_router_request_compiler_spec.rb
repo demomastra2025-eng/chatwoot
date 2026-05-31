@@ -152,4 +152,27 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       zdr: true
     )
   end
+
+  it 'keeps provider order only from trusted routing profile preferences' do
+    compiled = compile(
+      feature: :copilot,
+      runtime_preferences: {
+        openrouter_routing_strategy: 'auto_exacto',
+        openrouter_provider_order: %w[OpenAI Anthropic]
+      },
+      base_params: {
+        provider: {
+          order: ['UntrustedProvider'],
+          only: ['UntrustedProvider']
+        }
+      }
+    )
+
+    expect(compiled.params[:provider]).to include(
+      order: %w[OpenAI Anthropic],
+      allow_fallbacks: true,
+      require_parameters: true
+    )
+    expect(compiled.params[:provider]).not_to include(:only)
+  end
 end

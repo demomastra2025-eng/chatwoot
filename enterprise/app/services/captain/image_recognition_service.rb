@@ -18,12 +18,18 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
     return FALLBACK_DESCRIPTION if image_url.blank? || model.blank?
 
     response = instrument_image_recognition(instrumentation_params) do
-      Llm::ChatClient.ask(
-        chat(model: model, temperature: 0),
-        RubyLLM::Content.new(recognition_prompt, [image_url]),
-        observability: instrumentation_params.merge(runtime_mode: 'image_recognition'),
+      Llm::Runtime.chat(
+        feature: :image_recognition,
         account: account,
-        model: model
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: RubyLLM::Content.new(recognition_prompt, [image_url])
+          }
+        ],
+        observability: instrumentation_params.merge(runtime_mode: 'image_recognition'),
+        options: { temperature: 0 }
       )
     end
 
@@ -64,8 +70,8 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
     }
   end
 
-  def instrument_image_recognition(observability)
-    instrument_llm_call(observability) { yield }
+  def instrument_image_recognition(observability, &)
+    instrument_llm_call(observability, &)
   end
 
   def recognition_prompt

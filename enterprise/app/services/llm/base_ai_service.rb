@@ -18,11 +18,16 @@ class Llm::BaseAiService
   end
 
   def chat(model: self.model, temperature: @temperature, thinking: nil)
-    Llm::ChatClient.build(**chat_build_kwargs(model: model, temperature: temperature, thinking: thinking))
+    Llm::Runtime.build_chat(
+      feature: llm_feature_key,
+      account: llm_model_account,
+      model: model,
+      options: runtime_chat_options(model: model, temperature: temperature, thinking: thinking)
+    )
   end
 
   def ask_chat(chat, content, observability: default_observability_payload)
-    Llm::ChatClient.ask(chat, content, **chat_ask_kwargs(observability: observability))
+    Llm::Runtime.ask(chat, content, **runtime_ask_kwargs(observability: observability))
   end
 
   private
@@ -51,26 +56,19 @@ class Llm::BaseAiService
     @temperature = DEFAULT_TEMPERATURE
   end
 
-  def chat_build_kwargs(model:, temperature:, thinking:)
-    account = llm_model_account
+  def runtime_chat_options(model:, temperature:, thinking:)
     {
-      model: model,
       temperature: temperature,
       thinking: thinking
-    }.tap do |kwargs|
-      kwargs[:feature] = llm_feature_key if llm_feature_key.present?
-      kwargs[:account] = account if account.present?
-      context = llm_context_for_model(model, account)
-      kwargs[:context] = context if context.present?
+    }.tap do |options|
+      context = llm_context_for_model(model, llm_model_account)
+      options[:context] = context if context.present?
     end
   end
 
-  def chat_ask_kwargs(observability:)
+  def runtime_ask_kwargs(observability:)
     account = llm_model_account
-    { observability: observability }.tap do |kwargs|
-      kwargs[:account] = account if account.present?
-      kwargs[:model] = model if account.present? || observability.present?
-    end
+    { account: account, model: account.present? || observability.present? ? model : nil, observability: observability }
   end
 
   def llm_context_for_model(model_name, account)

@@ -87,7 +87,7 @@ class Captain::Runtime::Runner
     kwargs = {}
     kwargs[:account] = account if account.present?
 
-    Llm::ChatClient.ask(chat, input, **kwargs)
+    Llm::Runtime.ask(chat, input, **kwargs)
   end
 
   def emit_agent_thinking(session)

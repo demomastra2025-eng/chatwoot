@@ -11,7 +11,13 @@ class Llm::OpenRouterDiagnostics
 
   class << self
     def call(account: nil, sample_limit: DEFAULT_SAMPLE_LIMIT)
-      new(account: account, sample_limit: sample_limit).call
+      Llm::Config.with_runtime_cache do
+        Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+          Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do
+            new(account: account, sample_limit: sample_limit).call
+          end
+        end
+      end
     end
   end
 

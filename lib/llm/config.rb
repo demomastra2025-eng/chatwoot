@@ -3,8 +3,8 @@ require 'ruby_llm'
 # rubocop:disable Metrics/ModuleLength
 module Llm::Config
   DEFAULT_MODEL = 'openai/gpt-5.4-mini'.freeze
-  DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe'.freeze
-  DEFAULT_MODERATION_MODEL = 'omni-moderation-latest'.freeze
+  DEFAULT_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'.freeze
+  DEFAULT_MODERATION_MODEL = 'openai/gpt-oss-safeguard-20b'.freeze
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze

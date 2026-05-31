@@ -34,6 +34,32 @@ class Llm::OpenRouterRuntime
     runner.call
   end
 
+  def build_chat(request)
+    request = normalize_request(request)
+    model = resolve_model(request)
+    compiled = compiled_chat_request(request, model)
+    Llm::ChatClient.build(
+      context: chat_context(request, model),
+      chat: request.options[:chat],
+      model: model,
+      params: compiled.params,
+      headers: compiled.headers,
+      temperature: request.options[:temperature],
+      thinking: request.options[:thinking],
+      stream: request.options[:stream],
+      account: request_account(request),
+      feature: request.feature_key
+    )
+  end
+
+  def build_chat_legacy(**)
+    Llm::ChatClient.build(**)
+  end
+
+  def ask(chat, content, model: nil, observability: nil)
+    Llm::ChatClient.ask(chat, content, model: model, observability: observability, account: account)
+  end
+
   def transcribe(request)
     request = normalize_request(request, feature: :audio_transcription)
     raise ArgumentError, 'input is required for OpenRouter transcription.' if request.input.blank?

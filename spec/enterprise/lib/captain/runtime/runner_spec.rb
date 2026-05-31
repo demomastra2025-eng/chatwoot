@@ -123,6 +123,7 @@ RSpec.describe Captain::Runtime::Runner do
 
   describe '#run' do
     let(:llm_context) { instance_double(RubyLLM::Context) }
+    let(:account) { instance_double(Account, id: 42) }
     let(:first_agent) do
       Captain::Runtime::Agent.new(
         name: 'assistant_agent',
@@ -153,22 +154,30 @@ RSpec.describe Captain::Runtime::Runner do
       allow(runner).to receive(:handoff_requested?).and_call_original
       allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
 
-      expect(Llm::ChatClient).to receive(:build).with(
-        context: llm_context,
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        feature: :captain_agent,
+        account: account,
         model: 'gpt-4.1-mini',
-        temperature: 0.2,
-        params: { max_tokens: 111 },
-        headers: { :'X-Agent' => 'primary' },
-        thinking: nil
+        options: {
+          context: llm_context,
+          temperature: 0.2,
+          params: { max_tokens: 111 },
+          headers: { :'X-Agent' => 'primary' },
+          thinking: nil
+        }
       ).and_return(first_chat).ordered
 
-      expect(Llm::ChatClient).to receive(:build).with(
-        context: llm_context,
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        feature: :captain_agent,
+        account: account,
         model: 'gpt-4.1-nano',
-        temperature: 0.9,
-        params: { max_tokens: 22 },
-        headers: { :'X-Agent' => 'scenario' },
-        thinking: nil
+        options: {
+          context: llm_context,
+          temperature: 0.9,
+          params: { max_tokens: 22 },
+          headers: { :'X-Agent' => 'scenario' },
+          thinking: nil
+        }
       ).and_return(second_chat).ordered
 
       result = runner.run(
@@ -181,7 +190,8 @@ RSpec.describe Captain::Runtime::Runner do
           first_agent.name => first_agent,
           second_agent.name => second_agent
         },
-        llm_context: llm_context
+        llm_context: llm_context,
+        account: account
       )
 
       expect(result.output).to eq('Done')
@@ -197,14 +207,15 @@ RSpec.describe Captain::Runtime::Runner do
       self_handoff_response = RubyLLM::Tool::Halt.new('Transferred to assistant')
       chat = RuntimeRunnerSpecChat.new(ask_response: self_handoff_response)
 
-      expect(Llm::ChatClient).to receive(:build).once.and_return(chat)
+      expect(Llm::Runtime).to receive(:build_chat).once.and_return(chat)
 
       result = runner.run(
         agent,
         'handoff to yourself',
         context: { pending_handoff: { target_agent: agent } },
         registry: { agent.name => agent },
-        llm_context: llm_context
+        llm_context: llm_context,
+        account: account
       )
 
       expect(result.output).to be_nil
@@ -220,14 +231,15 @@ RSpec.describe Captain::Runtime::Runner do
 
       allow(runner).to receive(:handoff_requested?).and_call_original
       allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
-      expect(Llm::ChatClient).to receive(:build).and_return(first_chat, second_chat)
+      expect(Llm::Runtime).to receive(:build_chat).and_return(first_chat, second_chat)
 
       result = runner.run(
         first_agent,
         'Help me',
         context: { pending_handoff: { target_agent: 'scenario_agent' } },
         registry: { first_agent.name => first_agent, second_agent.name => second_agent },
-        llm_context: llm_context
+        llm_context: llm_context,
+        account: account
       )
 
       expect(result.output).to eq('Done')
@@ -240,14 +252,15 @@ RSpec.describe Captain::Runtime::Runner do
 
       allow(runner).to receive(:handoff_requested?).and_call_original
       allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
-      expect(Llm::ChatClient).to receive(:build).once.and_return(chat)
+      expect(Llm::Runtime).to receive(:build_chat).once.and_return(chat)
 
       result = runner.run(
         first_agent,
         'Help me',
         context: { pending_handoff: { target_agent: 'deleted_scenario_agent' } },
         registry: { first_agent.name => first_agent },
-        llm_context: llm_context
+        llm_context: llm_context,
+        account: account
       )
 
       expect(result.output).to be_nil
@@ -263,14 +276,15 @@ RSpec.describe Captain::Runtime::Runner do
 
       allow(runner).to receive(:handoff_requested?).and_call_original
       allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
-      expect(Llm::ChatClient).to receive(:build).once.and_return(chat)
+      expect(Llm::Runtime).to receive(:build_chat).once.and_return(chat)
 
       result = runner.run(
         first_agent,
         'Help me',
         context: { pending_handoff: {} },
         registry: { first_agent.name => first_agent },
-        llm_context: llm_context
+        llm_context: llm_context,
+        account: account
       )
 
       expect(result.output).to be_nil
@@ -298,10 +312,10 @@ RSpec.describe Captain::Runtime::Runner do
       chat = RuntimeRunnerSpecChat.new(complete_response: response)
 
       allow(Captain::Runtime::InputComparer).to receive(:last_message_matches?).and_return(true)
-      expect(Llm::ChatClient).to receive(:build).and_return(chat)
+      expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
       expect(Llm::StructuredOutputPolicy).to receive(:execute).with(chat: chat).and_call_original
 
-      result = runner.run(agent, 'Continue', registry: { agent.name => agent }, llm_context: llm_context)
+      result = runner.run(agent, 'Continue', registry: { agent.name => agent }, llm_context: llm_context, account: account)
 
       expect(result.output).to eq(response.content)
     end
@@ -310,9 +324,9 @@ RSpec.describe Captain::Runtime::Runner do
       agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
       chat = RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Tool::Halt.new('conversation_handoff'))
 
-      expect(Llm::ChatClient).to receive(:build).and_return(chat)
+      expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
 
-      result = runner.run(agent, 'Escalate', registry: { agent.name => agent }, llm_context: llm_context)
+      result = runner.run(agent, 'Escalate', registry: { agent.name => agent }, llm_context: llm_context, account: account)
 
       expect(result.output).to eq('conversation_handoff')
       expect(result.context[:current_agent]).to eq('assistant_agent')

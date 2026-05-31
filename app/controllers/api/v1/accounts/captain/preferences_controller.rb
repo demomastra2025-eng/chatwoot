@@ -20,6 +20,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     trace_input_capture
     trace_output_capture
   ].freeze
+  RUNTIME_ROUTING_STRATEGY_KEYS = Llm::OpenRouterRoutingProfile::ROUTING_STRATEGY_KEYS.freeze
+  RUNTIME_PROVIDER_ORDER_KEYS = Llm::OpenRouterRoutingProfile::PROVIDER_ORDER_KEYS.freeze
 
   before_action :current_account
   before_action :authorize_account_update, only: [:update]
@@ -144,6 +146,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       :knowledge_chunk_size,
       :trace_input_capture,
       :trace_output_capture,
+      :openrouter_routing_strategy,
+      :routing_strategy,
       :agent_high_risk_tools,
       release_gate: [
         :enabled,
@@ -161,6 +165,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       safety_blocklist: [],
       assistant_safety_blocklist: [],
       copilot_safety_blocklist: [],
+      openrouter_provider_order: [],
+      provider_order: [],
       agent_high_risk_tool_ids: [],
       agent_permissioned_tool_ids: []
     ).to_h.stringify_keys
@@ -353,8 +359,28 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     end
     runtime['audio_transcription_prompt'] = runtime['audio_transcription_prompt'].to_s.strip if runtime.key?('audio_transcription_prompt')
     runtime['knowledge_chunk_size'] = normalize_knowledge_chunk_size(runtime['knowledge_chunk_size']) if runtime.key?('knowledge_chunk_size')
+    RUNTIME_ROUTING_STRATEGY_KEYS.each { |key| normalize_runtime_routing_strategy!(runtime, key) }
+    RUNTIME_PROVIDER_ORDER_KEYS.each { |key| normalize_runtime_provider_order!(runtime, key) }
     runtime['release_gate'] = normalize_release_gate(runtime['release_gate']) if runtime['release_gate'].present?
     runtime
+  end
+
+  def normalize_runtime_routing_strategy!(runtime, key)
+    return unless runtime.key?(key)
+
+    strategy = runtime[key].to_s.strip.tr('-', '_')
+    if Llm::OpenRouterRoutingProfile::ROUTING_STRATEGIES.include?(strategy)
+      runtime[key] = strategy
+    else
+      runtime.delete(key)
+    end
+  end
+
+  def normalize_runtime_provider_order!(runtime, key)
+    return unless runtime.key?(key)
+
+    order = Array(runtime[key]).map { |provider| provider.to_s.strip }.compact_blank
+    order.present? ? runtime[key] = order : runtime.delete(key)
   end
 
   def normalize_knowledge_chunk_size(value)

@@ -46,7 +46,7 @@ describe('CopilotThinkingGroup', () => {
     i18nState.locale = 'ru';
     const wrapper = mountComponent({
       messages: [
-        { id: 'reasoning', message: { content: 'Обоснование ответа' } },
+        { id: 'reasoning', message: { content: 'Мысли' } },
         toolMessage(1),
         toolMessage(2),
       ],
@@ -71,7 +71,7 @@ describe('CopilotThinkingGroup', () => {
         {
           id: 'reasoning',
           message: {
-            content: 'Обоснование ответа',
+            content: 'Мысли',
             reasoning: 'Ответ подготовлен без инструментов.',
           },
         },

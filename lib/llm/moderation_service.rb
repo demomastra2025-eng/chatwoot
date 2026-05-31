@@ -130,9 +130,9 @@ class Llm::ModerationService
         raise RubyLLM::ConfigurationError, "OpenRouter moderation model #{model} does not support structured output"
       end
 
-      chat = Llm::ChatClient.build(**chat_build_kwargs(model: model, account: account))
+      chat = Llm::Runtime.build_chat(**chat_build_kwargs(model: model, account: account))
       chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: openrouter_moderation_schema)
-      response = Llm::ChatClient.ask(
+      response = Llm::Runtime.ask(
         chat,
         openrouter_moderation_prompt(content),
         **chat_ask_kwargs(
@@ -267,13 +267,17 @@ class Llm::ModerationService
     end
 
     def chat_build_kwargs(model:, account:)
-      { model: model, temperature: 0, feature: :moderation }.tap do |kwargs|
-        next if account.blank?
+      {
+        feature: :moderation,
+        account: account,
+        model: model,
+        options: { temperature: 0 }.tap do |options|
+          next if account.blank?
 
-        kwargs[:account] = account
-        context = chat_context_for(model: model, provider: 'openrouter', account: account)
-        kwargs[:context] = context if context.present?
-      end
+          context = chat_context_for(model: model, provider: 'openrouter', account: account)
+          options[:context] = context if context.present?
+        end
+      }
     end
 
     def chat_context_for(model:, provider:, account:)

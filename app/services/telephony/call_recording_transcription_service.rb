@@ -101,11 +101,18 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   def transcribe_with_openrouter_chat(file_path)
     observability = instrumentation_params(file_path).merge(provider: 'openrouter')
     response = instrument_audio_transcription(observability) do
-      Llm::ChatClient.ask(
-        chat(model: model, temperature: 0),
-        RubyLLM::Content.new(openrouter_transcription_prompt, [file_path]),
+      Llm::Runtime.chat(
+        feature: :audio_transcription,
+        account: account,
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: RubyLLM::Content.new(openrouter_transcription_prompt, [file_path])
+          }
+        ],
         observability: observability.merge(runtime_mode: 'call_recording_transcription'),
-        account: account
+        options: { temperature: 0 }
       )
     end
 

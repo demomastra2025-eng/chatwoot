@@ -156,11 +156,18 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
       logger_context: { account_id: account.id, call_id: call.id }
     )
     response = instrument_audio_transcription(observability) do
-      Llm::ChatClient.ask(
-        chat(model: model, temperature: 0),
-        RubyLLM::Content.new(openrouter_transcription_prompt, [provider_file_path]),
+      Llm::Runtime.chat(
+        feature: :audio_transcription,
+        account: account,
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: RubyLLM::Content.new(openrouter_transcription_prompt, [provider_file_path])
+          }
+        ],
         observability: observability.merge(provider: 'openrouter'),
-        account: account
+        options: { temperature: 0 }
       )
     end
 

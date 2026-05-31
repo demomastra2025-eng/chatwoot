@@ -78,6 +78,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
             image: '0',
             request: '0'
           },
+          dimensions: 1536,
           supported_parameters: []
         },
         {
@@ -177,7 +178,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
 
       metadata = described_class.refresh!(api_key: '[REDACTED]')
 
-      expect(metadata).to include(total_models: 4, chat_models: 1, embedding_models: 2, rerank_models: 1, source: 'openrouter_api',
+      expect(metadata).to include(total_models: 3, chat_models: 1, embedding_models: 1, rerank_models: 1, source: 'openrouter_api',
                                   using_fallback: false)
       expect(metadata[:last_refreshed_at]).to match(/\.\d{6}/)
       expect(described_class.model_config('openai/gpt-4')).to include(
@@ -212,12 +213,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         'pricing' => include('prompt' => '0.00000002')
       )
       expect(described_class.model_config('openai/text-embedding-3-small')['capabilities']).to include('embedding', 'text_input')
-      expect(described_class.model_config('baai/bge-m3')).to include(
-        'provider' => 'openrouter',
-        'type' => 'embedding',
-        'embedding_dimensions' => 1536,
-        'requested_embedding_dimensions' => 1536
-      )
+      expect(described_class.model_config('baai/bge-m3')).to be_nil
       expect(described_class.model_config('cohere/rerank-v3.5')).to include(
         'provider' => 'openrouter',
         'display_name' => 'Cohere Rerank 3.5',

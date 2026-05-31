@@ -52,14 +52,21 @@ RSpec.describe Llm::ModerationService do
       allow(Llm::Config).to receive(:moderation_model).and_return('openai/gpt-oss-safeguard-20b')
       allow(Llm::Config).to receive(:api_key).with('openrouter').and_return('[REDACTED]')
       allow(Llm::Models).to receive(:supports_structured_output?).with('openai/gpt-oss-safeguard-20b').and_return(true)
-      allow(Llm::ChatClient).to receive(:build).with(model: 'openai/gpt-oss-safeguard-20b', temperature: 0, feature: :moderation).and_return(chat)
+      allow(Llm::Runtime).to receive(:build_chat).with(
+        feature: :moderation,
+        account: nil,
+        model: 'openai/gpt-oss-safeguard-20b',
+        options: { temperature: 0 }
+      ).and_return(chat)
       allow(Llm::StructuredOutputPolicy).to receive(:bind!).with(chat: chat, schema: kind_of(Hash)).and_return(chat)
 
       expect(Llm::ApiClient).not_to receive(:moderate)
-      expect(Llm::ChatClient).to receive(:ask).with(
+      expect(Llm::Runtime).to receive(:ask).with(
         chat,
         include('Content:', 'Hello'),
-        observability: hash_including(provider: 'openrouter', model: 'openai/gpt-oss-safeguard-20b')
+        hash_including(
+          observability: hash_including(provider: 'openrouter', model: 'openai/gpt-oss-safeguard-20b')
+        )
       ).and_return(response)
 
       result = described_class.check!(feature: :assistant, stage: :input, content: 'Hello')

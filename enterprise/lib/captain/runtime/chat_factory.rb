@@ -3,7 +3,7 @@
 class Captain::Runtime::ChatFactory
   class << self
     def build(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil)
-      chat = Llm::ChatClient.build(**chat_build_kwargs(
+      chat = Llm::Runtime.build_chat(**chat_build_kwargs(
         agent: agent,
         context_wrapper: context_wrapper,
         llm_context: llm_context,
@@ -22,16 +22,17 @@ class Captain::Runtime::ChatFactory
 
     def chat_build_kwargs(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil)
       {
-        context: llm_context,
+        feature: :captain_agent,
+        account: account,
         model: agent.model,
-        temperature: agent.temperature,
-        params: merged_params(agent, runtime_params),
-        headers: merged_headers(agent, runtime_headers),
-        thinking: thinking_options(agent, context_wrapper, account: account),
-        feature: :captain_agent
-      }.tap do |kwargs|
-        kwargs[:account] = account if account.present?
-      end
+        options: {
+          context: llm_context,
+          temperature: agent.temperature,
+          params: merged_params(agent, runtime_params),
+          headers: merged_headers(agent, runtime_headers),
+          thinking: thinking_options(agent, context_wrapper, account: account)
+        }
+      }
     end
 
     def configure(chat, agent, context_wrapper, account: nil)

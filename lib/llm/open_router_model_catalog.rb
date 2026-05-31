@@ -302,6 +302,9 @@ class Llm::OpenRouterModelCatalog
       return if model_id.blank?
       return unless embedding_output_model?(model_data)
 
+      embedding_dimensions = embedding_dimensions_for(model_data)
+      return unless embedding_dimensions == VECTOR_DIMENSIONS
+
       [
         model_id,
         {
@@ -313,7 +316,7 @@ class Llm::OpenRouterModelCatalog
           'input_modalities' => input_modalities_for(model_data),
           'output_modalities' => output_modalities_for(model_data),
           'context_length' => integer_value(model_data['context_length'] || model_data.dig('top_provider', 'context_length')),
-          'embedding_dimensions' => VECTOR_DIMENSIONS,
+          'embedding_dimensions' => embedding_dimensions,
           'requested_embedding_dimensions' => VECTOR_DIMENSIONS,
           'pricing' => pricing_for(model_data),
           'latency_ms' => numeric_value(model_data.dig('top_provider', 'latency_ms') || model_data.dig('top_provider', 'latency') ||
@@ -503,6 +506,20 @@ class Llm::OpenRouterModelCatalog
       capabilities << 'multimodal_input' if (input_modalities - ['text']).any?
 
       capabilities.uniq
+    end
+
+    def embedding_dimensions_for(model_data)
+      dimension_candidates = [
+        model_data['embedding_dimensions'],
+        model_data['dimensions'],
+        model_data.dig('architecture', 'embedding_dimensions'),
+        model_data.dig('architecture', 'dimensions'),
+        model_data.dig('top_provider', 'embedding_dimensions'),
+        model_data.dig('top_provider', 'dimensions'),
+        *Array(model_data['supported_dimensions']),
+        *Array(model_data['supported_embedding_dimensions'])
+      ]
+      dimension_candidates.filter_map { |value| integer_value(value) }.find { |dimension| dimension == VECTOR_DIMENSIONS }
     end
 
     def transcription_capabilities_for(model_data)

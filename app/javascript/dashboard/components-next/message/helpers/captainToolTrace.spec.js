@@ -148,7 +148,7 @@ describe('buildCaptainToolTraceMessages', () => {
             ],
           },
         },
-        { reasoningLabel: 'Обоснование ответа' }
+        { reasoningLabel: 'Мысли' }
       ).map(({ message }) => ({
         content: message.content,
         reasoning: message.reasoning,
@@ -156,7 +156,7 @@ describe('buildCaptainToolTraceMessages', () => {
       }))
     ).toEqual([
       {
-        content: 'Обоснование ответа',
+        content: 'Мысли',
         reasoning: 'Найдена сделка по ID и обновлена сумма.',
         toolName: undefined,
       },
@@ -176,13 +176,13 @@ describe('buildCaptainToolTraceMessages', () => {
             reasoning: 'Ответ подготовлен без вызова инструментов.',
           },
         },
-        { reasoningLabel: 'Обоснование ответа' }
+        { reasoningLabel: 'Мысли' }
       )
     ).toEqual([
       {
         id: 'captain-reasoning',
         message: {
-          content: 'Обоснование ответа',
+          content: 'Мысли',
           reasoning: 'Ответ подготовлен без вызова инструментов.',
         },
       },

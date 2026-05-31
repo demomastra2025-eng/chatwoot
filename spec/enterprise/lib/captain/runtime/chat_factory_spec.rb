@@ -7,6 +7,48 @@ ChatFactorySpecTool = Struct.new(:name, :description) do
 end
 
 RSpec.describe Captain::Runtime::ChatFactory do
+  describe '.build' do
+    let(:chat) { instance_double(RubyLLM::Chat) }
+    let(:agent) do
+      Captain::Runtime::Agent.new(
+        name: 'assistant_agent',
+        model: 'openai/gpt-5.4-mini',
+        temperature: 0.3,
+        params: { top_p: 0.8 },
+        headers: { 'X-Test' => 'agent' }
+      )
+    end
+    let(:context_wrapper) { Captain::Runtime::RunContext.new({}) }
+
+    it 'constructs Captain chats through the LLM runtime facade' do
+      allow(chat).to receive(:model).and_return('openai/gpt-5.4-mini')
+      allow(chat).to receive(:with_instructions).and_return(chat)
+      allow(chat).to receive(:with_tools).and_return(chat)
+
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        hash_including(
+          feature: :captain_agent,
+          account: nil,
+          model: 'openai/gpt-5.4-mini',
+          options: hash_including(
+            context: :llm_context,
+            params: { top_p: 0.8, max_tokens: 500 },
+            headers: { :'X-Test' => 'runtime' },
+            temperature: 0.3
+          )
+        )
+      ).and_return(chat)
+
+      described_class.build(
+        agent: agent,
+        context_wrapper: context_wrapper,
+        llm_context: :llm_context,
+        runtime_headers: { 'X-Test' => 'runtime' },
+        runtime_params: { max_tokens: 500 }
+      )
+    end
+  end
+
   describe '.configure' do
     let(:chat) { instance_double(RubyLLM::Chat) }
     let(:tool) { ChatFactorySpecTool.new('search_deals', 'Search CRM deals') }

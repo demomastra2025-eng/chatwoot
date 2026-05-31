@@ -104,6 +104,7 @@ const emitNewAccount = () => {
               :name="currentAccount.name"
               :size="24"
             />
+            <Logo v-else class="size-5 flex-shrink-0" />
             <span
               class="text-sm font-medium leading-5 text-n-slate-12 truncate"
               aria-live="polite"
@@ -153,6 +154,7 @@ const emitNewAccount = () => {
                 :name="account.name"
                 :size="20"
               />
+              <Logo v-else class="size-5 flex-shrink-0" />
               <span
                 class="text-n-slate-12 max-w-36 truncate min-w-0"
                 :title="account.name"

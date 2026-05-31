@@ -35,8 +35,24 @@ RSpec.describe Llm::Models do
   end
 
   describe '.providers' do
-    it 'loads providers from llm.yml' do
-      expect(described_class.providers.keys).to include('openai', 'anthropic', 'gemini', 'openrouter')
+    it 'loads only OpenRouter as the normal runtime provider from llm.yml' do
+      expect(described_class.providers.keys).to eq(['openrouter'])
+    end
+
+    it 'keeps direct provider metadata available only for legacy stored model compatibility' do
+      expect(described_class.legacy_providers.keys).to include('openai', 'anthropic', 'gemini')
+      expect(described_class.provider_config('openai')).to include('api_key_config' => 'CAPTAIN_OPEN_AI_API_KEY')
+    end
+  end
+
+  describe '.features' do
+    it 'uses OpenRouter model ids as normal Captain feature defaults' do
+      expect(described_class.features.dig('editor', 'default')).to eq('openai/gpt-5.4-mini')
+      expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-5.4')
+      expect(described_class.features.dig('copilot', 'default')).to eq('openai/gpt-5.4')
+      expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-5.4-mini')
+      expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
+      expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
     end
   end
 
@@ -352,9 +368,9 @@ RSpec.describe Llm::Models do
           'type' => 'chat',
           'capabilities' => %w[structured_output tool_calling image_input streaming]
         },
-        'openai/gpt-4o-transcribe' => {
+        'openai/gpt-4o-mini-transcribe' => {
           'provider' => 'openrouter',
-          'display_name' => 'GPT-4o Transcribe via OpenRouter',
+          'display_name' => 'GPT-4o Mini Transcribe via OpenRouter',
           'type' => 'transcription',
           'source' => 'openrouter_api',
           'input_modalities' => ['audio'],
@@ -364,11 +380,11 @@ RSpec.describe Llm::Models do
       )
 
       expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.4')
-      expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-4o-transcribe')
+      expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.feature_config(:audio_transcription)[:models]).to include(
         hash_including(
-          id: 'openai/gpt-4o-transcribe',
-          display_name: 'GPT-4o Transcribe via OpenRouter',
+          id: 'openai/gpt-4o-mini-transcribe',
+          display_name: 'GPT-4o Mini Transcribe via OpenRouter',
           source: 'openrouter_api',
           input_modalities: ['audio'],
           output_modalities: ['transcription']

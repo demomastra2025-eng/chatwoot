@@ -57,6 +57,7 @@ module Llm::Models
 
   class << self
     def providers = CONFIG['providers']
+    def legacy_providers = CONFIG['legacy_providers'] || {}
     def configured_models = CONFIG['models']
     def models(account: nil) = configured_models.merge(dynamic_model_configs(account: account))
     def features = CONFIG['features']
@@ -163,7 +164,7 @@ module Llm::Models
     end
 
     def provider_config(provider_name)
-      providers&.fetch(provider_name.to_s, nil)
+      providers&.fetch(provider_name.to_s, nil) || legacy_providers&.fetch(provider_name.to_s, nil)
     end
 
     def type_for(model_name, account: nil)

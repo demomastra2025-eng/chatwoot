@@ -197,41 +197,6 @@
 # End of Microsoft Email Channel Config
 
 # MARK: AI Agents Config
-- name: CAPTAIN_OPEN_AI_API_KEY
-  display_title: 'OpenAI API Key'
-  description: 'The API key used to authenticate requests to OpenAI services for AI Agents.'
-  locked: false
-  type: secret
-- name: CAPTAIN_DEFAULT_MODEL
-  display_title: 'Default AI Model'
-  description: 'Optional installation-wide fallback model for AI Agents. Feature-specific defaults in llm.yml still apply when this is blank or unsupported.'
-  locked: false
-- name: CAPTAIN_OPEN_AI_MODEL
-  display_title: 'Legacy OpenAI Default Model'
-  description: 'Backward-compatible fallback for older AI Agents installations. Prefer CAPTAIN_DEFAULT_MODEL for new setups.'
-  locked: false
-- name: CAPTAIN_OPEN_AI_ENDPOINT
-  display_title: 'OpenAI API Endpoint (optional)'
-  description: 'The OpenAI endpoint configured for use in AI Agents. Default: https://api.openai.com/'
-  locked: false
-- name: CAPTAIN_ANTHROPIC_API_KEY
-  display_title: 'Anthropic API Key'
-  description: 'The API key used to authenticate requests to Anthropic services for AI Agents.'
-  locked: false
-  type: secret
-- name: CAPTAIN_ANTHROPIC_ENDPOINT
-  display_title: 'Anthropic API Endpoint (optional)'
-  description: 'The Anthropic endpoint configured for use in AI Agents.'
-  locked: false
-- name: CAPTAIN_GEMINI_API_KEY
-  display_title: 'Gemini API Key'
-  description: 'The API key used to authenticate requests to Gemini services for AI Agents.'
-  locked: false
-  type: secret
-- name: CAPTAIN_GEMINI_ENDPOINT
-  display_title: 'Gemini API Endpoint (optional)'
-  description: 'The Gemini endpoint configured for use in AI Agents.'
-  locked: false
 - name: CAPTAIN_OPENROUTER_API_KEY
   display_title: 'OpenRouter API Key'
   description: 'The API key used to authenticate OpenRouter requests for AI Agents. Used for chat completions and fetching selectable OpenRouter models.'
@@ -243,8 +208,8 @@
   locked: false
 - name: CAPTAIN_MODERATION_MODEL
   display_title: 'Moderation Model'
-  description: 'The moderation model used for optional AI safety checks. Default: omni-moderation-latest'
-  value: 'omni-moderation-latest'
+  description: 'The OpenRouter moderation/guard model used for optional AI safety checks. Default: openai/gpt-oss-safeguard-20b'
+  value: 'openai/gpt-oss-safeguard-20b'
   locked: false
 - name: CAPTAIN_EMBEDDING_MODEL
   display_title: 'Embedding Model (optional)'

@@ -67,6 +67,22 @@ module AccountSettingsSchema
             },
             'trace_input_capture': { 'type': %w[boolean null] },
             'trace_output_capture': { 'type': %w[boolean null] },
+            'openrouter_routing_strategy': {
+              'type': %w[string null],
+              'enum': Llm::OpenRouterRoutingProfile::ROUTING_STRATEGIES + [nil]
+            },
+            'routing_strategy': {
+              'type': %w[string null],
+              'enum': Llm::OpenRouterRoutingProfile::ROUTING_STRATEGIES + [nil]
+            },
+            'openrouter_provider_order': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
+            'provider_order': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
             'safety_blocklist': {
               'type': %w[array null],
               'items': { 'type': 'string' }

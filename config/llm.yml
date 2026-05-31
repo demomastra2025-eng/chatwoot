@@ -3,6 +3,12 @@ capability_sets:
   reasoning_chat: &reasoning_chat_capabilities [structured_output, tool_calling, multimodal_input, image_input, streaming, reasoning]
 
 providers:
+  openrouter:
+    display_name: 'OpenRouter'
+    api_key_config: 'CAPTAIN_OPENROUTER_API_KEY'
+    api_base_config: 'CAPTAIN_OPENROUTER_ENDPOINT'
+
+legacy_providers:
   openai:
     display_name: 'OpenAI'
     api_key_config: 'CAPTAIN_OPEN_AI_API_KEY'
@@ -15,10 +21,6 @@ providers:
     display_name: 'Gemini'
     api_key_config: 'CAPTAIN_GEMINI_API_KEY'
     api_base_config: 'CAPTAIN_GEMINI_ENDPOINT'
-  openrouter:
-    display_name: 'OpenRouter'
-    api_key_config: 'CAPTAIN_OPENROUTER_API_KEY'
-    api_base_config: 'CAPTAIN_OPENROUTER_ENDPOINT'
 
 models:
   gpt-4.1:
@@ -231,7 +233,7 @@ features:
         gemini-3-flash-preview,
         gemini-3.1-pro-preview,
       ]
-    default: gpt-5.4-mini
+    default: openai/gpt-5.4-mini
   assistant:
     models:
       [
@@ -250,7 +252,7 @@ features:
         gemini-3-flash-preview,
         gemini-3.1-pro-preview,
       ]
-    default: gpt-5.4
+    default: openai/gpt-5.4
   copilot:
     models:
       [
@@ -269,14 +271,14 @@ features:
         gemini-3-flash-preview,
         gemini-3.1-pro-preview,
       ]
-    default: gpt-5.4
+    default: openai/gpt-5.4
   label_suggestion:
     models:
       [gpt-4.1-nano, gpt-4.1-mini, gpt-5-mini, gpt-5.4-nano, gpt-5.4-mini, gemini-2.5-flash-lite, gemini-2.5-flash, claude-haiku-4-5]
-    default: gpt-5.4-mini
+    default: openai/gpt-5.4-mini
   audio_transcription:
     models: [openai/gpt-4o-mini-transcribe, openai/gpt-audio-mini, mistralai/voxtral-small-24b-2507, gpt-4o-transcribe, whisper-1]
-    default: gpt-4o-transcribe
+    default: openai/gpt-4o-mini-transcribe
   image_recognition:
     models:
       [
@@ -297,7 +299,7 @@ features:
         gemini-3-flash-preview,
         gemini-3.1-pro-preview,
       ]
-    default: gpt-5.4-mini
+    default: openai/gpt-5.4-mini
   help_center_search:
     models: [text-embedding-3-small]
     default: text-embedding-3-small
@@ -306,4 +308,4 @@ features:
     default:
   moderation:
     models: [omni-moderation-latest, openai/gpt-oss-safeguard-20b]
-    default: omni-moderation-latest
+    default: openai/gpt-oss-safeguard-20b

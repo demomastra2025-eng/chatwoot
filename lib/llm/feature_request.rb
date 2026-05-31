@@ -3,6 +3,7 @@
 class Llm::FeatureRequest
   IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
   AUDIO_EXTENSIONS = %w[.aac .flac .m4a .mp3 .mp4 .mpeg .mpga .oga .ogg .wav .webm].freeze
+  ACCOUNT_OPTIONAL_FEATURES = %w[moderation].freeze
 
   attr_reader :feature, :account, :assistant, :model, :messages, :schema, :tools, :attachments, :input,
               :runtime_preferences, :privacy_profile, :observability, :options
@@ -96,7 +97,10 @@ class Llm::FeatureRequest
   end
 
   def validate_account!
-    raise ArgumentError, 'account is required for account-scoped LLM feature requests.' if account.blank?
+    return if account.present?
+    return if ACCOUNT_OPTIONAL_FEATURES.include?(feature_key)
+
+    raise ArgumentError, 'account is required for account-scoped LLM feature requests.'
   end
 
   def validate_schema!

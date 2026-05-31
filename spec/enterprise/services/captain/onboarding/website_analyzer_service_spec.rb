@@ -21,10 +21,11 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     account.update!(captain_models: { 'assistant' => 'gpt-5.2' })
     allow(Captain::Tools::SimplePageCrawlService).to receive(:new).and_return(mock_crawler)
-    allow(Llm::ChatClient).to receive(:build).and_return(mock_chat)
-    allow(Llm::ChatClient).to receive(:ask).and_return(mock_response)
+    allow(Llm::Runtime).to receive(:build_chat).and_return(mock_chat)
+    allow(Llm::Runtime).to receive(:ask).and_return(mock_response)
     allow(Llm::CapabilityPolicy).to receive(:ensure_chat_features_supported!)
     allow(Llm::StructuredOutputPolicy).to receive(:bind!).and_return(mock_chat)
+    allow(mock_chat).to receive(:model).and_return('gpt-5.2')
     allow(mock_chat).to receive(:with_params).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
   end
@@ -52,8 +53,8 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
       end
 
       it 'builds chat with low temperature, resolved account model, and account context' do
-        expect(Llm::ChatClient).to receive(:build).with(
-          hash_including(account: account, model: 'gpt-5.2', temperature: 0.1)
+        expect(Llm::Runtime).to receive(:build_chat).with(
+          hash_including(account: account, model: 'gpt-5.2', options: hash_including(temperature: 0.1))
         ).and_return(mock_chat)
 
         service.analyze
@@ -61,7 +62,7 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
 
       it 'parses legacy JSON string responses' do
         legacy_response = instance_double(RubyLLM::Message, content: business_info.to_json)
-        allow(Llm::ChatClient).to receive(:ask).and_return(legacy_response)
+        allow(Llm::Runtime).to receive(:ask).and_return(legacy_response)
 
         result = service.analyze
 
@@ -75,11 +76,11 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
 
       it 'supports legacy construction without account context' do
         legacy_service = described_class.new(website_url)
-        expect(Llm::ChatClient).to receive(:build).with(hash_excluding(:account)).and_return(mock_chat)
-        expect(Llm::ChatClient).to receive(:ask).with(
+        expect(Llm::Runtime).to receive(:build_chat).with(hash_including(account: nil)).and_return(mock_chat)
+        expect(Llm::Runtime).to receive(:ask).with(
           mock_chat,
           kind_of(String),
-          hash_excluding(:account)
+          hash_including(account: nil)
         ).and_return(mock_response)
 
         result = legacy_service.analyze
@@ -91,7 +92,7 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
         expect(mock_chat).to receive(:with_instructions)
           .with(satisfy { |prompt| prompt.exclude?('Welcome to Example Corp') })
           .and_return(mock_chat)
-        expect(Llm::ChatClient).to receive(:ask).with(
+        expect(Llm::Runtime).to receive(:ask).with(
           mock_chat,
           'Title: Example Corp - Home Description: Leading provider of business solutions Welcome to Example Corp',
           hash_including(account: account, model: 'gpt-5.2')
@@ -135,7 +136,7 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
         allow(mock_crawler).to receive(:page_title).and_return('Example Corp - Home')
         allow(mock_crawler).to receive(:meta_description).and_return('Leading provider of business solutions')
         allow(mock_crawler).to receive(:favicon_url).and_return('https://example.com/favicon.ico')
-        allow(Llm::ChatClient).to receive(:ask).and_raise(StandardError, 'API error')
+        allow(Llm::Runtime).to receive(:ask).and_raise(StandardError, 'API error')
       end
 
       it 'returns error response with message' do
@@ -154,7 +155,7 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
         allow(mock_crawler).to receive(:page_title).and_return('Example Corp - Home')
         allow(mock_crawler).to receive(:meta_description).and_return('Leading provider of business solutions')
         allow(mock_crawler).to receive(:favicon_url).and_return('https://example.com/favicon.ico')
-        allow(Llm::ChatClient).to receive(:ask).and_return(invalid_response)
+        allow(Llm::Runtime).to receive(:ask).and_return(invalid_response)
       end
 
       it 'returns error for parsing failure' do

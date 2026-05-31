@@ -10,11 +10,12 @@ RSpec.describe Llm::BaseAiService do
   describe '#chat' do
     let(:chat) { instance_double(RubyLLM::Chat) }
 
-    it 'delegates chat construction to Llm::ChatClient' do
-      expect(Llm::ChatClient).to receive(:build).with(
+    it 'delegates chat construction to the LLM runtime facade' do
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        feature: nil,
+        account: nil,
         model: service.model,
-        temperature: service.temperature,
-        thinking: nil
+        options: { temperature: service.temperature, thinking: nil }
       ).and_return(chat)
 
       expect(service.chat).to eq(chat)
@@ -24,8 +25,8 @@ RSpec.describe Llm::BaseAiService do
   describe '#ask_chat' do
     let(:chat) { instance_double(RubyLLM::Chat) }
 
-    it 'delegates asking to Llm::ChatClient' do
-      expect(Llm::ChatClient).to receive(:ask).with(chat, 'hello', observability: {})
+    it 'delegates asking to the LLM runtime facade' do
+      expect(Llm::Runtime).to receive(:ask).with(chat, 'hello', account: nil, model: nil, observability: {})
 
       service.send(:ask_chat, chat, 'hello')
     end

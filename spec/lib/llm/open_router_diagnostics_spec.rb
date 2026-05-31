@@ -125,4 +125,26 @@ RSpec.describe Llm::OpenRouterDiagnostics do
     expect(assistant_diagnostics[:allowed]).to be false
     expect(assistant_diagnostics[:reason_codes]).to include('structured_output_unsupported', 'tool_calling_unsupported')
   end
+
+  it 'evaluates nested diagnostics inside per-request config and OpenRouter catalog snapshots' do
+    runtime_cache_seen = false
+    model_snapshot_seen = false
+    endpoint_snapshot_seen = false
+
+    allow(Llm::Config).to receive(:provider_available?).and_wrap_original do |method, *args, **kwargs|
+      runtime_cache_seen ||= Thread.current[Llm::Config::RUNTIME_CACHE_KEY].present?
+      method.call(*args, **kwargs)
+    end
+    allow(Llm::OpenRouterCapabilityResolver).to receive(:call).and_wrap_original do |method, *args, **kwargs|
+      model_snapshot_seen ||= Llm::OpenRouterModelCatalog.send(:current_model_configs_snapshot).present?
+      endpoint_snapshot_seen ||= Llm::OpenRouterEndpointCatalog.send(:current_endpoint_configs_snapshot).present?
+      method.call(*args, **kwargs)
+    end
+
+    described_class.call(sample_limit: 1)
+
+    expect(runtime_cache_seen).to be true
+    expect(model_snapshot_seen).to be true
+    expect(endpoint_snapshot_seen).to be true
+  end
 end

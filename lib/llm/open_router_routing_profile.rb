@@ -2,6 +2,11 @@
 
 class Llm::OpenRouterRoutingProfile
   RESPONSE_HEALING_PLUGIN_ID = 'response-healing'
+  EXACTO_STRATEGY = 'exacto'
+  AUTO_EXACTO_STRATEGY = 'auto_exacto'
+  ROUTING_STRATEGIES = [EXACTO_STRATEGY, AUTO_EXACTO_STRATEGY].freeze
+  ROUTING_STRATEGY_KEYS = %w[openrouter_routing_strategy routing_strategy].freeze
+  PROVIDER_ORDER_KEYS = %w[openrouter_provider_order provider_order].freeze
 
   FEATURE_ALIASES = {
     'assistant' => 'captain_agent',
@@ -29,7 +34,7 @@ class Llm::OpenRouterRoutingProfile
   }.freeze
 
   attr_reader :feature_key, :model, :account, :models, :provider_preferences, :plugins, :headers, :native_endpoint,
-              :workspace_policy
+              :workspace_policy, :runtime_preferences
 
   class << self
     def for(feature:, model: nil, account: nil, runtime_preferences: nil, privacy_profile: nil)
@@ -53,9 +58,10 @@ class Llm::OpenRouterRoutingProfile
     @feature_key = feature_key
     @model = model.to_s.presence
     @account = account
+    @runtime_preferences = normalize_runtime_preferences(runtime_preferences)
     @workspace_policy = Llm::OpenRouterWorkspacePolicy.resolve(
       account: account,
-      preferences: runtime_preferences,
+      preferences: @runtime_preferences,
       privacy_profile: privacy_profile
     )
     @models = build_models
@@ -92,15 +98,55 @@ class Llm::OpenRouterRoutingProfile
   def build_provider_preferences
     base = workspace_policy.provider_preferences.deep_dup
 
-    case feature_key
-    when 'captain_agent', 'moderation'
-      base.merge(require_parameters: true)
-    when 'copilot'
-      base.merge(require_parameters: true, sort: { by: 'latency', partition: 'none' })
-    when 'editor', 'label_suggestion'
-      base.merge(require_parameters: false, sort: { by: 'price', partition: 'none' })
+    feature_preferences = case feature_key
+                          when 'captain_agent', 'moderation'
+                            { require_parameters: true }
+                          when 'copilot'
+                            { require_parameters: true, sort: { by: 'latency', partition: 'none' } }
+                          when 'editor', 'label_suggestion'
+                            { require_parameters: false, sort: { by: 'price', partition: 'none' } }
+                          else
+                            { require_parameters: false }
+                          end
+
+    apply_routing_strategy(base.merge(feature_preferences))
+  end
+
+  def normalize_runtime_preferences(preferences)
+    return {} unless preferences.respond_to?(:to_h)
+
+    preferences.to_h.deep_stringify_keys
+  rescue StandardError
+    {}
+  end
+
+  def apply_routing_strategy(provider_preferences)
+    order = provider_order
+
+    case routing_strategy
+    when EXACTO_STRATEGY
+      return provider_preferences if order.blank?
+
+      provider_preferences.except(:sort).merge(order: order, allow_fallbacks: false)
+    when AUTO_EXACTO_STRATEGY
+      return provider_preferences if order.blank?
+
+      provider_preferences.except(:sort).merge(order: order, allow_fallbacks: true)
     else
-      base.merge(require_parameters: false)
+      order.present? ? provider_preferences.merge(order: order) : provider_preferences
     end
+  end
+
+  def routing_strategy
+    ROUTING_STRATEGY_KEYS.filter_map { |key| runtime_preferences[key].to_s.presence }.first.to_s.tr('-', '_')
+  end
+
+  def provider_order
+    PROVIDER_ORDER_KEYS.each do |key|
+      order = Array(runtime_preferences[key]).map { |provider| provider.to_s.strip }.compact_blank
+      return order if order.present?
+    end
+
+    []
   end
 end

@@ -46,6 +46,53 @@ RSpec.describe Llm::OpenRouterRuntime do
     expect(runtime.chat(request)).to eq(:response)
   end
 
+  it 'builds stateful chats through the compiled OpenRouter runtime profile' do
+    context = instance_double(RubyLLM::Context)
+    chat = instance_double(RubyLLM::Chat)
+    request = Llm::FeatureRequest.new(
+      feature: :captain_agent,
+      account: account,
+      model: 'openai/gpt-5.4-mini',
+      options: {
+        context: context,
+        temperature: 0.2,
+        params: { provider: { sort: 'price' }, top_p: 0.9 }
+      }
+    )
+
+    expect(Llm::ChatClient).to receive(:build).with(
+      hash_including(
+        context: context,
+        model: 'openai/gpt-5.4-mini',
+        account: account,
+        feature: 'captain_agent',
+        temperature: 0.2,
+        params: hash_including(
+          top_p: 0.9,
+          models: start_with('openai/gpt-5.4-mini'),
+          provider: include(require_parameters: true, allow_fallbacks: true, data_collection: 'deny')
+        )
+      )
+    ).and_return(chat)
+
+    expect(runtime.build_chat(request)).to eq(chat)
+  end
+
+  it 'asks stateful chats through the runtime facade' do
+    chat = instance_double(RubyLLM::Chat)
+    response = instance_double(RubyLLM::Message)
+
+    expect(Llm::ChatClient).to receive(:ask).with(
+      chat,
+      'hello',
+      model: 'openai/gpt-5.4-mini',
+      account: account,
+      observability: { trace_id: 'trace-1' }
+    ).and_return(response)
+
+    expect(runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })).to eq(response)
+  end
+
   it 'routes native embeddings to the OpenRouter embedding client' do
     request = Llm::FeatureRequest.new(
       feature: :help_center_search,

@@ -78,7 +78,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response).to have_key(:runtime_metadata)
-        expect(json_response.dig(:runtime_metadata, :providers, :openai)).to include(:configured, :display_name)
+        expect(json_response.dig(:runtime_metadata, :providers)).not_to have_key(:openai)
         expect(json_response.dig(:runtime_metadata, :providers, :openrouter)).to include(:configured, :display_name, :models_api)
         expect(json_response.dig(:runtime_metadata, :registry, :openrouter)).to include(:total_models, :using_fallback)
         expect(json_response.dig(:runtime_metadata, :features, :assistant)).to include(:selected_model, :provider)
@@ -231,6 +231,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
                 knowledge_chunk_size: '32000',
                 safety_blocklist: ['never disclose api keys'],
                 assistant_safety_blocklist: ['do not discuss payroll'],
+                openrouter_routing_strategy: 'auto-exacto',
+                openrouter_provider_order: ['OpenAI', '', 'Anthropic'],
                 agent_high_risk_tools: 'disabled',
                 agent_high_risk_tool_ids: ['create_deal'],
                 release_gate: {
@@ -252,6 +254,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           knowledge_chunk_size: 32_000,
           safety_blocklist: ['never disclose api keys'],
           assistant_safety_blocklist: ['do not discuss payroll'],
+          openrouter_routing_strategy: 'auto_exacto',
+          openrouter_provider_order: %w[OpenAI Anthropic],
           agent_high_risk_tools: 'disabled',
           agent_high_risk_tool_ids: ['create_deal'],
           release_gate: {
@@ -269,6 +273,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           'knowledge_chunk_size' => 32_000,
           'safety_blocklist' => ['never disclose api keys'],
           'assistant_safety_blocklist' => ['do not discuss payroll'],
+          'openrouter_routing_strategy' => 'auto_exacto',
+          'openrouter_provider_order' => %w[OpenAI Anthropic],
           'agent_high_risk_tools' => 'disabled',
           'agent_high_risk_tool_ids' => ['create_deal'],
           'release_gate' => {
@@ -276,6 +282,24 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             'min_request_count' => 20,
             'max_error_rate' => 0.05
           }
+        )
+      end
+
+      it 'updates aliased OpenRouter routing runtime preferences' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_runtime: {
+                routing_strategy: 'exacto',
+                provider_order: ['OpenAI', ' ', 'Fireworks']
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_runtime).to include(
+          'routing_strategy' => 'exacto',
+          'provider_order' => %w[OpenAI Fireworks]
         )
       end
 

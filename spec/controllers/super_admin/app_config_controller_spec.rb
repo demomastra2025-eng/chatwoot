@@ -58,6 +58,19 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response.body).to include('Configured — leave blank to keep current key')
         expect(response.body).not_to include('test-openrouter-secret-value')
       end
+
+      it 'does not expose legacy direct-provider Captain key fields in Super Admin config' do
+        allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+        sign_in(super_admin, scope: :super_admin)
+
+        get '/super_admin/app_config?config=captain'
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include('CAPTAIN_OPENROUTER_API_KEY')
+        expect(response.body).not_to include('CAPTAIN_OPEN_AI_API_KEY')
+        expect(response.body).not_to include('CAPTAIN_ANTHROPIC_API_KEY')
+        expect(response.body).not_to include('CAPTAIN_GEMINI_API_KEY')
+      end
     end
   end
 

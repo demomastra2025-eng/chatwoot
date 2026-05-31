@@ -71,5 +71,64 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
         zdr: true
       )
     end
+
+    it 'supports explicit Exacto provider order as a policy-level routing strategy' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-5.4',
+        runtime_preferences: {
+          openrouter_routing_strategy: 'exacto',
+          openrouter_provider_order: %w[OpenAI Anthropic]
+        }
+      )
+
+      expect(profile.provider_preferences).to include(
+        order: %w[OpenAI Anthropic],
+        allow_fallbacks: false,
+        require_parameters: true
+      )
+    end
+
+    it 'supports Auto Exacto provider order with fallback routing enabled' do
+      profile = described_class.for(
+        feature: :copilot,
+        model: 'openai/gpt-5.4',
+        runtime_preferences: {
+          openrouter_routing_strategy: 'auto_exacto',
+          openrouter_provider_order: %w[OpenAI Anthropic]
+        }
+      )
+
+      expect(profile.provider_preferences).to include(
+        order: %w[OpenAI Anthropic],
+        allow_fallbacks: true,
+        require_parameters: true
+      )
+      expect(profile.provider_preferences).not_to include(:sort)
+    end
+
+    it 'ignores Exacto strategies without a non-empty provider order' do
+      exacto_profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-5.4',
+        runtime_preferences: {
+          openrouter_routing_strategy: 'exacto',
+          openrouter_provider_order: []
+        }
+      )
+      auto_exacto_profile = described_class.for(
+        feature: :copilot,
+        model: 'openai/gpt-5.4',
+        runtime_preferences: {
+          openrouter_routing_strategy: 'auto-exacto',
+          openrouter_provider_order: ['', ' ']
+        }
+      )
+
+      expect(exacto_profile.provider_preferences).not_to include(:order)
+      expect(exacto_profile.provider_preferences).to include(allow_fallbacks: true)
+      expect(auto_exacto_profile.provider_preferences).not_to include(:order)
+      expect(auto_exacto_profile.provider_preferences).to include(sort: { by: 'latency', partition: 'none' })
+    end
   end
 end
