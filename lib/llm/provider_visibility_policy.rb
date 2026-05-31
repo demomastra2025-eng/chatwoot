@@ -10,7 +10,7 @@ class Llm::ProviderVisibilityPolicy
 
   class << self
     def visible_providers(surface: :captain_settings)
-      Llm::Models.providers.to_h.select do |provider_name, _provider_config|
+      all_provider_configs.select do |provider_name, _provider_config|
         visible_provider?(provider_name, surface: surface)
       end
     end
@@ -45,6 +45,12 @@ class Llm::ProviderVisibilityPolicy
         visible: visible_provider?(provider_name, surface: surface),
         hidden_reason: hidden_reason(provider_name, surface: surface)
       }
+    end
+
+    private
+
+    def all_provider_configs
+      Llm::Models.legacy_providers.to_h.merge(Llm::Models.providers.to_h)
     end
   end
 end
