@@ -65,7 +65,8 @@ class Llm::ChatRequestRunner
       headers: headers,
       chat: chat,
       feature: feature,
-      temperature: temperature
+      temperature: temperature,
+      routing_metadata: observability
     }.tap do |kwargs|
       kwargs[:account] = account if account.present?
     end
@@ -136,7 +137,8 @@ class Llm::ChatRequestRunner
       chat,
       feature: feature,
       account: account,
-      model: effective_model_name(chat)
+      model: effective_model_name(chat),
+      routing_metadata: observability
     )
   end
 
@@ -238,7 +240,7 @@ class Llm::ChatRequestRunner
       provider: 'openrouter'
     ).compact
     payload[:error_class] = error.class.name if error
-    payload[:error_message] = error.message if error
+    payload[:error_message] = Llm::ObservabilityPayload.sanitize_error_message(error) if error
 
     Llm::EventBus.publish('run.retry', payload)
   end

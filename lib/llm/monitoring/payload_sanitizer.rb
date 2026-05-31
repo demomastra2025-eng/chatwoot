@@ -11,6 +11,11 @@ class Llm::Monitoring::PayloadSanitizer
   ].freeze
   SENSITIVE_KEY_PATTERN = /(authorization|api[_-]?key|token|secret|password|cookie)/i
   RAW_CONTENT_KEY_PATTERN = /\A(raw_)?(prompt|messages|input|output|response|content)\z/i
+  SECRET_VALUE_PATTERNS = [
+    [/(Bearer\s+)[^\s,;'"\\]+/i, '\\1[REDACTED]'],
+    [/sk-or-v1-[A-Za-z0-9_-]+/, REDACTED],
+    [/((?:api[_-]?key|access[_-]?token|token|authorization)["'=:\s]+)[^\s,;'"\\]+/i, "\\1#{REDACTED}"]
+  ].freeze
 
   class << self
     def call(payload, redact_raw_content: false)
@@ -54,9 +59,16 @@ class Llm::Monitoring::PayloadSanitizer
     end
 
     def truncate_string(value)
-      return value if value.length <= MAX_STRING_LENGTH
+      redacted = redact_string_secrets(value)
+      return redacted if redacted.length <= MAX_STRING_LENGTH
 
-      "#{value.first(MAX_STRING_LENGTH)}#{TRUNCATED_SUFFIX}"
+      "#{redacted.first(MAX_STRING_LENGTH)}#{TRUNCATED_SUFFIX}"
+    end
+
+    def redact_string_secrets(value)
+      SECRET_VALUE_PATTERNS.reduce(value.to_s) do |redacted_value, (pattern, replacement)|
+        redacted_value.gsub(pattern, replacement)
+      end
     end
   end
 end

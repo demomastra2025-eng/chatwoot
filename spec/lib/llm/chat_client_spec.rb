@@ -251,6 +251,41 @@ RSpec.describe Llm::ChatClient do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
+    it 'publishes OpenRouter routing metadata stored on stateful chats' do
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+      response = double('message', content: 'Hello back', input_tokens: 5, output_tokens: 7, tool_call?: false)
+      allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'openai/gpt-5.4-mini'))
+      allow(chat).to receive(:ask).with('Hello').and_return(response)
+      Llm::OpenRouterRequestPolicy.tag!(
+        chat,
+        feature: :captain_agent,
+        model: 'openai/gpt-5.4-mini',
+        routing_metadata: {
+          requested_model: 'openai/gpt-5.4-mini',
+          routing_profile: 'exacto',
+          openrouter_provider_order: ['OpenAI'],
+          openrouter_require_parameters: true
+        }
+      )
+
+      described_class.ask(chat, 'Hello')
+
+      expect(events.last.payload).to include(
+        'provider' => 'openrouter',
+        'feature' => 'captain_agent',
+        'requested_model' => 'openai/gpt-5.4-mini',
+        'routing_profile' => 'exacto',
+        'openrouter_provider_order' => ['OpenAI'],
+        'openrouter_require_parameters' => true,
+        'status' => 'success'
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
     it 'raises when image content is sent to a model without image input support' do
       allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'whisper-1'))
       content = RubyLLM::Content.new('Describe this', ['https://example.com/image.png'])

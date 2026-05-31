@@ -3,6 +3,40 @@
 require 'rails_helper'
 
 RSpec.describe Llm::ObservabilityPayload do
+  describe '.normalize' do
+    it 'preserves whitelisted OpenRouter routing metadata for traces and usage ledger' do
+      payload = described_class.normalize(
+        {
+          provider: 'openrouter',
+          model: 'openai/gpt-5.4-mini',
+          requested_model: 'openai/gpt-5.4-mini',
+          routing_profile: 'exacto',
+          openrouter_provider_order: ['OpenAI'],
+          openrouter_require_parameters: true,
+          openrouter_allow_fallbacks: false,
+          openrouter_plugins: ['response-healing'],
+          metadata: {
+            openrouter_native_endpoint: '/embeddings',
+            openrouter_allow_fallbacks: true,
+            api_key: 'must-not-leak'
+          }
+        },
+        runtime_mode: 'openrouter_runtime'
+      )
+
+      expect(payload).to include(
+        requested_model: 'openai/gpt-5.4-mini',
+        routing_profile: 'exacto',
+        openrouter_provider_order: ['OpenAI'],
+        openrouter_require_parameters: true,
+        openrouter_allow_fallbacks: false,
+        openrouter_plugins: ['response-healing'],
+        openrouter_native_endpoint: '/embeddings'
+      )
+      expect(payload).not_to have_key(:api_key)
+    end
+  end
+
   describe '.attach_error!' do
     it 'adds OpenRouter error taxonomy fields for provider errors' do
       payload = { 'provider' => 'openrouter' }
@@ -16,6 +50,15 @@ RSpec.describe Llm::ObservabilityPayload do
         'retryable' => true,
         'retry_after_seconds' => 12
       )
+    end
+
+    it 'redacts secrets embedded in error messages before storing observability payloads' do
+      payload = { 'provider' => 'openrouter' }
+      error = RubyLLM::Error.new('request failed with Bearer sk-or-v1-secret and api_key=SECRET_VALUE')
+
+      described_class.attach_error!(payload, error)
+
+      expect(payload['error_message']).to eq('request failed with Bearer [REDACTED] and api_key=[REDACTED]')
     end
   end
 

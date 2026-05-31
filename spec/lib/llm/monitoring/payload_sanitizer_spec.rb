@@ -42,6 +42,14 @@ RSpec.describe Llm::Monitoring::PayloadSanitizer do
       expect(sanitized['access_token']).to eq('[REDACTED]')
     end
 
+    it 'redacts bearer tokens and API keys embedded in string values' do
+      sanitized = described_class.call(
+        'request failed with Bearer sk-or-v1-secret, api_key=SECRET_VALUE and token: OTHER_SECRET'
+      )
+
+      expect(sanitized).to eq('request failed with Bearer [REDACTED], api_key=[REDACTED] and token: [REDACTED]')
+    end
+
     it 'redacts raw content keys while preserving token usage counters' do
       sanitized = described_class.call(
         {

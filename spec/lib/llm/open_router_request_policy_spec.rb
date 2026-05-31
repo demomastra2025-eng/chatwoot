@@ -69,6 +69,82 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
       )
     end
 
+    it 'preserves trusted compiled OpenRouter routing controls when requiring tool parameters' do
+      chat = OpenRouterRequestPolicySpecChat.new(
+        model: OpenRouterRequestPolicySpecModel.new('moonshotai/kimi-k2.6', 'openrouter'),
+        params: {
+          provider: {
+            order: %w[Groq Fireworks],
+            only: ['Groq'],
+            ignore: ['OpenAI'],
+            quantizations: ['fp8'],
+            preferred_min_throughput: 80,
+            preferred_max_latency: 1200,
+            max_price: { prompt: 0.2, completion: 0.8 },
+            sort: { by: 'latency', partition: 'none' },
+            allow_fallbacks: false,
+            data_collection: 'deny'
+          }
+        }
+      )
+      described_class.tag!(
+        chat,
+        feature: :captain_agent,
+        model: 'moonshotai/kimi-k2.6',
+        routing_metadata: {
+          requested_model: 'moonshotai/kimi-k2.6',
+          routing_profile: 'exacto',
+          openrouter_provider_order: %w[Groq Fireworks]
+        }
+      )
+
+      described_class.require_parameters!(chat, feature: :captain_agent, tools: true)
+
+      expect(chat.params[:provider]).to include(
+        order: %w[Groq Fireworks],
+        only: ['Groq'],
+        ignore: ['OpenAI'],
+        quantizations: ['fp8'],
+        preferred_min_throughput: 80,
+        preferred_max_latency: 1200,
+        max_price: { prompt: 0.2, completion: 0.8 },
+        sort: { by: 'latency', partition: 'none' },
+        allow_fallbacks: false,
+        data_collection: 'deny',
+        require_parameters: true
+      )
+      expect(described_class.observability_metadata(chat)).to include(
+        requested_model: 'moonshotai/kimi-k2.6',
+        openrouter_provider_order: %w[Groq Fireworks],
+        openrouter_require_parameters: true,
+        openrouter_allow_fallbacks: false
+      )
+    end
+
+    it 'drops untrusted advanced provider controls from raw OpenRouter chats' do
+      chat = OpenRouterRequestPolicySpecChat.new(
+        model: OpenRouterRequestPolicySpecModel.new('moonshotai/kimi-k2.6', 'openrouter'),
+        params: {
+          provider: {
+            order: %w[UntrustedProvider],
+            only: %w[UntrustedProvider],
+            ignore: %w[OpenAI],
+            allow_fallbacks: false,
+            data_collection: 'allow'
+          }
+        }
+      )
+
+      described_class.require_parameters!(chat, feature: :captain_agent, tools: true)
+
+      expect(chat.params[:provider]).not_to include(:order, :only, :ignore)
+      expect(chat.params[:provider]).to include(
+        data_collection: 'deny',
+        allow_fallbacks: true,
+        require_parameters: true
+      )
+    end
+
     it 'does not mutate non-OpenRouter chats' do
       chat = OpenRouterRequestPolicySpecChat.new(
         model: OpenRouterRequestPolicySpecModel.new('gpt-4.1-mini', 'openai'),

@@ -313,6 +313,38 @@ RSpec.describe Llm::ChatRequestRunner do
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
+  it 'sanitizes retryable OpenRouter error messages before publishing retry events' do
+    openrouter_model = instance_double(RubyLLM::Model::Info, id: 'openai/gpt-5.4-mini', provider: 'openrouter')
+    final_response = instance_double(RubyLLM::Message, content: 'Done', input_tokens: 3, output_tokens: 4, tool_call?: false)
+    retry_events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.run.retry') do |*args|
+      retry_events << ActiveSupport::Notifications::Event.new(*args)
+    end
+
+    allow(chat).to receive(:model).and_return(openrouter_model)
+    expect(chat).to receive(:ask).with('Hello').twice do
+      raise RubyLLM::Error, 'OpenRouter provider error: 503 upstream unavailable Bearer sk-or-v1-secret' if retry_events.empty?
+
+      final_response
+    end
+
+    result = described_class.new(
+      chat: chat,
+      model: 'openai/gpt-5.4-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      observability: { feature: 'assistant', account_id: 1 }
+    ).call
+
+    expect(result).to eq(final_response)
+    expect(retry_events.first.payload).to include(
+      'provider' => 'openrouter',
+      'openrouter_error_category' => 'provider_error',
+      'error_message' => 'OpenRouter provider error: 503 upstream unavailable Bearer [REDACTED]'
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
   it 'rolls back failed retry attempts before asking the same chat again' do
     openrouter_model = instance_double(RubyLLM::Model::Info, id: 'openai/gpt-5.4-mini', provider: 'openrouter')
     messages = [instance_double(RubyLLM::Message, role: :user, content: 'History')]

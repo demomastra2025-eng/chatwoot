@@ -108,7 +108,8 @@ class Llm::ChatClient
         feature: options[:feature],
         account: account,
         model: resolved_model_name(chat, options[:model]),
-        stream: options[:stream]
+        stream: options[:stream],
+        routing_metadata: options[:routing_metadata]
       )
     end
 
@@ -122,13 +123,24 @@ class Llm::ChatClient
     end
 
     def observability_payload(observability, chat, fallback_model)
-      return {} if observability.blank?
+      routing_metadata = Llm::OpenRouterRequestPolicy.observability_metadata(chat)
+      return {} if observability.blank? && routing_metadata.blank?
+
+      source = routing_metadata.merge(observability_hash(observability))
 
       Llm::ObservabilityPayload.normalize(
-        observability,
+        source,
         model: resolved_model_name(chat, fallback_model),
         runtime_mode: 'chat_client'
       )
+    end
+
+    def observability_hash(observability)
+      return {} unless observability.respond_to?(:to_h)
+
+      observability.to_h.symbolize_keys
+    rescue StandardError
+      {}
     end
   end
 end

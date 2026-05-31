@@ -105,8 +105,29 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
     described_class.perform_now(event.id)
   end
 
+  it 'sanitizes provider error reasons returned by generation metadata' do
+    error_metadata = Llm::OpenRouterGenerationClient::Result.new(
+      generation_id: 'gen-123',
+      provider_name: 'OpenAI',
+      model: 'openai/gpt-4o',
+      error_code: 'provider_error',
+      error_reason: 'failed with Bearer sk-or-v1-secret and api_key=SECRET_VALUE'
+    )
+    allow(Llm::OpenRouterGenerationClient).to receive(:fetch).and_return(error_metadata)
+
+    described_class.perform_now(event.id, 'gen-123')
+
+    event.reload
+    expect(event.reason).to eq('failed with Bearer [REDACTED] and api_key=[REDACTED]')
+    expect(event.payload.dig('openrouter_generation', 'error_reason')).to eq(
+      'failed with Bearer [REDACTED] and api_key=[REDACTED]'
+    )
+  end
+
   it 'records compact generation metadata errors without re-raising' do
-    allow(Llm::OpenRouterGenerationClient).to receive(:fetch).and_raise(RubyLLM::Error, 'upstream failed')
+    allow(Llm::OpenRouterGenerationClient)
+      .to receive(:fetch)
+      .and_raise(RubyLLM::Error, 'upstream failed with Bearer sk-or-v1-secret and api_key=SECRET_VALUE')
 
     expect { described_class.perform_now(event.id, 'gen-123') }.not_to raise_error
 
@@ -116,7 +137,7 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
       'openrouter_generation_error' => include(
         'generation_id' => 'gen-123',
         'error_class' => 'RubyLLM::Error',
-        'message' => 'upstream failed',
+        'message' => 'upstream failed with Bearer [REDACTED] and api_key=[REDACTED]',
         'openrouter_error_category' => 'provider_error',
         'retryable' => true
       )

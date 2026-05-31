@@ -46,7 +46,7 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
   end
 
   def metadata_reason(event, metadata)
-    metadata.error_reason.presence || metadata.finish_reason.presence || event.reason
+    sanitized_error_reason(metadata).presence || metadata.finish_reason.presence || event.reason
   end
 
   def metadata_error_code(event, metadata)
@@ -70,12 +70,18 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
       'latency_ms' => metadata.latency_ms,
       'finish_reason' => metadata.finish_reason,
       'error_code' => metadata.error_code,
-      'error_reason' => metadata.error_reason,
+      'error_reason' => sanitized_error_reason(metadata),
       'prompt_tokens' => metadata.prompt_tokens,
       'completion_tokens' => metadata.completion_tokens,
       'reasoning_tokens' => metadata.reasoning_tokens,
       'cached_tokens' => metadata.cached_tokens
     }.compact
+  end
+
+  def sanitized_error_reason(metadata)
+    return if metadata.error_reason.blank?
+
+    Llm::ObservabilityPayload.sanitize_error_message(metadata.error_reason)
   end
 
   def record_error(event, generation_id, error)
@@ -97,7 +103,7 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
     {
       'generation_id' => generation_id,
       'error_class' => error.class.name,
-      'message' => error.message,
+      'message' => Llm::ObservabilityPayload.sanitize_error_message(error),
       'openrouter_error_category' => classification.category,
       'retryable' => classification.retryable,
       'retry_after_seconds' => classification.retry_after_seconds

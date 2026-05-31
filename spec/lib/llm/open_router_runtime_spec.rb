@@ -41,7 +41,17 @@ RSpec.describe Llm::OpenRouterRuntime do
         account: account,
         feature: 'captain_agent',
         temperature: 0.2,
-        observability: hash_including(trace_id: 'trace-1', provider: 'openrouter', feature: 'captain_agent')
+        observability: hash_including(
+          trace_id: 'trace-1',
+          provider: 'openrouter',
+          feature: 'captain_agent',
+          requested_model: 'openai/gpt-5.4-mini',
+          routing_profile: 'balanced',
+          openrouter_allow_fallbacks: true,
+          openrouter_require_parameters: true,
+          openrouter_plugins: ['response-healing'],
+          openrouter_cache_policy: 'session'
+        )
       )
     ).and_return(runner)
 
@@ -87,6 +97,17 @@ RSpec.describe Llm::OpenRouterRuntime do
         account: account,
         feature: 'captain_agent',
         temperature: 0.2,
+        observability: hash_including(
+          provider: 'openrouter',
+          requested_model: 'openai/gpt-5.4-mini',
+          routing_profile: 'balanced',
+          openrouter_require_parameters: true
+        ),
+        routing_metadata: hash_including(
+          requested_model: 'openai/gpt-5.4-mini',
+          routing_profile: 'balanced',
+          openrouter_require_parameters: true
+        ),
         params: hash_including(
           top_p: 0.9,
           models: start_with('openai/gpt-5.4-mini'),
@@ -101,13 +122,33 @@ RSpec.describe Llm::OpenRouterRuntime do
   it 'asks stateful chats through the runtime facade' do
     chat = instance_double(RubyLLM::Chat)
     response = instance_double(RubyLLM::Message)
+    Llm::OpenRouterRequestPolicy.tag!(
+      chat,
+      feature: :captain_agent,
+      account: account,
+      model: 'openai/gpt-5.4-mini',
+      routing_metadata: {
+        requested_model: 'openai/gpt-5.4-mini',
+        routing_profile: 'balanced',
+        openrouter_provider_order: ['OpenAI'],
+        openrouter_require_parameters: true
+      }
+    )
 
     expect(Llm::ChatClient).to receive(:ask).with(
       chat,
       'hello',
       model: 'openai/gpt-5.4-mini',
       account: account,
-      observability: { trace_id: 'trace-1' }
+      observability: hash_including(
+        trace_id: 'trace-1',
+        provider: 'openrouter',
+        feature: 'captain_agent',
+        requested_model: 'openai/gpt-5.4-mini',
+        routing_profile: 'balanced',
+        openrouter_provider_order: ['OpenAI'],
+        openrouter_require_parameters: true
+      )
     ).and_return(response)
 
     expect(runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })).to eq(response)
@@ -190,8 +231,15 @@ RSpec.describe Llm::OpenRouterRuntime do
       event_name: 'llm.embedding.complete',
       feature: 'help_center_search',
       provider: 'openrouter',
+      requested_model: 'openai/text-embedding-3-small',
+      routing_profile: 'balanced',
       prompt_tokens: 1,
       total_tokens: 1
+    )
+    expect(LlmEvent.last.payload).to include(
+      'openrouter_native_endpoint' => '/embeddings',
+      'openrouter_cache_policy' => 'static_context',
+      'requested_model' => 'openai/text-embedding-3-small'
     )
   end
 
@@ -220,7 +268,10 @@ RSpec.describe Llm::OpenRouterRuntime do
       'runtime_mode' => 'openrouter_runtime',
       'status' => 'success',
       'vector_count' => 1,
-      'dimensions' => 2
+      'dimensions' => 2,
+      'requested_model' => 'openai/text-embedding-3-small',
+      'openrouter_native_endpoint' => '/embeddings',
+      'openrouter_cache_policy' => 'static_context'
     )
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
@@ -298,7 +349,7 @@ RSpec.describe Llm::OpenRouterRuntime do
 
     expect(Llm::OpenRouterTranscriptionClient).to receive(:transcribe).twice do
       call_count += 1
-      raise RubyLLM::Error, 'OpenRouter provider error: 503 upstream unavailable' if call_count == 1
+      raise RubyLLM::Error, 'OpenRouter provider error: 503 upstream unavailable Bearer sk-or-v1-secret' if call_count == 1
 
       result
     end
@@ -311,7 +362,8 @@ RSpec.describe Llm::OpenRouterRuntime do
       'reason' => 'provider_error',
       'openrouter_error_category' => 'provider_error',
       'attempt' => 1,
-      'max_attempts' => 2
+      'max_attempts' => 2,
+      'error_message' => 'OpenRouter provider error: 503 upstream unavailable Bearer [REDACTED]'
     )
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber

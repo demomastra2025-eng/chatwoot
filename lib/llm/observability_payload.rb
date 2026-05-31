@@ -1,13 +1,23 @@
 # frozen_string_literal: true
 
 class Llm::ObservabilityPayload
+  OPENROUTER_METADATA_KEYS = %i[
+    requested_model actual_model endpoint_provider routing_profile runtime_profile
+    models fallback_models openrouter_provider_order openrouter_provider_sort
+    openrouter_allow_fallbacks openrouter_require_parameters openrouter_data_collection
+    openrouter_zdr openrouter_plugins openrouter_server_tools openrouter_service_tier
+    openrouter_native_endpoint openrouter_privacy_profile openrouter_guardrail_profile
+    openrouter_cache_policy openrouter_plugin_policy openrouter_transform_policy
+    openrouter_budget_policy
+  ].freeze
+
   class << self
     def normalize(payload = nil, model: nil, feature: nil, runtime_mode: nil)
       source = payload.to_h.with_indifferent_access
       metadata = source[:metadata].to_h.with_indifferent_access
       resolved_model = source[:model].presence || model
 
-      {
+      base_payload = {
         request_id: source[:request_id].presence || metadata[:request_id],
         feature: source[:feature].presence || source[:feature_name].presence || feature,
         runtime_mode: source[:runtime_mode].presence || runtime_mode,
@@ -33,7 +43,9 @@ class Llm::ObservabilityPayload
         conversation_id: source[:conversation_record_id].presence || source[:conversation_db_id],
         conversation_display_id: source[:conversation_display_id].presence || metadata[:conversation_display_id].presence || source[:conversation_id],
         copilot_thread_id: source[:copilot_thread_id].presence || metadata[:copilot_thread_id]
-      }.compact
+      }
+
+      base_payload.merge(openrouter_metadata(source, metadata)).compact
     rescue StandardError
       {}
     end
@@ -100,10 +112,15 @@ class Llm::ObservabilityPayload
       payload['error'] = true
       payload['reason'] = error.class.name.demodulize.underscore
       payload['error_class'] = error.class.name
-      payload['error_message'] = error.message
+      payload['error_message'] = sanitize_error_message(error)
       attach_openrouter_error_classification!(payload, error)
       payload.compact!
       payload
+    end
+
+    def sanitize_error_message(error)
+      message = error.respond_to?(:message) ? error.message : error.to_s
+      Llm::Monitoring::PayloadSanitizer.call(message.to_s)
     end
 
     private
@@ -114,6 +131,14 @@ class Llm::ObservabilityPayload
       Llm::Config.provider_for_model(model)
     rescue StandardError
       nil
+    end
+
+    def openrouter_metadata(source, metadata)
+      OPENROUTER_METADATA_KEYS.each_with_object({}) do |key, result|
+        value = source[key]
+        value = metadata[key] if value.blank? && value != false && metadata.key?(key)
+        result[key] = value if value.present? || value == false
+      end
     end
 
     def attach_openrouter_error_classification!(payload, error)

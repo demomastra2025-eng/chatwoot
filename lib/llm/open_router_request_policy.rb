@@ -6,15 +6,18 @@ class Llm::OpenRouterRequestPolicy
   ROUTING_METADATA_IVAR = :@onelink_openrouter_routing_metadata
 
   class << self
-    def tag!(chat, feature: nil, account: nil, model: nil, stream: nil)
+    def tag!(chat, feature: nil, account: nil, model: nil, stream: nil, routing_metadata: nil)
       return chat unless chat
 
-      metadata = routing_metadata(chat).merge(
-        feature: feature.presence || routing_metadata(chat)[:feature],
-        account: account.presence || routing_metadata(chat)[:account],
-        model: model.presence || routing_metadata(chat)[:model],
-        stream: stream.nil? ? routing_metadata(chat)[:stream] : stream
+      current_metadata = routing_metadata(chat)
+      openrouter_metadata = safe_observability_metadata(routing_metadata)
+      metadata = current_metadata.merge(openrouter_metadata).merge(
+        feature: feature.presence || current_metadata[:feature],
+        account: account.presence || current_metadata[:account],
+        model: model.presence || current_metadata[:model],
+        stream: stream.nil? ? current_metadata[:stream] : stream
       ).compact
+      metadata[:requested_model] ||= metadata[:model] if openrouter_metadata.present?
       chat.instance_variable_set(ROUTING_METADATA_IVAR, metadata)
       chat
     rescue StandardError
@@ -35,7 +38,7 @@ class Llm::OpenRouterRequestPolicy
         reasoning: reasoning,
         stream: stream
       )
-      chat.with_params(**compiled.params)
+      tagged_chat_with_params(chat, compiled, account: account, feature: feature, model: model, stream: stream)
     end
 
     def require_structured_output!(chat, account: nil, feature: nil, model: nil, stream: nil)
@@ -52,7 +55,7 @@ class Llm::OpenRouterRequestPolicy
         reasoning: false,
         stream: stream
       )
-      chat.with_params(**compiled.params)
+      tagged_chat_with_params(chat, compiled, account: account, feature: feature, model: model, stream: stream)
     end
 
     def params_with_required_parameters(params, feature: nil, model: nil, account: nil, tools: true, schema: false, reasoning: false, stream: false)
@@ -92,6 +95,27 @@ class Llm::OpenRouterRequestPolicy
       false
     end
 
+    def routing_metadata(chat)
+      return {} unless chat.respond_to?(:instance_variable_get)
+
+      metadata = chat.instance_variable_get(ROUTING_METADATA_IVAR)
+      metadata.respond_to?(:to_h) ? metadata.to_h.symbolize_keys : {}
+    rescue StandardError
+      {}
+    end
+
+    def observability_metadata(chat)
+      metadata = routing_metadata(chat)
+      openrouter_metadata = safe_observability_metadata(metadata)
+      return {} if openrouter_metadata.blank?
+
+      openrouter_metadata.merge(
+        provider: OPENROUTER_PROVIDER,
+        feature: metadata[:feature].to_s.presence,
+        model: metadata[:model].to_s.presence
+      ).compact
+    end
+
     private
 
     def compile_chat_params(chat, account:, feature:, model:, tools:, schema:, reasoning:, stream:)
@@ -104,17 +128,34 @@ class Llm::OpenRouterRequestPolicy
         tools: tools,
         schema: schema,
         reasoning: reasoning,
-        stream: stream.nil? ? metadata[:stream] : stream
+        stream: stream.nil? ? metadata[:stream] : stream,
+        trusted_provider_params: trusted_provider_params?(metadata)
       )
     end
 
-    def routing_metadata(chat)
-      return {} unless chat.respond_to?(:instance_variable_get)
+    def tagged_chat_with_params(chat, compiled, account:, feature:, model:, stream:)
+      metadata = routing_metadata(chat)
+      updated_chat = chat.with_params(**compiled.params)
+      tag!(
+        updated_chat,
+        account: account.presence || metadata[:account],
+        feature: feature.presence || metadata[:feature],
+        model: model.presence || metadata[:model].presence || compiled.model,
+        stream: stream.nil? ? metadata[:stream] : stream,
+        routing_metadata: compiled.metadata
+      )
+    end
 
-      metadata = chat.instance_variable_get(ROUTING_METADATA_IVAR)
-      metadata.respond_to?(:to_h) ? metadata.to_h.symbolize_keys : {}
+    def safe_observability_metadata(metadata)
+      return {} unless metadata.respond_to?(:to_h)
+
+      metadata.to_h.symbolize_keys.slice(*Llm::ObservabilityPayload::OPENROUTER_METADATA_KEYS)
     rescue StandardError
       {}
+    end
+
+    def trusted_provider_params?(metadata)
+      safe_observability_metadata(metadata).present?
     end
 
     def normalized_chat_params(chat)

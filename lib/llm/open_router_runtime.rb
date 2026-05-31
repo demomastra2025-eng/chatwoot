@@ -26,7 +26,7 @@ class Llm::OpenRouterRuntime
       temperature: request.temperature,
       account: request_account(request),
       feature: request.feature_key,
-      observability: runtime_observability(request),
+      observability: runtime_observability(request, routing_metadata: compiled.metadata),
       content_builder: request.options[:content_builder],
       on_end_message: request.options[:on_end_message],
       on_tool_call: request.options[:on_tool_call],
@@ -49,7 +49,9 @@ class Llm::OpenRouterRuntime
       thinking: request.reasoning || request.options[:thinking],
       stream: request.stream,
       account: request_account(request),
-      feature: request.feature_key
+      feature: request.feature_key,
+      observability: runtime_observability(request, routing_metadata: compiled.metadata),
+      routing_metadata: compiled.metadata
     )
   end
 
@@ -58,8 +60,9 @@ class Llm::OpenRouterRuntime
   end
 
   def ask(chat, content, model: nil, observability: nil)
-    enforce_observed_ask_budget!(model: model, observability: observability)
-    Llm::ChatClient.ask(chat, content, model: model, observability: observability, account: account)
+    enriched_observability = observed_ask_observability(chat, observability)
+    enforce_observed_ask_budget!(model: model, observability: enriched_observability)
+    Llm::ChatClient.ask(chat, content, model: model, observability: enriched_observability, account: account)
   end
 
   def transcribe(request)
@@ -68,7 +71,8 @@ class Llm::OpenRouterRuntime
 
     model = resolve_model(request)
     enforce_budget!(request, model)
-    observe_native_request(request, model, 'transcription.complete') do
+    profile = routing_profile(request, model)
+    observe_native_request(request, model, 'transcription.complete', routing_metadata: native_routing_metadata(request, model, profile)) do
       with_openrouter_retry(request, model) do
         Llm::OpenRouterTranscriptionClient.transcribe(
           request.input,
@@ -77,7 +81,7 @@ class Llm::OpenRouterRuntime
           api_base: api_base(request),
           language: request.options[:language],
           temperature: request.temperature.nil? ? 0.4 : request.temperature,
-          provider: routing_profile(request, model).provider_preferences
+          provider: profile.provider_preferences
         )
       end
     end
@@ -89,7 +93,8 @@ class Llm::OpenRouterRuntime
 
     model = resolve_model(request)
     enforce_budget!(request, model)
-    observe_native_request(request, model, 'embedding.complete') do
+    profile = routing_profile(request, model)
+    observe_native_request(request, model, 'embedding.complete', routing_metadata: native_routing_metadata(request, model, profile)) do
       with_openrouter_retry(request, model) do
         Llm::OpenRouterEmbeddingClient.embed(
           request.input,
@@ -98,7 +103,7 @@ class Llm::OpenRouterRuntime
           input_type: request.options[:input_type],
           api_key: api_key!(request),
           api_base: api_base(request),
-          provider: routing_profile(request, model).provider_preferences
+          provider: profile.provider_preferences
         )
       end
     end
@@ -115,8 +120,9 @@ class Llm::OpenRouterRuntime
     raise ArgumentError, 'model is required for OpenRouter rerank.' if model.blank?
 
     enforce_budget!(request, model)
+    profile = routing_profile(request, model)
 
-    observe_native_request(request, model, 'rerank.complete') do
+    observe_native_request(request, model, 'rerank.complete', routing_metadata: native_routing_metadata(request, model, profile)) do
       with_openrouter_retry(request, model) do
         Llm::OpenRouterRerankClient.rerank(
           query: query,
@@ -126,7 +132,7 @@ class Llm::OpenRouterRuntime
           return_documents: request.options.fetch(:return_documents, true),
           api_key: api_key!(request),
           api_base: api_base(request),
-          provider: routing_profile(request, model).provider_preferences
+          provider: profile.provider_preferences
         )
       end
     end
@@ -190,8 +196,8 @@ class Llm::OpenRouterRuntime
     )
   end
 
-  def observe_native_request(request, model, event_name)
-    payload = native_observability_payload(request, model)
+  def observe_native_request(request, model, event_name, routing_metadata: nil)
+    payload = native_observability_payload(request, model, routing_metadata: routing_metadata)
 
     instrument_native_request(event_name, payload) do |event_payload|
       response = yield
@@ -203,9 +209,9 @@ class Llm::OpenRouterRuntime
     end
   end
 
-  def native_observability_payload(request, model)
+  def native_observability_payload(request, model, routing_metadata: nil)
     Llm::ObservabilityPayload.normalize(
-      runtime_observability(request),
+      runtime_observability(request, routing_metadata: routing_metadata),
       model: model,
       runtime_mode: 'openrouter_runtime'
     )
@@ -281,7 +287,7 @@ class Llm::OpenRouterRuntime
   end
 
   def publish_native_retry_event(request, model, decision, attempt, error: nil)
-    payload = native_observability_payload(request, model).merge(
+    payload = native_observability_payload(request, model, routing_metadata: native_routing_metadata(request, model)).merge(
       status: 'retrying',
       error: error.present?,
       reason: decision.reason,
@@ -293,7 +299,7 @@ class Llm::OpenRouterRuntime
       provider: OPENROUTER_PROVIDER
     ).compact
     payload[:error_class] = error.class.name if error
-    payload[:error_message] = error.message if error
+    payload[:error_message] = Llm::ObservabilityPayload.sanitize_error_message(error) if error
 
     Llm::EventBus.publish('run.retry', payload)
   end
@@ -311,7 +317,7 @@ class Llm::OpenRouterRuntime
     )
   end
 
-  def runtime_observability(request)
+  def runtime_observability(request, routing_metadata: nil)
     request.observability.merge(
       provider: OPENROUTER_PROVIDER,
       feature: runtime_observability_feature(request),
@@ -319,7 +325,7 @@ class Llm::OpenRouterRuntime
       session_id: request.session_id,
       user_id: request.user_id,
       runtime_mode: 'openrouter_runtime'
-    ).compact
+    ).merge(openrouter_routing_metadata(routing_metadata)).compact
   end
 
   def runtime_observability_feature(request)
@@ -337,6 +343,57 @@ class Llm::OpenRouterRuntime
       runtime_preferences: request.runtime_preferences,
       privacy_profile: request.privacy_profile
     )
+  end
+
+  def openrouter_routing_metadata(metadata)
+    metadata.respond_to?(:to_h) ? metadata.to_h.symbolize_keys : {}
+  rescue StandardError
+    {}
+  end
+
+  def native_routing_metadata(request, model, profile = nil)
+    profile ||= routing_profile(request, model)
+    provider = profile.provider_preferences
+    feature_policy = request.openrouter_feature_policy
+    {
+      requested_model: model,
+      models: profile.models,
+      fallback_models: profile.fallback_models,
+      routing_profile: routing_profile_name(profile, provider),
+      openrouter_provider_order: Array(provider[:order]).presence,
+      openrouter_provider_sort: provider_sort(provider),
+      openrouter_allow_fallbacks: provider[:allow_fallbacks],
+      openrouter_require_parameters: provider[:require_parameters],
+      openrouter_data_collection: provider[:data_collection],
+      openrouter_zdr: provider[:zdr],
+      openrouter_service_tier: feature_policy.compiled_service_tier,
+      openrouter_native_endpoint: profile.native_endpoint,
+      openrouter_privacy_profile: feature_policy.privacy_profile,
+      openrouter_guardrail_profile: feature_policy.guardrail_profile,
+      openrouter_cache_policy: feature_policy.cache_policy,
+      openrouter_plugin_policy: feature_policy.plugin_policy,
+      openrouter_transform_policy: feature_policy.transform_policy,
+      openrouter_budget_policy: feature_policy.budget_policy
+    }.compact
+  end
+
+  def routing_profile_name(profile, provider)
+    profile.routing_policy[:strategy].presence ||
+      provider_sort(provider).presence ||
+      (provider[:order].present? ? 'ordered' : 'balanced')
+  end
+
+  def provider_sort(provider)
+    sort = provider[:sort]
+    return sort.to_h.with_indifferent_access[:by].to_s.presence if sort.respond_to?(:to_h)
+    return sort.to_s.presence if sort.present?
+  end
+
+  def observed_ask_observability(chat, observability)
+    routing_metadata = Llm::OpenRouterRequestPolicy.observability_metadata(chat)
+    return observability if routing_metadata.blank?
+
+    routing_metadata.merge(observability_hash(observability))
   end
 
   def enforce_budget!(request, model)
@@ -367,6 +424,14 @@ class Llm::OpenRouterRuntime
     return unless observability.respond_to?(:[])
 
     observability[:estimated_cost] || observability['estimated_cost'] || observability[:cost] || observability['cost']
+  end
+
+  def observability_hash(observability)
+    return {} unless observability.respond_to?(:to_h)
+
+    observability.to_h.symbolize_keys
+  rescue StandardError
+    {}
   end
 
   def rerank_query(request)

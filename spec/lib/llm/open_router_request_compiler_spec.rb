@@ -77,6 +77,17 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     expect(compiled.params[:provider]).not_to include(:sort)
     expect(compiled.params[:plugins].count { |plugin| plugin[:id] == 'response-healing' || plugin['id'] == 'response-healing' }).to eq(1)
     expect(compiled.params[:plugins]).not_to include({ id: 'web' })
+    expect(compiled.metadata).to include(
+      requested_model: 'moonshotai/kimi-k2.6',
+      routing_profile: 'balanced',
+      openrouter_allow_fallbacks: true,
+      openrouter_require_parameters: true,
+      openrouter_data_collection: 'deny',
+      openrouter_plugins: ['response-healing'],
+      openrouter_cache_policy: 'session',
+      openrouter_plugin_policy: 'structured_output_and_overflow_only'
+    )
+    expect(compiled.metadata[:fallback_models]).to include('openai/gpt-5.4-mini')
   end
 
   it 'does not add response healing for streaming structured output requests' do

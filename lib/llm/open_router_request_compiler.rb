@@ -8,10 +8,13 @@ class Llm::OpenRouterRequestCompiler
   ].freeze
   CALLER_PROVIDER_CONTROL_KEYS = %w[require_parameters allow_fallbacks data_collection zdr sort].freeze
 
-  Compiled = Struct.new(:model, :models, :params, :headers, :native_endpoint, keyword_init: true)
+  Compiled = Struct.new(:model, :models, :params, :headers, :native_endpoint, :metadata, keyword_init: true)
 
   class << self
-    def call(request: nil, model: nil, base_params: {}, stream: false, account: nil, feature: nil, schema: nil, tools: nil, reasoning: nil)
+    def call(
+      request: nil, model: nil, base_params: {}, stream: false, account: nil, feature: nil, schema: nil,
+      tools: nil, reasoning: nil, trusted_provider_params: false
+    )
       compiler = new(
         request: request,
         model: model,
@@ -21,13 +24,14 @@ class Llm::OpenRouterRequestCompiler
         feature: feature,
         schema: schema,
         tools: tools,
-        reasoning: reasoning
+        reasoning: reasoning,
+        trusted_provider_params: trusted_provider_params
       )
       compiler.call
     end
   end
 
-  def initialize(request:, model:, base_params:, stream:, account:, feature:, schema:, tools:, reasoning:)
+  def initialize(request:, model:, base_params:, stream:, account:, feature:, schema:, tools:, reasoning:, trusted_provider_params:)
     @request = request
     @model = model.to_s.presence
     @base_params = base_params.respond_to?(:to_h) ? base_params.to_h.deep_dup : {}
@@ -37,6 +41,7 @@ class Llm::OpenRouterRequestCompiler
     @schema = schema
     @tools = tools
     @reasoning = reasoning
+    @trusted_provider_params = trusted_provider_params
   end
 
   def call
@@ -47,6 +52,13 @@ class Llm::OpenRouterRequestCompiler
     provider_params = merged_provider_params(profile)
     plugins = merged_plugins(params, profile, feature_policy)
     server_tools = merged_server_tools(feature_policy)
+    metadata = compiled_metadata(
+      profile: profile,
+      feature_policy: feature_policy,
+      models: models,
+      provider_params: provider_params,
+      extensions: { plugins: plugins, server_tools: server_tools }
+    )
 
     apply_request_params!(params)
     apply_feature_policy_params!(params, feature_policy)
@@ -60,7 +72,8 @@ class Llm::OpenRouterRequestCompiler
       models: models,
       params: params,
       headers: profile.headers,
-      native_endpoint: profile.native_endpoint
+      native_endpoint: profile.native_endpoint,
+      metadata: metadata
     )
   end
 
@@ -159,10 +172,20 @@ class Llm::OpenRouterRequestCompiler
     profile_preferences.delete(:require_parameters) unless require_parameters
     profile_preferences[:require_parameters] = true if require_parameters
 
-    existing.deep_merge(profile_preferences).tap do |provider|
-      provider.delete(:require_parameters) if provider[:require_parameters] == false
-      provider.delete('require_parameters') if provider['require_parameters'] == false
+    merged_provider_preferences(existing, profile_preferences).tap do |provider|
+      if require_parameters
+        provider[:require_parameters] = true
+      else
+        provider.delete(:require_parameters) if provider[:require_parameters] == false
+        provider.delete('require_parameters') if provider['require_parameters'] == false
+      end
     end
+  end
+
+  def merged_provider_preferences(existing, profile_preferences)
+    return profile_preferences.deep_merge(existing) if @trusted_provider_params
+
+    existing.deep_merge(profile_preferences)
   end
 
   def merged_plugins(_params, profile, feature_policy)
@@ -183,6 +206,71 @@ class Llm::OpenRouterRequestCompiler
 
   def merged_server_tools(feature_policy)
     feature_policy.filter_server_tools(requested_server_tools)
+  end
+
+  def compiled_metadata(profile:, feature_policy:, models:, provider_params:, extensions:)
+    {
+      requested_model: @model,
+      models: models,
+      fallback_models: fallback_models(models),
+      routing_profile: routing_profile_name(profile, provider_params),
+      openrouter_provider_order: Array(provider_params[:order]).presence,
+      openrouter_provider_sort: provider_sort(provider_params),
+      openrouter_allow_fallbacks: provider_params[:allow_fallbacks],
+      openrouter_require_parameters: provider_params[:require_parameters],
+      openrouter_data_collection: provider_params[:data_collection],
+      openrouter_zdr: provider_params[:zdr],
+      openrouter_plugins: plugin_ids(extensions[:plugins]),
+      openrouter_server_tools: server_tool_ids(extensions[:server_tools]),
+      openrouter_service_tier: feature_policy.compiled_service_tier,
+      openrouter_native_endpoint: profile.native_endpoint,
+      openrouter_privacy_profile: feature_policy.privacy_profile,
+      openrouter_guardrail_profile: feature_policy.guardrail_profile,
+      openrouter_cache_policy: feature_policy.cache_policy,
+      openrouter_plugin_policy: feature_policy.plugin_policy,
+      openrouter_transform_policy: feature_policy.transform_policy,
+      openrouter_budget_policy: feature_policy.budget_policy
+    }.compact
+  end
+
+  def fallback_models(models)
+    return [] if models.blank?
+
+    models.drop(@model.present? ? 1 : 0)
+  end
+
+  def routing_profile_name(profile, provider_params)
+    profile.routing_policy[:strategy].presence ||
+      provider_sort(provider_params).presence ||
+      (provider_params[:order].present? ? 'ordered' : 'balanced')
+  end
+
+  def provider_sort(provider_params)
+    sort = provider_params[:sort]
+    return sort.to_h.with_indifferent_access[:by].to_s.presence if sort.respond_to?(:to_h)
+    return sort.to_s.presence if sort.present?
+  end
+
+  def plugin_ids(plugins)
+    Array(plugins).filter_map { |plugin| hash_identifier(plugin) }.uniq.presence
+  end
+
+  def server_tool_ids(server_tools)
+    Array(server_tools).filter_map { |tool| hash_identifier(tool) }.uniq.presence
+  end
+
+  def hash_identifier(value)
+    return value.to_s if value.is_a?(String) || value.is_a?(Symbol)
+    return unless value.respond_to?(:to_h)
+
+    hash_identifier_from_hash(value)
+  end
+
+  def hash_identifier_from_hash(value)
+    hash = value.to_h.with_indifferent_access
+    hash[:id].presence || hash[:name].presence || hash.dig(:function, :name).presence || hash[:type].presence
+  rescue StandardError
+    nil
   end
 
   def response_healing_allowed?(profile)
@@ -238,7 +326,8 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def safe_caller_provider_params(provider)
-    provider.slice(*CALLER_PROVIDER_CONTROL_KEYS.map(&:to_sym))
+    allowed_keys = @trusted_provider_params ? PROVIDER_CONTROL_KEYS : CALLER_PROVIDER_CONTROL_KEYS
+    provider.slice(*allowed_keys.map(&:to_sym))
   end
 
   def normalize_provider_keys(provider)
