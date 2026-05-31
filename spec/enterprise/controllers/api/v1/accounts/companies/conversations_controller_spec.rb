@@ -5,6 +5,10 @@ RSpec.describe 'Company conversations API', type: :request do
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:company) { create(:company, account: account) }
 
+  before do
+    account.enable_features!('companies')
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/companies/{company.id}/conversations' do
     it 'returns conversations for direct and deal-related company contacts' do
       direct_contact = create(:contact, account: account, company: company)

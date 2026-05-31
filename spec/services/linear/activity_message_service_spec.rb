@@ -18,15 +18,17 @@ RSpec.describe Linear::ActivityMessageService, type: :service do
       end
 
       it 'enqueues an activity message job' do
-        expect do
-          service.perform
-        end.to have_enqueued_job(Conversations::ActivityMessageJob)
-          .with(conversation, {
-                  account_id: conversation.account_id,
-                  inbox_id: conversation.inbox_id,
-                  message_type: :activity,
-                  content: "Linear issue ENG-123 was created by #{user.name}"
-                })
+        I18n.with_locale(:ru) do
+          expect do
+            service.perform
+          end.to have_enqueued_job(Conversations::ActivityMessageJob)
+            .with(conversation, {
+                    account_id: conversation.account_id,
+                    inbox_id: conversation.inbox_id,
+                    message_type: :activity,
+                    content: "Linear issue ENG-123 was created by #{user.name}"
+                  })
+        end
       end
 
       it 'does not enqueue job when issue data lacks id' do
@@ -93,15 +95,17 @@ RSpec.describe Linear::ActivityMessageService, type: :service do
       end
 
       it 'enqueues an activity message job' do
-        expect do
-          service.perform
-        end.to have_enqueued_job(Conversations::ActivityMessageJob)
-          .with(conversation, {
-                  account_id: conversation.account_id,
-                  inbox_id: conversation.inbox_id,
-                  message_type: :activity,
-                  content: "Linear issue ENG-456 was linked by #{user.name}"
-                })
+        I18n.with_locale(:ru) do
+          expect do
+            service.perform
+          end.to have_enqueued_job(Conversations::ActivityMessageJob)
+            .with(conversation, {
+                    account_id: conversation.account_id,
+                    inbox_id: conversation.inbox_id,
+                    message_type: :activity,
+                    content: "Linear issue ENG-456 was linked by #{user.name}"
+                  })
+        end
       end
 
       it 'does not enqueue job when issue data lacks id' do
@@ -129,15 +133,17 @@ RSpec.describe Linear::ActivityMessageService, type: :service do
       end
 
       it 'enqueues an activity message job' do
-        expect do
-          service.perform
-        end.to have_enqueued_job(Conversations::ActivityMessageJob)
-          .with(conversation, {
-                  account_id: conversation.account_id,
-                  inbox_id: conversation.inbox_id,
-                  message_type: :activity,
-                  content: "Linear issue ENG-789 was unlinked by #{user.name}"
-                })
+        I18n.with_locale(:ru) do
+          expect do
+            service.perform
+          end.to have_enqueued_job(Conversations::ActivityMessageJob)
+            .with(conversation, {
+                    account_id: conversation.account_id,
+                    inbox_id: conversation.inbox_id,
+                    message_type: :activity,
+                    content: "Linear issue ENG-789 was unlinked by #{user.name}"
+                  })
+        end
       end
 
       it 'does not enqueue job when issue data lacks id' do

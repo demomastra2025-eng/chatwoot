@@ -5,6 +5,10 @@ RSpec.describe 'Company notes API', type: :request do
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:company) { create(:company, account: account) }
 
+  before do
+    account.enable_features!('companies')
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/companies/{company.id}/notes' do
     it 'returns recent notes for direct company contacts with contact payload' do
       contact = create(:contact, account: account, company: company)

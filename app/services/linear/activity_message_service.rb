@@ -1,4 +1,6 @@
 class Linear::ActivityMessageService
+  ACTIVITY_LOCALE = :en
+
   attr_reader :conversation, :action_type, :issue_data, :user
 
   def initialize(conversation:, action_type:, user:, issue_data: {})
@@ -22,12 +24,16 @@ class Linear::ActivityMessageService
   def generate_activity_content
     case action_type.to_sym
     when :issue_created
-      I18n.t('conversations.activity.linear.issue_created', user_name: user.name, issue_id: issue_data[:id])
+      activity_text('conversations.activity.linear.issue_created')
     when :issue_linked
-      I18n.t('conversations.activity.linear.issue_linked', user_name: user.name, issue_id: issue_data[:id])
+      activity_text('conversations.activity.linear.issue_linked')
     when :issue_unlinked
-      I18n.t('conversations.activity.linear.issue_unlinked', user_name: user.name, issue_id: issue_data[:id])
+      activity_text('conversations.activity.linear.issue_unlinked')
     end
+  end
+
+  def activity_text(key)
+    I18n.t(key, locale: ACTIVITY_LOCALE, user_name: user.name, issue_id: issue_data[:id])
   end
 
   def activity_message_params(content)

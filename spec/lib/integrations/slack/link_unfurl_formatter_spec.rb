@@ -49,7 +49,9 @@ describe Integrations::Slack::LinkUnfurlFormatter do
 
       it 'returns expected unfurl blocks when the URL is not blank' do
         formatter = described_class.new(url: url, user_info: user_info, inbox_name: inbox.name, inbox_type: inbox.channel_type)
-        expect(formatter.perform).to eq(expected_payload)
+        I18n.with_locale(:ru) do
+          expect(formatter.perform).to eq(expected_payload)
+        end
       end
 
       it 'returns an empty hash when the URL is blank' do

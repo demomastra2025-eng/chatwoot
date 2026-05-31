@@ -220,8 +220,8 @@
   enabled: false
 - name: companies
   display_name: Companies
-  enabled: false
-  premium: true
+  enabled: true
+  premium: false
   chatwoot_internal: false
 - name: channel_tiktok
   display_name: TikTok Channel
