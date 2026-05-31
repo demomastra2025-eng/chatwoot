@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/ClassLength
 class Llm::Evals::PackRegistry
   Pack = Struct.new(
     :id,
@@ -195,3 +196,4 @@ class Llm::Evals::PackRegistry
     end
   end
 end
+# rubocop:enable Metrics/ClassLength

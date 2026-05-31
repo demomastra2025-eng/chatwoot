@@ -46,4 +46,60 @@ RSpec.describe Captain::Evals::VoiceScenarioSuite do
       expect(result.cases.first[:failures]).to include('voice interruption was not respected')
     end
   end
+
+  it 'fails when an interruption stop is required but no interruption event is present' do
+    Tempfile.create(['voice_scenarios_missing_interrupt', '.yml']) do |file|
+      file.write(
+        <<~YAML
+          cases:
+            - id: voice.missing_interruption
+              description: Interruption assertions require an interruption event.
+              tags: [ai_voice, interruption]
+              events:
+                - action: caller_transcript_final
+                  role: caller
+                  transcript: "Можно перебью?"
+                - action: ai_transcript_turn
+                  role: assistant
+                  transcript: "Слушаю."
+              expected:
+                require_interruption_stop: true
+        YAML
+      )
+      file.rewind
+
+      result = described_class.new(cases_path: file.path).call
+
+      expect(result.to_h).to include(total_count: 1, failed_count: 1, status: 'fail')
+      expect(result.cases.first[:failures]).to include('voice interruption event missing')
+    end
+  end
+
+  it 'fails latency budgets when required latency signals are missing' do
+    Tempfile.create(['voice_scenarios_missing_latency', '.yml']) do |file|
+      file.write(
+        <<~YAML
+          cases:
+            - id: voice.missing_ttfb
+              description: TTFB budget requires TTFB events.
+              tags: [ai_voice, latency]
+              events:
+                - action: caller_transcript_final
+                  role: caller
+                  transcript: "Алло"
+                - action: ai_transcript_turn
+                  role: assistant
+                  transcript: "Здравствуйте"
+              expected:
+                max_ttfb_ms: 1200
+        YAML
+      )
+      file.rewind
+
+      result = described_class.new(cases_path: file.path).call
+
+      expect(result.to_h).to include(total_count: 1, failed_count: 1, status: 'fail')
+      expect(result.cases.first[:failures]).to include('TTFB missing')
+    end
+  end
 end

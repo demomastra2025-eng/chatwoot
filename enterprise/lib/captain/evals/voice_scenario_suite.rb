@@ -49,6 +49,7 @@ class Captain::Evals::VoiceScenarioSuite
     {
       timeline: voice_timeline(events),
       latency: latency_summary(events),
+      interruption_observed: interruption_observed?(events),
       interruption_respected: interruption_respected?(events),
       transcript_fallback_used: transcript_fallback_used?(events),
       ai_response_after_last_caller: ai_response_after_last_caller?(events),
@@ -74,11 +75,14 @@ class Captain::Evals::VoiceScenarioSuite
 
   def latency_summary(events)
     latencies = events.filter_map { |event| integer_value(event[:latency_ms] || event[:ttfb_ms]) }.sort
+    ttfb_values = events.filter_map { |event| integer_value(event[:ttfb_ms]) }.sort
     {
       count: latencies.size,
       p50_ms: percentile(latencies, 0.50),
       p95_ms: percentile(latencies, 0.95),
-      max_ms: latencies.max
+      max_ms: latencies.max,
+      ttfb_count: ttfb_values.size,
+      max_ttfb_ms: ttfb_values.max
     }.compact
   end
 
@@ -89,7 +93,7 @@ class Captain::Evals::VoiceScenarioSuite
       ai_response_failure(expected, actual),
       interruption_failure(expected, actual),
       transcript_fallback_failure(expected, actual),
-      latency_failure(expected, actual, expected_key: :max_ttfb_ms, actual_key: :max_ms, label: 'TTFB'),
+      latency_failure(expected, actual, expected_key: :max_ttfb_ms, actual_key: :max_ttfb_ms, label: 'TTFB'),
       latency_failure(expected, actual, expected_key: :max_p95_latency_ms, actual_key: :p95_ms, label: 'p95 latency'),
       clip_marker_failure(expected, actual)
     ].compact
@@ -102,7 +106,9 @@ class Captain::Evals::VoiceScenarioSuite
   end
 
   def interruption_failure(expected, actual)
-    return unless expected[:require_interruption_stop] && !actual[:interruption_respected]
+    return unless expected[:require_interruption_stop]
+    return 'voice interruption event missing' unless actual[:interruption_observed]
+    return if actual[:interruption_respected]
 
     'voice interruption was not respected'
   end
@@ -116,7 +122,9 @@ class Captain::Evals::VoiceScenarioSuite
   def latency_failure(expected, actual, expected_key:, actual_key:, label:)
     expected_value = expected[expected_key]
     actual_value = actual.dig(:latency, actual_key)
-    return if expected_value.blank? || actual_value.to_i <= expected_value.to_i
+    return if expected_value.blank?
+    return "#{label} missing" if actual_value.blank?
+    return if actual_value.to_i <= expected_value.to_i
 
     "#{label} too high: #{actual_value} > #{expected_value}"
   end
@@ -132,6 +140,10 @@ class Captain::Evals::VoiceScenarioSuite
     return true if interrupt_index.blank?
 
     events.drop(interrupt_index + 1).none? { |event| event[:action].to_s == 'realtime_audio_out' && !truthy?(event[:stopped]) }
+  end
+
+  def interruption_observed?(events)
+    events.any? { |event| event[:action].to_s.include?('interrupt') || truthy?(event[:interrupted]) }
   end
 
   def transcript_fallback_used?(events)

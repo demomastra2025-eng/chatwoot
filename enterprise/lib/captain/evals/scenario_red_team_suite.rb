@@ -4,6 +4,8 @@ class Captain::Evals::ScenarioRedTeamSuite
   SUITE_ID = 'captain.scenario_red_team'
   DEFAULT_CASES_PATH = Rails.root.join('config/llm_evals/captain_scenario_red_team.yml')
 
+  UnsafeLiveCaseError = Class.new(StandardError)
+
   def initialize(**attributes)
     @account = attributes.fetch(:account)
     @cases_path = Pathname.new(attributes.fetch(:cases_path, DEFAULT_CASES_PATH))
@@ -34,6 +36,8 @@ class Captain::Evals::ScenarioRedTeamSuite
   end
 
   def evaluate_case(eval_case)
+    assert_live_case_safe!(eval_case)
+
     trace_collector = Llm::Evals::TraceCollector.new(trace_id: trace_id_for(eval_case), redact_raw_content: true)
     result = build_runner(eval_case, trace_collector).call
 
@@ -100,12 +104,22 @@ class Captain::Evals::ScenarioRedTeamSuite
       expected: eval_case.fetch(:expected, {}),
       client: @judge_client,
       cache_key: eval_case[:id],
-      cache_store: @cache_store
+      cache_store: @cache_store,
+      terminal_on_pass: false
     )
   end
 
   def open_router_client(mode)
-    Llm::Evals::OpenRouterClient.new(account: @account, mode: mode, privacy_profile: :evals)
+    Llm::Evals::OpenRouterClient.new(account: @account, mode: mode, privacy_profile: :sensitive)
+  end
+
+  def assert_live_case_safe!(eval_case)
+    return if @captain_agent_factory
+
+    input = eval_case.fetch(:input, {})
+    return if truthy?(input[:allow_mutations])
+
+    raise UnsafeLiveCaseError, 'unsafe_live_red_team_requires_isolated_account_and_allow_mutations'
   end
 
   def resolve_assistant(eval_case)
@@ -132,6 +146,10 @@ class Captain::Evals::ScenarioRedTeamSuite
 
   def trace_id_for(eval_case)
     "evals:#{SUITE_ID}:#{eval_case[:id]}:#{SecureRandom.hex(4)}"
+  end
+
+  def truthy?(value)
+    value == true || value.to_s == 'true'
   end
 
   def error_case_result(eval_case, error)

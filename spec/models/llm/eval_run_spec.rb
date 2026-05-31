@@ -49,7 +49,6 @@ RSpec.describe Llm::EvalRun do
       total_count: 2,
       passed_count: 1,
       failed_count: 1,
-      error_count: 0,
       suites: [
         {
           suite_id: 'captain.conversation_completion',
@@ -60,7 +59,6 @@ RSpec.describe Llm::EvalRun do
           total_count: 2,
           passed_count: 1,
           failed_count: 1,
-          error_count: 0,
           pass_rate: 0.5,
           cases: [{ id: 'case-1', input: 'secret customer prompt', output: 'raw answer' }]
         }
@@ -72,8 +70,7 @@ RSpec.describe Llm::EvalRun do
       suite_count: 1,
       total_count: 2,
       passed_count: 1,
-      failed_count: 1,
-      error_count: 0
+      failed_count: 1
     )
     expect(compact[:suites]).to eq(
       [
@@ -86,13 +83,65 @@ RSpec.describe Llm::EvalRun do
           total_count: 2,
           passed_count: 1,
           failed_count: 1,
-          error_count: 0,
-          pass_rate: 0.5
+          pass_rate: 0.5,
+          case_summaries: [{ id: 'case-1' }]
         }
       ]
     )
     expect(compact.to_json).not_to include('secret customer prompt')
     expect(compact.to_json).not_to include('raw answer')
     expect(compact.to_json).not_to include('cases')
+  end
+
+  it 'keeps sanitized scenario artifacts needed by live eval run status' do
+    compact = described_class.compact_result(
+      status: 'pass',
+      suites: [
+        {
+          suite_id: 'captain.scenario_red_team',
+          status: 'pass',
+          cases: [
+            {
+              id: 'red_team.case',
+              status: 'pass',
+              artifact: {
+                usage: {
+                  providers: ['openrouter'],
+                  models: ['openai/gpt-5.4-mini'],
+                  token_totals: { total_tokens: 42 },
+                  estimated_cost: 0.00012
+                },
+                timeline: [
+                  { index: 0, type: 'message', role: 'user', preview: 'secret customer prompt' },
+                  { index: 1, type: 'tool', tool_name: 'search_deals', action: 'tool_completed' }
+                ],
+                trace_digest: {
+                  total_count: 2,
+                  tool_names: ['search_deals'],
+                  token_totals: { total_tokens: 42 },
+                  estimated_cost: 0.00012,
+                  events: [{ payload: { token: 'secret' } }]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    )
+
+    artifact = compact.dig(:suites, 0, :case_summaries, 0, :artifact)
+
+    expect(artifact[:usage]).to include(
+      'providers' => ['openrouter'],
+      'models' => ['openai/gpt-5.4-mini'],
+      'estimated_cost' => 0.00012
+    )
+    expect(artifact[:timeline]).to include(
+      include(index: 0, type: 'message', role: 'user'),
+      include(index: 1, type: 'tool', tool_name: 'search_deals')
+    )
+    expect(artifact[:trace_digest]).to include(total_count: 2, tool_names: ['search_deals'])
+    expect(artifact.to_json).not_to include('secret customer prompt')
+    expect(artifact.to_json).not_to include('events')
   end
 end

@@ -126,7 +126,7 @@ class Captain::Evals::ScenarioSimulationSuite
   end
 
   def open_router_client(mode)
-    ::Llm::Evals::OpenRouterClient.new(account: @account, mode: mode, privacy_profile: :evals)
+    ::Llm::Evals::OpenRouterClient.new(account: @account, mode: mode, privacy_profile: :sensitive)
   end
 
   def assert_live_case_safe!(eval_case)

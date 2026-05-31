@@ -26,7 +26,9 @@
 #  index_llm_eval_runs_on_account_id_and_created_at  (account_id,created_at)
 #  index_llm_eval_runs_on_account_id_and_status      (account_id,status)
 #  index_llm_eval_runs_on_user_id                    (user_id)
-#  index_llm_eval_runs_one_active_live_per_account   (account_id) UNIQUE WHERE (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))
+#  index_llm_eval_runs_one_active_live_per_account   (account_id) UNIQUE WHERE (((status)::text = ANY
+#                                                        ((ARRAY['queued'::character varying, 'running'::character varying])::text[])) AND
+#                                                        ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))
 #
 # Foreign Keys
 #
@@ -48,6 +50,12 @@ class Llm::EvalRun < ApplicationRecord
     suite_id status prompt_id prompt_sha model generated_at total_count passed_count failed_count error_count pass_rate
   ].freeze
   COMPACT_CASE_KEYS = %i[id description tags status duration_ms failures].freeze
+  COMPACT_ARTIFACT_KEYS = %i[case_id status failures usage].freeze
+  COMPACT_TIMELINE_KEYS = %i[index type role tool_name action status duration_ms].freeze
+  COMPACT_TRACE_DIGEST_KEYS = %i[
+    total_count included_count counts_by_event_name tool_names error_count schema_invalid_count openrouter_generation_ids token_totals
+    estimated_cost
+  ].freeze
   MAX_STRING_BYTES = 2_000
 
   STATUSES = %w[queued running passed failed].freeze
@@ -116,7 +124,35 @@ class Llm::EvalRun < ApplicationRecord
     def compact_case_result(value)
       return unless value.is_a?(Hash)
 
-      COMPACT_CASE_KEYS.index_with { |key| sanitize_result(value_for(value, key)) }.compact
+      compacted = COMPACT_CASE_KEYS.index_with { |key| sanitize_result(value_for(value, key)) }.compact
+      artifact = compact_artifact(value_for(value, :artifact))
+      compacted[:artifact] = artifact if artifact.present?
+      compacted
+    end
+
+    def compact_artifact(value)
+      return unless value.is_a?(Hash)
+
+      compacted = COMPACT_ARTIFACT_KEYS.index_with { |key| sanitize_result(value_for(value, key)) }.compact
+      timeline = compact_artifact_timeline(value_for(value, :timeline))
+      trace_digest = compact_trace_digest(value_for(value, :trace_digest))
+      compacted[:timeline] = timeline if timeline.present?
+      compacted[:trace_digest] = trace_digest if trace_digest.present?
+      compacted
+    end
+
+    def compact_artifact_timeline(value)
+      Array(value).filter_map do |entry|
+        next unless entry.is_a?(Hash)
+
+        COMPACT_TIMELINE_KEYS.index_with { |key| sanitize_result(value_for(entry, key)) }.compact
+      end
+    end
+
+    def compact_trace_digest(value)
+      return unless value.is_a?(Hash)
+
+      COMPACT_TRACE_DIGEST_KEYS.index_with { |key| sanitize_result(value_for(value, key)) }.compact
     end
 
     def existing_case_summaries(value)
