@@ -7,27 +7,38 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   def perform(_tool_context, query:, semantic: true)
     log_tool_usage('searching', { query: query })
 
-    responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(query, semantic: semantic)
+    cache = answer_cache(query: query, semantic: semantic)
+    cached_payload = cache.fetch(overrides: { query: query })
+    return JSON.pretty_generate(cached_payload) if cached_payload.present?
 
+    JSON.pretty_generate(cache.write(semantic_payload(query: query, semantic: semantic)))
+  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
+    Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
+    JSON.pretty_generate(semantic_unavailable_payload(query))
+  end
+
+  private
+
+  def semantic_payload(query:, semantic:)
+    responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(query, semantic: semantic)
     log_tool_usage('found_results', { query: query, count: responses.size, strategy: lookup_strategy })
+
     faq_payload(
       query: query,
       responses: responses,
       lookup_strategy: lookup_strategy,
       trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason, rerank: rerank_trace)
     )
-  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
-    Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
-    responses = lexical_fallback_responses(query)
+  end
+
+  def semantic_unavailable_payload(query)
     faq_payload(
       query: query,
-      responses: responses,
+      responses: lexical_fallback_responses(query),
       lookup_strategy: 'lexical',
       trace_context: trace_context(semantic_attempted: true, fallback_reason: 'semantic_unavailable')
     )
   end
-
-  private
 
   def lookup_responses(query, semantic: true)
     responses, rerank_trace = semantic ? semantic_responses(query) : [Captain::DocumentChunk.none, nil]
@@ -85,6 +96,10 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     query.to_s.downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.first(5)
   end
 
+  def answer_cache(query:, semantic:)
+    Captain::Knowledge::AnswerCache.new(account: account, assistant: assistant, query: query, semantic: semantic)
+  end
+
   def faq_payload(query:, responses:, lookup_strategy: nil, trace_context: {})
     payload = {
       query: query,
@@ -98,7 +113,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     }
     payload[:lookup_strategy] = lookup_strategy if lookup_strategy.present?
 
-    JSON.pretty_generate(payload)
+    payload
   end
 
   def trace_context(semantic_attempted:, fallback_reason: nil, rerank: nil)

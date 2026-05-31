@@ -10,22 +10,15 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def execute(query:, semantic: true)
     translated_query = semantic ? translated_query_for(query) : query
-    responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(translated_query, query, semantic: semantic)
 
-    faq_result_payload(query: query, translated_query: translated_query, responses: responses, lookup_strategy: lookup_strategy,
-                       trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason,
-                                                    rerank: rerank_trace))
+    cache = answer_cache(query: translated_query, semantic: semantic)
+    cached_payload = cache.fetch(overrides: { query: query, translated_query: translated_query })
+    return formatted_payload(cached_payload) if cached_payload.present?
+
+    formatted_payload(cache.write(semantic_payload(query: query, translated_query: translated_query, semantic: semantic)))
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
     log_semantic_unavailable(e)
-    translated_query ||= query
-
-    faq_result_payload(
-      query: query,
-      translated_query: translated_query,
-      responses: lexical_fallback_responses(translated_query, query),
-      lookup_strategy: 'lexical',
-      trace_context: trace_context(semantic_attempted: true, fallback_reason: 'semantic_unavailable')
-    )
+    formatted_payload(semantic_unavailable_payload(query: query, translated_query: translated_query || query))
   rescue StandardError => e
     Rails.logger.error do
       "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
@@ -35,6 +28,28 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   end
 
   private
+
+  def semantic_payload(query:, translated_query:, semantic:)
+    responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(translated_query, query, semantic: semantic)
+
+    faq_result_payload(
+      query: query,
+      translated_query: translated_query,
+      responses: responses,
+      lookup_strategy: lookup_strategy,
+      trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason, rerank: rerank_trace)
+    )
+  end
+
+  def semantic_unavailable_payload(query:, translated_query:)
+    faq_result_payload(
+      query: query,
+      translated_query: translated_query,
+      responses: lexical_fallback_responses(translated_query, query),
+      lookup_strategy: 'lexical',
+      trace_context: trace_context(semantic_attempted: true, fallback_reason: 'semantic_unavailable')
+    )
+  end
 
   def translated_query_for(query)
     Captain::Llm::TranslateQueryService
@@ -59,8 +74,12 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     'semantic_no_matches'
   end
 
+  def answer_cache(query:, semantic:)
+    Captain::Knowledge::AnswerCache.new(account: account, assistant: assistant, query: query, semantic: semantic)
+  end
+
   def faq_result_payload(query:, translated_query:, responses:, lookup_strategy:, trace_context: {})
-    payload = {
+    {
       query: query,
       translated_query: translated_query,
       total_count: responses.size,
@@ -73,8 +92,6 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
         trace_context: trace_context
       )
     }.compact
-
-    formatted_payload(payload)
   end
 
   def trace_context(semantic_attempted:, fallback_reason: nil, rerank: nil)

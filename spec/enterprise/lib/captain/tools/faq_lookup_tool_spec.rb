@@ -34,6 +34,23 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     )
   end
 
+  it 'serves repeated semantic lookups from the answer cache' do
+    expect(Captain::DocumentChunk).to receive(:search).once.and_return(Captain::DocumentChunk.where(id: document_chunk.id))
+
+    first_payload = JSON.parse(tool.perform(tool_context, query: 'password reset'))
+    second_payload = JSON.parse(tool.perform(tool_context, query: ' password   reset '))
+
+    expect(first_payload.dig('retrieval_trace', 'answer_cache')).to include('hit' => false, 'stored' => true)
+    expect(second_payload.dig('retrieval_trace', 'answer_cache')).to include(
+      'enabled' => true,
+      'hit' => true,
+      'match' => 'exact',
+      'hit_count' => 1
+    )
+    expect(second_payload['query']).to eq(' password   reset ')
+    expect(second_payload['matches'].first).to include('document_chunk_id' => document_chunk.id)
+  end
+
   it 'reranks semantic chunks and exposes rerank scores in the retrieval trace' do
     second_document = create(:captain_document, account: account, assistant: assistant)
     second_chunk = second_document.document_chunks.create!(

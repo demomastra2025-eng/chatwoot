@@ -345,6 +345,9 @@ class Captain::Assistant < ApplicationRecord
   belongs_to :account
   has_many :documents, class_name: 'Captain::Document', dependent: :destroy_async
   has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :destroy_async
+  has_many :knowledge_answer_cache_entries,
+           class_name: 'Captain::KnowledgeAnswerCacheEntry',
+           dependent: :destroy_async
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :destroy_async
   has_many :captain_inboxes,
            class_name: 'CaptainInbox',

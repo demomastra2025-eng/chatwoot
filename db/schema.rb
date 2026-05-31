@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_31_111534) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_31_142916) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -505,6 +505,26 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_31_111534) do
     t.index ["captain_assistant_id", "inbox_id"], name: "index_captain_inboxes_on_captain_assistant_id_and_inbox_id", unique: true
     t.index ["captain_assistant_id"], name: "index_captain_inboxes_on_captain_assistant_id"
     t.index ["inbox_id"], name: "index_captain_inboxes_on_inbox_id"
+  end
+
+  create_table "captain_knowledge_answer_cache_entries", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assistant_id", null: false
+    t.text "query", null: false
+    t.string "query_sha256", null: false
+    t.vector "embedding", limit: 1536
+    t.jsonb "payload", default: {}, null: false
+    t.string "source_fingerprint", null: false
+    t.integer "hit_count", default: 0, null: false
+    t.datetime "last_hit_at"
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "assistant_id", "query_sha256", "source_fingerprint"], name: "idx_captain_answer_cache_exact", unique: true
+    t.index ["account_id"], name: "index_captain_knowledge_answer_cache_entries_on_account_id"
+    t.index ["assistant_id"], name: "index_captain_knowledge_answer_cache_entries_on_assistant_id"
+    t.index ["embedding"], name: "vector_idx_captain_answer_cache_embedding", using: :ivfflat
+    t.index ["expires_at"], name: "idx_captain_answer_cache_expires_at"
   end
 
   create_table "captain_mcp_servers", force: :cascade do |t|
@@ -2465,6 +2485,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_31_111534) do
   add_foreign_key "captain_document_chunks", "accounts"
   add_foreign_key "captain_document_chunks", "captain_assistants", column: "assistant_id"
   add_foreign_key "captain_document_chunks", "captain_documents", column: "document_id"
+  add_foreign_key "captain_knowledge_answer_cache_entries", "accounts", on_delete: :cascade
+  add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "captain_mcp_servers", "accounts"
   add_foreign_key "confirmation_requests", "accounts"
   add_foreign_key "confirmation_requests", "contacts"
