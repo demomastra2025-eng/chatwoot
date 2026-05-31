@@ -1,7 +1,7 @@
 class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
-  MASKED_SECRET_CONFIG_KEYS = %w[CAPTAIN_OPENROUTER_API_KEY].freeze
+  MASKED_SECRET_CONFIG_KEYS = %w[CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY].freeze
   CAPTAIN_CONFIG_KEYS = %w[
-    CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_ENDPOINT
+    CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY CAPTAIN_OPENROUTER_ENDPOINT
     CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT CAPTAIN_SYSTEM_PROMPTS
     ACCOUNT_CAPTAIN_TOKENS_LIMIT
   ].freeze
@@ -51,11 +51,13 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     if errors.any?
       redirect_to super_admin_app_config_path(config: @config), alert: errors.join(', ')
     else
+      expire_openrouter_key_health_cache if @config == 'captain'
       refresh_llm_config if @config == 'captain'
       redirect_to super_admin_settings_path, notice: "App Configs - #{@config.titleize} updated successfully"
     end
   end
 
+  # rubocop:disable Rails/I18nLocaleTexts
   def refresh_openrouter_models
     unless Llm::Config.installation_provider_available?(Llm::OpenRouterModelCatalog::PROVIDER)
       redirect_to super_admin_app_config_path(config: 'captain'), alert: 'OpenRouter API key is not configured.'
@@ -68,6 +70,20 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
       notice: 'OpenRouter catalog refresh queued. Status and diff will update after the job finishes.'
     )
   end
+
+  def refresh_openrouter_key_health
+    unless Llm::OpenRouterKeyHealth.configured?
+      redirect_to super_admin_app_config_path(config: 'captain'), alert: 'OpenRouter API key is not configured.'
+      return
+    end
+
+    Internal::RefreshOpenRouterKeyHealthJob.perform_later
+    redirect_to(
+      super_admin_app_config_path(config: 'captain'),
+      notice: 'OpenRouter key and credits health check queued.'
+    )
+  end
+  # rubocop:enable Rails/I18nLocaleTexts
 
   private
 
@@ -110,6 +126,12 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     Llm::Config.initialize!
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin::AppConfigsController] Failed to refresh LLM config: #{e.class}: #{e.message}")
+  end
+
+  def expire_openrouter_key_health_cache
+    return unless params.fetch('app_config', {}).keys.intersect?(MASKED_SECRET_CONFIG_KEYS)
+
+    Rails.cache.delete(Llm::OpenRouterKeyHealth::CACHE_KEY)
   end
 
   def masked_secret_config?(key)

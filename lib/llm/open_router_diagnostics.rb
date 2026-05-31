@@ -55,7 +55,8 @@ class Llm::OpenRouterDiagnostics
       effective_configured: Llm::Config.provider_available?(PROVIDER, account: account),
       account_configured: account.present? && Llm::Config.account_provider_available?(PROVIDER, account: account),
       global_configured: Llm::Config.installation_provider_available?(PROVIDER),
-      custom_endpoint: Llm::Config.custom_api_base_configured?(PROVIDER, account: account)
+      custom_endpoint: Llm::Config.custom_api_base_configured?(PROVIDER, account: account),
+      health: Llm::OpenRouterKeyHealth.metadata
     }
   end
 

@@ -18,6 +18,9 @@
   <% if @config == 'captain' %>
     <% diagnostics = @openrouter_diagnostics.to_h %>
     <% key_status = diagnostics[:key_status].to_h %>
+    <% key_health = key_status[:health].to_h %>
+    <% key_details = key_health[:key].to_h %>
+    <% credits = key_health[:credits].to_h %>
     <% catalog = diagnostics[:catalog].to_h %>
     <% endpoints = diagnostics[:endpoints].to_h %>
     <% runtime = diagnostics[:runtime].to_h %>
@@ -38,9 +41,33 @@
           <div class="mt-4 grid gap-3 md:grid-cols-4">
             <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
               <div class="text-xs font-medium uppercase text-slate-500">Key status</div>
-              <div class="mt-1 font-semibold text-slate-900"><%= key_status[:effective_configured] ? 'Configured' : 'Missing' %></div>
+              <div class="mt-1 font-semibold text-slate-900"><%= key_health[:status].presence || (key_status[:effective_configured] ? 'configured' : 'missing') %></div>
               <div class="text-xs text-slate-500">
                 Global: <%= key_status[:global_configured] ? 'yes' : 'no' %>, account: <%= key_status[:account_configured] ? 'yes' : 'no' %>
+              </div>
+              <div class="text-xs text-slate-400">
+                Type: <%= key_details[:key_type].presence || 'unknown' %>, checked: <%= key_health[:checked_at].presence || 'never' %>
+              </div>
+              <% if key_health[:error].present? %>
+                <div class="mt-1 text-xs text-red-600"><%= key_health[:error] %></div>
+              <% end %>
+            </div>
+            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Credits and limits</div>
+              <% if credits[:status] == 'available' %>
+                <div class="mt-1 font-semibold text-slate-900">
+                  <%= number_with_precision(credits[:remaining_credits].to_f, precision: 2) %> credits left
+                </div>
+                <div class="text-xs text-slate-500">
+                  Total: <%= number_with_precision(credits[:total_credits].to_f, precision: 2) %>, usage: <%= number_with_precision(credits[:total_usage].to_f, precision: 2) %>
+                </div>
+              <% else %>
+                <div class="mt-1 font-semibold text-slate-900"><%= credits[:status].presence || 'not checked' %></div>
+                <div class="text-xs text-slate-500"><%= credits[:reason].presence || credits[:error].presence || 'Use a management key to sync credits.' %></div>
+              <% end %>
+              <div class="text-xs text-slate-400">
+                Key limit: <%= key_details[:limit].present? ? number_with_precision(key_details[:limit].to_f, precision: 2) : 'none' %>,
+                remaining: <%= key_details[:limit_remaining].present? ? number_with_precision(key_details[:limit_remaining].to_f, precision: 2) : 'unknown' %>
               </div>
             </div>
             <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
@@ -202,10 +229,16 @@
           </div>
         </div>
 
-        <%= button_to 'Queue OpenRouter Catalog Refresh',
-                      refresh_openrouter_models_super_admin_app_config_path(config: 'captain'),
-                      method: :post,
-                      class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
+        <div class="flex flex-col gap-2">
+          <%= button_to 'Check OpenRouter Key & Credits',
+                        refresh_openrouter_key_health_super_admin_app_config_path(config: 'captain'),
+                        method: :post,
+                        class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+          <%= button_to 'Queue OpenRouter Catalog Refresh',
+                        refresh_openrouter_models_super_admin_app_config_path(config: 'captain'),
+                        method: :post,
+                        class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
+        </div>
       </div>
     </div>
   <% end %>

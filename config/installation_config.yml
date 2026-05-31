@@ -202,6 +202,11 @@
   description: 'The API key used to authenticate OpenRouter requests for AI Agents. Used for chat completions and fetching selectable OpenRouter models.'
   locked: false
   type: secret
+- name: CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY
+  display_title: 'OpenRouter Management API Key'
+  description: 'Optional management key used only by Super Admin diagnostics to check OpenRouter key health and credits. It is never used for model inference.'
+  locked: false
+  type: secret
 - name: CAPTAIN_OPENROUTER_ENDPOINT
   display_title: 'OpenRouter API Endpoint (optional)'
   description: 'The OpenRouter endpoint configured for use in AI Agents. Default: https://openrouter.ai/api/v1'

@@ -123,6 +123,7 @@ RSpec.describe Llm::OpenRouterDiagnostics do
 
     expect(diagnostics.dig(:key_status, :effective_configured)).to be true
     expect(diagnostics.dig(:key_status, :global_configured)).to be true
+    expect(diagnostics.dig(:key_status, :health)).to include(status: 'not_checked', configured: true)
     expect(diagnostics.dig(:catalog, :counts_by_type)).to include(chat: 2, embedding: 1)
     expect(diagnostics.dig(:catalog, :capability_counts)).to include(
       tool_calling: 1,

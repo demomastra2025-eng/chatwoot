@@ -900,6 +900,7 @@ Rails.application.routes.draw do
 
       resource :app_config, only: [:show, :create] do
         post :refresh_openrouter_models
+        post :refresh_openrouter_key_health
       end
       resource :push_diagnostics, only: [:show, :create] do
         post :destroy_subscriptions, on: :collection
