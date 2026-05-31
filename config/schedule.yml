@@ -81,6 +81,13 @@ backfill_llm_event_trace_id_job:
   class: 'Internal::BackfillLlmEventTraceIdJob'
   queue: scheduled_jobs
 
+# executed hourly
+# keeps cached OpenRouter key/credits health fresh for diagnostics and catalog refresh gating
+refresh_openrouter_key_health_job:
+  cron: '7 * * * *'
+  class: 'Internal::RefreshOpenRouterKeyHealthJob'
+  queue: scheduled_jobs
+
 # executed every 6 hours
 # keeps the shared OpenRouter model catalog warm without blocking account settings pages
 refresh_openrouter_model_catalog_job:

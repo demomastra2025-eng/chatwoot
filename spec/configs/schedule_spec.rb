@@ -44,4 +44,12 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('refresh_openrouter_model_catalog_job', 'class')).to eq('Internal::RefreshOpenRouterModelCatalogJob')
     expect(schedule.dig('refresh_openrouter_model_catalog_job', 'queue')).to eq('scheduled_jobs')
   end
+
+  it 'refreshes cached OpenRouter key health before catalog refresh windows' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule.dig('refresh_openrouter_key_health_job', 'cron')).to eq('7 * * * *')
+    expect(schedule.dig('refresh_openrouter_key_health_job', 'class')).to eq('Internal::RefreshOpenRouterKeyHealthJob')
+    expect(schedule.dig('refresh_openrouter_key_health_job', 'queue')).to eq('scheduled_jobs')
+  end
 end
