@@ -73,7 +73,9 @@ RSpec.describe Llm::OpenRouterDiagnostics do
       providers: %w[Acme OpenAI],
       source: 'openrouter_api',
       last_refreshed_at: '2026-05-30T12:01:00Z',
-      last_refresh_error: nil
+      last_refresh_error: nil,
+      pending_model_count: 1,
+      pending_model_ids: ['meta-llama/llama-4']
     )
   end
 
@@ -91,6 +93,8 @@ RSpec.describe Llm::OpenRouterDiagnostics do
       embedding: 1
     )
     expect(diagnostics.dig(:endpoints, :provider_counts)).to include('OpenAI' => 2, 'Acme' => 1)
+    expect(diagnostics.dig(:endpoints, :pending_model_count)).to eq(1)
+    expect(diagnostics.dig(:endpoints, :pending_model_ids)).to eq(['meta-llama/llama-4'])
     expect(diagnostics.to_json).not_to include('test-openrouter-diagnostics-key')
   end
 

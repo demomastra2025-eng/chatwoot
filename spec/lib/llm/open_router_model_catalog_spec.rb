@@ -79,7 +79,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
             request: '0'
           },
           dimensions: 1536,
-          supported_parameters: []
+          supported_parameters: %w[dimensions input_type]
         },
         {
           id: 'baai/bge-m3',
@@ -110,6 +110,8 @@ RSpec.describe Llm::OpenRouterModelCatalog do
     described_class.instance_variable_set(:@cached_model_configs, nil)
     described_class.instance_variable_set(:@cached_model_configs_refresh_marker, nil)
     described_class.instance_variable_set(:@cached_model_configs_loaded, nil)
+    Llm::ModelCatalogEntry.delete_all if defined?(Llm::ModelCatalogEntry)
+    Llm::EmbeddingModelProfile.delete_all if defined?(Llm::EmbeddingModelProfile)
     InstallationConfig.where(name: described_class::INSTALLATION_CONFIG_KEY).delete_all
   end
 
@@ -164,6 +166,89 @@ RSpec.describe Llm::OpenRouterModelCatalog do
           expect(described_class.model_ids).to include('openai/gpt-4')
         end
       end
+    end
+
+    it 'uses the DB catalog snapshot before the legacy InstallationConfig payload' do
+      Llm::ModelCatalogEntry.create!(
+        provider_platform: 'openrouter',
+        model_id: 'db/model',
+        canonical_slug: 'db/model',
+        display_name: 'DB Model',
+        model_type: 'chat',
+        input_modalities: ['text'],
+        output_modalities: ['text'],
+        supported_parameters: ['response_format'],
+        capabilities: %w[streaming structured_output text_input text_output],
+        context_length: 1234,
+        max_output_tokens: 321,
+        pricing: { 'prompt' => '0.000001', 'completion' => '0.000002' },
+        top_provider: { 'max_completion_tokens' => 321, 'latency' => 42, 'throughput' => 99.5 },
+        raw_payload: { 'id' => 'db/model' },
+        source: 'openrouter_api',
+        fetched_at: Time.current
+      )
+      InstallationConfig.create!(
+        name: described_class::INSTALLATION_CONFIG_KEY,
+        value: {
+          'models' => {
+            'legacy/model' => {
+              'provider' => 'openrouter',
+              'type' => 'chat',
+              'source' => 'installation_config'
+            }
+          }
+        }
+      )
+
+      expect(described_class).not_to receive(:fetch_payload)
+      expect(described_class.model_configs).to include(
+        'db/model' => include(
+          'display_name' => 'DB Model',
+          'source' => 'openrouter_api',
+          'supported_parameters' => ['response_format'],
+          'latency_ms' => 42.0,
+          'throughput_tokens_per_second' => 99.5
+        )
+      )
+      expect(described_class.model_configs).not_to include('legacy/model')
+      expect(described_class.metadata).to include(source: 'openrouter_api', using_fallback: false)
+    end
+
+    it 'excludes stale DB catalog rows from runtime selectors while preserving them for audit' do
+      Llm::ModelCatalogEntry.create!(
+        provider_platform: 'openrouter',
+        model_id: 'current/model',
+        display_name: 'Current Model',
+        model_type: 'chat',
+        capabilities: %w[streaming text_output],
+        fetched_at: Time.current
+      )
+      Llm::ModelCatalogEntry.create!(
+        provider_platform: 'openrouter',
+        model_id: 'stale/model',
+        display_name: 'Stale Model',
+        model_type: 'chat',
+        capabilities: %w[streaming text_output],
+        fetched_at: 1.hour.ago,
+        stale_at: Time.current
+      )
+
+      expect(described_class.model_configs.keys).to include('current/model')
+      expect(described_class.model_configs.keys).not_to include('stale/model')
+      expect(Llm::ModelCatalogEntry.find_by!(model_id: 'stale/model').stale_at).to be_present
+    end
+
+    it 'reports stale running refresh status when a worker dies after marking start' do
+      InstallationConfig.create!(
+        name: described_class::INSTALLATION_CONFIG_KEY,
+        value: {
+          'last_started_at' => 1.hour.ago.iso8601,
+          'refresh_status' => 'running',
+          'refresh_id' => 'stuck-refresh'
+        }
+      )
+
+      expect(described_class.metadata[:refresh_status]).to eq('stale_running')
     end
   end
 
@@ -225,6 +310,88 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       )
       expect(described_class.model_config('cohere/rerank-v3.5')['capabilities']).to include('rerank', 'text_input', 'text_output')
       expect(described_class.model_config('image/provider')).to be_nil
+      expect(Llm::ModelCatalogEntry.where(provider_platform: 'openrouter').pluck(:model_id)).to contain_exactly(
+        'cohere/rerank-v3.5', 'openai/gpt-4', 'openai/text-embedding-3-small'
+      )
+      expect(Llm::ModelCatalogEntry.find_by!(provider_platform: 'openrouter', model_id: 'openai/gpt-4')).to have_attributes(
+        display_name: 'GPT-4 via OpenRouter',
+        model_type: 'chat',
+        context_length: 8192,
+        max_output_tokens: 4096,
+        source: 'openrouter_api'
+      )
+      expect(Llm::EmbeddingModelProfile.find_by!(provider_platform: 'openrouter', model_id: 'openai/text-embedding-3-small')).to have_attributes(
+        default_dimensions: 1536,
+        supports_dimension_override: true,
+        supports_text_input: true,
+        supports_image_input: false,
+        probe_status: 'catalog_verified'
+      )
+    end
+
+    it 'stores refresh lifecycle metadata and changed/new/removed catalog diff' do
+      updated_response = {
+        data: [
+          api_response[:data].first.deep_merge(
+            pricing: { prompt: '0.000003', completion: '0.000002' },
+            supported_parameters: %w[temperature tools tool_choice response_format]
+          ),
+          {
+            id: 'anthropic/claude-sonnet-4',
+            name: 'Claude Sonnet 4',
+            architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+            supported_parameters: %w[tools response_format]
+          }
+        ]
+      }
+      stub_request(:get, api_url)
+        .to_return(status: 200, body: api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+        .then
+        .to_return(status: 200, body: updated_response.to_json, headers: { 'Content-Type' => 'application/json' })
+      stub_request(:get, embedding_api_url)
+        .to_return(status: 200, body: embedding_api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+        .then
+        .to_return(status: 200, body: embedding_api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      described_class.refresh!(api_key: '[REDACTED]')
+      metadata = described_class.refresh!(api_key: '[REDACTED]')
+
+      expect(metadata).to include(refresh_status: 'success')
+      expect(metadata[:last_started_at]).to be_present
+      expect(metadata[:last_finished_at]).to be_present
+      expect(metadata[:last_refresh_diff]['new']).to include('anthropic/claude-sonnet-4')
+      expect(metadata[:last_refresh_diff]['changed']).to include('openai/gpt-4')
+      expect(metadata[:last_refresh_diff]['removed']).to include('cohere/rerank-v3.5')
+      expect(metadata[:last_refresh_diff]['price_changed']).to include('openai/gpt-4')
+      expect(metadata[:last_refresh_diff]['capability_changed']).to include(
+        include('model_id' => 'openai/gpt-4', 'removed' => include('reasoning'))
+      )
+      expect(described_class.metadata[:last_refresh_diff]['removed']).to include('cohere/rerank-v3.5')
+      expect(described_class.metadata[:stale_models]).to be >= 1
+    end
+
+    it 'does not report unchanged DB-backed models as changed after cache reset' do
+      stub_request(:get, api_url)
+        .to_return(status: 200, body: api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+        .then
+        .to_return(status: 200, body: api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+      stub_request(:get, embedding_api_url)
+        .to_return(status: 200, body: embedding_api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+        .then
+        .to_return(status: 200, body: embedding_api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      described_class.refresh!(api_key: '[REDACTED]')
+      Rails.cache.clear
+      described_class.instance_variable_set(:@last_model_configs, nil)
+      described_class.instance_variable_set(:@last_refreshed_at, nil)
+      described_class.instance_variable_set(:@cached_model_configs, nil)
+      described_class.instance_variable_set(:@cached_model_configs_refresh_marker, nil)
+      described_class.instance_variable_set(:@cached_model_configs_loaded, nil)
+      metadata = described_class.refresh!(api_key: '[REDACTED]')
+
+      expect(metadata[:last_refresh_diff]['changed']).to be_empty
+      expect(metadata[:last_refresh_diff]['price_changed']).to be_empty
+      expect(metadata[:last_refresh_diff]['capability_changed']).to be_empty
     end
 
     it 'infers moderation only for explicit moderation or guard models' do
@@ -338,6 +505,15 @@ RSpec.describe Llm::OpenRouterModelCatalog do
 
       expect(described_class.model_config('openai/gpt-4')).to include('source' => 'openrouter_api')
       expect(described_class.metadata).to include(source: 'openrouter_api', using_fallback: false)
+    end
+
+    it 'does not overwrite catalog status when another refresh already holds the lock' do
+      allow(described_class).to receive(:acquire_refresh_lock).and_return(false)
+
+      expect do
+        described_class.refresh!(api_key: '[REDACTED]')
+      end.to raise_error(described_class::RefreshAlreadyRunningError)
+      expect(Rails.cache.read(described_class::LAST_REFRESH_ERROR_CACHE_KEY)).to be_nil
     end
 
     it 'raises when the OpenRouter API key is missing' do

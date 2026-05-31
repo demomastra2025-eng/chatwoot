@@ -7,6 +7,28 @@ class Llm::OpenRouterRoutingProfile
   ROUTING_STRATEGIES = [EXACTO_STRATEGY, AUTO_EXACTO_STRATEGY].freeze
   ROUTING_STRATEGY_KEYS = %w[openrouter_routing_strategy routing_strategy].freeze
   PROVIDER_ORDER_KEYS = %w[openrouter_provider_order provider_order].freeze
+  PROVIDER_RUNTIME_PREFERENCE_KEYS = {
+    'openrouter_provider_only' => :only,
+    'provider_only' => :only,
+    'openrouter_provider_ignore' => :ignore,
+    'provider_ignore' => :ignore,
+    'openrouter_provider_quantizations' => :quantizations,
+    'provider_quantizations' => :quantizations,
+    'openrouter_sort' => :sort,
+    'provider_sort' => :sort,
+    'openrouter_preferred_min_throughput' => :preferred_min_throughput,
+    'preferred_min_throughput' => :preferred_min_throughput,
+    'openrouter_preferred_max_latency' => :preferred_max_latency,
+    'preferred_max_latency' => :preferred_max_latency,
+    'openrouter_max_price' => :max_price,
+    'max_price' => :max_price,
+    'openrouter_enforce_distillable_text' => :enforce_distillable_text,
+    'enforce_distillable_text' => :enforce_distillable_text,
+    'openrouter_allow_fallbacks' => :allow_fallbacks,
+    'openrouter_require_parameters' => :require_parameters,
+    'openrouter_zdr' => :zdr,
+    'openrouter_data_collection' => :data_collection
+  }.freeze
 
   FEATURE_ALIASES = {
     'assistant' => 'captain_agent',
@@ -109,7 +131,9 @@ class Llm::OpenRouterRoutingProfile
                             { require_parameters: false }
                           end
 
-    apply_routing_strategy(base.merge(feature_preferences))
+    apply_routing_strategy(base.merge(feature_preferences).merge(runtime_provider_preferences)).tap do |provider_preferences|
+      enforce_workspace_privacy!(provider_preferences)
+    end
   end
 
   def normalize_runtime_preferences(preferences)
@@ -118,6 +142,47 @@ class Llm::OpenRouterRoutingProfile
     preferences.to_h.deep_stringify_keys
   rescue StandardError
     {}
+  end
+
+  def runtime_provider_preferences
+    PROVIDER_RUNTIME_PREFERENCE_KEYS.each_with_object({}) do |(preference_key, provider_key), result|
+      next unless runtime_preferences.key?(preference_key)
+
+      value = normalize_provider_preference_value(provider_key, runtime_preferences[preference_key])
+      result[provider_key] = value unless value.nil?
+    end
+  end
+
+  def normalize_provider_preference_value(provider_key, value)
+    case provider_key
+    when :only, :ignore, :quantizations
+      Array(value).filter_map { |entry| entry.to_s.strip.presence }.presence
+    when :allow_fallbacks, :require_parameters, :zdr, :enforce_distillable_text
+      ActiveModel::Type::Boolean.new.cast(value)
+    when :preferred_min_throughput, :preferred_max_latency
+      numeric_provider_preference(value)
+    else
+      return value.to_h.deep_symbolize_keys if value.respond_to?(:to_h)
+
+      value.presence
+    end
+  end
+
+  def numeric_provider_preference(value)
+    return if value.blank?
+
+    Float(value)
+  rescue ArgumentError, TypeError
+    value
+  end
+
+  def enforce_workspace_privacy!(provider_preferences)
+    workspace_preferences = workspace_policy.provider_preferences
+    provider_preferences[:data_collection] = workspace_preferences[:data_collection] if workspace_preferences[:data_collection].present?
+    return unless workspace_policy.zdr_required?
+
+    provider_preferences[:zdr] = true
+    provider_preferences[:allow_fallbacks] = false
   end
 
   def apply_routing_strategy(provider_preferences)

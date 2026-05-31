@@ -57,14 +57,16 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   end
 
   def refresh_openrouter_models
-    metadata = Llm::ModelRegistryService.refresh_openrouter!
-    redirect_to super_admin_app_config_path(config: 'captain'), notice: "OpenRouter model catalog refreshed: #{metadata[:total_models]} models"
-  rescue Llm::OpenRouterModelCatalog::MissingApiKeyError => e
-    redirect_to super_admin_app_config_path(config: 'captain'), alert: e.message
-  rescue StandardError => e
-    sanitized_error = Llm::OpenRouterModelCatalog.sanitize_error_message(e)
-    Rails.logger.warn("[SuperAdmin::AppConfigsController] OpenRouter model refresh failed: #{e.class}: #{sanitized_error}")
-    redirect_to super_admin_app_config_path(config: 'captain'), alert: Internal::RefreshOpenRouterModelCatalogJob::REFRESH_FAILED_MESSAGE
+    unless Llm::Config.installation_provider_available?(Llm::OpenRouterModelCatalog::PROVIDER)
+      redirect_to super_admin_app_config_path(config: 'captain'), alert: 'OpenRouter API key is not configured.'
+      return
+    end
+
+    Internal::RefreshOpenRouterModelCatalogJob.perform_later
+    redirect_to(
+      super_admin_app_config_path(config: 'captain'),
+      notice: 'OpenRouter catalog refresh queued. Status and diff will update after the job finishes.'
+    )
   end
 
   private

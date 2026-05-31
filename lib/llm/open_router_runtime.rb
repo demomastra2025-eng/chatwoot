@@ -22,7 +22,7 @@ class Llm::OpenRouterRuntime
       tools: request.tools,
       params: compiled.params,
       headers: compiled.headers,
-      temperature: request.options[:temperature],
+      temperature: request.temperature,
       account: request_account(request),
       feature: request.feature_key,
       observability: runtime_observability(request),
@@ -44,9 +44,9 @@ class Llm::OpenRouterRuntime
       model: model,
       params: compiled.params,
       headers: compiled.headers,
-      temperature: request.options[:temperature],
-      thinking: request.options[:thinking],
-      stream: request.options[:stream],
+      temperature: request.temperature,
+      thinking: request.reasoning || request.options[:thinking],
+      stream: request.stream,
       account: request_account(request),
       feature: request.feature_key
     )
@@ -72,7 +72,7 @@ class Llm::OpenRouterRuntime
         api_key: api_key!(request),
         api_base: api_base(request),
         language: request.options[:language],
-        temperature: request.options.fetch(:temperature, 0.4),
+        temperature: request.temperature.nil? ? 0.4 : request.temperature,
         provider: routing_profile(request, model).provider_preferences
       )
     end
@@ -168,10 +168,10 @@ class Llm::OpenRouterRuntime
       model: model,
       account: request_account(request),
       base_params: request.options[:params] || {},
-      stream: request.options[:stream],
-      schema: request.requires_schema?,
+      stream: request.stream,
+      schema: request.schema_required?,
       tools: request.requires_tools?,
-      reasoning: request.reasoning?
+      reasoning: request.reasoning_requested?
     )
   end
 
@@ -225,8 +225,10 @@ class Llm::OpenRouterRuntime
     request.observability.merge(
       provider: OPENROUTER_PROVIDER,
       feature: request.feature_key,
+      session_id: request.session_id,
+      user_id: request.user_id,
       runtime_mode: 'openrouter_runtime'
-    )
+    ).compact
   end
 
   def routing_profile(request, model)

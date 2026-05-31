@@ -116,9 +116,25 @@ RSpec.describe Llm::ModelRegistryService do
       expect(Llm::Config).to receive(:initialize!)
       expect(Llm::OpenRouterModelCatalog).to receive(:refresh!).and_return(total_models: 1)
       expect(Llm::OpenRouterModelCatalog).to receive(:model_ids).and_return(['openai/gpt-4'])
-      expect(Llm::OpenRouterEndpointCatalog).to receive(:refresh!).with(model_ids: ['openai/gpt-4']).and_return(total_endpoints: 2)
+      expect(Llm::OpenRouterEndpointCatalog).to receive(:refresh!).with(
+        model_ids: ['openai/gpt-4'],
+        limit: Llm::OpenRouterEndpointCatalog::DEFAULT_REFRESH_BATCH_SIZE
+      ).and_return(total_endpoints: 2)
 
       expect(described_class.refresh_openrouter!).to eq(total_models: 1, endpoints: { total_endpoints: 2 })
+    end
+
+    it 'can refresh only the next OpenRouter endpoint batch without refreshing the model catalog' do
+      expect(Llm::Config).to receive(:reset!)
+      expect(Llm::Config).to receive(:initialize!)
+      expect(Llm::OpenRouterModelCatalog).not_to receive(:refresh!)
+      expect(Llm::OpenRouterModelCatalog).to receive(:model_ids).and_return(['openai/gpt-4'])
+      expect(Llm::OpenRouterEndpointCatalog).to receive(:refresh!).with(
+        model_ids: ['openai/gpt-4'],
+        limit: Llm::OpenRouterEndpointCatalog::DEFAULT_REFRESH_BATCH_SIZE
+      ).and_return(total_endpoints: 2, pending_model_count: 0)
+
+      expect(described_class.refresh_openrouter_endpoints!).to include(total_endpoints: 2)
     end
   end
 end

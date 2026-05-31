@@ -31,13 +31,19 @@ class Llm::ModelRegistryService
       raise
     end
 
-    def refresh_openrouter!
+    def refresh_openrouter!(endpoint_batch_size: Llm::OpenRouterEndpointCatalog::DEFAULT_REFRESH_BATCH_SIZE)
       Llm::Config.reset!
       Llm::Config.initialize!
       model_metadata = Llm::OpenRouterModelCatalog.refresh!
-      endpoint_metadata = refresh_openrouter_endpoints
+      endpoint_metadata = refresh_openrouter_endpoints(batch_size: endpoint_batch_size)
 
       model_metadata.merge(endpoints: endpoint_metadata)
+    end
+
+    def refresh_openrouter_endpoints!(endpoint_batch_size: Llm::OpenRouterEndpointCatalog::DEFAULT_REFRESH_BATCH_SIZE)
+      Llm::Config.reset!
+      Llm::Config.initialize!
+      refresh_openrouter_endpoints(batch_size: endpoint_batch_size)
     end
 
     def audit_configuration
@@ -65,8 +71,8 @@ class Llm::ModelRegistryService
 
     private
 
-    def refresh_openrouter_endpoints
-      Llm::OpenRouterEndpointCatalog.refresh!(model_ids: Llm::OpenRouterModelCatalog.model_ids)
+    def refresh_openrouter_endpoints(batch_size:)
+      Llm::OpenRouterEndpointCatalog.refresh!(model_ids: Llm::OpenRouterModelCatalog.model_ids, limit: batch_size)
     rescue Llm::OpenRouterEndpointCatalog::MissingApiKeyError
       raise
     rescue StandardError => e

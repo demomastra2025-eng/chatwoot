@@ -58,9 +58,15 @@ class Llm::OpenRouterDiagnostics
     {
       source: metadata[:source],
       using_fallback: metadata[:using_fallback],
+      refresh_status: metadata[:refresh_status],
+      last_started_at: metadata[:last_started_at],
+      last_finished_at: metadata[:last_finished_at],
       last_refreshed_at: metadata[:last_refreshed_at],
       last_refresh_error: metadata[:last_refresh_error],
+      last_refresh_diff: refresh_diff_summary(metadata[:last_refresh_diff]),
       total_models: metadata[:total_models] || model_configs.count,
+      stale_models: metadata[:stale_models],
+      disabled_models: metadata[:disabled_models],
       counts_by_type: counts_by_type,
       capability_counts: capability_counts
     }
@@ -74,9 +80,16 @@ class Llm::OpenRouterDiagnostics
       total_endpoints: metadata[:total_endpoints] || endpoint_configs.values.sum { |config| Array(config['endpoints']).count },
       provider_count: metadata[:provider_count],
       providers: Array(metadata[:providers]),
+      stale_endpoints: metadata[:stale_endpoints],
+      pending_model_count: metadata[:pending_model_count],
+      pending_model_ids: Array(metadata[:pending_model_ids]).first(10),
       provider_counts: endpoint_provider_counts,
+      refresh_status: metadata[:refresh_status],
+      last_started_at: metadata[:last_started_at],
+      last_finished_at: metadata[:last_finished_at],
       last_refreshed_at: metadata[:last_refreshed_at],
       last_refresh_error: metadata[:last_refresh_error],
+      last_refresh_diff: refresh_diff_summary(metadata[:last_refresh_diff]),
       sample_models: endpoint_samples
     }
   end
@@ -169,6 +182,17 @@ class Llm::OpenRouterDiagnostics
     model_configs.values.each_with_object(Hash.new(0)) do |config, counts|
       counts[(config['type'].presence || 'unknown').to_sym] += 1
     end.to_h
+  end
+
+  def refresh_diff_summary(diff)
+    diff = (diff || {}).to_h.deep_stringify_keys
+    diff.each_with_object({}) do |(key, value), result|
+      values = Array(value)
+      result[key.to_sym] = {
+        count: values.count,
+        sample: values.first(sample_limit)
+      }
+    end
   end
 
   def capability_counts

@@ -175,4 +175,62 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     )
     expect(compiled.params[:provider]).not_to include(:only)
   end
+
+  it 'compiles expanded FeatureRequest params and trusted advanced provider controls' do
+    account = instance_double(Account, id: 42)
+    request = Llm::FeatureRequest.new(
+      feature: :copilot,
+      account: account,
+      session_id: 'conv-1',
+      user_id: 7,
+      models: ['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-4'],
+      tool_choice: 'required',
+      parallel_tool_calls: true,
+      reasoning: { effort: 'low' },
+      max_tokens: 256,
+      temperature: 0,
+      runtime_preferences: {
+        openrouter_provider_only: %w[OpenAI Anthropic],
+        openrouter_provider_ignore: ['SlowProvider'],
+        openrouter_provider_quantizations: %w[fp8],
+        openrouter_sort: { by: 'throughput', partition: 'none' },
+        openrouter_preferred_min_throughput: '50',
+        openrouter_preferred_max_latency: '1200',
+        openrouter_max_price: { prompt: '0.1', completion: '0.2' },
+        openrouter_enforce_distillable_text: true
+      },
+      options: { route: 'fallback' }
+    )
+
+    compiled = described_class.call(
+      request: request,
+      model: 'openai/gpt-5.4-mini',
+      account: account
+    )
+
+    expect(compiled.models).to eq(['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-4'])
+    expect(compiled.params).to include(
+      models: ['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-4'],
+      route: 'fallback',
+      session_id: 'llm:copilot:42:conv-1',
+      tool_choice: 'required',
+      parallel_tool_calls: true,
+      reasoning: { effort: 'low' },
+      max_tokens: 256,
+      temperature: 0,
+      user: '7'
+    )
+    expect(compiled.params[:provider]).to include(
+      only: %w[OpenAI Anthropic],
+      ignore: ['SlowProvider'],
+      quantizations: %w[fp8],
+      sort: { by: 'throughput', partition: 'none' },
+      preferred_min_throughput: 50.0,
+      preferred_max_latency: 1200.0,
+      max_price: { prompt: '0.1', completion: '0.2' },
+      enforce_distillable_text: true,
+      require_parameters: true,
+      data_collection: 'deny'
+    )
+  end
 end

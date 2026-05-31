@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_29_142000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_31_111534) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1483,6 +1483,26 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_29_142000) do
     t.index ["user_id"], name: "index_leaves_on_user_id"
   end
 
+  create_table "llm_embedding_model_profiles", force: :cascade do |t|
+    t.string "provider_platform", null: false
+    t.string "model_id", null: false
+    t.integer "default_dimensions"
+    t.jsonb "supported_dimensions", default: [], null: false
+    t.integer "min_dimensions"
+    t.integer "max_dimensions"
+    t.boolean "supports_dimension_override", default: false, null: false
+    t.boolean "supports_input_type", default: false, null: false
+    t.boolean "supports_text_input", default: false, null: false
+    t.boolean "supports_image_input", default: false, null: false
+    t.string "probe_status"
+    t.text "probe_error"
+    t.datetime "probed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider_platform", "model_id"], name: "idx_llm_embedding_profiles_provider_model", unique: true
+    t.index ["provider_platform", "probe_status"], name: "idx_llm_embedding_profiles_provider_status"
+  end
+
   create_table "llm_eval_runs", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "user_id"
@@ -1573,6 +1593,66 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_29_142000) do
     t.index ["assistant_id", "created_at"], name: "index_llm_events_on_assistant_created_at"
     t.index ["conversation_id", "created_at"], name: "index_llm_events_on_conversation_created_at"
     t.index ["event_name", "created_at"], name: "index_llm_events_on_event_name_created_at"
+  end
+
+  create_table "llm_model_catalog_entries", force: :cascade do |t|
+    t.string "provider_platform", null: false
+    t.string "model_id", null: false
+    t.string "canonical_slug"
+    t.string "display_name", null: false
+    t.string "model_type", null: false
+    t.jsonb "input_modalities", default: [], null: false
+    t.jsonb "output_modalities", default: [], null: false
+    t.jsonb "supported_parameters", default: [], null: false
+    t.jsonb "capabilities", default: [], null: false
+    t.integer "context_length"
+    t.integer "max_output_tokens"
+    t.jsonb "pricing", default: {}, null: false
+    t.jsonb "top_provider", default: {}, null: false
+    t.string "knowledge_cutoff"
+    t.text "description"
+    t.jsonb "raw_payload", default: {}, null: false
+    t.string "source", default: "openrouter_api", null: false
+    t.datetime "fetched_at", null: false
+    t.datetime "stale_at"
+    t.datetime "disabled_at"
+    t.string "checksum"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider_platform", "disabled_at"], name: "idx_llm_model_catalog_provider_disabled"
+    t.index ["provider_platform", "model_id"], name: "idx_llm_model_catalog_provider_model", unique: true
+    t.index ["provider_platform", "model_type"], name: "idx_llm_model_catalog_provider_type"
+    t.index ["provider_platform", "stale_at"], name: "idx_llm_model_catalog_provider_stale"
+  end
+
+  create_table "llm_model_endpoint_entries", force: :cascade do |t|
+    t.string "provider_platform", null: false
+    t.string "model_id", null: false
+    t.string "endpoint_slug", null: false
+    t.string "endpoint_provider_name"
+    t.string "endpoint_provider_key"
+    t.jsonb "supported_parameters", default: [], null: false
+    t.jsonb "capabilities", default: [], null: false
+    t.integer "context_length"
+    t.integer "max_prompt_tokens"
+    t.integer "max_completion_tokens"
+    t.jsonb "pricing", default: {}, null: false
+    t.integer "latency_ms"
+    t.decimal "throughput_tokens_per_second", precision: 12, scale: 4
+    t.decimal "uptime_last_30m", precision: 5, scale: 2
+    t.string "quantization"
+    t.string "data_collection"
+    t.boolean "zdr"
+    t.jsonb "raw_payload", default: {}, null: false
+    t.datetime "fetched_at", null: false
+    t.datetime "stale_at"
+    t.string "checksum"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider_platform", "endpoint_provider_key"], name: "idx_llm_endpoint_provider_key"
+    t.index ["provider_platform", "model_id", "endpoint_provider_key", "endpoint_slug"], name: "idx_llm_endpoint_provider_model_key_slug", unique: true
+    t.index ["provider_platform", "model_id"], name: "idx_llm_endpoint_provider_model"
+    t.index ["provider_platform", "stale_at"], name: "idx_llm_endpoint_provider_stale"
   end
 
   create_table "macros", force: :cascade do |t|

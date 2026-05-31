@@ -41,9 +41,11 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           'CAPTAIN_OPENROUTER_ENDPOINT',
           'OpenRouter diagnostics',
           'Catalog freshness',
+          'Catalog diff',
+          'Endpoint diff',
           'Workspace policy',
           'Model eligibility samples',
-          'Refresh OpenRouter Models'
+          'Queue OpenRouter Catalog Refresh'
         )
       end
 
@@ -178,24 +180,24 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         sign_in(super_admin, scope: :super_admin)
       end
 
-      it 'refreshes the OpenRouter model catalog from the captain config page' do
-        expect(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_return(total_models: 10)
+      it 'queues the OpenRouter catalog refresh job from the captain config page' do
+        allow(Llm::Config).to receive(:installation_provider_available?).with('openrouter').and_return(true)
+        expect(Internal::RefreshOpenRouterModelCatalogJob).to receive(:perform_later)
 
         post '/super_admin/app_config/refresh_openrouter_models'
 
         expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-        expect(flash[:notice]).to include('10 models')
+        expect(flash[:notice]).to include('refresh queued')
       end
 
-      it 'returns a sanitized error when refresh fails' do
-        allow(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_raise(
-          StandardError, 'upstream leaked Bearer sk-or-v1-secret'
-        )
+      it 'does not queue the refresh job when the global OpenRouter key is missing' do
+        allow(Llm::Config).to receive(:installation_provider_available?).with('openrouter').and_return(false)
+        expect(Internal::RefreshOpenRouterModelCatalogJob).not_to receive(:perform_later)
 
         post '/super_admin/app_config/refresh_openrouter_models'
 
         expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-        expect(flash[:alert]).to eq('OpenRouter model catalog refresh failed')
+        expect(flash[:alert]).to eq('OpenRouter API key is not configured.')
       end
     end
   end

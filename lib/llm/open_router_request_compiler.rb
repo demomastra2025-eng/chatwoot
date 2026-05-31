@@ -3,7 +3,11 @@
 class Llm::OpenRouterRequestCompiler
   RESPONSE_HEALING_PLUGIN_ID = Llm::OpenRouterRoutingProfile::RESPONSE_HEALING_PLUGIN_ID
   PRICE_SORT_VALUES = ['price', { by: 'price', partition: 'none' }, { 'by' => 'price', 'partition' => 'none' }].freeze
-  PROVIDER_CONTROL_KEYS = %w[require_parameters allow_fallbacks data_collection zdr sort].freeze
+  PROVIDER_CONTROL_KEYS = %w[
+    order allow_fallbacks require_parameters data_collection zdr enforce_distillable_text only ignore
+    quantizations sort preferred_min_throughput preferred_max_latency max_price
+  ].freeze
+  CALLER_PROVIDER_CONTROL_KEYS = %w[require_parameters allow_fallbacks data_collection zdr sort].freeze
 
   Compiled = Struct.new(:model, :models, :params, :headers, :native_endpoint, keyword_init: true)
 
@@ -39,16 +43,18 @@ class Llm::OpenRouterRequestCompiler
   def call
     profile = routing_profile
     params = normalized_base_params
+    models = compiled_models(profile)
     provider_params = merged_provider_params(profile)
     plugins = merged_plugins(params, profile)
 
-    params[:models] = profile.models if profile.models.present?
+    apply_request_params!(params)
+    params[:models] = models if models.present?
     params[:provider] = provider_params if provider_params.present?
     params[:plugins] = plugins if plugins.present?
 
     Compiled.new(
       model: @model,
-      models: profile.models,
+      models: models,
       params: params,
       headers: profile.headers,
       native_endpoint: profile.native_endpoint
@@ -79,6 +85,39 @@ class Llm::OpenRouterRequestCompiler
       params.delete(:plugins)
       params.delete('plugins')
     end
+  end
+
+  def compiled_models(profile)
+    request_models.presence || profile.models
+  end
+
+  def request_models
+    Array(request_value(:models)).filter_map { |candidate| candidate.to_s.strip.presence }.uniq
+  end
+
+  def apply_request_params!(params)
+    set_param_if_present(params, :route, request_option(:route))
+    set_param_if_present(params, :session_id, request_session_id)
+    set_param_if_present(params, :tool_choice, request_value(:tool_choice))
+    set_param_unless_nil(params, :parallel_tool_calls, request_value(:parallel_tool_calls))
+    set_param_if_present(params, :reasoning, request_value(:reasoning)) if reasoning_request?
+    set_param_if_present(params, :max_tokens, request_value(:max_tokens))
+    set_param_if_present(params, :temperature, request_value(:temperature))
+    set_param_if_present(params, :user, request_value(:user_id))
+  end
+
+  def set_param_if_present(params, key, value)
+    return if value.blank?
+    return if params.key?(key) || params.key?(key.to_s)
+
+    params[key] = value
+  end
+
+  def set_param_unless_nil(params, key, value)
+    return if value.nil?
+    return if params.key?(key) || params.key?(key.to_s)
+
+    params[key] = value
   end
 
   def merged_provider_params(profile)
@@ -161,7 +200,7 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def safe_caller_provider_params(provider)
-    provider.slice(*PROVIDER_CONTROL_KEYS.map(&:to_sym))
+    provider.slice(*CALLER_PROVIDER_CONTROL_KEYS.map(&:to_sym))
   end
 
   def normalize_provider_keys(provider)
@@ -169,6 +208,23 @@ class Llm::OpenRouterRequestCompiler
       normalized_key = PROVIDER_CONTROL_KEYS.include?(key.to_s) ? key.to_s.to_sym : key
       result[normalized_key] = value
     end
+  end
+
+  def request_options
+    options = request_value(:options)
+    return {} unless options.respond_to?(:to_h)
+
+    options.to_h.deep_symbolize_keys
+  rescue StandardError
+    {}
+  end
+
+  def request_option(key)
+    request_options[key]
+  end
+
+  def request_session_id
+    request_value(:session_cache_key).presence || request_value(:session_id)
   end
 
   def extract_plugins(value)

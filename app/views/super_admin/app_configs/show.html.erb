@@ -20,6 +20,8 @@
     <% key_status = diagnostics[:key_status].to_h %>
     <% catalog = diagnostics[:catalog].to_h %>
     <% endpoints = diagnostics[:endpoints].to_h %>
+    <% catalog_diff = (catalog[:last_refresh_diff] || {}).to_h %>
+    <% endpoint_diff = (endpoints[:last_refresh_diff] || {}).to_h %>
     <% workspace_policy = diagnostics[:workspace_policy].to_h %>
     <% features = diagnostics[:features].to_h %>
     <% model_eligibility = Array(diagnostics[:model_eligibility]) %>
@@ -42,17 +44,22 @@
             <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
               <div class="text-xs font-medium uppercase text-slate-500">Catalog freshness</div>
               <div class="mt-1 font-semibold text-slate-900"><%= catalog[:last_refreshed_at].presence || 'never' %></div>
-              <div class="text-xs text-slate-500">Source: <%= catalog[:source] || 'unknown' %><%= catalog[:using_fallback] ? ' (fallback)' : '' %></div>
+              <div class="text-xs text-slate-500">Status: <%= catalog[:refresh_status] || 'unknown' %>, source: <%= catalog[:source] || 'unknown' %><%= catalog[:using_fallback] ? ' (fallback)' : '' %></div>
+              <% if catalog[:last_started_at].present? %>
+                <div class="text-xs text-slate-400">Started: <%= catalog[:last_started_at] %></div>
+              <% end %>
             </div>
             <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
               <div class="text-xs font-medium uppercase text-slate-500">Model counts</div>
               <div class="mt-1 font-semibold text-slate-900"><%= catalog[:total_models] || 0 %> models</div>
               <div class="text-xs text-slate-500"><%= catalog[:counts_by_type].to_h.map { |type, count| "#{type}: #{count}" }.join(', ') %></div>
+              <div class="text-xs text-slate-400">Stale: <%= catalog[:stale_models] || 0 %>, disabled: <%= catalog[:disabled_models] || 0 %></div>
             </div>
             <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
               <div class="text-xs font-medium uppercase text-slate-500">Endpoints</div>
               <div class="mt-1 font-semibold text-slate-900"><%= endpoints[:total_endpoints] || 0 %> endpoints</div>
-              <div class="text-xs text-slate-500">Providers: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'none' %></div>
+              <div class="text-xs text-slate-500">Status: <%= endpoints[:refresh_status] || 'unknown' %>, providers: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'none' %></div>
+              <div class="text-xs text-slate-400">Stale endpoints: <%= endpoints[:stale_endpoints] || 0 %>, pending refresh: <%= endpoints[:pending_model_count] || 0 %></div>
             </div>
           </div>
 
@@ -62,6 +69,27 @@
           <% if endpoints[:last_refresh_error].present? %>
             <div class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-amber-700">Endpoint refresh warning: <%= endpoints[:last_refresh_error] %></div>
           <% end %>
+
+          <div class="mt-4 grid gap-3 md:grid-cols-2">
+            <div class="rounded-md border border-slate-100 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Catalog diff</div>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <% %i[new changed removed capability_changed price_changed].each do |diff_key| %>
+                  <% diff_item = catalog_diff.fetch(diff_key, {}).to_h %>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= diff_key %>: <%= diff_item[:count] || 0 %></span>
+                <% end %>
+              </div>
+            </div>
+            <div class="rounded-md border border-slate-100 p-3">
+              <div class="text-xs font-medium uppercase text-slate-500">Endpoint diff</div>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <% %i[new changed removed provider_changed price_changed failed_model_ids].each do |diff_key| %>
+                  <% diff_item = endpoint_diff.fetch(diff_key, {}).to_h %>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= diff_key %>: <%= diff_item[:count] || 0 %></span>
+                <% end %>
+              </div>
+            </div>
+          </div>
 
           <div class="mt-4 grid gap-4 lg:grid-cols-3">
             <div>
@@ -144,7 +172,7 @@
           </div>
         </div>
 
-        <%= button_to 'Refresh OpenRouter Models',
+        <%= button_to 'Queue OpenRouter Catalog Refresh',
                       refresh_openrouter_models_super_admin_app_config_path(config: 'captain'),
                       method: :post,
                       class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>

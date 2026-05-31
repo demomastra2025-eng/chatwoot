@@ -11,6 +11,14 @@ RSpec.describe Llm::FeatureRequest do
     end
   end
 
+  def runtime_tool(metadata)
+    Class.new do
+      define_method(:initialize) { |definition| @definition = definition }
+      define_method(:name) { @definition[:id] || 'spec_tool' }
+      define_method(:tool_definition) { @definition }
+    end.new(metadata)
+  end
+
   it 'normalizes feature aliases and exposes request helpers' do
     request = described_class.new(
       feature: :assistant,
@@ -36,6 +44,96 @@ RSpec.describe Llm::FeatureRequest do
     expect(request.runtime_preferences).to eq(privacy_profile: 'sensitive')
     expect(request.observability).to eq(trace_id: 'trace-1')
     expect(request.options).to eq(stream: false)
+  end
+
+  it 'normalizes expanded routing and observability fields' do
+    conversation = instance_double(Conversation, id: 7, display_id: 1001)
+    request = described_class.new(
+      feature: :captain_agent,
+      account: account,
+      assistant: instance_double(Captain::Assistant),
+      conversation: conversation,
+      user_id: 9,
+      model: 'openai/gpt-5.4-mini',
+      models: ['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-4', 'openai/gpt-5.4-mini'],
+      messages: [{ role: 'user', content: 'Hello' }],
+      schema: schema,
+      tool_choice: :auto,
+      stream: true,
+      reasoning: { effort: 'medium' },
+      max_tokens: '512',
+      temperature: 0,
+      performance_profile: 'fast',
+      cost_profile: 'balanced',
+      routing_intent: 'tool_reliability',
+      observability: { trace_id: 'trace-1' }
+    )
+
+    expect(request.conversation).to eq(conversation)
+    expect(request.session_id).to eq('42_1001')
+    expect(request.session_cache_key).to eq('llm:captain_agent:42:42_1001')
+    expect(request.user_id).to eq('9')
+    expect(request.models).to eq(['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-4'])
+    expect(request.tool_choice).to eq('auto')
+    expect(request.stream).to be(true)
+    expect(request.reasoning).to eq(effort: 'medium')
+    expect(request.reasoning_requested?).to be(true)
+    expect(request.schema_required?).to be(true)
+    expect(request.max_tokens).to eq(512)
+    expect(request.temperature).to eq(0)
+    expect(request.performance_profile).to eq('fast')
+    expect(request.cost_profile).to eq('balanced')
+    expect(request.routing_intent).to eq('tool_reliability')
+  end
+
+  it 'allows parallel tool calls only for read-only tool flows' do
+    read_only_tool = runtime_tool(id: 'lookup_contact', risk_level: 'low')
+    request = described_class.new(
+      feature: :captain_agent,
+      account: account,
+      tools: [read_only_tool],
+      parallel_tool_calls: true
+    )
+
+    expect(request.read_only_tool_flow?).to be(true)
+    expect(request.mutating_tool_flow?).to be(false)
+    expect(request.parallel_tool_calls).to be(true)
+  end
+
+  it 'disables parallel tool calls for mutating or unknown-idempotency tools' do
+    mutating_tool = runtime_tool(id: 'create_deal', risk_level: 'high', idempotent: false)
+    unknown_tool = instance_double(RubyLLM::Tool, name: 'unknown_runtime_tool')
+
+    mutating_request = described_class.new(
+      feature: :captain_agent,
+      account: account,
+      tools: [mutating_tool],
+      parallel_tool_calls: true
+    )
+    unknown_request = described_class.new(
+      feature: :captain_agent,
+      account: account,
+      tools: [unknown_tool],
+      parallel_tool_calls: true
+    )
+
+    expect(mutating_request.mutating_tool_flow?).to be(true)
+    expect(mutating_request.read_only_tool_flow?).to be(false)
+    expect(mutating_request.parallel_tool_calls).to be(false)
+    expect(unknown_request.mutating_tool_flow?).to be(true)
+    expect(unknown_request.parallel_tool_calls).to be(false)
+  end
+
+  it 'detects native endpoint preference without forcing chat-audio requests onto native endpoints' do
+    embedding_request = described_class.new(feature: :embedding, account: account, input: 'knowledge')
+    prompted_audio_request = described_class.new(
+      feature: :audio_transcription,
+      account: account,
+      messages: [{ role: 'user', content: 'Transcribe attached audio' }]
+    )
+
+    expect(embedding_request.native_endpoint_preferred?).to be(true)
+    expect(prompted_audio_request.native_endpoint_preferred?).to be(false)
   end
 
   it 'treats audio transcription requests as audio and multimodal' do
