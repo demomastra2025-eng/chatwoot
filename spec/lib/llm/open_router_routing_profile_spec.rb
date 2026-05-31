@@ -107,6 +107,26 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(profile.provider_preferences).not_to include(:sort)
     end
 
+    it 'exposes Exacto routing policy metadata for admin/debug previews' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-5.4',
+        runtime_preferences: {
+          openrouter_routing_strategy: 'auto-exacto',
+          openrouter_provider_order: %w[OpenAI Anthropic]
+        }
+      )
+
+      expect(profile.routing_policy).to include(
+        strategy: 'auto_exacto',
+        provider_order: %w[OpenAI Anthropic],
+        allow_fallbacks: true,
+        require_parameters: true
+      )
+      expect(profile.routing_policy).not_to include(:sort)
+      expect(profile.to_h).to include(routing_policy: profile.routing_policy)
+    end
+
     it 'ignores Exacto strategies without a non-empty provider order' do
       exacto_profile = described_class.for(
         feature: :captain_agent,

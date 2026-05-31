@@ -72,5 +72,31 @@ RSpec.describe Captain::ToolTraceBuilder do
     it 'returns nil when there are no steps' do
       expect(described_class.payload([])).to be_nil
     end
+
+    it 'separates native reasoning from structured and system fallback reasoning' do
+      payload = described_class.payload(
+        [],
+        native_reasoning: {
+          text: 'Model-native reasoning text.',
+          signature: 'sig_123',
+          details: [{ 'type' => 'reasoning.text', 'text' => 'detail' }],
+          source: 'openrouter'
+        },
+        structured_reasoning: 'Captain schema explanation.',
+        system_fallback_reason: 'Deterministic fallback after schema failure.'
+      )
+
+      expect(payload).to eq(
+        'version' => 1,
+        'native_reasoning' => {
+          'text' => 'Model-native reasoning text.',
+          'signature' => 'sig_123',
+          'details' => [{ 'type' => 'reasoning.text', 'text' => 'detail' }],
+          'source' => 'openrouter'
+        },
+        'structured_reasoning' => 'Captain schema explanation.',
+        'system_fallback_reason' => 'Deterministic fallback after schema failure.'
+      )
+    end
   end
 end

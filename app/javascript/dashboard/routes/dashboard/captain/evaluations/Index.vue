@@ -15,8 +15,13 @@ const SCENARIO_DEFINITIONS = [
     packIds: [
       'llm.moderation',
       'captain.tool_safety',
+      'captain.confirmation_safety',
       'captain.ai_voice_trace',
       'captain.event_contract_trace',
+      'captain.knowledge_rag_trace',
+      'captain.product_case_correctness',
+      'captain.scenarios',
+      'openrouter.contracts',
       'captain.red_team',
     ],
   },
@@ -24,7 +29,12 @@ const SCENARIO_DEFINITIONS = [
     id: 'safety',
     icon: 'i-lucide-shield-check',
     color: 'text-n-teal-11 bg-n-teal-3',
-    packIds: ['llm.moderation', 'captain.tool_safety', 'captain.red_team'],
+    packIds: [
+      'llm.moderation',
+      'captain.tool_safety',
+      'captain.confirmation_safety',
+      'captain.red_team',
+    ],
   },
   {
     id: 'voice',
@@ -36,7 +46,19 @@ const SCENARIO_DEFINITIONS = [
     id: 'tools',
     icon: 'i-lucide-wrench',
     color: 'text-n-slate-11 bg-n-slate-3',
-    packIds: ['captain.tool_safety'],
+    packIds: [
+      'captain.tool_safety',
+      'captain.confirmation_safety',
+      'captain.product_case_correctness',
+      'captain.scenarios',
+      'openrouter.contracts',
+    ],
+  },
+  {
+    id: 'simulation',
+    icon: 'i-lucide-route',
+    color: 'text-n-sky-11 bg-n-sky-3',
+    packIds: ['captain.scenario_simulation'],
   },
   {
     id: 'completion',
@@ -88,6 +110,35 @@ const requiresLlmCostControls = computed(
 
 const evalRunSummary = computed(() => evalRun.value?.result_summary || null);
 
+const packGroups = computed(() => {
+  const defaultPackIds = new Set(
+    packs.value.filter(pack => pack.default_enabled).map(pack => pack.id)
+  );
+  const groups = [
+    {
+      id: 'fast',
+      title: t('CAPTAIN.EVALUATIONS.PACK_GROUPS.FAST'),
+      packs: packs.value.filter(
+        pack => pack.deterministic && defaultPackIds.has(pack.id)
+      ),
+    },
+    {
+      id: 'live',
+      title: t('CAPTAIN.EVALUATIONS.PACK_GROUPS.LIVE'),
+      packs: packs.value.filter(pack => pack.live_model),
+    },
+    {
+      id: 'other',
+      title: t('CAPTAIN.EVALUATIONS.PACK_GROUPS.OTHER'),
+      packs: packs.value.filter(
+        pack => !pack.live_model && !defaultPackIds.has(pack.id)
+      ),
+    },
+  ];
+
+  return groups.filter(group => group.packs.length);
+});
+
 const selectedPacksLabel = computed(() => {
   if (!selectedPacks.value.length) {
     return t('CAPTAIN.EVALUATIONS.SELECTION.EMPTY');
@@ -137,6 +188,70 @@ const resultStatusClass = computed(() =>
     ? 'bg-n-teal-3 text-n-teal-11'
     : 'bg-n-ruby-3 text-n-ruby-11'
 );
+
+const releaseGateStatusLabel = gate =>
+  gate?.status === 'pass'
+    ? t('CAPTAIN.EVALUATIONS.RELEASE_GATE.PASS')
+    : t('CAPTAIN.EVALUATIONS.RELEASE_GATE.FAIL');
+
+const releaseGateCategoryCounts = gate => {
+  const summary = gate?.summary || {};
+  return [
+    {
+      key: 'SCHEMA_INVALID',
+      count: summary.schema_invalid_count,
+      label: t('CAPTAIN.EVALUATIONS.RELEASE_GATE.SCHEMA_INVALID', {
+        count: summary.schema_invalid_count,
+      }),
+    },
+    {
+      key: 'TOOL_FAILURE',
+      count: summary.tool_failure_count,
+      label: t('CAPTAIN.EVALUATIONS.RELEASE_GATE.TOOL_FAILURE', {
+        count: summary.tool_failure_count,
+      }),
+    },
+    {
+      key: 'NO_CONTENT',
+      count: summary.no_content_count,
+      label: t('CAPTAIN.EVALUATIONS.RELEASE_GATE.NO_CONTENT', {
+        count: summary.no_content_count,
+      }),
+    },
+    {
+      key: 'CATALOG_STALE',
+      count: summary.catalog_stale_count,
+      label: t('CAPTAIN.EVALUATIONS.RELEASE_GATE.CATALOG_STALE', {
+        count: summary.catalog_stale_count,
+      }),
+    },
+  ].filter(category => Number(category.count || 0) > 0);
+};
+
+const suiteCases = suite => suite.case_summaries || suite.cases || [];
+
+const visibleSuiteCases = suite => suiteCases(suite).slice(0, 4);
+
+const caseFailures = caseResult => (caseResult.failures || []).slice(0, 2);
+
+const caseTags = caseResult => (caseResult.tags || []).slice(0, 4);
+
+const caseTimeline = caseResult =>
+  (caseResult.artifact?.timeline || []).slice(-4);
+
+const timelineIcon = item => {
+  if (item.type === 'tool') return 'i-lucide-wrench';
+  if (item.type === 'judge') return 'i-lucide-scale';
+  if (item.role === 'assistant') return 'i-lucide-bot';
+  if (item.role === 'user') return 'i-lucide-user-round';
+
+  return 'i-lucide-circle-dot';
+};
+
+const timelineLabel = item =>
+  item.preview || item.tool_name || item.action || item.role || item.type;
+
+const resultFromRun = run => run?.result || null;
 
 const evalRunTitle = computed(() =>
   evalRun.value?.id
@@ -194,6 +309,12 @@ const scenarioCards = computed(() => [
   }),
   withCatalogState({
     ...SCENARIO_DEFINITIONS[4],
+    title: t('CAPTAIN.EVALUATIONS.SCENARIOS.SIMULATION.TITLE'),
+    short: t('CAPTAIN.EVALUATIONS.SCENARIOS.SIMULATION.SHORT'),
+    tooltip: t('CAPTAIN.EVALUATIONS.SCENARIOS.SIMULATION.TOOLTIP'),
+  }),
+  withCatalogState({
+    ...SCENARIO_DEFINITIONS[5],
     title: t('CAPTAIN.EVALUATIONS.SCENARIOS.COMPLETION.TITLE'),
     short: t('CAPTAIN.EVALUATIONS.SCENARIOS.COMPLETION.SHORT'),
     tooltip: t('CAPTAIN.EVALUATIONS.SCENARIOS.COMPLETION.TOOLTIP'),
@@ -210,8 +331,22 @@ const packLabel = pack => {
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.MODERATION.LABEL');
     case 'captain.tool_safety':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.TOOL_SAFETY.LABEL');
+    case 'captain.confirmation_safety':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.CONFIRMATION.LABEL');
     case 'captain.ai_voice_trace':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.AI_VOICE.LABEL');
+    case 'captain.event_contract_trace':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.EVENT_CONTRACT.LABEL');
+    case 'captain.knowledge_rag_trace':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.KNOWLEDGE_RAG.LABEL');
+    case 'captain.product_case_correctness':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.PRODUCT_CASE.LABEL');
+    case 'captain.scenarios':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIOS.LABEL');
+    case 'captain.scenario_simulation':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_SIMULATION.LABEL');
+    case 'openrouter.contracts':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.OPENROUTER_CONTRACTS.LABEL');
     case 'captain.red_team':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.RED_TEAM.LABEL');
     case 'captain.conversation_completion':
@@ -227,8 +362,24 @@ const packDescription = pack => {
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.MODERATION.DESCRIPTION');
     case 'captain.tool_safety':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.TOOL_SAFETY.DESCRIPTION');
+    case 'captain.confirmation_safety':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.CONFIRMATION.DESCRIPTION');
     case 'captain.ai_voice_trace':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.AI_VOICE.DESCRIPTION');
+    case 'captain.event_contract_trace':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.EVENT_CONTRACT.DESCRIPTION');
+    case 'captain.knowledge_rag_trace':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.KNOWLEDGE_RAG.DESCRIPTION');
+    case 'captain.product_case_correctness':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.PRODUCT_CASE.DESCRIPTION');
+    case 'captain.scenarios':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIOS.DESCRIPTION');
+    case 'captain.scenario_simulation':
+      return t('CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_SIMULATION.DESCRIPTION');
+    case 'openrouter.contracts':
+      return t(
+        'CAPTAIN.EVALUATIONS.PACK_COPY.OPENROUTER_CONTRACTS.DESCRIPTION'
+      );
     case 'captain.red_team':
       return t('CAPTAIN.EVALUATIONS.PACK_COPY.RED_TEAM.DESCRIPTION');
     case 'captain.conversation_completion':
@@ -320,7 +471,7 @@ const runEvals = async () => {
         response.data.run,
         ...recentEvalRuns.value.filter(run => run.id !== response.data.run.id),
       ].slice(0, 10);
-      result.value = null;
+      result.value = resultFromRun(response.data.run);
     } else {
       result.value = response.data?.result || null;
     }
@@ -398,6 +549,7 @@ const refreshEvalRun = async () => {
   try {
     const response = await captainEvaluationsAPI.getRun(evalRun.value.id);
     evalRun.value = response.data?.run || evalRun.value;
+    result.value = resultFromRun(response.data?.run) || result.value;
     if (response.data?.run) {
       recentEvalRuns.value = recentEvalRuns.value.map(run =>
         run.id === response.data.run.id ? response.data.run : run
@@ -499,7 +651,7 @@ onMounted(fetchCatalog);
           {{ errorMessage }}
         </div>
 
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <button
             v-for="scenario in scenarioCards"
             :key="scenario.id"
@@ -811,22 +963,174 @@ onMounted(fetchCatalog);
               </p>
             </div>
           </div>
+          <div
+            v-if="result.release_gate"
+            data-testid="eval-release-gate"
+            class="mt-4 rounded-xl border border-n-weak bg-n-alpha-1 p-3 text-sm text-n-slate-11"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p class="font-medium text-n-slate-12">
+                  {{ t('CAPTAIN.EVALUATIONS.RELEASE_GATE.TITLE') }}
+                </p>
+                <p
+                  v-if="result.release_gate.required_pack_ids?.length"
+                  class="mt-1 text-xs text-n-slate-10"
+                >
+                  {{
+                    t('CAPTAIN.EVALUATIONS.RELEASE_GATE.REQUIRED_PACKS', {
+                      count: result.release_gate.required_pack_ids.length,
+                    })
+                  }}
+                </p>
+              </div>
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-medium"
+                :class="statusTone(result.release_gate.status)"
+              >
+                {{ releaseGateStatusLabel(result.release_gate) }}
+              </span>
+            </div>
+            <div
+              v-if="releaseGateCategoryCounts(result.release_gate).length"
+              class="mt-3 flex flex-wrap gap-2"
+            >
+              <span
+                v-for="category in releaseGateCategoryCounts(
+                  result.release_gate
+                )"
+                :key="category.key"
+                class="rounded-full bg-n-alpha-2 px-2 py-1 text-xs text-n-slate-11"
+              >
+                {{ category.label }}
+              </span>
+            </div>
+            <ul
+              v-if="result.release_gate.failures?.length"
+              class="mt-3 list-disc space-y-1 pl-4 text-xs text-n-ruby-11"
+            >
+              <li
+                v-for="failure in result.release_gate.failures"
+                :key="failure"
+              >
+                {{ failure }}
+              </li>
+            </ul>
+          </div>
           <div class="mt-4 grid gap-2">
             <div
               v-for="suite in result.suites"
               :key="suite.suite_id"
-              class="rounded-xl border border-n-weak p-3 text-sm"
+              class="rounded-xl border border-n-weak bg-n-alpha-1 p-3 text-sm"
             >
               <div class="flex items-center justify-between gap-3">
-                <span class="font-medium text-n-slate-12">
-                  {{ suite.suite_id }}
+                <span class="min-w-0">
+                  <span class="block font-medium text-n-slate-12">
+                    {{ suite.suite_id }}
+                  </span>
+                  <span class="mt-1 block text-xs text-n-slate-10">
+                    {{
+                      t('CAPTAIN.EVALUATIONS.RESULTS.CASES_COUNT', {
+                        count: suite.total_count || suiteCases(suite).length,
+                      })
+                    }}
+                  </span>
                 </span>
-                <span
-                  class="rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="statusTone(suite.status)"
+                <span class="flex shrink-0 items-center gap-2">
+                  <span
+                    v-if="suite.failed_count || suite.error_count"
+                    class="text-xs text-n-ruby-11"
+                  >
+                    {{
+                      t('CAPTAIN.EVALUATIONS.RESULTS.ISSUES_COUNT', {
+                        count:
+                          (suite.failed_count || 0) + (suite.error_count || 0),
+                      })
+                    }}
+                  </span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-xs font-medium"
+                    :class="statusTone(suite.status)"
+                  >
+                    {{ formatCount(suite.passed_count, suite.total_count) }}
+                  </span>
+                </span>
+              </div>
+              <div
+                v-if="visibleSuiteCases(suite).length"
+                class="mt-3 grid gap-2"
+              >
+                <article
+                  v-for="caseResult in visibleSuiteCases(suite)"
+                  :key="caseResult.id"
+                  class="rounded-lg border border-n-weak bg-n-surface-2 p-3"
                 >
-                  {{ formatCount(suite.passed_count, suite.total_count) }}
-                </span>
+                  <div class="flex flex-wrap items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <p class="break-words font-medium text-n-slate-12">
+                        {{ caseResult.id }}
+                      </p>
+                      <p
+                        v-if="caseResult.description"
+                        class="mt-1 line-clamp-2 text-xs text-n-slate-10"
+                      >
+                        {{ caseResult.description }}
+                      </p>
+                    </div>
+                    <span
+                      class="rounded-full px-2 py-0.5 text-xs font-medium"
+                      :class="statusTone(caseResult.status)"
+                    >
+                      {{ caseResult.status }}
+                    </span>
+                  </div>
+                  <div
+                    v-if="caseTags(caseResult).length || caseResult.duration_ms"
+                    class="mt-2 flex flex-wrap items-center gap-2 text-xs text-n-slate-10"
+                  >
+                    <span
+                      v-for="tag in caseTags(caseResult)"
+                      :key="tag"
+                      class="rounded-full bg-n-alpha-2 px-2 py-0.5"
+                    >
+                      {{ tag }}
+                    </span>
+                    <span v-if="caseResult.duration_ms">
+                      {{
+                        t('CAPTAIN.EVALUATIONS.RESULTS.DURATION_MS', {
+                          ms: caseResult.duration_ms,
+                        })
+                      }}
+                    </span>
+                  </div>
+                  <div
+                    v-if="caseFailures(caseResult).length"
+                    class="mt-2 grid gap-1"
+                  >
+                    <p
+                      v-for="failure in caseFailures(caseResult)"
+                      :key="failure"
+                      class="rounded-lg border border-n-ruby-5 bg-n-ruby-2 px-2 py-1 text-xs text-n-ruby-11"
+                    >
+                      {{ failure }}
+                    </p>
+                  </div>
+                  <div
+                    v-if="caseTimeline(caseResult).length"
+                    class="mt-3 grid gap-1 border-t border-n-weak pt-3"
+                  >
+                    <div
+                      v-for="item in caseTimeline(caseResult)"
+                      :key="`${caseResult.id}-${item.index}`"
+                      class="flex items-start gap-2 text-xs text-n-slate-10"
+                    >
+                      <i :class="timelineIcon(item)" class="mt-0.5 size-3.5" />
+                      <span class="break-words">
+                        {{ timelineLabel(item) }}
+                      </span>
+                    </div>
+                  </div>
+                </article>
               </div>
             </div>
           </div>
@@ -847,50 +1151,61 @@ onMounted(fetchCatalog);
             />
           </summary>
 
-          <div class="mt-4 grid gap-3 md:grid-cols-2">
-            <label
-              v-for="pack in packs"
-              :key="pack.id"
-              class="rounded-xl border border-n-weak bg-n-alpha-1 p-4"
+          <div class="mt-4 grid gap-4">
+            <section
+              v-for="group in packGroups"
+              :key="group.id"
+              class="grid gap-2"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex items-start gap-3">
-                  <input
-                    v-model="selectedPackIds"
-                    data-testid="eval-pack-checkbox"
-                    type="checkbox"
-                    :value="pack.id"
-                    class="mt-1"
-                    @change="markCustomSelection"
-                  />
-                  <div>
-                    <h4 class="text-sm font-semibold text-n-slate-12">
-                      {{ packLabel(pack) }}
-                    </h4>
-                    <p class="mt-1 text-xs text-n-slate-10">
-                      {{ pack.id }}
-                    </p>
-                  </div>
-                </div>
-                <span
-                  class="shrink-0 rounded-full px-2 py-1 text-xs font-medium"
-                  :class="
-                    pack.deterministic
-                      ? 'bg-n-teal-3 text-n-teal-11'
-                      : 'bg-n-amber-3 text-n-amber-11'
-                  "
+              <h4 class="text-sm font-semibold text-n-slate-12">
+                {{ group.title }}
+              </h4>
+              <div class="grid gap-3 md:grid-cols-2">
+                <label
+                  v-for="pack in group.packs"
+                  :key="pack.id"
+                  class="rounded-xl border border-n-weak bg-n-alpha-1 p-4"
                 >
-                  {{
-                    pack.deterministic
-                      ? t('CAPTAIN.EVALUATIONS.PACKS.DETERMINISTIC')
-                      : t('CAPTAIN.EVALUATIONS.PACKS.LLM_MODEL')
-                  }}
-                </span>
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-start gap-3">
+                      <input
+                        v-model="selectedPackIds"
+                        data-testid="eval-pack-checkbox"
+                        type="checkbox"
+                        :value="pack.id"
+                        class="mt-1"
+                        @change="markCustomSelection"
+                      />
+                      <div>
+                        <h5 class="text-sm font-semibold text-n-slate-12">
+                          {{ packLabel(pack) }}
+                        </h5>
+                        <p class="mt-1 text-xs text-n-slate-10">
+                          {{ pack.id }}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      class="shrink-0 rounded-full px-2 py-1 text-xs font-medium"
+                      :class="
+                        pack.deterministic
+                          ? 'bg-n-teal-3 text-n-teal-11'
+                          : 'bg-n-amber-3 text-n-amber-11'
+                      "
+                    >
+                      {{
+                        pack.deterministic
+                          ? t('CAPTAIN.EVALUATIONS.PACKS.DETERMINISTIC')
+                          : t('CAPTAIN.EVALUATIONS.PACKS.LLM_MODEL')
+                      }}
+                    </span>
+                  </div>
+                  <p class="mt-3 text-sm leading-6 text-n-slate-11">
+                    {{ packDescription(pack) }}
+                  </p>
+                </label>
               </div>
-              <p class="mt-3 text-sm leading-6 text-n-slate-11">
-                {{ packDescription(pack) }}
-              </p>
-            </label>
+            </section>
           </div>
         </details>
 

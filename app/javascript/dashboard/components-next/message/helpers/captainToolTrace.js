@@ -47,12 +47,32 @@ const LEGACY_REASONING_FALLBACKS = new Set([
   'Model returned plain text instead of structured JSON; runtime wrapped it as a Captain response.',
   'Модель вернула текст без структурированного JSON; рантайм сохранил ответ и детали инструментов.',
   'Модель не передала отдельное обоснование. Ответ сохранен, а действия инструментов показаны в деталях.',
+  'Final assistant response failed after completed tool actions; a deterministic tool-result fallback was used.',
 ]);
 
 const normalizeTraceReasoning = reasoning => {
   const text = String(reasoning || '').trim();
   if (!text) return '';
   return LEGACY_REASONING_FALLBACKS.has(text) ? '' : text;
+};
+
+const nativeReasoningText = nativeReasoning => {
+  if (!nativeReasoning) return '';
+  if (typeof nativeReasoning === 'string') {
+    return normalizeTraceReasoning(nativeReasoning);
+  }
+  if (typeof nativeReasoning !== 'object') return '';
+
+  const text = normalizeTraceReasoning(
+    nativeReasoning.text || nativeReasoning.summary || nativeReasoning.reasoning
+  );
+  if (text) return text;
+
+  if (nativeReasoning.encrypted || nativeReasoning.redacted) {
+    return 'Модель скрыла рассуждение';
+  }
+
+  return '';
 };
 
 const parseStructuredString = value => {
@@ -371,7 +391,12 @@ const buildGroupedToolTraceMessages = toolSteps => {
 };
 
 const traceReasoning = captainTrace =>
-  captainTrace?.reasoning || captainTrace?.reasoning_summary;
+  nativeReasoningText(
+    captainTrace?.nativeReasoning || captainTrace?.native_reasoning
+  ) ||
+  normalizeTraceReasoning(
+    captainTrace?.reasoning || captainTrace?.reasoning_summary
+  );
 
 const buildReasoningTraceMessage = (captainTrace, options = {}) => {
   const reasoning = normalizeTraceReasoning(traceReasoning(captainTrace));

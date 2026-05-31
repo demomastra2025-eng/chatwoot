@@ -47,6 +47,7 @@ class Llm::EvalRun < ApplicationRecord
   COMPACT_SUITE_KEYS = %i[
     suite_id status prompt_id prompt_sha model generated_at total_count passed_count failed_count error_count pass_rate
   ].freeze
+  COMPACT_CASE_KEYS = %i[id description tags status duration_ms failures].freeze
   MAX_STRING_BYTES = 2_000
 
   STATUSES = %w[queued running passed failed].freeze
@@ -106,7 +107,27 @@ class Llm::EvalRun < ApplicationRecord
     def compact_suite_result(value)
       return unless value.is_a?(Hash)
 
-      COMPACT_SUITE_KEYS.index_with { |key| value_for(value, key) }.compact
+      compacted = COMPACT_SUITE_KEYS.index_with { |key| value_for(value, key) }.compact
+      case_summaries = compact_case_summaries(value)
+      compacted[:case_summaries] = case_summaries if case_summaries.present?
+      compacted
+    end
+
+    def compact_case_result(value)
+      return unless value.is_a?(Hash)
+
+      COMPACT_CASE_KEYS.index_with { |key| sanitize_result(value_for(value, key)) }.compact
+    end
+
+    def existing_case_summaries(value)
+      Array(value_for(value, :case_summaries)).filter_map do |case_summary|
+        compact_case_result(case_summary)
+      end
+    end
+
+    def compact_case_summaries(value)
+      existing_case_summaries(value).presence ||
+        Array(value_for(value, :cases)).filter_map { |case_result| compact_case_result(case_result) }
     end
 
     def value_for(payload, key)
@@ -123,7 +144,7 @@ class Llm::EvalRun < ApplicationRecord
       requested_budget_cents: requested_budget_cents,
       max_cases: max_cases,
       result_summary: result_summary,
-      result: include_result ? self.class.sanitize_result(result.presence) : nil,
+      result: include_result ? self.class.sanitize_result(self.class.compact_result(result.presence)) : nil,
       error_message: error_message,
       started_at: started_at,
       finished_at: finished_at,

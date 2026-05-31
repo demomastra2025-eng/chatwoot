@@ -44,17 +44,26 @@ class Captain::ToolTraceBuilder
     }.compact
   end
 
-  def self.payload(steps = nil, reasoning: nil)
+  def self.payload(steps = nil, **reasoning_options)
     normalized_steps = Array(steps).compact
-    normalized_reasoning = reasoning.present? ? safe_payload(reasoning) : nil
-    return if normalized_steps.blank? && normalized_reasoning.blank?
+    reasoning_payload = normalized_reasoning_payload(reasoning_options)
+    return if normalized_steps.blank? && reasoning_payload.blank?
 
     {
       'version' => VERSION,
-      'tool_steps' => normalized_steps.presence,
-      'reasoning' => normalized_reasoning
-    }.compact
+      'tool_steps' => normalized_steps.presence
+    }.merge(reasoning_payload).compact
   end
+
+  def self.normalized_reasoning_payload(options)
+    {
+      'reasoning' => options[:reasoning],
+      'native_reasoning' => options[:native_reasoning],
+      'structured_reasoning' => options[:structured_reasoning],
+      'system_fallback_reason' => options[:system_fallback_reason]
+    }.transform_values { |value| value.present? ? safe_payload(value) : nil }.compact
+  end
+  private_class_method :normalized_reasoning_payload
 
   def self.safe_payload(value)
     return if value.nil?

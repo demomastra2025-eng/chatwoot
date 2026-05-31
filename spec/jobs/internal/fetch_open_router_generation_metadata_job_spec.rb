@@ -26,6 +26,7 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
       model: 'openai/gpt-4o-2026-05-30',
       cost: '0.00042',
       latency_ms: 830,
+      finish_reason: 'stop',
       prompt_tokens: 120,
       completion_tokens: 40,
       reasoning_tokens: 7,
@@ -54,6 +55,7 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
     expect(event).to have_attributes(
       provider: 'openrouter',
       model: 'openai/gpt-4o-2026-05-30',
+      reason: 'stop',
       prompt_tokens: 120,
       completion_tokens: 40,
       thinking_tokens: 7,
@@ -70,6 +72,7 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
         'model' => 'openai/gpt-4o-2026-05-30',
         'cost' => '0.00042',
         'latency_ms' => 830,
+        'finish_reason' => 'stop',
         'prompt_tokens' => 120,
         'completion_tokens' => 40,
         'reasoning_tokens' => 7,
@@ -99,7 +102,9 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
       'openrouter_generation_error' => include(
         'generation_id' => 'gen-123',
         'error_class' => 'RubyLLM::Error',
-        'message' => 'upstream failed'
+        'message' => 'upstream failed',
+        'openrouter_error_category' => 'provider_error',
+        'retryable' => true
       )
     )
   end

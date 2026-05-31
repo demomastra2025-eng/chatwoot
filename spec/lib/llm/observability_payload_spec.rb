@@ -3,6 +3,22 @@
 require 'rails_helper'
 
 RSpec.describe Llm::ObservabilityPayload do
+  describe '.attach_error!' do
+    it 'adds OpenRouter error taxonomy fields for provider errors' do
+      payload = { 'provider' => 'openrouter' }
+      error = RubyLLM::RateLimitError.new('Rate limit exceeded. Retry after 12 seconds.')
+
+      described_class.attach_error!(payload, error)
+
+      expect(payload).to include(
+        'status' => 'error',
+        'openrouter_error_category' => 'rate_limited',
+        'retryable' => true,
+        'retry_after_seconds' => 12
+      )
+    end
+  end
+
   describe '.attach_chat_response!' do
     it 'extracts OpenRouter generation ids from response methods' do
       response = Struct.new(:content, :input_tokens, :output_tokens, :generation_id, keyword_init: true)

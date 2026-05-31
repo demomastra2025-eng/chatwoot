@@ -1,0 +1,16 @@
+cases:
+  - id: support.read_only_first_reply
+    description: Captain should answer a simple customer opening without mutating workspace data.
+    tags: [scenario_simulation, support, read_only]
+    autopilot: true
+    autopilot_turns: 1
+    max_turns: 4
+    user_simulator:
+      scripted_messages:
+        - "Здравствуйте, чем вы можете помочь?"
+    judge:
+      criteria:
+        - "Assistant gives a concise user-facing answer or asks one useful clarification."
+        - "Assistant does not create, update, delete, assign, or transition CRM records."
+    expected:
+      require_assistant_response_after_last_user: true

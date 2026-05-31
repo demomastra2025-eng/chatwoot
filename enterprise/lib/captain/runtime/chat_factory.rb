@@ -1,8 +1,13 @@
 # frozen_string_literal: true
 
 class Captain::Runtime::ChatFactory
+  FINALIZATION_ONLY_INSTRUCTIONS = <<~PROMPT.squish.freeze
+    Finalize the customer-facing Captain response using only the completed tool result messages already present in the conversation history.
+    Do not request or imply another tool call. Return the required structured response for the customer.
+  PROMPT
+
   class << self
-    def build(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil)
+    def build(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil, finalization_only: false)
       chat = Llm::Runtime.build_chat(**chat_build_kwargs(
         agent: agent,
         context_wrapper: context_wrapper,
@@ -12,7 +17,7 @@ class Captain::Runtime::ChatFactory
         account: account
       ))
 
-      configure(chat, agent, context_wrapper, account: account)
+      configure(chat, agent, context_wrapper, account: account, finalization_only: finalization_only)
       Captain::Runtime::HistoryRestorer.restore(chat, context_wrapper.context[:conversation_history])
       context_wrapper.callback_manager.emit_chat_created(chat, agent.name, agent.model, context_wrapper)
       chat
@@ -35,9 +40,9 @@ class Captain::Runtime::ChatFactory
       }
     end
 
-    def configure(chat, agent, context_wrapper, account: nil)
-      record_bound_agent_tools(agent, context_wrapper)
-      agent_tools = build_agent_tools(agent, context_wrapper)
+    def configure(chat, agent, context_wrapper, account: nil, finalization_only: false)
+      record_bound_agent_tools(agent, context_wrapper, finalization_only: finalization_only)
+      agent_tools = finalization_only ? [] : build_agent_tools(agent, context_wrapper)
       Llm::CapabilityPolicy.ensure_chat_features_supported!(
         model: agent.model,
         schema: agent.response_schema,
@@ -45,10 +50,10 @@ class Captain::Runtime::ChatFactory
         account: account
       )
 
-      system_prompt = agent.get_system_prompt(context_wrapper)
+      system_prompt = system_prompt_for(agent, context_wrapper, finalization_only: finalization_only)
       chat.with_instructions(system_prompt) if system_prompt.present?
       enforce_openrouter_tool_parameters!(chat, agent_tools, account: account, schema: agent.response_schema)
-      chat.with_tools(*agent_tools, replace: true)
+      chat.with_tools(*agent_tools, replace: true) if agent_tools.present?
       Llm::StructuredOutputPolicy.bind!(chat: chat, schema: agent.response_schema) if agent.response_schema.present?
       chat
     end
@@ -63,6 +68,14 @@ class Captain::Runtime::ChatFactory
       end
 
       handoff_tools + regular_tools
+    end
+
+    def system_prompt_for(agent, context_wrapper, finalization_only: false)
+      prompts = []
+      prompt = agent.get_system_prompt(context_wrapper)
+      prompts << prompt if prompt.present?
+      prompts << FINALIZATION_ONLY_INSTRUCTIONS if finalization_only
+      prompts.join("\n\n")
     end
 
     def enforce_openrouter_tool_parameters!(chat, agent_tools, account: nil, schema: nil)
@@ -84,8 +97,8 @@ class Captain::Runtime::ChatFactory
       return chat_model if chat_model.present?
     end
 
-    def record_bound_agent_tools(agent, context_wrapper)
-      bound_tool_names = (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
+    def record_bound_agent_tools(agent, context_wrapper, finalization_only: false)
+      bound_tool_names = finalization_only ? [] : (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
 
       context_wrapper.context[:current_agent] = agent.name
       context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] ||= {}
@@ -110,7 +123,15 @@ class Captain::Runtime::ChatFactory
     end
 
     def merged_params(agent, runtime_params)
-      Captain::Runtime::HashNormalizer.merge(agent.params, runtime_params)
+      Captain::Runtime::HashNormalizer.merge(agent.params, runtime_params).tap do |params|
+        params[:parallel_tool_calls] = false if mutating_tools?(agent)
+      end
+    end
+
+    def mutating_tools?(agent)
+      return true if agent.handoff_agents.present?
+
+      agent.tools.present? && agent.tools.any? { |tool| Llm::ToolRiskPolicy.mutating?(tool) }
     end
 
     def thinking_options(agent, context_wrapper, account: nil)

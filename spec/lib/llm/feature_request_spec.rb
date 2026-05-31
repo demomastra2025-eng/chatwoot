@@ -110,6 +110,11 @@ RSpec.describe Llm::FeatureRequest do
       tools: [mutating_tool],
       parallel_tool_calls: true
     )
+    mutating_default_request = described_class.new(
+      feature: :captain_agent,
+      account: account,
+      tools: [mutating_tool]
+    )
     unknown_request = described_class.new(
       feature: :captain_agent,
       account: account,
@@ -120,6 +125,7 @@ RSpec.describe Llm::FeatureRequest do
     expect(mutating_request.mutating_tool_flow?).to be(true)
     expect(mutating_request.read_only_tool_flow?).to be(false)
     expect(mutating_request.parallel_tool_calls).to be(false)
+    expect(mutating_default_request.parallel_tool_calls).to be(false)
     expect(unknown_request.mutating_tool_flow?).to be(true)
     expect(unknown_request.parallel_tool_calls).to be(false)
   end

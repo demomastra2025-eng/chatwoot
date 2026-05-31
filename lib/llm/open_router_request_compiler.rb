@@ -2,7 +2,6 @@
 
 class Llm::OpenRouterRequestCompiler
   RESPONSE_HEALING_PLUGIN_ID = Llm::OpenRouterRoutingProfile::RESPONSE_HEALING_PLUGIN_ID
-  PRICE_SORT_VALUES = ['price', { by: 'price', partition: 'none' }, { 'by' => 'price', 'partition' => 'none' }].freeze
   PROVIDER_CONTROL_KEYS = %w[
     order allow_fallbacks require_parameters data_collection zdr enforce_distillable_text only ignore
     quantizations sort preferred_min_throughput preferred_max_latency max_price
@@ -141,14 +140,22 @@ class Llm::OpenRouterRequestCompiler
 
   def merged_plugins(_params, profile)
     plugins = extract_plugins(@base_params[:plugins] || @base_params['plugins'])
+    default_allowed_ids = []
 
-    add_response_healing = schema_request? &&
-                           !streaming? &&
-                           profile.response_healing? &&
-                           plugins.none? { |plugin| plugin_id(plugin) == RESPONSE_HEALING_PLUGIN_ID }
-    plugins << { id: RESPONSE_HEALING_PLUGIN_ID } if add_response_healing
+    if response_healing_allowed?(profile)
+      plugins << { id: RESPONSE_HEALING_PLUGIN_ID }
+      default_allowed_ids << RESPONSE_HEALING_PLUGIN_ID
+    end
 
-    plugins
+    Llm::OpenRouterPluginPolicy.filter(
+      plugins: plugins,
+      runtime_preferences: request_value(:runtime_preferences),
+      default_allowed_ids: default_allowed_ids
+    )
+  end
+
+  def response_healing_allowed?(profile)
+    schema_request? && !streaming? && profile.response_healing?
   end
 
   def requires_parameters?(profile_preferences)
@@ -156,19 +163,19 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def schema_request?
-    return @schema unless @schema.nil?
+    return @schema.present? unless @schema.nil?
 
     request_boolean(:requires_schema?) || request_boolean(:schema?) || request_value(:schema).present?
   end
 
   def tool_flow?
-    return @tools unless @tools.nil?
+    return Array(@tools).present? unless @tools.nil?
 
     request_boolean(:requires_tools?) || Array(request_value(:tools)).present?
   end
 
   def reasoning_request?
-    return @reasoning unless @reasoning.nil?
+    return @reasoning.present? unless @reasoning.nil?
 
     request_boolean(:reasoning?) || request_value(:thinking).present? || request_value(:reasoning).present?
   end
@@ -235,16 +242,13 @@ class Llm::OpenRouterRequestCompiler
     []
   end
 
-  def plugin_id(plugin)
-    return unless plugin.respond_to?(:[])
-
-    plugin[:id] || plugin['id']
-  end
-
   def price_sort?(value)
     return true if value.to_s == 'price'
-    return value[:by].to_s == 'price' || value['by'].to_s == 'price' if value.respond_to?(:[])
+    return false unless value.respond_to?(:to_h)
 
-    PRICE_SORT_VALUES.include?(value)
+    sort = value.to_h
+    sort[:by].to_s == 'price' || sort['by'].to_s == 'price'
+  rescue StandardError
+    false
   end
 end

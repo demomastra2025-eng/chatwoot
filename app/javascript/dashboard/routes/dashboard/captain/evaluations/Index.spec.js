@@ -97,6 +97,14 @@ const catalogPayload = {
         live_model: true,
         default_enabled: false,
       },
+      {
+        id: 'captain.scenario_simulation',
+        label: 'Captain live scenario simulation',
+        description: 'Live scenarios',
+        deterministic: false,
+        live_model: true,
+        default_enabled: false,
+      },
     ],
     eval_runs: {
       llm_model_enabled: true,
@@ -132,8 +140,39 @@ const runPayload = {
           passed_count: 3,
           failed_count: 0,
           error_count: 0,
+          cases: [
+            {
+              id: 'voice.trace_healthy',
+              description: 'Trace stays healthy',
+              status: 'pass',
+              duration_ms: 4,
+              tags: ['voice'],
+              artifact: {
+                timeline: [
+                  {
+                    index: 0,
+                    type: 'message',
+                    role: 'assistant',
+                    preview: 'Короткий ответ',
+                  },
+                ],
+              },
+            },
+          ],
         },
       ],
+      release_gate: {
+        status: 'pass',
+        passed: true,
+        required_pack_ids: ['captain.ai_voice_trace'],
+        failures: [],
+        summary: {
+          schema_invalid_count: 0,
+          tool_failure_count: 0,
+          no_content_count: 0,
+          catalog_stale_count: 0,
+        },
+      },
     },
   },
 };
@@ -187,11 +226,12 @@ describe('Captain evaluations page', () => {
     expect(wrapper.text()).toContain(
       'CAPTAIN.EVALUATIONS.PACK_COPY.COMPLETION.LABEL'
     );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.PACK_COPY.SCENARIO_SIMULATION.LABEL'
+    );
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACKS.DETERMINISTIC');
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACKS.LLM_MODEL');
-    expect(wrapper.text()).not.toContain(
-      'CAPTAIN.EVALUATIONS.PACKS.LIVE_LOCKED'
-    );
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACK_GROUPS.LIVE');
   });
 
   it('runs the default selected eval packs and renders the result summary', async () => {
@@ -209,7 +249,10 @@ describe('Captain evaluations page', () => {
     });
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULT_STATUS.PASS');
     expect(wrapper.text()).toContain('12 / 12');
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RELEASE_GATE.TITLE');
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RELEASE_GATE.PASS');
     expect(wrapper.text()).toContain('captain.ai_voice_trace');
+    expect(wrapper.text()).toContain('voice.trace_healthy');
   });
 
   it('queues LLM-backed eval packs from the same run button with explicit budget and acknowledgement', async () => {
@@ -284,7 +327,26 @@ describe('Captain evaluations page', () => {
         run: {
           id: 123,
           status: 'passed',
-          result: { cases: [{ input: 'secret customer prompt' }] },
+          result: {
+            status: 'pass',
+            suite_count: 1,
+            total_count: 1,
+            passed_count: 1,
+            failed_count: 0,
+            error_count: 0,
+            suites: [
+              {
+                suite_id: 'captain.ai_voice_trace',
+                status: 'pass',
+                total_count: 1,
+                passed_count: 1,
+                failed_count: 0,
+                error_count: 0,
+                case_summaries: [{ id: 'safe_case', status: 'pass' }],
+                cases: [{ input: 'secret customer prompt' }],
+              },
+            ],
+          },
           result_summary: {
             suite_count: 1,
             passed_count: 1,
@@ -311,6 +373,7 @@ describe('Captain evaluations page', () => {
       true
     );
     expect(wrapper.text()).toContain('captain.ai_voice_trace');
+    expect(wrapper.text()).toContain('safe_case');
     expect(wrapper.text()).not.toContain('secret customer prompt');
   });
 

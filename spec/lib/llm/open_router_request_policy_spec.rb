@@ -96,7 +96,7 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
 
       expect(chat.params).to include(
         provider: include(sort: 'latency', require_parameters: true),
-        plugins: include({ id: 'web' }, { id: 'response-healing' })
+        plugins: contain_exactly({ id: 'response-healing' })
       )
     end
 

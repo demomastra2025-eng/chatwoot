@@ -526,11 +526,21 @@
           "SHORT": "Инструменты под контролем",
           "TOOLTIP": "Проверяет входные параметры и ответы Captain tools, чтобы в диалог не ушли запрещённые данные."
         },
+        "SIMULATION": {
+          "TITLE": "Live-сценарии",
+          "SHORT": "Реальный Captain под судьёй",
+          "TOOLTIP": "Запускает безопасные multi-turn симуляции через Captain runtime, user simulator и judge. Требует подтверждения бюджета."
+        },
         "COMPLETION": {
           "TITLE": "Закрытие диалогов",
           "SHORT": "Закрывать только решённое",
           "TOOLTIP": "Live-проверка через модель: отличает решённый диалог от ситуации, где агент ждёт данные или обещал follow-up."
         }
+      },
+      "PACK_GROUPS": {
+        "FAST": "Быстрые проверки",
+        "LIVE": "Live-проверки с LLM",
+        "OTHER": "Дополнительно"
       },
       "PACK_COPY": {
         "MODERATION": {
@@ -541,9 +551,37 @@
           "LABEL": "Безопасность инструментов",
           "DESCRIPTION": "Проверяет аргументы и результаты Captain tools перед показом клиенту."
         },
+        "CONFIRMATION": {
+          "LABEL": "Подтверждения действий",
+          "DESCRIPTION": "Проверяет, что рискованные изменения требуют явного подтверждения."
+        },
         "AI_VOICE": {
           "LABEL": "AI Voice trace",
           "DESCRIPTION": "Проверяет голосовые следы: tool result использован, речь не обрезана."
+        },
+        "EVENT_CONTRACT": {
+          "LABEL": "Контракт событий",
+          "DESCRIPTION": "Проверяет единые имена событий, payload budget и отсутствие сырого контента."
+        },
+        "KNOWLEDGE_RAG": {
+          "LABEL": "Knowledge/RAG",
+          "DESCRIPTION": "Проверяет, что поиск знаний использует чанки и явно показывает деградацию."
+        },
+        "PRODUCT_CASE": {
+          "LABEL": "Продуктовые кейсы",
+          "DESCRIPTION": "Проверяет ответы и инструменты для поддержки, CRM и расписания."
+        },
+        "SCENARIOS": {
+          "LABEL": "Сценарии Captain",
+          "DESCRIPTION": "Детерминированные multi-turn проверки tools, подтверждений, handoff и финальных ответов."
+        },
+        "SCENARIO_SIMULATION": {
+          "LABEL": "Live-симуляция Captain",
+          "DESCRIPTION": "Живой прогон Captain с user simulator, judge, trace artifacts и бюджетным лимитом."
+        },
+        "OPENROUTER_CONTRACTS": {
+          "LABEL": "Контракт OpenRouter",
+          "DESCRIPTION": "Проверяет tools, structured output, reasoning, routing, privacy и multimodal запросы."
         },
         "RED_TEAM": {
           "LABEL": "Red-team prompts",
@@ -563,7 +601,20 @@
         "PASSED": "Пройдено кейсов",
         "SUITES": "Наборы",
         "FAILED": "Провалено кейсов",
-        "ERRORS": "Ошибки"
+        "ERRORS": "Ошибки",
+        "CASES_COUNT": "Кейсов: {count}",
+        "ISSUES_COUNT": "Проблем: {count}",
+        "DURATION_MS": "{ms} мс"
+      },
+      "RELEASE_GATE": {
+        "TITLE": "Релизный gate",
+        "PASS": "Gate пройден",
+        "FAIL": "Gate провален",
+        "REQUIRED_PACKS": "Обязательных наборов: {count}",
+        "SCHEMA_INVALID": "Проблемы схемы: {count}",
+        "TOOL_FAILURE": "Ошибки инструментов: {count}",
+        "NO_CONTENT": "Пустые ответы: {count}",
+        "CATALOG_STALE": "Проблемы свежести каталога: {count}"
       },
       "PACKS": {
         "TITLE": "Наборы проверок",

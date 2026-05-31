@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require 'digest'
+
 class Captain::Runtime::ToolWrapper
   TOOL_NOT_BOUND_ERROR = 'Tool is not available for the current agent runtime'
+  TOOL_RESULT_CACHE_KEY = :captain_v2_tool_result_cache
 
   def initialize(tool, context_wrapper)
     @tool = tool
@@ -20,9 +23,13 @@ class Captain::Runtime::ToolWrapper
     pre_execution_error = pre_execution_error(normalized_args)
     return complete_and_render(pre_execution_error) if pre_execution_error
 
+    cached_result = cached_mutating_tool_result(normalized_args)
+    return complete_and_render(cached_result) if cached_result
+
     result = @tool.execute(tool_context, **normalized_args)
     result_error = tool_safety_error_for(:tool_results, safety_checked_result(result))
     final_result = result_error || result
+    cache_successful_mutating_tool_result(normalized_args, final_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
     return final_result if halt_result?(final_result)
 
@@ -142,6 +149,62 @@ class Captain::Runtime::ToolWrapper
 
   def context_wrapper_context
     @context_wrapper.context
+  end
+
+  def cached_mutating_tool_result(normalized_args)
+    return unless cache_mutating_tool_results?
+
+    cached_entry = tool_result_cache[tool_result_cache_digest(normalized_args)]
+    return unless cached_entry.respond_to?(:[])
+
+    result = cached_entry[:result] || cached_entry['result']
+    return unless result.respond_to?(:to_h)
+
+    cached_normalized = result.to_h.deep_symbolize_keys
+    cached_normalized[:audit] = cached_normalized.fetch(:audit, {}).to_h.merge(cached_result_reused: true)
+    cached_normalized
+  rescue StandardError
+    nil
+  end
+
+  def cache_successful_mutating_tool_result(normalized_args, result)
+    return unless cache_mutating_tool_results?
+    return if halt_result?(result)
+
+    normalized_result = Captain::ToolResult.normalize(result)
+    return if Captain::ToolResult.error?(normalized_result)
+
+    tool_result_cache[tool_result_cache_digest(normalized_args)] = {
+      tool_name: @tool.name.to_s,
+      arguments: normalized_args.deep_dup,
+      result: normalized_result.deep_dup,
+      stored_at: Time.current.iso8601
+    }
+  rescue StandardError
+    nil
+  end
+
+  def tool_result_cache
+    context_wrapper_context[TOOL_RESULT_CACHE_KEY] ||= {}
+  end
+
+  def tool_result_cache_digest(normalized_args)
+    Digest::SHA256.hexdigest(JSON.generate(canonical_json_value({ tool_name: @tool.name.to_s, arguments: normalized_args })))
+  end
+
+  def canonical_json_value(value)
+    case value
+    when Hash
+      value.to_h.stringify_keys.sort.to_h.transform_values { |nested| canonical_json_value(nested) }
+    when Array
+      value.map { |nested| canonical_json_value(nested) }
+    else
+      value.respond_to?(:as_json) ? value.as_json : value
+    end
+  end
+
+  def cache_mutating_tool_results?
+    Llm::ToolRiskPolicy.mutating?(@tool)
   end
 
   def tool_safety_error_for(stage, content)

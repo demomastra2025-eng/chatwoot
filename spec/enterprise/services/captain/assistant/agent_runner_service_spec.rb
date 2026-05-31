@@ -250,7 +250,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           current_agent: 'assistant_agent',
           conversation_history: [
             { role: :user, content: 'Update the deal' },
-            { role: :assistant, content: 'Done', thinking: 'Native OpenRouter reasoning' }
+            {
+              role: :assistant,
+              content: 'Done',
+              thinking: 'Native OpenRouter reasoning',
+              thinking_signature: 'sig_123',
+              reasoning_details: [{ 'type' => 'reasoning.text', 'text' => 'detail' }]
+            }
           ]
         },
         error: nil
@@ -262,6 +268,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(response).to include(
         'response' => 'Done',
         'reasoning' => 'Native OpenRouter reasoning',
+        'native_reasoning' => {
+          'text' => 'Native OpenRouter reasoning',
+          'signature' => 'sig_123',
+          'details' => [{ 'type' => 'reasoning.text', 'text' => 'detail' }],
+          'source' => 'openrouter'
+        },
         'structured_reasoning' => 'Structured summary',
         'agent_name' => 'assistant_agent',
         'handoff_tool_called' => false
@@ -392,6 +404,23 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
         'error_message' => 'Assistant runtime returned a blank response'
       )
+    end
+
+    it 'retries final response generation without tools after successful tool results before deterministic fallback', :aggregate_failures do
+      tool_history = finalization_tool_history
+      failed_context = finalization_failed_context(tool_history)
+      run_calls = []
+      retry_events = []
+      subscriber = subscribe_to_finalization_retry_events(retry_events)
+      allow_finalization_retry_runner(failed_context, run_calls)
+
+      result = service.generate_response(message_history: message_history)
+
+      expect_finalization_retry_call(run_calls, failed_context, tool_history)
+      expect_finalization_retry_result(result)
+      expect_finalization_retry_event(retry_events)
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
     it 'does not expose unknown raw tool identifiers in deterministic public fallback text' do
@@ -1400,6 +1429,101 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         :id, :title, :message, :campaign_type, :description
       )
     end
+  end
+
+  def finalization_tool_history
+    [
+      { role: :user, content: 'Create a deal for this contact' },
+      {
+        role: :assistant,
+        content: '',
+        agent_name: 'scenario_agent',
+        tool_calls: [{ id: 'call_1', name: 'create_deal', arguments: { title: 'New deal' } }]
+      },
+      { role: :tool, content: '{"deal_id":123,"title":"New deal"}', tool_call_id: 'call_1' }
+    ]
+  end
+
+  def finalization_failed_context(tool_history)
+    {
+      current_agent: 'scenario_agent',
+      conversation_history: tool_history,
+      captain_v2_completed_tool_names: ['create_deal'],
+      captain_v2_completed_tool_results: [{ tool_name: 'create_deal', success: true }]
+    }
+  end
+
+  def subscribe_to_finalization_retry_events(retry_events)
+    ActiveSupport::Notifications.subscribe('llm.schema.finalization_retry') do |*args|
+      retry_events << ActiveSupport::Notifications::Event.new(*args)
+    end
+  end
+
+  def allow_finalization_retry_runner(failed_context, run_calls)
+    blank_result = agent_result(output: { 'response' => '', 'handoff_message' => '' }, context: failed_context)
+    recovered_result = agent_result(
+      output: { 'response' => 'Deal created.', 'reasoning' => 'Used the completed create_deal tool result.' },
+      context: failed_context.merge(current_agent: 'scenario_agent')
+    )
+
+    allow(mock_runner).to receive(:run) do |input, context:, max_turns:, runtime_options:|
+      run_calls << { input: input, context: context, max_turns: max_turns, runtime_options: runtime_options }
+      run_calls.one? ? blank_result : recovered_result
+    end
+  end
+
+  def agent_result(output:, context:, error: nil)
+    instance_double(Captain::Runtime::Result, output: output, context: context, error: error)
+  end
+
+  def expect_finalization_retry_call(run_calls, failed_context, tool_history)
+    expect(mock_runner).to have_received(:run).twice
+    expect(run_calls.second[:input]).to be_nil
+    expect(run_calls.second[:max_turns]).to eq(described_class::MAX_RUNTIME_TURNS)
+    expect_finalization_runtime_options(run_calls.second[:runtime_options])
+    expect_finalization_retry_context(run_calls.second[:context], failed_context, tool_history)
+  end
+
+  def expect_finalization_runtime_options(runtime_options)
+    expect(runtime_options).to include(
+      account: account,
+      finalization_only: true,
+      continue_from_history: true
+    )
+    expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+  end
+
+  def expect_finalization_retry_context(context, failed_context, tool_history)
+    expect(context).to include(
+      current_agent: 'scenario_agent',
+      conversation_history: tool_history,
+      captain_v2_completed_tool_names: ['create_deal'],
+      captain_v2_completed_tool_results: [{ tool_name: 'create_deal', success: true }]
+    )
+    expect(context).not_to equal(failed_context)
+  end
+
+  def expect_finalization_retry_result(result)
+    expect(result).to include(
+      'response' => 'Deal created.',
+      'reasoning' => 'Used the completed create_deal tool result.',
+      'agent_name' => 'scenario_agent',
+      'handoff_tool_called' => false,
+      'finalization_only_retry' => true
+    )
+    expect(result).not_to include('schema_fallback' => true)
+  end
+
+  def expect_finalization_retry_event(retry_events)
+    expect(retry_events.map(&:payload)).to contain_exactly(
+      hash_including(
+        'schema_name' => 'Captain::ResponseSchema',
+        'status' => 'retrying',
+        'reason' => 'Assistant runtime returned a blank response',
+        'completed_tools_count' => 1,
+        'completed_tool_names' => ['create_deal']
+      )
+    )
   end
 
   def create_field_definition(entity_kind, key, label)

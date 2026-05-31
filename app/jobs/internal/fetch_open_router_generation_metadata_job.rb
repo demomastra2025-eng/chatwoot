@@ -32,6 +32,8 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
     attrs = {
       payload: enriched_payload(event.payload, metadata),
       model: metadata.model.presence || event.model,
+      reason: metadata_reason(event, metadata),
+      error_code: metadata_error_code(event, metadata),
       prompt_tokens: metadata.prompt_tokens || event.prompt_tokens,
       completion_tokens: metadata.completion_tokens || event.completion_tokens,
       thinking_tokens: metadata.reasoning_tokens || event.thinking_tokens,
@@ -40,6 +42,14 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
     }
     attrs[:total_tokens] = total_tokens(attrs, event)
     attrs.compact
+  end
+
+  def metadata_reason(event, metadata)
+    metadata.error_reason.presence || metadata.finish_reason.presence || event.reason
+  end
+
+  def metadata_error_code(event, metadata)
+    metadata.error_code.presence || event.error_code
   end
 
   def enriched_payload(payload, metadata)
@@ -57,6 +67,9 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
       'model' => metadata.model,
       'cost' => metadata.cost,
       'latency_ms' => metadata.latency_ms,
+      'finish_reason' => metadata.finish_reason,
+      'error_code' => metadata.error_code,
+      'error_reason' => metadata.error_reason,
       'prompt_tokens' => metadata.prompt_tokens,
       'completion_tokens' => metadata.completion_tokens,
       'reasoning_tokens' => metadata.reasoning_tokens,
@@ -67,11 +80,7 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
   def record_error(event, generation_id, error)
     payload = event.payload.to_h.merge(
       'openrouter_generation_id' => generation_id,
-      'openrouter_generation_error' => {
-        'generation_id' => generation_id,
-        'error_class' => error.class.name,
-        'message' => error.message
-      }
+      'openrouter_generation_error' => generation_error_payload(generation_id, error)
     )
     event.update!(payload: payload)
   rescue StandardError => e
@@ -80,6 +89,18 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
       "#{e.class}: #{e.message}"
     )
     nil
+  end
+
+  def generation_error_payload(generation_id, error)
+    classification = Llm::OpenRouterErrorClassifier.classify(error)
+    {
+      'generation_id' => generation_id,
+      'error_class' => error.class.name,
+      'message' => error.message,
+      'openrouter_error_category' => classification.category,
+      'retryable' => classification.retryable,
+      'retry_after_seconds' => classification.retry_after_seconds
+    }.compact
   end
 
   def total_tokens(attrs, event)

@@ -18,6 +18,7 @@ RSpec.describe Llm::OpenRouterGenerationClient do
                  model: 'openai/gpt-4o',
                  total_cost: '0.00042',
                  latency: 830,
+                 finish_reason: 'stop',
                  tokens_prompt: 120,
                  tokens_completion: 40,
                  native_tokens_reasoning: 7,
@@ -40,12 +41,37 @@ RSpec.describe Llm::OpenRouterGenerationClient do
       model: 'openai/gpt-4o',
       cost: '0.00042',
       latency_ms: 830,
+      finish_reason: 'stop',
       prompt_tokens: 120,
       completion_tokens: 40,
       reasoning_tokens: 7,
       cached_tokens: 13
     )
     expect(result.raw).to include('data' => include('id' => 'gen-123'))
+  end
+
+  it 'normalizes provider error metadata from completed OpenRouter generations' do
+    stub_request(:get, 'https://openrouter.ai/api/v1/generation')
+      .with(query: { 'id' => 'gen-error' })
+      .to_return(
+        status: 200,
+        body: {
+          data: {
+            id: 'gen-error',
+            finish_reason: 'error',
+            error: { code: 'provider_error', message: 'Provider timed out' }
+          }
+        }.to_json
+      )
+
+    result = described_class.fetch('gen-error', api_key: 'openrouter-key')
+
+    expect(result).to have_attributes(
+      generation_id: 'gen-error',
+      finish_reason: 'error',
+      error_code: 'provider_error',
+      error_reason: 'Provider timed out'
+    )
   end
 
   it 'normalizes API bases before fetching generation metadata' do

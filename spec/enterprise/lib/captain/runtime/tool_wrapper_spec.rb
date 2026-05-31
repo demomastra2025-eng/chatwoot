@@ -31,6 +31,58 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
   end
 
+  class ToolWrapperSpecReadOnlyTool < Captain::Runtime::Tool
+    attr_reader :calls
+
+    def initialize
+      super
+      @calls = 0
+    end
+
+    def name
+      'tool_wrapper_read_only_spec'
+    end
+
+    def description
+      'Tool wrapper read-only spec tool'
+    end
+
+    def metadata
+      { read_only: true, risk_level: 'low' }
+    end
+
+    def perform(_tool_context, **params)
+      @calls += 1
+      params.fetch(:result, 'ok')
+    end
+  end
+
+  class ToolWrapperSpecMutatingTool < Captain::Runtime::Tool
+    attr_reader :calls
+
+    def initialize
+      super
+      @calls = 0
+    end
+
+    def name
+      'tool_wrapper_mutating_spec'
+    end
+
+    def description
+      'Tool wrapper mutating spec tool'
+    end
+
+    def metadata
+      { risk_level: 'high', idempotent: false }
+    end
+
+    def perform(_tool_context, **params)
+      @calls += 1
+      Captain::ToolResult.success(message: "created #{params.fetch(:title)}", data: { id: @calls, title: params[:title] })
+    end
+  end
+
   let(:events) { [] }
   let(:context_wrapper) do
     Captain::Runtime::RunContext.new(
@@ -191,5 +243,36 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(result.content).to eq('Transferred to specialist')
     expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_halting_spec'])
     expect(events.last[2]).to be_a(RubyLLM::Tool::Halt)
+  end
+
+  it 'reuses successful mutating tool results for repeated identical calls instead of executing twice' do
+    mutating_tool = ToolWrapperSpecMutatingTool.new
+    mutating_wrapper = described_class.new(mutating_tool, context_wrapper)
+
+    first_result = mutating_wrapper.call(title: 'Premium lead')
+    second_result = mutating_wrapper.call(title: 'Premium lead')
+
+    expect(first_result).to eq(second_result)
+    expect(mutating_tool.calls).to eq(1)
+    expect(JSON.parse(second_result)).to include(
+      'message' => 'created Premium lead',
+      'data' => include('id' => 1, 'title' => 'Premium lead')
+    )
+    expect(context_wrapper.context[:captain_v2_tool_result_cache].values.first).to include(
+      tool_name: 'tool_wrapper_mutating_spec',
+      arguments: { title: 'Premium lead' },
+      result: include(success: true, message: 'created Premium lead')
+    )
+  end
+
+  it 'does not cache read-only tool calls that can safely execute repeatedly' do
+    read_only_tool = ToolWrapperSpecReadOnlyTool.new
+    read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
+
+    read_only_wrapper.call(result: 'lookup one')
+    read_only_wrapper.call(result: 'lookup one')
+
+    expect(read_only_tool.calls).to eq(2)
+    expect(context_wrapper.context[:captain_v2_tool_result_cache]).to be_blank
   end
 end

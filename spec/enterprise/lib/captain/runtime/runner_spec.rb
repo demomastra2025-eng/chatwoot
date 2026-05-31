@@ -56,6 +56,10 @@ class RuntimeRunnerSpecChat
   end
 end
 
+RuntimeRunnerSpecTool = Struct.new(:name, :description) do
+  def parameters = {}
+end
+
 RSpec.describe Captain::Runtime::Runner do
   subject(:runner) { described_class.new }
 
@@ -330,6 +334,48 @@ RSpec.describe Captain::Runtime::Runner do
 
       expect(result.output).to eq('conversation_handoff')
       expect(result.context[:current_agent]).to eq('assistant_agent')
+    end
+
+    it 'continues from restored history without exposing tools during finalization-only retries' do
+      tool = RuntimeRunnerSpecTool.new('create_deal', 'Create deal')
+      agent = Captain::Runtime::Agent.new(
+        name: 'assistant_agent',
+        instructions: 'Primary instructions',
+        tools: [tool]
+      )
+      history = [
+        { role: :user, content: 'Create a deal' },
+        {
+          role: :assistant,
+          content: '',
+          agent_name: 'assistant_agent',
+          tool_calls: [{ id: 'call_1', name: 'create_deal', arguments: { title: 'New deal' } }]
+        },
+        { role: :tool, content: '{"deal_id":123}', tool_call_id: 'call_1' }
+      ]
+      response = RubyLLM::Message.new(role: :assistant, content: 'Deal created')
+      chat = RuntimeRunnerSpecChat.new(complete_response: response)
+
+      allow(Llm::Models).to receive(:supports?).and_return(true)
+      expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
+      expect(Llm::Runtime).not_to receive(:ask)
+
+      result = runner.run(
+        agent,
+        nil,
+        context: { conversation_history: history },
+        registry: { agent.name => agent },
+        llm_context: llm_context,
+        account: account,
+        finalization_only: true,
+        continue_from_history: true
+      )
+
+      expect(result.output).to eq('Deal created')
+      expect(chat.instructions).to include('using only the completed tool result messages')
+      expect(chat.tools).to be_nil
+      expect(chat.messages.map(&:role)).to include(:tool)
+      expect(result.context[:captain_v2_bound_tool_ids]).to eq([])
     end
   end
 end

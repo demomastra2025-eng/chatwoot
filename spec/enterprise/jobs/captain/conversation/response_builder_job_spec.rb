@@ -577,11 +577,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
     end
 
-    it 'stores response reasoning in captain trace even when no tools ran' do
+    it 'stores native and structured reasoning separately in captain trace when no tools ran' do
       job = described_class.new
       response = {
         'response' => 'The deal was already up to date.',
-        'reasoning' => 'Checked the current CRM context and no tool call was required.'
+        'reasoning' => 'Native model reasoning.',
+        'native_reasoning' => { 'text' => 'Native model reasoning.', 'source' => 'openrouter' },
+        'structured_reasoning' => 'Checked the current CRM context and no tool call was required.'
       }
       job.instance_variable_set(:@response, response)
 
@@ -589,7 +591,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect(response['captain_trace']).to eq(
         'version' => Captain::ToolTraceBuilder::VERSION,
-        'reasoning' => 'Checked the current CRM context and no tool call was required.'
+        'native_reasoning' => { 'text' => 'Native model reasoning.', 'source' => 'openrouter' },
+        'structured_reasoning' => 'Checked the current CRM context and no tool call was required.'
       )
     end
 

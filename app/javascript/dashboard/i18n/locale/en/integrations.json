@@ -526,11 +526,21 @@
           "SHORT": "Tools stay controlled",
           "TOOLTIP": "Checks Captain tool inputs and outputs before they reach the customer."
         },
+        "SIMULATION": {
+          "TITLE": "Live scenarios",
+          "SHORT": "Real Captain under judge",
+          "TOOLTIP": "Runs safe multi-turn simulations through Captain runtime, user simulator, and judge. Requires budget acknowledgement."
+        },
         "COMPLETION": {
           "TITLE": "Conversation closing",
           "SHORT": "Close only solved chats",
           "TOOLTIP": "Live model check: separates solved conversations from cases waiting for customer data or follow-up."
         }
+      },
+      "PACK_GROUPS": {
+        "FAST": "Fast checks",
+        "LIVE": "Live LLM checks",
+        "OTHER": "Additional"
       },
       "PACK_COPY": {
         "MODERATION": {
@@ -541,9 +551,37 @@
           "LABEL": "Tool safety",
           "DESCRIPTION": "Checks Captain tool arguments and results before customer display."
         },
+        "CONFIRMATION": {
+          "LABEL": "Action confirmations",
+          "DESCRIPTION": "Checks that risky changes require explicit confirmation."
+        },
         "AI_VOICE": {
           "LABEL": "AI Voice trace",
           "DESCRIPTION": "Checks voice traces: tool result was used and speech was not clipped."
+        },
+        "EVENT_CONTRACT": {
+          "LABEL": "Event contract",
+          "DESCRIPTION": "Checks normalized event names, payload budgets, and raw-content-free traces."
+        },
+        "KNOWLEDGE_RAG": {
+          "LABEL": "Knowledge/RAG",
+          "DESCRIPTION": "Checks that knowledge search uses chunks and degraded fallbacks stay explicit."
+        },
+        "PRODUCT_CASE": {
+          "LABEL": "Product cases",
+          "DESCRIPTION": "Checks answer and tool correctness for support, CRM, and scheduling."
+        },
+        "SCENARIOS": {
+          "LABEL": "Captain scenarios",
+          "DESCRIPTION": "Deterministic multi-turn checks for tools, confirmations, handoff, and final answers."
+        },
+        "SCENARIO_SIMULATION": {
+          "LABEL": "Captain live simulation",
+          "DESCRIPTION": "Live Captain run with user simulator, judge, trace artifacts, and budget limits."
+        },
+        "OPENROUTER_CONTRACTS": {
+          "LABEL": "OpenRouter contract",
+          "DESCRIPTION": "Checks tools, structured output, reasoning, routing, privacy, and multimodal requests."
         },
         "RED_TEAM": {
           "LABEL": "Red-team prompts",
@@ -563,7 +601,20 @@
         "PASSED": "Passed cases",
         "SUITES": "Suites",
         "FAILED": "Failed cases",
-        "ERRORS": "Errors"
+        "ERRORS": "Errors",
+        "CASES_COUNT": "Cases: {count}",
+        "ISSUES_COUNT": "Issues: {count}",
+        "DURATION_MS": "{ms} ms"
+      },
+      "RELEASE_GATE": {
+        "TITLE": "Release gate",
+        "PASS": "Gate passed",
+        "FAIL": "Gate failed",
+        "REQUIRED_PACKS": "Required packs: {count}",
+        "SCHEMA_INVALID": "Schema issues: {count}",
+        "TOOL_FAILURE": "Tool failures: {count}",
+        "NO_CONTENT": "No-content cases: {count}",
+        "CATALOG_STALE": "Catalog freshness issues: {count}"
       },
       "PACKS": {
         "TITLE": "Check packs",

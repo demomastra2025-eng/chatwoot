@@ -202,6 +202,7 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
         reason: error.message,
         response_type: response.respond_to?(:content) ? response_type(response.content) : nil,
         response_size: response.respond_to?(:content) ? response_size(response.content) : nil,
+        response_healing_enabled: response_healing_enabled?(chat),
         **Llm::MessageTokenPayload.for(response)
       )
     end
@@ -213,7 +214,8 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
         schema_name: Llm::StructuredOutputSchema.name_for(schema),
         model: resolved_model_name(chat),
         attempt: attempt + 1,
-        reason: error.message
+        reason: error.message,
+        response_healing_enabled: response_healing_enabled?(chat)
       )
     end
 
@@ -223,6 +225,27 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
       return chat_model if chat_model.present?
 
       nil
+    end
+
+    def response_healing_enabled?(chat)
+      response_healing_plugin_ids(chat).include?(Llm::OpenRouterRequestPolicy::RESPONSE_HEALING_PLUGIN_ID)
+    rescue StandardError
+      false
+    end
+
+    def response_healing_plugin_ids(chat)
+      Array(chat_params_value(chat, :plugins)).filter_map do |plugin|
+        next unless plugin.respond_to?(:[])
+
+        plugin[:id] || plugin['id']
+      end.map(&:to_s)
+    end
+
+    def chat_params_value(chat, key)
+      params = chat.respond_to?(:params) ? chat.params : {}
+      return unless params.respond_to?(:[])
+
+      params[key] || params[key.to_s]
     end
 
     def halt_result?(response)

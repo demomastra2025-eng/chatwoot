@@ -103,10 +103,33 @@ namespace :llm do
     desc 'CI gate for deterministic offline AI evals. No live LLM/API calls.'
     task ci: :environment do
       result = Llm::Evals::Runner.new.call
+      gate = Llm::Evals::ReleaseGate.new(result: result).call
       summary = result.to_h.slice(:status, :suite_count, :total_count, :passed_count, :failed_count, :error_count)
+      summary = summary.merge(gate_status: gate[:status], gate_failures: gate[:failures])
 
       puts JSON.pretty_generate(summary)
-      abort('AI eval CI gate failed') unless result.passed?
+      abort('AI eval CI gate failed') unless gate[:passed]
+    end
+
+    desc 'Release gate for deterministic offline AI evals. ENV: PACK_IDS, REQUIRED_PACKS, MIN_PASS_RATE, MAX_FAILED, MAX_ERRORS, MAX_SCHEMA_INVALID, MAX_TOOL_FAILURES, MAX_NO_CONTENT, MAX_CATALOG_STALE.'
+    task release_gate: :environment do
+      pack_ids = ENV['PACK_IDS'].to_s.split(',').filter_map { |id| id.strip.presence }
+      required_pack_ids = ENV['REQUIRED_PACKS'].to_s.split(',').filter_map { |id| id.strip.presence }
+      result = Llm::Evals::Runner.new(pack_ids: pack_ids.presence).call
+      gate = Llm::Evals::ReleaseGate.new(
+        result: result,
+        required_pack_ids: required_pack_ids.presence,
+        min_pass_rate: ENV.fetch('MIN_PASS_RATE', Llm::Evals::ReleaseGate::DEFAULT_MIN_PASS_RATE),
+        max_failed_count: ENV.fetch('MAX_FAILED', Llm::Evals::ReleaseGate::DEFAULT_MAX_FAILED_COUNT),
+        max_error_count: ENV.fetch('MAX_ERRORS', Llm::Evals::ReleaseGate::DEFAULT_MAX_ERROR_COUNT),
+        max_schema_invalid_count: ENV.fetch('MAX_SCHEMA_INVALID', Llm::Evals::ReleaseGate::DEFAULT_MAX_SCHEMA_INVALID_COUNT),
+        max_tool_failure_count: ENV.fetch('MAX_TOOL_FAILURES', Llm::Evals::ReleaseGate::DEFAULT_MAX_TOOL_FAILURE_COUNT),
+        max_no_content_count: ENV.fetch('MAX_NO_CONTENT', Llm::Evals::ReleaseGate::DEFAULT_MAX_NO_CONTENT_COUNT),
+        max_catalog_stale_count: ENV.fetch('MAX_CATALOG_STALE', Llm::Evals::ReleaseGate::DEFAULT_MAX_CATALOG_STALE_COUNT)
+      ).call
+
+      puts JSON.pretty_generate(gate)
+      abort('AI eval release gate failed') unless gate[:passed]
     end
 
     desc 'Export an AI Voice conversation as a sanitized trace eval fixture preview. Requires ACCOUNT_ID, INBOX_ID, DISPLAY_ID.'

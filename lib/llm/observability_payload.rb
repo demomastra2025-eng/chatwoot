@@ -87,6 +87,7 @@ class Llm::ObservabilityPayload
       payload['reason'] = error.class.name.demodulize.underscore
       payload['error_class'] = error.class.name
       payload['error_message'] = error.message
+      attach_openrouter_error_classification!(payload, error)
       payload.compact!
       payload
     end
@@ -99,6 +100,21 @@ class Llm::ObservabilityPayload
       Llm::Config.provider_for_model(model)
     rescue StandardError
       nil
+    end
+
+    def attach_openrouter_error_classification!(payload, error)
+      return unless openrouter_error_payload?(payload, error)
+
+      classification = Llm::OpenRouterErrorClassifier.classify(error)
+      return if classification.category == 'unknown'
+
+      payload['openrouter_error_category'] = classification.category
+      payload['retryable'] = classification.retryable
+      payload['retry_after_seconds'] = classification.retry_after_seconds
+    end
+
+    def openrouter_error_payload?(payload, error)
+      payload['provider'].to_s == 'openrouter' || payload[:provider].to_s == 'openrouter' || error.message.to_s.match?(/openrouter/i)
     end
 
     def token_value(response, method_name)

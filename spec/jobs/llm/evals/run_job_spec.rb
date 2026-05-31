@@ -40,7 +40,9 @@ RSpec.describe Llm::Evals::RunJob do
     expect(eval_run.reload).to have_attributes(status: 'passed')
     expect(eval_run.result.dig('suites', 0, 'suite_id')).to eq('captain.conversation_completion')
     expect(eval_run.result.dig('suites', 0, 'cases')).to be_nil
-    expect(eval_run.result.to_json).not_to include('answered_question_then_thanks')
+    expect(eval_run.result.dig('suites', 0, 'case_summaries')).to include(
+      include('id' => 'answered_question_then_thanks', 'status' => 'pass')
+    )
     expect(eval_run.finished_at).to be_present
   end
 

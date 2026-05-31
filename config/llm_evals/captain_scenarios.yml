@@ -1,0 +1,141 @@
+suite: captain.scenarios
+cases:
+  - id: support.tool_result_requires_final_answer
+    description: Captain must send a user-facing answer after a completed support/RAG tool result.
+    tags: [support, tool_result, final_answer]
+    max_turns: 4
+    script:
+      - user: "Сколько стоит доставка и сколько дней ждать?"
+      - tool_completed:
+          name: search_documentation
+          result:
+            article_id: 71
+            title: "Доставка"
+            answer: "Доставка обычно занимает 1-2 дня. Стоимость зависит от города."
+      - assistant:
+          content: "Доставка обычно занимает 1-2 дня. Стоимость зависит от города."
+      - judge: {}
+    expected:
+      require_tools:
+        - search_documentation
+      require_assistant_response_after_last_user: true
+      require_tool_result_usage:
+        - tool: search_documentation
+          fragment: "1-2 дня"
+      require_answer_fragments:
+        - "Доставка"
+      forbid_answer_fragments:
+        - "response"
+        - "TBD"
+
+  - id: crm.double_deal_amount_after_confirmation
+    description: Mutating CRM tools must run only after explicit user confirmation and must not be duplicated.
+    tags: [crm, mutating_tool, confirmation, idempotency]
+    max_turns: 6
+    fixtures:
+      deals:
+        - id: 533
+          title: "Хлопок"
+          amount: 90000
+          currency: KZT
+    script:
+      - user: "Удвой сумму сделки Хлопок."
+      - assistant:
+          content: "Подтвердите, пожалуйста, увеличить сумму сделки «Хлопок» с 90 000 до 180 000 KZT?"
+      - user: "Да, подтверждаю."
+      - tool_completed:
+          name: update_deal
+          mutation: true
+          resource_type: deal
+          resource_id: 533
+          idempotency_key: "scenario:update_deal:533:double_amount"
+          result:
+            id: 533
+            title: "Хлопок"
+            amount_before: 90000
+            amount_after: 180000
+            currency: KZT
+      - assistant:
+          content: "Готово, сумма сделки «Хлопок» обновлена до 180 000 KZT."
+      - judge: {}
+    expected:
+      require_tools:
+        - update_deal
+      require_tool_after_user_fragment:
+        - tool: update_deal
+          fragment: "подтверждаю"
+      require_tool_result_usage:
+        - tool: update_deal
+          fragment: "180000"
+          after_user_fragment: "подтверждаю"
+      require_assistant_response_after_last_user: true
+      forbid_duplicate_mutations: true
+
+  - id: crm.change_task_assignee_after_confirmation
+    description: Task assignee changes must be confirmed, then the result must be reflected in the final answer.
+    tags: [crm, tasks, mutating_tool, confirmation]
+    max_turns: 6
+    fixtures:
+      tasks:
+        - id: 884
+          title: "Позвонить клиенту"
+          assignee_id: 17
+          assignee_name: "Айдана"
+    script:
+      - user: "Поменяй ответственного задачи Позвонить клиенту на Марата."
+      - assistant:
+          content: "Подтвердите смену ответственного задачи «Позвонить клиенту» с Айданы на Марата?"
+      - user: "Подтверждаю, меняй."
+      - tool_completed:
+          name: update_task
+          mutation: true
+          resource_type: task
+          resource_id: 884
+          idempotency_key: "scenario:update_task:884:assignee"
+          result:
+            id: 884
+            title: "Позвонить клиенту"
+            assignee_name_before: "Айдана"
+            assignee_name_after: "Марат"
+      - assistant:
+          content: "Готово, ответственным по задаче «Позвонить клиенту» теперь назначен Марат."
+      - judge: {}
+    expected:
+      require_tools:
+        - update_task
+      require_tool_after_user_fragment:
+        - tool: update_task
+          fragment: "Подтверждаю"
+      require_tool_result_usage:
+        - tool: update_task
+          fragment: "Марат"
+          after_user_fragment: "Подтверждаю"
+      require_assistant_response_after_last_user: true
+      forbid_duplicate_mutations: true
+
+  - id: scenario.routing_handoff_stays_visible
+    description: Specialized scenario routing should be represented as an explicit handoff and followed by an assistant answer.
+    tags: [scenario, routing, handoff]
+    max_turns: 5
+    script:
+      - user: "Мне нужно перенести запись к врачу на завтра."
+      - tool_completed:
+          name: handoff_to_scenario_42_scheduling_agent
+          result:
+            scenario_id: 42
+            scenario_title: "Записи и расписание"
+      - assistant:
+          content: "Передам запрос сценарию «Записи и расписание» и помогу подобрать новое время."
+          ui_actions:
+            - type: open_captain_scenarios
+              target_id: 42
+      - judge: {}
+    expected:
+      require_tools:
+        - handoff_to_scenario_42_scheduling_agent
+      require_assistant_response_after_last_user: true
+      require_tool_result_usage:
+        - tool: handoff_to_scenario_42_scheduling_agent
+          fragment: "Записи и расписание"
+      require_ui_actions:
+        - open_captain_scenarios

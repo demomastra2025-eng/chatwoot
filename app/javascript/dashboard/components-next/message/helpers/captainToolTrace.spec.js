@@ -189,6 +189,65 @@ describe('buildCaptainToolTraceMessages', () => {
     ]);
   });
 
+  it('prefers native model reasoning and does not render structured or system fallback text as reasoning', () => {
+    expect(
+      buildCaptainToolTraceMessages(
+        {
+          captain_trace: {
+            native_reasoning: {
+              text: 'Нативное рассуждение модели.',
+              source: 'openrouter',
+            },
+            structured_reasoning: 'Схемное объяснение Captain.',
+            system_fallback_reason: 'Детерминированный fallback.',
+          },
+        },
+        { reasoningLabel: 'Рассуждение модели' }
+      )
+    ).toEqual([
+      {
+        id: 'captain-reasoning',
+        message: {
+          content: 'Рассуждение модели',
+          reasoning: 'Нативное рассуждение модели.',
+        },
+      },
+    ]);
+
+    expect(
+      buildCaptainToolTraceMessages({
+        captain_trace: {
+          structured_reasoning: 'Схемное объяснение Captain.',
+          system_fallback_reason: 'Детерминированный fallback.',
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it('shows OpenRouter redacted native reasoning marker without inventing text', () => {
+    expect(
+      buildCaptainToolTraceMessages(
+        {
+          captain_trace: {
+            native_reasoning: {
+              encrypted: true,
+              source: 'openrouter',
+            },
+          },
+        },
+        { reasoningLabel: 'Рассуждение модели' }
+      )
+    ).toEqual([
+      {
+        id: 'captain-reasoning',
+        message: {
+          content: 'Рассуждение модели',
+          reasoning: 'Модель скрыла рассуждение',
+        },
+      },
+    ]);
+  });
+
   it('hides legacy technical fallback reasoning', () => {
     expect(
       buildCaptainToolTraceMessages({

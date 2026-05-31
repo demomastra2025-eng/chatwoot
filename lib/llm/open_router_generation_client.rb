@@ -14,6 +14,9 @@ class Llm::OpenRouterGenerationClient
     :model,
     :cost,
     :latency_ms,
+    :finish_reason,
+    :error_code,
+    :error_reason,
     :prompt_tokens,
     :completion_tokens,
     :reasoning_tokens,
@@ -63,12 +66,16 @@ class Llm::OpenRouterGenerationClient
     end
 
     def result_from_data(data, requested_generation_id:, raw:)
+      data = data.to_h.with_indifferent_access
       Result.new(
         generation_id: data['id'].presence || requested_generation_id,
         provider_name: data['provider_name'].presence || data['provider'],
         model: data['model'],
         cost: data['total_cost'].presence || data['cost'],
         latency_ms: latency_ms(data),
+        finish_reason: finish_reason(data),
+        error_code: error_code(data),
+        error_reason: error_reason(data),
         prompt_tokens: token_count(data, 'tokens_prompt', 'prompt_tokens', 'input_tokens'),
         completion_tokens: token_count(data, 'tokens_completion', 'completion_tokens', 'output_tokens'),
         reasoning_tokens: token_count(data, 'native_tokens_reasoning', 'reasoning_tokens'),
@@ -79,6 +86,26 @@ class Llm::OpenRouterGenerationClient
 
     def latency_ms(data)
       integer_value(data['latency_ms'] || data['latency'] || data['generation_time'])
+    end
+
+    def finish_reason(data)
+      data['finish_reason'].presence || data['native_finish_reason'].presence || data['finish'].presence
+    end
+
+    def error_code(data)
+      data['error_code'].presence || data['code'].presence || error_value(data, 'code')
+    end
+
+    def error_reason(data)
+      data['error_reason'].presence || data['error_message'].presence || error_value(data, 'message') || error_value(data, 'error')
+    end
+
+    def error_value(data, key)
+      error = data['error'].presence || data['provider_error'].presence
+      return if error.blank?
+      return error[key] if error.is_a?(Hash)
+
+      error.to_s if key == 'message' || key == 'error'
     end
 
     def token_count(data, *keys)

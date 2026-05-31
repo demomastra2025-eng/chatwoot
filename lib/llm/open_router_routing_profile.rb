@@ -107,7 +107,18 @@ class Llm::OpenRouterRoutingProfile
       provider: provider_preferences.presence,
       plugins: plugins.presence,
       headers: headers.presence,
-      native_endpoint: native_endpoint
+      native_endpoint: native_endpoint,
+      routing_policy: routing_policy.presence
+    }.compact
+  end
+
+  def routing_policy
+    {
+      strategy: routing_strategy.presence,
+      provider_order: provider_order.presence,
+      allow_fallbacks: provider_preferences[:allow_fallbacks],
+      require_parameters: provider_preferences[:require_parameters],
+      sort: provider_preferences[:sort]
     }.compact
   end
 

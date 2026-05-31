@@ -296,6 +296,22 @@ RSpec.describe Llm::StructuredOutputPolicy do
       expect(events.map(&:name)).to include('llm.schema.invalid', 'llm.schema.repair_requested')
     end
 
+    it 'records response-healing enablement in invalid-output repair telemetry' do
+      openrouter_model = instance_double(RubyLLM::Model::Info, id: 'deepseek/deepseek-v4-pro', provider: 'openrouter')
+      response_one = StructuredOutputPolicySpecResponse.new('{"unexpected":"field"}')
+      response_two = StructuredOutputPolicySpecResponse.new('{"message":"Done"}')
+      retry_chat = StructuredOutputPolicySpecChat.new([response_one, response_two], model: openrouter_model)
+
+      described_class.bind!(chat: retry_chat, schema: schema)
+
+      described_class.execute(chat: retry_chat) { retry_chat.ask('Hello') }
+
+      invalid_event = events.find { |event| event.name == 'llm.schema.invalid' }
+      repair_event = events.find { |event| event.name == 'llm.schema.repair_requested' }
+      expect(invalid_event.payload).to include('response_healing_enabled' => true)
+      expect(repair_event.payload).to include('response_healing_enabled' => true, 'attempt' => 2)
+    end
+
     it 'retries Captain plain text responses and accepts repaired JSON with reasoning' do
       response_one = StructuredOutputPolicySpecResponse.new("<think>internal scratchpad</think>\nГотово, обновил сделку.")
       response_two = StructuredOutputPolicySpecResponse.new(

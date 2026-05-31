@@ -38,6 +38,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
       expect(json_response[:packs]).to include(
         include(id: 'captain.ai_voice_trace', live_model: false, default_enabled: true),
         include(id: 'captain.event_contract_trace', live_model: false, default_enabled: true),
+        include(id: 'captain.scenario_simulation', live_model: true, default_enabled: false),
         include(id: 'captain.conversation_completion', live_model: true, default_enabled: false)
       )
       expect(json_response[:eval_runs]).to include(
@@ -236,6 +237,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
         include_live: false
       )
       expect(json_response.dig(:result, :suites).first).to include(suite_id: 'captain.ai_voice_trace')
+      expect(json_response.dig(:result, :release_gate)).to include(
+        status: 'pass',
+        passed: true,
+        required_pack_ids: ['captain.ai_voice_trace']
+      )
     end
 
     it 'queues mixed deterministic and LLM-backed packs through the same endpoint' do
@@ -296,7 +302,16 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
         pack_ids: ['captain.conversation_completion'],
         requested_budget_cents: 75,
         max_cases: 1,
-        result: { status: 'pass' }
+        result: {
+          status: 'pass',
+          suites: [
+            {
+              suite_id: 'captain.conversation_completion',
+              status: 'pass',
+              cases: [{ id: 'completed', status: 'pass', input: 'secret prompt' }]
+            }
+          ]
+        }
       )
 
       get "/api/v1/accounts/#{account.id}/captain/evaluations/run_status",
@@ -306,7 +321,12 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(json_response[:run]).to include(id: run.id, status: 'passed')
-      expect(json_response.dig(:run, :result)).to be_nil
+      expect(json_response.dig(:run, :result)).to include(status: 'pass')
+      expect(json_response.dig(:run, :result, :suites, 0, :case_summaries)).to include(
+        include(id: 'completed', status: 'pass')
+      )
+      expect(response.body).not_to include('input')
+      expect(response.body).not_to include('secret prompt')
     end
   end
 end

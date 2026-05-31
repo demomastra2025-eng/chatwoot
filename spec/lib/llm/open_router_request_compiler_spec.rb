@@ -74,7 +74,7 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     expect(compiled.params[:provider]).not_to include('sort')
     expect(compiled.params[:provider]).not_to include(:sort)
     expect(compiled.params[:plugins].count { |plugin| plugin[:id] == 'response-healing' || plugin['id'] == 'response-healing' }).to eq(1)
-    expect(compiled.params[:plugins]).to include({ id: 'web' })
+    expect(compiled.params[:plugins]).not_to include({ id: 'web' })
   end
 
   it 'does not add response healing for streaming structured output requests' do
@@ -86,7 +86,7 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     )
 
     expect(compiled.params[:provider]).to include(require_parameters: true)
-    expect(compiled.params[:plugins]).to contain_exactly({ id: 'web' })
+    expect(compiled.params).not_to include(:plugins)
   end
 
   it 'keeps Copilot latency-first routing for tool and schema requests' do
@@ -232,5 +232,39 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       require_parameters: true,
       data_collection: 'deny'
     )
+  end
+
+  it 'does not treat explicit empty tool or reasoning options as OpenRouter feature requirements' do
+    compiled = described_class.call(
+      request: nil,
+      feature: :label_suggestion,
+      model: 'openai/gpt-5.4-mini',
+      tools: [],
+      reasoning: {},
+      schema: nil
+    )
+
+    expect(compiled.params[:provider]).to include(sort: { by: 'price', partition: 'none' })
+    expect(compiled.params[:provider]).not_to include(:require_parameters)
+    expect(compiled.params).not_to include(:reasoning)
+  end
+
+  it 'filters caller-supplied plugins through OpenRouter plugin policy' do
+    compiled = compile(
+      feature: :captain_agent,
+      runtime_preferences: {
+        openrouter_allowed_plugins: ['context_compression', 'openrouter:web_search', 'apply_patch']
+      },
+      base_params: {
+        plugins: [
+          { id: 'context_compression', mode: 'emergency' },
+          { id: 'openrouter:web_search' },
+          { id: 'apply_patch' },
+          { id: 'web' }
+        ]
+      }
+    )
+
+    expect(compiled.params[:plugins]).to contain_exactly(id: 'context-compression', mode: 'emergency')
   end
 end

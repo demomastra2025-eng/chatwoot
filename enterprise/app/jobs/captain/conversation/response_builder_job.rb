@@ -721,21 +721,39 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       return
     end
 
-    payload = Captain::ToolTraceBuilder.payload(tool_trace_steps, reasoning: @response['reasoning'])
+    payload = Captain::ToolTraceBuilder.payload(tool_trace_steps, **reasoning_trace_attributes)
     @response['captain_trace'] = payload if payload.present?
   end
 
   def trace_with_reasoning(trace)
-    reasoning = @response['reasoning']
-    return trace if reasoning.blank?
-
     trace_hash = trace.respond_to?(:to_h) ? trace.to_h : {}
-    return trace if trace_hash['reasoning'].present? || trace_hash[:reasoning].present?
-
-    payload = Captain::ToolTraceBuilder.payload(nil, reasoning: reasoning)
+    payload = Captain::ToolTraceBuilder.payload(nil, **reasoning_trace_attributes)
     return trace if payload.blank?
 
-    trace_hash.merge('version' => trace_hash['version'] || trace_hash[:version] || payload['version'], 'reasoning' => payload['reasoning'])
+    merge_trace_reasoning(trace_hash, payload)
+  end
+
+  def reasoning_trace_attributes
+    separated_attributes = {
+      native_reasoning: response_value(:native_reasoning),
+      structured_reasoning: response_value(:structured_reasoning),
+      system_fallback_reason: response_value(:system_fallback_reason)
+    }.compact_blank
+    return separated_attributes if separated_attributes.present?
+
+    { reasoning: response_value(:reasoning) }
+  end
+
+  def response_value(key)
+    @response[key.to_s] || @response[key]
+  end
+
+  def merge_trace_reasoning(trace_hash, payload)
+    merged = trace_hash.merge('version' => trace_hash['version'] || trace_hash[:version] || payload['version'])
+    payload.except('version').each do |key, value|
+      merged[key] = value if value.present? && merged[key].blank? && merged[key.to_sym].blank?
+    end
+    merged
   end
 
   def conversation_pending?

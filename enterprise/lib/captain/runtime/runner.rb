@@ -35,6 +35,8 @@ class Captain::Runtime::Runner
       context_wrapper: Captain::Runtime::RunContext.new(deep_copy_context(options.fetch(:context, {})), callbacks: options.fetch(:callbacks, {})),
       runtime_headers: Captain::Runtime::HashNormalizer.normalize(options[:headers], label: 'headers'),
       runtime_params: Captain::Runtime::HashNormalizer.normalize(options[:params], label: 'params'),
+      finalization_only: ActiveModel::Type::Boolean.new.cast(options[:finalization_only]),
+      continue_from_history: ActiveModel::Type::Boolean.new.cast(options[:continue_from_history]),
       current_turn: 0
     }.tap do |session|
       initialize_session!(session)
@@ -44,7 +46,8 @@ class Captain::Runtime::Runner
   def initialize_session!(session)
     callback_manager(session).emit_run_start(session[:current_agent].name, session[:input], session[:context_wrapper])
     rebuild_chat!(session)
-    session[:input_already_in_history] = Captain::Runtime::InputComparer.last_message_matches?(session[:chat], session[:input])
+    session[:input_already_in_history] = session[:continue_from_history] ||
+                                         Captain::Runtime::InputComparer.last_message_matches?(session[:chat], session[:input])
   end
 
   def process_session(session)
@@ -186,7 +189,8 @@ class Captain::Runtime::Runner
       llm_context: session[:llm_context],
       account: session[:account],
       runtime_headers: session[:runtime_headers],
-      runtime_params: session[:runtime_params]
+      runtime_params: session[:runtime_params],
+      finalization_only: session[:finalization_only]
     )
   end
 

@@ -107,6 +107,37 @@ class Llm::Evals::PackRegistry
       default_enabled: true
     ),
     Pack.new(
+      id: 'captain.scenarios',
+      label: 'Captain scenario simulations',
+      description: 'Multi-turn deterministic scenario checks for Captain tool use, confirmations, handoffs, and final answers.',
+      suite_class: 'Captain::Evals::ScenarioSuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
+      id: 'captain.scenario_simulation',
+      label: 'Captain live scenario simulation',
+      description: 'Queued live multi-turn Captain simulations with user/judge agents, trace artifacts, and budget gates.',
+      suite_class: 'Captain::Evals::ScenarioSimulationSuite',
+      requires_account: true,
+      live_model: true,
+      deterministic: false,
+      default_enabled: false
+    ),
+    Pack.new(
+      id: 'openrouter.contracts',
+      label: 'OpenRouter runtime contracts',
+      description: 'Deterministic contract checks for OpenRouter tools, structured output, reasoning, routing, native endpoints, privacy, ' \
+                   'and multimodal requests.',
+      suite_class: 'Llm::Evals::OpenRouterContractSuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
       id: 'captain.red_team',
       label: 'Captain red-team attacks',
       description: 'Offline Tribunal red-team prompt generation coverage for Captain safety hardening.',

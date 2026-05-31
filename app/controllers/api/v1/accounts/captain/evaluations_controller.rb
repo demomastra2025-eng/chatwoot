@@ -47,15 +47,16 @@ class Api::V1::Accounts::Captain::EvaluationsController < Api::V1::Accounts::Bas
       pack_ids: pack_ids,
       include_live: false
     ).call
+    release_gate = Llm::Evals::ReleaseGate.new(result: result, required_pack_ids: pack_ids).call
 
-    render json: { packs: Llm::Evals::PackRegistry.catalog, result: result.to_h }
+    render json: { packs: Llm::Evals::PackRegistry.catalog, result: result.to_h.merge(release_gate: release_gate) }
   rescue Llm::Evals::RunRequest::ValidationError => e
     render json: { error: e.message, eval_runs: eval_run_config }, status: :unprocessable_content
   end
 
   def run_status
     run = Llm::EvalRun.where(account: @current_account).find(params[:run_id])
-    render json: { run: run.summary }
+    render json: { run: run.summary(include_result: true) }
   end
 
   def import_conversation

@@ -5,12 +5,6 @@ class Llm::FeatureRequest
   AUDIO_EXTENSIONS = %w[.aac .flac .m4a .mp3 .mp4 .mpeg .mpga .oga .ogg .wav .webm].freeze
   ACCOUNT_OPTIONAL_FEATURES = %w[moderation].freeze
   TOOL_CHOICE_VALUES = %w[auto none required].freeze
-  READ_ONLY_RISK_LEVELS = %w[low read_only readonly lookup].freeze
-  MUTATING_RISK_LEVELS = %w[medium high critical destructive custom].freeze
-  TOOL_DEFINITION_METHODS = %i[tool_definition definition metadata].freeze
-  TOOL_READ_ONLY_KEYS = %i[read_only read_only_hint readonly lookup].freeze
-  TOOL_MUTATING_KEYS = %i[mutating mutation destructive destructive_hint side_effect side_effects].freeze
-  TOOL_NON_IDEMPOTENT_KEYS = %i[non_idempotent non_retryable].freeze
   BOOLEAN = ActiveModel::Type::Boolean.new
 
   attr_reader :feature, :account, :assistant, :conversation, :session_id, :user_id, :model, :models,
@@ -228,6 +222,7 @@ class Llm::FeatureRequest
   end
 
   def normalize_parallel_tool_calls(value)
+    return false if value.nil? && mutating_tool_flow?
     return if value.nil?
     return false unless optional_boolean(value)
 
@@ -306,53 +301,10 @@ class Llm::FeatureRequest
   end
 
   def mutating_tool?(tool)
-    metadata = tool_metadata(tool)
-    return true if metadata.empty?
-    return true if metadata_boolean(metadata, *TOOL_MUTATING_KEYS) == true
-    return true if metadata_boolean(metadata, *TOOL_NON_IDEMPOTENT_KEYS) == true
-    return true if metadata_boolean(metadata, :idempotent) == false && metadata_key?(metadata, :idempotent)
-
-    risk_level = metadata[:risk_level].to_s
-    return true if MUTATING_RISK_LEVELS.include?(risk_level)
-    return false if read_only_tool?(tool)
-
-    true
+    Llm::ToolRiskPolicy.mutating?(tool)
   end
 
   def read_only_tool?(tool)
-    metadata = tool_metadata(tool)
-    return false if metadata.empty?
-    return true if metadata_boolean(metadata, *TOOL_READ_ONLY_KEYS) == true
-
-    READ_ONLY_RISK_LEVELS.include?(metadata[:risk_level].to_s)
-  end
-
-  def tool_metadata(tool)
-    metadata = TOOL_DEFINITION_METHODS.filter_map do |method_name|
-      next unless tool.respond_to?(method_name, true)
-
-      tool.send(method_name)
-    rescue StandardError
-      nil
-    end.find(&:present?)
-
-    metadata ||= tool.to_h if metadata.blank? && tool.respond_to?(:to_h) && !tool.is_a?(Hash)
-    return {} unless metadata.respond_to?(:to_h)
-
-    metadata.to_h.deep_symbolize_keys
-  rescue StandardError
-    {}
-  end
-
-  def metadata_key?(metadata, *keys)
-    keys.any? { |key| metadata.key?(key) || metadata.key?(key.to_s) }
-  end
-
-  def metadata_boolean(metadata, *keys)
-    key = keys.find { |candidate| metadata.key?(candidate) || metadata.key?(candidate.to_s) }
-    return if key.blank?
-
-    value = metadata.key?(key) ? metadata[key] : metadata[key.to_s]
-    BOOLEAN.cast(value)
+    Llm::ToolRiskPolicy.read_only?(tool)
   end
 end

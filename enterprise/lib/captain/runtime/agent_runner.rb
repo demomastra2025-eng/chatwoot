@@ -44,7 +44,7 @@ class Captain::Runtime::AgentRunner
       registry: @registry,
       max_turns: max_turns,
       callbacks: @callbacks
-    }.merge(runtime_options.symbolize_keys.slice(:llm_context, :headers, :params, :account))
+    }.merge(runtime_options.symbolize_keys.slice(:llm_context, :headers, :params, :account, :finalization_only, :continue_from_history))
   end
 
   def determine_conversation_agent(context)

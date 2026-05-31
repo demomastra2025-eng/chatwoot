@@ -12,6 +12,7 @@ class Captain::Assistant::AgentRunnerService
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
   MAX_BLANK_RESPONSE_RETRIES = 1
+  MAX_FINALIZATION_ONLY_RETRIES = 1
   MAX_TOOL_ARTIFACT_SCAN_BYTES = 100_000
   MAX_COMPLETED_TOOL_RESULT_RECORDS = 50
   TOOL_RESULT_FALLBACK_REASONING = [
@@ -91,7 +92,7 @@ class Captain::Assistant::AgentRunnerService
     response.merge('blank_response_retry' => true)
   end
 
-  def run_agent(message_to_process, context)
+  def run_agent(message_to_process, context, runtime_options: {})
     runner.run(
       message_to_process,
       context: context,
@@ -99,7 +100,7 @@ class Captain::Assistant::AgentRunnerService
       runtime_options: {
         llm_context: llm_context_for_run,
         account: @assistant.account
-      }
+      }.merge(runtime_options)
     )
   end
 
@@ -180,24 +181,73 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def attach_native_reasoning!(response, context)
-    native_reasoning = latest_native_reasoning(context)
+    native_reasoning = latest_native_reasoning_payload(context)
     return if native_reasoning.blank?
 
-    structured_reasoning = response['reasoning'].to_s.strip
-    response['structured_reasoning'] = structured_reasoning if structured_reasoning.present? && structured_reasoning != native_reasoning
-    response['reasoning'] = native_reasoning
+    structured_reasoning = response['structured_reasoning'].presence || response['reasoning'].to_s.strip
+    native_reasoning_text = native_reasoning['text'].to_s.strip
+    response['native_reasoning'] = native_reasoning
+    response['structured_reasoning'] = structured_reasoning if structured_reasoning.present? && structured_reasoning != native_reasoning_text
+    response['reasoning'] = native_reasoning_text if native_reasoning_text.present?
   end
 
-  def latest_native_reasoning(context)
+  def latest_native_reasoning_payload(context)
     Array(context&.dig(:conversation_history)).reverse_each do |message|
       next unless message_role(message) == 'assistant'
 
-      thinking = message[:thinking] || message['thinking']
-      normalized_thinking = thinking.to_s.strip
-      return normalized_thinking if normalized_thinking.present?
+      payload = native_reasoning_payload(message)
+      return payload if payload.present?
     end
 
     nil
+  end
+
+  def native_reasoning_payload(message)
+    text = native_reasoning_text(message)
+    details = message_value(message, :reasoning_details)
+    signature = message_value(message, :thinking_signature)
+    encrypted = native_reasoning_encrypted?(message, details)
+    return if text.blank? && details.blank? && signature.blank? && !encrypted
+
+    {
+      'text' => text.presence,
+      'details' => details.presence,
+      'signature' => signature.presence,
+      'encrypted' => (true if encrypted),
+      'source' => native_reasoning_source(message)
+    }.compact
+  end
+
+  def native_reasoning_text(message)
+    [message_value(message, :reasoning), message_value(message, :thinking)].each do |candidate|
+      normalized = candidate.to_s.strip
+      return normalized if normalized.present?
+    end
+
+    nil
+  end
+
+  def native_reasoning_source(message)
+    return 'openrouter' if message_value(message, :reasoning).present? || message_value(message, :reasoning_details).present?
+
+    'rubyllm'
+  end
+
+  def native_reasoning_encrypted?(message, details)
+    return true if message_value(message, :reasoning_encrypted).present? || message_value(message, :encrypted_reasoning).present?
+
+    Array(details).any? do |detail|
+      next false unless detail.respond_to?(:[])
+
+      type = (detail[:type] || detail['type']).to_s
+      type.include?('encrypted') || type.include?('redacted')
+    end
+  end
+
+  def message_value(message, key)
+    return unless message.respond_to?(:[])
+
+    message[key] || message[key.to_s]
   end
 
   def message_role(message)
@@ -229,8 +279,102 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def final_error_response(error, context, handoff_tool_called: false)
+    finalization_response = finalization_only_retry_response(error, context, handoff_tool_called: handoff_tool_called)
+    return finalization_response if finalization_response
+
     deterministic_tool_result_fallback_response(error, context, handoff_tool_called: handoff_tool_called) ||
       provider_error_response(error, handoff_tool_called: handoff_tool_called)
+  end
+
+  def finalization_only_retry_response(error, context, handoff_tool_called: false)
+    return if @finalization_only_retry_in_progress
+    return unless finalization_only_retry_eligible?(context)
+
+    publish_finalization_only_retry_event(error, context, status: 'retrying')
+    @finalization_only_retry_in_progress = true
+    response = process_agent_result(run_finalization_only_retry(context, error))
+    annotate_finalization_retry_response(response, handoff_tool_called: handoff_tool_called)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[Captain V2] Finalization-only retry failed for assistant=#{@assistant.id} " \
+      "conversation=#{@conversation&.id}: #{e.class.name}: #{e.message}"
+    )
+    publish_finalization_only_retry_event(error, context, status: 'failed', retry_error: e)
+    nil
+  ensure
+    @finalization_only_retry_in_progress = false
+  end
+
+  def run_finalization_only_retry(context, error)
+    run_agent(
+      nil,
+      context_for_finalization_only_retry(context, error),
+      runtime_options: { finalization_only: true, continue_from_history: true }
+    )
+  end
+
+  def annotate_finalization_retry_response(response, handoff_tool_called: false)
+    response['handoff_tool_called'] = true if handoff_tool_called
+    response['finalization_only_retry'] = true
+    response
+  end
+
+  def finalization_only_retry_eligible?(context)
+    return false if context.blank?
+    return false if finalization_only_retry_attempted?(context)
+    return false if successful_non_handoff_tool_records(context).blank?
+
+    conversation_history_has_tool_results?(context)
+  end
+
+  def finalization_only_retry_attempted?(context)
+    context_value(context, :captain_v2_finalization_only_retry).present?
+  end
+
+  def conversation_history_has_tool_results?(context)
+    Array(context_value(context, :conversation_history)).any? do |message|
+      message_role(message) == 'tool' && (message[:content] || message['content']).present?
+    end
+  end
+
+  def context_for_finalization_only_retry(context, error)
+    context.deep_dup.tap do |retry_context|
+      retry_context[:captain_v2_finalization_only_retry] = {
+        error_class: error.class.name,
+        error_message: error.message,
+        max_attempts: MAX_FINALIZATION_ONLY_RETRIES
+      }
+    end
+  rescue StandardError
+    context.merge(
+      captain_v2_finalization_only_retry: {
+        error_class: error.class.name,
+        error_message: error.message,
+        max_attempts: MAX_FINALIZATION_ONLY_RETRIES
+      }
+    )
+  end
+
+  def publish_finalization_only_retry_event(error, context, status:, retry_error: nil)
+    records = successful_non_handoff_tool_records(context)
+    Llm::EventBus.publish(
+      'schema.finalization_retry',
+      schema_name: Captain::ResponseSchema.name,
+      current_agent: context_value(context, :current_agent),
+      status: status,
+      reason: error.message,
+      error_class: error.class.name,
+      retry_error_class: retry_error&.class&.name,
+      retry_error_message: retry_error&.message,
+      completed_tools_count: records.size,
+      completed_tool_names: tool_result_counts(records).keys
+    )
+  end
+
+  def context_value(context, key)
+    return unless context.respond_to?(:[])
+
+    context[key] || context[key.to_s]
   end
 
   def deterministic_tool_result_fallback_response(error, context, handoff_tool_called: false)
@@ -242,6 +386,7 @@ class Captain::Assistant::AgentRunnerService
     {
       'response' => tool_result_fallback_message(successful_records),
       'reasoning' => TOOL_RESULT_FALLBACK_REASONING,
+      'system_fallback_reason' => TOOL_RESULT_FALLBACK_REASONING,
       'agent_name' => context&.dig(:current_agent),
       'handoff_tool_called' => handoff_tool_called,
       'schema_fallback' => true,
