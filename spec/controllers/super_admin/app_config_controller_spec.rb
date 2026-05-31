@@ -186,12 +186,24 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
       it 'queues the OpenRouter catalog refresh job from the captain config page' do
         allow(Llm::Config).to receive(:installation_provider_available?).with('openrouter').and_return(true)
+        allow(Llm::OpenRouterKeyHealth).to receive(:metadata).and_return(status: 'valid')
         expect(Internal::RefreshOpenRouterModelCatalogJob).to receive(:perform_later)
 
         post '/super_admin/app_config/refresh_openrouter_models'
 
         expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
         expect(flash[:notice]).to include('refresh queued')
+      end
+
+      it 'does not queue the refresh job when cached OpenRouter key health is invalid' do
+        allow(Llm::Config).to receive(:installation_provider_available?).with('openrouter').and_return(true)
+        allow(Llm::OpenRouterKeyHealth).to receive(:metadata).and_return(status: 'invalid')
+        expect(Internal::RefreshOpenRouterModelCatalogJob).not_to receive(:perform_later)
+
+        post '/super_admin/app_config/refresh_openrouter_models'
+
+        expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+        expect(flash[:alert]).to include('OpenRouter API key is invalid')
       end
 
       it 'does not queue the refresh job when the global OpenRouter key is missing' do

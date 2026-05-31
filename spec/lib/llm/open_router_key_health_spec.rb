@@ -155,4 +155,16 @@ RSpec.describe Llm::OpenRouterKeyHealth do
     )
     expect(metadata[:error]).to eq('OpenRouter key request failed: Invalid Bearer [REDACTED]')
   end
+
+  it 'allows catalog refresh only for safe key health states' do
+    expect(described_class.catalog_refresh_allowed?(status: 'valid')).to be true
+    expect(described_class.catalog_refresh_allowed?(status: 'credits_unavailable')).to be true
+    expect(described_class.catalog_refresh_allowed?(status: 'invalid')).to be false
+    expect(described_class.catalog_refresh_allowed?(status: 'key_limit_exhausted')).to be false
+  end
+
+  it 'returns actionable catalog refresh block reasons' do
+    expect(described_class.catalog_refresh_block_reason(status: 'credits_exhausted')).to include('credits are exhausted')
+    expect(described_class.catalog_refresh_block_reason(status: 'valid')).to be_nil
+  end
 end

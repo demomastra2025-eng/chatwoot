@@ -4,6 +4,10 @@ class Llm::OpenRouterKeyHealth
   CACHE_KEY = 'llm/openrouter/key_health'
   MANAGEMENT_API_KEY_CONFIG = 'CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY'
   PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
+  CATALOG_REFRESH_ALLOWED_STATUSES = %w[valid credits_unavailable].freeze
+  CATALOG_REFRESH_BLOCKING_STATUSES = %w[
+    missing invalid expired unavailable credits_exhausted key_limit_exhausted
+  ].freeze
 
   class << self
     def refresh!
@@ -30,7 +34,37 @@ class Llm::OpenRouterKeyHealth
       key_source_metadata[:api_key].present?
     end
 
+    def catalog_refresh_allowed?(metadata = self.metadata)
+      CATALOG_REFRESH_ALLOWED_STATUSES.include?(health_status_value(metadata))
+    end
+
+    def catalog_refresh_block_reason(metadata = self.metadata)
+      status = health_status_value(metadata)
+      return if catalog_refresh_allowed?(metadata)
+
+      case status
+      when 'missing'
+        'OpenRouter API key is not configured.'
+      when 'invalid'
+        'OpenRouter API key is invalid. Check key health before refreshing the catalog.'
+      when 'expired'
+        'OpenRouter API key is expired. Rotate the key before refreshing the catalog.'
+      when 'credits_exhausted'
+        'OpenRouter credits are exhausted. Add credits before refreshing the catalog.'
+      when 'key_limit_exhausted'
+        'OpenRouter key limit is exhausted. Increase the key limit before refreshing the catalog.'
+      when 'unavailable'
+        'OpenRouter key health is unavailable. Check key health before refreshing the catalog.'
+      else
+        'OpenRouter key health is not checked. Check key health before refreshing the catalog.'
+      end
+    end
+
     private
+
+    def health_status_value(metadata)
+      metadata.to_h.with_indifferent_access[:status].presence || (configured? ? 'not_checked' : 'missing')
+    end
 
     def fetch_health_payload(key_source)
       key = Llm::OpenRouterKeyClient.current_key(

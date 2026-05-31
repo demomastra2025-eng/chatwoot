@@ -63,6 +63,11 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
       redirect_to super_admin_app_config_path(config: 'captain'), alert: 'OpenRouter API key is not configured.'
       return
     end
+    catalog_block_reason = openrouter_catalog_refresh_block_reason
+    if catalog_block_reason.present?
+      redirect_to super_admin_app_config_path(config: 'captain'), alert: catalog_block_reason
+      return
+    end
 
     Internal::RefreshOpenRouterModelCatalogJob.perform_later
     redirect_to(
@@ -101,6 +106,13 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
       errors.concat(i.errors.full_messages) unless i.save
     end
     errors
+  end
+
+  def openrouter_catalog_refresh_block_reason
+    metadata = Llm::OpenRouterKeyHealth.metadata.to_h.with_indifferent_access
+    return unless Llm::OpenRouterKeyHealth::CATALOG_REFRESH_BLOCKING_STATUSES.include?(metadata[:status].to_s)
+
+    Llm::OpenRouterKeyHealth.catalog_refresh_block_reason(metadata)
   end
 
   def normalize_app_config_value(key, value, errors)

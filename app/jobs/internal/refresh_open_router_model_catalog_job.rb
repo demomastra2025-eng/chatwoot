@@ -6,10 +6,11 @@ class Internal::RefreshOpenRouterModelCatalogJob < ApplicationJob
   ENDPOINT_CONTINUATION_DELAY = 1.minute
 
   def perform(endpoint_only: false)
-    unless Llm::Config.installation_provider_available?(Llm::OpenRouterModelCatalog::PROVIDER)
+    unless openrouter_key_configured?
       Rails.logger.info('[Internal::RefreshOpenRouterModelCatalogJob] Skipping OpenRouter catalog refresh: global key is not configured')
       return
     end
+    return unless openrouter_key_healthy_for_refresh?
 
     metadata = endpoint_only ? refresh_endpoint_batch : Llm::ModelRegistryService.refresh_openrouter!
     model_diff = endpoint_only ? {} : metadata.fetch(:last_refresh_diff, {}).to_h
@@ -28,6 +29,19 @@ class Internal::RefreshOpenRouterModelCatalogJob < ApplicationJob
   end
 
   private
+
+  def openrouter_key_configured?
+    Llm::Config.installation_provider_available?(Llm::OpenRouterModelCatalog::PROVIDER)
+  end
+
+  def openrouter_key_healthy_for_refresh?
+    metadata = Llm::OpenRouterKeyHealth.refresh!
+    return true if Llm::OpenRouterKeyHealth.catalog_refresh_allowed?(metadata)
+
+    reason = Llm::OpenRouterKeyHealth.catalog_refresh_block_reason(metadata)
+    Rails.logger.warn("[Internal::RefreshOpenRouterModelCatalogJob] Skipping OpenRouter catalog refresh: #{reason}")
+    false
+  end
 
   def refresh_endpoint_batch
     Llm::ModelRegistryService.refresh_openrouter_endpoints!
