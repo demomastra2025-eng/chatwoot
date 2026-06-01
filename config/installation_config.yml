@@ -185,6 +185,76 @@
   locked: false
 # ------- End of WhatsApp Channel Related Config ------- #
 
+# ------- LinkedIn Personal Channel Related Config ------- #
+- name: LINKEDIN_PERSONAL_GATEWAY_URL
+  value: 'http://linkedin_personal_gateway:8010'
+  display_title: 'LinkedIn Personal Gateway URL'
+  description: 'Internal URL used by OneLink Rails to call the LinkedIn Personal gateway.'
+  locked: false
+- name: LINKEDIN_PERSONAL_GATEWAY_TOKEN
+  value:
+  display_title: 'LinkedIn Personal Gateway Token'
+  description: 'Shared secret used by OneLink Rails to authenticate internal LinkedIn Personal gateway requests.'
+  locked: false
+  type: secret
+- name: LINKEDIN_PERSONAL_GATEWAY_PUBLIC_BASE_URL
+  value: 'https://app.one-link.kz/linkedin-personal'
+  display_title: 'LinkedIn Personal Public Media URL'
+  description: 'Public base URL used by the gateway when it exposes temporary LinkedIn attachment downloads.'
+  locked: false
+- name: LINKEDIN_PERSONAL_GATEWAY_MEDIA_SECRET
+  value:
+  display_title: 'LinkedIn Personal Media Secret'
+  description: 'Secret used by the gateway to sign temporary media URLs.'
+  locked: false
+  type: secret
+- name: LINKEDIN_PERSONAL_GRAPHQL_CONVERSATIONS_QUERY_ID
+  value: 'messengerConversations.0d5e6781bbee71c3e51c8843c6519f48'
+  display_title: 'LinkedIn Conversations GraphQL Query ID'
+  description: 'Voyager GraphQL query id used by the gateway to list LinkedIn message threads.'
+  locked: false
+- name: LINKEDIN_PERSONAL_GRAPHQL_MESSAGES_QUERY_ID
+  value: 'messengerMessages.21eabeb3ee872254060ef21b793ea7d0'
+  display_title: 'LinkedIn Messages GraphQL Query ID'
+  description: 'Voyager GraphQL query id used by the gateway to list messages in a LinkedIn thread.'
+  locked: false
+- name: LINKEDIN_PERSONAL_SYNC_THREAD_LIMIT
+  value: 20
+  display_title: 'LinkedIn History Thread Limit'
+  description: 'Maximum number of LinkedIn threads to process during a manual history import.'
+  locked: false
+- name: LINKEDIN_PERSONAL_SYNC_MESSAGE_LIMIT
+  value: 50
+  display_title: 'LinkedIn History Message Limit'
+  description: 'Maximum number of messages to fetch per LinkedIn thread during manual history import.'
+  locked: false
+- name: LINKEDIN_PERSONAL_POLL_INTERVAL_SECONDS
+  value: 30
+  display_title: 'LinkedIn Poll Interval Seconds'
+  description: 'How often the gateway checks connected LinkedIn channels for new inbound messages.'
+  locked: false
+- name: LINKEDIN_PERSONAL_POLL_THREAD_LIMIT
+  value: 20
+  display_title: 'LinkedIn Poll Thread Limit'
+  description: 'Maximum number of LinkedIn threads checked on each poll cycle.'
+  locked: false
+- name: LINKEDIN_PERSONAL_POLL_MESSAGE_LIMIT
+  value: 10
+  display_title: 'LinkedIn Poll Message Limit'
+  description: 'Maximum number of recent messages checked per thread on each poll cycle.'
+  locked: false
+- name: LINKEDIN_PERSONAL_REQUEST_TIMEOUT_SECONDS
+  value: 30
+  display_title: 'LinkedIn Request Timeout Seconds'
+  description: 'HTTP timeout for LinkedIn provider requests made by the gateway.'
+  locked: false
+- name: LINKEDIN_PERSONAL_MIN_SEND_INTERVAL_SECONDS
+  value: 2
+  display_title: 'LinkedIn Minimum Send Interval Seconds'
+  description: 'Minimum delay between outbound LinkedIn sends from one runtime session.'
+  locked: false
+# ------- End of LinkedIn Personal Channel Related Config ------- #
+
 # MARK: Microsoft Email Channel Config
 - name: AZURE_APP_ID
   display_title: 'Azure App ID'

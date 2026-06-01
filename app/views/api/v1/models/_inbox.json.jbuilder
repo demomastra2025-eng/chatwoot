@@ -166,6 +166,16 @@ if resource.telegram_personal?
   json.runtime_state resource.channel.try(:runtime_state)
 end
 
+if resource.linkedin_personal?
+  json.profile_urn resource.channel.try(:profile_urn)
+  json.display_name resource.channel.try(:display_name)
+  json.connection_state resource.channel.try(:connection_state)
+  json.lifecycle_state resource.channel.try(:lifecycle_state)
+  json.last_error resource.channel.try(:last_error)
+  json.last_synced_at resource.channel.try(:last_synced_at)
+  json.runtime_state resource.channel.try(:runtime_state)
+end
+
 if resource.weixin?
   json.display_name resource.channel.try(:display_name)
   json.provider_account_id resource.channel.try(:provider_account_id)

@@ -7,6 +7,7 @@ class Campaigns::ChannelCapabilities
     Channel::WhatsappWeb
     Channel::Telegram
     Channel::TelegramPersonal
+    Channel::LinkedinPersonal
     Channel::VkCommunity
     Channel::Line
     Channel::FacebookPage
@@ -95,6 +96,15 @@ class Campaigns::ChannelCapabilities
         planned_rollout_tier: 1,
         requires_existing_target: true,
         notes: ['Requires a stored Telegram user target before outbound delivery can start.']
+      }
+    when 'Channel::LinkedinPersonal'
+      {
+        supports_outbound_campaigns: true,
+        delivery_readiness: 'ready',
+        planned_rollout_tier: 1,
+        requires_existing_target: true,
+        supports_media: true,
+        notes: ['Requires an existing LinkedIn conversation target before outbound delivery can start.']
       }
     when 'Channel::VkCommunity'
       {

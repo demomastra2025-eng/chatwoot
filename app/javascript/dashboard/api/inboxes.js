@@ -105,6 +105,32 @@ class Inboxes extends CacheEnabledApiClient {
     return axios.get(`${this.url}/${inboxId}/telegram_personal_diagnostics`);
   }
 
+  reconnectLinkedinPersonal(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/linkedin_personal_reconnect`);
+  }
+
+  historySyncLinkedinPersonal(inboxId, payload = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/linkedin_personal_history_sync`,
+      payload
+    );
+  }
+
+  contactsSyncLinkedinPersonal(inboxId, payload = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/linkedin_personal_contacts_sync`,
+      payload
+    );
+  }
+
+  disconnectLinkedinPersonal(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/linkedin_personal_disconnect`);
+  }
+
+  getLinkedinPersonalDiagnostics(inboxId) {
+    return axios.get(`${this.url}/${inboxId}/linkedin_personal_diagnostics`);
+  }
+
   requestWeixinQr(inboxId) {
     return axios.post(`${this.url}/${inboxId}/weixin_request_qr`);
   }

@@ -11,6 +11,7 @@ import WhatsappWeb from './channels/WhatsappWeb.vue';
 import Line from './channels/Line.vue';
 import Telegram from './channels/Telegram.vue';
 import TelegramPersonal from './channels/TelegramPersonal.vue';
+import LinkedinPersonal from './channels/LinkedinPersonal.vue';
 import Weixin from './channels/Weixin.vue';
 import VkCommunity from './channels/VkCommunity.vue';
 import Instagram from './channels/Instagram.vue';
@@ -29,6 +30,7 @@ const channelViewList = {
   line: Line,
   telegram: Telegram,
   telegram_personal: TelegramPersonal,
+  linkedin_personal: LinkedinPersonal,
   weixin: Weixin,
   vk_community: VkCommunity,
   instagram: Instagram,

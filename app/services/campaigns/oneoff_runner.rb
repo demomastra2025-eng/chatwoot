@@ -7,6 +7,7 @@ class Campaigns::OneoffRunner
     'WhatsApp Web' => ::WhatsappWeb::OneoffCampaignService,
     'Telegram' => ::Telegram::OneoffCampaignService,
     'Telegram Personal' => ::TelegramPersonal::OneoffCampaignService,
+    'LinkedIn' => ::LinkedinPersonal::OneoffCampaignService,
     'VK' => ::VkCommunity::OneoffCampaignService,
     'LINE' => ::Line::OneoffCampaignService,
     'Facebook' => ::Facebook::OneoffCampaignService,

@@ -105,6 +105,7 @@ class Account < ApplicationRecord
   has_many :inboxes, dependent: :destroy_async
   has_many :labels, dependent: :destroy_async
   has_many :line_channels, dependent: :destroy_async, class_name: '::Channel::Line'
+  has_many :linkedin_personal_channels, dependent: :destroy_async, class_name: '::Channel::LinkedinPersonal'
   has_many :llm_events, dependent: :destroy_async
   has_many :llm_event_annotations, dependent: :destroy_async
   has_many :mentions, dependent: :destroy_async

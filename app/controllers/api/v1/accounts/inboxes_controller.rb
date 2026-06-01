@@ -177,7 +177,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def allowed_channel_types
-    %w[web_widget api email line telegram telegram_personal weixin whatsapp whatsapp_web sms vk_community]
+    %w[web_widget api email line telegram telegram_personal linkedin_personal weixin whatsapp whatsapp_web sms vk_community]
   end
 
   def update_inbox_working_hours
@@ -342,6 +342,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       'line' => Channel::Line,
       'telegram' => Channel::Telegram,
       'telegram_personal' => Channel::TelegramPersonal,
+      'linkedin_personal' => Channel::LinkedinPersonal,
       'weixin' => Channel::Weixin,
       'whatsapp' => Channel::Whatsapp,
       'whatsapp_web' => Channel::WhatsappWeb,

@@ -130,6 +130,26 @@ class InboxPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def linkedin_personal_reconnect?
+    @account_user.administrator?
+  end
+
+  def linkedin_personal_history_sync?
+    @account_user.administrator?
+  end
+
+  def linkedin_personal_contacts_sync?
+    @account_user.administrator?
+  end
+
+  def linkedin_personal_disconnect?
+    @account_user.administrator?
+  end
+
+  def linkedin_personal_diagnostics?
+    @account_user.administrator?
+  end
+
   def weixin_request_qr?
     @account_user.administrator?
   end

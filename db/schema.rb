@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_31_191500) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_01_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -664,6 +664,28 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_31_191500) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["line_channel_id"], name: "index_channel_line_on_line_channel_id", unique: true
+  end
+
+  create_table "channel_linkedin_personal", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.string "profile_urn", null: false
+    t.string "display_name"
+    t.text "li_at"
+    t.text "jsessionid"
+    t.text "csrf_token"
+    t.text "x_li_track"
+    t.string "connection_state", default: "disconnected", null: false
+    t.string "lifecycle_state", default: "pending_auth", null: false
+    t.text "last_error"
+    t.datetime "last_synced_at"
+    t.string "webhook_identifier", null: false
+    t.string "webhook_secret", null: false
+    t.jsonb "runtime_state", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "profile_urn"], name: "index_channel_linkedin_personal_on_account_id_and_profile_urn", unique: true
+    t.index ["account_id"], name: "index_channel_linkedin_personal_on_account_id"
+    t.index ["webhook_identifier"], name: "index_channel_linkedin_personal_on_webhook_identifier", unique: true
   end
 
   create_table "channel_sms", force: :cascade do |t|

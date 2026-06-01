@@ -1,0 +1,13 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("LINKEDIN_PERSONAL_HISTORY_SIDEKIQ_CONCURRENCY", 2) %>
+:timeout: 25
+:max_retries: 3
+
+:queues:
+  - linkedin_personal_history
+
+production:
+  :concurrency: <%= ENV.fetch("LINKEDIN_PERSONAL_HISTORY_SIDEKIQ_CONCURRENCY", 2) %>
+staging:
+  :concurrency: <%= ENV.fetch("LINKEDIN_PERSONAL_HISTORY_SIDEKIQ_CONCURRENCY", 2) %>

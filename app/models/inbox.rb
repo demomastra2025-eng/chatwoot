@@ -53,6 +53,7 @@ class Inbox < ApplicationRecord
     Channel::FacebookPage
     Channel::Instagram
     Channel::Line
+    Channel::LinkedinPersonal
     Channel::Telegram
     Channel::TelegramPersonal
     Channel::Weixin
@@ -184,6 +185,10 @@ class Inbox < ApplicationRecord
 
   def telegram_personal?
     channel_type == 'Channel::TelegramPersonal'
+  end
+
+  def linkedin_personal?
+    channel_type == 'Channel::LinkedinPersonal'
   end
 
   def weixin?

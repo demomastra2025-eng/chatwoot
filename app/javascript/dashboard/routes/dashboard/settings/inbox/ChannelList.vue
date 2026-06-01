@@ -86,6 +86,14 @@ const channelList = computed(() => {
       icon: 'i-ri-vk-fill',
     },
     {
+      key: 'linkedin_personal',
+      title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.LINKEDIN_PERSONAL.TITLE'),
+      description: t(
+        'INBOX_MGMT.ADD.AUTH.CHANNEL.LINKEDIN_PERSONAL.DESCRIPTION'
+      ),
+      icon: 'i-ri-linkedin-box-fill',
+    },
+    {
       key: 'line',
       title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.LINE.TITLE'),
       description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.LINE.DESCRIPTION'),

@@ -15,6 +15,7 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
     INBOX_TYPES.TELEGRAM_PERSONAL,
+    INBOX_TYPES.LINKEDIN_PERSONAL,
     INBOX_TYPES.VK,
     INBOX_TYPES.TIKTOK,
     ...API_LIKE_INBOX_TYPES,
@@ -25,6 +26,7 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
     INBOX_TYPES.TELEGRAM_PERSONAL,
+    INBOX_TYPES.LINKEDIN_PERSONAL,
     INBOX_TYPES.VK,
     INBOX_TYPES.TIKTOK,
     ...API_LIKE_INBOX_TYPES,
@@ -74,6 +76,9 @@ export default {
     },
     isATelegramPersonalChannel() {
       return this.channelType === INBOX_TYPES.TELEGRAM_PERSONAL;
+    },
+    isALinkedinPersonalChannel() {
+      return this.channelType === INBOX_TYPES.LINKEDIN_PERSONAL;
     },
     isAVkCommunityChannel() {
       return this.channelType === INBOX_TYPES.VK;

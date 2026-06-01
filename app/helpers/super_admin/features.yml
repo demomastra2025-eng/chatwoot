@@ -93,6 +93,12 @@ telegram:
   description: 'Manage your Telegram customer interactions from Chatwoot.'
   enabled: true
   icon: 'icon-telegram-line'
+linkedin_personal:
+  name: 'LinkedIn Personal'
+  description: 'Manage LinkedIn direct messages through the OneLink personal gateway.'
+  enabled: true
+  icon: 'brand-linkedin-outline'
+  config_key: 'linkedin_personal'
 line:
   name: 'Line'
   description: 'Manage your Line customer interactions from Chatwoot.'
