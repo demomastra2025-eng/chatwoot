@@ -29,6 +29,10 @@ export default {
       type: Number,
       default: 0,
     },
+    disableAttributeModelSelection: {
+      type: Boolean,
+      default: false,
+    },
   },
   setup() {
     return { v$: useVuelidate() };
@@ -57,10 +61,18 @@ export default {
       uiFlags: 'getUIFlags',
     }),
     models() {
-      return ATTRIBUTE_MODELS.map(item => ({
+      const models = ATTRIBUTE_MODELS.map(item => ({
         ...item,
         option: this.attributeModelLabel(item.key),
       }));
+
+      if (!this.disableAttributeModelSelection) {
+        return models;
+      }
+
+      return models.filter(
+        model => model.id === this.selectedAttributeModelTab
+      );
     },
     types() {
       return ATTRIBUTE_TYPES.map(item => ({
@@ -184,7 +196,9 @@ export default {
         await this.$store.dispatch('attributes/create', {
           attribute_display_name: this.displayName,
           attribute_description: this.description,
-          attribute_model: this.attributeModel,
+          attribute_model: this.disableAttributeModelSelection
+            ? this.selectedAttributeModelTab
+            : this.attributeModel,
           attribute_display_type: this.attributeType,
           attribute_key: this.attributeKey,
           attribute_values: this.attributeListValues,
@@ -216,7 +230,10 @@ export default {
         <div class="w-full">
           <label :class="{ error: v$.attributeModel.$error }">
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.MODEL.LABEL') }}
-            <WootSelect v-model="attributeModel">
+            <WootSelect
+              v-model="attributeModel"
+              :disabled="disableAttributeModelSelection"
+            >
               <option v-for="model in models" :key="model.id" :value="model.id">
                 {{ model.option }}
               </option>

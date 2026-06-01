@@ -100,7 +100,7 @@
       },
       "SIDEBAR": {
         "TABS": {
-          "ATTRIBUTES": "Attributes",
+          "ATTRIBUTES": "Additional Fields",
           "CONTACTS": "Contacts",
           "HISTORY": "History",
           "NOTES": "Notes"
@@ -113,15 +113,15 @@
         "EMPTY": "No notes found for this company's contacts yet."
       },
       "ATTRIBUTES": {
-        "SEARCH_PLACEHOLDER": "Search attributes...",
-        "EMPTY_STATE": "There are no company custom attributes configured yet.",
-        "NO_ATTRIBUTES": "No matching attributes found.",
-        "UNUSED_ATTRIBUTES": "{count} unused attribute | {count} unused attributes",
+        "SEARCH_PLACEHOLDER": "Search fields...",
+        "EMPTY_STATE": "No additional fields are configured for companies yet.",
+        "NO_ATTRIBUTES": "No matching fields found.",
+        "UNUSED_ATTRIBUTES": "{count} unused field | {count} unused fields",
         "MESSAGES": {
-          "UPDATE_SUCCESS": "Company attribute updated.",
-          "UPDATE_ERROR": "Could not update company attribute.",
-          "DELETE_SUCCESS": "Company attribute removed.",
-          "DELETE_ERROR": "Could not remove company attribute."
+          "UPDATE_SUCCESS": "Company field updated.",
+          "UPDATE_ERROR": "Could not update company field.",
+          "DELETE_SUCCESS": "Company field removed.",
+          "DELETE_ERROR": "Could not remove company field."
         }
       },
       "CONTACTS": {

@@ -1,15 +1,15 @@
 {
   "ATTRIBUTES_MGMT": {
-    "HEADER": "Custom Attributes",
-    "HEADER_BTN_TXT": "Add Custom Attribute",
-    "LOADING": "Fetching custom attributes",
-    "DESCRIPTION": "Контактілер, компаниялар, диалогтар, мәмілелер және міндеттер үшін қосымша өрістерді бір жерден басқарыңыз. Оларды негізгі дерек схемасын өзгертпей жұмыс контекстін сақтау үшін пайдаланыңыз.",
-    "LEARN_MORE": "Learn more about custom attributes",
-    "COUNT": "{n} attribute | {n} attributes",
-    "SEARCH_PLACEHOLDER": "Search attributes...",
-    "NO_RESULTS": "No attributes found matching your search",
+    "HEADER": "Қосымша өрістер",
+    "HEADER_BTN_TXT": "Өріс қосу",
+    "LOADING": "Қосымша өрістер жүктелуде",
+    "DESCRIPTION": "Диалогтар, контактілер, компаниялар, мәмілелер, міндеттер және жазбалар үшін қосымша өрістерді баптаңыз.",
+    "LEARN_MORE": "Қосымша өрістер туралы толығырақ",
+    "COUNT": "{n} өріс | {n} өріс",
+    "SEARCH_PLACEHOLDER": "Өрістерді іздеу...",
+    "NO_RESULTS": "Іздеу бойынша өрістер табылмады",
     "EMPTY_STATE": {
-      "NO_ACCESS": "No custom attributes or CRM fields are available for your access level."
+      "NO_ACCESS": "No қосымша өрістер or CRM fields are available for your access level."
     },
     "ATTRIBUTE_MODELS": {
       "CONVERSATION": "Conversation",
@@ -25,18 +25,18 @@
       "CHECKBOX": "Checkbox"
     },
     "ADD": {
-      "TITLE": "Add Custom Attribute",
+      "TITLE": "Add Қосымша өріс",
       "SUBMIT": "Create",
       "CANCEL_BUTTON_TEXT": "Cancel",
       "FORM": {
         "NAME": {
           "LABEL": "Display Name",
-          "PLACEHOLDER": "Enter custom attribute display name",
+          "PLACEHOLDER": "Enter қосымша өріс display name",
           "ERROR": "Name is required"
         },
         "DESC": {
           "LABEL": "Description",
-          "PLACEHOLDER": "Enter custom attribute description",
+          "PLACEHOLDER": "Enter қосымша өріс description",
           "ERROR": "Description is required"
         },
         "MODEL": {
@@ -56,13 +56,13 @@
         },
         "KEY": {
           "LABEL": "Key",
-          "PLACEHOLDER": "Enter custom attribute key",
+          "PLACEHOLDER": "Enter қосымша өріс key",
           "ERROR": "Key is required",
           "IN_VALID": "Invalid key"
         },
         "REGEX_PATTERN": {
           "LABEL": "Regex Pattern",
-          "PLACEHOLDER": "Please enter custom attribute regex pattern. (Optional)"
+          "PLACEHOLDER": "Please enter қосымша өріс regex pattern. (Optional)"
         },
         "REGEX_CUE": {
           "LABEL": "Regex Cue",
@@ -78,26 +78,26 @@
         }
       },
       "API": {
-        "SUCCESS_MESSAGE": "Custom Attribute added successfully!",
-        "ERROR_MESSAGE": "Could not create a Custom Attribute. Please try again later."
+        "SUCCESS_MESSAGE": "Қосымша өріс added successfully!",
+        "ERROR_MESSAGE": "Could not create a Қосымша өріс. Please try again later."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
       "API": {
-        "SUCCESS_MESSAGE": "Custom Attribute deleted successfully.",
-        "ERROR_MESSAGE": "Couldn't delete the custom attribute. Try again."
+        "SUCCESS_MESSAGE": "Қосымша өріс deleted successfully.",
+        "ERROR_MESSAGE": "Couldn't delete the қосымша өріс. Try again."
       },
       "CONFIRM": {
         "TITLE": "Are you sure want to delete - {attributeName}",
         "PLACE_HOLDER": "Please type {attributeName} to confirm",
-        "MESSAGE": "Deleting will remove the custom attribute",
+        "MESSAGE": "Deleting will remove the қосымша өріс",
         "YES": "Delete ",
         "NO": "Cancel"
       }
     },
     "EDIT": {
-      "TITLE": "Edit Custom Attribute",
+      "TITLE": "Edit Қосымша өріс",
       "UPDATE_BUTTON_TEXT": "Update",
       "TYPE": {
         "LIST": {
@@ -106,12 +106,12 @@
         }
       },
       "API": {
-        "SUCCESS_MESSAGE": "Custom Attribute updated successfully",
-        "ERROR_MESSAGE": "There was an error updating custom attribute, please try again"
+        "SUCCESS_MESSAGE": "Қосымша өріс updated successfully",
+        "ERROR_MESSAGE": "There was an error updating қосымша өріс, please try again"
       }
     },
     "TABS": {
-      "HEADER": "Custom Attributes",
+      "HEADER": "Қосымша өрістер",
       "CONVERSATION": "Conversation",
       "CONTACT": "Contact",
       "COMPANY": "Company"
@@ -128,12 +128,12 @@
         "DELETE": "Delete"
       },
       "EMPTY_RESULT": {
-        "404": "There are no custom attributes created",
-        "NOT_FOUND": "There are no custom attributes configured"
+        "404": "There are no қосымша өрістер created",
+        "NOT_FOUND": "There are no қосымша өрістер configured"
       },
       "REGEX_PATTERN": {
         "LABEL": "Regex Pattern",
-        "PLACEHOLDER": "Please enter custom attribute regex pattern. (Optional)"
+        "PLACEHOLDER": "Please enter қосымша өріс regex pattern. (Optional)"
       },
       "REGEX_CUE": {
         "LABEL": "Regex Cue",

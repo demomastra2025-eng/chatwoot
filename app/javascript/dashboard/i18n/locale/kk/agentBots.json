@@ -1,45 +1,45 @@
 {
   "AGENT_BOTS": {
-    "HEADER": "Rororobots",
+    "HEADER": "Интеграциялар",
     "LOADING_EDITOR": "Loading editor...",
-    "DESCRIPTION": "Agent Rororobots are like the most fabulous members of your team. They can handle the small stuff, so you can focus on the stuff that matters. Give them a try. You can manage your rorobots from this page or create new ones using the 'Add Rorobot' button.",
-    "LEARN_MORE": "Learn about agent rorobots",
-    "GLOBAL_BOT": "System robot",
+    "DESCRIPTION": "Интеграциялар вебхуктар мен нативті сценарийлерді диалогтарға қосады.",
+    "LEARN_MORE": "Интеграциялар туралы толығырақ",
+    "GLOBAL_BOT": "System integration",
     "GLOBAL_BOT_BADGE": "System",
     "AVATAR": {
-      "SUCCESS_DELETE": "Rorobot avatar deleted successfully",
-      "ERROR_DELETE": "Error deleting robot avatar, please try again"
+      "SUCCESS_DELETE": "Integration avatar deleted successfully",
+      "ERROR_DELETE": "Error deleting integration avatar, please try again"
     },
     "BOT_CONFIGURATION": {
-      "TITLE": "Select an agent robot",
-      "DESC": "Assign an Agent Rorobot to your inbox. They can handle initial conversations and transfer them to a live agent when necessary.",
+      "TITLE": "Select an integration",
+      "DESC": "Assign an Integration to your inbox. They can handle initial conversations and transfer them to a live agent when necessary.",
       "SUBMIT": "Update",
-      "DISCONNECT": "Disconnect robot",
-      "SUCCESS_MESSAGE": "Successfully updated the agent robot.",
-      "DISCONNECTED_SUCCESS_MESSAGE": "Successfully disconnected the agent robot.",
-      "ERROR_MESSAGE": "Could not update the agent robot. Please try again.",
-      "DISCONNECTED_ERROR_MESSAGE": "Could not disconnect the agent robot. Please try again.",
-      "SELECT_PLACEHOLDER": "Select robot"
+      "DISCONNECT": "Disconnect integration",
+      "SUCCESS_MESSAGE": "Successfully updated the integration.",
+      "DISCONNECTED_SUCCESS_MESSAGE": "Successfully disconnected the integration.",
+      "ERROR_MESSAGE": "Could not update the integration. Please try again.",
+      "DISCONNECTED_ERROR_MESSAGE": "Could not disconnect the integration. Please try again.",
+      "SELECT_PLACEHOLDER": "Select integration"
     },
     "ADD": {
-      "TITLE": "Add Rorobot",
+      "TITLE": "Интеграция қосу",
       "CANCEL_BUTTON_TEXT": "Cancel",
       "API": {
-        "SUCCESS_MESSAGE": "Rorobot added successfully.",
-        "ERROR_MESSAGE": "Could not add robot. Please try again later."
+        "SUCCESS_MESSAGE": "Integration added successfully.",
+        "ERROR_MESSAGE": "Could not add integration. Please try again later."
       }
     },
     "LIST": {
-      "404": "No rorobots found. You can create a robot by clicking the 'Add Rorobot' button.",
-      "LOADING": "Fetching rorobots...",
+      "404": "Интеграциялар табылмады.",
+      "LOADING": "Интеграциялар жүктелуде...",
       "TABLE_HEADER": {
-        "DETAILS": "Rorobot Details",
+        "DETAILS": "Интеграция",
         "URL": "Webhook URL"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
-      "TITLE": "Delete robot",
+      "TITLE": "Delete integration",
       "CONFIRM": {
         "TITLE": "Confirm Deletion",
         "MESSAGE": "Are you sure you want to delete {name}?",
@@ -47,16 +47,16 @@
         "NO": "No, Keep"
       },
       "API": {
-        "SUCCESS_MESSAGE": "Rorobot deleted successfully.",
-        "ERROR_MESSAGE": "Could not delete robot. Please try again."
+        "SUCCESS_MESSAGE": "Integration deleted successfully.",
+        "ERROR_MESSAGE": "Could not delete integration. Please try again."
       }
     },
     "EDIT": {
       "BUTTON_TEXT": "Edit",
-      "TITLE": "Edit robot",
+      "TITLE": "Edit integration",
       "API": {
-        "SUCCESS_MESSAGE": "Rorobot updated successfully.",
-        "ERROR_MESSAGE": "Could not update robot. Please try again."
+        "SUCCESS_MESSAGE": "Integration updated successfully.",
+        "ERROR_MESSAGE": "Could not update integration. Please try again."
       }
     },
     "ACCESS_TOKEN": {
@@ -78,16 +78,16 @@
     },
     "FORM": {
       "AVATAR": {
-        "LABEL": "Rorobot avatar"
+        "LABEL": "Integration avatar"
       },
       "NAME": {
-        "LABEL": "Rorobot name",
-        "PLACEHOLDER": "Enter robot name",
-        "REQUIRED": "Rorobot name is required"
+        "LABEL": "Интеграция атауы",
+        "PLACEHOLDER": "Enter integration name",
+        "REQUIRED": "Integration name is required"
       },
       "DESCRIPTION": {
         "LABEL": "Description",
-        "PLACEHOLDER": "What does this robot do?"
+        "PLACEHOLDER": "What does this integration do?"
       },
       "WEBHOOK_URL": {
         "LABEL": "Webhook URL",
@@ -95,19 +95,22 @@
         "REQUIRED": "Webhook URL is required"
       },
       "ERRORS": {
-        "NAME": "Rorobot name is required",
+        "NAME": "Integration name is required",
         "URL": "Webhook URL is required",
         "VALID_URL": "Please enter a valid URL starting with http:// or https://"
       },
       "CANCEL": "Cancel",
-      "CREATE": "Create Rorobot",
-      "UPDATE": "Update Rorobot"
+      "CREATE": "Интеграция жасау",
+      "UPDATE": "Интеграцияны жаңарту"
     },
     "WEBHOOK": {
-      "DESCRIPTION": "Configure a webhook robot to integrate with your custom services. The robot will receive and process events from conversations and can respond to them."
+      "DESCRIPTION": "Configure a webhook integration to integrate with your custom services. The integration will receive and process events from conversations and can respond to them."
     },
     "TYPES": {
-      "WEBHOOK": "Webhook robot"
-    }
+      "WEBHOOK": "Webhook интеграциясы"
+    },
+    "COUNT": "{n} интеграция | {n} интеграция",
+    "SEARCH_PLACEHOLDER": "Интеграцияларды іздеу...",
+    "NO_RESULTS": "Іздеу бойынша интеграциялар табылмады"
   }
 }

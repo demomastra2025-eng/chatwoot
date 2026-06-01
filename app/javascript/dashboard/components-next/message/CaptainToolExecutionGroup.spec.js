@@ -54,6 +54,7 @@ describe('CaptainToolExecutionGroup', () => {
     });
 
     expect(wrapper.find('[data-testid="thinking-group"]').exists()).toBe(true);
+    expect(wrapper.find('i').classes()).toContain('i-lucide-file-text');
     await wrapper.find('button').trigger('click');
 
     expect(mocks.push).toHaveBeenCalledWith({
@@ -66,5 +67,22 @@ describe('CaptainToolExecutionGroup', () => {
         conversation_display_id: '5',
       },
     });
+  });
+
+  it('can hide the trace page action when message metadata renders it', () => {
+    const wrapper = mount(CaptainToolExecutionGroup, {
+      props: {
+        showOpenTraceAction: false,
+        additionalAttributes: {
+          captain_trace: {
+            reasoning: 'Used CRM task tools.',
+            trace_id: 'trace-1',
+          },
+        },
+      },
+    });
+
+    expect(wrapper.find('[data-testid="thinking-group"]').exists()).toBe(true);
+    expect(wrapper.find('button').exists()).toBe(false);
   });
 });

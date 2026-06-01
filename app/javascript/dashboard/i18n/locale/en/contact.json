@@ -527,7 +527,7 @@
     },
     "SIDEBAR": {
       "TABS": {
-        "ATTRIBUTES": "Attributes",
+        "ATTRIBUTES": "Additional Fields",
         "HISTORY": "History",
         "NOTES": "Notes",
         "MERGE": "Merge"
@@ -536,9 +536,9 @@
         "EMPTY_STATE": "There are no previous conversations associated to this contact"
       },
       "ATTRIBUTES": {
-        "SEARCH_PLACEHOLDER": "Search for attributes",
-        "UNUSED_ATTRIBUTES": "{count} Used attribute | {count} Unused attributes",
-        "EMPTY_STATE": "There are no contact custom attributes available in this account. You can create a custom attribute in settings.",
+        "SEARCH_PLACEHOLDER": "Search fields",
+        "UNUSED_ATTRIBUTES": "{count} used field | {count} unused fields",
+        "EMPTY_STATE": "No additional fields are available for contacts. Create them in contact settings.",
         "YES": "Yes",
         "NO": "No",
         "TRIGGER": {

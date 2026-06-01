@@ -551,7 +551,7 @@ export default {
           <button
             v-if="isCaptainAssistantTyping"
             type="button"
-            class="inline-flex items-center justify-center flex-shrink-0 rounded-full bg-n-ruby-3 text-n-ruby-11 hover:bg-n-ruby-4 hover:text-n-ruby-12 disabled:opacity-50 disabled:cursor-not-allowed ltr:ml-2 rtl:mr-2 size-8"
+            class="inline-flex items-center justify-center flex-shrink-0 rounded-full bg-n-alpha-2 text-n-slate-11 hover:bg-n-alpha-3 hover:text-n-slate-12 disabled:opacity-50 disabled:cursor-not-allowed ltr:ml-2 rtl:mr-2 size-8"
             :title="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
             :aria-label="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
             :disabled="isCancellingCaptainResponse"

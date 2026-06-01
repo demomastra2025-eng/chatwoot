@@ -3,7 +3,34 @@ import { frontendURL } from '../../../../helper/URLHelper';
 import { getUserPermissions } from '../../../../helper/permissionsHelper';
 import store from '../../../../store';
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const SettingsTabsWrapper = () =>
+  import('../components/SettingsTabsWrapper.vue');
 const AttributesHome = () => import('./Index.vue');
+
+const legacyFieldSettingsMeta = {
+  permissions: ['administrator'],
+  featureFlag: FEATURE_FLAGS.CUSTOM_ATTRIBUTES,
+};
+
+const contactSettingsTabs = [
+  {
+    labelKey: 'ATTRIBUTES_MGMT.HEADER',
+    routeName: 'contact_fields_settings_index',
+    activeOn: ['contact_fields_settings_index'],
+  },
+];
+
+const companySettingsTabs = [
+  {
+    labelKey: 'ATTRIBUTES_MGMT.HEADER',
+    routeName: 'company_fields_settings_index',
+    activeOn: ['company_fields_settings_index'],
+  },
+];
+
+const hasFeature = (accountId, featureFlag) =>
+  store.getters['accounts/isFeatureEnabledonAccount'](accountId, featureFlag);
+
 const hasLegacyAttributesAccess = accountId => {
   const permissions = getUserPermissions(
     store.getters.getCurrentUser,
@@ -12,10 +39,7 @@ const hasLegacyAttributesAccess = accountId => {
 
   return (
     permissions.includes('administrator') &&
-    store.getters['accounts/isFeatureEnabledonAccount'](
-      accountId,
-      FEATURE_FLAGS.CUSTOM_ATTRIBUTES
-    )
+    hasFeature(accountId, FEATURE_FLAGS.CUSTOM_ATTRIBUTES)
   );
 };
 
@@ -24,6 +48,7 @@ const hasManagedFieldAccess = accountId => {
     store.getters.getCurrentUser,
     Number(accountId)
   );
+  const isAdmin = permissions.includes('administrator');
   const hasCrmPermissions = [
     'administrator',
     'crm_settings_view',
@@ -31,26 +56,62 @@ const hasManagedFieldAccess = accountId => {
   ].some(permission => permissions.includes(permission));
 
   return (
-    hasCrmPermissions &&
-    (store.getters['accounts/isFeatureEnabledonAccount'](
-      accountId,
-      FEATURE_FLAGS.CRM_DEALS
-    ) ||
-      store.getters['accounts/isFeatureEnabledonAccount'](
-        accountId,
-        FEATURE_FLAGS.CRM_TASKS
-      ) ||
-      store.getters['accounts/isFeatureEnabledonAccount'](
-        accountId,
-        FEATURE_FLAGS.SCHEDULING
-      ))
+    (hasCrmPermissions &&
+      (hasFeature(accountId, FEATURE_FLAGS.CRM_DEALS) ||
+        hasFeature(accountId, FEATURE_FLAGS.CRM_TASKS))) ||
+    (isAdmin && hasFeature(accountId, FEATURE_FLAGS.SCHEDULING))
   );
 };
 
-const hasUnifiedAttributeAccess = accountId => {
-  return (
-    hasLegacyAttributesAccess(accountId) || hasManagedFieldAccess(accountId)
-  );
+const legacyAttributesFallbackRoute = to => {
+  const accountId = to.params.accountId;
+
+  if (hasLegacyAttributesAccess(accountId)) {
+    return { name: 'conversation_fields_settings_index', params: to.params };
+  }
+
+  if (hasManagedFieldAccess(accountId)) {
+    if (hasFeature(accountId, FEATURE_FLAGS.CRM_DEALS)) {
+      return { name: 'crm_deal_fields_settings_index', params: to.params };
+    }
+
+    if (hasFeature(accountId, FEATURE_FLAGS.CRM_TASKS)) {
+      return { name: 'crm_task_fields_settings_index', params: to.params };
+    }
+
+    if (hasFeature(accountId, FEATURE_FLAGS.SCHEDULING)) {
+      return { name: 'scheduling_fields_settings_index', params: to.params };
+    }
+  }
+
+  return {
+    path: frontendURL(`accounts/${accountId}/dashboard`),
+  };
+};
+
+const requireLegacyAttributes = (to, _from, next) => {
+  if (hasLegacyAttributesAccess(to.params.accountId)) {
+    next();
+    return;
+  }
+
+  next({
+    path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
+  });
+};
+
+const requireCompanyAttributes = (to, _from, next) => {
+  if (
+    hasLegacyAttributesAccess(to.params.accountId) &&
+    hasFeature(to.params.accountId, FEATURE_FLAGS.COMPANIES)
+  ) {
+    next();
+    return;
+  }
+
+  next({
+    path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
+  });
 };
 
 export default {
@@ -61,31 +122,71 @@ export default {
       children: [
         {
           path: '',
-          redirect: to => {
-            return { name: 'attributes_list', params: to.params };
-          },
+          redirect: to => legacyAttributesFallbackRoute(to),
         },
         {
           path: 'list',
           name: 'attributes_list',
+          redirect: to => legacyAttributesFallbackRoute(to),
+        },
+      ],
+    },
+    {
+      path: frontendURL('accounts/:accountId/settings/contacts'),
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: contactSettingsTabs,
+      },
+      children: [
+        {
+          path: '',
+          redirect: to => ({
+            name: 'contact_fields_settings_index',
+            params: to.params,
+          }),
+        },
+        {
+          path: 'fields',
+          name: 'contact_fields_settings_index',
           component: AttributesHome,
+          props: {
+            initialTab: 'contact_attribute',
+            showEntityTabs: false,
+            tabs: ['contact_attribute'],
+          },
+          meta: legacyFieldSettingsMeta,
+          beforeEnter: requireLegacyAttributes,
+        },
+      ],
+    },
+    {
+      path: frontendURL('accounts/:accountId/settings/companies'),
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: companySettingsTabs,
+      },
+      children: [
+        {
+          path: '',
+          redirect: to => ({
+            name: 'company_fields_settings_index',
+            params: to.params,
+          }),
+        },
+        {
+          path: 'fields',
+          name: 'company_fields_settings_index',
+          component: AttributesHome,
+          props: {
+            initialTab: 'company_attribute',
+            showEntityTabs: false,
+            tabs: ['company_attribute'],
+          },
           meta: {
-            permissions: [
-              'administrator',
-              'crm_settings_view',
-              'crm_settings_manage',
-            ],
+            ...legacyFieldSettingsMeta,
+            featureFlag: FEATURE_FLAGS.COMPANIES,
           },
-          beforeEnter: (to, _from, next) => {
-            if (hasUnifiedAttributeAccess(to.params.accountId)) {
-              next();
-              return;
-            }
-
-            next({
-              path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
-            });
-          },
+          beforeEnter: requireCompanyAttributes,
         },
       ],
     },

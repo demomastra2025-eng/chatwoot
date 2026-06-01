@@ -81,13 +81,6 @@ const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
 
-const hasCrmRuntime = computed(() => {
-  return (
-    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) ||
-    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS)
-  );
-});
-
 const hasCrmDealSettings = computed(() => {
   return isFeatureEnabledonAccount.value(
     accountId.value,
@@ -145,18 +138,6 @@ const hasLegacyCustomAttributes = computed(() => {
       accountId.value,
       FEATURE_FLAGS.CUSTOM_ATTRIBUTES
     )
-  );
-});
-
-const hasUnifiedCustomAttributes = computed(() => {
-  return (
-    hasLegacyCustomAttributes.value ||
-    (checkPermissions([
-      'administrator',
-      'crm_settings_view',
-      'crm_settings_manage',
-    ]) &&
-      hasCrmRuntime.value)
   );
 });
 
@@ -1088,6 +1069,14 @@ const menuItems = computed(() => {
         name: 'Contacts',
         label: t('SIDEBAR.CONTACTS'),
         icon: 'i-lucide-user-round',
+        actionTitle: t('SIDEBAR.SETTINGS'),
+        actionIcon: hasLegacyCustomAttributes.value
+          ? 'i-lucide-settings-2'
+          : '',
+        actionActiveOn: ['contact_fields_settings_index'],
+        actionTo: hasLegacyCustomAttributes.value
+          ? accountScopedRoute('contact_fields_settings_index')
+          : '',
         children: [
           {
             name: 'All Contacts',
@@ -1157,6 +1146,14 @@ const menuItems = computed(() => {
               name: 'Companies',
               label: t('SIDEBAR.COMPANIES'),
               icon: 'i-lucide-building-2',
+              actionTitle: t('SIDEBAR.SETTINGS'),
+              actionIcon: hasLegacyCustomAttributes.value
+                ? 'i-lucide-settings-2'
+                : '',
+              actionActiveOn: ['company_fields_settings_index'],
+              actionTo: hasLegacyCustomAttributes.value
+                ? accountScopedRoute('company_fields_settings_index')
+                : '',
               to: accountScopedRoute(
                 'companies_dashboard_index',
                 {},
@@ -1179,7 +1176,10 @@ const menuItems = computed(() => {
           hasCrmDealSettings.value && hasCrmSettingsAccess.value
             ? 'i-lucide-settings-2'
             : '',
-        actionActiveOn: ['crm_settings_index'],
+        actionActiveOn: [
+          'crm_settings_index',
+          'crm_deal_fields_settings_index',
+        ],
         actionTo:
           hasCrmDealSettings.value && hasCrmSettingsAccess.value
             ? accountScopedRoute('crm_settings_index')
@@ -1195,7 +1195,10 @@ const menuItems = computed(() => {
           hasCrmTaskSettings.value && hasCrmSettingsAccess.value
             ? 'i-lucide-settings-2'
             : '',
-        actionActiveOn: ['crm_task_settings_index'],
+        actionActiveOn: [
+          'crm_task_settings_index',
+          'crm_task_fields_settings_index',
+        ],
         actionTo:
           hasCrmTaskSettings.value && hasCrmSettingsAccess.value
             ? accountScopedRoute('crm_task_settings_index')
@@ -1210,7 +1213,10 @@ const menuItems = computed(() => {
           hasSchedulingSettings.value && checkPermissions(['administrator'])
             ? 'i-lucide-settings-2'
             : '',
-        actionActiveOn: ['scheduling_settings_index'],
+        actionActiveOn: [
+          'scheduling_settings_index',
+          'scheduling_fields_settings_index',
+        ],
         actionTo:
           hasSchedulingSettings.value && checkPermissions(['administrator'])
             ? accountScopedRoute('scheduling_settings_index')
@@ -1397,17 +1403,6 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.ADDITIONAL'),
         icon: 'i-lucide-ellipsis-vertical',
         children: [
-          ...(hasUnifiedCustomAttributes.value
-            ? [
-                {
-                  name: 'Settings Custom Attributes',
-                  visibilityKey: 'Settings:CustomAttributes',
-                  label: t('SIDEBAR.CUSTOM_ATTRIBUTES'),
-                  icon: 'i-lucide-code',
-                  to: accountScopedRoute('attributes_list'),
-                },
-              ]
-            : []),
           ...(hasAutomationRules.value
             ? [
                 {
@@ -1424,7 +1419,7 @@ const menuItems = computed(() => {
             name: 'Settings Agent Bots',
             visibilityKey: 'Settings:AgentBots',
             label: t('SIDEBAR.AGENT_BOTS'),
-            icon: 'i-lucide-bot',
+            icon: 'i-lucide-webhook',
             to: accountScopedRoute('agent_bots'),
           },
           {

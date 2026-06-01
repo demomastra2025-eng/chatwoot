@@ -2,7 +2,7 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 4;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 5;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -87,7 +87,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Portals:Settings', 'SIDEBAR.HELP_CENTER.SETTINGS'),
   ]),
   item('Settings', 'SIDEBAR.ADDITIONAL', [
-    item('Settings:CustomAttributes', 'SIDEBAR.CUSTOM_ATTRIBUTES'),
     item('Settings:Automation', 'SIDEBAR.AUTOMATION'),
     item('Settings:AgentBots', 'SIDEBAR.AGENT_BOTS'),
     item('Settings:Macros', 'SIDEBAR.MACROS'),

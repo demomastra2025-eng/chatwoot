@@ -19,7 +19,7 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Captain:Evaluations']).toBe(true);
     expect(visibilityState.Employees).toBe(true);
     expect(visibilityState.Settings).toBe(true);
-    expect(visibilityState['Settings:CustomAttributes']).toBe(true);
+    expect(visibilityState['Settings:Automation']).toBe(true);
     expect(visibilityState['Reports:Overview']).toBe(true);
   });
 
@@ -30,6 +30,7 @@ describe('sidebarVisibility', () => {
           'Reports',
           'Unknown',
           'Employees',
+          'Settings:CustomAttributes',
           'Settings:Macros',
           'Settings:Workspace',
           'Reports',

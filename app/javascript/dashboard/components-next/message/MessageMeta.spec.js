@@ -5,6 +5,23 @@ import { ref } from 'vue';
 import MessageMeta from './MessageMeta.vue';
 import { MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  route: {
+    params: {
+      accountId: '530',
+      conversation_id: '5',
+    },
+  },
+}));
+
+vi.mock('vue-router', () => ({
+  useRoute: () => routerMocks.route,
+  useRouter: () => ({
+    push: routerMocks.push,
+  }),
+}));
+
 vi.mock('shared/helpers/timeHelper', () => ({
   messageTimestamp: vi.fn(() => 'Mar 26, 6:51 AM'),
 }));
@@ -63,6 +80,11 @@ const mountComponent = () =>
 
 describe('MessageMeta', () => {
   beforeEach(() => {
+    routerMocks.push.mockClear();
+    routerMocks.route.params = {
+      accountId: '530',
+      conversation_id: '5',
+    };
     useInboxMock.mockReturnValue(baseInboxState());
   });
 
@@ -134,6 +156,47 @@ describe('MessageMeta', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.text()).toContain('AI менеджер');
+  });
+
+  it('shows a compact Captain logs action in the metadata row', async () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      additionalAttributes: ref({
+        captain_trace: {
+          trace_id: 'trace-1',
+          session_id: 'session-1',
+        },
+      }),
+      contentAttributes: ref({}),
+    });
+
+    const wrapper = mountComponent();
+    const logsButton = wrapper.find('[data-testid="captain-trace-logs"]');
+
+    expect(logsButton.exists()).toBe(true);
+    expect(logsButton.text()).toBe('Logs');
+    expect(wrapper.find('time').element.nextElementSibling).toBe(
+      logsButton.element
+    );
+    expect(wrapper.find('.message-meta-root').classes()).toContain('text-xs');
+    expect(logsButton.classes()).not.toContain('ltr:mr-auto');
+    expect(logsButton.classes()).not.toContain('font-mono');
+    expect(logsButton.classes()).not.toContain('text-[10px]');
+    expect(logsButton.find('i').classes()).toContain('i-lucide-file-text');
+    expect(logsButton.find('i').classes()).toContain('size-3');
+
+    await logsButton.trigger('click');
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'captain_observability_index',
+      params: { accountId: '530' },
+      query: {
+        tab: 'traces',
+        trace_id: 'trace-1',
+        session_id: 'session-1',
+        conversation_display_id: '5',
+      },
+    });
   });
 
   it('does not show a sending status for native AI voice transcript messages', () => {

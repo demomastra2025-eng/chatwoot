@@ -368,18 +368,18 @@
     "CAPTAIN_CHANNELS": "Channels",
     "HOME": "Home",
     "AGENTS": "Agents",
-    "AGENT_BOTS": "Bots",
+    "AGENT_BOTS": "Integrations",
     "AUDIT_LOGS": "Audit Logs",
     "INBOXES": "Inboxes",
     "NOTIFICATIONS": "Notifications",
     "CANNED_RESPONSES": "Templates",
-    "INTEGRATIONS": "Integrations",
+    "INTEGRATIONS": "Plugins",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Workspace",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
     "TAG_SETTINGS": "Tag settings",
-    "CUSTOM_ATTRIBUTES": "Custom Attributes",
+    "CUSTOM_ATTRIBUTES": "Additional Fields",
     "AUTOMATION": "Automation",
     "MACROS": "Macros",
     "TEAMS": "Teams",
@@ -958,12 +958,12 @@
       "SLA": "SLA"
     },
     "REQUIRED_ATTRIBUTES": {
-      "TITLE": "Attributes required on resolution",
-      "DESCRIPTION": "When resolving a conversation, agents will be prompted to fill these attributes if they haven't yet.",
-      "NO_ATTRIBUTES": "No attributes added yet",
+      "TITLE": "Additional fields required on closure",
+      "DESCRIPTION": "When closing a conversation, teammates will be asked to fill these fields if they are not set yet.",
+      "NO_ATTRIBUTES": "No additional fields added yet",
       "ADD": {
-        "TITLE": "Add Attributes",
-        "SEARCH_PLACEHOLDER": "Search attributes"
+        "TITLE": "Add fields",
+        "SEARCH_PLACEHOLDER": "Search fields"
       },
       "SAVE": {
         "SUCCESS": "Required attributes updated",
@@ -971,7 +971,7 @@
       },
       "MODAL": {
         "TITLE": "Resolve conversation",
-        "DESCRIPTION": "Please fill in the following custom attributes before resolving this conversation",
+        "DESCRIPTION": "Please fill the following additional fields before closing this conversation",
         "ACTIONS": {
           "RESOLVE": "Resolve conversation",
           "CANCEL": "Cancel"
@@ -989,15 +989,15 @@
         }
       },
       "PAYWALL": {
-        "TITLE": "Upgrade to use required attributes",
+        "TITLE": "Upgrade to use required additional fields",
         "AVAILABLE_ON": "The required conversation attributes feature is available on the Business and Enterprise plans.",
-        "UPGRADE_PROMPT": "Upgrade your plan to prompt agents to fill required attributes before conversation resolution.",
+        "UPGRADE_PROMPT": "Upgrade to require additional fields before closing a conversation.",
         "UPGRADE_NOW": "Upgrade now",
         "CANCEL_ANYTIME": "You can change or cancel your plan anytime"
       },
       "ENTERPRISE_PAYWALL": {
         "AVAILABLE_ON": "The required conversation attributes feature is available on the paid plans.",
-        "UPGRADE_PROMPT": "Upgrade to a paid plan to enforce required attributes before conversation resolution.",
+        "UPGRADE_PROMPT": "Upgrade to a paid plan to require additional fields before closing a conversation.",
         "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
       }
     }

@@ -1,9 +1,11 @@
+import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
 import { conversationSettingsTabs } from '../conversationSettingsTabs';
 
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const ConversationWorkflowIndex = () => import('./index.vue');
+const AttributesHome = () => import('../attributes/Index.vue');
 export default {
   routes: [
     {
@@ -19,6 +21,20 @@ export default {
           component: ConversationWorkflowIndex,
           meta: {
             permissions: ['administrator'],
+          },
+        },
+        {
+          path: 'fields',
+          name: 'conversation_fields_settings_index',
+          component: AttributesHome,
+          props: {
+            initialTab: 'conversation_attribute',
+            showEntityTabs: false,
+            tabs: ['conversation_attribute'],
+          },
+          meta: {
+            permissions: ['administrator'],
+            featureFlag: FEATURE_FLAGS.CUSTOM_ATTRIBUTES,
           },
         },
       ],

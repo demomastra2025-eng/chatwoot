@@ -524,7 +524,7 @@
     },
     "SIDEBAR": {
       "TABS": {
-        "ATTRIBUTES": "Attributes",
+        "ATTRIBUTES": "Қосымша өрістер",
         "HISTORY": "History",
         "NOTES": "Notes",
         "MERGE": "Merge"
@@ -533,9 +533,9 @@
         "EMPTY_STATE": "There are no previous conversations associated to this contact"
       },
       "ATTRIBUTES": {
-        "SEARCH_PLACEHOLDER": "Search for attributes",
-        "UNUSED_ATTRIBUTES": "{count} Used attribute | {count} Unused attributes",
-        "EMPTY_STATE": "There are no contact custom attributes available in this account. You can create a custom attribute in settings.",
+        "SEARCH_PLACEHOLDER": "Өрістерді іздеу",
+        "UNUSED_ATTRIBUTES": "{count} қолданылған өріс | {count} қолданылмаған өріс",
+        "EMPTY_STATE": "Контактілер үшін қосымша өрістер жоқ. Оларды контакт баптауларында жасаңыз.",
         "YES": "Yes",
         "NO": "No",
         "TRIGGER": {

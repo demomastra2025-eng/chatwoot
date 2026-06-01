@@ -3,9 +3,23 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { workspaceSettingsTabs } from '../workspaceSettingsTabs';
 const Index = () => import('./Index.vue');
 const Scheduling = () => import('./Scheduling.vue');
-const SettingsWrapper = () => import('../SettingsWrapper.vue');
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
+const AttributesHome = () => import('../attributes/Index.vue');
+
+const schedulingSettingsTabs = [
+  {
+    labelKey: 'SIDEBAR.SCHEDULING',
+    routeName: 'scheduling_settings_index',
+    activeOn: ['scheduling_settings_index'],
+  },
+  {
+    labelKey: 'ATTRIBUTES_MGMT.HEADER',
+    routeName: 'scheduling_fields_settings_index',
+    activeOn: ['scheduling_fields_settings_index'],
+  },
+];
+
 export default {
   routes: [
     {
@@ -34,12 +48,29 @@ export default {
         permissions: ['administrator'],
         featureFlag: FEATURE_FLAGS.SCHEDULING,
       },
-      component: SettingsWrapper,
+      component: SettingsTabsWrapper,
+      props: {
+        tabs: schedulingSettingsTabs,
+      },
       children: [
         {
           path: '',
           name: 'scheduling_settings_index',
           component: Scheduling,
+          meta: {
+            permissions: ['administrator'],
+            featureFlag: FEATURE_FLAGS.SCHEDULING,
+          },
+        },
+        {
+          path: 'fields',
+          name: 'scheduling_fields_settings_index',
+          component: AttributesHome,
+          props: {
+            initialTab: 'appointment',
+            showEntityTabs: false,
+            tabs: ['appointment'],
+          },
           meta: {
             permissions: ['administrator'],
             featureFlag: FEATURE_FLAGS.SCHEDULING,

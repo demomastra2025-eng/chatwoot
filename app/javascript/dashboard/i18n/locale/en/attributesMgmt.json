@@ -1,15 +1,15 @@
 {
   "ATTRIBUTES_MGMT": {
-    "HEADER": "Custom Attributes",
-    "HEADER_BTN_TXT": "Add Custom Attribute",
-    "LOADING": "Fetching custom attributes",
-    "DESCRIPTION": "Manage additional fields for contacts, companies, conversations, deals, and tasks from one place. Use them to capture workflow-specific context without changing the core data model.",
-    "LEARN_MORE": "Learn more about custom attributes",
-    "COUNT": "{n} attribute | {n} attributes",
-    "SEARCH_PLACEHOLDER": "Search attributes...",
-    "NO_RESULTS": "No attributes found matching your search",
+    "HEADER": "Additional Fields",
+    "HEADER_BTN_TXT": "Add Field",
+    "LOADING": "Fetching additional fields",
+    "DESCRIPTION": "Configure additional fields for the current area: conversations, contacts, companies, deals, tasks, and appointments.",
+    "LEARN_MORE": "Learn more about additional fields",
+    "COUNT": "{n} field | {n} fields",
+    "SEARCH_PLACEHOLDER": "Search fields...",
+    "NO_RESULTS": "No fields found matching your search",
     "EMPTY_STATE": {
-      "NO_ACCESS": "No custom attributes or CRM fields are available for your access level."
+      "NO_ACCESS": "No additional fields are available for your access level."
     },
     "ATTRIBUTE_MODELS": {
       "CONVERSATION": "Conversation",
@@ -25,18 +25,18 @@
       "CHECKBOX": "Checkbox"
     },
     "ADD": {
-      "TITLE": "Add Custom Attribute",
+      "TITLE": "Add Field",
       "SUBMIT": "Create",
       "CANCEL_BUTTON_TEXT": "Cancel",
       "FORM": {
         "NAME": {
           "LABEL": "Display Name",
-          "PLACEHOLDER": "Enter custom attribute display name",
+          "PLACEHOLDER": "Enter additional field display name",
           "ERROR": "Name is required"
         },
         "DESC": {
           "LABEL": "Description",
-          "PLACEHOLDER": "Enter custom attribute description",
+          "PLACEHOLDER": "Enter additional field description",
           "ERROR": "Description is required"
         },
         "MODEL": {
@@ -56,13 +56,13 @@
         },
         "KEY": {
           "LABEL": "Key",
-          "PLACEHOLDER": "Enter custom attribute key",
+          "PLACEHOLDER": "Enter additional field key",
           "ERROR": "Key is required",
           "IN_VALID": "Invalid key"
         },
         "REGEX_PATTERN": {
           "LABEL": "Regex Pattern",
-          "PLACEHOLDER": "Please enter custom attribute regex pattern. (Optional)"
+          "PLACEHOLDER": "Please enter additional field regex pattern. (Optional)"
         },
         "REGEX_CUE": {
           "LABEL": "Regex Cue",
@@ -78,26 +78,26 @@
         }
       },
       "API": {
-        "SUCCESS_MESSAGE": "Custom Attribute added successfully!",
-        "ERROR_MESSAGE": "Could not create a Custom Attribute. Please try again later."
+        "SUCCESS_MESSAGE": "Additional Field added successfully!",
+        "ERROR_MESSAGE": "Could not create an Additional Field. Please try again later."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
       "API": {
-        "SUCCESS_MESSAGE": "Custom Attribute deleted successfully.",
-        "ERROR_MESSAGE": "Couldn't delete the custom attribute. Try again."
+        "SUCCESS_MESSAGE": "Additional Field deleted successfully.",
+        "ERROR_MESSAGE": "Couldn't delete the additional field. Try again."
       },
       "CONFIRM": {
         "TITLE": "Are you sure want to delete - {attributeName}",
         "PLACE_HOLDER": "Please type {attributeName} to confirm",
-        "MESSAGE": "Deleting will remove the custom attribute",
+        "MESSAGE": "Deleting will remove the field",
         "YES": "Delete ",
         "NO": "Cancel"
       }
     },
     "EDIT": {
-      "TITLE": "Edit Custom Attribute",
+      "TITLE": "Edit Field",
       "UPDATE_BUTTON_TEXT": "Update",
       "TYPE": {
         "LIST": {
@@ -106,12 +106,12 @@
         }
       },
       "API": {
-        "SUCCESS_MESSAGE": "Custom Attribute updated successfully",
-        "ERROR_MESSAGE": "There was an error updating custom attribute, please try again"
+        "SUCCESS_MESSAGE": "Additional Field updated successfully",
+        "ERROR_MESSAGE": "There was an error updating additional field, please try again"
       }
     },
     "TABS": {
-      "HEADER": "Custom Attributes",
+      "HEADER": "Additional Fields",
       "CONVERSATION": "Conversation",
       "CONTACT": "Contact",
       "COMPANY": "Company"
@@ -128,12 +128,12 @@
         "DELETE": "Delete"
       },
       "EMPTY_RESULT": {
-        "404": "There are no custom attributes created",
-        "NOT_FOUND": "There are no custom attributes configured"
+        "404": "There are no additional fields created",
+        "NOT_FOUND": "There are no additional fields configured"
       },
       "REGEX_PATTERN": {
         "LABEL": "Regex Pattern",
-        "PLACEHOLDER": "Please enter custom attribute regex pattern. (Optional)"
+        "PLACEHOLDER": "Please enter additional field regex pattern. (Optional)"
       },
       "REGEX_CUE": {
         "LABEL": "Regex Cue",

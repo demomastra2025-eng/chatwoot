@@ -345,18 +345,18 @@
     "CAPTAIN_SETTINGS": "Settings",
     "HOME": "Home",
     "AGENTS": "Employees",
-    "AGENT_BOTS": "Robots",
+    "AGENT_BOTS": "Интеграциялар",
     "AUDIT_LOGS": "Audit Logs",
     "INBOXES": "Channels",
     "NOTIFICATIONS": "Notifications",
     "CANNED_RESPONSES": "Canned Responses",
-    "INTEGRATIONS": "Integrations",
+    "INTEGRATIONS": "Плагиндер",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Workspace",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
     "TAG_SETTINGS": "Tag settings",
-    "CUSTOM_ATTRIBUTES": "Custom Attributes",
+    "CUSTOM_ATTRIBUTES": "Қосымша өрістер",
     "AUTOMATION": "Automation",
     "MACROS": "Macros",
     "TEAMS": "Teams",
@@ -927,12 +927,12 @@
       "SLA": "SLA"
     },
     "REQUIRED_ATTRIBUTES": {
-      "TITLE": "Attributes required on resolution",
-      "DESCRIPTION": "When resolving a conversation, agents will be prompted to fill these attributes if they haven't yet.",
-      "NO_ATTRIBUTES": "No attributes added yet",
+      "TITLE": "Жабу кезінде міндетті қосымша өрістер",
+      "DESCRIPTION": "Диалог жабылған кезде бұл өрістер толтырылмаған болса, қызметкерлерге оларды толтыру ұсынылады.",
+      "NO_ATTRIBUTES": "Қосымша өрістер әлі қосылмаған",
       "ADD": {
-        "TITLE": "Add Attributes",
-        "SEARCH_PLACEHOLDER": "Search attributes"
+        "TITLE": "Өрістер қосу",
+        "SEARCH_PLACEHOLDER": "Өрістерді іздеу"
       },
       "SAVE": {
         "SUCCESS": "Required attributes updated",

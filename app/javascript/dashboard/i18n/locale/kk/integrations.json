@@ -33,10 +33,10 @@
         "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
       }
     },
-    "HEADER": "Integrations",
-    "DESCRIPTION": "OneLink integrates with multiple tools and services to improve your team's efficiency. Explore the list below to configure your favorite apps.",
-    "LEARN_MORE": "Learn more about integrations",
-    "LOADING": "Fetching integrations",
+    "HEADER": "Плагиндер",
+    "DESCRIPTION": "Плагиндер OneLink мүмкіндіктерін қосымша модульдермен кеңейтеді. Қажетті плагиндерді төменде баптаңыз.",
+    "LEARN_MORE": "Плагиндер туралы толығырақ",
+    "LOADING": "Плагиндер жүктелуде",
     "CAPTAIN": {
       "DISABLED": "Captain is not enabled on your account.",
       "CLICK_HERE_TO_CONFIGURE": "Click here to configure",
@@ -430,6 +430,7 @@
         "OUTPUT": "Output",
         "COPY_INPUT": "Copy input",
         "COPY_OUTPUT": "Copy output",
+        "OPEN_TRACE": "Логтар",
         "SCENARIO_HANDOFF": "Scenario handoff: {scenario}",
         "COPY_SUCCESS": "Copied to clipboard",
         "COPY_ERROR": "Unable to copy"

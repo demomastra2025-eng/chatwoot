@@ -32,6 +32,21 @@ import {
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
 
+const props = defineProps({
+  tabs: {
+    type: Array,
+    default: () => [],
+  },
+  initialTab: {
+    type: String,
+    default: '',
+  },
+  showEntityTabs: {
+    type: Boolean,
+    default: true,
+  },
+});
+
 const { t } = useI18n();
 const getters = useStoreGetters();
 const store = useStore();
@@ -52,7 +67,9 @@ const [showDeletePopup, toggleDeletePopup] = useToggle(false);
 const crmFieldDialogRef = ref(null);
 const searchQuery = ref('');
 const selectedAttribute = ref({});
-const selectedTabKey = ref('conversation_attribute');
+const selectedTabKey = ref(
+  props.initialTab || props.tabs[0] || 'conversation_attribute'
+);
 
 const legacyAttributeTabIndexes = {
   conversation_attribute: 0,
@@ -126,39 +143,55 @@ const appointmentsEnabled = computed(
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.SCHEDULING)
 );
 
+const allowedTabKeys = computed(() =>
+  Array.isArray(props.tabs) ? props.tabs.filter(Boolean) : []
+);
+
+const isTabAllowed = key => {
+  return (
+    allowedTabKeys.value.length === 0 || allowedTabKeys.value.includes(key)
+  );
+};
+
 const availableTabs = computed(() => {
   const tabs = [];
 
   if (canViewLegacy.value) {
-    tabs.push({
-      key: 'conversation_attribute',
-      name: t('ATTRIBUTES_MGMT.TABS.CONVERSATION'),
-    });
-    tabs.push({
-      key: 'contact_attribute',
-      name: t('ATTRIBUTES_MGMT.TABS.CONTACT'),
-    });
-    tabs.push({
-      key: 'company_attribute',
-      name: t('ATTRIBUTES_MGMT.TABS.COMPANY'),
-    });
+    if (isTabAllowed('conversation_attribute')) {
+      tabs.push({
+        key: 'conversation_attribute',
+        name: t('ATTRIBUTES_MGMT.TABS.CONVERSATION'),
+      });
+    }
+    if (isTabAllowed('contact_attribute')) {
+      tabs.push({
+        key: 'contact_attribute',
+        name: t('ATTRIBUTES_MGMT.TABS.CONTACT'),
+      });
+    }
+    if (isTabAllowed('company_attribute')) {
+      tabs.push({
+        key: 'company_attribute',
+        name: t('ATTRIBUTES_MGMT.TABS.COMPANY'),
+      });
+    }
   }
 
-  if (dealsEnabled.value) {
+  if (dealsEnabled.value && isTabAllowed('deal')) {
     tabs.push({
       key: 'deal',
       name: t('CRM.SETTINGS.FIELD_TABS.DEALS'),
     });
   }
 
-  if (tasksEnabled.value) {
+  if (tasksEnabled.value && isTabAllowed('task')) {
     tabs.push({
       key: 'task',
       name: t('CRM.SETTINGS.FIELD_TABS.TASKS'),
     });
   }
 
-  if (appointmentsEnabled.value) {
+  if (appointmentsEnabled.value && isTabAllowed('appointment')) {
     tabs.push({
       key: 'appointment',
       name: t('CRM.SETTINGS.FIELD_TABS.APPOINTMENTS'),
@@ -272,13 +305,13 @@ const crmFieldTypeOptions = computed(() => [
 
 const crmEntityOptions = computed(() =>
   [
-    dealsEnabled.value
+    dealsEnabled.value && isTabAllowed('deal')
       ? { label: t('CRM.SETTINGS.FIELD_TABS.DEALS'), value: 'deal' }
       : null,
-    tasksEnabled.value
+    tasksEnabled.value && isTabAllowed('task')
       ? { label: t('CRM.SETTINGS.FIELD_TABS.TASKS'), value: 'task' }
       : null,
-    appointmentsEnabled.value
+    appointmentsEnabled.value && isTabAllowed('appointment')
       ? {
           label: t('CRM.SETTINGS.FIELD_TABS.APPOINTMENTS'),
           value: 'appointment',
@@ -450,6 +483,9 @@ const emptyStateMessage = computed(() => {
 
 const selectedLegacyTabIndex = computed(
   () => legacyAttributeTabIndexes[selectedTabKey.value] ?? 0
+);
+const disableLegacyAttributeModelSelection = computed(
+  () => isLegacyTab.value && allowedTabKeys.value.length === 1
 );
 
 const crmDialogTitle = computed(() =>
@@ -780,19 +816,23 @@ const handleDeleteAttribute = attribute => {
 onMounted(async () => {
   const requests = [];
 
-  if (canViewLegacy.value) {
+  const shouldLoadLegacyAttributes =
+    allowedTabKeys.value.length === 0 ||
+    allowedTabKeys.value.some(key => key.endsWith('_attribute'));
+
+  if (canViewLegacy.value && shouldLoadLegacyAttributes) {
     requests.push(store.dispatch('attributes/get'));
   }
 
-  if (dealsEnabled.value) {
+  if (dealsEnabled.value && isTabAllowed('deal')) {
     requests.push(referencesStore.loadFieldDefinitions('deal'));
   }
 
-  if (tasksEnabled.value) {
+  if (tasksEnabled.value && isTabAllowed('task')) {
     requests.push(referencesStore.loadFieldDefinitions('task'));
   }
 
-  if (appointmentsEnabled.value) {
+  if (appointmentsEnabled.value && isTabAllowed('appointment')) {
     requests.push(referencesStore.loadFieldDefinitions('appointment'));
   }
 
@@ -825,7 +865,7 @@ onMounted(async () => {
             {{ countLabel }}
           </span>
         </template>
-        <template v-if="availableTabs.length" #tabs>
+        <template v-if="props.showEntityTabs && availableTabs.length > 1" #tabs>
           <TabBar
             :tabs="tabsForTabBar"
             :initial-active-tab="selectedTabIndex"
@@ -882,6 +922,7 @@ onMounted(async () => {
       v-model:show="showAddPopup"
       :on-close="hideAddPopup"
       :selected-attribute-model-tab="selectedLegacyTabIndex"
+      :disable-attribute-model-selection="disableLegacyAttributeModelSelection"
     />
 
     <woot-modal v-model:show="showEditPopup" @close="hideEditPopup">

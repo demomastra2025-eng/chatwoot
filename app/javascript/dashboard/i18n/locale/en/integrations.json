@@ -34,10 +34,10 @@
         "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
       }
     },
-    "HEADER": "Integrations",
-    "DESCRIPTION": "OneLink integrates with multiple tools and services to improve your team's efficiency. Explore the list below to configure your favorite apps.",
-    "LEARN_MORE": "Learn more about integrations",
-    "LOADING": "Fetching integrations",
+    "HEADER": "Plugins",
+    "DESCRIPTION": "Plugins extend OneLink with additional apps and modules. Configure the plugins you need below.",
+    "LEARN_MORE": "Learn more about plugins",
+    "LOADING": "Fetching plugins",
     "CAPTAIN": {
       "DISABLED": "AI Agents are not enabled on your account.",
       "CLICK_HERE_TO_CONFIGURE": "Click here to configure",
@@ -408,8 +408,8 @@
       },
       "HEADER": "Notion"
     },
-    "SEARCH_PLACEHOLDER": "Search integrations...",
-    "NO_RESULTS": "No integrations found matching your search"
+    "SEARCH_PLACEHOLDER": "Search plugins...",
+    "NO_RESULTS": "No plugins found matching your search"
   },
   "CAPTAIN": {
     "NAME": "AI Agents",
@@ -451,7 +451,7 @@
         "OUTPUT": "Output",
         "COPY_INPUT": "Copy input",
         "COPY_OUTPUT": "Copy output",
-        "OPEN_TRACE": "Open full trace",
+        "OPEN_TRACE": "Logs",
         "SCENARIO_HANDOFF": "Scenario handoff: {scenario}",
         "COPY_SUCCESS": "Copied to clipboard",
         "COPY_ERROR": "Unable to copy"

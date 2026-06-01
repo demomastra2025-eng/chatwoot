@@ -243,7 +243,7 @@
         },
         "CREATE_TITLE": "Create field",
         "DELETE_CONFIRM": "Delete this field definition?",
-        "DESCRIPTION": "Managed custom fields extend CRM entities without changing core schema columns.",
+        "DESCRIPTION": "Additional fields extend CRM entities without changing core schema columns.",
         "EDIT_TITLE": "Edit field",
         "FORM": {
           "ACTIVE": "Field is active",
@@ -275,7 +275,7 @@
           "REQUIRED": "Required",
           "TYPE": "Type"
         },
-        "TITLE": "Managed fields"
+        "TITLE": "Additional fields"
       },
       "DEFAULT_TOUCH_PLAN": {
         "DEAL_TITLE": "Default touch plan for deals",

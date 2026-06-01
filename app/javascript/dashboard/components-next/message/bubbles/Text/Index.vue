@@ -144,6 +144,7 @@ const handleSeeOriginal = () => {
       </div>
       <CaptainToolExecutionGroup
         :additional-attributes="additionalAttributes"
+        :show-open-trace-action="false"
       />
     </div>
   </BaseBubble>
