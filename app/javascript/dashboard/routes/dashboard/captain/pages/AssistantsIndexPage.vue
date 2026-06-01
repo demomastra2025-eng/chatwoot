@@ -41,9 +41,7 @@ const generateRouterParams = () => {
   return null;
 };
 
-const LEGACY_NAVIGATION_ALIASES = {
-  captain_assistants_playground_index: 'captain_assistants_prompts_index',
-};
+const LEGACY_NAVIGATION_ALIASES = {};
 
 const VALID_NAVIGATION_ROUTES = [
   'captain_assistants_responses_index', // Faq page
@@ -51,6 +49,7 @@ const VALID_NAVIGATION_ROUTES = [
   'captain_assistants_scenarios_index', // Legacy prompts alias
   'captain_assistants_channels_index', // Channels page
   'captain_tools_index', // Tools page
+  'captain_assistants_playground_index', // Playground page
   'captain_assistants_settings_index', // Settings page
   'captain_assistants_prompts_index', // Prompts page
   'captain_assistants_restrictions_index', // Legacy prompts alias

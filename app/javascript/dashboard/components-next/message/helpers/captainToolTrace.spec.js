@@ -366,6 +366,36 @@ describe('buildCaptainToolTraceMessages', () => {
     expect(message.output).not.toContain('{');
   });
 
+  it('renders retrieval trace and chunk metadata with user-readable labels', () => {
+    const [{ message }] = buildCaptainToolTraceMessages({
+      captainTrace: {
+        toolSteps: [
+          {
+            id: 'rag:finish:1',
+            toolName: 'knowledge_search',
+            status: 'finish',
+            content: 'Completed knowledge_search',
+            output: {
+              retrieval_trace: {
+                retrieval_mode: 'semantic_chunk',
+                document_name: 'Прайс-лист',
+                document_chunk_id: 32,
+                content_preview: 'Стоимость доставки от 1000 KZT',
+                score: 0.92,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(message.output).toContain('Источники ответа:');
+    expect(message.output).toContain('Режим поиска: semantic_chunk');
+    expect(message.output).toContain('Документ: Прайс-лист');
+    expect(message.output).toContain('Фрагмент: 32');
+    expect(message.output).toContain('Оценка релевантности: 0.92');
+  });
+
   it('unwraps captain_tool result envelopes and renders them as human-readable lists', () => {
     const [{ message }] = buildCaptainToolTraceMessages({
       captainTrace: {

@@ -43,6 +43,39 @@ const HUMAN_KEY_LABELS = {
   returnedCount: 'Найдено',
   tool_name: 'Инструмент',
   toolName: 'Инструмент',
+  retrieval_trace: 'Источники ответа',
+  retrievalTrace: 'Источники ответа',
+  retrieval_mode: 'Режим поиска',
+  retrievalMode: 'Режим поиска',
+  source: 'Источник',
+  sources: 'Источники',
+  document_id: 'Документ',
+  documentId: 'Документ',
+  document_name: 'Документ',
+  documentName: 'Документ',
+  document_chunk_id: 'Фрагмент',
+  documentChunkId: 'Фрагмент',
+  chunk_id: 'Фрагмент',
+  chunkId: 'Фрагмент',
+  chunk_ids: 'Фрагменты',
+  chunkIds: 'Фрагменты',
+  content_preview: 'Фрагмент',
+  contentPreview: 'Фрагмент',
+  embedding_status_counts: 'Статусы индексации',
+  embeddingStatusCounts: 'Статусы индексации',
+  semantic_chunk: 'Семантический поиск',
+  semanticChunk: 'Семантический поиск',
+  lexical_fallback: 'Лексический fallback',
+  lexicalFallback: 'Лексический fallback',
+  degraded: 'Ограниченный режим',
+  score: 'Оценка релевантности',
+  similarity: 'Сходство',
+  rerank_score: 'Оценка rerank',
+  rerankScore: 'Оценка rerank',
+  knowledge_base: 'База знаний',
+  knowledgeBase: 'База знаний',
+  response_ids: 'Ответы',
+  responseIds: 'Ответы',
 };
 
 const LEGACY_REASONING_FALLBACKS = new Set([
@@ -518,7 +551,9 @@ export const buildCaptainToolTraceMessages = (
 
   if (Array.isArray(toolCalls) && toolCalls.length > 0) {
     messages.push(
-      ...buildGroupedToolTraceMessages(toolCalls.map(normalizeCanonicalToolCall))
+      ...buildGroupedToolTraceMessages(
+        toolCalls.map(normalizeCanonicalToolCall)
+      )
     );
     return messages;
   }

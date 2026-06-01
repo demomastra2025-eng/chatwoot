@@ -1673,9 +1673,60 @@ function buildTraceWhySummary(group) {
     tools,
     flags,
     reasons,
+    operatorHints: buildTraceOperatorHints(group, events, tools),
     totalTokens,
     estimatedCost,
   };
+}
+
+function buildTraceOperatorHints(group, events, tools) {
+  const hints = [];
+
+  if (group.errorCount > 0) {
+    hints.push({
+      icon: 'i-lucide-circle-alert',
+      label: t('CAPTAIN.OBSERVABILITY.TRACES.OPERATOR_HINTS.ERROR'),
+    });
+  }
+  if (group.blockedCount > 0) {
+    hints.push({
+      icon: 'i-lucide-shield-alert',
+      label: t('CAPTAIN.OBSERVABILITY.TRACES.OPERATOR_HINTS.BLOCKED'),
+    });
+  }
+  if (events.some(event => event.tool_failure)) {
+    hints.push({
+      icon: 'i-lucide-wrench',
+      label: t('CAPTAIN.OBSERVABILITY.TRACES.OPERATOR_HINTS.TOOL_FAILURE'),
+    });
+  }
+  if (events.some(event => event.schema_invalid)) {
+    hints.push({
+      icon: 'i-lucide-braces',
+      label: t('CAPTAIN.OBSERVABILITY.TRACES.OPERATOR_HINTS.SCHEMA_INVALID'),
+    });
+  }
+  if (events.some(event => event.zero_completion_recovered)) {
+    hints.push({
+      icon: 'i-lucide-refresh-cw',
+      label: t('CAPTAIN.OBSERVABILITY.TRACES.OPERATOR_HINTS.ZERO_COMPLETION'),
+    });
+  }
+  if (tools.length > 0 && hints.length === 0) {
+    hints.push({
+      icon: 'i-lucide-check-circle-2',
+      label: t('CAPTAIN.OBSERVABILITY.TRACES.OPERATOR_HINTS.TOOLS_OK'),
+    });
+  }
+
+  if (hints.length === 0) {
+    hints.push({
+      icon: 'i-lucide-check-circle-2',
+      label: t('CAPTAIN.OBSERVABILITY.TRACES.OPERATOR_HINTS.HEALTHY'),
+    });
+  }
+
+  return hints.slice(0, 4);
 }
 
 function groupedTraceReasons(events) {
@@ -3513,6 +3564,19 @@ onMounted(async () => {
                         : t('CAPTAIN.OBSERVABILITY.TRACES.WHY_NO_REASONS')
                     }}
                   </div>
+                </div>
+              </div>
+              <div
+                v-if="focusedTraceSummary.operatorHints.length"
+                class="mt-4 grid gap-2 md:grid-cols-2"
+              >
+                <div
+                  v-for="hint in focusedTraceSummary.operatorHints"
+                  :key="hint.label"
+                  class="flex items-start gap-2 rounded-lg border border-n-weak bg-n-alpha-1 p-3 text-sm text-n-slate-11"
+                >
+                  <i class="mt-0.5 h-4 w-4 shrink-0" :class="[hint.icon]" />
+                  <span>{{ hint.label }}</span>
                 </div>
               </div>
             </div>

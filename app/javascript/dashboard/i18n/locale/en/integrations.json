@@ -451,6 +451,7 @@
         "OUTPUT": "Output",
         "COPY_INPUT": "Copy input",
         "COPY_OUTPUT": "Copy output",
+        "OPEN_TRACE": "Open full trace",
         "SCENARIO_HANDOFF": "Scenario handoff: {scenario}",
         "COPY_SUCCESS": "Copied to clipboard",
         "COPY_ERROR": "Unable to copy"
@@ -782,6 +783,8 @@
         "VOICE_SETTINGS": {
           "TITLE": "Voice settings",
           "DESCRIPTION": "Configure the realtime voice transport used when this Captain handles phone calls. Secrets stay in runtime environment variables.",
+          "ACTIVE_RUNTIME": "Active voice runtime",
+          "RUNTIME_NOTE": "Calls use the same Captain instructions, tools, knowledge base, and handoff rules as chat. Gemini Live remains the dedicated realtime voice provider.",
           "PROVIDER": "Realtime provider",
           "MODEL": "Realtime model",
           "VOICE": "Voice",
@@ -2511,6 +2514,15 @@
         "WHY_NO_TOOLS": "No tools",
         "WHY_NO_FLAGS": "No flags",
         "WHY_NO_REASONS": "No reasons",
+        "OPERATOR_HINTS": {
+          "ERROR": "Open matching events and inspect the provider/runtime error before retrying.",
+          "BLOCKED": "Check guardrail or moderation reason; the runtime blocked part of this flow.",
+          "TOOL_FAILURE": "Review tool input/output and retry only after the integration result is clear.",
+          "SCHEMA_INVALID": "Structured output recovery was involved; verify model compatibility and schema health.",
+          "ZERO_COMPLETION": "The final answer was recovered after a blank model response.",
+          "TOOLS_OK": "Tools completed without persisted failure flags.",
+          "HEALTHY": "No blocking flags were persisted for this trace."
+        },
         "METRICS": {
           "EVENTS": "{count} events",
           "ERRORS": "{count} errors",

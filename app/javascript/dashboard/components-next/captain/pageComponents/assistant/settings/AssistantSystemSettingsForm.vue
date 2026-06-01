@@ -7,6 +7,7 @@ import { minLength } from '@vuelidate/validators';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SettingsInfoDialog from './SettingsInfoDialog.vue';
 
@@ -49,6 +50,34 @@ const DEFAULT_VOICE_SETTINGS = {
   maxDurationSec: 0,
   interruptionsEnabled: true,
 };
+
+const VOICE_PROVIDER_OPTIONS = Object.freeze([
+  { value: 'gemini-live', label: 'Gemini Live' },
+]);
+
+const VOICE_MODEL_OPTIONS = Object.freeze([
+  {
+    value: 'gemini-3.1-flash-live-preview',
+    label: 'Gemini 3.1 Flash Live Preview',
+  },
+  { value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' },
+]);
+
+const VOICE_VOICE_OPTIONS = Object.freeze([
+  { value: 'sulafat', label: 'Sulafat' },
+  { value: 'aoede', label: 'Aoede' },
+  { value: 'charon', label: 'Charon' },
+  { value: 'fenrir', label: 'Fenrir' },
+  { value: 'kore', label: 'Kore' },
+  { value: 'puck', label: 'Puck' },
+]);
+
+const VOICE_LANGUAGE_OPTIONS = Object.freeze([
+  { value: 'ru-KZ', label: 'Русский (Казахстан)' },
+  { value: 'ru-RU', label: 'Русский' },
+  { value: 'kk-KZ', label: 'Қазақша' },
+  { value: 'en-US', label: 'English' },
+]);
 
 const initialState = {
   handoffMessageEnabled: false,
@@ -102,8 +131,36 @@ const resolutionInfoPoints = computed(() => [
 
 const temperatureMinLabel = '0.0';
 const temperatureMaxLabel = '1.0';
+const optionLabel = (options, value) =>
+  options.find(option => option.value === value)?.label || value;
+
+const optionsWithCurrentValue = (options, value) => {
+  if (!value || options.some(option => option.value === value)) {
+    return options;
+  }
+
+  return [{ value, label: value }, ...options];
+};
+
+const voiceProviderOptions = computed(() =>
+  optionsWithCurrentValue(VOICE_PROVIDER_OPTIONS, state.voiceSettings.provider)
+);
+const voiceModelOptions = computed(() =>
+  optionsWithCurrentValue(VOICE_MODEL_OPTIONS, state.voiceSettings.model)
+);
+const voiceVoiceOptions = computed(() =>
+  optionsWithCurrentValue(VOICE_VOICE_OPTIONS, state.voiceSettings.voice)
+);
+const voiceLanguageOptions = computed(() =>
+  optionsWithCurrentValue(VOICE_LANGUAGE_OPTIONS, state.voiceSettings.language)
+);
+
 const voiceSettingsSummary = computed(
-  () => `${state.voiceSettings.model} / ${state.voiceSettings.voice}`
+  () =>
+    `${optionLabel(voiceModelOptions.value, state.voiceSettings.model)} / ${optionLabel(
+      voiceVoiceOptions.value,
+      state.voiceSettings.voice
+    )}`
 );
 
 const temperatureOrDefault = value => {
@@ -467,27 +524,80 @@ defineExpose({
         </div>
       </summary>
 
+      <div class="mt-4 rounded-lg border border-n-weak bg-n-alpha-1 p-3">
+        <div class="flex items-center gap-2">
+          <i class="i-lucide-phone-call h-4 w-4 text-n-slate-10" />
+          <h5 class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.ACTIVE_RUNTIME') }}
+          </h5>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <span
+            class="rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
+          >
+            {{
+              optionLabel(voiceProviderOptions, state.voiceSettings.provider)
+            }}
+          </span>
+          <span
+            class="rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
+          >
+            {{ optionLabel(voiceModelOptions, state.voiceSettings.model) }}
+          </span>
+          <span
+            class="rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
+          >
+            {{
+              optionLabel(voiceLanguageOptions, state.voiceSettings.language)
+            }}
+          </span>
+        </div>
+        <p class="mt-3 text-sm text-n-slate-11">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.RUNTIME_NOTE') }}
+        </p>
+      </div>
+
       <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Input
-          v-model="state.voiceSettings.provider"
-          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.PROVIDER')"
-          placeholder="gemini-live"
-        />
-        <Input
-          v-model="state.voiceSettings.model"
-          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.MODEL')"
-          placeholder="gemini-3.1-flash-live-preview"
-        />
-        <Input
-          v-model="state.voiceSettings.voice"
-          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE')"
-          placeholder="sulafat"
-        />
-        <Input
-          v-model="state.voiceSettings.language"
-          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.LANGUAGE')"
-          placeholder="ru-KZ"
-        />
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.PROVIDER') }}
+          </label>
+          <Select
+            v-model="state.voiceSettings.provider"
+            :options="voiceProviderOptions"
+            class="w-full"
+          />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.MODEL') }}
+          </label>
+          <Select
+            v-model="state.voiceSettings.model"
+            :options="voiceModelOptions"
+            class="w-full"
+          />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE') }}
+          </label>
+          <Select
+            v-model="state.voiceSettings.voice"
+            :options="voiceVoiceOptions"
+            class="w-full"
+          />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.LANGUAGE') }}
+          </label>
+          <Select
+            v-model="state.voiceSettings.language"
+            :options="voiceLanguageOptions"
+            class="w-full"
+          />
+        </div>
         <div
           data-test-id="assistant-voice-system-prompt"
           class="md:col-span-2 flex flex-col gap-2"

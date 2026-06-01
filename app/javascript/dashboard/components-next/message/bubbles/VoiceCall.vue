@@ -1,10 +1,13 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { useMessageContext } from '../provider.js';
 import { MESSAGE_TYPES, VOICE_CALL_STATUS } from '../constants';
+import { useAlert } from 'dashboard/composables';
 import { acceptWhatsappCallById } from 'dashboard/composables/useWhatsappCallSession';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
+import { copyTextToClipboard } from 'shared/helpers/clipboard';
 
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import BaseBubble from 'next/message/bubbles/Base.vue';
@@ -43,6 +46,7 @@ const TERMINAL_RECORDING_STATUSES = [
 ];
 
 const router = useRouter();
+const { t } = useI18n();
 const { contentAttributes, messageType, createdAt } = useMessageContext();
 
 // NOTE: contentAttributes.data keys are camelCase because MessageList.vue
@@ -315,8 +319,33 @@ const toolTraceOutput = tool =>
   formatToolTraceDetail(tool.output ?? tool.result);
 const hasToolTraceDetail = tool =>
   Boolean(toolTraceInput(tool) || toolTraceOutput(tool));
-const TOOL_TRACE_INPUT_LABEL = 'Input';
-const TOOL_TRACE_OUTPUT_LABEL = 'Output';
+
+const voiceToolTracePanels = tool =>
+  [
+    {
+      id: 'input',
+      labelKey: 'CAPTAIN.COPILOT.TOOL_TRACE.INPUT',
+      copyLabelKey: 'CAPTAIN.COPILOT.TOOL_TRACE.COPY_INPUT',
+      icon: 'i-lucide-log-in',
+      value: toolTraceInput(tool),
+    },
+    {
+      id: 'output',
+      labelKey: 'CAPTAIN.COPILOT.TOOL_TRACE.OUTPUT',
+      copyLabelKey: 'CAPTAIN.COPILOT.TOOL_TRACE.COPY_OUTPUT',
+      icon: 'i-lucide-log-out',
+      value: toolTraceOutput(tool),
+    },
+  ].filter(panel => panel.value);
+
+const copyVoiceToolTrace = async value => {
+  try {
+    await copyTextToClipboard(value);
+    useAlert(t('CAPTAIN.COPILOT.TOOL_TRACE.COPY_SUCCESS'));
+  } catch {
+    useAlert(t('CAPTAIN.COPILOT.TOOL_TRACE.COPY_ERROR'));
+  }
+};
 
 const handleJoinCall = async () => {
   if (isJoining.value) return;
@@ -463,31 +492,38 @@ const handleJoinCall = async () => {
             </div>
             <div v-if="hasToolTraceDetail(tool)" class="mt-1 space-y-1">
               <details
-                v-if="toolTraceInput(tool)"
-                class="rounded border border-n-weak bg-n-alpha-1"
-                data-voice-tool-trace-panel="input"
+                v-for="panel in voiceToolTracePanels(tool)"
+                :key="panel.id"
+                class="group overflow-hidden rounded border border-n-weak bg-n-solid-1"
+                :data-voice-tool-trace-panel="panel.id"
               >
-                <summary class="cursor-pointer px-1.5 py-0.5 text-n-slate-11">
-                  {{ TOOL_TRACE_INPUT_LABEL }}
-                </summary>
-                <div
-                  class="max-h-48 overflow-auto whitespace-pre-wrap break-words px-1.5 pb-1.5 font-mono text-[11px] text-n-slate-12"
+                <summary
+                  class="flex cursor-pointer select-none items-center justify-between gap-2 px-1.5 py-1 text-n-slate-11"
                 >
-                  {{ toolTraceInput(tool) }}
-                </div>
-              </details>
-              <details
-                v-if="toolTraceOutput(tool)"
-                class="rounded border border-n-weak bg-n-alpha-1"
-                data-voice-tool-trace-panel="output"
-              >
-                <summary class="cursor-pointer px-1.5 py-0.5 text-n-slate-11">
-                  {{ TOOL_TRACE_OUTPUT_LABEL }}
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <Icon :icon="panel.icon" class="h-3.5 w-3.5 shrink-0" />
+                    <span class="truncate">{{ $t(panel.labelKey) }}</span>
+                  </span>
+                  <Icon
+                    icon="i-lucide-chevron-down"
+                    class="h-3.5 w-3.5 text-n-slate-9 transition-transform group-open:rotate-180"
+                  />
                 </summary>
-                <div
-                  class="max-h-48 overflow-auto whitespace-pre-wrap break-words px-1.5 pb-1.5 font-mono text-[11px] text-n-slate-12"
-                >
-                  {{ toolTraceOutput(tool) }}
+                <div class="relative border-t border-n-weak">
+                  <button
+                    v-tooltip.top="$t(panel.copyLabelKey)"
+                    type="button"
+                    class="skip-context-menu absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center text-n-slate-11 hover:text-n-slate-12"
+                    :aria-label="$t(panel.copyLabelKey)"
+                    @click.stop.prevent="copyVoiceToolTrace(panel.value)"
+                  >
+                    <Icon icon="i-lucide-copy" class="h-5 w-5" />
+                  </button>
+                  <div
+                    class="max-h-48 overflow-auto whitespace-pre-wrap break-words px-1.5 pb-1.5 pt-8 font-mono text-[11px] text-n-slate-12"
+                  >
+                    {{ panel.value }}
+                  </div>
                 </div>
               </details>
             </div>
@@ -504,6 +540,14 @@ const handleJoinCall = async () => {
 }
 
 .voice-call-recording-accordion__summary::marker {
+  content: '';
+}
+
+[data-voice-tool-trace-panel] > summary::-webkit-details-marker {
+  display: none;
+}
+
+[data-voice-tool-trace-panel] > summary::marker {
   content: '';
 }
 
