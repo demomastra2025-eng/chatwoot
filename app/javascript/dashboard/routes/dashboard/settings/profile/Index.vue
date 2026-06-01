@@ -337,7 +337,7 @@ export default {
       <SectionLayout
         with-border
         :title="$t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.TITLE')"
-        :description="$t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.NOTE')"
+        description=""
       >
         <McpConfiguration :access-token="currentUser.access_token" />
       </SectionLayout>
