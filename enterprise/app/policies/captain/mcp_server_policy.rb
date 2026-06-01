@@ -51,6 +51,10 @@ class Captain::McpServerPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def oauth_disconnect?
+    @account_user.administrator?
+  end
+
   def destroy?
     @account_user.administrator?
   end
