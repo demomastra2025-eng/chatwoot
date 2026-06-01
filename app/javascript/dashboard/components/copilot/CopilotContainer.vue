@@ -11,6 +11,7 @@ import { vOnClickOutside } from '@vueuse/components';
 import { useRoute, useRouter } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { executeCaptainUiAction } from 'dashboard/helper/captainUiActions';
+import { isCaptainRoute } from 'dashboard/helper/captainCopilotPanel';
 import wootConstants from 'dashboard/constants/globals';
 
 defineProps({
@@ -160,6 +161,17 @@ const shouldShowCopilotPanel = computed(() => {
   const { is_copilot_panel_open: isCopilotPanelOpen } = uiSettings.value;
   return isCaptainEnabled && isCopilotPanelOpen && !uiFlags.value.fetchingList;
 });
+
+const openCopilotPanelForCaptainRoute = () => {
+  if (!isCaptainRoute(route) || uiSettings.value?.is_copilot_panel_open) return;
+
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_copilot_panel_open: true,
+    is_crm_deal_panel_open: false,
+    is_touch_sidebar_open: false,
+  });
+};
 
 const handleReset = () => {
   selectedCopilotThreadId.value = null;
@@ -321,6 +333,12 @@ watch(
   async () => {
     await hydrateThreadFromRoute();
   },
+  { immediate: true }
+);
+
+watch(
+  () => [route.name, route.path],
+  () => openCopilotPanelForCaptainRoute(),
   { immediate: true }
 );
 </script>

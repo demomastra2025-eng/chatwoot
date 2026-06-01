@@ -72,11 +72,11 @@ describe('AssistantsIndexPage', () => {
     };
   });
 
-  it('routes the playground sidebar item to the playground page', async () => {
+  it('routes the legacy playground sidebar target to prompts', async () => {
     await mountPage();
 
     expect(mocks.replace).toHaveBeenCalledWith({
-      name: 'captain_assistants_playground_index',
+      name: 'captain_assistants_prompts_index',
       params: {
         accountId: '1',
         assistantId: 2,

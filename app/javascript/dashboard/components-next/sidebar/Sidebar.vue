@@ -984,15 +984,6 @@ const menuItems = computed(() => {
             }),
           },
           {
-            name: 'Playground',
-            visibilityKey: 'Captain:Playground',
-            label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
-            activeOn: ['captain_assistants_playground_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_playground_index',
-            }),
-          },
-          {
             name: 'Channels',
             visibilityKey: 'Captain:Channels',
             label: t('SIDEBAR.CAPTAIN_CHANNELS'),
@@ -1032,24 +1023,16 @@ const menuItems = computed(() => {
               ]
             : []),
           {
-            name: 'FAQs',
+            name: 'Knowledge Base',
             visibilityKey: 'Captain:FAQs',
             label: t('SIDEBAR.CAPTAIN_RESPONSES'),
             activeOn: [
               'captain_assistants_responses_index',
               'captain_assistants_responses_pending',
+              'captain_assistants_documents_index',
             ],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_responses_index',
-            }),
-          },
-          {
-            name: 'Documents',
-            visibilityKey: 'Captain:Documents',
-            label: t('SIDEBAR.CAPTAIN_DOCUMENTS'),
-            activeOn: ['captain_assistants_documents_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_documents_index',
             }),
           },
         ],

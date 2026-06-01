@@ -1096,6 +1096,14 @@
         }
       }
     },
+    "KNOWLEDGE_BASE": {
+      "HEADER": "Білім базасы",
+      "DESCRIPTION": "AI-агент нақты жауаптар үшін қолданатын білімді басқарыңыз: дайын FAQ жауаптары мен бастапқы құжаттар. Екі дереккөзді де қолдау үшін FAQ және Documents қойындылары арасында ауысыңыз.",
+      "TABS": {
+        "FAQS": "FAQ",
+        "DOCUMENTS": "Documents"
+      }
+    },
     "DOCUMENTS": {
       "HEADER": "Documents",
       "ADD_NEW": "Create a new document",

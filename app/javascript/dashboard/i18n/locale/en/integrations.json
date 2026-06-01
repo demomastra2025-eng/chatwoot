@@ -1839,6 +1839,14 @@
         }
       }
     },
+    "KNOWLEDGE_BASE": {
+      "HEADER": "Knowledge Base",
+      "DESCRIPTION": "Manage the knowledge the AI agent uses for factual answers: curated FAQ answers and source documents. Switch between FAQ and Documents tabs to maintain both sources.",
+      "TABS": {
+        "FAQS": "FAQ",
+        "DOCUMENTS": "Documents"
+      }
+    },
     "DOCUMENTS": {
       "HEADER": "Documents",
       "ADD_NEW": "Create a new document",

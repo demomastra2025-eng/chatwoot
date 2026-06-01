@@ -63,7 +63,7 @@ describe('CaptainPageRouteView', () => {
     );
   });
 
-  it('does not reopen the copilot panel if it was closed earlier in the session', () => {
+  it('reopens the copilot panel on Captain pages even if it was closed earlier in the session', () => {
     window.sessionStorage.setItem(
       CAPTAIN_COPILOT_PANEL_CLOSED_SESSION_KEY,
       'true'
@@ -73,12 +73,12 @@ describe('CaptainPageRouteView', () => {
 
     expect(mocks.updateUISettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        last_active_assistant_id: 42,
+        is_copilot_panel_open: true,
       })
     );
-    expect(mocks.updateUISettings).not.toHaveBeenCalledWith(
+    expect(mocks.updateUISettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        is_copilot_panel_open: true,
+        last_active_assistant_id: 42,
       })
     );
   });

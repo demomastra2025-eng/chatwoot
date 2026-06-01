@@ -18,14 +18,23 @@ describe('captain routes', () => {
     expect(evaluationRoute.meta.permissions).toEqual(['administrator']);
   });
 
-  it('exposes the assistant playground page', () => {
+  it('redirects the removed assistant playground page to prompts', () => {
     const playgroundRoute = flattenRoutes(routes).find(
       route => route.name === 'captain_assistants_playground_index'
     );
 
     expect(playgroundRoute).toBeTruthy();
     expect(playgroundRoute.path).toContain('/captain/:assistantId/playground');
-    expect(playgroundRoute.component).toBeTypeOf('function');
-    expect(playgroundRoute.redirect).toBeUndefined();
+    expect(playgroundRoute.component).toBeUndefined();
+    expect(
+      playgroundRoute.redirect({
+        params: { accountId: '1', assistantId: '2' },
+        query: { source: 'legacy' },
+      })
+    ).toEqual({
+      name: 'captain_assistants_prompts_index',
+      params: { accountId: '1', assistantId: '2' },
+      query: { source: 'legacy' },
+    });
   });
 });

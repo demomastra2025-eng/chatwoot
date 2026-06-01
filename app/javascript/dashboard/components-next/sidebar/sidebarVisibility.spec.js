@@ -17,6 +17,8 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Campaigns:Templates']).toBe(true);
     expect(visibilityState['Campaigns:Touches']).toBe(true);
     expect(visibilityState['Captain:Evaluations']).toBe(true);
+    expect(visibilityState['Captain:FAQs']).toBe(true);
+    expect(visibilityState['Captain:Documents']).toBeUndefined();
     expect(visibilityState.Employees).toBe(true);
     expect(visibilityState.Settings).toBe(true);
     expect(visibilityState['Settings:Automation']).toBe(true);

@@ -42,7 +42,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),
     item('Captain:Evaluations', 'SIDEBAR.CAPTAIN_EVALUATIONS'),
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
-    item('Captain:Documents', 'SIDEBAR.CAPTAIN_DOCUMENTS'),
   ]),
   item('Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
   item('Contacts', 'SIDEBAR.CONTACTS', [

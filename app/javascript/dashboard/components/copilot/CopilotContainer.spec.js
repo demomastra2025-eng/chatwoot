@@ -41,6 +41,7 @@ const testState = vi.hoisted(() => {
         preferred_captain_assistant_id: null,
       },
     },
+    route: { name: 'home', path: '/app/accounts/1/dashboard', query: {} },
     onClickOutsideDirective,
   };
 });
@@ -94,7 +95,7 @@ vi.mock('dashboard/composables/useConfig', () => ({
 }));
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {} }),
+  useRoute: () => testState.route,
   useRouter: () => ({ push: vi.fn() }),
 }));
 
@@ -130,6 +131,9 @@ describe('CopilotContainer', () => {
       is_copilot_panel_open: true,
       preferred_captain_assistant_id: null,
     };
+    testState.route.name = 'home';
+    testState.route.path = '/app/accounts/1/dashboard';
+    testState.route.query = {};
   });
 
   afterEach(() => {
@@ -157,6 +161,26 @@ describe('CopilotContainer', () => {
     expect(testState.updateUISettings).toHaveBeenCalledWith({
       is_contact_sidebar_open: false,
       is_copilot_panel_open: false,
+      is_crm_deal_panel_open: false,
+      is_touch_sidebar_open: false,
+    });
+
+    wrapper.unmount();
+  });
+
+  it('opens the copilot panel automatically on Captain settings routes', () => {
+    testState.uiSettings.value = {
+      is_copilot_panel_open: false,
+      preferred_captain_assistant_id: null,
+    };
+    testState.route.name = 'captain_settings_index';
+    testState.route.path = '/app/accounts/1/settings/captain';
+
+    const wrapper = mountComponent();
+
+    expect(testState.updateUISettings).toHaveBeenCalledWith({
+      is_contact_sidebar_open: false,
+      is_copilot_panel_open: true,
       is_crm_deal_panel_open: false,
       is_touch_sidebar_open: false,
     });

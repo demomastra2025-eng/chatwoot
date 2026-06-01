@@ -19,6 +19,7 @@ import CreateResponseDialog from 'dashboard/components-next/captain/pageComponen
 import ResponsePageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/ResponsePageEmptyState.vue';
 import FeatureSpotlightPopover from 'dashboard/components-next/feature-spotlight/FeatureSpotlightPopover.vue';
 import LimitBanner from 'dashboard/components-next/captain/pageComponents/response/LimitBanner.vue';
+import KnowledgeBaseTabs from 'dashboard/components-next/captain/pageComponents/knowledgeBase/KnowledgeBaseTabs.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -213,7 +214,7 @@ watch(
     :total-count="responseMeta.totalCount"
     :current-page="responseMeta.page"
     :button-policy="['administrator']"
-    :header-title="$t('CAPTAIN.RESPONSES.HEADER')"
+    :header-title="$t('CAPTAIN.KNOWLEDGE_BASE.HEADER')"
     :button-label="$t('CAPTAIN.RESPONSES.ADD_NEW')"
     :is-fetching="isFetching"
     :is-empty="!responses.length"
@@ -231,6 +232,10 @@ watch(
         fallback-thumbnail="/assets/images/dashboard/captain/faqs-popover-light.svg"
         fallback-thumbnail-dark="/assets/images/dashboard/captain/faqs-popover-dark.svg"
       />
+    </template>
+
+    <template #controls>
+      <KnowledgeBaseTabs />
     </template>
 
     <template #search>

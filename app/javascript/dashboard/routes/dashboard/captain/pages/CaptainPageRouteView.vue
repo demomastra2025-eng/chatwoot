@@ -2,14 +2,12 @@
 import { watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { wasCaptainCopilotPanelClosed } from 'dashboard/helper/captainCopilotPanel';
 
 const route = useRoute();
 const { uiSettings, updateUISettings } = useUISettings();
 
 const openCaptainCopilotPanelByDefault = () => {
   if (uiSettings.value?.is_copilot_panel_open) return;
-  if (wasCaptainCopilotPanelClosed()) return;
 
   updateUISettings({
     is_contact_sidebar_open: false,
