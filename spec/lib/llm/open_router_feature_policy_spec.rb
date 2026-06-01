@@ -61,7 +61,7 @@ RSpec.describe Llm::OpenRouterFeaturePolicy do
       { id: 'apply_patch' }
     ]
 
-    expect(policy.filter_server_tools(tools)).to contain_exactly(id: 'openrouter:datetime')
+    expect(policy.filter_server_tools(tools)).to contain_exactly(type: 'openrouter:datetime')
   end
 
   it 'does not let runtime preferences upgrade a feature beyond its service-tier allowlist' do
@@ -70,6 +70,12 @@ RSpec.describe Llm::OpenRouterFeaturePolicy do
 
     expect(editor_policy.compiled_service_tier).to eq('flex')
     expect(captain_policy.compiled_service_tier).to eq('priority')
+  end
+
+  it 'does not let runtime preferences upgrade Captain session cache into read-only provider cache' do
+    policy = described_class.for(feature: :captain_agent, runtime_preferences: { openrouter_cache_policy: 'read_only' })
+
+    expect(policy.cache_policy).to eq('session')
   end
 
   it 'intersects runtime variant preferences with the feature variant allowlist' do

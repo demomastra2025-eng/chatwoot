@@ -12,23 +12,40 @@ class Llm::OpenRouterFeaturePolicy
     'embedding' => %w[flex auto],
     'knowledge_rerank' => %w[flex auto]
   }.freeze
+  CACHE_POLICY_ALLOWLIST = {
+    'captain_agent' => %w[session disabled],
+    'copilot' => %w[session disabled],
+    'editor' => %w[read_only disabled],
+    'label_suggestion' => %w[read_only disabled],
+    'image_recognition' => %w[disabled],
+    'audio_transcription' => %w[disabled],
+    'moderation' => %w[disabled],
+    'embedding' => %w[static_context disabled],
+    'knowledge_rerank' => %w[read_only disabled]
+  }.freeze
   DEFAULT_SERVER_TOOL_ID = 'openrouter:datetime'
   DENIED_SERVER_TOOL_IDS = %w[
-    apply-patch apply_patch openrouter:apply-patch openrouter:apply_patch
-    image-generation image_generation openrouter:image-generation openrouter:image_generation
+    openrouter:apply_patch openrouter:image_generation
   ].freeze
   SERVER_TOOL_ID_ALIASES = {
     'datetime' => DEFAULT_SERVER_TOOL_ID,
     'openrouter:datetime' => DEFAULT_SERVER_TOOL_ID,
-    'web-fetch' => 'openrouter:web-fetch',
-    'web_fetch' => 'openrouter:web-fetch',
-    'openrouter:web_fetch' => 'openrouter:web-fetch',
-    'web-search' => 'openrouter:web-search',
-    'web_search' => 'openrouter:web-search',
-    'openrouter:web_search' => 'openrouter:web-search',
-    'apply-patch' => 'openrouter:apply-patch',
-    'apply_patch' => 'openrouter:apply-patch',
-    'openrouter:apply_patch' => 'openrouter:apply-patch'
+    'web-fetch' => 'openrouter:web_fetch',
+    'web_fetch' => 'openrouter:web_fetch',
+    'openrouter:web-fetch' => 'openrouter:web_fetch',
+    'openrouter:web_fetch' => 'openrouter:web_fetch',
+    'web-search' => 'openrouter:web_search',
+    'web_search' => 'openrouter:web_search',
+    'openrouter:web-search' => 'openrouter:web_search',
+    'openrouter:web_search' => 'openrouter:web_search',
+    'apply-patch' => 'openrouter:apply_patch',
+    'apply_patch' => 'openrouter:apply_patch',
+    'openrouter:apply-patch' => 'openrouter:apply_patch',
+    'openrouter:apply_patch' => 'openrouter:apply_patch',
+    'image-generation' => 'openrouter:image_generation',
+    'image_generation' => 'openrouter:image_generation',
+    'openrouter:image-generation' => 'openrouter:image_generation',
+    'openrouter:image_generation' => 'openrouter:image_generation'
   }.freeze
 
   DEFAULT_POLICY = {
@@ -311,7 +328,7 @@ class Llm::OpenRouterFeaturePolicy
     end
 
     def normalize_server_tool_id(value)
-      normalized = value.to_s.strip.tr('_', '-').presence
+      normalized = value.to_s.strip.presence
       return if normalized.blank?
 
       SERVER_TOOL_ID_ALIASES.fetch(normalized, normalized)
@@ -324,7 +341,13 @@ class Llm::OpenRouterFeaturePolicy
 
       RUNTIME_POLICY_KEYS.except(:service_tier, :allowed_variants).each do |policy_key, preference_keys|
         override = first_present_preference(preferences, preference_keys)
-        definition[policy_key] = override if override.present?
+        next if override.blank?
+
+        definition[policy_key] = if policy_key == :cache_policy
+                                   constrained_cache_policy(override, feature_key, definition[policy_key])
+                                 else
+                                   override
+                                 end
       end
 
       variant_override = first_present_preference(preferences, RUNTIME_POLICY_KEYS[:allowed_variants])
@@ -351,6 +374,13 @@ class Llm::OpenRouterFeaturePolicy
       keys.filter_map { |key| preferences[key].presence }.first
     end
 
+    def constrained_cache_policy(value, feature_key, fallback)
+      normalized = value.to_s.strip.presence
+      return fallback if normalized.blank?
+
+      CACHE_POLICY_ALLOWLIST.fetch(feature_key, %w[disabled]).include?(normalized) ? normalized : fallback
+    end
+
     def normalize_plugin_ids(values)
       Array(values).filter_map { |value| normalize_plugin_id(value).presence }.uniq
     end
@@ -372,13 +402,13 @@ class Llm::OpenRouterFeaturePolicy
       return unless tool.respond_to?(:to_h)
 
       hash = tool.to_h.with_indifferent_access
-      hash[:id] || hash[:name] || hash.dig(:function, :name) || hash[:type]
+      hash[:type] || hash[:id] || hash[:name] || hash.dig(:function, :name)
     rescue StandardError
       nil
     end
 
     def normalize_server_tool(_tool, id)
-      { id: id }
+      { type: id }
     end
   end
 end

@@ -85,8 +85,8 @@ class Llm::OpenRouterPluginPolicy
       status: 'implemented',
       reason: 'Safe read-only system time tool for agent context.'
     ),
-    'openrouter:web-search' => Extension.new(
-      id: 'openrouter:web-search',
+    'openrouter:web_search' => Extension.new(
+      id: 'openrouter:web_search',
       kind: 'server_tool',
       product_label_key: 'web_search',
       allowed_features: [],

@@ -1051,7 +1051,7 @@ const menuItems = computed(() => {
       {
         name: 'Contacts',
         label: t('SIDEBAR.CONTACTS'),
-        icon: 'i-lucide-user-round',
+        icon: 'i-lucide-square-user-round',
         actionTitle: t('SIDEBAR.SETTINGS'),
         actionIcon: hasLegacyCustomAttributes.value
           ? 'i-lucide-settings-2'

@@ -72,7 +72,8 @@ class Llm::OpenRouterRuntime
     model = resolve_model(request)
     enforce_budget!(request, model)
     profile = routing_profile(request, model)
-    observe_native_request(request, model, 'transcription.complete', routing_metadata: native_routing_metadata(request, model, profile)) do
+    headers = native_headers(request, profile)
+    observe_native_request(request, model, 'transcription.complete', routing_metadata: native_routing_metadata(request, model, profile, headers)) do
       with_openrouter_retry(request, model) do
         Llm::OpenRouterTranscriptionClient.transcribe(
           request.input,
@@ -82,7 +83,8 @@ class Llm::OpenRouterRuntime
           prompt: request.options[:prompt],
           language: request.options[:language],
           temperature: request.temperature.nil? ? 0.4 : request.temperature,
-          provider: profile.provider_preferences
+          provider: profile.provider_preferences,
+          headers: headers.headers
         )
       end
     end
@@ -95,7 +97,8 @@ class Llm::OpenRouterRuntime
     model = resolve_model(request)
     enforce_budget!(request, model)
     profile = routing_profile(request, model)
-    observe_native_request(request, model, 'embedding.complete', routing_metadata: native_routing_metadata(request, model, profile)) do
+    headers = native_headers(request, profile)
+    observe_native_request(request, model, 'embedding.complete', routing_metadata: native_routing_metadata(request, model, profile, headers)) do
       with_openrouter_retry(request, model) do
         Llm::OpenRouterEmbeddingClient.embed(
           request.input,
@@ -104,7 +107,8 @@ class Llm::OpenRouterRuntime
           input_type: request.options[:input_type],
           api_key: api_key!(request),
           api_base: api_base(request),
-          provider: profile.provider_preferences
+          provider: profile.provider_preferences,
+          headers: headers.headers
         )
       end
     end
@@ -122,8 +126,9 @@ class Llm::OpenRouterRuntime
 
     enforce_budget!(request, model)
     profile = routing_profile(request, model)
+    headers = native_headers(request, profile)
 
-    observe_native_request(request, model, 'rerank.complete', routing_metadata: native_routing_metadata(request, model, profile)) do
+    observe_native_request(request, model, 'rerank.complete', routing_metadata: native_routing_metadata(request, model, profile, headers)) do
       with_openrouter_retry(request, model) do
         Llm::OpenRouterRerankClient.rerank(
           query: query,
@@ -133,7 +138,8 @@ class Llm::OpenRouterRuntime
           return_documents: request.options.fetch(:return_documents, true),
           api_key: api_key!(request),
           api_base: api_base(request),
-          provider: profile.provider_preferences
+          provider: profile.provider_preferences,
+          headers: headers.headers
         )
       end
     end
@@ -374,8 +380,9 @@ class Llm::OpenRouterRuntime
     {}
   end
 
-  def native_routing_metadata(request, model, profile = nil)
+  def native_routing_metadata(request, model, profile = nil, headers = nil)
     profile ||= routing_profile(request, model)
+    headers ||= native_headers(request, profile)
     provider = profile.provider_preferences
     feature_policy = request.openrouter_feature_policy
     {
@@ -397,7 +404,19 @@ class Llm::OpenRouterRuntime
       openrouter_plugin_policy: feature_policy.plugin_policy,
       openrouter_transform_policy: feature_policy.transform_policy,
       openrouter_budget_policy: feature_policy.budget_policy
-    }.compact
+    }.merge(headers.metadata).compact
+  end
+
+  def native_headers(request, profile)
+    policy = request.openrouter_feature_policy
+    Llm::OpenRouterHeaders.build(
+      cache_policy: policy.cache_policy,
+      provider_params: profile.provider_preferences,
+      native_endpoint: profile.native_endpoint,
+      cache_options: request.options,
+      privacy_profile: policy.privacy_profile,
+      trace_capture_allowed: policy.workspace_policy&.trace_capture_allowed?
+    )
   end
 
   def routing_profile_name(profile, provider)

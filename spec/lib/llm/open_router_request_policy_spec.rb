@@ -5,12 +5,14 @@ require 'rails_helper'
 OpenRouterRequestPolicySpecModel = Struct.new(:id, :provider)
 
 class OpenRouterRequestPolicySpecChat
-  attr_reader :model, :params, :with_params_calls
+  attr_reader :model, :params, :headers, :with_params_calls, :with_headers_calls
 
-  def initialize(model:, params: {})
+  def initialize(model:, params: {}, headers: {})
     @model = model
     @params = params
+    @headers = headers
     @with_params_calls = []
+    @with_headers_calls = []
   end
 
   def with_params(**params)
@@ -18,9 +20,19 @@ class OpenRouterRequestPolicySpecChat
     @with_params_calls << params
     self
   end
+
+  def with_headers(**headers)
+    @headers = headers
+    @with_headers_calls << headers
+    self
+  end
 end
 
 RSpec.describe Llm::OpenRouterRequestPolicy do
+  it 'installs the RubyLLM OpenRouter server-tool payload patch' do
+    expect(RubyLLM::Providers::OpenRouter.ancestors).to include(Llm::OpenRouterServerToolsPatch)
+  end
+
   describe '.require_parameters!' do
     it 'adds provider require_parameters for OpenRouter chats and preserves existing params' do
       chat = OpenRouterRequestPolicySpecChat.new(
@@ -29,6 +41,10 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
           'logit_bias' => { '123' => -1 },
           'provider' => { 'allow_fallbacks' => true },
           :max_tokens => 200
+        },
+        headers: {
+          'HTTP-Referer' => 'https://spoofed.example',
+          'X-OpenRouter-Title' => 'Spoofed'
         }
       )
 
@@ -39,6 +55,10 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
         'logit_bias' => { '123' => -1 },
         :max_tokens => 200,
         :provider => include(:allow_fallbacks => true, :require_parameters => true)
+      )
+      expect(chat.headers).to include(
+        'HTTP-Referer' => Llm::OpenRouterHeaders.attribution_headers['HTTP-Referer'],
+        'X-OpenRouter-Title' => 'OneLink'
       )
     end
 
@@ -142,6 +162,78 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
         data_collection: 'deny',
         allow_fallbacks: true,
         require_parameters: true
+      )
+    end
+
+    it 'preserves sensitive privacy cache disablement when recompiling existing chat params' do
+      chat = OpenRouterRequestPolicySpecChat.new(
+        model: OpenRouterRequestPolicySpecModel.new('openai/gpt-5.4-mini', 'openrouter'),
+        headers: {
+          'HTTP-Referer' => Llm::OpenRouterHeaders.attribution_headers['HTTP-Referer'],
+          'x-openrouter-cache' => 'true',
+          'X-OpenRouter-Cache-TTL' => '300'
+        }
+      )
+      described_class.tag!(
+        chat,
+        feature: :editor,
+        model: 'openai/gpt-5.4-mini',
+        routing_metadata: {
+          requested_model: 'openai/gpt-5.4-mini',
+          openrouter_privacy_profile: 'sensitive',
+          openrouter_cache_policy: 'read_only',
+          openrouter_response_cache: 'disabled',
+          openrouter_response_cache_ttl: 300,
+          openrouter_response_cache_reason: 'privacy_sensitive'
+        }
+      )
+
+      described_class.require_parameters!(chat, tools: true)
+
+      expect(chat.headers).not_to include('X-OpenRouter-Cache')
+      expect(chat.headers).not_to include('x-openrouter-cache')
+      expect(chat.headers).not_to include('X-OpenRouter-Cache-TTL')
+      expect(chat.params[:provider]).to include(require_parameters: true)
+      metadata = described_class.observability_metadata(chat)
+      expect(metadata).to include(
+        openrouter_privacy_profile: 'sensitive',
+        openrouter_cache_policy: 'read_only',
+        openrouter_response_cache: 'disabled',
+        openrouter_response_cache_reason: 'privacy_sensitive'
+      )
+      expect(metadata).not_to include(:openrouter_response_cache_ttl)
+    end
+
+    it 'preserves disabled cache policy when recompiling existing read-only chat params' do
+      chat = OpenRouterRequestPolicySpecChat.new(
+        model: OpenRouterRequestPolicySpecModel.new('openai/gpt-5.4-mini', 'openrouter'),
+        headers: {
+          'HTTP-Referer' => Llm::OpenRouterHeaders.attribution_headers['HTTP-Referer'],
+          'X-OpenRouter-Cache' => 'true',
+          'X-OpenRouter-Cache-TTL' => '300'
+        }
+      )
+      described_class.tag!(
+        chat,
+        feature: :editor,
+        model: 'openai/gpt-5.4-mini',
+        routing_metadata: {
+          requested_model: 'openai/gpt-5.4-mini',
+          openrouter_cache_policy: 'disabled',
+          openrouter_response_cache: 'disabled',
+          openrouter_response_cache_reason: 'policy_disabled'
+        }
+      )
+
+      described_class.require_parameters!(chat, tools: true)
+
+      expect(chat.headers).not_to include('X-OpenRouter-Cache')
+      expect(chat.headers).not_to include('X-OpenRouter-Cache-TTL')
+      expect(chat.params[:provider]).to include(require_parameters: true)
+      expect(described_class.observability_metadata(chat)).to include(
+        openrouter_cache_policy: 'disabled',
+        openrouter_response_cache: 'disabled',
+        openrouter_response_cache_reason: 'policy_disabled'
       )
     end
 

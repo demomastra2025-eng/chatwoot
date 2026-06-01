@@ -50,6 +50,52 @@ RSpec.describe Llm::ChatClient do
       expect(result).to eq(chat)
     end
 
+    it 'adds OpenRouter attribution headers for OpenRouter models' do
+      allow(Llm::Models).to receive(:runtime_supported?).with('openai/gpt-4o').and_return(true)
+      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o').and_return('openrouter')
+
+      expect(RubyLLM).to receive(:chat).with(
+        model: 'openai/gpt-4o',
+        provider: 'openrouter',
+        assume_model_exists: true
+      ).and_return(chat)
+      expect(chat).to receive(:with_headers).with(
+        hash_including(
+          'HTTP-Referer' => Llm::OpenRouterHeaders.attribution_headers['HTTP-Referer'],
+          'X-OpenRouter-Title' => 'OneLink'
+        )
+      ).and_return(chat)
+
+      expect(described_class.build(model: 'openai/gpt-4o')).to eq(chat)
+    end
+
+    it 'does not let caller headers override official OpenRouter attribution headers' do
+      allow(Llm::Models).to receive(:runtime_supported?).with('openai/gpt-4o').and_return(true)
+      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o').and_return('openrouter')
+
+      expect(RubyLLM).to receive(:chat).with(
+        model: 'openai/gpt-4o',
+        provider: 'openrouter',
+        assume_model_exists: true
+      ).and_return(chat)
+      expect(chat).to receive(:with_headers).with(
+        hash_including(
+          'HTTP-Referer' => Llm::OpenRouterHeaders.attribution_headers['HTTP-Referer'],
+          'X-OpenRouter-Title' => 'OneLink',
+          'X-Test' => 'value'
+        )
+      ).and_return(chat)
+
+      described_class.build(
+        model: 'openai/gpt-4o',
+        headers: {
+          'HTTP-Referer' => 'https://spoofed.example',
+          'X-OpenRouter-Title' => 'Spoofed',
+          'X-Test' => 'value'
+        }
+      )
+    end
+
     it 'applies thinking options when provided' do
       expect(RubyLLM).to receive(:chat).with(model: 'gpt-5.1').and_return(chat)
       expect(chat).to receive(:with_thinking).with(effort: 'high').and_return(chat)

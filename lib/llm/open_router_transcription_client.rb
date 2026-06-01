@@ -32,6 +32,7 @@ class Llm::OpenRouterTranscriptionClient
         request['Authorization'] = "Bearer #{options[:api_key]}"
         request['Content-Type'] = 'application/json'
         request['Accept'] = 'application/json'
+        Llm::OpenRouterHeaders.apply!(request, headers: options[:headers])
         request.body = JSON.generate(
           {
             model: options[:model],

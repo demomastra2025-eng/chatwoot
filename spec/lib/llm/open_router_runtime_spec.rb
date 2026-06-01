@@ -315,6 +315,31 @@ RSpec.describe Llm::OpenRouterRuntime do
     expect(runtime.embed(request)).to eq(result)
   end
 
+  it 'does not send native embedding cache headers for sensitive privacy profiles' do
+    request = Llm::FeatureRequest.new(
+      feature: :help_center_search,
+      account: account,
+      model: 'openai/text-embedding-3-small',
+      input: ['hello'],
+      runtime_preferences: { privacy_profile: 'sensitive' },
+      options: { dimensions: 1536, openrouter_response_cache: true }
+    )
+    result = instance_double(Llm::OpenRouterEmbeddingClient::Result, vectors: [[0.1]], input_tokens: 1, model: 'openai/text-embedding-3-small')
+
+    expect(Llm::OpenRouterEmbeddingClient).to receive(:embed) do |_input, options|
+      expect(options[:headers]).to include('HTTP-Referer')
+      expect(options[:headers]).not_to include('X-OpenRouter-Cache')
+      result
+    end
+
+    expect(runtime.embed(request)).to eq(result)
+    expect(LlmEvent.last.payload).to include(
+      'openrouter_privacy_profile' => 'sensitive',
+      'openrouter_response_cache' => 'disabled',
+      'openrouter_response_cache_reason' => 'privacy_sensitive'
+    )
+  end
+
   it 'routes native transcription to the OpenRouter transcription client' do
     request = Llm::FeatureRequest.new(
       feature: :audio_transcription,

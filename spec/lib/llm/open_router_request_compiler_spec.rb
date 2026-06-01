@@ -11,6 +11,7 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
   :messages,
   :runtime_preferences,
   :privacy_profile,
+  :options,
   keyword_init: true
 ) do
   def requires_tools? = tools_required == true
@@ -28,7 +29,8 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       server_tools: options[:server_tools],
       messages: options[:messages],
       runtime_preferences: options[:runtime_preferences],
-      privacy_profile: options[:privacy_profile]
+      privacy_profile: options[:privacy_profile],
+      options: options[:request_options] || {}
     )
 
     described_class.call(
@@ -426,7 +428,72 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       base_params: { tools: [{ id: 'apply_patch' }] }
     )
 
-    expect(compiled.params[:tools]).to contain_exactly(id: 'openrouter:datetime')
+    expect(compiled.params[:tools]).to contain_exactly(type: 'openrouter:datetime')
+    expect(compiled.metadata[:openrouter_server_tools]).to eq(['openrouter:datetime'])
+  end
+
+  it 'keeps OpenRouter server tools separate from RubyLLM function tools for tool flows' do
+    compiled = compile(
+      feature: :captain_agent,
+      tools: true,
+      server_tools: [{ type: 'openrouter:datetime' }]
+    )
+
+    expect(compiled.params).not_to include(:tools)
+    expect(compiled.params[Llm::OpenRouterServerToolsPatch::SERVER_TOOLS_PARAM]).to contain_exactly(type: 'openrouter:datetime')
+    expect(compiled.metadata[:openrouter_server_tools]).to eq(['openrouter:datetime'])
+  end
+
+  it 'adds official OpenRouter attribution headers to compiled chat requests' do
+    compiled = compile(feature: :captain_agent)
+    referer = Llm::OpenRouterHeaders.attribution_headers['HTTP-Referer']
+
+    expect(compiled.headers).to include(
+      'HTTP-Referer' => referer,
+      'X-OpenRouter-Title' => 'OneLink',
+      'X-OpenRouter-Categories' => 'personal-agent,general-chat'
+    )
+    expect(compiled.metadata).to include(
+      openrouter_attribution: 'enabled',
+      openrouter_app_referer: referer,
+      openrouter_app_title: 'OneLink'
+    )
+  end
+
+  it 'enables OpenRouter response caching only for read-only cache policies' do
+    compiled = compile(feature: :editor, request_options: { openrouter_response_cache_ttl: 120 })
+    captain = compile(
+      feature: :captain_agent,
+      runtime_preferences: { openrouter_cache_policy: 'read_only' },
+      request_options: { openrouter_response_cache: true }
+    )
+    sensitive = compile(
+      feature: :editor,
+      privacy_profile: 'sensitive',
+      request_options: { openrouter_response_cache: true }
+    )
+
+    expect(compiled.headers).to include(
+      'X-OpenRouter-Cache' => 'true',
+      'X-OpenRouter-Cache-TTL' => '120'
+    )
+    expect(compiled.metadata).to include(
+      openrouter_response_cache: 'enabled',
+      openrouter_response_cache_ttl: 120
+    )
+    expect(captain.headers).not_to include('X-OpenRouter-Cache')
+    expect(captain.metadata).to include(
+      openrouter_cache_policy: 'session',
+      openrouter_response_cache: 'disabled',
+      openrouter_response_cache_reason: 'policy_session'
+    )
+    expect(sensitive.headers).not_to include('X-OpenRouter-Cache')
+    expect(sensitive.metadata).to include(
+      openrouter_cache_policy: 'read_only',
+      openrouter_privacy_profile: 'sensitive',
+      openrouter_response_cache: 'disabled',
+      openrouter_response_cache_reason: 'privacy_sensitive'
+    )
   end
 
   it 'compiles service tiers only from feature policy and strips raw caller tiers' do

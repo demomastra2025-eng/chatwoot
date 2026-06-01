@@ -81,9 +81,28 @@ class Llm::ChatClient
       chat = chat.with_temperature(options[:temperature]) unless options[:temperature].nil?
       chat = chat.with_params(**options[:params]) if options[:params].present?
       chat = apply_reasoning_routing_policy(chat, options, account: account)
-      chat = chat.with_headers(**options[:headers]) if options[:headers].present?
+      headers = openrouter_headers(chat, options, account: account)
+      chat = chat.with_headers(**headers) if headers.present?
       chat = chat.with_thinking(**options[:thinking]) if options[:thinking].present?
       chat
+    end
+
+    def openrouter_headers(chat, options, account:)
+      provided = options[:headers].respond_to?(:to_h) ? options[:headers].to_h : {}
+      return provided unless openrouter_headers_required?(chat, options, account: account)
+
+      provided.merge(Llm::OpenRouterHeaders.attribution_headers)
+    rescue StandardError
+      provided || {}
+    end
+
+    def openrouter_headers_required?(chat, options, account:)
+      model = options[:model].presence
+      return Llm::Models.provider_for(model, account: account) == 'openrouter' if model.present?
+
+      Llm::OpenRouterRequestPolicy.openrouter_chat?(chat, account: account, model: model)
+    rescue StandardError
+      false
     end
 
     def apply_reasoning_routing_policy(chat, options, account:)

@@ -1,3 +1,4 @@
+require 'digest'
 require Rails.root.join('lib/redis/config')
 
 class Rack::Attack
@@ -205,6 +206,18 @@ class Rack::Attack
   throttle('/api/v1/accounts/:account_id/contacts/search', limit: ENV.fetch('RATE_LIMIT_CONTACT_SEARCH', '100').to_i, period: 1.minute) do |req|
     match_data = %r{/api/v1/accounts/(?<account_id>\d+)/contacts/search}.match(req.path)
     match_data[:account_id] if match_data.present?
+  end
+
+  ## Prevent abuse of account-scoped MCP API by external agents
+  throttle('/api/v1/accounts/:account_id/mcp', limit: ENV.fetch('RATE_LIMIT_MCP_API', '120').to_i, period: 1.minute) do |req|
+    match_data = %r{\A/api/v1/accounts/(?<account_id>\d+)/mcp/?\z}.match(req.path)
+    next if match_data.blank?
+
+    bearer_token = req.get_header('HTTP_AUTHORIZATION').to_s[/\ABearer\s+(.+)\z/i, 1]
+    api_access_token = req.get_header('HTTP_API_ACCESS_TOKEN') || req.get_header('api_access_token') || bearer_token
+    token_digest = api_access_token.present? ? Digest::SHA256.hexdigest(api_access_token.to_s) : req.ip
+
+    "#{match_data[:account_id]}:#{token_digest}"
   end
 
   # Throttle by individual user (based on uid)

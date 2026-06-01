@@ -8,7 +8,9 @@ class Llm::ObservabilityPayload
     openrouter_zdr openrouter_plugins openrouter_server_tools openrouter_service_tier
     openrouter_native_endpoint openrouter_privacy_profile openrouter_guardrail_profile
     openrouter_cache_policy openrouter_plugin_policy openrouter_transform_policy
-    openrouter_budget_policy
+    openrouter_budget_policy openrouter_attribution openrouter_app_referer
+    openrouter_app_title openrouter_response_cache openrouter_response_cache_ttl
+    openrouter_response_cache_clear openrouter_response_cache_reason
   ].freeze
 
   class << self

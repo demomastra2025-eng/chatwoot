@@ -67,7 +67,7 @@ module Llm::Evals::OpenRouterContractRuntimeChecks
       expected: {
         allowed: [RESPONSE_HEALING_PLUGIN_ID],
         policy_controlled: ['context-compression'],
-        denied: ['web', 'openrouter:web-search', 'apply-patch']
+        denied: ['web', 'openrouter:web_search', 'apply-patch']
       },
       failures: plugin_policy_failures(ids)
     }
@@ -131,7 +131,7 @@ module Llm::Evals::OpenRouterContractRuntimeChecks
     Llm::Evals::MethodStub.with(
       Llm::Models,
       :model_config,
-      ->(_model, account: nil) { { 'context_length' => 100 } }
+      ->(_model, **_kwargs) { { 'context_length' => 100 } }
     ) do
       compiled = compile_contract_request(
         feature: :captain_agent,
@@ -359,7 +359,7 @@ module Llm::Evals::OpenRouterContractRuntimeChecks
     failures << 'response-healing plugin missing from structured policy' unless ids.include?(RESPONSE_HEALING_PLUGIN_ID)
     failures << 'caller-supplied context compression must be filtered unless overflow policy enables it' if ids.include?('context-compression')
     failures << 'caller-supplied web plugin must be filtered' if ids.include?('web')
-    failures << 'OpenRouter web search plugin must stay denied by product policy' if ids.include?('openrouter:web-search')
+    failures << 'OpenRouter web search plugin must stay denied by product policy' if ids.include?('openrouter:web_search')
     failures << 'OpenRouter apply_patch plugin must stay denied by product policy' if ids.include?('apply-patch')
     failures
   end

@@ -54,12 +54,21 @@ class Llm::OpenRouterRequestCompiler
     publish_context_transform_event(transform_plan, models)
     plugins = merged_plugins(params, profile, feature_policy, transform_plan: transform_plan)
     server_tools = merged_server_tools(feature_policy)
+    header_result = Llm::OpenRouterHeaders.build(
+      cache_policy: feature_policy.cache_policy,
+      provider_params: provider_params,
+      native_endpoint: profile.native_endpoint,
+      cache_options: request_options,
+      privacy_profile: feature_policy.privacy_profile,
+      trace_capture_allowed: feature_policy.workspace_policy&.trace_capture_allowed?
+    )
     metadata = compiled_metadata(
       profile: profile,
       feature_policy: feature_policy,
       models: models,
       provider_params: provider_params,
-      extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan }
+      extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan },
+      header_metadata: header_result.metadata
     )
 
     apply_request_params!(params)
@@ -67,13 +76,13 @@ class Llm::OpenRouterRequestCompiler
     params[:models] = models if models.present?
     params[:provider] = provider_params if provider_params.present?
     params[:plugins] = plugins if plugins.present?
-    params[:tools] = server_tools if server_tools.present?
+    apply_server_tools!(params, server_tools)
 
     Compiled.new(
       model: @model,
       models: models,
       params: params,
-      headers: profile.headers,
+      headers: profile.headers.merge(header_result.headers),
       native_endpoint: profile.native_endpoint,
       metadata: metadata
     )
@@ -255,7 +264,7 @@ class Llm::OpenRouterRequestCompiler
     Rails.logger.warn("[Llm::OpenRouterRequestCompiler] Failed to publish context transform event: #{e.class}: #{e.message}")
   end
 
-  def compiled_metadata(profile:, feature_policy:, models:, provider_params:, extensions:)
+  def compiled_metadata(profile:, feature_policy:, models:, provider_params:, extensions:, header_metadata: {})
     {
       requested_model: @model,
       models: models,
@@ -277,7 +286,7 @@ class Llm::OpenRouterRequestCompiler
       openrouter_plugin_policy: feature_policy.plugin_policy,
       openrouter_transform_policy: feature_policy.transform_policy,
       openrouter_budget_policy: feature_policy.budget_policy
-    }.merge(extensions[:transform_plan]&.to_metadata || {}).compact
+    }.merge(extensions[:transform_plan]&.to_metadata || {}).merge(header_metadata || {}).compact
   end
 
   def fallback_models(models)
@@ -308,6 +317,13 @@ class Llm::OpenRouterRequestCompiler
 
   def server_tool_ids(server_tools)
     Array(server_tools).filter_map { |tool| hash_identifier(tool) }.uniq.presence
+  end
+
+  def apply_server_tools!(params, server_tools)
+    return if server_tools.blank?
+
+    key = tool_flow? ? Llm::OpenRouterServerToolsPatch::SERVER_TOOLS_PARAM : :tools
+    params[key] = server_tools
   end
 
   def hash_identifier(value)

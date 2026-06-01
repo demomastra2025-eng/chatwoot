@@ -48,6 +48,7 @@ class Llm::OpenRouterGenerationClient
       Net::HTTP::Get.new(uri).tap do |request|
         request['Authorization'] = "Bearer #{api_key}"
         request['Accept'] = 'application/json'
+        Llm::OpenRouterHeaders.apply!(request)
       end
     end
 

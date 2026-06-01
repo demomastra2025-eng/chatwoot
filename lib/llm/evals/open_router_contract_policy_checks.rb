@@ -75,7 +75,7 @@ module Llm::Evals::OpenRouterContractPolicyChecks
     failures << 'Editor low-cost tier must compile to flex' unless editor.compiled_service_tier == 'flex'
     failures << 'Prompt injection must be locally enforced' unless captain.guardrails.dig(:prompt_injection, :status) == 'local_enforced'
     failures << 'Extension registry must expose response recovery' unless extension_ids(captain).include?(RESPONSE_HEALING_PLUGIN_ID)
-    failures << 'Deferred web search marker missing' unless deferred_extension_ids.include?('openrouter:web-search')
+    failures << 'Deferred web search marker missing' unless deferred_extension_ids.include?('openrouter:web_search')
 
     {
       captain: captain.to_h,
@@ -86,7 +86,7 @@ module Llm::Evals::OpenRouterContractPolicyChecks
         captain_plugins: [RESPONSE_HEALING_PLUGIN_ID, 'context-compression'],
         editor_service_tier: 'flex',
         prompt_injection: 'local_enforced',
-        deferred_extensions: ['openrouter:web-search']
+        deferred_extensions: ['openrouter:web_search']
       },
       failures: failures
     }
