@@ -55,6 +55,9 @@ Rails.application.routes.draw do
         end
 
         scope module: :accounts do
+          match :mcp, to: 'mcp#handle', via: [:get, :post]
+          resource :mcp_settings, only: [:show, :update], controller: 'mcp_settings'
+
           namespace :actions do
             resource :contact_merge, only: [:create]
           end

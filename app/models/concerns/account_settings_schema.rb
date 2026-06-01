@@ -189,6 +189,30 @@ module AccountSettingsSchema
             }
           },
           'additionalProperties': false
+        },
+        'mcp_access': {
+          'type': %w[object null],
+          'properties': {
+            'enabled': { 'type': %w[boolean null] },
+            'max_risk_level': { 'type': %w[string null], 'enum': ['low', 'medium', 'high', 'custom', nil] },
+            'require_confirmation_for_mutations': { 'type': %w[boolean null] },
+            'sources': {
+              'type': %w[object null],
+              'properties': {
+                'captain': { 'type': %w[boolean null] },
+                'openapi_read': { 'type': %w[boolean null] },
+                'openapi_write': { 'type': %w[boolean null] }
+              },
+              'additionalProperties': false
+            },
+            'allowed_groups': { 'type': %w[array null], 'items': { 'type': 'string' } },
+            'blocked_groups': { 'type': %w[array null], 'items': { 'type': 'string' } },
+            'allowed_tool_ids': { 'type': %w[array null], 'items': { 'type': 'string' } },
+            'blocked_tool_ids': { 'type': %w[array null], 'items': { 'type': 'string' } },
+            'allowed_openapi_operation_ids': { 'type': %w[array null], 'items': { 'type': 'string' } },
+            'blocked_openapi_operation_ids': { 'type': %w[array null], 'items': { 'type': 'string' } }
+          },
+          'additionalProperties': false
         }
       },
     'required': [],

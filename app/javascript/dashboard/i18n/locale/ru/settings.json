@@ -103,6 +103,66 @@
         "RESET_SUCCESS": "Токен доступа успешно сгенерирован",
         "RESET_ERROR": "Не удалось сгенерировать токен доступа. Попробуйте ещё раз"
       },
+      "MCP_CONFIGURATION": {
+        "TITLE": "MCP-конфигурация",
+        "NOTE": "Подключайте внешние AI-клиенты к текущему workspace через токен профиля выше.",
+        "CARD_TITLE": "OneLink MCP для вашего workspace",
+        "CARD_NOTE": "Готовый HTTP MCP endpoint с доступом только к данным текущей компании. Используйте токен профиля выше как Bearer token.",
+        "STATUS": "Готово к подключению",
+        "CURRENT_WORKSPACE": "Текущий workspace",
+        "ENDPOINT_LABEL": "Endpoint workspace",
+        "ACCOUNT_LABEL": "Workspace",
+        "ACCOUNT_HINT": "URL уже привязан к этому account_id.",
+        "TOKEN_LABEL": "Авторизация",
+        "TOKEN_SOURCE": "Токен доступа из блока выше",
+        "TOKEN_HINT": "Сброс токена отключит старые MCP-клиенты.",
+        "CONFIG_TITLE": "Конфиг для MCP-клиента",
+        "CONFIG_NOTE": "На экране токен скрыт плейсхолдером; при копировании готового конфига подставляется текущий токен.",
+        "COPY_ENDPOINT": "Копировать endpoint",
+        "COPY_CONFIG": "Копировать конфиг",
+        "COPY_CURL": "Копировать cURL",
+        "SECURITY_NOTE": "MCP-доступ наследует права пользователя и ограничен текущей компанией. При сбросе токена обновите конфиг во всех клиентах.",
+        "ACCESS_TITLE": "Доступ MCP к инструментам",
+        "ACCESS_NOTE": "Администратор workspace выбирает источники, группы и максимальный риск инструментов. Backend применяет эти правила и при tools/list, и при tools/call.",
+        "ACCESS_LOADING": "Загружаем правила MCP-доступа…",
+        "ACCESS_LOAD_ERROR": "Не удалось загрузить правила MCP-доступа. Конфиг endpoint можно копировать, но список галочек временно недоступен.",
+        "ACCESS_SAVED": "Правила MCP-доступа сохранены",
+        "ACCESS_SAVE_ERROR": "Не удалось сохранить правила MCP-доступа",
+        "SAVE_ACCESS": "Сохранить доступ",
+        "ACCESS_ENABLED": "MCP включен",
+        "ACCESS_ENABLED_NOTE": "Если выключить, внешний клиент подключится, но не увидит инструменты workspace.",
+        "MUTATION_CONFIRMATION": "Подтверждать мутации",
+        "MUTATION_CONFIRMATION_NOTE": "OpenAPI POST/PATCH/DELETE требуют параметр _confirm: true перед выполнением.",
+        "ACCESS_SUMMARY": "Текущая выдача",
+        "TOOLS_ENABLED": "инструментов",
+        "TOOLS_ENABLED_COUNT": "{enabled} / {total} инструментов",
+        "SOURCES_TITLE": "Источники инструментов",
+        "RISK_TITLE": "Максимальный риск",
+        "GROUPS_TITLE": "Группы инструментов",
+        "GROUPS_NOTE": "Если отмечены все группы, backend хранит это как “все текущие и будущие группы”. Снимите лишнее, чтобы зафиксировать allowlist.",
+        "ACCESS_READ_ONLY": "Редактирование MCP-доступа доступно только администраторам workspace.",
+        "SOURCES": {
+          "captain": "Captain tools",
+          "openapi_read": "OpenAPI read-only",
+          "openapi_write": "OpenAPI write"
+        },
+        "SOURCE_NOTES": {
+          "captain": "Семантические ИИ-инструменты OneLink: CRM, диалоги, расписание, outbound, платежи и администрирование.",
+          "openapi_read": "Безопасные GET endpoint’ы текущего workspace из Swagger/OpenAPI.",
+          "openapi_write": "POST/PATCH/PUT/DELETE endpoint’ы. Выключено по умолчанию и требует явного opt-in."
+        },
+        "RISK": {
+          "low": "Только read-only / low",
+          "medium": "Low + medium",
+          "high": "High-risk",
+          "custom": "Custom tools"
+        },
+        "BADGES": {
+          "WORKSPACE": "Только текущий workspace",
+          "BEARER": "Bearer token",
+          "TRANSPORT": "HTTP JSON-RPC"
+        }
+      },
       "AUDIO_NOTIFICATIONS_SECTION": {
         "TITLE": "Аудио уведомления",
         "NOTE": "Включите аудио уведомления на панели управления для новых сообщений и диалогов.",

@@ -20,6 +20,7 @@ import NotificationPreferences from './NotificationPreferences.vue';
 import SectionLayout from '../account/components/SectionLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import AccessToken from './AccessToken.vue';
+import McpConfiguration from './McpConfiguration.vue';
 import MfaSettingsCard from './MfaSettingsCard.vue';
 import Policy from 'dashboard/components/policy.vue';
 import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions.js';
@@ -38,6 +39,7 @@ export default {
     ChangePassword,
     NotificationPreferences,
     AccessToken,
+    McpConfiguration,
     MfaSettingsCard,
     BaseSettingsHeader,
   },
@@ -331,6 +333,13 @@ export default {
           @on-copy="onCopyToken"
           @on-reset="resetAccessToken"
         />
+      </SectionLayout>
+      <SectionLayout
+        with-border
+        :title="$t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.TITLE')"
+        :description="$t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.NOTE')"
+      >
+        <McpConfiguration :access-token="currentUser.access_token" />
       </SectionLayout>
     </div>
   </div>

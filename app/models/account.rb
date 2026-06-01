@@ -53,7 +53,7 @@ class Account < ApplicationRecord
 
   store_accessor :settings, :audio_transcriptions, :auto_resolve_label
   store_accessor :settings, :captain_models, :captain_features, :captain_runtime
-  store_accessor :settings, :captain_observability
+  store_accessor :settings, :captain_observability, :mcp_access
   store_accessor :settings, :reporting_timezone
   store_accessor :settings, :keep_pending_on_bot_failure
   store_accessor :settings, :captain_auto_resolve_mode
