@@ -3,7 +3,7 @@
     "HEADER": "Additional Fields",
     "HEADER_BTN_TXT": "Add Field",
     "LOADING": "Fetching additional fields",
-    "DESCRIPTION": "Configure additional fields for the current area: conversations, contacts, companies, deals, tasks, and appointments.",
+    "DESCRIPTION": "Configure additional fields for the current area: conversations, contacts, organizations, deals, tasks, and appointments.",
     "LEARN_MORE": "Learn more about additional fields",
     "COUNT": "{n} field | {n} fields",
     "SEARCH_PLACEHOLDER": "Search fields...",
@@ -14,7 +14,7 @@
     "ATTRIBUTE_MODELS": {
       "CONVERSATION": "Conversation",
       "CONTACT": "Contact",
-      "COMPANY": "Company"
+      "COMPANY": "Organization"
     },
     "ATTRIBUTE_TYPES": {
       "TEXT": "Text",
@@ -114,7 +114,7 @@
       "HEADER": "Additional Fields",
       "CONVERSATION": "Conversation",
       "CONTACT": "Contact",
-      "COMPANY": "Company"
+      "COMPANY": "Organization"
     },
     "LIST": {
       "TABLE_HEADER": {

@@ -6,43 +6,43 @@
       "AGENTS": "You have exceeded the agent limit. Your plan only allows {allowedAgents} agents.",
       "NON_ADMIN": "Please contact your administrator to upgrade the plan and continue using all features."
     },
-    "TITLE": "Account settings",
-    "SUBMIT": "Update settings",
+    "TITLE": "My company",
+    "SUBMIT": "Save changes",
     "BACK": "Back",
     "DISMISS": "Dismiss",
     "UPDATE": {
-      "ERROR": "Could not update settings, try again!",
-      "SUCCESS": "Successfully updated account settings"
+      "ERROR": "Could not update company settings, try again!",
+      "SUCCESS": "Company settings updated"
     },
     "ACCOUNT_DELETE_SECTION": {
-      "TITLE": "Delete your Account",
-      "NOTE": "Once you delete your account, all your data will be deleted.",
-      "BUTTON_TEXT": "Delete Your Account",
+      "TITLE": "Delete my company",
+      "NOTE": "Once you delete the company, all related data will be deleted.",
+      "BUTTON_TEXT": "Delete company",
       "CONFIRM": {
-        "TITLE": "Delete Account",
-        "MESSAGE": "Deleting your Account is irreversible. Enter your account name below to confirm you want to permanently delete it.",
+        "TITLE": "Delete company",
+        "MESSAGE": "Deleting the company is irreversible. Enter the company name below to confirm deletion.",
         "BUTTON_TEXT": "Delete",
         "DISMISS": "Cancel",
         "PLACE_HOLDER": "Please type {accountName} to confirm"
       },
-      "SUCCESS": "Account marked for deletion",
-      "FAILURE": "Could not delete account, try again!",
+      "SUCCESS": "Company marked for deletion",
+      "FAILURE": "Could not delete company, try again!",
       "SCHEDULED_DELETION": {
-        "TITLE": "Account Scheduled for Deletion",
-        "MESSAGE_MANUAL": "This account is scheduled for deletion on {deletionDate}. This was requested by an administrator. You can cancel the deletion before this date.",
-        "MESSAGE_INACTIVITY": "This account is scheduled for deletion on {deletionDate} due to account inactivity. You can cancel the deletion before this date.",
+        "TITLE": "Company scheduled for deletion",
+        "MESSAGE_MANUAL": "This company is scheduled for deletion on {deletionDate}. This was requested by an administrator. You can cancel the deletion before this date.",
+        "MESSAGE_INACTIVITY": "This company is scheduled for deletion on {deletionDate} due to inactivity. You can cancel the deletion before this date.",
         "CLEAR_BUTTON": "Cancel Scheduled Deletion"
       }
     },
     "FORM": {
       "ERROR": "Please fix form errors",
       "GENERAL_SECTION": {
-        "TITLE": "General settings",
-        "NOTE": ""
+        "TITLE": "Company profile",
+        "NOTE": "Manage the company name, logo, and interface language."
       },
       "ACCOUNT_ID": {
-        "TITLE": "Account ID",
-        "NOTE": "This ID is required if you are building an API based integration"
+        "TITLE": "Company ID",
+        "NOTE": "This ID is required for API integrations connected to this company."
       },
       "AUTO_RESOLVE": {
         "TITLE": "Auto-resolve conversations",
@@ -73,18 +73,18 @@
         "UPDATE_BUTTON": "Save Changes"
       },
       "NAME": {
-        "LABEL": "Account name",
-        "PLACEHOLDER": "Your account name",
-        "ERROR": "Please enter a valid account name"
+        "LABEL": "Company name",
+        "PLACEHOLDER": "Your company name",
+        "ERROR": "Please enter a valid company name"
       },
       "LOGO": {
-        "LABEL": "Workspace logo",
-        "DELETE_SUCCESS": "Workspace logo deleted successfully",
-        "DELETE_ERROR": "Could not delete the workspace logo. Please try again."
+        "LABEL": "Company logo",
+        "DELETE_SUCCESS": "Company logo deleted",
+        "DELETE_ERROR": "Could not delete the company logo. Please try again."
       },
       "LANGUAGE": {
         "LABEL": "Site language",
-        "PLACEHOLDER": "Your account name",
+        "PLACEHOLDER": "Select interface language",
         "ERROR": "Please select a site language"
       },
       "DOMAIN": {
@@ -124,8 +124,8 @@
         "MESSAGE_HELP": "This message is sent to the customer when a conversation is automatically resolved by the system due to inactivity."
       },
       "FEATURES": {
-        "INBOUND_EMAIL_ENABLED": "Conversation continuity with emails is enabled for your account.",
-        "CUSTOM_EMAIL_DOMAIN_ENABLED": "You can receive emails in your custom domain now."
+        "INBOUND_EMAIL_ENABLED": "Conversation continuity with emails is enabled for your company.",
+        "CUSTOM_EMAIL_DOMAIN_ENABLED": "You can receive emails on your company domain now."
       },
       "SCHEDULING": {
         "PAGE": {
@@ -249,7 +249,7 @@
       "GO_TO_SETTINGS_LABELS": "Go to Tag Settings",
       "GO_TO_SETTINGS_CANNED_RESPONSES": "Go to Canned Response Settings",
       "GO_TO_SETTINGS_APPLICATIONS": "Go to Plugin Settings",
-      "GO_TO_SETTINGS_ACCOUNT": "Go to Account Settings",
+      "GO_TO_SETTINGS_ACCOUNT": "Go to My company",
       "GO_TO_SETTINGS_PROFILE": "Go to Profile Settings",
       "GO_TO_NOTIFICATIONS": "Go to Notifications",
       "ADD_LABELS_TO_CONVERSATION": "Add tag to the conversation",

@@ -5,7 +5,7 @@
     "PHONE_NUMBER": "Номер телефона",
     "IDENTIFIER": "Идентификатор",
     "COPY_SUCCESSFUL": "Скопировано в буфер обмена",
-    "COMPANY": "Компания",
+    "COMPANY": "Организация",
     "LOCATION": "Местоположение",
     "BROWSER_LANGUAGE": "Язык браузера",
     "CONVERSATION_TITLE": "Детали диалога",
@@ -132,8 +132,8 @@
         "LABEL": "Местоположение"
       },
       "COMPANY_NAME": {
-        "PLACEHOLDER": "Введите название компании",
-        "LABEL": "Название компании"
+        "PLACEHOLDER": "Введите название организации",
+        "LABEL": "Название организации"
       },
       "COUNTRY": {
         "PLACEHOLDER": "Введите страну",
@@ -314,8 +314,8 @@
       "ACTIVE_TITLE": "Активные контакты",
       "SEARCH_PLACEHOLDER": "Поиск...",
       "COMPANY_FILTER": {
-        "PLACEHOLDER": "Все компании",
-        "SEARCH_PLACEHOLDER": "Поиск компаний"
+        "PLACEHOLDER": "Все организации",
+        "SEARCH_PLACEHOLDER": "Поиск организаций"
       },
       "MESSAGE_BUTTON": "Сообщение",
       "SEND_MESSAGE": "Отправить сообщение",
@@ -364,7 +364,7 @@
             "NAME": "Имя",
             "EMAIL": "Эл. почта",
             "PHONE_NUMBER": "Номер телефона",
-            "COMPANY": "Компания",
+            "COMPANY": "Организация",
             "COUNTRY": "Страна",
             "CITY": "Город",
             "LAST_ACTIVITY": "Последние действия",
@@ -462,7 +462,7 @@
             "PLACEHOLDER": "Введите биографию"
           },
           "COMPANY_NAME": {
-            "PLACEHOLDER": "Введите название компании"
+            "PLACEHOLDER": "Введите название организации"
           }
         },
         "UPDATE_BUTTON": "Обновить контакт",

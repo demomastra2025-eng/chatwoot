@@ -14,7 +14,7 @@
     "ATTRIBUTE_MODELS": {
       "CONVERSATION": "Conversation",
       "CONTACT": "Contact",
-      "COMPANY": "Company"
+      "COMPANY": "Organization"
     },
     "ATTRIBUTE_TYPES": {
       "TEXT": "Text",
@@ -114,7 +114,7 @@
       "HEADER": "Қосымша өрістер",
       "CONVERSATION": "Conversation",
       "CONTACT": "Contact",
-      "COMPANY": "Company"
+      "COMPANY": "Organization"
     },
     "LIST": {
       "TABLE_HEADER": {

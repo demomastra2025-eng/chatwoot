@@ -1,10 +1,10 @@
 {
   "COMPANIES": {
-    "HEADER": "Companies",
+    "HEADER": "Organizations",
     "BREADCRUMB": {
-      "COMPANIES": "Companies"
+      "COMPANIES": "Organizations"
     },
-    "DETAILS_HEADER": "Company Details",
+    "DETAILS_HEADER": "Organization Details",
     "SORT_BY": {
       "LABEL": "Sort by",
       "OPTIONS": {
@@ -22,30 +22,30 @@
         "DESCENDING": "Descending"
       }
     },
-    "SEARCH_PLACEHOLDER": "Search companies...",
-    "LOADING": "Loading companies...",
-    "UNNAMED": "Unnamed Company",
+    "SEARCH_PLACEHOLDER": "Search organizations...",
+    "LOADING": "Loading organizations...",
+    "UNNAMED": "Unnamed Organization",
     "CONTACTS_COUNT": "{n} contact | {n} contacts",
     "ACTIONS": {
-      "ADD": "Add company",
-      "CREATE": "Add company",
+      "ADD": "Add organization",
+      "CREATE": "Add organization",
       "SAVE": "Save changes",
-      "DELETE": "Delete company"
+      "DELETE": "Delete organization"
     },
     "CREATE": {
-      "TITLE": "Add company details",
+      "TITLE": "Add organization details",
       "ACTIONS": {
-        "SAVE": "Add company"
+        "SAVE": "Add organization"
       },
       "MESSAGES": {
-        "SUCCESS": "Company created.",
-        "ERROR": "Could not create the company."
+        "SUCCESS": "Organization created.",
+        "ERROR": "Could not create the organization."
       }
     },
     "FORM": {
       "NAME": {
-        "LABEL": "Company name",
-        "PLACEHOLDER": "Enter company name"
+        "LABEL": "Organization name",
+        "PLACEHOLDER": "Enter organization name"
       },
       "DOMAIN": {
         "LABEL": "Domain",
@@ -53,29 +53,29 @@
       },
       "DESCRIPTION": {
         "LABEL": "Description",
-        "PLACEHOLDER": "Add a short company description"
+        "PLACEHOLDER": "Add a short organization description"
       },
       "SUCCESS": {
-        "CREATE": "Company created successfully",
-        "UPDATE": "Company updated successfully",
-        "DELETE": "Company deleted successfully"
+        "CREATE": "Organization created successfully",
+        "UPDATE": "Organization updated successfully",
+        "DELETE": "Organization deleted successfully"
       },
       "ERROR": {
-        "CREATE": "Could not create company",
-        "UPDATE": "Could not update company",
-        "DELETE": "Could not delete company"
+        "CREATE": "Could not create organization",
+        "UPDATE": "Could not update organization",
+        "DELETE": "Could not delete organization"
       },
       "VALIDATION": {
-        "NAME_REQUIRED": "Company name is required"
+        "NAME_REQUIRED": "Organization name is required"
       }
     },
     "DETAILS": {
       "CONTACTS": {
         "TITLE": "{n} contact | {n} contacts",
         "LOADING": "Loading contacts...",
-        "EMPTY": "No contacts linked to this company yet.",
+        "EMPTY": "No contacts linked to this organization yet.",
         "NO_DETAILS": "No contact details",
-        "ERROR": "Could not load company contacts"
+        "ERROR": "Could not load organization contacts"
       },
       "META": {
         "DOMAIN": "Domain",
@@ -83,20 +83,20 @@
         "UPDATED_AT": "Updated {date}"
       },
       "DELETE_SECTION": {
-        "TITLE": "Delete company",
-        "DESCRIPTION": "This permanently removes the company from your workspace."
+        "TITLE": "Delete organization",
+        "DESCRIPTION": "This permanently removes the organization from your organization list."
       },
       "DELETE_DIALOG": {
-        "TITLE": "Delete company",
+        "TITLE": "Delete organization",
         "DESCRIPTION": "This action cannot be undone.",
-        "CONFIRM": "Delete company"
+        "CONFIRM": "Delete organization"
       }
     },
     "DETAIL": {
-      "LOADING": "Loading company details...",
+      "LOADING": "Loading organization details...",
       "EMPTY_STATE": {
-        "TITLE": "Company not found",
-        "SUBTITLE": "This company may have been removed or is no longer available in this account."
+        "TITLE": "Organization not found",
+        "SUBTITLE": "This organization may have been removed or is no longer available in this account."
       },
       "SIDEBAR": {
         "TABS": {
@@ -107,26 +107,26 @@
         }
       },
       "HISTORY": {
-        "EMPTY": "No conversations found for this company's contacts yet."
+        "EMPTY": "No conversations found for this organization's contacts yet."
       },
       "NOTES": {
-        "EMPTY": "No notes found for this company's contacts yet."
+        "EMPTY": "No notes found for this organization's contacts yet."
       },
       "ATTRIBUTES": {
         "SEARCH_PLACEHOLDER": "Search fields...",
-        "EMPTY_STATE": "No additional fields are configured for companies yet.",
+        "EMPTY_STATE": "No additional fields are configured for organizations yet.",
         "NO_ATTRIBUTES": "No matching fields found.",
         "UNUSED_ATTRIBUTES": "{count} unused field | {count} unused fields",
         "MESSAGES": {
-          "UPDATE_SUCCESS": "Company field updated.",
-          "UPDATE_ERROR": "Could not update company field.",
-          "DELETE_SUCCESS": "Company field removed.",
-          "DELETE_ERROR": "Could not remove company field."
+          "UPDATE_SUCCESS": "Organization field updated.",
+          "UPDATE_ERROR": "Could not update organization field.",
+          "DELETE_SUCCESS": "Organization field removed.",
+          "DELETE_ERROR": "Could not remove organization field."
         }
       },
       "CONTACTS": {
         "LOADING": "Loading contacts...",
-        "EMPTY": "No contacts are linked to this company yet.",
+        "EMPTY": "No contacts are linked to this organization yet.",
         "UNNAMED_CONTACT": "Unnamed contact",
         "ACTIONS": {
           "ADD": "Add contact",
@@ -134,46 +134,46 @@
         },
         "DIALOGS": {
           "ADD": {
-            "DESCRIPTION": "Search for an existing contact and link it to this company.",
+            "DESCRIPTION": "Search for an existing contact and link it to this organization.",
             "SEARCH_PLACEHOLDER": "Search contacts...",
             "INITIAL": "Start typing to search contacts.",
             "EMPTY": "No contacts found.",
             "CONFIRM_TITLE": "Link contact",
-            "CONFIRM_DESCRIPTION": "Confirm the company and contact before linking them.",
-            "COMPANY_LABEL": "Company",
+            "CONFIRM_DESCRIPTION": "Confirm the organization and contact before linking them.",
+            "COMPANY_LABEL": "Organization",
             "CONTACT_LABEL": "Contact",
-            "CURRENT_COMPANY": "Currently linked to {companyName}",
+            "CURRENT_COMPANY": "Currently linked to {organizationName}",
             "ADD": "Link contact",
             "CANCEL": "Cancel"
           }
         },
         "MESSAGES": {
-          "ADD_SUCCESS": "Contact linked to company.",
-          "ADD_ERROR": "Could not link contact to company.",
-          "REASSIGN_SUCCESS": "Contact reassigned to company.",
-          "REASSIGN_ERROR": "Could not reassign contact to company.",
-          "REMOVE_SUCCESS": "Contact removed from company.",
-          "REMOVE_ERROR": "Could not remove contact from company."
+          "ADD_SUCCESS": "Contact linked to organization.",
+          "ADD_ERROR": "Could not link contact to organization.",
+          "REASSIGN_SUCCESS": "Contact reassigned to organization.",
+          "REASSIGN_ERROR": "Could not reassign contact to organization.",
+          "REMOVE_SUCCESS": "Contact removed from organization.",
+          "REMOVE_ERROR": "Could not remove contact from organization."
         }
       },
       "AVATAR": {
-        "UPDATING": "Updating company avatar...",
-        "UPLOAD_SUCCESS": "Company avatar updated.",
-        "UPLOAD_ERROR": "Could not update the company avatar.",
-        "DELETE_SUCCESS": "Company avatar removed.",
-        "DELETE_ERROR": "Could not remove the company avatar."
+        "UPDATING": "Updating organization avatar...",
+        "UPLOAD_SUCCESS": "Organization avatar updated.",
+        "UPLOAD_ERROR": "Could not update the organization avatar.",
+        "DELETE_SUCCESS": "Organization avatar removed.",
+        "DELETE_ERROR": "Could not remove the organization avatar."
       },
       "PROFILE": {
-        "TITLE": "Edit company details",
+        "TITLE": "Edit organization details",
         "CREATED_AT": "Created {date}",
         "LAST_ACTIVE": "Last active {date}",
-        "DESCRIPTION_PLACEHOLDER": "Add a short description for this company",
+        "DESCRIPTION_PLACEHOLDER": "Add a short description for this organization",
         "ACTIONS": {
-          "SAVE": "Update company"
+          "SAVE": "Update organization"
         },
         "MESSAGES": {
-          "UPDATE_SUCCESS": "Company updated.",
-          "UPDATE_ERROR": "Could not update the company."
+          "UPDATE_SUCCESS": "Organization updated.",
+          "UPDATE_ERROR": "Could not update the organization."
         },
         "FIELDS": {
           "NAME": "Name",
@@ -182,25 +182,25 @@
       },
       "DELETE": {
         "SECTION_TITLE": "Danger zone",
-        "SECTION_DESCRIPTION": "Delete this company and unlink its contacts. The contacts will remain in the account.",
-        "BUTTON": "Delete company",
-        "TITLE": "Delete company?",
-        "DESCRIPTION": "This will remove the company and unlink all associated contacts. Contacts themselves will be preserved.",
-        "DESCRIPTION_WITH_NAME": "This will remove {companyName} and unlink all associated contacts. Contacts themselves will be preserved.",
-        "CONFIRM": "Delete company",
+        "SECTION_DESCRIPTION": "Delete this organization and unlink its contacts. The contacts will remain in the account.",
+        "BUTTON": "Delete organization",
+        "TITLE": "Delete organization?",
+        "DESCRIPTION": "This will remove the organization and unlink all associated contacts. Contacts themselves will be preserved.",
+        "DESCRIPTION_WITH_NAME": "This will remove {organizationName} and unlink all associated contacts. Contacts themselves will be preserved.",
+        "CONFIRM": "Delete organization",
         "MESSAGES": {
-          "SUCCESS": "Company deleted.",
-          "ERROR": "Could not delete the company."
+          "SUCCESS": "Organization deleted.",
+          "ERROR": "Could not delete the organization."
         }
       }
     },
     "EMPTY_STATE": {
-      "TITLE": "No companies found"
+      "TITLE": "No organizations found"
     }
   },
   "COMPANIES_LAYOUT": {
     "PAGINATION_FOOTER": {
-      "SHOWING": "Showing {startItem} – {endItem} of {totalItems} company | Showing {startItem} – {endItem} of {totalItems} companies"
+      "SHOWING": "Showing {startItem} – {endItem} of {totalItems} organization | Showing {startItem} – {endItem} of {totalItems} organizations"
     }
   }
 }

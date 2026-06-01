@@ -5,7 +5,7 @@
     "PHONE_NUMBER": "Phone number",
     "IDENTIFIER": "Identifier",
     "COPY_SUCCESSFUL": "Copied to clipboard successfully",
-    "COMPANY": "Company",
+    "COMPANY": "Organization",
     "LOCATION": "Location",
     "BROWSER_LANGUAGE": "Browser Language",
     "CONVERSATION_TITLE": "Conversation Details",
@@ -132,8 +132,8 @@
         "LABEL": "Location"
       },
       "COMPANY_NAME": {
-        "PLACEHOLDER": "Enter the company name",
-        "LABEL": "Company Name"
+        "PLACEHOLDER": "Enter the organization name",
+        "LABEL": "Organization Name"
       },
       "COUNTRY": {
         "PLACEHOLDER": "Enter the country name",
@@ -314,8 +314,8 @@
       "ACTIVE_TITLE": "Active contacts",
       "SEARCH_PLACEHOLDER": "Search...",
       "COMPANY_FILTER": {
-        "PLACEHOLDER": "All companies",
-        "SEARCH_PLACEHOLDER": "Search companies"
+        "PLACEHOLDER": "All organizations",
+        "SEARCH_PLACEHOLDER": "Search organizations"
       },
       "MESSAGE_BUTTON": "Message",
       "SEND_MESSAGE": "Send message",
@@ -364,7 +364,7 @@
             "NAME": "Name",
             "EMAIL": "Email",
             "PHONE_NUMBER": "Phone number",
-            "COMPANY": "Company",
+            "COMPANY": "Organization",
             "COUNTRY": "Country",
             "CITY": "City",
             "LAST_ACTIVITY": "Last activity",
@@ -462,7 +462,7 @@
             "PLACEHOLDER": "Enter the bio"
           },
           "COMPANY_NAME": {
-            "PLACEHOLDER": "Enter the company name"
+            "PLACEHOLDER": "Enter the organization name"
           }
         },
         "UPDATE_BUTTON": "Update contact",

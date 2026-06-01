@@ -1068,7 +1068,7 @@
             "KNOWLEDGE": "Knowledge",
             "CONVERSATIONS": "Conversations",
             "CONTACTS": "Contacts",
-            "COMPANIES": "Companies",
+            "COMPANIES": "Organizations",
             "CRM_DEALS": "CRM Deals",
             "CRM_TASKS": "CRM Tasks",
             "SCHEDULING": "Scheduling",
@@ -1146,20 +1146,20 @@
               "DESCRIPTION": "Update the contact linked to the current conversation."
             },
             "get_company": {
-              "TITLE": "Open company",
-              "DESCRIPTION": "Open one company with its details."
+              "TITLE": "Open organization",
+              "DESCRIPTION": "Open one organization with its details."
             },
             "search_companies": {
-              "TITLE": "Search companies",
-              "DESCRIPTION": "Search companies by name or domain."
+              "TITLE": "Search organizations",
+              "DESCRIPTION": "Search organizations by name or domain."
             },
             "create_company": {
-              "TITLE": "Create company",
-              "DESCRIPTION": "Create a company for the contact in the current conversation."
+              "TITLE": "Create organization",
+              "DESCRIPTION": "Create an organization for the contact in the current conversation."
             },
             "update_company": {
-              "TITLE": "Update company",
-              "DESCRIPTION": "Update the company linked to the current contact."
+              "TITLE": "Update organization",
+              "DESCRIPTION": "Update the organization linked to the current contact."
             },
             "get_deal": {
               "TITLE": "Open deal",
@@ -1167,7 +1167,7 @@
             },
             "search_deals": {
               "TITLE": "Search deals",
-              "DESCRIPTION": "Search CRM deals by title, stage, owner, or company."
+              "DESCRIPTION": "Search CRM deals by title, stage, owner, or organization."
             },
             "get_deal_timeline": {
               "TITLE": "Open deal timeline",

@@ -64,7 +64,7 @@ const emit = defineEmits([
 const SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS = 60 * 1000;
 const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 
-const { accountScopedRoute, currentAccount, isOnChatwootCloud } = useAccount();
+const { accountScopedRoute, isOnChatwootCloud } = useAccount();
 const route = useRoute();
 const { checkPermissions } = usePolicy();
 const store = useStore();
@@ -1073,13 +1073,13 @@ const menuItems = computed(() => {
               activeOn: [
                 ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
                 ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
+                'auditlogs_list',
               ],
               children: [
                 {
                   name: 'Workspace',
                   visibilityKey: 'MyCompany:Workspace',
-                  label:
-                    currentAccount.value?.name || t('SIDEBAR.ACCOUNT_SETTINGS'),
+                  label: t('SIDEBAR.ACCOUNT_SETTINGS'),
                   icon: 'i-lucide-building-2',
                   activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
                   to: accountScopedRoute('general_settings_index'),

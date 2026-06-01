@@ -1,10 +1,10 @@
 {
   "COMPANIES": {
-    "HEADER": "Companies",
+    "HEADER": "Organizations",
     "BREADCRUMB": {
-      "COMPANIES": "Companies"
+      "COMPANIES": "Organizations"
     },
-    "DETAILS_HEADER": "Company Details",
+    "DETAILS_HEADER": "Organization Details",
     "SORT_BY": {
       "LABEL": "Sort by",
       "OPTIONS": {
@@ -21,19 +21,19 @@
         "DESCENDING": "Descending"
       }
     },
-    "SEARCH_PLACEHOLDER": "Search companies...",
-    "LOADING": "Loading companies...",
-    "UNNAMED": "Unnamed Company",
+    "SEARCH_PLACEHOLDER": "Search organizations...",
+    "LOADING": "Loading organizations...",
+    "UNNAMED": "Unnamed Organization",
     "CONTACTS_COUNT": "{n} contact | {n} contacts",
     "ACTIONS": {
-      "ADD": "Add company",
+      "ADD": "Add organization",
       "SAVE": "Save changes",
-      "DELETE": "Delete company"
+      "DELETE": "Delete organization"
     },
     "FORM": {
       "NAME": {
-        "LABEL": "Company name",
-        "PLACEHOLDER": "Enter company name"
+        "LABEL": "Organization name",
+        "PLACEHOLDER": "Enter organization name"
       },
       "DOMAIN": {
         "LABEL": "Domain",
@@ -41,20 +41,20 @@
       },
       "DESCRIPTION": {
         "LABEL": "Description",
-        "PLACEHOLDER": "Add a short company description"
+        "PLACEHOLDER": "Add a short organization description"
       },
       "SUCCESS": {
-        "CREATE": "Company created successfully",
-        "UPDATE": "Company updated successfully",
-        "DELETE": "Company deleted successfully"
+        "CREATE": "Organization created successfully",
+        "UPDATE": "Organization updated successfully",
+        "DELETE": "Organization deleted successfully"
       },
       "ERROR": {
-        "CREATE": "Could not create company",
-        "UPDATE": "Could not update company",
-        "DELETE": "Could not delete company"
+        "CREATE": "Could not create organization",
+        "UPDATE": "Could not update organization",
+        "DELETE": "Could not delete organization"
       },
       "VALIDATION": {
-        "NAME_REQUIRED": "Company name is required"
+        "NAME_REQUIRED": "Organization name is required"
       }
     },
     "DETAILS": {
@@ -64,22 +64,22 @@
         "UPDATED_AT": "Updated {date}"
       },
       "DELETE_SECTION": {
-        "TITLE": "Delete company",
-        "DESCRIPTION": "This permanently removes the company from your workspace."
+        "TITLE": "Delete organization",
+        "DESCRIPTION": "This permanently removes the organization from your organization list."
       },
       "DELETE_DIALOG": {
-        "TITLE": "Delete company",
+        "TITLE": "Delete organization",
         "DESCRIPTION": "This action cannot be undone.",
-        "CONFIRM": "Delete company"
+        "CONFIRM": "Delete organization"
       }
     },
     "EMPTY_STATE": {
-      "TITLE": "No companies found"
+      "TITLE": "No organizations found"
     }
   },
   "COMPANIES_LAYOUT": {
     "PAGINATION_FOOTER": {
-      "SHOWING": "Showing {startItem} – {endItem} of {totalItems} company | Showing {startItem} – {endItem} of {totalItems} companies"
+      "SHOWING": "Showing {startItem} – {endItem} of {totalItems} organization | Showing {startItem} – {endItem} of {totalItems} organizations"
     }
   }
 }

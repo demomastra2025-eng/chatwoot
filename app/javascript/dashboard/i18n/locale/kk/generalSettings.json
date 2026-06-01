@@ -6,43 +6,43 @@
       "AGENTS": "You have exceeded the employee limit. Your plan only allows {allowedAgents} employees.",
       "NON_ADMIN": "Please contact your administrator to upgrade the plan and continue using all features."
     },
-    "TITLE": "Workspace settings",
-    "SUBMIT": "Update settings",
+    "TITLE": "Менің компаниям",
+    "SUBMIT": "Өзгерістерді сақтау",
     "BACK": "Back",
     "DISMISS": "Dismiss",
     "UPDATE": {
-      "ERROR": "Could not update settings, try again!",
-      "SUCCESS": "Successfully updated account settings"
+      "ERROR": "Компания деректерін жаңарту мүмкін болмады, қайталап көріңіз!",
+      "SUCCESS": "Компания деректері жаңартылды"
     },
     "ACCOUNT_DELETE_SECTION": {
-      "TITLE": "Delete your Workspace",
-      "NOTE": "Once you delete your account, all your data will be deleted.",
-      "BUTTON_TEXT": "Delete Your Workspace",
+      "TITLE": "Менің компаниямды жою",
+      "NOTE": "Компанияны жойғаннан кейін барлық байланысты деректер жойылады.",
+      "BUTTON_TEXT": "Компанияны жою",
       "CONFIRM": {
-        "TITLE": "Delete Workspace",
-        "MESSAGE": "Deleting your Workspace is irreversible. Enter your workspace name below to confirm you want to permanently delete it.",
+        "TITLE": "Компанияны жою",
+        "MESSAGE": "Компанияны жою қайтымсыз. Жоюды растау үшін төменге компания атауын енгізіңіз.",
         "BUTTON_TEXT": "Delete",
         "DISMISS": "Cancel",
         "PLACE_HOLDER": "Please type {accountName} to confirm"
       },
-      "SUCCESS": "Workspace marked for deletion",
-      "FAILURE": "Could not delete account, try again!",
+      "SUCCESS": "Компания жоюға белгіленді",
+      "FAILURE": "Компанияны жою мүмкін болмады, қайталап көріңіз!",
       "SCHEDULED_DELETION": {
-        "TITLE": "Workspace Scheduled for Deletion",
-        "MESSAGE_MANUAL": "This account is scheduled for deletion on {deletionDate}. This was requested by an administrator. You can cancel the deletion before this date.",
-        "MESSAGE_INACTIVITY": "This account is scheduled for deletion on {deletionDate} due to account inactivity. You can cancel the deletion before this date.",
+        "TITLE": "Компания жоюға жоспарланған",
+        "MESSAGE_MANUAL": "Бұл компания {deletionDate} күні жоюға жоспарланған. Мұны әкімші сұраған. Осы күнге дейін жоюды тоқтата аласыз.",
+        "MESSAGE_INACTIVITY": "Бұл компания белсенділік болмағандықтан {deletionDate} күні жоюға жоспарланған. Осы күнге дейін жоюды тоқтата аласыз.",
         "CLEAR_BUTTON": "Cancel Scheduled Deletion"
       }
     },
     "FORM": {
       "ERROR": "Please fix form errors",
       "GENERAL_SECTION": {
-        "TITLE": "General settings",
-        "NOTE": ""
+        "TITLE": "Негізгі ақпарат",
+        "NOTE": "Компания атауын, логотипін және интерфейс тілін баптаңыз."
       },
       "ACCOUNT_ID": {
-        "TITLE": "Workspace ID",
-        "NOTE": "This ID is required if you are building an API based integration"
+        "TITLE": "Компания ID",
+        "NOTE": "Бұл ID осы компанияға қосылған API-интеграциялар үшін қажет."
       },
       "AUTO_RESOLVE": {
         "TITLE": "Auto-resolve conversations",
@@ -73,13 +73,13 @@
         "UPDATE_BUTTON": "Save Changes"
       },
       "NAME": {
-        "LABEL": "Workspace name",
-        "PLACEHOLDER": "Your workspace name",
-        "ERROR": "Please enter a valid workspace name"
+        "LABEL": "Компания атауы",
+        "PLACEHOLDER": "Компанияңыздың атауы",
+        "ERROR": "Компанияның дұрыс атауын енгізіңіз"
       },
       "LANGUAGE": {
         "LABEL": "Site language",
-        "PLACEHOLDER": "Your workspace name",
+        "PLACEHOLDER": "Интерфейс тілін таңдаңыз",
         "ERROR": "Please select a site language"
       },
       "DOMAIN": {
@@ -119,8 +119,8 @@
         "MESSAGE_HELP": "This message is sent to the customer when a conversation is automatically resolved by the system due to inactivity."
       },
       "FEATURES": {
-        "INBOUND_EMAIL_ENABLED": "Conversation continuity with emails is enabled for your account.",
-        "CUSTOM_EMAIL_DOMAIN_ENABLED": "You can receive emails in your custom domain now."
+        "INBOUND_EMAIL_ENABLED": "Компанияңыз үшін email арқылы диалогты жалғастыру қосылған.",
+        "CUSTOM_EMAIL_DOMAIN_ENABLED": "Енді компания доменіне хат ала аласыз."
       },
       "SCHEDULING": {
         "PAGE": {
@@ -142,6 +142,11 @@
           "NOTE": "Automatically apply this touch plan when a new appointment is created.",
           "PLACEHOLDER": "No default touch plan"
         }
+      },
+      "LOGO": {
+        "LABEL": "Компания логотипі",
+        "DELETE_SUCCESS": "Компания логотипі жойылды",
+        "DELETE_ERROR": "Компания логотипін жою мүмкін болмады. Қайталап көріңіз."
       }
     },
     "UPDATE_CHATWOOT": "An update {latestOneLinkVersion} for OneLink is available. Please update your instance.",
@@ -243,7 +248,7 @@
       "GO_TO_SETTINGS_LABELS": "Go to Tag Settings",
       "GO_TO_SETTINGS_CANNED_RESPONSES": "Go to Canned Response Settings",
       "GO_TO_SETTINGS_APPLICATIONS": "Плагин баптауларына өту",
-      "GO_TO_SETTINGS_ACCOUNT": "Go to Workspace Settings",
+      "GO_TO_SETTINGS_ACCOUNT": "«Менің компаниям» бөліміне өту",
       "GO_TO_SETTINGS_PROFILE": "Go to Profile Settings",
       "GO_TO_NOTIFICATIONS": "Go to Notifications",
       "ADD_LABELS_TO_CONVERSATION": "Add tag to the conversation",
