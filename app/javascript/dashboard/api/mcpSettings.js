@@ -6,12 +6,12 @@ class McpSettings extends ApiClient {
     super('mcp_settings', { accountScoped: true });
   }
 
-  get() {
-    return axios.get(this.url);
+  get(config = {}) {
+    return axios.get(this.url, config);
   }
 
-  update(data) {
-    return axios.put(this.url, data);
+  update(data, config = {}) {
+    return axios.put(this.url, data, config);
   }
 }
 

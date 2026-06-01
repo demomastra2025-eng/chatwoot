@@ -16,6 +16,7 @@ const props = defineProps({
 const { t } = useI18n();
 const { accountId, currentAccount } = useAccount();
 
+const MCP_SETTINGS_TIMEOUT_MS = 8000;
 const tokenPlaceholder = '<profile_access_token>';
 const mcpServerName = computed(() => `onelink-account-${accountId.value}`);
 const baseOrigin = computed(() => {
@@ -65,17 +66,22 @@ const configPreview = computed(() =>
 const configForClipboard = computed(() =>
   JSON.stringify(buildMcpConfig(props.accessToken || tokenPlaceholder), null, 2)
 );
-const curlCommand = computed(() =>
-  [
-    `curl -X POST ${endpointUrl.value}`,
-    '-H "Content-Type: application/json"',
-    `-H "Authorization: Bearer ${props.accessToken || tokenPlaceholder}"`,
-    '-d \'{"jsonrpc":"2.0","id":1,"method":"tools/list"}\'',
-  ].join(' ')
-);
 
+const hasLoadedSettings = computed(() => settingsPayload.value !== null);
 const canManageMcpAccess = computed(
   () => settingsPayload.value?.permissions?.manage === true
+);
+const accessControlsDisabled = computed(
+  () =>
+    isFetchingSettings.value ||
+    settingsLoadFailed.value ||
+    !canManageMcpAccess.value
+);
+const showReadOnlyNotice = computed(
+  () =>
+    hasLoadedSettings.value &&
+    !settingsLoadFailed.value &&
+    !canManageMcpAccess.value
 );
 const mcpSummary = computed(() => settingsPayload.value?.summary || {});
 const mcpGroups = computed(() => settingsPayload.value?.groups || []);
@@ -176,7 +182,9 @@ const fetchMcpSettings = async () => {
   isFetchingSettings.value = true;
   settingsLoadFailed.value = false;
   try {
-    const { data } = await McpSettingsAPI.get();
+    const { data } = await McpSettingsAPI.get({
+      timeout: MCP_SETTINGS_TIMEOUT_MS,
+    });
     settingsPayload.value = data;
     hydrateAccessForm(data);
   } catch (error) {
@@ -189,9 +197,12 @@ const fetchMcpSettings = async () => {
 const saveMcpSettings = async () => {
   isSavingSettings.value = true;
   try {
-    const { data } = await McpSettingsAPI.update({
-      mcp_access: serializedAccessForm(),
-    });
+    const { data } = await McpSettingsAPI.update(
+      {
+        mcp_access: serializedAccessForm(),
+      },
+      { timeout: MCP_SETTINGS_TIMEOUT_MS }
+    );
     settingsPayload.value = data;
     hydrateAccessForm(data);
     useAlert(t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_SAVED'));
@@ -207,114 +218,75 @@ const copyValue = async value => {
   useAlert(t('COMPONENTS.CODE.COPY_SUCCESSFUL'));
 };
 
-const copyEndpoint = () => copyValue(endpointUrl.value);
 const copyConfig = () => copyValue(configForClipboard.value);
-const copyCurl = () => copyValue(curlCommand.value);
 
 onMounted(fetchMcpSettings);
 </script>
 
 <template>
-  <div class="grid gap-4">
-    <div class="rounded-xl border border-n-slate-4 bg-n-background p-4">
-      <div
-        class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
-      >
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="i-lucide-plug-zap size-4 text-n-slate-10" />
-            <h5 class="mb-0 text-heading-3 text-n-slate-12">
-              {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.CARD_TITLE') }}
-            </h5>
-          </div>
-          <div
-            class="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-11"
-          >
-            <span class="i-lucide-building-2 size-3.5 shrink-0" />
-            <span class="truncate">{{ accountName }}</span>
-          </div>
+  <div class="flex w-full flex-col gap-6">
+    <section class="flex flex-col gap-4">
+      <div class="flex flex-col gap-1">
+        <div class="flex items-center gap-2">
+          <span class="i-lucide-plug-zap size-4 text-n-slate-10" />
+          <h5 class="mb-0 text-heading-3 text-n-slate-12">
+            {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.CARD_TITLE') }}
+          </h5>
         </div>
-        <Button
-          size="sm"
-          color="slate"
-          variant="outline"
-          icon="i-lucide-copy"
-          :label="t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_CONFIG')"
-          class="shrink-0 rounded-xl"
-          @click="copyConfig"
-        />
+        <div class="text-sm text-n-slate-11">
+          {{ accountName }}
+        </div>
       </div>
 
-      <div class="mt-4 grid gap-3">
-        <div>
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <label
-              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-            >
-              {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ENDPOINT_LABEL') }}
-            </label>
-            <Button
-              size="xs"
-              color="slate"
-              variant="ghost"
-              icon="i-lucide-copy"
-              :label="
-                t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_ENDPOINT')
-              "
-              @click="copyEndpoint"
-            />
-          </div>
-          <code
-            class="block break-all rounded-xl border border-n-weak bg-n-alpha-2 px-3 py-2 font-mono text-xs text-n-slate-12"
+      <div class="grid gap-4">
+        <div class="flex flex-col gap-1.5">
+          <label
+            class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
           >
+            {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ENDPOINT_LABEL') }}
+          </label>
+          <code class="break-all font-mono text-xs text-n-slate-12">
             {{ endpointUrl }}
           </code>
         </div>
 
-        <div>
-          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-col gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <div
               class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
             >
               {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.CONFIG_TITLE') }}
             </div>
-            <div class="flex gap-2">
-              <Button
-                size="xs"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-terminal"
-                :label="t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_CURL')"
-                @click="copyCurl"
-              />
-              <Button
-                size="xs"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-copy"
-                :label="
-                  t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_CONFIG')
-                "
-                @click="copyConfig"
-              />
-            </div>
+            <Button
+              size="sm"
+              color="slate"
+              variant="outline"
+              icon="i-lucide-copy"
+              :label="t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_CONFIG')"
+              class="rounded-xl"
+              @click="copyConfig"
+            />
           </div>
           <pre
-            class="max-h-72 overflow-auto rounded-xl border border-n-weak bg-n-alpha-2 p-3 text-xs text-n-slate-12"
+            class="max-h-64 overflow-auto rounded-xl bg-n-alpha-1 p-3 text-xs text-n-slate-12"
           ><code>{{ configPreview }}</code></pre>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="rounded-xl border border-n-slate-4 bg-n-background p-4">
+    <section class="flex flex-col gap-4">
       <div
-        class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+        class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
       >
         <div class="flex items-center gap-2">
           <span class="i-lucide-sliders-horizontal size-4 text-n-slate-10" />
           <h5 class="mb-0 text-heading-3 text-n-slate-12">
             {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_TITLE') }}
           </h5>
+          <span
+            v-if="isFetchingSettings"
+            class="i-lucide-loader-circle size-3.5 animate-spin text-n-slate-8"
+          />
         </div>
         <Button
           v-if="canManageMcpAccess"
@@ -322,33 +294,24 @@ onMounted(fetchMcpSettings);
           color="blue"
           icon="i-lucide-save"
           :is-loading="isSavingSettings"
+          :disabled="isFetchingSettings || settingsLoadFailed"
           :label="t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SAVE_ACCESS')"
           @click="saveMcpSettings"
         />
       </div>
 
-      <div
-        v-if="settingsLoadFailed"
-        class="mt-3 rounded-xl border border-n-ruby-5 bg-n-ruby-2 px-3 py-2 text-xs text-n-ruby-11"
-      >
+      <div v-if="settingsLoadFailed" class="text-xs leading-5 text-n-ruby-11">
         {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_LOAD_ERROR') }}
       </div>
 
-      <div
-        v-else-if="isFetchingSettings"
-        class="mt-3 rounded-xl bg-n-alpha-2 px-3 py-2 text-xs text-n-slate-10"
-      >
-        {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_LOADING') }}
-      </div>
-
-      <div v-else class="mt-4 grid gap-4">
-        <div class="grid gap-3 sm:grid-cols-3">
+      <div class="grid gap-4">
+        <div class="grid gap-2 sm:grid-cols-3">
           <label
-            class="flex items-start gap-2 rounded-xl border border-n-weak bg-n-alpha-2 p-3"
+            class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
           >
             <Checkbox
               v-model="accessForm.enabled"
-              :disabled="!canManageMcpAccess"
+              :disabled="accessControlsDisabled"
               class="mt-0.5 shrink-0"
             />
             <span class="min-w-0">
@@ -361,11 +324,11 @@ onMounted(fetchMcpSettings);
           </label>
 
           <label
-            class="flex items-start gap-2 rounded-xl border border-n-weak bg-n-alpha-2 p-3"
+            class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
           >
             <Checkbox
               v-model="accessForm.require_confirmation_for_mutations"
-              :disabled="!canManageMcpAccess"
+              :disabled="accessControlsDisabled"
               class="mt-0.5 shrink-0"
             />
             <span class="min-w-0">
@@ -379,7 +342,7 @@ onMounted(fetchMcpSettings);
             </span>
           </label>
 
-          <div class="rounded-xl border border-n-weak bg-n-alpha-2 p-3">
+          <div class="rounded-lg p-2">
             <div class="text-sm font-medium text-n-slate-12">
               {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_SUMMARY') }}
             </div>
@@ -402,18 +365,18 @@ onMounted(fetchMcpSettings);
             <label
               v-for="source in sourceItems"
               :key="source.id"
-              class="flex items-start gap-2 rounded-xl border border-n-weak bg-n-alpha-2 p-3"
+              class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
             >
               <Checkbox
                 v-model="accessForm.sources[source.id]"
-                :disabled="!canManageMcpAccess"
+                :disabled="accessControlsDisabled"
                 class="mt-0.5 shrink-0"
               />
               <span class="min-w-0">
                 <span class="block text-sm font-medium text-n-slate-12">
                   {{ source.label }}
                 </span>
-                <span class="mt-2 block text-xs text-n-slate-9">
+                <span class="mt-1 block text-xs text-n-slate-9">
                   {{
                     toolCountLabel(source.enabledToolsCount, source.toolsCount)
                   }}
@@ -432,12 +395,12 @@ onMounted(fetchMcpSettings);
               v-for="risk in riskOptions"
               :key="risk.value"
               type="button"
-              :disabled="!canManageMcpAccess"
+              :disabled="accessControlsDisabled"
               class="rounded-full border px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60"
               :class="
                 accessForm.max_risk_level === risk.value
                   ? 'border-n-brand bg-n-brand/10 text-n-brand'
-                  : 'border-n-weak bg-n-alpha-2 text-n-slate-11'
+                  : 'border-n-weak text-n-slate-11'
               "
               @click="accessForm.max_risk_level = risk.value"
             >
@@ -446,27 +409,25 @@ onMounted(fetchMcpSettings);
           </div>
         </div>
 
-        <div>
+        <div v-if="mcpGroups.length">
           <div class="mb-2 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <div class="text-xs font-medium uppercase text-n-slate-10">
-                {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.GROUPS_TITLE') }}
-              </div>
+            <div class="text-xs font-medium uppercase text-n-slate-10">
+              {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.GROUPS_TITLE') }}
             </div>
             <span class="text-xs text-n-slate-9">
               {{ toolCountLabel(selectedGroupIds.length, allGroupIds.length) }}
             </span>
           </div>
-          <div class="grid max-h-72 gap-2 overflow-auto pr-1 sm:grid-cols-2">
+          <div class="grid max-h-64 gap-1 overflow-auto pr-1 sm:grid-cols-2">
             <label
               v-for="group in mcpGroups"
               :key="group.id"
-              class="flex items-start gap-2 rounded-xl border border-n-weak bg-n-alpha-2 p-3"
+              class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
             >
               <Checkbox
                 v-model="selectedGroupIds"
                 :value="group.id"
-                :disabled="!canManageMcpAccess"
+                :disabled="accessControlsDisabled"
                 class="mt-0.5 shrink-0"
               />
               <span class="min-w-0">
@@ -486,12 +447,12 @@ onMounted(fetchMcpSettings);
         </div>
 
         <div
-          v-if="!canManageMcpAccess"
-          class="rounded-xl border border-n-weak bg-n-alpha-2 px-3 py-2 text-xs leading-5 text-n-slate-10"
+          v-if="showReadOnlyNotice"
+          class="text-xs leading-5 text-n-slate-10"
         >
           {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_READ_ONLY') }}
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
