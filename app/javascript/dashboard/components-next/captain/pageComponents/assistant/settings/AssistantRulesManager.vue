@@ -574,6 +574,7 @@ defineExpose({
             "
             enable-captain-tools
             enable-captain-fields
+            enable-captain-skills
             :captain-context-assistant-id="assistantId"
             :captain-context-access="assistant?.config?.context_access || {}"
             :captain-tool-access="assistant?.config?.tool_access || {}"
@@ -627,6 +628,7 @@ defineExpose({
             :group-labels="groupLabels"
             enable-captain-tools
             enable-captain-fields
+            enable-captain-skills
             :captain-context-assistant-id="assistantId"
             :captain-context-access="assistant?.config?.context_access || {}"
             :captain-tool-access="assistant?.config?.tool_access || {}"
@@ -690,6 +692,7 @@ defineExpose({
           "
           enable-captain-tools
           enable-captain-fields
+          enable-captain-skills
           :captain-context-assistant-id="assistantId"
           :captain-context-access="assistant?.config?.context_access || {}"
           :captain-tool-access="assistant?.config?.tool_access || {}"
@@ -740,6 +743,7 @@ defineExpose({
             "
             enable-captain-tools
             enable-captain-fields
+            enable-captain-skills
             :captain-context-assistant-id="assistantId"
             :captain-context-access="assistant?.config?.context_access || {}"
             :captain-tool-access="assistant?.config?.tool_access || {}"

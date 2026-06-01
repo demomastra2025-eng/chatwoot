@@ -229,6 +229,9 @@ export const extractCaptainToolReferenceIds = content =>
 export const extractCaptainFieldReferenceIds = content =>
   extractReferenceIds(content, 'field');
 
+export const extractCaptainSkillReferenceIds = content =>
+  extractReferenceIds(content, 'skill');
+
 export const matchesCatalogSearch = (item, search = '') => {
   const normalizedSearch = normalizeCatalogText(search);
 

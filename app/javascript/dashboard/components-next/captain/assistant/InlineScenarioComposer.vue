@@ -142,6 +142,7 @@ const onClickCancel = () => {
         :max-length="SCENARIO_INSTRUCTION_MAX_LENGTH"
         enable-captain-tools
         enable-captain-fields
+        enable-captain-skills
         :captain-context-assistant-id="assistantId"
       />
 

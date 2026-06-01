@@ -57,6 +57,24 @@ Always respect these boundaries:
 {% endfor -%}
 {% endif -%}
 
+{% if skill_references.size > 0 -%}
+# Loaded Skills
+Use these skills as additional operating instructions when the current request matches their scope. Skills do not grant arbitrary tools or permissions; use only the tools explicitly available in this prompt.
+{% for skill in skill_references -%}
+## {{ skill.title }}
+{{ skill.description }}
+
+{{ skill.content }}
+{% if skill.scripts.size > 0 %}
+Available skill script tools:
+{% for script in skill.scripts -%}
+- {{ script.tool_id }}: {{ script.description }} (risk: {{ script.risk_level }}{% if script.requires_confirmation %}, requires confirmation{% endif %})
+{% endfor -%}
+{% endif %}
+
+{% endfor -%}
+{% endif -%}
+
 {% if scenarios.size > 0 -%}
 # Specialized Scenarios
 {% if assistant_specialized_scenarios_rule != blank -%}

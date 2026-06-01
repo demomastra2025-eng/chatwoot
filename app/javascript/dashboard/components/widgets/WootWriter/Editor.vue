@@ -17,6 +17,7 @@ import TagAgents from '../conversation/TagAgents.vue';
 import VariableList from '../conversation/VariableList.vue';
 import TagTools from '../conversation/TagTools.vue';
 import TagFields from '../conversation/TagFields.vue';
+import TagSkills from '../conversation/TagSkills.vue';
 import CopilotMenuBar from './CopilotMenuBar.vue';
 
 import { useEmitter } from 'dashboard/composables/emitter';
@@ -63,6 +64,7 @@ import {
 } from 'dashboard/helper/editorHelper';
 import {
   extractCaptainFieldReferenceIds,
+  extractCaptainSkillReferenceIds,
   extractCaptainToolReferenceIds,
 } from 'dashboard/helper/captainCatalog';
 import {
@@ -92,6 +94,7 @@ const props = defineProps({
   cannedMenuVisibleItems: { type: Number, default: 0 },
   enableCaptainTools: { type: Boolean, default: false },
   enableCaptainFields: { type: Boolean, default: false },
+  enableCaptainSkills: { type: Boolean, default: false },
   captainContextAssistantId: { type: Number, default: null },
   captainContextAccess: { type: Object, default: null },
   captainToolAccess: { type: Object, default: null },
@@ -198,9 +201,11 @@ const showVariables = ref(false);
 const showEmojiMenu = ref(false);
 const showToolsMenu = ref(false);
 const showFieldsMenu = ref(false);
+const showSkillsMenu = ref(false);
 const mentionSearchKey = ref('');
 const toolSearchKey = ref('');
 const fieldSearchKey = ref('');
+const skillSearchKey = ref('');
 const cannedSearchTerm = ref('');
 const variableSearchTerm = ref('');
 const emojiSearchTerm = ref('');
@@ -257,6 +262,10 @@ const usedCaptainToolIds = computed(() =>
 
 const usedCaptainFieldIds = computed(() =>
   extractCaptainFieldReferenceIds(props.modelValue)
+);
+
+const usedCaptainSkillIds = computed(() =>
+  extractCaptainSkillReferenceIds(props.modelValue)
 );
 
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -368,6 +377,12 @@ const plugins = computed(() => {
       showMenu: showFieldsMenu,
       searchTerm: fieldSearchKey,
       isAllowed: () => props.enableCaptainFields,
+    }),
+    createSuggestionPlugin({
+      trigger: '!',
+      showMenu: showSkillsMenu,
+      searchTerm: skillSearchKey,
+      isAllowed: () => props.enableCaptainSkills,
     }),
     createSuggestionPlugin({
       trigger: '/',
@@ -793,6 +808,11 @@ const closeToolsMenu = () => {
   toolSearchKey.value = '';
 };
 
+const closeSkillsMenu = () => {
+  showSkillsMenu.value = false;
+  skillSearchKey.value = '';
+};
+
 function handleLineBreakWhenCmdAndEnterToSendEnabled(event) {
   if (
     hasPressedCommandAndEnter(event) &&
@@ -872,9 +892,11 @@ watch(
     showCannedMenu.value = false;
     showEmojiMenu.value = false;
     showFieldsMenu.value = false;
+    showSkillsMenu.value = false;
     showVariables.value = false;
     cannedSearchTerm.value = '';
     fieldSearchKey.value = '';
+    skillSearchKey.value = '';
     reloadState(props.modelValue);
   }
 );
@@ -987,6 +1009,14 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :used-item-ids="usedCaptainFieldIds"
       @close="closeFieldsMenu"
       @select-field="content => insertSpecialContent('field', content)"
+    />
+    <TagSkills
+      v-if="showSkillsMenu"
+      :search-key="skillSearchKey"
+      :assistant-id="captainContextAssistantId"
+      :used-item-ids="usedCaptainSkillIds"
+      @close="closeSkillsMenu"
+      @select-skill="content => insertSpecialContent('skill', content)"
     />
     <CopilotMenuBar
       v-if="showSelectionMenu"

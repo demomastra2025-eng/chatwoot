@@ -1690,6 +1690,14 @@
           }
         }
       },
+      "SKILLS": {
+        "TITLE": "Skills",
+        "SEARCH_PLACEHOLDER": "Search skills or files...",
+        "INSERT": "Insert",
+        "USED": "Used",
+        "SCRIPTS": "Scripts",
+        "EMPTY": "No skills found."
+      },
       "RESPONSE_GUIDELINES": {
         "TITLE": "Rules",
         "DESCRIPTION": "Set the rules for how the dialogue should be handled: tone, structure, clarifications, and how to close the conversation.",

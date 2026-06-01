@@ -360,6 +360,7 @@ watch(
       class="z-0"
       enable-captain-tools
       enable-captain-fields
+      enable-captain-skills
       :captain-context-assistant-id="safeAssistant.id"
       :captain-context-access="state.contextAccess"
       :captain-tool-access="state.toolAccess"
@@ -405,6 +406,7 @@ watch(
           class="z-0 compact-system-message-editor"
           enable-captain-tools
           enable-captain-fields
+          enable-captain-skills
           :captain-context-assistant-id="safeAssistant.id"
           :captain-context-access="state.contextAccess"
           :captain-tool-access="state.toolAccess"
@@ -452,6 +454,7 @@ watch(
           class="z-0 compact-system-message-editor"
           enable-captain-tools
           enable-captain-fields
+          enable-captain-skills
           :captain-context-assistant-id="safeAssistant.id"
           :captain-context-access="state.contextAccess"
           :captain-tool-access="state.toolAccess"

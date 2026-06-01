@@ -83,6 +83,10 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     end
   end
 
+  def skills
+    @skills = Captain::SkillCatalog.all(account: Current.account)
+  end
+
   private
 
   def set_assistant

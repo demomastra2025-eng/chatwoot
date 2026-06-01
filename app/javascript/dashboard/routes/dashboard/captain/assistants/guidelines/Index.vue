@@ -240,6 +240,7 @@ const addAllExample = async () => {
                 v-model="newDialogRule"
                 enable-captain-tools
                 enable-captain-fields
+                enable-captain-skills
                 :captain-context-assistant-id="assistantId"
                 :captain-context-access="
                   assistant?.config?.context_access || {}
@@ -308,6 +309,7 @@ const addAllExample = async () => {
             :content="guideline.content"
             enable-captain-tools
             enable-captain-fields
+            enable-captain-skills
             :captain-context-assistant-id="assistantId"
             :captain-context-access="assistant?.config?.context_access || {}"
             :captain-tool-access="assistant?.config?.tool_access || {}"
@@ -326,6 +328,7 @@ const addAllExample = async () => {
           v-model="newInlineRule"
           enable-captain-tools
           enable-captain-fields
+          enable-captain-skills
           :captain-context-assistant-id="assistantId"
           :captain-context-access="assistant?.config?.context_access || {}"
           :captain-tool-access="assistant?.config?.tool_access || {}"

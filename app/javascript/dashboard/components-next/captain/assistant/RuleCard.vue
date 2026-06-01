@@ -88,6 +88,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  enableCaptainSkills: {
+    type: Boolean,
+    default: false,
+  },
   captainContextAssistantId: {
     type: Number,
     default: null,
@@ -226,7 +230,7 @@ const onToggleEnabled = enabled => {
 };
 
 const LINK_RULE_CLASS =
-  '[&_a[href^="field://"]]:text-n-teal-11 [&_a[href^="tool://"]]:text-n-iris-11 [&_a]:pointer-events-none [&_a]:cursor-default';
+  '[&_a[href^="field://"]]:text-n-teal-11 [&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="skill://"]]:text-n-amber-11 [&_a]:pointer-events-none [&_a]:cursor-default';
 
 const renderRuleContent = content => () =>
   h('span', {
@@ -358,6 +362,7 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
             :show-character-count="false"
             :enable-captain-tools="enableCaptainTools"
             :enable-captain-fields="enableCaptainFields"
+            :enable-captain-skills="enableCaptainSkills"
             :captain-context-assistant-id="captainContextAssistantId"
             :captain-context-access="captainContextAccess"
             :captain-tool-access="captainToolAccess"

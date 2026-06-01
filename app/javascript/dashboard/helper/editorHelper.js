@@ -491,6 +491,14 @@ const createNode = (editorView, nodeType, content) => {
         `[${label}](field://${content.id})`
       );
     }
+    case 'skill': {
+      const label = content.title?.startsWith('!')
+        ? content.title
+        : `!${content.title}`;
+      return new MessageMarkdownTransformer(state.schema).parse(
+        `[${label}](skill://${content.id})`
+      );
+    }
     default:
       return null;
   }
@@ -529,6 +537,11 @@ const nodeCreators = {
   }),
   field: (editorView, content, from, to) => ({
     node: createNode(editorView, 'field', content),
+    from,
+    to,
+  }),
+  skill: (editorView, content, from, to) => ({
+    node: createNode(editorView, 'skill', content),
     from,
     to,
   }),

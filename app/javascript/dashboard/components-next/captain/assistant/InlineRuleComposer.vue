@@ -52,6 +52,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  enableCaptainSkills: {
+    type: Boolean,
+    default: false,
+  },
   captainContextAssistantId: {
     type: Number,
     default: null,
@@ -172,6 +176,7 @@ const onClickCancel = () => {
         :show-character-count="false"
         :enable-captain-tools="enableCaptainTools"
         :enable-captain-fields="enableCaptainFields"
+        :enable-captain-skills="enableCaptainSkills"
         :captain-context-assistant-id="captainContextAssistantId"
         :captain-context-access="captainContextAccess"
         :captain-tool-access="captainToolAccess"

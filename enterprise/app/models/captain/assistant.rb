@@ -383,13 +383,17 @@ class Captain::Assistant < ApplicationRecord
   validate :internal_assistant_cannot_have_connected_inboxes
   validate :validate_instruction_tools
   validate :validate_instruction_fields
+  validate :validate_instruction_skills
   validate :validate_system_rule_tools
   validate :validate_system_rule_fields
+  validate :validate_system_rule_skills
   validate :validate_structured_rules_config
   validate :validate_response_guideline_tools
   validate :validate_response_guideline_fields
+  validate :validate_response_guideline_skills
   validate :validate_guardrail_tools
   validate :validate_guardrail_fields
+  validate :validate_guardrail_skills
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -530,7 +534,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def prompt_runtime_agent_tools
-    explicit_tool_ids = prompt_referenced_tool_ids_for_template(:assistant)
+    explicit_tool_ids = prompt_referenced_tool_ids_for_template(:assistant) + prompt_referenced_skill_script_tool_ids_for_template(:assistant)
 
     prompt_visible_tools_for_scope(
       Captain::ToolAccess::SCOPE_AGENT,
@@ -757,6 +761,7 @@ class Captain::Assistant < ApplicationRecord
 
   def prompt_context
     referenced_field_ids = referenced_field_ids_for_texts(prompt_glossary_texts)
+    referenced_skill_ids = referenced_skill_ids_for_texts(prompt_glossary_texts)
 
     {
       name: name,
@@ -781,6 +786,7 @@ class Captain::Assistant < ApplicationRecord
       guardrails: guardrails || [],
       response_guideline_groups: response_guideline_groups,
       guardrail_groups: guardrail_groups,
+      skill_references: Captain::SkillCatalog.prompt_blocks_for(account: account, skill_ids: referenced_skill_ids),
       context_glossary: context_glossary_groups(referenced_field_ids),
       tool_glossary: tool_glossary_groups(prompt_runtime_agent_tools)
     }
@@ -804,7 +810,8 @@ class Captain::Assistant < ApplicationRecord
     case value
     when String
       text_with_tools = render_tool_references(value)
-      Captain::ContextFields.render_references(text_with_tools, prompt_state: prompt_state, allowed_fields: allowed_fields)
+      text_with_skills = render_skill_references(text_with_tools)
+      Captain::ContextFields.render_references(text_with_skills, prompt_state: prompt_state, allowed_fields: allowed_fields)
     when Array
       value.map { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids) }
     when Hash
@@ -854,12 +861,20 @@ class Captain::Assistant < ApplicationRecord
     add_invalid_field_error(:description, invalid_field_ids_for_texts([description]))
   end
 
+  def validate_instruction_skills
+    add_invalid_skill_error(:description, invalid_skill_ids_for_texts([description]))
+  end
+
   def validate_response_guideline_tools
     add_invalid_tool_error(:response_guidelines, invalid_tool_ids_for_texts(response_guidelines))
   end
 
   def validate_response_guideline_fields
     add_invalid_field_error(:response_guidelines, invalid_field_ids_for_texts(response_guidelines))
+  end
+
+  def validate_response_guideline_skills
+    add_invalid_skill_error(:response_guidelines, invalid_skill_ids_for_texts(response_guidelines))
   end
 
   def validate_guardrail_tools
@@ -870,12 +885,20 @@ class Captain::Assistant < ApplicationRecord
     add_invalid_field_error(:guardrails, invalid_field_ids_for_texts(guardrails))
   end
 
+  def validate_guardrail_skills
+    add_invalid_skill_error(:guardrails, invalid_skill_ids_for_texts(guardrails))
+  end
+
   def validate_system_rule_tools
     add_invalid_tool_error(:config, invalid_tool_ids_for_texts(system_rule_contents))
   end
 
   def validate_system_rule_fields
     add_invalid_field_error(:config, invalid_field_ids_for_texts(system_rule_contents))
+  end
+
+  def validate_system_rule_skills
+    add_invalid_skill_error(:config, invalid_skill_ids_for_texts(system_rule_contents))
   end
 
   def validate_structured_rules_config
@@ -897,6 +920,13 @@ class Captain::Assistant < ApplicationRecord
     return [] if field_ids.empty?
 
     field_ids - available_context_field_ids
+  end
+
+  def invalid_skill_ids_for_texts(texts)
+    skill_ids = referenced_skill_ids_for_texts(texts)
+    return [] if skill_ids.empty?
+
+    skill_ids - Captain::SkillCatalog.available_ids(account: account)
   end
 
   def prompt_glossary_texts
@@ -1077,6 +1107,10 @@ class Captain::Assistant < ApplicationRecord
     Array(texts).flatten.compact.flat_map { |text| Captain::ContextFields.extract_field_ids_from_text(text) }.uniq
   end
 
+  def referenced_skill_ids_for_texts(texts)
+    Array(texts).flatten.compact.flat_map { |text| extract_skill_ids_from_text(text) }.uniq
+  end
+
   def glossary_context_definitions(field_ids)
     definitions = allowed_context_fields(field_ids)
     return definitions if field_ids.nil?
@@ -1105,6 +1139,12 @@ class Captain::Assistant < ApplicationRecord
     errors.add(field, "contains invalid fields: #{invalid_field_ids.join(', ')}")
   end
 
+  def add_invalid_skill_error(field, invalid_skill_ids)
+    return if invalid_skill_ids.empty?
+
+    errors.add(field, "contains invalid skills: #{invalid_skill_ids.join(', ')}")
+  end
+
   def runtime_tool_scope
     internal_assistant? ? Captain::ToolAccess::SCOPE_ASSISTANT : Captain::ToolAccess::SCOPE_AGENT
   end
@@ -1113,8 +1153,11 @@ class Captain::Assistant < ApplicationRecord
     available_tool_ids_for_scope(runtime_tool_scope)
   end
 
-  def referenced_tool_ids_for_scope(_scope_name)
-    referenced_tool_ids_for_texts(prompt_glossary_texts)
+  def referenced_tool_ids_for_scope(scope_name)
+    tool_ids = referenced_tool_ids_for_texts(prompt_glossary_texts)
+    return tool_ids unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
+
+    (tool_ids + prompt_referenced_skill_script_tool_ids_for_template(:assistant)).uniq
   end
 
   def effective_tool_ids_for(scope_name, referenced_tool_ids:)
@@ -1246,6 +1289,13 @@ class Captain::Assistant < ApplicationRecord
 
   def prompt_referenced_tool_ids_for_template(template_name)
     referenced_tool_ids_for_texts(prompt_glossary_texts_for_template(template_name))
+  end
+
+  def prompt_referenced_skill_script_tool_ids_for_template(template_name)
+    Captain::SkillCatalog.script_tool_ids_for(
+      account: account,
+      skill_ids: referenced_skill_ids_for_texts(prompt_glossary_texts_for_template(template_name))
+    )
   end
 
   def enabled_system_rule_entries_for_prompt(template_name:)

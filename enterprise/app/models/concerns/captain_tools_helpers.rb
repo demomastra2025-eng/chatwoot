@@ -69,6 +69,14 @@ module Concerns::CaptainToolsHelpers
     end
   end
 
+  def extract_skill_ids_from_text(text)
+    Captain::SkillCatalog.extract_skill_ids_from_text(text)
+  end
+
+  def render_skill_references(text)
+    Captain::SkillCatalog.render_skill_references(text)
+  end
+
   private
 
   def normalize_tool_id(tool_id)

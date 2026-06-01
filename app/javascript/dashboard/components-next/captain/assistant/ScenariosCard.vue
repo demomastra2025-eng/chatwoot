@@ -154,7 +154,7 @@ const instructionError = computed(() =>
 );
 
 const LINK_INSTRUCTION_CLASS =
-  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a:not([href^="tool://"]):not([href^="field://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
+  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a[href^="skill://"]]:text-n-amber-11 [&_a:not([href^="tool://"]):not([href^="field://"]):not([href^="skill://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
 
 const renderInstruction = instruction => () =>
   h('p', {
@@ -167,6 +167,10 @@ const toolLabels = computed(() => ({
     'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_documentation.TITLE'
   ),
   faq_lookup: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.faq_lookup.TITLE'),
+  web_search: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.web_search.TITLE'),
+  web_scrape_url: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.web_scrape_url.TITLE'
+  ),
   add_contact_note: t(
     'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_contact_note.TITLE'
   ),
@@ -342,6 +346,7 @@ const humanizeToolId = toolId => toolLabels.value[toolId] || `@${toolId}`;
         :max-length="SCENARIO_INSTRUCTION_MAX_LENGTH"
         enable-captain-tools
         enable-captain-fields
+        enable-captain-skills
         :captain-context-assistant-id="assistantId"
       />
       <div class="flex items-center gap-3">

@@ -32,7 +32,7 @@ const searchQuery = ref('');
 const isCreatingScenario = ref(false);
 
 const LINK_INSTRUCTION_CLASS =
-  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a:not([href^="tool://"]):not([href^="field://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
+  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a[href^="skill://"]]:text-n-amber-11 [&_a:not([href^="tool://"]):not([href^="field://"]):not([href^="skill://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
 
 const renderInstruction = instruction => () =>
   h('span', {

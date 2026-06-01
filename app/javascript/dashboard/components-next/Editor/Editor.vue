@@ -29,6 +29,7 @@ const props = defineProps({
   enableCannedResponses: { type: Boolean, default: true },
   enableCaptainTools: { type: Boolean, default: false },
   enableCaptainFields: { type: Boolean, default: false },
+  enableCaptainSkills: { type: Boolean, default: false },
   captainContextAssistantId: { type: Number, default: null },
   captainContextAccess: { type: Object, default: null },
   captainToolAccess: { type: Object, default: null },
@@ -258,6 +259,7 @@ onBeforeUnmount(() => {
         :enable-canned-responses="enableCannedResponses"
         :enable-captain-tools="enableCaptainTools"
         :enable-captain-fields="enableCaptainFields"
+        :enable-captain-skills="enableCaptainSkills"
         :captain-context-assistant-id="captainContextAssistantId"
         :captain-context-access="captainContextAccess"
         :captain-tool-access="captainToolAccess"
@@ -293,7 +295,7 @@ onBeforeUnmount(() => {
           v-if="showCharacterCount && !slots.actions"
           class="text-xs tabular-nums text-n-slate-10"
         >
-          {{ characterCount }} / {{ maxLength }}
+          {{ `${characterCount} / ${maxLength}` }}
         </span>
         <slot v-else name="actions" />
       </div>

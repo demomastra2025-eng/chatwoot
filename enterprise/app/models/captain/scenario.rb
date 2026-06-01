@@ -49,6 +49,7 @@ class Captain::Scenario < ApplicationRecord
   validates :account_id, presence: true
   validate :validate_instruction_tools
   validate :validate_instruction_fields
+  validate :validate_instruction_skills
 
   scope :enabled, -> { where(enabled: true) }
 
@@ -63,6 +64,7 @@ class Captain::Scenario < ApplicationRecord
 
   def prompt_context
     referenced_field_ids = referenced_field_ids_for_prompt
+    referenced_skill_ids = referenced_skill_ids_for_prompt
     available_prompt_tools = prompt_runtime_tools
 
     {
@@ -100,17 +102,18 @@ class Captain::Scenario < ApplicationRecord
       guardrails: guardrails || [],
       response_guideline_groups: response_guideline_groups,
       guardrail_groups: guardrail_groups,
+      skill_references: Captain::SkillCatalog.prompt_blocks_for(account: assistant.account, skill_ids: referenced_skill_ids),
       context_glossary: assistant.context_glossary_groups(referenced_field_ids),
       tool_glossary: assistant.tool_glossary_groups(available_prompt_tools)
     }
   end
 
   def runtime_tools
-    resolved_tools(referenced_tool_ids: prompt_referenced_tool_ids)
+    resolved_tools(referenced_tool_ids: prompt_referenced_runtime_tool_ids)
   end
 
   def prompt_runtime_tools
-    explicit_tool_ids = prompt_referenced_tool_ids
+    explicit_tool_ids = prompt_referenced_runtime_tool_ids
 
     resolved_tools(referenced_tool_ids: explicit_tool_ids).select do |tool_definition|
       assistant.prompt_visible_tool?(
@@ -181,7 +184,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def resolved_instructions
-    render_tool_references(instruction)
+    render_skill_references(render_tool_references(instruction))
   end
 
   def resolved_tools(referenced_tool_ids: prompt_referenced_tool_ids)
@@ -244,6 +247,18 @@ class Captain::Scenario < ApplicationRecord
     errors.add(:instruction, "contains invalid fields: #{invalid_fields.join(', ')}")
   end
 
+  def validate_instruction_skills
+    return if instruction.blank?
+
+    skill_ids = extract_skill_ids_from_text(instruction)
+    return if skill_ids.empty?
+
+    invalid_skills = skill_ids - Captain::SkillCatalog.available_ids(account: assistant.account)
+    return unless invalid_skills.any?
+
+    errors.add(:instruction, "contains invalid skills: #{invalid_skills.join(', ')}")
+  end
+
   # Resolves tool references from the instruction text into the tools field.
   # Parses the instruction for tool references and materializes them as
   # tool IDs stored in the tools JSONB field.
@@ -267,6 +282,10 @@ class Captain::Scenario < ApplicationRecord
 
   def referenced_field_ids_for_prompt
     Captain::ContextFields.extract_field_ids_from_text(prompt_glossary_texts.flatten.compact.join("\n"))
+  end
+
+  def referenced_skill_ids_for_prompt
+    extract_skill_ids_from_text(prompt_glossary_texts.flatten.compact.join("\n"))
   end
 
   def sibling_handoff_scenarios
@@ -297,5 +316,12 @@ class Captain::Scenario < ApplicationRecord
       .compact
       .flat_map { |text| extract_tool_ids_from_text(text) }
       .uniq
+  end
+
+  def prompt_referenced_runtime_tool_ids
+    (
+      prompt_referenced_tool_ids +
+        Captain::SkillCatalog.script_tool_ids_for(account: assistant.account, skill_ids: referenced_skill_ids_for_prompt)
+    ).uniq
   end
 end

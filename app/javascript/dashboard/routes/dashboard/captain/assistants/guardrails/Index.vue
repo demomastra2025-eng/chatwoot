@@ -233,6 +233,7 @@ watch(
                   v-model="newDialogRule"
                   enable-captain-tools
                   enable-captain-fields
+                  enable-captain-skills
                   :captain-context-assistant-id="assistantId"
                   :captain-context-access="
                     assistant?.config?.context_access || {}
@@ -285,6 +286,7 @@ watch(
               :content="guardrail.content"
               enable-captain-tools
               enable-captain-fields
+              enable-captain-skills
               :captain-context-assistant-id="assistantId"
               :captain-context-access="assistant?.config?.context_access || {}"
               :captain-tool-access="assistant?.config?.tool_access || {}"

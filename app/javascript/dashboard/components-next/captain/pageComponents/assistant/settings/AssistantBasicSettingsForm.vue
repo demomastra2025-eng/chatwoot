@@ -344,6 +344,7 @@ defineExpose({
         class="z-0"
         enable-captain-tools
         enable-captain-fields
+        enable-captain-skills
         :captain-context-assistant-id="assistant.id"
         :captain-context-access="state.contextAccess"
         :captain-tool-access="state.toolAccess"

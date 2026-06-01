@@ -3,7 +3,7 @@
 class Captain::ToolCatalog
   class << self
     def available_tools_for(assistant, scope_name)
-      (built_in_tools_for(assistant, scope_name) + custom_tools_for(assistant, scope_name) + mcp_tools_for(assistant, scope_name))
+      (built_in_tools_for(assistant, scope_name) + custom_tools_for(assistant, scope_name) + mcp_tools_for(assistant, scope_name) + skill_script_tools_for(assistant, scope_name))
         .map(&:dup)
         .uniq { |tool_definition| tool_definition[:id] }
     end
@@ -43,6 +43,8 @@ class Captain::ToolCatalog
       elsif tool_definition[:provider].to_s == 'mcp'
         build_mcp_tool(tool_definition, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation,
                                         copilot_thread: copilot_thread)
+      elsif tool_definition[:provider].to_s == 'skill_script'
+        build_skill_script_tool(tool_definition, assistant: assistant, scope_name: scope_name)
       else
         build_registered_tool(tool_id, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation,
                                        copilot_thread: copilot_thread)
@@ -100,6 +102,12 @@ class Captain::ToolCatalog
       Captain::Mcp::ToolCatalog.available_tools_for(assistant, scope_name).map do |tool|
         require_assistant_confirmation(tool, scope_name, include_missing_idempotency: true)
       end
+    end
+
+    def skill_script_tools_for(assistant, scope_name)
+      return [] unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
+
+      Captain::SkillCatalog.script_tools_for(account: assistant.account)
     end
 
     def require_assistant_confirmation(tool, scope_name, include_missing_idempotency: false)
@@ -174,6 +182,12 @@ class Captain::ToolCatalog
           copilot_thread: copilot_thread
         )
       end
+    end
+
+    def build_skill_script_tool(tool_definition, assistant:, scope_name:)
+      return unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
+
+      Captain::Tools::SkillScriptTool.new(assistant, tool_definition)
     end
   end
 end

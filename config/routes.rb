@@ -88,6 +88,7 @@ Rails.application.routes.draw do
               collection do
                 get :tools
                 get :context_fields
+                get :skills
               end
               resources :inboxes, only: [:index, :create, :destroy], param: :inbox_id
               resources :scenarios
