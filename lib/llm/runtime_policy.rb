@@ -209,6 +209,7 @@ class Llm::RuntimePolicy
 
     def runtime_preferences(account, preferences)
       return preferences.to_h.stringify_keys if preferences.present?
+      return account.captain_runtime_preferences.to_h.stringify_keys if account.respond_to?(:captain_runtime_preferences)
       return account.captain_preferences[:runtime].to_h.stringify_keys if account.respond_to?(:captain_preferences)
 
       {}

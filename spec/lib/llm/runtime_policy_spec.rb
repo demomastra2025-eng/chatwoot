@@ -202,6 +202,14 @@ RSpec.describe Llm::RuntimePolicy do
       expect(described_class.web_blocked_domains(preferences: preferences)).to eq(['bad.example.com'])
     end
 
+    it 'reads account runtime preferences without resolving the full Captain model catalog' do
+      account.update!(captain_runtime: { 'web_search_enabled' => true })
+
+      expect(account).not_to receive(:captain_preferences)
+
+      expect(described_class.web_access_enabled?(:search, account: account)).to be(true)
+    end
+
     it 'uses the admin upload size and caps document parsing at the provider limit' do
       InstallationConfig.where(name: 'MAXIMUM_FILE_UPLOAD_SIZE').delete_all
       GlobalConfig.clear_cache

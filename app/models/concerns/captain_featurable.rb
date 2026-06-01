@@ -73,8 +73,12 @@ module CaptainFeaturable
     {
       models: captain_models_with_defaults,
       features: captain_features_with_defaults,
-      runtime: captain_runtime_with_defaults
+      runtime: captain_runtime_preferences
     }.with_indifferent_access
+  end
+
+  def captain_runtime_preferences
+    captain_runtime_with_defaults.with_indifferent_access
   end
 
   private
