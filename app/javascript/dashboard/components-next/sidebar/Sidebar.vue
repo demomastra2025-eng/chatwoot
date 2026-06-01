@@ -25,6 +25,7 @@ import ChannelLeaf from './ChannelLeaf.vue';
 import ChannelStatusIcon from './ChannelStatusIcon.vue';
 import SidebarAccountSwitcher from './SidebarAccountSwitcher.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
+import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
 import { filterSidebarMenuItems } from './sidebarVisibility';
 import {
   getInboxFlowRouteNames,
@@ -176,6 +177,15 @@ const toggleShortcutModalFn = show => {
 useSidebarKeyboardShortcuts(toggleShortcutModalFn);
 
 const expandedItem = ref(null);
+const showCreateLabelPopup = ref(false);
+
+const openCreateLabelPopup = () => {
+  showCreateLabelPopup.value = true;
+};
+
+const hideCreateLabelPopup = () => {
+  showCreateLabelPopup.value = false;
+};
 
 const setExpandedItem = name => {
   expandedItem.value = expandedItem.value === name ? null : name;
@@ -885,6 +895,13 @@ const menuItems = computed(() => {
                   visibilityKey: 'Conversation:Labels',
                   label: t('SIDEBAR.LABELS'),
                   icon: 'i-lucide-tag',
+                  actionItems: [
+                    {
+                      title: t('LABEL_MGMT.HEADER_BTN_TXT'),
+                      icon: 'i-lucide-plus',
+                      handler: openCreateLabelPopup,
+                    },
+                  ],
                   to: withConversationStatus('home'),
                   activeOn: allLabelsActiveOn,
                   suppressHeaderActiveWhenChildActive: true,
@@ -1052,7 +1069,7 @@ const menuItems = computed(() => {
             {
               name: 'MyCompany',
               label: t('SIDEBAR.MY_COMPANY'),
-              icon: 'i-lucide-building-2',
+              icon: 'i-lucide-briefcase-business',
               activeOn: [
                 ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
                 ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
@@ -1063,7 +1080,7 @@ const menuItems = computed(() => {
                   visibilityKey: 'MyCompany:Workspace',
                   label:
                     currentAccount.value?.name || t('SIDEBAR.ACCOUNT_SETTINGS'),
-                  icon: 'i-lucide-briefcase-business',
+                  icon: 'i-lucide-building-2',
                   activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
                   to: accountScopedRoute('general_settings_index'),
                 },
@@ -1097,7 +1114,7 @@ const menuItems = computed(() => {
                         name: 'Policies',
                         visibilityKey: 'MyCompany:Policies',
                         label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-                        icon: 'i-lucide-route',
+                        icon: 'i-lucide-shield-check',
                         activeOn: activeOnForEmployeeTab(
                           'assignment_policy_index'
                         ),
@@ -1185,6 +1202,13 @@ const menuItems = computed(() => {
                   visibilityKey: 'Contacts:Tagged',
                   icon: 'i-lucide-tag',
                   label: t('SIDEBAR.TAGGED_WITH'),
+                  actionItems: [
+                    {
+                      title: t('LABEL_MGMT.HEADER_BTN_TXT'),
+                      icon: 'i-lucide-plus',
+                      handler: openCreateLabelPopup,
+                    },
+                  ],
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: label.title,
@@ -1650,6 +1674,12 @@ const menuItems = computed(() => {
         />
       </div>
     </section>
+    <woot-modal
+      v-model:show="showCreateLabelPopup"
+      @close="hideCreateLabelPopup"
+    >
+      <AddLabelForm @close="hideCreateLabelPopup" />
+    </woot-modal>
     <!-- Resize Handle (desktop only) -->
     <div
       class="hidden md:block absolute top-0 h-full w-1 cursor-col-resize z-40 ltr:right-0 rtl:left-0 group"

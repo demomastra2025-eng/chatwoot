@@ -1,9 +1,6 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-import { employeeSettingsTabs } from '../employeeSettingsTabs';
-
-const SettingsTabsWrapper = () =>
-  import('../components/SettingsTabsWrapper.vue');
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
 const AssignmentPolicyIndex = () => import('./Index.vue');
 const AgentAssignmentIndex = () =>
   import('./pages/AgentAssignmentIndexPage.vue');
@@ -17,10 +14,7 @@ export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/assignment-policy'),
-      component: SettingsTabsWrapper,
-      props: {
-        tabs: employeeSettingsTabs,
-      },
+      component: SettingsWrapper,
       children: [
         {
           path: '',

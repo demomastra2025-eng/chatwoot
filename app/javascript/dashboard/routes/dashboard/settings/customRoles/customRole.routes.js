@@ -1,19 +1,13 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from 'dashboard/helper/URLHelper';
-import { employeeSettingsTabs } from '../employeeSettingsTabs';
-
-const SettingsTabsWrapper = () =>
-  import('../components/SettingsTabsWrapper.vue');
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
 const CustomRolesHome = () => import('./Index.vue');
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/custom-roles'),
-      component: SettingsTabsWrapper,
-      props: {
-        tabs: employeeSettingsTabs,
-      },
+      component: SettingsWrapper,
       children: [
         {
           path: '',
