@@ -326,6 +326,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         state: hash_including(account_id: account.id, assistant_id: assistant.id)
       )
       expect(result).to include('response' => 'Recovered answer', 'blank_response_retry' => true)
+      expect(result).to include(
+        'zero_completion_recovered' => true,
+        'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_BLANK_RETRY
+      )
       expect(retry_events.map(&:payload)).to contain_exactly(
         hash_including('reason' => 'blank_response', 'attempt' => 1, 'max_attempts' => 1)
       )
@@ -377,7 +381,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'response' => 'Recovered answer',
           'agent_name' => 'scenario_agent',
           'handoff_tool_called' => false,
-          'blank_response_retry' => true
+          'blank_response_retry' => true,
+          'zero_completion_recovered' => true,
+          'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_BLANK_RETRY
         }
       )
     end
@@ -401,6 +407,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         'agent_name' => 'scenario_agent',
         'handoff_tool_called' => false,
         'schema_fallback' => true,
+        'zero_completion_recovered' => true,
+        'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_TOOL_RESULT_FALLBACK,
         'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
         'error_message' => 'Assistant runtime returned a blank response'
       )
@@ -411,7 +419,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       failed_context = finalization_failed_context(tool_history)
       run_calls = []
       retry_events = []
+      zero_completion_events = []
       subscriber = subscribe_to_finalization_retry_events(retry_events)
+      zero_completion_subscriber = subscribe_to_zero_completion_events(zero_completion_events)
       allow_finalization_retry_runner(failed_context, run_calls)
 
       result = service.generate_response(message_history: message_history)
@@ -419,8 +429,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect_finalization_retry_call(run_calls, failed_context, tool_history)
       expect_finalization_retry_result(result)
       expect_finalization_retry_event(retry_events)
+      expect_zero_completion_finalization_events(zero_completion_events)
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+      ActiveSupport::Notifications.unsubscribe(zero_completion_subscriber) if zero_completion_subscriber
     end
 
     it 'does not expose unknown raw tool identifiers in deterministic public fallback text' do
@@ -1459,6 +1471,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
   end
 
+  def subscribe_to_zero_completion_events(events)
+    ActiveSupport::Notifications.subscribe(/llm\.zero_completion\./) do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+  end
+
   def allow_finalization_retry_runner(failed_context, run_calls)
     blank_result = agent_result(output: { 'response' => '', 'handoff_message' => '' }, context: failed_context)
     recovered_result = agent_result(
@@ -1509,7 +1527,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       'reasoning' => 'Used the completed create_deal tool result.',
       'agent_name' => 'scenario_agent',
       'handoff_tool_called' => false,
-      'finalization_only_retry' => true
+      'finalization_only_retry' => true,
+      'zero_completion_recovered' => true,
+      'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_FINALIZATION_RETRY
     )
     expect(result).not_to include('schema_fallback' => true)
   end
@@ -1520,6 +1540,28 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         'schema_name' => 'Captain::ResponseSchema',
         'status' => 'retrying',
         'reason' => 'Assistant runtime returned a blank response',
+        'completed_tools_count' => 1,
+        'completed_tool_names' => ['create_deal']
+      )
+    )
+  end
+
+  def expect_zero_completion_finalization_events(events)
+    expect(events.map(&:name)).to contain_exactly(
+      'llm.zero_completion.detected',
+      'llm.zero_completion.retry',
+      'llm.zero_completion.recovered'
+    )
+    expect(events.map(&:payload)).to include(
+      hash_including(
+        'status' => 'retrying',
+        'recovery_kind' => described_class::ZERO_COMPLETION_FINALIZATION_RETRY,
+        'completed_tools_count' => 1,
+        'completed_tool_names' => ['create_deal']
+      ),
+      hash_including(
+        'status' => 'recovered',
+        'recovery_kind' => described_class::ZERO_COMPLETION_FINALIZATION_RETRY,
         'completed_tools_count' => 1,
         'completed_tool_names' => ['create_deal']
       )

@@ -942,6 +942,26 @@
         "WORKSPACE_KEY_CONFIGURED": "ключ workspace настроен"
       }
     },
+    "RELIABILITY": {
+      "TITLE": "Надёжность OpenRouter",
+      "DESCRIPTION": "Системные механизмы включены политикой One Link и не требуют ручной настройки пользователем.",
+      "STRUCTURED_RECOVERY_TITLE": "Восстановление JSON",
+      "STRUCTURED_RECOVERY_DESCRIPTION": "Исправляет структурированный ответ только там, где функция ждёт строгую схему.",
+      "CONTEXT_COMPRESSION_TITLE": "Длинный контекст",
+      "CONTEXT_COMPRESSION_DESCRIPTION": "Сжатие включается только при риске выхода за лимит контекста модели.",
+      "ZERO_COMPLETION_TITLE": "Пустые ответы",
+      "ZERO_COMPLETION_DESCRIPTION": "После выполненного инструмента система добивается финального ответа без повторной мутации.",
+      "SERVER_TIME_TITLE": "Системное время",
+      "SERVER_TIME_DESCRIPTION": "AI-агент и ИИ ассистент получают безопасный read-only инструмент времени.",
+      "BLOCKED_EXTENSIONS_TITLE": "Опасные расширения",
+      "BLOCKED_EXTENSIONS_DESCRIPTION": "Web search, patch, PDF и генерация изображений заблокированы до отдельного rollout.",
+      "STATUS": {
+        "AUTO": "авто",
+        "OVERFLOW_ONLY": "по лимиту",
+        "SYSTEM": "системно",
+        "PROTECTED": "защищено"
+      }
+    },
     "USAGE": {
       "TITLE": "Расход и бюджет OpenRouter",
       "DESCRIPTION": "Контролируйте стоимость, токены, ошибки и лимиты OpenRouter для этого workspace.",
@@ -971,8 +991,14 @@
       "RUNTIME_HEALTH_DESCRIPTION": "Короткая диагностика событий OpenRouter runtime.",
       "RUNTIME_EVENTS": "События",
       "RUNTIME_RETRIES": "Повторы",
+      "RUNTIME_P95_LATENCY": "P95 задержка",
+      "RUNTIME_ERROR_RATE": "Доля ошибок",
       "RUNTIME_SCHEMA_ERRORS": "Ошибки схемы",
       "RUNTIME_TOOL_ERRORS": "Ошибки тулзов",
+      "RUNTIME_ZERO_COMPLETION": "Пустые ответы восстановлены",
+      "RUNTIME_FALLBACKS": "Fallback моделей",
+      "RUNTIME_KEY_HEALTH": "Ключ OpenRouter",
+      "MILLISECONDS": "{count} мс",
       "LAST_EVENT": "Последнее событие: {date}",
       "NEVER": "нет данных",
       "TOP_MODELS": "Топ моделей",

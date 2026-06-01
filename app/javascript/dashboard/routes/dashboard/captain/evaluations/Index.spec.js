@@ -354,6 +354,7 @@ describe('Captain evaluations page', () => {
               pass_rate: 0.75,
               schema_invalid_count: 1,
               tool_failure_count: 1,
+              zero_completion_count: 1,
               no_content_count: 0,
               catalog_stale_count: 0,
             },
@@ -378,6 +379,9 @@ describe('Captain evaluations page', () => {
     );
     expect(wrapper.text()).toContain(
       'CAPTAIN.EVALUATIONS.RELEASE_GATE.TOOL_FAILURE'
+    );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.RELEASE_GATE.ZERO_COMPLETION'
     );
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULTS.COST');
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULTS.DURATION_MS');

@@ -11,6 +11,8 @@ class Llm::Monitoring::MetricsSnapshot
     transcription_events = @scope.where(event_name: 'llm.transcription.complete')
     moderation_events = @scope.where(event_name: %w[llm.moderation.complete llm.moderation.unavailable])
     blocked_events = @scope.blocked_events
+    zero_completion_events = @scope.where(event_name: zero_completion_event_names)
+    context_transform_events = @scope.where(event_name: context_transform_event_names)
 
     {
       total_events: @scope.count,
@@ -19,13 +21,18 @@ class Llm::Monitoring::MetricsSnapshot
       transcription_count: transcription_events.count,
       moderation_count: moderation_events.count,
       blocked_count: @scope.blocked_events.count,
+      guardrail_flagged_count: @scope.where(event_name: 'llm.safety.flagged').count,
       error_count: @scope.error_events.count,
       provider_failure_count: @scope.where(error_code: Llm::Monitoring::RuntimeHealth::PROVIDER_FAILURE_ERROR_CODES).count,
       moderation_skipped_count: @scope.moderation_skipped_events.count,
       schema_invalid_count: @scope.schema_invalid_events.count,
       tool_failure_count: @scope.tool_failure_events.count,
+      zero_completion_count: zero_completion_events.count,
+      zero_completion_recovered_count: zero_completion_events.where(status: 'recovered').count,
+      context_transform_applied_count: context_transform_count(context_transform_events, 'applied'),
       total_tokens: chat_events.sum(:total_tokens),
       all_total_tokens: @scope.sum(:total_tokens),
+      all_thinking_tokens: @scope.sum(:thinking_tokens),
       estimated_cost: chat_events.sum(:estimated_cost),
       total_estimated_cost: @scope.sum(:estimated_cost),
       avg_duration_ms: chat_events.average(:duration_ms)&.to_f,
@@ -56,6 +63,29 @@ class Llm::Monitoring::MetricsSnapshot
 
   private
 
+  def zero_completion_event_names
+    %w[
+      llm.zero_completion.detected
+      llm.zero_completion.retry
+      llm.zero_completion.recovered
+      llm.zero_completion.failed
+    ]
+  end
+
+  def context_transform_event_names
+    %w[
+      llm.context_transform.applied
+      llm.context_transform.skipped
+      llm.context_transform.failed
+    ]
+  end
+
+  def context_transform_count(context_transform_events, status)
+    return context_transform_events.where(status: status).count if context_transform_events.exists?
+
+    payload_value_count(@scope, 'openrouter_context_transform_status', status)
+  end
+
   def compact_counts(counts)
     counts.each_with_object({}) do |(key, value), result|
       next if key.blank?
@@ -70,6 +100,10 @@ class Llm::Monitoring::MetricsSnapshot
 
       counts[value] += 1
     end
+  end
+
+  def payload_value_count(scope, key, value)
+    scope.where('payload ->> ? = ?', key, value).count
   end
 
   def payload_array_value_counts(scope, key)

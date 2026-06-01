@@ -56,6 +56,8 @@ class Llm::RuntimeGuardrails
     prompt_injection: PROMPT_INJECTION_PATTERNS,
     sensitive_info: SENSITIVE_INFO_PATTERNS
   }.freeze
+  PROMPT_INJECTION_STAGES = %w[input tool_arguments tool_result tool_results].freeze
+  SENSITIVE_INFO_STAGES = %w[input output final_output tool_arguments tool_result tool_results].freeze
 
   class << self
     def matches(feature:, stage:, content:, account: nil, preferences: nil)
@@ -107,9 +109,9 @@ class Llm::RuntimeGuardrails
 
     def guardrail_applies_to_stage?(guardrail, stage)
       normalized_stage = stage.to_s
-      return normalized_stage == 'input' if guardrail.to_s == 'prompt_injection'
+      return PROMPT_INJECTION_STAGES.include?(normalized_stage) if guardrail.to_s == 'prompt_injection'
 
-      %w[input output].include?(normalized_stage)
+      SENSITIVE_INFO_STAGES.include?(normalized_stage)
     end
 
     def normalized_text(content)

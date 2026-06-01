@@ -8,6 +8,7 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
   :schema_required,
   :reasoning_required,
   :server_tools,
+  :messages,
   :runtime_preferences,
   :privacy_profile,
   keyword_init: true
@@ -25,6 +26,7 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       schema_required: options.fetch(:schema, false),
       reasoning_required: options.fetch(:reasoning, false),
       server_tools: options[:server_tools],
+      messages: options[:messages],
       runtime_preferences: options[:runtime_preferences],
       privacy_profile: options[:privacy_profile]
     )
@@ -189,6 +191,82 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     expect(compiled.params[:provider]).not_to include(:only)
   end
 
+  it 'compiles low-latency routing with human-safe latency constraints' do
+    compiled = compile(
+      feature: :copilot,
+      runtime_preferences: {
+        openrouter_routing_strategy: 'low_latency',
+        openrouter_preferred_max_latency: '900',
+        openrouter_preferred_min_throughput: '45'
+      }
+    )
+
+    expect(compiled.params[:provider]).to include(
+      sort: { by: 'latency', partition: 'none' },
+      preferred_max_latency: 900.0,
+      preferred_min_throughput: 45.0,
+      require_parameters: true
+    )
+    expect(compiled.metadata).to include(
+      routing_profile: 'low_latency',
+      openrouter_provider_sort: 'latency'
+    )
+  end
+
+  it 'keeps low-cost routing only for non-tool flows and strips it for tools' do
+    low_cost = compile(
+      feature: :editor,
+      runtime_preferences: { openrouter_routing_strategy: 'low_cost' }
+    )
+    tool_flow = compile(
+      feature: :editor,
+      tools: true,
+      runtime_preferences: { openrouter_routing_strategy: 'low_cost' }
+    )
+
+    expect(low_cost.params[:provider]).to include(sort: { by: 'price', partition: 'none' })
+    expect(tool_flow.params[:provider]).to include(require_parameters: true)
+    expect(tool_flow.params[:provider]).not_to include(:sort)
+  end
+
+  it 'forces strict tool routing to require provider parameter support without price sorting' do
+    compiled = compile(
+      feature: :captain_agent,
+      tools: true,
+      runtime_preferences: {
+        openrouter_routing_strategy: 'strict_tools',
+        openrouter_sort: { by: 'price', partition: 'none' }
+      }
+    )
+
+    expect(compiled.params[:provider]).to include(require_parameters: true)
+    expect(compiled.params[:provider]).not_to include(:sort)
+    expect(compiled.metadata).to include(routing_profile: 'strict_tools')
+  end
+
+  it 'forces ZDR strict routing to fail closed on provider fallbacks' do
+    compiled = compile(
+      feature: :captain_agent,
+      runtime_preferences: {
+        openrouter_routing_strategy: 'zdr_strict',
+        openrouter_allow_fallbacks: true,
+        openrouter_zdr: false,
+        openrouter_data_collection: 'allow'
+      }
+    )
+
+    expect(compiled.params[:provider]).to include(
+      allow_fallbacks: false,
+      data_collection: 'deny',
+      zdr: true
+    )
+    expect(compiled.metadata).to include(
+      routing_profile: 'zdr_strict',
+      openrouter_allow_fallbacks: false,
+      openrouter_zdr: true
+    )
+  end
+
   it 'compiles expanded FeatureRequest params and trusted advanced provider controls' do
     account = instance_double(Account, id: 42)
     request = Llm::FeatureRequest.new(
@@ -262,7 +340,7 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     expect(compiled.params).not_to include(:reasoning)
   end
 
-  it 'filters caller-supplied plugins through OpenRouter plugin policy' do
+  it 'does not allow caller-supplied context compression outside the overflow transform decision' do
     compiled = compile(
       feature: :captain_agent,
       runtime_preferences: {
@@ -278,7 +356,57 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       }
     )
 
-    expect(compiled.params[:plugins]).to contain_exactly(id: 'context-compression', mode: 'emergency')
+    expect(compiled.params).not_to include(:plugins)
+  end
+
+  it 'adds context compression only when the request exceeds the soft context limit' do
+    allow(Llm::Models).to receive(:model_config)
+      .with('moonshotai/kimi-k2.6', account: nil)
+      .and_return({ 'context_length' => 100 })
+    allow(Llm::EventBus).to receive(:publish).and_call_original
+
+    compiled = compile(
+      feature: :captain_agent,
+      messages: [{ role: 'user', content: 'x' * 360 }],
+      base_params: { plugins: [{ id: 'context_compression', mode: 'caller_override' }] }
+    )
+
+    expect(compiled.params[:plugins]).to contain_exactly(id: 'context-compression', mode: 'overflow_only')
+    expect(compiled.metadata).to include(
+      openrouter_context_transform_status: 'applied',
+      openrouter_context_transform_policy: 'overflow_only',
+      openrouter_context_transform_reason: 'estimated_tokens_exceed_soft_context_limit',
+      openrouter_context_estimated_tokens: 90,
+      openrouter_context_limit: 100,
+      openrouter_context_soft_limit: 85
+    )
+    expect(Llm::EventBus).to have_received(:publish).with(
+      'context_transform.applied',
+      hash_including(
+        feature: 'captain_agent',
+        model: 'moonshotai/kimi-k2.6',
+        status: 'applied',
+        openrouter_context_transform_reason: 'estimated_tokens_exceed_soft_context_limit'
+      )
+    )
+  end
+
+  it 'disables OpenRouter default context compression for small non-overflow contexts' do
+    allow(Llm::Models).to receive(:model_config)
+      .with('moonshotai/kimi-k2.6', account: nil)
+      .and_return({ 'context_length' => 8_192 })
+
+    compiled = compile(
+      feature: :captain_agent,
+      messages: [{ role: 'user', content: 'short prompt' }]
+    )
+
+    expect(compiled.params[:plugins]).to contain_exactly(id: 'context-compression', enabled: false)
+    expect(compiled.metadata).to include(
+      openrouter_context_transform_status: 'disabled_default',
+      openrouter_context_transform_reason: 'prevent_hidden_openrouter_default_for_small_context',
+      openrouter_context_limit: 8_192
+    )
   end
 
   it 'does not let read-only feature runtime preferences enable plugins outside feature policy' do

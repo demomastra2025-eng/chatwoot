@@ -12,11 +12,13 @@ RSpec.describe Llm::Monitoring::MetricsSnapshot do
         total_tokens: 100,
         estimated_cost: 0.0001,
         duration_ms: 200,
+        thinking_tokens: 12,
         queue_wait_ms: 40,
         payload_bytes: 2048,
         retry_count: 1,
         tool_calls_count: 2,
-        schema_invalid_count: 1
+        schema_invalid_count: 1,
+        payload: { openrouter_context_transform_status: 'applied' }
       )
       create(
         :llm_event,
@@ -70,11 +72,20 @@ RSpec.describe Llm::Monitoring::MetricsSnapshot do
       create(:llm_event, event_name: 'llm.tool.complete', tool_failure: true, total_tokens: nil, estimated_cost: nil)
       create(:llm_event, event_name: 'llm.embedding.complete', feature: 'embedding', total_tokens: 50, estimated_cost: 0.0002)
       create(:llm_event, event_name: 'llm.transcription.complete', feature: 'audio_transcription', total_tokens: nil, estimated_cost: nil)
+      create(
+        :llm_event,
+        event_name: 'llm.zero_completion.recovered',
+        status: 'recovered',
+        feature: 'assistant',
+        total_tokens: nil,
+        estimated_cost: nil,
+        payload: { recovery_kind: 'finalization_only_retry' }
+      )
 
       snapshot = described_class.new.call
 
       expect(snapshot).to include(
-        total_events: 9,
+        total_events: 10,
         request_count: 2,
         embedding_count: 1,
         transcription_count: 1,
@@ -84,8 +95,12 @@ RSpec.describe Llm::Monitoring::MetricsSnapshot do
         moderation_skipped_count: 1,
         schema_invalid_count: 1,
         tool_failure_count: 1,
+        zero_completion_count: 1,
+        zero_completion_recovered_count: 1,
+        context_transform_applied_count: 1,
         total_tokens: 300,
         all_total_tokens: 350,
+        all_thinking_tokens: 12,
         max_payload_bytes: 4096,
         payload_truncated_count: 1,
         retry_occurrences: 1,
@@ -106,7 +121,8 @@ RSpec.describe Llm::Monitoring::MetricsSnapshot do
         'llm.safety.blocked' => 1,
         'llm.schema.invalid' => 1,
         'llm.transcription.complete' => 1,
-        'llm.tool.complete' => 1
+        'llm.tool.complete' => 1,
+        'llm.zero_completion.recovered' => 1
       )
       expect(snapshot[:moderation_by_status]).to eq(
         'flagged' => 1,

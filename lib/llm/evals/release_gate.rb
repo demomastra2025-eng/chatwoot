@@ -7,12 +7,19 @@ class Llm::Evals::ReleaseGate
   DEFAULT_MAX_SCHEMA_INVALID_COUNT = 0
   DEFAULT_MAX_TOOL_FAILURE_COUNT = 0
   DEFAULT_MAX_NO_CONTENT_COUNT = 0
+  DEFAULT_MAX_ZERO_COMPLETION_COUNT = 0
   DEFAULT_MAX_CATALOG_STALE_COUNT = 0
   DEFAULT_MAX_CRITICAL_FAILURE_COUNT = 0
+  DEFAULT_MAX_DURATION_MS = nil
+  DEFAULT_MAX_ESTIMATED_COST = nil
   CATEGORY_MATCHERS = {
     schema_invalid: [/schema/i, /structured[\s_-]?output/i, /response_format/i, /json schema/i],
-    tool_failure: [/tool/i],
+    tool_failure: [
+      /tool[\s_-]?(failure|failures|failed|error|errors|timeout|timeouts|exception|exceptions)/i,
+      /(failure|failures|failed|error|errors|timeout|timeouts|exception|exceptions).*tool/i
+    ],
     no_content: [/no[\s_-]?content/i, /blank response/i, /empty response/i],
+    zero_completion: [/zero[\s_-]?completion/i, /no[\s_-]?final[\s_-]?answer/i, /finalization[\s_-]?only/i],
     catalog_stale: [/catalog/i, /stale/i],
     critical_failure: [/critical[\s_-]?failure/i, /\bcritical\b/i]
   }.freeze
@@ -20,6 +27,7 @@ class Llm::Evals::ReleaseGate
     [:schema_invalid_count, :max_schema_invalid_count, 'schema invalid eval cases'],
     [:tool_failure_count, :max_tool_failure_count, 'tool failure eval cases'],
     [:no_content_count, :max_no_content_count, 'no-content eval cases'],
+    [:zero_completion_count, :max_zero_completion_count, 'zero-completion eval cases'],
     [:catalog_stale_count, :max_catalog_stale_count, 'catalog stale eval cases'],
     [:critical_failure_count, :max_critical_failure_count, 'critical eval failures']
   ].freeze
@@ -33,8 +41,11 @@ class Llm::Evals::ReleaseGate
     @max_schema_invalid_count = normalized_limit(attributes, :max_schema_invalid_count, DEFAULT_MAX_SCHEMA_INVALID_COUNT)
     @max_tool_failure_count = normalized_limit(attributes, :max_tool_failure_count, DEFAULT_MAX_TOOL_FAILURE_COUNT)
     @max_no_content_count = normalized_limit(attributes, :max_no_content_count, DEFAULT_MAX_NO_CONTENT_COUNT)
+    @max_zero_completion_count = normalized_limit(attributes, :max_zero_completion_count, DEFAULT_MAX_ZERO_COMPLETION_COUNT)
     @max_catalog_stale_count = normalized_limit(attributes, :max_catalog_stale_count, DEFAULT_MAX_CATALOG_STALE_COUNT)
     @max_critical_failure_count = normalized_limit(attributes, :max_critical_failure_count, DEFAULT_MAX_CRITICAL_FAILURE_COUNT)
+    @max_duration_ms = normalized_optional_integer(attributes.fetch(:max_duration_ms, DEFAULT_MAX_DURATION_MS), 'max_duration_ms')
+    @max_estimated_cost = normalized_optional_float(attributes.fetch(:max_estimated_cost, DEFAULT_MAX_ESTIMATED_COST), 'max_estimated_cost')
   end
 
   def call
@@ -53,12 +64,13 @@ class Llm::Evals::ReleaseGate
 
   attr_reader :result, :required_pack_ids, :max_failed_count, :max_error_count, :min_pass_rate,
               :max_schema_invalid_count, :max_tool_failure_count, :max_no_content_count, :max_catalog_stale_count,
-              :max_critical_failure_count
+              :max_zero_completion_count, :max_critical_failure_count, :max_duration_ms, :max_estimated_cost
 
   def gate_failures
     failures = []
     failures.concat(count_failures)
     failures.concat(category_failures)
+    failures.concat(cost_duration_failures)
     failures.concat(required_pack_failures)
     failures
   end
@@ -80,6 +92,17 @@ class Llm::Evals::ReleaseGate
     end
   end
 
+  def cost_duration_failures
+    [].tap do |failures|
+      if max_duration_ms.present? && summary[:duration_ms].to_i > max_duration_ms
+        failures << "eval duration exceeded gate: #{summary[:duration_ms]} > #{max_duration_ms}"
+      end
+      if max_estimated_cost.present? && summary[:estimated_cost].to_f > max_estimated_cost
+        failures << "eval estimated cost exceeded gate: #{summary[:estimated_cost]} > #{max_estimated_cost}"
+      end
+    end
+  end
+
   def required_pack_failures
     missing_pack_ids = required_pack_ids - suite_ids
     return [] if missing_pack_ids.empty?
@@ -98,8 +121,11 @@ class Llm::Evals::ReleaseGate
       schema_invalid_count: category_count(:schema_invalid),
       tool_failure_count: category_count(:tool_failure),
       no_content_count: category_count(:no_content),
+      zero_completion_count: category_count(:zero_completion),
       catalog_stale_count: category_count(:catalog_stale),
-      critical_failure_count: category_count(:critical_failure)
+      critical_failure_count: category_count(:critical_failure),
+      duration_ms: aggregate_duration_ms,
+      estimated_cost: aggregate_estimated_cost
     }
   end
 
@@ -141,6 +167,27 @@ class Llm::Evals::ReleaseGate
       case_result[:expected],
       case_result[:actual]
     ].flatten.compact.map(&:to_s).join(' ')
+  end
+
+  def aggregate_duration_ms
+    direct_duration = integer_value(result_payload[:duration_ms])
+    return direct_duration if direct_duration
+
+    suites.sum do |suite|
+      integer_value(suite[:duration_ms]) ||
+        Array(suite[:cases]).sum { |case_result| integer_value(case_result.to_h[:duration_ms]) || 0 }
+    end
+  end
+
+  def aggregate_estimated_cost
+    direct_cost = decimal_value(result_payload[:estimated_cost])
+    return direct_cost if direct_cost
+
+    cost = suites.sum do |suite|
+      decimal_value(suite[:estimated_cost]) ||
+        Array(suite[:cases]).sum { |case_result| decimal_value(case_result.to_h.dig(:artifact, :usage, :estimated_cost)) || 0.0 }
+    end
+    cost.round(8)
   end
 
   def summary_total_count
@@ -189,6 +236,20 @@ class Llm::Evals::ReleaseGate
     raise ArgumentError, "#{name} must be a non-negative integer"
   end
 
+  def normalized_optional_integer(value, name)
+    return if value.blank?
+
+    normalize_non_negative_integer(value, name)
+  end
+
+  def normalized_optional_float(value, name)
+    return if value.blank?
+
+    Float(value)
+  rescue ArgumentError, TypeError
+    raise ArgumentError, "#{name} must be a number"
+  end
+
   def normalize_pass_rate(value)
     numeric_value = Float(value)
     return numeric_value if numeric_value.between?(0.0, 1.0)
@@ -196,5 +257,17 @@ class Llm::Evals::ReleaseGate
     raise ArgumentError
   rescue ArgumentError, TypeError
     raise ArgumentError, 'min_pass_rate must be a number between 0.0 and 1.0'
+  end
+
+  def integer_value(value)
+    Integer(value) if value.present?
+  rescue ArgumentError, TypeError
+    nil
+  end
+
+  def decimal_value(value)
+    Float(value) if value.present?
+  rescue ArgumentError, TypeError
+    nil
   end
 end

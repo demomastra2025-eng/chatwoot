@@ -3,14 +3,17 @@ const SENSITIVE_KEY_PATTERN =
 
 const STATUS_BY_EVENT = {
   start: 'start',
+  started: 'start',
   progress: 'progress',
   running: 'progress',
+  partial: 'progress',
   finish: 'finish',
   complete: 'finish',
   completed: 'finish',
   success: 'finish',
   failed: 'failed',
   error: 'failed',
+  suppressed: 'failed',
 };
 
 const HUMAN_KEY_LABELS = {
@@ -309,6 +312,28 @@ const stepToolCallId = step => {
 
 const isTerminalStatus = status => ['finish', 'failed'].includes(status);
 
+const canonicalToolCallContent = toolCall => {
+  const toolName = normalizedStepToolName(toolCall);
+  const status = stepStatus(toolCall);
+
+  if (status === 'finish') return `Completed ${toolName}`;
+  if (status === 'failed') return `Failed ${toolName}`;
+  if (status === 'start') return `Using ${toolName}`;
+  return `Running ${toolName}`;
+};
+
+const normalizeCanonicalToolCall = toolCall => ({
+  id: toolCall.id || toolCall.tool_call_id || toolCall.toolCallId,
+  content: toolCall.content || canonicalToolCallContent(toolCall),
+  tool_name: toolCall.tool_name || toolCall.toolName,
+  status: toolCall.status,
+  event: toolCall.event || toolCall.status,
+  input: toolCall.input,
+  output: toolCall.output,
+  error: toolCall.error,
+  tool_call_id: toolCall.tool_call_id || toolCall.toolCallId,
+});
+
 const createTraceGroup = (step, index) => ({
   id: step.id || `${normalizedStepToolName(step)}-${index}`,
   message: {
@@ -486,9 +511,17 @@ export const buildCaptainToolTraceMessages = (
 ) => {
   const captainTrace =
     additionalAttributes?.captainTrace || additionalAttributes?.captain_trace;
+  const toolCalls = captainTrace?.toolCalls || captainTrace?.tool_calls;
   const toolSteps = captainTrace?.toolSteps || captainTrace?.tool_steps;
   const reasoningMessage = buildReasoningTraceMessage(captainTrace, options);
   const messages = reasoningMessage ? [reasoningMessage] : [];
+
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+    messages.push(
+      ...buildGroupedToolTraceMessages(toolCalls.map(normalizeCanonicalToolCall))
+    );
+    return messages;
+  }
 
   if (Array.isArray(toolSteps) && toolSteps.length > 0) {
     messages.push(...buildGroupedToolTraceMessages(toolSteps));

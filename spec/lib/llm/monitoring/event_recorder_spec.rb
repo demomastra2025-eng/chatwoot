@@ -72,6 +72,36 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.reason).to eq('provider_not_configured')
     end
 
+    it 'persists flagged guardrail events without raw snippets' do
+      described_class.record_notification(
+        event_name: 'llm.safety.flagged',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'feature' => 'assistant',
+          'stage' => 'tool_results',
+          'reason' => 'sensitive_info',
+          'rule' => 'bearer_token',
+          'action' => 'flag',
+          'snippet_hash' => 'a' * 64
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.safety.flagged',
+        feature: 'assistant',
+        reason: 'sensitive_info',
+        blocked: false
+      )
+      expect(event.payload).to include(
+        'stage' => 'tool_results',
+        'action' => 'flag',
+        'snippet_hash' => 'a' * 64
+      )
+      expect(event.payload.to_json).not_to include('Bearer')
+    end
+
     it 'persists runtime retry events for blank-response recovery' do
       described_class.record_notification(
         event_name: 'llm.run.retry',
@@ -100,6 +130,104 @@ RSpec.describe Llm::Monitoring::EventRecorder do
         error: true
       )
       expect(event.payload).to include('attempt' => 1, 'max_attempts' => 1, 'retry_count' => 1)
+    end
+
+    it 'persists zero-completion recovery events for assistant observability' do
+      described_class.record_notification(
+        event_name: 'llm.zero_completion.recovered',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'runtime_mode' => 'captain_runtime',
+          'schema_name' => 'Captain::ResponseSchema',
+          'status' => 'recovered',
+          'reason' => 'Assistant runtime returned a blank response',
+          'recovery_kind' => 'finalization_only_retry',
+          'completed_tools_count' => 1,
+          'completed_tool_names' => ['create_deal']
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.zero_completion.recovered',
+        account_id: account.id,
+        feature: 'assistant',
+        runtime_mode: 'captain_runtime',
+        schema_name: 'Captain::ResponseSchema',
+        reason: 'Assistant runtime returned a blank response',
+        status: 'recovered'
+      )
+      expect(event.payload).to include(
+        'recovery_kind' => 'finalization_only_retry',
+        'completed_tools_count' => 1,
+        'completed_tool_names' => ['create_deal']
+      )
+    end
+
+    it 'persists context transform events for OpenRouter troubleshooting' do
+      described_class.record_notification(
+        event_name: 'llm.context_transform.applied',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'model' => 'openai/gpt-5.4-mini',
+          'provider' => 'openrouter',
+          'status' => 'applied',
+          'openrouter_context_transform_status' => 'applied',
+          'openrouter_context_transform_reason' => 'estimated_tokens_exceed_soft_context_limit',
+          'openrouter_context_estimated_tokens' => 90,
+          'openrouter_context_limit' => 100
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.context_transform.applied',
+        account_id: account.id,
+        feature: 'assistant',
+        provider: 'openrouter',
+        model: 'openai/gpt-5.4-mini',
+        status: 'applied'
+      )
+      expect(event.payload).to include(
+        'openrouter_context_transform_status' => 'applied',
+        'openrouter_context_transform_reason' => 'estimated_tokens_exceed_soft_context_limit',
+        'openrouter_context_estimated_tokens' => 90,
+        'openrouter_context_limit' => 100
+      )
+    end
+
+    it 'persists request compile timing as a local performance metric' do
+      described_class.record_notification(
+        event_name: 'llm.request.compile',
+        started_at: Time.zone.parse('2026-04-10 10:00:00'),
+        finished_at: Time.zone.parse('2026-04-10 10:00:00.045'),
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'captain_agent',
+          'provider' => 'openrouter',
+          'model' => 'openai/gpt-5.4-mini',
+          'status' => 'success',
+          'openrouter_require_parameters' => true
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.request.compile',
+        account_id: account.id,
+        feature: 'captain_agent',
+        provider: 'openrouter',
+        model: 'openai/gpt-5.4-mini',
+        status: 'success',
+        duration_ms: 45
+      )
+      expect(event.payload).to include('openrouter_require_parameters' => true)
     end
 
     it 'sanitizes persisted payload details before storing them in llm_events' do

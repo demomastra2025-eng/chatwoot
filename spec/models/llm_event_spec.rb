@@ -18,6 +18,9 @@ RSpec.describe LlmEvent do
     let!(:schema_event) do
       create(:llm_event, event_name: 'llm.schema.invalid', feature: 'editor', schema_invalid: true, account_id: 2)
     end
+    let!(:zero_completion_event) do
+      create(:llm_event, event_name: 'llm.zero_completion.recovered', feature: 'recovery', account_id: 1)
+    end
 
     it 'filters by account and feature' do
       expect(described_class.for_account(1).for_feature('assistant')).to contain_exactly(chat_event)
@@ -45,7 +48,9 @@ RSpec.describe LlmEvent do
     it 'filters by semantic event flag' do
       expect(described_class.for_flag('blocked')).to contain_exactly(blocked_event)
       expect(described_class.for_flag('schema_invalid')).to contain_exactly(schema_event)
-      expect(described_class.for_flag('unknown')).to include(chat_event, blocked_event, schema_event)
+      expect(described_class.for_flag('zero_completion')).to contain_exactly(zero_completion_event)
+      expect(described_class.for_flag('zero_completion_recovered')).to contain_exactly(zero_completion_event)
+      expect(described_class.for_flag('unknown')).to include(chat_event, blocked_event, schema_event, zero_completion_event)
     end
   end
 end

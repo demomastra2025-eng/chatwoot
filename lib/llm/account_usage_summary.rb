@@ -4,6 +4,14 @@ class Llm::AccountUsageSummary
   PROVIDER = 'openrouter'
   RECENT_ERROR_LIMIT = 5
   TOP_LIMIT = 5
+  HEALTH_WINDOW = 24.hours
+  SUCCESS_STATUSES = %w[success completed complete ok].freeze
+  ZERO_COMPLETION_EVENT_NAMES = %w[
+    llm.zero_completion.detected
+    llm.zero_completion.retry
+    llm.zero_completion.recovered
+    llm.zero_completion.failed
+  ].freeze
 
   def self.call(account:, at: Time.current)
     new(account: account, at: at).call
@@ -23,7 +31,8 @@ class Llm::AccountUsageSummary
       top_models: top_models,
       top_features: top_features,
       recent_errors: recent_errors,
-      runtime_health: runtime_health
+      runtime_health: runtime_health,
+      key_health: key_health
     }
   end
 
@@ -165,22 +174,101 @@ class Llm::AccountUsageSummary
   end
 
   def runtime_health
-    events = LlmEvent.for_account(account.id)
-                     .where(provider: PROVIDER)
-                     .for_date_range((at - 24.hours)..at)
+    events = runtime_events
+    usage = runtime_usage
+    total_events = events.count
+    error_count = runtime_error_events(events).count
+    schema_invalid_count = events.schema_invalid_events.count
+    tool_failure_count = events.tool_failure_events.count
+    zero_completion_count = events.where(event_name: ZERO_COMPLETION_EVENT_NAMES).count
+    zero_completion_recovered_count = events.where(event_name: 'llm.zero_completion.recovered').count
     {
-      window_hours: 24,
-      total_events: events.count,
-      error_count: events.error_events.count,
+      window_hours: (HEALTH_WINDOW / 1.hour).to_i,
+      total_events: total_events,
+      request_count: usage.count,
+      success_count: success_count(usage),
+      error_count: error_count,
+      error_rate: rate(error_count, total_events),
       retry_count: events.sum(:retry_count),
-      schema_invalid_count: events.schema_invalid_events.count,
-      tool_failure_count: events.tool_failure_events.count,
+      schema_invalid_count: schema_invalid_count,
+      schema_invalid_rate: rate(schema_invalid_count, total_events),
+      tool_failure_count: tool_failure_count,
+      tool_failure_rate: rate(tool_failure_count, total_events),
+      zero_completion_count: zero_completion_count,
+      zero_completion_recovered_count: zero_completion_recovered_count,
+      zero_completion_rate: rate(zero_completion_count, total_events),
+      fallback_model_count: fallback_model_count(usage),
+      p50_duration_ms: percentile_duration(usage, 0.50),
+      p95_duration_ms: percentile_duration(usage, 0.95),
       last_event_at: events.maximum(:created_at)&.iso8601
     }
   end
 
+  def key_health
+    metadata = Llm::OpenRouterKeyHealth.metadata.to_h.with_indifferent_access
+    credits = metadata[:credits].to_h.with_indifferent_access
+    {
+      status: metadata[:status],
+      configured: metadata[:configured],
+      checked_at: metadata[:checked_at],
+      source: metadata[:source],
+      credits_status: credits[:status],
+      credits_total: decimal_float(credits[:total_credits]),
+      credits_remaining: decimal_float(credits[:remaining_credits])
+    }.compact
+  rescue StandardError
+    { status: 'unavailable', configured: false }
+  end
+
   def usage_scope
     @usage_scope ||= Llm::UsageLedger.usage_scope(account: account, provider: PROVIDER)
+  end
+
+  def runtime_range
+    (at - HEALTH_WINDOW)..at
+  end
+
+  def runtime_events
+    LlmEvent.for_account(account.id)
+            .where(provider: PROVIDER)
+            .for_date_range(runtime_range)
+  end
+
+  def runtime_usage
+    usage_scope.for_date_range(runtime_range)
+  end
+
+  def runtime_error_events(events)
+    events
+      .where(error: true)
+      .or(events.where.not(error_code: [nil, '']))
+      .or(events.where(status: %w[error failed blocked]))
+  end
+
+  def success_count(scope)
+    scope.where(status: SUCCESS_STATUSES).where(error_code: [nil, '']).count
+  end
+
+  def fallback_model_count(scope)
+    scope
+      .where.not(requested_model: [nil, ''])
+      .where.not(actual_model: [nil, ''])
+      .where.not('requested_model = actual_model')
+      .count
+  end
+
+  def percentile_duration(scope, percentile)
+    durations = scope.where.not(duration_ms: nil).pluck(:duration_ms).map(&:to_i).sort
+    return if durations.blank?
+
+    index = ((durations.size - 1) * percentile).ceil
+    durations[index]
+  end
+
+  def rate(numerator, denominator)
+    return 0.0 if denominator.to_i.zero?
+
+    (numerator.to_f / denominator).round(4)
   end
 
   def decimal_value(value)

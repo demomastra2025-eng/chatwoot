@@ -1427,6 +1427,10 @@
         "OVERVIEW": "Overview",
         "EVENTS": "Events",
         "TRACES": "Traces",
+        "TOOLS": "Tools",
+        "MODELS_ROUTING": "Models & routing",
+        "GUARDRAILS": "Guardrails",
+        "COSTS": "Costs",
         "EVALUATIONS": "Evaluations"
       },
       "ACTIONS": {
@@ -1495,8 +1499,11 @@
         "BLOCKED": "Blocked",
         "AVG_LATENCY": "Avg latency",
         "ALL_TOKENS": "All tokens",
+        "REASONING_TOKENS": "Reasoning tokens",
         "ALL_COST": "All cost",
-        "MODERATION": "Moderation checks"
+        "MODERATION": "Moderation checks",
+        "ZERO_COMPLETION": "Recovered blank answers",
+        "CONTEXT_TRANSFORM": "Context compression"
       },
       "TRENDS": {
         "LATENCY_TITLE": "Latency over time",
@@ -1604,6 +1611,49 @@
           "EVENT": "Event"
         }
       },
+      "TOOLS": {
+        "TITLE": "Tool reliability",
+        "DESCRIPTION": "Tool calls, recoveries, and context transforms recorded for the selected period.",
+        "TOOL_CALLS": "Tool calls",
+        "TOOL_FAILURES": "Tool failures",
+        "ZERO_COMPLETION": "Answer recoveries",
+        "CONTEXT_TRANSFORMS": "Context transforms",
+        "EVENTS_TITLE": "Tool event types",
+        "EVENTS_DESCRIPTION": "Persisted OpenRouter and Captain events related to tool execution.",
+        "EMPTY": "No tool telemetry for this scope."
+      },
+      "MODELS_ROUTING": {
+        "REQUESTS": "Requests",
+        "PROVIDERS": "Providers",
+        "PROVIDER_FAILURES": "Provider failures",
+        "RETRIES": "Retries",
+        "MODELS_TITLE": "Models",
+        "MODELS_DESCRIPTION": "Most used OpenRouter models for the current filters.",
+        "PROVIDERS_TITLE": "Providers",
+        "PROVIDERS_DESCRIPTION": "Provider endpoints selected by OpenRouter routing.",
+        "EMPTY": "No model routing data yet."
+      },
+      "GUARDRAILS": {
+        "BLOCKED": "Blocked",
+        "FLAGGED": "Flagged",
+        "MODERATION": "Moderation",
+        "MODERATION_SKIPPED": "Moderation skipped",
+        "BLOCK_REASONS_TITLE": "Block reasons",
+        "BLOCK_REASONS_DESCRIPTION": "Local safety rules that blocked input, output, or tool payloads.",
+        "MODERATION_TITLE": "Moderation signals",
+        "MODERATION_DESCRIPTION": "Moderation categories and unavailable checks for the current scope.",
+        "EMPTY": "No guardrail signals for this scope."
+      },
+      "COSTS": {
+        "TOTAL_COST": "Total cost",
+        "TOTAL_TOKENS": "Total tokens",
+        "REASONING_TOKENS": "Reasoning tokens",
+        "PAYLOAD_TRUNCATED": "Payload truncations",
+        "BY_FEATURE": "By feature",
+        "BY_MODEL": "By model",
+        "BY_ASSISTANT": "By assistant",
+        "EMPTY": "No cost data for this scope."
+      },
       "EVALS": {
         "STATUS": "Report status",
         "TOTAL_CHECKS": "Checks",
@@ -1672,6 +1722,7 @@
         "TOOL_FAILURE": "Tool failure",
         "SCHEMA_INVALID": "Schema invalid",
         "MODERATION_SKIPPED": "Moderation skipped",
+        "ZERO_COMPLETION_RECOVERED": "Blank answer recovered",
         "ERROR": "Error",
         "NONE": "No flags"
       },
@@ -1727,7 +1778,11 @@
           "MODERATION_STAGE": "Moderation stage",
           "SAFETY_RULE": "Safety rule",
           "FAILURE_MODE": "Failure mode",
-          "FLAGGED_CATEGORIES": "Flagged categories"
+          "FLAGGED_CATEGORIES": "Flagged categories",
+          "RECOVERY_KIND": "Recovery kind",
+          "COMPLETED_TOOLS_COUNT": "Completed tools",
+          "CONTEXT_TRANSFORM_STATUS": "Context compression",
+          "CONTEXT_WINDOW": "Tokens / context window"
         },
         "ACTIONS": {
           "COPY_JSON": "Copy JSON",

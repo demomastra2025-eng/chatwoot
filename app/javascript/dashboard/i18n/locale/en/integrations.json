@@ -634,6 +634,7 @@
         "SCHEMA_INVALID": "Schema issues: {count}",
         "TOOL_FAILURE": "Tool failures: {count}",
         "NO_CONTENT": "No-content cases: {count}",
+        "ZERO_COMPLETION": "Recovered answers: {count}",
         "CATALOG_STALE": "Catalog freshness issues: {count}",
         "CRITICAL_FAILURE": "Critical failures: {count}"
       },
@@ -2331,6 +2332,10 @@
         "OVERVIEW": "Overview",
         "EVENTS": "Events",
         "TRACES": "Traces",
+        "TOOLS": "Tools",
+        "MODELS_ROUTING": "Models & routing",
+        "GUARDRAILS": "Guardrails",
+        "COSTS": "Costs",
         "EVALUATIONS": "Evaluations"
       },
       "ACTIONS": {
@@ -2399,8 +2404,11 @@
         "BLOCKED": "Blocked",
         "AVG_LATENCY": "Avg latency",
         "ALL_TOKENS": "All tokens",
+        "REASONING_TOKENS": "Reasoning tokens",
         "ALL_COST": "All cost",
-        "MODERATION": "Moderation checks"
+        "MODERATION": "Moderation checks",
+        "ZERO_COMPLETION": "Recovered blank answers",
+        "CONTEXT_TRANSFORM": "Context compression"
       },
       "TRENDS": {
         "LATENCY_TITLE": "Latency over time",
@@ -2517,6 +2525,49 @@
           "EVENT": "Event"
         }
       },
+      "TOOLS": {
+        "TITLE": "Tool reliability",
+        "DESCRIPTION": "Grouped traces, tool failures, and final-answer recovery in the current filtered window.",
+        "TOOL_CALLS": "Tool calls",
+        "TOOL_FAILURES": "Tool failures",
+        "ZERO_COMPLETION": "Answer recoveries",
+        "CONTEXT_TRANSFORMS": "Context transforms",
+        "EVENTS_TITLE": "Runtime events",
+        "EVENTS_DESCRIPTION": "Signals explaining tool loops, schema recovery, context transforms, and no-content recovery.",
+        "EMPTY": "No tool data for the selected scope."
+      },
+      "MODELS_ROUTING": {
+        "REQUESTS": "Requests",
+        "PROVIDERS": "Providers",
+        "PROVIDER_FAILURES": "Provider failures",
+        "RETRIES": "Retries",
+        "MODELS_TITLE": "Models",
+        "MODELS_DESCRIPTION": "Models actually used in the current filtered window.",
+        "PROVIDERS_TITLE": "Providers",
+        "PROVIDERS_DESCRIPTION": "OpenRouter/provider endpoint distribution across events.",
+        "EMPTY": "No model or provider data for the selected scope."
+      },
+      "GUARDRAILS": {
+        "BLOCKED": "Blocked",
+        "FLAGGED": "Flagged",
+        "MODERATION": "Moderation",
+        "MODERATION_SKIPPED": "Moderation skipped",
+        "BLOCK_REASONS_TITLE": "Block reasons",
+        "BLOCK_REASONS_DESCRIPTION": "Safety decisions without exposing source text or secrets.",
+        "MODERATION_TITLE": "Moderation and flags",
+        "MODERATION_DESCRIPTION": "Categories and reasons from local moderation/runtime policy.",
+        "EMPTY": "No guardrail events for the selected scope."
+      },
+      "COSTS": {
+        "TOTAL_COST": "Total cost",
+        "TOTAL_TOKENS": "All tokens",
+        "REASONING_TOKENS": "Reasoning tokens",
+        "PAYLOAD_TRUNCATED": "Truncated payloads",
+        "BY_FEATURE": "By feature",
+        "BY_MODEL": "By model",
+        "BY_ASSISTANT": "By assistant",
+        "EMPTY": "No cost data for the selected scope."
+      },
       "EVALS": {
         "STATUS": "Report status",
         "TOTAL_CHECKS": "Checks",
@@ -2566,6 +2617,7 @@
         "TOOL_FAILURE": "Tool failure",
         "SCHEMA_INVALID": "Schema invalid",
         "MODERATION_SKIPPED": "Moderation skipped",
+        "ZERO_COMPLETION_RECOVERED": "Blank answer recovered",
         "ERROR": "Error",
         "NONE": "No flags"
       },
@@ -2640,7 +2692,11 @@
           "MODERATION_STAGE": "Moderation stage",
           "SAFETY_RULE": "Safety rule",
           "FAILURE_MODE": "Failure mode",
-          "FLAGGED_CATEGORIES": "Flagged categories"
+          "FLAGGED_CATEGORIES": "Flagged categories",
+          "RECOVERY_KIND": "Recovery kind",
+          "COMPLETED_TOOLS_COUNT": "Completed tools",
+          "CONTEXT_TRANSFORM_STATUS": "Context compression",
+          "CONTEXT_WINDOW": "Tokens / context window"
         },
         "ACTIONS": {
           "COPY_JSON": "Copy JSON",

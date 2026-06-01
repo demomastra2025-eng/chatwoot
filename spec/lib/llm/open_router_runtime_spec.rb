@@ -14,6 +14,10 @@ RSpec.describe Llm::OpenRouterRuntime do
   end
 
   it 'runs chat requests through ChatRequestRunner with feature observability preserved' do
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.request.compile') do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
     schema = Class.new(RubyLLM::Schema) do
       string :message
     end
@@ -56,6 +60,15 @@ RSpec.describe Llm::OpenRouterRuntime do
     ).and_return(runner)
 
     expect(runtime.chat(request)).to eq(:response)
+    expect(events.last.payload).to include(
+      'status' => 'success',
+      'provider' => 'openrouter',
+      'feature' => 'captain_agent',
+      'requested_model' => 'openai/gpt-5.4-mini',
+      'openrouter_require_parameters' => true
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
   it 'blocks chat provider execution when the local account budget is exhausted' do

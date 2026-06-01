@@ -74,18 +74,30 @@ module Llm::Evals::OpenRouterContractPolicyChecks
     failures << 'Editor must keep plugins blocked by default' if editor.allowed_plugins.present?
     failures << 'Editor low-cost tier must compile to flex' unless editor.compiled_service_tier == 'flex'
     failures << 'Prompt injection must be locally enforced' unless captain.guardrails.dig(:prompt_injection, :status) == 'local_enforced'
+    failures << 'Extension registry must expose response recovery' unless extension_ids(captain).include?(RESPONSE_HEALING_PLUGIN_ID)
+    failures << 'Deferred web search marker missing' unless deferred_extension_ids.include?('openrouter:web-search')
 
     {
       captain: captain.to_h,
       editor: editor.to_h,
+      deferred_extensions: Llm::OpenRouterPluginPolicy.deferred_extensions,
       expected: {
         captain_server_tool: 'openrouter:datetime',
         captain_plugins: [RESPONSE_HEALING_PLUGIN_ID, 'context-compression'],
         editor_service_tier: 'flex',
-        prompt_injection: 'local_enforced'
+        prompt_injection: 'local_enforced',
+        deferred_extensions: ['openrouter:web-search']
       },
       failures: failures
     }
+  end
+
+  def extension_ids(policy)
+    Array(policy.to_h[:extensions]).pluck(:id)
+  end
+
+  def deferred_extension_ids
+    Llm::OpenRouterPluginPolicy.deferred_extensions.pluck(:id)
   end
 
   def routing_failures(exacto, auto)

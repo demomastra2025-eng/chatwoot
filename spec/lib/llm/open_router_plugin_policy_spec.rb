@@ -55,4 +55,51 @@ RSpec.describe Llm::OpenRouterPluginPolicy do
 
     expect(filtered).to contain_exactly(id: 'response-healing')
   end
+
+  it 'keeps unapproved OpenRouter plugins deferred and blocked even when runtime preferences request them' do
+    filtered = described_class.filter(
+      plugins: [{ id: 'pdf_inputs' }, { id: 'image_generation' }],
+      runtime_preferences: { openrouter_allowed_plugins: %w[pdf_inputs image_generation] }
+    )
+
+    expect(filtered).to be_empty
+    expect(described_class.deferred_extensions).to include(
+      include(
+        id: 'pdf-inputs',
+        status: 'deferred',
+        owner: 'ai-platform',
+        admin_availability: 'locked'
+      ),
+      include(
+        id: 'image-generation',
+        status: 'deferred',
+        owner: 'ai-platform',
+        admin_availability: 'locked'
+      )
+    )
+  end
+
+  it 'exposes product metadata for allowed extensions by feature' do
+    extensions = described_class.feature_extensions(:captain_agent)
+
+    expect(extensions).to include(
+      include(
+        id: 'response-healing',
+        product_label_key: 'structured_response_recovery',
+        risk_level: 'low',
+        default_mode: 'auto_for_non_streaming_structured_output'
+      ),
+      include(
+        id: 'context-compression',
+        product_label_key: 'long_context_protection',
+        risk_level: 'medium',
+        default_mode: 'overflow_only'
+      ),
+      include(
+        id: 'openrouter:datetime',
+        kind: 'server_tool',
+        product_label_key: 'system_time'
+      )
+    )
+  end
 end

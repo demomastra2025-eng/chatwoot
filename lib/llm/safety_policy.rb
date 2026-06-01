@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'digest'
+
 class Llm::SafetyPolicy
   CheckResult = Struct.new(:status, :feature, :stage, :reason, :rule, :moderation, keyword_init: true)
 
@@ -144,8 +146,15 @@ class Llm::SafetyPolicy
         stage: stage.to_sym,
         reason: match.guardrail.to_sym,
         rule: match.rule,
-        action: match.action
+        action: match.action,
+        snippet_hash: snippet_hash(match.snippet)
       )
+    end
+
+    def snippet_hash(snippet)
+      return if snippet.blank?
+
+      Digest::SHA256.hexdigest(snippet.to_s)
     end
 
     def raise_blocked!(feature:, stage:, reason:, rule: nil)

@@ -19,6 +19,9 @@ class Captain::Assistant::AgentRunnerService
     'Final assistant response failed after completed tool actions; ',
     'a deterministic tool-result fallback was used.'
   ].join.freeze
+  ZERO_COMPLETION_BLANK_RETRY = 'blank_response_retry'.freeze
+  ZERO_COMPLETION_FINALIZATION_RETRY = 'finalization_only_retry'.freeze
+  ZERO_COMPLETION_TOOL_RESULT_FALLBACK = 'tool_result_fallback'.freeze
 
   class BlankResponseError < StandardError; end
 
@@ -89,7 +92,11 @@ class Captain::Assistant::AgentRunnerService
   def retry_annotated_response(response, blank_response_retried)
     return response unless blank_response_retried
 
-    response.merge('blank_response_retry' => true)
+    response.merge(
+      'blank_response_retry' => true,
+      'zero_completion_recovered' => true,
+      'zero_completion_recovery_kind' => ZERO_COMPLETION_BLANK_RETRY
+    )
   end
 
   def run_agent(message_to_process, context, runtime_options: {})
@@ -136,6 +143,15 @@ class Captain::Assistant::AgentRunnerService
       status: 'retrying',
       reason: 'blank_response',
       error: true,
+      attempt: attempt,
+      max_attempts: MAX_BLANK_RESPONSE_RETRIES
+    )
+    publish_zero_completion_event(
+      'retry',
+      blank_response_error,
+      result.context,
+      status: 'retrying',
+      recovery_kind: ZERO_COMPLETION_BLANK_RETRY,
       attempt: attempt,
       max_attempts: MAX_BLANK_RESPONSE_RETRIES
     )
@@ -203,6 +219,9 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def native_reasoning_payload(message)
+    normalized = message_value(message, :native_reasoning)
+    return normalize_native_reasoning_payload(normalized) if normalized.present?
+
     text = native_reasoning_text(message)
     details = message_value(message, :reasoning_details)
     signature = message_value(message, :thinking_signature)
@@ -215,6 +234,22 @@ class Captain::Assistant::AgentRunnerService
       'signature' => signature.presence,
       'encrypted' => (true if encrypted),
       'source' => native_reasoning_source(message)
+    }.compact
+  end
+
+  def normalize_native_reasoning_payload(payload)
+    data = payload.respond_to?(:to_h) ? payload.to_h.with_indifferent_access : {}
+    text = data[:text].presence || data[:summary].presence || data[:reasoning].presence
+
+    {
+      'text' => text,
+      'summary' => data[:summary].presence || text,
+      'details' => data[:details].presence,
+      'signature' => data[:signature].presence,
+      'tokens' => data[:tokens].presence,
+      'encrypted' => (true if data[:encrypted]),
+      'source' => data[:source].presence || 'openrouter',
+      'visible_to_user' => data.key?(:visible_to_user) ? data[:visible_to_user] : false
     }.compact
   end
 
@@ -279,6 +314,8 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def final_error_response(error, context, handoff_tool_called: false)
+    publish_zero_completion_detected_event(error, context)
+
     finalization_response = finalization_only_retry_response(error, context, handoff_tool_called: handoff_tool_called)
     return finalization_response if finalization_response
 
@@ -290,16 +327,30 @@ class Captain::Assistant::AgentRunnerService
     return if @finalization_only_retry_in_progress
     return unless finalization_only_retry_eligible?(context)
 
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     publish_finalization_only_retry_event(error, context, status: 'retrying')
     @finalization_only_retry_in_progress = true
     response = process_agent_result(run_finalization_only_retry(context, error))
-    annotate_finalization_retry_response(response, handoff_tool_called: handoff_tool_called)
+    annotate_finalization_retry_response(response, handoff_tool_called: handoff_tool_called).tap do |annotated_response|
+      next unless finalization_retry_recovered?(annotated_response)
+
+      annotated_response['zero_completion_recovered'] = true
+      annotated_response['zero_completion_recovery_kind'] = ZERO_COMPLETION_FINALIZATION_RETRY
+      publish_zero_completion_event(
+        'recovered',
+        error,
+        context,
+        status: 'recovered',
+        recovery_kind: ZERO_COMPLETION_FINALIZATION_RETRY,
+        duration_ms: elapsed_ms(started_at)
+      )
+    end
   rescue StandardError => e
     Rails.logger.warn(
       "[Captain V2] Finalization-only retry failed for assistant=#{@assistant.id} " \
       "conversation=#{@conversation&.id}: #{e.class.name}: #{e.message}"
     )
-    publish_finalization_only_retry_event(error, context, status: 'failed', retry_error: e)
+    publish_finalization_only_retry_event(error, context, status: 'failed', retry_error: e, duration_ms: elapsed_ms(started_at))
     nil
   ensure
     @finalization_only_retry_in_progress = false
@@ -317,6 +368,13 @@ class Captain::Assistant::AgentRunnerService
     response['handoff_tool_called'] = true if handoff_tool_called
     response['finalization_only_retry'] = true
     response
+  end
+
+  def finalization_retry_recovered?(response)
+    response['response'].present? &&
+      response['response'] != PROVIDER_ERROR_RESPONSE &&
+      response['error_class'].blank? &&
+      response['tool_result_fallback'].blank?
   end
 
   def finalization_only_retry_eligible?(context)
@@ -355,7 +413,7 @@ class Captain::Assistant::AgentRunnerService
     )
   end
 
-  def publish_finalization_only_retry_event(error, context, status:, retry_error: nil)
+  def publish_finalization_only_retry_event(error, context, status:, retry_error: nil, duration_ms: nil)
     records = successful_non_handoff_tool_records(context)
     Llm::EventBus.publish(
       'schema.finalization_retry',
@@ -366,9 +424,26 @@ class Captain::Assistant::AgentRunnerService
       error_class: error.class.name,
       retry_error_class: retry_error&.class&.name,
       retry_error_message: retry_error&.message,
+      duration_ms: duration_ms,
       completed_tools_count: records.size,
       completed_tool_names: tool_result_counts(records).keys
     )
+    publish_zero_completion_event(
+      status == 'failed' ? 'failed' : 'retry',
+      error,
+      context,
+      status: status,
+      recovery_kind: ZERO_COMPLETION_FINALIZATION_RETRY,
+      retry_error_class: retry_error&.class&.name,
+      retry_error_message: retry_error&.message,
+      duration_ms: duration_ms
+    )
+  end
+
+  def elapsed_ms(started_at)
+    return if started_at.blank?
+
+    ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
   end
 
   def context_value(context, key)
@@ -391,6 +466,8 @@ class Captain::Assistant::AgentRunnerService
       'handoff_tool_called' => handoff_tool_called,
       'schema_fallback' => true,
       'tool_result_fallback' => true,
+      'zero_completion_recovered' => true,
+      'zero_completion_recovery_kind' => ZERO_COMPLETION_TOOL_RESULT_FALLBACK,
       'error_class' => error.class.name,
       'error_message' => error.message
     }
@@ -407,6 +484,41 @@ class Captain::Assistant::AgentRunnerService
       completed_tools_count: records.size,
       completed_tool_names: tool_result_counts(records).keys,
       fallback_kind: 'completed_tool_result_summary'
+    )
+    publish_zero_completion_event(
+      'recovered',
+      error,
+      context,
+      status: 'recovered',
+      recovery_kind: ZERO_COMPLETION_TOOL_RESULT_FALLBACK,
+      fallback_kind: 'completed_tool_result_summary'
+    )
+  end
+
+  def publish_zero_completion_detected_event(error, context)
+    return unless zero_completion_error?(error, context)
+
+    publish_zero_completion_event('detected', error, context, status: 'detected')
+  end
+
+  def zero_completion_error?(error, context)
+    error.is_a?(BlankResponseError) || successful_non_handoff_tool_records(context).present?
+  end
+
+  def publish_zero_completion_event(event, error, context, status:, recovery_kind: nil, **extra_payload)
+    records = successful_non_handoff_tool_records(context)
+    Llm::EventBus.publish(
+      "zero_completion.#{event}",
+      {
+        schema_name: Captain::ResponseSchema.name,
+        current_agent: context_value(context, :current_agent),
+        status: status,
+        reason: error.message,
+        error_class: error.class.name,
+        recovery_kind: recovery_kind,
+        completed_tools_count: records.size,
+        completed_tool_names: tool_result_counts(records).keys
+      }.merge(extra_payload).compact
     )
   end
 

@@ -4,7 +4,10 @@ require 'rails_helper'
 
 RSpec.describe Llm::ModerationService do
   describe '.check!' do
-    let(:moderation_result) { instance_double(RubyLLM::Moderation, flagged?: false) }
+    let(:chat) { instance_double(RubyLLM::Chat) }
+    let(:model) { 'openai/gpt-oss-safeguard-20b' }
+    let(:response_payload) { { 'flagged' => false, 'categories' => [], 'reason' => 'safe' } }
+    let(:response) { instance_double(RubyLLM::Message, content: response_payload) }
     let(:events) { [] }
     let(:subscriber) do
       ActiveSupport::Notifications.subscribe(/llm\.(moderation|safety)\./) do |*args|
@@ -17,10 +20,19 @@ RSpec.describe Llm::ModerationService do
       allow(Llm::RuntimePolicy).to receive(:moderation_enabled?).and_return(true)
       allow(Llm::RuntimePolicy).to receive(:fail_closed_moderation?).and_return(false)
       allow(Llm::RuntimePolicy).to receive(:moderation_failure_mode).and_return('fail_open')
-      allow(Llm::Config).to receive(:api_key).with('openai').and_return('openai-key')
-      allow(Llm::Config).to receive(:moderation_model).and_return('omni-moderation-latest')
-      allow(Llm::Config).to receive(:moderation_provider).and_return('openai')
-      allow(Llm::ApiClient).to receive(:moderate).and_return(moderation_result)
+      allow(Llm::Config).to receive(:api_key).with('openrouter').and_return('openrouter-key')
+      allow(Llm::Config).to receive(:moderation_model).and_return(model)
+      allow(Llm::Config).to receive(:provider_for_model).with(model, account: nil).and_return('openrouter')
+      allow(Llm::OpenRouterModelMigration).to receive(:resolve).and_return(model)
+      allow(Llm::Models).to receive(:supports_structured_output?).with(model).and_return(true)
+      allow(Llm::Runtime).to receive(:build_chat).with(
+        feature: :moderation,
+        account: nil,
+        model: model,
+        options: { temperature: 0 }
+      ).and_return(chat)
+      allow(Llm::StructuredOutputPolicy).to receive(:bind!).with(chat: chat, schema: kind_of(Hash)).and_return(chat)
+      allow(Llm::Runtime).to receive(:ask).and_return(response)
     end
 
     after do
@@ -33,9 +45,9 @@ RSpec.describe Llm::ModerationService do
       expect(result.status).to eq(:allowed)
       expect(result.feature).to eq(:assistant)
       expect(result.stage).to eq(:input)
-      expect(result.provider).to eq('openai')
-      expect(result.model).to eq('omni-moderation-latest')
-      expect(result.result).to eq(moderation_result)
+      expect(result.provider).to eq('openrouter')
+      expect(result.model).to eq(model)
+      expect(result.result).not_to be_flagged
       expect(events.last.name).to eq('llm.moderation.complete')
       expect(events.last.payload).to include(
         'status' => :allowed,
@@ -45,27 +57,12 @@ RSpec.describe Llm::ModerationService do
     end
 
     it 'uses an OpenRouter guard chat model instead of the OpenAI moderation endpoint when OpenRouter is selected' do
-      chat = instance_double(RubyLLM::Chat)
-      response = instance_double(RubyLLM::Message, content: { 'flagged' => false, 'categories' => [], 'reason' => 'safe' })
-
-      allow(Llm::Config).to receive(:moderation_provider).and_return('openrouter')
-      allow(Llm::Config).to receive(:moderation_model).and_return('openai/gpt-oss-safeguard-20b')
-      allow(Llm::Config).to receive(:api_key).with('openrouter').and_return('[REDACTED]')
-      allow(Llm::Models).to receive(:supports_structured_output?).with('openai/gpt-oss-safeguard-20b').and_return(true)
-      allow(Llm::Runtime).to receive(:build_chat).with(
-        feature: :moderation,
-        account: nil,
-        model: 'openai/gpt-oss-safeguard-20b',
-        options: { temperature: 0 }
-      ).and_return(chat)
-      allow(Llm::StructuredOutputPolicy).to receive(:bind!).with(chat: chat, schema: kind_of(Hash)).and_return(chat)
-
       expect(Llm::ApiClient).not_to receive(:moderate)
       expect(Llm::Runtime).to receive(:ask).with(
         chat,
         include('Content:', 'Hello'),
         hash_including(
-          observability: hash_including(provider: 'openrouter', model: 'openai/gpt-oss-safeguard-20b')
+          observability: hash_including(provider: 'openrouter', model: model)
         )
       ).and_return(response)
 
@@ -77,7 +74,7 @@ RSpec.describe Llm::ModerationService do
     end
 
     it 'returns a skipped result when moderation is unavailable in fail_open mode' do
-      allow(Llm::Config).to receive(:api_key).with('openai').and_return(nil)
+      allow(Llm::Config).to receive(:api_key).with('openrouter').and_return(nil)
 
       result = described_class.check!(feature: :assistant, stage: :input, content: 'Hello')
 
@@ -91,7 +88,7 @@ RSpec.describe Llm::ModerationService do
     end
 
     it 'raises when moderation is unavailable in fail_closed mode' do
-      allow(Llm::Config).to receive(:api_key).with('openai').and_return(nil)
+      allow(Llm::Config).to receive(:api_key).with('openrouter').and_return(nil)
       allow(Llm::RuntimePolicy).to receive(:fail_closed_moderation?).and_return(true)
       allow(Llm::RuntimePolicy).to receive(:moderation_failure_mode).and_return('fail_closed')
 
@@ -106,7 +103,9 @@ RSpec.describe Llm::ModerationService do
     end
 
     it 'raises when moderation flags the content' do
-      allow(moderation_result).to receive(:flagged?).and_return(true)
+      allow(response).to receive(:content).and_return(
+        { 'flagged' => true, 'categories' => ['violence'], 'reason' => 'unsafe' }
+      )
 
       expect do
         described_class.check!(feature: :assistant, stage: :output, content: 'Hello')
@@ -125,11 +124,10 @@ RSpec.describe Llm::ModerationService do
         ]
       )
 
-      expect(Llm::ApiClient).to have_received(:moderate).with(
-        'Look here',
-        context: anything,
-        model: 'omni-moderation-latest',
-        provider: 'openai'
+      expect(Llm::Runtime).to have_received(:ask).with(
+        chat,
+        include('Content:', 'Look here'),
+        hash_including(observability: hash_including(provider: 'openrouter', model: model))
       )
     end
   end

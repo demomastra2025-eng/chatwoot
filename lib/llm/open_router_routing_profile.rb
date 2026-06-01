@@ -2,9 +2,22 @@
 
 class Llm::OpenRouterRoutingProfile
   RESPONSE_HEALING_PLUGIN_ID = 'response-healing'
+  BALANCED_STRATEGY = 'balanced'
   EXACTO_STRATEGY = 'exacto'
   AUTO_EXACTO_STRATEGY = 'auto_exacto'
-  ROUTING_STRATEGIES = [EXACTO_STRATEGY, AUTO_EXACTO_STRATEGY].freeze
+  LOW_LATENCY_STRATEGY = 'low_latency'
+  LOW_COST_STRATEGY = 'low_cost'
+  STRICT_TOOLS_STRATEGY = 'strict_tools'
+  ZDR_STRICT_STRATEGY = 'zdr_strict'
+  ROUTING_STRATEGIES = [
+    BALANCED_STRATEGY,
+    EXACTO_STRATEGY,
+    AUTO_EXACTO_STRATEGY,
+    LOW_LATENCY_STRATEGY,
+    LOW_COST_STRATEGY,
+    STRICT_TOOLS_STRATEGY,
+    ZDR_STRICT_STRATEGY
+  ].freeze
   ROUTING_STRATEGY_KEYS = %w[openrouter_routing_strategy routing_strategy].freeze
   PROVIDER_ORDER_KEYS = %w[openrouter_provider_order provider_order].freeze
   PROVIDER_RUNTIME_PREFERENCE_KEYS = {
@@ -118,7 +131,12 @@ class Llm::OpenRouterRoutingProfile
       provider_order: provider_order.presence,
       allow_fallbacks: provider_preferences[:allow_fallbacks],
       require_parameters: provider_preferences[:require_parameters],
-      sort: provider_preferences[:sort]
+      sort: provider_preferences[:sort],
+      preferred_min_throughput: provider_preferences[:preferred_min_throughput],
+      preferred_max_latency: provider_preferences[:preferred_max_latency],
+      max_price: provider_preferences[:max_price],
+      data_collection: provider_preferences[:data_collection],
+      zdr: provider_preferences[:zdr]
     }.compact
   end
 
@@ -208,6 +226,18 @@ class Llm::OpenRouterRoutingProfile
       return provider_preferences if order.blank?
 
       provider_preferences.except(:sort).merge(order: order, allow_fallbacks: true)
+    when LOW_LATENCY_STRATEGY
+      provider_preferences.merge(sort: { by: 'latency', partition: 'none' })
+    when LOW_COST_STRATEGY
+      provider_preferences.merge(sort: { by: 'price', partition: 'none' })
+    when STRICT_TOOLS_STRATEGY
+      provider_preferences.except(:sort).merge(require_parameters: true)
+    when ZDR_STRICT_STRATEGY
+      provider_preferences.except(:sort).merge(
+        data_collection: 'deny',
+        zdr: true,
+        allow_fallbacks: false
+      )
     else
       order.present? ? provider_preferences.merge(order: order) : provider_preferences
     end

@@ -80,11 +80,12 @@ RSpec.describe Captain::Llm::EmbeddingService do
         .to raise_error(described_class::EmbeddingsError, /Failed to create an embedding: OpenRouter embedding failed: bad model/)
     end
 
-    it 'wraps non-OpenRouter provider configuration errors as embedding errors' do
+    it 'does not fall back to direct provider embedding APIs for legacy model ids' do
       allow(Llm::Config).to receive(:provider_for_model).and_call_original
       allow(Llm::Config).to receive(:provider_for_model).with(anything, account: anything).and_return('openai')
-      allow(Llm::ApiClient).to receive(:embed).and_raise(RubyLLM::ConfigurationError, 'Missing configuration for OpenAI: openai_api_key')
+      allow(Llm::Runtime).to receive(:embed).and_raise(RubyLLM::ConfigurationError, 'OpenRouter API key is not configured')
 
+      expect(Llm::ApiClient).not_to receive(:embed)
       expect(Llm::OpenRouterEmbeddingClient).not_to receive(:embed)
       expect { service.get_embedding('hello', model: 'gpt-4.1') }
         .to raise_error(described_class::EmbeddingsError, /Failed to create an embedding/)

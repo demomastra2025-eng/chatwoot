@@ -31,6 +31,10 @@ const TABS = Object.freeze([
   { id: 'overview', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.OVERVIEW' },
   { id: 'events', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.EVENTS' },
   { id: 'traces', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.TRACES' },
+  { id: 'tools', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.TOOLS' },
+  { id: 'models', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.MODELS_ROUTING' },
+  { id: 'guardrails', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.GUARDRAILS' },
+  { id: 'costs', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.COSTS' },
   { id: 'evaluations', labelKey: 'CAPTAIN.OBSERVABILITY.TABS.EVALUATIONS' },
 ]);
 
@@ -265,6 +269,10 @@ const flagOptions = computed(() => [
     value: 'moderation_skipped',
     label: t('CAPTAIN.OBSERVABILITY.FLAGS.MODERATION_SKIPPED'),
   },
+  {
+    value: 'zero_completion_recovered',
+    label: t('CAPTAIN.OBSERVABILITY.FLAGS.ZERO_COMPLETION_RECOVERED'),
+  },
 ]);
 
 const tabOptions = computed(() =>
@@ -322,6 +330,9 @@ const topModelDistribution = computed(() =>
 );
 const topProviderDistribution = computed(() =>
   buildDistribution(overview.snapshot.by_provider)
+);
+const eventNameDistribution = computed(() =>
+  buildDistribution(overview.snapshot.by_event_name)
 );
 const moderationStageDistribution = computed(() =>
   buildDistribution(overview.snapshot.moderation_by_stage)
@@ -429,6 +440,12 @@ const overviewMetrics = computed(() => {
       tone: 'text-n-iris-11',
     },
     {
+      key: 'reasoning_tokens',
+      label: t('CAPTAIN.OBSERVABILITY.METRICS.REASONING_TOKENS'),
+      value: formatInteger(snapshot.all_thinking_tokens),
+      tone: 'text-n-violet-11',
+    },
+    {
       key: 'cost',
       label: t('CAPTAIN.OBSERVABILITY.METRICS.ALL_COST'),
       value: formatCurrency(snapshot.total_estimated_cost),
@@ -439,6 +456,138 @@ const overviewMetrics = computed(() => {
       label: t('CAPTAIN.OBSERVABILITY.METRICS.MODERATION'),
       value: formatInteger(snapshot.moderation_count),
       tone: 'text-n-slate-12',
+    },
+    {
+      key: 'zero_completion',
+      label: t('CAPTAIN.OBSERVABILITY.METRICS.ZERO_COMPLETION'),
+      value: formatInteger(snapshot.zero_completion_recovered_count),
+      tone: 'text-n-amber-11',
+    },
+    {
+      key: 'context_transform',
+      label: t('CAPTAIN.OBSERVABILITY.METRICS.CONTEXT_TRANSFORM'),
+      value: formatInteger(snapshot.context_transform_applied_count),
+      tone: 'text-n-sky-11',
+    },
+  ];
+});
+const toolReliabilityMetrics = computed(() => {
+  const snapshot = overview.snapshot || {};
+
+  return [
+    {
+      key: 'tool_calls',
+      label: t('CAPTAIN.OBSERVABILITY.TOOLS.TOOL_CALLS'),
+      value: formatInteger(snapshot.tool_call_occurrences),
+      tone: 'text-n-slate-12',
+    },
+    {
+      key: 'tool_failures',
+      label: t('CAPTAIN.OBSERVABILITY.TOOLS.TOOL_FAILURES'),
+      value: formatInteger(snapshot.tool_failure_count),
+      tone: 'text-n-ruby-11',
+    },
+    {
+      key: 'zero_completion',
+      label: t('CAPTAIN.OBSERVABILITY.TOOLS.ZERO_COMPLETION'),
+      value: formatInteger(snapshot.zero_completion_recovered_count),
+      tone: 'text-n-amber-11',
+    },
+    {
+      key: 'context_transform',
+      label: t('CAPTAIN.OBSERVABILITY.TOOLS.CONTEXT_TRANSFORMS'),
+      value: formatInteger(snapshot.context_transform_applied_count),
+      tone: 'text-n-sky-11',
+    },
+  ];
+});
+const modelRoutingMetrics = computed(() => {
+  const snapshot = overview.snapshot || {};
+
+  return [
+    {
+      key: 'requests',
+      label: t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.REQUESTS'),
+      value: formatInteger(snapshot.request_count),
+      tone: 'text-n-brand',
+    },
+    {
+      key: 'providers',
+      label: t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.PROVIDERS'),
+      value: formatInteger(topProviderDistribution.value.length),
+      tone: 'text-n-slate-12',
+    },
+    {
+      key: 'provider_failures',
+      label: t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.PROVIDER_FAILURES'),
+      value: formatInteger(snapshot.provider_failure_count),
+      tone: 'text-n-ruby-11',
+    },
+    {
+      key: 'retries',
+      label: t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.RETRIES'),
+      value: formatInteger(snapshot.retry_occurrences),
+      tone: 'text-n-amber-11',
+    },
+  ];
+});
+const guardrailMetrics = computed(() => {
+  const snapshot = overview.snapshot || {};
+
+  return [
+    {
+      key: 'blocked',
+      label: t('CAPTAIN.OBSERVABILITY.GUARDRAILS.BLOCKED'),
+      value: formatInteger(snapshot.blocked_count),
+      tone: 'text-n-amber-11',
+    },
+    {
+      key: 'flagged',
+      label: t('CAPTAIN.OBSERVABILITY.GUARDRAILS.FLAGGED'),
+      value: formatInteger(snapshot.guardrail_flagged_count),
+      tone: 'text-n-sky-11',
+    },
+    {
+      key: 'moderation',
+      label: t('CAPTAIN.OBSERVABILITY.GUARDRAILS.MODERATION'),
+      value: formatInteger(snapshot.moderation_count),
+      tone: 'text-n-slate-12',
+    },
+    {
+      key: 'moderation_skipped',
+      label: t('CAPTAIN.OBSERVABILITY.GUARDRAILS.MODERATION_SKIPPED'),
+      value: formatInteger(snapshot.moderation_skipped_count),
+      tone: 'text-n-ruby-11',
+    },
+  ];
+});
+const costMetrics = computed(() => {
+  const snapshot = overview.snapshot || {};
+
+  return [
+    {
+      key: 'cost',
+      label: t('CAPTAIN.OBSERVABILITY.COSTS.TOTAL_COST'),
+      value: formatCurrency(snapshot.total_estimated_cost),
+      tone: 'text-n-teal-11',
+    },
+    {
+      key: 'tokens',
+      label: t('CAPTAIN.OBSERVABILITY.COSTS.TOTAL_TOKENS'),
+      value: formatInteger(snapshot.all_total_tokens),
+      tone: 'text-n-iris-11',
+    },
+    {
+      key: 'reasoning',
+      label: t('CAPTAIN.OBSERVABILITY.COSTS.REASONING_TOKENS'),
+      value: formatInteger(snapshot.all_thinking_tokens),
+      tone: 'text-n-violet-11',
+    },
+    {
+      key: 'payload',
+      label: t('CAPTAIN.OBSERVABILITY.COSTS.PAYLOAD_TRUNCATED'),
+      value: formatInteger(snapshot.payload_truncated_count),
+      tone: 'text-n-amber-11',
     },
   ];
 });
@@ -1041,6 +1190,14 @@ function tabLabel(tabId) {
       return t('CAPTAIN.OBSERVABILITY.TABS.EVENTS');
     case 'traces':
       return t('CAPTAIN.OBSERVABILITY.TABS.TRACES');
+    case 'tools':
+      return t('CAPTAIN.OBSERVABILITY.TABS.TOOLS');
+    case 'models':
+      return t('CAPTAIN.OBSERVABILITY.TABS.MODELS_ROUTING');
+    case 'guardrails':
+      return t('CAPTAIN.OBSERVABILITY.TABS.GUARDRAILS');
+    case 'costs':
+      return t('CAPTAIN.OBSERVABILITY.TABS.COSTS');
     case 'evaluations':
       return t('CAPTAIN.OBSERVABILITY.TABS.EVALUATIONS');
     default:
@@ -1633,6 +1790,9 @@ function eventFlags(event) {
       : null,
     event.moderation_skipped
       ? t('CAPTAIN.OBSERVABILITY.FLAGS.MODERATION_SKIPPED')
+      : null,
+    event.zero_completion_recovered
+      ? t('CAPTAIN.OBSERVABILITY.FLAGS.ZERO_COMPLETION_RECOVERED')
       : null,
     event.error ? t('CAPTAIN.OBSERVABILITY.FLAGS.ERROR') : null,
   ].filter(Boolean);
@@ -3563,7 +3723,369 @@ onMounted(async () => {
         </section>
       </div>
 
-      <div v-else class="grid gap-6">
+      <div v-else-if="activeTab === 'tools'" class="grid gap-6">
+        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <article
+            v-for="metric in toolReliabilityMetrics"
+            :key="metric.key"
+            class="rounded-2xl border border-n-weak bg-n-solid-1 p-4"
+          >
+            <div
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+            >
+              {{ metric.label }}
+            </div>
+            <div class="mt-3 text-2xl font-semibold" :class="metric.tone">
+              {{ metric.value }}
+            </div>
+          </article>
+        </section>
+
+        <section class="grid gap-6 lg:grid-cols-2">
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.TOOLS.TITLE') }}
+            </h2>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ t('CAPTAIN.OBSERVABILITY.TOOLS.DESCRIPTION') }}
+            </p>
+            <div class="mt-4 grid gap-3">
+              <div
+                v-for="group in traceGroups.slice(0, 8)"
+                :key="`tool-trace-${group.id}`"
+                class="rounded-xl border border-n-weak bg-n-alpha-2 p-4"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-medium text-n-slate-12">
+                      {{ group.label }}
+                    </div>
+                    <div class="mt-1 text-xs text-n-slate-10">
+                      {{
+                        t('CAPTAIN.OBSERVABILITY.TRACES.METRICS.EVENTS', {
+                          count: formatInteger(group.eventCount),
+                        })
+                      }}
+                    </div>
+                  </div>
+                  <span
+                    class="rounded-full bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
+                  >
+                    {{
+                      t('CAPTAIN.OBSERVABILITY.TRACES.DURATION', {
+                        duration: formatDuration(group.durationMs),
+                      })
+                    }}
+                  </span>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <span
+                    v-for="reason in group.reasons"
+                    :key="`tool-reason-${group.id}-${reason.label}`"
+                    class="rounded-full bg-n-ruby-3 px-2.5 py-1 text-xs text-n-ruby-11"
+                  >
+                    {{ formattedTraceReason(reason) }}
+                  </span>
+                  <span
+                    v-if="group.reasons.length === 0"
+                    class="rounded-full bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
+                  >
+                    {{ t('CAPTAIN.OBSERVABILITY.TRACES.WHY_NO_REASONS') }}
+                  </span>
+                </div>
+              </div>
+              <div
+                v-if="traceGroups.length === 0"
+                class="rounded-xl bg-n-alpha-2 p-4 text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.TOOLS.EMPTY') }}
+              </div>
+            </div>
+          </article>
+
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.TOOLS.EVENTS_TITLE') }}
+            </h2>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ t('CAPTAIN.OBSERVABILITY.TOOLS.EVENTS_DESCRIPTION') }}
+            </p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span
+                v-for="[name, count] in eventNameDistribution"
+                :key="`tool-event-${name}`"
+                class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                {{ `${name || t('GENERAL.NONE')} (${formatInteger(count)})` }}
+              </span>
+              <span
+                v-if="eventNameDistribution.length === 0"
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.TOOLS.EMPTY') }}
+              </span>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <div v-else-if="activeTab === 'models'" class="grid gap-6">
+        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <article
+            v-for="metric in modelRoutingMetrics"
+            :key="metric.key"
+            class="rounded-2xl border border-n-weak bg-n-solid-1 p-4"
+          >
+            <div
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+            >
+              {{ metric.label }}
+            </div>
+            <div class="mt-3 text-2xl font-semibold" :class="metric.tone">
+              {{ metric.value }}
+            </div>
+          </article>
+        </section>
+
+        <section class="grid gap-6 lg:grid-cols-2">
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.MODELS_TITLE') }}
+            </h2>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.MODELS_DESCRIPTION') }}
+            </p>
+            <div class="mt-4 grid gap-3">
+              <div
+                v-for="[name, count] in topModelDistribution"
+                :key="`routing-model-${name}`"
+                class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-2 p-3"
+              >
+                <span class="truncate text-sm font-medium text-n-slate-12">
+                  {{ name || t('GENERAL.NONE') }}
+                </span>
+                <span class="shrink-0 text-xs text-n-slate-11">
+                  {{ formatInteger(count) }}
+                </span>
+              </div>
+              <div
+                v-if="topModelDistribution.length === 0"
+                class="rounded-xl bg-n-alpha-2 p-4 text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.EMPTY') }}
+              </div>
+            </div>
+          </article>
+
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.PROVIDERS_TITLE') }}
+            </h2>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{
+                t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.PROVIDERS_DESCRIPTION')
+              }}
+            </p>
+            <div class="mt-4 grid gap-3">
+              <div
+                v-for="[name, count] in topProviderDistribution"
+                :key="`routing-provider-${name}`"
+                class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-2 p-3"
+              >
+                <span class="truncate text-sm font-medium text-n-slate-12">
+                  {{ name || t('GENERAL.NONE') }}
+                </span>
+                <span class="shrink-0 text-xs text-n-slate-11">
+                  {{ formatInteger(count) }}
+                </span>
+              </div>
+              <div
+                v-if="topProviderDistribution.length === 0"
+                class="rounded-xl bg-n-alpha-2 p-4 text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.MODELS_ROUTING.EMPTY') }}
+              </div>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <div v-else-if="activeTab === 'guardrails'" class="grid gap-6">
+        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <article
+            v-for="metric in guardrailMetrics"
+            :key="metric.key"
+            class="rounded-2xl border border-n-weak bg-n-solid-1 p-4"
+          >
+            <div
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+            >
+              {{ metric.label }}
+            </div>
+            <div class="mt-3 text-2xl font-semibold" :class="metric.tone">
+              {{ metric.value }}
+            </div>
+          </article>
+        </section>
+
+        <section class="grid gap-6 lg:grid-cols-2">
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.GUARDRAILS.BLOCK_REASONS_TITLE') }}
+            </h2>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{
+                t('CAPTAIN.OBSERVABILITY.GUARDRAILS.BLOCK_REASONS_DESCRIPTION')
+              }}
+            </p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span
+                v-for="[name, count] in blockedReasonDistribution"
+                :key="`guardrail-block-${name}`"
+                class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                {{
+                  `${humanizeIdentifier(name) || t('GENERAL.NONE')} (${formatInteger(count)})`
+                }}
+              </span>
+              <span
+                v-if="blockedReasonDistribution.length === 0"
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.GUARDRAILS.EMPTY') }}
+              </span>
+            </div>
+          </article>
+
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.GUARDRAILS.MODERATION_TITLE') }}
+            </h2>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ t('CAPTAIN.OBSERVABILITY.GUARDRAILS.MODERATION_DESCRIPTION') }}
+            </p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span
+                v-for="[name, count] in flaggedCategoryDistribution"
+                :key="`guardrail-flag-${name}`"
+                class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                {{
+                  `${humanizeIdentifier(name) || t('GENERAL.NONE')} (${formatInteger(count)})`
+                }}
+              </span>
+              <span
+                v-for="[name, count] in moderationReasonDistribution"
+                :key="`guardrail-moderation-${name}`"
+                class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                {{
+                  `${humanizeIdentifier(name) || t('GENERAL.NONE')} (${formatInteger(count)})`
+                }}
+              </span>
+              <span
+                v-if="
+                  flaggedCategoryDistribution.length === 0 &&
+                  moderationReasonDistribution.length === 0
+                "
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.GUARDRAILS.EMPTY') }}
+              </span>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <div v-else-if="activeTab === 'costs'" class="grid gap-6">
+        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <article
+            v-for="metric in costMetrics"
+            :key="metric.key"
+            class="rounded-2xl border border-n-weak bg-n-solid-1 p-4"
+          >
+            <div
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+            >
+              {{ metric.label }}
+            </div>
+            <div class="mt-3 text-2xl font-semibold" :class="metric.tone">
+              {{ metric.value }}
+            </div>
+          </article>
+        </section>
+
+        <section class="grid gap-6 lg:grid-cols-3">
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.COSTS.BY_FEATURE') }}
+            </h2>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span
+                v-for="[name, amount] in topFeatureCostDistribution"
+                :key="`cost-feature-${name}`"
+                class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                {{ `${name || t('GENERAL.NONE')} (${formatCurrency(amount)})` }}
+              </span>
+              <span
+                v-if="topFeatureCostDistribution.length === 0"
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.COSTS.EMPTY') }}
+              </span>
+            </div>
+          </article>
+
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.COSTS.BY_MODEL') }}
+            </h2>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span
+                v-for="[name, amount] in topModelCostDistribution"
+                :key="`cost-model-${name}`"
+                class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                {{ `${name || t('GENERAL.NONE')} (${formatCurrency(amount)})` }}
+              </span>
+              <span
+                v-if="topModelCostDistribution.length === 0"
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.COSTS.EMPTY') }}
+              </span>
+            </div>
+          </article>
+
+          <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
+            <h2 class="text-base font-medium text-n-slate-12">
+              {{ t('CAPTAIN.OBSERVABILITY.COSTS.BY_ASSISTANT') }}
+            </h2>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span
+                v-for="[assistantId, amount] in topAssistantCostDistribution"
+                :key="`cost-assistant-${assistantId}`"
+                class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                {{
+                  `${t(
+                    'CAPTAIN.OBSERVABILITY.COST_BREAKDOWN.ASSISTANT_LABEL'
+                  )} ${assistantId} (${formatCurrency(amount)})`
+                }}
+              </span>
+              <span
+                v-if="topAssistantCostDistribution.length === 0"
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.COSTS.EMPTY') }}
+              </span>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <div v-else-if="activeTab === 'evaluations'" class="grid gap-6">
         <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article class="rounded-2xl border border-n-weak bg-n-solid-1 p-4">
             <div

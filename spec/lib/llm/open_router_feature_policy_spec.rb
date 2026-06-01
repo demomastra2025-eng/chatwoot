@@ -18,6 +18,11 @@ RSpec.describe Llm::OpenRouterFeaturePolicy do
       prompt_injection: include(status: 'local_enforced'),
       pii: include(status: 'local_enforced')
     )
+    expect(policy.to_h[:extensions]).to include(
+      include(id: 'response-healing', product_label_key: 'structured_response_recovery'),
+      include(id: 'context-compression', product_label_key: 'long_context_protection'),
+      include(id: 'openrouter:datetime', product_label_key: 'system_time')
+    )
   end
 
   it 'reflects runtime guardrail monitoring and disabled modes in diagnostics' do

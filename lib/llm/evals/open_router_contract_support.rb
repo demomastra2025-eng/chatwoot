@@ -11,6 +11,7 @@ module Llm::Evals::OpenRouterContractSupport
     :runtime_preferences,
     :privacy_profile,
     :options,
+    :messages,
     :reasoning,
     keyword_init: true
   ) do
@@ -38,6 +39,7 @@ module Llm::Evals::OpenRouterContractSupport
       runtime_preferences: attributes[:runtime_preferences],
       privacy_profile: attributes[:privacy_profile],
       options: attributes[:options],
+      messages: attributes[:messages],
       reasoning: attributes[:reasoning]
     )
 

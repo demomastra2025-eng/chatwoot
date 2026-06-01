@@ -131,6 +131,76 @@ describe('buildCaptainToolTraceMessages', () => {
     ]);
   });
 
+  it('uses canonical grouped tool calls when present and avoids duplicate step rendering', () => {
+    expect(
+      buildCaptainToolTraceMessages({
+        captain_trace: {
+          tool_calls: [
+            {
+              tool_call_id: 'call-1',
+              tool_name: 'update_deal',
+              status: 'completed',
+              input: { title: 'Хлопок', access_token: 'secret' },
+              output: { amount: 180000 },
+            },
+          ],
+          tool_steps: [
+            {
+              id: 'update_deal:start:1:call-1',
+              tool_name: 'update_deal',
+              status: 'start',
+              content: 'Using update_deal',
+            },
+            {
+              id: 'update_deal:complete:2:call-1',
+              tool_name: 'update_deal',
+              status: 'complete',
+              content: 'Completed update_deal',
+            },
+          ],
+        },
+      })
+    ).toEqual([
+      {
+        id: 'call-1',
+        message: {
+          content: 'Completed update_deal',
+          toolName: 'update_deal',
+          status: 'finish',
+          input: 'Access token: [REDACTED]',
+          output: 'Amount: 180000',
+        },
+      },
+    ]);
+  });
+
+  it('renders partial canonical tool calls as a running grouped tool message', () => {
+    expect(
+      buildCaptainToolTraceMessages({
+        captain_trace: {
+          tool_calls: [
+            {
+              tool_call_id: 'call-running',
+              tool_name: 'search_deals',
+              status: 'partial',
+              input: { query: 'Хлопок' },
+            },
+          ],
+        },
+      })
+    ).toEqual([
+      {
+        id: 'call-running',
+        message: {
+          content: 'Running search_deals',
+          toolName: 'search_deals',
+          status: 'progress',
+          input: 'Query: Хлопок',
+        },
+      },
+    ]);
+  });
+
   it('adds response reasoning before tool steps', () => {
     expect(
       buildCaptainToolTraceMessages(

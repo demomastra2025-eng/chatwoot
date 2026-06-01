@@ -39,6 +39,7 @@ class Captain::Runtime::EventBusCallbacks
   end
 
   def on_tool_start(tool_name, args, context_wrapper)
+    push_tool_timing(context_wrapper, tool_name)
     publish(
       'tool.execute',
       context_wrapper,
@@ -60,6 +61,7 @@ class Captain::Runtime::EventBusCallbacks
 
   def on_tool_complete(tool_name, result, context_wrapper)
     normalized_result = Captain::ToolResult.normalize(result)
+    timing = pop_tool_timing(context_wrapper, tool_name)
 
     publish(
       'tool.complete',
@@ -73,7 +75,10 @@ class Captain::Runtime::EventBusCallbacks
       result_message_type: payload_type(normalized_result[:message]),
       result_message_size: payload_size(normalized_result[:message]),
       result_error_type: payload_type(normalized_result[:error]),
-      result_error_size: payload_size(normalized_result[:error])
+      result_error_size: payload_size(normalized_result[:error]),
+      duration_ms: timing[:duration_ms],
+      started_at: timing[:started_at],
+      completed_at: timing[:completed_at]
     )
   end
 
@@ -131,6 +136,37 @@ class Captain::Runtime::EventBusCallbacks
 
   def event_bus_state(context_wrapper)
     context_wrapper.context[EVENT_BUS_STATE_KEY] ||= {}
+  end
+
+  def push_tool_timing(context_wrapper, tool_name)
+    event_bus_state(context_wrapper)[:tool_timings] ||= {}
+    event_bus_state(context_wrapper)[:tool_timings][tool_name.to_s] ||= []
+    event_bus_state(context_wrapper)[:tool_timings][tool_name.to_s] << {
+      started_at: Time.current,
+      started_monotonic: Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    }
+  rescue StandardError
+    nil
+  end
+
+  def pop_tool_timing(context_wrapper, tool_name)
+    timing = event_bus_state(context_wrapper).dig(:tool_timings, tool_name.to_s)&.shift
+    completed_at = Time.current
+    return { completed_at: completed_at.iso8601 } if timing.blank?
+
+    {
+      started_at: timing[:started_at]&.iso8601,
+      completed_at: completed_at.iso8601,
+      duration_ms: elapsed_ms(timing[:started_monotonic])
+    }.compact
+  rescue StandardError
+    {}
+  end
+
+  def elapsed_ms(started_monotonic)
+    return if started_monotonic.blank?
+
+    ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_monotonic) * 1000).round
   end
 
   def current_chat_state(context_wrapper)

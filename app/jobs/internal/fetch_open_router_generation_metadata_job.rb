@@ -22,11 +22,32 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
 
   def fetch_metadata(event, generation_id)
     account = event.account
-    Llm::OpenRouterGenerationClient.fetch(
-      generation_id,
-      api_key: Llm::Config.api_key('openrouter', account: account),
-      api_base: Llm::Config.api_base('openrouter', account: account)
-    )
+    Llm::EventBus.publish('metadata.fetch', metadata_fetch_payload(event, generation_id)) do |event_payload|
+      metadata = Llm::OpenRouterGenerationClient.fetch(
+        generation_id,
+        api_key: Llm::Config.api_key('openrouter', account: account),
+        api_base: Llm::Config.api_base('openrouter', account: account)
+      )
+      event_payload['status'] = 'success'
+      event_payload['error'] = false
+      event_payload['endpoint_provider'] = metadata.provider_name if metadata.provider_name.present?
+      metadata
+    rescue StandardError => e
+      Llm::ObservabilityPayload.attach_error!(event_payload, e)
+      raise
+    end
+  end
+
+  def metadata_fetch_payload(event, generation_id)
+    {
+      account_id: event.account_id,
+      feature: event.feature,
+      provider: 'openrouter',
+      model: event.model,
+      status: 'fetching',
+      source_event_id: event.id,
+      openrouter_metadata_generation_id: generation_id
+    }.compact
   end
 
   def event_update_attributes(event, metadata)

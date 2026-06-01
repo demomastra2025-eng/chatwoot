@@ -634,6 +634,7 @@
         "SCHEMA_INVALID": "Проблемы схемы: {count}",
         "TOOL_FAILURE": "Ошибки инструментов: {count}",
         "NO_CONTENT": "Пустые ответы: {count}",
+        "ZERO_COMPLETION": "Восстановленные ответы: {count}",
         "CATALOG_STALE": "Проблемы свежести каталога: {count}",
         "CRITICAL_FAILURE": "Критические провалы: {count}"
       },
@@ -2331,6 +2332,10 @@
         "OVERVIEW": "Обзор",
         "EVENTS": "События",
         "TRACES": "Трейсы",
+        "TOOLS": "Инструменты",
+        "MODELS_ROUTING": "Модели и роутинг",
+        "GUARDRAILS": "Защита",
+        "COSTS": "Стоимость",
         "EVALUATIONS": "Оценки"
       },
       "ACTIONS": {
@@ -2399,8 +2404,11 @@
         "BLOCKED": "Заблокировано",
         "AVG_LATENCY": "Средняя задержка",
         "ALL_TOKENS": "Все токены",
+        "REASONING_TOKENS": "Токены рассуждений",
         "ALL_COST": "Полная стоимость",
-        "MODERATION": "Проверки модерации"
+        "MODERATION": "Проверки модерации",
+        "ZERO_COMPLETION": "Восстановлено пустых ответов",
+        "CONTEXT_TRANSFORM": "Сжатие контекста"
       },
       "TRENDS": {
         "LATENCY_TITLE": "Задержка во времени",
@@ -2517,6 +2525,49 @@
           "EVENT": "Событие"
         }
       },
+      "TOOLS": {
+        "TITLE": "Надёжность инструментов",
+        "DESCRIPTION": "Сводка по grouped traces, сбоям инструментов и восстановлению финального ответа.",
+        "TOOL_CALLS": "Вызовы инструментов",
+        "TOOL_FAILURES": "Сбои инструментов",
+        "ZERO_COMPLETION": "Восстановления ответа",
+        "CONTEXT_TRANSFORMS": "Сжатия контекста",
+        "EVENTS_TITLE": "События runtime",
+        "EVENTS_DESCRIPTION": "Сигналы, которые объясняют tool loop, schema recovery, context transform и no-content recovery.",
+        "EMPTY": "Для выбранной области нет данных по инструментам."
+      },
+      "MODELS_ROUTING": {
+        "REQUESTS": "Запросы",
+        "PROVIDERS": "Провайдеры",
+        "PROVIDER_FAILURES": "Сбои провайдера",
+        "RETRIES": "Повторы",
+        "MODELS_TITLE": "Модели",
+        "MODELS_DESCRIPTION": "Какие модели реально использовались в текущем окне фильтров.",
+        "PROVIDERS_TITLE": "Провайдеры",
+        "PROVIDERS_DESCRIPTION": "Как распределились OpenRouter/provider endpoints по событиям.",
+        "EMPTY": "Для выбранной области нет данных по моделям или провайдерам."
+      },
+      "GUARDRAILS": {
+        "BLOCKED": "Блокировки",
+        "FLAGGED": "Флаги",
+        "MODERATION": "Модерация",
+        "MODERATION_SKIPPED": "Модерация пропущена",
+        "BLOCK_REASONS_TITLE": "Причины блокировок",
+        "BLOCK_REASONS_DESCRIPTION": "Safety-решения без раскрытия исходного текста или секретов.",
+        "MODERATION_TITLE": "Модерация и флаги",
+        "MODERATION_DESCRIPTION": "Категории и причины, которые пришли из локальной модерации/runtime policy.",
+        "EMPTY": "Для выбранной области нет guardrail-событий."
+      },
+      "COSTS": {
+        "TOTAL_COST": "Полная стоимость",
+        "TOTAL_TOKENS": "Все токены",
+        "REASONING_TOKENS": "Reasoning токены",
+        "PAYLOAD_TRUNCATED": "Обрезанные payload",
+        "BY_FEATURE": "По функциям",
+        "BY_MODEL": "По моделям",
+        "BY_ASSISTANT": "По ассистентам",
+        "EMPTY": "Для выбранной области нет данных по стоимости."
+      },
       "EVALS": {
         "STATUS": "Статус отчёта",
         "TOTAL_CHECKS": "Проверки",
@@ -2566,6 +2617,7 @@
         "TOOL_FAILURE": "Сбой инструмента",
         "SCHEMA_INVALID": "Невалидная схема",
         "MODERATION_SKIPPED": "Модерация пропущена",
+        "ZERO_COMPLETION_RECOVERED": "Пустой ответ восстановлен",
         "ERROR": "Ошибка",
         "NONE": "Флагов нет"
       },
@@ -2640,7 +2692,11 @@
           "MODERATION_STAGE": "Этап модерации",
           "SAFETY_RULE": "Правило безопасности",
           "FAILURE_MODE": "Режим отказа",
-          "FLAGGED_CATEGORIES": "Помеченные категории"
+          "FLAGGED_CATEGORIES": "Помеченные категории",
+          "RECOVERY_KIND": "Тип восстановления",
+          "COMPLETED_TOOLS_COUNT": "Завершённых инструментов",
+          "CONTEXT_TRANSFORM_STATUS": "Сжатие контекста",
+          "CONTEXT_WINDOW": "Токены / окно контекста"
         },
         "ACTIONS": {
           "COPY_JSON": "Скопировать JSON",

@@ -31,6 +31,7 @@ RSpec.describe Llm::Monitoring::PayloadSanitizer do
           'completion_tokens' => 40,
           'total_tokens' => 160,
           'thinking_tokens' => 12,
+          'openrouter_context_estimated_tokens' => 90,
           'access_token' => 'secret-token'
         }
       )
@@ -39,6 +40,7 @@ RSpec.describe Llm::Monitoring::PayloadSanitizer do
       expect(sanitized['completion_tokens']).to eq(40)
       expect(sanitized['total_tokens']).to eq(160)
       expect(sanitized['thinking_tokens']).to eq(12)
+      expect(sanitized['openrouter_context_estimated_tokens']).to eq(90)
       expect(sanitized['access_token']).to eq('[REDACTED]')
     end
 

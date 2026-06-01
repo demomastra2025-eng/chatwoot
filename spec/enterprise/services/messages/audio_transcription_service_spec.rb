@@ -168,22 +168,29 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       allow(service).to receive(:instrument_audio_transcription).and_yield
     end
 
-    it 'uses RubyLLM transcription through the shared API client for legacy direct provider models' do
+    it 'routes dedicated STT models through the LLM runtime facade' do
+      transcription = RubyLLM::Transcription.new(text: 'Hello world transcription', model: 'openai/gpt-4o-transcribe')
+
       allow(service).to receive(:model).and_return('gpt-4o-transcribe')
       allow(Llm::Config).to receive(:provider_for_model).with('gpt-4o-transcribe', account: account).and_return('openai')
 
-      expect(Llm::ApiClient).to receive(:transcribe).with(
-        instance_of(String),
-        context: mock_context,
-        model: 'gpt-4o-transcribe',
-        prompt: 'Transcribe Kazakh and Russian accurately.',
-        temperature: 0.4,
-        observability: hash_including(
+      expect(Llm::ApiClient).not_to receive(:transcribe)
+      expect(Llm::Runtime).to receive(:transcribe) do |**kwargs|
+        expect(kwargs).to include(
+          feature: :audio_transcription,
+          account: service.account,
+          model: 'gpt-4o-transcribe',
+          input: instance_of(String),
+          options: { temperature: 0.4, prompt: 'Transcribe Kazakh and Russian accurately.' }
+        )
+        expect(kwargs[:observability]).to include(
           runtime_mode: 'audio_transcription',
+          provider: 'openrouter',
           feature_name: 'audio_transcription',
           account_id: service.account.id
         )
-      ).and_return(mock_transcription)
+        transcription
+      end
 
       expect(service.send(:transcribe_audio)).to eq('Hello world transcription')
       expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'Hello world transcription' })
@@ -276,7 +283,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
           account: service.account,
           model: 'openai/gpt-4o-mini-transcribe',
           input: instance_of(String),
-          options: { temperature: 0.4 }
+          options: { temperature: 0.4, prompt: 'Transcribe Kazakh and Russian accurately.' }
         )
         expect(kwargs[:observability]).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
         transcription

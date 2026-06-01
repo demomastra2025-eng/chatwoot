@@ -496,6 +496,26 @@
         "WORKSPACE_KEY_CONFIGURED": "workspace key configured"
       }
     },
+    "RELIABILITY": {
+      "TITLE": "OpenRouter reliability",
+      "DESCRIPTION": "System mechanisms are enforced by One Link policy and do not require user-side tuning.",
+      "STRUCTURED_RECOVERY_TITLE": "JSON recovery",
+      "STRUCTURED_RECOVERY_DESCRIPTION": "Repairs structured replies only when the feature expects a strict schema.",
+      "CONTEXT_COMPRESSION_TITLE": "Long context",
+      "CONTEXT_COMPRESSION_DESCRIPTION": "Compression is enabled only when a request approaches the model context limit.",
+      "ZERO_COMPLETION_TITLE": "Blank replies",
+      "ZERO_COMPLETION_DESCRIPTION": "After a completed tool, the system obtains a final answer without repeating mutations.",
+      "SERVER_TIME_TITLE": "System time",
+      "SERVER_TIME_DESCRIPTION": "AI Agent and AI Assistant get a safe read-only datetime tool.",
+      "BLOCKED_EXTENSIONS_TITLE": "Dangerous extensions",
+      "BLOCKED_EXTENSIONS_DESCRIPTION": "Web search, patch, PDF, and image generation stay blocked until a separate rollout.",
+      "STATUS": {
+        "AUTO": "auto",
+        "OVERFLOW_ONLY": "overflow",
+        "SYSTEM": "system",
+        "PROTECTED": "protected"
+      }
+    },
     "USAGE": {
       "TITLE": "OpenRouter usage and budget",
       "DESCRIPTION": "Track spend, tokens, errors, and OpenRouter limits for this workspace.",
@@ -525,8 +545,14 @@
       "RUNTIME_HEALTH_DESCRIPTION": "Quick diagnostics for OpenRouter runtime events.",
       "RUNTIME_EVENTS": "Events",
       "RUNTIME_RETRIES": "Retries",
+      "RUNTIME_P95_LATENCY": "P95 latency",
+      "RUNTIME_ERROR_RATE": "Error rate",
       "RUNTIME_SCHEMA_ERRORS": "Schema errors",
       "RUNTIME_TOOL_ERRORS": "Tool errors",
+      "RUNTIME_ZERO_COMPLETION": "Blank replies recovered",
+      "RUNTIME_FALLBACKS": "Model fallbacks",
+      "RUNTIME_KEY_HEALTH": "OpenRouter key",
+      "MILLISECONDS": "{count} ms",
       "LAST_EVENT": "Last event: {date}",
       "NEVER": "no data",
       "TOP_MODELS": "Top models",

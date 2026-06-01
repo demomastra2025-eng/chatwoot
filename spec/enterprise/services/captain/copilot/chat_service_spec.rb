@@ -19,7 +19,7 @@ RSpec.describe Captain::Copilot::ChatService do
     { user_id: user.id, copilot_thread_id: copilot_thread.id, conversation_id: conversation.display_id }
   end
 
-  # RubyLLM mocks
+  # RubyLLM/runtime mocks
   let(:mock_chat) { instance_double(RubyLLM::Chat) }
   let(:mock_response) do
     instance_double(
@@ -41,6 +41,7 @@ RSpec.describe Captain::Copilot::ChatService do
     end
 
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+    allow(Llm::Runtime).to receive(:build_chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
     allow(mock_chat).to receive(:with_params).and_return(mock_chat)
     allow(mock_chat).to receive(:with_thinking).and_return(mock_chat)
@@ -163,7 +164,12 @@ RSpec.describe Captain::Copilot::ChatService do
     it 'uses the account copilot model when configured' do
       account.update!(captain_models: { 'copilot' => 'gpt-5.2' })
 
-      expect(RubyLLM).to receive(:chat).with(model: 'gpt-5.2').and_return(mock_chat)
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        feature: 'copilot',
+        account: account,
+        model: 'gpt-5.2',
+        options: hash_including(temperature: 1.0)
+      ).and_return(mock_chat)
 
       described_class.new(assistant, config).generate_response('Hello')
     end
@@ -188,7 +194,12 @@ RSpec.describe Captain::Copilot::ChatService do
         captain_runtime: { 'copilot_thinking_effort' => 'high' }
       )
 
-      expect(mock_chat).to receive(:with_thinking).with(effort: 'high').and_return(mock_chat)
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        feature: 'copilot',
+        account: account,
+        model: 'gpt-5.2',
+        options: hash_including(thinking: { effort: 'high' })
+      ).and_return(mock_chat)
 
       described_class.new(assistant, config).generate_response('Hello')
     end
@@ -341,9 +352,18 @@ RSpec.describe Captain::Copilot::ChatService do
       response = service.generate_response('Hello')
       persisted_message = copilot_thread.reload.copilot_messages.assistant.last.message
 
-      expect(response['captain_trace']).to eq(
+      expect(response['captain_trace']).to include(
         'version' => Captain::ToolTraceBuilder::VERSION,
         'tool_steps' => [trace_step]
+      )
+      expect(response.dig('captain_trace', 'tool_calls')).to contain_exactly(
+        hash_including(
+          'tool_call_id' => 'trace-1',
+          'tool_name' => 'list_deal_pipelines',
+          'status' => 'completed',
+          'input' => { 'filters' => { 'active' => true } },
+          'output' => { 'returned_count' => 4 }
+        )
       )
       expect(persisted_message['captain_trace']).to eq(response['captain_trace'])
       expect(persisted_message).not_to have_key('usage')

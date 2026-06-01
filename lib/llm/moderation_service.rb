@@ -4,6 +4,8 @@ class Llm::ModerationService
   CheckResult = Struct.new(:status, :feature, :stage, :provider, :model, :reason, :result, keyword_init: true)
   ModerationResult = Struct.new(:flagged, :categories, :reason, :raw, keyword_init: true) do
     def flagged? = flagged == true
+    def flagged_categories = Array(categories)
+    def category_scores = raw.to_h.with_indifferent_access[:category_scores].to_h
   end
 
   class FlaggedContentError < StandardError
@@ -31,10 +33,12 @@ class Llm::ModerationService
   end
 
   MAX_CONTENT_LENGTH = 10_000
+  OPENROUTER_PROVIDER = 'openrouter'
+
   class << self
     def check!(feature:, stage:, content:, account: nil, preferences: nil)
-      provider = moderation_provider_for(account)
       model = moderation_model_for(account)
+      provider = moderation_provider_for(account, model: model)
 
       return check_result(status: :skipped, feature: feature, stage: stage, reason: :blank_content) if content.blank?
       return check_result(status: :disabled, feature: feature, stage: stage) unless Llm::RuntimePolicy.moderation_enabled?(
@@ -115,14 +119,7 @@ class Llm::ModerationService
     private
 
     def moderation_result_for(content:, provider:, model:, feature:, stage:, account: nil)
-      if provider.to_s == 'openrouter'
-        return openrouter_moderation_result(content: content, model: model, feature: feature, stage: stage,
-                                            account: account)
-      end
-
-      with_moderation_context(provider: provider, model: model, account: account) do |context|
-        Llm::ApiClient.moderate(content, context: context, model: model, provider: provider)
-      end
+      openrouter_moderation_result(content: content, model: model, feature: feature, stage: stage, account: account)
     end
 
     def openrouter_moderation_result(content:, model:, feature:, stage:, account: nil)
@@ -196,8 +193,8 @@ class Llm::ModerationService
     def handle_unavailable!(feature:, stage:, reason:, account:, preferences:, error: nil)
       Rails.logger.warn("[Llm::ModerationService] Moderation unavailable for #{feature}/#{stage}: #{reason}#{": #{error.message}" if error}")
       failure_mode = Llm::RuntimePolicy.moderation_failure_mode(feature: feature, account: account, preferences: preferences)
-      provider = moderation_provider_for(account)
       model = moderation_model_for(account)
+      provider = moderation_provider_for(account, model: model)
 
       publish_event(
         'moderation.unavailable',
@@ -235,12 +232,14 @@ class Llm::ModerationService
       )
     end
 
-    def moderation_provider_for(account)
-      account.present? ? Llm::Config.moderation_provider(account: account) : Llm::Config.moderation_provider
+    def moderation_provider_for(account, model: nil)
+      Llm::Config.provider_for_model(model, account: account).presence || OPENROUTER_PROVIDER
     end
 
     def moderation_model_for(account)
-      account.present? ? Llm::Config.moderation_model(account: account) : Llm::Config.moderation_model
+      configured_model = account.present? ? Llm::Config.moderation_model(account: account) : Llm::Config.moderation_model
+
+      Llm::OpenRouterModelMigration.resolve(configured_model, feature: :moderation, account: account) || configured_model
     end
 
     def api_key_for(provider, account)
@@ -253,17 +252,6 @@ class Llm::ModerationService
 
     def supports_structured_output?(model, account)
       account.present? ? Llm::Models.supports_structured_output?(model, account: account) : Llm::Models.supports_structured_output?(model)
-    end
-
-    def with_moderation_context(provider:, model:, account:, &)
-      kwargs = {
-        api_base: api_base_for(provider, account),
-        provider: provider,
-        model: model
-      }
-      kwargs[:account] = account if account.present?
-
-      Llm::Config.with_api_key(api_key_for(provider, account), **kwargs, &)
     end
 
     def chat_build_kwargs(model:, account:)

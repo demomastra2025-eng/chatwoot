@@ -261,6 +261,37 @@ const contextItems = computed(() => {
       label: t('CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.FLAGGED_CATEGORIES'),
       value: Array(event.flagged_categories).join(', ') || null,
     },
+    {
+      key: 'recovery_kind',
+      label: t('CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.RECOVERY_KIND'),
+      value: event.recovery_kind ? humanizeIdentifier(event.recovery_kind) : null,
+    },
+    {
+      key: 'completed_tools_count',
+      label: t(
+        'CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.COMPLETED_TOOLS_COUNT'
+      ),
+      value: stringValue(event.completed_tools_count),
+    },
+    {
+      key: 'context_transform_status',
+      label: t(
+        'CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.CONTEXT_TRANSFORM_STATUS'
+      ),
+      value: event.context_transform_status
+        ? humanizeIdentifier(event.context_transform_status)
+        : null,
+    },
+    {
+      key: 'context_window',
+      label: t('CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.CONTEXT_WINDOW'),
+      value:
+        event.context_estimated_tokens || event.context_limit
+          ? `${formatInteger(event.context_estimated_tokens)} / ${formatInteger(
+              event.context_limit
+            )}`
+          : null,
+    },
   ].filter(item => item.value);
 });
 
@@ -277,6 +308,9 @@ const flagItems = computed(() => {
       : null,
     event.moderation_skipped
       ? t('CAPTAIN.OBSERVABILITY.FLAGS.MODERATION_SKIPPED')
+      : null,
+    event.zero_completion_recovered
+      ? t('CAPTAIN.OBSERVABILITY.FLAGS.ZERO_COMPLETION_RECOVERED')
       : null,
   ].filter(Boolean);
 });

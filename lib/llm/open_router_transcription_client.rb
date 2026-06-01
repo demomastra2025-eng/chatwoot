@@ -39,6 +39,7 @@ class Llm::OpenRouterTranscriptionClient
               data: Base64.strict_encode64(File.binread(file_path)),
               format: Llm::OpenRouterAudioInput.format_for(file_path)
             },
+            prompt: options[:prompt].presence,
             language: options[:language].presence,
             temperature: options[:temperature],
             provider: options[:provider].presence

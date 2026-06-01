@@ -53,7 +53,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     allow(Llm::Config).to receive(:api_key).and_return('test-key')
     allow(Llm::Config).to receive(:api_base).and_return(nil)
     allow(Llm::Config).to receive(:with_api_key).and_yield(:llm_context)
-    allow(Llm::ApiClient).to receive(:transcribe).and_return(response)
+    allow(Llm::Runtime).to receive(:transcribe).and_return(response)
   end
 
   after do
@@ -64,9 +64,13 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     result = described_class.new(call_session).perform
 
     expect(result).to include(success: true, transcript: transcript)
-    expect(Llm::ApiClient).to have_received(:transcribe).with(
-      recording_path.to_s,
-      hash_including(context: :llm_context, model: anything, temperature: 0.2)
+    expect(Llm::Runtime).to have_received(:transcribe).with(
+      hash_including(
+        feature: :audio_transcription,
+        account: account,
+        input: recording_path.to_s,
+        options: hash_including(temperature: 0.2)
+      )
     )
 
     call_session.reload
@@ -104,7 +108,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     FileUtils.ln_s(outside_path, recording_path)
 
     expect { described_class.new(call_session).perform }.to raise_error(described_class::RecordingNotFound)
-    expect(Llm::ApiClient).not_to have_received(:transcribe)
+    expect(Llm::Runtime).not_to have_received(:transcribe)
   ensure
     FileUtils.rm_f(outside_path) if defined?(outside_path) && outside_path.present?
   end
@@ -117,14 +121,13 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('openrouter-key')
     allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.ai/api/v1')
 
-    expect(Llm::ApiClient).to receive(:transcribe).with(
-      recording_path.to_s,
-      provider: 'openrouter',
-      api_key: 'openrouter-key',
-      api_base: 'https://openrouter.ai/api/v1',
+    expect(Llm::Runtime).to receive(:transcribe).with(
+      feature: :audio_transcription,
+      account: account,
       model: 'openai/gpt-4o-mini-transcribe',
-      temperature: 0.2,
-      observability: hash_including(runtime_mode: 'call_recording_transcription')
+      input: recording_path.to_s,
+      observability: hash_including(runtime_mode: 'call_recording_transcription'),
+      options: hash_including(temperature: 0.2)
     ).and_return(response)
 
     expect(service.perform).to include(success: true, transcript: transcript)

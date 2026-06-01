@@ -58,26 +58,10 @@ class Captain::Llm::EmbeddingService
   end
 
   def embedding_for_provider(content, model, provider, observability, input_type: nil)
-    return openrouter_embedding(content, model, input_type: input_type) if provider == 'openrouter'
-
-    Llm::Config.with_api_key(
-      Llm::Config.api_key(provider, account: @account),
-      api_base: Llm::Config.api_base(provider, account: @account),
-      provider: provider,
-      model: model,
-      account: @account
-    ) do |context|
-      Llm::ApiClient.embed(
-        content,
-        context: context,
-        model: model,
-        dimensions: embedding_dimensions_for(model),
-        observability: observability.merge(runtime_mode: 'captain_embedding')
-      ).vectors
-    end
+    runtime_embedding(content, model, provider, observability, input_type: input_type)
   end
 
-  def openrouter_embedding(content, model, input_type: nil)
+  def runtime_embedding(content, model, provider, observability, input_type: nil)
     raise embeddings_unavailable_error if Llm::Config.api_key('openrouter', account: @account).blank?
 
     result = Llm::Runtime.embed(
@@ -85,7 +69,7 @@ class Captain::Llm::EmbeddingService
       account: @account,
       model: model,
       input: content,
-      observability: instrumentation_params(content, model, 'openrouter', input_type: input_type).merge(runtime_mode: 'captain_embedding'),
+      observability: observability.merge(provider: provider.presence || 'openrouter', runtime_mode: 'captain_embedding'),
       options: { dimensions: VECTOR_DIMENSIONS, input_type: input_type }.compact
     )
     vector = result.vectors.first
@@ -101,12 +85,6 @@ class Captain::Llm::EmbeddingService
     return input_type if EMBEDDING_INPUT_TYPES.include?(input_type)
 
     raise ArgumentError, "Unsupported embedding input_type: #{input_type}"
-  end
-
-  def embedding_dimensions_for(model)
-    return unless model.to_s.match?(%r{(^|/)text-embedding-3-})
-
-    VECTOR_DIMENSIONS
   end
 
   def embeddings_unavailable_error

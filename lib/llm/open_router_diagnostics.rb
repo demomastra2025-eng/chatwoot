@@ -38,6 +38,7 @@ class Llm::OpenRouterDiagnostics
       endpoints: endpoint_summary,
       runtime: runtime_summary,
       usage: usage_summary,
+      admin_operations: Llm::OpenRouterAdminOperations.call,
       workspace_policy: workspace_policy_summary,
       guardrails: guardrail_summary,
       features: feature_summaries,

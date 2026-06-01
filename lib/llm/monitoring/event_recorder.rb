@@ -7,18 +7,28 @@ class Llm::Monitoring::EventRecorder
       llm.budget.blocked
       llm.budget.warning
       llm.chat.complete
+      llm.context_transform.applied
+      llm.context_transform.failed
+      llm.context_transform.skipped
       llm.embedding.complete
       llm.moderation.complete
       llm.moderation.unavailable
+      llm.metadata.fetch
       llm.run.complete
       llm.run.retry
       llm.rerank.complete
+      llm.request.compile
+      llm.safety.flagged
       llm.safety.blocked
       llm.schema.fallback
       llm.schema.invalid
       llm.schema.repair_requested
       llm.transcription.complete
       llm.tool.complete
+      llm.zero_completion.detected
+      llm.zero_completion.failed
+      llm.zero_completion.recovered
+      llm.zero_completion.retry
     ]
   ).freeze
 
@@ -26,7 +36,7 @@ class Llm::Monitoring::EventRecorder
   ESSENTIAL_PAYLOAD_KEYS = %w[
     canonical_event_name event_name_alias error_class error_code failure_mode openrouter_generation_id
     payload_bytes payload_budget_bytes project_case_id queue_wait_ms retry_count schema_invalid_count status
-    thinking_tokens tool_calls_count
+    snippet_hash thinking_tokens tool_calls_count
   ].freeze
 
   PROMOTED_PAYLOAD_KEYS = Set.new(
@@ -34,7 +44,7 @@ class Llm::Monitoring::EventRecorder
       account_id assistant_id blocked channel_type completion_tokens conversation_display_id
       conversation_id copilot_thread_id current_agent error estimated_cost error_code feature model
       moderation_skipped payload_bytes payload_truncated project_case_id prompt_tokens provider queue_wait_ms
-      reason request_id retry_count runtime_mode schema_invalid schema_invalid_count schema_name session_id
+      reason request_id retry_count rule runtime_mode schema_invalid schema_invalid_count schema_name session_id
       source status thinking_tokens tool_calls_count tool_failure tool_name total_tokens trace_id
     ]
   ).freeze

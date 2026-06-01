@@ -50,14 +50,16 @@ class Llm::OpenRouterRequestCompiler
     params = normalized_base_params
     models = compiled_models(profile)
     provider_params = merged_provider_params(profile)
-    plugins = merged_plugins(params, profile, feature_policy)
+    transform_plan = context_transform_plan(feature_policy, models)
+    publish_context_transform_event(transform_plan, models)
+    plugins = merged_plugins(params, profile, feature_policy, transform_plan: transform_plan)
     server_tools = merged_server_tools(feature_policy)
     metadata = compiled_metadata(
       profile: profile,
       feature_policy: feature_policy,
       models: models,
       provider_params: provider_params,
-      extensions: { plugins: plugins, server_tools: server_tools }
+      extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan }
     )
 
     apply_request_params!(params)
@@ -188,9 +190,16 @@ class Llm::OpenRouterRequestCompiler
     existing.deep_merge(profile_preferences)
   end
 
-  def merged_plugins(_params, profile, feature_policy)
-    plugins = extract_plugins(@base_params[:plugins] || @base_params['plugins'])
+  def merged_plugins(_params, profile, feature_policy, transform_plan:)
+    plugins = extract_plugins(@base_params[:plugins] || @base_params['plugins']).reject do |plugin|
+      context_compression_plugin?(plugin)
+    end
     default_allowed_ids = []
+
+    if transform_plan&.plugin?
+      plugins.unshift(transform_plan.plugin)
+      default_allowed_ids << Llm::OpenRouterContextTransformPolicy::CONTEXT_COMPRESSION_PLUGIN_ID
+    end
 
     if response_healing_allowed?(profile)
       plugins << { id: RESPONSE_HEALING_PLUGIN_ID }
@@ -206,6 +215,44 @@ class Llm::OpenRouterRequestCompiler
 
   def merged_server_tools(feature_policy)
     feature_policy.filter_server_tools(requested_server_tools)
+  end
+
+  def context_transform_plan(feature_policy, models)
+    Llm::OpenRouterContextTransformPolicy.call(
+      messages: request_value(:messages),
+      model: Array(models).first || @model,
+      account: @account,
+      policy: feature_policy.transform_policy
+    )
+  rescue StandardError => e
+    Llm::OpenRouterContextTransformPolicy::Plan.new(
+      status: 'failed',
+      estimated_tokens: nil,
+      context_limit: nil,
+      soft_context_limit: nil,
+      policy: feature_policy.transform_policy,
+      reason: e.class.name.demodulize.underscore
+    )
+  end
+
+  def publish_context_transform_event(transform_plan, models)
+    return if transform_plan.blank?
+
+    event_name = case transform_plan.status
+                 when 'applied' then 'context_transform.applied'
+                 when 'failed' then 'context_transform.failed'
+                 else 'context_transform.skipped'
+                 end
+    payload = request_observability_hash.merge(
+      feature: feature_key,
+      model: Array(models).first || @model,
+      status: transform_plan.status,
+      provider: 'openrouter'
+    ).merge(transform_plan.to_metadata)
+
+    Llm::EventBus.publish(event_name, payload.compact)
+  rescue StandardError => e
+    Rails.logger.warn("[Llm::OpenRouterRequestCompiler] Failed to publish context transform event: #{e.class}: #{e.message}")
   end
 
   def compiled_metadata(profile:, feature_policy:, models:, provider_params:, extensions:)
@@ -230,7 +277,7 @@ class Llm::OpenRouterRequestCompiler
       openrouter_plugin_policy: feature_policy.plugin_policy,
       openrouter_transform_policy: feature_policy.transform_policy,
       openrouter_budget_policy: feature_policy.budget_policy
-    }.compact
+    }.merge(extensions[:transform_plan]&.to_metadata || {}).compact
   end
 
   def fallback_models(models)
@@ -253,6 +300,10 @@ class Llm::OpenRouterRequestCompiler
 
   def plugin_ids(plugins)
     Array(plugins).filter_map { |plugin| hash_identifier(plugin) }.uniq.presence
+  end
+
+  def context_compression_plugin?(plugin)
+    hash_identifier(plugin).to_s.tr('_', '-') == Llm::OpenRouterContextTransformPolicy::CONTEXT_COMPRESSION_PLUGIN_ID
   end
 
   def server_tool_ids(server_tools)
@@ -342,6 +393,15 @@ class Llm::OpenRouterRequestCompiler
     return {} unless options.respond_to?(:to_h)
 
     options.to_h.deep_symbolize_keys
+  rescue StandardError
+    {}
+  end
+
+  def request_observability_hash
+    observability = request_value(:observability)
+    return {} unless observability.respond_to?(:to_h)
+
+    observability.to_h.symbolize_keys
   rescue StandardError
     {}
   end

@@ -133,6 +133,49 @@ function formatPercent(value) {
   return numberFormatter.format(Math.min(100, Math.max(0, numberValue)));
 }
 
+function formatRate(value) {
+  return `${formatPercent(Number(value || 0) * 100)}%`;
+}
+
+function providerHealthStatus(provider) {
+  const status = provider.credential.health?.status || 'not_checked';
+
+  switch (status) {
+    case 'valid':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.VALID');
+    case 'missing':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.MISSING');
+    case 'invalid':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.INVALID');
+    case 'expired':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.EXPIRED');
+    case 'unavailable':
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.UNAVAILABLE');
+    case 'credits_exhausted':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.CREDITS_EXHAUSTED'
+      );
+    case 'credits_unavailable':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.CREDITS_UNAVAILABLE'
+      );
+    case 'key_limit_exhausted':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.KEY_LIMIT_EXHAUSTED'
+      );
+    case 'management_key_required':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.MANAGEMENT_KEY_REQUIRED'
+      );
+    case 'workspace_key_configured':
+      return t(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.WORKSPACE_KEY_CONFIGURED'
+      );
+    default:
+      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.NOT_CHECKED');
+  }
+}
+
 function progressWidth(value) {
   const numberValue = Number(value || 0);
   if (!Number.isFinite(numberValue)) return '0%';
@@ -405,6 +448,7 @@ const accountBudgetPolicy = computed(
 const budgetDaily = computed(() => accountBudgetPolicy.value.daily || {});
 const budgetMonthly = computed(() => accountBudgetPolicy.value.monthly || {});
 const runtimeHealth = computed(() => usage.value?.runtime_health || {});
+const openRouterKeyHealth = computed(() => usage.value?.key_health || {});
 const topUsageModels = computed(() =>
   Array.isArray(usage.value?.top_models) ? usage.value.top_models : []
 );
@@ -433,10 +477,18 @@ const runtimeHealthItems = computed(() => [
     value: formatNumber(runtimeHealth.value.total_events),
   },
   {
-    key: 'retries',
-    icon: 'i-lucide-refresh-cw',
-    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_RETRIES'),
-    value: formatNumber(runtimeHealth.value.retry_count),
+    key: 'p95_latency',
+    icon: 'i-lucide-timer',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_P95_LATENCY'),
+    value: t('CAPTAIN_SETTINGS.USAGE.MILLISECONDS', {
+      count: formatNumber(runtimeHealth.value.p95_duration_ms),
+    }),
+  },
+  {
+    key: 'error_rate',
+    icon: 'i-lucide-circle-alert',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_ERROR_RATE'),
+    value: formatRate(runtimeHealth.value.error_rate),
   },
   {
     key: 'schema',
@@ -449,6 +501,69 @@ const runtimeHealthItems = computed(() => [
     icon: 'i-lucide-wrench',
     label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_TOOL_ERRORS'),
     value: formatNumber(runtimeHealth.value.tool_failure_count),
+  },
+  {
+    key: 'zero_completion',
+    icon: 'i-lucide-shield-check',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_ZERO_COMPLETION'),
+    value: formatNumber(runtimeHealth.value.zero_completion_recovered_count),
+  },
+  {
+    key: 'fallback_models',
+    icon: 'i-lucide-route',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_FALLBACKS'),
+    value: formatNumber(runtimeHealth.value.fallback_model_count),
+  },
+  {
+    key: 'key_health',
+    icon: 'i-lucide-key-round',
+    label: t('CAPTAIN_SETTINGS.USAGE.RUNTIME_KEY_HEALTH'),
+    value: providerHealthStatus({
+      credential: { health: openRouterKeyHealth.value },
+    }),
+  },
+]);
+const openRouterReliabilityItems = computed(() => [
+  {
+    key: 'structured_recovery',
+    icon: 'i-lucide-wand-sparkles',
+    title: t('CAPTAIN_SETTINGS.RELIABILITY.STRUCTURED_RECOVERY_TITLE'),
+    description: t(
+      'CAPTAIN_SETTINGS.RELIABILITY.STRUCTURED_RECOVERY_DESCRIPTION'
+    ),
+    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.AUTO'),
+  },
+  {
+    key: 'context_compression',
+    icon: 'i-lucide-file-stack',
+    title: t('CAPTAIN_SETTINGS.RELIABILITY.CONTEXT_COMPRESSION_TITLE'),
+    description: t(
+      'CAPTAIN_SETTINGS.RELIABILITY.CONTEXT_COMPRESSION_DESCRIPTION'
+    ),
+    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.OVERFLOW_ONLY'),
+  },
+  {
+    key: 'zero_completion',
+    icon: 'i-lucide-shield-check',
+    title: t('CAPTAIN_SETTINGS.RELIABILITY.ZERO_COMPLETION_TITLE'),
+    description: t('CAPTAIN_SETTINGS.RELIABILITY.ZERO_COMPLETION_DESCRIPTION'),
+    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.AUTO'),
+  },
+  {
+    key: 'server_time',
+    icon: 'i-lucide-clock-3',
+    title: t('CAPTAIN_SETTINGS.RELIABILITY.SERVER_TIME_TITLE'),
+    description: t('CAPTAIN_SETTINGS.RELIABILITY.SERVER_TIME_DESCRIPTION'),
+    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.SYSTEM'),
+  },
+  {
+    key: 'blocked_extensions',
+    icon: 'i-lucide-lock-keyhole',
+    title: t('CAPTAIN_SETTINGS.RELIABILITY.BLOCKED_EXTENSIONS_TITLE'),
+    description: t(
+      'CAPTAIN_SETTINGS.RELIABILITY.BLOCKED_EXTENSIONS_DESCRIPTION'
+    ),
+    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.PROTECTED'),
   },
 ]);
 const usageMetricCards = computed(() => [
@@ -562,44 +677,6 @@ const providerCredentialStatus = provider => {
       return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.STATUS.GLOBAL');
     default:
       return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.STATUS.MISSING');
-  }
-};
-const providerHealthStatus = provider => {
-  const status = provider.credential.health?.status || 'not_checked';
-
-  switch (status) {
-    case 'valid':
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.VALID');
-    case 'missing':
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.MISSING');
-    case 'invalid':
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.INVALID');
-    case 'expired':
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.EXPIRED');
-    case 'unavailable':
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.UNAVAILABLE');
-    case 'credits_exhausted':
-      return t(
-        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.CREDITS_EXHAUSTED'
-      );
-    case 'credits_unavailable':
-      return t(
-        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.CREDITS_UNAVAILABLE'
-      );
-    case 'key_limit_exhausted':
-      return t(
-        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.KEY_LIMIT_EXHAUSTED'
-      );
-    case 'management_key_required':
-      return t(
-        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.MANAGEMENT_KEY_REQUIRED'
-      );
-    case 'workspace_key_configured':
-      return t(
-        'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.WORKSPACE_KEY_CONFIGURED'
-      );
-    default:
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.NOT_CHECKED');
   }
 };
 const isProviderApiKeyDirty = providerKey =>
@@ -961,6 +1038,43 @@ onMounted(() => {
               <p class="text-xs text-n-slate-11">
                 {{ t('CAPTAIN_SETTINGS.PROVIDER_KEYS.SECRET_NOTE') }}
               </p>
+            </div>
+          </div>
+        </SectionLayout>
+
+        <SectionLayout
+          :title="t('CAPTAIN_SETTINGS.RELIABILITY.TITLE')"
+          :description="t('CAPTAIN_SETTINGS.RELIABILITY.DESCRIPTION')"
+          with-border
+        >
+          <div
+            class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+            data-test="captain-reliability-section"
+          >
+            <div
+              v-for="item in openRouterReliabilityItems"
+              :key="item.key"
+              class="grid gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <Icon
+                  :icon="item.icon"
+                  class="mt-0.5 size-4 shrink-0 text-n-slate-11"
+                />
+                <span
+                  class="shrink-0 rounded-md border border-n-weak bg-n-alpha-2 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
+                >
+                  {{ item.status }}
+                </span>
+              </div>
+              <div class="grid gap-1">
+                <div class="text-xs font-medium text-n-slate-12">
+                  {{ item.title }}
+                </div>
+                <div class="text-xs leading-5 text-n-slate-11">
+                  {{ item.description }}
+                </div>
+              </div>
             </div>
           </div>
         </SectionLayout>

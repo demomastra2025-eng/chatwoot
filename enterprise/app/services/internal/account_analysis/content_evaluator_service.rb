@@ -10,10 +10,12 @@ class Internal::AccountAnalysis::ContentEvaluatorService
 
     observability = instrumentation_params(content)
     moderation_result = instrument_moderation_call(observability) do
-      Llm::ApiClient.moderate(
-        content.to_s[0...10_000],
-        observability: observability.merge(runtime_mode: 'content_evaluator')
-      )
+      Llm::ModerationService.check!(
+        feature: :content_evaluator,
+        stage: :analysis,
+        content: content.to_s[0...10_000],
+        preferences: { content_evaluator_moderation: true }
+      ).result
     end
 
     build_evaluation(moderation_result)

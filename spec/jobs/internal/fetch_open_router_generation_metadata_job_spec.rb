@@ -43,6 +43,10 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
   end
 
   it 'fetches generation metadata asynchronously and enriches the llm event payload and columns' do
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.metadata.fetch') do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
     expect(Llm::OpenRouterGenerationClient).to receive(:fetch).with(
       'gen-123',
       api_key: 'openrouter-key',
@@ -93,6 +97,14 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
       generation_id: 'gen-123'
     )
     expect(usage.estimated_cost.to_f).to eq(0.00042)
+    expect(events.last.payload).to include(
+      'provider' => 'openrouter',
+      'status' => 'success',
+      'openrouter_metadata_generation_id' => 'gen-123',
+      'endpoint_provider' => 'OpenAI'
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
   it 'uses the generation id stored in the payload when no explicit id is passed' do

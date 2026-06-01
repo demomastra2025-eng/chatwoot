@@ -143,10 +143,13 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
     CSV.generate(headers: true) do |csv|
       csv << %w[
         id created_at event_name feature runtime_mode status reason provider model
-        tool_name schema_name request_id trace_id trace_name root_span_id span_id parent_span_id span_kind span_name moderation_stage safety_rule failure_mode flagged_categories current_agent channel_type source session_id assistant_id
+        tool_name schema_name request_id trace_id trace_name root_span_id span_id
+        parent_span_id span_kind span_name moderation_stage safety_rule failure_mode
+        flagged_categories current_agent channel_type source session_id assistant_id
         conversation_id conversation_display_id copilot_thread_id prompt_tokens
         completion_tokens thinking_tokens total_tokens duration_ms estimated_cost blocked
-        moderation_skipped schema_invalid tool_failure error
+        moderation_skipped schema_invalid tool_failure zero_completion_recovered
+        recovery_kind context_transform_status error
       ]
 
       payload.each do |event|
@@ -192,6 +195,9 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
           event[:moderation_skipped],
           event[:schema_invalid],
           event[:tool_failure],
+          event[:zero_completion_recovered],
+          event[:recovery_kind],
+          event[:context_transform_status],
           event[:error]
         ]
       end
@@ -241,6 +247,13 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
       moderation_skipped: event.moderation_skipped,
       schema_invalid: event.schema_invalid,
       tool_failure: event.tool_failure,
+      zero_completion_recovered: event.event_name == 'llm.zero_completion.recovered',
+      recovery_kind: event.payload['recovery_kind'],
+      completed_tools_count: event.payload['completed_tools_count'],
+      context_transform_status: event.payload['openrouter_context_transform_status'],
+      context_transform_reason: event.payload['openrouter_context_transform_reason'],
+      context_estimated_tokens: event.payload['openrouter_context_estimated_tokens'],
+      context_limit: event.payload['openrouter_context_limit'],
       error: event.error,
       details: event.payload
     }

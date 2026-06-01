@@ -34,6 +34,14 @@ RSpec.describe Captain::Runtime::MessageExtractor do
             agent_name: 'assistant_agent',
             thinking: 'reasoning text',
             thinking_signature: 'sig_123',
+            reasoning: 'reasoning text',
+            native_reasoning: {
+              source: 'rubyllm',
+              text: 'reasoning text',
+              summary: 'reasoning text',
+              signature: 'sig_123',
+              visible_to_user: false
+            },
             tool_calls: [
               { id: 'call_1', name: 'search_faq', arguments: { query: 'refund' } }
             ]
@@ -69,14 +77,15 @@ RSpec.describe Captain::Runtime::MessageExtractor do
     end
 
     it 'falls back to OpenRouter native reasoning fields when RubyLLM thinking is absent' do
-      native_message = Struct.new(:role, :content, :tool_calls, :thinking, :reasoning, :reasoning_details, keyword_init: true) do
+      native_message = Struct.new(:role, :content, :tool_calls, :thinking, :reasoning, :reasoning_details, :reasoning_tokens, keyword_init: true) do
         def tool_call? = false
       end.new(
         role: :assistant,
         content: 'Done',
         tool_calls: {},
         reasoning: 'OpenRouter native reasoning text',
-        reasoning_details: [{ 'type' => 'reasoning.text', 'text' => 'detail' }]
+        reasoning_details: [{ 'type' => 'reasoning.text', 'text' => 'detail' }],
+        reasoning_tokens: 533
       )
       native_chat = Struct.new(:messages).new([native_message])
 
@@ -87,7 +96,15 @@ RSpec.describe Captain::Runtime::MessageExtractor do
         content: 'Done',
         thinking: 'OpenRouter native reasoning text',
         reasoning: 'OpenRouter native reasoning text',
-        reasoning_details: [{ 'type' => 'reasoning.text', 'text' => 'detail' }]
+        reasoning_details: [{ 'type' => 'reasoning.text', 'text' => 'detail' }],
+        native_reasoning: {
+          source: 'openrouter',
+          text: 'OpenRouter native reasoning text',
+          summary: 'OpenRouter native reasoning text',
+          details: [{ 'type' => 'reasoning.text', 'text' => 'detail' }],
+          tokens: 533,
+          visible_to_user: false
+        }
       )
     end
   end

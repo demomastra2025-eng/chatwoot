@@ -115,6 +115,20 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     )
   end
 
+  it 'records lightweight tool execution timing when start and complete are paired' do
+    callbacks.on_tool_start('lookup_contact', { contact_id: 123 }, context_wrapper)
+    callbacks.on_tool_complete('lookup_contact', { status: 'ok' }, context_wrapper)
+
+    tool_event = events.find { |event| event.name == 'llm.tool.complete' }
+
+    expect(tool_event.payload).to include(
+      'tool_name' => 'lookup_contact',
+      'duration_ms' => a_kind_of(Integer),
+      'started_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T/),
+      'completed_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T/)
+    )
+  end
+
   it 'includes trace identifiers when tracing metadata is available' do
     context_wrapper.context[:__captain_trace_event] = {
       trace_id: 'trace-123',

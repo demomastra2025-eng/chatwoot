@@ -116,27 +116,24 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
     end
 
     options = {
-      context: llm_context,
       model: model,
       temperature: temperature,
-      observability: observability
+      prompt: account.captain_audio_transcription_prompt,
+      observability: observability.merge(provider: 'openrouter')
     }
     options[:response_format] = response_format if response_format.present?
     options[:timestamp_granularities] = timestamp_granularities if timestamp_granularities.present?
 
     instrument_audio_transcription(observability) do
-      Llm::ApiClient.transcribe(file_path, **options)
+      Llm::Runtime.transcribe(
+        feature: :audio_transcription,
+        account: account,
+        model: model,
+        input: file_path,
+        observability: options.delete(:observability),
+        options: options.except(:model)
+      )
     end
-  end
-
-  def llm_context
-    Llm::Config.with_api_key(
-      api_key,
-      api_base: api_base,
-      provider: Llm::Config.provider_for_model(model, account: account),
-      model: model,
-      account: account
-    ) { |context| return context }
   end
 
   def openrouter_chat_transcription?
@@ -181,14 +178,13 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
       file_path,
       logger_context: { account_id: account.id, call_id: call.id }
     )
-    Llm::ApiClient.transcribe(
-      provider_file_path,
-      provider: 'openrouter',
-      api_key: api_key,
-      api_base: api_base,
+    Llm::Runtime.transcribe(
+      feature: :audio_transcription,
+      account: account,
       model: model,
-      temperature: temperature,
-      observability: observability.merge(provider: 'openrouter')
+      input: provider_file_path,
+      observability: observability.merge(provider: 'openrouter'),
+      options: { temperature: temperature, prompt: account.captain_audio_transcription_prompt }
     )
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
@@ -220,14 +216,6 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
 
   def llm_model_account
     account
-  end
-
-  def api_key
-    Llm::Config.api_key(Llm::Config.provider_for_model(model, account: account), account: account)
-  end
-
-  def api_base
-    Llm::Config.api_base(Llm::Config.provider_for_model(model, account: account), account: account)
   end
 
   def fetch_combined_recording

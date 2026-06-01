@@ -180,6 +180,10 @@ class Llm::OpenRouterFeaturePolicy
       }
     end
 
+    def extensions
+      Llm::OpenRouterPluginPolicy.feature_extensions(feature_key)
+    end
+
     def to_h
       {
         feature_key: feature_key,
@@ -197,6 +201,7 @@ class Llm::OpenRouterFeaturePolicy
         budget_policy: budget_policy,
         observability_mode: observability_mode,
         runtime_preferences: runtime_preferences,
+        extensions: extensions,
         guardrails: guardrails
       }.compact
     end

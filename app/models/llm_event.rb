@@ -68,8 +68,15 @@ class LlmEvent < ApplicationRecord
     'error' => :error,
     'moderation_skipped' => :moderation_skipped,
     'schema_invalid' => :schema_invalid,
-    'tool_failure' => :tool_failure
+    'tool_failure' => :tool_failure,
+    'payload_truncated' => :payload_truncated
   }.freeze
+  ZERO_COMPLETION_EVENT_NAMES = %w[
+    llm.zero_completion.detected
+    llm.zero_completion.retry
+    llm.zero_completion.recovered
+    llm.zero_completion.failed
+  ].freeze
 
   belongs_to :account, optional: true
   belongs_to :conversation, optional: true
@@ -104,6 +111,9 @@ class LlmEvent < ApplicationRecord
   scope :schema_invalid_events, -> { where(schema_invalid: true) }
   scope :tool_failure_events, -> { where(tool_failure: true) }
   scope :for_flag, lambda { |flag|
+    return where(event_name: ZERO_COMPLETION_EVENT_NAMES) if flag.to_s == 'zero_completion'
+    return where(event_name: 'llm.zero_completion.recovered') if flag.to_s == 'zero_completion_recovered'
+
     column_name = EVENT_FLAGS[flag.to_s]
     column_name.present? ? where(column_name => true) : all
   }

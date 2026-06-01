@@ -226,6 +226,13 @@ const releaseGateCategoryCounts = gate => {
       }),
     },
     {
+      key: 'ZERO_COMPLETION',
+      count: summary.zero_completion_count,
+      label: t('CAPTAIN.EVALUATIONS.RELEASE_GATE.ZERO_COMPLETION', {
+        count: summary.zero_completion_count,
+      }),
+    },
+    {
       key: 'CATALOG_STALE',
       count: summary.catalog_stale_count,
       label: t('CAPTAIN.EVALUATIONS.RELEASE_GATE.CATALOG_STALE', {

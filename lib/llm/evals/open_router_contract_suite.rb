@@ -19,6 +19,11 @@ class Llm::Evals::OpenRouterContractSuite
       tags: %w[openrouter structured_output response_healing]
     },
     {
+      id: 'openrouter.structured_output_recovery_contract',
+      description: 'Structured output runtime accepts valid JSON, repairs invalid JSON, wraps safe final text, and fails hard on unsafe text.',
+      tags: %w[openrouter structured_output response_healing zero_completion]
+    },
+    {
       id: 'openrouter.plugin_policy_contract',
       description: 'Caller-supplied plugins are filtered through product policy and unsafe OpenRouter tools stay denied.',
       tags: %w[openrouter plugins guardrails]
@@ -77,6 +82,31 @@ class Llm::Evals::OpenRouterContractSuite
       id: 'openrouter.prompt_cache_contract',
       description: 'FeatureRequest and compiler emit stable session IDs for OpenRouter prompt caching and routing.',
       tags: %w[openrouter prompt_cache routing]
+    },
+    {
+      id: 'openrouter.context_compression_contract',
+      description: 'Overflow context compression is deterministic and only inserts the OpenRouter plugin when limits require it.',
+      tags: %w[openrouter context_compression message_transforms]
+    },
+    {
+      id: 'openrouter.tool_result_requires_final_answer_contract',
+      description: 'Completed tools require a final user-facing answer and deterministic replay catches missing final answers.',
+      tags: %w[openrouter tools zero_completion]
+    },
+    {
+      id: 'openrouter.zero_completion_recovery_contract',
+      description: 'Zero-completion recovery is recorded without duplicate mutating tool effects.',
+      tags: %w[openrouter zero_completion tools]
+    },
+    {
+      id: 'openrouter.fallback_model_contract',
+      description: 'Fallback model chains are compiled and observable when routing allows them.',
+      tags: %w[openrouter routing fallback]
+    },
+    {
+      id: 'openrouter.native_reasoning_trace_contract',
+      description: 'Native reasoning is captured only when provider payload exists and absent reasoning does not create fake UI text.',
+      tags: %w[openrouter reasoning trace]
     }
   ].freeze
 

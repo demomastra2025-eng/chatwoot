@@ -79,6 +79,7 @@ class Llm::OpenRouterRuntime
           model: model,
           api_key: api_key!(request),
           api_base: api_base(request),
+          prompt: request.options[:prompt],
           language: request.options[:language],
           temperature: request.temperature.nil? ? 0.4 : request.temperature,
           provider: profile.provider_preferences
@@ -184,16 +185,38 @@ class Llm::OpenRouterRuntime
   end
 
   def compiled_chat_request(request, model)
-    Llm::OpenRouterRequestCompiler.call(
-      request: request,
+    Llm::EventBus.publish('request.compile', compile_observability_payload(request, model)) do |event_payload|
+      compiled = Llm::OpenRouterRequestCompiler.call(
+        request: request,
+        model: model,
+        account: request_account(request),
+        base_params: request.options[:params] || {},
+        stream: request.stream,
+        schema: request.schema_required?,
+        tools: request.requires_tools?,
+        reasoning: request.reasoning_requested?
+      )
+      attach_compile_success!(event_payload, compiled)
+      compiled
+    rescue StandardError => e
+      Llm::ObservabilityPayload.attach_error!(event_payload, e)
+      raise
+    end
+  end
+
+  def compile_observability_payload(request, model)
+    runtime_observability(request).merge(
       model: model,
-      account: request_account(request),
-      base_params: request.options[:params] || {},
-      stream: request.stream,
-      schema: request.schema_required?,
-      tools: request.requires_tools?,
-      reasoning: request.reasoning_requested?
-    )
+      requested_model: model,
+      provider: OPENROUTER_PROVIDER,
+      status: 'compiling'
+    ).compact
+  end
+
+  def attach_compile_success!(event_payload, compiled)
+    event_payload.merge!(compiled.metadata.to_h.stringify_keys)
+    event_payload['status'] = 'success'
+    event_payload['error'] = false
   end
 
   def observe_native_request(request, model, event_name, routing_metadata: nil)

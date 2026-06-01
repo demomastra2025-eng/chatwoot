@@ -75,7 +75,7 @@ RSpec.describe Llm::Evals::ReleaseGate do
     )
   end
 
-  it 'fails release category gates for schema, tool, no-content, and catalog-staleness regressions' do
+  it 'fails release category gates for schema, tool, no-content, zero-completion, and catalog-staleness regressions' do
     result = Llm::Evals::CollectionResult.new(
       suites: [
         suite_result(
@@ -84,6 +84,7 @@ RSpec.describe Llm::Evals::ReleaseGate do
             { id: 'schema_invalid', status: 'fail', tags: %w[structured_output], failures: ['schema invalid'] },
             { id: 'tool_timeout', status: 'fail', tags: %w[tools], failures: ['tool call failed'] },
             { id: 'empty_model_response', status: 'error', failures: ['no content generated'] },
+            { id: 'tool_no_final_answer', status: 'fail', tags: %w[zero_completion], failures: ['zero completion after tool call'] },
             { id: 'catalog_refresh', status: 'fail', failures: ['catalog stale'] }
           ]
         )
@@ -103,13 +104,46 @@ RSpec.describe Llm::Evals::ReleaseGate do
       schema_invalid_count: 1,
       tool_failure_count: 1,
       no_content_count: 1,
+      zero_completion_count: 1,
       catalog_stale_count: 1
     )
     expect(gate[:failures]).to include(
       'schema invalid eval cases exceeded gate: 1 > 0',
       'tool failure eval cases exceeded gate: 1 > 0',
       'no-content eval cases exceeded gate: 1 > 0',
+      'zero-completion eval cases exceeded gate: 1 > 0',
       'catalog stale eval cases exceeded gate: 1 > 0'
+    )
+  end
+
+  it 'can gate deterministic eval duration and estimated cost when limits are configured' do
+    result = Llm::Evals::CollectionResult.new(
+      suites: [
+        suite_result(
+          id: 'openrouter.contracts',
+          cases: [
+            {
+              status: 'pass',
+              duration_ms: 125,
+              artifact: { usage: { estimated_cost: 0.0025 } }
+            }
+          ]
+        )
+      ]
+    )
+
+    gate = described_class.new(
+      result: result,
+      required_pack_ids: ['openrouter.contracts'],
+      max_duration_ms: 100,
+      max_estimated_cost: 0.001
+    ).call
+
+    expect(gate).to include(status: 'fail', passed: false)
+    expect(gate[:summary]).to include(duration_ms: 125, estimated_cost: 0.0025)
+    expect(gate[:failures]).to include(
+      'eval duration exceeded gate: 125 > 100',
+      'eval estimated cost exceeded gate: 0.0025 > 0.001'
     )
   end
 

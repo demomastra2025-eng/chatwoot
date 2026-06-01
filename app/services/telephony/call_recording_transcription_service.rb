@@ -60,40 +60,29 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def transcribe_with_transcription_endpoint(file_path)
-    return transcribe_with_openrouter_transcription_endpoint(file_path) if openrouter_transcription_endpoint?
-
     observability = instrumentation_params(file_path)
     instrument_audio_transcription(observability) do
-      Llm::Config.with_api_key(
-        api_key,
-        api_base: api_base,
-        provider: provider_name,
+      Llm::Runtime.transcribe(
+        feature: :audio_transcription,
+        account: account,
         model: model,
-        account: account
-      ) do |context|
-        Llm::ApiClient.transcribe(
-          file_path,
-          context: context,
-          model: model,
-          prompt: transcription_prompt,
-          temperature: 0.2,
-          observability: observability.merge(runtime_mode: 'call_recording_transcription')
-        )
-      end
+        input: file_path,
+        observability: observability.merge(runtime_mode: 'call_recording_transcription', provider: 'openrouter'),
+        options: { temperature: 0.2, prompt: transcription_prompt }
+      )
     end
   end
 
   def transcribe_with_openrouter_transcription_endpoint(file_path)
     observability = instrumentation_params(file_path).merge(provider: 'openrouter')
     instrument_audio_transcription(observability) do
-      Llm::ApiClient.transcribe(
-        file_path,
-        provider: 'openrouter',
-        api_key: api_key,
-        api_base: api_base,
+      Llm::Runtime.transcribe(
+        feature: :audio_transcription,
+        account: account,
         model: model,
-        temperature: 0.2,
-        observability: observability.merge(runtime_mode: 'call_recording_transcription')
+        input: file_path,
+        observability: observability.merge(runtime_mode: 'call_recording_transcription'),
+        options: { temperature: 0.2, prompt: transcription_prompt }
       )
     end
   end
@@ -235,14 +224,6 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def provider_name
     @provider_name ||= Llm::Config.provider_for_model(model, account: account)
-  end
-
-  def api_key
-    @api_key ||= Llm::Config.api_key(provider_name, account: account)
-  end
-
-  def api_base
-    Llm::Config.api_base(provider_name, account: account)
   end
 
   def llm_feature_key

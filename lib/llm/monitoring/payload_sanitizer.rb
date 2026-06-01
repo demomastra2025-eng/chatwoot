@@ -7,7 +7,8 @@ class Llm::Monitoring::PayloadSanitizer
   REDACTED = '[REDACTED]'
   TRUNCATED_SUFFIX = '...[TRUNCATED]'
   TOKEN_USAGE_KEYS = %w[
-    cached_tokens completion_tokens input_tokens output_tokens prompt_tokens reasoning_tokens thinking_tokens token_count total_tokens
+    cached_tokens completion_tokens input_tokens openrouter_context_estimated_tokens output_tokens
+    prompt_tokens reasoning_tokens thinking_tokens token_count total_tokens
   ].freeze
   SENSITIVE_KEY_PATTERN = /(authorization|api[_-]?key|token|secret|password|cookie)/i
   RAW_CONTENT_KEY_PATTERN = /\A(raw_)?(prompt|messages|input|output|response|content)\z/i
