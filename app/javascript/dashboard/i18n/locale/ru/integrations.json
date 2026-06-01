@@ -74,12 +74,12 @@
           "PLACEHOLDER": "Пример: {webhookExampleURL}",
           "ERROR": "Пожалуйста, введите правильный URL"
         },
-        "EDIT_SUBMIT": "Обновить webhook",
+        "EDIT_SUBMIT": "Обновить вебхук",
         "ADD_SUBMIT": "Создать вебхук"
       },
       "TITLE": "Вебхук",
       "CONFIGURE": "Настроить",
-      "HEADER": "Настройки вебхуков",
+      "HEADER": "Вебхуки",
       "HEADER_BTN_TXT": "Добавить новый вебхук",
       "LOADING": "Получение подключенных вебхуков",
       "SEARCH_404": "Нет вебхуков, соответствующих запросу",
@@ -122,16 +122,17 @@
         }
       },
       "SECRET": {
-        "LABEL": "Secret",
-        "COPY": "Copy secret to clipboard",
-        "COPY_SUCCESS": "Secret copied to clipboard",
-        "TOGGLE": "Toggle secret visibility",
-        "CREATED_DESC": "Your webhook has been created. Use the secret below to verify webhook signatures. Please copy it now — you can also find it later in the webhook edit form.",
-        "DONE": "Done"
+        "LABEL": "Секрет вебхука",
+        "COPY": "Скопировать секрет",
+        "COPY_SUCCESS": "Секрет скопирован",
+        "TOGGLE": "Показать или скрыть секрет",
+        "CREATED_DESC": "Вебхук создан. Скопируйте секрет сейчас: он нужен для проверки подписи вебхука и будет доступен позже в форме редактирования.",
+        "DONE": "Готово"
       },
-      "COUNT": "{n} webhook | {n} webhooks",
-      "SEARCH_PLACEHOLDER": "Search webhooks...",
-      "NO_RESULTS": "No webhooks found matching your search"
+      "COUNT": "{n} вебхук | {n} вебхука | {n} вебхуков",
+      "SEARCH_PLACEHOLDER": "Поиск вебхуков...",
+      "NO_RESULTS": "Вебхуки по запросу не найдены",
+      "DESCRIPTION": "Исходящие вебхуки отправляют события OneLink на внешний URL. Настройте адрес вебхука и события, которые нужно отправлять."
     },
     "SLACK": {
       "DELETE": "Удалить",
@@ -254,7 +255,7 @@
       "BUTTON_TEXT": "Подключить"
     },
     "DASHBOARD_APPS": {
-      "TITLE": "Плагин",
+      "TITLE": "Плагины",
       "HEADER_BTN_TXT": "Добавить плагин",
       "SIDEBAR_TXT": "<p><b>Плагин</b></p><p>Плагины позволяют встроить своё приложение в OneLink и показывать сотрудникам полезный контекст по клиенту, заказу или оплате.</p>",
       "DESCRIPTION": "Плагины встраивают своё приложение в OneLink и показывают сотрудникам полезный контекст по клиенту, заказу или оплате.",
@@ -302,7 +303,7 @@
       },
       "COUNT": "{n} плагин | {n} плагина | {n} плагинов",
       "SEARCH_PLACEHOLDER": "Поиск интеграций...",
-      "NO_RESULTS": "Плагины по запросу не найдены"
+      "NO_RESULTS": "Интеграции по запросу не найдены"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Создать/Связать Задачу",
@@ -408,7 +409,7 @@
       },
       "HEADER": "Notion"
     },
-    "SEARCH_PLACEHOLDER": "Поиск плагинов...",
+    "SEARCH_PLACEHOLDER": "Поиск интеграций...",
     "NO_RESULTS": "Интеграции по запросу не найдены"
   },
   "CAPTAIN": {

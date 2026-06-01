@@ -1,6 +1,7 @@
 <script setup>
 import { useStoreGetters, useStore } from 'dashboard/composables/store';
 import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useBranding } from 'shared/composables/useBranding';
 import { picoSearch } from '@scmmishra/pico-search';
 import IntegrationItem from './IntegrationItem.vue';
@@ -10,6 +11,7 @@ import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 const store = useStore();
 const getters = useStoreGetters();
 const { replaceInstallationName } = useBranding();
+const { t } = useI18n();
 
 const searchQuery = ref('');
 const uiFlags = getters['integrations/getUIFlags'];
@@ -19,7 +21,16 @@ const integrationList = computed(
 );
 
 const pluginIntegrationList = computed(() =>
-  integrationList.value.filter(item => item.id !== 'webhook')
+  integrationList.value
+    .filter(item => item.id !== 'webhook')
+    .map(item => {
+      if (item.id !== 'dashboard_apps') return item;
+      return {
+        ...item,
+        name: t('INTEGRATION_SETTINGS.DASHBOARD_APPS.TITLE'),
+        description: t('INTEGRATION_SETTINGS.DASHBOARD_APPS.DESCRIPTION'),
+      };
+    })
 );
 
 const filteredIntegrationList = computed(() => {

@@ -46,14 +46,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:Evaluations', 'SIDEBAR.CAPTAIN_EVALUATIONS'),
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
   ]),
-  item('MyCompany', 'SIDEBAR.MY_COMPANY', [
-    item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
-    item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-    item('MyCompany:Teams', 'EMPLOYEE_SETTINGS.TABS.TEAM'),
-    item('MyCompany:Roles', 'EMPLOYEE_SETTINGS.TABS.ROLES'),
-    item('MyCompany:Policies', 'EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-    item('MyCompany:AuditLogs', 'SIDEBAR.AUDIT_LOGS'),
-  ]),
   item('Contacts', 'SIDEBAR.CONTACTS', [
     item('Contacts:All', 'SIDEBAR.ALL_CONTACTS'),
     item('Contacts:Active', 'SIDEBAR.ACTIVE'),
@@ -77,6 +69,14 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('SMM:Media', 'SIDEBAR.SMM_MEDIA'),
     item('SMM:Analytics', 'SIDEBAR.SMM_ANALYTICS'),
     item('SMM:Settings', 'SIDEBAR.SMM_SETTINGS'),
+  ]),
+  item('MyCompany', 'SIDEBAR.MY_COMPANY', [
+    item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
+    item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+    item('MyCompany:Teams', 'EMPLOYEE_SETTINGS.TABS.TEAM'),
+    item('MyCompany:Roles', 'EMPLOYEE_SETTINGS.TABS.ROLES'),
+    item('MyCompany:Policies', 'EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+    item('MyCompany:AuditLogs', 'SIDEBAR.AUDIT_LOGS'),
   ]),
   item('Reports', 'SIDEBAR.REPORTS', [
     item('Reports:Overview', 'SIDEBAR.REPORTS_OVERVIEW'),

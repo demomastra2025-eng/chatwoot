@@ -6,7 +6,7 @@
       "AGENTS": "You have exceeded the employee limit. Your plan only allows {allowedAgents} employees.",
       "NON_ADMIN": "Please contact your administrator to upgrade the plan and continue using all features."
     },
-    "TITLE": "Менің компаниям",
+    "TITLE": "Профиль",
     "SUBMIT": "Өзгерістерді сақтау",
     "BACK": "Back",
     "DISMISS": "Dismiss",
@@ -248,7 +248,7 @@
       "GO_TO_SETTINGS_LABELS": "Go to Tag Settings",
       "GO_TO_SETTINGS_CANNED_RESPONSES": "Go to Canned Response Settings",
       "GO_TO_SETTINGS_APPLICATIONS": "Плагин баптауларына өту",
-      "GO_TO_SETTINGS_ACCOUNT": "«Менің компаниям» бөліміне өту",
+      "GO_TO_SETTINGS_ACCOUNT": "«Профиль» бөліміне өту",
       "GO_TO_SETTINGS_PROFILE": "Go to Profile Settings",
       "GO_TO_NOTIFICATIONS": "Go to Notifications",
       "ADD_LABELS_TO_CONVERSATION": "Add tag to the conversation",

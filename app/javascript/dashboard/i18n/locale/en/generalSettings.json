@@ -6,7 +6,7 @@
       "AGENTS": "You have exceeded the agent limit. Your plan only allows {allowedAgents} agents.",
       "NON_ADMIN": "Please contact your administrator to upgrade the plan and continue using all features."
     },
-    "TITLE": "My company",
+    "TITLE": "Profile",
     "SUBMIT": "Save changes",
     "BACK": "Back",
     "DISMISS": "Dismiss",
@@ -249,7 +249,7 @@
       "GO_TO_SETTINGS_LABELS": "Go to Tag Settings",
       "GO_TO_SETTINGS_CANNED_RESPONSES": "Go to Canned Response Settings",
       "GO_TO_SETTINGS_APPLICATIONS": "Go to Plugin Settings",
-      "GO_TO_SETTINGS_ACCOUNT": "Go to My company",
+      "GO_TO_SETTINGS_ACCOUNT": "Go to Profile",
       "GO_TO_SETTINGS_PROFILE": "Go to Profile Settings",
       "GO_TO_NOTIFICATIONS": "Go to Notifications",
       "ADD_LABELS_TO_CONVERSATION": "Add tag to the conversation",

@@ -2,6 +2,7 @@ import {
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
+  SIDEBAR_VISIBILITY_ITEMS,
   buildSidebarVisibilityState,
   filterSidebarMenuItems,
   getSidebarHiddenItems,
@@ -42,6 +43,12 @@ describe('sidebarVisibility', () => {
         ],
       })
     ).toEqual(['MyCompany:Employees', 'Reports', 'Settings:Macros']);
+  });
+
+  it('keeps company settings immediately before reports in the visibility menu', () => {
+    const itemKeys = SIDEBAR_VISIBILITY_ITEMS.map(item => item.key);
+
+    expect(itemKeys.indexOf('MyCompany')).toBe(itemKeys.indexOf('Reports') - 1);
   });
 
   it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {

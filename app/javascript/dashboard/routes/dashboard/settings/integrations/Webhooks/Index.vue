@@ -40,9 +40,6 @@ export default {
       records: 'webhooks/getWebhooks',
       uiFlags: 'webhooks/getUIFlags',
     }),
-    integration() {
-      return this.$store.getters['integrations/getIntegration']('webhook');
-    },
     filteredRecords() {
       const query = this.searchQuery.trim();
       if (!query) return this.records;
@@ -58,7 +55,6 @@ export default {
     },
   },
   mounted() {
-    this.$store.dispatch('integrations/get', 'webhook');
     this.$store.dispatch('webhooks/get');
   },
   methods: {
@@ -112,10 +108,13 @@ export default {
   >
     <template #header>
       <BaseSettingsHeader
-        v-if="integration.name"
         v-model:search-query="searchQuery"
-        :title="integration.name"
-        :description="replaceInstallationName(integration.description)"
+        :title="$t('INTEGRATION_SETTINGS.WEBHOOK.HEADER')"
+        :description="
+          replaceInstallationName(
+            $t('INTEGRATION_SETTINGS.WEBHOOK.DESCRIPTION')
+          )
+        "
         :search-placeholder="
           $t('INTEGRATION_SETTINGS.WEBHOOK.SEARCH_PLACEHOLDER')
         "

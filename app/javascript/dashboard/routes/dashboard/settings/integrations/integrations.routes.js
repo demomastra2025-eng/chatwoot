@@ -3,7 +3,6 @@ import { frontendURL } from '../../../../helper/URLHelper';
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
 const IntegrationHooks = () => import('./IntegrationHooks.vue');
 const Index = () => import('./Index.vue');
-const Webhook = () => import('./Webhooks/Index.vue');
 const DashboardApps = () => import('./DashboardApps/Index.vue');
 const Slack = () => import('./Slack.vue');
 const Linear = () => import('./Linear.vue');
@@ -37,12 +36,13 @@ export default {
         },
         {
           path: 'webhook',
-          component: Webhook,
           name: 'settings_integrations_webhook',
-          meta: {
-            featureFlag: FEATURE_FLAGS.INTEGRATIONS,
-            permissions: ['administrator'],
-          },
+          redirect: to => ({
+            name: 'agent_bots',
+            params: to.params,
+            query: to.query,
+            hash: to.hash,
+          }),
         },
       ],
     },

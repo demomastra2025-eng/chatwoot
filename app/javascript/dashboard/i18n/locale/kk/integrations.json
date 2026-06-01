@@ -37,6 +37,8 @@
     "DESCRIPTION": "Интеграциялар OneLink-ті сыртқы сервистермен және модульдермен байланыстырады. Қажетті интеграцияларды төменде баптаңыз.",
     "LEARN_MORE": "Интеграциялар туралы толығырақ",
     "LOADING": "Интеграциялар жүктелуде",
+    "SEARCH_PLACEHOLDER": "Интеграцияларды іздеу...",
+    "NO_RESULTS": "Сұрау бойынша интеграциялар табылмады",
     "CAPTAIN": {
       "DISABLED": "Captain is not enabled on your account.",
       "CLICK_HERE_TO_CONFIGURE": "Click here to configure",
@@ -44,81 +46,93 @@
       "FAILED_TO_LOAD_CONSOLE": "Failed to load Captain Console. Please refresh and try again."
     },
     "WEBHOOK": {
-      "SUBSCRIBED_EVENTS": "Subscribed Events",
-      "LEARN_MORE": "Learn more about webhooks",
+      "SUBSCRIBED_EVENTS": "Жазылған оқиғалар",
+      "LEARN_MORE": "Вебхуктар туралы толығырақ",
       "FORM": {
-        "CANCEL": "Cancel",
-        "DESC": "Webhook events provide you the realtime information about what's happening in your OneLink account. Please enter a valid URL to configure a callback.",
+        "CANCEL": "Болдырмау",
+        "DESC": "Вебхук оқиғалары OneLink аккаунтында болып жатқан өзгерістерді нақты уақытта сыртқы URL-ға жібереді. Callback үшін дұрыс URL енгізіңіз.",
         "SUBSCRIPTIONS": {
-          "LABEL": "Events",
+          "LABEL": "Оқиғалар",
           "EVENTS": {
-            "CONVERSATION_CREATED": "Conversation Created",
-            "CONVERSATION_STATUS_CHANGED": "Conversation Status Changed",
-            "CONVERSATION_UPDATED": "Conversation Updated",
-            "MESSAGE_CREATED": "Message created",
-            "MESSAGE_UPDATED": "Message updated",
-            "WEBWIDGET_TRIGGERED": "Live chat widget opened by the user",
-            "CONTACT_CREATED": "Contact created",
-            "CONTACT_UPDATED": "Contact updated",
-            "CONVERSATION_TYPING_ON": "Conversation Typing On",
-            "CONVERSATION_TYPING_OFF": "Conversation Typing Off"
+            "CONVERSATION_CREATED": "Диалог құрылды",
+            "CONVERSATION_STATUS_CHANGED": "Диалог статусы өзгерді",
+            "CONVERSATION_UPDATED": "Диалог жаңартылды",
+            "MESSAGE_CREATED": "Хабарлама құрылды",
+            "MESSAGE_UPDATED": "Хабарлама жаңартылды",
+            "WEBWIDGET_TRIGGERED": "Пайдаланушы live chat виджетін ашты",
+            "CONTACT_CREATED": "Контакт құрылды",
+            "CONTACT_UPDATED": "Контакт жаңартылды",
+            "CONVERSATION_TYPING_ON": "Диалогта теру басталды",
+            "CONVERSATION_TYPING_OFF": "Диалогта теру тоқтады"
           }
         },
         "NAME": {
-          "LABEL": "Webhook Name",
-          "PLACEHOLDER": "Enter the name of the webhook"
+          "LABEL": "Вебхук атауы",
+          "PLACEHOLDER": "Вебхук атауын енгізіңіз"
         },
         "END_POINT": {
-          "LABEL": "Webhook URL",
-          "PLACEHOLDER": "Example: {webhookExampleURL}",
-          "ERROR": "Please enter a valid URL"
+          "LABEL": "Вебхук URL",
+          "PLACEHOLDER": "Мысалы: {webhookExampleURL}",
+          "ERROR": "Дұрыс URL енгізіңіз"
         },
-        "EDIT_SUBMIT": "Update webhook",
-        "ADD_SUBMIT": "Create webhook"
+        "EDIT_SUBMIT": "Вебхукты жаңарту",
+        "ADD_SUBMIT": "Вебхук жасау"
       },
-      "TITLE": "Webhook",
-      "CONFIGURE": "Configure",
-      "HEADER": "Webhook settings",
-      "HEADER_BTN_TXT": "Add new webhook",
-      "LOADING": "Fetching attached webhooks",
-      "SEARCH_404": "There are no items matching this query",
-      "SIDEBAR_TXT": "<p><b>Webhooks</b> </p> <p>Webhooks are HTTP callbacks which can be defined for every account. They are triggered by events like message creation in OneLink. You can create more than one webhook for this account. <br /><br /> For creating a <b>webhook</b>, click on the <b>Add new webhook</b> button. You can also remove any existing webhook by clicking on the Delete button.</p>",
+      "TITLE": "Вебхук",
+      "CONFIGURE": "Баптау",
+      "HEADER": "Вебхуктар",
+      "HEADER_BTN_TXT": "Жаңа вебхук қосу",
+      "LOADING": "Вебхуктар жүктелуде",
+      "SEARCH_404": "Сұрауға сәйкес вебхуктар жоқ",
+      "SIDEBAR_TXT": "<p><b>Вебхуктар</b></p><p>Вебхуктар OneLink оқиғаларын сыртқы URL-ға жіберуге мүмкіндік береді.</p>",
       "LIST": {
-        "404": "There are no webhooks configured for this account.",
-        "TITLE": "Manage webhooks",
+        "404": "Бұл аккаунтта вебхуктар бапталмаған.",
+        "TITLE": "Вебхуктарды басқару",
         "TABLE_HEADER": {
-          "WEBHOOK_ENDPOINT": "Webhook endpoint",
-          "ACTIONS": "Actions"
+          "WEBHOOK_ENDPOINT": "Вебхук мекенжайы",
+          "ACTIONS": "Әрекеттер"
         }
       },
       "EDIT": {
-        "BUTTON_TEXT": "Edit",
-        "TITLE": "Edit webhook",
+        "BUTTON_TEXT": "Өңдеу",
+        "TITLE": "Вебхукты өңдеу",
         "API": {
-          "SUCCESS_MESSAGE": "Webhook configuration updated successfully",
-          "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
+          "SUCCESS_MESSAGE": "Вебхук баптауы сәтті жаңартылды",
+          "ERROR_MESSAGE": "Onelink серверіне қосылу мүмкін болмады, кейінірек қайталаңыз"
         }
       },
       "ADD": {
-        "CANCEL": "Cancel",
-        "TITLE": "Add new webhook",
+        "CANCEL": "Болдырмау",
+        "TITLE": "Жаңа вебхук қосу",
         "API": {
-          "SUCCESS_MESSAGE": "Webhook configuration added successfully",
-          "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
+          "SUCCESS_MESSAGE": "Вебхук баптауы сәтті қосылды",
+          "ERROR_MESSAGE": "Onelink серверіне қосылу мүмкін болмады, кейінірек қайталаңыз"
         }
       },
       "DELETE": {
-        "BUTTON_TEXT": "Delete",
+        "BUTTON_TEXT": "Жою",
         "API": {
-          "SUCCESS_MESSAGE": "Webhook deleted successfully",
-          "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
+          "SUCCESS_MESSAGE": "Вебхук жойылды",
+          "ERROR_MESSAGE": "Onelink серверіне қосылу мүмкін болмады, кейінірек қайталаңыз"
         },
         "CONFIRM": {
-          "TITLE": "Confirm Deletion",
-          "MESSAGE": "Are you sure to delete the webhook? ({webhookURL})",
-          "YES": "Yes, Delete ",
-          "NO": "No, Keep it"
+          "TITLE": "Жоюды растаңыз",
+          "MESSAGE": "Вебхукты жоюды растайсыз ба? ({webhookURL})",
+          "YES": "Иә, жою",
+          "NO": "Жоқ, қалдыру"
         }
+      },
+      "COUNT": "{n} вебхук | {n} вебхук",
+      "SEARCH_PLACEHOLDER": "Вебхуктарды іздеу...",
+      "NO_RESULTS": "Сұрау бойынша вебхуктар табылмады",
+      "DESCRIPTION": "Шығыс вебхуктар OneLink оқиғаларын сыртқы URL-ға жібереді. Endpoint пен жіберілетін оқиғаларды баптаңыз.",
+      "SECRET": {
+        "LABEL": "Вебхук құпиясы",
+        "COPY": "Құпияны көшіру",
+        "COPY_SUCCESS": "Құпия көшірілді",
+        "TOGGLE": "Құпияны көрсету немесе жасыру",
+        "CREATED_DESC": "Вебхук жасалды. Қолтаңбаны тексеру үшін құпияны қазір көшіріңіз; кейін оны өңдеу формасынан да таба аласыз.",
+        "DONE": "Дайын"
       }
     },
     "SLACK": {
@@ -241,51 +255,55 @@
       "BUTTON_TEXT": "Connect"
     },
     "DASHBOARD_APPS": {
-      "TITLE": "Плагин",
+      "TITLE": "Плагиндер",
       "HEADER_BTN_TXT": "Плагин қосу",
-      "SIDEBAR_TXT": "<p><b>Dashboard Apps</b></p><p>Dashboard Apps allow organizations to embed an application inside the OneLink dashboard to provide the context for customer support agents. This feature allows you to create an application independently and embed that inside the dashboard to provide user information, their orders, or their previous payment history.</p><p>When you embed your application using the dashboard in OneLink, your application will get the context of the conversation and contact as a window event. Implement a listener for the message event on your page to receive the context.</p><p>To add a new dashboard app, click on the button 'Add a new dashboard app'.</p>",
+      "SIDEBAR_TXT": "<p><b>Плагиндер</b></p><p>Плагиндер OneLink ішіне өз қосымшаңызды ендіріп, қызметкерлерге клиент, тапсырыс немесе төлем туралы пайдалы контекст көрсетеді.</p>",
       "DESCRIPTION": "Плагиндер OneLink ішіне өз қосымшаңызды ендіріп, қызметкерлерге клиент, тапсырыс немесе төлем туралы контекст көрсетеді.",
       "LEARN_MORE": "Плагиндер туралы толығырақ",
       "LIST": {
         "404": "Бұл аккаунтта әлі плагиндер бапталмаған",
         "LOADING": "Плагиндер жүктелуде...",
         "TABLE_HEADER": {
-          "NAME": "Name",
-          "ENDPOINT": "Endpoint"
+          "NAME": "Атауы",
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "Әрекеттер"
         },
         "EDIT_TOOLTIP": "Плагинді өңдеу",
         "DELETE_TOOLTIP": "Плагинді жою"
       },
       "FORM": {
-        "TITLE_LABEL": "Name",
+        "TITLE_LABEL": "Атауы",
         "TITLE_PLACEHOLDER": "Плагин атауын енгізіңіз",
         "TITLE_ERROR": "Плагин атауы міндетті",
         "URL_LABEL": "Endpoint",
         "URL_PLACEHOLDER": "Плагин орналасқан URL мекенжайын енгізіңіз",
-        "URL_ERROR": "A valid URL is required"
+        "URL_ERROR": "Дұрыс URL қажет"
       },
       "CREATE": {
         "HEADER": "Плагин қосу",
-        "FORM_SUBMIT": "Submit",
-        "FORM_CANCEL": "Cancel",
-        "API_SUCCESS": "Dashboard app configured successfully",
-        "API_ERROR": "We couldn't create an app. Please try again later"
+        "FORM_SUBMIT": "Жіберу",
+        "FORM_CANCEL": "Болдырмау",
+        "API_SUCCESS": "Плагин сәтті бапталды",
+        "API_ERROR": "Плагинді жасау мүмкін болмады. Кейінірек қайталаңыз"
       },
       "UPDATE": {
         "HEADER": "Плагинді өңдеу",
-        "FORM_SUBMIT": "Update",
-        "FORM_CANCEL": "Cancel",
+        "FORM_SUBMIT": "Жаңарту",
+        "FORM_CANCEL": "Болдырмау",
         "API_SUCCESS": "Плагин сәтті жаңартылды",
         "API_ERROR": "Плагинді жаңарту мүмкін болмады. Кейінірек қайталаңыз"
       },
       "DELETE": {
-        "CONFIRM_YES": "Yes, delete it",
-        "CONFIRM_NO": "No, keep it",
-        "TITLE": "Confirm deletion",
+        "CONFIRM_YES": "Иә, жою",
+        "CONFIRM_NO": "Жоқ, қалдыру",
+        "TITLE": "Жоюды растаңыз",
         "MESSAGE": "{appName} плагинін жоюды растайсыз ба?",
         "API_SUCCESS": "Плагин сәтті жойылды",
         "API_ERROR": "Плагинді жою мүмкін болмады. Кейінірек қайталаңыз"
-      }
+      },
+      "COUNT": "{n} плагин | {n} плагин",
+      "SEARCH_PLACEHOLDER": "Интеграцияларды іздеу...",
+      "NO_RESULTS": "Сұрау бойынша интеграциялар табылмады"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Create/Link Linear Issue",

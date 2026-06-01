@@ -1,7 +1,9 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
-const Bot = () => import('./Index.vue');
 import { frontendURL } from '../../../../helper/URLHelper';
+
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const Webhook = () => import('../integrations/Webhooks/Index.vue');
+
 export default {
   routes: [
     {
@@ -14,9 +16,9 @@ export default {
         {
           path: '',
           name: 'agent_bots',
-          component: Bot,
+          component: Webhook,
           meta: {
-            featureFlag: FEATURE_FLAGS.AGENT_BOTS,
+            featureFlag: FEATURE_FLAGS.INTEGRATIONS,
             permissions: ['administrator'],
           },
         },

@@ -79,7 +79,7 @@
       },
       "TITLE": "Webhook",
       "CONFIGURE": "Configure",
-      "HEADER": "Webhook settings",
+      "HEADER": "Webhooks",
       "HEADER_BTN_TXT": "Add new webhook",
       "LOADING": "Fetching attached webhooks",
       "SEARCH_404": "There are no items matching this query",
@@ -131,7 +131,8 @@
       },
       "COUNT": "{n} webhook | {n} webhooks",
       "SEARCH_PLACEHOLDER": "Search webhooks...",
-      "NO_RESULTS": "No webhooks found matching your search"
+      "NO_RESULTS": "No webhooks found matching your search",
+      "DESCRIPTION": "Outgoing webhooks send OneLink events to an external URL. Configure the endpoint and events you want to send."
     },
     "SLACK": {
       "DELETE": "Delete",
@@ -254,7 +255,7 @@
       "BUTTON_TEXT": "Connect"
     },
     "DASHBOARD_APPS": {
-      "TITLE": "Plugin",
+      "TITLE": "Plugins",
       "HEADER_BTN_TXT": "Add plugin",
       "SIDEBAR_TXT": "<p><b>Plugin</b></p><p>Plugins let teams embed a custom app inside OneLink to show useful customer, order, or payment context for agents.</p>",
       "DESCRIPTION": "Plugins embed a custom app inside OneLink to show useful customer, order, or payment context for agents.",
@@ -408,8 +409,8 @@
       },
       "HEADER": "Notion"
     },
-    "SEARCH_PLACEHOLDER": "Search plugins...",
-    "NO_RESULTS": "No plugins found matching your search"
+    "SEARCH_PLACEHOLDER": "Search integrations...",
+    "NO_RESULTS": "No integrations found matching your search"
   },
   "CAPTAIN": {
     "NAME": "AI Agents",

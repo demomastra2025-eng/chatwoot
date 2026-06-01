@@ -1064,80 +1064,6 @@ const menuItems = computed(() => {
           },
         ],
       },
-      ...(checkPermissions(['administrator'])
-        ? [
-            {
-              name: 'MyCompany',
-              label: t('SIDEBAR.MY_COMPANY'),
-              icon: 'i-lucide-briefcase-business',
-              activeOn: [
-                ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
-                ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
-                'auditlogs_list',
-              ],
-              children: [
-                {
-                  name: 'Workspace',
-                  visibilityKey: 'MyCompany:Workspace',
-                  label: t('SIDEBAR.ACCOUNT_SETTINGS'),
-                  icon: 'i-lucide-building-2',
-                  activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
-                  to: accountScopedRoute('general_settings_index'),
-                },
-                {
-                  name: 'Employees',
-                  visibilityKey: 'MyCompany:Employees',
-                  label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-                  icon: 'i-lucide-user-round',
-                  activeOn: activeOnForEmployeeTab('agent_list'),
-                  to: accountScopedRoute('agent_list'),
-                },
-                {
-                  name: 'Teams',
-                  visibilityKey: 'MyCompany:Teams',
-                  label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
-                  icon: 'i-lucide-users-round',
-                  activeOn: activeOnForEmployeeTab('settings_teams_list'),
-                  to: accountScopedRoute('settings_teams_list'),
-                },
-                {
-                  name: 'Roles',
-                  visibilityKey: 'MyCompany:Roles',
-                  label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
-                  icon: 'i-lucide-shield-user',
-                  activeOn: activeOnForEmployeeTab('custom_roles_list'),
-                  to: accountScopedRoute('custom_roles_list'),
-                },
-                ...(hasAssignmentPolicies.value
-                  ? [
-                      {
-                        name: 'Policies',
-                        visibilityKey: 'MyCompany:Policies',
-                        label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-                        icon: 'i-lucide-shield-check',
-                        activeOn: activeOnForEmployeeTab(
-                          'assignment_policy_index'
-                        ),
-                        to: accountScopedRoute('assignment_policy_index'),
-                      },
-                    ]
-                  : []),
-                ...(hasAuditLogs.value
-                  ? [
-                      {
-                        name: 'Audit Logs',
-                        visibilityKey: 'MyCompany:AuditLogs',
-                        label: t('SIDEBAR.AUDIT_LOGS'),
-                        icon: 'i-lucide-scroll-text',
-                        activeOn: ['auditlogs_list'],
-                        to: accountScopedRoute('auditlogs_list'),
-                      },
-                    ]
-                  : []),
-              ],
-            },
-          ]
-        : []),
       {
         name: 'Contacts',
         label: t('SIDEBAR.CONTACTS'),
@@ -1388,6 +1314,80 @@ const menuItems = computed(() => {
                   label: t('SIDEBAR.SMM_SETTINGS'),
                   to: accountScopedRoute('smm_settings'),
                 },
+              ],
+            },
+          ]
+        : []),
+      ...(checkPermissions(['administrator'])
+        ? [
+            {
+              name: 'MyCompany',
+              label: t('SIDEBAR.MY_COMPANY'),
+              icon: 'i-lucide-briefcase-business',
+              activeOn: [
+                ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+                ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
+                'auditlogs_list',
+              ],
+              children: [
+                {
+                  name: 'Workspace',
+                  visibilityKey: 'MyCompany:Workspace',
+                  label: t('SIDEBAR.ACCOUNT_SETTINGS'),
+                  icon: 'i-lucide-building-2',
+                  activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+                  to: accountScopedRoute('general_settings_index'),
+                },
+                {
+                  name: 'Employees',
+                  visibilityKey: 'MyCompany:Employees',
+                  label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+                  icon: 'i-lucide-user-round',
+                  activeOn: activeOnForEmployeeTab('agent_list'),
+                  to: accountScopedRoute('agent_list'),
+                },
+                {
+                  name: 'Teams',
+                  visibilityKey: 'MyCompany:Teams',
+                  label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
+                  icon: 'i-lucide-users-round',
+                  activeOn: activeOnForEmployeeTab('settings_teams_list'),
+                  to: accountScopedRoute('settings_teams_list'),
+                },
+                {
+                  name: 'Roles',
+                  visibilityKey: 'MyCompany:Roles',
+                  label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
+                  icon: 'i-lucide-shield-user',
+                  activeOn: activeOnForEmployeeTab('custom_roles_list'),
+                  to: accountScopedRoute('custom_roles_list'),
+                },
+                ...(hasAssignmentPolicies.value
+                  ? [
+                      {
+                        name: 'Policies',
+                        visibilityKey: 'MyCompany:Policies',
+                        label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+                        icon: 'i-lucide-shield-check',
+                        activeOn: activeOnForEmployeeTab(
+                          'assignment_policy_index'
+                        ),
+                        to: accountScopedRoute('assignment_policy_index'),
+                      },
+                    ]
+                  : []),
+                ...(hasAuditLogs.value
+                  ? [
+                      {
+                        name: 'Audit Logs',
+                        visibilityKey: 'MyCompany:AuditLogs',
+                        label: t('SIDEBAR.AUDIT_LOGS'),
+                        icon: 'i-lucide-scroll-text',
+                        activeOn: ['auditlogs_list'],
+                        to: accountScopedRoute('auditlogs_list'),
+                      },
+                    ]
+                  : []),
               ],
             },
           ]
