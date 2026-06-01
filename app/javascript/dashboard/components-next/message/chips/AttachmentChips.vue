@@ -21,6 +21,8 @@ import { ATTACHMENT_TYPES } from '../constants';
  * @property {number} fileSize - Size of the file in bytes
  * @property {number|null} width - Width of the image if applicable
  * @property {number|null} height - Height of the image if applicable
+ * @property {string|null} parsedText - Extracted document text if available
+ * @property {string|null} transcribedText - Extracted audio or document text if available
  */
 const props = defineProps({
   attachments: {

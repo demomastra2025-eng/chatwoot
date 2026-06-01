@@ -568,12 +568,39 @@
       "SERVER_TIME_TITLE": "System time",
       "SERVER_TIME_DESCRIPTION": "AI Agent and AI Assistant get a safe read-only datetime tool.",
       "BLOCKED_EXTENSIONS_TITLE": "Dangerous extensions",
-      "BLOCKED_EXTENSIONS_DESCRIPTION": "Web search, patch, PDF, and image generation stay blocked until a separate rollout.",
+      "BLOCKED_EXTENSIONS_DESCRIPTION": "OpenRouter patch, PDF plugins, and image generation stay blocked until a separate rollout.",
       "STATUS": {
         "AUTO": "auto",
         "OVERFLOW_ONLY": "overflow",
         "SYSTEM": "system",
         "PROTECTED": "protected"
+      }
+    },
+    "WEB_ACCESS": {
+      "TITLE": "Firecrawl web access",
+      "DESCRIPTION": "Control public web access for the AI Agent and AI Assistant through the One Link policy layer.",
+      "PROVIDER_TITLE": "Web access provider",
+      "PROVIDER_DESCRIPTION": "Firecrawl powers search, page reading, and document parsing. Results go through workspace policy, limits, and tool tracing.",
+      "SCOPE_AGENT": "AI Agent",
+      "SCOPE_ASSISTANT": "AI Assistant",
+      "STATUS": {
+        "CONFIGURED": "Firecrawl configured",
+        "MISSING": "Firecrawl key required"
+      },
+      "SEARCH": {
+        "TITLE": "Web search",
+        "DESCRIPTION": "Allows finding external sources and returning links with short snippets.",
+        "LIMIT": "up to {count} results"
+      },
+      "SCRAPE": {
+        "TITLE": "Page reading",
+        "DESCRIPTION": "Allows reading one public URL and returning cleaned source text to the model.",
+        "LIMIT": "up to {count} chars"
+      },
+      "DOCUMENTS": {
+        "TITLE": "Document reading",
+        "DESCRIPTION": "Allows Captain to read PDF, DOCX, XLSX, RTF, HTML, and text files from incoming messages.",
+        "LIMIT": "up to {count} chars, file up to {size}"
       }
     },
     "USAGE": {

@@ -285,6 +285,15 @@ class Message < ApplicationRecord
                           .presence
     return "[Voice Message] #{audio_transcription}" if audio_transcription.present?
 
+    if Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+      document_text = attachments
+                      .where(file_type: :file)
+                      .filter_map { |att| att.meta&.dig('parsed_text').presence || att.meta&.dig('transcribed_text').presence }
+                      .join(' ')
+                      .presence
+      return "[File Attachment] #{document_text}" if document_text.present?
+    end
+
     '[Attachment]' if attachments.any?
   end
 

@@ -7,6 +7,7 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { useCaptain } from 'dashboard/composables/useCaptain';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
+import { formatBytes } from 'shared/helpers/FileHelper';
 
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
@@ -135,6 +136,10 @@ function formatPercent(value) {
 
 function formatRate(value) {
   return `${formatPercent(Number(value || 0) * 100)}%`;
+}
+
+function formatFileSize(value) {
+  return formatBytes(Number(value || 0), 0);
 }
 
 function providerHealthStatus(provider) {
@@ -566,6 +571,68 @@ const openRouterReliabilityItems = computed(() => [
     status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.PROTECTED'),
   },
 ]);
+const webAccessMetadata = computed(
+  () => runtimeMetadata.value?.web_access || {}
+);
+const isFirecrawlConfigured = computed(
+  () => webAccessMetadata.value.configured === true
+);
+const webAccessStatusLabel = computed(() =>
+  isFirecrawlConfigured.value
+    ? t('CAPTAIN_SETTINGS.WEB_ACCESS.STATUS.CONFIGURED')
+    : t('CAPTAIN_SETTINGS.WEB_ACCESS.STATUS.MISSING')
+);
+const webAccessStatusClasses = computed(() =>
+  isFirecrawlConfigured.value
+    ? 'border-n-teal-8 text-n-teal-11 bg-n-teal-2'
+    : 'border-n-amber-8 text-n-amber-11 bg-n-amber-2'
+);
+const webAccessItems = computed(() => [
+  {
+    key: 'web_search_enabled',
+    icon: 'i-lucide-search',
+    title: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.TITLE'),
+    description: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.DESCRIPTION'),
+    enabled: runtime.value.web_search_enabled === true,
+    limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.LIMIT', {
+      count:
+        runtime.value.web_search_max_results ||
+        webAccessMetadata.value.search_default_results ||
+        5,
+    }),
+  },
+  {
+    key: 'web_scrape_enabled',
+    icon: 'i-lucide-file-search',
+    title: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.TITLE'),
+    description: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.DESCRIPTION'),
+    enabled: runtime.value.web_scrape_enabled === true,
+    limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.LIMIT', {
+      count: formatNumber(
+        runtime.value.web_scrape_max_chars ||
+          webAccessMetadata.value.scrape_default_max_chars ||
+          12000
+      ),
+    }),
+  },
+  {
+    key: 'web_document_parse_enabled',
+    icon: 'i-lucide-file-text',
+    title: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.TITLE'),
+    description: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.DESCRIPTION'),
+    enabled: runtime.value.web_document_parse_enabled === true,
+    limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.LIMIT', {
+      count: formatNumber(
+        runtime.value.web_document_parse_max_chars ||
+          webAccessMetadata.value.document_parse_default_max_chars ||
+          24000
+      ),
+      size: formatFileSize(
+        webAccessMetadata.value.document_parse_max_file_bytes || 0
+      ),
+    }),
+  },
+]);
 const usageMetricCards = computed(() => [
   {
     key: 'today_spend',
@@ -790,6 +857,12 @@ async function handleRuntimeChange(runtimeConfig) {
     useAlert(t('CAPTAIN_SETTINGS.API.ERROR'));
     captainConfigStore.fetch();
   }
+}
+
+async function handleWebAccessToggle(key, enabled) {
+  await handleRuntimeChange({
+    [key]: enabled,
+  });
 }
 
 async function handleBudgetSave() {
@@ -1073,6 +1146,89 @@ onMounted(() => {
                 </div>
                 <div class="text-xs leading-5 text-n-slate-11">
                   {{ item.description }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </SectionLayout>
+
+        <SectionLayout
+          :title="t('CAPTAIN_SETTINGS.WEB_ACCESS.TITLE')"
+          :description="t('CAPTAIN_SETTINGS.WEB_ACCESS.DESCRIPTION')"
+          with-border
+        >
+          <div class="grid gap-4" data-test="captain-web-access-section">
+            <div
+              class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div class="flex min-w-0 items-start gap-3">
+                <Icon
+                  icon="i-lucide-globe-2"
+                  class="mt-0.5 size-4 shrink-0 text-n-slate-11"
+                />
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-n-slate-12">
+                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.PROVIDER_TITLE') }}
+                  </div>
+                  <div class="mt-0.5 text-xs leading-5 text-n-slate-11">
+                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.PROVIDER_DESCRIPTION') }}
+                  </div>
+                </div>
+              </div>
+              <span
+                class="shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium"
+                :class="webAccessStatusClasses"
+              >
+                {{ webAccessStatusLabel }}
+              </span>
+            </div>
+
+            <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+              <div
+                v-for="item in webAccessItems"
+                :key="item.key"
+                class="grid gap-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex min-w-0 items-start gap-3">
+                    <Icon
+                      :icon="item.icon"
+                      class="mt-0.5 size-4 shrink-0 text-n-slate-11"
+                    />
+                    <div class="min-w-0">
+                      <div class="text-sm font-medium text-n-slate-12">
+                        {{ item.title }}
+                      </div>
+                      <div class="mt-0.5 text-xs leading-5 text-n-slate-11">
+                        {{ item.description }}
+                      </div>
+                    </div>
+                  </div>
+                  <Switch
+                    :model-value="item.enabled"
+                    :disabled="!isFirecrawlConfigured"
+                    @change="
+                      enabled => handleWebAccessToggle(item.key, enabled)
+                    "
+                  />
+                </div>
+
+                <div class="flex flex-wrap gap-2 border-t border-n-weak pt-3">
+                  <span
+                    class="rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-[11px] font-medium text-n-slate-11"
+                  >
+                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.SCOPE_AGENT') }}
+                  </span>
+                  <span
+                    class="rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-[11px] font-medium text-n-slate-11"
+                  >
+                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.SCOPE_ASSISTANT') }}
+                  </span>
+                  <span
+                    class="rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-[11px] font-medium text-n-slate-11"
+                  >
+                    {{ item.limit }}
+                  </span>
                 </div>
               </div>
             </div>

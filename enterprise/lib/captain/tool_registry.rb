@@ -12,6 +12,7 @@ class Captain::ToolRegistry
       assistant_tool_class
       required_features
       required_integrations
+      required_runtime_flags
       required_permissions
       risk_level
       requires_confirmation
@@ -35,6 +36,7 @@ class Captain::ToolRegistry
       @assistant_tool_class = attributes[:assistant_tool_class]
       @required_features = Array(attributes[:required_features]).map(&:to_s).freeze
       @required_integrations = Array(attributes[:required_integrations]).map(&:to_s).freeze
+      @required_runtime_flags = Array(attributes[:required_runtime_flags]).map(&:to_s).freeze
       @required_permissions = Array(attributes[:required_permissions]).map(&:to_s).freeze
       @risk_level = attributes[:risk_level].presence || 'medium'
       @requires_confirmation = ActiveModel::Type::Boolean.new.cast(attributes[:requires_confirmation])
@@ -70,6 +72,7 @@ class Captain::ToolRegistry
         capability_tool: capability_tool,
         required_features: required_features,
         required_integrations: required_integrations,
+        required_runtime_flags: required_runtime_flags,
         required_permissions: required_permissions,
         risk_level: risk_level,
         requires_confirmation: requires_confirmation,
@@ -418,6 +421,32 @@ class Captain::ToolRegistry
           agent_tool_class: Captain::Tools::FaqLookupTool,
           assistant_tool_class: Captain::Tools::Copilot::FaqLookupService,
           risk_level: 'low'
+        ),
+        definition(
+          id: 'web_search',
+          title: 'Web Search',
+          description: 'Search the public web through the configured Firecrawl provider and return source links with short snippets',
+          group_name: 'Web Access',
+          icon: 'search',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          required_runtime_flags: %w[web_search],
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::WebSearchService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'web_scrape_url',
+          title: 'Read Web Page',
+          description: 'Read one approved public URL through Firecrawl and return cleaned page text with source metadata',
+          group_name: 'Web Access',
+          icon: 'globe',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          required_runtime_flags: %w[web_scrape],
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::WebScrapeUrlService,
+          risk_level: 'low',
+          idempotent: true
         ),
         definition(
           id: 'add_contact_note',

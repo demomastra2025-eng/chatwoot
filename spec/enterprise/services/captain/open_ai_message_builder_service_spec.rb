@@ -111,6 +111,30 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
 
+    context 'with parsed document attachments' do
+      let(:document_attachment) do
+        attachment = message.attachments.build(account_id: message.account_id, file_type: :file)
+        attachment.file.attach(io: StringIO.new('pdf'), filename: 'contract.pdf', content_type: 'application/pdf')
+        attachment.save!
+        attachment
+      end
+
+      before do
+        message.account.update!(captain_runtime: { 'web_document_parse_enabled' => true })
+      end
+
+      it 'includes stored document text instead of a generic attachment placeholder' do
+        document_attachment.update!(meta: { 'parsed_text' => 'Contract terms text' })
+
+        result = service.send(:attachment_parts, attachments)
+
+        expect(result).to include(
+          { type: 'text', text: "Document attachment: contract.pdf\nContract terms text" }
+        )
+        expect(result).not_to include({ type: 'text', text: 'User has shared an attachment' })
+      end
+    end
+
     context 'with mixed attachment types' do
       let(:image_attachment) do
         attachment = message.attachments.build(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/image.jpg')

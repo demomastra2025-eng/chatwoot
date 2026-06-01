@@ -118,6 +118,14 @@ const basePayload = ({ audioModel }) => ({
     recent_errors: [],
   },
   runtime_metadata: {
+    web_access: {
+      provider: 'firecrawl',
+      configured: true,
+      search_default_results: 5,
+      scrape_default_max_chars: 12000,
+      document_parse_default_max_chars: 24000,
+      document_parse_max_file_bytes: 41943040,
+    },
     knowledge_indexing: {
       chunk_size_options: [],
     },
@@ -367,6 +375,48 @@ describe('Captain settings OpenRouter UX', () => {
     expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.TODAY_SPEND');
     expect(wrapper.text()).toContain('openai/gpt-5.4');
     expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.NO_RECENT_ERRORS');
+  });
+
+  it('renders web access controls and saves shared agent settings', async () => {
+    const store = useCaptainConfigStore();
+    const payload = basePayload({
+      audioModel: {
+        id: 'openai/gpt-audio-mini',
+        display_name: 'GPT Audio Mini',
+        provider: 'openrouter',
+        provider_configured: true,
+        type: 'chat',
+        capabilities: ['audio_input', 'text_output', 'transcription'],
+      },
+    });
+    store.applyPayload(payload);
+    const updateSpy = vi
+      .spyOn(store, 'updatePreferences')
+      .mockResolvedValue({ data: payload });
+
+    const wrapper = mountComponent(store);
+
+    expect(
+      wrapper.find('[data-test="captain-web-access-section"]').exists()
+    ).toBe(true);
+    expect(wrapper.text()).toContain(
+      'CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.TITLE'
+    );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.TITLE'
+    );
+    expect(wrapper.text()).toContain('40 MB');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN_SETTINGS.WEB_ACCESS.SCOPE_ASSISTANT'
+    );
+
+    await wrapper.vm.handleWebAccessToggle('web_search_enabled', true);
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      captain_runtime: {
+        web_search_enabled: true,
+      },
+    });
   });
 
   it('preserves zero budget limits and warning thresholds', () => {

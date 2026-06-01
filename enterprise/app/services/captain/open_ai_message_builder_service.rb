@@ -39,9 +39,13 @@ class Captain::OpenAiMessageBuilderService
     transcription = extract_audio_transcriptions(attachments)
     transcription_part = text_part(transcription) if transcription.present?
 
-    attachment_part = text_part('User has shared an attachment') if attachments.where.not(file_type: %i[image audio]).exists?
+    document_text = extract_document_texts(attachments)
+    document_part = text_part(document_text) if document_text.present?
 
-    [image_content, transcription_part, attachment_part].flatten.compact
+    attachment_summary = unparsed_attachment_summary(attachments)
+    attachment_part = text_part(attachment_summary) if attachment_summary.present?
+
+    [image_content, transcription_part, document_part, attachment_part].flatten.compact
   end
 
   def image_parts(image_attachments)
@@ -74,5 +78,39 @@ class Captain::OpenAiMessageBuilderService
     audio_attachments.filter_map do |attachment|
       attachment.meta.to_h['transcribed_text'].presence
     end.join
+  end
+
+  def extract_document_texts(attachments)
+    return '' unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: @message.account)
+
+    file_attachments(attachments).filter_map do |attachment|
+      document_text = Messages::DocumentParsingService.extracted_text(attachment)
+      next if document_text.blank?
+
+      ["Document attachment: #{attachment_filename(attachment)}", document_text].join("\n")
+    end.join("\n\n")
+  end
+
+  def unparsed_attachment_summary(attachments)
+    document_parse_enabled = Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: @message.account)
+    unparsed_attachments = attachments.where.not(file_type: %i[image audio]).reject do |attachment|
+      document_parse_enabled && attachment.file_type == 'file' && Messages::DocumentParsingService.extracted_text(attachment).present?
+    end
+    return if unparsed_attachments.blank?
+
+    filenames = unparsed_attachments.filter_map { |attachment| attachment_filename(attachment).presence }
+    return 'User has shared an attachment' if filenames.blank?
+
+    "User has shared file attachment(s): #{filenames.first(5).join(', ')}"
+  end
+
+  def file_attachments(attachments)
+    attachments.where(file_type: :file)
+  end
+
+  def attachment_filename(attachment)
+    return attachment.file.blob.filename.to_s if attachment.file.attached?
+
+    attachment.fallback_title.presence || attachment.external_url.to_s.split('/').last.presence
   end
 end

@@ -1014,12 +1014,39 @@
       "SERVER_TIME_TITLE": "Системное время",
       "SERVER_TIME_DESCRIPTION": "AI-агент и ИИ ассистент получают безопасный read-only инструмент времени.",
       "BLOCKED_EXTENSIONS_TITLE": "Опасные расширения",
-      "BLOCKED_EXTENSIONS_DESCRIPTION": "Web search, patch, PDF и генерация изображений заблокированы до отдельного rollout.",
+      "BLOCKED_EXTENSIONS_DESCRIPTION": "Patch, PDF-плагины OpenRouter и генерация изображений заблокированы до отдельного rollout.",
       "STATUS": {
         "AUTO": "авто",
         "OVERFLOW_ONLY": "по лимиту",
         "SYSTEM": "системно",
         "PROTECTED": "защищено"
+      }
+    },
+    "WEB_ACCESS": {
+      "TITLE": "Веб-доступ Firecrawl",
+      "DESCRIPTION": "Управляйте доступом AI-агента и ИИ ассистента к публичному вебу через контролируемый слой One Link.",
+      "PROVIDER_TITLE": "Провайдер веб-доступа",
+      "PROVIDER_DESCRIPTION": "Firecrawl используется для поиска, чтения страниц и разбора документов. Результаты проходят через политики workspace, лимиты и трассировку инструментов.",
+      "SCOPE_AGENT": "AI-агент",
+      "SCOPE_ASSISTANT": "ИИ ассистент",
+      "STATUS": {
+        "CONFIGURED": "Firecrawl настроен",
+        "MISSING": "Нужен ключ Firecrawl"
+      },
+      "SEARCH": {
+        "TITLE": "Веб-поиск",
+        "DESCRIPTION": "Разрешает искать внешние источники и возвращать ссылки с краткими описаниями.",
+        "LIMIT": "до {count} результатов"
+      },
+      "SCRAPE": {
+        "TITLE": "Чтение страниц",
+        "DESCRIPTION": "Разрешает читать конкретную публичную страницу и отдавать модели очищенный текст с источником.",
+        "LIMIT": "до {count} символов"
+      },
+      "DOCUMENTS": {
+        "TITLE": "Чтение документов",
+        "DESCRIPTION": "Разрешает Captain читать PDF, DOCX, XLSX, RTF, HTML и текстовые файлы из входящих сообщений.",
+        "LIMIT": "до {count} символов, файл до {size}"
       }
     },
     "USAGE": {

@@ -1093,6 +1093,14 @@
               "TITLE": "Поиск FAQ",
               "DESCRIPTION": "Ищет подходящие ответы в FAQ по смыслу."
             },
+            "web_search": {
+              "TITLE": "Веб-поиск",
+              "DESCRIPTION": "Ищет публичные веб-источники через Firecrawl."
+            },
+            "web_scrape_url": {
+              "TITLE": "Читать страницу",
+              "DESCRIPTION": "Читает одну публичную веб-страницу через Firecrawl."
+            },
             "add_contact_note": {
               "TITLE": "Добавить заметку к контакту",
               "DESCRIPTION": "Добавляет заметку в профиль контакта."

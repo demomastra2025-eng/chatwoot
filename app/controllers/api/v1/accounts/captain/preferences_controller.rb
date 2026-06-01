@@ -20,6 +20,9 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     copilot_moderation
     trace_input_capture
     trace_output_capture
+    web_search_enabled
+    web_scrape_enabled
+    web_document_parse_enabled
   ].freeze
   RUNTIME_ROUTING_STRATEGY_KEYS = Llm::OpenRouterRoutingProfile::ROUTING_STRATEGY_KEYS.freeze
   RUNTIME_PROVIDER_ORDER_KEYS = Llm::OpenRouterRoutingProfile::PROVIDER_ORDER_KEYS.freeze
@@ -169,6 +172,12 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       :openrouter_routing_strategy,
       :routing_strategy,
       :agent_high_risk_tools,
+      :web_search_enabled,
+      :web_scrape_enabled,
+      :web_document_parse_enabled,
+      :web_search_max_results,
+      :web_scrape_max_chars,
+      :web_document_parse_max_chars,
       release_gate: [
         :enabled,
         :min_request_count,
@@ -188,7 +197,9 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       openrouter_provider_order: [],
       provider_order: [],
       agent_high_risk_tool_ids: [],
-      agent_permissioned_tool_ids: []
+      agent_permissioned_tool_ids: [],
+      web_allowed_domains: [],
+      web_blocked_domains: []
     ).to_h.stringify_keys
 
     normalize_captain_runtime(permitted)
@@ -275,10 +286,26 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   def runtime_metadata_payload
     Llm::ModelRegistryService.runtime_metadata(account: Current.account).merge(
+      web_access: web_access_metadata_payload,
       knowledge_indexing: Captain::KnowledgeSettings.metadata_for(Current.account).merge(
         chunk_size_options: Llm::Models.knowledge_chunk_size_options(account: Current.account)
       )
     )
+  end
+
+  def web_access_metadata_payload
+    {
+      provider: 'firecrawl',
+      configured: Captain::Tools::FirecrawlService.configured?,
+      search_default_results: Llm::RuntimePolicy::WEB_SEARCH_DEFAULT_LIMIT,
+      search_max_results: Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT,
+      scrape_default_max_chars: Llm::RuntimePolicy::WEB_SCRAPE_DEFAULT_MAX_CHARS,
+      scrape_max_chars: Llm::RuntimePolicy::WEB_SCRAPE_MAX_CHARS,
+      document_parse_default_max_chars: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_DEFAULT_MAX_CHARS,
+      document_parse_max_chars: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_MAX_CHARS,
+      document_parse_max_file_bytes: Llm::RuntimePolicy.web_document_parse_max_file_bytes,
+      document_parse_provider_max_file_bytes: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_PROVIDER_MAX_FILE_BYTES
+    }
   end
 
   def usage_payload
@@ -419,13 +446,37 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     RUNTIME_BOOLEAN_KEYS.each do |key|
       runtime[key] = ActiveModel::Type::Boolean.new.cast(runtime[key]) if runtime.key?(key)
     end
+    normalize_runtime_integer!(runtime, 'web_search_max_results', default: Llm::RuntimePolicy::WEB_SEARCH_DEFAULT_LIMIT,
+                                                              min: 1, max: Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT)
+    normalize_runtime_integer!(runtime, 'web_scrape_max_chars', default: Llm::RuntimePolicy::WEB_SCRAPE_DEFAULT_MAX_CHARS,
+                                                            min: 1_000, max: Llm::RuntimePolicy::WEB_SCRAPE_MAX_CHARS)
+    normalize_runtime_integer!(runtime, 'web_document_parse_max_chars', default: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_DEFAULT_MAX_CHARS,
+                                                                       min: 1_000, max: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_MAX_CHARS)
     runtime['audio_transcription_prompt'] = runtime['audio_transcription_prompt'].to_s.strip if runtime.key?('audio_transcription_prompt')
     runtime['knowledge_chunk_size'] = normalize_knowledge_chunk_size(runtime['knowledge_chunk_size']) if runtime.key?('knowledge_chunk_size')
+    normalize_runtime_domain_list!(runtime, 'web_allowed_domains')
+    normalize_runtime_domain_list!(runtime, 'web_blocked_domains')
     RUNTIME_GUARDRAIL_ACTION_KEYS.each { |key| normalize_runtime_guardrail_action!(runtime, key) }
     RUNTIME_ROUTING_STRATEGY_KEYS.each { |key| normalize_runtime_routing_strategy!(runtime, key) }
     RUNTIME_PROVIDER_ORDER_KEYS.each { |key| normalize_runtime_provider_order!(runtime, key) }
     runtime['release_gate'] = normalize_release_gate(runtime['release_gate']) if runtime['release_gate'].present?
     runtime
+  end
+
+  def normalize_runtime_integer!(runtime, key, default:, min:, max:)
+    return unless runtime.key?(key)
+
+    runtime[key] = integer_value(runtime[key])
+    runtime[key] = default unless runtime[key].is_a?(Integer)
+    runtime[key] = runtime[key].clamp(min, max)
+  end
+
+  def normalize_runtime_domain_list!(runtime, key)
+    return unless runtime.key?(key)
+
+    runtime[key] = Array(runtime[key]).filter_map do |domain|
+      domain.to_s.strip.downcase.delete_prefix('http://').delete_prefix('https://').split('/').first.presence
+    end.uniq
   end
 
   def normalize_runtime_guardrail_action!(runtime, key)

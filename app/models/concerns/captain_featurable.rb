@@ -14,7 +14,15 @@ module CaptainFeaturable
     'assistant_sensitive_info_guardrail' => 'block',
     'copilot_sensitive_info_guardrail' => 'block',
     'trace_input_capture' => !Rails.env.production?,
-    'trace_output_capture' => !Rails.env.production?
+    'trace_output_capture' => !Rails.env.production?,
+    'web_search_enabled' => false,
+    'web_scrape_enabled' => false,
+    'web_document_parse_enabled' => false,
+    'web_search_max_results' => Llm::RuntimePolicy::WEB_SEARCH_DEFAULT_LIMIT,
+    'web_scrape_max_chars' => Llm::RuntimePolicy::WEB_SCRAPE_DEFAULT_MAX_CHARS,
+    'web_document_parse_max_chars' => Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_DEFAULT_MAX_CHARS,
+    'web_allowed_domains' => [],
+    'web_blocked_domains' => []
   }.freeze
   RUNTIME_FEATURE_KEYS = %w[assistant copilot].freeze
 

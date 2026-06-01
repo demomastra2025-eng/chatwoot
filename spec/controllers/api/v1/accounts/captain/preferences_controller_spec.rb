@@ -479,6 +479,47 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
       end
 
+      it 'stores normalized web access runtime settings and returns Firecrawl metadata' do
+        allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_runtime: {
+                web_search_enabled: true,
+                web_scrape_enabled: true,
+                web_document_parse_enabled: true,
+                web_search_max_results: 99,
+                web_scrape_max_chars: 99_999,
+                web_document_parse_max_chars: 99_999,
+                web_allowed_domains: ['https://Example.com/docs'],
+                web_blocked_domains: ['Bad.Example.com/path']
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_runtime).to include(
+          'web_search_enabled' => true,
+          'web_scrape_enabled' => true,
+          'web_document_parse_enabled' => true,
+          'web_search_max_results' => Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT,
+          'web_scrape_max_chars' => Llm::RuntimePolicy::WEB_SCRAPE_MAX_CHARS,
+          'web_document_parse_max_chars' => Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_MAX_CHARS,
+          'web_allowed_domains' => ['example.com'],
+          'web_blocked_domains' => ['bad.example.com']
+        )
+        expect(json_response.dig(:runtime_metadata, :web_access)).to include(
+          provider: 'firecrawl',
+          configured: true,
+          search_max_results: Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT,
+          scrape_max_chars: Llm::RuntimePolicy::WEB_SCRAPE_MAX_CHARS,
+          document_parse_max_chars: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_MAX_CHARS,
+          document_parse_max_file_bytes: Llm::RuntimePolicy.web_document_parse_max_file_bytes,
+          document_parse_provider_max_file_bytes: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_PROVIDER_MAX_FILE_BYTES
+        )
+      end
+
       it 'updates both models and features in single request' do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,

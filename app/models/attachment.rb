@@ -26,7 +26,7 @@ class Attachment < ApplicationRecord
   include AccountStorageLimitable
 
   ACCEPTABLE_FILE_TYPES = %w[
-    text/csv text/plain text/rtf
+    text/csv text/html text/plain text/rtf
     application/json application/pdf
     application/zip application/x-7z-compressed application/vnd.rar application/x-tar
     application/msword application/vnd.ms-excel application/vnd.ms-powerpoint application/rtf
@@ -138,7 +138,10 @@ class Attachment < ApplicationRecord
       thumb_url: thumb_url,
       file_size: file.byte_size,
       width: file.metadata[:width],
-      height: file.metadata[:height]
+      height: file.metadata[:height],
+      transcribed_text: meta&.[]('transcribed_text') || '',
+      parsed_text: meta&.[]('parsed_text') || '',
+      document_parse_status: meta&.dig('document_parse', 'status') || ''
     }
 
     metadata[:data_url] = metadata[:thumb_url] = external_url if instagram_incoming_message?

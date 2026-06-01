@@ -301,6 +301,41 @@ RSpec.describe Attachment do
     end
   end
 
+  describe 'document parsing enqueue' do
+    before do
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(firecrawl_configured)
+      message.account.enable_features('captain_integration')
+      message.account.update!(captain_runtime: { 'web_document_parse_enabled' => document_parse_enabled })
+    end
+
+    let(:document_parse_enabled) { true }
+    let(:firecrawl_configured) { true }
+
+    def build_document_attachment
+      message.attachments.create!(
+        account_id: message.account_id,
+        file_type: :file,
+        file: fixture_file_upload('sample.pdf', 'application/pdf')
+      )
+    end
+
+    it 'enqueues document parsing when Captain document reading is enabled' do
+      expect { build_document_attachment }.to have_enqueued_job(Messages::DocumentParsingJob).on_queue('audio_transcription')
+    end
+
+    it 'does not enqueue document parsing when the runtime toggle is disabled' do
+      message.account.update!(captain_runtime: { 'web_document_parse_enabled' => false })
+
+      expect { build_document_attachment }.not_to have_enqueued_job(Messages::DocumentParsingJob)
+    end
+
+    it 'does not enqueue Firecrawl documents when Firecrawl is missing' do
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
+
+      expect { build_document_attachment }.not_to have_enqueued_job(Messages::DocumentParsingJob)
+    end
+  end
+
   describe 'set_extension' do
     it 'sets extension from filename on save' do
       attachment = message.attachments.new(account_id: message.account_id, file_type: :file)

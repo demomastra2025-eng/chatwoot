@@ -35,6 +35,10 @@ class Captain::Tools::FirecrawlService
     post('/scrape', body: scrape_payload(url, options))
   end
 
+  def search(query, options = {})
+    post('/search', body: search_payload(query, options))
+  end
+
   def parse_upload(attachment, options = {})
     blob = attachment.respond_to?(:blob) ? attachment.blob : attachment
 
@@ -131,6 +135,44 @@ class Captain::Tools::FirecrawlService
       ignoreCache: options.fetch(:ignore_cache, false),
       limit: options.fetch(:limit, DEFAULT_MAP_LIMIT)
     }.merge(compact_payload(search: options[:search])).to_json
+  end
+
+  def search_payload(query, options)
+    payload = {
+      query: query,
+      limit: options.fetch(:limit, 5),
+      sources: Array(options[:sources]).presence || ['web'],
+      categories: search_categories_payload(options[:categories]),
+      includeDomains: Array(options[:include_domains]).presence,
+      excludeDomains: Array(options[:exclude_domains]).presence,
+      tbs: options[:tbs],
+      location: options[:location],
+      country: options.fetch(:country, 'US'),
+      timeout: options[:timeout],
+      ignoreInvalidURLs: options.fetch(:ignore_invalid_urls, true)
+    }.compact
+
+    if options[:scrape_results]
+      payload[:scrapeOptions] = nested_scrape_options_payload(
+        {
+          formats: ['markdown'],
+          only_main_content: true,
+          remove_base64_images: true
+        }.merge(options[:scrape_options].to_h.symbolize_keys)
+      )
+    end
+
+    payload.to_json
+  end
+
+  def search_categories_payload(categories)
+    Array(categories).filter_map do |category|
+      normalized = category.respond_to?(:to_h) ? category.to_h.stringify_keys : { 'type' => category.to_s }
+      type = normalized['type'].to_s.strip
+      next if type.blank?
+
+      normalized.merge('type' => type)
+    end.presence
   end
 
   def crawl_payload(url, webhook_url, crawl_limit, options = {})

@@ -180,7 +180,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   def update_transcription(transcribed_text)
     return if transcribed_text.blank?
 
-    attachment.update!(meta: { transcribed_text: transcribed_text })
+    attachment.update!(meta: attachment.meta.to_h.merge('transcribed_text' => transcribed_text))
     message.reload.send_update_event
     message.account.increment_response_usage
 

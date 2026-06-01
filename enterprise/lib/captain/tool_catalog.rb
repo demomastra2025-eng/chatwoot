@@ -79,7 +79,26 @@ class Captain::ToolCatalog
     def built_in_tools_for(assistant, scope_name)
       Captain::ToolRegistry.tools_for_scope(scope_name)
                            .select { |tool_definition| required_integrations_available?(assistant, tool_definition) }
+                           .select { |tool_definition| runtime_requirements_available?(assistant, tool_definition) }
                            .map { |tool_definition| require_assistant_confirmation(tool_definition, scope_name) }
+    end
+
+    def runtime_requirements_available?(assistant, tool_definition)
+      flags = Array(tool_definition[:required_runtime_flags]).map(&:to_s)
+      return true if assistant.blank? || flags.blank?
+
+      flags.all? do |flag|
+        case flag
+        when 'web_search'
+          Llm::RuntimePolicy.web_access_enabled?(:search, account: assistant.account) &&
+            Captain::Tools::FirecrawlService.configured?
+        when 'web_scrape'
+          Llm::RuntimePolicy.web_access_enabled?(:scrape, account: assistant.account) &&
+            Captain::Tools::FirecrawlService.configured?
+        else
+          true
+        end
+      end
     end
 
     def required_integrations_available?(assistant, tool_definition)

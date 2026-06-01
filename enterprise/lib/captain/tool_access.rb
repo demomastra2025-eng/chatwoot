@@ -5,7 +5,7 @@ module Captain::ToolAccess
     SCOPE_AGENT,
     SCOPE_ASSISTANT
   ].freeze
-  DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup handoff].freeze
+  DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup web_search web_scrape_url handoff].freeze
 
   module_function
 

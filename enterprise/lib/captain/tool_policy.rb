@@ -29,18 +29,21 @@ class Captain::ToolPolicy
   def runtime_allowed?
     return false unless scope_allowed?
 
-    feature_requirements_satisfied?
+    feature_requirements_satisfied? &&
+      runtime_requirements_satisfied?
   end
 
   def execution_allowed?
     scope_allowed? &&
       feature_requirements_satisfied? &&
+      runtime_requirements_satisfied? &&
       permission_requirements_satisfied?
   end
 
   def execution_error_message
     return 'Tool is not available for the current runtime scope' unless scope_allowed?
     return 'Required account feature is not enabled for this tool' unless feature_requirements_satisfied?
+    return 'Required runtime setting is not enabled for this tool' unless runtime_requirements_satisfied?
     return 'Tool permission is not available for the current operator' unless permission_requirements_satisfied?
 
     'Tool is not available for the current runtime policy'
@@ -49,6 +52,7 @@ class Captain::ToolPolicy
   def selection_metadata
     {
       required_features: required_features,
+      required_runtime_flags: required_runtime_flags,
       required_permissions: required_permissions,
       risk_level: risk_level,
       requires_confirmation: requires_confirmation?,
@@ -89,6 +93,26 @@ class Captain::ToolPolicy
     end
   end
 
+  def runtime_requirements_satisfied?
+    return true if assistant.blank? || required_runtime_flags.blank?
+
+    required_runtime_flags.all? do |flag|
+      case flag
+      when 'web_search'
+        web_access_available?(:search)
+      when 'web_scrape'
+        web_access_available?(:scrape)
+      else
+        true
+      end
+    end
+  end
+
+  def web_access_available?(capability)
+    Llm::RuntimePolicy.web_access_enabled?(capability, account: assistant.account) &&
+      Captain::Tools::FirecrawlService.configured?
+  end
+
   def confirmation_requirements_satisfied?
     return true unless requires_confirmation?
 
@@ -107,6 +131,10 @@ class Captain::ToolPolicy
 
   def required_features
     Array(@tool_definition[:required_features]).map(&:to_s)
+  end
+
+  def required_runtime_flags
+    Array(@tool_definition[:required_runtime_flags]).map(&:to_s)
   end
 
   def required_permissions

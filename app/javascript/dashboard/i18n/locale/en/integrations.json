@@ -1093,6 +1093,14 @@
               "TITLE": "FAQ lookup",
               "DESCRIPTION": "Find matching FAQ answers using semantic similarity."
             },
+            "web_search": {
+              "TITLE": "Web search",
+              "DESCRIPTION": "Search public web sources through Firecrawl."
+            },
+            "web_scrape_url": {
+              "TITLE": "Read web page",
+              "DESCRIPTION": "Read one public web page through Firecrawl."
+            },
             "add_contact_note": {
               "TITLE": "Add contact note",
               "DESCRIPTION": "Add a note to the contact profile."

@@ -21,6 +21,16 @@ class Llm::RuntimePolicy
   ].freeze
   AGENT_HIGH_RISK_TOOL_MODES = %w[disabled enabled].freeze
   TRACE_CAPTURE_KEYS = %w[trace_input_capture trace_output_capture].freeze
+  WEB_ACCESS_CAPABILITIES = %w[search scrape document_parse].freeze
+  WEB_SEARCH_DEFAULT_LIMIT = 5
+  WEB_SEARCH_MAX_LIMIT = 10
+  WEB_SCRAPE_DEFAULT_MAX_CHARS = 12_000
+  WEB_SCRAPE_MAX_CHARS = 24_000
+  WEB_DOCUMENT_PARSE_DEFAULT_MAX_CHARS = 24_000
+  WEB_DOCUMENT_PARSE_MAX_CHARS = 48_000
+  WEB_DOCUMENT_PARSE_PROVIDER_MAX_FILE_BYTES = 50 * 1024 * 1024
+  WEB_DOCUMENT_PARSE_FALLBACK_MAX_FILE_BYTES = 40 * 1024 * 1024
+  WEB_DOCUMENT_PARSE_MAX_FILE_BYTES = WEB_DOCUMENT_PARSE_PROVIDER_MAX_FILE_BYTES
   THINKING_BUDGETS = {
     'low' => 2_048,
     'medium' => 4_096,
@@ -125,6 +135,68 @@ class Llm::RuntimePolicy
       ).include?(tool_id.to_s.downcase)
     end
 
+    def web_access_enabled?(capability, account: nil, preferences: nil)
+      capability = capability.to_s
+      return false unless WEB_ACCESS_CAPABILITIES.include?(capability)
+
+      boolean_or_default(
+        runtime_preferences(account, preferences)["web_#{capability}_enabled"],
+        default: false
+      )
+    end
+
+    def web_search_limit(account: nil, preferences: nil, requested: nil)
+      constrained_integer(
+        requested.presence || runtime_preferences(account, preferences)['web_search_max_results'],
+        default: WEB_SEARCH_DEFAULT_LIMIT,
+        min: 1,
+        max: WEB_SEARCH_MAX_LIMIT
+      )
+    end
+
+    def web_scrape_max_chars(account: nil, preferences: nil)
+      constrained_integer(
+        runtime_preferences(account, preferences)['web_scrape_max_chars'],
+        default: WEB_SCRAPE_DEFAULT_MAX_CHARS,
+        min: 1_000,
+        max: WEB_SCRAPE_MAX_CHARS
+      )
+    end
+
+    def web_document_parse_max_chars(account: nil, preferences: nil)
+      constrained_integer(
+        runtime_preferences(account, preferences)['web_document_parse_max_chars'],
+        default: WEB_DOCUMENT_PARSE_DEFAULT_MAX_CHARS,
+        min: 1_000,
+        max: WEB_DOCUMENT_PARSE_MAX_CHARS
+      )
+    end
+
+    def web_document_parse_max_file_bytes
+      upload_limit_mb = GlobalConfigService.load(
+        'MAXIMUM_FILE_UPLOAD_SIZE',
+        WEB_DOCUMENT_PARSE_FALLBACK_MAX_FILE_BYTES / (1024 * 1024)
+      ).to_i
+      upload_limit_bytes =
+        if upload_limit_mb.positive?
+          upload_limit_mb * 1024 * 1024
+        else
+          WEB_DOCUMENT_PARSE_FALLBACK_MAX_FILE_BYTES
+        end
+
+      [upload_limit_bytes, WEB_DOCUMENT_PARSE_PROVIDER_MAX_FILE_BYTES].min
+    rescue StandardError
+      WEB_DOCUMENT_PARSE_FALLBACK_MAX_FILE_BYTES
+    end
+
+    def web_allowed_domains(account: nil, preferences: nil)
+      normalize_domain_list(runtime_preferences(account, preferences)['web_allowed_domains'])
+    end
+
+    def web_blocked_domains(account: nil, preferences: nil)
+      normalize_domain_list(runtime_preferences(account, preferences)['web_blocked_domains'])
+    end
+
     def trace_input_capture?(account: nil, preferences: nil)
       trace_capture_enabled?('trace_input_capture', account: account, preferences: preferences)
     end
@@ -155,6 +227,19 @@ class Llm::RuntimePolicy
         normalized = entry.to_s.strip
         normalized.downcase if normalized.present?
       end
+    end
+
+    def normalize_domain_list(value)
+      normalize_string_list(value).filter_map do |entry|
+        entry.delete_prefix('http://').delete_prefix('https://').split('/').first.presence
+      end.uniq
+    end
+
+    def constrained_integer(value, default:, min:, max:)
+      integer_value = integer_or_default(value, default: default)
+      return default unless integer_value.is_a?(Integer)
+
+      integer_value.clamp(min, max)
     end
 
     def integer_or_default(value, default:)

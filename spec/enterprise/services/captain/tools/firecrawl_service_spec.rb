@@ -193,6 +193,39 @@ RSpec.describe Captain::Tools::FirecrawlService do
     end
   end
 
+  describe '#search' do
+    let(:service) { described_class.new }
+
+    it 'posts a v2 search payload with safe defaults and optional scrape settings' do
+      stub_request(:post, "#{default_api_url}/search")
+        .with(
+          headers: {
+            'Authorization' => "Bearer #{api_key}",
+            'Content-Type' => 'application/json'
+          }
+        )
+        .to_return(status: 200, body: { success: true, data: { web: [] } }.to_json)
+
+      service.search(
+        'openrouter structured outputs',
+        limit: 3,
+        include_domains: ['docs.firecrawl.dev'],
+        scrape_results: true
+      )
+
+      expect(WebMock).to have_requested(:post, "#{default_api_url}/search").with { |request|
+        payload = JSON.parse(request.body)
+        payload['query'] == 'openrouter structured outputs' &&
+          payload['limit'] == 3 &&
+          payload['sources'] == ['web'] &&
+          payload['includeDomains'] == ['docs.firecrawl.dev'] &&
+          payload['ignoreInvalidURLs'] == true &&
+          payload.dig('scrapeOptions', 'formats') == ['markdown'] &&
+          payload.dig('scrapeOptions', 'onlyMainContent') == true
+      }
+    end
+  end
+
   describe '#parse_upload' do
     let(:service) { described_class.new }
     let(:blob) do

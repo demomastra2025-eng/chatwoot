@@ -131,6 +131,32 @@ module AccountSettingsSchema
               'type': %w[array null],
               'items': { 'type': 'string' }
             },
+            'web_search_enabled': { 'type': %w[boolean null] },
+            'web_scrape_enabled': { 'type': %w[boolean null] },
+            'web_document_parse_enabled': { 'type': %w[boolean null] },
+            'web_search_max_results': {
+              'type': %w[integer null],
+              'minimum': 1,
+              'maximum': Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT
+            },
+            'web_scrape_max_chars': {
+              'type': %w[integer null],
+              'minimum': 1_000,
+              'maximum': Llm::RuntimePolicy::WEB_SCRAPE_MAX_CHARS
+            },
+            'web_document_parse_max_chars': {
+              'type': %w[integer null],
+              'minimum': 1_000,
+              'maximum': Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_MAX_CHARS
+            },
+            'web_allowed_domains': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
+            'web_blocked_domains': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
             'release_gate': {
               'type': %w[object null],
               'properties': {

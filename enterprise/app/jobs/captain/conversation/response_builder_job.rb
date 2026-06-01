@@ -7,6 +7,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   SINGLE_ATTACHMENT_MESSAGE_CHANNELS = %w[Channel::Whatsapp Channel::WhatsappWeb].freeze
   AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
   AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
+  DOCUMENT_PARSE_WAIT_TIMEOUT = 6.seconds
+  DOCUMENT_PARSE_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
@@ -73,6 +75,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def generate_and_process_response
     wait_for_audio_transcriptions
+    wait_for_document_parsing
 
     callbacks, tool_trace_steps = build_tool_trace_callbacks
     @response = Captain::Assistant::AgentRunnerService.new(
@@ -199,6 +202,27 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     incoming_messages_pending_response.any? do |message|
       message.attachments.any? do |attachment|
         attachment.file_type == 'audio' && attachment.meta.to_h['transcribed_text'].blank?
+      end
+    end
+  end
+
+  def wait_for_document_parsing
+    return unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+    return unless pending_document_parsing?
+
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + DOCUMENT_PARSE_WAIT_TIMEOUT.to_f
+
+    while pending_document_parsing?
+      break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep DOCUMENT_PARSE_WAIT_INTERVAL.to_f
+    end
+  end
+
+  def pending_document_parsing?
+    incoming_messages_pending_response.any? do |message|
+      message.attachments.any? do |attachment|
+        Messages::DocumentParsingService.pending_attachment?(attachment, account: account)
       end
     end
   end

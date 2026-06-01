@@ -974,6 +974,62 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
       end
     end
+
+    context 'when message contains a document attachment' do
+      let!(:document_message) do
+        create(
+          :message,
+          conversation: conversation,
+          message_type: :incoming,
+          content: nil
+        )
+      end
+      let!(:document_attachment) do
+        document_message.attachments.create!(
+          account: account,
+          file_type: :file,
+          meta: {},
+          file: {
+            io: StringIO.new('fake pdf'),
+            filename: 'contract.pdf',
+            content_type: 'application/pdf'
+          }
+        )
+      end
+
+      before do
+        account.enable_features('captain_integration')
+        account.update!(captain_runtime: { 'web_document_parse_enabled' => true })
+        allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+        document_attachment
+        conversation.messages.where.not(id: document_message.id).destroy_all
+        stub_const('Captain::Conversation::ResponseBuilderJob::DOCUMENT_PARSE_WAIT_TIMEOUT', 0.05)
+        stub_const('Captain::Conversation::ResponseBuilderJob::DOCUMENT_PARSE_WAIT_INTERVAL', 0.01)
+      end
+
+      it 'waits for stored document text before generating a response' do
+        allow_any_instance_of(described_class).to receive(:sleep) do |_job, _duration|
+          document_attachment.update!(meta: { 'parsed_text' => 'Parsed contract text' })
+        end
+
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          expect(message_history.last[:content]).to eq("Document attachment: contract.pdf\nParsed contract text")
+          { 'response' => 'I read the document.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+      end
+
+      it 'continues after the document parsing wait timeout' do
+        expect_any_instance_of(described_class).to receive(:sleep).at_least(:once)
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          expect(message_history.last[:content]).to eq('User has shared file attachment(s): contract.pdf')
+          { 'response' => 'Please confirm the document details.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+      end
+    end
   end
 
   describe 'retry mechanisms for image processing' do

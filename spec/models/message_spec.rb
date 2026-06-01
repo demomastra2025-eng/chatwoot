@@ -1015,4 +1015,19 @@ RSpec.describe Message do
       end
     end
   end
+
+  describe '#content_for_llm' do
+    it 'uses parsed document text when Captain document reading is enabled' do
+      account = create(:account, captain_runtime: { 'web_document_parse_enabled' => true })
+      conversation = create(:conversation, account: account)
+      message = create(:message, conversation: conversation, content: nil)
+      message.attachments.create!(
+        account: account,
+        file_type: :file,
+        meta: { 'parsed_text' => 'Parsed file text' }
+      )
+
+      expect(message.content_for_llm).to eq('[File Attachment] Parsed file text')
+    end
+  end
 end

@@ -172,4 +172,54 @@ RSpec.describe Llm::RuntimePolicy do
       expect(described_class.agent_high_risk_tool_allowed?('cancel_appointment', account: account)).to be(true)
     end
   end
+
+  describe '.web_access_enabled?' do
+    it 'defaults web access to disabled' do
+      expect(described_class.web_access_enabled?(:search, account: account)).to be(false)
+      expect(described_class.web_access_enabled?(:scrape, account: account)).to be(false)
+      expect(described_class.web_access_enabled?(:document_parse, account: account)).to be(false)
+    end
+
+    it 'reads web access toggles and clamps runtime limits' do
+      preferences = {
+        'web_search_enabled' => true,
+        'web_scrape_enabled' => true,
+        'web_document_parse_enabled' => true,
+        'web_search_max_results' => 99,
+        'web_scrape_max_chars' => 99_999,
+        'web_document_parse_max_chars' => 99_999,
+        'web_allowed_domains' => ['https://Example.com/docs'],
+        'web_blocked_domains' => ['bad.example.com']
+      }
+
+      expect(described_class.web_access_enabled?(:search, preferences: preferences)).to be(true)
+      expect(described_class.web_access_enabled?(:scrape, preferences: preferences)).to be(true)
+      expect(described_class.web_access_enabled?(:document_parse, preferences: preferences)).to be(true)
+      expect(described_class.web_search_limit(preferences: preferences)).to eq(10)
+      expect(described_class.web_scrape_max_chars(preferences: preferences)).to eq(24_000)
+      expect(described_class.web_document_parse_max_chars(preferences: preferences)).to eq(48_000)
+      expect(described_class.web_allowed_domains(preferences: preferences)).to eq(['example.com'])
+      expect(described_class.web_blocked_domains(preferences: preferences)).to eq(['bad.example.com'])
+    end
+
+    it 'uses the admin upload size and caps document parsing at the provider limit' do
+      InstallationConfig.where(name: 'MAXIMUM_FILE_UPLOAD_SIZE').delete_all
+      GlobalConfig.clear_cache
+
+      InstallationConfig.create!(name: 'MAXIMUM_FILE_UPLOAD_SIZE', value: 12, locked: false)
+      GlobalConfig.clear_cache
+
+      expect(described_class.web_document_parse_max_file_bytes).to eq(12.megabytes)
+
+      InstallationConfig.find_by!(name: 'MAXIMUM_FILE_UPLOAD_SIZE').update!(value: 100)
+      GlobalConfig.clear_cache
+
+      expect(described_class.web_document_parse_max_file_bytes).to eq(
+        described_class::WEB_DOCUMENT_PARSE_PROVIDER_MAX_FILE_BYTES
+      )
+    ensure
+      InstallationConfig.where(name: 'MAXIMUM_FILE_UPLOAD_SIZE').delete_all
+      GlobalConfig.clear_cache
+    end
+  end
 end
