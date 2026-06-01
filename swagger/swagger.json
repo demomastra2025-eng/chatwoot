@@ -20980,11 +20980,7 @@
           },
           "bot_type": {
             "type": "string",
-            "description": "The type of the bot"
-          },
-          "bot_config": {
-            "type": "object",
-            "description": "The configuration of the bot"
+            "description": "Always `webhook`; incoming calls use the access token and outgoing events use `outgoing_url`."
           },
           "account_id": {
             "type": "number",
@@ -22231,16 +22227,6 @@
             "type": "string",
             "description": "The url to a jpeg, png file for the agent bot avatar",
             "example": "https://example.com/avatar.png"
-          },
-          "bot_type": {
-            "type": "integer",
-            "description": "The type of the bot (0 for webhook)",
-            "example": 0
-          },
-          "bot_config": {
-            "type": "object",
-            "description": "The configuration for the bot",
-            "example": {}
           }
         }
       },

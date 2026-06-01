@@ -3,7 +3,10 @@ class Platform::Api::V1::AgentBotsController < PlatformController
   before_action :validate_platform_app_permissible, except: [:index, :create]
 
   def index
-    @resources = @platform_app.platform_app_permissibles.where(permissible_type: 'AgentBot').all
+    @resources = @platform_app.platform_app_permissibles.where(
+      permissible_type: 'AgentBot',
+      permissible_id: AgentBot.webhook.select(:id)
+    ).all
   end
 
   def show; end
@@ -33,7 +36,7 @@ class Platform::Api::V1::AgentBotsController < PlatformController
   private
 
   def set_resource
-    @resource = AgentBot.find(params[:id])
+    @resource = AgentBot.webhook.find(params[:id])
   end
 
   def agent_bot_params

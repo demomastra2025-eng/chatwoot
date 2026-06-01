@@ -24,7 +24,7 @@ RSpec.describe AgentBot do
     it 'invalid when crossed the limit' do
       agent_bot.outgoing_url = 'a' * (Limits::URL_LENGTH_LIMIT + 1)
       agent_bot.valid?
-      expect(agent_bot.errors[:outgoing_url]).to include("is too long (maximum is #{Limits::URL_LENGTH_LIMIT} characters)")
+      expect(agent_bot.errors.details[:outgoing_url]).to include(error: :too_long, count: Limits::URL_LENGTH_LIMIT)
     end
   end
 

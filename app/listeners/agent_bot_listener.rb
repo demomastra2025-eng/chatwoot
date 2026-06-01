@@ -69,7 +69,7 @@ class AgentBotListener < BaseListener
     bots << conversation.assignee_agent_bot if conversation&.assignee_agent_bot.present?
     inbox_bot = active_inbox_agent_bot(inbox)
     bots << inbox_bot if inbox_bot.present?
-    bots.compact.uniq
+    bots.compact.select(&:webhook?).uniq
   end
 
   def active_inbox_agent_bot(inbox)
@@ -79,12 +79,8 @@ class AgentBotListener < BaseListener
   end
 
   def process_message_event(method_name, agent_bot, message, _event)
-    if agent_bot.flow_builder?
-      process_flow_builder_event(agent_bot, message)
-    else
-      payload = message.webhook_data.merge(event: method_name)
-      process_webhook_bot_event(agent_bot, payload)
-    end
+    payload = message.webhook_data.merge(event: method_name)
+    process_webhook_bot_event(agent_bot, payload)
   end
 
   def voice_call_message?(message)
@@ -100,11 +96,5 @@ class AgentBotListener < BaseListener
 
     AgentBots::WebhookJob.perform_later(agent_bot.outgoing_url, payload, :agent_bot_webhook,
                                         secret: agent_bot.secret, delivery_id: SecureRandom.uuid)
-  end
-
-  def process_flow_builder_event(agent_bot, message)
-    return unless message.incoming?
-
-    AgentBots::FlowBuilder::RunnerService.new(agent_bot: agent_bot, message: message).perform
   end
 end

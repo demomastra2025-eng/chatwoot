@@ -7,12 +7,7 @@ import { throwErrorMessage } from '../utils/api';
 const appendBotFormData = (formData, botData) => {
   formData.append('name', botData.name || '');
   formData.append('description', botData.description || '');
-  formData.append('bot_type', botData.bot_type || 'webhook');
   formData.append('outgoing_url', botData.outgoing_url || '');
-
-  if (botData.bot_config) {
-    formData.append('bot_config', JSON.stringify(botData.bot_config));
-  }
 
   if (botData.avatar) {
     formData.append('avatar', botData.avatar);

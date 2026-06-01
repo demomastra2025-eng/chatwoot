@@ -17,10 +17,7 @@ properties:
     description: The webhook URL for the bot
   bot_type:
     type: string
-    description: The type of the bot
-  bot_config:
-    type: object
-    description: The configuration of the bot
+    description: Always `webhook`; incoming calls use the access token and outgoing events use `outgoing_url`.
   account_id:
     type: number
     description: Account ID if it's an account specific bot

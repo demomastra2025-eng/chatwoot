@@ -14,10 +14,6 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import AccessToken from 'dashboard/routes/dashboard/settings/profile/AccessToken.vue';
-import {
-  createDefaultFlowConfig,
-  cloneFlowConfig,
-} from '../flowBuilder/defaultConfig';
 
 const props = defineProps({
   type: {
@@ -47,8 +43,6 @@ const formState = reactive({
   botName: '',
   botDescription: '',
   botUrl: '',
-  botType: 'webhook',
-  botConfig: createDefaultFlowConfig(),
   botAvatar: null,
   botAvatarUrl: '',
 });
@@ -64,39 +58,16 @@ const validationRules = computed(() => ({
       required
     ),
   },
-  botUrl:
-    formState.botType === 'webhook'
-      ? {
-          required: helpers.withMessage(
-            () => t('AGENT_BOTS.FORM.ERRORS.URL'),
-            required
-          ),
-          url: helpers.withMessage(
-            () => t('AGENT_BOTS.FORM.ERRORS.VALID_URL'),
-            url
-          ),
-        }
-      : {},
+  botUrl: {
+    required: helpers.withMessage(
+      () => t('AGENT_BOTS.FORM.ERRORS.URL'),
+      required
+    ),
+    url: helpers.withMessage(() => t('AGENT_BOTS.FORM.ERRORS.VALID_URL'), url),
+  },
 }));
 
 const v$ = useVuelidate(validationRules, formState);
-
-const isWebhookBot = computed(() => formState.botType === 'webhook');
-
-const botTypeOptions = computed(() => [
-  {
-    value: 'webhook',
-    title: t('AGENT_BOTS.TYPES.WEBHOOK'),
-    description: t('AGENT_BOTS.WEBHOOK.DESCRIPTION'),
-    icon: 'i-lucide-globe',
-  },
-  {
-    value: 'flow_builder',
-    title: t('AGENT_BOTS.TYPES.FLOW_BUILDER'),
-    description: t('AGENT_BOTS.FLOW_BUILDER.DESCRIPTION'),
-    icon: 'i-lucide-workflow',
-  },
-]);
 
 const isLoading = computed(() =>
   props.type === MODAL_TYPES.CREATE
@@ -137,17 +108,15 @@ const botUrlError = computed(() =>
 
 const showAccessTokenInput = computed(
   () =>
-    isWebhookBot.value &&
-    (showAccessToken.value ||
-      props.type === MODAL_TYPES.EDIT ||
-      accessToken.value)
+    showAccessToken.value ||
+    props.type === MODAL_TYPES.EDIT ||
+    accessToken.value
 );
 const showEditableSecret = computed(
-  () => isWebhookBot.value && botSecret.value && props.type === MODAL_TYPES.EDIT
+  () => botSecret.value && props.type === MODAL_TYPES.EDIT
 );
 const showCreatedSecret = computed(
   () =>
-    isWebhookBot.value &&
     botSecret.value &&
     showAccessToken.value &&
     props.type === MODAL_TYPES.CREATE
@@ -158,8 +127,6 @@ const resetForm = () => {
     botName: '',
     botDescription: '',
     botUrl: '',
-    botType: 'webhook',
-    botConfig: createDefaultFlowConfig(),
     botAvatar: null,
     botAvatarUrl: '',
   });
@@ -198,9 +165,7 @@ const handleSubmit = async () => {
   const botData = {
     name: formState.botName,
     description: formState.botDescription,
-    outgoing_url: isWebhookBot.value ? formState.botUrl : '',
-    bot_type: formState.botType,
-    bot_config: isWebhookBot.value ? undefined : formState.botConfig,
+    outgoing_url: formState.botUrl,
     avatar: formState.botAvatar,
   };
 
@@ -229,7 +194,7 @@ const handleSubmit = async () => {
         id,
       } = response || {};
 
-      if (id && responseAccessToken && isWebhookBot.value) {
+      if (id && responseAccessToken) {
         accessToken.value = responseAccessToken;
         botSecret.value = responseSecret || '';
         toggleAccessToken(true);
@@ -259,19 +224,15 @@ const initializeForm = () => {
       description,
       outgoing_url: botUrl,
       thumbnail,
-      bot_type: botType,
-      bot_config: botConfig,
       access_token: botAccessToken,
       secret: botSecretValue,
     } = props.selectedBot;
     formState.botName = name || '';
     formState.botDescription = description || '';
-    formState.botUrl = botUrl || botConfig?.webhook_url || '';
-    formState.botType = botType || 'webhook';
-    formState.botConfig = cloneFlowConfig(botConfig);
+    formState.botUrl = botUrl || '';
     formState.botAvatarUrl = thumbnail || '';
 
-    if (props.type === MODAL_TYPES.EDIT && formState.botType === 'webhook') {
+    if (props.type === MODAL_TYPES.EDIT) {
       if (botAccessToken) accessToken.value = botAccessToken;
       if (botSecretValue) botSecret.value = botSecretValue;
     }
@@ -383,7 +344,6 @@ defineExpose({ dialogRef });
         />
 
         <Input
-          v-if="isWebhookBot"
           id="bot-url"
           v-model="formState.botUrl"
           :label="$t('AGENT_BOTS.FORM.WEBHOOK_URL.LABEL')"
@@ -392,49 +352,6 @@ defineExpose({ dialogRef });
           :message-type="botUrlError ? 'error' : 'info'"
           @blur="v$.botUrl.$touch()"
         />
-
-        <div class="flex flex-col gap-2">
-          <span class="text-sm font-medium text-n-slate-12">
-            {{ $t('AGENT_BOTS.FORM.TYPE.LABEL') }}
-          </span>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <button
-              v-for="option in botTypeOptions"
-              :key="option.value"
-              type="button"
-              class="rounded-2xl border p-4 text-left transition-all"
-              :class="
-                formState.botType === option.value
-                  ? 'border-n-blue-8 bg-n-blue-2 shadow-sm'
-                  : 'border-n-weak bg-n-surface-2 hover:border-n-blue-6'
-              "
-              @click="formState.botType = option.value"
-            >
-              <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2">
-                  <span
-                    class="flex h-8 w-8 items-center justify-center rounded-lg bg-n-alpha-2 text-n-slate-12"
-                  >
-                    <i :class="option.icon" />
-                  </span>
-                  <p class="mb-0 text-sm font-medium text-n-slate-12">
-                    {{ option.title }}
-                  </p>
-                </div>
-                <p class="mb-0 text-xs leading-5 text-n-slate-11">
-                  {{ option.description }}
-                </p>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <p
-          v-if="!isWebhookBot"
-          class="mb-0 rounded-2xl border border-n-blue-5 bg-n-blue-2 px-4 py-3 text-sm text-n-slate-11"
-        >
-          {{ $t('AGENT_BOTS.FLOW_BUILDER.EDITOR_HINT') }}
-        </p>
       </div>
 
       <div v-if="showEditableSecret" class="flex flex-col gap-1">

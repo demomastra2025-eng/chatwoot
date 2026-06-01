@@ -37,16 +37,11 @@ class AgentBot < ApplicationRecord
                                     dependent: :nullify,
                                     inverse_of: :assignee_agent_bot
   belongs_to :account, optional: true
-  enum bot_type: { webhook: 0, flow_builder: 1 }
+  enum bot_type: { webhook: 0 }
 
   validates :outgoing_url, length: { maximum: Limits::URL_LENGTH_LIMIT }
   validate :validate_configuration
-
-  before_validation :normalize_flow_builder_config
-
-  def self.default_flow_builder_config
-    AgentBots::FlowBuilder::ConfigNormalizer.default_config
-  end
+  before_validation :force_webhook_type
 
   def available_name
     name
@@ -75,22 +70,13 @@ class AgentBot < ApplicationRecord
 
   private
 
-  def normalize_flow_builder_config
-    return unless flow_builder?
-
-    self.bot_config = AgentBots::FlowBuilder::ConfigNormalizer.normalize(bot_config)
+  def force_webhook_type
+    self.bot_type = :webhook
+    self.bot_config = {}
   end
 
   def validate_configuration
-    if webhook?
-      errors.add(:outgoing_url, :blank) if outgoing_url.blank? && !system_bot?
-      return
-    end
-
-    validator = AgentBots::FlowBuilder::ConfigValidator.new(bot_config: bot_config)
-    return if validator.valid?
-
-    validator.errors.each { |message| errors.add(:bot_config, message) }
+    errors.add(:outgoing_url, :blank) if outgoing_url.blank? && !system_bot?
   end
 end
 

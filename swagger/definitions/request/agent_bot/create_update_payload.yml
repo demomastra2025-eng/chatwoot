@@ -20,11 +20,3 @@ properties:
     type: string
     description: The url to a jpeg, png file for the agent bot avatar
     example: https://example.com/avatar.png
-  bot_type:
-    type: integer
-    description: The type of the bot (0 for webhook)
-    example: 0
-  bot_config:
-    type: object
-    description: The configuration for the bot
-    example: {}

@@ -18,10 +18,17 @@ const integrationList = computed(
   () => getters['integrations/getAppIntegrations'].value
 );
 
+const pluginIntegrationList = computed(() =>
+  integrationList.value.filter(item => item.id !== 'webhook')
+);
+
 const filteredIntegrationList = computed(() => {
   const query = searchQuery.value.trim();
-  if (!query) return integrationList.value;
-  return picoSearch(integrationList.value, query, ['name', 'description']);
+  if (!query) return pluginIntegrationList.value;
+  return picoSearch(pluginIntegrationList.value, query, [
+    'name',
+    'description',
+  ]);
 });
 
 onMounted(() => {

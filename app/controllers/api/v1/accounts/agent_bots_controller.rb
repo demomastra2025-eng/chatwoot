@@ -4,7 +4,7 @@ class Api::V1::Accounts::AgentBotsController < Api::V1::Accounts::BaseController
   before_action :agent_bot, except: [:index, :create]
 
   def index
-    @agent_bots = AgentBot.accessible_to(Current.account)
+    @agent_bots = AgentBot.accessible_to(Current.account).webhook
   end
 
   def show; end
@@ -41,26 +41,15 @@ class Api::V1::Accounts::AgentBotsController < Api::V1::Accounts::BaseController
   private
 
   def agent_bot
-    @agent_bot = AgentBot.accessible_to(Current.account).find(params[:id]) if params[:action] == 'show'
-    @agent_bot ||= Current.account.agent_bots.find(params[:id])
+    @agent_bot = AgentBot.accessible_to(Current.account).webhook.find(params[:id]) if params[:action] == 'show'
+    @agent_bot ||= Current.account.agent_bots.webhook.find(params[:id])
   end
 
   def permitted_params
-    permitted = params.permit(:name, :description, :outgoing_url, :avatar, :avatar_url, :bot_type, bot_config: {})
-    permitted[:bot_config] = parsed_bot_config if params[:bot_config].present?
-    permitted
+    params.permit(:name, :description, :outgoing_url, :avatar, :avatar_url)
   end
 
   def process_avatar_from_url
     ::Avatar::AvatarFromUrlJob.perform_later(@agent_bot, params[:avatar_url]) if params[:avatar_url].present?
-  end
-
-  def parsed_bot_config
-    return params[:bot_config].to_unsafe_h if params[:bot_config].is_a?(ActionController::Parameters)
-    return JSON.parse(params[:bot_config]) if params[:bot_config].is_a?(String)
-
-    params[:bot_config]
-  rescue JSON::ParserError
-    {}
   end
 end

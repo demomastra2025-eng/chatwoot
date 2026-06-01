@@ -2,7 +2,7 @@
   "AGENT_BOTS": {
     "HEADER": "Интеграциялар",
     "LOADING_EDITOR": "Loading editor...",
-    "DESCRIPTION": "Интеграциялар вебхуктар мен нативті сценарийлерді диалогтарға қосады.",
+    "DESCRIPTION": "Бұл интеграциялар кіріс және шығыс вебхуктарға арналған.",
     "LEARN_MORE": "Интеграциялар туралы толығырақ",
     "GLOBAL_BOT": "System integration",
     "GLOBAL_BOT_BADGE": "System",
