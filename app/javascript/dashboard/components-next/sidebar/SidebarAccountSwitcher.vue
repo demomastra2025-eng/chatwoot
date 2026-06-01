@@ -1,14 +1,11 @@
 <script setup>
 import { computed } from 'vue';
-import { useRoute } from 'vue-router';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useMapGetter } from 'dashboard/composables/store';
-import { useI18n } from 'vue-i18n';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ButtonNext from 'next/button/Button.vue';
 import Icon from 'next/icon/Icon.vue';
 import Logo from 'next/icon/Logo.vue';
-import { WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/workspaceSettingsTabs';
 
 import {
   DropdownContainer,
@@ -26,9 +23,7 @@ defineProps({
 
 const emit = defineEmits(['showCreateAccountModal']);
 
-const { t } = useI18n();
-const route = useRoute();
-const { accountId, accountScopedRoute, currentAccount } = useAccount();
+const { accountId, currentAccount } = useAccount();
 const currentUser = useMapGetter('getCurrentUser');
 const globalConfig = useMapGetter('globalConfig/get');
 
@@ -36,14 +31,6 @@ const userAccounts = useMapGetter('getUserAccounts');
 
 const showAccountSwitcher = computed(
   () => userAccounts.value.length > 1 && currentAccount.value.name
-);
-
-const workspaceSettingsRoute = computed(() =>
-  accountScopedRoute('general_settings_index')
-);
-
-const isWorkspaceSettingsActive = computed(() =>
-  WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES.includes(route.name)
 );
 
 const sortedCurrentUserAccounts = computed(() => {
@@ -119,16 +106,6 @@ const emitNewAccount = () => {
             class="i-lucide-chevron-down size-4 text-n-slate-10 flex-shrink-0"
           />
         </button>
-        <RouterLink
-          :to="workspaceSettingsRoute"
-          class="inline-flex items-center justify-center rounded-md size-7 flex-shrink-0 text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12"
-          :class="{
-            'bg-n-alpha-2 text-n-slate-12': isWorkspaceSettingsActive,
-          }"
-          :title="t('SIDEBAR_ITEMS.WORKSPACE_SETTINGS')"
-        >
-          <Icon icon="i-lucide-briefcase-business" class="size-3.5" />
-        </RouterLink>
       </div>
     </template>
     <DropdownBody

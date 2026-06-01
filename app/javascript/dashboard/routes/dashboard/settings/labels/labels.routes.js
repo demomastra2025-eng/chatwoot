@@ -1,7 +1,6 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
-const Index = () => import('./Index.vue');
 export default {
   routes: [
     {
@@ -15,7 +14,7 @@ export default {
             permissions: ['administrator'],
           },
           redirect: to => {
-            return { name: 'labels_list', params: to.params };
+            return { name: 'contact_tags_settings_index', params: to.params };
           },
         },
         {
@@ -24,7 +23,9 @@ export default {
           meta: {
             permissions: ['administrator'],
           },
-          component: Index,
+          redirect: to => {
+            return { name: 'contact_tags_settings_index', params: to.params };
+          },
         },
       ],
     },

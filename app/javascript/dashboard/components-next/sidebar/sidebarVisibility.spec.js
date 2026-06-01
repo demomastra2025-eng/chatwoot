@@ -17,9 +17,12 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Campaigns:Templates']).toBe(true);
     expect(visibilityState['Campaigns:Touches']).toBe(true);
     expect(visibilityState['Captain:Evaluations']).toBe(true);
+    expect(visibilityState['Captain:Observability']).toBe(true);
     expect(visibilityState['Captain:FAQs']).toBe(true);
     expect(visibilityState['Captain:Documents']).toBeUndefined();
-    expect(visibilityState.Employees).toBe(true);
+    expect(visibilityState.MyCompany).toBe(true);
+    expect(visibilityState['MyCompany:Employees']).toBe(true);
+    expect(visibilityState.Employees).toBeUndefined();
     expect(visibilityState.Settings).toBe(true);
     expect(visibilityState['Settings:Automation']).toBe(true);
     expect(visibilityState['Reports:Overview']).toBe(true);
@@ -38,7 +41,7 @@ describe('sidebarVisibility', () => {
           'Reports',
         ],
       })
-    ).toEqual(['Employees', 'Reports', 'Settings:Macros']);
+    ).toEqual(['MyCompany:Employees', 'Reports', 'Settings:Macros']);
   });
 
   it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {

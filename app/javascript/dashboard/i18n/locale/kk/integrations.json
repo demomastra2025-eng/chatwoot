@@ -33,10 +33,10 @@
         "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
       }
     },
-    "HEADER": "Плагиндер",
-    "DESCRIPTION": "Плагиндер OneLink мүмкіндіктерін қосымша модульдермен кеңейтеді. Қажетті плагиндерді төменде баптаңыз.",
-    "LEARN_MORE": "Плагиндер туралы толығырақ",
-    "LOADING": "Плагиндер жүктелуде",
+    "HEADER": "Интеграциялар",
+    "DESCRIPTION": "Интеграциялар OneLink-ті сыртқы сервистермен және модульдермен байланыстырады. Қажетті интеграцияларды төменде баптаңыз.",
+    "LEARN_MORE": "Интеграциялар туралы толығырақ",
+    "LOADING": "Интеграциялар жүктелуде",
     "CAPTAIN": {
       "DISABLED": "Captain is not enabled on your account.",
       "CLICK_HERE_TO_CONFIGURE": "Click here to configure",
@@ -241,50 +241,50 @@
       "BUTTON_TEXT": "Connect"
     },
     "DASHBOARD_APPS": {
-      "TITLE": "Dashboard Apps",
-      "HEADER_BTN_TXT": "Add a new dashboard app",
+      "TITLE": "Плагин",
+      "HEADER_BTN_TXT": "Плагин қосу",
       "SIDEBAR_TXT": "<p><b>Dashboard Apps</b></p><p>Dashboard Apps allow organizations to embed an application inside the OneLink dashboard to provide the context for customer support agents. This feature allows you to create an application independently and embed that inside the dashboard to provide user information, their orders, or their previous payment history.</p><p>When you embed your application using the dashboard in OneLink, your application will get the context of the conversation and contact as a window event. Implement a listener for the message event on your page to receive the context.</p><p>To add a new dashboard app, click on the button 'Add a new dashboard app'.</p>",
-      "DESCRIPTION": "Dashboard Apps allow organizations to embed an application inside the dashboard to provide the context for customer support agents. This feature allows you to create an application independently and embed that to provide user information, their orders, or their previous payment history.",
-      "LEARN_MORE": "Learn more about Dashboard Apps",
+      "DESCRIPTION": "Плагиндер OneLink ішіне өз қосымшаңызды ендіріп, қызметкерлерге клиент, тапсырыс немесе төлем туралы контекст көрсетеді.",
+      "LEARN_MORE": "Плагиндер туралы толығырақ",
       "LIST": {
-        "404": "There are no dashboard apps configured on this account yet",
-        "LOADING": "Fetching dashboard apps...",
+        "404": "Бұл аккаунтта әлі плагиндер бапталмаған",
+        "LOADING": "Плагиндер жүктелуде...",
         "TABLE_HEADER": {
           "NAME": "Name",
           "ENDPOINT": "Endpoint"
         },
-        "EDIT_TOOLTIP": "Edit app",
-        "DELETE_TOOLTIP": "Delete app"
+        "EDIT_TOOLTIP": "Плагинді өңдеу",
+        "DELETE_TOOLTIP": "Плагинді жою"
       },
       "FORM": {
         "TITLE_LABEL": "Name",
-        "TITLE_PLACEHOLDER": "Enter a name for your dashboard app",
-        "TITLE_ERROR": "A name for the dashboard app is required",
+        "TITLE_PLACEHOLDER": "Плагин атауын енгізіңіз",
+        "TITLE_ERROR": "Плагин атауы міндетті",
         "URL_LABEL": "Endpoint",
-        "URL_PLACEHOLDER": "Enter the endpoint URL where your app is hosted",
+        "URL_PLACEHOLDER": "Плагин орналасқан URL мекенжайын енгізіңіз",
         "URL_ERROR": "A valid URL is required"
       },
       "CREATE": {
-        "HEADER": "Add a new dashboard app",
+        "HEADER": "Плагин қосу",
         "FORM_SUBMIT": "Submit",
         "FORM_CANCEL": "Cancel",
         "API_SUCCESS": "Dashboard app configured successfully",
         "API_ERROR": "We couldn't create an app. Please try again later"
       },
       "UPDATE": {
-        "HEADER": "Edit dashboard app",
+        "HEADER": "Плагинді өңдеу",
         "FORM_SUBMIT": "Update",
         "FORM_CANCEL": "Cancel",
-        "API_SUCCESS": "Dashboard app updated successfully",
-        "API_ERROR": "We couldn't update the app. Please try again later"
+        "API_SUCCESS": "Плагин сәтті жаңартылды",
+        "API_ERROR": "Плагинді жаңарту мүмкін болмады. Кейінірек қайталаңыз"
       },
       "DELETE": {
         "CONFIRM_YES": "Yes, delete it",
         "CONFIRM_NO": "No, keep it",
         "TITLE": "Confirm deletion",
-        "MESSAGE": "Are you sure to delete the app - {appName}?",
-        "API_SUCCESS": "Dashboard app deleted successfully",
-        "API_ERROR": "We couldn't delete the app. Please try again later"
+        "MESSAGE": "{appName} плагинін жоюды растайсыз ба?",
+        "API_SUCCESS": "Плагин сәтті жойылды",
+        "API_ERROR": "Плагинді жою мүмкін болмады. Кейінірек қайталаңыз"
       }
     },
     "LINEAR": {
@@ -1431,7 +1431,7 @@
       }
     },
     "OBSERVABILITY": {
-      "TITLE": "Observability",
+      "TITLE": "Логтар",
       "TABS": {
         "OVERVIEW": "Overview",
         "EVENTS": "Events",
@@ -1678,7 +1678,7 @@
         "OPEN_RELATED_EVENTS": "Open related events"
       },
       "SETTINGS": {
-        "TITLE": "Observability settings",
+        "TITLE": "Лог баптаулары",
         "DESCRIPTION": "Account-scoped defaults for lookback, retention, and alert delivery.",
         "DEFAULT_LOOKBACK_LABEL": "Default lookback days",
         "RETENTION_LABEL": "Retention days",
@@ -1691,8 +1691,8 @@
         "NOTIFY_ON_LABEL": "Primary alert source",
         "DISABLED_OPTION": "Disabled",
         "ENABLED_OPTION": "Enabled",
-        "SAVE_ACTION": "Save observability settings",
-        "SAVE_SUCCESS": "Observability settings updated",
+        "SAVE_ACTION": "Лог баптауларын сақтау",
+        "SAVE_SUCCESS": "Лог баптаулары жаңартылды",
         "NOTIFY_ON": {
           "OPERATIONAL": "Operational release gate",
           "DETERMINISTIC": "Deterministic evals",
@@ -1818,13 +1818,13 @@
         }
       },
       "EMPTY": {
-        "TITLE": "No matching observability data",
+        "TITLE": "Сәйкес лог деректері жоқ",
         "DESCRIPTION": "Adjust the active filters or wait for more AI traffic to be recorded for this account."
       },
       "API": {
-        "OVERVIEW_ERROR": "Failed to load observability data",
+        "OVERVIEW_ERROR": "Лог деректерін жүктеу мүмкін болмады",
         "RELEASE_CHECK_ERROR": "Failed to run release check",
-        "PREFERENCES_ERROR": "Failed to update observability preferences"
+        "PREFERENCES_ERROR": "Лог баптауларын жаңарту мүмкін болмады"
       }
     },
     "RESPONSES": {

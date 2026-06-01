@@ -2,11 +2,13 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 5;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 6;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
 const TOUCHES_VISIBILITY_KEY = 'Campaigns:Touches';
+const LEGACY_EMPLOYEES_VISIBILITY_KEY = 'Employees';
+const MY_COMPANY_EMPLOYEES_VISIBILITY_KEY = 'MyCompany:Employees';
 // Saved profile UI settings may still contain this pre-touch sidebar key.
 const LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY =
   'Campaigns:PersonalBroadcasts';
@@ -40,10 +42,18 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:Prompts', 'SIDEBAR.CAPTAIN_PROMPTS'),
     item('Captain:Channels', 'SIDEBAR.CAPTAIN_CHANNELS'),
     item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),
+    item('Captain:Observability', 'SIDEBAR.CAPTAIN_OBSERVABILITY'),
     item('Captain:Evaluations', 'SIDEBAR.CAPTAIN_EVALUATIONS'),
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
   ]),
-  item('Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+  item('MyCompany', 'SIDEBAR.MY_COMPANY', [
+    item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
+    item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+    item('MyCompany:Teams', 'EMPLOYEE_SETTINGS.TABS.TEAM'),
+    item('MyCompany:Roles', 'EMPLOYEE_SETTINGS.TABS.ROLES'),
+    item('MyCompany:Policies', 'EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+    item('MyCompany:AuditLogs', 'SIDEBAR.AUDIT_LOGS'),
+  ]),
   item('Contacts', 'SIDEBAR.CONTACTS', [
     item('Contacts:All', 'SIDEBAR.ALL_CONTACTS'),
     item('Contacts:Active', 'SIDEBAR.ACTIVE'),
@@ -166,12 +176,35 @@ const normalizeLegacyTouchesVisibility = (hiddenItems, version) => {
   return hiddenItemsSet;
 };
 
+const normalizeLegacyMyCompanyVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldMigrateLegacyVisibility = Number(version || 0) < 6;
+
+  if (!shouldMigrateLegacyVisibility) {
+    return hiddenItemsSet;
+  }
+
+  const employeesWasHidden = hiddenItemsSet.has(
+    LEGACY_EMPLOYEES_VISIBILITY_KEY
+  );
+  hiddenItemsSet.delete(LEGACY_EMPLOYEES_VISIBILITY_KEY);
+
+  if (employeesWasHidden) {
+    hiddenItemsSet.add(MY_COMPANY_EMPLOYEES_VISIBILITY_KEY);
+  }
+
+  return hiddenItemsSet;
+};
+
 export const getSidebarHiddenItems = uiSettings =>
   normalizeSidebarHiddenItems(
     Array.from(
-      normalizeLegacyTouchesVisibility(
-        normalizeLegacyCaptainPromptsVisibility(
-          uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+      normalizeLegacyMyCompanyVisibility(
+        normalizeLegacyTouchesVisibility(
+          normalizeLegacyCaptainPromptsVisibility(
+            uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+            uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+          ),
           uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
         ),
         uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]

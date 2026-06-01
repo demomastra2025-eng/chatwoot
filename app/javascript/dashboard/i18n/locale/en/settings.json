@@ -416,8 +416,8 @@
     "CAPTAIN_DOCUMENTS": "Documents",
     "CAPTAIN_RESPONSES": "Knowledge Base",
     "CAPTAIN_TOOLS": "Tools",
-    "CAPTAIN_OBSERVABILITY": "Observability",
-    "CAPTAIN_EVALUATIONS": "AI Quality",
+    "CAPTAIN_OBSERVABILITY": "Logs",
+    "CAPTAIN_EVALUATIONS": "Testing",
     "CAPTAIN_SCENARIOS": "Scenarios",
     "CAPTAIN_PLAYGROUND": "Playground",
     "CAPTAIN_INBOXES": "Inboxes",
@@ -428,14 +428,15 @@
     "CAPTAIN_CHANNELS": "Channels",
     "HOME": "Home",
     "AGENTS": "Agents",
-    "AGENT_BOTS": "Integrations",
+    "AGENT_BOTS": "Webhook",
     "AUDIT_LOGS": "Audit Logs",
     "INBOXES": "Inboxes",
     "NOTIFICATIONS": "Notifications",
     "CANNED_RESPONSES": "Templates",
-    "INTEGRATIONS": "Plugins",
+    "INTEGRATIONS": "Integrations",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Workspace",
+    "MY_COMPANY": "My company",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
     "TAG_SETTINGS": "Tag settings",
@@ -514,7 +515,7 @@
       "EMPLOYEES": "Employees",
       "TEAM": "Team",
       "ROLES": "Roles",
-      "ASSIGNMENT": "Assignment"
+      "ASSIGNMENT": "Policies"
     }
   },
   "CAPTAIN_SETTINGS": {

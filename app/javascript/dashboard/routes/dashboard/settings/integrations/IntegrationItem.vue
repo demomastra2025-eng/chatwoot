@@ -73,14 +73,18 @@ const actionURL = computed(() =>
     class="flex flex-col flex-1 p-4 m-px outline outline-n-container outline-1 bg-n-card rounded-xl"
   >
     <div class="flex items-start justify-between">
-      <div class="flex h-12 w-12 mb-2">
+      <div
+        class="flex h-12 w-12 mb-2 items-center justify-center overflow-hidden rounded-md border border-n-weak bg-n-alpha-3 p-1 shadow-sm dark:bg-n-alpha-2"
+      >
         <img
           :src="lightLogoSource"
-          class="max-w-full rounded-md border border-n-weak shadow-sm block dark:hidden bg-n-alpha-3 dark:bg-n-alpha-2"
+          class="block h-full w-full object-contain dark:hidden"
+          :alt="name"
         />
         <img
           :src="darkLogoSource"
-          class="max-w-full rounded-md border border-n-weak shadow-sm hidden dark:block bg-n-alpha-3 dark:bg-n-alpha-2"
+          class="hidden h-full w-full object-contain dark:block"
+          :alt="name"
         />
       </div>
       <Label

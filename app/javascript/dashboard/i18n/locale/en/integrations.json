@@ -34,10 +34,10 @@
         "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
       }
     },
-    "HEADER": "Plugins",
-    "DESCRIPTION": "Plugins extend OneLink with additional apps and modules. Configure the plugins you need below.",
-    "LEARN_MORE": "Learn more about plugins",
-    "LOADING": "Fetching plugins",
+    "HEADER": "Integrations",
+    "DESCRIPTION": "Integrations connect OneLink to external services and modules. Configure the integrations you need below.",
+    "LEARN_MORE": "Learn more about integrations",
+    "LOADING": "Fetching integrations",
     "CAPTAIN": {
       "DISABLED": "AI Agents are not enabled on your account.",
       "CLICK_HERE_TO_CONFIGURE": "Click here to configure",
@@ -254,55 +254,55 @@
       "BUTTON_TEXT": "Connect"
     },
     "DASHBOARD_APPS": {
-      "TITLE": "Dashboard Apps",
-      "HEADER_BTN_TXT": "Add a new dashboard app",
-      "SIDEBAR_TXT": "<p><b>Dashboard Apps</b></p><p>Dashboard Apps allow organizations to embed an application inside the OneLink dashboard to provide the context for customer support agents. This feature allows you to create an application independently and embed that inside the dashboard to provide user information, their orders, or their previous payment history.</p><p>When you embed your application using the dashboard in OneLink, your application will get the context of the conversation and contact as a window event. Implement a listener for the message event on your page to receive the context.</p><p>To add a new dashboard app, click on the button 'Add a new dashboard app'.</p>",
-      "DESCRIPTION": "Dashboard Apps allow organizations to embed an application inside the dashboard to provide the context for customer support agents. This feature allows you to create an application independently and embed that to provide user information, their orders, or their previous payment history.",
-      "LEARN_MORE": "Learn more about Dashboard Apps",
+      "TITLE": "Plugin",
+      "HEADER_BTN_TXT": "Add plugin",
+      "SIDEBAR_TXT": "<p><b>Plugin</b></p><p>Plugins let teams embed a custom app inside OneLink to show useful customer, order, or payment context for agents.</p>",
+      "DESCRIPTION": "Plugins embed a custom app inside OneLink to show useful customer, order, or payment context for agents.",
+      "LEARN_MORE": "Learn more about plugins",
       "LIST": {
-        "404": "There are no dashboard apps configured on this account yet",
-        "LOADING": "Fetching dashboard apps...",
+        "404": "There are no plugins configured on this account yet",
+        "LOADING": "Loading plugins...",
         "TABLE_HEADER": {
           "NAME": "Name",
           "ENDPOINT": "Endpoint",
           "ACTIONS": "Actions"
         },
-        "EDIT_TOOLTIP": "Edit app",
-        "DELETE_TOOLTIP": "Delete app"
+        "EDIT_TOOLTIP": "Edit plugin",
+        "DELETE_TOOLTIP": "Delete plugin"
       },
       "FORM": {
         "TITLE_LABEL": "Name",
-        "TITLE_PLACEHOLDER": "Enter a name for your dashboard app",
-        "TITLE_ERROR": "A name for the dashboard app is required",
+        "TITLE_PLACEHOLDER": "Enter a plugin name",
+        "TITLE_ERROR": "Plugin name is required",
         "URL_LABEL": "Endpoint",
-        "URL_PLACEHOLDER": "Enter the endpoint URL where your app is hosted",
+        "URL_PLACEHOLDER": "Enter the endpoint URL where the plugin is hosted",
         "URL_ERROR": "A valid URL is required"
       },
       "CREATE": {
-        "HEADER": "Add a new dashboard app",
+        "HEADER": "Add plugin",
         "FORM_SUBMIT": "Submit",
         "FORM_CANCEL": "Cancel",
         "API_SUCCESS": "Dashboard app configured successfully",
         "API_ERROR": "We couldn't create an app. Please try again later"
       },
       "UPDATE": {
-        "HEADER": "Edit dashboard app",
+        "HEADER": "Edit plugin",
         "FORM_SUBMIT": "Update",
         "FORM_CANCEL": "Cancel",
-        "API_SUCCESS": "Dashboard app updated successfully",
-        "API_ERROR": "We couldn't update the app. Please try again later"
+        "API_SUCCESS": "Plugin updated successfully",
+        "API_ERROR": "Could not update the plugin. Please try again later"
       },
       "DELETE": {
         "CONFIRM_YES": "Yes, delete it",
         "CONFIRM_NO": "No, keep it",
         "TITLE": "Confirm deletion",
-        "MESSAGE": "Are you sure to delete the app - {appName}?",
-        "API_SUCCESS": "Dashboard app deleted successfully",
-        "API_ERROR": "We couldn't delete the app. Please try again later"
+        "MESSAGE": "Are you sure you want to delete plugin - {appName}?",
+        "API_SUCCESS": "Plugin deleted successfully",
+        "API_ERROR": "Could not delete the plugin. Please try again later"
       },
-      "COUNT": "{n} dashboard app | {n} dashboard apps",
-      "SEARCH_PLACEHOLDER": "Search dashboard apps...",
-      "NO_RESULTS": "No dashboard apps found matching your search"
+      "COUNT": "{n} plugin | {n} plugins",
+      "SEARCH_PLACEHOLDER": "Search integrations...",
+      "NO_RESULTS": "No integrations found matching your search"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Create/Link Linear Issue",
@@ -489,7 +489,7 @@
       "CREDIT_NOTE": "Messages sent here will count toward your AI Agent credits."
     },
     "EVALUATIONS": {
-      "TITLE": "AI quality",
+      "TITLE": "Testing",
       "BADGE": "Quality checks",
       "HERO_TITLE": "Ready-made Captain checks",
       "HERO_DESCRIPTION": "Check answers, tools, voice, and safety without technical setup.",
@@ -2354,7 +2354,7 @@
       }
     },
     "OBSERVABILITY": {
-      "TITLE": "Observability",
+      "TITLE": "Logs",
       "TABS": {
         "OVERVIEW": "Overview",
         "EVENTS": "Events",
@@ -2373,10 +2373,10 @@
         "COPY_LINK": "Copy current view link",
         "EXPORT_JSON": "Export matching events JSON",
         "EXPORT_CSV": "Export matching events CSV",
-        "LINK_COPIED": "Observability link copied",
-        "LINK_COPY_ERROR": "Failed to copy observability link",
-        "EXPORT_DONE": "Observability export generated",
-        "EXPORT_ERROR": "Failed to export observability data",
+        "LINK_COPIED": "Logs link copied",
+        "LINK_COPY_ERROR": "Failed to copy logs link",
+        "EXPORT_DONE": "Logs export generated",
+        "EXPORT_ERROR": "Failed to export logs data",
         "OPEN_METRICS": "Open metrics endpoint",
         "VIEW_DETAILS": "View details",
         "FOCUS_TRACE": "Focus trace",
@@ -2619,7 +2619,7 @@
         "OPEN_RELATED_EVENTS": "Open related events"
       },
       "SETTINGS": {
-        "TITLE": "Observability settings",
+        "TITLE": "Log settings",
         "DESCRIPTION": "Account-scoped defaults for lookback, retention, and alert delivery.",
         "DEFAULT_LOOKBACK_LABEL": "Default lookback days",
         "RETENTION_LABEL": "Retention days",
@@ -2632,8 +2632,8 @@
         "NOTIFY_ON_LABEL": "Primary alert source",
         "DISABLED_OPTION": "Disabled",
         "ENABLED_OPTION": "Enabled",
-        "SAVE_ACTION": "Save observability settings",
-        "SAVE_SUCCESS": "Observability settings updated",
+        "SAVE_ACTION": "Save log settings",
+        "SAVE_SUCCESS": "Log settings updated",
         "NOTIFY_ON": {
           "OPERATIONAL": "Operational release gate",
           "DETERMINISTIC": "Deterministic evals",
@@ -2759,13 +2759,13 @@
         }
       },
       "EMPTY": {
-        "TITLE": "No matching observability data",
+        "TITLE": "No matching log data",
         "DESCRIPTION": "Adjust the active filters or wait for more AI traffic to be recorded for this account."
       },
       "API": {
-        "OVERVIEW_ERROR": "Failed to load observability data",
+        "OVERVIEW_ERROR": "Failed to load logs data",
         "RELEASE_CHECK_ERROR": "Failed to run release check",
-        "PREFERENCES_ERROR": "Failed to update observability preferences"
+        "PREFERENCES_ERROR": "Failed to update log preferences"
       }
     },
     "RESPONSES": {

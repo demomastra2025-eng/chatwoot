@@ -416,8 +416,8 @@
     "CAPTAIN_DOCUMENTS": "Документы",
     "CAPTAIN_RESPONSES": "База знаний",
     "CAPTAIN_TOOLS": "Инструменты",
-    "CAPTAIN_OBSERVABILITY": "Наблюдаемость",
-    "CAPTAIN_EVALUATIONS": "Качество AI",
+    "CAPTAIN_OBSERVABILITY": "Логи",
+    "CAPTAIN_EVALUATIONS": "Тестирование",
     "CAPTAIN_SCENARIOS": "Сценарии",
     "CAPTAIN_PLAYGROUND": "Площадка",
     "CAPTAIN_INBOXES": "Каналы",
@@ -428,14 +428,15 @@
     "CAPTAIN_CHANNELS": "Каналы",
     "HOME": "Главная",
     "AGENTS": "Сотрудники",
-    "AGENT_BOTS": "Интеграции",
+    "AGENT_BOTS": "Вебхук",
     "AUDIT_LOGS": "Журнал аудита",
     "INBOXES": "Каналы",
     "NOTIFICATIONS": "Уведомления",
     "CANNED_RESPONSES": "Шаблоны",
-    "INTEGRATIONS": "Плагины",
+    "INTEGRATIONS": "Интеграции",
     "PROFILE_SETTINGS": "Настройки профиля",
     "ACCOUNT_SETTINGS": "Workspace",
+    "MY_COMPANY": "Моя компания",
     "APPLICATIONS": "Приложения",
     "LABELS": "Теги",
     "TAG_SETTINGS": "Настройки тегов",
@@ -514,7 +515,7 @@
       "EMPLOYEES": "Сотрудники",
       "TEAM": "Команда",
       "ROLES": "Роли",
-      "ASSIGNMENT": "Назначение"
+      "ASSIGNMENT": "Политики"
     }
   },
   "BILLING_SETTINGS": {

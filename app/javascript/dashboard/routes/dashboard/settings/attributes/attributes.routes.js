@@ -6,6 +6,7 @@ const SettingsWrapper = () => import('../SettingsWrapper.vue');
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const AttributesHome = () => import('./Index.vue');
+const LabelsHome = () => import('../labels/Index.vue');
 
 const legacyFieldSettingsMeta = {
   permissions: ['administrator'],
@@ -17,6 +18,12 @@ const contactSettingsTabs = [
     labelKey: 'ATTRIBUTES_MGMT.HEADER',
     routeName: 'contact_fields_settings_index',
     activeOn: ['contact_fields_settings_index'],
+    featureFlag: FEATURE_FLAGS.CUSTOM_ATTRIBUTES,
+  },
+  {
+    labelKey: 'SIDEBAR.LABELS',
+    routeName: 'contact_tags_settings_index',
+    activeOn: ['contact_tags_settings_index', 'labels_wrapper', 'labels_list'],
   },
 ];
 
@@ -141,7 +148,9 @@ export default {
         {
           path: '',
           redirect: to => ({
-            name: 'contact_fields_settings_index',
+            name: hasLegacyAttributesAccess(to.params.accountId)
+              ? 'contact_fields_settings_index'
+              : 'contact_tags_settings_index',
             params: to.params,
           }),
         },
@@ -156,6 +165,14 @@ export default {
           },
           meta: legacyFieldSettingsMeta,
           beforeEnter: requireLegacyAttributes,
+        },
+        {
+          path: 'tags',
+          name: 'contact_tags_settings_index',
+          component: LabelsHome,
+          meta: {
+            permissions: ['administrator'],
+          },
         },
       ],
     },

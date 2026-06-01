@@ -25,14 +25,17 @@ import ChannelLeaf from './ChannelLeaf.vue';
 import ChannelStatusIcon from './ChannelStatusIcon.vue';
 import SidebarAccountSwitcher from './SidebarAccountSwitcher.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
-import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
 import { filterSidebarMenuItems } from './sidebarVisibility';
 import {
   getInboxFlowRouteNames,
   INBOX_FLOW_ROUTE_NAMES,
 } from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
-import { EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/employeeSettingsTabs';
+import {
+  EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
+  employeeSettingsTabs,
+} from 'dashboard/routes/dashboard/settings/employeeSettingsTabs';
 import { CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/conversationSettingsTabs';
+import { WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/workspaceSettingsTabs';
 import {
   isInboxPendingDeletion,
   isWhatsappWebInbox,
@@ -60,7 +63,7 @@ const emit = defineEmits([
 const SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS = 60 * 1000;
 const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 
-const { accountScopedRoute, isOnChatwootCloud } = useAccount();
+const { accountScopedRoute, currentAccount, isOnChatwootCloud } = useAccount();
 const route = useRoute();
 const { checkPermissions } = usePolicy();
 const store = useStore();
@@ -122,6 +125,27 @@ const hasAutomationRules = computed(() => {
     checkPermissions(['administrator']) &&
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.AUTOMATIONS)
   );
+});
+
+const hasAssignmentPolicies = computed(() => {
+  return (
+    checkPermissions(['administrator']) &&
+    isFeatureEnabledonAccount.value(
+      accountId.value,
+      FEATURE_FLAGS.ASSIGNMENT_V2
+    )
+  );
+});
+
+const hasAuditLogs = computed(() => {
+  return (
+    checkPermissions(['administrator']) &&
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.AUDIT_LOGS)
+  );
+});
+
+const hasContactSettingsAccess = computed(() => {
+  return checkPermissions(['administrator']);
 });
 
 const hasCompanies = computed(() => {
@@ -668,14 +692,6 @@ const onComposeClose = () => {
   emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, false);
 };
 
-const showCreateLabelPopup = ref(false);
-const openCreateLabelPopup = () => {
-  showCreateLabelPopup.value = true;
-};
-const hideCreateLabelPopup = () => {
-  showCreateLabelPopup.value = false;
-};
-
 const newReportRoutes = () => [
   {
     name: 'Reports Agent',
@@ -703,6 +719,11 @@ const newReportRoutes = () => [
 ];
 
 const reportRoutes = computed(() => newReportRoutes());
+
+const activeOnForEmployeeTab = routeName =>
+  employeeSettingsTabs.find(tab => tab.routeName === routeName)?.activeOn || [
+    routeName,
+  ];
 
 const menuItems = computed(() => {
   return filterSidebarMenuItems(
@@ -857,50 +878,39 @@ const menuItems = computed(() => {
               }),
             })),
           },
-          {
-            name: 'Labels',
-            visibilityKey: 'Conversation:Labels',
-            label: t('SIDEBAR.LABELS'),
-            icon: 'i-lucide-tag',
-            to: withConversationStatus('home'),
-            activeOn: allLabelsActiveOn,
-            suppressHeaderActiveWhenChildActive: true,
-            actionItems: checkPermissions(['administrator'])
-              ? [
-                  {
-                    title: t('SIDEBAR.TAG_SETTINGS'),
-                    icon: 'i-lucide-settings-2',
-                    to: accountScopedRoute('labels_list'),
-                    activeOn: ['labels_list', 'labels_wrapper'],
-                  },
-                  {
-                    title: t('SIDEBAR.NEW_LABEL'),
-                    icon: 'i-lucide-plus',
-                    handler: openCreateLabelPopup,
-                  },
-                ]
-              : [],
-            children: [
-              {
-                name: 'all-labels',
-                label: t('SIDEBAR.ALL'),
-                collapsedLabel: t('SIDEBAR.ALL_TAGS'),
-                activeOn: allLabelsActiveOn,
-                to: withConversationStatus('home'),
-              },
-              ...labels.value.map(label => ({
-                name: `${label.title}-${label.id}`,
-                label: label.title,
-                icon: h('span', {
-                  class: `size-[8px] rounded-sm`,
-                  style: { backgroundColor: label.color },
-                }),
-                to: withConversationStatus('label_conversations', {
-                  label: label.title,
-                }),
-              })),
-            ],
-          },
+          ...(labels.value.length
+            ? [
+                {
+                  name: 'Labels',
+                  visibilityKey: 'Conversation:Labels',
+                  label: t('SIDEBAR.LABELS'),
+                  icon: 'i-lucide-tag',
+                  to: withConversationStatus('home'),
+                  activeOn: allLabelsActiveOn,
+                  suppressHeaderActiveWhenChildActive: true,
+                  children: [
+                    {
+                      name: 'all-labels',
+                      label: t('SIDEBAR.ALL'),
+                      collapsedLabel: t('SIDEBAR.ALL_TAGS'),
+                      activeOn: allLabelsActiveOn,
+                      to: withConversationStatus('home'),
+                    },
+                    ...labels.value.map(label => ({
+                      name: `${label.title}-${label.id}`,
+                      label: label.title,
+                      icon: h('span', {
+                        class: `size-[8px] rounded-sm`,
+                        style: { backgroundColor: label.color },
+                      }),
+                      to: withConversationStatus('label_conversations', {
+                        label: label.title,
+                      }),
+                    })),
+                  ],
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -1040,11 +1050,74 @@ const menuItems = computed(() => {
       ...(checkPermissions(['administrator'])
         ? [
             {
-              name: 'Employees',
-              label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-              icon: 'i-lucide-users-round',
-              to: accountScopedRoute('agent_list'),
-              activeOn: EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
+              name: 'MyCompany',
+              label: t('SIDEBAR.MY_COMPANY'),
+              icon: 'i-lucide-building-2',
+              activeOn: [
+                ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+                ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
+              ],
+              children: [
+                {
+                  name: 'Workspace',
+                  visibilityKey: 'MyCompany:Workspace',
+                  label:
+                    currentAccount.value?.name || t('SIDEBAR.ACCOUNT_SETTINGS'),
+                  icon: 'i-lucide-briefcase-business',
+                  activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+                  to: accountScopedRoute('general_settings_index'),
+                },
+                {
+                  name: 'Employees',
+                  visibilityKey: 'MyCompany:Employees',
+                  label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+                  icon: 'i-lucide-user-round',
+                  activeOn: activeOnForEmployeeTab('agent_list'),
+                  to: accountScopedRoute('agent_list'),
+                },
+                {
+                  name: 'Teams',
+                  visibilityKey: 'MyCompany:Teams',
+                  label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
+                  icon: 'i-lucide-users-round',
+                  activeOn: activeOnForEmployeeTab('settings_teams_list'),
+                  to: accountScopedRoute('settings_teams_list'),
+                },
+                {
+                  name: 'Roles',
+                  visibilityKey: 'MyCompany:Roles',
+                  label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
+                  icon: 'i-lucide-shield-user',
+                  activeOn: activeOnForEmployeeTab('custom_roles_list'),
+                  to: accountScopedRoute('custom_roles_list'),
+                },
+                ...(hasAssignmentPolicies.value
+                  ? [
+                      {
+                        name: 'Policies',
+                        visibilityKey: 'MyCompany:Policies',
+                        label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+                        icon: 'i-lucide-route',
+                        activeOn: activeOnForEmployeeTab(
+                          'assignment_policy_index'
+                        ),
+                        to: accountScopedRoute('assignment_policy_index'),
+                      },
+                    ]
+                  : []),
+                ...(hasAuditLogs.value
+                  ? [
+                      {
+                        name: 'Audit Logs',
+                        visibilityKey: 'MyCompany:AuditLogs',
+                        label: t('SIDEBAR.AUDIT_LOGS'),
+                        icon: 'i-lucide-scroll-text',
+                        activeOn: ['auditlogs_list'],
+                        to: accountScopedRoute('auditlogs_list'),
+                      },
+                    ]
+                  : []),
+              ],
             },
           ]
         : []),
@@ -1053,12 +1126,19 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.CONTACTS'),
         icon: 'i-lucide-square-user-round',
         actionTitle: t('SIDEBAR.SETTINGS'),
-        actionIcon: hasLegacyCustomAttributes.value
-          ? 'i-lucide-settings-2'
-          : '',
-        actionActiveOn: ['contact_fields_settings_index'],
-        actionTo: hasLegacyCustomAttributes.value
-          ? accountScopedRoute('contact_fields_settings_index')
+        actionIcon: hasContactSettingsAccess.value ? 'i-lucide-settings-2' : '',
+        actionActiveOn: [
+          'contact_fields_settings_index',
+          'contact_tags_settings_index',
+          'labels_list',
+          'labels_wrapper',
+        ],
+        actionTo: hasContactSettingsAccess.value
+          ? accountScopedRoute(
+              hasLegacyCustomAttributes.value
+                ? 'contact_fields_settings_index'
+                : 'contact_tags_settings_index'
+            )
           : '',
         children: [
           {
@@ -1098,29 +1178,33 @@ const menuItems = computed(() => {
               ],
             })),
           },
-          {
-            name: 'Tagged With',
-            visibilityKey: 'Contacts:Tagged',
-            icon: 'i-lucide-tag',
-            label: t('SIDEBAR.TAGGED_WITH'),
-            children: labels.value.map(label => ({
-              name: `${label.title}-${label.id}`,
-              label: label.title,
-              icon: h('span', {
-                class: `size-[8px] rounded-sm`,
-                style: { backgroundColor: label.color },
-              }),
-              to: accountScopedRoute(
-                'contacts_dashboard_labels_index',
-                { label: label.title },
-                { page: 1, search: undefined }
-              ),
-              activeOn: [
-                'contacts_dashboard_labels_index',
-                'contacts_edit_label',
-              ],
-            })),
-          },
+          ...(labels.value.length
+            ? [
+                {
+                  name: 'Tagged With',
+                  visibilityKey: 'Contacts:Tagged',
+                  icon: 'i-lucide-tag',
+                  label: t('SIDEBAR.TAGGED_WITH'),
+                  children: labels.value.map(label => ({
+                    name: `${label.title}-${label.id}`,
+                    label: label.title,
+                    icon: h('span', {
+                      class: `size-[8px] rounded-sm`,
+                      style: { backgroundColor: label.color },
+                    }),
+                    to: accountScopedRoute(
+                      'contacts_dashboard_labels_index',
+                      { label: label.title },
+                      { page: 1, search: undefined }
+                    ),
+                    activeOn: [
+                      'contacts_dashboard_labels_index',
+                      'contacts_edit_label',
+                    ],
+                  })),
+                },
+              ]
+            : []),
         ],
       },
       ...(hasCompanies.value
@@ -1566,14 +1650,6 @@ const menuItems = computed(() => {
         />
       </div>
     </section>
-    <Teleport to="body">
-      <woot-modal
-        v-model:show="showCreateLabelPopup"
-        @close="hideCreateLabelPopup"
-      >
-        <AddLabelForm @close="hideCreateLabelPopup" />
-      </woot-modal>
-    </Teleport>
     <!-- Resize Handle (desktop only) -->
     <div
       class="hidden md:block absolute top-0 h-full w-1 cursor-col-resize z-40 ltr:right-0 rtl:left-0 group"
