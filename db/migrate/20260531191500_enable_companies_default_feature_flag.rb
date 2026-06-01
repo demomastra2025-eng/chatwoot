@@ -9,10 +9,7 @@ class EnableCompaniesDefaultFeatureFlag < ActiveRecord::Migration[7.1]
 
     upsert_account_default(company_feature) if company_feature.present?
 
-    Account.reset_column_information
-    Account.find_each(batch_size: 100) do |account|
-      account.enable_features!(FEATURE_NAME)
-    end
+    enable_account_feature_flag
   end
 
   def down
@@ -33,5 +30,15 @@ class EnableCompaniesDefaultFeatureFlag < ActiveRecord::Migration[7.1]
     config.value = features.values
     config.locked = true if config.locked.nil?
     config.save!
+  end
+
+  def enable_account_feature_flag
+    position = Featurable::FEATURE_POSITIONS.fetch(FEATURE_NAME)
+    flag_value = 1 << (position - 1)
+
+    execute(<<~SQL.squish)
+      UPDATE accounts
+      SET feature_flags = COALESCE(feature_flags, 0)::bigint | #{flag_value}
+    SQL
   end
 end
