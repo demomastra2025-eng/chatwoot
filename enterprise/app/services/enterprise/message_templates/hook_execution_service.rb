@@ -39,7 +39,7 @@ module Enterprise::MessageTemplates::HookExecutionService
     assistant = conversation.inbox.captain_assistant
     attachment_wait_time = message.attachments.blank? ? 0.seconds : calculate_attachment_wait_time
 
-    turn_on_captain_typing_indicator(assistant)
+    Captain::Conversation::TypingIndicatorService.turn_on(conversation: conversation, assistant: assistant)
 
     if assistant.message_collapse_window_seconds_value.zero?
       schedule_response_builder(assistant, attachment_wait_time)
@@ -55,13 +55,6 @@ module Enterprise::MessageTemplates::HookExecutionService
     # Wait longer for more attachments or larger files
     additional_wait = [attachment_count * 1, MAX_ATTACHMENT_WAIT_SECONDS].min.seconds
     base_wait + additional_wait
-  end
-
-  def turn_on_captain_typing_indicator(assistant)
-    Captain::Conversation::TypingIndicatorService.turn_on(
-      conversation: conversation,
-      assistant: assistant
-    )
   end
 
   def schedule_response_builder(assistant, attachment_wait_time)
@@ -94,27 +87,15 @@ module Enterprise::MessageTemplates::HookExecutionService
   def open_conversation_for_human_response
     return unless conversation.pending?
 
-    Rails.logger.info(
-      "[CAPTAIN][AutoReply] Opening conversation #{conversation.id} because Captain auto-reply is not allowed now"
-    )
+    Rails.logger.info("[CAPTAIN][AutoReply] Opening conversation #{conversation.id} because Captain auto-reply is not allowed now")
+    previous_current = [Current.user, Current.executed_by]
+    Current.user = Current.executed_by = nil
+    conversation.open!
+    return unless conversation.saved_change_to_status?
 
-    previous_user = Current.user
-    previous_executed_by = Current.executed_by
-    Current.user = nil
-    Current.executed_by = nil
-
-    begin
-      conversation.open!
-      return unless conversation.saved_change_to_status?
-
-      Captain::Conversation::TypingIndicatorService.turn_off(
-        conversation: conversation,
-        assistant: inbox.captain_assistant
-      )
-    ensure
-      Current.user = previous_user
-      Current.executed_by = previous_executed_by
-    end
+    Captain::Conversation::TypingIndicatorService.turn_off(conversation: conversation, assistant: inbox.captain_assistant)
+  ensure
+    Current.user, Current.executed_by = previous_current if previous_current
   end
 
   def perform_handoff
