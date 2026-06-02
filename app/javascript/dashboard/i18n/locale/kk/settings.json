@@ -109,6 +109,7 @@
         "ENDPOINT_LABEL": "MCP URL",
         "CONFIG_TITLE": "Клиент конфигурациясы",
         "COPY_CONFIG": "Конфигті көшіру",
+        "COPY_URL": "URL көшіру",
         "ACCESS_TITLE": "Құралдарға қолжетімділік",
         "ACCESS_NOTE": "MCP құралдарына қолжетімділікті баптаңыз.",
         "ACCESS_LOADING": "Қолжетімділік жүктелуде…",
@@ -120,6 +121,14 @@
         "MUTATION_CONFIRMATION": "Өзгерістерді растау",
         "ACCESS_SUMMARY": "Таңдалған құралдар",
         "TOOLS_TITLE": "Құралдар",
+        "CATALOG_TITLE": "Құралдар",
+        "TABLE_GROUP": "Топ",
+        "TABLE_TOOL": "Құрал",
+        "TABLE_SOURCE": "Дереккөз",
+        "TABLE_STATE": "Қосу/өшіру",
+        "GROUP_ROW_LABEL": "Бүкіл топ",
+        "STATE_ENABLED": "Қосулы",
+        "STATE_DISABLED": "Өшірулі",
         "TOOLS_ENABLED_COUNT": "{enabled} / {total}",
         "SOURCES_TITLE": "Дереккөздер",
         "GROUPS_TITLE": "Топтар",
@@ -130,7 +139,7 @@
           "FULL_TITLE": "Толық"
         },
         "SOURCES": {
-          "captain": "AI құралдары",
+          "captain": "Тулдар",
           "openapi_read": "API оқу",
           "openapi_write": "API өзгерту"
         }

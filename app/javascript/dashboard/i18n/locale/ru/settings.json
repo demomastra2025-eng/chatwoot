@@ -109,6 +109,7 @@
         "ENDPOINT_LABEL": "MCP URL",
         "CONFIG_TITLE": "Конфиг клиента",
         "COPY_CONFIG": "Копировать конфиг",
+        "COPY_URL": "Копировать URL",
         "ACCESS_TITLE": "Доступ к инструментам",
         "ACCESS_NOTE": "Настройте доступ к инструментам MCP.",
         "ACCESS_LOADING": "Загружаем доступ…",
@@ -120,6 +121,14 @@
         "MUTATION_CONFIRMATION": "Подтверждать изменения",
         "ACCESS_SUMMARY": "Выбрано инструментов",
         "TOOLS_TITLE": "Инструменты",
+        "CATALOG_TITLE": "Инструменты",
+        "TABLE_GROUP": "Набор",
+        "TABLE_TOOL": "Инструмент",
+        "TABLE_SOURCE": "Источник",
+        "TABLE_STATE": "Вкл/выкл",
+        "GROUP_ROW_LABEL": "Весь набор",
+        "STATE_ENABLED": "Вкл",
+        "STATE_DISABLED": "Выкл",
         "TOOLS_ENABLED_COUNT": "{enabled} / {total}",
         "SOURCES_TITLE": "Источники",
         "GROUPS_TITLE": "Наборы",
@@ -130,7 +139,7 @@
           "FULL_TITLE": "Полный"
         },
         "SOURCES": {
-          "captain": "Инструменты ИИ",
+          "captain": "Тулзы",
           "openapi_read": "Чтение API",
           "openapi_write": "Изменения API"
         }

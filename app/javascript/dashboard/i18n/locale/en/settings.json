@@ -109,6 +109,7 @@
         "ENDPOINT_LABEL": "MCP URL",
         "CONFIG_TITLE": "Client config",
         "COPY_CONFIG": "Copy config",
+        "COPY_URL": "Copy URL",
         "ACCESS_TITLE": "Tool access",
         "ACCESS_NOTE": "Configure MCP tool access.",
         "ACCESS_LOADING": "Loading tool access…",
@@ -120,6 +121,14 @@
         "MUTATION_CONFIRMATION": "Confirm changes",
         "ACCESS_SUMMARY": "Selected tools",
         "TOOLS_TITLE": "Tools",
+        "CATALOG_TITLE": "Tools",
+        "TABLE_GROUP": "Group",
+        "TABLE_TOOL": "Tool",
+        "TABLE_SOURCE": "Source",
+        "TABLE_STATE": "On/off",
+        "GROUP_ROW_LABEL": "Whole group",
+        "STATE_ENABLED": "On",
+        "STATE_DISABLED": "Off",
         "TOOLS_ENABLED_COUNT": "{enabled} / {total}",
         "SOURCES_TITLE": "Sources",
         "GROUPS_TITLE": "Groups",
@@ -130,7 +139,7 @@
           "FULL_TITLE": "Full"
         },
         "SOURCES": {
-          "captain": "AI tools",
+          "captain": "Tools",
           "openapi_read": "API reading",
           "openapi_write": "API changes"
         }

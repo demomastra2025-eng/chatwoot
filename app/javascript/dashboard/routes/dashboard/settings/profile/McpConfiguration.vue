@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 
 import McpSettingsAPI from 'dashboard/api/mcpSettings';
 import Button from 'dashboard/components-next/button/Button.vue';
-import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
@@ -55,6 +55,7 @@ const accessForm = reactive({
   max_risk_level: 'medium',
   require_confirmation_for_mutations: true,
   allowed_groups: [],
+  blocked_groups: [],
   selected_tool_ids: [],
   selected_openapi_operation_ids: [],
 });
@@ -97,68 +98,35 @@ const showReadOnlyNotice = computed(
 const mcpGroups = computed(() => settingsPayload.value?.groups || []);
 const catalogTools = computed(() => settingsPayload.value?.tools || []);
 const allGroupIds = computed(() => mcpGroups.value.map(group => group.id));
+const uniqueValues = values => [...new Set(values.map(String).filter(Boolean))];
 const selectedGroupIds = computed({
   get() {
-    return accessForm.allowed_groups.length
-      ? accessForm.allowed_groups
-      : allGroupIds.value;
+    const blockedIds = new Set(accessForm.blocked_groups.map(String));
+    const allowedIds = accessForm.allowed_groups.length
+      ? accessForm.allowed_groups.map(String)
+      : allGroupIds.value.map(String);
+
+    return allowedIds.filter(id => !blockedIds.has(id));
   },
   set(values) {
-    const normalizedValues = [...new Set(values)];
-    accessForm.allowed_groups =
-      normalizedValues.length === allGroupIds.value.length
-        ? []
-        : normalizedValues;
+    const normalizedValues = uniqueValues(values);
+    const allIds = allGroupIds.value.map(String);
+
+    if (normalizedValues.length === allIds.length) {
+      accessForm.allowed_groups = [];
+      accessForm.blocked_groups = [];
+      return;
+    }
+
+    if (normalizedValues.length === 0) {
+      accessForm.allowed_groups = [];
+      accessForm.blocked_groups = allIds;
+      return;
+    }
+
+    accessForm.allowed_groups = normalizedValues;
+    accessForm.blocked_groups = [];
   },
-});
-
-const toolCountLabel = (enabled, total) =>
-  t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.TOOLS_ENABLED_COUNT', {
-    enabled,
-    total,
-  });
-
-const sourceLabelFor = source => {
-  if (source === 'captain') {
-    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SOURCES.captain');
-  }
-
-  if (source === 'openapi_read') {
-    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SOURCES.openapi_read');
-  }
-
-  if (source === 'openapi_write') {
-    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SOURCES.openapi_write');
-  }
-
-  return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.OTHER_GROUP');
-};
-
-const sourceItems = computed(() => {
-  const sourceCounts = settingsPayload.value?.sources || [];
-  const sourceById = sourceCounts.reduce((acc, source) => {
-    acc[source.id] = source;
-    return acc;
-  }, {});
-
-  return [
-    {
-      id: 'captain',
-      label: sourceLabelFor('captain'),
-    },
-    {
-      id: 'openapi_read',
-      label: sourceLabelFor('openapi_read'),
-    },
-    {
-      id: 'openapi_write',
-      label: sourceLabelFor('openapi_write'),
-    },
-  ].map(source => ({
-    ...source,
-    toolsCount: sourceById[source.id]?.tools_count || 0,
-    enabledToolsCount: sourceById[source.id]?.enabled_tools_count || 0,
-  }));
 });
 
 const accessModeOptions = computed(() => [
@@ -176,12 +144,44 @@ const accessModeOptions = computed(() => [
 
 const toolPolicyId = tool => String(tool.id || tool.operation_id || tool.name);
 const isOpenApiTool = tool => String(tool.source || '').startsWith('openapi');
-const uniqueValues = values => [...new Set(values.map(String).filter(Boolean))];
 const groupKeyFor = tool =>
   tool.group_key || `${tool.source || 'tool'}:${tool.group_name || 'Other'}`;
-const groupIsSelected = groupId => selectedGroupIds.value.includes(groupId);
+const groupIsSelected = groupId =>
+  selectedGroupIds.value.map(String).includes(String(groupId));
 const sourceIsEnabled = source => accessForm.sources[source] !== false;
+const sourceLabelFor = source => {
+  if (source === 'captain') {
+    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SOURCES.captain');
+  }
+
+  if (source === 'openapi_read') {
+    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SOURCES.openapi_read');
+  }
+
+  if (source === 'openapi_write') {
+    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SOURCES.openapi_write');
+  }
+
+  return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.OTHER_GROUP');
+};
+const sourceIdsForGroup = group =>
+  uniqueValues((group.tools || []).map(tool => tool.source));
+const sourceSummaryForGroup = group =>
+  sourceIdsForGroup(group).map(sourceLabelFor).join(' · ');
+const toolIdsForGroup = (group, openApi) =>
+  uniqueValues(
+    (group.tools || [])
+      .filter(tool => isOpenApiTool(tool) === openApi)
+      .map(toolPolicyId)
+  );
 const toolTitle = tool => tool.title || tool.name || toolPolicyId(tool);
+const stateLabel = enabled => {
+  if (enabled) {
+    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.STATE_ENABLED');
+  }
+
+  return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.STATE_DISABLED');
+};
 const hasCustomAccessFilters = access =>
   [
     'allowed_groups',
@@ -230,12 +230,6 @@ const activeSelectedOpenApiToolIds = computed(() => {
       .map(toolPolicyId)
   );
 });
-const selectedToolCount = computed(
-  () =>
-    activeSelectedNativeToolIds.value.length +
-    activeSelectedOpenApiToolIds.value.length
-);
-
 const groupedCatalogTools = computed(() => {
   const groups = new Map();
 
@@ -246,8 +240,6 @@ const groupedCatalogTools = computed(() => {
       name:
         tool.group_name ||
         t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.OTHER_GROUP'),
-      source: tool.source,
-      sourceLabel: sourceLabelFor(tool.source),
       tools: [],
     };
 
@@ -256,14 +248,45 @@ const groupedCatalogTools = computed(() => {
   });
 
   return Array.from(groups.values()).sort((left, right) =>
-    [left.sourceLabel, left.name]
-      .join(' ')
-      .localeCompare([right.sourceLabel, right.name].join(' '))
+    left.name.localeCompare(right.name)
   );
 });
 
 const setSelectedIds = (key, ids) => {
   accessForm[key] = uniqueValues(ids);
+};
+
+const setGroupSelected = (group, selected) => {
+  markCustomAccessMode();
+  const selectedGroupSet = new Set(selectedGroupIds.value.map(String));
+  const normalizedGroupId = String(group.id);
+  const selectedNativeToolIds = new Set(
+    accessForm.selected_tool_ids.map(String)
+  );
+  const selectedOpenApiToolIds = new Set(
+    accessForm.selected_openapi_operation_ids.map(String)
+  );
+
+  if (selected) {
+    selectedGroupSet.add(normalizedGroupId);
+    sourceIdsForGroup(group).forEach(source => {
+      accessForm.sources[source] = true;
+    });
+    toolIdsForGroup(group, false).forEach(id => selectedNativeToolIds.add(id));
+    toolIdsForGroup(group, true).forEach(id => selectedOpenApiToolIds.add(id));
+  } else {
+    selectedGroupSet.delete(normalizedGroupId);
+    toolIdsForGroup(group, false).forEach(id =>
+      selectedNativeToolIds.delete(id)
+    );
+    toolIdsForGroup(group, true).forEach(id =>
+      selectedOpenApiToolIds.delete(id)
+    );
+  }
+
+  selectedGroupIds.value = [...selectedGroupSet];
+  setSelectedIds('selected_tool_ids', [...selectedNativeToolIds]);
+  setSelectedIds('selected_openapi_operation_ids', [...selectedOpenApiToolIds]);
 };
 
 const setToolSelected = (tool, selected) => {
@@ -294,6 +317,20 @@ const isToolSelected = tool => {
 
   return selectedIds.map(String).includes(toolPolicyId(tool));
 };
+
+const groupIsEnabled = group =>
+  group.tools.length > 0 &&
+  groupIsSelected(group.id) &&
+  group.tools.every(tool => isToolSelected(tool));
+const selectedToolCount = computed(
+  () => catalogTools.value.filter(tool => isToolSelected(tool)).length
+);
+const toolCountLabel = computed(() =>
+  t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.TOOLS_ENABLED_COUNT', {
+    enabled: selectedToolCount.value,
+    total: catalogTools.value.length,
+  })
+);
 
 const toolCheckboxDisabled = tool =>
   accessControlsDisabled.value ||
@@ -333,6 +370,9 @@ const hydrateAccessForm = payload => {
   accessForm.allowed_groups = Array.isArray(access.allowed_groups)
     ? [...access.allowed_groups]
     : [];
+  accessForm.blocked_groups = Array.isArray(access.blocked_groups)
+    ? [...access.blocked_groups]
+    : [];
   setSelectedIds(
     'selected_tool_ids',
     catalogTools.value
@@ -361,6 +401,7 @@ const applyAccessMode = modeId => {
   accessForm.require_confirmation_for_mutations =
     policy.require_confirmation_for_mutations;
   accessForm.allowed_groups = [];
+  accessForm.blocked_groups = [];
   applySelectedToolsFromPolicy(policy);
 };
 
@@ -381,7 +422,7 @@ const serializedAccessForm = () => {
     require_confirmation_for_mutations:
       accessForm.require_confirmation_for_mutations,
     allowed_groups: [...accessForm.allowed_groups],
-    blocked_groups: [],
+    blocked_groups: [...accessForm.blocked_groups],
     allowed_tool_ids: [...selectedNativeIds],
     blocked_tool_ids: allNativeToolIds.value.filter(
       id => !selectedNativeIds.has(id)
@@ -434,15 +475,14 @@ const copyValue = async value => {
 };
 
 const copyConfig = () => copyValue(configForClipboard.value);
+const copyEndpointUrl = () => copyValue(endpointUrl.value);
 
 onMounted(fetchMcpSettings);
 </script>
 
 <template>
   <div class="flex w-full flex-col gap-4">
-    <section
-      class="flex flex-col gap-4 rounded-xl border border-n-weak bg-n-background p-4"
-    >
+    <section class="flex flex-col gap-4">
       <div class="flex flex-col gap-1">
         <div class="flex items-center gap-2">
           <span class="i-lucide-plug-zap size-4 text-n-slate-10" />
@@ -459,9 +499,25 @@ onMounted(fetchMcpSettings);
           >
             {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ENDPOINT_LABEL') }}
           </label>
-          <code class="break-all font-mono text-xs text-n-slate-12">
-            {{ endpointUrl }}
-          </code>
+          <div
+            class="flex items-center overflow-hidden rounded-lg border border-n-weak bg-n-alpha-1"
+          >
+            <code
+              class="min-w-0 flex-1 select-all truncate px-3 py-2 font-mono text-xs text-n-slate-12"
+            >
+              {{ endpointUrl }}
+            </code>
+            <button
+              type="button"
+              class="flex size-9 shrink-0 items-center justify-center border-l border-n-weak text-n-slate-10 transition hover:bg-n-alpha-2 hover:text-n-slate-12"
+              :aria-label="
+                t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_URL')
+              "
+              @click="copyEndpointUrl"
+            >
+              <span class="i-lucide-copy size-4" />
+            </button>
+          </div>
         </div>
 
         <div class="flex flex-col gap-2">
@@ -488,9 +544,7 @@ onMounted(fetchMcpSettings);
       </div>
     </section>
 
-    <section
-      class="flex flex-col gap-4 rounded-xl border border-n-weak bg-n-background p-4"
-    >
+    <section class="flex flex-col gap-4">
       <div
         class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
       >
@@ -506,16 +560,24 @@ onMounted(fetchMcpSettings);
             />
           </div>
         </div>
-        <Button
+        <div
           v-if="canManageMcpAccess"
-          size="sm"
-          color="blue"
-          icon="i-lucide-save"
-          :is-loading="isSavingSettings"
-          :disabled="isFetchingSettings || settingsLoadFailed"
-          :label="t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SAVE_ACCESS')"
-          @click="saveMcpSettings"
-        />
+          class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-1 px-3 py-2 sm:justify-end"
+        >
+          <span class="text-sm font-medium text-n-slate-12">
+            {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_ENABLED') }}
+          </span>
+          <span class="text-xs font-normal text-n-slate-10">
+            {{ stateLabel(accessForm.enabled) }}
+          </span>
+          <Switch
+            v-model="accessForm.enabled"
+            :disabled="accessControlsDisabled"
+            :aria-label="
+              t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_ENABLED')
+            "
+          />
+        </div>
       </div>
 
       <div v-if="settingsLoadFailed" class="text-xs leading-5 text-n-ruby-11">
@@ -523,54 +585,6 @@ onMounted(fetchMcpSettings);
       </div>
 
       <div class="grid gap-4">
-        <div class="grid gap-2 sm:grid-cols-3">
-          <label
-            class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
-          >
-            <Checkbox
-              v-model="accessForm.enabled"
-              :disabled="accessControlsDisabled"
-              class="mt-0.5 shrink-0"
-            />
-            <span class="min-w-0">
-              <span class="block text-sm font-medium text-n-slate-12">
-                {{
-                  t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_ENABLED')
-                }}
-              </span>
-            </span>
-          </label>
-
-          <label
-            class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
-          >
-            <Checkbox
-              v-model="accessForm.require_confirmation_for_mutations"
-              :disabled="accessControlsDisabled"
-              class="mt-0.5 shrink-0"
-              @change="markCustomAccessMode"
-            />
-            <span class="min-w-0">
-              <span class="block text-sm font-medium text-n-slate-12">
-                {{
-                  t(
-                    'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION'
-                  )
-                }}
-              </span>
-            </span>
-          </label>
-
-          <div class="rounded-lg p-2">
-            <div class="text-sm font-medium text-n-slate-12">
-              {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_SUMMARY') }}
-            </div>
-            <div class="mt-1 text-xs leading-5 text-n-slate-10">
-              {{ toolCountLabel(selectedToolCount, catalogTools.length) }}
-            </div>
-          </div>
-        </div>
-
         <div class="grid gap-3 md:grid-cols-2">
           <button
             v-for="mode in accessModeOptions"
@@ -602,126 +616,98 @@ onMounted(fetchMcpSettings);
           </button>
         </div>
 
-        <div>
-          <div class="mb-2 text-xs font-medium uppercase text-n-slate-10">
-            {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SOURCES_TITLE') }}
-          </div>
-          <div class="grid gap-2 sm:grid-cols-3">
-            <label
-              v-for="source in sourceItems"
-              :key="source.id"
-              class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
-            >
-              <Checkbox
-                v-model="accessForm.sources[source.id]"
-                :disabled="accessControlsDisabled"
-                class="mt-0.5 shrink-0"
-                @change="markCustomAccessMode"
-              />
-              <span class="min-w-0">
-                <span class="block text-sm font-medium text-n-slate-12">
-                  {{ source.label }}
-                </span>
-                <span class="mt-1 block text-xs text-n-slate-9">
-                  {{
-                    toolCountLabel(source.enabledToolsCount, source.toolsCount)
-                  }}
-                </span>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <div v-if="mcpGroups.length">
-          <div class="mb-2 flex flex-wrap items-end justify-between gap-2">
-            <div class="text-xs font-medium uppercase text-n-slate-10">
-              {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.GROUPS_TITLE') }}
-            </div>
-            <span class="text-xs text-n-slate-9">
-              {{ toolCountLabel(selectedGroupIds.length, allGroupIds.length) }}
+        <div
+          class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-1 p-3"
+        >
+          <span class="text-sm font-medium text-n-slate-12">
+            {{
+              t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION')
+            }}
+          </span>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-normal text-n-slate-10">
+              {{ stateLabel(accessForm.require_confirmation_for_mutations) }}
             </span>
-          </div>
-          <div class="grid max-h-64 gap-1 overflow-auto pr-1 sm:grid-cols-2">
-            <label
-              v-for="group in mcpGroups"
-              :key="group.id"
-              class="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-n-alpha-1"
-            >
-              <Checkbox
-                v-model="selectedGroupIds"
-                :value="group.id"
-                :disabled="accessControlsDisabled"
-                class="mt-0.5 shrink-0"
-                @change="markCustomAccessMode"
-              />
-              <span class="min-w-0">
-                <span
-                  class="block truncate text-sm font-medium text-n-slate-12"
-                >
-                  {{ group.name }}
-                </span>
-                <span class="mt-1 block text-xs text-n-slate-10">
-                  {{
-                    toolCountLabel(group.enabled_tools_count, group.tools_count)
-                  }}
-                </span>
-              </span>
-            </label>
+            <Switch
+              v-model="accessForm.require_confirmation_for_mutations"
+              :disabled="accessControlsDisabled"
+              :aria-label="
+                t(
+                  'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION'
+                )
+              "
+              @change="markCustomAccessMode"
+            />
           </div>
         </div>
 
         <div v-if="groupedCatalogTools.length">
-          <div class="mb-2 flex flex-wrap items-end justify-between gap-2">
+          <div class="mb-2 flex items-center justify-between gap-2">
             <div class="text-xs font-medium uppercase text-n-slate-10">
-              {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.TOOLS_TITLE') }}
+              {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.CATALOG_TITLE') }}
             </div>
-            <span class="text-xs text-n-slate-9">
-              {{ toolCountLabel(selectedToolCount, catalogTools.length) }}
+            <span
+              class="shrink-0 rounded-full bg-n-alpha-1 px-2 py-0.5 text-xs font-medium text-n-slate-10"
+            >
+              {{ toolCountLabel }}
             </span>
           </div>
-          <div class="grid max-h-96 gap-2 overflow-auto pr-1 lg:grid-cols-2">
+          <div
+            class="max-h-[28rem] overflow-auto rounded-xl border border-n-weak"
+          >
             <div
               v-for="group in groupedCatalogTools"
               :key="group.id"
-              class="rounded-lg border border-n-weak bg-n-solid-1 p-3"
+              class="border-b border-n-weak last:border-b-0"
             >
-              <div class="mb-2 flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="truncate text-sm font-medium text-n-slate-12">
+              <div class="flex h-11 items-center justify-between gap-3 px-3">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span
+                    class="min-w-0 truncate text-sm font-semibold text-n-slate-12"
+                  >
                     {{ group.name }}
-                  </div>
-                  <div class="mt-1 text-xs text-n-slate-10">
-                    {{ group.sourceLabel }}
-                  </div>
+                  </span>
+                  <span
+                    class="shrink-0 rounded-full bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium text-n-slate-9"
+                  >
+                    {{ sourceSummaryForGroup(group) }}
+                  </span>
                 </div>
-                <span
-                  class="shrink-0 rounded-full bg-n-alpha-2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
-                >
-                  {{ group.tools.length }}
-                </span>
+                <div class="flex shrink-0 items-center gap-2">
+                  <span class="text-xs font-normal text-n-slate-10">
+                    {{ stateLabel(groupIsEnabled(group)) }}
+                  </span>
+                  <Switch
+                    :model-value="groupIsEnabled(group)"
+                    :disabled="accessControlsDisabled"
+                    :aria-label="group.name"
+                    @change="value => setGroupSelected(group, value)"
+                  />
+                </div>
               </div>
-              <div class="flex flex-col gap-1">
-                <label
+              <div class="divide-y divide-n-weak">
+                <div
                   v-for="tool in group.tools"
                   :key="toolPolicyId(tool)"
-                  class="flex items-start gap-2 rounded-md p-1.5 transition-colors hover:bg-n-alpha-1"
+                  class="flex h-10 items-center justify-between gap-3 px-3 ltr:pl-6 rtl:pr-6 transition-colors hover:bg-n-alpha-1"
                 >
-                  <Checkbox
-                    :model-value="isToolSelected(tool)"
-                    :disabled="toolCheckboxDisabled(tool)"
-                    class="mt-0.5 shrink-0"
-                    @change="
-                      event => setToolSelected(tool, event.target.checked)
-                    "
-                  />
-                  <span class="min-w-0">
-                    <span
-                      class="block truncate text-sm font-medium text-n-slate-12"
-                    >
-                      {{ toolTitle(tool) }}
-                    </span>
+                  <span
+                    class="min-w-0 truncate text-xs font-normal text-n-slate-11"
+                  >
+                    {{ toolTitle(tool) }}
                   </span>
-                </label>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <span class="text-xs font-normal text-n-slate-10">
+                      {{ stateLabel(isToolSelected(tool)) }}
+                    </span>
+                    <Switch
+                      :model-value="isToolSelected(tool)"
+                      :disabled="toolCheckboxDisabled(tool)"
+                      :aria-label="toolTitle(tool)"
+                      @change="value => setToolSelected(tool, value)"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -732,6 +718,18 @@ onMounted(fetchMcpSettings);
           class="text-xs leading-5 text-n-slate-10"
         >
           {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_READ_ONLY') }}
+        </div>
+
+        <div v-if="canManageMcpAccess" class="flex justify-end pt-2">
+          <Button
+            size="sm"
+            color="blue"
+            icon="i-lucide-save"
+            :is-loading="isSavingSettings"
+            :disabled="isFetchingSettings || settingsLoadFailed"
+            :label="t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.SAVE_ACCESS')"
+            @click="saveMcpSettings"
+          />
         </div>
       </div>
     </section>
