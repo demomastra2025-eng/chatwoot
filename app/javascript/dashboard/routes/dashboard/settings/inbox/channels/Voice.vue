@@ -51,6 +51,11 @@ const sipuniState = reactive({
   defaultInternalNumber: '',
 });
 
+const normalizeE164Input = value =>
+  String(value || '').replace(/[\s().-]/g, '');
+
+const isNormalizablePhoneE164 = value => isPhoneE164(normalizeE164Input(value));
+
 const uiFlags = useMapGetter('inboxes/getUIFlags');
 
 const selectedProvider = computed(() => {
@@ -114,7 +119,7 @@ const twilioValidationRules = computed(() => ({
 }));
 
 const sipuniValidationRules = computed(() => ({
-  phoneNumber: { required, isPhoneE164 },
+  phoneNumber: { required, isPhoneE164: isNormalizablePhoneE164 },
   accountNumber: { required },
 }));
 
@@ -277,6 +282,10 @@ async function createTwilioChannel() {
 }
 
 async function createSipuniChannel() {
+  sipuniState.phoneNumber = normalizeE164Input(sipuniState.phoneNumber);
+  sipuniState.accountNumber = sipuniState.accountNumber.trim();
+  sipuniState.defaultInternalNumber = sipuniState.defaultInternalNumber.trim();
+
   const isFormValid = await sipuniV$.value.$validate();
   if (!isFormValid) return;
 
