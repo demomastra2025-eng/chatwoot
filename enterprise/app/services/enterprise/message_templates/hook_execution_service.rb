@@ -4,7 +4,12 @@ module Enterprise::MessageTemplates::HookExecutionService
   def trigger_templates
     super
     return unless should_process_captain_response?
-    return unless inbox.captain_auto_reply_allowed?
+
+    unless inbox.captain_auto_reply_allowed?
+      open_conversation_for_human_response
+      return
+    end
+
     return perform_handoff unless inbox.captain_active?
 
     schedule_captain_response
@@ -84,6 +89,32 @@ module Enterprise::MessageTemplates::HookExecutionService
 
   def should_process_captain_response?
     conversation.pending? && message.incoming? && !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
+  end
+
+  def open_conversation_for_human_response
+    return unless conversation.pending?
+
+    Rails.logger.info(
+      "[CAPTAIN][AutoReply] Opening conversation #{conversation.id} because Captain auto-reply is not allowed now"
+    )
+
+    previous_user = Current.user
+    previous_executed_by = Current.executed_by
+    Current.user = nil
+    Current.executed_by = nil
+
+    begin
+      conversation.open!
+      return unless conversation.saved_change_to_status?
+
+      Captain::Conversation::TypingIndicatorService.turn_off(
+        conversation: conversation,
+        assistant: inbox.captain_assistant
+      )
+    ensure
+      Current.user = previous_user
+      Current.executed_by = previous_executed_by
+    end
   end
 
   def perform_handoff

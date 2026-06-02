@@ -10,6 +10,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
   before do
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
+    allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
   end
 
   context 'when captain assistant is configured' do
@@ -52,8 +53,24 @@ RSpec.describe MessageTemplates::HookExecutionService do
         captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
 
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+        expect(Captain::Conversation::TypingIndicatorService).to receive(:turn_off).with(
+          conversation: conversation,
+          assistant: assistant
+        )
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(conversation.reload.status).to eq('open')
+      end
+
+      it 'opens the conversation within business hours when auto-reply mode is never' do
+        captain_inbox.update!(auto_reply_mode: 'never')
+
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(conversation.reload.status).to eq('open')
       end
 
       it 'does not schedule captain response for voice_call bubble updates' do
@@ -99,6 +116,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
 
         expect(MessageTemplates::Template::OutOfOffice).to have_received(:new)
+        expect(conversation.reload.status).to eq('open')
       end
 
       it 'schedules captain response outside business hours when auto-reply mode is outside_working_hours' do
@@ -124,6 +142,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
 
         expect(MessageTemplates::Template::OutOfOffice).to have_received(:new)
+        expect(conversation.reload.status).to eq('open')
       end
 
       it 'performs captain handoff when quota is exceeded (OOO template will kick in after handoff)' do
@@ -161,6 +180,26 @@ RSpec.describe MessageTemplates::HookExecutionService do
         )
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
+      end
+
+      it 'opens the conversation when outside-hours auto-reply has no active outside-hours window' do
+        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(conversation.reload.status).to eq('open')
+      end
+
+      it 'opens the conversation when auto-reply mode is never' do
+        captain_inbox.update!(auto_reply_mode: 'never')
+
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(conversation.reload.status).to eq('open')
       end
     end
 
