@@ -34,11 +34,13 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
   attr_reader :assistant
 
   def search_responses(query)
-    if assistant.present?
-      assistant.responses.approved.search(query, account_id: @account.id)
-    else
-      @account.captain_assistant_responses.approved.search(query, account_id: @account.id)
-    end
+    scoped_responses.search(query, account_id: @account.id)
+  end
+
+  def scoped_responses
+    @account.captain_assistant_responses
+            .approved
+            .visible_to_assistant(assistant&.id)
   end
 
   def format_response(response)
@@ -52,7 +54,7 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
   end
 
   def tool_definition
-    definition = Captain::ToolRegistry.definition_for(name)&.to_h || {}
+    definition = Captain::ToolRegistry.definition_for(name).to_h
     definition[:id] ||= name
     definition[:title] ||= name.to_s.humanize
     definition

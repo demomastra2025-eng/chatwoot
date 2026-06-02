@@ -28,11 +28,8 @@ class Api::V1::Accounts::Captain::SkillsController < Api::V1::Accounts::BaseCont
     203.0.113.0/24
     224.0.0.0/4
     240.0.0.0/4
-    ::/128
-    ::1/128
-    fc00::/7
-    fe80::/10
-    ff00::/8
+    ::/128 ::1/128 ::/96 ::ffff:0:0/96
+    fc00::/7 fe80::/10 ff00::/8
   ].map { |range| IPAddr.new(range) }.freeze
 
   def index
@@ -62,8 +59,9 @@ class Api::V1::Accounts::Captain::SkillsController < Api::V1::Accounts::BaseCont
   end
 
   def import
-    source_url = normalized_import_url(import_params[:url])
-    markdown = fetch_import_markdown(source_url)
+    import_endpoint = normalized_import_endpoint(import_params[:url])
+    source_url = import_endpoint[:uri].to_s
+    markdown = fetch_import_markdown(import_endpoint)
     attributes = Captain::Skill.attributes_from_markdown(markdown, source_url: source_url)
     skill = Current.account.captain_skills.find_or_initialize_by(slug: attributes[:slug])
     skill.assign_attributes(attributes)
@@ -95,11 +93,11 @@ class Api::V1::Accounts::Captain::SkillsController < Api::V1::Accounts::BaseCont
     params.permit(:url)
   end
 
-  def normalized_import_url(raw_url)
+  def normalized_import_endpoint(raw_url)
     uri = parse_import_uri(raw_url)
     uri = github_blob_raw_uri(uri)
     validate_import_uri!(uri)
-    uri.to_s
+    { uri: uri, ip_address: validated_import_ip_address(uri.host) }
   end
 
   def parse_import_uri(raw_url)
@@ -128,18 +126,11 @@ class Api::V1::Accounts::Captain::SkillsController < Api::V1::Accounts::BaseCont
   def validate_import_uri!(uri)
     raise I18n.t('captain.skills.import.https_required') unless uri.scheme == 'https'
     raise I18n.t('captain.skills.import.invalid_url') if uri.host.blank?
-    raise I18n.t('captain.skills.import.local_url') if disallowed_import_host?(uri.host)
-  end
 
-  def disallowed_import_host?(host)
-    normalized_host = normalize_import_host(host)
-    return true if DISALLOWED_HOSTS.include?(normalized_host)
-    return true if DISALLOWED_HOST_SUFFIXES.any? { |suffix| normalized_host.end_with?(suffix) }
+    normalized_host = normalize_import_host(uri.host)
+    return unless DISALLOWED_HOSTS.include?(normalized_host) || DISALLOWED_HOST_SUFFIXES.any? { |suffix| normalized_host.end_with?(suffix) }
 
-    addresses = resolved_import_ip_addresses(normalized_host)
-    addresses.blank? || addresses.any? { |address| disallowed_import_ip?(address) }
-  rescue SocketError
-    true
+    raise I18n.t('captain.skills.import.local_url')
   end
 
   def normalize_import_host(host)
@@ -150,9 +141,9 @@ class Api::V1::Accounts::Captain::SkillsController < Api::V1::Accounts::BaseCont
     literal_ip = parse_ip_address(host)
     return [literal_ip] if literal_ip
 
-    Addrinfo.getaddrinfo(host, nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM).filter_map do |addrinfo|
-      parse_ip_address(addrinfo.ip_address)
-    end.uniq
+    Addrinfo.getaddrinfo(host, nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM)
+            .filter_map { |addrinfo| parse_ip_address(addrinfo.ip_address) }
+            .uniq
   end
 
   def parse_ip_address(value)
@@ -165,22 +156,25 @@ class Api::V1::Accounts::Captain::SkillsController < Api::V1::Accounts::BaseCont
     DISALLOWED_IP_RANGES.any? { |range| range.include?(address) }
   end
 
-  def fetch_import_markdown(source_url)
-    body = download_import_markdown(URI.parse(source_url))
+  def validated_import_ip_address(host)
+    addresses = resolved_import_ip_addresses(normalize_import_host(host))
+    raise I18n.t('captain.skills.import.local_url') if addresses.blank? || addresses.any? { |address| disallowed_import_ip?(address) }
+
+    addresses.first
+  rescue SocketError
+    raise I18n.t('captain.skills.import.local_url')
+  end
+
+  def fetch_import_markdown(import_endpoint)
+    body = download_import_markdown(import_endpoint[:uri], import_endpoint[:ip_address])
     validate_import_markdown!(body)
     body
   end
 
-  def download_import_markdown(uri)
+  def download_import_markdown(uri, ip_address)
     body = +''
 
-    Net::HTTP.start(
-      uri.host,
-      uri.port,
-      use_ssl: true,
-      open_timeout: IMPORT_TIMEOUT_SECONDS,
-      read_timeout: IMPORT_TIMEOUT_SECONDS
-    ) do |http|
+    start_import_http(uri, ip_address) do |http|
       http.request(import_request(uri)) do |response|
         validate_import_response!(response)
         response.read_body do |chunk|
@@ -191,6 +185,17 @@ class Api::V1::Accounts::Captain::SkillsController < Api::V1::Accounts::BaseCont
     end
 
     body
+  end
+
+  def start_import_http(uri, ip_address, &)
+    Net::HTTP.new(uri.host, uri.port).tap do |http|
+      # Keep the original host for TLS/SNI/Host headers, but pin the TCP connection to the
+      # already-validated address so DNS cannot rebind between validation and fetch.
+      http.ipaddr = ip_address.to_s
+      http.use_ssl = true
+      http.open_timeout = http.read_timeout = IMPORT_TIMEOUT_SECONDS
+      http.start(&)
+    end
   end
 
   def import_request(uri)

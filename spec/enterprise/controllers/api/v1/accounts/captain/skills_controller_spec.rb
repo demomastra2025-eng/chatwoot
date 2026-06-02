@@ -123,6 +123,33 @@ RSpec.describe 'Api::V1::Accounts::Captain::Skills', type: :request do
       )
     end
 
+    it 'pins the validated IP address for import fetches to prevent DNS rebinding' do
+      http_instances = []
+      allow(Net::HTTP).to receive(:new).and_wrap_original do |method, *args|
+        method.call(*args).tap do |http|
+          allow(http).to receive(:ipaddr=).and_call_original
+          http_instances << http
+        end
+      end
+      allow(Addrinfo).to receive(:getaddrinfo)
+        .with('skills.example.com', nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM)
+        .and_return([instance_double(Addrinfo, ip_address: '93.184.216.34')])
+      stub_request(:get, 'https://skills.example.com/SKILL.md')
+        .to_return(status: 200, body: skill_markdown, headers: { 'Content-Type' => 'text/markdown' })
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/captain/skills/import",
+             params: { url: 'https://skills.example.com/SKILL.md' },
+             headers: admin.create_new_auth_token,
+             as: :json
+      end.to change(Captain::Skill, :count).by(1)
+
+      expect(response).to have_http_status(:success)
+      expect(Addrinfo).to have_received(:getaddrinfo).once
+      expect(http_instances).not_to be_empty
+      expect(http_instances.first).to have_received(:ipaddr=).with('93.184.216.34')
+    end
+
     it 'rejects local import URLs' do
       post "/api/v1/accounts/#{account.id}/captain/skills/import",
            params: { url: 'https://localhost/SKILL.md' },
@@ -147,6 +174,22 @@ RSpec.describe 'Api::V1::Accounts::Captain::Skills', type: :request do
       allow(Addrinfo).to receive(:getaddrinfo)
         .with('skills.example.com', nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM)
         .and_return([instance_double(Addrinfo, ip_address: '10.0.0.7')])
+      request = stub_request(:get, 'https://skills.example.com/SKILL.md')
+
+      post "/api/v1/accounts/#{account.id}/captain/skills/import",
+           params: { url: 'https://skills.example.com/SKILL.md' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(request).not_to have_been_requested
+      expect(Captain::Skill.count).to eq(0)
+    end
+
+    it 'rejects import hosts that resolve to IPv4-mapped private IPv6 addresses' do
+      allow(Addrinfo).to receive(:getaddrinfo)
+        .with('skills.example.com', nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM)
+        .and_return([instance_double(Addrinfo, ip_address: '::ffff:127.0.0.1')])
       request = stub_request(:get, 'https://skills.example.com/SKILL.md')
 
       post "/api/v1/accounts/#{account.id}/captain/skills/import",
