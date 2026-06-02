@@ -866,6 +866,12 @@
           "LABEL": "Instruction",
           "PLACEHOLDER": "Describe how the AI agent should work and what boundaries it should follow"
         },
+        "REFERENCE_ACTIONS": {
+          "TITLE": "View",
+          "FIELDS": "Fields",
+          "TOOLS": "Tools",
+          "SKILLS": "Skills"
+        },
         "CATALOG_ITEM_USED": "Used",
         "FEATURES": {
           "TITLE": "Features",
@@ -875,7 +881,23 @@
           "ALLOW_CITATIONS": "Include source citations in responses",
           "ALLOW_FAQ_LOOKUP": "Use FAQ lookup to search for relevant answers",
           "ALLOW_HUMAN_HANDOFF": "Hand off to a human when the AI agent cannot help",
+          "ALLOW_WEB_ACCESS": "Allow web search",
           "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
+        },
+        "ACCESS_MODES": {
+          "TITLE": "AI assistant access",
+          "DESCRIPTION": "Choose one mode. The list below shows the tool groups the assistant gets; backend permissions and confirmations still apply.",
+          "BASIC_TITLE": "Basic mode",
+          "BASIC_DESCRIPTION": "The standard OneLink work toolkit without external MCP servers or actions disabled by default.",
+          "BASIC_META": "For operators and daily team assistance",
+          "FULL_TITLE": "Full mode",
+          "FULL_DESCRIPTION": "Every available assistant tool, including connected MCP servers and advanced actions.",
+          "FULL_META": "For company owners and administrators",
+          "GROUPS_TITLE": "What this mode includes",
+          "TOOL_COUNT": "{enabled} / {total} tools",
+          "LOADING": "Loading tools…",
+          "EMPTY": "No tools are available for this mode yet.",
+          "OTHER_GROUP": "Other tools"
         },
         "CONTEXT_ACCESS": {
           "TITLE": "Default data",
@@ -1049,9 +1071,9 @@
             "CUSTOM": "Custom",
             "REQUIRES_CONFIRMATION": "Needs confirmation",
             "RISK_LEVELS": {
-              "LOW": "Low risk",
-              "MEDIUM": "Medium risk",
-              "HIGH": "High risk",
+              "LOW": "Basic",
+              "MEDIUM": "Working",
+              "HIGH": "Full",
               "CUSTOM": "Custom"
             }
           },
@@ -1446,6 +1468,10 @@
             "LABEL": "General",
             "DESCRIPTION": "AI agent profile, operating mode, avatar, system messages, and live runtime settings."
           },
+          "VOICE_AGENT": {
+            "LABEL": "Voice agent",
+            "DESCRIPTION": "Realtime voice settings for this AI agent."
+          },
           "PROMPTS": {
             "LABEL": "Prompts",
             "DESCRIPTION": "Instruction, response rules, and compiled prompt preview.",
@@ -1705,7 +1731,24 @@
         "INSERT": "Insert",
         "USED": "Used",
         "SCRIPTS": "Scripts",
-        "EMPTY": "No skills found."
+        "EMPTY": "No skills found.",
+        "ADD_OWN": "Add own",
+        "IMPORT": "Import URL",
+        "SHOW_OWN": "Own ({count})",
+        "SHOW_ALL": "All skills",
+        "OWN_BADGE": "Own",
+        "EDIT": "Edit",
+        "CREATE_TITLE": "New workspace skill",
+        "EDIT_TITLE": "Edit skill",
+        "IMPORT_TITLE": "Add skill from the internet",
+        "NAME": "Name",
+        "DESCRIPTION": "Description",
+        "GROUP": "Group",
+        "SOURCE_URL": "SKILL.md URL",
+        "CONTENT_PLACEHOLDER": "Skill markdown instructions...",
+        "SAVE": "Save",
+        "SAVED": "Skill saved",
+        "SAVE_ERROR": "Could not save skill"
       },
       "RESPONSE_GUIDELINES": {
         "TITLE": "Rules",
@@ -1854,6 +1897,14 @@
       "TABS": {
         "FAQS": "FAQ",
         "DOCUMENTS": "Documents"
+      }
+    },
+    "KNOWLEDGE_VISIBILITY": {
+      "LABEL": "Visibility",
+      "HELP_TEXT": "Shared knowledge is available across the workspace. Personal knowledge stays in the workspace personal layer.",
+      "OPTIONS": {
+        "GENERAL": "Shared",
+        "PERSONAL": "Personal"
       }
     },
     "DOCUMENTS": {

@@ -24,6 +24,21 @@ module Onelink
         )
       end
 
+      def self.from_assistant_tool(assistant:, user:, scope_name: DEFAULT_SCOPE_NAME)
+        account = assistant.account
+        account_user = user.present? ? account.account_users.find_by(user_id: user.id) : nil
+
+        new(
+          account: account,
+          account_user: account_user,
+          user: user,
+          access_token: nil,
+          request: nil,
+          assistant_id: assistant.persisted? ? assistant.id : nil,
+          scope_name: scope_name
+        )
+      end
+
       def initialize(account:, account_user:, user:, access_token:, request:, assistant_id: nil, scope_name: nil)
         @account = account
         @account_user = account_user
@@ -47,7 +62,7 @@ module Onelink
       end
 
       def base_url
-        request.base_url
+        request&.base_url.to_s
       end
 
       def metadata

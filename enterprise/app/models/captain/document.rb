@@ -10,6 +10,7 @@
 #  name                   :string
 #  source_text            :text
 #  status                 :integer          default("in_progress"), not null
+#  visibility             :integer          default("general"), not null
 #  created_at             :datetime         not null
 #  updated_at             :datetime         not null
 #  account_id             :bigint           not null
@@ -17,6 +18,7 @@
 #
 # Indexes
 #
+#  idx_captain_documents_account_visibility                   (account_id,visibility)
 #  index_captain_documents_on_account_id                      (account_id)
 #  index_captain_documents_on_assistant_id                    (assistant_id)
 #  index_captain_documents_on_assistant_id_and_external_link  (assistant_id,external_link) UNIQUE
@@ -62,6 +64,7 @@ class Captain::Document < ApplicationRecord
     available: 1,
     failed: 2
   }
+  enum visibility: { general: 0, personal: 1 }, _prefix: :visibility
 
   before_create :ensure_within_plan_limit
   after_create_commit :enqueue_crawl_job

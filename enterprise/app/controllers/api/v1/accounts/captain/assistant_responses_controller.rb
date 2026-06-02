@@ -3,7 +3,6 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   before_action -> { check_authorization(Captain::Assistant) }
 
   before_action :set_current_page, only: [:index]
-  before_action :set_assistant, only: [:create]
   before_action :set_responses, except: [:create]
   before_action :set_response, only: [:show, :update, :destroy]
 
@@ -18,7 +17,7 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   def show; end
 
   def create
-    @response = Current.account.captain_assistant_responses.new(response_params)
+    @response = Current.account.captain_assistant_responses.new(response_params_with_default_assistant)
     @response.documentable = Current.user
     @response.save!
   end
@@ -57,10 +56,6 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
     base_query
   end
 
-  def set_assistant
-    @assistant = Current.account.captain_assistants.find_by(id: params[:assistant_id])
-  end
-
   def set_responses
     @responses = Current.account.captain_assistant_responses.includes(:assistant, :documentable).ordered
   end
@@ -82,7 +77,18 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
       :question,
       :answer,
       :assistant_id,
-      :status
+      :status,
+      :visibility
     )
+  end
+
+  def response_params_with_default_assistant
+    attributes = response_params
+    attributes[:assistant_id] = workspace_default_assistant&.id if attributes[:assistant_id].blank?
+    attributes
+  end
+
+  def workspace_default_assistant
+    Current.account.captain_assistants.external_agent.ordered.first || Current.account.captain_assistants.ordered.first
   end
 end

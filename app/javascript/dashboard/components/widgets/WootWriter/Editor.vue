@@ -813,6 +813,29 @@ const closeSkillsMenu = () => {
   skillSearchKey.value = '';
 };
 
+const closeCaptainReferenceMenus = () => {
+  closeToolsMenu();
+  closeFieldsMenu();
+  closeSkillsMenu();
+};
+
+function openCaptainReferenceMenu(menuType) {
+  if (!editorView) return;
+
+  closeCaptainReferenceMenus();
+  const { from, to } = editorView.state.selection;
+  range.value = { from, to };
+  editorView.focus();
+
+  if (menuType === 'tools' && props.enableCaptainTools) {
+    showToolsMenu.value = true;
+  } else if (menuType === 'fields' && props.enableCaptainFields) {
+    showFieldsMenu.value = true;
+  } else if (menuType === 'skills' && props.enableCaptainSkills) {
+    showSkillsMenu.value = true;
+  }
+}
+
 function handleLineBreakWhenCmdAndEnterToSendEnabled(event) {
   if (
     hasPressedCommandAndEnter(event) &&
@@ -952,7 +975,7 @@ onMounted(() => {
   }
 });
 
-defineExpose({ focusEditorInputField });
+defineExpose({ focusEditorInputField, openCaptainReferenceMenu });
 
 // BUS Event to insert text or markdown into the editor at the
 // current cursor position.

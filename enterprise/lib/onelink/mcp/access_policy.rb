@@ -7,7 +7,7 @@ module Onelink
       SOURCE_OPENAPI_READ = 'openapi_read'
       SOURCE_OPENAPI_WRITE = 'openapi_write'
       OPENAPI_GROUP_SOURCE = 'openapi'
-      DEFAULT_MAX_RISK_LEVEL = 'low'
+      DEFAULT_MAX_RISK_LEVEL = 'medium'
       RISK_ORDER = {
         'low' => 0,
         'medium' => 1,
@@ -181,6 +181,7 @@ module Onelink
         normalized_source = source.to_s
         return false unless source_enabled?(normalized_source)
         return false if blocked_ids.include?(normalized_id)
+        return false if explicit_ids.present? && explicit_ids.exclude?(normalized_id)
         return false unless group_allowed?(source: normalized_source, group: group)
 
         explicit = explicit_ids.include?(normalized_id)

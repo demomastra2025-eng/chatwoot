@@ -1298,6 +1298,54 @@ class Captain::ToolRegistry
           risk_level: 'medium'
         ),
         definition(
+          id: 'get_workspace_profile',
+          title: 'Get Workspace Profile',
+          description: 'Get safe OneLink workspace profile, editable company settings, MCP access summary, and account-level operational counts',
+          group_name: 'Account',
+          icon: 'building',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetWorkspaceProfileService,
+          risk_level: 'low',
+          selected_by_default: false,
+          idempotent: true
+        ),
+        definition(
+          id: 'update_workspace_profile',
+          title: 'Update Workspace Profile',
+          description: 'Update OneLink workspace/company profile fields and safe account-level settings after operator confirmation',
+          group_name: 'Account',
+          icon: 'building-edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateWorkspaceProfileService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'get_mcp_access_policy',
+          title: 'Get MCP Access Policy',
+          description: 'Get current OneLink MCP access policy, source/group summary, and optional visible tool catalog',
+          group_name: 'Account',
+          icon: 'plug-zap',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetMcpAccessPolicyService,
+          risk_level: 'low',
+          selected_by_default: false,
+          idempotent: true
+        ),
+        definition(
+          id: 'update_mcp_access_policy',
+          title: 'Update MCP Access Policy',
+          description: 'Update OneLink MCP endpoint access, sources, risk ceiling, and group/tool allowlists after operator confirmation',
+          group_name: 'Account',
+          icon: 'plug-zap',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateMcpAccessPolicyService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'list_account_users',
           title: 'List Account Users',
           description: 'List account users with IDs, roles, availability, and team membership for assignment, notifications, and ownership fields',

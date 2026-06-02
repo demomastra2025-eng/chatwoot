@@ -68,6 +68,41 @@ RSpec.describe Captain::Assistant, type: :model do
     end
   end
 
+  describe 'shared knowledge ownership' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'restricts destructive associations for workspace-level knowledge records' do
+      %i[documents document_chunks knowledge_answer_cache_entries responses].each do |association_name|
+        association = described_class.reflect_on_association(association_name)
+
+        expect(association.options[:dependent]).to eq(:restrict_with_error)
+      end
+    end
+
+    it 'does not delete workspace knowledge when an assistant delete is attempted' do
+      document = create(:captain_document, account: account, assistant: assistant)
+      chunk = create(:captain_document_chunk, account: account, assistant: assistant, document: document)
+      response = create(:captain_assistant_response, account: account, assistant: assistant)
+      cache_entry = Captain::KnowledgeAnswerCacheEntry.create!(
+        account: account,
+        assistant: assistant,
+        query: 'shipping policy',
+        query_sha256: Digest::SHA256.hexdigest('shipping policy'),
+        source_fingerprint: 'shared-workspace-kb',
+        payload: { answer: 'Use shared docs.' }
+      )
+
+      expect(assistant.destroy).to be false
+      expect(assistant.errors[:base]).to be_present
+      expect(described_class.exists?(assistant.id)).to be true
+      expect(Captain::Document.exists?(document.id)).to be true
+      expect(Captain::DocumentChunk.exists?(chunk.id)).to be true
+      expect(Captain::AssistantResponse.exists?(response.id)).to be true
+      expect(Captain::KnowledgeAnswerCacheEntry.exists?(cache_entry.id)).to be true
+    end
+  end
+
   describe '#runtime_state_for' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }

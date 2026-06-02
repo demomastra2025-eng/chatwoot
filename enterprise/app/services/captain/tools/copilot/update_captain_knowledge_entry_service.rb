@@ -10,6 +10,7 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService < Captain::Too
   param :question, type: :string, desc: 'Optional updated question', required: false
   param :answer, type: :string, desc: 'Optional updated answer', required: false
   param :status, type: :string, desc: 'Optional status: pending or approved', required: false
+  param :visibility, type: :string, desc: 'Optional visibility: general or personal', required: false
   param :assistant_id, type: :integer, desc: 'Optional destination Captain assistant ID in the same account', required: false
   param :document_id, type: :integer, desc: 'Optional Captain document ID to attach entry to', required: false
 
@@ -43,6 +44,7 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService < Captain::Too
       attributes[:question] = kwargs[:question] if kwargs[:question].present?
       attributes[:answer] = kwargs[:answer] if kwargs[:answer].present?
       attributes[:status] = kwargs[:status] if kwargs[:status].present?
+      attributes[:visibility] = normalize_knowledge_visibility(kwargs[:visibility]) if kwargs[:visibility].present?
       attributes[:documentable] = entry_documentable(entry, kwargs, target_assistant)
     end.compact
   end
@@ -50,8 +52,8 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService < Captain::Too
   def entry_documentable(entry, kwargs, target_assistant)
     return find_document_for_assistant!(kwargs[:document_id], target_assistant) if kwargs[:document_id].present?
     return unless kwargs[:assistant_id].present? && entry.documentable_type == 'Captain::Document'
-    return entry.documentable if entry.documentable&.assistant_id == target_assistant.id
+    return entry.documentable if entry.documentable&.account_id == target_assistant.account_id
 
-    raise ActiveRecord::RecordNotFound, 'Existing knowledge entry document belongs to a different assistant'
+    raise ActiveRecord::RecordNotFound, 'Existing knowledge entry document belongs to a different account'
   end
 end

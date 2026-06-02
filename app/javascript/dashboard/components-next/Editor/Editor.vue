@@ -65,6 +65,7 @@ const initialEditorHeight = computed(() =>
   clampEditorHeight(props.initialHeight)
 );
 const isFocused = ref(false);
+const wootEditorRef = ref(null);
 const editorHeight = ref(initialEditorHeight.value);
 const isResizing = ref(false);
 const resizeStartY = ref(0);
@@ -190,6 +191,12 @@ const handleBlur = () => {
   }
 };
 
+const openCaptainReferenceMenu = menuType => {
+  wootEditorRef.value?.openCaptainReferenceMenu?.(menuType);
+};
+
+defineExpose({ openCaptainReferenceMenu });
+
 watch(
   () => props.modelValue,
   newValue => {
@@ -248,6 +255,7 @@ onBeforeUnmount(() => {
       :style="autoHeightStyle"
     >
       <WootEditor
+        ref="wootEditorRef"
         :editor-id="editorKey"
         :model-value="normalizedModelValue"
         :placeholder="placeholder"

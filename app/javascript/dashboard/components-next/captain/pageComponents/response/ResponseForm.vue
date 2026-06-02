@@ -8,6 +8,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 
 const props = defineProps({
   mode: {
@@ -31,6 +32,7 @@ const formState = {
 const initialState = {
   question: '',
   answer: '',
+  visibility: 'general',
 };
 
 const state = reactive({ ...initialState });
@@ -55,11 +57,23 @@ const formErrors = computed(() => ({
   answer: getErrorMessage('answer', 'ANSWER'),
 }));
 
+const visibilityOptions = computed(() => [
+  {
+    value: 'general',
+    label: t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL'),
+  },
+  {
+    value: 'personal',
+    label: t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL'),
+  },
+]);
+
 const handleCancel = () => emit('cancel');
 
 const prepareDocumentDetails = () => ({
   question: state.question,
   answer: state.answer,
+  visibility: state.visibility,
 });
 
 const handleSubmit = async () => {
@@ -74,11 +88,12 @@ const handleSubmit = async () => {
 const updateStateFromResponse = response => {
   if (!response) return;
 
-  const { question, answer } = response;
+  const { question, answer, visibility } = response;
 
   Object.assign(state, {
     question,
     answer,
+    visibility: visibility || 'general',
   });
 };
 
@@ -111,6 +126,23 @@ watch(
       :max-length="10000"
       :message-type="formErrors.answer ? 'error' : 'info'"
     />
+    <div class="flex flex-col gap-1">
+      <label
+        for="responseVisibility"
+        class="mb-0.5 text-sm font-medium text-n-slate-12"
+      >
+        {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.LABEL') }}
+      </label>
+      <ComboBox
+        id="responseVisibility"
+        v-model="state.visibility"
+        :options="visibilityOptions"
+        class="[&>div>button]:bg-n-alpha-black2"
+      />
+      <p class="m-0 text-xs text-n-slate-11">
+        {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.HELP_TEXT') }}
+      </p>
+    </div>
     <div class="flex items-center justify-between w-full gap-3">
       <Button
         type="button"

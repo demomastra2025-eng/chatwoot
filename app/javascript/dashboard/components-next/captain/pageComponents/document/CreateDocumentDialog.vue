@@ -11,7 +11,7 @@ import DocumentForm from './DocumentForm.vue';
 defineProps({
   assistantId: {
     type: Number,
-    required: true,
+    default: null,
   },
 });
 

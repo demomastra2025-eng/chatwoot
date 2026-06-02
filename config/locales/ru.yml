@@ -413,6 +413,14 @@ ru:
       processing_pages: Обработка страниц %{start}-%{end} (итерация %{iteration})
       chunk_generated: 'Страниц сгенерировано %{chunk_faqs} FAQs. Всего на данный момент: %{total_faqs}'
       page_processing_error: 'Ошибка при обработке страниц %{start}-%{end}: %{error}'
+    skills:
+      import:
+        invalid_url: Некорректный URL скила
+        https_required: URL скила должен использовать HTTPS
+        local_url: URL скила не может указывать на локальный/приватный хост
+        fetch_failed: 'Не удалось загрузить скил: HTTP %{code}'
+        too_large: Файл скила слишком большой
+        missing_skill_md: URL должен указывать на SKILL.md с frontmatter name и description
     custom_tool:
       slug_generation_failed: Невозможно сгенерировать уникальный slug после 5 попыток
     upgrade: Перейдите на более высокий тариф, чтобы включить AI-агентов

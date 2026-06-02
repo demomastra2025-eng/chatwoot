@@ -97,6 +97,11 @@ Rails.application.routes.draw do
               resources :scenarios
             end
             resources :assistant_responses
+            resources :skills do
+              collection do
+                post :import
+              end
+            end
             resources :bulk_actions, only: [:create]
             resources :copilot_threads, only: [:index, :create] do
               resources :copilot_messages, only: [:index, :create]

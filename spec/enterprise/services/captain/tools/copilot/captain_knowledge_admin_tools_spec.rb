@@ -13,12 +13,12 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
       account: account,
       assistant: assistant,
       name: 'Billing Guide',
-      external_link: 'https://docs.example.test/billing?token=secret',
+      external_link: 'https://docs.example.test/billing',
       status: :available,
       metadata: {
         'firecrawl' => {
           'mode' => 'legacy_url',
-          'sync' => { 'status' => 'completed', 'failed_urls' => ['https://docs.example.test/fail?token=secret'] }
+          'sync' => { 'status' => 'completed', 'failed_urls' => ['https://docs.example.test/fail'] }
         }
       }
     )
@@ -91,15 +91,16 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
         service.execute(
           assistant_id: assistant.id,
           name: 'Pricing Guide',
-          external_link: 'https://docs.example.test/pricing?api_key=secret',
-          source_mode: 'legacy_url'
+          external_link: 'https://docs.example.test/pricing',
+          source_mode: 'legacy_url',
+          visibility: 'personal'
         )
       )
 
       created_document = account.captain_documents.find(payload['document']['id'])
       expect(payload['action']).to eq('create_captain_knowledge_document')
       expect(payload['document']['external_link']).to eq('[FILTERED]')
-      expect(created_document).to have_attributes(name: 'Pricing Guide', assistant_id: assistant.id)
+      expect(created_document).to have_attributes(name: 'Pricing Guide', assistant_id: assistant.id, visibility: 'personal')
     end
 
     it 'does not mutate until the backend confirmation gate permits execution' do
@@ -129,23 +130,30 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
           document_id: document.id,
           assistant_id: other_assistant.id,
           name: 'Updated Guide',
+          visibility: 'personal',
           faq_generation_enabled: false
         )
       )
 
       expect(payload['action']).to eq('update_captain_knowledge_document')
       expect(payload['previous_document']).to include('id' => document.id, 'external_link' => '[FILTERED]')
-      expect(payload['updated_fields']).to contain_exactly('assistant', 'name', 'faq_generation_enabled')
-      expect(document.reload).to have_attributes(assistant_id: other_assistant.id, name: 'Updated Guide', faq_generation_enabled: false)
+      expect(payload['updated_fields']).to contain_exactly('assistant', 'name', 'visibility', 'faq_generation_enabled')
+      expect(document.reload).to have_attributes(
+        assistant_id: other_assistant.id,
+        name: 'Updated Guide',
+        visibility: 'personal',
+        faq_generation_enabled: false
+      )
     end
 
-    it 'reconciles generated knowledge entries when moving a document to another assistant' do
-      entry = create(:captain_assistant_response, account: account, assistant: assistant, documentable: document)
+    it 'reconciles generated knowledge entries when moving a document or changing visibility' do
+      entry = create(:captain_assistant_response, account: account, assistant: assistant, documentable: document, visibility: :general)
       other_assistant = create(:captain_assistant, account: account, name: 'New Owner')
 
-      service.execute(document_id: document.id, assistant_id: other_assistant.id)
+      service.execute(document_id: document.id, assistant_id: other_assistant.id, visibility: 'personal')
 
       expect(entry.reload.assistant_id).to eq(other_assistant.id)
+      expect(entry.visibility).to eq('personal')
     end
   end
 
@@ -198,32 +206,38 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
       expect(JSON.generate(get_payload)).not_to include('secret billing flow')
     end
 
-    it 'rejects attaching an entry to a document owned by another assistant' do
+    it 'allows attaching an entry to a same-account document owned by another assistant' do
       other_assistant = create(:captain_assistant, account: account)
       other_document = create(:captain_document, account: account, assistant: other_assistant)
 
-      result = Captain::Tools::Copilot::CreateCaptainKnowledgeEntryService.new(assistant, user: admin).execute(
-        assistant_id: assistant.id,
-        question: 'Mismatch?',
-        answer: 'Should not attach.',
-        document_id: other_document.id
+      service = Captain::Tools::Copilot::CreateCaptainKnowledgeEntryService.new(assistant, user: admin)
+      payload = JSON.parse(
+        service.execute(
+          assistant_id: assistant.id,
+          question: 'Shared doc?',
+          answer: 'Same account can attach.',
+          document_id: other_document.id
+        )
       )
+      created_entry = account.captain_assistant_responses.find(payload['entry']['id'])
 
-      expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
-      expect(account.captain_assistant_responses.where(question: 'Mismatch?')).not_to exist
+      expect(created_entry).to have_attributes(assistant_id: assistant.id, documentable: other_document)
     end
 
-    it 'rejects moving an entry to a document owned by another assistant' do
+    it 'allows moving an entry to a same-account document owned by another assistant' do
       other_assistant = create(:captain_assistant, account: account)
       other_document = create(:captain_document, account: account, assistant: other_assistant)
 
-      result = Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService.new(assistant, user: admin).execute(
-        entry_id: entry.id,
-        document_id: other_document.id
+      service = Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService.new(assistant, user: admin)
+      payload = JSON.parse(
+        service.execute(
+          entry_id: entry.id,
+          document_id: other_document.id
+        )
       )
 
-      expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
-      expect(entry.reload.documentable).to eq(document)
+      expect(payload['entry']).to include('id' => entry.id)
+      expect(entry.reload.documentable).to eq(other_document)
     end
 
     it 'creates, updates, and deletes manual entries with confirmation-gated services' do
@@ -232,7 +246,8 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
           assistant_id: assistant.id,
           question: 'What are working hours?',
           answer: 'We work 9-18.',
-          status: 'approved'
+          status: 'approved',
+          visibility: 'personal'
         )
       )
       created_entry = account.captain_assistant_responses.find(created_payload['entry']['id'])
@@ -240,14 +255,16 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
       updated_payload = JSON.parse(
         Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService.new(assistant, user: admin).execute(
           entry_id: created_entry.id,
-          answer: 'We work 10-19.'
+          answer: 'We work 10-19.',
+          visibility: 'general'
         )
       )
       deleted_payload = JSON.parse(
         Captain::Tools::Copilot::DeleteCaptainKnowledgeEntryService.new(assistant, user: admin).execute(entry_id: created_entry.id)
       )
 
-      expect(updated_payload['entry']).to include('answer_preview' => '[FILTERED]', 'answer_bytes' => 14)
+      expect(created_entry).to be_visibility_personal
+      expect(updated_payload['entry']).to include('answer_preview' => '[FILTERED]', 'answer_bytes' => 14, 'visibility' => 'general')
       expect(JSON.generate(updated_payload)).not_to include('We work 10-19.')
       expect(deleted_payload['deleted_entry']).to include('id' => created_entry.id)
       expect(account.captain_assistant_responses.where(id: created_entry.id)).not_to exist

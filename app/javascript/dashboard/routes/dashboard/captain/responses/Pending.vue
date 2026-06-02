@@ -34,7 +34,9 @@ const selectedResponse = ref(null);
 const deleteDialog = ref(null);
 const bulkDeleteDialog = ref(null);
 
-const selectedAssistantId = computed(() => Number(route.params.assistantId));
+const selectedAssistantId = computed(() =>
+  route.params.assistantId ? Number(route.params.assistantId) : null
+);
 const dialogType = ref('');
 const searchQuery = ref('');
 const { t } = useI18n();
@@ -45,7 +47,6 @@ const backUrl = computed(() => ({
   name: 'captain_assistants_responses_index',
   params: {
     accountId: route.params.accountId,
-    assistantId: selectedAssistantId.value,
   },
 }));
 
@@ -239,11 +240,7 @@ const initializeFromURL = () => {
 
 watch(
   selectedAssistantId,
-  currentAssistantId => {
-    if (!currentAssistantId) {
-      return;
-    }
-
+  () => {
     initializeFromURL();
     bulkSelectedIds.value = new Set();
   },
@@ -260,6 +257,7 @@ watch(
     :is-empty="!filteredResponses.length"
     :show-pagination-footer="!isFetching && !!filteredResponses.length"
     :show-know-more="false"
+    :show-assistant-switcher="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     :back-url="backUrl"
     @update:current-page="onPageChange"
@@ -340,9 +338,9 @@ watch(
           :key="response.id"
           :question="response.question"
           :answer="response.answer"
-          :assistant="response.assistant"
           :documentable="response.documentable"
           :status="response.status"
+          :visibility="response.visibility"
           :created-at="response.created_at"
           :updated-at="response.updated_at"
           :is-selected="bulkSelectedIds.has(response.id)"

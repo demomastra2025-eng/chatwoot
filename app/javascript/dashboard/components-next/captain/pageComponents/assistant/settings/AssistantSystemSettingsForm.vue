@@ -28,6 +28,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  showVoiceSettings: {
+    type: Boolean,
+    default: true,
+  },
   showSubmitButton: {
     type: Boolean,
     default: true,
@@ -504,6 +508,7 @@ defineExpose({
     </template>
 
     <details
+      v-if="showVoiceSettings"
       open
       data-test-id="assistant-voice-settings"
       class="rounded-xl border border-n-weak bg-n-solid-1 p-4"

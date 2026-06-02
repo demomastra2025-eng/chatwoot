@@ -14,7 +14,7 @@ import Switch from 'dashboard/components-next/switch/Switch.vue';
 const props = defineProps({
   assistantId: {
     type: Number,
-    required: true,
+    default: null,
   },
 });
 
@@ -67,6 +67,7 @@ const initialState = {
   importProfile: { ...DEFAULT_IMPORT_PROFILE },
   previewLinks: [],
   selectedUrls: [],
+  visibility: 'general',
   faqGenerationEnabled: true,
 };
 
@@ -114,6 +115,17 @@ const documentTypeOptions = computed(() => [
   {
     value: 'file_upload',
     label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.FILE_UPLOAD'),
+  },
+]);
+
+const visibilityOptions = computed(() => [
+  {
+    value: 'general',
+    label: t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL'),
+  },
+  {
+    value: 'personal',
+    label: t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL'),
   },
 ]);
 
@@ -289,7 +301,7 @@ const handlePreviewSelectedPages = async () => {
   try {
     const response = await store.dispatch('captainDocuments/preview', {
       document: {
-        assistant_id: props.assistantId,
+        ...(props.assistantId ? { assistant_id: props.assistantId } : {}),
         external_link: state.url,
         source_mode: state.documentType,
         import_profile: buildImportProfile(),
@@ -311,7 +323,9 @@ const prepareDocumentDetails = () => {
     const formData = new FormData();
     const extension =
       state.uploadedFile?.name.split('.').pop()?.toLowerCase() || '';
-    formData.append('document[assistant_id]', props.assistantId);
+    if (props.assistantId) {
+      formData.append('document[assistant_id]', props.assistantId);
+    }
     if (extension === 'pdf') {
       formData.append('document[pdf_file]', state.uploadedFile);
     } else {
@@ -326,17 +340,19 @@ const prepareDocumentDetails = () => {
       'document[faq_generation_enabled]',
       state.faqGenerationEnabled
     );
+    formData.append('document[visibility]', state.visibility);
     return formData;
   }
 
   return {
     document: {
-      assistant_id: props.assistantId,
+      ...(props.assistantId ? { assistant_id: props.assistantId } : {}),
       name: state.name || state.url,
       external_link: state.url,
       source_mode: state.documentType,
       import_profile: buildImportProfile(),
       faq_generation_enabled: state.faqGenerationEnabled,
+      visibility: state.visibility,
       ...(state.documentType === 'selected_pages'
         ? { selected_urls: state.selectedUrls }
         : {}),
@@ -624,6 +640,24 @@ const handleSubmit = async () => {
       :label="t('CAPTAIN.DOCUMENTS.FORM.NAME.LABEL')"
       :placeholder="t('CAPTAIN.DOCUMENTS.FORM.NAME.PLACEHOLDER')"
     />
+
+    <div class="flex flex-col gap-1">
+      <label
+        for="documentVisibility"
+        class="mb-0.5 text-sm font-medium text-n-slate-12"
+      >
+        {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.LABEL') }}
+      </label>
+      <ComboBox
+        id="documentVisibility"
+        v-model="state.visibility"
+        :options="visibilityOptions"
+        class="[&>div>button]:bg-n-alpha-black2"
+      />
+      <p class="m-0 text-xs text-n-slate-11">
+        {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.HELP_TEXT') }}
+      </p>
+    </div>
 
     <div
       class="flex items-start justify-between gap-3 rounded-xl bg-n-alpha-2 p-4"

@@ -27,25 +27,77 @@ const metaV2 = {
   installationTypes: [INSTALLATION_TYPES.CLOUD, INSTALLATION_TYPES.ENTERPRISE],
 };
 
-const assistantRoutes = [
+const sharedKnowledgeRoutes = [
   {
-    path: frontendURL('accounts/:accountId/captain/:assistantId/faqs'),
+    path: frontendURL('accounts/:accountId/captain/faqs'),
     component: ResponsesIndex,
     name: 'captain_assistants_responses_index',
     meta,
   },
   {
-    path: frontendURL('accounts/:accountId/captain/:assistantId/documents'),
+    path: frontendURL('accounts/:accountId/captain/documents'),
     component: DocumentsIndex,
     name: 'captain_assistants_documents_index',
     meta,
   },
   {
-    path: frontendURL('accounts/:accountId/captain/:assistantId/tools'),
+    path: frontendURL('accounts/:accountId/captain/tools'),
     component: CustomToolsIndex,
     name: 'captain_tools_index',
     meta: metaV2,
   },
+  {
+    path: frontendURL('accounts/:accountId/captain/faqs/pending'),
+    component: ResponsesPendingIndex,
+    name: 'captain_assistants_responses_pending',
+    meta,
+  },
+];
+
+const legacySharedKnowledgeRoutes = [
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/faqs'),
+    redirect: to => ({
+      name: 'captain_assistants_responses_index',
+      params: { accountId: to.params.accountId },
+      query: to.query,
+    }),
+    name: 'captain_assistants_responses_legacy_index',
+    meta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/documents'),
+    redirect: to => ({
+      name: 'captain_assistants_documents_index',
+      params: { accountId: to.params.accountId },
+      query: to.query,
+    }),
+    name: 'captain_assistants_documents_legacy_index',
+    meta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/tools'),
+    redirect: to => ({
+      name: 'captain_tools_index',
+      params: { accountId: to.params.accountId },
+      query: to.query,
+    }),
+    name: 'captain_tools_legacy_index',
+    meta: metaV2,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/faqs/pending'),
+    redirect: to => ({
+      name: 'captain_assistants_responses_pending',
+      params: { accountId: to.params.accountId },
+      query: to.query,
+    }),
+    name: 'captain_assistants_responses_pending_legacy',
+    meta,
+  },
+];
+
+const assistantRoutes = [
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/scenarios'),
     redirect: to => ({
@@ -82,12 +134,7 @@ const assistantRoutes = [
     name: 'captain_assistants_inboxes_index',
     meta,
   },
-  {
-    path: frontendURL('accounts/:accountId/captain/:assistantId/faqs/pending'),
-    component: ResponsesPendingIndex,
-    name: 'captain_assistants_responses_pending',
-    meta,
-  },
+
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/settings'),
     component: AssistantSettingsIndex,
@@ -198,11 +245,15 @@ export const routes = [
       return {
         name: 'captain_assistants_index',
         params: {
-          navigationPath: 'captain_assistants_responses_index',
+          navigationPath: 'knowledge_base',
           ...to.params,
         },
       };
     },
-    children: [...assistantRoutes],
+    children: [
+      ...sharedKnowledgeRoutes,
+      ...legacySharedKnowledgeRoutes,
+      ...assistantRoutes,
+    ],
   },
 ];

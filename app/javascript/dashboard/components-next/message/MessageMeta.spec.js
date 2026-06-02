@@ -175,13 +175,13 @@ describe('MessageMeta', () => {
 
     expect(logsButton.exists()).toBe(true);
     expect(logsButton.text()).toBe('Logs');
-    expect(wrapper.find('time').element.nextElementSibling).toBe(
+    expect(wrapper.find('time').element.previousElementSibling).toBe(
       logsButton.element
     );
     expect(wrapper.find('.message-meta-root').classes()).toContain('text-xs');
     expect(logsButton.classes()).not.toContain('ltr:mr-auto');
     expect(logsButton.classes()).not.toContain('font-mono');
-    expect(logsButton.classes()).not.toContain('text-[10px]');
+    expect(logsButton.classes()).toContain('text-[0.625rem]');
     expect(logsButton.find('i').classes()).toContain('i-lucide-file-text');
     expect(logsButton.find('i').classes()).toContain('size-3');
 

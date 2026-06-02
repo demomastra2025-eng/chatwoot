@@ -147,7 +147,8 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
       answer: normalized[:answer],
       assistant: document.assistant,
       documentable: document,
-      document_chunk: document_chunk
+      document_chunk: document_chunk,
+      visibility: document.visibility
     )
   rescue ActiveRecord::RecordInvalid => e
     Rails.logger.error I18n.t('captain.documents.response_creation_error', error: e.message)

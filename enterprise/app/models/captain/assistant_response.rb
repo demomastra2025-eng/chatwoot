@@ -9,6 +9,7 @@
 #  embedding         :vector(1536)
 #  question          :string           not null
 #  status            :integer          default("approved"), not null
+#  visibility        :integer          default("general"), not null
 #  created_at        :datetime         not null
 #  updated_at        :datetime         not null
 #  account_id        :bigint           not null
@@ -19,6 +20,7 @@
 # Indexes
 #
 #  idx_cap_asst_resp_on_documentable                       (documentable_id,documentable_type)
+#  idx_captain_responses_account_visibility                (account_id,visibility)
 #  index_captain_assistant_responses_on_account_id         (account_id)
 #  index_captain_assistant_responses_on_assistant_id       (assistant_id)
 #  index_captain_assistant_responses_on_document_chunk_id  (document_chunk_id)
@@ -50,8 +52,20 @@ class Captain::AssistantResponse < ApplicationRecord
   scope :by_account, ->(account_id) { where(account_id: account_id) }
   scope :by_assistant, ->(assistant_id) { where(assistant_id: assistant_id) }
   scope :with_document, ->(document_id) { where(document_id: document_id) }
+  scope :visible_to_assistant, lambda { |assistant_id|
+    if assistant_id.blank?
+      where(visibility: :general)
+    else
+      where(
+        'captain_assistant_responses.visibility = :general_visibility OR captain_assistant_responses.assistant_id = :assistant_id',
+        general_visibility: visibilities[:general],
+        assistant_id: assistant_id
+      )
+    end
+  }
 
   enum status: { pending: 0, approved: 1 }
+  enum visibility: { general: 0, personal: 1 }, _prefix: :visibility
 
   def self.search(query, account_id: nil)
     embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(

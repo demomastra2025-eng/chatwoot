@@ -190,7 +190,7 @@ describe('Captain assistant settings page', () => {
     });
   });
 
-  it('saves voice agent settings through the combined general save payload', async () => {
+  it('keeps existing voice settings when saving the profile tab', async () => {
     const wrapper = mountComponent();
 
     await clickUpdate(wrapper);
@@ -204,6 +204,29 @@ describe('Captain assistant settings page', () => {
         feature_faq: true,
         handoff_message: '',
         temperature: 0.4,
+        voice_settings: assistantRecord.config.voice_settings,
+      }),
+    });
+  });
+
+  it('saves voice agent settings from the dedicated voice tab', async () => {
+    const wrapper = mountComponent();
+
+    const voiceTab = wrapper
+      .findAll('button')
+      .find(
+        button =>
+          button.text() === 'CAPTAIN.ASSISTANTS.SETTINGS.TABS.VOICE_AGENT.LABEL'
+      );
+
+    await voiceTab.trigger('click');
+    await clickUpdate(wrapper);
+
+    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
+      id: 57,
+      config: expect.objectContaining({
+        feature_faq: true,
+        handoff_message: 'old handoff',
         voice_settings: {
           provider: 'gemini-live',
           model: 'gemini-3.1-flash-live-preview',

@@ -300,7 +300,12 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(response).to have_http_status(:success)
       content = json_response.dig(:result, :contents).first
       expect(content).to include(uri: uri, mimeType: 'application/json')
-      expect(JSON.parse(content[:text])['account']['id']).to eq(account.id)
+      profile = JSON.parse(content[:text])
+      expect(profile['account']['id']).to eq(account.id)
+      expect(profile['mcp_access']).to include(
+        'enabled' => true,
+        'max_risk_level' => 'medium'
+      )
     end
 
     it 'reads the combined Captain and OpenAPI tool catalog resource' do

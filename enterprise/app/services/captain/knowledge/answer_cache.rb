@@ -173,10 +173,10 @@ class Captain::Knowledge::AnswerCache
   def source_fingerprint
     @source_fingerprint ||= Digest::SHA256.hexdigest(
       [
-        assistant.id,
-        precise_timestamp(assistant.updated_at),
-        scope_fingerprint(assistant.document_chunks),
-        scope_fingerprint(assistant.responses.approved)
+        account.id,
+        scope_fingerprint(account.captain_documents),
+        scope_fingerprint(Captain::DocumentChunk.where(account_id: account.id)),
+        scope_fingerprint(account.captain_assistant_responses.approved)
       ].join(':')
     )
   end

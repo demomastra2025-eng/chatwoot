@@ -23,9 +23,9 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  assistant: {
-    type: Object,
-    default: () => ({}),
+  visibility: {
+    type: String,
+    default: 'general',
   },
   externalLink: {
     type: String,
@@ -189,6 +189,12 @@ const sourceModeLabel = computed(() =>
   t(`CAPTAIN.DOCUMENTS.SOURCE_MODE.${props.sourceMode.toUpperCase()}`)
 );
 
+const visibilityLabel = computed(() =>
+  props.visibility === 'personal'
+    ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL')
+    : t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL')
+);
+
 const progressLabel = computed(() => {
   if (!props.pagesTotal) return '';
 
@@ -275,14 +281,15 @@ const handleAction = ({ action, value }) => {
           >
             {{ sourceModeLabel }}
           </span>
+          <span
+            class="rounded-full bg-n-alpha-2 px-2 py-1 text-xs font-medium text-n-slate-11"
+          >
+            {{ visibilityLabel }}
+          </span>
         </div>
         <div
           class="mt-2 flex flex-wrap items-center gap-3 text-sm text-n-slate-11"
         >
-          <span class="flex items-center gap-1 truncate">
-            <i class="i-woot-captain" />
-            {{ assistant?.name || '' }}
-          </span>
           <span class="flex min-w-0 flex-1 items-center gap-1 truncate">
             <i :class="linkIcon" class="shrink-0" />
             <span class="truncate">{{ displayLink }}</span>

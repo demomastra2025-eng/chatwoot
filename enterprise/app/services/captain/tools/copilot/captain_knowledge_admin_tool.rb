@@ -4,6 +4,7 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
   SUPPORTED_SOURCE_MODES = %w[legacy_url selected_pages pdf_url file_url].freeze
   FIRECRAWL_SOURCE_MODES = %w[pdf_url file_url].freeze
   RESYNC_MODES = %w[full delta retry_failed].freeze
+  KNOWLEDGE_VISIBILITIES = %w[general personal].freeze
 
   private
 
@@ -29,9 +30,9 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
 
   def find_document_for_assistant!(document_id, document_assistant)
     document = find_document!(document_id)
-    return document if document.assistant_id == document_assistant.id
+    return document if document.account_id == document_assistant.account_id
 
-    raise ActiveRecord::RecordNotFound, 'Captain document belongs to a different assistant'
+    raise ActiveRecord::RecordNotFound, 'Captain document belongs to a different account'
   end
 
   def find_knowledge_entry!(entry_id)
@@ -51,6 +52,7 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
       assistant_name: document.assistant&.name,
       name: redacted_value(document.name),
       source_mode: document.source_mode,
+      visibility: document.visibility,
       created_at: document.created_at&.iso8601,
       updated_at: document.updated_at&.iso8601
     }
@@ -97,6 +99,7 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
       assistant_id: entry.assistant_id,
       assistant_name: entry.assistant&.name,
       status: entry.status,
+      visibility: entry.visibility,
       edited: entry.edited,
       documentable_type: entry.documentable_type,
       documentable_id: safe_documentable_id(entry),
@@ -135,8 +138,16 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
       name: kwargs[:name],
       external_link: kwargs[:external_link],
       faq_generation_enabled: cast_boolean(kwargs[:faq_generation_enabled], default: true),
+      visibility: normalize_knowledge_visibility(kwargs[:visibility]),
       metadata: document_metadata(source_mode: source_mode, kwargs: kwargs)
     }
+  end
+
+  def normalize_knowledge_visibility(visibility, default: 'general')
+    value = visibility.presence || default
+    raise ArgumentError, "visibility must be one of: #{KNOWLEDGE_VISIBILITIES.join(', ')}" unless KNOWLEDGE_VISIBILITIES.include?(value.to_s)
+
+    value.to_s
   end
 
   def document_metadata(source_mode:, kwargs:)

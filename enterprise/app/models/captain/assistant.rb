@@ -343,12 +343,12 @@ class Captain::Assistant < ApplicationRecord
   end
 
   belongs_to :account
-  has_many :documents, class_name: 'Captain::Document', dependent: :destroy_async
-  has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :destroy_async
+  has_many :documents, class_name: 'Captain::Document', dependent: :restrict_with_error
+  has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :restrict_with_error
   has_many :knowledge_answer_cache_entries,
            class_name: 'Captain::KnowledgeAnswerCacheEntry',
-           dependent: :destroy_async
-  has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :destroy_async
+           dependent: :restrict_with_error
+  has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :restrict_with_error
   has_many :captain_inboxes,
            class_name: 'CaptainInbox',
            foreign_key: :captain_assistant_id,

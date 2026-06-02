@@ -78,6 +78,12 @@ const CAPTAIN_ASSISTANT_ROUTE_ACTIONS = {
   highlight_config_field: 'captain_assistants_settings_index',
 };
 
+const SHARED_CAPTAIN_ROUTE_NAMES = new Set([
+  'captain_assistants_responses_index',
+  'captain_assistants_documents_index',
+  'captain_tools_index',
+]);
+
 const NON_ROUTE_ACTIONS = new Set(['show_confirmation']);
 
 const QUERY_TARGET_ROUTE_ACTIONS = {
@@ -438,9 +444,17 @@ const assistantActionQuery = (action, parsedTarget) => {
 const captainAssistantRoute = (action, accountId) => {
   const routeName = CAPTAIN_ASSISTANT_ROUTE_ACTIONS[action.type];
   const { assistantId, parsedTarget } = assistantRouteTarget(action);
-  if (!assistantId) return null;
-
   const query = assistantActionQuery(action, parsedTarget);
+
+  if (SHARED_CAPTAIN_ROUTE_NAMES.has(routeName)) {
+    return {
+      name: routeName,
+      params: { accountId },
+      ...(Object.keys(query).length ? { query } : {}),
+    };
+  }
+
+  if (!assistantId) return null;
 
   return {
     name: routeName,

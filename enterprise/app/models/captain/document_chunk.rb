@@ -58,6 +58,18 @@ class Captain::DocumentChunk < ApplicationRecord
     where(embedding_status: [embedding_statuses[:pending], embedding_statuses[:failed], embedding_statuses[:stale]])
       .or(where(embedding: nil))
   }
+  scope :visible_to_assistant, lambda { |assistant_id|
+    relation = joins(:document)
+    if assistant_id.blank?
+      relation.where(captain_documents: { visibility: Captain::Document.visibilities[:general] })
+    else
+      relation.where(
+        'captain_documents.visibility = :general_visibility OR captain_document_chunks.assistant_id = :assistant_id',
+        general_visibility: Captain::Document.visibilities[:general],
+        assistant_id: assistant_id
+      )
+    end
+  }
 
   def self.search(query, account_id: nil)
     return none if account_id.blank?

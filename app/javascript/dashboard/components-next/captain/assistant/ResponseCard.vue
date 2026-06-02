@@ -36,9 +36,9 @@ const props = defineProps({
     type: Object,
     default: null,
   },
-  assistant: {
-    type: Object,
-    default: () => ({}),
+  visibility: {
+    type: String,
+    default: 'general',
   },
   updatedAt: {
     type: Number,
@@ -111,6 +111,12 @@ const timestamp = computed(() =>
   dynamicTime(props.updatedAt || props.createdAt)
 );
 
+const visibilityLabel = computed(() =>
+  props.visibility === 'personal'
+    ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL')
+    : t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL')
+);
+
 const handleAssistantAction = ({ action, value }) => {
   toggleDropdown(false);
   emit('action', { action, value, id: props.id });
@@ -150,11 +156,9 @@ const handleDocumentableClick = () => {
             class="hidden min-w-0 items-center gap-3 md:flex"
           >
             <span
-              v-if="status === 'approved'"
-              class="inline-flex max-w-40 shrink items-center gap-1 truncate text-sm text-n-slate-11"
+              class="inline-flex shrink-0 items-center rounded-full bg-n-alpha-2 px-2 py-1 text-xs font-medium text-n-slate-11"
             >
-              <Icon icon="i-woot-captain" class="size-3.5 shrink-0" />
-              {{ assistant?.name || '' }}
+              {{ visibilityLabel }}
             </span>
             <div
               v-if="documentable"
@@ -239,15 +243,6 @@ const handleDocumentableClick = () => {
           <Icon icon="i-ph-calendar-dot" class="size-3" />
           {{ timestamp }}
         </div>
-      </div>
-      <div
-        v-if="!compact && status === 'approved'"
-        class="flex items-center gap-1 text-sm text-n-slate-11 md:hidden"
-      >
-        <Icon icon="i-woot-captain" class="size-3.5 shrink-0" />
-        <span class="truncate">
-          {{ assistant?.name || '' }}
-        </span>
       </div>
       <div
         v-if="!compact && documentable"

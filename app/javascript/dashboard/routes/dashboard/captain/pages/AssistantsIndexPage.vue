@@ -43,14 +43,20 @@ const generateRouterParams = () => {
 
 const LEGACY_NAVIGATION_ALIASES = {
   captain_assistants_playground_index: 'captain_assistants_prompts_index',
+  captain_assistants_responses_index: 'knowledge_base',
+  captain_assistants_documents_index: 'documents',
+  captain_tools_index: 'tools',
+};
+
+const SHARED_NAVIGATION_ROUTES = {
+  knowledge_base: 'captain_assistants_responses_index',
+  documents: 'captain_assistants_documents_index',
+  tools: 'captain_tools_index',
 };
 
 const VALID_NAVIGATION_ROUTES = [
-  'captain_assistants_responses_index', // Faq page
-  'captain_assistants_documents_index', // Document page
   'captain_assistants_scenarios_index', // Legacy prompts alias
   'captain_assistants_channels_index', // Channels page
-  'captain_tools_index', // Tools page
   'captain_assistants_settings_index', // Settings page
   'captain_assistants_prompts_index', // Prompts page
   'captain_assistants_restrictions_index', // Legacy prompts alias
@@ -71,9 +77,16 @@ const routeToLastActiveAssistant = () => {
   const { navigationPath } = route.params;
   const aliasedNavigationPath =
     LEGACY_NAVIGATION_ALIASES[navigationPath] || navigationPath;
+
+  if (SHARED_NAVIGATION_ROUTES[aliasedNavigationPath]) {
+    return routeToView(SHARED_NAVIGATION_ROUTES[aliasedNavigationPath], {
+      accountId: route.params.accountId,
+    });
+  }
+
   const navigateTo = VALID_NAVIGATION_ROUTES.includes(aliasedNavigationPath)
     ? aliasedNavigationPath
-    : 'captain_assistants_responses_index';
+    : 'captain_assistants_prompts_index';
 
   return routeToView(navigateTo, {
     accountId: route.params.accountId,

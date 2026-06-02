@@ -10,9 +10,10 @@ class Captain::Tools::Copilot::CreateCaptainKnowledgeEntryService < Captain::Too
   param :question, type: :string, desc: 'Knowledge entry question', required: true
   param :answer, type: :string, desc: 'Knowledge entry answer', required: true
   param :status, type: :string, desc: 'Optional status: pending or approved. Defaults to approved.', required: false
+  param :visibility, type: :string, desc: 'Optional visibility: general or personal. Defaults to general.', required: false
   param :document_id, type: :integer, desc: 'Optional Captain document ID to attach this generated entry to', required: false
 
-  def execute(assistant_id:, question:, answer:, status: nil, document_id: nil)
+  def execute(assistant_id:, question:, answer:, status: nil, visibility: nil, document_id: nil)
     ensure_account_administrator!
 
     entry_assistant = find_captain_assistant!(assistant_id)
@@ -22,6 +23,7 @@ class Captain::Tools::Copilot::CreateCaptainKnowledgeEntryService < Captain::Too
       question: question,
       answer: answer,
       status: status.presence || 'approved',
+      visibility: normalize_knowledge_visibility(visibility),
       documentable: document_id.present? ? find_document_for_assistant!(document_id, entry_assistant) : @user
     )
 

@@ -41,6 +41,7 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
 
     return attrs if source_document.blank? || source_document.id == document.id
 
+    attrs[:visibility] = source_document.visibility
     attrs[:faq_generation_enabled] = source_document.faq_generation_enabled
     attrs[:metadata] = (document.metadata || {}).deep_merge(
       'firecrawl' => {

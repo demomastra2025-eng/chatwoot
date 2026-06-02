@@ -5,10 +5,11 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeDocumentService < Captain::
     'update_captain_knowledge_document'
   end
 
-  description 'Update a Captain knowledge document name, assistant assignment, or FAQ generation flag. Requires operator confirmation.'
+  description 'Update a Captain knowledge document name, assistant assignment, visibility, or FAQ generation flag. Requires operator confirmation.'
   param :document_id, type: :integer, desc: 'Captain document ID', required: true
   param :assistant_id, type: :integer, desc: 'Optional destination Captain assistant ID in the same account', required: false
   param :name, type: :string, desc: 'Optional document name', required: false
+  param :visibility, type: :string, desc: 'Optional visibility: general or personal', required: false
   param :faq_generation_enabled, type: :boolean, desc: 'Optional FAQ generation flag', required: false
 
   def execute(document_id:, **kwargs)
@@ -21,7 +22,7 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeDocumentService < Captain::
     before_payload = document_payload(document, include_details: true)
     ActiveRecord::Base.transaction do
       document.update!(attributes)
-      reconcile_document_entries!(document) if attributes.key?(:assistant)
+      reconcile_document_entries!(document) if attributes.key?(:assistant) || attributes.key?(:visibility)
     end
 
     formatted_payload(
@@ -40,13 +41,14 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeDocumentService < Captain::
     {}.tap do |attributes|
       attributes[:assistant] = find_captain_assistant!(kwargs[:assistant_id]) if kwargs[:assistant_id].present?
       attributes[:name] = kwargs[:name] if kwargs[:name].present?
+      attributes[:visibility] = normalize_knowledge_visibility(kwargs[:visibility]) if kwargs[:visibility].present?
       attributes[:faq_generation_enabled] = cast_boolean(kwargs[:faq_generation_enabled]) unless kwargs[:faq_generation_enabled].nil?
     end
   end
 
   def reconcile_document_entries!(document)
     document.responses.find_each do |entry|
-      entry.update!(assistant: document.assistant, account: account)
+      entry.update!(assistant: document.assistant, account: account, visibility: document.visibility)
     end
   end
 end

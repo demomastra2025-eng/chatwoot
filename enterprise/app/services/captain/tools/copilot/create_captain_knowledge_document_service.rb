@@ -11,6 +11,7 @@ class Captain::Tools::Copilot::CreateCaptainKnowledgeDocumentService < Captain::
   param :external_link, type: :string, desc: 'Remote source URL. Secret query strings are redacted from tool output.', required: true
   param :source_mode, type: :string, desc: 'Optional source mode: legacy_url, selected_pages, pdf_url, file_url', required: false
   param :faq_generation_enabled, type: :boolean, desc: 'Whether to generate FAQ entries from the document. Defaults to true.', required: false
+  param :visibility, type: :string, desc: 'Optional visibility: general or personal. Defaults to general.', required: false
   param :selected_urls_json, type: :string, desc: 'Optional JSON array of selected URLs for selected_pages mode', required: false
   param :import_profile_json, type: :string, desc: 'Optional JSON object with crawl/import profile settings', required: false
 

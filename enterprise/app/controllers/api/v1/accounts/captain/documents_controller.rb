@@ -32,9 +32,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
   def create
     return render_could_not_create_error(I18n.t('captain.documents.missing_assistant')) if @assistant.nil?
-    return render_could_not_create_error(missing_firecrawl_error) if firecrawl_required_for_mode?(requested_source_mode)
-
-    @document = @assistant.documents.build(base_document_params)
+    @document = @assistant.documents.build(base_document_params.except(:assistant_id))
     @document.metadata = document_metadata
     @document.save!
   rescue Captain::Document::LimitExceededError => e
@@ -64,8 +62,6 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
   def resync
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_resync_error')) if @document.derived_document?
-    return render_could_not_create_error(missing_firecrawl_error) if firecrawl_required_for_mode?(@document.source_mode)
-
     @document.prepare_for_resync!(refresh_mode: 'full')
     Captain::Documents::CrawlJob.perform_later(@document)
     render :show
@@ -79,8 +75,6 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_sync_error')) if @document.derived_document?
     return render_could_not_create_error(I18n.t('captain.documents.delta_refresh_uploaded_file_error')) if %w[pdf_upload
                                                                                                               file_upload].include?(@document.source_mode)
-    return render_could_not_create_error(missing_firecrawl_error) if firecrawl_required_for_mode?(@document.source_mode)
-
     @document.prepare_for_resync!(refresh_mode: 'delta')
     Captain::Documents::CrawlJob.perform_later(@document)
     render :show
@@ -93,8 +87,6 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   def retry_failed
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_retry_error')) if @document.derived_document?
     return render_could_not_create_error(I18n.t('captain.documents.retry_failed_empty_error')) if @document.failed_urls.blank?
-    return render_could_not_create_error(missing_firecrawl_error) if firecrawl_required_for_mode?(@document.source_mode)
-
     @document.prepare_for_resync!(refresh_mode: 'retry_failed')
     Captain::Documents::CrawlJob.perform_later(@document)
     render :show
@@ -120,7 +112,15 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def set_assistant
-    @assistant = Current.account.captain_assistants.find_by(id: document_creation_params[:assistant_id])
+    @assistant = if document_creation_params[:assistant_id].present?
+                   Current.account.captain_assistants.find_by(id: document_creation_params[:assistant_id])
+                 else
+                   workspace_default_assistant
+                 end
+  end
+
+  def workspace_default_assistant
+    Current.account.captain_assistants.external_agent.ordered.first || Current.account.captain_assistants.ordered.first
   end
 
   def set_current_page
@@ -132,7 +132,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def base_document_params
-    document_creation_params.slice(:name, :external_link, :assistant_id, :pdf_file, :source_file, :faq_generation_enabled)
+    document_creation_params.slice(:name, :external_link, :assistant_id, :pdf_file, :source_file, :faq_generation_enabled, :visibility)
   end
 
   def document_creation_params
@@ -144,6 +144,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
       :source_file,
       :source_mode,
       :faq_generation_enabled,
+      :visibility,
       import_profile: [:sitemap, :max_pages, :max_discovery_depth, :allow_subdomains, :ignore_query_parameters, :only_main_content,
                        :timeout, :pdf_parser_mode, :pdf_max_pages, :remove_base64_images, :zero_data_retention, :store_in_cache, :proxy,
                        { include_paths: [], exclude_paths: [] }],
@@ -267,21 +268,4 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
     document_creation_params[:source_mode].presence || Captain::Document::DEFAULT_SOURCE_MODE
   end
 
-  def firecrawl_required_for_mode?(source_mode)
-    return false if source_mode.to_s == 'file_upload' && uploaded_source_image?
-
-    %w[pdf_url file_url file_upload].include?(source_mode.to_s) && !Captain::Tools::FirecrawlService.configured?
-  end
-
-  def uploaded_source_image?
-    source_file = document_creation_params[:source_file]
-    return false if source_file.blank?
-
-    extension = source_file.original_filename.to_s.split('.').last.to_s.downcase
-    Captain::Document::SUPPORTED_IMAGE_EXTENSIONS.include?(extension)
-  end
-
-  def missing_firecrawl_error
-    I18n.t('captain.documents.missing_firecrawl_error')
-  end
 end

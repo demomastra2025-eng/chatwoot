@@ -172,4 +172,54 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
       'match_count' => 1
     )
   end
+
+  it 'shares general chunks but hides another assistant personal chunks from semantic lookup' do
+    other_assistant = create(:captain_assistant, account: account)
+    general_document = create(:captain_document, account: account, assistant: other_assistant, visibility: :general)
+    personal_document = create(:captain_document, account: account, assistant: other_assistant, visibility: :personal)
+    general_chunk = general_document.document_chunks.create!(
+      account: account,
+      assistant: other_assistant,
+      chunk_index: 0,
+      content: 'Shared workspace policy source'
+    )
+    personal_chunk = personal_document.document_chunks.create!(
+      account: account,
+      assistant: other_assistant,
+      chunk_index: 0,
+      content: 'Private assistant policy source'
+    )
+    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [general_chunk.id, personal_chunk.id]))
+
+    payload = JSON.parse(service.execute(query: 'workspace visibility'))
+
+    expect(payload.dig('retrieval_trace', 'document_chunk_ids')).to contain_exactly(general_chunk.id)
+    expect(payload['matches'].map { |match| match['answer'] }).to contain_exactly('Shared workspace policy source')
+  end
+
+  it 'shares general FAQ entries but hides another assistant personal entries from lexical lookup' do
+    other_assistant = create(:captain_assistant, account: account)
+    create(
+      :captain_assistant_response,
+      assistant: other_assistant,
+      account: account,
+      question: 'visibilityscope shared',
+      answer: 'Shared workspace answer',
+      visibility: :general,
+      status: :approved
+    )
+    create(
+      :captain_assistant_response,
+      assistant: other_assistant,
+      account: account,
+      question: 'visibilityscope private',
+      answer: 'Private assistant answer',
+      visibility: :personal,
+      status: :approved
+    )
+
+    payload = JSON.parse(service.execute(query: 'visibilityscope', semantic: false))
+
+    expect(payload['matches'].map { |match| match['answer'] }).to contain_exactly('Shared workspace answer')
+  end
 end

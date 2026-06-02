@@ -16,6 +16,7 @@ import McpServerCard from 'dashboard/components-next/captain/pageComponents/mcpS
 import McpServerSurfaceDialog from 'dashboard/components-next/captain/pageComponents/mcpServer/McpServerSurfaceDialog.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import CaptainToolsAPI from 'dashboard/api/captain/tools';
 
 const store = useStore();
 const { t } = useI18n();
@@ -25,6 +26,7 @@ const customTools = useMapGetter('captainCustomTools/getRecords');
 const customToolsMeta = useMapGetter('captainCustomTools/getMeta');
 const mcpServerFlags = useMapGetter('captainMcpServers/getUIFlags');
 const mcpServers = useMapGetter('captainMcpServers/getRecords');
+const catalogTools = ref([]);
 
 const EMPTY_SELECTED_TOOL = Object.freeze({});
 const EMPTY_SELECTED_SERVER = Object.freeze({});
@@ -53,12 +55,25 @@ const dialogSelectedServer = computed(
   () => selectedServer.value || EMPTY_SELECTED_SERVER
 );
 
+const isSystemTool = tool =>
+  !tool.custom && !['mcp', 'skill_script'].includes(tool.provider);
+
 const sortTools = tools =>
   [...tools].sort((leftTool, rightTool) => {
     const leftTitle = leftTool.title?.toLowerCase() || '';
     const rightTitle = rightTool.title?.toLowerCase() || '';
     return leftTitle.localeCompare(rightTitle);
   });
+
+const systemTools = computed(() =>
+  sortTools(catalogTools.value.filter(tool => isSystemTool(tool)))
+);
+
+const publicTools = computed(() =>
+  sortTools(
+    catalogTools.value.filter(tool => !isSystemTool(tool) && !tool.custom)
+  )
+);
 
 const groupedCustomTools = computed(() => {
   const grouped = customTools.value.reduce((accumulator, tool) => {
@@ -89,6 +104,15 @@ const fetchCustomTools = (page = 1) => {
 
 const fetchMcpServers = () => {
   store.dispatch('captainMcpServers/get', { page: 1 });
+};
+
+const fetchCatalogTools = async () => {
+  try {
+    const response = await CaptainToolsAPI.get();
+    catalogTools.value = response.data || [];
+  } catch (error) {
+    catalogTools.value = [];
+  }
 };
 
 const onPageChange = page => fetchCustomTools(page);
@@ -210,6 +234,7 @@ const notifyOAuthRedirectStatus = () => {
 
 onMounted(() => {
   notifyOAuthRedirectStatus();
+  fetchCatalogTools();
   fetchCustomTools();
   fetchMcpServers();
 });
@@ -226,9 +251,12 @@ onMounted(() => {
       !customToolFlags.fetchingList && !!customTools.length
     "
     :is-fetching="isFetching"
-    :is-empty="!customTools.length && !mcpServers.length"
+    :is-empty="
+      !customTools.length && !mcpServers.length && !catalogTools.length
+    "
     :feature-flag="FEATURE_FLAGS.CAPTAIN_V2"
     :show-know-more="false"
+    :show-assistant-switcher="false"
     @update:current-page="onPageChange"
     @click="openCreateDialog"
   >
@@ -242,6 +270,114 @@ onMounted(() => {
 
     <template #body>
       <div class="flex flex-col gap-6">
+        <section class="grid gap-3 md:grid-cols-3">
+          <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-4">
+            <p
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+            >
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.SYSTEM') }}
+            </p>
+            <p class="mt-2 text-2xl font-semibold text-n-slate-12">
+              {{ systemTools.length }}
+            </p>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.SYSTEM_DESCRIPTION') }}
+            </p>
+          </div>
+          <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-4">
+            <p
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+            >
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.CUSTOM') }}
+            </p>
+            <p class="mt-2 text-2xl font-semibold text-n-slate-12">
+              {{ customTools.length }}
+            </p>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.CUSTOM_DESCRIPTION') }}
+            </p>
+          </div>
+          <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-4">
+            <p
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+            >
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.PUBLIC') }}
+            </p>
+            <p class="mt-2 text-2xl font-semibold text-n-slate-12">
+              {{ publicTools.length + mcpServers.length }}
+            </p>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.PUBLIC_DESCRIPTION') }}
+            </p>
+          </div>
+        </section>
+
+        <section v-if="systemTools.length" class="flex flex-col gap-3">
+          <div class="flex items-center gap-2 px-1">
+            <span
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-11"
+            >
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.SYSTEM') }}
+            </span>
+            <span class="text-xs text-n-slate-11">
+              {{ systemTools.length }}
+            </span>
+          </div>
+          <div class="grid gap-3 md:grid-cols-2">
+            <article
+              v-for="tool in systemTools"
+              :key="tool.id"
+              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <h3 class="truncate text-sm font-medium text-n-slate-12">
+                    {{ tool.title || tool.id }}
+                  </h3>
+                  <p class="mt-1 line-clamp-2 text-sm text-n-slate-11">
+                    {{ tool.description }}
+                  </p>
+                </div>
+                <span
+                  class="shrink-0 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
+                >
+                  {{ tool.scope_name }}
+                </span>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section v-if="publicTools.length" class="flex flex-col gap-3">
+          <div class="flex items-center gap-2 px-1">
+            <span
+              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-11"
+            >
+              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.PUBLIC') }}
+            </span>
+            <span class="text-xs text-n-slate-11">
+              {{ publicTools.length }}
+            </span>
+          </div>
+          <div class="grid gap-3 md:grid-cols-2">
+            <article
+              v-for="tool in publicTools"
+              :key="tool.id"
+              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+            >
+              <h3 class="truncate text-sm font-medium text-n-slate-12">
+                {{ tool.title || tool.id }}
+              </h3>
+              <p class="mt-1 line-clamp-2 text-sm text-n-slate-11">
+                {{ tool.description }}
+              </p>
+              <p class="mt-2 text-xs text-n-slate-10">
+                {{ tool.group_name || tool.provider || tool.scope_name }}
+              </p>
+            </article>
+          </div>
+        </section>
+
         <section class="flex flex-col gap-3">
           <div class="flex items-center justify-between gap-2 px-1">
             <div class="flex items-center gap-2">

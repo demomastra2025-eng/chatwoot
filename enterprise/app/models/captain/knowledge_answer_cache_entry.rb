@@ -16,6 +16,19 @@
 #  account_id         :bigint           not null
 #  assistant_id       :bigint           not null
 #
+# Indexes
+#
+#  idx_captain_answer_cache_exact                                (account_id,assistant_id,query_sha256,source_fingerprint) UNIQUE
+#  idx_captain_answer_cache_expires_at                           (expires_at)
+#  index_captain_knowledge_answer_cache_entries_on_account_id    (account_id)
+#  index_captain_knowledge_answer_cache_entries_on_assistant_id  (assistant_id)
+#  vector_idx_captain_answer_cache_embedding                     (embedding) USING ivfflat
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id) ON DELETE => cascade
+#  fk_rails_...  (assistant_id => captain_assistants.id)
+#
 class Captain::KnowledgeAnswerCacheEntry < ApplicationRecord
   self.table_name = 'captain_knowledge_answer_cache_entries'
 

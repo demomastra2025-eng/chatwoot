@@ -38,7 +38,6 @@ const switchTab = tab => {
     name: tab.routeName,
     params: {
       accountId: route.params.accountId,
-      assistantId: route.params.assistantId,
     },
   });
 };

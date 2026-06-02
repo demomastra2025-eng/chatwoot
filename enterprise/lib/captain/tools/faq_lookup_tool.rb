@@ -56,7 +56,8 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
 
   def semantic_responses(query)
     candidates = Captain::DocumentChunk.search(query, account_id: account.id)
-                                       .where(assistant_id: assistant.id)
+                                       .visible_to_assistant(assistant.id)
+                                       .where(account_id: account.id)
                                        .limit(SEMANTIC_RESULT_LIMIT)
                                        .to_a
     rerank_result = Captain::Documents::Reranker.new(account: account).call(
@@ -68,7 +69,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def fallback_reason_for_empty_semantic
-    return 'chunk_embeddings_unindexed' if assistant.document_chunks.needs_embedding_reindex.exists?
+    return 'chunk_embeddings_unindexed' if visible_document_chunks.needs_embedding_reindex.exists?
 
     'semantic_no_matches'
   end
@@ -84,12 +85,12 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token.downcase)}%"]
     end
 
-    assistant.responses
-             .approved
-             .where(account_id: account.id)
-             .where(conditions, bind_values)
-             .ordered
-             .limit(5)
+    account.captain_assistant_responses
+           .approved
+           .visible_to_assistant(assistant.id)
+           .where(conditions, bind_values)
+           .ordered
+           .limit(5)
   end
 
   def lexical_tokens(query)
@@ -161,7 +162,11 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def embedding_status_counts
-    assistant.document_chunks.group(:embedding_status).count.presence
+    visible_document_chunks.group(:embedding_status).count.presence
+  end
+
+  def visible_document_chunks
+    Captain::DocumentChunk.where(account_id: account.id).visible_to_assistant(assistant.id)
   end
 
   def sources_for(responses)

@@ -585,9 +585,16 @@
           "PLACEHOLDER": "Enter resolution message"
         },
         "INSTRUCTIONS": {
-          "LABEL": "Instructions",
-          "PLACEHOLDER": "Enter instructions for the assistant"
+          "LABEL": "Instruction",
+          "PLACEHOLDER": "Describe how the AI agent should work and what boundaries it should follow"
         },
+        "REFERENCE_ACTIONS": {
+          "TITLE": "Қарау",
+          "FIELDS": "Fields",
+          "TOOLS": "Tools",
+          "SKILLS": "Skills"
+        },
+        "CATALOG_ITEM_USED": "Used",
         "ADDITIONAL_INSTRUCTIONS": {
           "LABEL": "AI-агентке арналған қосымша нұсқаулар",
           "PLACEHOLDER": "Live AI-агент үшін қосымша нұсқауларды енгізіңіз",
@@ -602,7 +609,27 @@
           "TITLE": "Мүмкіндіктер",
           "ALLOW_CONVERSATION_FAQS": "Шешілген диалогтардан FAQ жасау",
           "ALLOW_MEMORIES": "Клиентпен өзара әрекеттесуден негізгі мәліметтерді естеліктер ретінде сақтау.",
-          "ALLOW_CITATIONS": "Жауаптарға дереккөз сілтемелерін қосу"
+          "ALLOW_NOTES": "Контакт жазбаларын және диалогтағы жеке жазбаларды жасауға рұқсат ету",
+          "ALLOW_CITATIONS": "Жауаптарға дереккөз сілтемелерін қосу",
+          "ALLOW_FAQ_LOOKUP": "Сәйкес жауаптарды табу үшін FAQ іздеуді пайдалану",
+          "ALLOW_HUMAN_HANDOFF": "AI-агент көмектесе алмаса, адамға беру",
+          "ALLOW_WEB_ACCESS": "Веб-іздеуге рұқсат ету",
+          "ALLOW_CONTACT_ATTRIBUTES": "Контакт ақпаратына қол жеткізуге рұқсат ету"
+        },
+        "ACCESS_MODES": {
+          "TITLE": "AI-ассистент қатынауы",
+          "DESCRIPTION": "Бір режимді таңдаңыз. Төмендегі тізім ассистент алатын құрал топтарын көрсетеді; backend құқықтары мен растаулары сақталады.",
+          "BASIC_TITLE": "Базалық режим",
+          "BASIC_DESCRIPTION": "Сыртқы MCP серверлері және әдепкіде өшірілген әрекеттерсіз стандартты OneLink жұмыс құралдары.",
+          "BASIC_META": "Операторларға және күнделікті командалық көмекке",
+          "FULL_TITLE": "Толық режим",
+          "FULL_DESCRIPTION": "Қосылған MCP серверлері мен кеңейтілген әрекеттерді қоса алғанда барлық қолжетімді ассистент құралдары.",
+          "FULL_META": "Компания иелері мен әкімшілеріне",
+          "GROUPS_TITLE": "Бұл режимге кіретіндер",
+          "TOOL_COUNT": "{enabled} / {total} құрал",
+          "LOADING": "Құралдар жүктелуде…",
+          "EMPTY": "Бұл режим үшін әзірге қолжетімді құралдар жоқ.",
+          "OTHER_GROUP": "Басқа құралдар"
         },
         "CONTEXT_ACCESS": {
           "TITLE": "Әдепкі деректер",
@@ -666,9 +693,9 @@
             "CUSTOM": "Custom",
             "REQUIRES_CONFIRMATION": "Растауды қажет етеді",
             "RISK_LEVELS": {
-              "LOW": "Төмен тәуекел",
-              "MEDIUM": "Орташа тәуекел",
-              "HIGH": "Жоғары тәуекел",
+              "LOW": "Базалық",
+              "MEDIUM": "Жұмыс",
+              "HIGH": "Толық",
               "CUSTOM": "Custom"
             }
           },
@@ -758,6 +785,31 @@
           "DESCRIPTION": "Агент диалогты AI-агентке қолмен ауыстырғанда, егер соңғы ашық хабарлама клиенттен болса, бірден жауап береді."
         }
       },
+      "SKILLS": {
+        "TITLE": "Skills",
+        "SEARCH_PLACEHOLDER": "Search skills or files...",
+        "INSERT": "Insert",
+        "USED": "Used",
+        "SCRIPTS": "Scripts",
+        "EMPTY": "No skills found.",
+        "ADD_OWN": "Add own",
+        "IMPORT": "Import URL",
+        "SHOW_OWN": "Own ({count})",
+        "SHOW_ALL": "All skills",
+        "OWN_BADGE": "Own",
+        "EDIT": "Edit",
+        "CREATE_TITLE": "New workspace skill",
+        "EDIT_TITLE": "Edit skill",
+        "IMPORT_TITLE": "Add skill from the internet",
+        "NAME": "Name",
+        "DESCRIPTION": "Description",
+        "GROUP": "Group",
+        "SOURCE_URL": "SKILL.md URL",
+        "CONTENT_PLACEHOLDER": "Skill markdown instructions...",
+        "SAVE": "Save",
+        "SAVED": "Skill saved",
+        "SAVE_ERROR": "Could not save skill"
+      },
       "EDIT": {
         "TITLE": "Update the assistant",
         "SUCCESS_MESSAGE": "The assistant has been successfully updated",
@@ -770,6 +822,10 @@
           "GENERAL": {
             "LABEL": "General",
             "DESCRIPTION": "Assistant profile, product context, avatar, core capabilities, runtime behavior, and lifecycle controls."
+          },
+          "VOICE_AGENT": {
+            "LABEL": "Voice agent",
+            "DESCRIPTION": "Realtime voice settings for this assistant."
           },
           "PROMPTS": {
             "LABEL": "Prompts",
@@ -1120,6 +1176,14 @@
       "TABS": {
         "FAQS": "FAQ",
         "DOCUMENTS": "Documents"
+      }
+    },
+    "KNOWLEDGE_VISIBILITY": {
+      "LABEL": "Көрінуі",
+      "HELP_TEXT": "Жалпы білім workspace AI-агенттеріне қолжетімді. Жеке білім workspace-тің жеке қабатында қалады.",
+      "OPTIONS": {
+        "GENERAL": "Жалпы",
+        "PERSONAL": "Жеке"
       }
     },
     "DOCUMENTS": {

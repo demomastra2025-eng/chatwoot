@@ -46,13 +46,13 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def perform_pdf_url_import(document)
-    raise I18n.t('captain.documents.pdf_url_requires_firecrawl') unless Captain::Tools::FirecrawlService.configured?
+    return mark_firecrawl_unavailable(document, I18n.t('captain.documents.pdf_url_requires_firecrawl')) unless Captain::Tools::FirecrawlService.configured?
 
     perform_firecrawl_scrape(document)
   end
 
   def perform_file_url_import(document)
-    raise I18n.t('captain.documents.file_url_requires_firecrawl') unless Captain::Tools::FirecrawlService.configured?
+    return mark_firecrawl_unavailable(document, I18n.t('captain.documents.file_url_requires_firecrawl')) unless Captain::Tools::FirecrawlService.configured?
 
     perform_firecrawl_scrape(document)
   end
@@ -60,9 +60,14 @@ class Captain::Documents::CrawlJob < ApplicationJob
   def perform_uploaded_file_import(document)
     return mark_uploaded_image_available(document) if document.image_upload?
 
-    raise I18n.t('captain.documents.file_upload_requires_firecrawl') unless Captain::Tools::FirecrawlService.configured?
+    return mark_firecrawl_unavailable(document, I18n.t('captain.documents.file_upload_requires_firecrawl')) unless Captain::Tools::FirecrawlService.configured?
 
     perform_firecrawl_upload_parse(document, attachment: document.source_file)
+  end
+
+  def mark_firecrawl_unavailable(document, error_message)
+    document.mark_import_failed!(error_message)
+    Rails.logger.warn("#{self.class.name} skipped Firecrawl-only import for document #{document.id}: #{error_message}")
   end
 
   def mark_uploaded_image_available(document)

@@ -31,7 +31,8 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   private
 
   def knowledge_available?
-    assistant.responses.approved.exists? || assistant.document_chunks.exists?
+    assistant.account.captain_assistant_responses.approved.visible_to_assistant(assistant.id).exists? ||
+      Captain::DocumentChunk.where(account_id: assistant.account_id).visible_to_assistant(assistant.id).exists?
   end
 
   def translated_query_for(query)
@@ -61,7 +62,8 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
 
   def semantic_responses(query)
     candidates = Captain::DocumentChunk.search(query, account_id: assistant.account_id)
-                                       .where(assistant_id: assistant.id)
+                                       .visible_to_assistant(assistant.id)
+                                       .where(account_id: assistant.account_id)
                                        .limit(SEMANTIC_RESULT_LIMIT)
                                        .to_a
     Captain::Documents::Reranker.new(account: assistant.account).call(
@@ -82,9 +84,9 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
       ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token.downcase)}%"]
     end
 
-    assistant.responses
+    assistant.account.captain_assistant_responses
              .approved
-             .where(account_id: assistant.account_id)
+             .visible_to_assistant(assistant.id)
              .where(conditions, bind_values)
              .ordered
              .limit(5)

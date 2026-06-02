@@ -24,5 +24,6 @@ json.selected_urls_count resource.selected_urls_count
 json.source_document resource.source_document?
 json.source_mode resource.source_mode
 json.status resource.status
+json.visibility resource.visibility
 json.sync_status resource.sync_status
 json.updated_at resource.updated_at.to_i

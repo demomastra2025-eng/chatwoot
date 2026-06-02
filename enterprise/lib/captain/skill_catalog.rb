@@ -21,11 +21,9 @@ class Captain::SkillCatalog
 
   class << self
     def all(account: nil)
-      Rails.cache.fetch(cache_key, expires_in: 5.minutes) do
-        skill_dirs.filter_map { |dir| parse_skill_dir(dir) }
-                  .uniq { |skill| skill[:id] }
-                  .sort_by { |skill| [skill[:group_name].to_s.downcase, skill[:title].to_s.downcase] }
-      end
+      (account_skills(account) + file_skills)
+        .uniq { |skill| skill[:id] }
+        .sort_by { |skill| skill_sort_key(skill) }
     end
 
     def find(id, account: nil)
@@ -107,6 +105,29 @@ class Captain::SkillCatalog
 
     private
 
+    def file_skills
+      Rails.cache.fetch(cache_key, expires_in: 5.minutes) do
+        skill_dirs.filter_map { |dir| parse_skill_dir(dir) }
+                  .uniq { |skill| skill[:id] }
+      end
+    end
+
+    def account_skills(account)
+      return [] unless account&.respond_to?(:captain_skills)
+
+      account.captain_skills.ordered.map(&:to_catalog_entry)
+    rescue ActiveRecord::StatementInvalid
+      []
+    end
+
+    def skill_sort_key(skill)
+      [
+        skill[:source_type] == 'workspace' ? 0 : 1,
+        skill[:group_name].to_s.downcase,
+        skill[:title].to_s.downcase
+      ]
+    end
+
     def cache_key
       source_state = configured_source_dirs.map do |dir|
         path = Pathname.new(dir)
@@ -180,7 +201,9 @@ class Captain::SkillCatalog
         source_path: dir.to_s,
         content: content.to_s.strip,
         scripts: scripts_for(dir, skill_id: normalize_skill_id(name), skill_title: name),
-        tree: tree_for(dir)
+        tree: tree_for(dir),
+        editable: false,
+        source_type: 'catalog'
       }
     rescue StandardError => e
       Rails.logger.warn("Captain::SkillCatalog failed to parse skill #{dir}: #{e.class} #{e.message}")

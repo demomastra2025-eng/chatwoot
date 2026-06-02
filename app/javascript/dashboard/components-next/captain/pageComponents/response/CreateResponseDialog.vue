@@ -38,18 +38,21 @@ const i18nKey = computed(() => `CAPTAIN.RESPONSES.${props.type.toUpperCase()}`);
 const createResponse = responseDetails =>
   store.dispatch('captainResponses/create', responseDetails);
 
+const withOptionalAssistantId = responseDetails => ({
+  ...responseDetails,
+  ...(route.params.assistantId
+    ? { assistant_id: route.params.assistantId }
+    : {}),
+});
+
 const handleSubmit = async updatedResponse => {
   try {
     if (props.type === 'edit') {
       await updateResponse({
-        ...updatedResponse,
-        assistant_id: route.params.assistantId,
+        ...withOptionalAssistantId(updatedResponse),
       });
     } else {
-      await createResponse({
-        ...updatedResponse,
-        assistant_id: route.params.assistantId,
-      });
+      await createResponse(withOptionalAssistantId(updatedResponse));
     }
     useAlert(t(`${i18nKey.value}.SUCCESS_MESSAGE`));
     dialogRef.value.close();

@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, computed, watch } from 'vue';
+import { reactive, computed, watch, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required, minLength } from '@vuelidate/validators';
@@ -17,6 +17,8 @@ import {
   ASSISTANT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
+  WEB_SCRAPE_URL_TOOL_ID,
+  WEB_SEARCH_TOOL_ID,
   buildDefaultToolAccessForUsageMode,
   isToolEnabled,
   resolveToolAccessForUsageMode,
@@ -82,6 +84,7 @@ const initialState = {
     conversationFaqs: false,
     memories: false,
     citations: false,
+    web: false,
   },
   contextAccess: {},
   toolAccess: buildDefaultToolAccessForUsageMode(),
@@ -91,16 +94,40 @@ const initialState = {
 };
 
 const state = reactive({ ...initialState });
+const instructionEditorRef = ref(null);
 const isExternalAgent = computed(
   () => state.usageMode !== 'internal_assistant'
 );
 const activeToolScope = computed(() =>
-  state.usageMode === 'internal_assistant' ? 'assistant' : 'agent'
+  state.usageMode === 'internal_assistant'
+    ? ASSISTANT_TOOL_SCOPE
+    : AGENT_TOOL_SCOPE
 );
-
 const validationRules = {
   name: { required, minLength: minLength(1) },
   description: { required, minLength: minLength(1) },
+};
+
+const instructionReferenceActions = computed(() => [
+  {
+    id: 'fields',
+    icon: 'i-lucide-braces',
+    label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.FIELDS'),
+  },
+  {
+    id: 'tools',
+    icon: 'i-lucide-wrench',
+    label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.TOOLS'),
+  },
+  {
+    id: 'skills',
+    icon: 'i-lucide-sparkles',
+    label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.SKILLS'),
+  },
+]);
+
+const openInstructionReferenceMenu = menuType => {
+  instructionEditorRef.value?.openCaptainReferenceMenu?.(menuType);
 };
 
 const v$ = useVuelidate(validationRules, state);
@@ -163,6 +190,34 @@ const faqLookupEnabled = computed({
   },
 });
 
+const webAccessEnabled = computed({
+  get: () =>
+    state.features.web ||
+    (isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, WEB_SEARCH_TOOL_ID) &&
+      isToolEnabled(
+        state.toolAccess,
+        AGENT_TOOL_SCOPE,
+        WEB_SCRAPE_URL_TOOL_ID
+      )),
+  set: enabled => {
+    state.features.web = enabled;
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      AGENT_TOOL_SCOPE,
+      WEB_SEARCH_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      AGENT_TOOL_SCOPE,
+      WEB_SCRAPE_URL_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+  },
+});
+
 const notesEnabled = computed({
   get: () => {
     const scopeName = activeToolScope.value;
@@ -207,12 +262,16 @@ const updateStateFromAssistant = assistant => {
     conversationFaqs: config.feature_faq || false,
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
+    web: config.feature_web || false,
   };
   state.contextAccess = {};
   state.toolAccess = resolveToolAccessForUsageMode(
     config.tool_access || {},
     state.usageMode
   );
+  if (state.features.web) {
+    webAccessEnabled.value = true;
+  }
   state.avatarFile = null;
   state.avatarUrl = assistant.avatar_url || '';
   state.removeAvatar = false;
@@ -253,6 +312,7 @@ const buildPayload = async () => {
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
+      feature_web: webAccessEnabled.value,
       tool_access: state.toolAccess,
     };
   }
@@ -286,6 +346,7 @@ watch(
       state.toolAccess,
       newUsageMode
     );
+
     emit('update:usageMode', newUsageMode);
   },
   { immediate: true }
@@ -328,28 +389,46 @@ defineExpose({
         v-model="state.usageMode"
       />
 
-      <Editor
-        v-if="showDescriptionField"
-        v-model="state.description"
-        override-line-breaks
-        auto-height
-        :editor-key="`captain:assistant:${assistant?.id || 'new'}:basic-description`"
-        :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
-        :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
-        :max-length="descriptionMaxLength"
-        :initial-height="descriptionInitialHeight"
-        :min-height="descriptionMinHeight"
-        :message="formErrors.description"
-        :message-type="formErrors.description ? 'error' : 'info'"
-        class="z-0"
-        enable-captain-tools
-        enable-captain-fields
-        enable-captain-skills
-        :captain-context-assistant-id="assistant.id"
-        :captain-context-access="state.contextAccess"
-        :captain-tool-access="state.toolAccess"
-        :captain-tool-scope="activeToolScope"
-      />
+      <div v-if="showDescriptionField" class="flex flex-col gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium uppercase text-n-slate-10">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.TITLE') }}
+          </span>
+          <Button
+            v-for="action in instructionReferenceActions"
+            :key="action.id"
+            size="sm"
+            color="slate"
+            variant="faded"
+            :icon="action.icon"
+            :label="action.label"
+            class="!px-3"
+            @click="openInstructionReferenceMenu(action.id)"
+          />
+        </div>
+        <Editor
+          ref="instructionEditorRef"
+          v-model="state.description"
+          override-line-breaks
+          auto-height
+          :editor-key="`captain:assistant:${assistant?.id || 'new'}:basic-description`"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
+          :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
+          :max-length="descriptionMaxLength"
+          :initial-height="descriptionInitialHeight"
+          :min-height="descriptionMinHeight"
+          :message="formErrors.description"
+          :message-type="formErrors.description ? 'error' : 'info'"
+          class="z-0"
+          enable-captain-tools
+          enable-captain-fields
+          enable-captain-skills
+          :captain-context-assistant-id="assistant.id"
+          :captain-context-access="state.contextAccess"
+          :captain-tool-access="state.toolAccess"
+          :captain-tool-scope="activeToolScope"
+        />
+      </div>
     </template>
 
     <div v-if="showFeatureFlags" class="flex flex-col gap-2">
@@ -372,6 +451,10 @@ defineExpose({
         <label class="flex items-center gap-2">
           <Checkbox v-model="state.features.citations" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
+        </label>
+        <label v-if="isExternalAgent" class="flex items-center gap-2">
+          <Checkbox v-model="webAccessEnabled" />
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_WEB_ACCESS') }}
         </label>
         <label v-if="isExternalAgent" class="flex items-center gap-2">
           <Checkbox v-model="faqLookupEnabled" />

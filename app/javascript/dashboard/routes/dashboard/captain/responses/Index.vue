@@ -40,7 +40,9 @@ const { t } = useI18n();
 
 const createDialog = ref(null);
 
-const selectedAssistantId = computed(() => Number(route.params.assistantId));
+const selectedAssistantId = computed(() =>
+  route.params.assistantId ? Number(route.params.assistantId) : null
+);
 
 const pendingCount = useMapGetter('captainResponses/getPendingCount');
 
@@ -196,13 +198,9 @@ const navigateToPendingFAQs = () => {
 
 watch(
   selectedAssistantId,
-  currentAssistantId => {
-    if (!currentAssistantId) {
-      return;
-    }
-
+  () => {
     initializeFromURL();
-    store.dispatch('captainResponses/fetchPendingCount', currentAssistantId);
+    store.dispatch('captainResponses/fetchPendingCount');
     bulkSelectedIds.value = new Set();
   },
   { immediate: true }
@@ -219,6 +217,7 @@ watch(
     :is-fetching="isFetching"
     :is-empty="!responses.length"
     :show-pagination-footer="!isFetching && !!responses.length"
+    :show-assistant-switcher="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     @update:current-page="onPageChange"
     @click="handleCreate"
@@ -297,9 +296,9 @@ watch(
           :key="response.id"
           :question="response.question"
           :answer="response.answer"
-          :assistant="response.assistant"
           :documentable="response.documentable"
           :status="response.status"
+          :visibility="response.visibility"
           :created-at="response.created_at"
           :updated-at="response.updated_at"
           :is-selected="bulkSelectedIds.has(response.id)"

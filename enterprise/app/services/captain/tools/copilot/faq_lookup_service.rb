@@ -69,7 +69,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def fallback_reason_for(semantic: true)
     return unless semantic
-    return 'chunk_embeddings_unindexed' if assistant.document_chunks.needs_embedding_reindex.exists?
+    return 'chunk_embeddings_unindexed' if account_document_chunks.needs_embedding_reindex.exists?
 
     'semantic_no_matches'
   end
@@ -140,7 +140,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   end
 
   def embedding_status_counts
-    assistant.document_chunks.group(:embedding_status).count.presence
+    account_document_chunks.group(:embedding_status).count.presence
   end
 
   def sources_for(responses)
@@ -157,7 +157,8 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def semantic_responses(query)
     candidates = Captain::DocumentChunk.search(query, account_id: account.id)
-                                       .where(assistant_id: assistant.id)
+                                       .visible_to_assistant(assistant.id)
+                                       .where(account_id: account.id)
                                        .limit(SEMANTIC_RESULT_LIMIT)
                                        .to_a
     rerank_result = Captain::Documents::Reranker.new(account: account).call(
@@ -179,12 +180,16 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
       ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token.downcase)}%"]
     end
 
-    assistant.responses
-             .approved
-             .where(account_id: account.id)
-             .where(conditions, bind_values)
-             .ordered
-             .limit(5)
+    account.captain_assistant_responses
+           .approved
+           .visible_to_assistant(assistant.id)
+           .where(conditions, bind_values)
+           .ordered
+           .limit(5)
+  end
+
+  def account_document_chunks
+    Captain::DocumentChunk.where(account_id: account.id).visible_to_assistant(assistant.id)
   end
 
   def lexical_tokens(*queries)

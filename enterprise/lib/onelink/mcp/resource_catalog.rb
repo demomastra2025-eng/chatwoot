@@ -87,26 +87,53 @@ module Onelink
 
       def profile_payload
         {
-          account: {
-            id: auth_context.account.id,
-            name: auth_context.account.name
-          },
-          user: {
-            id: auth_context.user.id,
-            name: auth_context.user.name,
-            email: auth_context.user.email
-          },
-          account_user: {
-            id: auth_context.account_user&.id,
-            role: auth_context.account_user&.role,
-            administrator: auth_context.administrator?
-          },
-          assistant: {
-            id: auth_context.assistant.persisted? ? auth_context.assistant.id : nil,
-            name: auth_context.assistant.name,
-            usage_mode: auth_context.assistant.usage_mode
-          },
+          account: account_payload,
+          user: user_payload,
+          account_user: account_user_payload,
+          assistant: assistant_payload,
+          mcp_access: mcp_access_summary,
           scope_name: auth_context.scope_name
+        }
+      end
+
+      def account_payload
+        {
+          id: auth_context.account.id,
+          name: auth_context.account.name
+        }
+      end
+
+      def user_payload
+        {
+          id: auth_context.user.id,
+          name: auth_context.user.name,
+          email: auth_context.user.email
+        }
+      end
+
+      def account_user_payload
+        {
+          id: auth_context.account_user&.id,
+          role: auth_context.account_user&.role,
+          administrator: auth_context.administrator?
+        }
+      end
+
+      def assistant_payload
+        {
+          id: auth_context.assistant.persisted? ? auth_context.assistant.id : nil,
+          name: auth_context.assistant.name,
+          usage_mode: auth_context.assistant.usage_mode
+        }
+      end
+
+      def mcp_access_summary
+        access = auth_context.mcp_access_policy.config
+        {
+          enabled: access['enabled'],
+          max_risk_level: access['max_risk_level'],
+          sources: access['sources'],
+          require_confirmation_for_mutations: access['require_confirmation_for_mutations']
         }
       end
 

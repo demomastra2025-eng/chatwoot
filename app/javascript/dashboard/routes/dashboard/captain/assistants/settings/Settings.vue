@@ -12,6 +12,7 @@ import SettingsHeader from 'dashboard/components-next/captain/pageComponents/set
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
+import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -21,7 +22,9 @@ const store = useStore();
 const deleteAssistantDialog = ref(null);
 const generalBasicFormRef = ref(null);
 const generalSystemFormRef = ref(null);
+const voiceSystemFormRef = ref(null);
 const draftUsageMode = ref('external_agent');
+const activeSettingsTab = ref('profile');
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const assistants = useMapGetter('captainAssistants/getRecords');
@@ -38,11 +41,28 @@ const isInternalAssistant = computed(
 );
 const isExternalAgent = computed(() => !isInternalAssistant.value);
 const assistantConfig = computed(() => assistant.value?.config || {});
+const settingsTabs = computed(() => [
+  {
+    key: 'profile',
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.GENERAL.LABEL'),
+  },
+  {
+    key: 'voice_agent',
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.VOICE_AGENT.LABEL'),
+  },
+]);
+const activeSettingsTabIndex = computed(() =>
+  Math.max(
+    settingsTabs.value.findIndex(tab => tab.key === activeSettingsTab.value),
+    0
+  )
+);
 
 const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
   'feature_faq',
   'feature_memory',
   'feature_citation',
+  'feature_web',
   'context_access',
   'tool_access',
 ]);
@@ -54,8 +74,9 @@ const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
   'auto_reply_on_last_incoming',
   'message_collapse_window_seconds',
   'history_message_limit',
-  'voice_settings',
 ]);
+
+const VOICE_SETTINGS_CONFIG_KEYS = Object.freeze(['voice_settings']);
 
 watch(
   assistantId,
@@ -172,12 +193,33 @@ const handleGeneralSave = async () => {
   await handleSubmit(mergeAssistantPayloads(basicPayload, systemPayload));
 };
 
+const handleVoiceSave = async () => {
+  const voicePayload = await voiceSystemFormRef.value?.buildPayload?.();
+  if (!voicePayload) return;
+
+  await handleSubmit({
+    assistant: {
+      config: {
+        ...assistantConfig.value,
+        ...pickConfigKeys(
+          voicePayload.assistant?.config,
+          VOICE_SETTINGS_CONFIG_KEYS
+        ),
+      },
+    },
+  });
+};
+
 const handleDelete = () => {
   deleteAssistantDialog.value.dialogRef.open();
 };
 
 const handleUsageModeUpdate = nextUsageMode => {
   draftUsageMode.value = nextUsageMode || 'external_agent';
+};
+
+const handleSettingsTabChanged = tab => {
+  activeSettingsTab.value = tab?.key || 'profile';
 };
 
 const handleDeleteSuccess = () => {
@@ -205,49 +247,90 @@ const handleDeleteSuccess = () => {
 
 <template>
   <PageLayout
-    :header-title="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.GENERAL.LABEL')"
+    :header-title="t('CAPTAIN.ASSISTANTS.SETTINGS.HEADER')"
     :is-fetching="isFetching"
     :show-pagination-footer="false"
     :show-know-more="false"
   >
     <template #body>
       <div class="flex max-w-4xl flex-col gap-6">
-        <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
-          <div class="flex flex-col gap-6">
-            <AssistantBasicSettingsForm
-              ref="generalBasicFormRef"
-              :assistant="assistant"
-              :show-description-field="false"
-              :show-submit-button="false"
-              @update:usage-mode="handleUsageModeUpdate"
+        <TabBar
+          active-text-class="text-n-slate-12 scale-100"
+          :tabs="settingsTabs"
+          :initial-active-tab="activeSettingsTabIndex"
+          @tab-changed="handleSettingsTabChanged"
+        />
+
+        <template v-if="activeSettingsTab === 'profile'">
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+            <div class="flex flex-col gap-6">
+              <AssistantBasicSettingsForm
+                ref="generalBasicFormRef"
+                :assistant="assistant"
+                :show-description-field="false"
+                :show-submit-button="false"
+                @update:usage-mode="handleUsageModeUpdate"
+              />
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+            <div class="flex flex-col gap-6">
+              <SettingsHeader
+                :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.LABEL')"
+                :description="
+                  t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.DESCRIPTION')
+                "
+              />
+              <AssistantSystemSettingsForm
+                ref="generalSystemFormRef"
+                :assistant="assistant"
+                :show-conversation-messages="isExternalAgent"
+                :show-automation-settings="isExternalAgent"
+                :show-voice-settings="false"
+                :show-submit-button="false"
+              />
+            </div>
+          </div>
+
+          <div class="flex justify-end">
+            <Button
+              :label="t('CAPTAIN.ASSISTANTS.FORM.UPDATE')"
+              @click="handleGeneralSave"
             />
           </div>
-        </div>
+        </template>
 
-        <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
-          <div class="flex flex-col gap-6">
-            <SettingsHeader
-              :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.LABEL')"
-              :description="
-                t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.DESCRIPTION')
-              "
-            />
-            <AssistantSystemSettingsForm
-              ref="generalSystemFormRef"
-              :assistant="assistant"
-              :show-conversation-messages="isExternalAgent"
-              :show-automation-settings="isExternalAgent"
-              :show-submit-button="false"
+        <template v-else-if="activeSettingsTab === 'voice_agent'">
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+            <div class="flex flex-col gap-6">
+              <SettingsHeader
+                :heading="
+                  t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.VOICE_AGENT.LABEL')
+                "
+                :description="
+                  t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.VOICE_AGENT.DESCRIPTION')
+                "
+              />
+              <AssistantSystemSettingsForm
+                ref="voiceSystemFormRef"
+                :assistant="assistant"
+                :show-conversation-messages="false"
+                :show-temperature-setting="false"
+                :show-automation-settings="false"
+                show-voice-settings
+                :show-submit-button="false"
+              />
+            </div>
+          </div>
+
+          <div class="flex justify-end">
+            <Button
+              :label="t('CAPTAIN.ASSISTANTS.FORM.UPDATE')"
+              @click="handleVoiceSave"
             />
           </div>
-        </div>
-
-        <div class="flex justify-end">
-          <Button
-            :label="t('CAPTAIN.ASSISTANTS.FORM.UPDATE')"
-            @click="handleGeneralSave"
-          />
-        </div>
+        </template>
 
         <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-5 md:p-6">
           <SettingsHeader

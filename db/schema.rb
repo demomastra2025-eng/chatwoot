@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_01_123000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_01_143000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -412,6 +412,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_01_123000) do
     t.string "documentable_type"
     t.boolean "edited", default: false, null: false
     t.bigint "document_chunk_id"
+    t.integer "visibility", default: 0, null: false
+    t.index ["account_id", "visibility"], name: "idx_captain_responses_account_visibility"
     t.index ["account_id"], name: "index_captain_assistant_responses_on_account_id"
     t.index ["assistant_id"], name: "index_captain_assistant_responses_on_assistant_id"
     t.index ["document_chunk_id"], name: "index_captain_assistant_responses_on_document_chunk_id"
@@ -490,6 +492,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_01_123000) do
     t.jsonb "metadata", default: {}
     t.text "source_text"
     t.boolean "faq_generation_enabled", default: true, null: false
+    t.integer "visibility", default: 0, null: false
+    t.index ["account_id", "visibility"], name: "idx_captain_documents_account_visibility"
     t.index ["account_id"], name: "index_captain_documents_on_account_id"
     t.index ["assistant_id", "external_link"], name: "index_captain_documents_on_assistant_id_and_external_link", unique: true
     t.index ["assistant_id"], name: "index_captain_documents_on_assistant_id"
@@ -568,6 +572,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_01_123000) do
     t.index ["assistant_id", "enabled"], name: "index_captain_scenarios_on_assistant_id_and_enabled"
     t.index ["assistant_id"], name: "index_captain_scenarios_on_assistant_id"
     t.index ["enabled"], name: "index_captain_scenarios_on_enabled"
+  end
+
+  create_table "captain_skills", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "slug", null: false
+    t.string "name", null: false
+    t.string "group_name"
+    t.text "description", null: false
+    t.text "content", null: false
+    t.string "source_url"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "slug"], name: "index_captain_skills_on_account_id_and_slug", unique: true
+    t.index ["account_id"], name: "index_captain_skills_on_account_id"
   end
 
   create_table "categories", force: :cascade do |t|
@@ -2560,8 +2579,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_01_123000) do
   add_foreign_key "captain_document_chunks", "captain_assistants", column: "assistant_id"
   add_foreign_key "captain_document_chunks", "captain_documents", column: "document_id"
   add_foreign_key "captain_knowledge_answer_cache_entries", "accounts", on_delete: :cascade
-  add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id"
   add_foreign_key "captain_mcp_servers", "accounts"
+  add_foreign_key "captain_skills", "accounts"
   add_foreign_key "confirmation_requests", "accounts"
   add_foreign_key "confirmation_requests", "contacts"
   add_foreign_key "confirmation_requests", "conversations"

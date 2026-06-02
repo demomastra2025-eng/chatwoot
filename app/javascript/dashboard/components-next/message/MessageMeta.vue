@@ -243,11 +243,10 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
       {{ audioTimeLabel }}
     </span>
     <div class="inline-flex items-center gap-1.5">
-      <time class="inline">{{ readableTime }}</time>
       <button
         v-if="traceQuery"
         type="button"
-        class="skip-context-menu inline-flex items-center gap-1 whitespace-nowrap transition-colors hover:text-n-slate-12"
+        class="skip-context-menu inline-flex items-center gap-1 whitespace-nowrap text-[0.625rem] transition-colors hover:text-n-slate-12"
         :title="t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE')"
         :aria-label="t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE')"
         data-testid="captain-trace-logs"
@@ -256,6 +255,7 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
         <i class="i-lucide-file-text size-3 shrink-0" aria-hidden="true" />
         <span>{{ t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE') }}</span>
       </button>
+      <time class="inline">{{ readableTime }}</time>
     </div>
     <span v-if="subagentName" class="inline text-n-slate-11/90 font-medium">
       {{ subagentName }}

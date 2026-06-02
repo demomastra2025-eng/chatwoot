@@ -55,6 +55,10 @@ RSpec.describe Captain::ToolRegistry do
         'cancel_response',
         'send_notification',
         'assign_conversation',
+        'get_workspace_profile',
+        'update_workspace_profile',
+        'get_mcp_access_policy',
+        'update_mcp_access_policy',
         'search_canned_responses',
         'create_canned_response',
         'get_canned_response',
@@ -271,6 +275,10 @@ RSpec.describe Captain::ToolRegistry do
       execute_macro
       create_contact
       complete_task
+      get_workspace_profile
+      update_workspace_profile
+      get_mcp_access_policy
+      update_mcp_access_policy
       create_user_invite
       update_user_role
       update_user_availability

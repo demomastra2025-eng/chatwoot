@@ -35,7 +35,9 @@ const documents = useMapGetter('captainDocuments/getRecords');
 const isFetching = computed(() => uiFlags.value.fetchingList);
 const documentsMeta = useMapGetter('captainDocuments/getMeta');
 
-const selectedAssistantId = computed(() => Number(route.params.assistantId));
+const selectedAssistantId = computed(() =>
+  route.params.assistantId ? Number(route.params.assistantId) : null
+);
 const canManageDocuments = computed(() => checkPermissions(['administrator']));
 
 const selectedDocument = ref(null);
@@ -235,11 +237,7 @@ const onBulkDeleteSuccess = () => {
 
 watch(
   selectedAssistantId,
-  currentAssistantId => {
-    if (!currentAssistantId) {
-      return;
-    }
-
+  () => {
     bulkSelectedIds.value = new Set();
     fetchDocuments();
   },
@@ -258,6 +256,7 @@ watch(
     :is-fetching="isFetching"
     :is-empty="!documents.length"
     :show-know-more="false"
+    :show-assistant-switcher="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     @update:current-page="onPageChange"
     @click="handleCreateDocument"
@@ -312,7 +311,7 @@ watch(
           :name="doc.name || doc.external_link"
           :external-link="doc.external_link"
           :display-url="doc.display_url"
-          :assistant="doc.assistant"
+          :visibility="doc.visibility"
           :source-mode="doc.source_mode"
           :sync-status="doc.sync_status"
           :refresh-mode="doc.refresh_mode"
@@ -343,7 +342,6 @@ watch(
     <CreateDocumentDialog
       v-if="showCreateDialog"
       ref="createDocumentDialog"
-      :assistant-id="selectedAssistantId"
       @close="handleCreateDialogClose"
     />
     <SourceTextDialog

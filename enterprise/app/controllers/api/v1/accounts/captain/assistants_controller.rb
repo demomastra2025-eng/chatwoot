@@ -1,6 +1,6 @@
 class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::BaseController
   ASSISTANT_CONFIG_FIELDS = [
-    :feature_faq, :feature_memory, :feature_citation,
+    :feature_faq, :feature_memory, :feature_citation, :feature_web,
     :welcome_message, :handoff_message, :resolution_message,
     :handoff_message_enabled, :handoff_message_mode,
     :resolution_message_enabled, :resolution_message_mode,

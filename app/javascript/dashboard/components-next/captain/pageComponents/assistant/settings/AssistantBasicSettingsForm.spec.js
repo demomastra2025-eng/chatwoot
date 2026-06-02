@@ -6,13 +6,18 @@ import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
   AGENT_TOOL_SCOPE,
+  ASSISTANT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
+  WEB_SCRAPE_URL_TOOL_ID,
+  WEB_SEARCH_TOOL_ID,
 } from '../toolAccessDefaults';
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: key => key,
+    t: (key, values = {}) =>
+      key.replace(/\{(\w+)\}/g, (_, valueKey) => values[valueKey] ?? ''),
+    te: () => false,
   }),
 }));
 
@@ -65,6 +70,7 @@ describe('AssistantBasicSettingsForm', () => {
       feature_faq: false,
       feature_memory: false,
       feature_citation: false,
+      feature_web: false,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
           enabled: true,
@@ -154,6 +160,65 @@ describe('AssistantBasicSettingsForm', () => {
       assistant: {
         enabled: true,
         tool_ids: ['mcp__github__list_issues'],
+      },
+    });
+  });
+
+  it('persists web access when web tools are already enabled', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: {
+          feature_faq: false,
+          feature_memory: false,
+          feature_citation: false,
+          feature_web: false,
+          tool_access: {
+            [AGENT_TOOL_SCOPE]: {
+              enabled: true,
+              tool_ids: [WEB_SEARCH_TOOL_ID, WEB_SCRAPE_URL_TOOL_ID],
+            },
+          },
+        },
+      },
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+    await flushPromises();
+
+    expect(payload.assistant.config.feature_web).toBe(true);
+  });
+
+  it('preserves internal assistant tool access from the instruction/tool-reference flow', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Помогай сотрудникам.',
+        usage_mode: 'internal_assistant',
+        config: {
+          feature_faq: false,
+          feature_memory: false,
+          feature_citation: true,
+          tool_access: {
+            [ASSISTANT_TOOL_SCOPE]: {
+              enabled: true,
+              tool_ids: ['get_workspace_profile', 'mcp__github__list_issues'],
+            },
+          },
+        },
+      },
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.tool_access).toEqual({
+      [ASSISTANT_TOOL_SCOPE]: {
+        enabled: true,
+        tool_ids: ['get_workspace_profile', 'mcp__github__list_issues'],
       },
     });
   });

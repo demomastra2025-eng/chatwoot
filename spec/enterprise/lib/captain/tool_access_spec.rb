@@ -7,18 +7,20 @@ RSpec.describe Captain::ToolAccess do
   describe '.normalized_access_for' do
     it 'does not enable MCP tools by default for assistant scope' do
       allow(assistant).to receive(:available_agent_tools).and_return([])
-      allow(assistant).to receive(:available_assistant_tools).and_return([
-                                                                          {
-                                                                            id: 'search_documentation',
-                                                                            title: 'Search documentation'
-                                                                          },
-                                                                          {
-                                                                            id: 'mcp__github__list_issues',
-                                                                            title: 'List issues',
-                                                                            provider: 'mcp',
-                                                                            selected_by_default: false
-                                                                          }
-                                                                        ])
+      allow(assistant).to receive(:available_assistant_tools).and_return(
+        [
+          {
+            id: 'search_documentation',
+            title: 'Search documentation'
+          },
+          {
+            id: 'mcp__github__list_issues',
+            title: 'List issues',
+            provider: 'mcp',
+            selected_by_default: false
+          }
+        ]
+      )
 
       access = described_class.normalized_access_for(assistant)
 
@@ -37,14 +39,16 @@ RSpec.describe Captain::ToolAccess do
       }
 
       allow(assistant).to receive(:available_agent_tools).and_return([])
-      allow(assistant).to receive(:available_assistant_tools).and_return([
-                                                                          {
-                                                                            id: 'mcp__github__list_issues',
-                                                                            title: 'List issues',
-                                                                            provider: 'mcp',
-                                                                            selected_by_default: false
-                                                                          }
-                                                                        ])
+      allow(assistant).to receive(:available_assistant_tools).and_return(
+        [
+          {
+            id: 'mcp__github__list_issues',
+            title: 'List issues',
+            provider: 'mcp',
+            selected_by_default: false
+          }
+        ]
+      )
 
       access = described_class.normalized_access_for(assistant)
 
