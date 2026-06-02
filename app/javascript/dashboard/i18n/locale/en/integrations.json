@@ -2097,6 +2097,20 @@
         }
       },
       "FORM_DESCRIPTION": "Configure your custom tool to connect with external APIs",
+      "SOURCE_TYPES": {
+        "SYSTEM": "System",
+        "CUSTOM": "Custom",
+        "MCP": "MCP",
+        "SKILL": "Skill"
+      },
+      "CATEGORIES": {
+        "SYSTEM": "System tools",
+        "SYSTEM_DESCRIPTION": "Built-in OneLink actions and knowledge tools available to agents and assistants.",
+        "CUSTOM": "Custom tools",
+        "CUSTOM_DESCRIPTION": "Workspace HTTP tools created by your team.",
+        "PUBLIC": "MCP and skills",
+        "PUBLIC_DESCRIPTION": "Imported MCP tools and skill scripts exposed through the tool catalog."
+      },
       "OPTIONS": {
         "EDIT_TOOL": "Edit tool",
         "DELETE_TOOL": "Delete tool"

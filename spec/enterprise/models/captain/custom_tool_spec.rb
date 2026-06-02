@@ -906,6 +906,7 @@ RSpec.describe Captain::CustomTool, type: :model do
                                  required_features: [],
                                  required_permissions: [],
                                  risk_level: 'custom',
+                                 source_type: 'custom',
                                  requires_confirmation: false,
                                  idempotent: false
                                })

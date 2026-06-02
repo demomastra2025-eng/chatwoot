@@ -3,7 +3,7 @@ class Captain::Tools::Copilot::ListCaptainDocumentsService < Captain::Tools::Cop
     'list_captain_documents'
   end
 
-  description 'List Captain knowledge documents for this assistant, including safe artifact IDs for documents that can be sent as files'
+  description 'List visible workspace Captain knowledge documents, including safe artifact IDs for documents that can be sent as files'
   param :query, type: :string, desc: 'Optional case-insensitive search by document name or URL', required: false
   param :sendable_only, type: :boolean, desc: 'When true, return only documents with uploaded files that can be attached to messages', required: false
   param :limit, type: :integer, desc: 'Maximum number of documents to return, up to 20', required: false
@@ -23,7 +23,7 @@ class Captain::Tools::Copilot::ListCaptainDocumentsService < Captain::Tools::Cop
   private
 
   def filtered_documents(query:, sendable_only:, limit:)
-    scope = assistant.documents.source_documents.available.ordered
+    scope = account.captain_documents.source_documents.available.visible_to_assistant(assistant.id).ordered
     scope = scope.where('name ILIKE :query OR external_link ILIKE :query', query: "%#{query}%") if query.present?
     records = scope.limit(limit)
     return records.select(&:sendable_file?) if sendable_only

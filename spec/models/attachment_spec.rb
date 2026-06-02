@@ -32,6 +32,30 @@ RSpec.describe Attachment do
     end
   end
 
+  describe 'business file attachments' do
+    let(:web_widget_inbox) { create(:inbox, channel: create(:channel_widget)) }
+    let(:web_widget_message) { create(:message, inbox: web_widget_inbox, account: web_widget_inbox.account) }
+
+    it 'allows XML files for website widget uploads' do
+      attachment = web_widget_message.attachments.new(account_id: web_widget_message.account_id, file_type: :file)
+      attachment.file.attach(io: StringIO.new('<root />'), filename: 'invoice.xml', content_type: 'application/xml')
+
+      expect(attachment).to be_valid
+      attachment.save!
+      expect(attachment.push_event_data).to include(extension: 'xml', content_type: 'application/xml')
+    end
+
+    it 'allows PFX files and exposes an attachment-disposition URL' do
+      attachment = web_widget_message.attachments.new(account_id: web_widget_message.account_id, file_type: :file)
+      attachment.file.attach(io: StringIO.new('fake pfx'), filename: 'certificate.pfx', content_type: 'application/x-pkcs12')
+
+      expect(attachment).to be_valid
+      attachment.save!
+      expect(attachment.push_event_data).to include(extension: 'pfx', content_type: 'application/x-pkcs12')
+      expect(attachment.push_event_data[:data_url]).to include('disposition=attachment')
+    end
+  end
+
   describe 'with_attached_file?' do
     it 'returns true if its an attachment with file' do
       attachment = message.attachments.new(account_id: message.account_id, file_type: :image)

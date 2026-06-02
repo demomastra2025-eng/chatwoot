@@ -76,6 +76,52 @@ RSpec.describe SafeFetch do
         .to raise_error(SafeFetch::UnsafeUrlError)
     end
 
+    it 'allows explicit allowlisted private hosts for scoped webhook use cases' do
+      private_url = 'http://internal-webhook.example.com/image.png'
+      allow(Resolv).to receive(:getaddresses).with('internal-webhook.example.com').and_return(['10.0.0.5'])
+      stub_request(:get, private_url).to_return(
+        status: 200,
+        body: File.new(Rails.root.join('spec/assets/avatar.png')),
+        headers: { 'Content-Type' => 'image/png' }
+      )
+
+      described_class.fetch(private_url, private_network_allowed_hosts: ['internal-webhook.example.com']) do |result|
+        expect(result.filename).to eq('image.png')
+        expect(result.content_type).to eq('image/png')
+      end
+    end
+
+    it 'rejects redirects to private hosts unless the redirect host is allowlisted' do
+      private_url = 'http://internal-webhook.example.com/final-image.png'
+      allow(Resolv).to receive(:getaddresses).with('internal-webhook.example.com').and_return(['10.0.0.5'])
+      stub_request(:get, url).to_return(status: 302, headers: { 'Location' => private_url })
+
+      expect { described_class.fetch(url) { raise 'should not yield' } }
+        .to raise_error(SafeFetch::UnsafeUrlError)
+    end
+
+    it 'allows redirects to explicitly allowlisted private hosts' do
+      private_url = 'http://internal-webhook.example.com/final-image.png'
+      allow(Resolv).to receive(:getaddresses).with('internal-webhook.example.com').and_return(['10.0.0.5'])
+      stub_request(:get, url).to_return(status: 302, headers: { 'Location' => private_url })
+      stub_request(:get, private_url).to_return(
+        status: 200,
+        body: File.new(Rails.root.join('spec/assets/avatar.png')),
+        headers: { 'Content-Type' => 'image/png' }
+      )
+
+      described_class.fetch(url, private_network_allowed_hosts: ['internal-webhook.example.com']) do |result|
+        expect(result.filename).to eq('final-image.png')
+      end
+    end
+
+    it 'keeps metadata and link-local addresses blocked even when listed' do
+      metadata_url = 'http://169.254.169.254/latest/meta-data'
+
+      expect { described_class.fetch(metadata_url, private_network_allowed_hosts: ['169.254.169.254']) { raise 'should not yield' } }
+        .to raise_error(SafeFetch::UnsafeUrlError)
+    end
+
     it 'rejects unsupported content types' do
       stub_request(:get, url).to_return(status: 200, body: '<html></html>', headers: { 'Content-Type' => 'text/html' })
 

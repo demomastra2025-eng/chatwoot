@@ -14,6 +14,13 @@ module SafeFetch
   DEFAULT_MAX_BYTES_FALLBACK_MB = 40
   DEFAULT_MAX_REDIRECTS = 3
 
+  ALLOWLISTABLE_PRIVATE_IP_RANGES = [
+    IPAddr.new('10.0.0.0/8'),
+    IPAddr.new('172.16.0.0/12'),
+    IPAddr.new('192.168.0.0/16'),
+    IPAddr.new('fc00::/7')
+  ].freeze
+
   UNSAFE_IP_RANGES = [
     IPAddr.new('0.0.0.0/8'),
     IPAddr.new('10.0.0.0/8'),
@@ -64,32 +71,40 @@ module SafeFetch
     limit_mb.megabytes
   end
 
-  def self.resolve_public_ip!(host)
+  def self.resolve_public_ip!(host, allow_private_network: false)
     raise InvalidUrlError, 'missing host' if host.blank?
     raise UnsafeUrlError, 'localhost is not allowed' if host.casecmp('localhost').zero?
 
-    literal_ip = public_literal_ip(host)
+    literal_ip = allowed_literal_ip(host, allow_private_network: allow_private_network)
     return literal_ip if literal_ip
 
     addresses = Resolv.getaddresses(host)
     raise FetchError, 'host could not be resolved' if addresses.blank?
-    raise UnsafeUrlError, 'resolved to a non-public address' if addresses.any? { |address| unsafe_ip?(address) }
+    raise UnsafeUrlError, 'resolved to a non-public address' if addresses.any? do |address|
+      unsafe_ip?(address, allow_private_network: allow_private_network)
+    end
 
     addresses.first
   end
 
-  def self.public_literal_ip(host)
+  def self.allowed_literal_ip(host, allow_private_network: false)
     ip = IPAddr.new(host)
-    raise UnsafeUrlError, 'IP address is not allowed' if unsafe_ip?(ip.to_s)
+    raise UnsafeUrlError, 'IP address is not allowed' if unsafe_ip?(ip.to_s, allow_private_network: allow_private_network)
 
     ip.to_s
   rescue IPAddr::InvalidAddressError
     nil
   end
 
-  def self.unsafe_ip?(value)
+  def self.unsafe_ip?(value, allow_private_network: false)
     ip = IPAddr.new(value)
+    return false if allow_private_network && allowlistable_private_ip?(ip)
+
     UNSAFE_IP_RANGES.any? { |range| range.include?(ip) }
+  end
+
+  def self.allowlistable_private_ip?(ip)
+    ALLOWLISTABLE_PRIVATE_IP_RANGES.any? { |range| range.include?(ip) }
   end
 end
 

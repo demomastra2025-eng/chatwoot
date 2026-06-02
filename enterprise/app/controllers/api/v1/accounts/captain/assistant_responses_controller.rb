@@ -17,13 +17,13 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   def show; end
 
   def create
-    @response = Current.account.captain_assistant_responses.new(response_params_with_default_assistant)
+    @response = Current.account.captain_assistant_responses.new(response_params_with_valid_assistant)
     @response.documentable = Current.user
     @response.save!
   end
 
   def update
-    @response.update!(response_params)
+    @response.update!(response_params_with_valid_assistant)
   end
 
   def destroy
@@ -34,8 +34,6 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   private
 
   def apply_filters(base_query)
-    base_query = base_query.where(assistant_id: permitted_params[:assistant_id]) if permitted_params[:assistant_id].present?
-
     if permitted_params[:document_id].present?
       base_query = base_query.where(
         documentable_id: permitted_params[:document_id],
@@ -57,7 +55,10 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   end
 
   def set_responses
-    @responses = Current.account.captain_assistant_responses.includes(:assistant, :documentable).ordered
+    @responses = Current.account.captain_assistant_responses
+                        .visible_to_assistant(permitted_params[:assistant_id])
+                        .includes(:assistant, :documentable)
+                        .ordered
   end
 
   def set_response
@@ -82,13 +83,14 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
     )
   end
 
-  def response_params_with_default_assistant
+  def response_params_with_valid_assistant
     attributes = response_params
-    attributes[:assistant_id] = workspace_default_assistant&.id if attributes[:assistant_id].blank?
-    attributes
-  end
+    return attributes if attributes[:assistant_id].blank?
 
-  def workspace_default_assistant
-    Current.account.captain_assistants.external_agent.ordered.first || Current.account.captain_assistants.ordered.first
+    assistant = Current.account.captain_assistants.find_by(id: attributes[:assistant_id])
+    raise ActiveRecord::RecordNotFound, 'Captain assistant not found' if assistant.blank?
+
+    attributes[:assistant_id] = assistant.id
+    attributes
   end
 end

@@ -179,6 +179,7 @@ class Captain::CustomTool < ApplicationRecord
       group_name: group_name.presence || 'Custom tools',
       icon: 'plug',
       custom: true,
+      source_type: Captain::ToolCatalog::SOURCE_TYPE_CUSTOM,
       allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
       required_features: [],
       required_permissions: [],

@@ -60,11 +60,29 @@ RSpec.describe AutoAssignment::AssignmentService do
 
       it 'returns 0 when no agents are online' do
         allow(OnlineStatusTracker).to receive(:get_available_users).and_return({})
+        expect(service).not_to receive(:unassigned_conversations)
 
         assigned_count = service.perform_bulk_assignment(limit: 1)
 
         expect(assigned_count).to eq(0)
         expect(conversation.reload.assignee).to be_nil
+      end
+
+      it 'does not override a conversation assigned by another worker before the claim' do
+        competing_agent = create(:user, account: account, role: :agent, availability: :online)
+        conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
+        allow(service).to receive(:unassigned_conversations).and_return([conv])
+        allow(conv).to receive(:with_lock).and_wrap_original do |original, &block|
+          conv.update!(assignee: competing_agent)
+          original.call(&block)
+        end
+
+        assigned_count = service.perform_bulk_assignment(limit: 1)
+
+        expect(assigned_count).to eq(0)
+        expect(conv.reload.assignee).to eq(competing_agent)
+        expect(Current.executed_by).to be_nil
       end
 
       it 'respects the limit parameter' do

@@ -1,11 +1,24 @@
 # frozen_string_literal: true
 
 class Captain::ToolCatalog
+  SOURCE_TYPE_SYSTEM = 'system'
+  SOURCE_TYPE_CUSTOM = 'custom'
+  SOURCE_TYPE_MCP = 'mcp'
+  SOURCE_TYPE_SKILL = 'skill'
+  SOURCE_TYPES = [SOURCE_TYPE_SYSTEM, SOURCE_TYPE_CUSTOM, SOURCE_TYPE_MCP, SOURCE_TYPE_SKILL].freeze
+
   class << self
     def available_tools_for(assistant, scope_name)
-      (built_in_tools_for(assistant, scope_name) + custom_tools_for(assistant, scope_name) + mcp_tools_for(assistant, scope_name) + skill_script_tools_for(assistant, scope_name))
-        .map(&:dup)
-        .uniq { |tool_definition| tool_definition[:id] }
+      (built_in_tools_for(assistant,
+                          scope_name) + custom_tools_for(assistant,
+                                                         scope_name) + mcp_tools_for(assistant,
+                                                                                     scope_name) + skill_script_tools_for(assistant, scope_name))
+        .map do |tool_definition|
+        with_source_type(tool_definition).dup
+      end
+        .uniq do |tool_definition|
+        tool_definition[:id]
+      end
     end
 
     def available_tool_ids_for(assistant, scope_name)
@@ -81,6 +94,26 @@ class Captain::ToolCatalog
                            .select { |tool_definition| required_integrations_available?(assistant, tool_definition) }
                            .select { |tool_definition| runtime_requirements_available?(assistant, tool_definition) }
                            .map { |tool_definition| require_assistant_confirmation(tool_definition, scope_name) }
+    end
+
+    def with_source_type(tool_definition)
+      definition = tool_definition.to_h.symbolize_keys
+      source_type = definition[:source_type].presence || inferred_source_type(definition)
+
+      definition.merge(source_type: source_type)
+    end
+
+    def inferred_source_type(tool_definition)
+      return SOURCE_TYPE_CUSTOM if ActiveModel::Type::Boolean.new.cast(tool_definition[:custom])
+
+      case tool_definition[:provider].to_s
+      when SOURCE_TYPE_MCP
+        SOURCE_TYPE_MCP
+      when 'skill_script'
+        SOURCE_TYPE_SKILL
+      else
+        SOURCE_TYPE_SYSTEM
+      end
     end
 
     def runtime_requirements_available?(assistant, tool_definition)

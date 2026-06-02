@@ -357,6 +357,7 @@ kk:
       tool_not_available: Tool not available
     documents:
       limit_exceeded: Document limit exceeded
+      personal_visibility_requires_assistant: AI Agent is required for personal visibility
       pdf_format_error: must be a PDF file
       pdf_size_error: must be less than 10MB
       pdf_upload_failed: Failed to upload PDF to OpenAI

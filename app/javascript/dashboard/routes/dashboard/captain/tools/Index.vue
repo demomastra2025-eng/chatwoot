@@ -28,8 +28,16 @@ const mcpServerFlags = useMapGetter('captainMcpServers/getUIFlags');
 const mcpServers = useMapGetter('captainMcpServers/getRecords');
 const catalogTools = ref([]);
 
+const TOOL_SOURCE_TYPES = Object.freeze({
+  SYSTEM: 'system',
+  CUSTOM: 'custom',
+  MCP: 'mcp',
+  SKILL: 'skill',
+});
+
 const EMPTY_SELECTED_TOOL = Object.freeze({});
 const EMPTY_SELECTED_SERVER = Object.freeze({});
+const TOOL_META_SEPARATOR = ' · ';
 
 const createDialogRef = ref(null);
 const createMcpDialogRef = ref(null);
@@ -55,8 +63,9 @@ const dialogSelectedServer = computed(
   () => selectedServer.value || EMPTY_SELECTED_SERVER
 );
 
-const isSystemTool = tool =>
-  !tool.custom && !['mcp', 'skill_script'].includes(tool.provider);
+const isSystemTool = tool => tool.source_type === TOOL_SOURCE_TYPES.SYSTEM;
+const isCustomCatalogTool = tool =>
+  tool.source_type === TOOL_SOURCE_TYPES.CUSTOM;
 
 const sortTools = tools =>
   [...tools].sort((leftTool, rightTool) => {
@@ -71,9 +80,28 @@ const systemTools = computed(() =>
 
 const publicTools = computed(() =>
   sortTools(
-    catalogTools.value.filter(tool => !isSystemTool(tool) && !tool.custom)
+    catalogTools.value.filter(
+      tool => !isSystemTool(tool) && !isCustomCatalogTool(tool)
+    )
   )
 );
+
+const toolSourceLabel = tool => {
+  const sourceType = tool.source_type || TOOL_SOURCE_TYPES.SYSTEM;
+  if (sourceType === TOOL_SOURCE_TYPES.CUSTOM) {
+    return t('CAPTAIN.CUSTOM_TOOLS.SOURCE_TYPES.CUSTOM');
+  }
+  if (sourceType === TOOL_SOURCE_TYPES.MCP) {
+    return t('CAPTAIN.CUSTOM_TOOLS.SOURCE_TYPES.MCP');
+  }
+  if (sourceType === TOOL_SOURCE_TYPES.SKILL) {
+    return t('CAPTAIN.CUSTOM_TOOLS.SOURCE_TYPES.SKILL');
+  }
+  return t('CAPTAIN.CUSTOM_TOOLS.SOURCE_TYPES.SYSTEM');
+};
+
+const toolSourceMeta = (tool, extraLabel) =>
+  [toolSourceLabel(tool), extraLabel].filter(Boolean).join(TOOL_META_SEPARATOR);
 
 const groupedCustomTools = computed(() => {
   const grouped = customTools.value.reduce((accumulator, tool) => {
@@ -341,7 +369,7 @@ onMounted(() => {
                 <span
                   class="shrink-0 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
                 >
-                  {{ tool.scope_name }}
+                  {{ toolSourceMeta(tool, tool.scope_name) }}
                 </span>
               </div>
             </article>
@@ -372,7 +400,7 @@ onMounted(() => {
                 {{ tool.description }}
               </p>
               <p class="mt-2 text-xs text-n-slate-10">
-                {{ tool.group_name || tool.provider || tool.scope_name }}
+                {{ toolSourceMeta(tool, tool.group_name || tool.scope_name) }}
               </p>
             </article>
           </div>

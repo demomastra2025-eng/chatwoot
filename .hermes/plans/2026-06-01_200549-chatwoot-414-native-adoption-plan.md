@@ -771,3 +771,49 @@ Expected: only safe code/locale references; no credential values. Any credential
 - No secrets in diffs/logs.
 - Each release slice has independent review.
 - Final handoff includes branch, SHA, checks, DEV smoke, PROD touched/not touched.
+
+---
+
+## 11. Execution status — 2026-06-02
+
+### Closed in this code slice
+
+- **A1 Twilio signature validation:** implemented through a shared controller concern and callback/delivery-status specs. API-key channels now fail closed unless a configured account auth token is available for signature verification.
+- **A2 IMAP timeout/skip:** implemented in the IMAP fetch job with targeted job specs.
+- **A3 AutoAssignment guard:** implemented with atomic/online-agent safety coverage.
+- **B1 Integration disconnect visibility:** implemented through reauthorization/inbox-update signaling.
+- **B2 SafeFetch allowlist:** implemented as explicit request options and covered by SafeFetch specs.
+- **B3 WhatsApp edge cases:** implemented for BSUID/coexistence unavailable-message handling with service specs.
+- **C2 XML/PFX attachments:** implemented with backend validation/icon support and attachment specs.
+- **C4 Integration health/status polish:** implemented for integration metadata/locales/assets without exposing secrets.
+- **D1 Captain document/account-owned knowledge semantics:** implemented through migration `20260602120000_make_captain_knowledge_workspace_owned.rb`, nullable assistant ownership for workspace knowledge, account-scoped uniqueness/visibility, import fallback extraction, and Captain controller/model/job specs.
+
+### Explicitly not shipped in this slice
+
+- **C1 Unread counts:** deferred intentionally. Existing OneLink sidebar currently exposes the global unread inbox count through `notifications/unReadCount` / `notifications/getUnreadCount`; adding per-label/team/channel ordering badges still needs a separate backend cache/event-invalidation contract and UI rollout decision to avoid sidebar IA regression.
+- **C3 Help Center enhancements:** deferred intentionally. No Help Center/article/portal files were changed; the plan requires a product decision that Help Center is active priority before shipping bulk actions, translation, layout switching, or markdown routes.
+
+### Git-scope closure
+
+- Required final untracked files are included in this slice and must be staged before commit: `app/controllers/concerns/twilio_signature_verify_concern.rb`, `db/migrate/20260602120000_make_captain_knowledge_workspace_owned.rb`, `public/integrations/channels/badges/logosipuni.svg`, and `spec/enterprise/lib/onelink/mcp/captain_tool_adapter_spec.rb`. Sipuni provider files/specs are already tracked in the current branch and verified by the focused Voice/Sipuni RSpec evidence below.
+- This section is documentation/status only; runtime changes remain in the code/spec files above.
+
+### Final verification evidence
+
+- `git diff --check` — PASS (`DIFF_CHECK_PRE_STAGE_EXIT=0`, `DIFF_CHECK_AFTER_PLAN_FINAL_EXIT=0`).
+- `git diff --cached --check` — PASS (`CACHED_DIFF_CHECK_EXIT=0`, `CACHED_DIFF_CHECK_FINAL_EXIT=0`).
+- Ruby syntax for all changed/untracked `.rb` files — PASS: 71 files (`RUBY_SYNTAX_EXIT=0`).
+- JSON/YAML parse for changed locale/config files — PASS: 9 files (`JSON_YAML_PARSE_EXIT=0`).
+- Changed-file RSpec pack — PASS: 26 spec files, 669 examples, 0 failures (`CHANGED_RSPEC_FINAL_EXIT=0`).
+- Twilio signature regression after review blocker fix — PASS: 15 examples, 0 failures (`TWILIO_SIGNATURE_RSPEC_EXIT=0`); API-key channels now fail closed without `TWILIO_ACCOUNT_AUTH_TOKEN` / `TWILIO_AUTH_TOKEN`.
+- Final blocker regression pack (`Twilio` callback/delivery-status + `AutoAssignment`) — PASS: 34 examples, 0 failures (`FINAL_BLOCKER_RSPEC_EXIT=0`).
+- Sipuni/Voice focused RSpec — PASS: 25 examples, 0 failures (`VOICE_RSPEC_EXIT=0`).
+- Frontend ESLint for all changed `.js`/`.vue` files — PASS (`FRONTEND_ESLINT_ALL_CHANGED_EXIT=0`).
+- Frontend Vitest (`inbox.spec.js`, `Voice.spec.js`) — PASS: 37 tests, 0 failures (`FRONTEND_VITEST_EXIT=0`).
+- `pnpm build:app` — PASS (`FRONTEND_BUILD_APP_EXIT=0`).
+- Static secret scan on staged added lines found only synthetic Twilio test fixtures: `account_auth_token = 'twilio-account-auth-token'` in specs; no production credential literals.
+
+### Review status
+
+- First independent review found a real Twilio API-key signature bypass blocker; fixed by removing the legacy allow-through path and adding callback/delivery-status fail-closed specs.
+- A later reviewer attempted read-only review but produced stale Twilio findings and left an unstaged test edit; that reviewer-created edit was discarded before final staging.

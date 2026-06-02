@@ -5,18 +5,18 @@ class Captain::Tools::Copilot::CreateCaptainKnowledgeEntryService < Captain::Too
     'create_captain_knowledge_entry'
   end
 
-  description 'Create a manual Captain FAQ/knowledge entry. Requires operator confirmation.'
-  param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true
+  description 'Create a manual workspace Captain FAQ/knowledge entry. Requires operator confirmation.'
+  param :assistant_id, type: :integer, desc: 'Optional Captain assistant ID for personal entries', required: false
   param :question, type: :string, desc: 'Knowledge entry question', required: true
   param :answer, type: :string, desc: 'Knowledge entry answer', required: true
   param :status, type: :string, desc: 'Optional status: pending or approved. Defaults to approved.', required: false
   param :visibility, type: :string, desc: 'Optional visibility: general or personal. Defaults to general.', required: false
   param :document_id, type: :integer, desc: 'Optional Captain document ID to attach this generated entry to', required: false
 
-  def execute(assistant_id:, question:, answer:, status: nil, visibility: nil, document_id: nil)
+  def execute(question:, answer:, assistant_id: nil, status: nil, visibility: nil, document_id: nil)
     ensure_account_administrator!
 
-    entry_assistant = find_captain_assistant!(assistant_id)
+    entry_assistant = find_captain_assistant!(assistant_id) if assistant_id.present?
     entry = Captain::AssistantResponse.create!(
       assistant: entry_assistant,
       account: account,

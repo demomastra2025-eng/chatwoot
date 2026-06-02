@@ -21,7 +21,7 @@ module Whatsapp::IncomingMessageServiceHelpers
   end
 
   def message_type
-    messages_data.first[:type]
+    messages_data.first[:type].to_s
   end
 
   def message_content(message)
@@ -30,7 +30,8 @@ module Whatsapp::IncomingMessageServiceHelpers
       message.dig(:button, :text) ||
       message.dig(:interactive, :button_reply, :title) ||
       message.dig(:interactive, :list_reply, :title) ||
-      message.dig(:name, :formatted_name)
+      message.dig(:name, :formatted_name) ||
+      unsupported_message_content(message)
   end
 
   def message_content_attributes(message)
@@ -44,7 +45,10 @@ module Whatsapp::IncomingMessageServiceHelpers
       interactive_reply_id: interactive_button_reply&.[](:id) || interactive_list_reply&.[](:id),
       interactive_reply_title: interactive_button_reply&.[](:title) || interactive_list_reply&.[](:title),
       button_payload: button&.[](:payload),
-      button_text: button&.[](:text)
+      button_text: button&.[](:text),
+      whatsapp_unavailable_message: unavailable_whatsapp_message?(message),
+      whatsapp_error_code: unavailable_whatsapp_error(message)&.[](:code),
+      whatsapp_error_title: unavailable_whatsapp_error(message)&.[](:title)
     }.compact
   end
 
@@ -58,8 +62,26 @@ module Whatsapp::IncomingMessageServiceHelpers
     :file
   end
 
-  def unprocessable_message_type?(message_type)
-    %w[reaction ephemeral unsupported request_welcome].include?(message_type)
+  def unprocessable_message_type?(message)
+    type = (message.is_a?(Hash) ? message[:type] : message).to_s
+    return false if type == 'unsupported' && unavailable_whatsapp_message?(message)
+
+    %w[reaction ephemeral unsupported request_welcome].include?(type)
+  end
+
+  def unavailable_whatsapp_message?(message)
+    message.is_a?(Hash) && message[:type].to_s == 'unsupported' && unavailable_whatsapp_error(message).present?
+  end
+
+  def unavailable_whatsapp_error(message)
+    Array(message[:errors]).first
+  end
+
+  def unsupported_message_content(message)
+    return unless unavailable_whatsapp_message?(message)
+
+    error_title = unavailable_whatsapp_error(message)&.[](:title).presence || 'Message is unavailable'
+    "WhatsApp message unavailable: #{error_title}"
   end
 
   def processed_waid(waid)
@@ -67,6 +89,8 @@ module Whatsapp::IncomingMessageServiceHelpers
   end
 
   def error_webhook_event?(message)
+    return false if unavailable_whatsapp_message?(message)
+
     message.key?('errors')
   end
 

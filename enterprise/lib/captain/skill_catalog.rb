@@ -99,7 +99,7 @@ class Captain::SkillCatalog
         .find { |script| script[:tool_id].to_s == tool_id.to_s }
     end
 
-    def script_tool_ids_for(account: nil, skill_ids:)
+    def script_tool_ids_for(skill_ids:, account: nil)
       script_tools_for(account: account, skill_ids: skill_ids).pluck(:id)
     end
 
@@ -299,6 +299,7 @@ class Captain::SkillCatalog
         icon: 'terminal-square',
         allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
         provider: 'skill_script',
+        source_type: Captain::ToolCatalog::SOURCE_TYPE_SKILL,
         skill_id: script[:skill_id],
         skill_script_id: script[:id],
         risk_level: script[:risk_level],

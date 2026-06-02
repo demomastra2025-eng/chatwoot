@@ -12,12 +12,13 @@ class SafeFetch::RequestOptions
     allowed_content_type_prefixes: SafeFetch::DEFAULT_ALLOWED_CONTENT_TYPE_PREFIXES,
     allowed_content_types: SafeFetch::DEFAULT_ALLOWED_CONTENT_TYPES,
     validate_content_type: true,
+    private_network_allowed_hosts: nil,
     redirects_remaining: SafeFetch::DEFAULT_MAX_REDIRECTS
   }.freeze
 
   attr_reader :allowed_content_type_prefixes, :allowed_content_types, :body, :headers,
               :http_basic_authentication, :method, :open_timeout, :read_timeout,
-              :redirects_remaining, :uri, :url
+              :private_network_allowed_hosts, :redirects_remaining, :uri, :url
 
   def initialize(url:, **options)
     config = DEFAULTS.merge(options)
@@ -33,6 +34,7 @@ class SafeFetch::RequestOptions
     @allowed_content_type_prefixes = Array(config[:allowed_content_type_prefixes])
     @allowed_content_types = Array(config[:allowed_content_types])
     @validate_content_type = config[:validate_content_type]
+    @private_network_allowed_hosts = normalize_private_network_allowed_hosts(config[:private_network_allowed_hosts])
     @redirects_remaining = config[:redirects_remaining]
   end
 
@@ -61,12 +63,17 @@ class SafeFetch::RequestOptions
       allowed_content_type_prefixes: allowed_content_type_prefixes,
       allowed_content_types: allowed_content_types,
       validate_content_type: validate_content_type?,
+      private_network_allowed_hosts: private_network_allowed_hosts,
       redirects_remaining: redirects_remaining - 1
     )
   end
 
   def validate_content_type?
     @validate_content_type
+  end
+
+  def private_network_allowed?
+    private_network_allowed_hosts.include?(uri.hostname.to_s.downcase)
   end
 
   private
@@ -88,6 +95,13 @@ class SafeFetch::RequestOptions
 
   def normalize_headers(value)
     value.to_h.transform_keys(&:to_s)
+  end
+
+  def normalize_private_network_allowed_hosts(value)
+    Array(value).flat_map { |entry| entry.to_s.split(',') }
+                .map { |entry| entry.strip.downcase }
+                .compact_blank
+                .uniq
   end
 
   def headers_for_redirect(redirected_uri)

@@ -53,28 +53,47 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
         end
       end
 
+      it 'does not expose assistant-personal documents without an assistant filter' do
+        general_document = create(:captain_document, assistant: nil, account: account, visibility: :general)
+        personal_document = create(
+          :captain_document,
+          assistant: assistant,
+          account: account,
+          visibility: :personal
+        )
+
+        get "/api/v1/accounts/#{account.id}/captain/documents", headers: agent.create_new_auth_token, as: :json
+
+        document_ids = json_response[:payload].pluck(:id)
+        expect(document_ids).to include(general_document.id)
+        expect(document_ids).not_to include(personal_document.id)
+      end
+
       context 'when filtering by assistant_id' do
         before do
-          create_list(:captain_document, 3, assistant: assistant, account: account)
-          create_list(:captain_document, 2, assistant: assistant2, account: account)
+          create(:captain_document, assistant: nil, account: account, visibility: :general)
+          create_list(:captain_document, 3, assistant: assistant, account: account, visibility: :personal)
+          create_list(:captain_document, 2, assistant: assistant2, account: account, visibility: :personal)
         end
 
-        it 'returns only documents for the specified assistant' do
+        it 'returns general workspace documents plus personal documents for the specified assistant' do
           get "/api/v1/accounts/#{account.id}/captain/documents",
               params: { assistant_id: assistant.id },
               headers: agent.create_new_auth_token, as: :json
           expect(response).to have_http_status(:ok)
-          expect(json_response[:payload].length).to eq(3)
-          expect(json_response[:payload][0][:assistant][:id]).to eq(assistant.id)
+          expect(json_response[:payload].length).to eq(4)
+          assistant_ids = json_response[:payload].pluck(:assistant).compact.pluck(:id).uniq
+          expect(assistant_ids).to eq([assistant.id])
         end
 
-        it 'returns empty array when assistant has no documents' do
+        it 'returns general workspace documents when assistant has no personal documents' do
           new_assistant = create(:captain_assistant, account: account)
           get "/api/v1/accounts/#{account.id}/captain/documents",
               params: { assistant_id: new_assistant.id },
               headers: agent.create_new_auth_token, as: :json
           expect(response).to have_http_status(:ok)
-          expect(json_response[:payload]).to be_empty
+          expect(json_response[:payload].length).to eq(1)
+          expect(json_response[:payload].first[:assistant]).to be_nil
         end
       end
 
@@ -119,8 +138,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
 
       context 'with pagination and assistant filter combined' do
         before do
-          create_list(:captain_document, 30, assistant: assistant, account: account)
-          create_list(:captain_document, 10, assistant: assistant2, account: account)
+          create_list(:captain_document, 30, assistant: assistant, account: account, visibility: :personal)
+          create_list(:captain_document, 10, assistant: assistant2, account: account, visibility: :personal)
         end
 
         it 'returns paginated results for specific assistant' do
@@ -179,8 +198,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
     let(:invalid_attributes) do
       {
         document: {
-          name: 'Test Document',
-          external_link: 'https://example.com/doc'
+          name: 'Test Document'
         }
       }
     end
@@ -225,6 +243,40 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           expect(json_response[:name]).to eq('Test Document')
           expect(json_response[:external_link]).to eq('https://example.com/doc')
           expect(json_response[:faq_generation_enabled]).to be true
+        end
+
+        it 'creates a general workspace document without assistant ownership' do
+          post "/api/v1/accounts/#{account.id}/captain/documents",
+               params: {
+                 document: {
+                   name: 'Workspace Policy',
+                   external_link: 'https://example.com/workspace-policy',
+                   visibility: 'general'
+                 }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(json_response[:assistant]).to be_nil
+          expect(Captain::Document.last.assistant_id).to be_nil
+        end
+
+        it 'rejects personal visibility without an assistant' do
+          expect do
+            post "/api/v1/accounts/#{account.id}/captain/documents",
+                 params: {
+                   document: {
+                     name: 'Personal Policy',
+                     external_link: 'https://example.com/personal-policy',
+                     visibility: 'personal'
+                   }
+                 },
+                 headers: admin.create_new_auth_token,
+                 as: :json
+          end.not_to change(Captain::Document, :count)
+
+          expect(response).to have_http_status(:unprocessable_content)
         end
 
         it 'creates a document with FAQ generation disabled' do
@@ -322,7 +374,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
                params: {
                  document: {
                    name: 'Unsupported File',
-                   external_link: 'https://example.com/page.csv',
+                   external_link: 'https://example.com/page.exe',
                    assistant_id: assistant.id,
                    source_mode: 'file_url'
                  }

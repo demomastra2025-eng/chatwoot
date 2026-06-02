@@ -37,11 +37,13 @@ module Reauthorizable
   # Performed automatically if error threshold is breached
   # could used to manually prompt reauthorization if auth scope changes
   def prompt_reauthorization!
+    reauthorization_was_required = reauthorization_required?
     ::Redis::Alfred.set(reauthorization_required_key, true)
 
     reauthorization_handlers[self.class.name]&.call(self)
 
     invalidate_inbox_cache unless instance_of?(::AutomationRule)
+    dispatch_reauthorization_inbox_update(false, true) unless reauthorization_was_required
   end
 
   def process_integration_hook_reauthorization_emails
@@ -63,10 +65,12 @@ module Reauthorizable
 
   # call this after you successfully Reauthorized the object in UI
   def reauthorized!
+    reauthorization_was_required = reauthorization_required?
     ::Redis::Alfred.delete(authorization_error_count_key)
     ::Redis::Alfred.delete(reauthorization_required_key)
 
     invalidate_inbox_cache unless instance_of?(::AutomationRule)
+    dispatch_reauthorization_inbox_update(true, false) if reauthorization_was_required
   end
 
   private
@@ -85,6 +89,19 @@ module Reauthorizable
 
   def invalidate_inbox_cache
     inbox.update_account_cache if inbox.present?
+  end
+
+  def dispatch_reauthorization_inbox_update(previous_value, current_value)
+    return if instance_of?(::AutomationRule)
+    return if inbox.blank?
+    return if ENV['ENABLE_INBOX_EVENTS'].blank?
+
+    Rails.configuration.dispatcher.dispatch(
+      Events::Types::INBOX_UPDATED,
+      Time.zone.now,
+      inbox: inbox,
+      changed_attributes: { 'reauthorization_required' => [previous_value, current_value] }
+    )
   end
 
   def authorization_error_count_key

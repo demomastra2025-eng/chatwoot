@@ -13,7 +13,7 @@
 #  created_at           :datetime         not null
 #  updated_at           :datetime         not null
 #  account_id           :bigint           not null
-#  assistant_id         :bigint           not null
+#  assistant_id         :bigint
 #  document_id          :bigint           not null
 #
 # Indexes
@@ -36,7 +36,7 @@ class Captain::DocumentChunk < ApplicationRecord
   self.table_name = 'captain_document_chunks'
 
   belongs_to :account
-  belongs_to :assistant, class_name: 'Captain::Assistant'
+  belongs_to :assistant, class_name: 'Captain::Assistant', optional: true
   belongs_to :document, class_name: 'Captain::Document'
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :nullify
   has_neighbors :embedding, normalize: true
@@ -64,7 +64,7 @@ class Captain::DocumentChunk < ApplicationRecord
       relation.where(captain_documents: { visibility: Captain::Document.visibilities[:general] })
     else
       relation.where(
-        'captain_documents.visibility = :general_visibility OR captain_document_chunks.assistant_id = :assistant_id',
+        'captain_documents.visibility = :general_visibility OR captain_documents.assistant_id = :assistant_id',
         general_visibility: Captain::Document.visibilities[:general],
         assistant_id: assistant_id
       )

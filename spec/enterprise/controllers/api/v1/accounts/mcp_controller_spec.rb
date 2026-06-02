@@ -136,6 +136,31 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(account.mcp_access['allowed_groups']).to eq(['captain:CRM Deals'])
     end
 
+    it 'persists exact MCP tool and OpenAPI operation filters for custom policies' do
+      put "/api/v1/accounts/#{account.id}/mcp_settings",
+          params: {
+            mcp_access: {
+              enabled: true,
+              sources: { captain: true, openapi_read: true, openapi_write: false },
+              max_risk_level: 'medium',
+              require_confirmation_for_mutations: true,
+              allowed_tool_ids: %w[search_documentation list_captain_assistants],
+              blocked_tool_ids: %w[delete_campaign],
+              allowed_openapi_operation_ids: ['getAccountDetails'],
+              blocked_openapi_operation_ids: ['deleteAccount']
+            }
+          }.to_json,
+          headers: admin.create_new_auth_token.merge('CONTENT_TYPE' => 'application/json')
+
+      expect(response).to have_http_status(:success)
+      account.reload
+      expect(account.mcp_access['allowed_tool_ids']).to eq(%w[search_documentation list_captain_assistants])
+      expect(account.mcp_access['blocked_tool_ids']).to eq(%w[delete_campaign])
+      expect(account.mcp_access['allowed_openapi_operation_ids']).to eq(['getAccountDetails'])
+      expect(account.mcp_access['blocked_openapi_operation_ids']).to eq(['deleteAccount'])
+      expect(json_response.dig(:mcp_access, :allowed_tool_ids)).to eq(%w[search_documentation list_captain_assistants])
+    end
+
     it 'rejects non-admin updates' do
       put "/api/v1/accounts/#{account.id}/mcp_settings",
           params: { mcp_access: { sources: { openapi_write: true }, max_risk_level: 'high' } }.to_json,

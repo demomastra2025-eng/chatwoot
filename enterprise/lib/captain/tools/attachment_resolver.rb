@@ -31,7 +31,9 @@ class Captain::Tools::AttachmentResolver
       raise Captain::Tools::DocumentArtifactToken::InvalidToken, 'Document artifact belongs to another assistant'
     end
 
-    document = Captain::Document.find_by(id: payload[:document_id], account_id: account.id, assistant_id: assistant.id)
+    document = Captain::Document
+               .visible_to_assistant(assistant.id)
+               .find_by(id: payload[:document_id], account_id: account.id)
     raise Captain::Tools::DocumentArtifactToken::InvalidToken, 'Document artifact not found' if document.blank?
     raise Captain::Tools::DocumentArtifactToken::InvalidToken, 'Document is not available to send' unless document.sendable_file?
 

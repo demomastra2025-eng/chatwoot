@@ -1,10 +1,10 @@
 class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
   queue_as :low
 
-  def perform(assistant_id:, page_link:, source_document_id: nil)
-    assistant = Captain::Assistant.find(assistant_id)
-    account = assistant.account
-    source_document = assistant.documents.find_by(id: source_document_id) if source_document_id.present?
+  def perform(page_link:, assistant_id: nil, account_id: nil, source_document_id: nil)
+    assistant = Captain::Assistant.find_by(id: assistant_id) if assistant_id.present?
+    account = assistant&.account || Account.find(account_id)
+    source_document = account.captain_documents.find_by(id: source_document_id) if source_document_id.present?
 
     if limit_exceeded?(account) && !(source_document.present? && normalize_link(page_link) == normalize_link(source_document.external_link))
       Rails.logger.info("Document limit exceeded for #{assistant_id}")
@@ -17,10 +17,11 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
     content = crawler.body_text_content || ''
 
     normalized_link = normalize_link(page_link)
-    document = find_or_initialize_document(assistant, source_document, normalized_link)
+    document = find_or_initialize_document(account, source_document, normalized_link)
+    return mark_conflicting_page_processed(source_document, normalized_link) if document.blank?
 
     document.update!(
-      **document_attributes(source_document, document, normalized_link, page_title, content)
+      **document_attributes(source_document, document, normalized_link, page_title, content, assistant)
     )
     source_document&.mark_page_processed!(normalized_link)
   rescue StandardError => e
@@ -30,9 +31,10 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
 
   private
 
-  def document_attributes(source_document, document, normalized_link, page_title, content)
+  def document_attributes(source_document, document, normalized_link, page_title, content, assistant)
     attrs = {
       external_link: normalized_link,
+      assistant: source_document.present? ? source_document.assistant : assistant,
       name: page_title[0..254],
       source_text: content,
       content: content[0..14_999],
@@ -54,10 +56,26 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
     attrs
   end
 
-  def find_or_initialize_document(assistant, source_document, normalized_link)
+  def find_or_initialize_document(account, source_document, normalized_link)
     return source_document if source_document.present? && normalized_link == normalize_link(source_document.external_link)
 
-    assistant.documents.find_or_initialize_by(external_link: normalized_link)
+    document = account.captain_documents.find_by(external_link: normalized_link)
+    return account.captain_documents.new(external_link: normalized_link) if document.blank?
+    return document if compatible_document_context?(document, source_document)
+
+    Rails.logger.warn("[Captain] Skipping conflicting simple-crawl document for #{normalized_link}")
+    nil
+  end
+
+  def compatible_document_context?(document, source_document)
+    return true if source_document.blank?
+    return true if document.metadata&.dig('firecrawl', 'root_document_id').to_s == source_document.id.to_s
+
+    document.assistant_id == source_document.assistant_id && document.visibility == source_document.visibility
+  end
+
+  def mark_conflicting_page_processed(source_document, normalized_link)
+    source_document&.mark_page_processed!(normalized_link)
   end
 
   def normalize_link(raw_link)

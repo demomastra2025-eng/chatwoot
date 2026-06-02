@@ -5,12 +5,11 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   before_action :set_current_page, only: [:index]
   before_action :set_documents, except: [:create, :preview]
   before_action :set_document, only: [:show, :destroy, :resync, :refresh_changed_only, :retry_failed, :source_text]
-  before_action :set_assistant, only: [:create, :preview]
+  before_action :set_assistant, only: [:create]
   RESULTS_PER_PAGE = 25
 
   def index
     base_query = @documents.source_documents
-    base_query = base_query.where(assistant_id: permitted_params[:assistant_id]) if permitted_params[:assistant_id].present?
 
     @documents_count = base_query.count
     @documents = base_query.page(@current_page).per(RESULTS_PER_PAGE)
@@ -31,8 +30,12 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def create
-    return render_could_not_create_error(I18n.t('captain.documents.missing_assistant')) if @assistant.nil?
-    @document = @assistant.documents.build(base_document_params.except(:assistant_id))
+    if document_creation_params[:assistant_id].present? && @assistant.nil?
+      return render_could_not_create_error(I18n.t('captain.documents.missing_assistant'))
+    end
+
+    @document = Current.account.captain_documents.build(base_document_params.except(:assistant_id))
+    @document.assistant = @assistant
     @document.metadata = document_metadata
     @document.save!
   rescue Captain::Document::LimitExceededError => e
@@ -42,8 +45,6 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def preview
-    return render_could_not_create_error(I18n.t('captain.documents.missing_assistant')) if @assistant.nil?
-
     root_url = document_creation_params[:external_link].presence
     return render_could_not_create_error(I18n.t('captain.documents.missing_root_url')) if root_url.blank?
 
@@ -62,6 +63,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
   def resync
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_resync_error')) if @document.derived_document?
+
     @document.prepare_for_resync!(refresh_mode: 'full')
     Captain::Documents::CrawlJob.perform_later(@document)
     render :show
@@ -75,6 +77,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_sync_error')) if @document.derived_document?
     return render_could_not_create_error(I18n.t('captain.documents.delta_refresh_uploaded_file_error')) if %w[pdf_upload
                                                                                                               file_upload].include?(@document.source_mode)
+
     @document.prepare_for_resync!(refresh_mode: 'delta')
     Captain::Documents::CrawlJob.perform_later(@document)
     render :show
@@ -87,6 +90,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   def retry_failed
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_retry_error')) if @document.derived_document?
     return render_could_not_create_error(I18n.t('captain.documents.retry_failed_empty_error')) if @document.failed_urls.blank?
+
     @document.prepare_for_resync!(refresh_mode: 'retry_failed')
     Captain::Documents::CrawlJob.perform_later(@document)
     render :show
@@ -104,7 +108,10 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   private
 
   def set_documents
-    @documents = Current.account.captain_documents.includes(:assistant).ordered
+    @documents = Current.account.captain_documents
+                        .visible_to_assistant(permitted_params[:assistant_id])
+                        .includes(:assistant)
+                        .ordered
   end
 
   def set_document
@@ -112,15 +119,9 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def set_assistant
-    @assistant = if document_creation_params[:assistant_id].present?
-                   Current.account.captain_assistants.find_by(id: document_creation_params[:assistant_id])
-                 else
-                   workspace_default_assistant
-                 end
-  end
+    return if document_creation_params[:assistant_id].blank?
 
-  def workspace_default_assistant
-    Current.account.captain_assistants.external_agent.ordered.first || Current.account.captain_assistants.ordered.first
+    @assistant = Current.account.captain_assistants.find_by(id: document_creation_params[:assistant_id])
   end
 
   def set_current_page
@@ -267,5 +268,4 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
     document_creation_params[:source_mode].presence || Captain::Document::DEFAULT_SOURCE_MODE
   end
-
 end

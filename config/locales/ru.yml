@@ -380,6 +380,7 @@ ru:
     documents:
       limit_exceeded: Превышен лимит документов
       missing_assistant: Не выбран AI-агент
+      personal_visibility_requires_assistant: Для личной видимости нужно выбрать AI-агента
       missing_root_url: Не указан корневой URL
       derived_document_resync_error: Производные документы нельзя пересинхронизировать напрямую
       derived_document_sync_error: Производные документы нельзя синхронизировать напрямую

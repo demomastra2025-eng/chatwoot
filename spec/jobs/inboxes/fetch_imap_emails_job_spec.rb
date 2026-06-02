@@ -99,13 +99,20 @@ RSpec.describe Inboxes::FetchImapEmailsJob do
 
     context 'when the fetch service returns the email objects' do
       let(:inbound_mail) {  create_inbound_email_from_fixture('welcome.eml').mail }
+      let(:problematic_mail) { instance_double(Mail::Message, message_id: 'problematic-message-id', from: 'bad@example.com') }
+      let(:missing_message_id_mail) do
+        instance_double(Mail::Message, message_id: nil, from: 'bad@example.com', to: 'inbox@example.com', subject: 'Broken mail', date: Time.zone.now)
+      end
+      let(:next_mail) { instance_double(Mail::Message, message_id: 'next-message-id', from: 'next@example.com') }
       let(:mailbox) { double }
       let(:exception_tracker) { double }
       let(:fetch_service) { double }
 
       before do
+        clear_problematic_email_cache
         allow(Imap::ImapMailbox).to receive(:new).and_return(mailbox)
         allow(ChatwootExceptionTracker).to receive(:new).and_return(exception_tracker)
+        allow(exception_tracker).to receive(:capture_exception)
 
         allow(Imap::FetchEmailService).to receive(:new).with(channel: imap_email_channel, interval: 1).and_return(fetch_service)
         allow(fetch_service).to receive(:perform).and_return([inbound_mail])
@@ -127,6 +134,63 @@ RSpec.describe Inboxes::FetchImapEmailsJob do
         expect(exception_tracker).to receive(:capture_exception)
 
         described_class.perform_now(imap_email_channel)
+      end
+
+      it 'records a timed out email and continues processing the next email' do
+        allow(fetch_service).to receive(:perform).and_return([problematic_mail, next_mail])
+        allow(mailbox).to receive(:process) do |mail, _channel|
+          raise Timeout::Error if mail.message_id == problematic_mail.message_id
+        end
+
+        described_class.perform_now(imap_email_channel)
+
+        expect(mailbox).to have_received(:process).with(problematic_mail, imap_email_channel)
+        expect(mailbox).to have_received(:process).with(next_mail, imap_email_channel)
+        expect(Redis::Alfred.get(problematic_email_cache_key(problematic_mail)).to_i).to eq(1)
+      end
+
+      it 'records a timed out email without a message id' do
+        allow(fetch_service).to receive(:perform).and_return([missing_message_id_mail])
+        allow(mailbox).to receive(:process).and_raise(Timeout::Error)
+
+        described_class.perform_now(imap_email_channel)
+
+        cache_keys = problematic_email_cache_keys
+        expect(cache_keys.length).to eq(1)
+        expect(Redis::Alfred.get(cache_keys.first).to_i).to eq(1)
+      end
+
+      it 'skips repeatedly failing emails and continues processing the next email' do
+        Redis::Alfred.setex(problematic_email_cache_key(problematic_mail), described_class::PROBLEMATIC_EMAIL_FAILURE_THRESHOLD, 1.day)
+        allow(fetch_service).to receive(:perform).and_return([problematic_mail, next_mail])
+        allow(mailbox).to receive(:process)
+
+        described_class.perform_now(imap_email_channel)
+
+        expect(mailbox).not_to have_received(:process).with(problematic_mail, imap_email_channel)
+        expect(mailbox).to have_received(:process).with(next_mail, imap_email_channel)
+      end
+
+      it 'clears the failure marker when a previously failing email is processed successfully' do
+        Redis::Alfred.setex(problematic_email_cache_key(problematic_mail), 1, 1.day)
+        allow(fetch_service).to receive(:perform).and_return([problematic_mail])
+        allow(mailbox).to receive(:process)
+
+        described_class.perform_now(imap_email_channel)
+
+        expect(Redis::Alfred.get(problematic_email_cache_key(problematic_mail))).to be_nil
+      end
+
+      def problematic_email_cache_key(mail)
+        "imap:problematic-email:#{imap_email_channel.id}:#{Digest::SHA256.hexdigest(mail.message_id)}"
+      end
+
+      def problematic_email_cache_keys
+        Redis::Alfred.scan_each(match: "imap:problematic-email:#{imap_email_channel.id}:*").to_a
+      end
+
+      def clear_problematic_email_cache
+        problematic_email_cache_keys.each { |key| Redis::Alfred.delete(key) }
       end
     end
   end

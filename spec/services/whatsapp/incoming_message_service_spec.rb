@@ -32,6 +32,18 @@ describe Whatsapp::IncomingMessageService do
         expect(whatsapp_channel.inbox.messages.first.content).to eq('Test')
       end
 
+      it 'stores business-scoped user id as contact inbox source while preserving the sender phone' do
+        bsuid_params = params.deep_dup
+        bsuid_params[:contacts].first[:wa_id] = '111122223333444'
+        bsuid_params[:messages].first[:from] = '77001234567'
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: bsuid_params).perform
+
+        contact_inbox = whatsapp_channel.inbox.contact_inboxes.first
+        expect(contact_inbox.source_id).to eq('111122223333444')
+        expect(contact_inbox.contact.phone_number).to eq('+77001234567')
+      end
+
       it 'appends to last conversation when if conversation already exists' do
         contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, source_id: params[:messages].first[:from])
         2.times.each { create(:conversation, inbox: whatsapp_channel.inbox, contact_inbox: contact_inbox) }
@@ -102,7 +114,7 @@ describe Whatsapp::IncomingMessageService do
         expect(whatsapp_channel.inbox.messages.count).to eq(0)
       end
 
-      it 'ignores type unsupported and does not create ghost conversation' do
+      it 'creates a visible safe message for unavailable coexistence payloads' do
         params = {
           'contacts' => [{ 'profile' => { 'name' => 'Sojan Jose' }, 'wa_id' => '2423423243' }],
           'messages' => [{
@@ -113,9 +125,16 @@ describe Whatsapp::IncomingMessageService do
         }.with_indifferent_access
 
         described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
-        expect(whatsapp_channel.inbox.conversations.count).to eq(0)
-        expect(Contact.count).to eq(0)
-        expect(whatsapp_channel.inbox.messages.count).to eq(0)
+
+        message = whatsapp_channel.inbox.messages.first
+        expect(whatsapp_channel.inbox.conversations.count).to eq(1)
+        expect(Contact.count).to eq(1)
+        expect(message.content).to eq('WhatsApp message unavailable: Message type is currently not supported.')
+        expect(message.content_attributes).to include(
+          'whatsapp_unavailable_message' => true,
+          'whatsapp_error_code' => 131_051,
+          'whatsapp_error_title' => 'Message type is currently not supported.'
+        )
       end
     end
 

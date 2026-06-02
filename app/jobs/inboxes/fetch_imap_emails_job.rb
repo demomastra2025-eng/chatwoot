@@ -1,6 +1,12 @@
+require 'digest'
 require 'net/imap'
+require 'timeout'
 
 class Inboxes::FetchImapEmailsJob < MutexApplicationJob
+  EMAIL_PROCESSING_TIMEOUT_SECONDS = ENV.fetch('EMAIL_PROCESSING_TIMEOUT_SECONDS', 30).to_i
+  PROBLEMATIC_EMAIL_FAILURE_THRESHOLD = ENV.fetch('EMAIL_PROBLEMATIC_FAILURE_THRESHOLD', 3).to_i
+  PROBLEMATIC_EMAIL_FAILURE_TTL = 1.day
+
   queue_as :scheduled_jobs
 
   def perform(channel, interval = 1)
@@ -36,7 +42,9 @@ class Inboxes::FetchImapEmailsJob < MutexApplicationJob
                      else
                        Imap::FetchEmailService.new(channel: channel, interval: interval).perform
                      end
-    inbound_emails.map do |inbound_mail|
+    inbound_emails.each do |inbound_mail|
+      next if skip_problematic_email?(inbound_mail, channel)
+
       process_mail(inbound_mail, channel)
     end
   rescue OAuth2::Error => e
@@ -48,10 +56,64 @@ class Inboxes::FetchImapEmailsJob < MutexApplicationJob
   end
 
   def process_mail(inbound_mail, channel)
-    Imap::ImapMailbox.new.process(inbound_mail, channel)
+    Timeout.timeout(email_processing_timeout) do
+      Imap::ImapMailbox.new.process(inbound_mail, channel)
+    end
+    clear_problematic_email_failure(inbound_mail, channel)
   rescue StandardError => e
+    record_problematic_email_failure(inbound_mail, channel)
     ChatwootExceptionTracker.new(e, account: channel.account).capture_exception
     Rails.logger.error("
       #{channel.provider} Email dropped: #{inbound_mail.from} and message_source_id: #{inbound_mail.message_id}")
+  end
+
+  def skip_problematic_email?(inbound_mail, channel)
+    return false if problematic_email_failure_count(inbound_mail, channel) < problematic_email_failure_threshold
+
+    Rails.logger.warn(
+      "[IMAP] Skipping problematic email for inbox #{channel.inbox.id} with message_source_id: #{problematic_email_identifier(inbound_mail)}"
+    )
+    true
+  end
+
+  def record_problematic_email_failure(inbound_mail, channel)
+    Redis::Alfred.setex(problematic_email_failure_cache_key(inbound_mail, channel), problematic_email_failure_count(inbound_mail, channel) + 1,
+                        PROBLEMATIC_EMAIL_FAILURE_TTL)
+  end
+
+  def clear_problematic_email_failure(inbound_mail, channel)
+    Redis::Alfred.delete(problematic_email_failure_cache_key(inbound_mail, channel))
+  end
+
+  def problematic_email_failure_count(inbound_mail, channel)
+    Redis::Alfred.get(problematic_email_failure_cache_key(inbound_mail, channel)).to_i
+  end
+
+  def problematic_email_failure_cache_key(inbound_mail, channel)
+    "imap:problematic-email:#{channel.id}:#{Digest::SHA256.hexdigest(problematic_email_identifier(inbound_mail))}"
+  end
+
+  def problematic_email_identifier(inbound_mail)
+    inbound_mail.message_id.to_s.presence || Digest::SHA256.hexdigest(problematic_email_fingerprint(inbound_mail))
+  end
+
+  def problematic_email_fingerprint(inbound_mail)
+    %i[from to subject date].filter_map { |attribute| safe_mail_attribute(inbound_mail, attribute) }.join(':')
+  end
+
+  def safe_mail_attribute(inbound_mail, attribute)
+    return unless inbound_mail.respond_to?(attribute)
+
+    inbound_mail.public_send(attribute).to_s
+  rescue StandardError
+    nil
+  end
+
+  def email_processing_timeout
+    [EMAIL_PROCESSING_TIMEOUT_SECONDS, 1].max
+  end
+
+  def problematic_email_failure_threshold
+    [PROBLEMATIC_EMAIL_FAILURE_THRESHOLD, 1].max
   end
 end

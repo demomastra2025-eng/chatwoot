@@ -149,6 +149,35 @@ RSpec.describe Captain::ToolCatalog do
       expect(tool_ids).to include('mcp__github_mcp__list_issues')
     end
 
+    it 'normalizes first-class source types across system, custom, MCP, and skill tools' do
+      custom_tool = create(:captain_custom_tool, account: account)
+      allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)
+        .and_return([
+                      {
+                        id: 'mcp__github_mcp__list_issues',
+                        title: 'List issues',
+                        description: 'List repository issues',
+                        provider: 'mcp'
+                      }
+                    ])
+      allow(Captain::SkillCatalog).to receive(:script_tools_for)
+        .and_return([
+                      {
+                        id: 'skill_script_support_summary',
+                        title: 'Support summary',
+                        description: 'Summarize support context',
+                        provider: 'skill_script'
+                      }
+                    ])
+
+      tools = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)
+
+      expect(tools.find { |tool| tool[:id] == 'faq_lookup' }).to include(source_type: 'system')
+      expect(tools.find { |tool| tool[:id] == custom_tool.slug }).to include(source_type: 'custom')
+      expect(tools.find { |tool| tool[:id] == 'mcp__github_mcp__list_issues' }).to include(source_type: 'mcp')
+      expect(tools.find { |tool| tool[:id] == 'skill_script_support_summary' }).to include(source_type: 'skill')
+    end
+
     it 'marks non-idempotent assistant MCP tools as confirmation-required' do
       allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)
         .with(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)

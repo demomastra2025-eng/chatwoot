@@ -43,7 +43,7 @@ class Enterprise::Webhooks::FirecrawlController < ActionController::API
   end
 
   def source_document
-    @source_document ||= assistant.documents.find_by(id: params[:document_id])
+    @source_document ||= assistant.account.captain_documents.find_by(id: params[:document_id])
   end
 
   def event_type

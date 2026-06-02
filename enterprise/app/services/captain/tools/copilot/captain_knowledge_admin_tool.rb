@@ -2,7 +2,7 @@
 
 class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copilot::CaptainAssistantAdminTool
   SUPPORTED_SOURCE_MODES = %w[legacy_url selected_pages pdf_url file_url].freeze
-  FIRECRAWL_SOURCE_MODES = %w[pdf_url file_url].freeze
+  FIRECRAWL_SOURCE_MODES = [].freeze
   RESYNC_MODES = %w[full delta retry_failed].freeze
   KNOWLEDGE_VISIBILITIES = %w[general personal].freeze
 
@@ -30,6 +30,7 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
 
   def find_document_for_assistant!(document_id, document_assistant)
     document = find_document!(document_id)
+    return document if document_assistant.blank?
     return document if document.account_id == document_assistant.account_id
 
     raise ActiveRecord::RecordNotFound, 'Captain document belongs to a different account'

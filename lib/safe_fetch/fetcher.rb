@@ -66,7 +66,7 @@ class SafeFetch::Fetcher
 
   def with_http_client(uri, &)
     http = Net::HTTP.new(uri.host, uri.port)
-    http.ipaddr = SafeFetch.resolve_public_ip!(uri.host)
+    http.ipaddr = SafeFetch.resolve_public_ip!(uri.host, allow_private_network: options.private_network_allowed?)
     http.use_ssl = uri.scheme == 'https'
     http.open_timeout = options.open_timeout
     http.read_timeout = options.read_timeout

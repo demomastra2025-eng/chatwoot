@@ -10,15 +10,19 @@ module Onelink
       end
 
       def tools
-        tool_definitions.filter_map do |tool_definition|
-          next unless auth_context.mcp_access_policy.allows_captain_tool?(tool_definition)
+        with_llm_runtime_cache do
+          executable_tool_definitions.filter_map do |tool_definition|
+            next unless auth_context.mcp_access_policy.allows_captain_tool?(tool_definition)
 
-          mcp_tool_definition(tool_definition)
+            mcp_tool_definition(tool_definition)
+          end
         end
       end
 
       def catalog_entries
-        tool_definitions.map { |tool_definition| catalog_entry(tool_definition) }
+        with_llm_runtime_cache do
+          catalog_tool_definitions.map { |tool_definition| catalog_entry(tool_definition) }
+        end
       end
 
       def call_tool(name:, arguments:, meta: {})
@@ -46,23 +50,50 @@ module Onelink
       attr_reader :auth_context
 
       def tool_definition_for(name)
-        tool_definitions.find { |tool_definition| tool_definition[:id].to_s == name.to_s }
+        executable_tool_definitions.find { |tool_definition| tool_definition[:id].to_s == name.to_s }
       end
 
-      def tool_definitions
-        @tool_definitions ||= begin
-          available = Captain::ToolCatalog.available_tools_for(auth_context.assistant, auth_context.scope_name)
-          fallback_ids = available.map { |tool| tool[:id].to_s }
-          allowed = Captain::ToolCatalog.allowed_tools_for(
-            auth_context.assistant,
-            auth_context.scope_name,
-            fallback_ids: fallback_ids
-          )
+      def catalog_tool_definitions
+        auth_context.administrator? ? available_tool_definitions : executable_tool_definitions
+      end
 
-          allowed
+      def executable_tool_definitions
+        @executable_tool_definitions ||= available_tool_definitions.select { |tool| tool_visible_to_user?(tool) }
+      end
+
+      def available_tool_definitions
+        @available_tool_definitions ||= begin
+          available = Captain::ToolCatalog.available_tools_for(auth_context.assistant, auth_context.scope_name)
+          allowed_ids = allowed_tool_ids_for(available)
+
+          available
+            .select { |tool| allowed_ids.include?(tool[:id].to_s) }
             .map { |tool| tool.with_indifferent_access }
-            .select { |tool| tool_visible_to_user?(tool) }
         end
+      end
+
+      def allowed_tool_ids_for(available_tools)
+        available_ids = available_tools.map { |tool| tool[:id].to_s }
+        raw_access = auth_context.assistant.config.is_a?(Hash) ? auth_context.assistant.config['tool_access'] : nil
+        raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
+        return available_ids unless raw_access.is_a?(Hash) && raw_access.key?(auth_context.scope_name)
+
+        raw_scope = raw_access[auth_context.scope_name]
+        raw_scope = raw_scope.to_h.deep_stringify_keys if raw_scope.respond_to?(:to_h)
+        raw_scope = {} unless raw_scope.is_a?(Hash)
+        default_ids = Captain::ToolAccess.default_tool_ids_for(auth_context.scope_name, available_tools)
+        enabled = raw_scope.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) : default_ids.any?
+        return [] unless enabled
+
+        configured_ids = Array(raw_scope['tool_ids']).map(&:to_s)
+        selected_ids = raw_scope.key?('tool_ids') ? configured_ids : default_ids
+        Captain::ToolAccess.sanitize_tool_ids(selected_ids, available_ids)
+      end
+
+      def with_llm_runtime_cache(&)
+        return yield unless defined?(Llm::Config) && Llm::Config.respond_to?(:with_runtime_cache)
+
+        Llm::Config.with_runtime_cache(&)
       end
 
       def tool_visible_to_user?(tool_definition)

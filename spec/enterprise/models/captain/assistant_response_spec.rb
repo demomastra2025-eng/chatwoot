@@ -41,4 +41,29 @@ RSpec.describe Captain::AssistantResponse, type: :model do
       expect(response.reload.edited).to be true
     end
   end
+
+  describe 'workspace ownership' do
+    let(:account) { create(:account) }
+
+    it 'allows general workspace entries without an assistant' do
+      response = build(:captain_assistant_response, account: account, assistant: nil, visibility: :general)
+
+      expect(response).to be_valid
+    end
+
+    it 'requires an assistant for personal visibility' do
+      response = build(:captain_assistant_response, account: account, assistant: nil, visibility: :personal)
+
+      expect(response).not_to be_valid
+      expect(response.errors[:assistant]).to include(I18n.t('captain.documents.personal_visibility_requires_assistant'))
+    end
+
+    it 'inherits account ownership from the attached document when assistant is blank' do
+      document = create(:captain_document, account: account, assistant: nil, visibility: :general)
+      response = build(:captain_assistant_response, account: nil, assistant: nil, documentable: document)
+
+      expect(response).to be_valid
+      expect(response.account).to eq(account)
+    end
+  end
 end

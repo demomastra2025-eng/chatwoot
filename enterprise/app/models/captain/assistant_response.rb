@@ -13,7 +13,7 @@
 #  created_at        :datetime         not null
 #  updated_at        :datetime         not null
 #  account_id        :bigint           not null
-#  assistant_id      :bigint           not null
+#  assistant_id      :bigint
 #  document_chunk_id :bigint
 #  documentable_id   :bigint
 #
@@ -34,7 +34,7 @@
 class Captain::AssistantResponse < ApplicationRecord
   self.table_name = 'captain_assistant_responses'
 
-  belongs_to :assistant, class_name: 'Captain::Assistant'
+  belongs_to :assistant, class_name: 'Captain::Assistant', optional: true
   belongs_to :account
   belongs_to :documentable, polymorphic: true, optional: true
   belongs_to :document_chunk, class_name: 'Captain::DocumentChunk', optional: true
@@ -42,6 +42,8 @@ class Captain::AssistantResponse < ApplicationRecord
 
   validates :question, presence: true
   validates :answer, presence: true
+  validate :assistant_belongs_to_account
+  validate :personal_visibility_requires_assistant
 
   before_validation :ensure_account
   before_validation :ensure_status
@@ -86,7 +88,22 @@ class Captain::AssistantResponse < ApplicationRecord
   end
 
   def ensure_account
-    self.account = assistant&.account
+    self.account ||= assistant&.account ||
+                     documentable&.try(:account) ||
+                     document_chunk&.account
+  end
+
+  def assistant_belongs_to_account
+    return if assistant.blank? || account.blank? || assistant.account_id == account_id
+
+    errors.add(:assistant, 'must belong to the same account')
+  end
+
+  def personal_visibility_requires_assistant
+    return unless visibility_personal?
+    return if assistant_id.present?
+
+    errors.add(:assistant, I18n.t('captain.documents.personal_visibility_requires_assistant'))
   end
 
   def update_response_embedding

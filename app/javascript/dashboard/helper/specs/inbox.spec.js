@@ -190,5 +190,21 @@ describe('#Inbox Helpers', () => {
         'warning'
       );
     });
+
+    it('should surface warnings for reauthorization-capable integration inboxes', () => {
+      [
+        INBOX_TYPES.EMAIL,
+        INBOX_TYPES.INSTAGRAM,
+        INBOX_TYPES.TIKTOK,
+        INBOX_TYPES.WHATSAPP,
+      ].forEach(type => {
+        expect(getInboxWarningIconClass(type, true)).toEqual('warning');
+      });
+    });
+
+    it('should not surface warnings when reauthorization is not required', () => {
+      expect(getInboxWarningIconClass(INBOX_TYPES.WHATSAPP, false)).toEqual('');
+      expect(getInboxWarningIconClass(INBOX_TYPES.API, true)).toEqual('');
+    });
   });
 });

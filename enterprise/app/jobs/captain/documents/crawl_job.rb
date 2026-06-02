@@ -1,6 +1,12 @@
 class Captain::Documents::CrawlJob < ApplicationJob
   queue_as :low
 
+  FALLBACK_FETCH_CONTENT_TYPES = (
+    Captain::Documents::SourceTextExtractor::TEXT_CONTENT_TYPES +
+      %w[application/pdf application/octet-stream]
+  ).freeze
+  FALLBACK_FETCH_CONTENT_TYPE_PREFIXES = Captain::Documents::SourceTextExtractor::TEXT_CONTENT_TYPE_PREFIXES
+
   def perform(document)
     return perform_pdf_processing(document) if document.pdf_upload?
     return perform_uploaded_file_import(document) if document.file_upload?
@@ -46,13 +52,17 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def perform_pdf_url_import(document)
-    return mark_firecrawl_unavailable(document, I18n.t('captain.documents.pdf_url_requires_firecrawl')) unless Captain::Tools::FirecrawlService.configured?
+    return perform_remote_file_text_import(document, operation: 'pdf_url') unless Captain::Tools::FirecrawlService.configured?
 
     perform_firecrawl_scrape(document)
   end
 
   def perform_file_url_import(document)
-    return mark_firecrawl_unavailable(document, I18n.t('captain.documents.file_url_requires_firecrawl')) unless Captain::Tools::FirecrawlService.configured?
+    unless Captain::Tools::FirecrawlService.configured?
+      return enqueue_simple_page_parse(document, document.external_link, total_pages: 1) if document.remote_html_file_url?
+
+      return perform_remote_file_text_import(document, operation: 'file_url')
+    end
 
     perform_firecrawl_scrape(document)
   end
@@ -60,9 +70,52 @@ class Captain::Documents::CrawlJob < ApplicationJob
   def perform_uploaded_file_import(document)
     return mark_uploaded_image_available(document) if document.image_upload?
 
-    return mark_firecrawl_unavailable(document, I18n.t('captain.documents.file_upload_requires_firecrawl')) unless Captain::Tools::FirecrawlService.configured?
+    return perform_uploaded_source_text_import(document) unless Captain::Tools::FirecrawlService.configured?
 
     perform_firecrawl_upload_parse(document, attachment: document.source_file)
+  end
+
+  def perform_remote_file_text_import(document, operation:)
+    document.mark_import_processing!
+
+    source_text = nil
+    SafeFetch.fetch(
+      document.external_link,
+      max_bytes: Llm::RuntimePolicy.web_document_parse_max_file_bytes,
+      allowed_content_type_prefixes: FALLBACK_FETCH_CONTENT_TYPE_PREFIXES,
+      allowed_content_types: FALLBACK_FETCH_CONTENT_TYPES
+    ) do |result|
+      source_text = Captain::Documents::SourceTextExtractor.extract_text_from_tempfile(
+        result.tempfile,
+        extension: document.remote_document_extension,
+        content_type: result.content_type
+      )
+    end
+
+    return mark_firecrawl_unavailable(document, fallback_unavailable_message(document)) if source_text.blank?
+
+    store_source_text_document_result!(
+      document,
+      source_text,
+      source_url: document.external_link,
+      provider: 'safe_fetch',
+      operation: operation
+    )
+  end
+
+  def perform_uploaded_source_text_import(document)
+    document.mark_import_processing!
+
+    source_text = Captain::Documents::SourceTextExtractor.new(document).extract_source_file_text
+    return mark_firecrawl_unavailable(document, I18n.t('captain.documents.file_upload_requires_firecrawl')) if source_text.blank?
+
+    store_source_text_document_result!(
+      document,
+      source_text,
+      source_url: document.external_link,
+      provider: 'attachment',
+      operation: 'parse'
+    )
   end
 
   def mark_firecrawl_unavailable(document, error_message)
@@ -214,7 +267,8 @@ class Captain::Documents::CrawlJob < ApplicationJob
 
     Array(page_links).each do |page_link|
       Captain::Tools::SimplePageCrawlParserJob.perform_later(
-        assistant_id: document.assistant_id,
+        assistant_id: document.runtime_assistant_id,
+        account_id: document.account_id,
         page_link: page_link,
         source_document_id: document.id
       )
@@ -222,10 +276,13 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def firecrawl_webhook_url(document)
+    runtime_assistant = document.runtime_assistant
+    raise I18n.t('captain.documents.missing_assistant') if runtime_assistant.blank?
+
     webhook_url = Rails.application.routes.url_helpers.enterprise_webhooks_firecrawl_url
 
-    "#{webhook_url}?assistant_id=#{document.assistant_id}&document_id=#{document.id}&token=#{generate_firecrawl_token(document.assistant_id,
-                                                                                                                      document.account_id)}"
+    token = generate_firecrawl_token(runtime_assistant.id, document.account_id)
+    "#{webhook_url}?assistant_id=#{runtime_assistant.id}&document_id=#{document.id}&token=#{token}"
   end
 
   def effective_crawl_limit(document)
@@ -324,6 +381,15 @@ class Captain::Documents::CrawlJob < ApplicationJob
     )
   end
 
+  def store_source_text_document_result!(document, source_text, source_url:, provider:, operation:)
+    document.update!(
+      source_text: source_text,
+      content: Captain::Documents::SourceTextExtractor.preview(source_text),
+      status: :available,
+      metadata: source_text_result_metadata(document, source_text, source_url, provider, operation)
+    )
+  end
+
   def firecrawl_result_metadata(document, metadata, markdown, source_url, operation)
     (document.metadata || {}).deep_merge(
       'firecrawl' => document.firecrawl_metadata.deep_merge(
@@ -347,5 +413,35 @@ class Captain::Documents::CrawlJob < ApplicationJob
         'extracted_at' => Time.current.iso8601
       }
     )
+  end
+
+  def source_text_result_metadata(document, source_text, source_url, provider, operation)
+    (document.metadata || {}).deep_merge(
+      'firecrawl' => document.firecrawl_metadata.deep_merge(
+        'provider' => provider,
+        'operation' => operation,
+        'sync' => document.firecrawl_sync.merge(
+          'status' => 'completed',
+          'pages_total' => 1,
+          'pages_processed' => 1,
+          'processed_urls' => [source_url],
+          'last_error' => nil,
+          'last_synced_at' => Time.current.iso8601
+        )
+      ),
+      'source_text' => {
+        'provider' => provider,
+        'operation' => operation,
+        'status' => 'completed',
+        'bytes' => source_text.bytesize,
+        'extracted_at' => Time.current.iso8601
+      }
+    )
+  end
+
+  def fallback_unavailable_message(document)
+    return I18n.t('captain.documents.pdf_url_requires_firecrawl') if document.source_mode == 'pdf_url'
+
+    I18n.t('captain.documents.file_url_requires_firecrawl')
   end
 end

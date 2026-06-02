@@ -14,14 +14,14 @@
 #  created_at             :datetime         not null
 #  updated_at             :datetime         not null
 #  account_id             :bigint           not null
-#  assistant_id           :bigint           not null
+#  assistant_id           :bigint
 #
 # Indexes
 #
 #  idx_captain_documents_account_visibility                   (account_id,visibility)
 #  index_captain_documents_on_account_id                      (account_id)
 #  index_captain_documents_on_assistant_id                    (assistant_id)
-#  index_captain_documents_on_assistant_id_and_external_link  (assistant_id,external_link) UNIQUE
+#  index_captain_documents_on_account_id_and_external_link    (account_id,external_link) UNIQUE
 #  index_captain_documents_on_status                          (status)
 #
 class Captain::Document < ApplicationRecord
@@ -32,14 +32,17 @@ class Captain::Document < ApplicationRecord
   DEFAULT_SOURCE_MODE = 'legacy_url'.freeze
   FILE_PREFIX = 'FILE:'.freeze
   PDF_PREFIX = 'PDF:'.freeze
+  TEXT_DOCUMENT_EXTENSIONS = %w[txt text md markdown csv json xml yaml yml].freeze
   FIRECRAWL_DOCUMENT_EXTENSIONS = %w[pdf docx doc odt rtf xlsx xls html htm].freeze
-  SUPPORTED_REMOTE_FILE_EXTENSIONS = %w[
-    docx doc odt rtf xlsx xls html htm
-  ].freeze
+  SUPPORTED_REMOTE_FILE_EXTENSIONS = (
+    TEXT_DOCUMENT_EXTENSIONS + %w[docx doc odt rtf xlsx xls html htm]
+  ).freeze
   SUPPORTED_IMAGE_EXTENSIONS = %w[jpg jpeg png webp gif heic heif tiff tif bmp].freeze
-  SUPPORTED_UPLOAD_EXTENSIONS = (FIRECRAWL_DOCUMENT_EXTENSIONS + SUPPORTED_IMAGE_EXTENSIONS).freeze
+  SUPPORTED_UPLOAD_EXTENSIONS = (
+    FIRECRAWL_DOCUMENT_EXTENSIONS + TEXT_DOCUMENT_EXTENSIONS + SUPPORTED_IMAGE_EXTENSIONS
+  ).uniq.freeze
 
-  belongs_to :assistant, class_name: 'Captain::Assistant'
+  belongs_to :assistant, class_name: 'Captain::Assistant', optional: true
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :destroy, as: :documentable
   has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :destroy, inverse_of: :document
   belongs_to :account
@@ -48,12 +51,14 @@ class Captain::Document < ApplicationRecord
   account_storage_attachments :pdf_file, :source_file
 
   validates :external_link, presence: true, unless: :uploaded_file_attached?
-  validates :external_link, uniqueness: { scope: :assistant_id }, allow_blank: true
+  validates :external_link, uniqueness: { scope: :account_id }, allow_blank: true
   validates :content, length: { maximum: 200_000 }
   validates :pdf_file, presence: true, if: :pdf_upload?
   validate :validate_pdf_format, if: :pdf_upload?
   validate :validate_uploaded_source_file_format, if: -> { source_file.attached? }
   validate :validate_remote_source_url, if: :remote_source_mode?
+  validate :assistant_belongs_to_account
+  validate :personal_visibility_requires_assistant
   before_validation :ensure_account_id
   before_validation :set_external_link_for_pdf
   before_validation :set_external_link_for_uploaded_file
@@ -76,6 +81,17 @@ class Captain::Document < ApplicationRecord
 
   scope :for_account, ->(account_id) { where(account_id: account_id) }
   scope :for_assistant, ->(assistant_id) { where(assistant_id: assistant_id) }
+  scope :visible_to_assistant, lambda { |assistant_id|
+    if assistant_id.blank?
+      where(visibility: :general)
+    else
+      where(
+        'captain_documents.visibility = :general_visibility OR captain_documents.assistant_id = :assistant_id',
+        general_visibility: visibilities[:general],
+        assistant_id: assistant_id
+      )
+    end
+  }
   scope :source_documents, lambda {
     where("COALESCE(metadata -> 'firecrawl' ->> 'root_document_id', '') = ''")
   }
@@ -102,6 +118,14 @@ class Captain::Document < ApplicationRecord
 
   def remote_file_url?
     SUPPORTED_REMOTE_FILE_EXTENSIONS.include?(remote_document_extension)
+  end
+
+  def remote_html_file_url?
+    %w[html htm].include?(remote_document_extension)
+  end
+
+  def source_pdf_upload?
+    source_file.attached? && uploaded_source_extension == 'pdf'
   end
 
   def remote_document_extension
@@ -441,6 +465,16 @@ class Captain::Document < ApplicationRecord
     external_link
   end
 
+  def runtime_assistant
+    assistant ||
+      account&.captain_assistants&.external_agent&.ordered&.first ||
+      account&.captain_assistants&.ordered&.first
+  end
+
+  def runtime_assistant_id
+    runtime_assistant&.id
+  end
+
   private
 
   def uploaded_file_attachment
@@ -515,7 +549,20 @@ class Captain::Document < ApplicationRecord
   end
 
   def ensure_account_id
-    self.account_id = assistant&.account_id
+    self.account_id ||= assistant&.account_id
+  end
+
+  def assistant_belongs_to_account
+    return if assistant.blank? || account_id.blank? || assistant.account_id == account_id
+
+    errors.add(:assistant, 'must belong to the same account')
+  end
+
+  def personal_visibility_requires_assistant
+    return unless visibility_personal?
+    return if assistant_id.present?
+
+    errors.add(:assistant, I18n.t('captain.documents.personal_visibility_requires_assistant'))
   end
 
   def ensure_within_plan_limit
@@ -581,7 +628,7 @@ class Captain::Document < ApplicationRecord
     return unless source_document?
 
     self.class
-        .where(account_id: account_id, assistant_id: assistant_id)
+        .where(account_id: account_id)
         .where("metadata -> 'firecrawl' ->> 'root_document_id' = ?", id.to_s)
         .find_each(&:destroy!)
   end

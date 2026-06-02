@@ -50,6 +50,35 @@ describe Webhooks::Trigger do
       trigger.execute(url, payload, webhook_type)
     end
 
+    it 'passes private-network allowlist only for API inbox webhooks' do
+      payload = { hello: :hello }
+
+      with_modified_env API_INBOX_WEBHOOK_PRIVATE_NETWORK_ALLOWED_HOSTS: 'internal-webhook.example.com, 10.0.0.5' do
+        expect(SafeFetch).to receive(:fetch).with(
+          url,
+          method: :post,
+          body: payload.to_json,
+          headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' },
+          open_timeout: webhook_timeout,
+          read_timeout: webhook_timeout,
+          validate_content_type: false,
+          private_network_allowed_hosts: ['internal-webhook.example.com', '10.0.0.5']
+        ).and_yield(nil)
+
+        trigger.execute(url, payload, :api_inbox_webhook)
+      end
+    end
+
+    it 'does not pass private-network allowlist for agent bot webhooks' do
+      payload = { hello: :hello }
+
+      with_modified_env API_INBOX_WEBHOOK_PRIVATE_NETWORK_ALLOWED_HOSTS: 'internal-webhook.example.com' do
+        expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' })
+
+        trigger.execute(url, payload, :agent_bot_webhook)
+      end
+    end
+
     it 'updates message status if webhook fails for message-created event' do
       payload = { event: 'message_created', conversation: { id: conversation.id }, id: message.id }
       error = SafeFetch::HttpError.new('500 Internal Server Error')

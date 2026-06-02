@@ -5,8 +5,8 @@ class Captain::Tools::Copilot::CreateCaptainKnowledgeDocumentService < Captain::
     'create_captain_knowledge_document'
   end
 
-  description 'Create a remote URL Captain knowledge document for one assistant. Requires operator confirmation.'
-  param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true
+  description 'Create a workspace remote URL Captain knowledge document. Requires operator confirmation.'
+  param :assistant_id, type: :integer, desc: 'Optional Captain assistant ID for personal documents', required: false
   param :name, type: :string, desc: 'Document name', required: true
   param :external_link, type: :string, desc: 'Remote source URL. Secret query strings are redacted from tool output.', required: true
   param :source_mode, type: :string, desc: 'Optional source mode: legacy_url, selected_pages, pdf_url, file_url', required: false
@@ -15,10 +15,10 @@ class Captain::Tools::Copilot::CreateCaptainKnowledgeDocumentService < Captain::
   param :selected_urls_json, type: :string, desc: 'Optional JSON array of selected URLs for selected_pages mode', required: false
   param :import_profile_json, type: :string, desc: 'Optional JSON object with crawl/import profile settings', required: false
 
-  def execute(assistant_id:, name:, external_link:, **kwargs)
+  def execute(name:, external_link:, assistant_id: nil, **kwargs)
     ensure_account_administrator!
 
-    document_assistant = find_captain_assistant!(assistant_id)
+    document_assistant = find_captain_assistant!(assistant_id) if assistant_id.present?
     document = Captain::Document.create!(
       create_document_attributes(
         assistant: document_assistant,

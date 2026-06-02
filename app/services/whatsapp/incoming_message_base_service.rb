@@ -26,7 +26,7 @@ class Whatsapp::IncomingMessageBaseService
   def process_messages
     # We don't support reactions & ephemeral message now, we need to skip processing the message
     # if the webhook event is a reaction or an ephermal message or an unsupported message.
-    return if unprocessable_message_type?(message_type)
+    return if unprocessable_message_type?(messages_data.first)
 
     # Multiple webhook events can be received for the same message due to
     # misconfigurations in the Meta business manager account.
@@ -155,7 +155,7 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def attach_files
-    return if %w[text button interactive location contacts].include?(message_type)
+    return if %w[text button interactive location contacts unsupported].include?(message_type)
 
     attachment_payload = messages_data.first[message_type.to_sym]
     @message.content ||= attachment_payload[:caption]

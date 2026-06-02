@@ -411,6 +411,7 @@ en:
     documents:
       limit_exceeded: 'Document limit exceeded'
       missing_assistant: 'AI Agent is required'
+      personal_visibility_requires_assistant: 'AI Agent is required for personal visibility'
       missing_root_url: 'Root URL is required'
       derived_document_resync_error: 'Derived documents cannot be re-synced directly'
       derived_document_sync_error: 'Derived documents cannot be synced directly'

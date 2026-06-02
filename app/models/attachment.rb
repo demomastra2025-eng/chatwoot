@@ -26,8 +26,8 @@ class Attachment < ApplicationRecord
   include AccountStorageLimitable
 
   ACCEPTABLE_FILE_TYPES = %w[
-    text/csv text/html text/plain text/rtf
-    application/json application/pdf
+    text/csv text/html text/plain text/rtf text/xml application/xml
+    application/json application/pdf application/pkcs12 application/x-pkcs12
     application/zip application/x-7z-compressed application/vnd.rar application/x-tar
     application/msword application/vnd.ms-excel application/vnd.ms-powerpoint application/rtf
     application/vnd.oasis.opendocument.text
@@ -130,11 +130,21 @@ class Attachment < ApplicationRecord
     Rails.application.routes.url_helpers.rails_storage_redirect_url(file, disposition: 'inline')
   end
 
+  def attachment_download_url
+    return '' unless file.attached?
+
+    Rails.application.routes.url_helpers.rails_storage_redirect_url(file, disposition: 'attachment')
+  end
+
+  def download_only_attachment?
+    file.content_type.in?(%w[application/pkcs12 application/x-pkcs12]) || extension.in?(%w[p12 pfx])
+  end
+
   def file_metadata
     metadata = {
       extension: extension,
       content_type: file.content_type,
-      data_url: file_url,
+      data_url: download_only_attachment? ? attachment_download_url : file_url,
       thumb_url: thumb_url,
       file_size: file.byte_size,
       width: file.metadata[:width],

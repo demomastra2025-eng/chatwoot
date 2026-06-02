@@ -127,6 +127,7 @@ class Captain::McpServer < ApplicationRecord
       requires_confirmation: false,
       idempotent: ActiveModel::Type::Boolean.new.cast(tool_payload[:idempotent]),
       custom: false,
+      source_type: Captain::ToolCatalog::SOURCE_TYPE_MCP,
       selected_by_default: false,
       provider: 'mcp',
       mcp_server_id: id,

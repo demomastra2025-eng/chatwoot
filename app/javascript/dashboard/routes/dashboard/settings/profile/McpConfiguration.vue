@@ -322,16 +322,6 @@ const groupIsEnabled = group =>
   group.tools.length > 0 &&
   groupIsSelected(group.id) &&
   group.tools.every(tool => isToolSelected(tool));
-const selectedToolCount = computed(
-  () => catalogTools.value.filter(tool => isToolSelected(tool)).length
-);
-const toolCountLabel = computed(() =>
-  t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.TOOLS_ENABLED_COUNT', {
-    enabled: selectedToolCount.value,
-    total: catalogTools.value.length,
-  })
-);
-
 const toolCheckboxDisabled = tool =>
   accessControlsDisabled.value ||
   !sourceIsEnabled(tool.source) ||
@@ -642,15 +632,10 @@ onMounted(fetchMcpSettings);
         </div>
 
         <div v-if="groupedCatalogTools.length">
-          <div class="mb-2 flex items-center justify-between gap-2">
+          <div class="mb-2 flex items-center gap-2">
             <div class="text-xs font-medium uppercase text-n-slate-10">
               {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.CATALOG_TITLE') }}
             </div>
-            <span
-              class="shrink-0 rounded-full bg-n-alpha-1 px-2 py-0.5 text-xs font-medium text-n-slate-10"
-            >
-              {{ toolCountLabel }}
-            </span>
           </div>
           <div
             class="max-h-[28rem] overflow-auto rounded-xl border border-n-weak"

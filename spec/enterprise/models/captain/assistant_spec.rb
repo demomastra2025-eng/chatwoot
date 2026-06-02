@@ -72,15 +72,15 @@ RSpec.describe Captain::Assistant, type: :model do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
 
-    it 'restricts destructive associations for workspace-level knowledge records' do
+    it 'nullifies assistant ownership for workspace-level knowledge records' do
       %i[documents document_chunks knowledge_answer_cache_entries responses].each do |association_name|
         association = described_class.reflect_on_association(association_name)
 
-        expect(association.options[:dependent]).to eq(:restrict_with_error)
+        expect(association.options[:dependent]).to eq(:nullify)
       end
     end
 
-    it 'does not delete workspace knowledge when an assistant delete is attempted' do
+    it 'keeps workspace knowledge when an assistant is deleted' do
       document = create(:captain_document, account: account, assistant: assistant)
       chunk = create(:captain_document_chunk, account: account, assistant: assistant, document: document)
       response = create(:captain_assistant_response, account: account, assistant: assistant)
@@ -93,13 +93,27 @@ RSpec.describe Captain::Assistant, type: :model do
         payload: { answer: 'Use shared docs.' }
       )
 
-      expect(assistant.destroy).to be false
-      expect(assistant.errors[:base]).to be_present
-      expect(described_class.exists?(assistant.id)).to be true
+      expect { assistant.destroy }.to change { described_class.exists?(assistant.id) }.from(true).to(false)
       expect(Captain::Document.exists?(document.id)).to be true
       expect(Captain::DocumentChunk.exists?(chunk.id)).to be true
       expect(Captain::AssistantResponse.exists?(response.id)).to be true
       expect(Captain::KnowledgeAnswerCacheEntry.exists?(cache_entry.id)).to be true
+      expect(document.reload.assistant_id).to be_nil
+      expect(chunk.reload.assistant_id).to be_nil
+      expect(response.reload.assistant_id).to be_nil
+      expect(cache_entry.reload.assistant_id).to be_nil
+    end
+
+    it 'removes assistant-personal knowledge when an assistant is deleted' do
+      personal_document = create(:captain_document, account: account, assistant: assistant, visibility: :personal)
+      personal_chunk = create(:captain_document_chunk, account: account, assistant: assistant, document: personal_document)
+      personal_response = create(:captain_assistant_response, account: account, assistant: assistant, visibility: :personal)
+
+      assistant.destroy
+
+      expect(Captain::Document.exists?(personal_document.id)).to be false
+      expect(Captain::DocumentChunk.exists?(personal_chunk.id)).to be false
+      expect(Captain::AssistantResponse.exists?(personal_response.id)).to be false
     end
   end
 

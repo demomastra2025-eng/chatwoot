@@ -267,6 +267,7 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
             .to receive(:perform_later)
             .with(
               assistant_id: assistant_id,
+              account_id: document.account_id,
               page_link: link,
               source_document_id: document.id
             )
@@ -277,6 +278,7 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
           .to receive(:perform_later)
           .with(
             assistant_id: assistant_id,
+            account_id: document.account_id,
             page_link: document.external_link,
             source_document_id: document.id
           )
@@ -287,6 +289,55 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
       it 'uses SimplePageCrawlService to discover page links' do
         expect(simple_crawler).to receive(:page_links)
         described_class.perform_now(document)
+      end
+    end
+
+    context 'when importing fallback-supported files without Firecrawl' do
+      before do
+        allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
+      end
+
+      it 'extracts remote text file URLs with SafeFetch' do
+        file_document = create(
+          :captain_document,
+          assistant: document.assistant,
+          account: document.account,
+          external_link: 'https://example.com/files/policy.txt',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url', 'sync' => {} } }
+        )
+        tempfile = Tempfile.new(['policy', '.txt'])
+        tempfile.write('Workspace policy text')
+        tempfile.rewind
+
+        allow(SafeFetch).to receive(:fetch).and_yield(double(tempfile: tempfile, content_type: 'text/plain'))
+
+        described_class.perform_now(file_document)
+
+        expect(SafeFetch).to have_received(:fetch).with(
+          file_document.external_link,
+          hash_including(max_bytes: Llm::RuntimePolicy.web_document_parse_max_file_bytes)
+        )
+        expect(file_document.reload).to be_available
+        expect(file_document.source_text).to eq('Workspace policy text')
+        expect(file_document.metadata.dig('source_text', 'provider')).to eq('safe_fetch')
+      ensure
+        tempfile&.close!
+      end
+
+      it 'extracts uploaded text files without Firecrawl' do
+        file_document = build(:captain_document, assistant: document.assistant, account: document.account, external_link: nil)
+        file_document.source_file.attach(
+          io: StringIO.new('Uploaded policy text'),
+          filename: 'policy.txt',
+          content_type: 'text/plain'
+        )
+        file_document.save!
+
+        described_class.perform_now(file_document)
+
+        expect(file_document.reload).to be_available
+        expect(file_document.source_text).to eq('Uploaded policy text')
+        expect(file_document.metadata.dig('source_text', 'provider')).to eq('attachment')
       end
     end
 

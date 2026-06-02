@@ -40,15 +40,23 @@ class Webhooks::Trigger
 
   def perform_request
     body = @payload.to_json
-    SafeFetch.fetch(
-      @url,
+    SafeFetch.fetch(@url, **safe_fetch_options(body)) { |_response| nil }
+  end
+
+  def safe_fetch_options(body)
+    options = {
       method: :post,
       body: body,
       headers: request_headers(body),
       open_timeout: webhook_timeout,
       read_timeout: webhook_timeout,
       validate_content_type: false
-    ) { |_response| nil }
+    }
+
+    allowed_hosts = api_inbox_private_network_allowed_hosts
+    options[:private_network_allowed_hosts] = allowed_hosts if allowed_hosts.present?
+
+    options
   end
 
   def request_headers(body)
@@ -120,6 +128,16 @@ class Webhooks::Trigger
     timeout = raw_timeout.presence&.to_i
 
     timeout&.positive? ? timeout : 5
+  end
+
+  def api_inbox_private_network_allowed_hosts
+    return [] unless @webhook_type == :api_inbox_webhook
+
+    ENV.fetch('API_INBOX_WEBHOOK_PRIVATE_NETWORK_ALLOWED_HOSTS', '')
+       .split(',')
+       .map { |host| host.strip.downcase }
+       .compact_blank
+       .uniq
   end
 
   def retryable_agent_bot_error?(error)

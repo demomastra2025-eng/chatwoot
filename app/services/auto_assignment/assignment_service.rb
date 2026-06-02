@@ -4,6 +4,7 @@ class AutoAssignment::AssignmentService
   def perform_bulk_assignment(limit: 100)
     return 0 unless inbox.auto_assignment_v2_enabled?
     return 0 unless inbox.enable_auto_assignment?
+    return 0 unless available_agents_for_bulk_assignment?
 
     assigned_count = 0
 
@@ -15,6 +16,10 @@ class AutoAssignment::AssignmentService
   end
 
   private
+
+  def available_agents_for_bulk_assignment?
+    inbox.available_agents.exists?
+  end
 
   def perform_for_conversation(conversation)
     return false unless assignable?(conversation)
@@ -73,7 +78,12 @@ class AutoAssignment::AssignmentService
 
   def assign_conversation(conversation, agent)
     Current.executed_by = inbox.assignment_policy || inbox
-    conversation.update!(assignee: agent)
+    conversation.with_lock do
+      conversation.reload
+      return false unless assignable?(conversation)
+
+      conversation.update!(assignee: agent)
+    end
     Current.executed_by = nil
 
     rate_limiter = build_rate_limiter(agent)

@@ -246,6 +246,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         hash_including(
           id: 'faq_lookup',
           scope_name: 'agent',
+          source_type: 'system',
           selected: true,
           title: 'FAQ Lookup'
         ),
@@ -270,6 +271,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         hash_including(
           id: custom_tool.slug,
           scope_name: 'assistant',
+          source_type: 'custom',
           selected: true,
           title: 'Lookup booking'
         )
@@ -314,6 +316,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         hash_including(
           id: custom_tool.slug,
           scope_name: 'assistant',
+          source_type: 'custom',
           selected: true,
           title: 'Lookup booking'
         )

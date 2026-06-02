@@ -29,6 +29,48 @@ RSpec.describe Channel::Whatsapp do
 
         channel.prompt_reauthorization!
       end
+
+      it 'dispatches inbox_updated once when reauthorization becomes required' do
+        admin_mailer = double
+        mailer_double = double
+        allow(AdministratorNotifications::ChannelNotificationsMailer).to receive(:with).and_return(admin_mailer)
+        allow(admin_mailer).to receive(:whatsapp_disconnect).and_return(mailer_double)
+        allow(mailer_double).to receive(:deliver_later)
+        allow(Rails.configuration.dispatcher).to receive(:dispatch)
+
+        with_modified_env ENABLE_INBOX_EVENTS: 'true' do
+          channel.prompt_reauthorization!
+          channel.prompt_reauthorization!
+        end
+
+        expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(
+          Events::Types::INBOX_UPDATED,
+          anything,
+          inbox: channel.inbox,
+          changed_attributes: { 'reauthorization_required' => [false, true] }
+        ).once
+      end
+
+      it 'dispatches inbox_updated when reauthorization is cleared' do
+        admin_mailer = double
+        mailer_double = double
+        allow(AdministratorNotifications::ChannelNotificationsMailer).to receive(:with).and_return(admin_mailer)
+        allow(admin_mailer).to receive(:whatsapp_disconnect).and_return(mailer_double)
+        allow(mailer_double).to receive(:deliver_later)
+        allow(Rails.configuration.dispatcher).to receive(:dispatch)
+
+        with_modified_env ENABLE_INBOX_EVENTS: 'true' do
+          channel.prompt_reauthorization!
+          channel.reauthorized!
+        end
+
+        expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(
+          Events::Types::INBOX_UPDATED,
+          anything,
+          inbox: channel.inbox,
+          changed_attributes: { 'reauthorization_required' => [true, false] }
+        )
+      end
     end
   end
 

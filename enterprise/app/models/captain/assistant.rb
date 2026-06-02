@@ -343,12 +343,12 @@ class Captain::Assistant < ApplicationRecord
   end
 
   belongs_to :account
-  has_many :documents, class_name: 'Captain::Document', dependent: :restrict_with_error
-  has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :restrict_with_error
+  has_many :documents, class_name: 'Captain::Document', dependent: :nullify
+  has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :nullify
   has_many :knowledge_answer_cache_entries,
            class_name: 'Captain::KnowledgeAnswerCacheEntry',
-           dependent: :restrict_with_error
-  has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :restrict_with_error
+           dependent: :nullify
+  has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :nullify
   has_many :captain_inboxes,
            class_name: 'CaptainInbox',
            foreign_key: :captain_assistant_id,
@@ -368,6 +368,7 @@ class Captain::Assistant < ApplicationRecord
   before_validation :normalize_instruction_description
   before_validation :capture_raw_rules_config_input
   before_validation :normalize_rules_config
+  before_destroy :destroy_personal_knowledge, prepend: true
 
   validates :name, presence: true
   validates :description, presence: true
@@ -715,6 +716,11 @@ class Captain::Assistant < ApplicationRecord
   end
 
   private
+
+  def destroy_personal_knowledge
+    documents.visibility_personal.find_each(&:destroy!)
+    responses.visibility_personal.find_each(&:destroy!)
+  end
 
   def ensure_usage_mode
     self.usage_mode = usage_mode.presence || 'external_agent'

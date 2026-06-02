@@ -14,7 +14,7 @@
 #  created_at         :datetime         not null
 #  updated_at         :datetime         not null
 #  account_id         :bigint           not null
-#  assistant_id       :bigint           not null
+#  assistant_id       :bigint
 #
 # Indexes
 #
@@ -35,7 +35,7 @@ class Captain::KnowledgeAnswerCacheEntry < ApplicationRecord
   DEFAULT_DISTANCE_THRESHOLD = 0.15
 
   belongs_to :account
-  belongs_to :assistant, class_name: 'Captain::Assistant'
+  belongs_to :assistant, class_name: 'Captain::Assistant', optional: true
   has_neighbors :embedding, normalize: true
 
   validates :query, presence: true
@@ -46,7 +46,7 @@ class Captain::KnowledgeAnswerCacheEntry < ApplicationRecord
 
   scope :active, -> { where('expires_at IS NULL OR expires_at > ?', Time.current) }
   scope :for_scope, lambda { |account:, assistant:, source_fingerprint:|
-    where(account_id: account.id, assistant_id: assistant.id, source_fingerprint: source_fingerprint)
+    where(account_id: account.id, assistant_id: assistant&.id, source_fingerprint: source_fingerprint)
   }
 
   def self.semantic_match(embedding:, account:, assistant:, source_fingerprint:, distance_threshold: DEFAULT_DISTANCE_THRESHOLD)

@@ -41,6 +41,45 @@ RSpec.describe Captain::Document, type: :model do
     end
   end
 
+  describe 'workspace ownership' do
+    it 'allows general workspace documents without an assistant' do
+      document = build(:captain_document, account: account, assistant: nil, visibility: :general)
+
+      expect(document).to be_valid
+    end
+
+    it 'requires an assistant for personal visibility' do
+      document = build(:captain_document, account: account, assistant: nil, visibility: :personal)
+
+      expect(document).not_to be_valid
+      expect(document.errors[:assistant]).to include(I18n.t('captain.documents.personal_visibility_requires_assistant'))
+    end
+
+    it 'keeps external links unique per account instead of per assistant' do
+      create(:captain_document, account: account, assistant: assistant, external_link: 'https://example.com/shared')
+      second_assistant = create(:captain_assistant, account: account)
+      duplicate = build(:captain_document, account: account, assistant: second_assistant, external_link: 'https://example.com/shared')
+      other_account_duplicate = build(:captain_document, account: create(:account), external_link: 'https://example.com/shared')
+
+      expect(duplicate).not_to be_valid
+      expect(other_account_duplicate).to be_valid
+    end
+
+    it 'returns general documents plus personal documents for the selected assistant' do
+      general_document = create(:captain_document, account: account, assistant: nil, visibility: :general)
+      personal_document = create(:captain_document, account: account, assistant: assistant, visibility: :personal)
+      other_personal_document = create(
+        :captain_document,
+        account: account,
+        assistant: create(:captain_assistant, account: account),
+        visibility: :personal
+      )
+
+      expect(described_class.visible_to_assistant(assistant.id)).to include(general_document, personal_document)
+      expect(described_class.visible_to_assistant(assistant.id)).not_to include(other_personal_document)
+    end
+  end
+
   describe '#embedding_status_summary' do
     it 'summarizes chunk embedding health for operator visibility' do
       document = create(:captain_document, assistant: assistant, account: account)
@@ -119,7 +158,7 @@ RSpec.describe Captain::Document, type: :model do
           :captain_document,
           assistant: assistant,
           account: account,
-          external_link: 'https://example.com/report.csv',
+          external_link: 'https://example.com/report.exe',
           metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
         )
 
@@ -179,10 +218,20 @@ RSpec.describe Captain::Document, type: :model do
         expect(doc.remote_file_url?).to be true
       end
 
-      it 'returns false for unsupported file urls' do
+      it 'returns true for supported text file urls' do
         doc = build(
           :captain_document,
           external_link: 'https://example.com/document.txt',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
+        )
+
+        expect(doc.remote_file_url?).to be true
+      end
+
+      it 'returns false for unsupported file urls' do
+        doc = build(
+          :captain_document,
+          external_link: 'https://example.com/document.exe',
           metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
         )
 
@@ -235,12 +284,24 @@ RSpec.describe Captain::Document, type: :model do
       expect(uploaded_file_document.source_mode).to eq('file_upload')
     end
 
-    it 'rejects unsupported uploaded file types' do
+    it 'allows supported uploaded text files without external link' do
       document = build(:captain_document, assistant: assistant, account: account)
       document.source_file.attach(
         io: StringIO.new('Text file content'),
         filename: 'notes.txt',
         content_type: 'text/plain'
+      )
+      document.external_link = nil
+
+      expect(document).to be_valid
+    end
+
+    it 'rejects unsupported uploaded file types' do
+      document = build(:captain_document, assistant: assistant, account: account)
+      document.source_file.attach(
+        io: StringIO.new('Binary file content'),
+        filename: 'notes.exe',
+        content_type: 'application/octet-stream'
       )
 
       expect(document).not_to be_valid

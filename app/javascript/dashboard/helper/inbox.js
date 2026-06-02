@@ -215,7 +215,13 @@ export const getInboxIconByType = (type, medium, variant = 'fill') => {
 };
 
 export const getInboxWarningIconClass = (type, reauthorizationRequired) => {
-  const allowedInboxTypes = [INBOX_TYPES.FB, INBOX_TYPES.EMAIL];
+  const allowedInboxTypes = [
+    INBOX_TYPES.FB,
+    INBOX_TYPES.EMAIL,
+    INBOX_TYPES.INSTAGRAM,
+    INBOX_TYPES.TIKTOK,
+    INBOX_TYPES.WHATSAPP,
+  ];
   if (allowedInboxTypes.includes(type) && reauthorizationRequired) {
     return 'warning';
   }

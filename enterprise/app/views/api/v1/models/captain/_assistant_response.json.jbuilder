@@ -1,7 +1,13 @@
 json.account_id resource.account_id
 json.answer resource.answer
-json.assistant do
-  json.partial! 'api/v1/models/captain/assistant', formats: [:json], resource: resource.assistant
+if resource.assistant.present?
+  json.assistant do
+    json.partial! 'api/v1/models/captain/assistant',
+                  formats: [:json],
+                  resource: resource.assistant
+  end
+else
+  json.assistant nil
 end
 json.created_at resource.created_at.to_i
 
