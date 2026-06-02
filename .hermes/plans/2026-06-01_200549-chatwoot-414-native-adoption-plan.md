@@ -817,3 +817,32 @@ Expected: only safe code/locale references; no credential values. Any credential
 
 - First independent review found a real Twilio API-key signature bypass blocker; fixed by removing the legacy allow-through path and adding callback/delivery-status fail-closed specs.
 - A later reviewer attempted read-only review but produced stale Twilio findings and left an unstaged test edit; that reviewer-created edit was discarded before final staging.
+
+---
+
+## 12. HookExecutionService follow-up closure — 2026-06-02
+
+### Closed after residual dirty diff
+
+- Residual `HookExecutionService` code diff is closed and pushed.
+- Delivered commits:
+  - `3d65fccb6b` — `Open Captain conversations when auto-reply is gated`.
+  - `4bc37c5e1f` — `[verified] Simplify Captain auto-reply gate handling`.
+- Final branch/head: `feature/content-postiz-native-module` at `4bc37c5e1f10a9d6de139f3885bc0b836dd49321`.
+- Local and remote matched after push: `AHEAD_BEHIND=0 0`, remote SHA `4bc37c5e1f10a9d6de139f3885bc0b836dd49321`.
+
+### Behavior shipped
+
+- If a pending customer conversation has a Captain binding but current `inbox.captain_auto_reply_allowed?` is false (`working_hours`, `outside_working_hours`, or `never` cases), the hook no longer leaves the conversation stuck in pending.
+- The hook opens the pending conversation for human handling, does not schedule a Captain response, preserves/restores `Current.user` and `Current.executed_by`, and clears the Captain typing indicator only after an actual status transition.
+
+### Follow-up verification evidence
+
+- Ruby syntax for touched service/spec — PASS.
+- `git diff --check`, `git diff --cached --check`, `git show --check HEAD`, and `git diff --check HEAD^..HEAD` — PASS.
+- RuboCop `--fail-level E` for touched service/spec — PASS with 0 offenses after final simplification.
+- HookExecutionService RSpec — PASS: 43 examples, 0 failures.
+- Adjacent Captain buffered/response/controller RSpec pack — PASS: 159 examples, 0 failures.
+- `bin/validate_push` — PASS.
+- Independent read-only final review of `HEAD~2..HEAD` — PASS; no security concerns and no logic errors.
+- PROD deploy/restart — not performed in this code-finalization step.
