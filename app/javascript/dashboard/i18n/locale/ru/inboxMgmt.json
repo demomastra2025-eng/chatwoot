@@ -421,7 +421,13 @@
           },
           "DEFAULT_INTERNAL_NUMBER": {
             "LABEL": "Внутренний номер по умолчанию",
-            "PLACEHOLDER": "Необязательный extension оператора"
+            "PLACEHOLDER": "Внутренний номер оператора для click-to-call",
+            "REQUIRED": "Внутренний номер обязателен для исходящих звонков"
+          },
+          "INTEGRATION_SECRET": {
+            "LABEL": "Ключ интеграции",
+            "PLACEHOLDER": "Введите ключ интеграции Sipuni",
+            "REQUIRED": "Ключ интеграции Sipuni обязателен"
           }
         },
         "CONFIGURATION": {
@@ -440,6 +446,9 @@
           "SIPUNI_MODE_TITLE": "Режим подключения Sipuni",
           "SIPUNI_MODE_SUBTITLE": "Этот inbox сохраняет события звонков и записи Sipuni, а живой звук остаётся на софтфоне или SIP-устройствах Sipuni.",
           "SIPUNI_EXTERNAL_SOFTPHONE": "Внешний софтфон Sipuni",
+          "SIPUNI_OUTBOUND_TITLE": "Исходящие звонки Sipuni",
+          "SIPUNI_OUTBOUND_SUBTITLE": "Обновите ключ интеграции, который OneLink использует для click-to-call callback-запросов.",
+          "SIPUNI_UPDATE_KEY": "Обновить ключ",
           "ROUTING_MODE": "Режим маршрутизации",
           "FALLBACK_MODE": "Fallback-режим",
           "PRIMARY_APP_REF": "Ссылка на основное приложение",

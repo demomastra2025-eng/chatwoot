@@ -49,6 +49,7 @@ const sipuniState = reactive({
   phoneNumber: '',
   accountNumber: '',
   defaultInternalNumber: '',
+  integrationSecret: '',
 });
 
 const normalizeE164Input = value =>
@@ -121,6 +122,8 @@ const twilioValidationRules = computed(() => ({
 const sipuniValidationRules = computed(() => ({
   phoneNumber: { required, isPhoneE164: isNormalizablePhoneE164 },
   accountNumber: { required },
+  defaultInternalNumber: { required },
+  integrationSecret: { required },
 }));
 
 const kazakhstanV$ = useVuelidate(kazakhstanValidationRules, kazakhstanState);
@@ -192,6 +195,12 @@ const sipuniFormErrors = computed(() => ({
     : '',
   accountNumber: sipuniV$.value.accountNumber?.$error
     ? t('INBOX_MGMT.ADD.VOICE.SIPUNI.ACCOUNT_NUMBER.REQUIRED')
+    : '',
+  defaultInternalNumber: sipuniV$.value.defaultInternalNumber?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.SIPUNI.DEFAULT_INTERNAL_NUMBER.REQUIRED')
+    : '',
+  integrationSecret: sipuniV$.value.integrationSecret?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.SIPUNI.INTEGRATION_SECRET.REQUIRED')
     : '',
 }));
 
@@ -285,6 +294,7 @@ async function createSipuniChannel() {
   sipuniState.phoneNumber = normalizeE164Input(sipuniState.phoneNumber);
   sipuniState.accountNumber = sipuniState.accountNumber.trim();
   sipuniState.defaultInternalNumber = sipuniState.defaultInternalNumber.trim();
+  sipuniState.integrationSecret = sipuniState.integrationSecret.trim();
 
   const isFormValid = await sipuniV$.value.$validate();
   if (!isFormValid) return;
@@ -298,6 +308,7 @@ async function createSipuniChannel() {
         provider_config: {
           account_number: sipuniState.accountNumber,
           default_internal_number: sipuniState.defaultInternalNumber,
+          integration_secret: sipuniState.integrationSecret,
           audio_mode: 'external_softphone',
         },
       },
@@ -486,6 +497,18 @@ async function createSipuniChannel() {
         />
 
         <Input
+          v-model="sipuniState.integrationSecret"
+          type="password"
+          :label="t('INBOX_MGMT.ADD.VOICE.SIPUNI.INTEGRATION_SECRET.LABEL')"
+          :placeholder="
+            t('INBOX_MGMT.ADD.VOICE.SIPUNI.INTEGRATION_SECRET.PLACEHOLDER')
+          "
+          :message="sipuniFormErrors.integrationSecret"
+          :message-type="sipuniFormErrors.integrationSecret ? 'error' : 'info'"
+          @blur="sipuniV$.integrationSecret?.$touch"
+        />
+
+        <Input
           v-model="sipuniState.defaultInternalNumber"
           :label="
             t('INBOX_MGMT.ADD.VOICE.SIPUNI.DEFAULT_INTERNAL_NUMBER.LABEL')
@@ -493,6 +516,11 @@ async function createSipuniChannel() {
           :placeholder="
             t('INBOX_MGMT.ADD.VOICE.SIPUNI.DEFAULT_INTERNAL_NUMBER.PLACEHOLDER')
           "
+          :message="sipuniFormErrors.defaultInternalNumber"
+          :message-type="
+            sipuniFormErrors.defaultInternalNumber ? 'error' : 'info'
+          "
+          @blur="sipuniV$.defaultInternalNumber?.$touch"
         />
 
         <div>

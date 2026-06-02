@@ -56,6 +56,7 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
                    provider_config: {
                      account_number: '123456',
                      default_internal_number: '100',
+                     integration_secret: 'integration-secret',
                      audio_mode: 'external_softphone'
                    }
                  }
@@ -73,6 +74,10 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
           'audio_mode' => 'external_softphone'
         )
         expect(response.parsed_body['provider_config']).not_to have_key('webhook_token')
+        expect(response.parsed_body['provider_config']).not_to have_key('integration_secret')
+        expect(Channel::Voice.find_by!(phone_number: '+77271234567').provider_config_hash.with_indifferent_access[:integration_secret]).to eq(
+          'integration-secret'
+        )
       end
     end
   end
@@ -97,7 +102,9 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
       it 'preserves the Sipuni webhook token when updating sanitized provider config' do
         sipuni_channel = create(:channel_voice, :sipuni, account: account)
         sipuni_inbox = sipuni_channel.inbox
-        token = sipuni_channel.provider_config_hash.with_indifferent_access[:webhook_token]
+        config = sipuni_channel.provider_config_hash.with_indifferent_access
+        token = config[:webhook_token]
+        integration_secret = config[:integration_secret]
 
         patch "/api/v1/accounts/#{account.id}/inboxes/#{sipuni_inbox.id}",
               headers: admin.create_new_auth_token,
@@ -113,8 +120,11 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
               as: :json
 
         expect(response).to have_http_status(:success)
-        expect(sipuni_channel.reload.provider_config_hash.with_indifferent_access[:webhook_token]).to eq(token)
+        reloaded_config = sipuni_channel.reload.provider_config_hash.with_indifferent_access
+        expect(reloaded_config[:webhook_token]).to eq(token)
+        expect(reloaded_config[:integration_secret]).to eq(integration_secret)
         expect(response.parsed_body['provider_config']).not_to have_key('webhook_token')
+        expect(response.parsed_body['provider_config']).not_to have_key('integration_secret')
       end
     end
   end

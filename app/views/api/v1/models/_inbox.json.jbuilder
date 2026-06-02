@@ -212,7 +212,13 @@ if resource.channel_type == 'Channel::Voice'
   if resource.channel.provider == 'sipuni'
     if Current.account_user&.administrator?
       json.sipuni_events_webhook_url resource.channel.try(:sipuni_events_webhook_url)
-      json.provider_config resource.channel.try(:provider_config).to_h.with_indifferent_access.except(:webhook_token).to_h
+      json.provider_config resource.channel.try(:provider_config).to_h.with_indifferent_access.except(
+        :webhook_token,
+        :integration_secret,
+        :secret,
+        :integration_key,
+        :api_key
+      ).to_h
     end
   end
 

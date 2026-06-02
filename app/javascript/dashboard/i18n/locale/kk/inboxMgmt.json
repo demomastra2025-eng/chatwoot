@@ -421,7 +421,13 @@
           },
           "DEFAULT_INTERNAL_NUMBER": {
             "LABEL": "Әдепкі ішкі нөмір",
-            "PLACEHOLDER": "Қосымша оператор extension"
+            "PLACEHOLDER": "Click-to-call үшін оператордың ішкі нөмірі",
+            "REQUIRED": "Шығыс қоңыраулар үшін әдепкі ішкі нөмір міндетті"
+          },
+          "INTEGRATION_SECRET": {
+            "LABEL": "Интеграция кілті",
+            "PLACEHOLDER": "Sipuni интеграция кілтін енгізіңіз",
+            "REQUIRED": "Sipuni интеграция кілті міндетті"
           }
         },
         "CONFIGURATION": {
@@ -440,6 +446,9 @@
           "SIPUNI_MODE_TITLE": "Sipuni қосылу режимі",
           "SIPUNI_MODE_SUBTITLE": "Бұл inbox Sipuni қоңырау оқиғалары мен жазбаларын сақтайды, ал нақты аудио Sipuni softphone немесе SIP құрылғыларында қалады.",
           "SIPUNI_EXTERNAL_SOFTPHONE": "Сыртқы Sipuni softphone",
+          "SIPUNI_OUTBOUND_TITLE": "Sipuni шығыс қоңыраулары",
+          "SIPUNI_OUTBOUND_SUBTITLE": "OneLink click-to-call callback сұраулары үшін қолданатын интеграция кілтін жаңартыңыз.",
+          "SIPUNI_UPDATE_KEY": "Кілтті жаңарту",
           "ROUTING_MODE": "Маршрутизация режимі",
           "FALLBACK_MODE": "Fallback режимі",
           "PRIMARY_APP_REF": "Негізгі қосымша сілтемесі",

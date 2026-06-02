@@ -68,7 +68,8 @@ describe('Voice channel setup', () => {
 
     await inputs[0].setValue('+7 727 123-45-67');
     await inputs[1].setValue('  123456  ');
-    await inputs[2].setValue('  100  ');
+    await inputs[2].setValue('  integration-key  ');
+    await inputs[3].setValue('  100  ');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -80,6 +81,7 @@ describe('Voice channel setup', () => {
         provider_config: {
           account_number: '123456',
           default_internal_number: '100',
+          integration_secret: 'integration-key',
           audio_mode: 'external_softphone',
         },
       },

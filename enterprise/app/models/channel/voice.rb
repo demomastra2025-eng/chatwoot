@@ -178,9 +178,16 @@ class Channel::Voice < ApplicationRecord
   def normalize_sipuni_config
     config = sipuni_config_for_validation
 
-    config[:account_number] = config[:user].presence if config[:account_number].blank? && config[:user].present?
+    config[:account_number] = sipuni_config_value(config, :account_number, :user) ||
+                              persisted_sipuni_config_value(:account_number, :user)
+    config[:default_internal_number] = sipuni_config_value(config, :default_internal_number, :sipnumber, :sip_number) ||
+                                       persisted_sipuni_config_value(:default_internal_number, :sipnumber, :sip_number)
+    config[:integration_secret] = sipuni_config_value(config, :integration_secret, :secret, :integration_key, :api_key) ||
+                                  persisted_sipuni_config_value(:integration_secret, :secret, :integration_key, :api_key)
     config[:audio_mode] = config[:audio_mode].presence || 'external_softphone'
     config[:webhook_token] = config[:webhook_token].presence || persisted_sipuni_webhook_token || SecureRandom.hex(24)
+    config[:reverse] = normalized_sipuni_binary_value(config[:reverse].presence || persisted_sipuni_config_value(:reverse), default: '0')
+    config[:antiaon] = normalized_sipuni_binary_value(config[:antiaon].presence || persisted_sipuni_config_value(:antiaon), default: '0')
     normalize_sipuni_internal_numbers!(config)
     self.provider_config = config
   end
@@ -197,10 +204,30 @@ class Channel::Voice < ApplicationRecord
     config[:internal_numbers] = Array.wrap(config[:internal_numbers]).compact_blank.map(&:to_s)
   end
 
+  def sipuni_config_value(config, *keys)
+    keys.each do |key|
+      value = config[key].to_s.strip
+      return value if value.present?
+    end
+
+    nil
+  end
+
+  def normalized_sipuni_binary_value(value, default:)
+    candidate = value.to_s.strip
+    return candidate if candidate.in?(%w[0 1])
+
+    default
+  end
+
   def persisted_sipuni_webhook_token
+    persisted_sipuni_config_value(:webhook_token)
+  end
+
+  def persisted_sipuni_config_value(*keys)
     config = provider_config_in_database
     config = JSON.parse(config.to_s) unless config.is_a?(Hash)
-    config.with_indifferent_access[:webhook_token]
+    sipuni_config_value(config.with_indifferent_access, *keys)
   rescue JSON::ParserError, TypeError
     nil
   end
