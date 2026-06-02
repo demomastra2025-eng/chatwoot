@@ -8,7 +8,7 @@ class Captain::Tools::FirecrawlParserJob < ApplicationJob
     metadata = payload.with_indifferent_access[:metadata] || {}
 
     canonical_url = normalize_link(metadata['url'])
-    document = find_or_initialize_document(account, source_document, canonical_url)
+    document = find_or_initialize_document(account, source_document, canonical_url, assistant)
     return mark_conflicting_page_processed(source_document, canonical_url) if document.blank?
 
     change_tracking = payload.with_indifferent_access[:changeTracking] || {}
@@ -66,19 +66,19 @@ class Captain::Tools::FirecrawlParserJob < ApplicationJob
     attrs
   end
 
-  def find_or_initialize_document(account, source_document, canonical_url)
+  def find_or_initialize_document(account, source_document, canonical_url, assistant)
     return source_document if source_document.present? && canonical_url == normalize_link(source_document.external_link)
 
     document = account.captain_documents.find_by(external_link: canonical_url)
     return account.captain_documents.new(external_link: canonical_url) if document.blank?
-    return document if compatible_document_context?(document, source_document)
+    return document if compatible_document_context?(document, source_document, assistant)
 
     Rails.logger.warn("[Captain] Skipping conflicting Firecrawl document for #{canonical_url}")
     nil
   end
 
-  def compatible_document_context?(document, source_document)
-    return true if source_document.blank?
+  def compatible_document_context?(document, source_document, assistant)
+    return document.visibility_general? || document.assistant_id == assistant.id if source_document.blank?
     return true if document.metadata&.dig('firecrawl', 'root_document_id').to_s == source_document.id.to_s
 
     document.assistant_id == source_document.assistant_id && document.visibility == source_document.visibility

@@ -95,4 +95,34 @@ RSpec.describe Captain::Tools::SimplePageCrawlParserJob, type: :job do
     expect(conflicting_document).to be_visibility_personal
     expect(conflicting_document.source_text).to eq('Original personal content')
   end
+
+  it 'does not overwrite another assistant personal document without a source document' do
+    other_assistant = create(:captain_assistant, account: assistant.account)
+    conflicting_document = create(
+      :captain_document,
+      account: assistant.account,
+      assistant: other_assistant,
+      visibility: :personal,
+      external_link: 'https://example.com/docs/no-source-conflict',
+      source_text: 'Original personal content'
+    )
+    crawler = instance_double(
+      Captain::Tools::SimplePageCrawlService,
+      page_title: 'No source conflict',
+      body_text_content: 'Replacement content'
+    )
+    allow(Captain::Tools::SimplePageCrawlService)
+      .to receive(:new)
+      .with('https://example.com/docs/no-source-conflict')
+      .and_return(crawler)
+
+    described_class.perform_now(
+      assistant_id: assistant.id,
+      page_link: 'https://example.com/docs/no-source-conflict'
+    )
+
+    expect(conflicting_document.reload.assistant_id).to eq(other_assistant.id)
+    expect(conflicting_document).to be_visibility_personal
+    expect(conflicting_document.source_text).to eq('Original personal content')
+  end
 end

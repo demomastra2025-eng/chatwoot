@@ -13,6 +13,8 @@ class Enterprise::Webhooks::FirecrawlController < ActionController::API
   include Captain::FirecrawlHelper
 
   def process_page_events
+    return if requested_source_document_unavailable?
+
     page_payloads.each do |payload|
       Captain::Tools::FirecrawlParserJob.perform_later(
         assistant_id: assistant.id,
@@ -43,7 +45,11 @@ class Enterprise::Webhooks::FirecrawlController < ActionController::API
   end
 
   def source_document
-    @source_document ||= assistant.account.captain_documents.find_by(id: params[:document_id])
+    @source_document ||= assistant.account.captain_documents.visible_to_assistant(assistant.id).find_by(id: params[:document_id])
+  end
+
+  def requested_source_document_unavailable?
+    params[:document_id].present? && source_document.blank?
   end
 
   def event_type

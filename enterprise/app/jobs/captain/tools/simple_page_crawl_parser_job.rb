@@ -17,7 +17,7 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
     content = crawler.body_text_content || ''
 
     normalized_link = normalize_link(page_link)
-    document = find_or_initialize_document(account, source_document, normalized_link)
+    document = find_or_initialize_document(account, source_document, normalized_link, assistant)
     return mark_conflicting_page_processed(source_document, normalized_link) if document.blank?
 
     document.update!(
@@ -56,19 +56,19 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
     attrs
   end
 
-  def find_or_initialize_document(account, source_document, normalized_link)
+  def find_or_initialize_document(account, source_document, normalized_link, assistant)
     return source_document if source_document.present? && normalized_link == normalize_link(source_document.external_link)
 
     document = account.captain_documents.find_by(external_link: normalized_link)
     return account.captain_documents.new(external_link: normalized_link) if document.blank?
-    return document if compatible_document_context?(document, source_document)
+    return document if compatible_document_context?(document, source_document, assistant)
 
     Rails.logger.warn("[Captain] Skipping conflicting simple-crawl document for #{normalized_link}")
     nil
   end
 
-  def compatible_document_context?(document, source_document)
-    return true if source_document.blank?
+  def compatible_document_context?(document, source_document, assistant)
+    return document.visibility_general? || (assistant.present? && document.assistant_id == assistant.id) if source_document.blank?
     return true if document.metadata&.dig('firecrawl', 'root_document_id').to_s == source_document.id.to_s
 
     document.assistant_id == source_document.assistant_id && document.visibility == source_document.visibility
