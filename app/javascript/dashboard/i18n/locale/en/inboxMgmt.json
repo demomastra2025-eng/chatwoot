@@ -338,7 +338,9 @@
           "KAZAKHSTAN": "Fonoster",
           "KAZAKHSTAN_DESC": "Use Fonoster for Kazakhstan numbers and telephony bridge routing.",
           "TWILIO": "Twilio",
-          "TWILIO_DESC": "Connect Twilio phone numbers and browser calling."
+          "TWILIO_DESC": "Connect Twilio phone numbers and browser calling.",
+          "SIPUNI": "Sipuni",
+          "SIPUNI_DESC": "Connect Sipuni call events, recordings, and operator softphone calls."
         },
         "PHONE_NUMBER": {
           "LABEL": "Phone Number",
@@ -411,6 +413,17 @@
             "REQUIRED": "API Key Secret is required"
           }
         },
+        "SIPUNI": {
+          "ACCOUNT_NUMBER": {
+            "LABEL": "Sipuni account number",
+            "PLACEHOLDER": "Enter the Sipuni account number",
+            "REQUIRED": "Sipuni account number is required"
+          },
+          "DEFAULT_INTERNAL_NUMBER": {
+            "LABEL": "Default internal number",
+            "PLACEHOLDER": "Optional operator extension"
+          }
+        },
         "CONFIGURATION": {
           "TWILIO_VOICE_URL_TITLE": "Twilio Voice URL",
           "TWILIO_VOICE_URL_SUBTITLE": "Configure this URL as the Voice URL on your Twilio phone number and TwiML App.",
@@ -422,6 +435,11 @@
           "FONOSTER_ROUTING_SUBTITLE": "Choose the active route for this number and the fallback used when the primary target is unavailable.",
           "FONOSTER_READINESS_TITLE": "Fonoster readiness",
           "FONOSTER_READINESS_SUBTITLE": "Checks the telephony bridge, inbox binding, and effective route for this voice inbox.",
+          "SIPUNI_WEBHOOK_TITLE": "Sipuni events webhook",
+          "SIPUNI_WEBHOOK_SUBTITLE": "Configure this URL in Sipuni call event integration.",
+          "SIPUNI_MODE_TITLE": "Sipuni connection mode",
+          "SIPUNI_MODE_SUBTITLE": "This inbox stores Sipuni call events and recordings while live audio remains on Sipuni softphone or SIP endpoints.",
+          "SIPUNI_EXTERNAL_SOFTPHONE": "External Sipuni softphone",
           "ROUTING_MODE": "Routing mode",
           "FALLBACK_MODE": "Fallback mode",
           "PRIMARY_APP_REF": "Primary app ref",

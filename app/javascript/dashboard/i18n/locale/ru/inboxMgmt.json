@@ -338,7 +338,9 @@
           "KAZAKHSTAN": "Виртуальная АТС",
           "KAZAKHSTAN_DESC": "Используйте OneLink Виртуальная АТС для номеров Казахстана.",
           "TWILIO": "Twilio",
-          "TWILIO_DESC": "Подключите номера Twilio и браузерные звонки."
+          "TWILIO_DESC": "Подключите номера Twilio и браузерные звонки.",
+          "SIPUNI": "Sipuni",
+          "SIPUNI_DESC": "Подключите события звонков Sipuni, записи и звонки операторов через софтфон."
         },
         "PHONE_NUMBER": {
           "LABEL": "Номер телефона",
@@ -411,6 +413,17 @@
             "REQUIRED": "API Key Secret обязателен"
           }
         },
+        "SIPUNI": {
+          "ACCOUNT_NUMBER": {
+            "LABEL": "Номер аккаунта Sipuni",
+            "PLACEHOLDER": "Введите номер аккаунта Sipuni",
+            "REQUIRED": "Номер аккаунта Sipuni обязателен"
+          },
+          "DEFAULT_INTERNAL_NUMBER": {
+            "LABEL": "Внутренний номер по умолчанию",
+            "PLACEHOLDER": "Необязательный extension оператора"
+          }
+        },
         "CONFIGURATION": {
           "TWILIO_VOICE_URL_TITLE": "Twilio Voice URL",
           "TWILIO_VOICE_URL_SUBTITLE": "Настройте этот URL как Voice URL на вашем Twilio телефонном номере и TwiML приложения.",
@@ -422,6 +435,11 @@
           "FONOSTER_ROUTING_SUBTITLE": "Выберите активный маршрут для номера и fallback, если основная цель недоступна.",
           "FONOSTER_READINESS_TITLE": "Готовность Fonoster",
           "FONOSTER_READINESS_SUBTITLE": "Проверяет telephony bridge, binding номера и эффективный маршрут для этого voice inbox.",
+          "SIPUNI_WEBHOOK_TITLE": "Webhook событий Sipuni",
+          "SIPUNI_WEBHOOK_SUBTITLE": "Укажите этот URL в интеграции событий звонков Sipuni.",
+          "SIPUNI_MODE_TITLE": "Режим подключения Sipuni",
+          "SIPUNI_MODE_SUBTITLE": "Этот inbox сохраняет события звонков и записи Sipuni, а живой звук остаётся на софтфоне или SIP-устройствах Sipuni.",
+          "SIPUNI_EXTERNAL_SOFTPHONE": "Внешний софтфон Sipuni",
           "ROUTING_MODE": "Режим маршрутизации",
           "FALLBACK_MODE": "Fallback-режим",
           "PRIMARY_APP_REF": "Ссылка на основное приложение",

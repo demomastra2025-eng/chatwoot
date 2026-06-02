@@ -842,6 +842,7 @@ Rails.application.routes.draw do
   post 'webhooks/tiktok', to: 'webhooks/tiktok#events'
   post 'webhooks/shopify', to: 'webhooks/shopify#events'
   post 'webhooks/macrocrm/:webhook_key/manager_changed', to: 'webhooks/macrocrm#manager_changed'
+  match 'webhooks/sipuni/voice/:inbox_id', to: 'sipuni/voice_events#create', via: [:get, :post], as: :sipuni_voice_events
 
   namespace :twitter do
     resource :callback, only: [:show]

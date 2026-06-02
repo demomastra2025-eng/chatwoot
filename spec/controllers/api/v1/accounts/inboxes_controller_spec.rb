@@ -132,6 +132,23 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(data[:hmac_token]).to be_nil
       end
 
+      it 'does not expose Sipuni webhook URL or provider config to an assigned agent' do
+        sipuni_channel = create(:channel_voice, :sipuni, account: account)
+        sipuni_inbox = sipuni_channel.inbox
+        token = sipuni_channel.provider_config_hash.with_indifferent_access[:webhook_token]
+        create(:inbox_member, user: agent, inbox: sipuni_inbox)
+
+        get "/api/v1/accounts/#{account.id}/inboxes/#{sipuni_inbox.id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        data = JSON.parse(response.body, symbolize_names: true)
+        expect(data).not_to have_key(:sipuni_events_webhook_url)
+        expect(data).not_to have_key(:provider_config)
+        expect(response.body).not_to include(token)
+      end
+
       it 'returns empty imap details in inbox when agent' do
         email_channel = create(:channel_email, account: account, imap_enabled: true, imap_login: 'test@test.com')
         email_inbox = create(:inbox, channel: email_channel, account: account)

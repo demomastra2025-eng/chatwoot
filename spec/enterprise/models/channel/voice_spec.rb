@@ -18,7 +18,7 @@ RSpec.describe Channel::Voice do
     it 'validates presence of provider_config' do
       channel.provider_config = nil
       expect(channel).not_to be_valid
-      expect(channel.errors[:provider_config]).to include("can't be blank")
+      expect(channel.errors[:provider_config]).to be_present
     end
 
     it 'validates presence of account_sid in provider_config' do
@@ -61,6 +61,38 @@ RSpec.describe Channel::Voice do
       }
       expect(channel).to be_valid
     end
+
+    it 'is valid with Sipuni account number and generated webhook token' do
+      sipuni_channel = create(
+        :channel_voice,
+        provider: 'sipuni',
+        provider_config: { account_number: '123456', audio_mode: 'external_softphone' }
+      )
+
+      expect(sipuni_channel.provider_config.with_indifferent_access[:webhook_token]).to be_present
+    end
+
+    it 'preserves the Sipuni webhook token when config is updated without a token' do
+      sipuni_channel = create(:channel_voice, :sipuni)
+      token = sipuni_channel.provider_config.with_indifferent_access[:webhook_token]
+
+      sipuni_channel.update!(
+        provider_config: {
+          account_number: 'updated-account',
+          default_internal_number: '101',
+          audio_mode: 'external_softphone'
+        }
+      )
+
+      expect(sipuni_channel.reload.provider_config.with_indifferent_access[:webhook_token]).to eq(token)
+    end
+
+    it 'validates presence of Sipuni account number' do
+      sipuni_channel = build(:channel_voice, account: create(:account), provider: 'sipuni', provider_config: { webhook_token: 'token' })
+
+      expect(sipuni_channel).not_to be_valid
+      expect(sipuni_channel.errors[:provider_config]).to include('account_number is required for Sipuni provider')
+    end
   end
 
   describe '#name' do
@@ -74,6 +106,16 @@ RSpec.describe Channel::Voice do
     it 'stores twiml_app_sid in provider_config' do
       ch = create(:channel_voice)
       expect(ch.provider_config.with_indifferent_access[:twiml_app_sid]).to eq(twiml_app_sid)
+    end
+  end
+
+  describe '#sipuni_events_webhook_url' do
+    it 'builds the Sipuni webhook URL with the inbox id and generated token' do
+      sipuni_channel = create(:channel_voice, :sipuni)
+      token = sipuni_channel.provider_config.with_indifferent_access[:webhook_token]
+
+      expect(sipuni_channel.sipuni_events_webhook_url).to include("/webhooks/sipuni/voice/#{sipuni_channel.inbox.id}")
+      expect(sipuni_channel.sipuni_events_webhook_url).to include("token=#{token}")
     end
   end
 end

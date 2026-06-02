@@ -209,6 +209,13 @@ if resource.channel_type == 'Channel::Voice'
     json.voice_status_webhook_url resource.channel.try(:voice_status_webhook_url)
   end
 
+  if resource.channel.provider == 'sipuni'
+    if Current.account_user&.administrator?
+      json.sipuni_events_webhook_url resource.channel.try(:sipuni_events_webhook_url)
+      json.provider_config resource.channel.try(:provider_config).to_h.with_indifferent_access.except(:webhook_token).to_h
+    end
+  end
+
   if resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding.present?
     json.telephony resource.telephony_number_binding.to_telephony_h
   end

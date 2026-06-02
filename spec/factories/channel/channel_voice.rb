@@ -35,5 +35,17 @@ FactoryBot.define do
         Telephony::NumberBinding.sync_from_voice_channel!(channel_voice)
       end
     end
+
+    trait :sipuni do
+      provider { 'sipuni' }
+      provider_config do
+        {
+          account_number: "sipuni-#{SecureRandom.hex(4)}",
+          webhook_token: SecureRandom.hex(24),
+          audio_mode: 'external_softphone',
+          default_internal_number: '100'
+        }
+      end
+    end
   end
 end

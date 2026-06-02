@@ -479,20 +479,18 @@ class Telephony::EventsIngestionService
 
   def ensure_conversation!(call_session, account)
     return if call_session.conversation.present?
-    return unless call_session.direction == 'inbound'
 
     inbox = call_session.inbox || resolve_inbox(account)
     if inbox.blank?
-      raise Telephony::Error.new(code: 'VOICE_INBOX_NOT_FOUND', message: 'Unable to resolve voice inbox for inbound call',
+      raise Telephony::Error.new(code: 'VOICE_INBOX_NOT_FOUND', message: "Unable to resolve voice inbox for #{call_session.direction} call",
                                  status: :not_found)
     end
 
-    conversation = Voice::InboundCallBuilder.perform!(
-      account: account,
-      inbox: inbox,
-      from_number: caller_number,
-      call_sid: call_ref
-    )
+    conversation = if call_session.direction == 'inbound'
+                     ensure_inbound_conversation!(account: account, inbox: inbox)
+                   else
+                     ensure_outbound_conversation!(account: account, inbox: inbox, call_session: call_session)
+                   end
 
     call_session.update!(
       conversation: conversation,
@@ -500,6 +498,61 @@ class Telephony::EventsIngestionService
       inbox: inbox,
       number_binding: inbox.telephony_number_binding || call_session.number_binding
     )
+  end
+
+  def ensure_inbound_conversation!(account:, inbox:)
+    Voice::InboundCallBuilder.perform!(
+      account: account,
+      inbox: inbox,
+      from_number: caller_number,
+      call_sid: call_ref
+    )
+  end
+
+  def ensure_outbound_conversation!(account:, inbox:, call_session:)
+    contact_number = call_session.to_number.presence || resolved_to_number
+    if contact_number.blank?
+      raise Telephony::Error.new(code: 'CONTACT_PHONE_NOT_FOUND', message: 'Unable to resolve contact phone number for outbound call',
+                                 status: :unprocessable_content)
+    end
+
+    contact = ensure_call_contact!(account, contact_number)
+    contact_inbox = ensure_call_contact_inbox!(contact, inbox, contact_number)
+    conversation = account.conversations.find_by(identifier: call_ref) ||
+                   account.conversations.create!(
+                     contact_inbox_id: contact_inbox.id,
+                     inbox_id: inbox.id,
+                     contact_id: contact.id,
+                     status: :open,
+                     identifier: call_ref
+                   )
+
+    update_outbound_conversation!(conversation, call_session)
+    conversation
+  end
+
+  def ensure_call_contact!(account, phone_number)
+    account.contacts.find_or_create_by!(phone_number: phone_number) do |record|
+      record.name = phone_number if record.name.blank?
+    end
+  end
+
+  def ensure_call_contact_inbox!(contact, inbox, source_id)
+    ContactInbox.find_or_create_by!(contact_id: contact.id, inbox_id: inbox.id) do |record|
+      record.source_id = source_id
+    end
+  end
+
+  def update_outbound_conversation!(conversation, call_session)
+    timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i
+    attrs = (conversation.additional_attributes || {}).deep_dup
+    attrs['call_direction'] = 'outbound'
+    attrs['call_status'] = call_session.status
+    attrs['conference_sid'] ||= Voice::Conference::Name.for(conversation)
+    attrs['telephony_provider'] = call_session.provider
+    attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
+    attrs['meta']['initiated_at'] ||= timestamp
+    conversation.update!(identifier: call_ref, additional_attributes: attrs, last_activity_at: Time.current)
   end
 
   def apply_call_status!(call_session)
@@ -554,6 +607,7 @@ class Telephony::EventsIngestionService
     data['data']['transcript'] = transcript if transcript.present?
     data['data']['summary'] = call_session.summary if call_session.summary.present?
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
+    message.source_id ||= call_session.voice_call_source_id
     message.update!(content_attributes: data)
     mark_linked_runtime_duplicate_message!(call_session, message)
   end
@@ -611,11 +665,11 @@ class Telephony::EventsIngestionService
 
     timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i
     source_id = "voice_call:#{call_session.external_call_ref}"
-    conversation.messages.create!(
+    message = conversation.messages.build(
       account: conversation.account,
       inbox: conversation.inbox,
-      sender: conversation.contact,
-      message_type: :incoming,
+      sender: voice_message_sender(call_session, conversation),
+      message_type: voice_message_type(call_session),
       content: 'Voice Call',
       content_type: :voice_call,
       source_id: source_id,
@@ -633,9 +687,22 @@ class Telephony::EventsIngestionService
         }.compact
       }
     )
+    message.skip_send_reply = true if call_session.direction == 'outbound'
+    message.save!
+    message
   rescue ActiveRecord::RecordNotUnique
     conversation.messages.voice_calls.find_by(source_id: source_id) ||
       Message.find_by(inbox: conversation.inbox, source_id: source_id)
+  end
+
+  def voice_message_type(call_session)
+    call_session.direction == 'outbound' ? :outgoing : :incoming
+  end
+
+  def voice_message_sender(call_session, conversation)
+    return conversation.contact if call_session.direction == 'inbound'
+
+    call_session.agent_binding&.user
   end
 
   def voice_message_meta(call_session)
@@ -925,9 +992,12 @@ class Telephony::EventsIngestionService
 
   def call_recording_metadata(call_session)
     recording = call_session.metadata.to_h['recording']
-    return {} unless recording.is_a?(Hash)
+    metadata = recording.is_a?(Hash) ? recording.deep_stringify_keys : {}
+    return {} if metadata.blank? && !http_url?(call_session.recording_ref)
 
-    recording.deep_stringify_keys.merge('recording_ref' => call_session.recording_ref).compact
+    metadata['recording_ref'] ||= call_session.recording_ref if call_session.recording_ref.present?
+    metadata['recording_url'] ||= call_session.recording_ref if http_url?(call_session.recording_ref)
+    metadata.compact
   end
 
   def recording_url(call_session)
@@ -945,12 +1015,16 @@ class Telephony::EventsIngestionService
     candidate = call_recording_metadata(call_session)['recording_url'].presence || call_session.recording_ref.presence
     return if candidate.blank?
 
-    uri = URI.parse(candidate.to_s)
-    return unless uri.is_a?(URI::HTTP) && uri.host.present?
+    candidate.to_s if http_url?(candidate)
+  end
 
-    uri.to_s
+  def http_url?(value)
+    return false if value.blank?
+
+    uri = URI.parse(value.to_s)
+    uri.is_a?(URI::HTTP) && uri.host.present?
   rescue URI::InvalidURIError
-    nil
+    false
   end
 
   def recording_event_metadata

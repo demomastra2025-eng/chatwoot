@@ -42,6 +42,38 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
         expect(response.body).to include('Voice Inbox')
         expect(response.body).to include('+15551234567')
       end
+
+      it 'creates a Sipuni voice inbox and returns a configured webhook url' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/inboxes",
+               headers: admin.create_new_auth_token,
+               params: {
+                 name: 'Sipuni Voice',
+                 channel: {
+                   type: 'voice',
+                   phone_number: '+77271234567',
+                   provider: 'sipuni',
+                   provider_config: {
+                     account_number: '123456',
+                     default_internal_number: '100',
+                     audio_mode: 'external_softphone'
+                   }
+                 }
+               },
+               as: :json
+        end.to change(Channel::Voice.where(provider: 'sipuni'), :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['channel_type']).to eq('Channel::Voice')
+        expect(response.parsed_body['provider']).to eq('sipuni')
+        expect(response.parsed_body['sipuni_events_webhook_url']).to include('/webhooks/sipuni/voice/')
+        expect(response.parsed_body['provider_config']).to include(
+          'account_number' => '123456',
+          'default_internal_number' => '100',
+          'audio_mode' => 'external_softphone'
+        )
+        expect(response.parsed_body['provider_config']).not_to have_key('webhook_token')
+      end
     end
   end
 
@@ -60,6 +92,29 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(JSON.parse(response.body)['auto_assignment_config']['max_assignment_limit']).to eq 10
+      end
+
+      it 'preserves the Sipuni webhook token when updating sanitized provider config' do
+        sipuni_channel = create(:channel_voice, :sipuni, account: account)
+        sipuni_inbox = sipuni_channel.inbox
+        token = sipuni_channel.provider_config_hash.with_indifferent_access[:webhook_token]
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{sipuni_inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: {
+                channel: {
+                  provider_config: {
+                    account_number: 'updated-account',
+                    default_internal_number: '101',
+                    audio_mode: 'external_softphone'
+                  }
+                }
+              },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(sipuni_channel.reload.provider_config_hash.with_indifferent_access[:webhook_token]).to eq(token)
+        expect(response.parsed_body['provider_config']).not_to have_key('webhook_token')
       end
     end
   end

@@ -177,7 +177,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def allowed_channel_types
-    %w[web_widget api email line telegram telegram_personal linkedin_personal weixin whatsapp whatsapp_web sms vk_community]
+    types = %w[web_widget api email line telegram telegram_personal linkedin_personal weixin whatsapp whatsapp_web sms vk_community]
+    types << 'voice' if defined?(Channel::Voice)
+    types
   end
 
   def update_inbox_working_hours
@@ -220,9 +222,10 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def sync_voice_telephony!(channel)
     return unless defined?(Channel::Voice) && channel.is_a?(Channel::Voice)
-    return unless channel.provider == 'fonoster'
 
     sync_voice_captain_inbox!(channel)
+    return unless channel.provider == 'fonoster'
+
     binding = Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
     return if binding.blank?
 
@@ -347,7 +350,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       'whatsapp' => Channel::Whatsapp,
       'whatsapp_web' => Channel::WhatsappWeb,
       'sms' => Channel::Sms,
-      'vk_community' => Channel::VkCommunity
+      'vk_community' => Channel::VkCommunity,
+      'voice' => (Channel::Voice if defined?(Channel::Voice))
     }[permitted_params[:channel][:type]]
   end
 
