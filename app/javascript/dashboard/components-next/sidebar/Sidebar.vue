@@ -925,13 +925,6 @@ const menuItems = computed(() => {
                   activeOn: allLabelsActiveOn,
                   suppressHeaderActiveWhenChildActive: true,
                   children: [
-                    {
-                      name: 'all-labels',
-                      label: t('SIDEBAR.ALL'),
-                      collapsedLabel: t('SIDEBAR.ALL_TAGS'),
-                      activeOn: allLabelsActiveOn,
-                      to: withConversationStatus('home'),
-                    },
                     ...labels.value.map(label => ({
                       name: `${label.title}-${label.id}`,
                       label: label.title,

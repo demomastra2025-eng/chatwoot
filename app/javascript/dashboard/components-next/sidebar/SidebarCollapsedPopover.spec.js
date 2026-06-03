@@ -47,9 +47,9 @@ const defaultChildren = [
     ],
     children: [
       {
-        name: 'all-labels',
-        label: 'All tags',
-        to: { name: 'home' },
+        name: 'VIP-1',
+        label: 'VIP',
+        to: { name: 'label_conversations', params: { label: 'VIP' } },
       },
     ],
   },
@@ -116,7 +116,7 @@ describe('SidebarCollapsedPopover', () => {
     await toggleButton.trigger('click');
 
     expect(routerPush).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain('All tags');
+    expect(wrapper.text()).toContain('VIP');
   });
 
   it('renders an active linkable subgroup even without accessible subchildren', () => {
