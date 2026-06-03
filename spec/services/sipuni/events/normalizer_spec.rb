@@ -47,7 +47,7 @@ RSpec.describe Sipuni::Events::Normalizer do
         timestamp: '1717171760',
         call_start_timestamp: '1717171700',
         call_answer_timestamp: '1717171710',
-        call_record_link: 'https://sipuni.example.test/recordings/call-2.mp3'
+        call_record_link: 'https://sipuni.com/api/crm/record?id=call-2&hash=recording-hash&user=056124'
       }
     ).perform
 
@@ -55,8 +55,8 @@ RSpec.describe Sipuni::Events::Normalizer do
       event: 'session_completed',
       status: 'completed',
       duration: 50,
-      recording_ref: 'https://sipuni.example.test/recordings/call-2.mp3',
-      recording_url: 'https://sipuni.example.test/recordings/call-2.mp3'
+      recording_ref: 'https://sipuni.com/api/crm/record?id=call-2&hash=recording-hash&user=056124',
+      recording_url: 'https://sipuni.com/api/crm/record?id=call-2&hash=recording-hash&user=056124'
     )
     expect(payload[:metadata]).to include(
       provider: 'sipuni',
@@ -76,7 +76,7 @@ RSpec.describe Sipuni::Events::Normalizer do
         dst_num: '77271234567',
         timestamp: '1717171760',
         call_start_timestamp: '1717171700',
-        call_record_link: 'https://sipuni.example.test/recordings/no-answer.mp3'
+        call_record_link: 'https://sipuni.com/api/crm/record?id=no-answer&hash=recording-hash&user=056124'
       }
     ).perform
 
@@ -96,6 +96,11 @@ RSpec.describe Sipuni::Events::Normalizer do
       params: {
         token: 'webhook-token',
         webhook_token: 'alternate-webhook-token',
+        call_record_link: 'https://sipuni.com/api/crm/record?id=raw-call&hash=secret-hash&user=056124',
+        callRecordLink: 'https://sipuni.com/api/crm/record?id=raw-call-2&hash=secret-hash-2&user=056124',
+        recording_url: 'https://sipuni.com/api/crm/record?id=raw-call-3&hash=secret-hash-3&user=056124',
+        recordingUrl: 'https://sipuni.com/api/crm/record?id=raw-call-4&hash=secret-hash-4&user=056124',
+        hash: 'secret-hash',
         event: '1',
         call_id: 'sipuni-call-with-raw-metadata',
         src_num: '77011234567',
@@ -131,7 +136,8 @@ RSpec.describe Sipuni::Events::Normalizer do
       'last_called' => '',
       'roistat_number' => ''
     )
-    expect(payload[:metadata][:raw_webhook]).not_to include('token', 'webhook_token')
+    filtered_keys = %w[token webhook_token call_record_link callRecordLink recording_url recordingUrl hash]
+    expect(payload[:metadata][:raw_webhook].keys).not_to include(*filtered_keys)
   end
 
   it 'detects outbound calls from an internal Sipuni extension to an external number' do
@@ -172,5 +178,66 @@ RSpec.describe Sipuni::Events::Normalizer do
       agent_ref: agent_binding.agent_ref,
       chatwoot_user_id: operator.id
     )
+  end
+
+  it 'maps Sipuni terminal statuses without exposing non-answer recordings' do
+    {
+      'BUSY' => %w[dial_status busy callee],
+      'NOANSWER' => %w[dial_status no_answer callee],
+      'NO_ANSWER' => %w[dial_status no_answer callee],
+      'CANCEL' => %w[dial_status cancelled caller],
+      'CANCELLED' => %w[dial_status cancelled caller],
+      'CONGESTION' => %w[provider_error failed provider],
+      'CHANUNAVAIL' => %w[provider_error failed provider]
+    }.each do |sipuni_status, (event_name, normalized_status, ended_by)|
+      payload = described_class.new(
+        inbox: inbox,
+        params: {
+          event: '2',
+          status: sipuni_status,
+          call_id: "sipuni-call-#{sipuni_status.downcase}",
+          src_num: '77011234567',
+          dst_num: '77271234567',
+          timestamp: '1717171760',
+          call_start_timestamp: '1717171700',
+          call_record_link: "https://sipuni.com/api/crm/record?id=#{sipuni_status.downcase}&hash=recording-hash&user=056124"
+        }
+      ).perform
+
+      expect(payload).to include(
+        event: event_name,
+        status: normalized_status,
+        duration: 0,
+        ended_by: ended_by,
+        end_reason: sipuni_status.downcase
+      )
+      expect(payload).not_to have_key(:recording_ref)
+      expect(payload).not_to have_key(:recording_url)
+    end
+  end
+
+  it 'ignores Sipuni recording links outside Sipuni HTTPS hosts' do
+    unsafe_url = 'https://attacker.example.test/recordings/call.mp3?hash=secret'
+
+    payload = described_class.new(
+      inbox: inbox,
+      params: {
+        event: '2',
+        status: 'ANSWER',
+        call_id: 'sipuni-call-unsafe-recording',
+        src_num: '77011234567',
+        dst_num: '77271234567',
+        timestamp: '1717171760',
+        call_start_timestamp: '1717171700',
+        call_answer_timestamp: '1717171710',
+        call_record_link: unsafe_url
+      }
+    ).perform
+
+    expect(payload).to include(event: 'session_completed', status: 'completed')
+    expect(payload).not_to have_key(:recording_ref)
+    expect(payload).not_to have_key(:recording_url)
+    expect(payload[:metadata]).to include(recording_link_present: true)
+    expect(payload[:metadata][:raw_webhook].to_json).not_to include(unsafe_url)
   end
 end

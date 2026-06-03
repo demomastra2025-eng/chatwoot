@@ -20,7 +20,7 @@ RSpec.describe 'Sipuni voice events' do
       timestamp: '1717171760',
       call_start_timestamp: '1717171700',
       call_answer_timestamp: '1717171710',
-      call_record_link: 'https://sipuni.example.test/recordings/call-1.mp3'
+      call_record_link: 'https://sipuni.com/api/crm/record?id=call-1&hash=recording-hash&user=056124'
     }
 
     expect do
@@ -39,7 +39,7 @@ RSpec.describe 'Sipuni voice events' do
       from_number: '+77011234567',
       to_number: '+77271234567',
       duration_seconds: 50,
-      recording_ref: 'https://sipuni.example.test/recordings/call-1.mp3'
+      recording_ref: 'https://sipuni.com/api/crm/record?id=call-1&hash=recording-hash&user=056124'
     )
 
     voice_message = call_session.conversation.messages.voice_calls.find_by!(source_id: 'voice_call:sipuni-webhook-call-1')
@@ -77,7 +77,7 @@ RSpec.describe 'Sipuni voice events' do
       timestamp: '1717171760',
       call_start_timestamp: '1717171700',
       call_answer_timestamp: '1717171710',
-      call_record_link: 'https://sipuni.example.test/recordings/outbound-1.mp3'
+      call_record_link: 'https://sipuni.com/api/crm/record?id=outbound-1&hash=recording-hash&user=056124'
     }
 
     expect do
@@ -93,7 +93,7 @@ RSpec.describe 'Sipuni voice events' do
       from_number: '+77271234567',
       to_number: '+77015550102',
       duration_seconds: 50,
-      recording_ref: 'https://sipuni.example.test/recordings/outbound-1.mp3'
+      recording_ref: 'https://sipuni.com/api/crm/record?id=outbound-1&hash=recording-hash&user=056124'
     )
     expect(call_session.agent_binding).to eq(agent_binding)
 
@@ -132,5 +132,57 @@ RSpec.describe 'Sipuni voice events' do
 
     expect(response).to have_http_status(:unauthorized)
     expect(response.parsed_body).to include('success' => false)
+  end
+
+  it 'deduplicates repeated Sipuni webhook retries by event key' do
+    params = {
+      token: token,
+      event: '2',
+      status: 'ANSWER',
+      call_id: 'sipuni-webhook-duplicate-1',
+      src_num: '77011234567',
+      dst_num: '77271234567',
+      timestamp: '1717171760',
+      call_start_timestamp: '1717171700',
+      call_answer_timestamp: '1717171710',
+      call_record_link: 'https://sipuni.com/api/crm/record?id=duplicate-1&hash=recording-hash&user=056124'
+    }
+
+    expect do
+      2.times { post path, params: params }
+    end.to change(Telephony::CallSession, :count).by(1)
+       .and change(Telephony::Event, :count).by(1)
+
+    expect(response).to have_http_status(:ok)
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'sipuni-webhook-duplicate-1')
+    expect(call_session.events.count).to eq(1)
+    expect(call_session.conversation.messages.voice_calls.where(source_id: 'voice_call:sipuni-webhook-duplicate-1').count).to eq(1)
+  end
+
+  it 'does not persist or expose unsafe non-Sipuni recording links from webhooks' do
+    unsafe_url = 'https://attacker.example.test/recordings/call-unsafe.mp3?hash=secret'
+
+    post path,
+         params: {
+           token: token,
+           event: '2',
+           status: 'ANSWER',
+           call_id: 'sipuni-webhook-unsafe-recording',
+           src_num: '77011234567',
+           dst_num: '77271234567',
+           timestamp: '1717171760',
+           call_start_timestamp: '1717171700',
+           call_answer_timestamp: '1717171710',
+           call_record_link: unsafe_url
+         }
+
+    expect(response).to have_http_status(:ok)
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'sipuni-webhook-unsafe-recording')
+    expect(call_session.recording_ref).to be_blank
+    expect(call_session.events.last.payload.to_json).not_to include(unsafe_url)
+
+    voice_message = call_session.conversation.messages.voice_calls.find_by!(source_id: 'voice_call:sipuni-webhook-unsafe-recording')
+    expect(voice_message.content_attributes.dig('data', 'recording_url')).to be_blank
+    expect(voice_message.content_attributes.dig('data', 'recording')).to be_blank
   end
 end

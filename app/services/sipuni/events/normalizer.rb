@@ -3,13 +3,22 @@ require 'digest'
 class Sipuni::Events::Normalizer
   SENSITIVE_PARAM_KEYS = %w[
     action
+    api_key
     authenticity_token
+    callRecordLink
+    call_record_link
     controller
     format
+    hash
     inbox_id
+    recordingUrl
+    recording_url
+    secret
+    signature
     token
     utf8
     webhook_token
+    websocket_auth_key
   ].freeze
 
   TERMINAL_STATUS_MAP = {
@@ -403,6 +412,12 @@ class Sipuni::Events::Normalizer
   end
 
   def recording_url
+    return @recording_url if defined?(@recording_url)
+
+    @recording_url = Sipuni::RecordingUrl.normalize(raw_recording_url)
+  end
+
+  def raw_recording_url
     params['call_record_link'].presence || params['callRecordLink'].presence || params['recording_url'].presence || params['recordingUrl'].presence
   end
 
@@ -488,7 +503,7 @@ class Sipuni::Events::Normalizer
   def sipuni_recording_metadata
     {
       was_recorded: boolean_value(params['is_recorded'].presence || params['isRecorded'].presence),
-      recording_link_present: recording_url.present?
+      recording_link_present: raw_recording_url.present?
     }
   end
 

@@ -1002,6 +1002,8 @@ class Telephony::EventsIngestionService
   end
 
   def presentation_recording_metadata(call_session)
+    return {} if unsafe_sipuni_external_recording?(call_session)
+
     metadata = call_recording_metadata(call_session).deep_dup
     return metadata unless proxy_external_recording?(call_session)
 
@@ -1011,6 +1013,7 @@ class Telephony::EventsIngestionService
   end
 
   def recording_url(call_session)
+    return if unsafe_sipuni_external_recording?(call_session)
     return internal_recording_url(call_session) if proxy_external_recording?(call_session)
 
     external_recording_url(call_session) || internal_recording_url(call_session)
@@ -1026,12 +1029,18 @@ class Telephony::EventsIngestionService
   def external_recording_url(call_session)
     candidate = call_recording_metadata(call_session)['recording_url'].presence || call_session.recording_ref.presence
     return if candidate.blank?
+    return if unsafe_sipuni_external_recording?(call_session, candidate)
 
     candidate.to_s if http_url?(candidate)
   end
 
   def proxy_external_recording?(call_session)
-    call_session.provider == 'sipuni' && external_recording_url(call_session).present?
+    call_session.provider == 'sipuni' && Sipuni::RecordingUrl.allowed?(external_recording_url(call_session))
+  end
+
+  def unsafe_sipuni_external_recording?(call_session, candidate = nil)
+    candidate ||= call_recording_metadata(call_session)['recording_url'].presence || call_session.recording_ref.presence
+    call_session.provider == 'sipuni' && http_url?(candidate) && !Sipuni::RecordingUrl.allowed?(candidate)
   end
 
   def http_url?(value)

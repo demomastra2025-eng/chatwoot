@@ -35,6 +35,8 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
         return
       end
 
+      raise ActiveRecord::RecordNotFound, 'Recording could not be found' if sipuni_recording?
+
       redirect_to external_recording_url, allow_other_host: true
       return
     end
@@ -97,10 +99,13 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def recording_available?
+    return false if unsafe_sipuni_external_recording?
+
     recording_storage_key.present? || external_recording_url.present?
   end
 
   def recording_url_for_call_session
+    return if unsafe_sipuni_external_recording?
     return signed_recording_url_for_call_session if proxy_external_recording?
 
     external_recording_url || signed_recording_url_for_call_session
@@ -125,7 +130,15 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def proxy_external_recording?
-    @call_session.provider == 'sipuni' && sipuni_recording_url?(external_recording_url)
+    sipuni_recording? && sipuni_recording_url?(external_recording_url)
+  end
+
+  def unsafe_sipuni_external_recording?
+    sipuni_recording? && external_recording_url.present? && !proxy_external_recording?
+  end
+
+  def sipuni_recording?
+    @call_session.provider == 'sipuni'
   end
 
   def stream_external_recording!
@@ -171,18 +184,11 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def sipuni_recording_url?(url)
-    return false if url.blank?
-
-    sipuni_recording_uri?(URI.parse(url))
-  rescue URI::InvalidURIError
-    false
+    Sipuni::RecordingUrl.allowed?(url)
   end
 
   def sipuni_recording_uri?(uri)
-    host = uri.host.to_s
-    uri.is_a?(URI::HTTP) &&
-      uri.scheme == 'https' &&
-      (host == 'sipuni.com' || host.end_with?('.sipuni.com'))
+    Sipuni::RecordingUrl.allowed?(uri)
   end
 
   def external_recording_content_type(response)
@@ -218,7 +224,19 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def recording_storage_key
-    recording_metadata['storage_key'].presence || recording_metadata['recording_ref'].presence || @call_session.recording_ref.presence
+    candidate = recording_metadata['storage_key'].presence || recording_metadata['recording_ref'].presence || @call_session.recording_ref.presence
+    return if sipuni_recording? && http_url?(candidate) && !Sipuni::RecordingUrl.allowed?(candidate)
+
+    candidate
+  end
+
+  def http_url?(value)
+    return false if value.blank?
+
+    uri = URI.parse(value.to_s)
+    uri.is_a?(URI::HTTP) && uri.host.present?
+  rescue URI::InvalidURIError
+    false
   end
 
   def authenticate_recording_request!

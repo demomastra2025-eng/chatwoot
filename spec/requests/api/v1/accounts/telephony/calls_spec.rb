@@ -212,6 +212,40 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(response.body).to start_with('ID3')
   end
 
+  it 'does not redirect Sipuni recording playback to non-Sipuni external hosts' do
+    sipuni_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+77271234567')
+    sipuni_inbox = sipuni_channel.inbox
+    sipuni_conversation = create(:conversation, account: account, inbox: sipuni_inbox, contact: contact)
+    unsafe_url = 'https://attacker.example.test/api/crm/record?id=sipuni-call-unsafe&hash=secret'
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      conversation: sipuni_conversation,
+      inbox: sipuni_inbox,
+      contact: contact,
+      number_binding: sipuni_inbox.telephony_number_binding,
+      provider: 'sipuni',
+      external_call_ref: 'sipuni-unsafe-recording-call',
+      recording_ref: unsafe_url,
+      metadata: {
+        'recording' => {
+          'recording_ref' => unsafe_url,
+          'recording_url' => unsafe_url
+        }
+      }
+    )
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'recording_url')).to be_blank
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: headers
+
+    expect(response).to have_http_status(:not_found)
+    expect(response).not_to redirect_to(unsafe_url)
+  end
+
   it 'does not expose another account recording for the same call ref' do
     other_account = create(:account)
     create(:telephony_call_session, account: other_account, external_call_ref: 'other-recording-call', metadata: recording_metadata)
