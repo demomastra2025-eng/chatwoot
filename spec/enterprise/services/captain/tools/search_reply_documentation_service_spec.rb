@@ -45,7 +45,7 @@ RSpec.describe Captain::Tools::SearchReplyDocumentationService do
     general_entry = create(
       :captain_assistant_response,
       account: account,
-      assistant: assistant,
+      assistant: nil,
       answer: 'General answer',
       visibility: :general,
       status: :approved
@@ -74,5 +74,27 @@ RSpec.describe Captain::Tools::SearchReplyDocumentationService do
 
     expect(service.send(:search_responses, 'visibilityscope')).to eq(scoped_relation)
     expect(scoped_relation).to have_received(:search).with('visibilityscope', account_id: account.id)
+  end
+
+  it 'degrades to lexical fallback when semantic response lookup is not configured' do
+    create(
+      :captain_assistant_response,
+      account: account,
+      assistant: assistant,
+      question: 'visibilityscope shared',
+      answer: 'Search reply fallback answer',
+      status: :approved
+    )
+    translate_service = instance_double(Captain::Llm::TranslateQueryService)
+    allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translate_service)
+    allow(translate_service).to receive(:translate).and_return('visibilityscope')
+    service = described_class.new(account: account, assistant: assistant)
+    allow(service).to receive(:search_responses)
+      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'OpenRouter embeddings are not configured.')
+
+    result = service.execute(query: 'visibilityscope')
+
+    expect(result).to include('Search reply fallback answer')
+    expect(result).not_to include('temporarily unavailable')
   end
 end

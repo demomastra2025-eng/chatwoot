@@ -355,8 +355,7 @@ const hydrateAccessForm = payload => {
     openapi_write: access.sources?.openapi_write === true,
   };
   accessForm.max_risk_level = access.max_risk_level || 'medium';
-  accessForm.require_confirmation_for_mutations =
-    access.require_confirmation_for_mutations !== false;
+  accessForm.require_confirmation_for_mutations = true;
   accessForm.allowed_groups = Array.isArray(access.allowed_groups)
     ? [...access.allowed_groups]
     : [];
@@ -388,8 +387,7 @@ const applyAccessMode = modeId => {
 
   accessForm.sources = { ...policy.sources };
   accessForm.max_risk_level = policy.max_risk_level;
-  accessForm.require_confirmation_for_mutations =
-    policy.require_confirmation_for_mutations;
+  accessForm.require_confirmation_for_mutations = true;
   accessForm.allowed_groups = [];
   accessForm.blocked_groups = [];
   applySelectedToolsFromPolicy(policy);
@@ -409,8 +407,7 @@ const serializedAccessForm = () => {
     enabled: accessForm.enabled,
     sources: { ...accessForm.sources },
     max_risk_level: accessForm.max_risk_level,
-    require_confirmation_for_mutations:
-      accessForm.require_confirmation_for_mutations,
+    require_confirmation_for_mutations: true,
     allowed_groups: [...accessForm.allowed_groups],
     blocked_groups: [...accessForm.blocked_groups],
     allowed_tool_ids: [...selectedNativeIds],
@@ -609,24 +606,34 @@ onMounted(fetchMcpSettings);
         <div
           class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-1 p-3"
         >
-          <span class="text-sm font-medium text-n-slate-12">
-            {{
-              t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION')
-            }}
+          <span class="flex min-w-0 flex-col gap-1">
+            <span class="text-sm font-medium text-n-slate-12">
+              {{
+                t(
+                  'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION'
+                )
+              }}
+            </span>
+            <span class="text-xs font-normal text-n-slate-10">
+              {{
+                t(
+                  'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION_LOCKED'
+                )
+              }}
+            </span>
           </span>
           <div class="flex items-center gap-2">
             <span class="text-xs font-normal text-n-slate-10">
               {{ stateLabel(accessForm.require_confirmation_for_mutations) }}
             </span>
             <Switch
-              v-model="accessForm.require_confirmation_for_mutations"
-              :disabled="accessControlsDisabled"
+              model-value
+              disabled
               :aria-label="
                 t(
                   'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION'
                 )
               "
-              @change="markCustomAccessMode"
             />
           </div>
         </div>

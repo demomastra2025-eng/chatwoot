@@ -60,6 +60,24 @@ RSpec.describe Onelink::Mcp::OpenapiCatalog do
         expect(tool.dig(:inputSchema, :properties)).to include('_confirm')
       end
     end
+
+    context 'when a legacy policy tries to disable mutation confirmation' do
+      let(:access_policy_config) do
+        {
+          sources: { openapi_write: true },
+          max_risk_level: 'custom',
+          require_confirmation_for_mutations: false
+        }
+      end
+
+      it 'still marks OpenAPI mutations as requiring _confirm in the schema' do
+        tool = catalog.tools.find { |item| item.dig(:_meta, :method) != 'GET' }
+
+        expect(tool).to be_present
+        expect(tool.dig(:_meta, :requires_confirmation)).to be(true)
+        expect(tool.dig(:inputSchema, :required)).to include('_confirm')
+      end
+    end
   end
 
   describe '#call_tool' do
@@ -119,6 +137,26 @@ RSpec.describe Onelink::Mcp::OpenapiCatalog do
       end
 
       it 'requires explicit confirmation before dispatching the mutation' do
+        allow(Rails.application).to receive(:call)
+
+        result = catalog.call_tool(name: 'api__update_account', arguments: {})
+
+        expect(result[:isError]).to be(true)
+        expect(result.dig(:content, 0, :text)).to include('_confirm: true')
+        expect(Rails.application).not_to have_received(:call)
+      end
+    end
+
+    context 'when a mutating OpenAPI tool is enabled with legacy confirmation disabled' do
+      let(:access_policy_config) do
+        {
+          sources: { openapi_write: true },
+          max_risk_level: 'custom',
+          require_confirmation_for_mutations: false
+        }
+      end
+
+      it 'still blocks the mutation before dispatching into Rails without _confirm' do
         allow(Rails.application).to receive(:call)
 
         result = catalog.call_tool(name: 'api__update_account', arguments: {})

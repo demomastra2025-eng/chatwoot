@@ -40,7 +40,7 @@ export const MCP_ACCESS_MODE_POLICIES = {
       openapi_write: true,
     },
     max_risk_level: 'custom',
-    require_confirmation_for_mutations: false,
+    require_confirmation_for_mutations: true,
   },
 };
 

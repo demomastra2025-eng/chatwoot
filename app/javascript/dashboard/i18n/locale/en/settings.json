@@ -119,6 +119,7 @@
         "SAVE_ACCESS": "Save",
         "ACCESS_ENABLED": "MCP enabled",
         "MUTATION_CONFIRMATION": "Confirm changes",
+        "MUTATION_CONFIRMATION_LOCKED": "Always required for external MCP actions that can change workspace data.",
         "ACCESS_SUMMARY": "Selected tools",
         "TOOLS_TITLE": "Tools",
         "CATALOG_TITLE": "Tools",

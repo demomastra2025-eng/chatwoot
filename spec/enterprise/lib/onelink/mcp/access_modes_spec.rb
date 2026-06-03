@@ -30,7 +30,7 @@ RSpec.describe Onelink::Mcp::AccessModes do
         'openapi_write' => true
       },
       'max_risk_level' => 'custom',
-      'require_confirmation_for_mutations' => false,
+      'require_confirmation_for_mutations' => true,
       'allowed_tool_ids' => [],
       'blocked_tool_ids' => []
     )

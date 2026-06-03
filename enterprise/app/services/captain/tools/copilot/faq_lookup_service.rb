@@ -16,9 +16,9 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     return formatted_payload(cached_payload) if cached_payload.present?
 
     formatted_payload(cache.write(semantic_payload(query: query, translated_query: translated_query, semantic: semantic)))
-  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
+  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
     log_semantic_unavailable(e)
-    formatted_payload(semantic_unavailable_payload(query: query, translated_query: translated_query || query))
+    formatted_payload(semantic_unavailable_payload(query: query, translated_query: translated_query || query, error: e))
   rescue StandardError => e
     Rails.logger.error do
       "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
@@ -41,14 +41,22 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     )
   end
 
-  def semantic_unavailable_payload(query:, translated_query:)
+  def semantic_unavailable_payload(query:, translated_query:, error: nil)
     faq_result_payload(
       query: query,
       translated_query: translated_query,
       responses: lexical_fallback_responses(translated_query, query),
       lookup_strategy: 'lexical',
-      trace_context: trace_context(semantic_attempted: true, fallback_reason: 'semantic_unavailable')
+      trace_context: trace_context(semantic_attempted: true, fallback_reason: semantic_error_fallback_reason(error))
     )
+  end
+
+  def semantic_error_fallback_reason(error)
+    return 'semantic_not_configured' if error.is_a?(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError) ||
+                                        error.is_a?(RubyLLM::ConfigurationError)
+    return 'semantic_timeout' if error.is_a?(Timeout::Error)
+
+    'semantic_unavailable'
   end
 
   def translated_query_for(query)

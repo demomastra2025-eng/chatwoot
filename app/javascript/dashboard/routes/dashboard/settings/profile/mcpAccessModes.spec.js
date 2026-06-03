@@ -42,7 +42,7 @@ describe('mcpAccessModes', () => {
         openapi_write: true,
       },
       max_risk_level: 'custom',
-      require_confirmation_for_mutations: false,
+      require_confirmation_for_mutations: true,
       allowed_groups: [],
       blocked_groups: [],
       allowed_tool_ids: [],

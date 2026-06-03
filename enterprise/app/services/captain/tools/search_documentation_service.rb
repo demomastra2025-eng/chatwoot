@@ -15,7 +15,7 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
     translated_query = translated_query_for(query)
     responses = lookup_responses(translated_query, query)
     formatted_responses_or_empty(responses)
-  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
+  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
     log_semantic_unavailable(e)
     translated_query ||= query
 

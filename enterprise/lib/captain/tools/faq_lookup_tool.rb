@@ -12,9 +12,9 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     return JSON.pretty_generate(cached_payload) if cached_payload.present?
 
     JSON.pretty_generate(cache.write(semantic_payload(query: query, semantic: semantic)))
-  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
+  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
     Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
-    JSON.pretty_generate(semantic_unavailable_payload(query))
+    JSON.pretty_generate(semantic_unavailable_payload(query, error: e))
   end
 
   private
@@ -31,13 +31,21 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     )
   end
 
-  def semantic_unavailable_payload(query)
+  def semantic_unavailable_payload(query, error: nil)
     faq_payload(
       query: query,
       responses: lexical_fallback_responses(query),
       lookup_strategy: 'lexical',
-      trace_context: trace_context(semantic_attempted: true, fallback_reason: 'semantic_unavailable')
+      trace_context: trace_context(semantic_attempted: true, fallback_reason: semantic_error_fallback_reason(error))
     )
+  end
+
+  def semantic_error_fallback_reason(error)
+    return 'semantic_not_configured' if error.is_a?(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError) ||
+                                        error.is_a?(RubyLLM::ConfigurationError)
+    return 'semantic_timeout' if error.is_a?(Timeout::Error)
+
+    'semantic_unavailable'
   end
 
   def lookup_responses(query, semantic: true)

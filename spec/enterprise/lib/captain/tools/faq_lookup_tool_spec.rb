@@ -136,6 +136,35 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(payload).not_to have_key('error')
   end
 
+  it 'marks semantic lookup as not configured when embeddings are not configured' do
+    allow(Captain::DocumentChunk).to receive(:search)
+      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'OpenRouter embeddings are not configured.')
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_not_configured',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Click forgot password')
+  end
+
+  it 'degrades to lexical lookup when semantic lookup times out' do
+    allow(Captain::DocumentChunk).to receive(:search).and_raise(Timeout::Error, 'execution expired')
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_timeout',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Click forgot password')
+  end
+
   it 'can skip semantic lookup for realtime voice calls' do
     expect(Captain::DocumentChunk).not_to receive(:search)
 

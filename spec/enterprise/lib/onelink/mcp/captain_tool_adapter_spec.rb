@@ -69,13 +69,15 @@ RSpec.describe Onelink::Mcp::CaptainToolAdapter do
     allow(Captain::ToolCatalog).to receive(:available_tools_for).and_return(available_tools)
     allow(Captain::ToolCatalog).to receive(:allowed_tools_for)
     allow(Captain::ToolPolicy).to receive(:execution_allowed?).and_return(true)
-    allow(Captain::ToolPolicy).to receive(:selection_metadata).and_return(
-      required_features: [],
-      required_permissions: [],
-      risk_level: 'low',
-      requires_confirmation: false,
-      agent_high_risk: false
-    )
+    allow(Captain::ToolPolicy).to receive(:selection_metadata) do |tool_definition|
+      {
+        required_features: [],
+        required_permissions: [],
+        risk_level: tool_definition[:risk_level] || 'low',
+        requires_confirmation: tool_definition[:requires_confirmation] || false,
+        agent_high_risk: %w[high custom].include?(tool_definition[:risk_level].to_s)
+      }
+    end
   end
 
   describe '#catalog_entries' do
@@ -117,6 +119,38 @@ RSpec.describe Onelink::Mcp::CaptainToolAdapter do
         expect(tool_names).to eq(['allowed_tool'])
         expect(Captain::ToolCatalog).to have_received(:available_tools_for).once
         expect(Captain::ToolCatalog).not_to have_received(:allowed_tools_for)
+      end
+    end
+
+    context 'when a medium-risk Captain tool mutates state but is marked idempotent' do
+      let(:available_tools) do
+        [
+          {
+            id: 'update_priority',
+            title: 'Update Priority',
+            description: 'Update the priority of the current conversation',
+            group_name: 'Conversations',
+            allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+            risk_level: 'medium',
+            idempotent: true,
+            requires_confirmation: false,
+            input_schema: {
+              type: 'object',
+              properties: { priority: { type: 'string' } },
+              required: ['priority']
+            }
+          }
+        ]
+      end
+
+      it 'adds an MCP confirmation requirement and still advertises the tool as destructive' do
+        tool = adapter.tools.first
+
+        expect(tool.dig(:_meta, :requires_confirmation)).to be(true)
+        expect(tool.dig(:inputSchema, 'properties')).to include('_confirm')
+        expect(tool.dig(:inputSchema, 'required')).to include('_confirm')
+        expect(tool.dig(:annotations, :idempotentHint)).to be(true)
+        expect(tool.dig(:annotations, :destructiveHint)).to be(true)
       end
     end
   end

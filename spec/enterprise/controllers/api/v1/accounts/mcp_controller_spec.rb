@@ -190,7 +190,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       account.reload
       expect(account.mcp_access['sources']['openapi_write']).to be(true)
       expect(account.mcp_access['max_risk_level']).to eq('custom')
-      expect(account.mcp_access['require_confirmation_for_mutations']).to be(false)
+      expect(account.mcp_access['require_confirmation_for_mutations']).to be(true)
     end
 
     it 'rejects non-admin updates' do
@@ -434,6 +434,56 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
              id: 'call-direct-confirmation-2',
              method: 'tools/call',
              params: { name: 'update_mcp_access_policy', arguments: { max_risk_level: 'custom' } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(true)
+      expect(json_response.dig(:result, :content).first[:text]).to include('_confirm')
+    end
+
+    it 'requires MCP confirmation for medium-risk native tools that mutate state' do
+      account.update!(
+        mcp_access: {
+          enabled: true,
+          sources: { captain: true, openapi_read: true, openapi_write: false },
+          max_risk_level: 'medium',
+          allowed_tool_ids: ['update_priority']
+        }
+      )
+      allow(Captain::ToolCatalog).to receive(:available_tools_for).and_raise('full catalog should not be enumerated for direct calls')
+      allow(Captain::ToolCatalog).to receive(:build_tool).and_raise('medium-risk mutating tools should not execute without _confirm')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-direct-confirmation-3',
+             method: 'tools/call',
+             params: { name: 'update_priority', arguments: { priority: 'urgent' } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(true)
+      expect(json_response.dig(:result, :content).first[:text]).to include('_confirm')
+    end
+
+    it 'requires MCP confirmation for idempotent medium-risk native tools that create records' do
+      account.update!(
+        mcp_access: {
+          enabled: true,
+          sources: { captain: true, openapi_read: true, openapi_write: false },
+          max_risk_level: 'medium',
+          allowed_tool_ids: ['create_contact']
+        }
+      )
+      allow(Captain::ToolCatalog).to receive(:available_tools_for).and_raise('full catalog should not be enumerated for direct calls')
+      allow(Captain::ToolCatalog).to receive(:build_tool).and_raise('idempotent medium-risk mutating tools should not execute without _confirm')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-direct-confirmation-4',
+             method: 'tools/call',
+             params: { name: 'create_contact', arguments: { email: 'client@example.com' } }
            ).to_json,
            headers: mcp_headers(admin)
 

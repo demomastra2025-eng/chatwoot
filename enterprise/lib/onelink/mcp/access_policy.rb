@@ -8,6 +8,7 @@ module Onelink
       SOURCE_OPENAPI_WRITE = 'openapi_write'
       OPENAPI_GROUP_SOURCE = 'openapi'
       DEFAULT_MAX_RISK_LEVEL = 'medium'
+      MUTATION_CONFIRMATION_REQUIRED = true
       RISK_ORDER = {
         'low' => 0,
         'medium' => 1,
@@ -45,7 +46,11 @@ module Onelink
           'enabled' => boolean_value(raw.fetch('enabled', true), default: true),
           'sources' => sources,
           'max_risk_level' => max_risk_level,
-          'require_confirmation_for_mutations' => boolean_value(raw.fetch('require_confirmation_for_mutations', true), default: true),
+          # External MCP mutations are always confirmation-gated. The setting is
+          # retained in the persisted shape for older clients/presets, but false
+          # is no longer honored because it can let external agents bypass the
+          # operator confirmation boundary.
+          'require_confirmation_for_mutations' => MUTATION_CONFIRMATION_REQUIRED,
           'allowed_groups' => normalize_array(raw['allowed_groups']),
           'blocked_groups' => normalize_array(raw['blocked_groups']),
           'allowed_tool_ids' => normalize_array(raw['allowed_tool_ids']),
@@ -169,8 +174,6 @@ module Onelink
       end
 
       def mutation_confirmed?(arguments)
-        return true unless require_confirmation_for_mutations?
-
         self.class.boolean_value(arguments.to_h.with_indifferent_access[:_confirm])
       end
 

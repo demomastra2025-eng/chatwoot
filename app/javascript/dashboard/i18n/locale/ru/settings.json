@@ -119,6 +119,7 @@
         "SAVE_ACCESS": "Сохранить",
         "ACCESS_ENABLED": "MCP включен",
         "MUTATION_CONFIRMATION": "Подтверждать изменения",
+        "MUTATION_CONFIRMATION_LOCKED": "Всегда требуется для внешних MCP-действий, которые могут менять данные workspace.",
         "ACCESS_SUMMARY": "Выбрано инструментов",
         "TOOLS_TITLE": "Инструменты",
         "CATALOG_TITLE": "Инструменты",

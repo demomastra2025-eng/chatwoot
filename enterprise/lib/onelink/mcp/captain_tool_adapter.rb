@@ -7,6 +7,7 @@ module Onelink
       RESERVED_ARGUMENT_KEYS = [CONFIRM_ARGUMENT, '_meta', '__mcp', 'mcp_context'].freeze
       AUDIT_SOURCE = 'mcp_captain'
       AUDIT_AGENT = 'onelink-mcp'
+      CONFIRMATION_RISK_LEVELS = %w[medium high custom].freeze
 
       def initialize(auth_context:)
         @auth_context = auth_context
@@ -259,7 +260,7 @@ module Onelink
 
       def high_risk_or_confirmation_required?(tool_definition)
         risk_level = tool_definition[:risk_level].to_s
-        ActiveModel::Type::Boolean.new.cast(tool_definition[:requires_confirmation]) ||
+        confirmation_required_for(tool_definition, metadata: Captain::ToolPolicy.selection_metadata(tool_definition)) ||
           %w[high custom].include?(risk_level)
       end
 
@@ -269,15 +270,16 @@ module Onelink
 
         metadata = Captain::ToolPolicy.selection_metadata(tool_definition)
         risk_level = risk_level_for(tool_definition, metadata: metadata)
-        idempotent = ActiveModel::Type::Boolean.new.cast(tool_definition[:idempotent]) || risk_level == 'low'
-        destructive = %w[high custom].include?(risk_level)
+        idempotent = idempotent_for(tool_definition, risk_level: risk_level)
+        destructive = risk_level != 'low'
         requires_confirmation = confirmation_required_for(tool_definition, metadata: metadata)
+        schema = normalize_input_schema(schema, requires_confirmation: requires_confirmation)
 
         {
           name: tool_definition[:id].to_s,
           title: tool_definition[:title].presence || tool_definition[:id].to_s.humanize,
           description: tool_description(tool_definition, requires_confirmation: requires_confirmation, risk_level: risk_level),
-          inputSchema: normalize_input_schema(schema),
+          inputSchema: schema,
           annotations: {
             title: tool_definition[:title].presence || tool_definition[:id].to_s.humanize,
             readOnlyHint: risk_level == 'low',
@@ -335,7 +337,14 @@ module Onelink
 
       def confirmation_required_for(tool_definition, metadata: nil)
         metadata ||= Captain::ToolPolicy.selection_metadata(tool_definition)
-        ActiveModel::Type::Boolean.new.cast(metadata[:requires_confirmation] || tool_definition[:requires_confirmation])
+        return true if ActiveModel::Type::Boolean.new.cast(metadata[:requires_confirmation] || tool_definition[:requires_confirmation])
+
+        CONFIRMATION_RISK_LEVELS.include?(risk_level_for(tool_definition, metadata: metadata))
+      end
+
+      def idempotent_for(tool_definition, risk_level: nil)
+        risk_level ||= risk_level_for(tool_definition)
+        ActiveModel::Type::Boolean.new.cast(tool_definition[:idempotent]) || risk_level == 'low'
       end
 
       def input_schema_for(tool_definition)
@@ -344,13 +353,21 @@ module Onelink
         build_tool(tool_definition)&.params_schema
       end
 
-      def normalize_input_schema(schema)
+      def normalize_input_schema(schema, requires_confirmation: false)
         normalized = schema.respond_to?(:as_json) ? schema.as_json : schema
         normalized = normalized.deep_stringify_keys if normalized.respond_to?(:deep_stringify_keys)
         normalized = {} unless normalized.is_a?(Hash)
         normalized['type'] ||= 'object'
         normalized['properties'] = {} unless normalized['properties'].is_a?(Hash)
         normalized['required'] = Array(normalized['required']).map(&:to_s)
+        if requires_confirmation
+          normalized['properties'][CONFIRM_ARGUMENT] = {
+            'type' => 'boolean',
+            'description' => 'Required true to execute this mutating OneLink Captain tool through MCP.'
+          }
+          normalized['required'] << CONFIRM_ARGUMENT
+          normalized['required'].uniq!
+        end
         normalized
       end
 

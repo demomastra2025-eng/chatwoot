@@ -79,4 +79,12 @@ RSpec.describe Onelink::Mcp::AccessPolicy do
       )
     ).to be(false)
   end
+
+  it 'keeps MCP mutation confirmation mandatory even when legacy configs try to disable it' do
+    policy = described_class.new(config: policy_config.merge('require_confirmation_for_mutations' => false))
+
+    expect(policy.require_confirmation_for_mutations?).to be(true)
+    expect(policy.mutation_confirmed?({})).to be(false)
+    expect(policy.mutation_confirmed?('_confirm' => true)).to be(true)
+  end
 end

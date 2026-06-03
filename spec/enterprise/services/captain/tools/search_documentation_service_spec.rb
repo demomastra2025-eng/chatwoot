@@ -62,4 +62,21 @@ RSpec.describe Captain::Tools::SearchDocumentationService do
     expect(result).to include('Shared documentation answer')
     expect(result).not_to include('Private documentation answer')
   end
+
+  it 'degrades to lexical fallback when semantic documentation lookup times out' do
+    create(
+      :captain_assistant_response,
+      assistant: assistant,
+      account: account,
+      question: 'visibilityscope timeout',
+      answer: 'Timeout fallback answer',
+      status: :approved
+    )
+    allow(Captain::DocumentChunk).to receive(:search).and_raise(Timeout::Error, 'execution expired')
+
+    result = service.execute(query: 'visibilityscope')
+
+    expect(result).to include('Timeout fallback answer')
+    expect(result).not_to include('temporarily unavailable')
+  end
 end

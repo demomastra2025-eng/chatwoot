@@ -38,7 +38,7 @@ module Onelink::Mcp::AccessModes
         Onelink::Mcp::AccessPolicy::SOURCE_OPENAPI_WRITE => true
       ),
       'max_risk_level' => 'custom',
-      'require_confirmation_for_mutations' => false
+      'require_confirmation_for_mutations' => Onelink::Mcp::AccessPolicy::MUTATION_CONFIRMATION_REQUIRED
     }
   end
 end

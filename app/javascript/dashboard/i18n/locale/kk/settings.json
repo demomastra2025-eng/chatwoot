@@ -119,6 +119,7 @@
         "SAVE_ACCESS": "Сақтау",
         "ACCESS_ENABLED": "MCP қосулы",
         "MUTATION_CONFIRMATION": "Өзгерістерді растау",
+        "MUTATION_CONFIRMATION_LOCKED": "Workspace деректерін өзгерте алатын сыртқы MCP әрекеттері үшін әрқашан қажет.",
         "ACCESS_SUMMARY": "Таңдалған құралдар",
         "TOOLS_TITLE": "Құралдар",
         "CATALOG_TITLE": "Құралдар",

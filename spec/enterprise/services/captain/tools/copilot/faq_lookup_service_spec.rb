@@ -127,6 +127,35 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     )
   end
 
+  it 'marks semantic lookup as not configured when embeddings are not configured' do
+    allow(Captain::DocumentChunk).to receive(:search)
+      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'OpenRouter embeddings are not configured.')
+
+    payload = JSON.parse(service.execute(query: 'refund'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_not_configured',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Refund in 14 days')
+  end
+
+  it 'degrades to keyword matches when semantic lookup times out' do
+    allow(Captain::DocumentChunk).to receive(:search).and_raise(Timeout::Error, 'execution expired')
+
+    payload = JSON.parse(service.execute(query: 'refund'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_timeout',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Refund in 14 days')
+  end
+
   it 'falls back to keyword matches when semantic lookup returns no matches' do
     document_chunk.update!(embedding_status: :indexed, embedding: Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1))
     allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.none)
