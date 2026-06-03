@@ -161,6 +161,38 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(json_response.dig(:mcp_access, :allowed_tool_ids)).to eq(%w[search_documentation list_captain_assistants])
     end
 
+    it 'does not revalidate unchanged Captain model preferences when updating MCP access' do
+      account.update!(captain_models: { 'editor' => 'gpt-4.1-mini', 'assistant' => 'gpt-5.2' })
+      account.reload
+
+      allow(Llm::Models).to receive(:valid_model_for?).and_raise('Captain model validation should not run')
+      allow(Llm::Models).to receive(:configured_model_for_feature?).and_raise('Captain model validation should not run')
+      allow(Llm::Models).to receive(:runtime_supported?).and_raise('Captain model validation should not run')
+
+      put "/api/v1/accounts/#{account.id}/mcp_settings",
+          params: {
+            mcp_access: {
+              enabled: true,
+              sources: { captain: true, openapi_read: true, openapi_write: true },
+              max_risk_level: 'custom',
+              require_confirmation_for_mutations: false,
+              allowed_groups: [],
+              blocked_groups: [],
+              allowed_tool_ids: [],
+              blocked_tool_ids: [],
+              allowed_openapi_operation_ids: [],
+              blocked_openapi_operation_ids: []
+            }
+          }.to_json,
+          headers: admin.create_new_auth_token.merge('CONTENT_TYPE' => 'application/json')
+
+      expect(response).to have_http_status(:success)
+      account.reload
+      expect(account.mcp_access['sources']['openapi_write']).to be(true)
+      expect(account.mcp_access['max_risk_level']).to eq('custom')
+      expect(account.mcp_access['require_confirmation_for_mutations']).to be(false)
+    end
+
     it 'rejects non-admin updates' do
       put "/api/v1/accounts/#{account.id}/mcp_settings",
           params: { mcp_access: { sources: { openapi_write: true }, max_risk_level: 'high' } }.to_json,

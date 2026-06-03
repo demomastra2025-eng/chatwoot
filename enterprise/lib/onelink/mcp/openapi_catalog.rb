@@ -301,14 +301,16 @@ module Onelink
         normalized_arguments.delete(CONFIRM_ARGUMENT)
         relative_path = build_relative_path(operation, normalized_arguments)
         body_payload = request_body_payload(operation, normalized_arguments)
-        status, _headers, body = Rails.application.call(
-          rack_env_for(
-            relative_path,
-            method: operation[:method],
-            body_payload: body_payload,
-            idempotency_key: idempotency_key
+        status, _headers, body = preserve_mini_profiler_current do
+          Rails.application.call(
+            rack_env_for(
+              relative_path,
+              method: operation[:method],
+              body_payload: body_payload,
+              idempotency_key: idempotency_key
+            )
           )
-        )
+        end
         raw_body = collect_body(body)
         parsed = parse_json(raw_body)
         redacted_parsed = redact_value(parsed)
@@ -379,6 +381,21 @@ module Onelink
         ).tap do |env|
           env['HTTP_IDEMPOTENCY_KEY'] = idempotency_key.to_s if idempotency_key.present?
         end
+      end
+
+      def preserve_mini_profiler_current
+        return yield unless mini_profiler_current_supported?
+
+        current = Rack::MiniProfiler.current
+        yield
+      ensure
+        Rack::MiniProfiler.current = current if mini_profiler_current_supported?
+      end
+
+      def mini_profiler_current_supported?
+        defined?(Rack::MiniProfiler) &&
+          Rack::MiniProfiler.respond_to?(:current) &&
+          Rack::MiniProfiler.respond_to?(:current=)
       end
 
       def collect_body(body)

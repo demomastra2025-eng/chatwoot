@@ -88,6 +88,28 @@ RSpec.describe Onelink::Mcp::OpenapiCatalog do
       )
     end
 
+    it 'preserves an existing Rack Mini Profiler context around internal dispatch' do
+      response_body = ['{"resource":{"id":12}}']
+      profiler_context = Object.new
+      profiler_class = Class.new do
+        class << self
+          attr_accessor :current
+        end
+      end
+      stub_const('Rack::MiniProfiler', profiler_class)
+      Rack::MiniProfiler.current = profiler_context
+
+      allow(Rails.application).to receive(:call) do
+        Rack::MiniProfiler.current = nil
+        [200, { 'Content-Type' => 'application/json' }, response_body]
+      end
+
+      result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 12 })
+
+      expect(result[:isError]).to be(false)
+      expect(Rack::MiniProfiler.current).to equal(profiler_context)
+    end
+
     context 'when a mutating OpenAPI tool is enabled' do
       let(:access_policy_config) do
         {

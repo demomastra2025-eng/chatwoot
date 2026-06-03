@@ -27,7 +27,7 @@ module CaptainFeaturable
   RUNTIME_FEATURE_KEYS = %w[assistant copilot].freeze
 
   included do
-    validate :validate_captain_models
+    validate :validate_captain_models, if: :captain_models_validation_required?
 
     # Dynamically define accessor methods for each captain feature
     Llm::Models.feature_keys.each do |feature_key|
@@ -129,6 +129,20 @@ module CaptainFeaturable
 
       errors.add(:captain_models, "'#{model_name}' for #{feature_key} is not available in RubyLLM.models.")
     end
+  end
+
+  def captain_models_validation_required?
+    return false if captain_models.blank?
+    return true if new_record?
+    return false unless will_save_change_to_settings?
+
+    settings_value_for(:captain_models, settings_in_database) != settings_value_for(:captain_models, settings)
+  end
+
+  def settings_value_for(key, raw_settings)
+    return nil unless raw_settings.respond_to?(:to_h)
+
+    raw_settings.to_h.with_indifferent_access[key]
   end
 
   def resolved_captain_model_for(feature_key, model_name)

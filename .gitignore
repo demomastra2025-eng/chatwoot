@@ -107,6 +107,9 @@ vite.config.mts.timestamp-*.mjs
 .claude/settings.local.json
 CLAUDE.local.md
 
+# Local Hermes research artifacts (do not commit scraped vendor docs)
+/.hermes/research/sipuni/
+
 # Histoire deployment
 .netlify
 .histoire
