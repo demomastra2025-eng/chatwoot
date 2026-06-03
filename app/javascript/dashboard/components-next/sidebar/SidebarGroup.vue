@@ -45,7 +45,12 @@ const {
 } = usePopoverState();
 
 const navigableChildren = computed(() => {
-  return props.children?.flatMap(child => child.children || child) || [];
+  return (
+    props.children?.flatMap(child => {
+      if (!child.children) return child;
+      return child.to ? [child, ...child.children] : child.children;
+    }) || []
+  );
 });
 
 const route = useRoute();

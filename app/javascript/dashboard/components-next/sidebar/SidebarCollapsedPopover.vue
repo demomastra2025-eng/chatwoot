@@ -56,6 +56,15 @@ const handleActionClick = action => {
   }
 };
 
+const handleSubGroupClick = child => {
+  if (child.to && isAllowed(child.to)) {
+    navigateAndClose(child.to);
+    return;
+  }
+
+  toggleSubGroup(child.name);
+};
+
 const renderIcon = icon => ({
   component: typeof icon === 'object' ? icon : Icon,
   props: typeof icon === 'string' ? { icon } : null,
@@ -83,7 +92,10 @@ const accessibleChildren = computed(() => {
     }
 
     if (child.children) {
-      return child.children.some(subChild => isAllowed(subChild.to));
+      return (
+        (child.to && isAllowed(child.to)) ||
+        child.children.some(subChild => isAllowed(subChild.to))
+      );
     }
     return child.to && isAllowed(child.to);
   });
@@ -94,10 +106,12 @@ onMounted(async () => {
 
   // Auto-expand subgroup if active child is inside it
   if (props.activeChildNames.length) {
-    const parentGroup = props.children.find(child =>
-      child.children?.some(subChild =>
-        props.activeChildNames.includes(subChild.name)
-      )
+    const parentGroup = props.children.find(
+      child =>
+        props.activeChildNames.includes(child.name) ||
+        child.children?.some(subChild =>
+          props.activeChildNames.includes(subChild.name)
+        )
     );
     if (parentGroup) {
       expandedSubGroup.value = parentGroup.name;
@@ -150,11 +164,15 @@ onMounted(async () => {
             <!-- SubGroup with children -->
             <li v-if="child.children" class="py-0.5">
               <div
-                class="flex items-center gap-1 rounded-lg text-n-slate-11 hover:bg-n-alpha-2 transition-colors duration-150 ease-out"
+                class="flex items-center gap-1 rounded-lg transition-colors duration-150 ease-out"
+                :class="{
+                  'text-n-slate-12 bg-n-alpha-2': isActive(child),
+                  'text-n-slate-11 hover:bg-n-alpha-2': !isActive(child),
+                }"
               >
                 <button
                   class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left rtl:text-right"
-                  @click="toggleSubGroup(child.name)"
+                  @click="handleSubGroupClick(child)"
                 >
                   <Icon
                     v-if="child.icon"
@@ -163,6 +181,13 @@ onMounted(async () => {
                   />
                   <span class="flex-1 truncate text-sm">{{ child.label }}</span>
                   <SidebarUnreadBadge :value="badgeCount(child)" />
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex flex-shrink-0 items-center justify-center rounded-md p-1 text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12"
+                  :title="child.label"
+                  @click.stop="toggleSubGroup(child.name)"
+                >
                   <span
                     class="size-3 transition-transform i-lucide-chevron-down"
                     :class="{

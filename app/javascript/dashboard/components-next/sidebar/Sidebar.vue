@@ -840,7 +840,6 @@ const menuItems = computed(() => {
             to: withConversationStatus('home'),
             activeOn: allChannelsActiveOn,
             suppressHeaderActiveWhenChildActive: true,
-            suppressHeaderActiveForChildren: ['all-channels'],
             actionTitle: t('SETTINGS.INBOXES.NEW_INBOX'),
             actionIcon: checkPermissions(['administrator'])
               ? 'i-lucide-plus'
@@ -858,14 +857,6 @@ const menuItems = computed(() => {
                 )
               : '',
             children: [
-              {
-                name: 'all-channels',
-                label: t('SIDEBAR.ALL'),
-                collapsedLabel: t('SIDEBAR.ALL_CHANNELS'),
-                activeOn: allChannelsActiveOn,
-                badge: allConversationUnreadCount.value,
-                to: withConversationStatus('home'),
-              },
               ...sortedInboxes.value.map(inbox => ({
                 name: `${inbox.name}-${inbox.id}`,
                 label: inbox.name,
