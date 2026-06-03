@@ -44,7 +44,11 @@ RSpec.describe 'Sipuni voice events' do
 
     voice_message = call_session.conversation.messages.voice_calls.find_by!(source_id: 'voice_call:sipuni-webhook-call-1')
     expect(voice_message.content_attributes.dig('data', 'status')).to eq('completed')
-    expect(voice_message.content_attributes.dig('data', 'recording_url')).to eq('https://sipuni.example.test/recordings/call-1.mp3')
+    recording_url = voice_message.content_attributes.dig('data', 'recording_url')
+    expect(recording_url)
+      .to start_with("/api/v1/accounts/#{account.id}/telephony/calls/sipuni-webhook-call-1/recording?")
+    expect(voice_message.content_attributes.dig('data', 'recording', 'recording_url')).to eq(recording_url)
+    expect(voice_message.content_attributes.dig('data', 'recording', 'recording_ref')).to eq('sipuni-webhook-call-1')
     expect(call_session.events.last.payload.to_json).not_to include(token)
   end
 
@@ -106,7 +110,11 @@ RSpec.describe 'Sipuni voice events' do
     expect(voice_message.message_type).to eq('outgoing')
     expect(voice_message.sender).to eq(operator)
     expect(voice_message.content_attributes.dig('data', 'call_direction')).to eq('outbound')
-    expect(voice_message.content_attributes.dig('data', 'recording_url')).to eq('https://sipuni.example.test/recordings/outbound-1.mp3')
+    recording_url = voice_message.content_attributes.dig('data', 'recording_url')
+    expect(recording_url)
+      .to start_with("/api/v1/accounts/#{account.id}/telephony/calls/sipuni-webhook-outbound-1/recording?")
+    expect(voice_message.content_attributes.dig('data', 'recording', 'recording_url')).to eq(recording_url)
+    expect(voice_message.content_attributes.dig('data', 'recording', 'recording_ref')).to eq('sipuni-webhook-outbound-1')
     expect(SendReplyJob).not_to have_received(:perform_later)
   end
 

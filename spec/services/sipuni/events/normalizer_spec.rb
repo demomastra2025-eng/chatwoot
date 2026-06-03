@@ -65,6 +65,31 @@ RSpec.describe Sipuni::Events::Normalizer do
     )
   end
 
+  it 'does not expose a non-answered call record link as a playable recording' do
+    payload = described_class.new(
+      inbox: inbox,
+      params: {
+        event: '2',
+        status: 'NOANSWER',
+        call_id: 'sipuni-call-no-answer',
+        src_num: '77011234567',
+        dst_num: '77271234567',
+        timestamp: '1717171760',
+        call_start_timestamp: '1717171700',
+        call_record_link: 'https://sipuni.example.test/recordings/no-answer.mp3'
+      }
+    ).perform
+
+    expect(payload).to include(
+      event: 'dial_status',
+      status: 'no_answer',
+      duration: 0
+    )
+    expect(payload).not_to have_key(:recording_ref)
+    expect(payload).not_to have_key(:recording_url)
+    expect(payload[:metadata]).to include(recording_link_present: true)
+  end
+
   it 'preserves raw Sipuni webhook fields without authentication tokens' do
     payload = described_class.new(
       inbox: inbox,

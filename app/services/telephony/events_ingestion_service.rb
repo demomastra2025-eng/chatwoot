@@ -573,8 +573,9 @@ class Telephony::EventsIngestionService
 
     attrs = (conversation.additional_attributes || {}).deep_dup
     attrs['telephony_provider'] = call_session.provider
-    attrs['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
-    attrs['recording'] = call_recording_metadata(call_session) if call_recording_metadata(call_session).present?
+    recording_metadata = presentation_recording_metadata(call_session)
+    attrs['recording_ref'] = recording_metadata['recording_ref'] if recording_metadata['recording_ref'].present?
+    attrs['recording'] = recording_metadata if recording_metadata.present?
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
     conversation.update!(additional_attributes: attrs, last_activity_at: Time.current)
@@ -596,9 +597,9 @@ class Telephony::EventsIngestionService
     data['data']['ai_voice'] = existing_ai_voice.merge(voice_ai_message_state(call_session))
     tools = voice_ai_tool_events(call_session)
     data['data']['tools'] = tools if tools.present?
-    recording_metadata = call_recording_metadata(call_session)
+    recording_metadata = presentation_recording_metadata(call_session)
     if recording_metadata.present?
-      data['data']['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
+      data['data']['recording_ref'] = recording_metadata['recording_ref'] if recording_metadata['recording_ref'].present?
       data['data']['recording'] = recording_metadata
       data['data']['recording_url'] = recording_url(call_session)
     end
@@ -1000,7 +1001,18 @@ class Telephony::EventsIngestionService
     metadata.compact
   end
 
+  def presentation_recording_metadata(call_session)
+    metadata = call_recording_metadata(call_session).deep_dup
+    return metadata unless proxy_external_recording?(call_session)
+
+    metadata['recording_ref'] = call_session.external_call_ref
+    metadata['recording_url'] = recording_url(call_session)
+    metadata
+  end
+
   def recording_url(call_session)
+    return internal_recording_url(call_session) if proxy_external_recording?(call_session)
+
     external_recording_url(call_session) || internal_recording_url(call_session)
   end
 
@@ -1016,6 +1028,10 @@ class Telephony::EventsIngestionService
     return if candidate.blank?
 
     candidate.to_s if http_url?(candidate)
+  end
+
+  def proxy_external_recording?(call_session)
+    call_session.provider == 'sipuni' && external_recording_url(call_session).present?
   end
 
   def http_url?(value)

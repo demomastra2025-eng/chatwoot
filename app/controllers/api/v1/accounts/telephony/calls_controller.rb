@@ -1,3 +1,5 @@
+require 'net/http'
+
 class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telephony::BaseController
   skip_before_action :authenticate_user!, :ensure_active_auth_session!, only: [:recording], raise: false
 
@@ -28,6 +30,11 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     authorize_recording_access!
 
     if external_recording_url.present?
+      if proxy_external_recording?
+        stream_external_recording!
+        return
+      end
+
       redirect_to external_recording_url, allow_other_host: true
       return
     end
@@ -94,6 +101,8 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def recording_url_for_call_session
+    return signed_recording_url_for_call_session if proxy_external_recording?
+
     external_recording_url || signed_recording_url_for_call_session
   end
 
@@ -113,6 +122,80 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     uri.to_s
   rescue URI::InvalidURIError
     nil
+  end
+
+  def proxy_external_recording?
+    @call_session.provider == 'sipuni' && sipuni_recording_url?(external_recording_url)
+  end
+
+  def stream_external_recording!
+    response = fetch_external_recording(URI.parse(external_recording_url))
+    raise ActiveRecord::RecordNotFound, 'Recording could not be found' unless response.is_a?(Net::HTTPSuccess)
+
+    content_type = external_recording_content_type(response)
+    send_data(
+      response.body,
+      type: content_type,
+      disposition: 'inline',
+      filename: external_recording_filename(content_type)
+    )
+  rescue URI::InvalidURIError
+    raise ActiveRecord::RecordNotFound, 'Recording could not be found'
+  end
+
+  def fetch_external_recording(uri, redirects_left = 2)
+    return unless sipuni_recording_uri?(uri)
+
+    response = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 30) do |http|
+      http.request(Net::HTTP::Get.new(uri))
+    end
+    return follow_external_recording_redirect(uri, response, redirects_left) if response.is_a?(Net::HTTPRedirection)
+
+    response
+  rescue Errno::ECONNREFUSED, Net::OpenTimeout, Net::ReadTimeout, Net::HTTPBadResponse,
+         Net::ProtocolError, OpenSSL::SSL::SSLError, SocketError
+    nil
+  end
+
+  def follow_external_recording_redirect(uri, response, redirects_left)
+    return response unless redirects_left.positive?
+
+    location = response['location'].to_s
+    return response if location.blank?
+
+    next_uri = URI.parse(location)
+    next_uri = uri + location if next_uri.relative?
+    fetch_external_recording(next_uri, redirects_left - 1)
+  rescue URI::InvalidURIError
+    response
+  end
+
+  def sipuni_recording_url?(url)
+    return false if url.blank?
+
+    sipuni_recording_uri?(URI.parse(url))
+  rescue URI::InvalidURIError
+    false
+  end
+
+  def sipuni_recording_uri?(uri)
+    host = uri.host.to_s
+    uri.is_a?(URI::HTTP) &&
+      uri.scheme == 'https' &&
+      (host == 'sipuni.com' || host.end_with?('.sipuni.com'))
+  end
+
+  def external_recording_content_type(response)
+    content_type = response['Content-Type'].to_s.split(';').first
+    return content_type if content_type.start_with?('audio/')
+
+    recording_content_type
+  end
+
+  def external_recording_filename(content_type)
+    extension = content_type.to_s.split('/').last
+    extension = 'wav' if extension.blank? || extension == 'x-wav'
+    "call-#{@call_session.external_call_ref}.#{extension}"
   end
 
   def recording_file_path

@@ -55,8 +55,8 @@ class Sipuni::Events::Normalizer
       ended_by: ended_by,
       end_reason: end_reason,
       duration: duration_seconds,
-      recording_ref: recording_url,
-      recording_url: recording_url,
+      recording_ref: playable_recording_url,
+      recording_url: playable_recording_url,
       metadata: metadata
     }.compact_blank
   end
@@ -404,6 +404,14 @@ class Sipuni::Events::Normalizer
 
   def recording_url
     params['call_record_link'].presence || params['callRecordLink'].presence || params['recording_url'].presence || params['recordingUrl'].presence
+  end
+
+  def playable_recording_url
+    return if recording_url.blank?
+    return recording_url if explicit_status == 'completed'
+    return recording_url unless event_code == '2'
+
+    nil
   end
 
   def metadata
