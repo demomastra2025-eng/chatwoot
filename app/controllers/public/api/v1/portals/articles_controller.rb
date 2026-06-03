@@ -1,8 +1,8 @@
 class Public::Api::V1::Portals::ArticlesController < Public::Api::V1::Portals::BaseController
-  before_action :ensure_custom_domain_request, only: [:show, :index]
+  before_action :ensure_custom_domain_request, only: [:show, :index, :markdown]
   before_action :portal
-  before_action :set_category, except: [:index, :show, :tracking_pixel]
-  before_action :set_article, only: [:show]
+  before_action :set_category, except: [:index, :show, :markdown, :tracking_pixel]
+  before_action :set_article, only: [:show, :markdown]
   layout 'portal'
 
   def index
@@ -20,6 +20,10 @@ class Public::Api::V1::Portals::ArticlesController < Public::Api::V1::Portals::B
 
   def show
     @og_image_url = helpers.set_og_image_url(@portal.name, @article.title)
+  end
+
+  def markdown
+    render plain: @article.content.to_s, content_type: 'text/markdown'
   end
 
   def tracking_pixel
@@ -61,6 +65,9 @@ class Public::Api::V1::Portals::ArticlesController < Public::Api::V1::Portals::B
 
   def set_article
     @article = @portal.articles.find_by(slug: permitted_params[:article_slug])
+    return render_404 if @article.blank?
+    return if action_name == 'markdown'
+
     @parsed_content = render_article_content(@article.content.to_s)
   end
 

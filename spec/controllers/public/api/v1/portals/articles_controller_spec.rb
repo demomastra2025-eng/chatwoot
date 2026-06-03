@@ -159,6 +159,25 @@ RSpec.describe 'Public Articles API', type: :request do
     end
   end
 
+  describe 'GET /public/api/v1/portals/:slug/articles/:slug.md' do
+    it 'serves the raw markdown content without rendering HTML' do
+      get "/hc/#{portal.slug}/articles/#{article.slug}.md"
+
+      expect(response).to have_http_status(:success)
+      expect(response.media_type).to eq('text/markdown')
+      expect(response.body).to eq(article.content)
+      expect(response.body).to include('*test*')
+      expect(response.body).not_to include('<em>test</em>')
+      expect(article.reload.views).to eq 0
+    end
+
+    it 'returns 404 if article does not exist' do
+      get "/hc/#{portal.slug}/articles/non-existent-article.md"
+
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
   describe 'GET /public/api/v1/portals/:slug/articles/:slug.png (tracking pixel)' do
     it 'serves a PNG image and increments view count for published article' do
       get "/hc/#{portal.slug}/articles/#{article.slug}.png"
