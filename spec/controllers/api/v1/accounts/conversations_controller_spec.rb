@@ -35,6 +35,72 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:messages].first[:id]).to eq(message.id)
       end
 
+      it 'returns full unread counts for public incoming messages' do
+        conversation.update!(agent_last_seen_at: 1.hour.ago)
+        create_list(
+          :message,
+          12,
+          conversation: conversation,
+          account: account,
+          message_type: :incoming,
+          private: false,
+          created_at: 10.minutes.ago
+        )
+        create(:message, conversation: conversation, account: account, message_type: :incoming, private: true, created_at: 10.minutes.ago)
+        create(:message, conversation: conversation, account: account, message_type: :outgoing, created_at: 10.minutes.ago)
+        create(:message, conversation: conversation, account: account, message_type: :incoming, private: false, created_at: 2.hours.ago)
+
+        get "/api/v1/accounts/#{account.id}/conversations",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        body = JSON.parse(response.body, symbolize_names: true)
+        expect(body[:data][:payload].first[:unread_count]).to eq(12)
+      end
+
+      it 'returns sidebar unread counts scoped by agent inbox access' do
+        team = create(:team, account: account, allow_auto_assign: false)
+        conversation.update!(agent_last_seen_at: 1.hour.ago, status: :pending, team: team)
+        conversation.update_labels('vip')
+        create_list(
+          :message,
+          2,
+          conversation: conversation,
+          account: account,
+          message_type: :incoming,
+          private: false,
+          created_at: 10.minutes.ago
+        )
+        create(:message, conversation: conversation, account: account, message_type: :incoming, private: true, created_at: 10.minutes.ago)
+        create(:message, conversation: conversation, account: account, message_type: :outgoing, created_at: 10.minutes.ago)
+
+        inaccessible_conversation = create(:conversation, account: account, status: :open, agent_last_seen_at: 1.hour.ago)
+        inaccessible_conversation.update_labels('vip')
+        create(
+          :message,
+          conversation: inaccessible_conversation,
+          account: account,
+          message_type: :incoming,
+          private: false,
+          created_at: 10.minutes.ago
+        )
+
+        get "/api/v1/accounts/#{account.id}/conversations/sidebar_unread_counts",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        body = JSON.parse(response.body, symbolize_names: true)
+        expect(body[:counts]).to eq(
+          all: 2,
+          statuses: { pending: 2 },
+          inboxes: { conversation.inbox_id.to_s.to_sym => 2 },
+          teams: { team.id.to_s.to_sym => 2 },
+          labels: { vip: 2 }
+        )
+      end
+
       it 'does not use private notes as conversation preview messages' do
         public_message = create(:message, conversation: conversation, account: account, content: 'Customer visible reply')
         create(

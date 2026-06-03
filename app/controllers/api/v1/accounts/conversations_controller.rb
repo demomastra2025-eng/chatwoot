@@ -3,7 +3,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   include DateRangeHelper
   include HmacConcern
 
-  before_action :conversation, except: [:index, :meta, :search, :create, :filter]
+  before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :create, :filter]
   before_action :inbox, :contact, :contact_inbox, only: [:create]
 
   ATTACHMENT_RESULTS_PER_PAGE = 100
@@ -17,6 +17,13 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   def meta
     result = conversation_finder.perform_meta_only
     @conversations_count = result[:count]
+  end
+
+  def sidebar_unread_counts
+    @sidebar_unread_counts = Conversations::SidebarUnreadCountService.new(
+      account: Current.account,
+      user: Current.user
+    ).perform
   end
 
   def search

@@ -177,7 +177,11 @@ class Conversation < ApplicationRecord
   end
 
   def unread_incoming_messages
-    unread_messages.where(account_id: account_id).incoming.last(10)
+    unread_incoming_message_scope.last(10)
+  end
+
+  def unread_incoming_messages_count
+    unread_incoming_message_scope.count
   end
 
   def cached_label_list_array
@@ -221,6 +225,10 @@ class Conversation < ApplicationRecord
   end
 
   private
+
+  def unread_incoming_message_scope
+    unread_messages.where(account_id: account_id, private: false).incoming
+  end
 
   def execute_after_update_commit_callbacks
     handle_resolved_status_change

@@ -281,6 +281,7 @@ Rails.application.routes.draw do
           resources :conversations, only: [:index, :create, :show, :update, :destroy] do
             collection do
               get :meta
+              get :sidebar_unread_counts
               get :search
               post :filter
             end
@@ -810,6 +811,7 @@ Rails.application.routes.draw do
   get 'hc/:slug/:locale/categories', to: 'public/api/v1/portals/categories#index'
   get 'hc/:slug/:locale/categories/:category_slug', to: 'public/api/v1/portals/categories#show'
   get 'hc/:slug/:locale/categories/:category_slug/articles', to: 'public/api/v1/portals/articles#index'
+  get 'hc/:slug/articles/:article_slug.md', to: 'public/api/v1/portals/articles#markdown'
   get 'hc/:slug/articles/:article_slug.png', to: 'public/api/v1/portals/articles#tracking_pixel'
   get 'hc/:slug/articles/:article_slug', to: 'public/api/v1/portals/articles#show'
 

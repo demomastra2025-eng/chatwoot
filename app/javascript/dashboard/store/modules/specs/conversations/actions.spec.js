@@ -293,13 +293,69 @@ describe('#actions', () => {
     });
   });
 
+  describe('#fetchSidebarUnreadCounts', () => {
+    it('commits sidebar unread counts from the API', async () => {
+      const localCommit = vi.fn();
+      const counts = { all: 2, statuses: { open: 2 } };
+      axios.get.mockResolvedValue({ data: { counts } });
+
+      await actions.fetchSidebarUnreadCounts({ commit: localCommit });
+
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        counts
+      );
+    });
+
+    it('ignores stale sidebar unread count responses', async () => {
+      const localCommit = vi.fn();
+      let resolveFirst;
+      let resolveSecond;
+      axios.get
+        .mockImplementationOnce(
+          () =>
+            new Promise(resolve => {
+              resolveFirst = resolve;
+            })
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise(resolve => {
+              resolveSecond = resolve;
+            })
+        );
+
+      const firstRequest = actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+      });
+      const secondRequest = actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+      });
+
+      resolveSecond({ data: { counts: { all: 3 } } });
+      await secondRequest;
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        { all: 3 }
+      );
+
+      resolveFirst({ data: { counts: { all: 1 } } });
+      await firstRequest;
+      expect(localCommit).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('#markMessagesRead', () => {
     it('sends correct mutations if api is successful', async () => {
       const lastSeen = new Date().getTime() / 1000;
       axios.post.mockResolvedValue({
         data: { id: 1, agent_last_seen_at: lastSeen },
       });
-      await actions.markMessagesRead({ commit }, { id: 1 });
+      const refreshDispatch = vi.fn();
+      await actions.markMessagesRead(
+        { commit, dispatch: refreshDispatch },
+        { id: 1 }
+      );
       expect(commit).toHaveBeenCalledTimes(1);
       expect(commit.mock.calls).toEqual([
         [
@@ -307,6 +363,7 @@ describe('#actions', () => {
           { id: 1, lastSeen, unreadCount: 0 },
         ],
       ]);
+      expect(refreshDispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
     });
     it('sends correct mutations if api is unsuccessful', async () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });
@@ -321,7 +378,11 @@ describe('#actions', () => {
       axios.post.mockResolvedValue({
         data: { id: 1, agent_last_seen_at: lastSeen, unread_count: 1 },
       });
-      await actions.markMessagesUnread({ commit }, { id: 1 });
+      const refreshDispatch = vi.fn();
+      await actions.markMessagesUnread(
+        { commit, dispatch: refreshDispatch },
+        { id: 1 }
+      );
       expect(commit).toHaveBeenCalledTimes(1);
       expect(commit.mock.calls).toEqual([
         [
@@ -329,6 +390,7 @@ describe('#actions', () => {
           { id: 1, lastSeen, unreadCount: 1 },
         ],
       ]);
+      expect(refreshDispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
     });
     it('sends correct mutations if API is unsuccessful', async () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });

@@ -385,6 +385,7 @@ watch(
             :active-child-names="activeChildNames"
             :to="child.to"
             :header-active="isSubGroupHeaderActive(child)"
+            :badge="child.badge"
             :action-label="child.actionLabel"
             :action-to="child.actionTo"
             :action-title="child.actionTitle"

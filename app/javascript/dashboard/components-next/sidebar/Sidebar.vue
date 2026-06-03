@@ -276,11 +276,29 @@ const contactCustomViews = useMapGetter('customViews/getContactCustomViews');
 const conversationCustomViews = useMapGetter(
   'customViews/getConversationCustomViews'
 );
+const conversationSidebarUnreadCounts = useMapGetter(
+  'getConversationSidebarUnreadCounts'
+);
 
 const sortedInboxes = computed(() =>
   inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
 );
 const selectedConversation = useMapGetter('getSelectedChat');
+
+const getSidebarUnreadCount = (collection, key) => {
+  if (!key) return 0;
+  return Number(
+    conversationSidebarUnreadCounts.value?.[collection]?.[key] || 0
+  );
+};
+
+const allConversationUnreadCount = computed(() =>
+  Number(conversationSidebarUnreadCounts.value?.all || 0)
+);
+const statusUnreadCount = status => getSidebarUnreadCount('statuses', status);
+const inboxUnreadCount = inboxId => getSidebarUnreadCount('inboxes', inboxId);
+const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
+const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
 const isDialogConversationRoute = routeName =>
@@ -675,6 +693,7 @@ onMounted(async () => {
     store.dispatch('labels/get'),
     store.dispatch('inboxes/get'),
     store.dispatch('notifications/unReadCount'),
+    store.dispatch('fetchSidebarUnreadCounts'),
     store.dispatch('teams/get'),
     store.dispatch('attributes/get'),
     store.dispatch('customViews/get', 'conversation'),
@@ -767,6 +786,7 @@ const menuItems = computed(() => {
             visibilityKey: 'Conversation:Pending',
             label: t('SIDEBAR.PENDING_CONVERSATIONS'),
             icon: 'i-woot-captain',
+            badge: statusUnreadCount('pending'),
             activeOn: conversationStatusActiveOn,
             to: withCurrentConversationScopeStatus('pending'),
           },
@@ -775,6 +795,7 @@ const menuItems = computed(() => {
             visibilityKey: 'Conversation:Open',
             label: t('SIDEBAR.OPEN_CONVERSATIONS'),
             icon: 'i-lucide-inbox',
+            badge: statusUnreadCount('open'),
             activeOn: conversationStatusActiveOn,
             to: withCurrentConversationScopeStatus('open'),
           },
@@ -782,6 +803,7 @@ const menuItems = computed(() => {
             name: 'Snoozed',
             visibilityKey: 'Conversation:Snoozed',
             icon: 'i-lucide-timer-reset',
+            badge: statusUnreadCount('snoozed'),
             activeOn: conversationStatusActiveOn,
             label: t('SIDEBAR.SNOOZED_CONVERSATIONS'),
             to: withCurrentConversationScopeStatus('snoozed'),
@@ -790,6 +812,7 @@ const menuItems = computed(() => {
             name: 'Resolved',
             visibilityKey: 'Conversation:Resolved',
             icon: 'i-lucide-check-check',
+            badge: statusUnreadCount('resolved'),
             activeOn: conversationStatusActiveOn,
             label: t('SIDEBAR.RESOLVED_CONVERSATIONS'),
             to: withCurrentConversationScopeStatus('resolved'),
@@ -813,6 +836,7 @@ const menuItems = computed(() => {
             visibilityKey: 'Conversation:Channels',
             label: t('SIDEBAR.CHANNELS'),
             icon: 'i-lucide-mailbox',
+            badge: allConversationUnreadCount.value,
             to: withConversationStatus('home'),
             activeOn: allChannelsActiveOn,
             suppressHeaderActiveWhenChildActive: true,
@@ -839,12 +863,14 @@ const menuItems = computed(() => {
                 label: t('SIDEBAR.ALL'),
                 collapsedLabel: t('SIDEBAR.ALL_CHANNELS'),
                 activeOn: allChannelsActiveOn,
+                badge: allConversationUnreadCount.value,
                 to: withConversationStatus('home'),
               },
               ...sortedInboxes.value.map(inbox => ({
                 name: `${inbox.name}-${inbox.id}`,
                 label: inbox.name,
                 icon: h(ChannelStatusIcon, { inbox, class: 'size-[16px]' }),
+                badge: inboxUnreadCount(inbox.id),
                 activeOn: [
                   'inbox_dashboard',
                   'conversation_through_inbox',
@@ -857,6 +883,7 @@ const menuItems = computed(() => {
                   h(ChannelLeaf, {
                     label: leafProps.label,
                     active: leafProps.active,
+                    badge: leafProps.badge,
                     inbox,
                     settingsRoute: accountScopedRoute(
                       inboxFlowRouteNames.value.show,
@@ -883,6 +910,7 @@ const menuItems = computed(() => {
             children: teams.value.map(team => ({
               name: `${team.name}-${team.id}`,
               label: team.name,
+              badge: teamUnreadCount(team.id),
               to: withConversationStatus('team_conversations', {
                 teamId: team.id,
               }),
@@ -916,6 +944,7 @@ const menuItems = computed(() => {
                     ...labels.value.map(label => ({
                       name: `${label.title}-${label.id}`,
                       label: label.title,
+                      badge: labelUnreadCount(label.title),
                       icon: h('span', {
                         class: `size-[8px] rounded-sm`,
                         style: { backgroundColor: label.color },

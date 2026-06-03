@@ -18,6 +18,8 @@ import {
   handleVoiceCallUpdated,
 } from 'dashboard/helper/voice';
 
+let sidebarUnreadCountsRequestId = 0;
+
 export const hasMessageFailedWithExternalError = pendingMessage => {
   // This helper is used to check if the message has failed with an external error.
   // We have two cases
@@ -69,6 +71,21 @@ const actions = {
       );
     } catch (error) {
       // Handle error
+    }
+  },
+
+  fetchSidebarUnreadCounts: async ({ commit }) => {
+    sidebarUnreadCountsRequestId += 1;
+    const requestId = sidebarUnreadCountsRequestId;
+    try {
+      const {
+        data: { counts },
+      } = await ConversationApi.sidebarUnreadCounts();
+      if (requestId !== sidebarUnreadCountsRequestId) return;
+
+      commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});
+    } catch (error) {
+      // Keep the last known sidebar counts if the refresh fails.
     }
   },
 

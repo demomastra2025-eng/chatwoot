@@ -6,6 +6,7 @@ import { useAdmin } from 'dashboard/composables/useAdmin';
 import Icon from 'next/icon/Icon.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ChannelStatusIcon from './ChannelStatusIcon.vue';
+import SidebarUnreadBadge from './SidebarUnreadBadge.vue';
 
 const props = defineProps({
   label: {
@@ -16,6 +17,10 @@ const props = defineProps({
   active: {
     type: Boolean,
     default: false,
+  },
+  badge: {
+    type: [Number, String],
+    default: 0,
   },
   inbox: {
     type: Object,
@@ -35,6 +40,8 @@ const isHoveringChannel = ref(false);
 const reauthorizationRequired = computed(() => {
   return props.inbox.reauthorization_required;
 });
+
+const badgeCount = computed(() => Number(props.badge) || 0);
 
 const openSettings = async () => {
   if (!props.settingsRoute) {
@@ -63,6 +70,7 @@ const handleMouseLeave = () => {
       <ChannelStatusIcon :inbox="inbox" />
     </span>
     <div class="flex-1 truncate min-w-0">{{ label }}</div>
+    <SidebarUnreadBadge :value="badgeCount" />
     <div
       v-if="reauthorizationRequired"
       v-tooltip.top-end="$t('SIDEBAR.REAUTHORIZE')"

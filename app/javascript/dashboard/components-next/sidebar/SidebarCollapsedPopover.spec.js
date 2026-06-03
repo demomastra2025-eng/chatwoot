@@ -37,6 +37,7 @@ const mountComponent = () =>
           name: 'Labels',
           label: 'Tags',
           icon: 'i-lucide-tag',
+          badge: 123,
           to: { name: 'home' },
           actionItems: [
             {
@@ -83,5 +84,13 @@ describe('SidebarCollapsedPopover', () => {
 
     expect(routerPush).toHaveBeenCalledWith(labelsSettingsRoute);
     expect(wrapper.emitted('close')).toBeTruthy();
+  });
+
+  it('renders unread badges in the collapsed sidebar popover', () => {
+    const wrapper = mountComponent();
+
+    expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').text()).toBe(
+      '99+'
+    );
   });
 });

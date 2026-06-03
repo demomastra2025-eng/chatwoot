@@ -23,6 +23,13 @@ const state = {
   syncConversationsMessages: {},
   conversationFilters: {},
   copilotAssistant: {},
+  sidebarUnreadCounts: {
+    all: 0,
+    statuses: {},
+    inboxes: {},
+    teams: {},
+    labels: {},
+  },
 };
 
 const getConversationById = _state => conversationId => {
@@ -280,6 +287,15 @@ export const mutations = {
       chat.agent_last_seen_at = lastSeen;
       chat.unread_count = unreadCount;
     }
+  },
+  [types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS](_state, counts) {
+    _state.sidebarUnreadCounts = {
+      all: Number(counts?.all || 0),
+      statuses: counts?.statuses || {},
+      inboxes: counts?.inboxes || {},
+      teams: counts?.teams || {},
+      labels: counts?.labels || {},
+    };
   },
   [types.CHANGE_CHAT_STATUS_FILTER](_state, data) {
     _state.chatStatusFilter = data;

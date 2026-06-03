@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Icon from 'next/icon/Icon.vue';
+import SidebarUnreadBadge from './SidebarUnreadBadge.vue';
 
 const props = defineProps({
   label: {
@@ -19,6 +20,10 @@ const props = defineProps({
   active: {
     type: Boolean,
     default: false,
+  },
+  badge: {
+    type: [Number, String],
+    default: 0,
   },
   actionLabel: {
     type: String,
@@ -66,6 +71,8 @@ const actionItemsToRender = computed(() =>
 const hasActionButtons = computed(
   () => !props.actionLabel && actionItemsToRender.value.length > 0
 );
+
+const badgeCount = computed(() => Number(props.badge) || 0);
 
 const isActionActive = action => {
   if (action.active) return true;
@@ -122,6 +129,7 @@ const handleRootClick = async () => {
     >
       {{ label }}
     </span>
+    <SidebarUnreadBadge :value="badgeCount" />
     <span
       v-if="actionLabel"
       class="text-xs font-medium shrink-0 rounded-md px-2 py-0.5"
@@ -132,7 +140,7 @@ const handleRootClick = async () => {
     >
       {{ actionLabel }}
     </span>
-    <div v-else-if="hasActionButtons" class="flex items-center gap-0.5">
+    <div v-if="hasActionButtons" class="flex items-center gap-0.5">
       <button
         v-for="(action, index) in actionItemsToRender"
         :key="action.title || action.icon || index"

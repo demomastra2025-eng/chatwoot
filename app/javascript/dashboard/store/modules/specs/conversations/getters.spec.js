@@ -128,6 +128,23 @@ describe('#getters', () => {
       ]);
     });
   });
+  describe('#getConversationSidebarUnreadCounts', () => {
+    it('returns authoritative sidebar unread counts from state', () => {
+      const sidebarUnreadCounts = {
+        all: 5,
+        statuses: { open: 2, pending: 3 },
+        inboxes: { 10: 5 },
+        teams: { 100: 2, 101: 3 },
+        labels: { vip: 5, sales: 2 },
+      };
+      const state = { sidebarUnreadCounts };
+
+      expect(getters.getConversationSidebarUnreadCounts(state)).toEqual(
+        sidebarUnreadCounts
+      );
+    });
+  });
+
   describe('#getUnAssignedChats', () => {
     it('order returns only chats assigned to user', () => {
       const conversationList = [

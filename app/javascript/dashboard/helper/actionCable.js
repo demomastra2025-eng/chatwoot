@@ -19,6 +19,7 @@ import {
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 
 let audioNotificationHelperPromise;
+const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 250;
 
 const getAudioNotificationHelper = () => {
   audioNotificationHelperPromise ||= import(
@@ -45,6 +46,9 @@ class ActionCableConnector extends BaseActionCableConnector {
     const { websocketURL = '' } = window.chatwootConfig || {};
     super(app, pubsubToken, authClientId, websocketURL);
     this.CancelTyping = [];
+    this.sidebarUnreadCountsRefreshTimer = null;
+    this.isSidebarUnreadCountsRefreshInFlight = false;
+    this.hasQueuedSidebarUnreadCountsRefresh = false;
     this.events = {
       'message.created': this.onMessageCreated,
       'message.updated': this.onMessageUpdated,
@@ -163,6 +167,7 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   onConversationRead = data => {
     this.app.$store.dispatch('updateConversation', data);
+    this.fetchSidebarUnreadCounts();
   };
 
   // eslint-disable-next-line class-methods-use-this
@@ -179,6 +184,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       lastActivityAt,
       conversationId,
     });
+    this.fetchSidebarUnreadCounts();
   };
 
   // eslint-disable-next-line class-methods-use-this
@@ -237,9 +243,36 @@ class ActionCableConnector extends BaseActionCableConnector {
     }, timeoutMs);
   };
 
-  // eslint-disable-next-line class-methods-use-this
   fetchConversationStats = () => {
     emitter.emit('fetch_conversation_stats');
+    this.fetchSidebarUnreadCounts();
+  };
+
+  fetchSidebarUnreadCounts = () => {
+    if (this.sidebarUnreadCountsRefreshTimer) return;
+
+    if (this.isSidebarUnreadCountsRefreshInFlight) {
+      this.hasQueuedSidebarUnreadCountsRefresh = true;
+      return;
+    }
+
+    this.sidebarUnreadCountsRefreshTimer = setTimeout(() => {
+      this.sidebarUnreadCountsRefreshTimer = null;
+      this.dispatchSidebarUnreadCountsRefresh();
+    }, SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY);
+  };
+
+  dispatchSidebarUnreadCountsRefresh = () => {
+    this.isSidebarUnreadCountsRefreshInFlight = true;
+    Promise.resolve()
+      .then(() => this.app.$store.dispatch('fetchSidebarUnreadCounts'))
+      .finally(() => {
+        this.isSidebarUnreadCountsRefreshInFlight = false;
+        if (this.hasQueuedSidebarUnreadCountsRefresh) {
+          this.hasQueuedSidebarUnreadCountsRefresh = false;
+          this.fetchSidebarUnreadCounts();
+        }
+      });
   };
 
   onContactDelete = data => {

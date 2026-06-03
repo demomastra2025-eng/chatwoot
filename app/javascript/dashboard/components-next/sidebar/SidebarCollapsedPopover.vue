@@ -5,6 +5,7 @@ import { useSidebarContext } from './provider';
 import { useMapGetter } from 'dashboard/composables/store';
 import Icon from 'next/icon/Icon.vue';
 import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirection.vue';
+import SidebarUnreadBadge from './SidebarUnreadBadge.vue';
 
 const props = defineProps({
   label: { type: String, required: true },
@@ -59,6 +60,8 @@ const renderIcon = icon => ({
   component: typeof icon === 'object' ? icon : Icon,
   props: typeof icon === 'string' ? { icon } : null,
 });
+
+const badgeCount = item => Number(item?.badge) || 0;
 
 const transition = computed(() =>
   skipTransition.value
@@ -159,6 +162,7 @@ onMounted(async () => {
                     class="size-4 flex-shrink-0"
                   />
                   <span class="flex-1 truncate text-sm">{{ child.label }}</span>
+                  <SidebarUnreadBadge :value="badgeCount(child)" />
                   <span
                     class="size-3 transition-transform i-lucide-chevron-down"
                     :class="{
@@ -205,6 +209,7 @@ onMounted(async () => {
                         class="size-4 flex-shrink-0"
                       />
                       <span class="flex-1 truncate">{{ subChild.label }}</span>
+                      <SidebarUnreadBadge :value="badgeCount(subChild)" />
                     </button>
                   </li>
                 </ul>
@@ -227,6 +232,7 @@ onMounted(async () => {
                   class="size-4 flex-shrink-0"
                 />
                 <span class="flex-1 truncate">{{ child.label }}</span>
+                <SidebarUnreadBadge :value="badgeCount(child)" />
               </button>
             </li>
           </template>

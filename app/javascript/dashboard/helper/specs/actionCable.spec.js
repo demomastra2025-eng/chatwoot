@@ -83,6 +83,59 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
     actionCable = ActionCableConnector.init(store.$store, 'test-token');
   });
+
+  const sidebarUnreadRefreshCalls = () =>
+    mockDispatch.mock.calls.filter(
+      ([actionName]) => actionName === 'fetchSidebarUnreadCounts'
+    );
+
+  describe('sidebar unread count refreshes', () => {
+    it('debounces repeated refreshes from realtime events', async () => {
+      vi.useFakeTimers();
+      try {
+        actionCable.fetchSidebarUnreadCounts();
+        actionCable.fetchSidebarUnreadCounts();
+
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(250);
+
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('queues one trailing refresh while a count request is in flight', async () => {
+      vi.useFakeTimers();
+      let resolveRefresh;
+      mockDispatch.mockImplementation(actionName => {
+        if (actionName !== 'fetchSidebarUnreadCounts') return undefined;
+
+        return new Promise(resolve => {
+          resolveRefresh = resolve;
+        });
+      });
+
+      try {
+        actionCable.fetchSidebarUnreadCounts();
+        await vi.advanceTimersByTimeAsync(250);
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
+
+        actionCable.fetchSidebarUnreadCounts();
+        actionCable.fetchSidebarUnreadCounts();
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
+
+        resolveRefresh();
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(250);
+
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
   describe('copilot event handlers', () => {
     it('should register the copilot.message.created event handler', () => {
       expect(Object.keys(actionCable.events)).toContain(

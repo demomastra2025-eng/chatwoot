@@ -43,6 +43,9 @@ const getters = {
   getAllConversations: ({ allConversations, chatSortFilter: sortKey }) => {
     return sortConversations(allConversations, sortKey);
   },
+  getConversationSidebarUnreadCounts: ({ sidebarUnreadCounts }) => {
+    return sidebarUnreadCounts;
+  },
   getFilteredConversations: (
     { allConversations, chatSortFilter, appliedFilters },
     _,

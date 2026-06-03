@@ -4,12 +4,14 @@ import Icon from 'next/icon/Icon.vue';
 import Policy from 'dashboard/components/policy.vue';
 import { useSidebarContext } from './provider';
 import { useRouter } from 'vue-router';
+import SidebarUnreadBadge from './SidebarUnreadBadge.vue';
 
 const props = defineProps({
   label: { type: String, required: true },
   to: { type: [String, Object], required: true },
   icon: { type: [String, Object], default: null },
   active: { type: Boolean, default: false },
+  badge: { type: [Number, String], default: 0 },
   component: { type: Function, default: null },
 });
 
@@ -19,6 +21,8 @@ const router = useRouter();
 const shouldRenderComponent = computed(() => {
   return typeof props.component === 'function' || isVNode(props.component);
 });
+
+const badgeCount = computed(() => Number(props.badge) || 0);
 
 const INTERACTIVE_TARGET_SELECTOR = [
   'button',
@@ -91,12 +95,14 @@ const handleLeafClick = async event => {
         :label
         :icon
         :active
+        :badge="badgeCount"
       />
       <template v-else>
         <span v-if="icon" class="size-4 grid place-content-center rounded-full">
           <Icon :icon="icon" class="size-4 inline-block" />
         </span>
         <div class="flex-1 truncate min-w-0 text-sm">{{ label }}</div>
+        <SidebarUnreadBadge :value="badgeCount" />
       </template>
     </component>
   </Policy>
