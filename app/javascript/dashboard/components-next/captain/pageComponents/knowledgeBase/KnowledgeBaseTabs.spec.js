@@ -90,7 +90,7 @@ describe('KnowledgeBaseTabs', () => {
     ).toBe('1');
   });
 
-  it('routes between FAQ and Documents inside the same assistant', async () => {
+  it('routes between FAQ and Documents inside the shared workspace knowledge base', async () => {
     const wrapper = mountComponent();
 
     await wrapper.findAll('button')[1].trigger('click');
@@ -99,7 +99,6 @@ describe('KnowledgeBaseTabs', () => {
       name: 'captain_assistants_documents_index',
       params: {
         accountId: '530',
-        assistantId: '42',
       },
     });
   });
