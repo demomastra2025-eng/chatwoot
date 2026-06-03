@@ -1,5 +1,9 @@
+require 'timeout'
+
 class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseAccountTool
   SEMANTIC_RESULT_LIMIT = 5
+  CACHE_FETCH_TIMEOUT_SECONDS = 3
+  SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
 
   def self.name
     'faq_lookup'
@@ -12,7 +16,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     translated_query = semantic ? translated_query_for(query) : query
 
     cache = answer_cache(query: translated_query, semantic: semantic)
-    cached_payload = cache.fetch(overrides: { query: query, translated_query: translated_query })
+    cached_payload = bounded_cache_fetch(cache, query: query, translated_query: translated_query)
     return formatted_payload(cached_payload) if cached_payload.present?
 
     formatted_payload(cache.write(semantic_payload(query: query, translated_query: translated_query, semantic: semantic)))
@@ -164,17 +168,25 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   end
 
   def semantic_responses(query)
-    candidates = Captain::DocumentChunk.search(query, account_id: account.id)
-                                       .visible_to_assistant(assistant.id)
-                                       .where(account_id: account.id)
-                                       .limit(SEMANTIC_RESULT_LIMIT)
-                                       .to_a
-    rerank_result = Captain::Documents::Reranker.new(account: account).call(
-      query: query,
-      documents: candidates,
-      top_n: SEMANTIC_RESULT_LIMIT
-    )
-    [rerank_result.documents, rerank_result.trace]
+    Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
+      candidates = Captain::DocumentChunk.search(query, account_id: account.id)
+                                         .visible_to_assistant(assistant.id)
+                                         .where(account_id: account.id)
+                                         .limit(SEMANTIC_RESULT_LIMIT)
+                                         .to_a
+      rerank_result = Captain::Documents::Reranker.new(account: account).call(
+        query: query,
+        documents: candidates,
+        top_n: SEMANTIC_RESULT_LIMIT
+      )
+      [rerank_result.documents, rerank_result.trace]
+    end
+  end
+
+  def bounded_cache_fetch(cache, query:, translated_query:)
+    Timeout.timeout(CACHE_FETCH_TIMEOUT_SECONDS) do
+      cache.fetch(overrides: { query: query, translated_query: translated_query })
+    end
   end
 
   def lexical_fallback_responses(*queries)

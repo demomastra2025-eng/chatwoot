@@ -72,8 +72,31 @@ RSpec.describe Captain::Tools::SearchReplyDocumentationService do
     allow(service).to receive(:scoped_responses).and_return(scoped_relation)
     allow(scoped_relation).to receive(:search).and_return(scoped_relation)
 
-    expect(service.send(:search_responses, 'visibilityscope')).to eq(scoped_relation)
+    expect(service.send(:search_responses, 'visibilityscope')).to eq(scoped_relation.to_a)
     expect(scoped_relation).to have_received(:search).with('visibilityscope', account_id: account.id)
+  end
+
+  it 'bounds semantic response lookup and degrades to lexical fallback on timeout' do
+    create(
+      :captain_assistant_response,
+      account: account,
+      assistant: assistant,
+      question: 'visibilityscope bounded timeout',
+      answer: 'Search reply bounded timeout answer',
+      status: :approved
+    )
+    translate_service = instance_double(Captain::Llm::TranslateQueryService)
+    allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translate_service)
+    allow(translate_service).to receive(:translate).and_return('visibilityscope')
+    service = described_class.new(account: account, assistant: assistant)
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::SEMANTIC_LOOKUP_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    result = service.execute(query: 'visibilityscope')
+
+    expect(result).to include('Search reply bounded timeout answer')
+    expect(result).not_to include('temporarily unavailable')
   end
 
   it 'degrades to lexical fallback when semantic response lookup is not configured' do

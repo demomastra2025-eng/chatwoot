@@ -156,6 +156,40 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     expect(payload['matches'].first).to include('answer' => 'Refund in 14 days')
   end
 
+  it 'bounds semantic lookup and returns lexical results when the timeout fires' do
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::SEMANTIC_LOOKUP_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    payload = JSON.parse(service.execute(query: 'refund'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_timeout',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Refund in 14 days')
+  end
+
+  it 'bounds answer-cache reads and returns lexical results when cache lookup times out' do
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::CACHE_FETCH_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    payload = JSON.parse(service.execute(query: 'refund'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_timeout',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Refund in 14 days')
+  end
+
   it 'falls back to keyword matches when semantic lookup returns no matches' do
     document_chunk.update!(embedding_status: :indexed, embedding: Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1))
     allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.none)

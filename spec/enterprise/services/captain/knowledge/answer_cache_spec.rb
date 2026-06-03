@@ -95,4 +95,16 @@ RSpec.describe Captain::Knowledge::AnswerCache do
     )
     expect(entry.dig('retrieval_trace', 'answer_cache')).to include('stored' => true)
   end
+
+  it 'does not block cache lookup when query embedding exceeds the bounded timeout' do
+    described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
+
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::QUERY_EMBEDDING_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    result = described_class.new(account: account, assistant: assistant, query: 'How do refunds work?').fetch
+
+    expect(result).to be_nil
+  end
 end

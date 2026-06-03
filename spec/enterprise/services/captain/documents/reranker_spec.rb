@@ -64,4 +64,21 @@ RSpec.describe Captain::Documents::Reranker do
       error_class: 'RubyLLM::Error'
     )
   end
+
+  it 'bounds rerank calls and degrades when the timeout fires' do
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::REQUEST_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    result = described_class.new(account: account).call(query: 'refund', documents: [first_chunk, second_chunk], top_n: 2)
+
+    expect(result.documents).to eq([first_chunk, second_chunk])
+    expect(result.trace).to include(
+      attempted: true,
+      enabled: true,
+      degraded: true,
+      fallback_reason: 'rerank_unavailable',
+      error_class: 'Timeout::Error'
+    )
+  end
 end

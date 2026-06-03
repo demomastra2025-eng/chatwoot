@@ -1,5 +1,8 @@
+require 'timeout'
+
 class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   SEMANTIC_RESULT_LIMIT = 5
+  SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
 
   def self.name
     'search_documentation'
@@ -61,16 +64,18 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   end
 
   def semantic_responses(query)
-    candidates = Captain::DocumentChunk.search(query, account_id: assistant.account_id)
-                                       .visible_to_assistant(assistant.id)
-                                       .where(account_id: assistant.account_id)
-                                       .limit(SEMANTIC_RESULT_LIMIT)
-                                       .to_a
-    Captain::Documents::Reranker.new(account: assistant.account).call(
-      query: query,
-      documents: candidates,
-      top_n: SEMANTIC_RESULT_LIMIT
-    ).documents
+    Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
+      candidates = Captain::DocumentChunk.search(query, account_id: assistant.account_id)
+                                         .visible_to_assistant(assistant.id)
+                                         .where(account_id: assistant.account_id)
+                                         .limit(SEMANTIC_RESULT_LIMIT)
+                                         .to_a
+      Captain::Documents::Reranker.new(account: assistant.account).call(
+        query: query,
+        documents: candidates,
+        top_n: SEMANTIC_RESULT_LIMIT
+      ).documents
+    end
   end
 
   def lexical_fallback_responses(*queries)

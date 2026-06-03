@@ -1,4 +1,8 @@
+require 'timeout'
+
 class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
+  SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
+
   prepend Captain::Tools::Instrumentation
   include Captain::ToolResultOutput
 
@@ -46,7 +50,9 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
   attr_reader :assistant
 
   def search_responses(query)
-    scoped_responses.search(query, account_id: @account.id)
+    Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
+      scoped_responses.search(query, account_id: @account.id).to_a
+    end
   end
 
   def formatted_responses_or_empty(responses)

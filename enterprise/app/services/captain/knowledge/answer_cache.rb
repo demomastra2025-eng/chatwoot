@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require 'digest'
+require 'timeout'
 
 class Captain::Knowledge::AnswerCache
   DEFAULT_TTL = 24.hours
   CACHEABLE_STRATEGY = 'semantic_chunk'
+  QUERY_EMBEDDING_TIMEOUT_SECONDS = 4
 
   def initialize(account:, assistant:, query:, semantic: true, ttl: DEFAULT_TTL)
     @account = account
@@ -157,10 +159,12 @@ class Captain::Knowledge::AnswerCache
   end
 
   def query_embedding
-    @query_embedding ||= Captain::Llm::EmbeddingService.new(account_id: account.id).get_embedding(
-      normalized_query,
-      input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
-    )
+    @query_embedding ||= Timeout.timeout(QUERY_EMBEDDING_TIMEOUT_SECONDS) do
+      Captain::Llm::EmbeddingService.new(account_id: account.id).get_embedding(
+        normalized_query,
+        input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
+      )
+    end
   end
 
   def safe_query_embedding

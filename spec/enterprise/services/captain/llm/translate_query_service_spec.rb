@@ -29,5 +29,13 @@ RSpec.describe Captain::Llm::TranslateQueryService do
 
       expect(service.translate('Hello', target_language: 'spanish')).to eq('Hola')
     end
+
+    it 'falls back to the original query when translation exceeds the bounded timeout' do
+      expect(Timeout).to receive(:timeout)
+        .with(described_class::REQUEST_TIMEOUT_SECONDS)
+        .and_raise(Timeout::Error, 'execution expired')
+
+      expect(service.translate('Hello', target_language: 'spanish')).to eq('Hello')
+    end
   end
 end

@@ -165,6 +165,40 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(payload['matches'].first).to include('answer' => 'Click forgot password')
   end
 
+  it 'bounds semantic lookup and returns lexical results when the timeout fires' do
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::SEMANTIC_LOOKUP_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_timeout',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Click forgot password')
+  end
+
+  it 'bounds answer-cache reads and returns lexical results when cache lookup times out' do
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::CACHE_FETCH_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_timeout',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Click forgot password')
+  end
+
   it 'can skip semantic lookup for realtime voice calls' do
     expect(Captain::DocumentChunk).not_to receive(:search)
 

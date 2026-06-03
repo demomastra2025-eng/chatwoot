@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require 'timeout'
+
 class Captain::Documents::Reranker
   DEFAULT_TOP_N = 5
   FALLBACK_REASON = 'rerank_unavailable'
+  REQUEST_TIMEOUT_SECONDS = 8
 
   Result = Struct.new(:documents, :trace, keyword_init: true)
 
@@ -19,13 +22,7 @@ class Captain::Documents::Reranker
     model = rerank_model
     return result(documents.first(top_n), disabled_trace) if model.blank?
 
-    response = Llm::Runtime.rerank(
-      feature: :knowledge_rerank,
-      account: account,
-      model: model,
-      input: { query: query, documents: documents.map(&:content) },
-      options: { top_n: top_n }
-    )
+    response = rerank_response_for(query: query, documents: documents, model: model, top_n: top_n)
 
     ranked_documents = ranked_documents_for(response.results, documents, top_n)
     return degraded_result(documents, top_n, 'rerank_empty_result') if ranked_documents.blank?
@@ -41,6 +38,18 @@ class Captain::Documents::Reranker
   private
 
   attr_reader :account, :model
+
+  def rerank_response_for(query:, documents:, model:, top_n:)
+    Timeout.timeout(REQUEST_TIMEOUT_SECONDS) do
+      Llm::Runtime.rerank(
+        feature: :knowledge_rerank,
+        account: account,
+        model: model,
+        input: { query: query, documents: documents.map(&:content) },
+        options: { top_n: top_n }
+      )
+    end
+  end
 
   def rerank_model
     model.presence || Llm::Config.model_for(feature: 'knowledge_rerank', account: account, fallback: nil)

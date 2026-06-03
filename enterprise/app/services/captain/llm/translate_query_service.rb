@@ -1,5 +1,8 @@
+require 'timeout'
+
 class Captain::Llm::TranslateQueryService < Captain::BaseTaskService
   MODEL = 'gpt-4.1-nano'.freeze
+  REQUEST_TIMEOUT_SECONDS = 5
 
   pattr_initialize [:account!]
 
@@ -11,7 +14,9 @@ class Captain::Llm::TranslateQueryService < Captain::BaseTaskService
       { role: 'user', content: query }
     ]
 
-    response = make_api_call(model: MODEL, messages: messages)
+    response = Timeout.timeout(REQUEST_TIMEOUT_SECONDS) do
+      make_api_call(model: MODEL, messages: messages)
+    end
     return query if response[:error]
 
     response[:message].strip

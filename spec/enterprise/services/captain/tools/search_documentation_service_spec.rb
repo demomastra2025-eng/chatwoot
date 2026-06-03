@@ -79,4 +79,23 @@ RSpec.describe Captain::Tools::SearchDocumentationService do
     expect(result).to include('Timeout fallback answer')
     expect(result).not_to include('temporarily unavailable')
   end
+
+  it 'bounds semantic documentation lookup and degrades to lexical fallback on timeout' do
+    create(
+      :captain_assistant_response,
+      assistant: assistant,
+      account: account,
+      question: 'visibilityscope bounded timeout',
+      answer: 'Bounded timeout fallback answer',
+      status: :approved
+    )
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::SEMANTIC_LOOKUP_TIMEOUT_SECONDS)
+      .and_raise(Timeout::Error, 'execution expired')
+
+    result = service.execute(query: 'visibilityscope')
+
+    expect(result).to include('Bounded timeout fallback answer')
+    expect(result).not_to include('temporarily unavailable')
+  end
 end

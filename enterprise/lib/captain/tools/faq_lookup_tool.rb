@@ -1,5 +1,9 @@
+require 'timeout'
+
 class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   SEMANTIC_RESULT_LIMIT = 5
+  CACHE_FETCH_TIMEOUT_SECONDS = 3
+  SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
 
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: 'string', desc: 'The question or topic to search for in the FAQ database'
@@ -8,7 +12,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     log_tool_usage('searching', { query: query })
 
     cache = answer_cache(query: query, semantic: semantic)
-    cached_payload = cache.fetch(overrides: { query: query })
+    cached_payload = bounded_cache_fetch(cache, query: query)
     return JSON.pretty_generate(cached_payload) if cached_payload.present?
 
     JSON.pretty_generate(cache.write(semantic_payload(query: query, semantic: semantic)))
@@ -63,17 +67,25 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def semantic_responses(query)
-    candidates = Captain::DocumentChunk.search(query, account_id: account.id)
-                                       .visible_to_assistant(assistant.id)
-                                       .where(account_id: account.id)
-                                       .limit(SEMANTIC_RESULT_LIMIT)
-                                       .to_a
-    rerank_result = Captain::Documents::Reranker.new(account: account).call(
-      query: query,
-      documents: candidates,
-      top_n: SEMANTIC_RESULT_LIMIT
-    )
-    [rerank_result.documents, rerank_result.trace]
+    Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
+      candidates = Captain::DocumentChunk.search(query, account_id: account.id)
+                                         .visible_to_assistant(assistant.id)
+                                         .where(account_id: account.id)
+                                         .limit(SEMANTIC_RESULT_LIMIT)
+                                         .to_a
+      rerank_result = Captain::Documents::Reranker.new(account: account).call(
+        query: query,
+        documents: candidates,
+        top_n: SEMANTIC_RESULT_LIMIT
+      )
+      [rerank_result.documents, rerank_result.trace]
+    end
+  end
+
+  def bounded_cache_fetch(cache, query:)
+    Timeout.timeout(CACHE_FETCH_TIMEOUT_SECONDS) do
+      cache.fetch(overrides: { query: query })
+    end
   end
 
   def fallback_reason_for_empty_semantic
