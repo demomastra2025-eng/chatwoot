@@ -3,7 +3,10 @@
 module Onelink
   module Mcp
     class CaptainToolAdapter
-      RESERVED_ARGUMENT_KEYS = %w[_meta __mcp mcp_context].freeze
+      CONFIRM_ARGUMENT = '_confirm'
+      RESERVED_ARGUMENT_KEYS = [CONFIRM_ARGUMENT, '_meta', '__mcp', 'mcp_context'].freeze
+      AUDIT_SOURCE = 'mcp_captain'
+      AUDIT_AGENT = 'onelink-mcp'
 
       def initialize(auth_context:)
         @auth_context = auth_context
@@ -31,14 +34,22 @@ module Onelink
         unless auth_context.mcp_access_policy.allows_captain_tool?(tool_definition)
           return error_tool_response("Tool '#{name}' is disabled by this workspace MCP access policy")
         end
+        if captain_confirmation_required?(tool_definition) && !captain_confirmation_confirmed?(arguments)
+          return captain_confirmation_error_response(tool_definition: tool_definition, name: name, arguments: arguments)
+        end
 
         execution_arguments = sanitized_arguments(arguments)
         tool = build_tool(tool_definition, arguments: execution_arguments, meta: meta)
         return error_tool_response("Tool '#{name}' is not active for this workspace") if tool.blank? || !tool.active?
 
-        result = tool.execute(**execution_arguments.symbolize_keys)
+        result = execute_tool(tool, execution_arguments)
+        audit_captain_tool_call(tool_definition: tool_definition, arguments: execution_arguments, result: result)
         result_to_mcp_response(result)
       rescue StandardError => e
+        if defined?(tool_definition) && tool_definition.present?
+          audit_captain_tool_call(tool_definition: tool_definition, arguments: execution_arguments || {}, error: e)
+        end
+
         Rails.logger.warn do
           "#{self.class.name} failed account=#{auth_context.account.id} user=#{auth_context.user.id} tool=#{name}: #{e.class} #{e.message}"
         end
@@ -50,7 +61,87 @@ module Onelink
       attr_reader :auth_context
 
       def tool_definition_for(name)
+        registry_definition = Captain::ToolRegistry.definition_for(name)
+        return registry_tool_definition_for(registry_definition) if registry_definition.present?
+
         executable_tool_definitions.find { |tool_definition| tool_definition[:id].to_s == name.to_s }
+      end
+
+      def registry_tool_definition_for(registry_definition)
+        return unless registry_definition.supports_scope?(auth_context.scope_name)
+
+        tool_definition = registry_definition.to_h.with_indifferent_access
+        return unless required_integrations_available?(tool_definition)
+        return unless runtime_requirements_available?(tool_definition)
+
+        tool_definition = apply_assistant_confirmation(tool_definition)
+        return unless assistant_tool_selected?(tool_definition)
+        return unless tool_visible_to_user?(tool_definition)
+        return unless auth_context.mcp_access_policy.allows_captain_tool?(tool_definition)
+
+        tool_definition
+      end
+
+      def required_integrations_available?(tool_definition)
+        required_integrations = Array(tool_definition[:required_integrations]).map(&:to_s)
+        return true if auth_context.assistant.blank? || required_integrations.blank?
+
+        required_integrations.all? do |app_id|
+          auth_context.account.hooks.exists?(app_id: app_id, status: Integrations::Hook.statuses[:enabled])
+        end
+      end
+
+      def runtime_requirements_available?(tool_definition)
+        flags = Array(tool_definition[:required_runtime_flags]).map(&:to_s)
+        return true if auth_context.assistant.blank? || flags.blank?
+
+        flags.all? do |flag|
+          case flag
+          when 'web_search'
+            Llm::RuntimePolicy.web_access_enabled?(:search, account: auth_context.account) &&
+              Captain::Tools::FirecrawlService.configured?
+          when 'web_scrape'
+            Llm::RuntimePolicy.web_access_enabled?(:scrape, account: auth_context.account) &&
+              Captain::Tools::FirecrawlService.configured?
+          else
+            true
+          end
+        end
+      end
+
+      def apply_assistant_confirmation(tool_definition)
+        return tool_definition unless Captain::ToolCatalog.requires_confirmation_for_scope?(tool_definition, auth_context.scope_name)
+
+        tool_definition.merge(requires_confirmation: true).with_indifferent_access
+      end
+
+      def assistant_tool_selected?(tool_definition)
+        raw_access = auth_context.assistant.config.is_a?(Hash) ? auth_context.assistant.config['tool_access'] : nil
+        raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
+        return true unless raw_access.is_a?(Hash) && raw_access.key?(auth_context.scope_name)
+
+        raw_scope = raw_access[auth_context.scope_name]
+        raw_scope = raw_scope.to_h.deep_stringify_keys if raw_scope.respond_to?(:to_h)
+        raw_scope = {} unless raw_scope.is_a?(Hash)
+
+        default_selected = default_selected_tool?(tool_definition)
+        enabled = assistant_tool_scope_enabled?(raw_scope, default_selected: default_selected)
+        return false unless enabled
+
+        return Array(raw_scope['tool_ids']).map(&:to_s).include?(tool_definition[:id].to_s) if raw_scope.key?('tool_ids')
+
+        default_selected
+      end
+
+      def assistant_tool_scope_enabled?(raw_scope, default_selected:)
+        return ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) if raw_scope.key?('enabled')
+        return true if raw_scope.key?('tool_ids')
+
+        default_selected
+      end
+
+      def default_selected_tool?(tool_definition)
+        Captain::ToolAccess.default_tool_ids_for(auth_context.scope_name, [tool_definition]).include?(tool_definition[:id].to_s)
       end
 
       def catalog_tool_definitions
@@ -68,7 +159,7 @@ module Onelink
 
           available
             .select { |tool| allowed_ids.include?(tool[:id].to_s) }
-            .map { |tool| tool.with_indifferent_access }
+            .map(&:with_indifferent_access)
         end
       end
 
@@ -94,6 +185,63 @@ module Onelink
         return yield unless defined?(Llm::Config) && Llm::Config.respond_to?(:with_runtime_cache)
 
         Llm::Config.with_runtime_cache(&)
+      end
+
+      def execute_tool(tool, execution_arguments)
+        raw_execute_method(tool).call(**execution_arguments.symbolize_keys)
+      end
+
+      def raw_execute_method(tool)
+        method = tool.method(:execute)
+        return method unless defined?(Captain::Tools::Instrumentation)
+
+        method = method.super_method while method.owner == Captain::Tools::Instrumentation && method.super_method.present?
+
+        method
+      end
+
+      def audit_captain_tool_call(tool_definition:, arguments:, result: nil, error: nil)
+        return if auth_context.assistant.blank?
+
+        Captain::ToolExecutionAuditService.record(
+          assistant: auth_context.assistant,
+          scope_name: auth_context.scope_name,
+          tool_definition: tool_definition,
+          arguments: arguments,
+          result: result,
+          error: error,
+          user: auth_context.user,
+          runtime_context: {
+            source: AUDIT_SOURCE,
+            current_agent: AUDIT_AGENT
+          }
+        )
+      rescue StandardError => e
+        Rails.logger.warn do
+          [
+            "#{self.class.name} failed to audit",
+            "account=#{auth_context.account.id}",
+            "user=#{auth_context.user.id}",
+            "tool=#{tool_definition[:id]}:",
+            "#{e.class} #{e.message}"
+          ].join(' ')
+        end
+      end
+
+      def captain_confirmation_required?(tool_definition)
+        confirmation_required_for(tool_definition, metadata: Captain::ToolPolicy.selection_metadata(tool_definition))
+      end
+
+      def captain_confirmation_confirmed?(arguments)
+        normalized = arguments.respond_to?(:to_h) ? arguments.to_h.with_indifferent_access : {}
+
+        ActiveModel::Type::Boolean.new.cast(normalized[CONFIRM_ARGUMENT])
+      end
+
+      def captain_confirmation_error_response(tool_definition:, name:, arguments:)
+        result = error_tool_response("Captain tool '#{name}' requires #{CONFIRM_ARGUMENT}: true")
+        audit_captain_tool_call(tool_definition: tool_definition, arguments: sanitized_arguments(arguments), result: result)
+        result
       end
 
       def tool_visible_to_user?(tool_definition)

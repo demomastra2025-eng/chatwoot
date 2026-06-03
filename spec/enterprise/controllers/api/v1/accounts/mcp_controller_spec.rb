@@ -347,6 +347,101 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(response.body).not_to include('super-secret-token')
     end
 
+    it 'executes registry-backed Captain tools without enumerating the full assistant catalog' do
+      allow(Captain::ToolCatalog).to receive(:available_tools_for).and_raise('full catalog should not be enumerated for direct calls')
+      allow(Llm::SafetyPolicy).to receive(:check!).and_raise('MCP direct Captain calls should not run copilot runtime moderation')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-direct-1',
+             method: 'tools/call',
+             params: { name: 'list_account_users', arguments: { limit: 1 } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(false)
+      expect(json_response.dig(:result, :structuredContent, :users).length).to eq(1)
+    end
+
+    it 'honors explicit assistant tool IDs even when the registry tool is not selected by default' do
+      assistant.update!(
+        config: {
+          'tool_access' => {
+            'assistant' => {
+              'tool_ids' => ['list_account_users']
+            }
+          }
+        }
+      )
+      allow(Captain::ToolCatalog).to receive(:available_tools_for).and_raise('full catalog should not be enumerated for direct calls')
+      allow(Llm::SafetyPolicy).to receive(:check!).and_raise('MCP direct Captain calls should not run copilot runtime moderation')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-direct-selected-1',
+             method: 'tools/call',
+             params: { name: 'list_account_users', arguments: { limit: 1 } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(false)
+      expect(json_response.dig(:result, :structuredContent, :users).length).to eq(1)
+    end
+
+    it 'requires explicit MCP confirmation before executing confirmation-required Captain tools' do
+      account.update!(
+        mcp_access: {
+          enabled: true,
+          sources: { captain: true, openapi_read: true, openapi_write: false },
+          max_risk_level: 'high',
+          require_confirmation_for_mutations: true,
+          allowed_tool_ids: ['update_mcp_access_policy']
+        }
+      )
+      allow(Captain::ToolCatalog).to receive(:available_tools_for).and_raise('full catalog should not be enumerated for direct calls')
+      allow(Captain::ToolCatalog).to receive(:build_tool).and_raise('confirmation-required tools should not execute without _confirm')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-direct-confirmation-1',
+             method: 'tools/call',
+             params: { name: 'update_mcp_access_policy', arguments: { max_risk_level: 'custom' } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(true)
+      expect(json_response.dig(:result, :content).first[:text]).to include('_confirm')
+    end
+
+    it 'does not bypass Captain tool confirmation when OpenAPI mutation confirmation is disabled' do
+      account.update!(
+        mcp_access: {
+          enabled: true,
+          sources: { captain: true, openapi_read: true, openapi_write: true },
+          max_risk_level: 'high',
+          require_confirmation_for_mutations: false,
+          allowed_tool_ids: ['update_mcp_access_policy']
+        }
+      )
+      allow(Captain::ToolCatalog).to receive(:available_tools_for).and_raise('full catalog should not be enumerated for direct calls')
+      allow(Captain::ToolCatalog).to receive(:build_tool).and_raise('confirmation-required tools should not execute without _confirm')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-direct-confirmation-2',
+             method: 'tools/call',
+             params: { name: 'update_mcp_access_policy', arguments: { max_risk_level: 'custom' } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(true)
+      expect(json_response.dig(:result, :content).first[:text]).to include('_confirm')
+    end
+
     it 'reads account profile resource' do
       uri = "onelink://accounts/#{account.id}/profile"
 
