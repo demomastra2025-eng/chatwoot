@@ -375,7 +375,7 @@ class Telephony::EventsIngestionService
       end_reason: next_end_reason(call_session, status),
       last_event_at: next_last_event_at(call_session),
       legs: next_legs(call_session, status),
-      metadata: merged_metadata(call_session)
+      metadata: merged_metadata(call_session, conversation)
     }
   end
 
@@ -478,7 +478,10 @@ class Telephony::EventsIngestionService
   end
 
   def ensure_conversation!(call_session, account)
-    return if call_session.conversation.present?
+    if call_session.conversation.present?
+      update_outbound_conversation!(call_session.conversation, call_session) if sipuni_outbound_call_session?(call_session)
+      return
+    end
 
     inbox = call_session.inbox || resolve_inbox(account)
     if inbox.blank?
@@ -543,6 +546,10 @@ class Telephony::EventsIngestionService
     end
   end
 
+  def sipuni_outbound_call_session?(call_session)
+    call_session.provider == 'sipuni' && call_session.direction == 'outbound'
+  end
+
   def update_outbound_conversation!(conversation, call_session)
     timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i
     attrs = (conversation.additional_attributes || {}).deep_dup
@@ -593,6 +600,12 @@ class Telephony::EventsIngestionService
       data['data']['meta'] = existing_meta.merge(voice_meta)
     end
     data['data']['status'] = call_session.status
+    if message.source_id.blank? || message.source_id == call_session.voice_call_source_id
+      data['data']['call_sid'] = call_session.external_call_ref
+      data['data']['call_direction'] ||= call_session.direction
+      data['data']['from_number'] ||= call_session.from_number
+      data['data']['to_number'] ||= call_session.to_number
+    end
     existing_ai_voice = data['data']['ai_voice'].is_a?(Hash) ? data['data']['ai_voice'] : {}
     data['data']['ai_voice'] = existing_ai_voice.merge(voice_ai_message_state(call_session))
     tools = voice_ai_tool_events(call_session)
@@ -867,7 +880,50 @@ class Telephony::EventsIngestionService
       return conversation if conversation.present?
     end
 
-    account.conversations.find_by(identifier: call_ref)
+    conversation = account.conversations.find_by(identifier: call_ref)
+    return conversation if conversation.present?
+
+    resolve_pending_sipuni_outbound_conversation(account)
+  end
+
+  def resolve_pending_sipuni_outbound_conversation(account)
+    return unless payload_value('provider') == 'sipuni' && resolved_direction == 'outbound'
+
+    inbox = resolve_inbox(account)
+    contact = resolve_contact(account, nil)
+    return if inbox.blank? || contact.blank?
+
+    event_anchor = resolved_started_at || resolved_occurred_at || Time.current
+    candidates = account.conversations
+                        .where(inbox_id: inbox.id, contact_id: contact.id)
+                        .where(created_at: (event_anchor - 15.minutes)..(event_anchor + 5.minutes))
+                        .order(created_at: :desc, id: :desc)
+                        .select { |conversation| pending_sipuni_outbound_conversation?(conversation) }
+    return candidates.first if candidates.one?
+
+    nil
+  end
+
+  def pending_sipuni_outbound_conversation?(conversation)
+    attrs = (conversation.additional_attributes || {}).deep_stringify_keys
+    return false unless attrs['telephony_provider'] == 'sipuni'
+    return false unless attrs['call_direction'] == 'outbound'
+    return false unless pending_sipuni_outbound_status?(attrs['call_status'])
+
+    pending_to_number = attrs['to_number'].presence || conversation.contact&.phone_number
+    normalized_phone(pending_to_number) == normalized_phone(resolved_to_number)
+  end
+
+  def pending_sipuni_outbound_status?(status)
+    normalized_status = Telephony::CallSession.normalize_status(status)
+    normalized_status.blank? || normalized_status.in?(%w[created ringing connecting])
+  end
+
+  def normalized_phone(value)
+    digits = value.to_s.gsub(/\D/, '')
+    digits = digits.delete_prefix('00')
+    digits = "7#{digits[1..]}" if digits.length == 11 && digits.start_with?('8')
+    digits.presence
   end
 
   def resolve_contact(account, conversation)
@@ -977,18 +1033,38 @@ class Telephony::EventsIngestionService
     nil
   end
 
-  def merged_metadata(call_session)
+  def merged_metadata(call_session, conversation = nil)
     base = (call_session.metadata || {}).deep_dup
     base['last_payload'] = payload
     if metadata.present?
       existing_metadata = base['metadata'].is_a?(Hash) ? base['metadata'].deep_dup : {}
       base['metadata'] = existing_metadata.deep_merge(metadata)
     end
+    if (initiation_metadata = sipuni_outbound_initiation_metadata(conversation || call_session.conversation)).present?
+      existing_initiation_metadata = base['sipuni_outbound_initiation'].is_a?(Hash) ? base['sipuni_outbound_initiation'].deep_dup : {}
+      base['sipuni_outbound_initiation'] = existing_initiation_metadata.deep_merge(initiation_metadata)
+    end
     if recording_event_metadata.present?
       existing_recording_metadata = base['recording'].is_a?(Hash) ? base['recording'].deep_dup : {}
       base['recording'] = existing_recording_metadata.deep_merge(recording_event_metadata)
     end
     base.compact
+  end
+
+  def sipuni_outbound_initiation_metadata(conversation)
+    return {} unless payload_value('provider') == 'sipuni' && resolved_direction == 'outbound'
+    return {} if conversation.blank?
+
+    attrs = (conversation.additional_attributes || {}).deep_stringify_keys
+    meta = attrs['meta'].is_a?(Hash) ? attrs['meta'].deep_stringify_keys : {}
+    provider_request_ref = meta['provider_request_ref'].presence
+    return {} if provider_request_ref.blank?
+
+    {
+      'provider_request_ref' => provider_request_ref,
+      'provider_request_status' => meta['provider_request_status'],
+      'sipuni_callback_response' => meta['sipuni_callback_response']
+    }.compact
   end
 
   def call_recording_metadata(call_session)

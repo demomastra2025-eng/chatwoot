@@ -24,6 +24,7 @@ class Voice::Provider::Sipuni::Adapter
     {
       provider: 'sipuni',
       call_sid: callback[:callback_id],
+      provider_request_ref: callback[:callback_id],
       status: callback[:status] || 'ringing',
       call_direction: 'outbound',
       requires_agent_join: false,

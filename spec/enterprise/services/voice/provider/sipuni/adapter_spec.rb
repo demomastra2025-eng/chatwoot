@@ -48,6 +48,7 @@ RSpec.describe Voice::Provider::Sipuni::Adapter do
       expect(result).to include(
         provider: 'sipuni',
         call_sid: 'sipuni-order-1',
+        provider_request_ref: 'sipuni-order-1',
         status: 'ringing',
         call_direction: 'outbound',
         requires_agent_join: false,

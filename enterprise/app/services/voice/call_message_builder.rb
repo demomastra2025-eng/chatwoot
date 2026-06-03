@@ -53,6 +53,7 @@ class Voice::CallMessageBuilder
     @base_payload ||= begin
       data = payload.slice(
         :call_sid,
+        :provider_request_ref,
         :status,
         :call_direction,
         :conference_sid,
