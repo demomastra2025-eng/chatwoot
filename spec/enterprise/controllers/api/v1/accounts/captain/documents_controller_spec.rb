@@ -6,7 +6,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:assistant2) { create(:captain_assistant, account: account) }
-  let(:document) { create(:captain_document, assistant: assistant, account: account) }
+  let(:document) { create(:captain_document, assistant: nil, account: account) }
   let(:captain_limits) do
     {
       :startups => { :documents => 1, :responses => 100 }
@@ -31,7 +31,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
     context 'when it is an agent' do
       context 'when no filters are applied' do
         before do
-          create_list(:captain_document, 30, assistant: assistant, account: account)
+          create_list(:captain_document, 30, assistant: nil, account: account)
         end
 
         it 'returns the first page of documents' do
@@ -53,8 +53,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
         end
       end
 
-      it 'does not expose assistant-personal documents without an assistant filter' do
+      it 'shows workspace-owned documents without exposing assistant-personal visibility' do
         general_document = create(:captain_document, assistant: nil, account: account, visibility: :general)
+        workspace_personal_document = create(:captain_document, assistant: nil, account: account, visibility: :personal)
         personal_document = create(
           :captain_document,
           assistant: assistant,
@@ -65,7 +66,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
         get "/api/v1/accounts/#{account.id}/captain/documents", headers: agent.create_new_auth_token, as: :json
 
         document_ids = json_response[:payload].pluck(:id)
-        expect(document_ids).to include(general_document.id)
+        expect(document_ids).to include(general_document.id, workspace_personal_document.id)
         expect(document_ids).not_to include(personal_document.id)
       end
 
@@ -101,8 +102,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
         let(:other_account) { create(:account) }
 
         before do
-          create_list(:captain_document, 3, assistant: assistant, account: account)
-          create_list(:captain_document, 2, account: other_account)
+          create_list(:captain_document, 3, assistant: nil, account: account)
+          create_list(:captain_document, 2, assistant: nil, account: other_account)
         end
 
         it 'only returns documents for the current account' do
@@ -117,9 +118,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
 
       context 'with chunk embedding health' do
         it 'returns embedding status summary for each document' do
-          document = create(:captain_document, assistant: assistant, account: account)
-          create(:captain_document_chunk, document: document, account: account, assistant: assistant, embedding_status: :indexed)
-          create(:captain_document_chunk, document: document, account: account, assistant: assistant, embedding_status: :stale)
+          document = create(:captain_document, assistant: nil, account: account)
+          create(:captain_document_chunk, document: document, account: account, assistant: nil, embedding_status: :indexed)
+          create(:captain_document_chunk, document: document, account: account, assistant: nil, embedding_status: :stale)
 
           get "/api/v1/accounts/#{account.id}/captain/documents",
               headers: agent.create_new_auth_token, as: :json
@@ -262,7 +263,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           expect(Captain::Document.last.assistant_id).to be_nil
         end
 
-        it 'rejects personal visibility without an assistant' do
+        it 'creates a workspace-personal document without assistant ownership' do
           expect do
             post "/api/v1/accounts/#{account.id}/captain/documents",
                  params: {
@@ -274,9 +275,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
                  },
                  headers: admin.create_new_auth_token,
                  as: :json
-          end.not_to change(Captain::Document, :count)
+          end.to change(Captain::Document, :count).by(1)
 
-          expect(response).to have_http_status(:unprocessable_content)
+          expect(response).to have_http_status(:success)
+          expect(json_response[:visibility]).to eq('personal')
+          expect(Captain::Document.last.assistant_id).to be_nil
         end
 
         it 'creates a document with FAQ generation disabled' do
@@ -417,7 +420,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
     end
 
     context 'when it is an agent' do
-      let!(:document_to_delete) { create(:captain_document, assistant: assistant) }
+      let!(:document_to_delete) { create(:captain_document, assistant: nil, account: account) }
 
       it 'deletes the document' do
         delete "/api/v1/accounts/#{account.id}/captain/documents/#{document_to_delete.id}",
@@ -429,7 +432,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
 
     context 'when it is an admin' do
       context 'when document exists' do
-        let!(:document_to_delete) { create(:captain_document, assistant: assistant) }
+        let!(:document_to_delete) { create(:captain_document, assistant: nil, account: account) }
 
         it 'deletes the document' do
           expect do

@@ -339,6 +339,59 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
         expect(file_document.source_text).to eq('Uploaded policy text')
         expect(file_document.metadata.dig('source_text', 'provider')).to eq('attachment')
       end
+
+      it 'extracts remote office file URLs without Firecrawl' do
+        file_document = create(
+          :captain_document,
+          assistant: document.assistant,
+          account: document.account,
+          external_link: 'https://example.com/files/report.xlsx',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url', 'sync' => {} } }
+        )
+        tempfile = Tempfile.new(['report', '.xlsx'])
+        allow(Captain::Documents::SourceTextExtractor)
+          .to receive(:extract_text_from_tempfile)
+          .and_return('Spreadsheet policy text')
+        allow(SafeFetch).to receive(:fetch) do |url, options, &block|
+          expect(url).to eq(file_document.external_link)
+          expect(options[:allowed_content_types]).to include(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          )
+          block.call(
+            double(
+              tempfile: tempfile,
+              content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+          )
+        end
+
+        described_class.perform_now(file_document)
+
+        expect(file_document.reload).to be_available
+        expect(file_document.source_text).to eq('Spreadsheet policy text')
+        expect(file_document.metadata.dig('source_text', 'provider')).to eq('safe_fetch')
+      ensure
+        tempfile&.close!
+      end
+
+      it 'extracts uploaded office files without Firecrawl' do
+        file_document = build(:captain_document, assistant: document.assistant, account: document.account, external_link: nil)
+        file_document.source_file.attach(
+          io: StringIO.new('Spreadsheet content'),
+          filename: 'report.xlsx',
+          content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        file_document.save!
+        allow(Captain::Documents::SourceTextExtractor)
+          .to receive(:extract_text_from_tempfile)
+          .and_return('Uploaded spreadsheet text')
+
+        described_class.perform_now(file_document)
+
+        expect(file_document.reload).to be_available
+        expect(file_document.source_text).to eq('Uploaded spreadsheet text')
+        expect(file_document.metadata.dig('source_text', 'provider')).to eq('attachment')
+      end
     end
 
     context 'when document is a PDF' do

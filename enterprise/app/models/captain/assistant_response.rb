@@ -43,7 +43,6 @@ class Captain::AssistantResponse < ApplicationRecord
   validates :question, presence: true
   validates :answer, presence: true
   validate :assistant_belongs_to_account
-  validate :personal_visibility_requires_assistant
 
   before_validation :ensure_account
   before_validation :ensure_status
@@ -54,12 +53,19 @@ class Captain::AssistantResponse < ApplicationRecord
   scope :by_account, ->(account_id) { where(account_id: account_id) }
   scope :by_assistant, ->(assistant_id) { where(assistant_id: assistant_id) }
   scope :with_document, ->(document_id) { where(document_id: document_id) }
+  # assistant_id nil is workspace-owned knowledge. These rows can be general or
+  # workspace-personal, but they are not assistant-private records.
+  scope :workspace_owned, -> { where(assistant_id: nil) }
   scope :visible_to_assistant, lambda { |assistant_id|
     if assistant_id.blank?
-      where(visibility: :general)
+      workspace_owned
     else
       where(
-        'captain_assistant_responses.visibility = :general_visibility OR captain_assistant_responses.assistant_id = :assistant_id',
+        <<~SQL.squish,
+          captain_assistant_responses.assistant_id IS NULL OR
+          captain_assistant_responses.visibility = :general_visibility OR
+          captain_assistant_responses.assistant_id = :assistant_id
+        SQL
         general_visibility: visibilities[:general],
         assistant_id: assistant_id
       )
@@ -97,13 +103,6 @@ class Captain::AssistantResponse < ApplicationRecord
     return if assistant.blank? || account.blank? || assistant.account_id == account_id
 
     errors.add(:assistant, 'must belong to the same account')
-  end
-
-  def personal_visibility_requires_assistant
-    return unless visibility_personal?
-    return if assistant_id.present?
-
-    errors.add(:assistant, I18n.t('captain.documents.personal_visibility_requires_assistant'))
   end
 
   def update_response_embedding

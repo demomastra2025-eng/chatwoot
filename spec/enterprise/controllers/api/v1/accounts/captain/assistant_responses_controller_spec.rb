@@ -3,11 +3,11 @@ require 'rails_helper'
 RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request do
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:document) { create(:captain_document, assistant: assistant, account: account) }
+  let(:document) { create(:captain_document, assistant: nil, account: account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:another_assistant) { create(:captain_assistant, account: account) }
-  let(:another_document) { create(:captain_document, account: account, assistant: assistant) }
+  let(:another_document) { create(:captain_document, account: account, assistant: nil) }
 
   def json_response
     JSON.parse(response.body, symbolize_names: true)
@@ -18,7 +18,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       before do
         create_list(:captain_assistant_response, 30,
                     account: account,
-                    assistant: assistant,
+                    assistant: nil,
                     documentable: document)
       end
 
@@ -43,12 +43,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       end
     end
 
-    it 'does not expose assistant-personal responses without an assistant filter' do
+    it 'shows workspace-owned responses without exposing assistant-personal visibility' do
       general_response = create(
         :captain_assistant_response,
         account: account,
         assistant: nil,
         visibility: :general,
+        documentable: document
+      )
+      workspace_personal_response = create(
+        :captain_assistant_response,
+        account: account,
+        assistant: nil,
+        visibility: :personal,
         documentable: document
       )
       personal_response = create(
@@ -64,7 +71,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
           as: :json
 
       response_ids = json_response[:payload].pluck(:id)
-      expect(response_ids).to include(general_response.id)
+      expect(response_ids).to include(general_response.id, workspace_personal_response.id)
       expect(response_ids).not_to include(personal_response.id)
     end
 
@@ -102,11 +109,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       before do
         create_list(:captain_assistant_response, 3,
                     account: account,
-                    assistant: assistant,
+                    assistant: nil,
                     documentable: document)
         create_list(:captain_assistant_response, 2,
                     account: account,
-                    assistant: assistant,
+                    assistant: nil,
                     documentable: another_document)
       end
 
@@ -126,12 +133,12 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       before do
         create(:captain_assistant_response,
                account: account,
-               assistant: assistant,
+               assistant: nil,
                question: 'How to reset password?',
                answer: 'Click forgot password')
         create(:captain_assistant_response,
                account: account,
-               assistant: assistant,
+               assistant: nil,
                question: 'How to change email?',
                answer: 'Go to settings')
       end
@@ -171,7 +178,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
   end
 
   describe 'GET /api/v1/accounts/:account_id/captain/assistant_responses/:id' do
-    let!(:response_record) { create(:captain_assistant_response, assistant: assistant, account: account) }
+    let!(:response_record) { create(:captain_assistant_response, assistant: nil, account: account) }
 
     it 'returns the requested response if the user is agent or admin' do
       get "/api/v1/accounts/#{account.id}/captain/assistant_responses/#{response_record.id}",
@@ -229,7 +236,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       expect(Captain::AssistantResponse.last.assistant_id).to be_nil
     end
 
-    it 'rejects personal visibility without an assistant' do
+    it 'creates a workspace-personal response without assistant ownership' do
       expect do
         post "/api/v1/accounts/#{account.id}/captain/assistant_responses",
              params: {
@@ -241,9 +248,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
              },
              headers: admin.create_new_auth_token,
              as: :json
-      end.not_to change(Captain::AssistantResponse, :count)
+      end.to change(Captain::AssistantResponse, :count).by(1)
 
-      expect(response).to have_http_status(:unprocessable_content)
+      expect(response).to have_http_status(:success)
+      expect(json_response[:visibility]).to eq('personal')
+      expect(Captain::AssistantResponse.last.assistant_id).to be_nil
     end
 
     context 'with invalid params' do
@@ -268,7 +277,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
   end
 
   describe 'PATCH /api/v1/accounts/:account_id/captain/assistant_responses/:id' do
-    let!(:response_record) { create(:captain_assistant_response, assistant: assistant) }
+    let!(:response_record) { create(:captain_assistant_response, assistant: nil, account: account) }
     let(:update_params) do
       {
         assistant_response: {
@@ -312,7 +321,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
   end
 
   describe 'DELETE /api/v1/accounts/:account_id/captain/assistant_responses/:id' do
-    let!(:response_record) { create(:captain_assistant_response, assistant: assistant) }
+    let!(:response_record) { create(:captain_assistant_response, assistant: nil, account: account) }
 
     it 'deletes the response' do
       expect do

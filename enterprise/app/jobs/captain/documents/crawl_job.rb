@@ -1,10 +1,7 @@
 class Captain::Documents::CrawlJob < ApplicationJob
   queue_as :low
 
-  FALLBACK_FETCH_CONTENT_TYPES = (
-    Captain::Documents::SourceTextExtractor::TEXT_CONTENT_TYPES +
-      %w[application/pdf application/octet-stream]
-  ).freeze
+  FALLBACK_FETCH_CONTENT_TYPES = Captain::Documents::SourceTextExtractor::FALLBACK_CONTENT_TYPES
   FALLBACK_FETCH_CONTENT_TYPE_PREFIXES = Captain::Documents::SourceTextExtractor::TEXT_CONTENT_TYPE_PREFIXES
 
   def perform(document)

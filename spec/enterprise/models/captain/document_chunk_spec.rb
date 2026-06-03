@@ -48,4 +48,36 @@ RSpec.describe Captain::DocumentChunk, type: :model do
 
     expect(described_class.search('refund policy')).to be_empty
   end
+
+  describe '.visible_to_assistant' do
+    it 'returns workspace-owned and selected assistant chunks without leaking another assistant personal chunks' do
+      general_document = create(:captain_document, account: account, assistant: nil, visibility: :general)
+      workspace_personal_document = create(:captain_document, account: account, assistant: nil, visibility: :personal)
+      assistant_personal_document = create(:captain_document, account: account, assistant: assistant, visibility: :personal)
+      other_personal_document = create(
+        :captain_document,
+        account: account,
+        assistant: create(:captain_assistant, account: account),
+        visibility: :personal
+      )
+      general_chunk = create(:captain_document_chunk, account: account, assistant: nil, document: general_document)
+      workspace_personal_chunk = create(:captain_document_chunk, account: account, assistant: nil, document: workspace_personal_document)
+      assistant_personal_chunk = create(:captain_document_chunk, account: account, assistant: assistant, document: assistant_personal_document)
+      other_personal_chunk = create(
+        :captain_document_chunk,
+        account: account,
+        assistant: other_personal_document.assistant,
+        document: other_personal_document
+      )
+
+      expect(described_class.visible_to_assistant(assistant.id)).to include(
+        general_chunk,
+        workspace_personal_chunk,
+        assistant_personal_chunk
+      )
+      expect(described_class.visible_to_assistant(assistant.id)).not_to include(other_personal_chunk)
+      expect(described_class.visible_to_assistant(nil)).to include(general_chunk, workspace_personal_chunk)
+      expect(described_class.visible_to_assistant(nil)).not_to include(assistant_personal_chunk, other_personal_chunk)
+    end
+  end
 end

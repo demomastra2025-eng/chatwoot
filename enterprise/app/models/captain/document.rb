@@ -58,7 +58,6 @@ class Captain::Document < ApplicationRecord
   validate :validate_uploaded_source_file_format, if: -> { source_file.attached? }
   validate :validate_remote_source_url, if: :remote_source_mode?
   validate :assistant_belongs_to_account
-  validate :personal_visibility_requires_assistant
   before_validation :ensure_account_id
   before_validation :set_external_link_for_pdf
   before_validation :set_external_link_for_uploaded_file
@@ -81,12 +80,19 @@ class Captain::Document < ApplicationRecord
 
   scope :for_account, ->(account_id) { where(account_id: account_id) }
   scope :for_assistant, ->(assistant_id) { where(assistant_id: assistant_id) }
+  # assistant_id nil is workspace-owned knowledge. These rows can be general or
+  # workspace-personal, but they are not assistant-private records.
+  scope :workspace_owned, -> { where(assistant_id: nil) }
   scope :visible_to_assistant, lambda { |assistant_id|
     if assistant_id.blank?
-      where(visibility: :general)
+      workspace_owned
     else
       where(
-        'captain_documents.visibility = :general_visibility OR captain_documents.assistant_id = :assistant_id',
+        <<~SQL.squish,
+          captain_documents.assistant_id IS NULL OR
+          captain_documents.visibility = :general_visibility OR
+          captain_documents.assistant_id = :assistant_id
+        SQL
         general_visibility: visibilities[:general],
         assistant_id: assistant_id
       )
@@ -556,13 +562,6 @@ class Captain::Document < ApplicationRecord
     return if assistant.blank? || account_id.blank? || assistant.account_id == account_id
 
     errors.add(:assistant, 'must belong to the same account')
-  end
-
-  def personal_visibility_requires_assistant
-    return unless visibility_personal?
-    return if assistant_id.present?
-
-    errors.add(:assistant, I18n.t('captain.documents.personal_visibility_requires_assistant'))
   end
 
   def ensure_within_plan_limit

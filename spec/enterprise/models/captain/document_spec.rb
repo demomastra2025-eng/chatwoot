@@ -48,11 +48,10 @@ RSpec.describe Captain::Document, type: :model do
       expect(document).to be_valid
     end
 
-    it 'requires an assistant for personal visibility' do
+    it 'allows workspace-personal documents without an assistant' do
       document = build(:captain_document, account: account, assistant: nil, visibility: :personal)
 
-      expect(document).not_to be_valid
-      expect(document.errors[:assistant]).to include(I18n.t('captain.documents.personal_visibility_requires_assistant'))
+      expect(document).to be_valid
     end
 
     it 'keeps external links unique per account instead of per assistant' do
@@ -67,6 +66,7 @@ RSpec.describe Captain::Document, type: :model do
 
     it 'returns general documents plus personal documents for the selected assistant' do
       general_document = create(:captain_document, account: account, assistant: nil, visibility: :general)
+      workspace_personal_document = create(:captain_document, account: account, assistant: nil, visibility: :personal)
       personal_document = create(:captain_document, account: account, assistant: assistant, visibility: :personal)
       other_personal_document = create(
         :captain_document,
@@ -75,8 +75,21 @@ RSpec.describe Captain::Document, type: :model do
         visibility: :personal
       )
 
-      expect(described_class.visible_to_assistant(assistant.id)).to include(general_document, personal_document)
+      expect(described_class.visible_to_assistant(assistant.id)).to include(
+        general_document,
+        workspace_personal_document,
+        personal_document
+      )
       expect(described_class.visible_to_assistant(assistant.id)).not_to include(other_personal_document)
+    end
+
+    it 'returns workspace-owned knowledge without an assistant filter' do
+      general_document = create(:captain_document, account: account, assistant: nil, visibility: :general)
+      workspace_personal_document = create(:captain_document, account: account, assistant: nil, visibility: :personal)
+      assistant_personal_document = create(:captain_document, account: account, assistant: assistant, visibility: :personal)
+
+      expect(described_class.visible_to_assistant(nil)).to include(general_document, workspace_personal_document)
+      expect(described_class.visible_to_assistant(nil)).not_to include(assistant_personal_document)
     end
   end
 

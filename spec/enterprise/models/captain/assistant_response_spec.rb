@@ -51,11 +51,10 @@ RSpec.describe Captain::AssistantResponse, type: :model do
       expect(response).to be_valid
     end
 
-    it 'requires an assistant for personal visibility' do
+    it 'allows workspace-personal entries without an assistant' do
       response = build(:captain_assistant_response, account: account, assistant: nil, visibility: :personal)
 
-      expect(response).not_to be_valid
-      expect(response.errors[:assistant]).to include(I18n.t('captain.documents.personal_visibility_requires_assistant'))
+      expect(response).to be_valid
     end
 
     it 'inherits account ownership from the attached document when assistant is blank' do
@@ -64,6 +63,44 @@ RSpec.describe Captain::AssistantResponse, type: :model do
 
       expect(response).to be_valid
       expect(response.account).to eq(account)
+    end
+
+    it 'returns general entries plus personal entries for the selected assistant' do
+      general_response = create(:captain_assistant_response, account: account, assistant: nil, visibility: :general)
+      workspace_personal_response = create(:captain_assistant_response, account: account, assistant: nil, visibility: :personal)
+      personal_response = create(
+        :captain_assistant_response,
+        account: account,
+        assistant: create(:captain_assistant, account: account),
+        visibility: :personal
+      )
+      other_personal_response = create(
+        :captain_assistant_response,
+        account: account,
+        assistant: create(:captain_assistant, account: account),
+        visibility: :personal
+      )
+
+      expect(described_class.visible_to_assistant(personal_response.assistant_id)).to include(
+        general_response,
+        workspace_personal_response,
+        personal_response
+      )
+      expect(described_class.visible_to_assistant(personal_response.assistant_id)).not_to include(other_personal_response)
+    end
+
+    it 'returns workspace-owned entries without an assistant filter' do
+      general_response = create(:captain_assistant_response, account: account, assistant: nil, visibility: :general)
+      workspace_personal_response = create(:captain_assistant_response, account: account, assistant: nil, visibility: :personal)
+      assistant_personal_response = create(
+        :captain_assistant_response,
+        account: account,
+        assistant: create(:captain_assistant, account: account),
+        visibility: :personal
+      )
+
+      expect(described_class.visible_to_assistant(nil)).to include(general_response, workspace_personal_response)
+      expect(described_class.visible_to_assistant(nil)).not_to include(assistant_personal_response)
     end
   end
 end

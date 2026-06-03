@@ -61,10 +61,14 @@ class Captain::DocumentChunk < ApplicationRecord
   scope :visible_to_assistant, lambda { |assistant_id|
     relation = joins(:document)
     if assistant_id.blank?
-      relation.where(captain_documents: { visibility: Captain::Document.visibilities[:general] })
+      relation.where(captain_documents: { assistant_id: nil })
     else
       relation.where(
-        'captain_documents.visibility = :general_visibility OR captain_documents.assistant_id = :assistant_id',
+        <<~SQL.squish,
+          captain_documents.assistant_id IS NULL OR
+          captain_documents.visibility = :general_visibility OR
+          captain_documents.assistant_id = :assistant_id
+        SQL
         general_visibility: Captain::Document.visibilities[:general],
         assistant_id: assistant_id
       )
