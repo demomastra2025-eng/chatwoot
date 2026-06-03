@@ -239,6 +239,13 @@ function handleCreateError(error) {
   );
 }
 
+function agentsRouteParams(inboxId) {
+  return {
+    accountId: route.params.accountId,
+    inbox_id: inboxId,
+  };
+}
+
 async function createKazakhstanChannel() {
   const isFormValid = await kazakhstanV$.value.$validate();
   if (!isFormValid) return;
@@ -255,7 +262,7 @@ async function createKazakhstanChannel() {
 
     router.replace({
       name: getInboxFlowRouteName(route, 'agents'),
-      params: { page: 'new', inbox_id: channel.id },
+      params: agentsRouteParams(channel.id),
     });
   } catch (error) {
     handleCreateError(error);
@@ -283,7 +290,7 @@ async function createTwilioChannel() {
 
     router.replace({
       name: getInboxFlowRouteName(route, 'agents'),
-      params: { page: 'new', inbox_id: channel.id },
+      params: agentsRouteParams(channel.id),
     });
   } catch (error) {
     handleCreateError(error);
@@ -316,7 +323,7 @@ async function createSipuniChannel() {
 
     router.replace({
       name: getInboxFlowRouteName(route, 'agents'),
-      params: { page: 'new', inbox_id: channel.id },
+      params: agentsRouteParams(channel.id),
     });
   } catch (error) {
     handleCreateError(error);

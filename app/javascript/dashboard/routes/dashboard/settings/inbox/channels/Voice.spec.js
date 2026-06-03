@@ -86,5 +86,12 @@ describe('Voice channel setup', () => {
         },
       },
     });
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inboxes_add_agents',
+      params: {
+        accountId: 530,
+        inbox_id: 101,
+      },
+    });
   });
 });

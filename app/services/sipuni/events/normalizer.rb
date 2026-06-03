@@ -1,6 +1,17 @@
 require 'digest'
 
 class Sipuni::Events::Normalizer
+  SENSITIVE_PARAM_KEYS = %w[
+    action
+    authenticity_token
+    controller
+    format
+    inbox_id
+    token
+    utf8
+    webhook_token
+  ].freeze
+
   TERMINAL_STATUS_MAP = {
     'ANSWER' => 'completed',
     'BUSY' => 'busy',
@@ -396,6 +407,14 @@ class Sipuni::Events::Normalizer
   end
 
   def metadata
+    base_metadata
+      .merge(call_party_metadata)
+      .merge(sipuni_event_metadata)
+      .merge(raw_webhook: sanitized_raw_webhook)
+      .compact_blank
+  end
+
+  def base_metadata
     {
       provider: 'sipuni',
       account_number: sipuni_account_number,
@@ -404,7 +423,12 @@ class Sipuni::Events::Normalizer
       status: raw_status.presence,
       operator_internal_number: operator_internal_number,
       agent_ref: agent_binding&.agent_ref,
-      chatwoot_user_id: agent_binding&.user_id,
+      chatwoot_user_id: agent_binding&.user_id
+    }
+  end
+
+  def call_party_metadata
+    {
       source: {
         number: raw_source_number,
         short_number: short_source_number,
@@ -414,15 +438,63 @@ class Sipuni::Events::Normalizer
         number: raw_destination_number,
         short_number: short_destination_number,
         type: destination_type
-      }.compact_blank,
-      is_inner_call: boolean_value(params['is_inner_call']),
+      }.compact_blank
+    }
+  end
+
+  def sipuni_event_metadata
+    sipuni_route_metadata
+      .merge(sipuni_attribution_metadata)
+      .merge(sipuni_recording_metadata)
+  end
+
+  def sipuni_route_metadata
+    {
+      is_inner_call: boolean_value(param_value('is_inner_call', 'isInnerCall')),
       tree_name: params['tree_name'].presence || params['treeName'].presence,
       tree_number: params['tree_number'].presence || params['treeNumber'].presence,
-      phone: params['phone'].presence,
+      phone: params['phone'].presence
+    }.merge(sipuni_transfer_metadata)
+  end
+
+  def sipuni_transfer_metadata
+    {
       diverter: params['diverter'].presence,
+      sipuni_user_id: param_value('user_id', 'userId', 'user'),
+      transfer_from: param_value('transfer_from', 'transferFrom'),
+      last_called: param_value('last_called', 'lastCalled'),
+      provider_channel: params['channel'].presence,
+      pbx_destination_number: param_value('pbxdstnum', 'pbxDstNum', 'pbx_dst_num')
+    }
+  end
+
+  def sipuni_attribution_metadata
+    {
+      roistat: params['roistat'].presence,
+      roistat_number: param_value('roistat_number', 'roistatNumber'),
+      roistat_market: param_value('roistat_market', 'roistatMarket'),
+      roistat_google_id: param_value('roistatgoogleid', 'roistat_google_id', 'roistatGoogleId')
+    }
+  end
+
+  def sipuni_recording_metadata
+    {
       was_recorded: boolean_value(params['is_recorded'].presence || params['isRecorded'].presence),
       recording_link_present: recording_url.present?
-    }.compact_blank
+    }
+  end
+
+  def param_value(*keys)
+    keys.each do |key|
+      value = params[key.to_s]
+      return value if value.present?
+    end
+
+    nil
+  end
+
+  def sanitized_raw_webhook
+    params.except(*SENSITIVE_PARAM_KEYS)
   end
 
   def boolean_value(value)

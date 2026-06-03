@@ -65,6 +65,50 @@ RSpec.describe Sipuni::Events::Normalizer do
     )
   end
 
+  it 'preserves raw Sipuni webhook fields without authentication tokens' do
+    payload = described_class.new(
+      inbox: inbox,
+      params: {
+        token: 'webhook-token',
+        webhook_token: 'alternate-webhook-token',
+        event: '1',
+        call_id: 'sipuni-call-with-raw-metadata',
+        src_num: '77011234567',
+        dst_num: '77271234567_id356795',
+        src_type: '1',
+        dst_type: '1',
+        timestamp: '1717171700',
+        user_id: '056124',
+        transfer_from: '',
+        last_called: '',
+        channel: 'SIP/013997 77003470027-000063a8',
+        pbxdstnum: '87271234567',
+        treeName: 'Incoming',
+        treeNumber: '000-2776321',
+        roistat: '0',
+        roistat_number: '',
+        roistat_market: 'test-market'
+      }
+    ).perform
+
+    expect(payload[:metadata]).to include(
+      sipuni_user_id: '056124',
+      provider_channel: 'SIP/013997 77003470027-000063a8',
+      pbx_destination_number: '87271234567',
+      roistat: '0',
+      roistat_market: 'test-market',
+      tree_name: 'Incoming',
+      tree_number: '000-2776321'
+    )
+    expect(payload[:metadata][:raw_webhook]).to include(
+      'call_id' => 'sipuni-call-with-raw-metadata',
+      'transfer_from' => '',
+      'last_called' => '',
+      'roistat_number' => ''
+    )
+    expect(payload[:metadata][:raw_webhook]).not_to include('token', 'webhook_token')
+  end
+
   it 'detects outbound calls from an internal Sipuni extension to an external number' do
     operator = create(:user, account: account, role: :agent)
     agent_binding = create(
