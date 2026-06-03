@@ -23,4 +23,16 @@ describe('SidebarUnreadBadge', () => {
       '99+'
     );
   });
+
+  it('forwards positioning classes to the visible badge element', () => {
+    const wrapper = mount(SidebarUnreadBadge, {
+      props: { value: 3 },
+      attrs: { class: 'absolute -top-1' },
+    });
+
+    const badge = wrapper.find('[data-test-id="sidebar-unread-badge"]');
+
+    expect(badge.classes()).toContain('absolute');
+    expect(badge.classes()).toContain('-top-1');
+  });
 });
