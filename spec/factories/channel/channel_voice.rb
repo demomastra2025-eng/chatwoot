@@ -40,7 +40,7 @@ FactoryBot.define do
       provider { 'sipuni' }
       provider_config do
         {
-          account_number: "sipuni-#{SecureRandom.hex(4)}",
+          account_number: rand(100_000..999_999).to_s,
           integration_secret: SecureRandom.hex(16),
           webhook_token: SecureRandom.hex(24),
           audio_mode: 'external_softphone',

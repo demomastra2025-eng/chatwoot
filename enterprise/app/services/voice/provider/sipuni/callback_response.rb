@@ -41,6 +41,10 @@ class Voice::Provider::Sipuni::CallbackResponse
     sanitize_response(payload)
   end
 
+  def provider_message
+    payload_message(payload)
+  end
+
   def http_success?
     return response.success? if response.respond_to?(:success?)
 
@@ -110,6 +114,20 @@ class Voice::Provider::Sipuni::CallbackResponse
       nested_payload = response_payload[key]
       nested_payload.with_indifferent_access if nested_payload.is_a?(Hash)
     end
+  end
+
+  def payload_message(response_payload)
+    %i[message error reason description].each do |key|
+      value = response_payload[key]
+      return value.to_s if value.present?
+    end
+
+    nested_response_payloads(response_payload).each do |nested_payload|
+      nested_message = payload_message(nested_payload)
+      return nested_message if nested_message.present?
+    end
+
+    nil
   end
 
   def sanitize_response(value)

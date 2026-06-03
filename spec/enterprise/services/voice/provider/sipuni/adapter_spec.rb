@@ -14,7 +14,8 @@ RSpec.describe Voice::Provider::Sipuni::Adapter do
   end
   let(:provider_config) do
     {
-      account_number: '123456',
+      account_number: 'asset@example.test',
+      sipuni_user_id: '056124',
       integration_secret: 'top-secret',
       default_internal_number: '100',
       reverse: '1',
@@ -31,8 +32,8 @@ RSpec.describe Voice::Provider::Sipuni::Adapter do
         'phone' => normalized_phone,
         'reverse' => '1',
         'sipnumber' => '100',
-        'user' => '123456',
-        'hash' => Digest::MD5.hexdigest(['0', normalized_phone, '1', '100', '123456', 'top-secret'].join('+'))
+        'user' => '056124',
+        'hash' => Digest::MD5.hexdigest(['0', normalized_phone, '1', '100', '056124', 'top-secret'].join('+'))
       }
       stub_request(:post, described_class::CALL_NUMBER_URL)
         .with(body: expected_body)
@@ -84,12 +85,13 @@ RSpec.describe Voice::Provider::Sipuni::Adapter do
       stub_request(:post, described_class::CALL_NUMBER_URL)
         .to_return(
           status: 200,
-          body: { status: 'error', error: 'bad hash', secret: 'do-not-leak' }.to_json,
+          body: { success: false, message: 'User not found', secret: 'do-not-leak' }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
 
       expect { adapter.initiate_call(to: outbound_phone) }.to raise_error(Telephony::Error) { |error|
         expect(error.code).to eq('SIPUNI_OUTBOUND_FAILED')
+        expect(error.message).to include('User not found')
         expect(error.status).to eq(:bad_gateway)
         expect(error.details[:response]).not_to have_key('secret')
       }

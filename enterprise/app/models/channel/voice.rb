@@ -145,7 +145,11 @@ class Channel::Voice < ApplicationRecord
   def validate_sipuni_config
     config = provider_config.with_indifferent_access
 
-    errors.add(:provider_config, 'account_number is required for Sipuni provider') if config[:account_number].blank?
+    sipuni_user_id = config[:sipuni_user_id].presence || config[:account_number]
+    errors.add(:provider_config, 'account_number is required for Sipuni provider') if sipuni_user_id.blank?
+    if sipuni_user_id.present? && !sipuni_user_id.to_s.match?(/\A\d+\z/)
+      errors.add(:provider_config, 'account_number must be Sipuni numeric system user id')
+    end
     errors.add(:provider_config, 'webhook_token is required for Sipuni provider') if config[:webhook_token].blank?
 
     audio_mode = config[:audio_mode].to_s
@@ -178,18 +182,32 @@ class Channel::Voice < ApplicationRecord
   def normalize_sipuni_config
     config = sipuni_config_for_validation
 
-    config[:account_number] = sipuni_config_value(config, :account_number, :user) ||
-                              persisted_sipuni_config_value(:account_number, :user)
+    normalize_sipuni_user_id!(config)
+    normalize_sipuni_callback_config!(config)
+    normalize_sipuni_runtime_config!(config)
+    normalize_sipuni_internal_numbers!(config)
+    self.provider_config = config
+  end
+
+  def normalize_sipuni_user_id!(config)
+    sipuni_user_id = sipuni_config_value(config, :sipuni_user_id, :system_user, :account_number, :user) ||
+                     persisted_sipuni_config_value(:sipuni_user_id, :system_user, :account_number, :user)
+    config[:sipuni_user_id] = sipuni_user_id
+    config[:account_number] = sipuni_user_id
+  end
+
+  def normalize_sipuni_callback_config!(config)
     config[:default_internal_number] = sipuni_config_value(config, :default_internal_number, :sipnumber, :sip_number) ||
                                        persisted_sipuni_config_value(:default_internal_number, :sipnumber, :sip_number)
     config[:integration_secret] = sipuni_config_value(config, :integration_secret, :secret, :integration_key, :api_key) ||
                                   persisted_sipuni_config_value(:integration_secret, :secret, :integration_key, :api_key)
+  end
+
+  def normalize_sipuni_runtime_config!(config)
     config[:audio_mode] = config[:audio_mode].presence || 'external_softphone'
     config[:webhook_token] = config[:webhook_token].presence || persisted_sipuni_webhook_token || SecureRandom.hex(24)
     config[:reverse] = normalized_sipuni_binary_value(config[:reverse].presence || persisted_sipuni_config_value(:reverse), default: '0')
     config[:antiaon] = normalized_sipuni_binary_value(config[:antiaon].presence || persisted_sipuni_config_value(:antiaon), default: '0')
-    normalize_sipuni_internal_numbers!(config)
-    self.provider_config = config
   end
 
   def sipuni_config_for_validation

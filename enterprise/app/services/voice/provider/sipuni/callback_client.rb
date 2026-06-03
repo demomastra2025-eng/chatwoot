@@ -46,7 +46,7 @@ class Voice::Provider::Sipuni::CallbackClient
 
   def call_number_request(to)
     {
-      user: config_value(:account_number, :user),
+      user: config_value(:sipuni_user_id, :system_user, :account_number, :user),
       secret: config_value(:integration_secret, :secret, :integration_key, :api_key),
       sipnumber: config_value(:default_internal_number, :sipnumber, :sip_number),
       phone: normalized_outbound_phone(to),
@@ -108,7 +108,11 @@ class Voice::Provider::Sipuni::CallbackClient
 
   def validate_response!(callback_response)
     raise_outbound_failed!(callback_response, 'Sipuni outbound callback request failed') unless callback_response.http_success?
-    raise_outbound_failed!(callback_response, 'Sipuni rejected outbound callback request') if callback_response.provider_error?
+
+    return unless callback_response.provider_error?
+
+    message = ['Sipuni rejected outbound callback request', callback_response.provider_message].compact_blank.join(': ')
+    raise_outbound_failed!(callback_response, message)
   end
 
   def raise_outbound_not_configured!(missing, to)

@@ -43,7 +43,7 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
         expect(response.body).to include('+15551234567')
       end
 
-      it 'creates a Sipuni voice inbox and returns a configured webhook url' do
+      it 'creates a Sipuni voice inbox and returns a configured webhook url', :aggregate_failures do
         expect do
           post "/api/v1/accounts/#{account.id}/inboxes",
                headers: admin.create_new_auth_token,
@@ -55,6 +55,7 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
                    provider: 'sipuni',
                    provider_config: {
                      account_number: '123456',
+                     sipuni_user_id: '123456',
                      default_internal_number: '100',
                      integration_secret: 'integration-secret',
                      audio_mode: 'external_softphone'
@@ -70,6 +71,7 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
         expect(response.parsed_body['sipuni_events_webhook_url']).to include('/webhooks/sipuni/voice/')
         expect(response.parsed_body['provider_config']).to include(
           'account_number' => '123456',
+          'sipuni_user_id' => '123456',
           'default_internal_number' => '100',
           'audio_mode' => 'external_softphone'
         )
@@ -111,7 +113,7 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
               params: {
                 channel: {
                   provider_config: {
-                    account_number: 'updated-account',
+                    account_number: '654321',
                     default_internal_number: '101',
                     audio_mode: 'external_softphone'
                   }

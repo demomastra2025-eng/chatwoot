@@ -82,7 +82,7 @@ RSpec.describe Channel::Voice do
         :channel_voice,
         provider: 'sipuni',
         provider_config: {
-          user: ' 123456 ',
+          system_user: ' 123456 ',
           secret: ' integration-secret ',
           sipnumber: ' 100008 ',
           audio_mode: 'external_softphone'
@@ -90,6 +90,7 @@ RSpec.describe Channel::Voice do
       )
 
       config = sipuni_channel.provider_config.with_indifferent_access
+      expect(config[:sipuni_user_id]).to eq('123456')
       expect(config[:account_number]).to eq('123456')
       expect(config[:integration_secret]).to eq('integration-secret')
       expect(config[:default_internal_number]).to eq('100008')
@@ -105,7 +106,7 @@ RSpec.describe Channel::Voice do
 
       sipuni_channel.update!(
         provider_config: {
-          account_number: 'updated-account',
+          account_number: '654321',
           default_internal_number: '101',
           audio_mode: 'external_softphone'
         }
@@ -122,6 +123,7 @@ RSpec.describe Channel::Voice do
         :sipuni,
         provider_config: {
           account_number: '123456',
+          sipuni_user_id: '123456',
           integration_secret: 'old-secret',
           webhook_token: 'webhook-token',
           default_internal_number: '100',
@@ -136,6 +138,7 @@ RSpec.describe Channel::Voice do
       reloaded_config = sipuni_channel.reload.provider_config.with_indifferent_access
       expect(reloaded_config).to include(
         account_number: '123456',
+        sipuni_user_id: '123456',
         integration_secret: 'new-secret',
         webhook_token: 'webhook-token',
         default_internal_number: '100',
@@ -159,6 +162,23 @@ RSpec.describe Channel::Voice do
 
       expect(sipuni_channel).not_to be_valid
       expect(sipuni_channel.errors[:provider_config]).to include('account_number is required for Sipuni provider')
+    end
+
+    it 'rejects Sipuni account login values for callback user id' do
+      sipuni_channel = build(
+        :channel_voice,
+        account: create(:account),
+        provider: 'sipuni',
+        provider_config: {
+          account_number: 'asset@example.test',
+          webhook_token: 'token',
+          integration_secret: 'secret',
+          default_internal_number: '100'
+        }
+      )
+
+      expect(sipuni_channel).not_to be_valid
+      expect(sipuni_channel.errors[:provider_config]).to include('account_number must be Sipuni numeric system user id')
     end
   end
 
