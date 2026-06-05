@@ -249,6 +249,41 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       end
     end
 
+    context 'when WhatsApp Cloud delivery status webhooks arrive out of order' do
+      it 'does not downgrade a delivered message back to sent' do
+        message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :delivered, source_id: 'wamid.DELIVERED_MESSAGE')
+
+        described_class.new(
+          inbox: whatsapp_channel.inbox,
+          params: status_update_params(source_id: message.source_id, status: 'sent')
+        ).perform
+
+        expect(message.reload).to be_delivered
+      end
+
+      it 'does not downgrade a read message back to delivered' do
+        message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :read, source_id: 'wamid.READ_MESSAGE')
+
+        described_class.new(
+          inbox: whatsapp_channel.inbox,
+          params: status_update_params(source_id: message.source_id, status: 'delivered')
+        ).perform
+
+        expect(message.reload).to be_read
+      end
+
+      it 'still upgrades a sent message to delivered' do
+        message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :sent, source_id: 'wamid.SENT_MESSAGE')
+
+        described_class.new(
+          inbox: whatsapp_channel.inbox,
+          params: status_update_params(source_id: message.source_id, status: 'delivered')
+        ).perform
+
+        expect(message.reload).to be_delivered
+      end
+    end
+
     context 'when incoming WhatsApp replies answer a pending confirmation request' do
       let(:confirmation_source_id) { '77010000000' }
       let(:contact) { create(:contact, phone_number: "+#{confirmation_source_id}", account: whatsapp_channel.account) }
@@ -365,6 +400,20 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
   end
 
   # Métodos auxiliares para reduzir o tamanho do exemplo
+
+  def status_update_params(source_id:, status:)
+    {
+      phone_number: whatsapp_channel.phone_number,
+      object: 'whatsapp_business_account',
+      entry: [{
+        changes: [{
+          value: {
+            statuses: [{ id: source_id, status: status, timestamp: Time.current.to_i.to_s }]
+          }
+        }]
+      }]
+    }.with_indifferent_access
+  end
 
   def confirmation_reply_params(source_id:, message_id:, message:)
     message_payload = message.with_indifferent_access.merge(
