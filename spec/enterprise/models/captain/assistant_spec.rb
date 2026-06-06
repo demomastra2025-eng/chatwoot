@@ -122,6 +122,10 @@ RSpec.describe Captain::Assistant, type: :model do
     let(:assistant) { create(:captain_assistant, account: account) }
     let(:conversation) { create(:conversation, account: account) }
 
+    before do
+      account.enable_features!('communication_threads')
+    end
+
     it 'keeps the assistant runtime-state path compatible while delegating to ContextFields' do
       state = assistant.send(:runtime_state_for, conversation)
 
@@ -131,6 +135,11 @@ RSpec.describe Captain::Assistant, type: :model do
         inbox_id: conversation.inbox_id
       )
       expect(state[:contact]).to include(id: conversation.contact_id)
+      expect(state[:communication_thread]).to include(
+        display_id: conversation.reload.communication_thread.display_id,
+        current_conversation_id: conversation.display_id,
+        current_channel_key: "conversation:#{conversation.display_id}"
+      )
       expect(state).not_to have_key(:channel_type)
     end
   end
@@ -939,6 +948,48 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(rendered).to include('Linked Appointment Context')
       expect(rendered).to include('Status: confirmed')
+    end
+
+    it 'renders unified communication thread metadata without changing send tools' do
+      context_double = instance_double(
+        Captain::Runtime::RunContext,
+        context: {
+          state: {
+            assistant_config: { 'context_access' => {} },
+            prompt_context: {
+              communication_thread: {
+                'display_id' => 12,
+                'current_conversation_id' => 34,
+                'conversation_ids' => [34, 35],
+                'current_channel_key' => 'conversation:34',
+                'current_channel' => {
+                  'inbox_name' => 'WhatsApp',
+                  'channel' => 'Channel::Whatsapp',
+                  'channel_key' => 'conversation:34',
+                  'can_send_text' => true
+                },
+                'channels' => [
+                  {
+                    'channel_key' => 'conversation:34',
+                    'inbox_name' => 'WhatsApp',
+                    'channel' => 'Channel::Whatsapp',
+                    'conversation_id' => 34,
+                    'can_send_text' => true,
+                    'requires_template' => false
+                  }
+                ]
+              }
+            }
+          }
+        }
+      )
+
+      rendered = assistant.agent_instructions(context_double)
+
+      expect(rendered).to include('Unified Communication Thread Context')
+      expect(rendered).to include('Communication Thread ID: 12')
+      expect(rendered).to include('Linked Conversation IDs: 34, 35')
+      expect(rendered).to include('Current Channel Key: conversation:34')
     end
 
     it 'renders custom attribute labels together with raw keys' do

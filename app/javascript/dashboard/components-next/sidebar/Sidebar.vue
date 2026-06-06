@@ -305,6 +305,7 @@ const isDialogConversationRoute = routeName =>
   typeof routeName === 'string' &&
   (routeName === 'home' ||
     routeName === 'inbox_dashboard' ||
+    routeName.startsWith('communication_thread') ||
     routeName.startsWith('conversation') ||
     routeName.startsWith('conversations'));
 
@@ -313,6 +314,8 @@ const conversationStatusActiveOn = [
   'inbox_dashboard',
   'inbox_conversation',
   'conversation_through_inbox',
+  'communication_threads_dashboard',
+  'communication_thread_conversation',
   'label_conversations',
   'conversations_through_label',
   'team_conversations',
@@ -321,19 +324,8 @@ const conversationStatusActiveOn = [
   'conversations_through_folders',
 ];
 const allChannelsActiveOn = [
-  'home',
-  'inbox_conversation',
-  'label_conversations',
-  'conversations_through_label',
-  'team_conversations',
-  'conversations_through_team',
-  'folder_conversations',
-  'conversations_through_folders',
-  INBOX_FLOW_ROUTE_NAMES.dialog.list,
-  INBOX_FLOW_ROUTE_NAMES.dialog.new,
-  INBOX_FLOW_ROUTE_NAMES.dialog.page,
-  INBOX_FLOW_ROUTE_NAMES.dialog.agents,
-  INBOX_FLOW_ROUTE_NAMES.dialog.finish,
+  'communication_threads_dashboard',
+  'communication_thread_conversation',
 ];
 const allLabelsActiveOn = [
   'home',
@@ -393,6 +385,12 @@ const currentConversationScope = computed(() => {
       return {
         name: 'inbox_dashboard',
         params: { inbox_id: route.params.inbox_id },
+      };
+    case 'communication_threads_dashboard':
+    case 'communication_thread_conversation':
+      return {
+        name: 'communication_threads_dashboard',
+        params: {},
       };
     case 'label_conversations':
     case 'conversations_through_label':
@@ -838,7 +836,7 @@ const menuItems = computed(() => {
             icon: 'i-lucide-mailbox',
             badge: allConversationUnreadCount.value,
             to: withConversationStatus('home'),
-            activeOn: allChannelsActiveOn,
+            activeOn: ['inbox_dashboard', 'conversation_through_inbox'],
             suppressHeaderActiveWhenChildActive: true,
             actionTitle: t('SETTINGS.INBOXES.NEW_INBOX'),
             actionIcon: checkPermissions(['administrator'])
@@ -857,6 +855,15 @@ const menuItems = computed(() => {
                 )
               : '',
             children: [
+              {
+                name: 'AllChannels',
+                visibilityKey: 'Conversation:AllChannels',
+                label: t('SIDEBAR.ALL_CHANNELS'),
+                icon: 'i-lucide-mailbox',
+                badge: allConversationUnreadCount.value,
+                activeOn: allChannelsActiveOn,
+                to: withConversationStatus('communication_threads_dashboard'),
+              },
               ...sortedInboxes.value.map(inbox => ({
                 name: `${inbox.name}-${inbox.id}`,
                 label: inbox.name,

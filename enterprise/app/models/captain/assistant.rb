@@ -828,7 +828,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def runtime_state_for(conversation)
-    Captain::ContextFields.runtime_state_for(account: account, conversation: conversation)
+    Captain::ContextFields.runtime_state_for(account: account, conversation: conversation, assistant: self)
   end
 
   def config_integer_value(key)

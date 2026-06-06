@@ -23,10 +23,12 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
       account_id: account.id,
       assistant_id: assistant.id,
       conversation: { id: 123, display_id: 456 },
+      communication_thread: { id: 11, display_id: 12, conversation_ids: [456], current_channel_key: 'conversation:456' },
       contact: { id: 789, phone_number: 'customer-phone' },
       prompt_context: {
         contact: { id: 789, phone_number: 'customer-phone' },
-        conversation: { id: 123, display_id: 456 }
+        conversation: { id: 123, display_id: 456 },
+        communication_thread: { id: 11, display_id: 12, conversation_ids: [456], current_channel_key: 'conversation:456' }
       }
     }
   end
@@ -50,6 +52,7 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
       request.headers['X-Chatwoot-Account-Id'] == account.id.to_s &&
         request.headers['X-Chatwoot-Assistant-Id'] == assistant.id.to_s &&
         request.headers['X-Chatwoot-Conversation-Id'] == '123' &&
+        request.headers['X-Chatwoot-Communication-Thread-Display-Id'] == '12' &&
         request.headers['X-Chatwoot-Contact-Id'] == '789'
     end)
   end

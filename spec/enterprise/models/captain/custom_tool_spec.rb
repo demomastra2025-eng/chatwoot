@@ -647,7 +647,13 @@ RSpec.describe Captain::CustomTool, type: :model do
     describe '#build_metadata_headers' do
       let(:tool) { create(:captain_custom_tool, account: account, slug: 'custom_test_tool') }
       let(:conversation) { create(:conversation, account: account) }
+      let(:communication_thread) { conversation.reload.communication_thread }
       let(:contact) { conversation.contact }
+
+      before do
+        account.enable_features!('communication_threads')
+      end
+
       let(:deal) do
         create(
           :crm_deal,
@@ -682,6 +688,12 @@ RSpec.describe Captain::CustomTool, type: :model do
           conversation: {
             id: conversation.id,
             display_id: conversation.display_id
+          },
+          communication_thread: {
+            id: communication_thread.id,
+            display_id: communication_thread.display_id,
+            conversation_ids: [conversation.display_id],
+            current_channel_key: "conversation:#{conversation.display_id}"
           },
           contact_inbox: {
             id: conversation.contact_inbox.id,
@@ -728,6 +740,15 @@ RSpec.describe Captain::CustomTool, type: :model do
 
         expect(headers['X-Chatwoot-Conversation-Id']).to eq(conversation.id.to_s)
         expect(headers['X-Chatwoot-Conversation-Display-Id']).to eq(conversation.display_id.to_s)
+      end
+
+      it 'includes communication thread metadata when present' do
+        headers = tool.build_metadata_headers(state)
+
+        expect(headers['X-Chatwoot-Communication-Thread-Id']).to eq(communication_thread.id.to_s)
+        expect(headers['X-Chatwoot-Communication-Thread-Display-Id']).to eq(communication_thread.display_id.to_s)
+        expect(headers['X-Chatwoot-Communication-Thread-Conversation-Ids']).to eq(conversation.display_id.to_s)
+        expect(headers['X-Chatwoot-Communication-Thread-Channel-Key']).to eq("conversation:#{conversation.display_id}")
       end
 
       it 'includes contact metadata when present' do

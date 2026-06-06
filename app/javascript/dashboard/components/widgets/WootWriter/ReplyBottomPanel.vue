@@ -11,7 +11,8 @@ import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
 import VideoCallButton from '../VideoCallButton.vue';
 import { useWhatsappCallInitiation } from 'dashboard/composables/useWhatsappCallInitiation';
 import PaymentActionButton from '../PaymentActionButton.vue';
-import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { INBOX_TYPES, getInboxIconByType } from 'dashboard/helper/inbox';
+import { getCommunicationChannelLabel } from 'dashboard/helper/communicationThreadHelper';
 import { mapGetters } from 'vuex';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import wootConstants from 'dashboard/constants/globals';
@@ -32,6 +33,18 @@ export default {
     sendButtonText: {
       type: String,
       default: '',
+    },
+    showCommunicationChannelSelector: {
+      type: Boolean,
+      default: false,
+    },
+    communicationChannels: {
+      type: Array,
+      default: () => [],
+    },
+    activeReplyChannel: {
+      type: Object,
+      default: null,
     },
     recordingAudioDurationText: {
       type: String,
@@ -102,7 +115,7 @@ export default {
     },
     conversationId: {
       type: Number,
-      required: true,
+      default: null,
     },
     // eslint-disable-next-line vue/no-unused-properties
     message: {
@@ -138,6 +151,7 @@ export default {
     'toggleInsertArticle',
     'selectWhatsappTemplate',
     'selectContentTemplate',
+    'selectReplyChannel',
     'toggleQuotedReply',
     'replaceText',
     'attachFile',
@@ -187,6 +201,7 @@ export default {
     return {
       ALLOWED_FILE_TYPES,
       isTogglingCaptain: false,
+      showReplyChannelDropdown: false,
     };
   },
   computed: {
@@ -197,6 +212,26 @@ export default {
     }),
     currentConversation() {
       return this.$store.getters.getConversationById(this.conversationId) || {};
+    },
+    showReplyChannelMenu() {
+      return (
+        this.showCommunicationChannelSelector &&
+        this.communicationChannels.length > 1
+      );
+    },
+    activeReplyChannelIcon() {
+      return this.replyChannelIcon(this.activeReplyChannel);
+    },
+    activeReplyChannelLabel() {
+      return this.replyChannelLabel(this.activeReplyChannel);
+    },
+    activeReplyChannelTooltip() {
+      if (!this.showReplyChannelMenu || !this.activeReplyChannelLabel)
+        return '';
+
+      return this.$t('CONVERSATION.COMMUNICATION_THREAD.ACTIVE_CHANNEL', {
+        channel: this.activeReplyChannelLabel,
+      });
     },
     wrapClass() {
       return {
@@ -322,6 +357,36 @@ export default {
     ActiveStorage.start();
   },
   methods: {
+    replyChannelIcon(channel) {
+      return channel?.channel
+        ? getInboxIconByType(channel.channel, channel.medium)
+        : '';
+    },
+    replyChannelLabel(channel) {
+      return getCommunicationChannelLabel(channel);
+    },
+    isSelectedReplyChannel(channel) {
+      return (
+        String(channel?.channel_key || channel?.conversation_id) ===
+        String(
+          this.activeReplyChannel?.channel_key ||
+            this.activeReplyChannel?.conversation_id
+        )
+      );
+    },
+    closeReplyChannelDropdown() {
+      this.showReplyChannelDropdown = false;
+    },
+    toggleReplyChannelDropdown() {
+      this.showReplyChannelDropdown = !this.showReplyChannelDropdown;
+    },
+    selectReplyChannel(channel) {
+      this.$emit(
+        'selectReplyChannel',
+        channel.channel_key || channel.conversation_id
+      );
+      this.closeReplyChannelDropdown();
+    },
     toggleMessageSignature() {
       this.setSignatureFlagForInbox(this.channelType, !this.sendWithSignature);
     },
@@ -538,15 +603,71 @@ export default {
       />
     </div>
     <div class="right-wrap">
-      <NextButton
-        :label="sendButtonText"
-        type="submit"
-        sm
-        :color="isNote ? 'amber' : 'blue'"
-        :disabled="isSendDisabled"
-        class="flex-shrink-0"
-        @click="onSend"
-      />
+      <div v-on-clickaway="closeReplyChannelDropdown" class="reply-send-group">
+        <NextButton
+          :label="sendButtonText"
+          type="submit"
+          sm
+          :color="isNote ? 'amber' : 'blue'"
+          :disabled="isSendDisabled"
+          class="reply-send-button flex-shrink-0"
+          :class="
+            showReplyChannelMenu ? 'ltr:rounded-r-none rtl:rounded-l-none' : ''
+          "
+          @click="onSend"
+        />
+        <NextButton
+          v-if="showReplyChannelMenu"
+          v-tooltip.top-end="activeReplyChannelTooltip"
+          class="reply-channel-menu__toggle flex-shrink-0 ltr:rounded-l-none rtl:rounded-r-none"
+          :aria-label="$t('CONVERSATION.COMMUNICATION_THREAD.REPLY_VIA')"
+          :aria-expanded="showReplyChannelDropdown"
+          type="button"
+          :icon="activeReplyChannelIcon || 'i-lucide-chevron-down'"
+          sm
+          :color="isNote ? 'amber' : 'blue'"
+          @click="toggleReplyChannelDropdown"
+        />
+        <div
+          v-if="showReplyChannelMenu && showReplyChannelDropdown"
+          class="reply-channel-menu"
+        >
+          <button
+            v-for="channel in communicationChannels"
+            :key="
+              channel.channel_key ||
+              `${channel.inbox_id}-${channel.conversation_id}`
+            "
+            type="button"
+            class="reply-channel-menu__item"
+            :class="{
+              'reply-channel-menu__item--active':
+                isSelectedReplyChannel(channel),
+            }"
+            @click="selectReplyChannel(channel)"
+          >
+            <span
+              v-if="replyChannelIcon(channel)"
+              :class="replyChannelIcon(channel)"
+              class="reply-channel-menu__icon"
+            />
+            <span class="min-w-0 flex-1 truncate text-left">
+              {{ replyChannelLabel(channel) }}
+              <span v-if="!channel.can_reply" class="text-n-slate-10">
+                {{
+                  $t(
+                    'CONVERSATION.COMMUNICATION_THREAD.REPLY_RESTRICTED_SUFFIX'
+                  )
+                }}
+              </span>
+            </span>
+            <span
+              v-if="isSelectedReplyChannel(channel)"
+              class="i-lucide-check flex-shrink-0 text-n-brand"
+            />
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -558,6 +679,26 @@ export default {
 
 .right-wrap {
   @apply flex gap-2;
+}
+
+.reply-send-group {
+  @apply relative flex;
+}
+
+.reply-channel-menu {
+  @apply absolute bottom-full right-0 z-20 mb-1 min-w-56 rounded-lg border border-n-strong bg-n-alpha-3 p-1 shadow-lg backdrop-blur-[100px];
+}
+
+.reply-channel-menu__item {
+  @apply flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-n-slate-12 hover:bg-n-alpha-2 focus-visible:bg-n-alpha-2 focus-visible:outline-none;
+}
+
+.reply-channel-menu__item--active {
+  @apply bg-n-alpha-2;
+}
+
+.reply-channel-menu__icon {
+  @apply flex-shrink-0;
 }
 
 ::v-deep .file-uploads {

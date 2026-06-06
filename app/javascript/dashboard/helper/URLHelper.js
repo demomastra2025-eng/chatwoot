@@ -39,8 +39,18 @@ export const conversationUrl = ({
   conversationType = '',
   foldersId,
   status,
+  communicationThread = false,
 }) => {
-  let url = `accounts/${accountId}/conversations/${id}`;
+  let url = communicationThread
+    ? `accounts/${accountId}/communication_threads/${id}`
+    : `accounts/${accountId}/conversations/${id}`;
+  if (communicationThread) {
+    return appendQueryToPath(url, {
+      status:
+        normalizeConversationStatus(status) ??
+        currentConversationStatusFromLocation(),
+    });
+  }
   if (activeInbox) {
     url = `accounts/${accountId}/inbox/${activeInbox}/conversations/${id}`;
   } else if (label) {
@@ -71,8 +81,14 @@ export const conversationListPageURL = ({
   teamId,
   customViewId,
   status,
+  communicationThread = false,
 }) => {
-  let url = `accounts/${accountId}/dashboard`;
+  let url = communicationThread
+    ? `accounts/${accountId}/communication_threads`
+    : `accounts/${accountId}/dashboard`;
+  if (communicationThread) {
+    return frontendURL(appendQueryToPath(url, { status }));
+  }
   if (label) {
     url = `accounts/${accountId}/label/${label}`;
   } else if (teamId) {

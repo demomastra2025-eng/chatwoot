@@ -278,6 +278,14 @@ Rails.application.routes.draw do
           namespace :channels do
             resource :twilio_channel, only: [:create]
           end
+          resources :communication_threads, only: [:index, :show, :update] do
+            member do
+              get :messages
+              post :messages, action: :create_message
+              get :channels
+            end
+          end
+
           resources :conversations, only: [:index, :create, :show, :update, :destroy] do
             collection do
               get :meta

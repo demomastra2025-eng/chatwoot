@@ -12,5 +12,10 @@ RSpec.describe ReportingEvent do
     it { is_expected.to belong_to(:inbox).optional }
     it { is_expected.to belong_to(:user).optional }
     it { is_expected.to belong_to(:conversation).optional }
+
+    it 'remains conversation-centric and does not bind metrics to communication threads' do
+      expect(described_class.reflect_on_association(:communication_thread)).to be_nil
+      expect(described_class.column_names).not_to include('communication_thread_id')
+    end
   end
 end

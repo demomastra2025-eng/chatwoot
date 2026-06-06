@@ -16,19 +16,49 @@ import {
 } from 'dashboard/constants/permissions.js';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
-export const routeIsAccessibleFor = (route, userPermissions = []) => {
-  const { meta: { permissions: routePermissions = [] } = {} } = route;
-  return hasPermissions(routePermissions, userPermissions);
+const withRouteAccountFeatures = (userAccount, accountFeatureSource = null) => {
+  if (!userAccount || !accountFeatureSource?.features) {
+    return userAccount;
+  }
+
+  return {
+    ...userAccount,
+    features: {
+      ...(userAccount.features || {}),
+      ...accountFeatureSource.features,
+    },
+  };
 };
 
 const isFeatureEnabled = (account, featureFlag) => {
-  return account?.features?.[featureFlag] || false;
+  return Boolean(account?.features?.[featureFlag]);
 };
 
-export const defaultRedirectPage = (to, permissions, user = null) => {
+export const routeIsAccessibleFor = (
+  route,
+  userPermissions = [],
+  currentAccount = null
+) => {
+  const {
+    meta: { permissions: routePermissions = [], featureFlag = null } = {},
+  } = route;
+  return (
+    hasPermissions(routePermissions, userPermissions) &&
+    (!featureFlag || isFeatureEnabled(currentAccount, featureFlag))
+  );
+};
+
+export const defaultRedirectPage = (
+  to,
+  permissions,
+  user = null,
+  accountFeatureSource = null
+) => {
   const { accountId } = to.params;
-  const currentAccount =
-    (user && getCurrentAccount(user, Number(accountId))) || null;
+  const currentAccount = withRouteAccountFeatures(
+    (user && getCurrentAccount(user, Number(accountId))) || null,
+    accountFeatureSource
+  );
 
   const permissionRoutes = [
     {
@@ -68,7 +98,7 @@ export const defaultRedirectPage = (to, permissions, user = null) => {
   return `accounts/${accountId}/${route ? route.path : 'dashboard'}`;
 };
 
-const validateActiveAccountRoutes = (to, user) => {
+const validateActiveAccountRoutes = (to, user, accountFeatureSource = null) => {
   // If the current account is active, then check for the route permissions
   const accountDashboardURL = `accounts/${to.params.accountId}/dashboard`;
 
@@ -77,15 +107,32 @@ const validateActiveAccountRoutes = (to, user) => {
     return accountDashboardURL;
   }
 
+  const currentAccount = withRouteAccountFeatures(
+    getCurrentAccount(user, Number(to.params.accountId)),
+    accountFeatureSource
+  );
   const userPermissions = getUserPermissions(user, to.params.accountId);
 
-  const isAccessible = routeIsAccessibleFor(to, userPermissions);
+  const isAccessible = routeIsAccessibleFor(
+    to,
+    userPermissions,
+    currentAccount
+  );
   // If the route is not accessible for the user, return to dashboard screen
-  return isAccessible ? null : defaultRedirectPage(to, userPermissions, user);
+  return isAccessible
+    ? null
+    : defaultRedirectPage(to, userPermissions, user, accountFeatureSource);
 };
 
-export const validateLoggedInRoutes = (to, user) => {
-  const currentAccount = getCurrentAccount(user, Number(to.params.accountId));
+export const validateLoggedInRoutes = (
+  to,
+  user,
+  accountFeatureSource = null
+) => {
+  const currentAccount = withRouteAccountFeatures(
+    getCurrentAccount(user, Number(to.params.accountId)),
+    accountFeatureSource
+  );
   // If current account is missing, either user does not have
   // access to the account or the account is deleted, return to login screen
   if (!currentAccount) {
@@ -95,7 +142,7 @@ export const validateLoggedInRoutes = (to, user) => {
   const isCurrentAccountActive = currentAccount.status === 'active';
 
   if (isCurrentAccountActive) {
-    return validateActiveAccountRoutes(to, user);
+    return validateActiveAccountRoutes(to, user, accountFeatureSource);
   }
 
   // If the current account is not active, then redirect the user to the suspended screen
@@ -121,6 +168,7 @@ export const isAConversationRoute = (
     'team_conversations',
     'folder_conversations',
     'conversation_participating',
+    'communication_threads_dashboard',
   ];
   const extendedRoutes = [
     'inbox_conversation',
@@ -131,6 +179,7 @@ export const isAConversationRoute = (
     'conversations_through_team',
     'conversations_through_folders',
     'conversation_through_participating',
+    'communication_thread_conversation',
   ];
 
   const routes = [
@@ -159,6 +208,8 @@ export const getConversationDashboardRoute = routeName => {
       return 'conversation_participating';
     case 'conversation_through_inbox':
       return 'inbox_dashboard';
+    case 'communication_thread_conversation':
+      return 'communication_threads_dashboard';
     default:
       return null;
   }

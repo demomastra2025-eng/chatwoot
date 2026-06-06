@@ -318,6 +318,12 @@
     "CANCEL_EDIT_MESSAGE": "Отменить",
     "UPDATE_MESSAGE": "Обновить",
     "FAIL_UPDATE_MESSAGE": "Не удалось обновить сообщение. Попробуйте снова",
+    "COMMUNICATION_THREAD": {
+      "ALL_CHANNELS": "Все каналы",
+      "REPLY_VIA": "Ответить через",
+      "ACTIVE_CHANNEL": "Активный канал: {channel}",
+      "REPLY_RESTRICTED_SUFFIX": "(ответ ограничен)"
+    },
     "SENT_BY": "Отправитель:",
     "BOT": "Бот",
     "SEND_FAILED": "Не удалось удалить сообщение! Попробуйте еще раз",

@@ -48,6 +48,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    communicationThreadMode: {
+      type: Boolean,
+      default: false,
+    },
   },
 };
 </script>
@@ -60,9 +64,11 @@ export default {
     :chat="source"
     :active-status="activeStatus"
     :conversation-type="conversationType"
+    :communication-thread-mode="communicationThreadMode"
     :selected="isConversationSelected(source.id)"
     :show-assignee="showAssignee"
-    enable-context-menu
+    :selectable="!communicationThreadMode"
+    :enable-context-menu="!communicationThreadMode"
     @select-conversation="selectConversation"
     @de-select-conversation="deSelectConversation"
     @assign-agent="assignAgent"

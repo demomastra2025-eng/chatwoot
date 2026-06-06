@@ -441,7 +441,13 @@ export default {
     },
 
     makeMessagesRead() {
-      this.$store.dispatch('markMessagesRead', { id: this.currentChat.id });
+      const conversationIds = this.currentChat?.is_communication_thread
+        ? this.currentChat.conversation_ids || []
+        : [this.currentChat.id];
+
+      conversationIds
+        .filter(Boolean)
+        .forEach(id => this.$store.dispatch('markMessagesRead', { id }));
     },
     async handleMessageRetry(message) {
       if (!message) return;

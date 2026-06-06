@@ -51,6 +51,16 @@ describe('#URL Helpers', () => {
       ).toBe('/app/accounts/1/inbox/1?status=pending');
     });
 
+    it('should return communication thread list URL when communication thread mode is active', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          status: 'open',
+          communicationThread: true,
+        })
+      ).toBe('/app/accounts/1/communication_threads?status=open');
+    });
+
     it('should return url to participating conversations', () => {
       expect(
         conversationListPageURL({
@@ -90,6 +100,17 @@ describe('#URL Helpers', () => {
       expect(conversationUrl({ accountId: 1, id: 1, status: 'snoozed' })).toBe(
         'accounts/1/conversations/1?status=snoozed'
       );
+    });
+
+    it('should return communication thread detail URL when communication thread mode is active', () => {
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'pending',
+          communicationThread: true,
+        })
+      ).toBe('accounts/1/communication_threads/42?status=pending');
     });
 
     it('should preserve the current route status when explicit status is absent', () => {

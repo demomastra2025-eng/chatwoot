@@ -139,22 +139,37 @@ class Message < ApplicationRecord
   after_create_commit :execute_after_create_commit_callbacks
 
   after_update_commit :dispatch_update_event
+  after_commit :refresh_communication_thread, on: [:update, :destroy], if: :communication_threads_enabled?
   after_commit :reindex_for_search, if: :should_index?, on: [:create, :update]
 
   def channel_token
     @token ||= inbox.channel.try(:page_access_token)
   end
 
-  def push_event_data
+  def push_event_data(include_communication_thread: true)
     data = attributes.symbolize_keys.merge(
       created_at: created_at.to_i,
       message_type: message_type_before_type_cast,
       conversation_id: conversation&.display_id,
       conversation: conversation.present? ? conversation_push_event_data : nil
     )
+    data.merge!(communication_thread_push_event_data) if include_communication_thread && communication_threads_enabled?
     data[:echo_id] = echo_id if echo_id.present?
     data[:attachments] = attachments.map(&:push_event_data) if attachments.present?
     merge_sender_attributes(data)
+  end
+
+  def communication_thread_push_event_data
+    return {} unless communication_threads_enabled?
+    return {} if conversation.blank?
+
+    {
+      communication_thread_id: conversation.communication_thread&.display_id,
+      inbox_name: inbox&.name,
+      channel: inbox&.channel_type,
+      medium: inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil,
+      contact_inbox_id: conversation.contact_inbox_id
+    }
   end
 
   def conversation_push_event_data
@@ -353,6 +368,7 @@ class Message < ApplicationRecord
     if runtime_events_suppressed?
       set_conversation_activity
       update_contact_activity(runtime_events: false)
+      refresh_communication_thread
       return
     end
 
@@ -360,11 +376,13 @@ class Message < ApplicationRecord
     reopen_conversation
     mark_pending_conversation_as_open_for_human_response
     set_conversation_activity
+    ensure_communication_thread_for_create_event
     dispatch_create_events
     sync_related_touches
     send_reply
     execute_message_template_hooks
     update_contact_activity(runtime_events: true)
+    refresh_communication_thread
   end
 
   def update_contact_activity(runtime_events: true)
@@ -498,6 +516,13 @@ class Message < ApplicationRecord
     ::MessageTemplates::HookExecutionService.new(message: self).perform
   end
 
+  def ensure_communication_thread_for_create_event
+    return unless communication_threads_enabled?
+    return if conversation.blank? || conversation.communication_thread.present?
+
+    refresh_communication_thread
+  end
+
   def sync_related_touches
     return if private? || activity?
 
@@ -519,6 +544,19 @@ class Message < ApplicationRecord
     # rubocop:disable Rails/SkipsModelValidations
     conversation.update_columns(last_activity_at: activity_time, updated_at: Time.current)
     # rubocop:enable Rails/SkipsModelValidations
+  end
+
+  def refresh_communication_thread
+    return unless communication_threads_enabled?
+
+    thread = conversation&.refresh_communication_thread!
+    conversation&.association(:communication_thread_conversation)&.reset
+    conversation&.association(:communication_thread)&.reset
+    thread
+  end
+
+  def communication_threads_enabled?
+    account&.feature_enabled?('communication_threads')
   end
 
   def reindex_for_search

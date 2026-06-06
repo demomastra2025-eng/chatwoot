@@ -51,6 +51,14 @@ class ReconnectService {
       ? Math.max(differenceInSeconds(new Date(), this.disconnectTime), 0)
       : 0;
 
+  activeConversationRouteId = () => {
+    const {
+      conversation_id: conversationId,
+      communication_thread_id: threadId,
+    } = this.router.currentRoute.value.params;
+    return conversationId || threadId;
+  };
+
   // Force reload if the user is disconnected for more than 3 hours
   handleOnlineEvent = () => {
     if (this.getSecondsSinceDisconnect() >= MAX_DISCONNECT_SECONDS) {
@@ -70,8 +78,7 @@ class ReconnectService {
 
   syncActiveConversationMessagesIfNeeded = async () => {
     const currentRoute = this.router.currentRoute.value.name;
-    const { conversation_id: conversationId } =
-      this.router.currentRoute.value.params;
+    const conversationId = this.activeConversationRouteId();
 
     if (!conversationId || document.hidden) return;
     if (!isAConversationRoute(currentRoute, true)) return;
@@ -127,8 +134,7 @@ class ReconnectService {
   };
 
   fetchConversationMessagesOnReconnect = async () => {
-    const { conversation_id: conversationId } =
-      this.router.currentRoute.value.params;
+    const conversationId = this.activeConversationRouteId();
     if (conversationId) {
       await this.store.dispatch('syncActiveConversationMessages', {
         conversationId: Number(conversationId),
@@ -166,8 +172,7 @@ class ReconnectService {
   };
 
   setConversationLastMessageId = async () => {
-    const { conversation_id: conversationId } =
-      this.router.currentRoute.value.params;
+    const conversationId = this.activeConversationRouteId();
     if (conversationId) {
       await this.store.dispatch('setConversationLastMessageId', {
         conversationId: Number(conversationId),

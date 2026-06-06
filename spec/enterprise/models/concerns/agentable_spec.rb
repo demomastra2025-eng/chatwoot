@@ -93,6 +93,7 @@ RSpec.describe Concerns::Agentable do
           base_key: 'base_value',
           conversation: nil,
           contact: nil,
+          communication_thread: nil,
           campaign: {},
           conversation_visible_fields: [],
           contact_visible_fields: []
@@ -107,7 +108,8 @@ RSpec.describe Concerns::Agentable do
                                        context: {
                                          state: {
                                            conversation: { id: 123 },
-                                           contact: { name: 'John' }
+                                           contact: { name: 'John' },
+                                           communication_thread: { display_id: 9, current_channel_key: 'conversation:123' }
                                          }
                                        })
 
@@ -115,6 +117,7 @@ RSpec.describe Concerns::Agentable do
         base_key: 'base_value',
         conversation: { id: 123 },
         contact: { name: 'John' },
+        communication_thread: { display_id: 9, current_channel_key: 'conversation:123' },
         campaign: {}
       }
 
@@ -184,6 +187,10 @@ RSpec.describe Concerns::Agentable do
                                              deal: { 'stage_name' => 'Negotiation' },
                                              task: { 'status_name' => 'In progress' },
                                              appointment: { 'status' => 'confirmed' },
+                                             communication_thread: {
+                                               'display_id' => 77,
+                                               'current_channel_key' => 'conversation:456'
+                                             },
                                              visible_fields: {
                                                deal: ['stage_name'],
                                                task: ['status_name'],
@@ -199,6 +206,7 @@ RSpec.describe Concerns::Agentable do
           deal: { 'stage_name' => 'Negotiation' },
           task: { 'status_name' => 'In progress' },
           appointment: { 'status' => 'confirmed' },
+          communication_thread: { 'display_id' => 77, 'current_channel_key' => 'conversation:456' },
           deal_visible_fields: ['stage_name'],
           task_visible_fields: ['status_name'],
           appointment_visible_fields: ['status']

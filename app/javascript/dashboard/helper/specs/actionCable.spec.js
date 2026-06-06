@@ -136,6 +136,38 @@ describe('ActionCableConnector - Copilot Tests', () => {
       }
     });
   });
+  describe('communication thread realtime events', () => {
+    it('registers the communication_thread.updated event handler', () => {
+      expect(actionCable.events['communication_thread.updated']).toBe(
+        actionCable.onCommunicationThreadUpdated
+      );
+    });
+
+    it('updates the synthetic thread without requiring conversation meta', () => {
+      const payload = {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        conversation_ids: [11, 22],
+        unread_count: 3,
+        timestamp: 1710000000,
+        updated_at: 1710000000.25,
+        account_id: 1,
+      };
+
+      actionCable.onReceived({
+        event: 'communication_thread.updated',
+        data: payload,
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'updateCommunicationThreadRealtime',
+        payload
+      );
+      expect(emitter.emit).toHaveBeenCalledWith('fetch_conversation_stats');
+    });
+  });
+
   describe('copilot event handlers', () => {
     it('should register the copilot.message.created event handler', () => {
       expect(Object.keys(actionCable.events)).toContain(

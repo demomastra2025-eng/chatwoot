@@ -12,7 +12,22 @@ export const buildCreatePayload = ({
   bccEmails = '',
   toEmails = '',
   templateParams,
+  extraParams = {},
 }) => {
+  const appendExtraParams = payload => {
+    Object.entries(extraParams).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+
+      const normalizedValue =
+        typeof value === 'object' ? JSON.stringify(value) : value;
+      if (payload instanceof FormData) {
+        payload.append(key, normalizedValue);
+      } else {
+        payload[key] = value;
+      }
+    });
+  };
+
   let payload;
   if (files && files.length !== 0) {
     payload = new FormData();
@@ -33,6 +48,9 @@ export const buildCreatePayload = ({
     if (contentAttributes) {
       payload.append('content_attributes', JSON.stringify(contentAttributes));
     }
+    if (templateParams) {
+      payload.append('template_params', JSON.stringify(templateParams));
+    }
   } else {
     payload = {
       content: message,
@@ -45,6 +63,7 @@ export const buildCreatePayload = ({
       template_params: templateParams,
     };
   }
+  appendExtraParams(payload);
   return payload;
 };
 

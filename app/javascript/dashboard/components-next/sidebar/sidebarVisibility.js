@@ -29,6 +29,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
     item('Conversation:Teams', 'SIDEBAR.TEAMS'),
     item('Conversation:Channels', 'SIDEBAR.CHANNELS'),
+    item('Conversation:AllChannels', 'SIDEBAR.ALL_CHANNELS'),
     item('Conversation:Labels', 'SIDEBAR.LABELS'),
   ]),
   item('Campaigns', 'SIDEBAR.OUTBOUND', [

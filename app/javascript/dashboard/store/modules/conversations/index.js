@@ -2,11 +2,12 @@ import types from '../../mutation-types';
 import getters, { getSelectedChatConversation } from './getters';
 import actions from './actions';
 import { findPendingMessageIndex } from './helpers';
-import { MESSAGE_STATUS } from 'shared/constants/messages';
+import { MESSAGE_STATUS, MESSAGE_TYPE } from 'shared/constants/messages';
 import wootConstants from 'dashboard/constants/globals';
 import { BUS_EVENTS } from '../../../../shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { CONTENT_TYPES } from 'dashboard/components-next/message/constants.js';
+import { buildCommunicationChannelFromMessage } from 'dashboard/helper/communicationThreadHelper';
 
 const state = {
   allConversations: [],
@@ -34,6 +35,44 @@ const state = {
 
 const getConversationById = _state => conversationId => {
   return _state.allConversations.find(c => c.id === conversationId);
+};
+
+const sortMessagesByTimeline = (leftMessage, rightMessage) => {
+  const createdAtDifference =
+    Number(leftMessage.created_at || 0) - Number(rightMessage.created_at || 0);
+  if (createdAtDifference !== 0) return createdAtDifference;
+
+  return String(leftMessage.id || '').localeCompare(
+    String(rightMessage.id || '')
+  );
+};
+
+const mergeMessagesById = (existingMessages = [], incomingMessages = []) => {
+  const mergedMessages = [];
+  const indexById = new Map();
+
+  [...existingMessages, ...incomingMessages].forEach(message => {
+    const messageId = message?.id;
+    if (messageId === undefined || messageId === null) {
+      mergedMessages.push(message);
+      return;
+    }
+
+    const key = String(messageId);
+    const existingIndex = indexById.get(key);
+    if (existingIndex === undefined) {
+      indexById.set(key, mergedMessages.length);
+      mergedMessages.push(message);
+      return;
+    }
+
+    mergedMessages[existingIndex] = {
+      ...mergedMessages[existingIndex],
+      ...message,
+    };
+  });
+
+  return mergedMessages.sort(sortMessagesByTimeline);
 };
 
 // mutations
@@ -90,7 +129,9 @@ export const mutations = {
   [types.SET_PREVIOUS_CONVERSATIONS](_state, { id, data }) {
     if (data.length) {
       const [chat] = _state.allConversations.filter(c => c.id === id);
-      chat.messages.unshift(...data);
+      if (!chat) return;
+
+      chat.messages = mergeMessagesById(chat.messages, data);
     }
   },
   [types.SET_ALL_ATTACHMENTS](_state, { id, data }) {
@@ -228,6 +269,84 @@ export const mutations = {
       if (selectedChatId === conversationId) {
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
       }
+    }
+  },
+
+  [types.ADD_MESSAGE_TO_CHAT](_state, { chatId, message }) {
+    const chat = getConversationById(_state)(Number(chatId));
+    if (!chat) return;
+
+    chat.messages ||= [];
+    const pendingMessageIndex = findPendingMessageIndex(chat, message);
+    if (pendingMessageIndex !== -1) {
+      chat.messages[pendingMessageIndex] = message;
+    } else if (!chat.messages.some(item => item.id === message.id)) {
+      chat.messages.push(message);
+    }
+
+    chat.messages.sort(sortMessagesByTimeline);
+    chat.timestamp = Math.max(
+      Number(chat.timestamp || 0),
+      Number(message.created_at || 0)
+    );
+
+    let channel = (chat.channels || []).find(
+      item => String(item.conversation_id) === String(message.conversation_id)
+    );
+    if (!channel && chat.is_communication_thread && message.inbox_id) {
+      channel = (chat.channels || []).find(
+        item =>
+          !item.conversation_id &&
+          String(item.inbox_id) === String(message.inbox_id)
+      );
+      if (channel && message.conversation_id) {
+        channel.conversation_id = message.conversation_id;
+        channel.contact_inbox_id ||= message.contact_inbox_id;
+        channel.channel_key = `conversation:${message.conversation_id}`;
+        chat.conversation_ids ||= [];
+        if (
+          !chat.conversation_ids.some(
+            conversationId =>
+              String(conversationId) === String(message.conversation_id)
+          )
+        ) {
+          chat.conversation_ids.push(message.conversation_id);
+        }
+      }
+    }
+    if (!channel && chat.is_communication_thread) {
+      channel = buildCommunicationChannelFromMessage(message);
+      if (channel) {
+        chat.channels ||= [];
+        chat.channels.push(channel);
+        chat.conversation_ids ||= [];
+        if (
+          !chat.conversation_ids.some(
+            conversationId =>
+              String(conversationId) === String(channel.conversation_id)
+          )
+        ) {
+          chat.conversation_ids.push(channel.conversation_id);
+        }
+      }
+    }
+    if (channel) {
+      channel.last_activity_at = Math.max(
+        Number(channel.last_activity_at || 0),
+        Number(message.created_at || 0)
+      );
+      if (message.message_type === MESSAGE_TYPE.INCOMING) {
+        channel.can_reply = true;
+        channel.can_send_text = true;
+        channel.can_send_attachments = true;
+        channel.reply_window_open = true;
+        channel.disabled = false;
+        channel.disabled_reason = null;
+      }
+    }
+
+    if (_state.selectedChatId === Number(chatId)) {
+      emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
     }
   },
 

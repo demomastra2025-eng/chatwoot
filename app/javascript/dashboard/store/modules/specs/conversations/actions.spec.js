@@ -93,7 +93,7 @@ describe('#actions', () => {
   });
 
   describe('#updateConversation', () => {
-    it('sends setContact action and update_conversation mutation', () => {
+    it('setContact action and update_conversation mutation', () => {
       const conversation = {
         id: 1,
         messages: [],
@@ -117,6 +117,32 @@ describe('#actions', () => {
           {
             id: 1,
             name: 'john-doe',
+          },
+        ],
+      ]);
+    });
+  });
+
+  describe('#updateCommunicationThreadRealtime', () => {
+    it('commits thread realtime payload without requiring conversation meta', () => {
+      const payload = {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        conversation_ids: [11, 22],
+        unread_count: 3,
+        timestamp: 1710000000,
+        updated_at: 1710000000.25,
+      };
+
+      actions.updateCommunicationThreadRealtime({ commit }, payload);
+
+      expect(commit.mock.calls).toEqual([
+        [
+          types.UPDATE_CONVERSATION,
+          {
+            ...payload,
+            display_id: 7,
           },
         ],
       ]);
@@ -852,7 +878,28 @@ describe('#addMentions', () => {
   });
 
   describe('#setActiveChat', () => {
-    it('should commit SET_CHAT_DATA_FETCHED with conversation ID after fetch', async () => {
+    it('should fetch the latest page without a before cursor on normal open', async () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn().mockResolvedValue();
+      const data = { id: 42, messages: [{ id: 100 }] };
+
+      await actions.setActiveChat(
+        { commit: localCommit, dispatch: localDispatch },
+        { data }
+      );
+
+      expect(localCommit.mock.calls).toEqual([
+        [types.SET_CURRENT_CHAT_WINDOW, data],
+        [types.CLEAR_ALL_MESSAGES_LOADED, 42],
+        [types.SET_CHAT_DATA_FETCHED, 42],
+      ]);
+      expect(localDispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        after: undefined,
+        conversationId: 42,
+      });
+    });
+
+    it('should include before cursor when opening around a target message', async () => {
       const localCommit = vi.fn();
       const localDispatch = vi.fn().mockResolvedValue();
       const data = { id: 42, messages: [{ id: 100 }] };

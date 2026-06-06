@@ -674,6 +674,35 @@ describe('#mutations', () => {
       mutations[types.SET_PREVIOUS_CONVERSATIONS](state, payload);
       expect(state.allConversations[0].messages).toEqual([{ id: 'msg2' }]);
     });
+
+    it('should merge messages by id and keep chronological order', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            messages: [
+              { id: 2, content: 'stale latest', created_at: 20 },
+              { id: 3, content: 'local newest', created_at: 30 },
+            ],
+          },
+        ],
+      };
+      const payload = {
+        id: 1,
+        data: [
+          { id: 1, content: 'older', created_at: 10 },
+          { id: 2, content: 'fresh latest', created_at: 20 },
+        ],
+      };
+
+      mutations[types.SET_PREVIOUS_CONVERSATIONS](state, payload);
+
+      expect(state.allConversations[0].messages).toEqual([
+        { id: 1, content: 'older', created_at: 10 },
+        { id: 2, content: 'fresh latest', created_at: 20 },
+        { id: 3, content: 'local newest', created_at: 30 },
+      ]);
+    });
   });
 
   describe('#SET_MISSING_MESSAGES', () => {

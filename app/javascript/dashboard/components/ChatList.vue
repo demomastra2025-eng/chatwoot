@@ -74,6 +74,7 @@ const props = defineProps({
   label: { type: String, default: '' },
   conversationType: { type: String, default: '' },
   foldersId: { type: [String, Number], default: 0 },
+  communicationThreadMode: { type: Boolean, default: false },
   showConversationList: { default: true, type: Boolean },
   isOnExpandedLayout: { default: false, type: Boolean },
 });
@@ -332,6 +333,9 @@ const pageTitle = computed(() => {
   }
   if (hasActiveFolders.value) {
     return activeFolder.value.name;
+  }
+  if (props.communicationThreadMode) {
+    return t('CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS');
   }
   return t('CHAT_LIST.TAB_HEADING');
 });
@@ -638,7 +642,13 @@ function onToggleAdvanceFiltersModal() {
 
 function fetchConversations() {
   store.dispatch('updateChatListFilters', conversationFilters.value);
-  store.dispatch('fetchAllConversations').then(emitConversationLoaded);
+  store
+    .dispatch(
+      props.communicationThreadMode
+        ? 'fetchCommunicationThreads'
+        : 'fetchAllConversations'
+    )
+    .then(emitConversationLoaded);
 }
 
 function resetAndFetchData() {
@@ -742,6 +752,7 @@ function redirectToConversationList() {
       label,
       teamId,
       status: activeStatus.value,
+      communicationThread: props.communicationThreadMode,
     })
   );
 }
@@ -977,6 +988,13 @@ watch(
     resetAndFetchData();
   }
 );
+watch(
+  computed(() => props.communicationThreadMode),
+  () => {
+    clearLocalSearch();
+    resetAndFetchData();
+  }
+);
 
 watch(activeFolder, (newVal, oldVal) => {
   if (newVal !== oldVal) {
@@ -1061,6 +1079,7 @@ watch(conversationFilters, (newVal, oldVal) => {
       v-if="selectedConversations.length"
       :conversations="selectedConversations"
       :all-conversations-selected="allConversationsSelected"
+      :selectable-conversations-count="displayedConversationList.length"
       :selected-inboxes="uniqueInboxes"
       :show-open-action="allSelectedConversationsStatus('open')"
       :show-resolved-action="allSelectedConversationsStatus('resolved')"
@@ -1090,6 +1109,7 @@ watch(conversationFilters, (newVal, oldVal) => {
           :folders-id="foldersId"
           :conversation-type="conversationType"
           :active-status="activeStatus"
+          :communication-thread-mode="communicationThreadMode"
           :show-assignee="showAssigneeInConversationCard"
           :data-index="index"
           @select-conversation="selectConversation"

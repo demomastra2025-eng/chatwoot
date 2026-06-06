@@ -364,7 +364,12 @@ RSpec.describe Captain::ContextFields do
   describe '.runtime_state_for' do
     let(:conversation_record) { create(:conversation, account: account) }
 
+    before do
+      account.enable_features!('communication_threads')
+    end
+
     it 'builds reusable Captain runtime state from a conversation' do
+      thread = conversation_record.reload.communication_thread
       state = described_class.runtime_state_for(
         account: account,
         conversation: conversation_record,
@@ -383,11 +388,88 @@ RSpec.describe Captain::ContextFields do
         name: conversation_record.contact.name,
         email: conversation_record.contact.email
       )
+      expect(state[:communication_thread]).to include(
+        id: thread.id,
+        display_id: thread.display_id,
+        current_conversation_id: conversation_record.display_id,
+        current_channel_key: "conversation:#{conversation_record.display_id}"
+      )
+      expect(state[:communication_thread][:conversation_ids]).to include(conversation_record.display_id)
+      expect(state[:communication_thread][:current_channel]).to include(
+        conversation_id: conversation_record.display_id,
+        inbox_id: conversation_record.inbox_id,
+        channel_key: "conversation:#{conversation_record.display_id}"
+      )
+      expect(state[:communication_thread][:channels].first).to include(:can_send_text, :requires_template, :disabled_reason)
       expect(state[:channel_type]).to eq(conversation_record.inbox.channel_type)
+    end
+
+    it 'filters communication-thread channels to the assistant connected inboxes' do
+      second_inbox = create(:inbox, account: account)
+      second_contact_inbox = create(:contact_inbox, contact: conversation_record.contact, inbox: second_inbox)
+      second_conversation = create(
+        :conversation,
+        account: account,
+        contact: conversation_record.contact,
+        inbox: second_inbox,
+        contact_inbox: second_contact_inbox
+      )
+      captain_assistant = create(:captain_assistant, account: account)
+      create(:captain_inbox, captain_assistant: captain_assistant, inbox: conversation_record.inbox)
+
+      state = described_class.runtime_state_for(
+        account: account,
+        conversation: conversation_record,
+        assistant: captain_assistant
+      )
+
+      expect(state[:communication_thread][:conversation_ids]).to contain_exactly(conversation_record.display_id)
+      expect(state[:communication_thread][:conversation_ids]).not_to include(second_conversation.display_id)
+      expect(state[:communication_thread][:channels].pluck(:inbox_id)).to contain_exactly(conversation_record.inbox_id)
+    end
+
+    it 'filters communication-thread channels to the actor accessible inboxes' do
+      second_inbox = create(:inbox, account: account)
+      second_contact_inbox = create(:contact_inbox, contact: conversation_record.contact, inbox: second_inbox)
+      second_conversation = create(
+        :conversation,
+        account: account,
+        contact: conversation_record.contact,
+        inbox: second_inbox,
+        contact_inbox: second_contact_inbox
+      )
+      actor = create(:user, account: account, role: :agent)
+      create(:inbox_member, inbox: conversation_record.inbox, user: actor)
+
+      state = described_class.communication_thread_state_for(
+        account: account,
+        conversation: conversation_record,
+        actor: actor
+      )
+
+      expect(state[:conversation_ids]).to contain_exactly(conversation_record.display_id)
+      expect(state[:conversation_ids]).not_to include(second_conversation.display_id)
+      expect(state[:channels].pluck(:inbox_id)).to contain_exactly(conversation_record.inbox_id)
     end
 
     it 'returns an empty state without a conversation' do
       expect(described_class.runtime_state_for(account: account, conversation: nil)).to eq({})
+    end
+
+    it 'does not expose communication-thread state when the feature is disabled' do
+      disabled_account = create(:account)
+      disabled_conversation = create(:conversation, account: disabled_account)
+
+      state = described_class.runtime_state_for(
+        account: disabled_account,
+        conversation: disabled_conversation,
+        channel_type: disabled_conversation.inbox.channel_type
+      )
+
+      expect(state).not_to include(:communication_thread)
+      expect(
+        described_class.communication_thread_state_for(account: disabled_account, conversation: disabled_conversation)
+      ).to be_nil
     end
 
     it 'preserves related state only when related records are present' do

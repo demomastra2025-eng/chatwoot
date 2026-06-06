@@ -53,6 +53,11 @@ import {
 import { useCopilotReply } from 'dashboard/composables/useCopilotReply';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
 import { isFileTypeAllowedForChannel } from 'shared/helpers/FileHelper';
+import {
+  decoratePayloadWithCommunicationThread,
+  getCommunicationReplyChannel,
+  isCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { LocalStorage } from 'shared/helpers/localStorage';
@@ -136,6 +141,7 @@ export default {
       showArticleSearchPopover: false,
       hasRecordedAudio: false,
       copilotAcceptedMessages: {},
+      selectedReplyConversationId: null,
     };
   },
   computed: {
@@ -152,6 +158,33 @@ export default {
       const senderId = this.currentChat?.meta?.sender?.id;
       if (!senderId) return {};
       return this.$store.getters['contacts/getContact'](senderId);
+    },
+    isCommunicationThreadConversation() {
+      return isCommunicationThread(this.currentChat);
+    },
+    communicationChannels() {
+      return Array.isArray(this.currentChat?.channels)
+        ? this.currentChat.channels
+        : [];
+    },
+    showCommunicationChannelSelector() {
+      return (
+        this.isCommunicationThreadConversation &&
+        this.communicationChannels.length > 1 &&
+        !this.isEditingMessage
+      );
+    },
+    activeReplyChannel() {
+      return getCommunicationReplyChannel(
+        this.currentChat,
+        this.selectedReplyConversationId
+      );
+    },
+    selectedChannelCanReply() {
+      if (!this.isCommunicationThreadConversation) {
+        return this.currentChat?.can_reply;
+      }
+      return Boolean(this.activeReplyChannel?.can_reply);
     },
     shouldShowReplyToMessage() {
       return (
@@ -175,7 +208,7 @@ export default {
     },
     isPrivate() {
       if (
-        this.currentChat.can_reply ||
+        this.selectedChannelCanReply ||
         this.isAWhatsAppChannel ||
         this.isAPIInbox
       ) {
@@ -185,12 +218,14 @@ export default {
     },
     isReplyRestricted() {
       return (
-        !this.currentChat?.can_reply &&
+        !this.selectedChannelCanReply &&
         !(this.isAWhatsAppChannel || this.isAPIInbox)
       );
     },
     inboxId() {
-      return this.currentChat.inbox_id;
+      return this.isCommunicationThreadConversation
+        ? this.activeReplyChannel?.inbox_id
+        : this.currentChat.inbox_id;
     },
     inbox() {
       return this.$store.getters['inboxes/getInbox'](this.inboxId);
@@ -379,10 +414,12 @@ export default {
         : false;
     },
     conversationId() {
-      return this.currentChat.id;
+      return this.isCommunicationThreadConversation
+        ? this.activeReplyChannel?.conversation_id
+        : this.currentChat.id;
     },
     conversationIdByRoute() {
-      return this.conversationId;
+      return this.currentChat.id;
     },
     editorStateId() {
       return `draft-${this.conversationIdByRoute}-${this.replyType}`;
@@ -465,13 +502,14 @@ export default {
       return (
         (this.isAWhatsAppChannel || this.isAPIInbox) &&
         !this.isOnPrivateNote &&
-        !this.currentChat.can_reply
+        !this.selectedChannelCanReply
       );
     },
   },
   watch: {
     currentChat(conversation, oldConversation) {
-      const { can_reply: canReply } = conversation;
+      this.syncSelectedReplyChannel(conversation);
+      const canReply = this.selectedChannelCanReply;
       if (oldConversation && oldConversation.id !== conversation.id) {
         // Only update email fields when switching to a completely different conversation (by ID)
         // This prevents overwriting user input (e.g., CC/BCC fields) when performing actions
@@ -512,6 +550,11 @@ export default {
         this.resetRecorderAndClearAttachments();
       }
     },
+    selectedReplyConversationId() {
+      this.syncReplyModeWithSelectedChannel();
+      this.setCCAndToEmailsFromLastChat();
+      this.fetchAndSetReplyTo();
+    },
     message() {
       if (this.isEditingMessage) {
         return;
@@ -527,6 +570,7 @@ export default {
   },
 
   mounted() {
+    this.syncSelectedReplyChannel();
     this.getFromDraft();
     // Don't use the keyboard listener mixin here as the events here are supposed to be
     // working even if the editor is focussed.
@@ -568,6 +612,46 @@ export default {
     emitter.off(CMD_AI_ASSIST, this.executeCopilotAction);
   },
   methods: {
+    syncSelectedReplyChannel(conversation = this.currentChat) {
+      if (!isCommunicationThread(conversation)) {
+        this.selectedReplyConversationId = null;
+        return;
+      }
+
+      const currentChannel = getCommunicationReplyChannel(
+        conversation,
+        this.selectedReplyConversationId
+      );
+      const nextChannel =
+        currentChannel || getCommunicationReplyChannel(conversation);
+      this.selectedReplyConversationId =
+        nextChannel?.channel_key || nextChannel?.conversation_id || null;
+    },
+    syncReplyModeWithSelectedChannel() {
+      if (this.isOnPrivateNote) {
+        return;
+      }
+
+      if (
+        this.selectedChannelCanReply ||
+        this.isAWhatsAppChannel ||
+        this.isAPIInbox
+      ) {
+        this.replyType = REPLY_EDITOR_MODES.REPLY;
+      } else {
+        this.replyType = REPLY_EDITOR_MODES.NOTE;
+      }
+    },
+    selectReplyChannel(channelKey) {
+      this.selectedReplyConversationId = channelKey;
+    },
+    decorateMessagePayload(messagePayload) {
+      return decoratePayloadWithCommunicationThread(
+        messagePayload,
+        this.currentChat,
+        this.selectedReplyConversationId
+      );
+    },
     getDraftKey(
       conversationId = this.conversationIdByRoute,
       replyType = this.replyType
@@ -922,15 +1006,13 @@ export default {
       editorMessage = '',
       copilotAcceptedMessage = ''
     ) {
+      const payload = this.decorateMessagePayload(messagePayload);
       try {
-        await this.$store.dispatch(
-          'createPendingMessageAndSend',
-          messagePayload
-        );
+        await this.$store.dispatch('createPendingMessageAndSend', payload);
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
         emitter.emit(BUS_EVENTS.MESSAGE_SENT);
         this.removeFromDraft();
-        this.sendMessageAnalyticsData(messagePayload.private, {
+        this.sendMessageAnalyticsData(payload.private, {
           editorMessage,
           copilotAcceptedMessage,
         });
@@ -943,7 +1025,8 @@ export default {
     async updateExistingMessage(content) {
       try {
         await this.$store.dispatch('updateMessageContent', {
-          conversationId: this.currentChat.id,
+          conversationId:
+            this.editingMessage.conversation_id || this.conversationId,
           messageId: this.editingMessage.id,
           content,
         });
@@ -957,14 +1040,14 @@ export default {
     },
     async onSendWhatsAppReply(messagePayload) {
       this.sendMessage({
-        conversationId: this.currentChat.id,
+        conversationId: this.conversationId,
         ...messagePayload,
       });
       this.hideWhatsappTemplatesModal();
     },
     async onSendContentTemplateReply(messagePayload) {
       this.sendMessage({
-        conversationId: this.currentChat.id,
+        conversationId: this.conversationId,
         ...messagePayload,
       });
       this.hideContentTemplatesModal();
@@ -978,7 +1061,7 @@ export default {
       // This is to prevent from breaking the upload rules
       if (this.attachedFiles.length > 0) this.attachedFiles = [];
 
-      const { can_reply: canReply } = this.currentChat;
+      const canReply = this.selectedChannelCanReply;
       this.$store.dispatch('draftMessages/setReplyEditorMode', {
         mode,
       });
@@ -1074,7 +1157,7 @@ export default {
       return file && this.onFileUpload(autoRecordedFile);
     },
     toggleTyping(status) {
-      const conversationId = this.currentChat.id;
+      const conversationId = this.conversationId;
       const isPrivate = this.isPrivate;
 
       if (!conversationId) {
@@ -1145,7 +1228,7 @@ export default {
             ? attachment.blobSignedId
             : attachment.resource.file;
           let attachmentPayload = {
-            conversationId: this.currentChat.id,
+            conversationId: this.conversationId,
             files: [attachedFile],
             private: false,
             message: caption,
@@ -1173,7 +1256,7 @@ export default {
           hasNoAttachments)
       ) {
         let messagePayload = {
-          conversationId: this.currentChat.id,
+          conversationId: this.conversationId,
           message,
           private: false,
           sender: this.sender,
@@ -1190,7 +1273,7 @@ export default {
       const messageWithQuote = this.getMessageWithQuotedEmailText(message);
 
       let messagePayload = {
-        conversationId: this.currentChat.id,
+        conversationId: this.conversationId,
         message: messageWithQuote,
         private: this.isPrivate,
         sender: this.sender,
@@ -1227,6 +1310,8 @@ export default {
       this.ccEmails = value.ccEmails;
     },
     setCCAndToEmailsFromLastChat() {
+      if (!this.inbox) return;
+
       const conversationContact = this.currentChat?.meta?.sender?.email || '';
       const { email: inboxEmail, forward_to_email: forwardToEmail } =
         this.inbox;
@@ -1538,6 +1623,9 @@ export default {
         :recording-audio-duration-text="recordingAudioDurationText"
         :recording-audio-state="recordingAudioState"
         :send-button-text="replyButtonLabel"
+        :show-communication-channel-selector="showCommunicationChannelSelector"
+        :communication-channels="communicationChannels"
+        :active-reply-channel="activeReplyChannel"
         :show-audio-recorder="showAudioRecorder"
         :show-emoji-picker="showEmojiPicker"
         :show-file-upload="showFileUpload"
@@ -1554,6 +1642,7 @@ export default {
         @select-content-template="openContentTemplateModal"
         @toggle-insert-article="toggleInsertArticle"
         @toggle-quoted-reply="toggleQuotedReply"
+        @select-reply-channel="selectReplyChannel"
         @replace-text="addIntoEditor"
         @attach-file="onFileUpload"
       />

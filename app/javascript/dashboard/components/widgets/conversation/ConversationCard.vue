@@ -29,9 +29,11 @@ const props = defineProps({
   conversationType: { type: String, default: '' },
   activeStatus: { type: String, default: '' },
   selected: { type: Boolean, default: false },
+  selectable: { type: Boolean, default: true },
   compact: { type: Boolean, default: false },
   enableContextMenu: { type: Boolean, default: false },
   allowedContextMenuOptions: { type: Array, default: () => [] },
+  communicationThreadMode: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -163,6 +165,8 @@ const conversationPath = computed(() => {
       conversationType: props.conversationType,
       foldersId: props.foldersId,
       status: props.activeStatus,
+      communicationThread:
+        props.communicationThreadMode || props.chat.is_communication_thread,
     })
   );
 });
@@ -313,7 +317,7 @@ const togglePinnedConversation = async nextPinnedState => {
       >
         <template #overlay="{ size }">
           <label
-            v-if="hovered || selected"
+            v-if="selectable && (hovered || selected)"
             class="flex items-center justify-center rounded-full cursor-pointer absolute inset-0 z-10 backdrop-blur-[2px]"
             :style="{ width: `${size}px`, height: `${size}px` }"
             @click.stop

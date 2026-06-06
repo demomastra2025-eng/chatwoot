@@ -113,7 +113,7 @@ For scheduled sends after this close time, use an approved channel_template inst
 
 {% endif -%}
 
-{% if conversation or contact or deal or task or appointment or campaign != blank %}
+{% if conversation or contact or communication_thread or deal or task or appointment or campaign != blank %}
 # Current Context
 {% if current_context_rule != blank -%}
 {{ current_context_rule }}
@@ -121,6 +121,10 @@ For scheduled sends after this close time, use an approved channel_template inst
 
 {% if conversation -%}
 {% render 'conversation', conversation: conversation, conversation_visible_fields: conversation_visible_fields, conversation_custom_attribute_labels: conversation_custom_attribute_labels %}
+{% endif -%}
+
+{% if communication_thread -%}
+{% render 'communication_thread', communication_thread: communication_thread %}
 {% endif -%}
 
 {% if contact -%}

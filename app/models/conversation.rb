@@ -117,6 +117,8 @@ class Conversation < ApplicationRecord
   has_many :attachments, through: :messages
   has_many :reporting_events, dependent: :destroy_async
   has_many :reminders, as: :remindable, dependent: :nullify
+  has_one :communication_thread_conversation, dependent: :destroy
+  has_one :communication_thread, through: :communication_thread_conversation
 
   before_save :ensure_snooze_until_reset
   before_create :determine_conversation_status
@@ -125,6 +127,7 @@ class Conversation < ApplicationRecord
   after_update_commit :execute_after_update_commit_callbacks
   after_create_commit :notify_conversation_creation
   after_create_commit :load_attributes_created_by_db_triggers
+  after_create_commit :ensure_communication_thread, if: :communication_threads_enabled?
 
   delegate :auto_resolve_after, to: :account
 
@@ -224,7 +227,21 @@ class Conversation < ApplicationRecord
     dispatcher_dispatch(CONVERSATION_UPDATED, previous_changes)
   end
 
+  def refresh_communication_thread!
+    return unless communication_threads_enabled?
+
+    Conversations::CommunicationThreadResolver.new(conversation: self).perform
+  end
+
   private
+
+  def ensure_communication_thread
+    refresh_communication_thread!
+  end
+
+  def communication_threads_enabled?
+    account&.feature_enabled?('communication_threads')
+  end
 
   def unread_incoming_message_scope
     unread_messages.where(account_id: account_id, private: false).incoming
@@ -232,6 +249,7 @@ class Conversation < ApplicationRecord
 
   def execute_after_update_commit_callbacks
     handle_resolved_status_change
+    refresh_communication_thread! if communication_threads_enabled?
     return if runtime_events_suppressed?
 
     notify_status_change

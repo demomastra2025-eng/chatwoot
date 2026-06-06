@@ -297,6 +297,12 @@
     "BOT": "Robot",
     "NATIVE_APP": "Native app",
     "NATIVE_APP_ADVISORY": "This message was sent from the {platform} native app. Reply from {installationName} to maintain the message window.",
+    "COMMUNICATION_THREAD": {
+      "ALL_CHANNELS": "Барлық арналар",
+      "REPLY_VIA": "Жауап беру арнасы",
+      "ACTIVE_CHANNEL": "Белсенді арна: {channel}",
+      "REPLY_RESTRICTED_SUFFIX": "(жауап шектелген)"
+    },
     "SEND_FAILED": "Couldn't send message! Try again",
     "TRY_AGAIN": "retry",
     "ASSIGNMENT": {

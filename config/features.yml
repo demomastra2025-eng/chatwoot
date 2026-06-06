@@ -264,3 +264,6 @@
 - name: content
   display_name: SMM
   enabled: true
+- name: communication_threads
+  display_name: Communication Threads
+  enabled: false

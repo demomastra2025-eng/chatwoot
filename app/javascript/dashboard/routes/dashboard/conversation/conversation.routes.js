@@ -3,6 +3,7 @@ import { frontendURL } from '../../../helper/URLHelper';
 const ConversationView = () => import('./ConversationView.vue');
 import inboxDialogRoutes from '../settings/inbox/inboxDialog.routes';
 import { CONVERSATION_ACCESS_PERMISSIONS } from '../../../constants/permissions';
+import { FEATURE_FLAGS } from '../../../featureFlags';
 
 export default {
   routes: [
@@ -15,6 +16,36 @@ export default {
       component: ConversationView,
       props: () => {
         return { inboxId: 0 };
+      },
+    },
+    {
+      path: frontendURL('accounts/:accountId/communication_threads'),
+      name: 'communication_threads_dashboard',
+      meta: {
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
+        featureFlag: FEATURE_FLAGS.COMMUNICATION_THREADS,
+      },
+      component: ConversationView,
+      props: () => {
+        return { inboxId: 0, communicationThreadMode: true };
+      },
+    },
+    {
+      path: frontendURL(
+        'accounts/:accountId/communication_threads/:communication_thread_id'
+      ),
+      name: 'communication_thread_conversation',
+      meta: {
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
+        featureFlag: FEATURE_FLAGS.COMMUNICATION_THREADS,
+      },
+      component: ConversationView,
+      props: route => {
+        return {
+          inboxId: 0,
+          conversationId: route.params.communication_thread_id,
+          communicationThreadMode: true,
+        };
       },
     },
     ...inboxDialogRoutes.routes,

@@ -34,6 +34,12 @@ module Events::Types
   CONVERSATION_TYPING_OFF = 'conversation.typing_off'
   CONVERSATION_MENTIONED = 'conversation.mentioned'
 
+  # communication thread events
+  # Dashboard-only realtime refresh event. This is intentionally emitted by the
+  # ActionCable listener, not the global dispatcher, so reporting, webhooks, and
+  # automation rules stay conversation-centric.
+  COMMUNICATION_THREAD_UPDATED = 'communication_thread.updated'
+
   # message events
   MESSAGE_CREATED = 'message.created'
   FIRST_REPLY_CREATED = 'first.reply.created'

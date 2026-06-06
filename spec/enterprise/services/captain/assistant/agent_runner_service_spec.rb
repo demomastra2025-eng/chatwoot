@@ -116,6 +116,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'runs agent with extracted user message and context' do
+      communication_thread = conversation.reload.communication_thread
+
       expect(mock_runner).to receive(:run) do |input, context:, max_turns:, runtime_options:|
         expect(input).to eq('I need help with my account')
         expect(context).to include(
@@ -132,7 +134,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
               'assistant_moderation' => false
             ),
             conversation: hash_including(id: conversation.id),
-            contact: hash_including(id: contact.id)
+            contact: hash_including(id: contact.id),
+            communication_thread: hash_including(
+              display_id: communication_thread.display_id,
+              current_conversation_id: conversation.display_id,
+              current_channel_key: "conversation:#{conversation.display_id}",
+              channels: include(hash_including(channel_key: "conversation:#{conversation.display_id}"))
+            )
           )
         )
         expect(context[:captain_v2_trace_input]).to include('I need help with my account')

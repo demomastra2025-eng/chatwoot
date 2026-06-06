@@ -47,6 +47,38 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload.dig('message', 'attachments', 0, 'file_type')).to eq('image')
       expect(conversation.reload.messages.outgoing.last.attachments.first.file.blob.signed_id).to eq(signed_blob_id)
     end
+
+    it 'sends through a selected communication thread channel without bypassing native message creation', :aggregate_failures do
+      account.enable_features!('communication_threads')
+      target_inbox = create(:inbox, account: account)
+      target_contact_inbox = create(:contact_inbox, contact: contact, inbox: target_inbox)
+      thread = conversation.reload.communication_thread
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
+      payload = nil
+
+      expect do
+        payload = execute_confirmed(
+          service,
+          communication_thread_id: thread.display_id,
+          channel_key: "inbox:#{target_inbox.id}",
+          target_contact_inbox_id: target_contact_inbox.id,
+          content: 'Hello through selected channel'
+        )
+      end.to change(Conversation, :count).by(1)
+
+      created_conversation = Conversation.find_by!(account: account, display_id: payload['conversation_id'])
+      expect(created_conversation).to have_attributes(
+        contact_id: contact.id,
+        inbox_id: target_inbox.id,
+        contact_inbox_id: target_contact_inbox.id
+      )
+      expect(created_conversation.communication_thread).to eq(thread)
+      expect(created_conversation.messages.outgoing.last.content).to eq('Hello through selected channel')
+      expect(payload.dig('communication_thread', 'display_id')).to eq(thread.display_id)
+      expect(payload.dig('communication_thread', 'channels')).to include(
+        hash_including('channel_key' => "conversation:#{created_conversation.display_id}")
+      )
+    end
   end
 
   describe Captain::Tools::Copilot::ListChannelTemplatesService do

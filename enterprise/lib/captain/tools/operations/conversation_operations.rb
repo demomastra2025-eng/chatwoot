@@ -47,7 +47,11 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
   end
 
   def send_message_to_conversation(
-    conversation_id:,
+    conversation_id: nil,
+    communication_thread_id: nil,
+    channel_key: nil,
+    target_inbox_id: nil,
+    target_contact_inbox_id: nil,
     content: nil,
     content_kind: nil,
     template_params: nil,
@@ -56,6 +60,28 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     attachment_ids: [],
     artifact_ids: []
   )
+    if communication_thread_target?(
+      communication_thread_id: communication_thread_id,
+      channel_key: channel_key,
+      target_inbox_id: target_inbox_id,
+      target_contact_inbox_id: target_contact_inbox_id
+    )
+      return send_message_to_communication_thread(
+        conversation_id: conversation_id,
+        communication_thread_id: communication_thread_id,
+        channel_key: channel_key,
+        target_inbox_id: target_inbox_id,
+        target_contact_inbox_id: target_contact_inbox_id,
+        content: content,
+        content_kind: content_kind,
+        template_params: template_params,
+        private_note: private_note,
+        in_reply_to_message_id: in_reply_to_message_id,
+        attachment_ids: attachment_ids,
+        artifact_ids: artifact_ids
+      )
+    end
+
     target_conversation = find_permissible_conversation!(conversation_id)
     sanitized_content = content.to_s.strip
     selected_attachment_ids = materialized_attachment_ids(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
@@ -191,6 +217,64 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     attachment_resolver.resolve(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
   end
 
+  def communication_thread_target?(communication_thread_id:, channel_key:, target_inbox_id:, target_contact_inbox_id:)
+    communication_thread_id.present? || channel_key.present? || target_inbox_id.present? || target_contact_inbox_id.present?
+  end
+
+  def send_message_to_communication_thread(
+    conversation_id: nil,
+    communication_thread_id: nil,
+    channel_key: nil,
+    target_inbox_id: nil,
+    target_contact_inbox_id: nil,
+    content: nil,
+    content_kind: nil,
+    template_params: nil,
+    private_note: false,
+    in_reply_to_message_id: nil,
+    attachment_ids: [],
+    artifact_ids: []
+  )
+    communication_thread = find_permissible_communication_thread!(communication_thread_id)
+    sanitized_content = content.to_s.strip
+    selected_attachment_ids = materialized_attachment_ids(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
+    normalized_template_params = parsed_hash(template_params, field_name: 'template_params')
+    normalized_content_kind = normalized_content_kind(content_kind, template_params: normalized_template_params)
+    private_message = ActiveModel::Type::Boolean.new.cast(private_note)
+
+    validate_message_payload!(
+      content: sanitized_content,
+      content_kind: normalized_content_kind,
+      template_params: normalized_template_params,
+      attachments: selected_attachment_ids,
+      private_note: private_message
+    )
+
+    params = delivery_message_params(
+      content: sanitized_content.presence,
+      private_message: private_message,
+      attachments: selected_attachment_ids,
+      template_params: normalized_template_params,
+      content_kind: normalized_content_kind,
+      in_reply_to_message_id: in_reply_to_message_id
+    )
+    params[:conversation_id] = conversation_id if conversation_id.present?
+    params[:channel_key] = channel_key.to_s.strip if channel_key.present?
+    params[:target_inbox_id] = target_inbox_id if target_inbox_id.present?
+    params[:target_contact_inbox_id] = target_contact_inbox_id if target_contact_inbox_id.present?
+    params[:content_kind] = normalized_content_kind
+
+    with_current_account_context do
+      ::CommunicationThreads::MessageCreateService.new(
+        communication_thread: communication_thread,
+        current_user: actor,
+        params: ActionController::Parameters.new(params),
+        accessible_inboxes: accessible_inboxes_for_actor,
+        accessible_links: accessible_communication_thread_links(communication_thread)
+      ).perform
+    end
+  end
+
   def split_outgoing_attachments?(conversation:, content_kind:, private_message:, attachments:)
     !private_message &&
       content_kind == 'free_text' &&
@@ -281,6 +365,54 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
         'delivery_policy' => delivery_policy.as_json
       )
     )
+  end
+
+  def find_permissible_communication_thread!(communication_thread_id)
+    raise ArgumentError, 'Communication threads feature is disabled' unless account.feature_enabled?('communication_threads')
+
+    thread = if communication_thread_id.present?
+               CommunicationThread.find_by(account_id: account.id, display_id: communication_thread_id) ||
+                 CommunicationThread.find_by(account_id: account.id, id: communication_thread_id)
+             else
+               conversation&.communication_thread || conversation&.reload&.communication_thread
+             end
+    raise ActiveRecord::RecordNotFound, 'Communication thread not found' if thread.blank? || thread.account_id != account.id
+
+    return thread if thread.communication_thread_conversations.exists?(conversation_id: permissible_conversations.select(:id))
+
+    raise ActiveRecord::RecordNotFound, 'Communication thread not found'
+  end
+
+  def accessible_inboxes_for_actor
+    inboxes = account.inboxes.includes(:channel)
+    return inboxes if actor_account_user&.administrator?
+    return inboxes.none if actor.blank?
+
+    inboxes.where(id: actor.inboxes.where(account_id: account.id).select(:id))
+  end
+
+  def accessible_communication_thread_links(communication_thread)
+    communication_thread.communication_thread_conversations.where(conversation_id: permissible_conversations.select(:id))
+  end
+
+  def actor_account_user
+    return if actor.blank?
+
+    @actor_account_user ||= AccountUser.find_by(account_id: account.id, user_id: actor.id)
+  end
+
+  def with_current_account_context
+    previous_account = Current.account
+    previous_account_user = Current.account_user
+    previous_user = Current.user
+    Current.account = account
+    Current.account_user = actor_account_user
+    Current.user = actor
+    yield
+  ensure
+    Current.account = previous_account
+    Current.account_user = previous_account_user
+    Current.user = previous_user
   end
 
   def find_permissible_conversation!(conversation_id)

@@ -319,6 +319,12 @@
     "CANCEL_EDIT_MESSAGE": "Cancel",
     "UPDATE_MESSAGE": "Update",
     "FAIL_UPDATE_MESSAGE": "Couldn't update message. Try again",
+    "COMMUNICATION_THREAD": {
+      "ALL_CHANNELS": "All channels",
+      "REPLY_VIA": "Reply via",
+      "ACTIVE_CHANNEL": "Active channel: {channel}",
+      "REPLY_RESTRICTED_SUFFIX": "(reply restricted)"
+    },
     "SENT_BY": "Sent by:",
     "BOT": "Bot",
     "NATIVE_APP": "Native app",

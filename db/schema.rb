@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_02_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_05_080630) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -894,6 +894,46 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_02_120000) do
     t.boolean "sync_labels", default: true, null: false
     t.index ["instance_name"], name: "index_channel_whatsapp_web_on_instance_name", unique: true
     t.index ["webhook_identifier"], name: "index_channel_whatsapp_web_on_webhook_identifier", unique: true
+  end
+
+
+  create_table "communication_thread_conversations", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "communication_thread_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "contact_inbox_id"
+    t.boolean "primary", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "conversation_id"], name: "idx_ctc_account_conversation_unique", unique: true
+    t.index ["account_id"], name: "index_communication_thread_conversations_on_account_id"
+    t.index ["communication_thread_id", "inbox_id"], name: "idx_ctc_thread_inbox"
+    t.index ["communication_thread_id"], name: "idx_ctc_on_thread_id"
+    t.index ["contact_inbox_id"], name: "index_communication_thread_conversations_on_contact_inbox_id"
+    t.index ["conversation_id"], name: "index_communication_thread_conversations_on_conversation_id"
+    t.index ["inbox_id"], name: "index_communication_thread_conversations_on_inbox_id"
+  end
+
+  create_table "communication_threads", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "contact_id", null: false
+    t.bigint "display_id", null: false
+    t.integer "status", default: 0, null: false
+    t.integer "priority"
+    t.bigint "assignee_id"
+    t.bigint "team_id"
+    t.datetime "last_activity_at"
+    t.integer "unread_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
+    t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
+    t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"
+    t.index ["account_id"], name: "index_communication_threads_on_account_id"
+    t.index ["assignee_id"], name: "index_communication_threads_on_assignee_id"
+    t.index ["contact_id"], name: "index_communication_threads_on_contact_id"
+    t.index ["team_id"], name: "index_communication_threads_on_team_id"
   end
 
   create_table "companies", force: :cascade do |t|
@@ -2582,6 +2622,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_02_120000) do
   add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id", on_delete: :nullify
   add_foreign_key "captain_mcp_servers", "accounts"
   add_foreign_key "captain_skills", "accounts"
+  add_foreign_key "communication_thread_conversations", "accounts"
+  add_foreign_key "communication_thread_conversations", "communication_threads"
+  add_foreign_key "communication_thread_conversations", "contact_inboxes"
+  add_foreign_key "communication_thread_conversations", "conversations"
+  add_foreign_key "communication_thread_conversations", "inboxes"
+  add_foreign_key "communication_threads", "accounts"
+  add_foreign_key "communication_threads", "contacts"
+  add_foreign_key "communication_threads", "teams"
+  add_foreign_key "communication_threads", "users", column: "assignee_id"
   add_foreign_key "confirmation_requests", "accounts"
   add_foreign_key "confirmation_requests", "contacts"
   add_foreign_key "confirmation_requests", "conversations"

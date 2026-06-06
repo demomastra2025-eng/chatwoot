@@ -1,6 +1,8 @@
 class ActionCableListener < BaseListener
   include Events::Types
 
+  COMMUNICATION_THREAD_FEATURE = 'communication_threads'.freeze
+
   def notification_created(event)
     notification, account, unread_count, count = extract_notification_and_account(event)
     tokens = [event.data[:notification].user.pubsub_token]
@@ -41,17 +43,28 @@ class ActionCableListener < BaseListener
   def message_created(event)
     message, account = extract_message_and_account(event)
     conversation = message.conversation
-    tokens = user_tokens(account, conversation.inbox.members) + contact_tokens(conversation.contact_inbox, message)
+    dashboard_tokens = user_tokens(account, conversation.inbox.members)
+    customer_tokens = contact_tokens(conversation.contact_inbox, message)
 
-    broadcast(account, tokens, MESSAGE_CREATED, message.push_event_data)
+    broadcast(account, dashboard_tokens, MESSAGE_CREATED, message.push_event_data)
+    broadcast(account, customer_tokens, MESSAGE_CREATED, message.push_event_data(include_communication_thread: false))
+    broadcast_communication_thread_update(conversation, MESSAGE_CREATED, message: message)
   end
 
   def message_updated(event)
     message, account = extract_message_and_account(event)
     conversation = message.conversation
-    tokens = user_tokens(account, conversation.inbox.members) + contact_tokens(conversation.contact_inbox, message)
+    dashboard_tokens = user_tokens(account, conversation.inbox.members)
+    customer_tokens = contact_tokens(conversation.contact_inbox, message)
 
-    broadcast(account, tokens, MESSAGE_UPDATED, message.push_event_data.merge(previous_changes: event.data[:previous_changes]))
+    broadcast(account, dashboard_tokens, MESSAGE_UPDATED, message.push_event_data.merge(previous_changes: event.data[:previous_changes]))
+    broadcast(
+      account,
+      customer_tokens,
+      MESSAGE_UPDATED,
+      message.push_event_data(include_communication_thread: false).merge(previous_changes: event.data[:previous_changes])
+    )
+    broadcast_communication_thread_update(conversation, MESSAGE_UPDATED, message: message)
   end
 
   def first_reply_created(event)
@@ -60,6 +73,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members)
 
     broadcast(account, tokens, FIRST_REPLY_CREATED, message.push_event_data)
+    broadcast_communication_thread_update(conversation, FIRST_REPLY_CREATED, message: message)
   end
 
   def conversation_created(event)
@@ -74,6 +88,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members)
 
     broadcast(account, tokens, CONVERSATION_READ, conversation.push_event_data)
+    broadcast_communication_thread_update(conversation, CONVERSATION_READ)
   end
 
   def conversation_status_changed(event)
@@ -81,6 +96,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
 
     broadcast(account, tokens, CONVERSATION_STATUS_CHANGED, conversation.push_event_data)
+    broadcast_communication_thread_update(conversation, CONVERSATION_STATUS_CHANGED)
   end
 
   def conversation_updated(event)
@@ -88,6 +104,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
 
     broadcast(account, tokens, CONVERSATION_UPDATED, conversation.push_event_data)
+    broadcast_communication_thread_update(conversation, CONVERSATION_UPDATED)
   end
 
   def conversation_typing_on(event)
@@ -127,6 +144,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members)
 
     broadcast(account, tokens, ASSIGNEE_CHANGED, conversation.push_event_data)
+    broadcast_communication_thread_update(conversation, ASSIGNEE_CHANGED)
   end
 
   def team_changed(event)
@@ -134,6 +152,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members)
 
     broadcast(account, tokens, TEAM_CHANGED, conversation.push_event_data)
+    broadcast_communication_thread_update(conversation, TEAM_CHANGED)
   end
 
   def conversation_contact_changed(event)
@@ -197,6 +216,76 @@ class ActionCableListener < BaseListener
 
   def account_token(account)
     "account_#{account.id}"
+  end
+
+  def broadcast_communication_thread_update(conversation, source_event, message: nil)
+    account = conversation&.account
+    return unless account&.feature_enabled?(COMMUNICATION_THREAD_FEATURE)
+
+    communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
+    return if communication_thread.blank?
+
+    communication_thread.reload
+    links = communication_thread.communication_thread_conversations.includes(:conversation, inbox: [:members, :channel]).to_a
+    broadcast_communication_thread_dashboard_updates(account, communication_thread, links, conversation, source_event, message)
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
+    Rails.logger.warn("[CommunicationThreads] realtime refresh skipped conversation=#{conversation&.id}: #{e.class}: #{e.message}")
+  end
+
+  def broadcast_communication_thread_dashboard_updates(account, communication_thread, links, source_conversation, source_event, message)
+    communication_thread_dashboard_users(account, links).each do |user|
+      visible_links = communication_thread_visible_links_for(account, user, links)
+      next if visible_links.blank?
+      next unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
+
+      payload = communication_thread_realtime_payload(communication_thread, visible_links, source_conversation, source_event, message)
+      broadcast(account, [user.pubsub_token], COMMUNICATION_THREAD_UPDATED, payload)
+    end
+  end
+
+  def communication_thread_dashboard_users(account, links)
+    users = links.flat_map { |link| link.inbox.members.to_a } + account.administrators.to_a
+    users.index_by(&:id).values
+  end
+
+  def communication_thread_visible_links_for(account, user, links)
+    accessible_conversation_ids = Conversations::PermissionFilterService.new(
+      account.conversations.where(id: links.map(&:conversation_id)),
+      user,
+      account
+    ).perform.pluck(:id)
+
+    links.select { |link| accessible_conversation_ids.include?(link.conversation_id) }
+  end
+
+  def communication_thread_realtime_payload(communication_thread, links, source_conversation, source_event, message)
+    {
+      id: communication_thread.display_id,
+      communication_thread_id: communication_thread.display_id,
+      is_communication_thread: true,
+      source_event: source_event,
+      message_id: message&.id,
+      conversation_id: source_conversation.display_id,
+      conversation_ids: links.map { |link| link.conversation.display_id },
+      contact_id: communication_thread.contact_id,
+      inbox_id: source_conversation.inbox_id,
+      inbox_name: source_conversation.inbox&.name,
+      contact_inbox_id: source_conversation.contact_inbox_id,
+      channel: source_conversation.inbox&.channel_type,
+      medium: communication_thread_medium(source_conversation.inbox),
+      status: communication_thread.status,
+      priority: communication_thread.priority,
+      assignee_id: communication_thread.assignee_id,
+      team_id: communication_thread.team_id,
+      unread_count: communication_thread.unread_count,
+      last_activity_at: communication_thread.last_activity_at.to_i,
+      timestamp: communication_thread.last_activity_at.to_i,
+      updated_at: communication_thread.updated_at.to_f
+    }
+  end
+
+  def communication_thread_medium(inbox)
+    inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil
   end
 
   def typing_event_listener_tokens(account, conversation, user)

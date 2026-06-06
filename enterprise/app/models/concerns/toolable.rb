@@ -91,10 +91,12 @@ module Concerns::Toolable
     deal_context = state.key?(:prompt_context) ? prompt_context[:deal] : state[:deal]
     task_context = state.key?(:prompt_context) ? prompt_context[:task] : state[:task]
     appointment_context = state.key?(:prompt_context) ? prompt_context[:appointment] : state[:appointment]
+    communication_thread_context = state.key?(:prompt_context) ? prompt_context[:communication_thread] : state[:communication_thread]
 
     {}.tap do |headers|
       add_base_headers(headers, state)
       add_conversation_headers(headers, conversation_context) if conversation_context
+      add_communication_thread_headers(headers, communication_thread_context) if communication_thread_context
       add_contact_headers(headers, contact_context) if contact_context
       add_deal_headers(headers, deal_context) if deal_context
       add_task_headers(headers, task_context) if task_context
@@ -112,6 +114,19 @@ module Concerns::Toolable
   def add_conversation_headers(headers, conversation)
     headers['X-Chatwoot-Conversation-Id'] = conversation[:id].to_s if conversation[:id]
     headers['X-Chatwoot-Conversation-Display-Id'] = conversation[:display_id].to_s if conversation[:display_id]
+  end
+
+  def add_communication_thread_headers(headers, communication_thread)
+    headers['X-Chatwoot-Communication-Thread-Id'] = communication_thread[:id].to_s if communication_thread[:id]
+    if communication_thread[:display_id]
+      headers['X-Chatwoot-Communication-Thread-Display-Id'] = communication_thread[:display_id].to_s
+    end
+
+    conversation_ids = Array(communication_thread[:conversation_ids]).compact
+    headers['X-Chatwoot-Communication-Thread-Conversation-Ids'] = conversation_ids.join(',') if conversation_ids.present?
+
+    channel_key = communication_thread[:current_channel_key] || communication_thread.dig(:current_channel, :channel_key)
+    headers['X-Chatwoot-Communication-Thread-Channel-Key'] = channel_key.to_s if channel_key.present?
   end
 
   def add_contact_headers(headers, contact)

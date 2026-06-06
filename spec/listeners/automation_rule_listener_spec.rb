@@ -15,6 +15,16 @@ describe AutomationRuleListener do
     allow(action_service).to receive(:perform)
   end
 
+  describe 'communication thread realtime events' do
+    it 'keeps automation rules conversation-centric until explicit thread events are designed' do
+      expect(listener).not_to respond_to(:communication_thread_updated)
+      expect(AutomationRule::SUPPORTED_EVENT_NAMES).not_to include(
+        'communication_thread_updated',
+        'communication_thread_message_created'
+      )
+    end
+  end
+
   describe 'conversation_created' do
     let!(:automation_rule) { create(:automation_rule, event_name: 'conversation_created', account: account) }
     let(:event) do

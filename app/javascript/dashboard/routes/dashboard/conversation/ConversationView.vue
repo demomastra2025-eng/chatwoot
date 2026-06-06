@@ -52,6 +52,10 @@ export default {
       type: [String, Number],
       default: 0,
     },
+    communicationThreadMode: {
+      type: Boolean,
+      default: false,
+    },
   },
   setup() {
     const { uiSettings, updateUISettings } = useUISettings();
@@ -89,7 +93,7 @@ export default {
     },
 
     shouldShowSidebar() {
-      if (!this.currentChat.id) {
+      if (!this.currentChat.id || this.currentChat.is_communication_thread) {
         return false;
       }
 
@@ -155,7 +159,12 @@ export default {
       }
       const chat = this.findConversation();
       if (!chat) {
-        this.$store.dispatch('getConversation', this.conversationId);
+        this.$store.dispatch(
+          this.communicationThreadMode
+            ? 'getCommunicationThread'
+            : 'getConversation',
+          this.conversationId
+        );
       }
     },
     findConversation() {
@@ -206,6 +215,7 @@ export default {
       :team-id="teamId"
       :conversation-type="conversationType"
       :folders-id="foldersId"
+      :communication-thread-mode="communicationThreadMode"
       :is-on-expanded-layout="isOnExpandedLayout"
       @conversation-load="onConversationLoad"
     />
@@ -214,7 +224,9 @@ export default {
       :inbox-id="inboxId"
       :is-on-expanded-layout="isOnExpandedLayout"
     >
-      <SidepanelSwitch v-if="currentChat.id" />
+      <SidepanelSwitch
+        v-if="currentChat.id && !currentChat.is_communication_thread"
+      />
     </ConversationBox>
     <ConversationSidebar v-if="shouldShowSidebar" :current-chat="currentChat" />
     <CmdBarConversationSnooze />

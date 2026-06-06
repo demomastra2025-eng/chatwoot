@@ -1,0 +1,95 @@
+/* global axios */
+import ApiClient from '../ApiClient';
+import { buildCreatePayload } from './message';
+
+class CommunicationThreadApi extends ApiClient {
+  constructor() {
+    super('communication_threads', { accountScoped: true });
+  }
+
+  get({ inboxId, status, assigneeType, page, labels, teamId, sortBy } = {}) {
+    return axios.get(this.url, {
+      params: {
+        inbox_id: inboxId,
+        status,
+        assignee_type: assigneeType,
+        page,
+        labels,
+        team_id: teamId,
+        sort_by: sortBy,
+      },
+    });
+  }
+
+  channels(threadId) {
+    return axios.get(`${this.url}/${threadId}/channels`);
+  }
+
+  messages(threadId, params = {}) {
+    const normalizedParams = Object.fromEntries(
+      Object.entries(params).filter(
+        ([, value]) => value !== undefined && value !== null
+      )
+    );
+
+    if (
+      normalizedParams.after &&
+      Number(normalizedParams.after) === Number(normalizedParams.before)
+    ) {
+      delete normalizedParams.after;
+    }
+
+    return axios.get(`${this.url}/${threadId}/messages`, {
+      params: normalizedParams,
+    });
+  }
+
+  createMessage(
+    threadId,
+    {
+      conversation_id: conversationId,
+      message,
+      private: isPrivate,
+      contentAttributes,
+      echo_id: echoId,
+      files,
+      ccEmails = '',
+      bccEmails = '',
+      toEmails = '',
+      templateParams,
+      channelKey,
+      targetInboxId,
+      inboxId,
+      targetContactInboxId,
+      contactInboxId,
+      contentKind,
+    }
+  ) {
+    return axios({
+      method: 'post',
+      url: `${this.url}/${threadId}/messages`,
+      data: buildCreatePayload({
+        message,
+        isPrivate,
+        contentAttributes,
+        echoId,
+        files,
+        ccEmails,
+        bccEmails,
+        toEmails,
+        templateParams,
+        extraParams: {
+          conversation_id: conversationId,
+          channel_key: channelKey,
+          target_inbox_id: targetInboxId,
+          inbox_id: inboxId,
+          target_contact_inbox_id: targetContactInboxId,
+          contact_inbox_id: contactInboxId,
+          content_kind: contentKind,
+        },
+      }),
+    });
+  }
+}
+
+export default new CommunicationThreadApi();

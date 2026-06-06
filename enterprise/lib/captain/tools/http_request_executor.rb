@@ -236,6 +236,7 @@ class Captain::Tools::HttpRequestExecutor
       'p' => stringified_params,
       'contact' => prompt_context['contact'] || {},
       'conversation' => prompt_context['conversation'] || {},
+      'communication_thread' => prompt_context['communication_thread'] || {},
       'deal' => prompt_context['deal'] || {},
       'task' => prompt_context['task'] || {},
       'appointment' => prompt_context['appointment'] || {},
@@ -340,6 +341,7 @@ class Captain::Tools::HttpRequestExecutor
     prompt_context = state[:prompt_context] || {}
     fallback_prompt_context = {
       conversation: state[:conversation],
+      communication_thread: state[:communication_thread],
       contact: state[:contact],
       deal: state[:deal],
       task: state[:task],

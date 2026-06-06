@@ -5,6 +5,10 @@ import { MESSAGE_TYPES } from './constants.js';
 import { useCamelCase } from 'dashboard/composables/useTransformKeys';
 import { useMapGetter } from 'dashboard/composables/store.js';
 import MessageApi from 'dashboard/api/inbox/message.js';
+import {
+  getCommunicationChannelLabel,
+  isCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 
 /**
  * Props definition for the component
@@ -54,6 +58,38 @@ const allMessages = computed(() => {
 });
 
 const currentChat = useMapGetter('getSelectedChat');
+
+const communicationChannels = computed(() =>
+  Array.isArray(currentChat.value?.channels) ? currentChat.value.channels : []
+);
+
+const isCommunicationThreadContext = computed(() =>
+  isCommunicationThread(currentChat.value)
+);
+
+const channelForMessage = message => {
+  return communicationChannels.value.find(
+    channel =>
+      String(channel.conversation_id) === String(message?.conversationId)
+  );
+};
+
+const channelLabelForMessage = message => {
+  return getCommunicationChannelLabel(channelForMessage(message));
+};
+
+const shouldShowChannelDivider = (message, index, messages) => {
+  if (!isCommunicationThreadContext.value) return false;
+
+  const channelLabel = channelLabelForMessage(message);
+  if (!channelLabel) return false;
+
+  const previousMessage = messages[index - 1];
+  return (
+    !previousMessage ||
+    String(previousMessage.conversationId) !== String(message.conversationId)
+  );
+};
 
 // Cache for fetched reply messages to avoid duplicate API calls
 const fetchedReplyMessages = reactive(new Map());
@@ -123,6 +159,7 @@ const shouldGroupWithNext = (index, searchList) => {
   if (!hasSameSender || areBothTemplates) return false;
 
   if (currentMessageType !== nextMessageType) return false;
+  if (current.conversationId !== next.conversationId) return false;
 
   // Check if messages are in the same minute by rounding down to nearest minute
   return Math.floor(next.createdAt / 60) === Math.floor(current.createdAt / 60);
@@ -158,8 +195,10 @@ const getInReplyToMessage = parentMessage => {
   }
 
   // If still not found and we have conversation context, fetch it
-  if (!replyMessage && currentChat.value?.id) {
-    fetchReplyMessage(inReplyToMessageId, currentChat.value.id);
+  const replyConversationId =
+    parentMessage.conversationId || currentChat.value?.id;
+  if (!replyMessage && replyConversationId) {
+    fetchReplyMessage(inReplyToMessageId, replyConversationId);
     return null; // Let UI handle loading state
   }
 
@@ -175,6 +214,16 @@ const getInReplyToMessage = parentMessage => {
         v-if="firstUnreadId && message.id === firstUnreadId"
         name="unreadBadge"
       />
+      <li
+        v-if="shouldShowChannelDivider(message, index, allMessages)"
+        class="my-3 flex justify-center"
+      >
+        <span
+          class="inline-flex items-center rounded-full border border-n-weak bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-11"
+        >
+          {{ channelLabelForMessage(message) }}
+        </span>
+      </li>
       <Message
         v-bind="message"
         :is-email-inbox="isAnEmailChannel"

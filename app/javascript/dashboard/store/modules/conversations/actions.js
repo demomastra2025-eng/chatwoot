@@ -1,8 +1,14 @@
 import types from '../../mutation-types';
 import ConversationApi from '../../../api/inbox/conversation';
+import CommunicationThreadApi from '../../../api/inbox/communicationThread';
 import MessageApi from '../../../api/inbox/message';
 import { MESSAGE_STATUS, MESSAGE_TYPE } from 'shared/constants/messages';
 import { createPendingMessage } from 'dashboard/helper/commons';
+import {
+  buildCommunicationThreadConversation,
+  isCommunicationThread,
+  isMessageInCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 import {
   buildConversationList,
   isOnMentionsView,
@@ -19,6 +25,31 @@ import {
 } from 'dashboard/helper/voice';
 
 let sidebarUnreadCountsRequestId = 0;
+
+const communicationThreadIdsForMessage = (state, message) => {
+  return (state?.allConversations || [])
+    .filter(chat => isMessageInCommunicationThread(chat, message))
+    .map(chat => chat.id);
+};
+
+const addMessageToCommunicationThreads = (commit, state, message) => {
+  communicationThreadIdsForMessage(state, message).forEach(chatId => {
+    commit(types.ADD_MESSAGE_TO_CHAT, { chatId, message });
+  });
+};
+
+const getCommunicationThreadById = (state, conversationId) => {
+  return (state?.allConversations || []).find(
+    chat =>
+      String(chat.id) === String(conversationId) && isCommunicationThread(chat)
+  );
+};
+
+const commitCommunicationThreadUpdate = (commit, payload) => {
+  const communicationThread = buildCommunicationThreadConversation(payload);
+  commit(types.UPDATE_CONVERSATION, communicationThread);
+  return communicationThread;
+};
 
 export const hasMessageFailedWithExternalError = pendingMessage => {
   // This helper is used to check if the message has failed with an external error.
@@ -74,6 +105,46 @@ const actions = {
     }
   },
 
+  fetchCommunicationThreads: async ({ commit, state, dispatch }) => {
+    commit(types.SET_LIST_LOADING_STATUS);
+    try {
+      const params = state.conversationFilters;
+      const {
+        data: { data },
+      } = await CommunicationThreadApi.get(params);
+      buildConversationList(
+        { commit, dispatch },
+        params,
+        {
+          meta: data.meta || {},
+          payload: (data.payload || []).map(
+            buildCommunicationThreadConversation
+          ),
+        },
+        params.assigneeType
+      );
+    } catch (error) {
+      commit(types.CLEAR_LIST_LOADING_STATUS);
+    }
+  },
+
+  getCommunicationThread: async ({ commit }, communicationThreadId) => {
+    try {
+      const response = await CommunicationThreadApi.show(communicationThreadId);
+      const communicationThread = buildCommunicationThreadConversation(
+        response.data
+      );
+      commit(types.SET_ALL_CONVERSATION, [communicationThread]);
+      commit(
+        `contacts/${types.SET_CONTACT_ITEM}`,
+        communicationThread.meta.sender
+      );
+      return communicationThread;
+    } catch (error) {
+      return null;
+    }
+  },
+
   fetchSidebarUnreadCounts: async ({ commit }) => {
     sidebarUnreadCountsRequestId += 1;
     const requestId = sidebarUnreadCountsRequestId;
@@ -112,8 +183,38 @@ const actions = {
     commit(types.CLEAR_CURRENT_CHAT_WINDOW);
   },
 
-  fetchPreviousMessages: async ({ commit }, data) => {
+  fetchPreviousMessages: async ({ commit, state }, data) => {
     try {
+      const selectedChat = state.allConversations.find(
+        conversation => conversation.id === Number(data.conversationId)
+      );
+
+      if (selectedChat?.is_communication_thread) {
+        const {
+          data: { meta, payload },
+        } = await CommunicationThreadApi.messages(data.conversationId, {
+          after: data.after,
+          before: data.before,
+        });
+        selectedChat.channels = meta.channels || selectedChat.channels || [];
+        selectedChat.meta = {
+          ...(selectedChat.meta || {}),
+          sender: meta.contact || selectedChat.meta?.sender || {},
+        };
+        commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
+          id: data.conversationId,
+          data: meta,
+        });
+        commit(types.SET_PREVIOUS_CONVERSATIONS, {
+          id: data.conversationId,
+          data: payload,
+        });
+        if (!payload.length) {
+          commit(types.SET_ALL_MESSAGES_LOADED, data.conversationId);
+        }
+        return;
+      }
+
       const {
         data: { meta, payload },
       } = await MessageApi.getPreviousMessages(data);
@@ -167,17 +268,25 @@ const actions = {
     if (!selectedChat) return;
     try {
       const { messages } = selectedChat;
+      const syncMessagesApi = selectedChat.is_communication_thread
+        ? CommunicationThreadApi.messages(conversationId, {
+            after: lastMessageId,
+          })
+        : MessageApi.getPreviousMessages({
+            conversationId,
+            after: lastMessageId,
+          });
       // Fetch all the messages after the last message id
       const {
         data: { meta, payload },
-      } = await MessageApi.getPreviousMessages({
-        conversationId,
-        after: lastMessageId,
-      });
+      } = await syncMessagesApi;
       commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
         id: conversationId,
         data: meta,
       });
+      if (selectedChat.is_communication_thread) {
+        selectedChat.channels = meta.channels || selectedChat.channels || [];
+      }
       // Find the messages that are not already present in the store
       const missingMessages = payload.filter(
         message => !messages.find(item => item.id === message.id)
@@ -185,7 +294,7 @@ const actions = {
       selectedChat.messages.push(...missingMessages);
       // Sort the messages by created_at
       const sortedMessages = selectedChat.messages.sort((a, b) => {
-        return new Date(a.created_at) - new Date(b.created_at);
+        return Number(a.created_at || 0) - Number(b.created_at || 0);
       });
       commit(types.SET_MISSING_MESSAGES, {
         id: conversationId,
@@ -195,7 +304,15 @@ const actions = {
         conversationId,
         messageId: null,
       });
-      dispatch('markMessagesRead', { id: conversationId }, { root: true });
+      if (selectedChat.is_communication_thread) {
+        await Promise.all(
+          (selectedChat.conversation_ids || []).map(id =>
+            dispatch('markMessagesRead', { id }, { root: true })
+          )
+        );
+      } else {
+        dispatch('markMessagesRead', { id: conversationId }, { root: true });
+      }
     } catch (error) {
       // Handle error
     }
@@ -224,11 +341,16 @@ const actions = {
     commit(types.CLEAR_ALL_MESSAGES_LOADED, data.id);
     if (data.dataFetched === undefined) {
       try {
-        await dispatch('fetchPreviousMessages', {
+        const fetchParams = {
           after,
-          before: data.messages[0].id,
           conversationId: data.id,
-        });
+        };
+
+        if (after) {
+          fetchParams.before = data.messages?.[0]?.id;
+        }
+
+        await dispatch('fetchPreviousMessages', fetchParams);
         commit(types.SET_CHAT_DATA_FETCHED, data.id);
       } catch (error) {
         // Ignore error
@@ -236,8 +358,30 @@ const actions = {
     }
   },
 
-  assignAgent: async ({ dispatch }, { conversationId, agentId }) => {
+  assignAgent: async (
+    { commit, dispatch, state },
+    { conversationId, agentId }
+  ) => {
     try {
+      const communicationThread = getCommunicationThreadById(
+        state,
+        conversationId
+      );
+      if (communicationThread) {
+        const response = await CommunicationThreadApi.update(conversationId, {
+          assignee_id: agentId,
+        });
+        const updatedThread = commitCommunicationThreadUpdate(
+          commit,
+          response.data
+        );
+        dispatch('setCurrentChatAssignee', {
+          conversationId,
+          assignee: updatedThread.meta?.assignee || null,
+        });
+        return;
+      }
+
       const response = await ConversationApi.assignAgent({
         conversationId,
         agentId,
@@ -255,8 +399,30 @@ const actions = {
     commit(types.ASSIGN_AGENT, { conversationId, assignee });
   },
 
-  assignTeam: async ({ dispatch }, { conversationId, teamId }) => {
+  assignTeam: async (
+    { commit, dispatch, state },
+    { conversationId, teamId }
+  ) => {
     try {
+      const communicationThread = getCommunicationThreadById(
+        state,
+        conversationId
+      );
+      if (communicationThread) {
+        const response = await CommunicationThreadApi.update(conversationId, {
+          team_id: teamId,
+        });
+        const updatedThread = commitCommunicationThreadUpdate(
+          commit,
+          response.data
+        );
+        dispatch('setCurrentChatTeam', {
+          team: updatedThread.meta?.team || null,
+          conversationId,
+        });
+        return;
+      }
+
       const response = await ConversationApi.assignTeam({
         conversationId,
         teamId,
@@ -272,10 +438,31 @@ const actions = {
   },
 
   toggleStatus: async (
-    { commit },
+    { commit, state },
     { conversationId, status, snoozedUntil = null, customAttributes = null }
   ) => {
     try {
+      const communicationThread = getCommunicationThreadById(
+        state,
+        conversationId
+      );
+      if (communicationThread) {
+        const response = await CommunicationThreadApi.update(conversationId, {
+          status,
+          snoozed_until: snoozedUntil,
+        });
+        const updatedThread = commitCommunicationThreadUpdate(
+          commit,
+          response.data
+        );
+        commit(types.CHANGE_CONVERSATION_STATUS, {
+          conversationId,
+          status: updatedThread.status,
+          snoozedUntil,
+        });
+        return;
+      }
+
       // Update custom attributes first if provided
       if (customAttributes) {
         const response = await ConversationApi.updateCustomAttributes({
@@ -318,15 +505,36 @@ const actions = {
 
   sendMessageWithData: async ({ commit }, pendingMessage) => {
     const { conversation_id: conversationId, id } = pendingMessage;
+    const communicationThreadId =
+      pendingMessage.communication_thread_id ||
+      pendingMessage.communicationThreadId;
+    const addMessage = message => {
+      commit(types.ADD_MESSAGE, message);
+      if (communicationThreadId) {
+        commit(types.ADD_MESSAGE_TO_CHAT, {
+          chatId: communicationThreadId,
+          message,
+        });
+      }
+    };
+
     try {
-      commit(types.ADD_MESSAGE, {
+      addMessage({
         ...pendingMessage,
         status: MESSAGE_STATUS.PROGRESS,
       });
-      const response = hasMessageFailedWithExternalError(pendingMessage)
-        ? await MessageApi.retry(conversationId, id)
-        : await MessageApi.create(pendingMessage);
-      commit(types.ADD_MESSAGE, {
+      let response;
+      if (hasMessageFailedWithExternalError(pendingMessage)) {
+        response = await MessageApi.retry(conversationId, id);
+      } else if (communicationThreadId) {
+        response = await CommunicationThreadApi.createMessage(
+          communicationThreadId,
+          pendingMessage
+        );
+      } else {
+        response = await MessageApi.create(pendingMessage);
+      }
+      addMessage({
         ...response.data,
         status: MESSAGE_STATUS.SENT,
       });
@@ -338,7 +546,7 @@ const actions = {
       const errorMessage = error.response
         ? error.response.data.error
         : undefined;
-      commit(types.ADD_MESSAGE, {
+      addMessage({
         ...pendingMessage,
         meta: {
           error: errorMessage,
@@ -349,8 +557,9 @@ const actions = {
     }
   },
 
-  addMessage({ commit, rootGetters }, message) {
+  addMessage({ commit, rootGetters, state }, message) {
     commit(types.ADD_MESSAGE, message);
+    addMessageToCommunicationThreads(commit, state, message);
     if (message.message_type === MESSAGE_TYPE.INCOMING) {
       commit(types.SET_CONVERSATION_CAN_REPLY, {
         conversationId: message.conversation_id,
@@ -361,19 +570,21 @@ const actions = {
     handleVoiceCallCreated(message, rootGetters?.getCurrentUserID);
   },
 
-  updateMessage({ commit, rootGetters }, message) {
+  updateMessage({ commit, rootGetters, state }, message) {
     commit(types.ADD_MESSAGE, message);
+    addMessageToCommunicationThreads(commit, state, message);
     handleVoiceCallUpdated(commit, message, rootGetters?.getCurrentUserID);
   },
 
   updateMessageContent: async (
-    { commit },
+    { commit, state },
     { conversationId, messageId, content }
   ) => {
     const { data } = await MessageApi.update(conversationId, messageId, {
       content,
     });
     commit(types.ADD_MESSAGE, data);
+    addMessageToCommunicationThreads(commit, state, data);
     return data;
   },
 
@@ -447,6 +658,17 @@ const actions = {
     });
 
     dispatch('contacts/setContact', sender);
+  },
+
+  updateCommunicationThreadRealtime({ commit }, payload) {
+    const threadId = payload.communication_thread_id || payload.id;
+    commit(types.UPDATE_CONVERSATION, {
+      ...payload,
+      id: threadId,
+      display_id: threadId,
+      communication_thread_id: threadId,
+      is_communication_thread: true,
+    });
   },
 
   updateConversationLastActivity(
@@ -565,8 +787,30 @@ const actions = {
     commit(types.UPDATE_CHAT_LIST_FILTERS, data);
   },
 
-  assignPriority: async ({ dispatch }, { conversationId, priority }) => {
+  assignPriority: async (
+    { commit, dispatch, state },
+    { conversationId, priority }
+  ) => {
     try {
+      const communicationThread = getCommunicationThreadById(
+        state,
+        conversationId
+      );
+      if (communicationThread) {
+        const response = await CommunicationThreadApi.update(conversationId, {
+          priority,
+        });
+        const updatedThread = commitCommunicationThreadUpdate(
+          commit,
+          response.data
+        );
+        dispatch('setCurrentChatPriority', {
+          priority: updatedThread.priority,
+          conversationId,
+        });
+        return;
+      }
+
       await ConversationApi.togglePriority({
         conversationId,
         priority,

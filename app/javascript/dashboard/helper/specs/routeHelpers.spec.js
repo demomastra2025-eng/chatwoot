@@ -6,12 +6,33 @@ import {
   validateLoggedInRoutes,
   isAInboxViewRoute,
 } from '../routeHelpers';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
 describe('#routeIsAccessibleFor', () => {
   it('should return the correct access', () => {
     let route = { meta: { permissions: ['administrator'] } };
     expect(routeIsAccessibleFor(route, ['agent'])).toEqual(false);
     expect(routeIsAccessibleFor(route, ['administrator'])).toEqual(true);
+  });
+
+  it('should require enabled account feature flags when route declares one', () => {
+    const route = {
+      meta: {
+        permissions: ['agent'],
+        featureFlag: FEATURE_FLAGS.COMMUNICATION_THREADS,
+      },
+    };
+
+    expect(
+      routeIsAccessibleFor(route, ['agent'], {
+        features: { communication_threads: false },
+      })
+    ).toEqual(false);
+    expect(
+      routeIsAccessibleFor(route, ['agent'], {
+        features: { communication_threads: true },
+      })
+    ).toEqual(true);
   });
 });
 
@@ -182,6 +203,9 @@ describe('isAConversationRoute', () => {
     expect(isAConversationRoute('conversation_through_inbox')).toBe(true);
     expect(isAConversationRoute('conversations_through_label')).toBe(true);
     expect(isAConversationRoute('conversations_through_team')).toBe(true);
+    expect(isAConversationRoute('communication_thread_conversation')).toBe(
+      true
+    );
     expect(isAConversationRoute('dashboard')).toBe(false);
   });
 
@@ -194,6 +218,9 @@ describe('isAConversationRoute', () => {
     expect(isAConversationRoute('team_conversations', true)).toBe(true);
     expect(isAConversationRoute('folder_conversations', true)).toBe(true);
     expect(isAConversationRoute('conversation_participating', true)).toBe(true);
+    expect(isAConversationRoute('communication_threads_dashboard', true)).toBe(
+      true
+    );
   });
 
   it('returns false if base conversation route name is provided and includeBase is false', () => {
@@ -205,6 +232,9 @@ describe('isAConversationRoute', () => {
     expect(isAConversationRoute('team_conversations', false)).toBe(false);
     expect(isAConversationRoute('folder_conversations', false)).toBe(false);
     expect(isAConversationRoute('conversation_participating', false)).toBe(
+      false
+    );
+    expect(isAConversationRoute('communication_threads_dashboard', false)).toBe(
       false
     );
   });
@@ -224,6 +254,12 @@ describe('isAConversationRoute', () => {
     expect(isAConversationRoute('conversation_participating', true, true)).toBe(
       true
     );
+    expect(
+      isAConversationRoute('communication_threads_dashboard', true, true)
+    ).toBe(true);
+    expect(
+      isAConversationRoute('communication_thread_conversation', true, true)
+    ).toBe(true);
   });
 
   it('returns false if base conversation route name is not provided', () => {
@@ -255,6 +291,9 @@ describe('getConversationDashboardRoute', () => {
     expect(getConversationDashboardRoute('conversation_through_inbox')).toEqual(
       'inbox_dashboard'
     );
+    expect(
+      getConversationDashboardRoute('communication_thread_conversation')
+    ).toEqual('communication_threads_dashboard');
     expect(getConversationDashboardRoute('non_existent_route')).toBeNull();
   });
 });

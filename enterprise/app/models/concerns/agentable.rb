@@ -24,6 +24,7 @@ module Concerns::Agentable
       deal_data = explicit_prompt_context ? prompt_state[:deal].presence : state[:deal].presence
       task_data = explicit_prompt_context ? prompt_state[:task].presence : state[:task].presence
       appointment_data = explicit_prompt_context ? prompt_state[:appointment].presence : state[:appointment].presence
+      communication_thread_data = explicit_prompt_context ? prompt_state[:communication_thread].presence : state[:communication_thread].presence
       visible_fields =
         if explicit_prompt_context
           prompt_state[:visible_fields] || {}
@@ -45,6 +46,7 @@ module Concerns::Agentable
         deal: deal_data,
         task: task_data,
         appointment: appointment_data,
+        communication_thread: communication_thread_data,
         campaign: state[:campaign] || {},
         conversation_visible_fields: visible_fields[:conversation] || [],
         contact_visible_fields: visible_fields[:contact] || [],
@@ -104,6 +106,7 @@ module Concerns::Agentable
       deal: nil,
       task: nil,
       appointment: nil,
+      communication_thread: nil,
       campaign: {},
       runtime_clock: {},
       reply_window: {},

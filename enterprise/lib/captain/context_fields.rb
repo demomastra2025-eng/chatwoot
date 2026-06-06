@@ -30,6 +30,11 @@ class Captain::ContextFields
     prepaid_amount prepaid_payment_method settlement_amount settlement_payment_method
     custom_attributes
   ].freeze
+  COMMUNICATION_THREAD_CHANNEL_KEYS = %i[
+    conversation_id inbox_id inbox_name contact_inbox_id channel medium provider status
+    can_reply can_send_text requires_template reply_window_open reply_window_closes_at
+    reauthorization_required disabled disabled_reason primary channel_key
+  ].freeze
 
   CONTACT_FIELD_DEFINITIONS = [
     { key: 'id', title: 'Contact ID', description: 'contact.id' },
@@ -259,7 +264,7 @@ class Captain::ContextFields
         tasks.order(updated_at: :desc, id: :desc).first
     end
 
-    def runtime_state_for(account:, conversation:, channel_type: nil)
+    def runtime_state_for(account:, conversation:, channel_type: nil, assistant: nil, actor: nil, accessible_inboxes: nil)
       return {} if conversation.blank?
 
       runtime_state = {
@@ -267,6 +272,15 @@ class Captain::ContextFields
         contact: slice_record_attributes(conversation.contact, CONTACT_STATE_ATTRIBUTES),
         channel_type: channel_type
       }.compact
+
+      communication_thread_state = communication_thread_state_for(
+        account: account,
+        conversation: conversation,
+        assistant: assistant,
+        actor: actor,
+        accessible_inboxes: accessible_inboxes
+      )
+      runtime_state[:communication_thread] = communication_thread_state if communication_thread_state.present?
 
       deal_state = deal_state_for(account: account, conversation: conversation)
       runtime_state[:deal] = deal_state if deal_state.present?
@@ -277,6 +291,58 @@ class Captain::ContextFields
       appointment_state = appointment_state_for(account: account, conversation: conversation)
       runtime_state[:appointment] = appointment_state if appointment_state.present?
       runtime_state
+    end
+
+    def communication_thread_state_for(account:, conversation:, assistant: nil, actor: nil, accessible_inboxes: nil)
+      return if account.blank? || conversation.blank?
+      return unless account.feature_enabled?('communication_threads')
+
+      thread = conversation.communication_thread || conversation.reload.communication_thread
+      return if thread.blank? || thread.account_id != account.id
+
+      links = thread.communication_thread_conversations.includes(:conversation, :inbox, :contact_inbox).order(primary: :desc, created_at: :asc, id: :asc).to_a
+      visible_links = visible_communication_thread_links(
+        links,
+        account: account,
+        conversation: conversation,
+        assistant: assistant,
+        actor: actor,
+        accessible_inboxes: accessible_inboxes
+      )
+      return if visible_links.blank?
+
+      visible_inboxes = communication_thread_accessible_inboxes(
+        account: account,
+        assistant: assistant,
+        actor: actor,
+        accessible_inboxes: accessible_inboxes
+      )
+      channels = CommunicationThreads::ChannelCapabilitiesBuilder.new(
+        links: visible_links,
+        contact: thread.contact,
+        available_inboxes: visible_inboxes || []
+      ).perform.map do |channel|
+        channel.slice(*COMMUNICATION_THREAD_CHANNEL_KEYS)
+      end
+      current_channel = channels.find { |channel| channel[:conversation_id] == conversation.display_id }
+
+      {
+        id: thread.id,
+        display_id: thread.display_id,
+        contact_id: thread.contact_id,
+        status: thread.status,
+        priority: thread.priority,
+        unread_count: thread.unread_count,
+        assignee_id: thread.assignee_id,
+        team_id: thread.team_id,
+        last_activity_at: thread.last_activity_at&.iso8601,
+        conversation_ids: visible_links.map { |link| link.conversation.display_id },
+        primary_conversation_id: visible_links.find(&:primary?)&.conversation&.display_id,
+        current_conversation_id: conversation.display_id,
+        current_channel_key: current_channel&.dig(:channel_key),
+        current_channel: current_channel,
+        channels: channels
+      }.compact
     end
 
     def allowed_definitions_for(assistant)
@@ -338,6 +404,7 @@ class Captain::ContextFields
       end
 
       prompt_state[:visible_fields] = visible_fields if visible_fields.present?
+      prompt_state[:communication_thread] = runtime_state[:communication_thread] if runtime_state[:communication_thread].present?
       custom_attribute_label_maps.each do |scope, labels|
         next if labels.blank?
 
@@ -413,6 +480,46 @@ class Captain::ContextFields
     end
 
     private
+
+    def visible_communication_thread_links(links, account:, conversation:, assistant:, actor:, accessible_inboxes:)
+      inboxes = communication_thread_accessible_inboxes(
+        account: account,
+        assistant: assistant,
+        actor: actor,
+        accessible_inboxes: accessible_inboxes
+      )
+
+      if inboxes.present?
+        visible_inbox_ids = inboxes.map(&:id)
+        return links.select { |link| visible_inbox_ids.include?(link.inbox_id) }
+      end
+
+      return [] if communication_thread_access_scope_present?(assistant: assistant, actor: actor, accessible_inboxes: accessible_inboxes)
+
+      links.select { |link| link.conversation_id == conversation.id }
+    end
+
+    def communication_thread_accessible_inboxes(account:, assistant:, actor:, accessible_inboxes:)
+      return Array(accessible_inboxes) if accessible_inboxes
+
+      if assistant.present?
+        return assistant.inboxes.where(account_id: account.id).includes(:channel).to_a
+      end
+
+      if actor.present? && actor.respond_to?(:id)
+        account_user = AccountUser.find_by(account_id: account.id, user_id: actor.id)
+        return account.inboxes.includes(:channel).to_a if account_user&.administrator?
+        return actor.inboxes.where(account_id: account.id).includes(:channel).to_a if actor.respond_to?(:inboxes)
+
+        return []
+      end
+
+      nil
+    end
+
+    def communication_thread_access_scope_present?(actor:, accessible_inboxes:, **)
+      actor.present? || !accessible_inboxes.nil?
+    end
 
     def sanitize_field_ids(field_ids, definitions)
       available_field_ids = definitions.map { |field| field[:id] }

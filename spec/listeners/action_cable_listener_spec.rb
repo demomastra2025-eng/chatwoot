@@ -26,11 +26,14 @@ describe ActionCableListener do
       expect(conversation.inbox.reload.inbox_members.count).to eq(1)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(
-          agent.pubsub_token, admin.pubsub_token, conversation.contact_inbox.pubsub_token
-        ),
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
+      )
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        a_collection_containing_exactly(conversation.contact_inbox.pubsub_token),
+        'message.created',
+        message.push_event_data(include_communication_thread: false).merge(account_id: account.id)
       )
       listener.message_created(event)
     end
@@ -44,13 +47,91 @@ describe ActionCableListener do
       verified_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: inbox, hmac_verified: true)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(
-          agent.pubsub_token, admin.pubsub_token, conversation.contact_inbox.pubsub_token, verified_contact_inbox.pubsub_token
-        ),
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
       )
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        a_collection_containing_exactly(conversation.contact_inbox.pubsub_token, verified_contact_inbox.pubsub_token),
+        'message.created',
+        message.push_event_data(include_communication_thread: false).merge(account_id: account.id)
+      )
       listener.message_created(event)
+    end
+
+    it 'also broadcasts a dashboard-only communication thread refresh when the feature is enabled' do
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.refresh_communication_thread!
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        'message.created',
+        message.push_event_data.merge(account_id: account.id)
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(conversation.contact_inbox.pubsub_token),
+        'message.created',
+        message.push_event_data(include_communication_thread: false).merge(account_id: account.id)
+      )
+      expected_payload = hash_including(
+        account_id: account.id,
+        id: communication_thread.display_id,
+        communication_thread_id: communication_thread.display_id,
+        is_communication_thread: true,
+        source_event: 'message.created',
+        message_id: message.id,
+        conversation_id: conversation.display_id,
+        conversation_ids: [conversation.display_id],
+        contact_id: conversation.contact_id,
+        inbox_id: inbox.id,
+        channel: inbox.channel_type,
+        status: communication_thread.reload.status,
+        unread_count: communication_thread.unread_count
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        expected_payload
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [admin.pubsub_token],
+        'communication_thread.updated',
+        expected_payload
+      )
+    end
+
+    it 'filters communication thread realtime payloads per recipient conversation permission scope' do
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.refresh_communication_thread!
+      contact = conversation.contact
+      second_inbox = create(:inbox, account: account)
+      second_agent = create(:user, account: account, role: :agent)
+      second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
+      second_conversation = create(:conversation, account: account, contact: contact, inbox: second_inbox, contact_inbox: second_contact_inbox)
+      create(:inbox_member, user: second_agent, inbox: second_inbox)
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(conversation_ids: [conversation.display_id])
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [admin.pubsub_token],
+        'communication_thread.updated',
+        hash_including(conversation_ids: contain_exactly(conversation.display_id, second_conversation.display_id))
+      )
+      expect(ActionCableBroadcastJob).not_to have_received(:perform_later).with(
+        [second_agent.pubsub_token],
+        'communication_thread.updated',
+        anything
+      )
+      expect(communication_thread.communication_thread_conversations.count).to eq(2)
     end
   end
 

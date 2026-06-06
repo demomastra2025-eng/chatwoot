@@ -51,6 +51,7 @@ export const FEATURE_FLAGS = {
   SCHEDULING_FINANCE: 'scheduling_finance',
   SMM: 'content',
   WHATSAPP_CALL: 'whatsapp_call',
+  COMMUNICATION_THREADS: 'communication_threads',
 };
 
 export const PREMIUM_FEATURES = [

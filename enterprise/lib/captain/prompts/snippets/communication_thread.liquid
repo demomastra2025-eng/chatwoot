@@ -1,0 +1,22 @@
+# Unified Communication Thread Context
+- Communication Thread ID: {{ communication_thread.display_id }}
+{% if communication_thread.current_conversation_id -%}
+- Current Conversation ID: {{ communication_thread.current_conversation_id }}
+{% endif -%}
+{% if communication_thread.conversation_ids and communication_thread.conversation_ids.size > 0 -%}
+- Linked Conversation IDs: {{ communication_thread.conversation_ids | join: ", " }}
+{% endif -%}
+{% if communication_thread.current_channel -%}
+- Current Reply Channel: {{ communication_thread.current_channel.inbox_name }} ({{ communication_thread.current_channel.channel }})
+- Current Channel Key: {{ communication_thread.current_channel.channel_key }}
+- Current Channel Can Send Text: {{ communication_thread.current_channel.can_send_text }}
+{% if communication_thread.current_channel.disabled_reason -%}
+- Current Channel Disabled Reason: {{ communication_thread.current_channel.disabled_reason }}
+{% endif -%}
+{% endif -%}
+{% if communication_thread.channels and communication_thread.channels.size > 0 -%}
+- Available Channels:
+{% for channel in communication_thread.channels -%}
+  - {{ channel.channel_key }}: {{ channel.inbox_name }} / {{ channel.channel }}{% if channel.conversation_id %} / conversation {{ channel.conversation_id }}{% endif %}; can_send_text={{ channel.can_send_text }}; requires_template={{ channel.requires_template }}{% if channel.disabled_reason %}; disabled_reason={{ channel.disabled_reason }}{% endif %}
+{% endfor -%}
+{% endif -%}

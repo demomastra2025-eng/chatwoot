@@ -113,13 +113,22 @@ RSpec.describe Message do
   describe '#push_event_data' do
     subject(:push_event_data) { message.push_event_data }
 
-    let(:message) { create(:message, echo_id: 'random-echo_id') }
+    let(:account) do
+      create(:account).tap { |record| record.enable_features!('communication_threads') }
+    end
+    let(:conversation) { create(:conversation, account: account) }
+    let(:message) do
+      create(:message, account: account, conversation: conversation, inbox: conversation.inbox, echo_id: 'random-echo_id')
+    end
 
     let(:expected_data) do
       {
 
         account_id: message.account_id,
         additional_attributes: message.additional_attributes,
+        channel: message.inbox.channel_type,
+        communication_thread_id: message.conversation.communication_thread.display_id,
+        contact_inbox_id: message.conversation.contact_inbox_id,
         content_attributes: message.content_attributes,
         content_type: message.content_type,
         content: message.content,
@@ -128,6 +137,8 @@ RSpec.describe Message do
         external_source_ids: message.external_source_ids,
         id: message.id,
         inbox_id: message.inbox_id,
+        inbox_name: message.inbox.name,
+        medium: message.inbox.channel.respond_to?(:medium) ? message.inbox.channel.medium : nil,
         message_type: message.message_type_before_type_cast,
         private: message.private,
         processed_message_content: message.processed_message_content,
@@ -154,6 +165,28 @@ RSpec.describe Message do
 
     it 'returns push event payload' do
       expect(push_event_data).to eq(expected_data)
+    end
+
+    it 'can omit communication thread metadata for customer-facing broadcasts' do
+      expect(message.push_event_data(include_communication_thread: false)).not_to include(
+        :communication_thread_id,
+        :inbox_name,
+        :channel,
+        :medium,
+        :contact_inbox_id
+      )
+    end
+
+    it 'omits communication thread metadata when the feature is disabled' do
+      disabled_message = create(:message, echo_id: 'random-echo_id')
+
+      expect(disabled_message.push_event_data).not_to include(
+        :communication_thread_id,
+        :inbox_name,
+        :channel,
+        :medium,
+        :contact_inbox_id
+      )
     end
   end
 

@@ -797,6 +797,11 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def add_related_record_state(state)
+    state[:communication_thread] = Captain::ContextFields.communication_thread_state_for(
+      account: @assistant.account,
+      conversation: @conversation,
+      assistant: @assistant
+    )
     state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation)
     state[:task] = Captain::ContextFields.task_state_for(account: @assistant.account, conversation: @conversation)
     state[:appointment] = Captain::ContextFields.appointment_state_for(account: @assistant.account, conversation: @conversation)

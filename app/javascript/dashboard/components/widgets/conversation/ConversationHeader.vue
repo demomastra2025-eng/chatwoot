@@ -13,6 +13,10 @@ import { conversationListPageURL } from 'dashboard/helper/URLHelper';
 import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { useI18n } from 'vue-i18n';
+import {
+  getCommunicationChannelLabel,
+  isCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 
 const props = defineProps({
   chat: {
@@ -35,7 +39,26 @@ const { isAWebWidgetInbox } = useInbox();
 const currentChat = computed(() => store.getters.getSelectedChat);
 const accountId = computed(() => store.getters.getCurrentAccountId);
 
-const chatMetadata = computed(() => props.chat.meta);
+const chatMetadata = computed(() => props.chat.meta || {});
+const isCommunicationThreadConversation = computed(() =>
+  isCommunicationThread(props.chat)
+);
+const communicationChannels = computed(() =>
+  Array.isArray(props.chat?.channels) ? props.chat.channels : []
+);
+const visibleCommunicationChannels = computed(() =>
+  communicationChannels.value.slice(0, 3)
+);
+const hiddenCommunicationChannelCount = computed(() =>
+  Math.max(
+    communicationChannels.value.length -
+      visibleCommunicationChannels.value.length,
+    0
+  )
+);
+
+const communicationChannelLabel = channel =>
+  getCommunicationChannelLabel(channel);
 
 const backButtonUrl = computed(() => {
   const {
@@ -56,6 +79,7 @@ const backButtonUrl = computed(() => {
     conversationType: conversationTypeMap[name],
     customViewId,
     status: route.query.status,
+    communicationThread: name === 'communication_thread_conversation',
   });
 });
 
@@ -66,9 +90,25 @@ const isHMACVerified = computed(() => {
   return chatMetadata.value.hmac_verified;
 });
 
-const currentContact = computed(() =>
-  store.getters['contacts/getContact'](props.chat.meta.sender.id)
-);
+const currentContact = computed(() => {
+  const sender = props.chat.meta?.sender || {};
+  return (
+    (sender.id ? store.getters['contacts/getContact'](sender.id) : null) ||
+    sender ||
+    {}
+  );
+});
+
+const contactDisplayName = computed(() => {
+  const contact = currentContact.value || props.chat.meta?.sender || {};
+  return (
+    contact.name ||
+    contact.email ||
+    contact.phone_number ||
+    contact.identifier ||
+    t('CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER')
+  );
+});
 
 const isSnoozed = computed(
   () => currentChat.value.status === wootConstants.STATUS_TYPE.SNOOZED
@@ -84,7 +124,7 @@ const snoozedDisplayText = computed(() => {
 
 const inbox = computed(() => {
   const { inbox_id: inboxId } = props.chat;
-  return store.getters['inboxes/getInbox'](inboxId);
+  return inboxId ? store.getters['inboxes/getInbox'](inboxId) : {};
 });
 
 const hasMultipleInboxes = computed(
@@ -140,7 +180,7 @@ const statusMeta = computed(() => {
         class="ltr:mr-2 rtl:ml-2"
       />
       <Avatar
-        :name="currentContact.name"
+        :name="contactDisplayName"
         :src="currentContact.thumbnail"
         :size="32"
         :status="currentContact.availability_status"
@@ -154,7 +194,7 @@ const statusMeta = computed(() => {
           <span
             class="text-sm font-medium truncate leading-tight text-n-slate-12"
           >
-            {{ currentContact.name }}
+            {{ contactDisplayName }}
           </span>
           <fluent-icon
             v-if="!isHMACVerified"
@@ -168,7 +208,31 @@ const statusMeta = computed(() => {
         <div
           class="flex items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
         >
-          <InboxName v-if="hasMultipleInboxes" :inbox="inbox" class="!mx-0" />
+          <template v-if="isCommunicationThreadConversation">
+            <span
+              class="inline-flex items-center px-2 py-0.5 rounded-full border border-n-weak bg-n-alpha-2 font-medium text-n-slate-11 whitespace-nowrap"
+            >
+              {{ $t('CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS') }}
+            </span>
+            <span
+              v-for="channel in visibleCommunicationChannels"
+              :key="`${channel.inbox_id}-${channel.conversation_id}`"
+              class="inline-flex items-center px-2 py-0.5 rounded-full bg-n-alpha-1 text-n-slate-10 whitespace-nowrap"
+            >
+              {{ communicationChannelLabel(channel) }}
+            </span>
+            <span
+              v-if="hiddenCommunicationChannelCount"
+              class="inline-flex items-center px-2 py-0.5 rounded-full bg-n-alpha-1 text-n-slate-10 whitespace-nowrap"
+            >
+              {{ `+${hiddenCommunicationChannelCount}` }}
+            </span>
+          </template>
+          <InboxName
+            v-else-if="hasMultipleInboxes"
+            :inbox="inbox"
+            class="!mx-0"
+          />
           <span
             class="inline-flex items-center px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
             :class="statusMeta.className"
@@ -191,7 +255,10 @@ const statusMeta = computed(() => {
         :parent-width="width"
         class="hidden md:flex"
       />
-      <MoreActions :conversation-id="currentChat.id" />
+      <MoreActions
+        v-if="!isCommunicationThreadConversation"
+        :conversation-id="currentChat.id"
+      />
     </div>
   </div>
 </template>
