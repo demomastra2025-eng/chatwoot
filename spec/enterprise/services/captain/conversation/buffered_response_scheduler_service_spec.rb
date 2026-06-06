@@ -17,12 +17,12 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
   let(:state_key) { format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id) }
 
   before do
-    allow(Captain::Conversation::BufferedResponseFlushJob).to receive(:set) do |wait:|
+    allow(Captain::Conversation::ResponseBuilderJob).to receive(:set) do |wait:|
       scheduled_waits << wait
       configured_job
     end
     allow(configured_job).to receive(:perform_later) do |*args, **kwargs|
-      scheduled_payloads << (kwargs.empty? ? args.first : kwargs)
+      scheduled_payloads << { args: args, kwargs: kwargs }
     end
   end
 
@@ -43,9 +43,9 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
     expect(second_state['last_message_id']).to eq(second_message.id)
     expect(second_state['assistant_id']).to eq(assistant.id)
     expect(second_state['token']).not_to eq(first_state['token'])
-    expect(scheduled_payloads.map { |payload| payload[:conversation_id] }).to eq([conversation.id, conversation.id])
-    expect(scheduled_payloads.map { |payload| payload[:assistant_id] }).to eq([assistant.id, assistant.id])
-    expect(scheduled_payloads.map { |payload| payload[:token] }).to eq([first_state['token'], second_state['token']])
+    expect(scheduled_payloads.map { |payload| payload[:args] }).to eq([[conversation, assistant], [conversation, assistant]])
+    expect(scheduled_payloads.map { |payload| payload.dig(:kwargs, :buffer_token) }).to eq([first_state['token'], second_state['token']])
+    expect(scheduled_payloads.map { |payload| payload.dig(:kwargs, :expected_last_message_id) }).to eq([first_message.id, second_message.id])
   end
 
   it 'uses the longer wait when attachment processing needs more time than the collapse window' do

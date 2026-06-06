@@ -13,9 +13,20 @@ class Captain::Conversation::BufferedResponseSchedulerService
 
     Redis::Alfred.set(state_key, state_payload(token).to_json, ex: state_ttl_seconds)
 
-    Captain::Conversation::BufferedResponseFlushJob
+    Rails.logger.info(
+      '[CAPTAIN][BufferedResponse] Scheduled response builder ' \
+      "conversation_id=#{@conversation.id} assistant_id=#{@assistant.id} " \
+      "message_id=#{@message.id} wait_seconds=#{effective_wait_seconds}"
+    )
+
+    Captain::Conversation::ResponseBuilderJob
       .set(wait: effective_wait_seconds.seconds)
-      .perform_later(conversation_id: @conversation.id, assistant_id: @assistant.id, token: token)
+      .perform_later(
+        @conversation,
+        @assistant,
+        buffer_token: token,
+        expected_last_message_id: @message.id
+      )
   end
 
   private
