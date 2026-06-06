@@ -297,6 +297,33 @@ RSpec.describe Llm::ChatClient do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
+    it 'does not fail a successful chat response when success observability overflows the stack' do
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+      response = double('message', content: 'Hello back', input_tokens: 5, output_tokens: 7, tool_call?: false)
+      allow(chat).to receive(:model).and_return(chat_model)
+      allow(chat).to receive(:ask).with('Hello').and_return(response)
+      allow(Llm::ObservabilityPayload).to receive(:attach_chat_response!).and_raise(SystemStackError.new('stack level too deep'))
+
+      result = described_class.ask(
+        chat,
+        'Hello',
+        observability: { feature: 'captain_agent', account_id: 1 }
+      )
+
+      expect(result).to eq(response)
+      expect(events.last.payload).to include(
+        'status' => 'success',
+        'error' => false,
+        'observability_error_class' => 'SystemStackError',
+        'observability_error_phase' => 'chat_response'
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
     it 'publishes OpenRouter routing metadata stored on stateful chats' do
       events = []
       subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|

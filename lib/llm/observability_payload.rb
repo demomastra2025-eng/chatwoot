@@ -13,6 +13,13 @@ class Llm::ObservabilityPayload
     openrouter_response_cache_clear openrouter_response_cache_reason
   ].freeze
 
+  MAX_GENERATION_ID_SEARCH_DEPTH = 8
+  MAX_GENERATION_ID_SEARCH_NODES = 100
+  OPENROUTER_GENERATION_ID_PATTERN = /\Agen[-_][A-Za-z0-9._:\-]+\z/
+  OPENROUTER_GENERATION_ID_KEYS = %w[
+    openrouter_generation_id generation_id x-generation-id X-Generation-Id id
+  ].freeze
+
   class << self
     def normalize(payload = nil, model: nil, feature: nil, runtime_mode: nil)
       source = payload.to_h.with_indifferent_access
@@ -217,32 +224,132 @@ class Llm::ObservabilityPayload
       %i[openrouter_generation_id generation_id id].each do |method_name|
         next unless response.respond_to?(method_name)
 
-        value = response.public_send(method_name)
+        value = normalize_generation_id(response.public_send(method_name))
         return value if value.present?
       end
+      nil
+    rescue StandardError, SystemStackError
       nil
     end
 
     def response_generation_id_from_metadata(response)
-      %i[metadata raw to_h].each do |method_name|
+      %i[headers response_headers metadata raw to_h].each do |method_name|
         next unless response.respond_to?(method_name)
 
         value = nested_generation_id(response.public_send(method_name))
         return value if value.present?
       end
       nil
-    rescue StandardError
+    rescue StandardError, SystemStackError
       nil
     end
 
     def nested_generation_id(value)
-      return unless value.respond_to?(:to_h)
+      queue = [[value, 0]]
+      seen = {}
+      visited_nodes = 0
 
-      data = value.to_h.with_indifferent_access
-      data[:openrouter_generation_id].presence ||
-        data[:generation_id].presence ||
-        data[:id].presence ||
-        nested_generation_id(data[:data])
+      until queue.empty? || visited_nodes >= MAX_GENERATION_ID_SEARCH_NODES
+        current, depth = queue.shift
+        next if current.nil?
+
+        object_id = generation_search_object_id(current)
+        if object_id
+          next if seen[object_id]
+
+          seen[object_id] = true
+        end
+
+        container = generation_search_container(current)
+        next unless container
+
+        visited_nodes += 1
+
+        case container
+        when Hash
+          generation_id = generation_id_from_hash(container)
+          return generation_id if generation_id.present?
+
+          next if depth >= MAX_GENERATION_ID_SEARCH_DEPTH
+
+          container.each_value do |child|
+            queue << [child, depth + 1] if generation_search_traversable?(child)
+          end
+        when Array
+          next if depth >= MAX_GENERATION_ID_SEARCH_DEPTH
+
+          container.each do |child|
+            queue << [child, depth + 1] if generation_search_traversable?(child)
+          end
+        end
+      end
+
+      nil
+    end
+
+    def generation_search_object_id(value)
+      return unless generation_search_traversable?(value)
+
+      value.object_id
+    end
+
+    def generation_search_traversable?(value)
+      value.is_a?(Hash) || value.is_a?(Array) || value.respond_to?(:to_h)
+    end
+
+    def generation_search_container(value)
+      case value
+      when Hash, Array
+        return value
+      else
+        return unless value.respond_to?(:to_h)
+
+        converted = value.to_h
+        return converted if converted.is_a?(Hash) || converted.is_a?(Array)
+      end
+
+      nil
+    rescue StandardError, SystemStackError
+      nil
+    end
+
+    def generation_id_from_hash(data)
+      OPENROUTER_GENERATION_ID_KEYS.each do |key|
+        generation_id = normalize_generation_id(hash_value(data, key))
+        return generation_id if generation_id.present?
+      end
+
+      nil
+    end
+
+    def hash_value(data, key)
+      return unless data.respond_to?(:key?)
+
+      string_key = key.to_s
+      symbol_key = string_key.to_sym
+      underscored_symbol_key = string_key.tr('-', '_').to_sym
+
+      return data[key] if data.key?(key)
+      return data[string_key] if data.key?(string_key)
+      return data[symbol_key] if data.key?(symbol_key)
+      return data[underscored_symbol_key] if data.key?(underscored_symbol_key)
+
+      data.each_pair do |candidate_key, candidate_value|
+        return candidate_value if candidate_key.to_s.casecmp(string_key).zero?
+      end
+
+      nil
+    rescue StandardError
+      nil
+    end
+
+    def normalize_generation_id(value)
+      return if value.blank?
+
+      generation_id = value.to_s.strip
+      return if generation_id.blank?
+
+      generation_id if generation_id.match?(OPENROUTER_GENERATION_ID_PATTERN)
     end
 
     def compact_sum(*values)

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Llm::ChatRequestRunner
+  OBSERVABILITY_NON_CRITICAL_ERRORS = [StandardError, SystemStackError].freeze
+
   attr_reader :context, :model, :messages, :schema, :tools, :params, :headers, :chat, :account, :feature, :temperature, :on_end_message,
               :on_tool_call, :on_tool_result, :content_builder, :observability
 
@@ -249,14 +251,49 @@ class Llm::ChatRequestRunner
     payload = observability_payload(chat)
     return yield if payload.blank?
 
+    response = nil
+
     Llm::EventBus.publish('chat.complete', payload) do |event_payload|
       response = yield
-      Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
+      attach_chat_response_best_effort!(event_payload, response)
       response
     rescue StandardError => e
       Llm::ObservabilityPayload.attach_error!(event_payload, e)
       raise
     end
+  rescue *OBSERVABILITY_NON_CRITICAL_ERRORS => e
+    raise if response.nil?
+
+    log_observability_failure(e, phase: 'event_bus')
+    response
+  end
+
+  def attach_chat_response_best_effort!(event_payload, response)
+    Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
+  rescue *OBSERVABILITY_NON_CRITICAL_ERRORS => e
+    event_payload['status'] = 'success'
+    event_payload['error'] = false
+    event_payload['observability_error_class'] = e.class.name
+    event_payload['observability_error_message'] = sanitized_observability_error_message(e)
+    event_payload['observability_error_phase'] = 'chat_response'
+    event_payload.compact!
+    log_observability_failure(e, phase: 'chat_response')
+    event_payload
+  end
+
+  def log_observability_failure(error, phase:)
+    Rails.logger.warn(
+      '[Llm::ChatRequestRunner] suppressed non-critical observability failure ' \
+      "phase=#{phase} class=#{error.class.name} message=#{sanitized_observability_error_message(error)}"
+    )
+  rescue StandardError
+    nil
+  end
+
+  def sanitized_observability_error_message(error)
+    Llm::ObservabilityPayload.sanitize_error_message(error)
+  rescue StandardError
+    error.message.to_s
   end
 
   def observability_payload(chat)

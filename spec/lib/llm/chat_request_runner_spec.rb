@@ -280,6 +280,47 @@ RSpec.describe Llm::ChatRequestRunner do
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
+  it 'does not fail a successful observed runner response when success observability overflows the stack' do
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+    observed_response = double(
+      'message',
+      content: 'Done',
+      input_tokens: 3,
+      output_tokens: 4,
+      tool_call?: false
+    )
+
+    allow(Llm::ObservabilityPayload).to receive(:attach_chat_response!).and_raise(SystemStackError.new('stack level too deep'))
+    expect(chat).to receive(:ask).with('Hello').and_return(observed_response)
+
+    result = described_class.new(
+      context: context,
+      model: 'gpt-4.1-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      observability: {
+        feature: 'assistant',
+        account_id: 1,
+        conversation_record_id: 2,
+        conversation_display_id: 22
+      }
+    ).call
+
+    expect(result).to eq(observed_response)
+    expect(events.size).to eq(1)
+    expect(events.first.payload).to include(
+      'feature' => 'assistant',
+      'status' => 'success',
+      'error' => false,
+      'observability_error_class' => 'SystemStackError',
+      'observability_error_phase' => 'chat_response'
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
   it 'retries blank OpenRouter responses once when no tools can duplicate side effects' do
     openrouter_model = instance_double(RubyLLM::Model::Info, id: 'openai/gpt-5.4-mini', provider: 'openrouter')
     blank_response = instance_double(RubyLLM::Message, content: '', tool_call?: false)

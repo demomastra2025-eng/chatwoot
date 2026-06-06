@@ -86,6 +86,51 @@ RSpec.describe Llm::ObservabilityPayload do
       expect(payload['openrouter_generation_id']).to eq('gen-raw-123')
     end
 
+    it 'extracts OpenRouter generation ids from official response headers' do
+      response = Struct.new(:content, :input_tokens, :output_tokens, :headers, keyword_init: true)
+                       .new(content: 'Done', input_tokens: 3, output_tokens: 4, headers: { 'X-Generation-Id' => 'gen-header-123' })
+      payload = { 'provider' => 'openrouter' }
+
+      described_class.attach_chat_response!(payload, response)
+
+      expect(payload['openrouter_generation_id']).to eq('gen-header-123')
+    end
+
+    it 'does not recurse forever when OpenRouter raw metadata contains a cycle' do
+      raw = {}
+      raw['data'] = raw
+      response = Struct.new(:content, :input_tokens, :output_tokens, :raw, keyword_init: true)
+                       .new(content: 'Done', input_tokens: 3, output_tokens: 4, raw: raw)
+      payload = { 'provider' => 'openrouter' }
+
+      expect { described_class.attach_chat_response!(payload, response) }.not_to raise_error
+
+      expect(payload).to include('status' => 'success')
+      expect(payload).not_to have_key('openrouter_generation_id')
+    end
+
+    it 'bounds OpenRouter generation id metadata search depth' do
+      too_deep = { 'id' => 'gen-too-deep-123' }
+      20.times { too_deep = { 'data' => too_deep } }
+      response = Struct.new(:content, :input_tokens, :output_tokens, :raw, keyword_init: true)
+                       .new(content: 'Done', input_tokens: 3, output_tokens: 4, raw: too_deep)
+      payload = { 'provider' => 'openrouter' }
+
+      described_class.attach_chat_response!(payload, response)
+
+      expect(payload).not_to have_key('openrouter_generation_id')
+    end
+
+    it 'extracts OpenRouter generation ids from bounded array metadata' do
+      response = Struct.new(:content, :input_tokens, :output_tokens, :raw, keyword_init: true)
+                       .new(content: 'Done', input_tokens: 3, output_tokens: 4, raw: { 'candidates' => [{ 'data' => { 'id' => 'gen-array-123' } }] })
+      payload = { 'provider' => 'openrouter' }
+
+      described_class.attach_chat_response!(payload, response)
+
+      expect(payload['openrouter_generation_id']).to eq('gen-array-123')
+    end
+
     it 'does not label direct-provider response ids as OpenRouter generation ids' do
       response = Struct.new(:content, :input_tokens, :output_tokens, :id, keyword_init: true)
                        .new(content: 'Done', input_tokens: 3, output_tokens: 4, id: 'direct-response-id')
