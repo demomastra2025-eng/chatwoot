@@ -5,6 +5,18 @@
     "LEARN_MORE": "Learn more about inboxes",
     "RECONNECTION_REQUIRED": "Your inbox is disconnected. You won't receive new messages until you reauthorize it.",
     "CLICK_TO_RECONNECT": "Click here to reconnect.",
+    "HEALTH_STATUS": {
+      "CONNECTED": "Connected",
+      "CONNECTED_DESCRIPTION": "The channel is ready to receive messages.",
+      "DISCONNECTED": "Disconnected",
+      "DISCONNECTED_DESCRIPTION": "The channel is not connected. Reconnect it before expecting new messages.",
+      "REAUTHORIZATION_REQUIRED": "Reauthorization required",
+      "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Reconnect this channel to resume message delivery.",
+      "WEBHOOK_SIGNATURE_INVALID": "Webhook signature invalid",
+      "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Check the provider webhook secret or callback URL before retrying.",
+      "PROVIDER_UNAVAILABLE": "Provider unavailable",
+      "PROVIDER_UNAVAILABLE_DESCRIPTION": "The provider is temporarily unavailable. Retry after the provider recovers."
+    },
     "WHATSAPP_REGISTRATION_INCOMPLETE": "Your WhatsApp Business registration isn’t complete. Please check your display name status in Meta Business Manager before reconnecting.",
     "COMPLETE_REGISTRATION": "Complete Registration",
     "LIST": {

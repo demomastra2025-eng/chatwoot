@@ -5,6 +5,18 @@
     "LEARN_MORE": "Узнать больше о «Входящих»",
     "RECONNECTION_REQUIRED": "Входящие сообщения отключены. Вы не будете получать новые сообщения пока не пройдете авторизацию повторно.",
     "CLICK_TO_RECONNECT": "Нажмите здесь для повторного подключения.",
+    "HEALTH_STATUS": {
+      "CONNECTED": "Подключено",
+      "CONNECTED_DESCRIPTION": "Канал готов принимать сообщения.",
+      "DISCONNECTED": "Отключено",
+      "DISCONNECTED_DESCRIPTION": "Канал не подключен. Переподключите его перед ожиданием новых сообщений.",
+      "REAUTHORIZATION_REQUIRED": "Нужна повторная авторизация",
+      "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Переподключите канал, чтобы восстановить доставку сообщений.",
+      "WEBHOOK_SIGNATURE_INVALID": "Некорректная подпись webhook",
+      "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Проверьте секрет webhook или callback URL у провайдера перед повторной попыткой.",
+      "PROVIDER_UNAVAILABLE": "Провайдер недоступен",
+      "PROVIDER_UNAVAILABLE_DESCRIPTION": "Провайдер временно недоступен. Повторите попытку после восстановления провайдера."
+    },
     "WHATSAPP_REGISTRATION_INCOMPLETE": "Ваша регистрация в WhatsApp Business не завершена. Пожалуйста, проверьте статус отображения в Meta Business Manager перед повторным подключением.",
     "COMPLETE_REGISTRATION": "Завершить регистрацию",
     "LIST": {

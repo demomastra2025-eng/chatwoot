@@ -5,6 +5,18 @@
     "LEARN_MORE": "Learn more about inboxes",
     "RECONNECTION_REQUIRED": "Your inbox is disconnected. You won't receive new messages until you reauthorize it.",
     "CLICK_TO_RECONNECT": "Click here to reconnect.",
+    "HEALTH_STATUS": {
+      "CONNECTED": "Қосылған",
+      "CONNECTED_DESCRIPTION": "Арна хабарламаларды қабылдауға дайын.",
+      "DISCONNECTED": "Ажыратылған",
+      "DISCONNECTED_DESCRIPTION": "Арна қосылмаған. Жаңа хабарламаларды күтер алдында қайта қосыңыз.",
+      "REAUTHORIZATION_REQUIRED": "Қайта авторизация қажет",
+      "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Хабарлама жеткізуді қалпына келтіру үшін арнаны қайта қосыңыз.",
+      "WEBHOOK_SIGNATURE_INVALID": "Webhook қолтаңбасы қате",
+      "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Қайталап көруден бұрын провайдердегі webhook құпиясын немесе callback URL-ды тексеріңіз.",
+      "PROVIDER_UNAVAILABLE": "Провайдер қолжетімсіз",
+      "PROVIDER_UNAVAILABLE_DESCRIPTION": "Провайдер уақытша қолжетімсіз. Провайдер қалпына келген соң қайталап көріңіз."
+    },
     "WHATSAPP_REGISTRATION_INCOMPLETE": "Your WhatsApp Business registration isn’t complete. Please check your display name status in Meta Business Manager before reconnecting.",
     "COMPLETE_REGISTRATION": "Complete Registration",
     "LIST": {

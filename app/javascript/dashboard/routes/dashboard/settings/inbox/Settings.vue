@@ -44,6 +44,7 @@ import SelectInput from 'dashboard/components-next/select/Select.vue';
 import Widget from 'dashboard/modules/widget-preview/components/Widget.vue';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
+import { getInboxHealthStatus } from './helpers/inboxHealthStatus';
 import AccessToken from 'dashboard/routes/dashboard/settings/profile/AccessToken.vue';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 
@@ -725,6 +726,69 @@ export default {
     },
     inbox() {
       return this.$store.getters['inboxes/getInbox'](this.currentInboxId);
+    },
+    inboxHealthStatus() {
+      return getInboxHealthStatus(this.inbox);
+    },
+    inboxHealthStatusClass() {
+      const classesByTone = {
+        teal: 'border-n-teal-6 bg-n-teal-3 text-n-teal-11',
+        amber: 'border-n-amber-6 bg-n-amber-3 text-n-amber-11',
+        ruby: 'border-n-ruby-6 bg-n-ruby-3 text-n-ruby-11',
+      };
+
+      return (
+        classesByTone[this.inboxHealthStatus?.tone] ||
+        'border-n-weak bg-n-solid-2 text-n-slate-11'
+      );
+    },
+    inboxHealthStatusLabel() {
+      if (!this.inboxHealthStatus) {
+        return '';
+      }
+
+      const labels = {
+        connected: this.$t('INBOX_MGMT.HEALTH_STATUS.CONNECTED'),
+        disconnected: this.$t('INBOX_MGMT.HEALTH_STATUS.DISCONNECTED'),
+        reauthorization_required: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.REAUTHORIZATION_REQUIRED'
+        ),
+        webhook_signature_invalid: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.WEBHOOK_SIGNATURE_INVALID'
+        ),
+        provider_unavailable: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.PROVIDER_UNAVAILABLE'
+        ),
+      };
+
+      return labels[this.inboxHealthStatus.id] || '';
+    },
+    inboxHealthStatusDescription() {
+      if (!this.inboxHealthStatus) {
+        return '';
+      }
+
+      const descriptions = {
+        connected: this.$t('INBOX_MGMT.HEALTH_STATUS.CONNECTED_DESCRIPTION'),
+        disconnected: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED_DESCRIPTION'
+        ),
+        reauthorization_required: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.REAUTHORIZATION_REQUIRED_DESCRIPTION'
+        ),
+        webhook_signature_invalid: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.WEBHOOK_SIGNATURE_INVALID_DESCRIPTION'
+        ),
+        provider_unavailable: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.PROVIDER_UNAVAILABLE_DESCRIPTION'
+        ),
+      };
+
+      return (
+        this.inboxHealthStatus.detail ||
+        descriptions[this.inboxHealthStatus.id] ||
+        ''
+      );
     },
     inboxIcon() {
       const { medium, channel_type: type } = this.inbox;
@@ -2286,6 +2350,22 @@ export default {
       :header-image="inbox.avatarUrl"
       :header-title="inboxName"
     >
+      <div
+        v-if="inboxHealthStatus"
+        class="mb-3 flex flex-col gap-2 text-sm sm:flex-row sm:items-center"
+      >
+        <span
+          class="inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium"
+          :class="inboxHealthStatusClass"
+          data-test-id="inbox-health-status"
+        >
+          <Icon :icon="inboxHealthStatus.icon" class="size-4" />
+          {{ inboxHealthStatusLabel }}
+        </span>
+        <span class="text-n-slate-11">
+          {{ inboxHealthStatusDescription }}
+        </span>
+      </div>
       <woot-tabs
         class="[&_ul]:p-0 top-px relative"
         :index="selectedTabIndex"

@@ -45,15 +45,12 @@ shared_examples_for 'reauthorizable' do
 
   def setup_channel_mailer(_obj)
     channel_mailer = instance_double(AdministratorNotifications::ChannelNotificationsMailer)
-    facebook_mailer_response = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
-    whatsapp_mailer_response = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
-    email_mailer_response = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
-    instagram_mailer_response = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
     allow(AdministratorNotifications::ChannelNotificationsMailer).to receive(:with).and_return(channel_mailer)
-    allow(channel_mailer).to receive(:facebook_disconnect).and_return(facebook_mailer_response)
-    allow(channel_mailer).to receive(:whatsapp_disconnect).and_return(whatsapp_mailer_response)
-    allow(channel_mailer).to receive(:email_disconnect).and_return(email_mailer_response)
-    allow(channel_mailer).to receive(:instagram_disconnect).and_return(instagram_mailer_response)
+
+    %i[facebook whatsapp email instagram tiktok].each do |provider|
+      mailer_response = instance_double(ActionMailer::MessageDelivery, deliver_later: true)
+      allow(channel_mailer).to receive("#{provider}_disconnect").and_return(mailer_response)
+    end
   end
 
   describe 'prompt_reauthorization!' do
@@ -83,6 +80,44 @@ shared_examples_for 'reauthorizable' do
         expect(AdministratorNotifications::IntegrationsNotificationMailer).to have_received(:with).with(account: obj.account)
       else
         expect(AdministratorNotifications::ChannelNotificationsMailer).to have_received(:with).with(account: obj.account)
+      end
+    end
+  end
+
+  if described_class.name.start_with?('Channel::')
+    describe 'inbox reauthorization events' do
+      before do
+        setup_channel_mailer(obj)
+        allow(Rails.configuration.dispatcher).to receive(:dispatch)
+      end
+
+      it 'emits inbox.updated once when authorization errors cross the threshold' do
+        with_modified_env ENABLE_INBOX_EVENTS: 'true' do
+          (obj.class::AUTHORIZATION_ERROR_THRESHOLD + 1).times do
+            obj.authorization_error!
+          end
+        end
+
+        expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(
+          Events::Types::INBOX_UPDATED,
+          kind_of(Time),
+          inbox: obj.inbox,
+          changed_attributes: { 'reauthorization_required' => [false, true] }
+        ).once
+      end
+
+      it 'emits inbox.updated when reauthorization is cleared' do
+        with_modified_env ENABLE_INBOX_EVENTS: 'true' do
+          obj.prompt_reauthorization!
+          obj.reauthorized!
+        end
+
+        expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(
+          Events::Types::INBOX_UPDATED,
+          kind_of(Time),
+          inbox: obj.inbox,
+          changed_attributes: { 'reauthorization_required' => [true, false] }
+        ).once
       end
     end
   end
