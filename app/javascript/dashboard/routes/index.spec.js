@@ -1,5 +1,6 @@
 import { validateAuthenticateRoutePermission } from './index';
 import store from '../store'; // This import will be mocked
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { vi } from 'vitest';
 
 // Mock the store module
@@ -21,6 +22,8 @@ describe('#validateAuthenticateRoutePermission', () => {
 
   beforeEach(() => {
     next = vi.fn(); // Mock the next function
+    store.dispatch = vi.fn().mockResolvedValue();
+    store.getters['accounts/getAccount'] = vi.fn(() => ({}));
   });
 
   describe('when user is not logged in', () => {
@@ -99,6 +102,37 @@ describe('#validateAuthenticateRoutePermission', () => {
 
         validateAuthenticateRoutePermission(to, next);
 
+        expect(next).toHaveBeenCalledWith();
+      });
+
+      it('hydrates account features before guarding feature-flag routes', async () => {
+        let hasHydratedAccount = false;
+        store.dispatch = vi.fn().mockImplementation(async action => {
+          if (action === 'accounts/get') {
+            hasHydratedAccount = true;
+          }
+        });
+        store.getters['accounts/getAccount'] = vi.fn(() =>
+          hasHydratedAccount
+            ? {
+                id: 1,
+                features: { [FEATURE_FLAGS.INBOX_MANAGEMENT]: true },
+              }
+            : {}
+        );
+
+        const to = {
+          name: 'settings_inbox_list',
+          params: { accountId: 1 },
+          meta: {
+            permissions: ['administrator'],
+            featureFlag: FEATURE_FLAGS.INBOX_MANAGEMENT,
+          },
+        };
+
+        await validateAuthenticateRoutePermission(to, next);
+
+        expect(store.dispatch).toHaveBeenCalledWith('accounts/get');
         expect(next).toHaveBeenCalledWith();
       });
     });

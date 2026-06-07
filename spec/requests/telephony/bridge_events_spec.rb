@@ -49,6 +49,33 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(account.telephony_events.find_by!(event_key: 'evt-1')).to be_processed
   end
 
+  it 'normalizes Kazakhstan trunk-prefix caller numbers from bridge callbacks' do
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             event_key: 'evt-kz-trunk-prefix',
+             call_ref: 'call-in-kz-trunk-prefix',
+             event: 'session_started',
+             status: 'ringing',
+             direction: 'FROM_PSTN',
+             number_ref: voice_inbox.telephony_number_binding.number_ref,
+             ingress_number: voice_channel.phone_number,
+             caller_number: '87066318623'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-kz-trunk-prefix')
+    expect(call_session.from_number).to eq('+77066318623')
+    expect(call_session.conversation.contact.phone_number).to eq('+77066318623')
+    expect(account.telephony_events.find_by!(event_key: 'evt-kz-trunk-prefix')).to be_processed
+  end
+
   it 'accepts camelCase bridge payloads from the voice runtime' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       post path,

@@ -298,8 +298,8 @@ const flexOrientationClass = computed(() => {
 
 const gridClass = computed(() => {
   const map = {
-    [ORIENTATION.LEFT]: 'grid grid-cols-1fr',
-    [ORIENTATION.RIGHT]: 'grid grid-cols-[1fr_24px]',
+    [ORIENTATION.LEFT]: 'grid grid-cols-[minmax(0,1fr)]',
+    [ORIENTATION.RIGHT]: 'grid grid-cols-[minmax(0,1fr)_24px]',
   };
 
   return map[orientation.value];
@@ -646,7 +646,7 @@ provideMessageContext({
           'w-full': variant === MESSAGE_VARIANTS.EMAIL,
         },
       ]"
-      class="gap-x-2"
+      class="gap-x-2 w-full max-w-full min-w-0"
       :style="{
         gridTemplateAreas: gridTemplate,
       }"
@@ -659,7 +659,7 @@ provideMessageContext({
         <Avatar v-bind="avatarInfo" :size="24" />
       </div>
       <div
-        class="[grid-area:bubble] flex"
+        class="[grid-area:bubble] flex max-w-full min-w-0"
         :class="{
           'ltr:ml-8 rtl:mr-8 justify-end': orientation === ORIENTATION.RIGHT,
           'ltr:mr-8 rtl:ml-8': orientation === ORIENTATION.LEFT,

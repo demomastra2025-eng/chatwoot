@@ -53,10 +53,12 @@ RSpec.describe Telephony::CallReconciliationService do
         'provider_direction' => 'TO_PSTN',
         'raw_ref' => 'call-ref-1'
       )
-      expect(call_session.legs.last).to include(
-        'source' => 'bridge_reconciliation',
-        'status' => 'busy',
-        'provider_status' => 'BUSY'
+      expect(call_session.legs).to include(
+        include(
+          'source' => 'bridge_reconciliation',
+          'status' => 'busy',
+          'provider_status' => 'BUSY'
+        )
       )
     end
 
@@ -116,6 +118,63 @@ RSpec.describe Telephony::CallReconciliationService do
         'provider_status' => 'UNKNOWN',
         'terminal_fallback' => 'missed'
       )
+    end
+
+    it 'syncs the voice-call bubble when reconciliation finalizes a call' do
+      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77172705175')
+      voice_inbox = voice_channel.inbox
+      contact = create(:contact, account: account, phone_number: '+77066318623')
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: contact_inbox
+      )
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: contact,
+        inbox: voice_inbox,
+        number_binding: nil,
+        direction: 'outbound',
+        status: 'in_progress',
+        external_call_ref: 'call-ref-sync-message',
+        from_number: voice_channel.phone_number,
+        to_number: contact.phone_number,
+        started_at: now - 2.minutes,
+        answered_at: now - 90.seconds
+      )
+      message = conversation.messages.create!(
+        account: account,
+        inbox: voice_inbox,
+        message_type: :outgoing,
+        content_type: :voice_call,
+        content: 'Voice Call',
+        source_id: call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'call_sid' => call_session.external_call_ref,
+            'status' => 'in_progress',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+      bridge_items << {
+        'ref' => 'call-ref-sync-message',
+        'status' => 'UNKNOWN',
+        'startedAt' => (now - 2.minutes).iso8601,
+        'endedAt' => (now - 30.seconds).iso8601,
+        'duration' => 0,
+        'direction' => 'TO_PSTN'
+      }
+
+      service.perform
+
+      expect(call_session.reload.status).to eq('no_answer')
+      expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
     end
 
     it 'closes stale operator calls that disappeared from the bridge poll as no-answer' do

@@ -507,7 +507,7 @@ class Telephony::EventsIngestionService
     Voice::InboundCallBuilder.perform!(
       account: account,
       inbox: inbox,
-      from_number: caller_number,
+      from_number: normalized_caller_number || caller_number,
       call_sid: call_ref
     )
   end
@@ -936,7 +936,7 @@ class Telephony::EventsIngestionService
     phone_number ||= resolved_to_number if resolved_direction == 'outbound'
     return if phone_number.blank?
 
-    account.contacts.find_by(phone_number: phone_number)
+    account.contacts.find_by(phone_number: normalize_phone_number(phone_number) || phone_number)
   end
 
   def resolve_inbox(account)
@@ -947,6 +947,7 @@ class Telephony::EventsIngestionService
     return binding.inbox if binding&.inbox.present?
 
     channel = Channel::Voice.find_by(phone_number: inbound_number, account_id: account.id)
+    channel ||= Channel::Voice.find_by(phone_number: resolved_from_number, account_id: account.id) if resolved_direction == 'outbound'
     channel&.inbox
   end
 
@@ -1321,11 +1322,13 @@ class Telephony::EventsIngestionService
   end
 
   def resolved_from_number
-    payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
+    value = payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
+    normalize_phone_number(value) || value
   end
 
   def resolved_to_number
-    payload_value('callee_number', 'calleeNumber', 'to_number', 'toNumber', 'to') || inbound_number
+    value = payload_value('callee_number', 'calleeNumber', 'to_number', 'toNumber', 'to') || inbound_number
+    normalize_phone_number(value) || value
   end
 
   def number_ref
@@ -1337,7 +1340,17 @@ class Telephony::EventsIngestionService
   end
 
   def caller_number
-    payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
+    value = payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
+    normalize_phone_number(value) || value
+  end
+
+  def normalized_caller_number
+    normalize_phone_number(caller_number)
+  end
+
+  def normalize_phone_number(value)
+    Contacts::PhoneNumberNormalizer.normalize(value) ||
+      Contacts::PhoneNumberNormalizer.normalize(value, default_country: 'KZ')
   end
 
   def event_time

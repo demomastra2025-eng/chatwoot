@@ -8,7 +8,6 @@ const AssistantEmptyStateIndex = () => import('./assistants/Index.vue');
 const AssistantSettingsIndex = () =>
   import('./assistants/settings/Settings.vue');
 const AssistantPromptsIndex = () => import('./assistants/prompts/Index.vue');
-const AssistantInboxesIndex = () => import('./assistants/inboxes/Index.vue');
 const DocumentsIndex = () => import('./documents/Index.vue');
 const ResponsesIndex = () => import('./responses/Index.vue');
 const ResponsesPendingIndex = () => import('./responses/Pending.vue');
@@ -120,15 +119,19 @@ const assistantRoutes = [
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/channels'),
-    component: AssistantInboxesIndex,
+    redirect: to => ({
+      name: 'settings_inbox_list',
+      params: { accountId: to.params.accountId },
+      query: to.query,
+    }),
     name: 'captain_assistants_channels_index',
     meta,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/inboxes'),
     redirect: to => ({
-      name: 'captain_assistants_channels_index',
-      params: to.params,
+      name: 'settings_inbox_list',
+      params: { accountId: to.params.accountId },
       query: to.query,
     }),
     name: 'captain_assistants_inboxes_index',

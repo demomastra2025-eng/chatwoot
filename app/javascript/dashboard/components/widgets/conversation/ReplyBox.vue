@@ -159,6 +159,16 @@ export default {
       if (!senderId) return {};
       return this.$store.getters['contacts/getContact'](senderId);
     },
+    voiceCallContactId() {
+      return this.currentContact?.id || this.currentChat?.meta?.sender?.id;
+    },
+    voiceCallPhone() {
+      return (
+        this.currentContact?.phone_number ||
+        this.currentChat?.meta?.sender?.phone_number ||
+        ''
+      );
+    },
     isCommunicationThreadConversation() {
       return isCommunicationThread(this.currentChat);
     },
@@ -1619,6 +1629,8 @@ export default {
         :is-editor-disabled="isEditorDisabled"
         :on-file-upload="onFileUpload"
         :on-send="onSendReply"
+        :contact-id="voiceCallContactId"
+        :contact-phone="voiceCallPhone"
         :conversation-type="conversationType"
         :recording-audio-duration-text="recordingAudioDurationText"
         :recording-audio-state="recordingAudioState"

@@ -474,7 +474,7 @@ class Telephony::InboundRoutingService
   end
 
   def normalized_caller_number
-    @normalized_caller_number ||= Contacts::PhoneNumberNormalizer.normalize(caller_number)
+    @normalized_caller_number ||= normalize_phone_number(caller_number)
   end
 
   def call_ref
@@ -482,7 +482,13 @@ class Telephony::InboundRoutingService
   end
 
   def caller_number
-    payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
+    value = payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
+    normalize_phone_number(value) || value
+  end
+
+  def normalize_phone_number(value)
+    Contacts::PhoneNumberNormalizer.normalize(value) ||
+      Contacts::PhoneNumberNormalizer.normalize(value, default_country: 'KZ')
   end
 
   def number_binding

@@ -73,6 +73,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   ]),
   item('MyCompany', 'SIDEBAR.MY_COMPANY', [
     item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
+    item('MyCompany:Channels', 'SIDEBAR.CHANNELS'),
     item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
     item('MyCompany:Teams', 'EMPLOYEE_SETTINGS.TABS.TEAM'),
     item('MyCompany:Roles', 'EMPLOYEE_SETTINGS.TABS.ROLES'),

@@ -694,7 +694,7 @@ export default {
       }
 
       if (
-        this.isFeatureEnabledonAccount(this.accountId, FEATURE_FLAGS.AGENT_BOTS)
+        this.isFeatureEnabledonAccount(this.accountId, FEATURE_FLAGS.CAPTAIN)
       ) {
         visibleToAllChannelTabs = [
           ...visibleToAllChannelTabs,
@@ -731,7 +731,7 @@ export default {
       return getInboxIconByType(type, medium, 'line');
     },
     bannerMaxWidth() {
-      const narrowTabs = ['collaborators', 'bot-configuration'];
+      const narrowTabs = ['collaborators'];
       const wideIfWebWidget = ['configuration', 'inbox-settings'];
       if (narrowTabs.includes(this.selectedTabKey)) return 'max-w-4xl';
       if (wideIfWebWidget.includes(this.selectedTabKey)) {

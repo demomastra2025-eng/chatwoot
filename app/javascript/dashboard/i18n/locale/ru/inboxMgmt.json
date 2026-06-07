@@ -8,7 +8,58 @@
     "WHATSAPP_REGISTRATION_INCOMPLETE": "Ваша регистрация в WhatsApp Business не завершена. Пожалуйста, проверьте статус отображения в Meta Business Manager перед повторным подключением.",
     "COMPLETE_REGISTRATION": "Завершить регистрацию",
     "LIST": {
-      "404": "У вас пока нет каналов."
+      "404": "У вас пока нет каналов.",
+      "CREATE_CHANNEL": "Создать канал",
+      "CREATE_CHANNEL_HELP": "Подключите сайт, WhatsApp, Telegram, почту, голос или другой канал коммуникации.",
+      "OPEN_SETTINGS": "Открыть настройки",
+      "STATUS": {
+        "ACTIVE": "Активен",
+        "INACTIVE": "Неактивен",
+        "CHECK": "Проверить",
+        "NEEDS_AUTH": "Нужна авторизация",
+        "DELETING": "Удаляется"
+      },
+      "DETAILS": {
+        "PHONE": "Номер",
+        "SITE": "Сайт",
+        "EMAIL": "Email",
+        "BOT": "Бот",
+        "PROFILE": "Профиль",
+        "ACCOUNT": "Аккаунт",
+        "WEBHOOK": "Вебхук",
+        "PROVIDER": "Провайдер",
+        "CONNECTION": "Связь",
+        "SYNCED_AT": "Синхр.",
+        "ROUTING": "Маршрут",
+        "ROUTING_AI": "AI Voice",
+        "ROUTING_OPERATOR": "Оператор",
+        "EMAIL_CONTINUITY": "Email",
+        "FORWARD_TO": "Пересылка",
+        "IDENTITY": "Канал",
+        "ENABLED": "Включено",
+        "CONNECTED_ACCOUNT": "Подключен"
+      },
+      "CONNECTION_STATES": {
+        "CONNECTED": "Подключен",
+        "DISCONNECTED": "Отключен",
+        "QR_REQUIRED": "Нужен QR",
+        "SYNCING": "Синхронизация",
+        "CONNECTING": "Подключается",
+        "UNAUTHORIZED": "Нет авторизации",
+        "ERROR": "Ошибка"
+      },
+      "CHIPS": {
+        "CAPTAIN": "AI: {name}",
+        "AUTO_ASSIGNMENT": "Автораспределение",
+        "WORKING_HOURS": "Рабочие часы",
+        "GREETING": "Приветствие",
+        "PRE_CHAT_FORM": "Pre-chat форма",
+        "IMAP": "IMAP",
+        "SMTP": "SMTP",
+        "CALLS": "Звонки",
+        "MEDIA_SERVER": "Медиа-сервер",
+        "CAMPAIGNS": "Рассылки"
+      }
     },
     "CREATE_FLOW": {
       "CHANNEL": {

@@ -420,6 +420,32 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(call_session.conversation.messages.where(content_type: 'voice_call').count).to eq(1)
   end
 
+  it 'normalizes trunk-prefix caller numbers in native route lifecycle records' do
+    number_binding.routing_policy.update!(
+      mode: 'reject',
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-kz-trunk-prefix',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '87066318623'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'inbound-route-kz-trunk-prefix')
+    expect(call_session.from_number).to eq('+77066318623')
+    expect(call_session.conversation.contact.phone_number).to eq('+77066318623')
+    expect(call_session.conversation.messages.voice_calls.first.content_attributes.dig('data', 'from_number')).to eq('+77066318623')
+  end
+
   it 'rejects non-SIP operator targets instead of returning a non-executable operator route' do
     number_binding.routing_policy.update_columns(
       mode: 'operator',

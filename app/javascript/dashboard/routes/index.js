@@ -25,7 +25,26 @@ const trackPageView = to => {
     .catch(() => {});
 };
 
-export const validateAuthenticateRoutePermission = (to, next) => {
+const getRouteAccountFeatureSource = async to => {
+  if (!to.meta?.featureFlag || !to.params?.accountId) {
+    return null;
+  }
+
+  const getAccount = store.getters['accounts/getAccount'];
+  const resolveAccount = () =>
+    typeof getAccount === 'function' ? getAccount(to.params.accountId) : null;
+
+  let account = resolveAccount();
+  if (account?.id || account?.features) {
+    return account;
+  }
+
+  await store.dispatch('accounts/get');
+  account = resolveAccount();
+  return account;
+};
+
+export const validateAuthenticateRoutePermission = async (to, next) => {
   const { isLoggedIn, getCurrentUser: user } = store.getters;
 
   if (!isLoggedIn) {
@@ -46,7 +65,14 @@ export const validateAuthenticateRoutePermission = (to, next) => {
     return next(frontendURL(`accounts/${accountId}/dashboard`));
   }
 
-  const nextRoute = validateLoggedInRoutes(to, store.getters.getCurrentUser);
+  const accountFeatureSource = to.meta?.featureFlag
+    ? await getRouteAccountFeatureSource(to)
+    : null;
+  const nextRoute = validateLoggedInRoutes(
+    to,
+    store.getters.getCurrentUser,
+    accountFeatureSource
+  );
   return nextRoute ? next(frontendURL(nextRoute)) : next();
 };
 

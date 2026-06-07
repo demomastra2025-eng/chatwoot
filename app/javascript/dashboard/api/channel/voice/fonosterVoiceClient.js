@@ -15,6 +15,7 @@ const createCallUnregisteredEvent = detail =>
 
 const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 7_000;
+const WEBPHONE_OUTBOUND_CALL_WAIT_MS = 75_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
 
 class FonosterVoiceClient extends EventTarget {
@@ -288,12 +289,16 @@ class FonosterVoiceClient extends EventTarget {
     return this.pendingIncomingCall;
   }
 
-  async joinClientCall() {
+  async joinClientCall({ callDirection } = {}) {
     if (!this.simpleUser || !this.initialized) return null;
 
     await this.ensureConnectedAndRegistered();
 
-    const hasIncomingCall = await this.waitForPendingIncomingCall();
+    const waitMs =
+      callDirection === 'outbound'
+        ? WEBPHONE_OUTBOUND_CALL_WAIT_MS
+        : WEBPHONE_INCOMING_CALL_WAIT_MS;
+    const hasIncomingCall = await this.waitForPendingIncomingCall(waitMs);
     if (!hasIncomingCall) {
       return null;
     }

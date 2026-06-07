@@ -30,6 +30,7 @@ const SIMPLE_ROUTE_ACTIONS = {
   open_help_center: 'portals_index',
   open_captain_settings: 'captain_settings_index',
   open_captain_assistants: 'captain_assistants_create_index',
+  open_captain_channels: 'settings_inbox_list',
   open_captain_observability: 'captain_observability_index',
 };
 
@@ -66,7 +67,6 @@ const CAPTAIN_ASSISTANT_ROUTE_ACTIONS = {
   open_captain_tools: 'captain_tools_index',
   open_captain_scenarios: 'captain_assistants_scenarios_index',
   open_captain_playground: 'captain_assistants_prompts_index',
-  open_captain_channels: 'captain_assistants_channels_index',
   open_captain_assistant_settings: 'captain_assistants_settings_index',
   open_captain_prompts: 'captain_assistants_prompts_index',
   open_assistant_settings: 'captain_assistants_settings_index',

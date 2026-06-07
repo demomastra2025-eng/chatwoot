@@ -8,7 +8,58 @@
     "WHATSAPP_REGISTRATION_INCOMPLETE": "Your WhatsApp Business registration isn’t complete. Please check your display name status in Meta Business Manager before reconnecting.",
     "COMPLETE_REGISTRATION": "Complete Registration",
     "LIST": {
-      "404": "There are no inboxes attached to this account."
+      "404": "There are no inboxes attached to this account.",
+      "CREATE_CHANNEL": "Арна жасау",
+      "CREATE_CHANNEL_HELP": "Сайт, WhatsApp, Telegram, email, voice немесе басқа байланыс арнасын қосыңыз.",
+      "OPEN_SETTINGS": "Баптауларды ашу",
+      "STATUS": {
+        "ACTIVE": "Белсенді",
+        "INACTIVE": "Белсенді емес",
+        "CHECK": "Тексеру",
+        "NEEDS_AUTH": "Авторизация қажет",
+        "DELETING": "Жойылуда"
+      },
+      "DETAILS": {
+        "PHONE": "Нөмір",
+        "SITE": "Сайт",
+        "EMAIL": "Email",
+        "BOT": "Бот",
+        "PROFILE": "Профиль",
+        "ACCOUNT": "Аккаунт",
+        "WEBHOOK": "Вебхук",
+        "PROVIDER": "Провайдер",
+        "CONNECTION": "Байланыс",
+        "SYNCED_AT": "Синхр.",
+        "ROUTING": "Маршрут",
+        "ROUTING_AI": "AI Voice",
+        "ROUTING_OPERATOR": "Оператор",
+        "EMAIL_CONTINUITY": "Email",
+        "FORWARD_TO": "Қайта жіберу",
+        "IDENTITY": "Арна",
+        "ENABLED": "Қосулы",
+        "CONNECTED_ACCOUNT": "Қосылған"
+      },
+      "CONNECTION_STATES": {
+        "CONNECTED": "Қосылған",
+        "DISCONNECTED": "Ажыратылған",
+        "QR_REQUIRED": "QR қажет",
+        "SYNCING": "Синхрондалуда",
+        "CONNECTING": "Қосылуда",
+        "UNAUTHORIZED": "Авторизация жоқ",
+        "ERROR": "Қате"
+      },
+      "CHIPS": {
+        "CAPTAIN": "AI: {name}",
+        "AUTO_ASSIGNMENT": "Автобөлу",
+        "WORKING_HOURS": "Жұмыс уақыты",
+        "GREETING": "Сәлемдесу",
+        "PRE_CHAT_FORM": "Pre-chat форма",
+        "IMAP": "IMAP",
+        "SMTP": "SMTP",
+        "CALLS": "Қоңыраулар",
+        "MEDIA_SERVER": "Медиа-сервер",
+        "CAMPAIGNS": "Жіберілімдер"
+      }
     },
     "CREATE_FLOW": {
       "CHANNEL": {

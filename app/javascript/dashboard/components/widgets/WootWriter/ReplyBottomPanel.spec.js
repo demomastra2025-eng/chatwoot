@@ -168,4 +168,17 @@ describe('ReplyBottomPanel', () => {
 
     expect(wrapper.emitted('selectReplyChannel')).toEqual([[22]]);
   });
+
+  it('renders the voice call action when the conversation contact has a phone number', () => {
+    const wrapper = mountComponent({
+      contactId: 42,
+      contactPhone: '+77066318623',
+      inbox: { channel_type: 'Channel::Voice' },
+    });
+
+    const voiceCallButton = wrapper.findComponent({ name: 'VoiceCallButton' });
+    expect(voiceCallButton.exists()).toBe(true);
+    expect(voiceCallButton.props('contactId')).toBe(42);
+    expect(voiceCallButton.props('phone')).toBe('+77066318623');
+  });
 });

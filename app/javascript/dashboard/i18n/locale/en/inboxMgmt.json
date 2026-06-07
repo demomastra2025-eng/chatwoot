@@ -8,7 +8,58 @@
     "WHATSAPP_REGISTRATION_INCOMPLETE": "Your WhatsApp Business registration isn’t complete. Please check your display name status in Meta Business Manager before reconnecting.",
     "COMPLETE_REGISTRATION": "Complete Registration",
     "LIST": {
-      "404": "There are no inboxes attached to this account."
+      "404": "There are no inboxes attached to this account.",
+      "CREATE_CHANNEL": "Create channel",
+      "CREATE_CHANNEL_HELP": "Connect website, WhatsApp, Telegram, email, voice, or another communication channel.",
+      "OPEN_SETTINGS": "Open settings",
+      "STATUS": {
+        "ACTIVE": "Active",
+        "INACTIVE": "Inactive",
+        "CHECK": "Check",
+        "NEEDS_AUTH": "Needs auth",
+        "DELETING": "Deleting"
+      },
+      "DETAILS": {
+        "PHONE": "Phone",
+        "SITE": "Site",
+        "EMAIL": "Email",
+        "BOT": "Bot",
+        "PROFILE": "Profile",
+        "ACCOUNT": "Account",
+        "WEBHOOK": "Webhook",
+        "PROVIDER": "Provider",
+        "CONNECTION": "Connection",
+        "SYNCED_AT": "Synced",
+        "ROUTING": "Routing",
+        "ROUTING_AI": "AI Voice",
+        "ROUTING_OPERATOR": "Operator",
+        "EMAIL_CONTINUITY": "Email",
+        "FORWARD_TO": "Forward to",
+        "IDENTITY": "Channel",
+        "ENABLED": "Enabled",
+        "CONNECTED_ACCOUNT": "Connected"
+      },
+      "CONNECTION_STATES": {
+        "CONNECTED": "Connected",
+        "DISCONNECTED": "Disconnected",
+        "QR_REQUIRED": "QR required",
+        "SYNCING": "Syncing",
+        "CONNECTING": "Connecting",
+        "UNAUTHORIZED": "Unauthorized",
+        "ERROR": "Error"
+      },
+      "CHIPS": {
+        "CAPTAIN": "AI: {name}",
+        "AUTO_ASSIGNMENT": "Auto assignment",
+        "WORKING_HOURS": "Working hours",
+        "GREETING": "Greeting",
+        "PRE_CHAT_FORM": "Pre-chat form",
+        "IMAP": "IMAP",
+        "SMTP": "SMTP",
+        "CALLS": "Calls",
+        "MEDIA_SERVER": "Media server",
+        "CAMPAIGNS": "Campaigns"
+      }
     },
     "CREATE_FLOW": {
       "CHANNEL": {

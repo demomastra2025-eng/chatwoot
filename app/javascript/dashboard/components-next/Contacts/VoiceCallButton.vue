@@ -137,12 +137,6 @@ const onPickInbox = async inbox => {
             <span class="i-ri-phone-fill text-n-slate-10" />
             <div class="flex flex-col">
               <span class="text-sm text-n-slate-12">{{ inbox.name }}</span>
-              <span
-                v-if="inbox.provider === 'fonoster'"
-                class="text-xs text-n-slate-10"
-              >
-                {{ $t('CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER') }}
-              </span>
             </div>
           </div>
           <div class="flex items-center gap-2">

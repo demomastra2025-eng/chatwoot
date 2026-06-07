@@ -239,6 +239,46 @@ describe('fonosterVoiceClient', () => {
     }
   });
 
+  it('waits longer for the operator SIP INVITE on outbound calls', async () => {
+    vi.useFakeTimers();
+    registerMock.mockResolvedValue(undefined);
+    simpleUserConstructorMock.mockImplementation(() => ({
+      answer: answerMock,
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    try {
+      const client = await importClient();
+      await client.initializeDevice(completeSessionConfig);
+
+      let settled = false;
+      const joinPromise = client
+        .joinClientCall({ callDirection: 'outbound' })
+        .then(result => {
+          settled = true;
+          return result;
+        });
+
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(settled).toBe(false);
+
+      simpleUserConstructorMock.mock.calls[0][1].delegate.onCallReceived();
+      await vi.advanceTimersByTimeAsync(100);
+
+      await expect(joinPromise).resolves.toEqual({
+        provider: 'fonoster',
+        answered: true,
+      });
+      expect(answerMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('notifies aggregators that registration is unavailable after server disconnect', async () => {
     registerMock.mockImplementation(() => {
       simpleUserConstructorMock.mock.calls[0][1].delegate.onRegistered();

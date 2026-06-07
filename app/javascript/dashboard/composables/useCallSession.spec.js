@@ -3,18 +3,22 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createApp } from 'vue';
 
 const {
+  addEventListenerMock,
   bootstrapIncomingSupportMock,
   endClientCallMock,
   initializeDeviceMock,
   joinClientCallMock,
+  removeEventListenerMock,
   rejectBackendCallMock,
   rejectClientCallMock,
   supportsBrowserCallingMock,
 } = vi.hoisted(() => ({
+  addEventListenerMock: vi.fn(),
   bootstrapIncomingSupportMock: vi.fn(),
   endClientCallMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
   joinClientCallMock: vi.fn(),
+  removeEventListenerMock: vi.fn(),
   rejectBackendCallMock: vi.fn(),
   rejectClientCallMock: vi.fn(),
   supportsBrowserCallingMock: vi.fn(),
@@ -31,13 +35,13 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
 
 vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
   default: {
-    addEventListener: vi.fn(),
+    addEventListener: addEventListenerMock,
     bootstrapIncomingSupport: bootstrapIncomingSupportMock,
     endClientCall: endClientCallMock,
     initializeDevice: initializeDeviceMock,
     joinClientCall: joinClientCallMock,
     rejectIncomingCall: rejectClientCallMock,
-    removeEventListener: vi.fn(),
+    removeEventListener: removeEventListenerMock,
     supportsBrowserCalling: supportsBrowserCallingMock,
   },
 }));
@@ -179,6 +183,31 @@ describe('useCallSession', () => {
       }
     );
     expect(VoiceAPI.leaveConference).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('releases the backend Fonoster call when the SIP client reports a remote disconnect', async () => {
+    let disconnectHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-remote-disconnect',
+      provider: 'fonoster',
+    });
+    callsStore.setCallActive('call-remote-disconnect');
+
+    mountUseCallSession();
+    await disconnectHandler?.();
+
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-remote-disconnect',
+      {
+        reason: 'remote_hangup',
+        status: 'completed',
+      }
+    );
     expect(callsStore.calls).toEqual([]);
   });
 
@@ -428,6 +457,74 @@ describe('useCallSession', () => {
         browserJoinSupported: null,
       },
     ]);
+  });
+
+  it('joins outbound Fonoster calls in the browser without claiming an incoming call first', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-outbound-browser-join',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 6,
+      inboxId: 4083,
+      callSid: 'call-outbound-browser-join',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: true,
+    });
+    expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
+    expect(joinClientCallMock).toHaveBeenCalledWith({
+      provider: 'fonoster',
+      conversationId: 6,
+      callRef: 'call-outbound-browser-join',
+      callDirection: 'outbound',
+    });
+    expect(callsStore.activeCall).toMatchObject({
+      callSid: 'call-outbound-browser-join',
+      isActive: true,
+    });
+  });
+
+  it('releases outbound Fonoster calls when the operator SIP INVITE never reaches the browser', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-outbound-no-sip-invite',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+    joinClientCallMock.mockResolvedValue(null);
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 6,
+      inboxId: 4083,
+      callSid: 'call-outbound-no-sip-invite',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'browser_webphone_not_ready',
+    });
+    expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-outbound-no-sip-invite',
+      {
+        reason: 'browser_webphone_not_ready',
+        status: 'no_answer',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
   });
 
   it('keeps the call visible as browser-unsupported when backend claim says the operator is not registered', async () => {

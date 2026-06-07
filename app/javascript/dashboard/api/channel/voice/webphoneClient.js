@@ -211,9 +211,8 @@ class WebphoneClient extends EventTarget {
     }
   }
 
-  supportsBrowserCalling(provider, { callDirection = null } = {}) {
+  supportsBrowserCalling(provider) {
     if (!provider) return false;
-    if (provider === 'fonoster' && callDirection === 'outbound') return false;
 
     const session = this.getSession(provider);
     if (session?.callingSupported === false) return false;

@@ -134,6 +134,7 @@ class Telephony::CallReconciliationService
     attrs.merge!(status_change_attributes(session, item, status_to_apply, target_status)) if status_to_apply.present?
 
     session.update!(attrs)
+    sync_reconciled_session!(session, status_to_apply) if status_to_apply.present?
     true
   end
 
@@ -152,7 +153,57 @@ class Telephony::CallReconciliationService
       metadata: missing_metadata(session, target_status),
       legs: append_missing_leg_snapshot(session, target_status)
     )
+    sync_reconciled_session!(session, target_status)
     true
+  end
+
+  def sync_reconciled_session!(session, status)
+    return unless Telephony::CallSession::TERMINAL_STATUSES.include?(status)
+
+    Telephony::EventsIngestionService.new(payload: reconciliation_event_payload(session, status)).perform
+  rescue StandardError => e
+    Rails.logger.warn(
+      event: 'telephony_call_reconciliation_side_effect_failed',
+      account_id: session.account_id,
+      call_ref: session.external_call_ref,
+      status: status,
+      error_class: e.class.name,
+      error_message: e.message
+    )
+  end
+
+  def reconciliation_event_payload(session, status)
+    {
+      account_id: session.account_id,
+      inbox_id: session.inbox_id,
+      call_ref: session.external_call_ref,
+      event_key: reconciliation_event_key(session, status),
+      event: reconciliation_event_type(status),
+      status: status,
+      direction: session.direction,
+      from_number: session.from_number,
+      to_number: session.to_number,
+      started_at: session.started_at&.iso8601,
+      answered_at: session.answered_at&.iso8601,
+      ended_at: session.ended_at&.iso8601,
+      ended_by: session.ended_by,
+      end_reason: session.end_reason,
+      duration: session.duration_seconds,
+      metadata: {
+        source: 'bridge_reconciliation'
+      }
+    }.compact
+  end
+
+  def reconciliation_event_key(session, status)
+    ended_key = (session.ended_at || now).to_i
+    "bridge_reconciliation:#{session.account_id}:#{session.external_call_ref}:#{status}:#{ended_key}"
+  end
+
+  def reconciliation_event_type(status)
+    return 'session_completed' if status == 'completed'
+
+    status
   end
 
   def missing_terminal_candidate?(session)

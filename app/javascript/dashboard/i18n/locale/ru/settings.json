@@ -294,8 +294,8 @@
   },
   "SIDEBAR_ITEMS": {
     "CHANGE_AVAILABILITY_STATUS": "Изменить",
-    "CHANGE_ACCOUNTS": "Сменить workspace",
-    "SWITCH_ACCOUNT": "Сменить workspace",
+    "CHANGE_ACCOUNTS": "Сменить компанию",
+    "SWITCH_ACCOUNT": "Сменить компанию",
     "CONTACT_SUPPORT": "Связаться с поддержкой",
     "SELECTOR_SUBTITLE": "Выберите workspace из списка",
     "PROFILE_SETTINGS": "Настройки профиля",

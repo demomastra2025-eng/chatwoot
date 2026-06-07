@@ -86,11 +86,12 @@ vi.mock('next/button/Button.vue', () => ({
 vi.mock('next/dropdown-menu/base', () => {
   const DropdownContainer = {
     name: 'DropdownContainer',
+    props: ['menuClass'],
     methods: {
       toggle() {},
     },
     template:
-      '<div><slot name="trigger" :toggle="toggle" :is-open="false" /><slot /></div>',
+      '<div class="dropdown-container" :data-menu-class="menuClass"><slot name="trigger" :toggle="toggle" :is-open="false" /><slot /></div>',
   };
 
   return {
@@ -105,7 +106,8 @@ vi.mock('next/dropdown-menu/base', () => {
     },
     DropdownItem: {
       name: 'DropdownItem',
-      template: '<div><slot name="label" /><slot /></div>',
+      props: ['label', 'icon', 'link'],
+      template: '<div><slot name="label" />{{ label }}<slot /></div>',
     },
   };
 });
@@ -192,5 +194,32 @@ describe('SidebarAccountSwitcher', () => {
     expect(
       wrapper.find('[data-test-id="default-workspace-logo"]').exists()
     ).toBe(false);
+  });
+
+  it('positions the company menu to the right of the briefcase trigger', () => {
+    const wrapper = mountComponent({
+      isCollapsed: false,
+      companyMenuItem: {
+        name: 'my_company',
+        label: 'Company',
+        to: { name: 'settings_general' },
+        children: [
+          {
+            name: 'employees',
+            label: 'Employees',
+            icon: 'i-lucide-users',
+            to: { name: 'settings_agents' },
+          },
+        ],
+      },
+    });
+
+    const containers = wrapper.findAll('.dropdown-container');
+
+    expect(containers).toHaveLength(2);
+    expect(containers[1].attributes('data-menu-class')).toBe(
+      'ltr:left-full rtl:right-full top-0 ltr:ml-2 rtl:mr-2 !mt-0'
+    );
+    expect(wrapper.text()).toContain('Employees');
   });
 });

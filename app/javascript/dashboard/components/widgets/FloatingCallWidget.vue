@@ -30,6 +30,8 @@ const formatProviderLabel = provider =>
 const formatInboxLine = ({ inboxName, providerLabel }) =>
   providerLabel ? `${inboxName} · ${providerLabel}` : inboxName;
 
+const isOutboundCall = call => call?.callDirection === 'outbound';
+
 const getCallInfo = call => {
   const conversation = store.getters.getConversationById(call?.conversationId);
   const inbox = store.getters['inboxes/getInbox'](
@@ -240,7 +242,7 @@ watch(
               <i class="text-lg text-white i-ph-phone-x-bold" />
             </button>
             <button
-              v-if="!hasActiveCall"
+              v-if="!hasActiveCall && !isOutboundCall(incomingCalls[0])"
               class="flex justify-center items-center w-10 h-10 bg-n-teal-9 hover:bg-n-teal-10 rounded-full transition-colors"
               @click="handleJoinCall(incomingCalls[0])"
             >

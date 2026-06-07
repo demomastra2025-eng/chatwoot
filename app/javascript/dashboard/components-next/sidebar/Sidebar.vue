@@ -113,6 +113,13 @@ const hasSmm = computed(() => {
   );
 });
 
+const hasInboxManagement = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.INBOX_MANAGEMENT
+  );
+});
+
 const hasCrmSettingsAccess = computed(() => {
   return checkPermissions([
     'administrator',
@@ -747,10 +754,109 @@ const newReportRoutes = () => [
 
 const reportRoutes = computed(() => newReportRoutes());
 
+const settingsInboxRouteNames = [
+  'settings_inbox_list',
+  'settings_inbox_new',
+  'settings_inboxes_page_channel',
+  'settings_inboxes_add_agents',
+  'settings_inbox_finish',
+  'settings_inbox_show',
+];
+
 const activeOnForEmployeeTab = routeName =>
   employeeSettingsTabs.find(tab => tab.routeName === routeName)?.activeOn || [
     routeName,
   ];
+
+const buildMyCompanyMenuItem = () => ({
+  name: 'MyCompany',
+  label: t('SIDEBAR.MY_COMPANY'),
+  icon: 'i-lucide-briefcase-business',
+  activeOn: [
+    ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+    ...settingsInboxRouteNames,
+    ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
+    'auditlogs_list',
+  ],
+  children: [
+    {
+      name: 'Workspace',
+      visibilityKey: 'MyCompany:Workspace',
+      label: t('SIDEBAR.ACCOUNT_SETTINGS'),
+      icon: 'i-lucide-building-2',
+      activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+      to: accountScopedRoute('general_settings_index'),
+    },
+    ...(hasInboxManagement.value
+      ? [
+          {
+            name: 'Channels',
+            visibilityKey: 'MyCompany:Channels',
+            label: t('SIDEBAR.CHANNELS'),
+            icon: 'i-lucide-mailbox',
+            activeOn: settingsInboxRouteNames,
+            to: accountScopedRoute('settings_inbox_list'),
+          },
+        ]
+      : []),
+    {
+      name: 'Employees',
+      visibilityKey: 'MyCompany:Employees',
+      label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+      icon: 'i-lucide-user-round',
+      activeOn: activeOnForEmployeeTab('agent_list'),
+      to: accountScopedRoute('agent_list'),
+    },
+    {
+      name: 'Teams',
+      visibilityKey: 'MyCompany:Teams',
+      label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
+      icon: 'i-lucide-users-round',
+      activeOn: activeOnForEmployeeTab('settings_teams_list'),
+      to: accountScopedRoute('settings_teams_list'),
+    },
+    {
+      name: 'Roles',
+      visibilityKey: 'MyCompany:Roles',
+      label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
+      icon: 'i-lucide-shield-user',
+      activeOn: activeOnForEmployeeTab('custom_roles_list'),
+      to: accountScopedRoute('custom_roles_list'),
+    },
+    ...(hasAssignmentPolicies.value
+      ? [
+          {
+            name: 'Policies',
+            visibilityKey: 'MyCompany:Policies',
+            label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+            icon: 'i-lucide-shield-check',
+            activeOn: activeOnForEmployeeTab('assignment_policy_index'),
+            to: accountScopedRoute('assignment_policy_index'),
+          },
+        ]
+      : []),
+    ...(hasAuditLogs.value
+      ? [
+          {
+            name: 'Audit Logs',
+            visibilityKey: 'MyCompany:AuditLogs',
+            label: t('SIDEBAR.AUDIT_LOGS'),
+            icon: 'i-lucide-scroll-text',
+            activeOn: ['auditlogs_list'],
+            to: accountScopedRoute('auditlogs_list'),
+          },
+        ]
+      : []),
+  ],
+});
+
+const myCompanyMenuItem = computed(() => {
+  if (!checkPermissions(['administrator'])) return null;
+  return (
+    filterSidebarMenuItems([buildMyCompanyMenuItem()], uiSettings.value)[0] ||
+    null
+  );
+});
 
 const menuItems = computed(() => {
   return filterSidebarMenuItems(
@@ -1028,18 +1134,6 @@ const menuItems = computed(() => {
             ],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_prompts_index',
-            }),
-          },
-          {
-            name: 'Channels',
-            visibilityKey: 'Captain:Channels',
-            label: t('SIDEBAR.CAPTAIN_CHANNELS'),
-            activeOn: [
-              'captain_assistants_channels_index',
-              'captain_assistants_inboxes_index',
-            ],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_channels_index',
             }),
           },
           {
@@ -1338,80 +1432,6 @@ const menuItems = computed(() => {
             },
           ]
         : []),
-      ...(checkPermissions(['administrator'])
-        ? [
-            {
-              name: 'MyCompany',
-              label: t('SIDEBAR.MY_COMPANY'),
-              icon: 'i-lucide-briefcase-business',
-              activeOn: [
-                ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
-                ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
-                'auditlogs_list',
-              ],
-              children: [
-                {
-                  name: 'Workspace',
-                  visibilityKey: 'MyCompany:Workspace',
-                  label: t('SIDEBAR.ACCOUNT_SETTINGS'),
-                  icon: 'i-lucide-building-2',
-                  activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
-                  to: accountScopedRoute('general_settings_index'),
-                },
-                {
-                  name: 'Employees',
-                  visibilityKey: 'MyCompany:Employees',
-                  label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-                  icon: 'i-lucide-user-round',
-                  activeOn: activeOnForEmployeeTab('agent_list'),
-                  to: accountScopedRoute('agent_list'),
-                },
-                {
-                  name: 'Teams',
-                  visibilityKey: 'MyCompany:Teams',
-                  label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
-                  icon: 'i-lucide-users-round',
-                  activeOn: activeOnForEmployeeTab('settings_teams_list'),
-                  to: accountScopedRoute('settings_teams_list'),
-                },
-                {
-                  name: 'Roles',
-                  visibilityKey: 'MyCompany:Roles',
-                  label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
-                  icon: 'i-lucide-shield-user',
-                  activeOn: activeOnForEmployeeTab('custom_roles_list'),
-                  to: accountScopedRoute('custom_roles_list'),
-                },
-                ...(hasAssignmentPolicies.value
-                  ? [
-                      {
-                        name: 'Policies',
-                        visibilityKey: 'MyCompany:Policies',
-                        label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-                        icon: 'i-lucide-shield-check',
-                        activeOn: activeOnForEmployeeTab(
-                          'assignment_policy_index'
-                        ),
-                        to: accountScopedRoute('assignment_policy_index'),
-                      },
-                    ]
-                  : []),
-                ...(hasAuditLogs.value
-                  ? [
-                      {
-                        name: 'Audit Logs',
-                        visibilityKey: 'MyCompany:AuditLogs',
-                        label: t('SIDEBAR.AUDIT_LOGS'),
-                        icon: 'i-lucide-scroll-text',
-                        activeOn: ['auditlogs_list'],
-                        to: accountScopedRoute('auditlogs_list'),
-                      },
-                    ]
-                  : []),
-              ],
-            },
-          ]
-        : []),
       {
         name: 'Reports',
         label: t('SIDEBAR.REPORTS'),
@@ -1593,12 +1613,14 @@ const menuItems = computed(() => {
         <template v-if="isEffectivelyCollapsed">
           <SidebarAccountSwitcher
             is-collapsed
+            :company-menu-item="myCompanyMenuItem"
             @show-create-account-modal="emit('showCreateAccountModal')"
           />
         </template>
         <template v-else>
           <SidebarAccountSwitcher
             class="flex-grow min-w-0"
+            :company-menu-item="myCompanyMenuItem"
             @show-create-account-modal="emit('showCreateAccountModal')"
           />
         </template>

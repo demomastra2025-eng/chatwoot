@@ -43,6 +43,7 @@ describe('captainUiActions helper', () => {
         'open_help_center',
         'open_captain_documents',
         'open_captain_tools',
+        'open_captain_channels',
         'open_captain_observability',
         'open_assistant_settings',
         'open_scenario_editor',
@@ -242,8 +243,15 @@ describe('captainUiActions helper', () => {
       )
     ).toEqual({
       name: 'captain_assistants_documents_index',
-      params: { accountId: 1, assistantId: '12' },
+      params: { accountId: 1 },
       query: { source: 'captain_ui_action' },
+    });
+
+    expect(
+      routeForCaptainUiAction({ type: 'open_captain_channels' }, 1)
+    ).toEqual({
+      name: 'settings_inbox_list',
+      params: { accountId: 1 },
     });
 
     expect(
@@ -303,7 +311,7 @@ describe('captainUiActions helper', () => {
       )
     ).toEqual({
       name: 'captain_tools_index',
-      params: { accountId: 1, assistantId: '12' },
+      params: { accountId: 1 },
       query: {
         source: 'captain_ui_action',
         customToolId: '56',
@@ -354,7 +362,7 @@ describe('captainUiActions helper', () => {
     ).toBe(null);
     expect(
       routeForCaptainUiAction(
-        { type: 'open_captain_documents', targetId: '' },
+        { type: 'open_assistant_settings', targetId: '' },
         1
       )
     ).toBe(null);

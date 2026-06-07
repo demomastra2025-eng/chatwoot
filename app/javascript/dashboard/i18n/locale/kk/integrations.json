@@ -1204,6 +1204,16 @@
         "TITLE": "Related FAQs",
         "DESCRIPTION": "These FAQs are generated directly from the document."
       },
+      "SOURCE_TEXT": {
+        "TITLE": "Танылған мәтін",
+        "DESCRIPTION": "Құжаттан алынған мәтін",
+        "SUMMARY_TITLE": "Қысқаша мазмұн",
+        "FULL_TEXT_TITLE": "Толық мәтін",
+        "SIZE": "Мәтін көлемі: {size}",
+        "EMPTY_TITLE": "Мәтін алынбады",
+        "EMPTY_DESCRIPTION": "Суреттер OCR-сыз құжат тіркемесі ретінде сақталады. Кейбір файлдарда мәтін өңдеу аяқталғаннан кейін пайда болады.",
+        "ERROR_MESSAGE": "Танылған мәтінді жүктеу мүмкін болмады"
+      },
       "FORM_DESCRIPTION": "Enter the URL of the document to add it as a knowledge source and choose the assistant to associate it with.",
       "CREATE": {
         "TITLE": "Add a document",
@@ -2012,7 +2022,31 @@
     "INBOXES": {
       "HEADER": "Connected Channels",
       "ADD_NEW": "Connect a new inbox",
+      "CONNECTED_TO": "Connected to: {assistantName}",
       "CONNECTION_TOGGLE_LABEL": "Connection",
+      "AUTO_REPLY_MODE": {
+        "LABEL": "Жауап беру режимі",
+        "OPTIONS": {
+          "ALWAYS": "Әрқашан",
+          "WORKING_HOURS": "Жұмыс уақытында",
+          "OUTSIDE_WORKING_HOURS": "Жұмыс уақытынан тыс",
+          "NEVER": "Ешқашан"
+        },
+        "UPDATE": {
+          "SUCCESS_MESSAGE": "Авто жауап беру режимі жаңартылды.",
+          "ERROR_MESSAGE": "Авто жауап беру режимін жаңарту мүмкін болмады. Қайталап көріңіз."
+        }
+      },
+      "CHANNEL_SETTINGS": {
+        "TITLE": "Арнаға арналған AI-агент",
+        "DESCRIPTION": "«{inboxName}» арнасы үшін AI-агентті таңдап, авто жауап беру режимін баптаңыз.",
+        "ASSISTANT": {
+          "LABEL": "AI-агент",
+          "NO_AGENT": "Таңдалмаған"
+        },
+        "EMPTY_TITLE": "Қолжетімді AI-агенттер жоқ",
+        "EMPTY_DESCRIPTION": "Бұл арнаға қосу үшін алдымен AI-сотрудники бөлімінде сыртқы AI-агент жасаңыз."
+      },
       "OPTIONS": {
         "DISCONNECT": "Disconnect"
       },

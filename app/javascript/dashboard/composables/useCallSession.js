@@ -17,11 +17,8 @@ export function useCallSession() {
   const activeCall = computed(() => callsStore.activeCall);
   const incomingCalls = computed(() => callsStore.incomingCalls);
   const hasActiveCall = computed(() => callsStore.hasActiveCall);
-  const handleClientDisconnect = () => callsStore.clearActiveCall();
   const resolveCallProvider = call => call?.provider || null;
-  const isFonosterOutboundCall = call =>
-    resolveCallProvider(call) === 'fonoster' &&
-    call?.callDirection === 'outbound';
+  const isOutboundCallDirection = callDirection => callDirection === 'outbound';
 
   watch(
     hasActiveCall,
@@ -35,26 +32,6 @@ export function useCallSession() {
     },
     { immediate: true }
   );
-
-  onMounted(() => {
-    WebphoneClient.addEventListener(
-      'call:disconnected',
-      handleClientDisconnect
-    );
-
-    WebphoneClient.bootstrapIncomingSupport().catch(error => {
-      // eslint-disable-next-line no-console
-      console.error('Failed to bootstrap browser calling:', error);
-    });
-  });
-
-  onUnmounted(() => {
-    durationTimer.stop();
-    WebphoneClient.removeEventListener(
-      'call:disconnected',
-      handleClientDisconnect
-    );
-  });
 
   const claimErrorPayload = error => error?.response?.data || {};
 
@@ -122,6 +99,51 @@ export function useCallSession() {
     }
   };
 
+  const handleFonosterClientDisconnect = async call => {
+    if (!call?.callSid) {
+      await callsStore.clearActiveCall();
+      return;
+    }
+
+    await runOnceForCall(endingCallSids, call.callSid, async () => {
+      await releaseFonosterIncomingCall(call.callSid, {
+        status: 'completed',
+        reason: 'remote_hangup',
+      });
+    });
+    await callsStore.clearActiveCall();
+  };
+
+  const handleClientDisconnect = async () => {
+    const call = callsStore.activeCall;
+    if (resolveCallProvider(call) === 'fonoster') {
+      await handleFonosterClientDisconnect(call);
+      return;
+    }
+
+    await callsStore.clearActiveCall();
+  };
+
+  onMounted(() => {
+    WebphoneClient.addEventListener(
+      'call:disconnected',
+      handleClientDisconnect
+    );
+
+    WebphoneClient.bootstrapIncomingSupport().catch(error => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to bootstrap browser calling:', error);
+    });
+  });
+
+  onUnmounted(() => {
+    durationTimer.stop();
+    WebphoneClient.removeEventListener(
+      'call:disconnected',
+      handleClientDisconnect
+    );
+  });
+
   const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
     if (provider === 'fonoster') {
       return runOnceForCall(endingCallSids, callSid, async () => {
@@ -178,23 +200,19 @@ export function useCallSession() {
 
       const resolvedProvider = webphoneSession.provider || provider;
 
-      if (resolvedProvider === 'fonoster' && callDirection === 'outbound') {
-        callsStore.markBrowserJoinUnsupported(callSid, resolvedProvider);
-        return {
-          provider: resolvedProvider,
-          joinSupported: false,
-        };
-      }
-
       if (resolvedProvider === 'fonoster') {
-        const claimResult = await claimFonosterIncomingCall(callSid);
-        if (!claimResult.claimed) {
-          callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
-          return {
-            provider: 'fonoster',
-            joinSupported: false,
-            reason: claimResult.reason || claimResult.code,
-          };
+        const isOutbound = isOutboundCallDirection(callDirection);
+
+        if (!isOutbound) {
+          const claimResult = await claimFonosterIncomingCall(callSid);
+          if (!claimResult.claimed) {
+            callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
+            return {
+              provider: 'fonoster',
+              joinSupported: false,
+              reason: claimResult.reason || claimResult.code,
+            };
+          }
         }
 
         let joinResult = null;
@@ -203,16 +221,23 @@ export function useCallSession() {
             provider: 'fonoster',
             conversationId,
             callRef: callSid,
+            callDirection,
           });
         } catch (error) {
           // eslint-disable-next-line no-console
-          console.warn('Failed to answer Fonoster incoming call:', error);
+          console.warn('Failed to answer Fonoster browser call:', error);
           return releaseUnsupportedFonosterJoin(callSid, {
             includeReason: true,
           });
         }
 
         if (!joinResult) {
+          if (isOutbound) {
+            return releaseUnsupportedFonosterJoin(callSid, {
+              includeReason: true,
+            });
+          }
+
           if (webphoneSession.registered === true) {
             return {
               provider: 'fonoster',
@@ -319,7 +344,6 @@ export function useCallSession() {
     const provider = resolveCallProvider(call);
     if (!provider) return false;
     if (call?.browserJoinSupported === false) return false;
-    if (isFonosterOutboundCall(call)) return false;
 
     return WebphoneClient.supportsBrowserCalling(provider, {
       callDirection: call?.callDirection,

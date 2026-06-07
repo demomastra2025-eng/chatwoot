@@ -29,8 +29,8 @@ class Voice::InboundCallBuilder
   private
 
   def ensure_contact!
-    account.contacts.find_or_create_by!(phone_number: from_number) do |record|
-      record.name = from_number if record.name.blank?
+    account.contacts.find_or_create_by!(phone_number: normalized_from_number) do |record|
+      record.name = normalized_from_number if record.name.blank?
     end
   end
 
@@ -39,7 +39,7 @@ class Voice::InboundCallBuilder
       contact_id: contact.id,
       inbox_id: inbox.id
     ) do |record|
-      record.source_id = from_number
+      record.source_id = normalized_from_number
     end
   end
 
@@ -82,11 +82,17 @@ class Voice::InboundCallBuilder
         call_sid: call_sid,
         status: 'ringing',
         conference_sid: conversation.additional_attributes['conference_sid'],
-        from_number: from_number,
+        from_number: normalized_from_number,
         to_number: inbox.channel&.phone_number
       },
       timestamps: { created_at: timestamp, ringing_at: timestamp }
     )
+  end
+
+  def normalized_from_number
+    @normalized_from_number ||= Contacts::PhoneNumberNormalizer.normalize(from_number) ||
+                                Contacts::PhoneNumberNormalizer.normalize(from_number, default_country: 'KZ') ||
+                                from_number
   end
 
   def current_timestamp

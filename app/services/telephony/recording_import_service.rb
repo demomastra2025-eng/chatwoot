@@ -57,13 +57,14 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
   def download_recording!(file, uri = parsed_download_url, redirects_left = MAX_REDIRECTS)
     raise_non_retryable!('Recording download redirect URL is not allowed') unless Telephony::RecordingImportDownloadPolicy.allowed?(uri)
 
-    response = http_response(uri)
-    return stream_success_response!(response, file) if response.is_a?(Net::HTTPSuccess)
-    return follow_redirect!(file, uri, response, redirects_left) if response.is_a?(Net::HTTPRedirection)
+    with_http_response(uri) do |response|
+      return stream_success_response!(response, file) if response.is_a?(Net::HTTPSuccess)
+      return follow_redirect!(file, uri, response, redirects_left) if response.is_a?(Net::HTTPRedirection)
 
-    raise_retryable!("Recording download failed with HTTP #{response.code}") if response.is_a?(Net::HTTPServerError)
+      raise_retryable!("Recording download failed with HTTP #{response.code}") if response.is_a?(Net::HTTPServerError)
 
-    raise_non_retryable!("Recording download failed with HTTP #{response.code}")
+      raise_non_retryable!("Recording download failed with HTTP #{response.code}")
+    end
   rescue Timeout::Error, Errno::ECONNRESET, Errno::ECONNREFUSED, SocketError, OpenSSL::SSL::SSLError => e
     raise_retryable!("Recording download failed: #{e.class.name}")
   end
@@ -77,11 +78,11 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
     download_recording!(file, URI.join(uri, location), redirects_left - 1)
   end
 
-  def http_response(uri)
+  def with_http_response(uri, &)
     Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', open_timeout: timeout_seconds, read_timeout: timeout_seconds) do |http|
       request = Net::HTTP::Get.new(uri)
       request['User-Agent'] = 'OneLink-RecordingImport/1.0'
-      http.request(request)
+      http.request(request, &)
     end
   end
 

@@ -84,4 +84,21 @@ describe('AssistantsIndexPage', () => {
       replace: true,
     });
   });
+
+  it('routes the removed channels target to channel settings list', async () => {
+    mocks.route.params = {
+      accountId: '1',
+      navigationPath: 'captain_assistants_channels_index',
+    };
+
+    await mountPage();
+
+    expect(mocks.replace).toHaveBeenCalledWith({
+      name: 'settings_inbox_list',
+      params: {
+        accountId: '1',
+      },
+      replace: true,
+    });
+  });
 });

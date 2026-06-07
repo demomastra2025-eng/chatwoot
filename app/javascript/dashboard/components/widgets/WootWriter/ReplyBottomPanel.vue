@@ -15,11 +15,18 @@ import { INBOX_TYPES, getInboxIconByType } from 'dashboard/helper/inbox';
 import { getCommunicationChannelLabel } from 'dashboard/helper/communicationThreadHelper';
 import { mapGetters } from 'vuex';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
 import wootConstants from 'dashboard/constants/globals';
 
 export default {
   name: 'ReplyBottomPanel',
-  components: { NextButton, FileUpload, PaymentActionButton, VideoCallButton },
+  components: {
+    NextButton,
+    FileUpload,
+    PaymentActionButton,
+    VideoCallButton,
+    VoiceCallButton,
+  },
   mixins: [inboxMixin],
   props: {
     isNote: {
@@ -116,6 +123,14 @@ export default {
     conversationId: {
       type: Number,
       default: null,
+    },
+    contactId: {
+      type: [Number, String],
+      default: null,
+    },
+    contactPhone: {
+      type: String,
+      default: '',
     },
     // eslint-disable-next-line vue/no-unused-properties
     message: {
@@ -342,6 +357,12 @@ export default {
 
       return !!this.inbox?.captain_assistant?.id;
     },
+    showVoiceCallButton() {
+      if (this.isEditorDisabled) return false;
+      if (this.isNote || this.isOnPrivateNote) return false;
+
+      return Boolean(this.contactId && this.contactPhone);
+    },
     isCaptainEnabledForConversation() {
       return (
         this.currentConversation?.status === wootConstants.STATUS_TYPE.PENDING
@@ -527,6 +548,16 @@ export default {
             : ''
         "
         @click="toggleCaptainForConversation"
+      />
+      <VoiceCallButton
+        v-if="showVoiceCallButton"
+        v-tooltip.top-end="$t('CONTACT_PANEL.CALL')"
+        :contact-id="contactId"
+        :phone="contactPhone"
+        icon="i-ph-phone"
+        slate
+        faded
+        sm
       />
       <NextButton
         v-if="showQuotedReplyToggle"

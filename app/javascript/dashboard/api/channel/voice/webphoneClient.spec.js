@@ -252,17 +252,18 @@ describe('webphoneClient', () => {
     }
   });
 
-  it('keeps outbound fonoster calls out of the browser-join path', () => {
+  it('allows outbound fonoster calls through the browser-join path', () => {
     WebphoneClient.providerSessions.fonoster = {
       provider: 'fonoster',
       callingSupported: true,
+      registered: true,
     };
 
     expect(
       WebphoneClient.supportsBrowserCalling('fonoster', {
         callDirection: 'outbound',
       })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       WebphoneClient.supportsBrowserCalling('fonoster', {
         callDirection: 'inbound',

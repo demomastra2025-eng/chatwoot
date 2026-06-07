@@ -1928,6 +1928,8 @@
       "SOURCE_TEXT": {
         "TITLE": "Parsed text",
         "DESCRIPTION": "Text extracted from the document",
+        "SUMMARY_TITLE": "Summary",
+        "FULL_TEXT_TITLE": "Full text",
         "SIZE": "Text size: {size}",
         "EMPTY_TITLE": "No text was extracted",
         "EMPTY_DESCRIPTION": "Images are stored as document attachments without OCR. For some files, text appears after processing finishes.",
@@ -2937,6 +2939,16 @@
           "SUCCESS_MESSAGE": "Auto-reply mode was updated.",
           "ERROR_MESSAGE": "There was an error updating auto-reply mode. Please try again."
         }
+      },
+      "CHANNEL_SETTINGS": {
+        "TITLE": "AI agent for this inbox",
+        "DESCRIPTION": "Choose an AI agent for “{inboxName}” and configure the auto-reply mode.",
+        "ASSISTANT": {
+          "LABEL": "AI agent",
+          "NO_AGENT": "Not selected"
+        },
+        "EMPTY_TITLE": "No available AI agents",
+        "EMPTY_DESCRIPTION": "Create an external AI agent in AI employees before connecting it to this inbox."
       },
       "OPTIONS": {
         "DISCONNECT": "Disconnect"

@@ -37,4 +37,24 @@ describe('captain routes', () => {
       query: { source: 'legacy' },
     });
   });
+
+  it('redirects the removed channels page to channel settings', () => {
+    const channelsRoute = flattenRoutes(routes).find(
+      route => route.name === 'captain_assistants_channels_index'
+    );
+
+    expect(channelsRoute).toBeTruthy();
+    expect(channelsRoute.path).toContain('/captain/:assistantId/channels');
+    expect(channelsRoute.component).toBeUndefined();
+    expect(
+      channelsRoute.redirect({
+        params: { accountId: '1', assistantId: '2' },
+        query: { source: 'legacy' },
+      })
+    ).toEqual({
+      name: 'settings_inbox_list',
+      params: { accountId: '1' },
+      query: { source: 'legacy' },
+    });
+  });
 });

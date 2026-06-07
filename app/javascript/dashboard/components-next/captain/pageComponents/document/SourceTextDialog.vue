@@ -20,7 +20,17 @@ const { t } = useI18n();
 const dialogRef = ref(null);
 
 const sourceText = computed(() => props.document?.source_text || '');
+const summaryText = computed(() => {
+  const summary = props.document?.summary?.trim();
+  if (summary) return summary;
+
+  const content = props.document?.content?.trim();
+  if (content && content !== sourceText.value.trim()) return content;
+
+  return '';
+});
 const hasSourceText = computed(() => sourceText.value.trim().length > 0);
+const hasSummary = computed(() => summaryText.value.length > 0);
 const sourceTextSize = computed(() => {
   const bytes = props.document?.source_text_bytes || 0;
   if (!bytes) return '';
@@ -55,39 +65,57 @@ defineExpose({ dialogRef });
       <Spinner />
     </div>
     <div v-else class="flex min-h-0 flex-col gap-4">
-      <div class="flex flex-wrap items-center gap-2">
-        <span
-          class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
-        >
-          {{
-            t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.SIZE', {
-              size: sourceTextSize || '0 B',
-            })
-          }}
-        </span>
-      </div>
-
-      <div
-        v-if="hasSourceText"
-        class="max-h-[60vh] overflow-auto rounded-xl border border-n-weak bg-n-alpha-2 p-4"
+      <section
+        v-if="hasSummary"
+        class="rounded-xl border border-n-weak bg-n-surface-2 p-4"
       >
-        <pre
-          class="m-0 whitespace-pre-wrap break-words font-mono text-sm leading-6 text-n-slate-12"
-          >{{ sourceText }}</pre
-        >
-      </div>
+        <h3 class="mb-2 text-sm font-semibold text-n-slate-12">
+          {{ t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.SUMMARY_TITLE') }}
+        </h3>
+        <p class="m-0 whitespace-pre-wrap text-sm leading-6 text-n-slate-12">
+          {{ summaryText }}
+        </p>
+      </section>
 
-      <div
-        v-else
-        class="rounded-xl border border-dashed border-n-weak bg-n-alpha-2 px-5 py-10 text-center"
-      >
-        <p class="m-0 text-sm font-medium text-n-slate-12">
-          {{ t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.EMPTY_TITLE') }}
-        </p>
-        <p class="mx-auto mb-0 mt-2 max-w-xl text-sm text-n-slate-11">
-          {{ t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.EMPTY_DESCRIPTION') }}
-        </p>
-      </div>
+      <section class="flex min-h-0 flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="m-0 text-sm font-semibold text-n-slate-12">
+            {{ t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.FULL_TEXT_TITLE') }}
+          </h3>
+          <span
+            class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+          >
+            {{
+              t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.SIZE', {
+                size: sourceTextSize || '0 B',
+              })
+            }}
+          </span>
+        </div>
+
+        <div
+          v-if="hasSourceText"
+          class="max-h-[50vh] overflow-auto rounded-xl border border-n-weak bg-n-alpha-2 p-4"
+        >
+          <div
+            class="m-0 whitespace-pre-wrap break-words font-mono text-sm leading-6 text-n-slate-12"
+          >
+            {{ sourceText }}
+          </div>
+        </div>
+
+        <div
+          v-else
+          class="rounded-xl border border-dashed border-n-weak bg-n-alpha-2 px-5 py-10 text-center"
+        >
+          <p class="m-0 text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.EMPTY_TITLE') }}
+          </p>
+          <p class="mx-auto mb-0 mt-2 max-w-xl text-sm text-n-slate-11">
+            {{ t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.EMPTY_DESCRIPTION') }}
+          </p>
+        </div>
+      </section>
     </div>
     <template #footer />
   </Dialog>
