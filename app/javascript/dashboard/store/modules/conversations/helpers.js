@@ -90,11 +90,12 @@ export const applyRoleFilter = (
     return true;
   }
 
-  const conversationAssignee = conversation.meta.assignee;
+  const conversationMeta = conversation.meta || {};
+  const conversationAssignee = conversationMeta.assignee;
   const isUnassigned = !conversationAssignee;
   const isAssignedToUser = conversationAssignee?.id === currentUserId;
   const isCurrentUserParticipant = Boolean(
-    conversation.meta.current_user_participant
+    conversationMeta.current_user_participant
   );
 
   // Check unassigned management permission

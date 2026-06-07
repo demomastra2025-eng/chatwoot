@@ -83,7 +83,11 @@ export const VOICE_CALL_STATUS = {
   RINGING: 'ringing',
   COMPLETED: 'completed',
   NO_ANSWER: 'no-answer',
+  MISSED: 'missed',
   FAILED: 'failed',
+  BUSY: 'busy',
+  REJECTED: 'rejected',
+  CANCELLED: 'cancelled',
 };
 
 export const VOICE_CALL_DIRECTION = {

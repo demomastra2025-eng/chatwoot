@@ -200,6 +200,36 @@ describe('#getters', () => {
       ]);
     });
   });
+
+  describe('#getMineChats', () => {
+    it('ignores conversations without meta instead of throwing', () => {
+      const assignedConversation = {
+        id: 1,
+        inbox_id: 2,
+        status: 'open',
+        meta: { assignee: { id: 1 } },
+        labels: [],
+        last_activity_at: 2,
+      };
+      const syntheticThread = {
+        id: 7,
+        status: 'open',
+        is_communication_thread: true,
+        labels: [],
+        last_activity_at: 1,
+      };
+      const state = {
+        allConversations: [syntheticThread, assignedConversation],
+        chatSortFilter: 'last_activity_at_desc',
+      };
+      const rootGetters = { getCurrentUser: { id: 1 } };
+
+      expect(
+        getters.getMineChats(state, {}, {}, rootGetters)({ status: 'open' })
+      ).toEqual([assignedConversation]);
+    });
+  });
+
   describe('#getParticipatingChats', () => {
     const conversationList = [
       { id: 1, inbox_id: 2, status: 1, meta: { assignee: { id: 1 } } },

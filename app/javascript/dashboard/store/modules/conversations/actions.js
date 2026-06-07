@@ -46,7 +46,11 @@ const getCommunicationThreadById = (state, conversationId) => {
 };
 
 const commitCommunicationThreadUpdate = (commit, payload) => {
-  const communicationThread = buildCommunicationThreadConversation(payload);
+  const threadId = payload.communication_thread_id || payload.id;
+  const communicationThread = buildCommunicationThreadConversation({
+    ...payload,
+    id: threadId,
+  });
   commit(types.UPDATE_CONVERSATION, communicationThread);
   return communicationThread;
 };
@@ -661,14 +665,7 @@ const actions = {
   },
 
   updateCommunicationThreadRealtime({ commit }, payload) {
-    const threadId = payload.communication_thread_id || payload.id;
-    commit(types.UPDATE_CONVERSATION, {
-      ...payload,
-      id: threadId,
-      display_id: threadId,
-      communication_thread_id: threadId,
-      is_communication_thread: true,
-    });
+    commitCommunicationThreadUpdate(commit, payload);
   },
 
   updateConversationLastActivity(

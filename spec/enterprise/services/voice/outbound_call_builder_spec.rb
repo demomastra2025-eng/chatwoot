@@ -94,6 +94,106 @@ RSpec.describe Voice::OutboundCallBuilder do
       )
     end
 
+    context 'with Fonoster provider' do
+      let(:channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230000') }
+      let(:call_sid) { 'fonoster-new-outbound-call-1' }
+      let!(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number) }
+      let!(:existing_conversation) do
+        create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          contact: contact,
+          contact_inbox: contact_inbox,
+          status: :resolved,
+          identifier: 'fonoster-previous-call',
+          additional_attributes: {
+            'call_direction' => 'outbound',
+            'call_status' => 'completed',
+            'fonoster_call_ref' => 'fonoster-previous-call',
+            'call_started_at' => 100,
+            'call_ended_at' => 120,
+            'call_duration' => 20,
+            'recording_ref' => 'old-recording.wav',
+            'recording' => { 'storage_key' => 'old-recording.wav' },
+            'from_number' => '+15559990000',
+            'to_number' => '+15550000000'
+          }
+        )
+      end
+      let!(:call_session) do
+        create(
+          :telephony_call_session,
+          account: account,
+          conversation: existing_conversation,
+          contact: contact,
+          inbox: inbox,
+          number_binding: inbox.telephony_number_binding,
+          external_call_ref: call_sid,
+          provider: 'fonoster',
+          status: 'ringing',
+          direction: 'outbound'
+        )
+      end
+      let(:calls_service) { instance_double(Telephony::CallsService) }
+
+      before do
+        create(
+          :message,
+          account: account,
+          inbox: inbox,
+          conversation: existing_conversation,
+          message_type: :outgoing,
+          content_type: :voice_call,
+          sender: user,
+          source_id: 'voice_call:fonoster-previous-call',
+          content_attributes: { 'data' => { 'call_sid' => 'fonoster-previous-call', 'status' => 'completed' } }
+        )
+        allow(Telephony::CallsService).to receive(:new).with(account: account).and_return(calls_service)
+        allow(calls_service).to receive(:create_outbound!).and_return(
+          call_ref: call_sid,
+          status: 'ringing',
+          call_session: call_session
+        )
+      end
+
+      it 'reuses the latest open contact conversation without replacing previous call history' do
+        expect do
+          described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+        end.not_to(change { account.conversations.where(inbox_id: inbox.id, contact_id: contact.id).count })
+
+        expect(calls_service).to have_received(:create_outbound!).with(
+          inbox: inbox,
+          contact: contact,
+          user: user,
+          conversation: existing_conversation
+        )
+
+        existing_conversation.reload
+        voice_messages = existing_conversation.messages.voice_calls.order(:created_at, :id)
+
+        aggregate_failures do
+          expect(existing_conversation.identifier).to eq('fonoster-previous-call')
+          expect(existing_conversation).to be_open
+          expect(existing_conversation.additional_attributes).to include(
+            'call_direction' => 'outbound',
+            'call_status' => 'ringing',
+            'fonoster_call_ref' => call_sid,
+            'from_number' => channel.phone_number,
+            'to_number' => contact.phone_number
+          )
+          expect(existing_conversation.additional_attributes).not_to have_key('call_started_at')
+          expect(existing_conversation.additional_attributes).not_to have_key('call_ended_at')
+          expect(existing_conversation.additional_attributes).not_to have_key('call_duration')
+          expect(existing_conversation.additional_attributes).not_to have_key('recording_ref')
+          expect(existing_conversation.additional_attributes).not_to have_key('recording')
+          expect(voice_messages.count).to eq(2)
+          expect(voice_messages.last.source_id).to eq("voice_call:#{call_sid}")
+          expect(voice_messages.first.content_attributes.dig('data', 'call_sid')).to eq('fonoster-previous-call')
+        end
+      end
+    end
+
     context 'with Sipuni outbound callback identity' do
       let(:channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+77271234567') }
       let(:contact) { create(:contact, account: account, phone_number: '+77015550102') }

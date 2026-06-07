@@ -76,6 +76,12 @@ export const useCallsStore = defineStore('calls', {
             sameCallSid(item, callSid) ||
             sameFonosterConversation(item, { conversationId, provider })
         );
+        if (
+          call?.provider === 'fonoster' &&
+          call?.callDirection === 'outbound'
+        ) {
+          return;
+        }
         if (call && !call.isActive) this.dismissCall(call.callSid);
       }
     },

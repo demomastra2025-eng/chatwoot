@@ -140,10 +140,23 @@ describe('#actions', () => {
       expect(commit.mock.calls).toEqual([
         [
           types.UPDATE_CONVERSATION,
-          {
-            ...payload,
+          expect.objectContaining({
+            id: 7,
             display_id: 7,
-          },
+            communication_thread_id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11, 22],
+            unread_count: 3,
+            timestamp: 1710000000,
+            updated_at: 1710000000.25,
+            messages: [],
+            labels: [],
+            meta: {
+              sender: {},
+              assignee: null,
+              team: null,
+            },
+          }),
         ],
       ]);
     });

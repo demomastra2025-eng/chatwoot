@@ -105,6 +105,163 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'uses the answered timestamp for active Fonoster conversation state' do
+      started_at = Time.zone.parse(30.seconds.ago.iso8601)
+      answered_at = Time.zone.parse(10.seconds.ago.iso8601)
+      existing_call_session.update!(
+        provider: 'fonoster',
+        status: 'ringing',
+        started_at: started_at,
+        last_event_at: started_at
+      )
+      existing_call_session.conversation.update!(
+        additional_attributes: {
+          'call_status' => 'ringing',
+          'fonoster_call_ref' => 'call-retry-1',
+          'call_started_at' => 100,
+          'call_ended_at' => 120,
+          'call_duration' => 20
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-active-answered-timer-1',
+          provider: 'fonoster',
+          event: 'operator_answered',
+          status: 'answered',
+          occurred_at: answered_at.iso8601,
+          answered_at: answered_at.iso8601,
+          answered_by: 'operator_device'
+        )
+      ).perform
+
+      attrs = result.conversation.reload.additional_attributes
+      aggregate_failures do
+        expect(result.reload).to have_attributes(status: 'in_progress', answered_at: answered_at)
+        expect(attrs['call_status']).to eq('in_progress')
+        expect(attrs['call_started_at']).to eq(answered_at.to_i)
+        expect(attrs).not_to have_key('call_ended_at')
+        expect(attrs).not_to have_key('call_duration')
+      end
+    end
+
+    it 'keeps outbound CRM direction when a Fonoster operator leg reports inbound runtime direction' do
+      existing_call_session.update!(
+        direction: 'outbound',
+        status: 'ringing',
+        metadata: {
+          'metadata' => {
+            'mode' => 'operator',
+            'routing_mode' => 'operator',
+            'direction' => 'outbound',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-operator-leg-answered-1',
+          event: 'operator_answered',
+          status: 'answered',
+          callDirection: 'inbound',
+          call_direction: 'inbound',
+          routingMode: 'operator',
+          routing_mode: 'operator',
+          leg: 'operator'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        direction: 'outbound',
+        status: 'in_progress'
+      )
+      expect(result.legs.last).to include(
+        'direction' => 'outbound',
+        'leg' => 'operator',
+        'status' => 'in_progress'
+      )
+    end
+
+    it 'attaches a new Fonoster call event to the existing open contact conversation' do
+      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+15551230000')
+      voice_inbox = voice_channel.inbox
+      contact = create(:contact, account: account, phone_number: '+15550001111')
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
+      existing_conversation = create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        status: :resolved,
+        identifier: 'fonoster-previous-call',
+        additional_attributes: {
+          'call_direction' => 'outbound',
+          'call_status' => 'completed',
+          'fonoster_call_ref' => 'fonoster-previous-call',
+          'call_started_at' => 100,
+          'call_ended_at' => 120,
+          'call_duration' => 20,
+          'recording_ref' => 'old-recording.wav',
+          'recording' => { 'storage_key' => 'old-recording.wav' },
+          'from_number' => '+15559990000',
+          'to_number' => '+15550000000'
+        }
+      )
+      create(
+        :message,
+        account: account,
+        conversation: existing_conversation,
+        inbox: voice_inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:fonoster-previous-call',
+        content_attributes: { 'data' => { 'call_sid' => 'fonoster-previous-call', 'status' => 'completed' } }
+      )
+
+      result = nil
+      expect do
+        result = described_class.new(
+          payload: {
+            event_key: 'evt-fonoster-reuse-existing-conversation-1',
+            account_id: account.id,
+            provider: 'fonoster',
+            call_ref: 'fonoster-new-outbound-call-1',
+            event: 'call_created',
+            status: 'ringing',
+            direction: 'outbound',
+            inbox_id: voice_inbox.id,
+            from_number: voice_channel.phone_number,
+            to_number: contact.phone_number,
+            occurred_at: Time.current.iso8601
+          }
+        ).perform
+      end.not_to(change { account.conversations.where(inbox_id: voice_inbox.id, contact_id: contact.id).count })
+
+      existing_conversation.reload
+      new_message = existing_conversation.messages.voice_calls.find_by!(source_id: 'voice_call:fonoster-new-outbound-call-1')
+
+      aggregate_failures do
+        expect(result.reload.conversation_id).to eq(existing_conversation.id)
+        expect(existing_conversation.identifier).to eq('fonoster-previous-call')
+        expect(existing_conversation).to be_open
+        expect(existing_conversation.additional_attributes).to include(
+          'call_direction' => 'outbound',
+          'fonoster_call_ref' => 'fonoster-new-outbound-call-1',
+          'from_number' => voice_channel.phone_number,
+          'to_number' => contact.phone_number
+        )
+        expect(existing_conversation.additional_attributes).not_to have_key('call_started_at')
+        expect(existing_conversation.additional_attributes).not_to have_key('call_ended_at')
+        expect(existing_conversation.additional_attributes).not_to have_key('call_duration')
+        expect(existing_conversation.additional_attributes).not_to have_key('recording_ref')
+        expect(existing_conversation.additional_attributes).not_to have_key('recording')
+        expect(new_message.content_attributes.dig('data', 'call_sid')).to eq('fonoster-new-outbound-call-1')
+        expect(new_message.content_attributes.dig('data', 'status')).to eq('ringing')
+      end
+    end
+
     it 'recomputes zero completed duration for answered calls with a later ended_at' do
       answered_at = Time.zone.parse(2.minutes.ago.iso8601)
       ended_at = Time.zone.parse(30.seconds.ago.iso8601)
@@ -248,6 +405,63 @@ RSpec.describe Telephony::EventsIngestionService do
         'event_type' => 'operator_no_answer',
         'status' => 'no_answer'
       )
+    end
+
+    it 'marks inbound calls missed when caller hangs up before the operator answers' do
+      occurred_at = Time.zone.parse(15.seconds.ago.iso8601)
+      started_at = occurred_at - 10.seconds
+      existing_call_session.update!(
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: started_at,
+        answered_at: nil,
+        last_event_at: 1.minute.ago
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-inbound-operator-unanswered-1',
+          event: 'session_completed',
+          callDirection: 'inbound',
+          occurred_at: occurred_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'voice_stream_ended_before_operator_answer'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'missed',
+        ended_at: occurred_at,
+        ended_by: 'caller',
+        end_reason: 'voice_stream_ended_before_operator_answer',
+        answered_at: nil,
+        duration_seconds: 10
+      )
+      expect(result.latest_voice_message.content_attributes.dig('data', 'status')).to eq('missed')
+      expect(result.latest_voice_message.content_attributes.dig('data', 'duration')).to eq(10)
+      expect(result.legs.last).to include(
+        'event_key' => 'evt-inbound-operator-unanswered-1',
+        'event_type' => 'session_completed',
+        'status' => 'missed',
+        'direction' => 'inbound'
+      )
+
+      recording_result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-inbound-operator-unanswered-recording-1',
+          event: 'recording_ready',
+          occurred_at: (occurred_at + 3.seconds).iso8601,
+          recording_ref: 'voice-recordings/fonoster/530/call-retry-1/empty.wav',
+          duration: 2
+        )
+      ).perform
+
+      expect(recording_result.reload).to have_attributes(
+        status: 'missed',
+        duration_seconds: 10
+      )
+      expect(recording_result.latest_voice_message.content_attributes.dig('data', 'status')).to eq('missed')
+      expect(recording_result.latest_voice_message.content_attributes.dig('data', 'duration')).to eq(10)
     end
 
     it 'normalizes call_ended caller_hangup reasons to cancelled' do

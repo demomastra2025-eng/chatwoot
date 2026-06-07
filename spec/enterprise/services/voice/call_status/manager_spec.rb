@@ -79,6 +79,51 @@ RSpec.describe Voice::CallStatus::Manager do
     expect(message.content_attributes.dig('data', 'status')).to eq('completed')
   end
 
+  it 'clears stale terminal metadata when the call returns to ringing' do
+    conversation.update!(
+      additional_attributes: {
+        'call_status' => 'completed',
+        'call_started_at' => 100,
+        'call_ended_at' => 120,
+        'call_duration' => 20
+      }
+    )
+
+    described_class.new(conversation: conversation, call_sid: 'fresh-call-ref').process_status_update('ringing')
+
+    attrs = conversation.reload.additional_attributes
+    aggregate_failures do
+      expect(attrs['call_status']).to eq('ringing')
+      expect(attrs).not_to have_key('call_started_at')
+      expect(attrs).not_to have_key('call_ended_at')
+      expect(attrs).not_to have_key('call_duration')
+    end
+  end
+
+  it 'refreshes active start time and clears stale terminal metadata for in-progress calls' do
+    conversation.update!(
+      additional_attributes: {
+        'call_status' => 'completed',
+        'call_started_at' => 100,
+        'call_ended_at' => 120,
+        'call_duration' => 20
+      }
+    )
+
+    described_class.new(conversation: conversation, call_sid: 'fresh-call-ref').process_status_update(
+      'in_progress',
+      timestamp: 180
+    )
+
+    attrs = conversation.reload.additional_attributes
+    aggregate_failures do
+      expect(attrs['call_status']).to eq('in_progress')
+      expect(attrs['call_started_at']).to eq(180)
+      expect(attrs).not_to have_key('call_ended_at')
+      expect(attrs).not_to have_key('call_duration')
+    end
+  end
+
   it 'does not mutate the latest voice call message when no message matches the call sid' do
     stale_message = create(
       :message,

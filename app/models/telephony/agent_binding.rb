@@ -74,7 +74,7 @@ class Telephony::AgentBinding < ApplicationRecord
     update!(metadata: registration_metadata, last_synced_at: occurred_at)
   end
 
-  DEFAULT_REGISTRATION_TTL = 2.minutes
+  DEFAULT_REGISTRATION_TTL = 5.minutes
   DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
 
   def registered_for_routing?

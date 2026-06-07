@@ -3,7 +3,11 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { useMessageContext } from '../provider.js';
-import { MESSAGE_TYPES, VOICE_CALL_STATUS } from '../constants';
+import {
+  MESSAGE_TYPES,
+  VOICE_CALL_DIRECTION,
+  VOICE_CALL_STATUS,
+} from '../constants';
 import { useAlert } from 'dashboard/composables';
 import { acceptWhatsappCallById } from 'dashboard/composables/useWhatsappCallSession';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
@@ -25,24 +29,36 @@ const SUBTEXT_MAP = {
 };
 
 const ICON_MAP = {
+  [VOICE_CALL_STATUS.MISSED]: 'i-ph-phone-x',
   [VOICE_CALL_STATUS.IN_PROGRESS]: 'i-ph-phone-call',
   [VOICE_CALL_STATUS.NO_ANSWER]: 'i-ph-phone-x',
   [VOICE_CALL_STATUS.FAILED]: 'i-ph-phone-x',
+  [VOICE_CALL_STATUS.BUSY]: 'i-ph-phone-x',
+  [VOICE_CALL_STATUS.REJECTED]: 'i-ph-phone-x',
+  [VOICE_CALL_STATUS.CANCELLED]: 'i-ph-phone-x',
 };
 
 const BG_COLOR_MAP = {
   [VOICE_CALL_STATUS.IN_PROGRESS]: 'bg-n-teal-9',
   [VOICE_CALL_STATUS.RINGING]: 'bg-n-teal-9 animate-pulse',
   [VOICE_CALL_STATUS.COMPLETED]: 'bg-n-slate-11',
+  [VOICE_CALL_STATUS.MISSED]: 'bg-n-ruby-9',
   [VOICE_CALL_STATUS.NO_ANSWER]: 'bg-n-ruby-9',
   [VOICE_CALL_STATUS.FAILED]: 'bg-n-ruby-9',
+  [VOICE_CALL_STATUS.BUSY]: 'bg-n-ruby-9',
+  [VOICE_CALL_STATUS.REJECTED]: 'bg-n-ruby-9',
+  [VOICE_CALL_STATUS.CANCELLED]: 'bg-n-ruby-9',
 };
 
 const TERMINAL_RECORDING_STATUSES = [
   VOICE_CALL_STATUS.COMPLETED,
-  VOICE_CALL_STATUS.NO_ANSWER,
   VOICE_CALL_STATUS.FAILED,
   'cancelled',
+];
+
+const UNANSWERED_STATUSES = [
+  VOICE_CALL_STATUS.MISSED,
+  VOICE_CALL_STATUS.NO_ANSWER,
 ];
 
 const router = useRouter();
@@ -55,16 +71,47 @@ const normalizeVoiceCallStatus = value => {
   const rawStatus = value?.toString();
   if (rawStatus === 'in_progress') return VOICE_CALL_STATUS.IN_PROGRESS;
   if (rawStatus === 'no_answer') return VOICE_CALL_STATUS.NO_ANSWER;
+  if (rawStatus === 'missed') return VOICE_CALL_STATUS.MISSED;
   return rawStatus;
+};
+
+const normalizeVoiceCallDirection = value => {
+  const rawDirection = value?.toString()?.trim()?.toLowerCase();
+  if (rawDirection === VOICE_CALL_DIRECTION.OUTBOUND) {
+    return VOICE_CALL_DIRECTION.OUTBOUND;
+  }
+  if (rawDirection === VOICE_CALL_DIRECTION.INBOUND) {
+    return VOICE_CALL_DIRECTION.INBOUND;
+  }
+  return '';
 };
 
 const data = computed(() => contentAttributes.value?.data);
 const status = computed(() => normalizeVoiceCallStatus(data.value?.status));
 const meta = computed(() => data.value?.meta || {});
 
-const isOutbound = computed(() => messageType.value === MESSAGE_TYPES.OUTGOING);
+const callDirection = computed(() =>
+  normalizeVoiceCallDirection(
+    data.value?.callDirection || data.value?.call_direction
+  )
+);
+const isOutbound = computed(() => {
+  if (callDirection.value) {
+    return callDirection.value === VOICE_CALL_DIRECTION.OUTBOUND;
+  }
+
+  return messageType.value === MESSAGE_TYPES.OUTGOING;
+});
+const isUnanswered = computed(() => UNANSWERED_STATUSES.includes(status.value));
 const isFailed = computed(() =>
-  [VOICE_CALL_STATUS.NO_ANSWER, VOICE_CALL_STATUS.FAILED].includes(status.value)
+  [
+    VOICE_CALL_STATUS.MISSED,
+    VOICE_CALL_STATUS.NO_ANSWER,
+    VOICE_CALL_STATUS.FAILED,
+    VOICE_CALL_STATUS.BUSY,
+    VOICE_CALL_STATUS.REJECTED,
+    VOICE_CALL_STATUS.CANCELLED,
+  ].includes(status.value)
 );
 
 // Call source and metadata — all camelCase due to deep transform
@@ -250,9 +297,18 @@ const labelKey = computed(() => {
       ? 'CONVERSATION.VOICE_CALL.OUTGOING_CALL'
       : 'CONVERSATION.VOICE_CALL.INCOMING_CALL';
   }
-  return isFailed.value
-    ? 'CONVERSATION.VOICE_CALL.MISSED_CALL'
-    : 'CONVERSATION.VOICE_CALL.INCOMING_CALL';
+  if (isUnanswered.value) {
+    return isOutbound.value
+      ? 'CONVERSATION.VOICE_CALL.OUTGOING_CALL'
+      : 'CONVERSATION.VOICE_CALL.MISSED_CALL';
+  }
+  if (isFailed.value) {
+    return isOutbound.value
+      ? 'CONVERSATION.VOICE_CALL.OUTGOING_CALL'
+      : 'CONVERSATION.VOICE_CALL.MISSED_CALL';
+  }
+
+  return 'CONVERSATION.VOICE_CALL.INCOMING_CALL';
 });
 
 const subtextKey = computed(() => {
@@ -283,7 +339,7 @@ const subtextKey = computed(() => {
       ? 'CONVERSATION.VOICE_CALL.THEY_ANSWERED'
       : 'CONVERSATION.VOICE_CALL.YOU_ANSWERED';
   }
-  return isFailed.value
+  return isUnanswered.value || isFailed.value
     ? 'CONVERSATION.VOICE_CALL.NO_ANSWER'
     : 'CONVERSATION.VOICE_CALL.NOT_ANSWERED_YET';
 });

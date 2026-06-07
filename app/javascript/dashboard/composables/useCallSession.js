@@ -105,13 +105,13 @@ export function useCallSession() {
       return;
     }
 
+    await callsStore.clearActiveCall();
     await runOnceForCall(endingCallSids, call.callSid, async () => {
       await releaseFonosterIncomingCall(call.callSid, {
         status: 'completed',
         reason: 'remote_hangup',
       });
     });
-    await callsStore.clearActiveCall();
   };
 
   const handleClientDisconnect = async () => {

@@ -18,7 +18,7 @@ class Voice::InboundCallBuilder
     ActiveRecord::Base.transaction do
       contact = ensure_contact!
       contact_inbox = ensure_contact_inbox!(contact)
-      conversation = find_conversation || create_conversation!(contact, contact_inbox)
+      conversation = find_conversation(contact) || create_conversation!(contact, contact_inbox)
       conversation.reload
       update_conversation!(conversation, timestamp)
       build_voice_message!(conversation, timestamp)
@@ -43,35 +43,56 @@ class Voice::InboundCallBuilder
     end
   end
 
-  def find_conversation
-    return if call_sid.blank?
+  def find_conversation(contact)
+    conversation = account.conversations.includes(:contact).find_by(identifier: call_sid) if call_sid.present?
+    return conversation if conversation.present?
 
-    account.conversations.includes(:contact).find_by(identifier: call_sid)
+    reusable_fonoster_conversation(contact)
+  end
+
+  def reusable_fonoster_conversation(contact)
+    return unless fonoster_provider?
+
+    account.conversations
+           .where(inbox_id: inbox.id, contact_id: contact.id)
+           .order(last_activity_at: :desc, id: :desc)
+           .first
   end
 
   def create_conversation!(contact, contact_inbox)
-    account.conversations.create!(
+    attrs = {
       contact_inbox_id: contact_inbox.id,
       inbox_id: inbox.id,
       contact_id: contact.id,
-      status: :open,
-      identifier: call_sid
-    )
+      status: :open
+    }
+    attrs[:identifier] = call_sid unless fonoster_provider?
+
+    account.conversations.create!(attrs)
   end
 
   def update_conversation!(conversation, timestamp)
-    attrs = {
+    attrs = (conversation.additional_attributes || {}).deep_dup
+    reset_reused_fonoster_call_state!(attrs)
+    attrs.merge!(
       'call_direction' => 'inbound',
       'call_status' => 'ringing',
       'conference_sid' => Voice::Conference::Name.for(conversation),
-      'meta' => { 'initiated_at' => timestamp }
-    }
+      'from_number' => normalized_from_number,
+      'to_number' => inbox.channel&.phone_number
+    )
+    attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
+    attrs['meta']['initiated_at'] = timestamp
+    attrs['fonoster_call_ref'] = call_sid if fonoster_provider?
 
-    conversation.update!(
-      identifier: call_sid,
+    update_attrs = {
       additional_attributes: attrs,
       last_activity_at: current_time
-    )
+    }
+    update_attrs[:identifier] = call_sid unless fonoster_provider?
+    update_attrs[:status] = :open if fonoster_provider?
+
+    conversation.update!(update_attrs)
   end
 
   def build_voice_message!(conversation, timestamp)
@@ -101,5 +122,27 @@ class Voice::InboundCallBuilder
 
   def current_time
     @current_time ||= Time.zone.now
+  end
+
+  def fonoster_provider?
+    inbox.channel&.provider == 'fonoster'
+  end
+
+  def reset_reused_fonoster_call_state!(attrs)
+    return unless fonoster_provider?
+    return if attrs['fonoster_call_ref'].present? && attrs['fonoster_call_ref'] == call_sid
+
+    %w[
+      agent_id
+      call_started_at
+      call_ended_at
+      call_duration
+      recording_ref
+      recording
+      transcript_ref
+      summary
+      from_number
+      to_number
+    ].each { |key| attrs.delete(key) }
   end
 end

@@ -211,6 +211,40 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('clears the active Fonoster call immediately on remote disconnect while backend release is pending', async () => {
+    let disconnectHandler;
+    let resolveRelease;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    rejectBackendCallMock.mockReturnValue(
+      new Promise(resolve => {
+        resolveRelease = resolve;
+      })
+    );
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-remote-disconnect-pending',
+      provider: 'fonoster',
+    });
+    callsStore.setCallActive('call-remote-disconnect-pending');
+
+    mountUseCallSession();
+    const releasePromise = disconnectHandler?.();
+    await Promise.resolve();
+
+    expect(callsStore.calls).toEqual([]);
+    resolveRelease({ status: 'completed' });
+    await releasePromise;
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-remote-disconnect-pending',
+      {
+        reason: 'remote_hangup',
+        status: 'completed',
+      }
+    );
+  });
+
   it('still releases an active Fonoster call when the local RTC hangup fails', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

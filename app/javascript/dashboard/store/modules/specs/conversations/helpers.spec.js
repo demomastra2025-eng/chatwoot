@@ -5,6 +5,7 @@ import {
   filterByTeam,
   filterByLabel,
   filterByUnattended,
+  applyRoleFilter,
 } from '../../conversations/helpers';
 
 const conversationList = [
@@ -170,5 +171,18 @@ describe('#filterByUnattended', () => {
   });
   it('returns true if conversation type is unattended and has first reply', () => {
     expect(filterByUnattended(true, 'mentions', 123)).toEqual(true);
+  });
+});
+
+describe('#applyRoleFilter', () => {
+  it('treats conversations without meta as unassigned for custom roles', () => {
+    expect(
+      applyRoleFilter(
+        { id: 7 },
+        'custom_role',
+        ['conversation_unassigned_manage'],
+        1
+      )
+    ).toBe(true);
   });
 });

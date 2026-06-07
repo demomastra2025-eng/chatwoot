@@ -223,6 +223,88 @@ describe('VoiceCall bubble', () => {
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
   });
 
+  it('renders Rails missed status as an inbound missed call state', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'missed',
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+  });
+
+  it('renders unanswered outbound calls with outgoing heading and no-answer subtext', () => {
+    const wrapper = buildWrapper({
+      messageType: ref(MESSAGE_TYPES.OUTGOING),
+      contentAttributes: ref({
+        data: {
+          status: 'no_answer',
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.OUTGOING_CALL');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
+  });
+
+  it('renders busy outbound calls with outgoing heading', () => {
+    const wrapper = buildWrapper({
+      messageType: ref(MESSAGE_TYPES.OUTGOING),
+      contentAttributes: ref({
+        data: {
+          status: 'busy',
+          callDirection: 'outbound',
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.OUTGOING_CALL');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+    expect(wrapper.text()).not.toContain(
+      'CONVERSATION.VOICE_CALL.INCOMING_CALL'
+    );
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
+  });
+
+  it('uses saved call_direction when message type is stale', () => {
+    const wrapper = buildWrapper({
+      messageType: ref(MESSAGE_TYPES.INCOMING),
+      contentAttributes: ref({
+        data: {
+          status: 'no_answer',
+          call_direction: 'outbound',
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.OUTGOING_CALL');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
+  });
+
+  it('does not render recording or transcript block for unanswered calls', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'missed',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-missed/recording.wav',
+          transcript: 'Клиент: привет',
+        },
+      }),
+    });
+
+    expect(
+      wrapper.find('[data-testid="voice-call-recording-accordion"]').exists()
+    ).toBe(false);
+    expect(wrapper.find('[data-testid="voice-call-recording"]').exists()).toBe(
+      false
+    );
+  });
+
   it('renders the shared audio waveform chip inside a collapsed accordion for completed calls with an authorized recording URL', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({

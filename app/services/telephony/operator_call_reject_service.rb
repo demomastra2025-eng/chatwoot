@@ -67,6 +67,8 @@ class Telephony::OperatorCallRejectService
 
   def operator_route?
     route_metadata['route_action'].to_s == 'operator' ||
+      route_metadata['routing_mode'].to_s == 'operator' ||
+      route_metadata['mode'].to_s == 'operator' ||
       route_metadata['operator_pool'].present? ||
       route_metadata['operator_candidates'].present? ||
       route_metadata['operator_candidate_binding_ids'].present? ||
@@ -159,7 +161,9 @@ class Telephony::OperatorCallRejectService
       {
         reason: bridge_reason,
         agent_aor: agent_binding&.agent_aor,
-        actor: 'operator'
+        actor: 'operator',
+        call_direction: call_session.direction,
+        routing_mode: bridge_routing_mode
       }.compact
     )
   rescue Telephony::Error => e
@@ -175,6 +179,13 @@ class Telephony::OperatorCallRejectService
     return 'operator_declined' if status == 'rejected' && reason == 'operator_rejected_from_browser'
 
     reason
+  end
+
+  def bridge_routing_mode
+    route_metadata['routing_mode'].presence ||
+      route_metadata['mode'].presence ||
+      route_metadata['route_action'].presence ||
+      'operator'
   end
 
   def reject_event_payload

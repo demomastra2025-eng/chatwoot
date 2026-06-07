@@ -21,9 +21,9 @@ class Voice::CallStatus::Manager
     attrs = conversation.additional_attributes || {}
 
     if status == 'in_progress'
-      return true if timestamp.nil?
+      return active_status_attributes_current?(attrs) if timestamp.nil?
 
-      return attrs['call_started_at'].to_i == timestamp.to_i
+      return attrs['call_started_at'].to_i == timestamp.to_i && active_status_attributes_current?(attrs)
     end
 
     if TERMINAL_STATUSES.include?(status)
@@ -32,7 +32,7 @@ class Voice::CallStatus::Manager
       return ended_at_current && duration_current
     end
 
-    true
+    ringing_status_attributes_current?(attrs)
   end
 
   def apply_status(status, duration:, timestamp:)
@@ -40,10 +40,13 @@ class Voice::CallStatus::Manager
     attrs['call_status'] = status
 
     if status == 'in_progress'
-      attrs['call_started_at'] ||= timestamp || now_seconds
+      clear_terminal_status_attributes(attrs)
+      attrs['call_started_at'] = timestamp || now_seconds
     elsif TERMINAL_STATUSES.include?(status)
       attrs['call_ended_at'] = timestamp || now_seconds
       attrs['call_duration'] = resolved_duration(attrs, duration, timestamp)
+    else
+      clear_active_status_attributes(attrs)
     end
 
     conversation.update!(
@@ -59,6 +62,24 @@ class Voice::CallStatus::Manager
     return unless started_at && timestamp
 
     [timestamp - started_at.to_i, 0].max
+  end
+
+  def active_status_attributes_current?(attrs)
+    attrs['call_ended_at'].blank? && attrs['call_duration'].blank?
+  end
+
+  def ringing_status_attributes_current?(attrs)
+    attrs['call_started_at'].blank? && active_status_attributes_current?(attrs)
+  end
+
+  def clear_active_status_attributes(attrs)
+    attrs.delete('call_started_at')
+    clear_terminal_status_attributes(attrs)
+  end
+
+  def clear_terminal_status_attributes(attrs)
+    attrs.delete('call_ended_at')
+    attrs.delete('call_duration')
   end
 
   def update_message(status)

@@ -156,4 +156,28 @@ describe('useCallsStore', () => {
 
     expect(store.calls).toEqual([]);
   });
+
+  it('keeps an outbound Fonoster call visible while the browser leg is joining', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'outbound-call-1',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+    store.handleCallStatusChanged({
+      callSid: 'outbound-call-1',
+      status: 'in_progress',
+      provider: 'fonoster',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'outbound-call-1',
+        callDirection: 'outbound',
+        isActive: false,
+        provider: 'fonoster',
+      }),
+    ]);
+  });
 });

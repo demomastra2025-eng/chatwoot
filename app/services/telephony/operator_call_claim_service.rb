@@ -66,6 +66,8 @@ class Telephony::OperatorCallClaimService
 
   def operator_route?
     route_metadata['route_action'].to_s == 'operator' ||
+      route_metadata['routing_mode'].to_s == 'operator' ||
+      route_metadata['mode'].to_s == 'operator' ||
       route_metadata['operator_pool'].present? ||
       route_metadata['operator_candidates'].present? ||
       route_metadata['operator_candidate_user_ids'].present? ||

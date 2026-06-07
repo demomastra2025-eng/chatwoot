@@ -102,7 +102,7 @@ const getters = {
     const currentUserID = rootGetters.getCurrentUser?.id;
     const filteredConversations = _state.allConversations.filter(
       conversation => {
-        const { assignee } = conversation.meta;
+        const { assignee } = conversation.meta || {};
         const isAssignedToMe = assignee && assignee.id === currentUserID;
         const shouldFilter = applyPageFilters(conversation, activeFilters);
         const isChatMine = isAssignedToMe && shouldFilter;
@@ -127,7 +127,7 @@ const getters = {
   getUnAssignedChats: _state => activeFilters => {
     const filteredConversations = _state.allConversations.filter(
       conversation => {
-        const isUnAssigned = !conversation.meta.assignee;
+        const isUnAssigned = !conversation.meta?.assignee;
         const shouldFilter = applyPageFilters(conversation, activeFilters);
         return isUnAssigned && shouldFilter;
       }

@@ -689,6 +689,70 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'allows the current operator to hang up an outbound Fonoster operator-mode call' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: administrator,
+      provider: 'fonoster',
+      agent_ref: '1001',
+      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+    )
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'outbound-operator-mode-hangup-1',
+      status: 'in_progress',
+      direction: 'outbound',
+      agent_binding: agent_binding,
+      metadata: {
+        'metadata' => {
+          'mode' => 'operator',
+          'routing_mode' => 'operator',
+          'direction' => 'outbound',
+          'call_direction' => 'outbound',
+          'chatwoot_user_id' => administrator.id.to_s,
+          'operator_agent_ref' => '1001',
+          'operator_agent_aor' => 'sip:1001@operator.cloud.vconsult.kz'
+        }
+      }
+    )
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      terminate_request = stub_request(
+        :post,
+        'https://bridge.example/telephony/webphone/calls/outbound-operator-mode-hangup-1/reject'
+      ).with(
+        body: hash_including(
+          reason: 'operator_hangup',
+          agent_aor: 'sip:1001@operator.cloud.vconsult.kz',
+          actor: 'operator'
+        ),
+        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+           headers: headers,
+           as: :json
+
+      expect(terminate_request).to have_been_requested
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
+    expect(call_session.reload).to have_attributes(
+      status: 'completed',
+      direction: 'outbound',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'operator_hangup'
+    )
+  end
+
   it 'rejects browser release attempts from unregistered operators before a claim' do
     agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
     call_session = create(

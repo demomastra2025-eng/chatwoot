@@ -3,6 +3,13 @@ require 'json'
 
 class Telephony::EventsIngestionService
   CALL_SESSION_CONFLICT_RETRIES = 2
+  MISSED_INBOUND_TERMINAL_REASONS = %w[
+    voice_stream_ended_before_operator_answer
+  ].freeze
+  UNANSWERED_TERMINAL_STATUSES = %w[
+    missed
+    no_answer
+  ].freeze
 
   EVENT_STATUS_MAP = {
     'created' => 'created',
@@ -359,7 +366,7 @@ class Telephony::EventsIngestionService
       provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id',
                                        'providerCallId') || call_session.provider_call_sid,
       status: status,
-      direction: resolved_direction || call_session.direction || 'inbound',
+      direction: next_direction(call_session),
       from_number: resolved_from_number || call_session.from_number,
       to_number: resolved_to_number || call_session.to_number,
       recording_ref: payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
@@ -439,8 +446,39 @@ class Telephony::EventsIngestionService
     resolved_end_reason || call_session.end_reason || status
   end
 
+  def next_direction(call_session)
+    direction = resolved_direction
+    return call_session.direction if preserve_existing_outbound_direction?(call_session, direction)
+
+    direction || call_session.direction || 'inbound'
+  end
+
+  def preserve_existing_outbound_direction?(call_session, direction)
+    return false unless call_session.direction == 'outbound'
+    return false unless direction == 'inbound'
+
+    outbound_origin_metadata?(call_session) && operator_leg_event?
+  end
+
+  def outbound_origin_metadata?(call_session)
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_stringify_keys : {}
+    outbound_values = %w[outbound to_pstn outbound_api outbound-dial outbound_api_call]
+
+    outbound_values.include?(route_metadata['direction'].to_s.strip.downcase) ||
+      outbound_values.include?(route_metadata['call_direction'].to_s.strip.downcase) ||
+      outbound_values.include?(route_metadata['callDirection'].to_s.strip.downcase)
+  end
+
+  def operator_leg_event?
+    payload_value('leg', 'legType', 'leg_type').to_s == 'operator' ||
+      payload_value('routingMode', 'routing_mode', 'mode').to_s == 'operator'
+  end
+
   def next_duration_seconds(call_session, status, started_at, answered_at, ended_at)
     return call_session.duration_seconds if stale_event?(call_session)
+
+    return [ended_at.to_i - started_at.to_i, 0].max if unanswered_terminal_status?(status) && started_at.present? && ended_at.present?
 
     explicit_duration = resolved_duration
     if explicit_duration.present?
@@ -465,11 +503,15 @@ class Telephony::EventsIngestionService
     status == 'completed' && duration.zero? && answered_at.present? && ended_at.present? && ended_at > answered_at
   end
 
+  def unanswered_terminal_status?(status)
+    status.to_s.in?(UNANSWERED_TERMINAL_STATUSES)
+  end
+
   def next_legs(call_session, status)
     legs = Array.wrap(call_session.legs).map { |leg| leg.is_a?(Hash) ? leg.deep_stringify_keys : leg }
     return legs if legs.any? { |leg| leg.is_a?(Hash) && leg['event_key'] == event_key }
 
-    legs + [leg_snapshot(status)]
+    legs + [leg_snapshot(status, call_session: call_session)]
   end
 
   def next_last_event_at(call_session)
@@ -569,16 +611,24 @@ class Telephony::EventsIngestionService
     contact = ensure_call_contact!(account, contact_number)
     contact_inbox = ensure_call_contact_inbox!(contact, inbox, contact_number)
     conversation = account.conversations.find_by(identifier: call_ref) ||
-                   account.conversations.create!(
-                     contact_inbox_id: contact_inbox.id,
-                     inbox_id: inbox.id,
-                     contact_id: contact.id,
-                     status: :open,
-                     identifier: call_ref
-                   )
+                   reusable_fonoster_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session) ||
+                   create_outbound_conversation!(account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox,
+                                                 call_session: call_session)
 
     update_outbound_conversation!(conversation, call_session)
     conversation
+  end
+
+  def create_outbound_conversation!(account:, inbox:, contact:, contact_inbox:, call_session:)
+    attrs = {
+      contact_inbox_id: contact_inbox.id,
+      inbox_id: inbox.id,
+      contact_id: contact.id,
+      status: :open
+    }
+    attrs[:identifier] = call_ref unless fonoster_call_session?(call_session)
+
+    account.conversations.create!(attrs)
   end
 
   def ensure_call_contact!(account, phone_number)
@@ -600,13 +650,22 @@ class Telephony::EventsIngestionService
   def update_outbound_conversation!(conversation, call_session)
     timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i
     attrs = (conversation.additional_attributes || {}).deep_dup
+    reset_reused_fonoster_call_state!(attrs, call_session)
     attrs['call_direction'] = 'outbound'
     attrs['call_status'] = call_session.status
     attrs['conference_sid'] ||= Voice::Conference::Name.for(conversation)
     attrs['telephony_provider'] = call_session.provider
+    attrs['from_number'] = call_session.from_number if call_session.from_number.present?
+    attrs['to_number'] = call_session.to_number if call_session.to_number.present?
+    attrs['fonoster_call_ref'] = call_session.external_call_ref if fonoster_call_session?(call_session)
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
-    attrs['meta']['initiated_at'] ||= timestamp
-    conversation.update!(identifier: call_ref, additional_attributes: attrs, last_activity_at: Time.current)
+    attrs['meta']['initiated_at'] = timestamp
+
+    update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
+    update_attrs[:identifier] = call_session.external_call_ref unless fonoster_call_session?(call_session)
+    update_attrs[:status] = :open if fonoster_call_session?(call_session)
+
+    conversation.update!(update_attrs)
   end
 
   def apply_call_status!(call_session)
@@ -614,7 +673,7 @@ class Telephony::EventsIngestionService
     return if conversation.blank?
 
     if resolved_status.present?
-      timestamp = call_session.ended_at&.to_i || call_session.started_at&.to_i
+      timestamp = call_status_timestamp(call_session)
       Voice::CallStatus::Manager.new(
         conversation: conversation,
         call_sid: call_session.external_call_ref
@@ -625,14 +684,49 @@ class Telephony::EventsIngestionService
       )
     end
 
+    conversation.reload if resolved_status.present?
     attrs = (conversation.additional_attributes || {}).deep_dup
+    reset_reused_fonoster_call_state!(attrs, call_session)
     attrs['telephony_provider'] = call_session.provider
+    attrs['call_direction'] = call_session.direction if fonoster_call_session?(call_session)
+    attrs['from_number'] = call_session.from_number if call_session.from_number.present?
+    attrs['to_number'] = call_session.to_number if call_session.to_number.present?
+    attrs['fonoster_call_ref'] = call_session.external_call_ref if fonoster_call_session?(call_session)
     recording_metadata = presentation_recording_metadata(call_session)
     attrs['recording_ref'] = recording_metadata['recording_ref'] if recording_metadata['recording_ref'].present?
     attrs['recording'] = recording_metadata if recording_metadata.present?
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
-    conversation.update!(additional_attributes: attrs, last_activity_at: Time.current)
+    update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
+    update_attrs[:status] = :open if fonoster_call_session?(call_session)
+    conversation.update!(update_attrs)
+  end
+
+  def call_status_timestamp(call_session)
+    return (call_session.answered_at || call_session.started_at)&.to_i if call_session.status == 'in_progress'
+    return (call_session.ended_at || call_session.started_at)&.to_i if terminal_status?(call_session.status)
+
+    call_session.started_at&.to_i
+  end
+
+  def reset_reused_fonoster_call_state!(attrs, call_session)
+    return unless fonoster_call_session?(call_session)
+
+    previous_call_ref = attrs['fonoster_call_ref']
+    return if previous_call_ref.blank? || previous_call_ref == call_session.external_call_ref
+
+    %w[
+      agent_id
+      call_started_at
+      call_ended_at
+      call_duration
+      recording_ref
+      recording
+      transcript_ref
+      summary
+      from_number
+      to_number
+    ].each { |key| attrs.delete(key) }
   end
 
   def sync_voice_message!(call_session)
@@ -947,7 +1041,34 @@ class Telephony::EventsIngestionService
     conversation = account.conversations.find_by(identifier: call_ref)
     return conversation if conversation.present?
 
+    conversation = resolve_reusable_fonoster_conversation(account, call_session)
+    return conversation if conversation.present?
+
     resolve_pending_sipuni_outbound_conversation(account)
+  end
+
+  def resolve_reusable_fonoster_conversation(account, call_session)
+    return unless fonoster_call_session?(call_session)
+
+    inbox = call_session.inbox || resolve_inbox(account)
+    contact = call_session.contact || resolve_contact(account, nil)
+    return if inbox.blank? || contact.blank?
+
+    reusable_fonoster_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session)
+  end
+
+  def reusable_fonoster_conversation(account:, inbox:, contact:, call_session:)
+    return unless fonoster_call_session?(call_session)
+
+    account.conversations
+           .where(inbox_id: inbox.id, contact_id: contact.id)
+           .order(last_activity_at: :desc, id: :desc)
+           .first
+  end
+
+  def fonoster_call_session?(call_session)
+    provider = payload_value('provider') || call_session&.provider || 'fonoster'
+    provider.to_s == 'fonoster'
   end
 
   def resolve_pending_sipuni_outbound_conversation(account)
@@ -1061,13 +1182,13 @@ class Telephony::EventsIngestionService
     account.telephony_agent_bindings.find_by(user_id: metadata_user_id)
   end
 
-  def leg_snapshot(status)
+  def leg_snapshot(status, call_session: nil)
     {
       event_key: event_key,
       event_type: resolved_event_type,
       status: leg_status_for(status),
       leg: leg_name,
-      direction: resolved_direction,
+      direction: leg_direction(call_session),
       occurred_at: resolved_occurred_at&.iso8601,
       provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id', 'providerCallId'),
       bridge_call_ref: bridge_call_ref,
@@ -1078,6 +1199,13 @@ class Telephony::EventsIngestionService
       ended_by: resolved_ended_by,
       end_reason: resolved_end_reason
     }.compact.deep_stringify_keys
+  end
+
+  def leg_direction(call_session)
+    direction = resolved_direction
+    return call_session.direction if call_session.present? && preserve_existing_outbound_direction?(call_session, direction)
+
+    direction
   end
 
   def leg_status_for(status)
@@ -1362,6 +1490,8 @@ class Telephony::EventsIngestionService
     elsif event_name == 'call_ended'
       ended_reason = resolved_end_reason.to_s.strip.downcase
       return 'cancelled' if %w[caller_hangup caller_hung_up].include?(ended_reason)
+    elsif event_name == 'session_completed' && missed_inbound_terminal_reason?
+      return 'missed'
     elsif EVENT_STATUS_MAP.key?(event_name) && EVENT_STATUS_MAP[event_name].present?
       return normalize_status(event_name)
     end
@@ -1378,11 +1508,17 @@ class Telephony::EventsIngestionService
   end
 
   def resolved_direction
-    value = payload_value('direction').to_s.strip.downcase
+    value = payload_value('direction', 'call_direction', 'callDirection').to_s.strip.downcase
     return 'inbound' if %w[inbound from_pstn].include?(value)
-    return 'outbound' if %w[outbound outbound_api outbound-dial outbound_api_call].include?(value)
+    return 'outbound' if %w[outbound to_pstn outbound_api outbound-dial outbound_api_call].include?(value)
 
     value.presence_in(Telephony::CallSession::ALLOWED_DIRECTIONS)
+  end
+
+  def missed_inbound_terminal_reason?
+    return false unless resolved_end_reason.to_s.strip.downcase.in?(MISSED_INBOUND_TERMINAL_REASONS)
+
+    resolved_direction != 'outbound'
   end
 
   def resolved_from_number
