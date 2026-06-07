@@ -106,6 +106,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'action' => 'operator',
       'reason' => 'operator_route'
     )
+    expect(response.parsed_body).not_to have_key('bridge_call_ref')
+    expect(response.parsed_body).not_to have_key('conversation_id')
+    expect(response.parsed_body).not_to have_key('conversation_display_id')
+    expect(response.parsed_body).not_to have_key('conversation_status')
     expect(Message.voice_calls.where(source_id: 'voice_call:audit-call')).not_to exist
   end
 
@@ -284,14 +288,16 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post path,
-           params: {
-             call_ref: 'inbound-route-operator-pool',
-             ingress_number: voice_channel.phone_number,
-             caller_number: '+155****0100'
-           },
-           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
-           as: :json
+      perform_enqueued_jobs do
+        post path,
+             params: {
+               call_ref: 'inbound-route-operator-pool',
+               ingress_number: voice_channel.phone_number,
+               caller_number: '+155****0100'
+             },
+             headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+             as: :json
+      end
     end
 
     expect(response).to have_http_status(:ok)
@@ -399,7 +405,9 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       expect do
-        2.times { route_request.call }
+        perform_enqueued_jobs do
+          2.times { route_request.call }
+        end
       end.to change(Telephony::CallSession, :count).by(1)
                                                    .and change(Conversation, :count).by(1)
                                                                                     .and change(Message, :count).by(1)
@@ -427,16 +435,18 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post path,
-           params: {
-             call_ref: 'inbound-route-kz-trunk-prefix',
-             ingress_number: voice_channel.phone_number,
-             caller_number: '87066318623'
-           },
-           headers: {
-             'X-Bridge-Secret' => 'bridge-secret'
-           },
-           as: :json
+      perform_enqueued_jobs do
+        post path,
+             params: {
+               call_ref: 'inbound-route-kz-trunk-prefix',
+               ingress_number: voice_channel.phone_number,
+               caller_number: '87066318623'
+             },
+             headers: {
+               'X-Bridge-Secret' => 'bridge-secret'
+             },
+             as: :json
+      end
     end
 
     expect(response).to have_http_status(:ok)
@@ -492,16 +502,18 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       expect do
-        post path,
-             params: {
-               call_ref: 'existing-conversation-rejected-route',
-               ingress_number: voice_channel.phone_number,
-               caller_number: caller_number
-             },
-             headers: {
-               'X-Bridge-Secret' => 'bridge-secret'
-             },
-             as: :json
+        perform_enqueued_jobs do
+          post path,
+               params: {
+                 call_ref: 'existing-conversation-rejected-route',
+                 ingress_number: voice_channel.phone_number,
+                 caller_number: caller_number
+               },
+               headers: {
+                 'X-Bridge-Secret' => 'bridge-secret'
+               },
+               as: :json
+        end
       end.to change(Message, :count).by(1)
 
       post '/internal/voice/inbound/event',

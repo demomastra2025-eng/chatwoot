@@ -125,6 +125,13 @@ const activeAssistant = computed(() => {
   // If neither of the above is available, the first assistant in the account takes preference.
   return assistants.value[0];
 });
+const activeConversationId = computed(
+  () =>
+    currentChat.value?.active_reply_channel?.conversation_id ||
+    currentChat.value?.active_reply_channel_conversation_id ||
+    currentChat.value?.conversation_ids?.[0] ||
+    currentChat.value?.id
+);
 
 const closeCopilotPanel = () => {
   if (isSmallScreen.value && uiSettings.value?.is_copilot_panel_open) {
@@ -284,14 +291,14 @@ const sendMessage = async message => {
     if (selectedCopilotThreadId.value) {
       await store.dispatch('copilotMessages/create', {
         assistant_id: activeAssistant.value.id,
-        conversation_id: currentChat.value?.id,
+        conversation_id: activeConversationId.value,
         threadId: selectedCopilotThreadId.value,
         message,
       });
     } else {
       const response = await store.dispatch('copilotThreads/create', {
         assistant_id: activeAssistant.value.id,
-        conversation_id: currentChat.value?.id,
+        conversation_id: activeConversationId.value,
         message,
       });
       selectedCopilotThreadId.value = response.id;

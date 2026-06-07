@@ -79,7 +79,12 @@ export function handleVoiceCallCreated(message, currentUserId) {
   if (shouldSkipCall(callDirection, senderId, currentUserId)) return;
   if (TERMINAL_STATUSES.includes(status)) {
     const callsStore = useCallsStore();
-    callsStore.handleCallStatusChanged({ callSid, status, conversationId });
+    callsStore.handleCallStatusChanged({
+      callSid,
+      status,
+      conversationId,
+      provider,
+    });
     return;
   }
 
@@ -117,7 +122,12 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
 
   const callsStore = useCallsStore();
 
-  callsStore.handleCallStatusChanged({ callSid, status, conversationId });
+  callsStore.handleCallStatusChanged({
+    callSid,
+    status,
+    conversationId,
+    provider,
+  });
 
   const isNewCall =
     status === 'ringing' &&

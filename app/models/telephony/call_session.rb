@@ -222,9 +222,24 @@ class Telephony::CallSession < ApplicationRecord
   end
 
   def voice_message_data(message)
-    content_attributes = (message.content_attributes || {}).to_h
+    content_attributes = normalized_message_content_attributes(message)
     data = content_attributes['data'] || content_attributes[:data]
     data.is_a?(Hash) ? data.deep_stringify_keys : {}
+  end
+
+  def normalized_message_content_attributes(message)
+    raw_attributes = message&.content_attributes
+    attributes = if raw_attributes.is_a?(String)
+                   JSON.parse(raw_attributes)
+                 elsif raw_attributes.respond_to?(:to_h)
+                   raw_attributes.to_h
+                 else
+                   {}
+                 end
+
+    attributes.is_a?(Hash) ? attributes : {}
+  rescue JSON::ParserError
+    {}
   end
 
   def normalize_status_value

@@ -59,6 +59,41 @@ RSpec.describe 'Touch Plans API', type: :request do
     expect(account.reminders.where(reminder_group: touch_plan).count).to eq(1)
   end
 
+  it 'applies a conversation touch plan using the conversation display identifier' do
+    conversation = create(:conversation, account: account)
+    conversation.update!(display_id: 88)
+    touch_plan = create(
+      :reminder_group,
+      account: account,
+      entity_kinds: ['conversation'],
+      touches: [
+        {
+          action_type: 'send_message',
+          content_kind: 'free_text',
+          timing_mode: 'absolute',
+          scheduled_at: 1.hour.from_now.iso8601,
+          timezone: 'UTC',
+          body: 'Conversation follow-up'
+        }
+      ]
+    )
+
+    post "#{path}/#{touch_plan.id}/apply",
+         params: {
+           remindable_type: 'Conversation',
+           remindable_id: conversation.display_id
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    touch = account.reminders.where(reminder_group: touch_plan).sole
+    expect(touch).to have_attributes(
+      remindable: conversation,
+      conversation: conversation
+    )
+  end
+
   it 'archives a touch plan' do
     touch_plan = create(:reminder_group, account: account)
 

@@ -120,7 +120,7 @@ RSpec.describe Telephony::CallReconciliationService do
       )
     end
 
-    it 'syncs the voice-call bubble when reconciliation finalizes a call' do
+    it 'keeps an answered UNKNOWN bridge record completed when reconciliation finalizes a call' do
       voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77172705175')
       voice_inbox = voice_channel.inbox
       contact = create(:contact, account: account, phone_number: '+77066318623')
@@ -160,7 +160,7 @@ RSpec.describe Telephony::CallReconciliationService do
             'status' => 'in_progress',
             'call_direction' => 'outbound'
           }
-        }
+        }.to_json
       )
       bridge_items << {
         'ref' => 'call-ref-sync-message',
@@ -173,8 +173,39 @@ RSpec.describe Telephony::CallReconciliationService do
 
       service.perform
 
-      expect(call_session.reload.status).to eq('no_answer')
-      expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        end_reason: 'bridge_unknown_terminal'
+      )
+      expect(call_session.ended_at).to be >= call_session.answered_at
+      expect(message.reload.content_attributes).to be_a(Hash)
+      expect(message.content_attributes.dig('data', 'status')).to eq('completed')
+    end
+
+    it 'keeps unanswered outbound UNKNOWN bridge records as no-answer' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        direction: 'outbound',
+        status: 'ringing',
+        external_call_ref: 'call-ref-outbound-no-answer',
+        started_at: now - 2.minutes
+      )
+      bridge_items << {
+        'ref' => 'call-ref-outbound-no-answer',
+        'status' => 'UNKNOWN',
+        'startedAt' => (now - 2.minutes).iso8601,
+        'endedAt' => (now - 30.seconds).iso8601,
+        'duration' => 0,
+        'direction' => 'TO_PSTN'
+      }
+
+      service.perform
+
+      expect(call_session.reload).to have_attributes(
+        status: 'no_answer',
+        end_reason: 'bridge_unknown_terminal'
+      )
     end
 
     it 'closes stale operator calls that disappeared from the bridge poll as no-answer' do

@@ -43,6 +43,29 @@ const activeTab = computed(() => {
   if (isTouchSidebarOpen) return 'touch';
   return null;
 });
+const isCommunicationThread = computed(() =>
+  Boolean(props.currentChat?.is_communication_thread)
+);
+const activeReplyChannel = computed(
+  () => props.currentChat?.active_reply_channel || {}
+);
+const activeConversationId = computed(
+  () =>
+    activeReplyChannel.value?.conversation_id ||
+    props.currentChat?.active_reply_channel_conversation_id ||
+    props.currentChat?.conversation_ids?.[0] ||
+    props.currentChat?.id
+);
+const activeInboxId = computed(
+  () =>
+    activeReplyChannel.value?.inbox_id ||
+    props.currentChat?.active_reply_channel_inbox_id ||
+    props.currentChat?.inbox_id
+);
+const remindableType = computed(() =>
+  isCommunicationThread.value ? 'CommunicationThread' : 'Conversation'
+);
+const remindableId = computed(() => props.currentChat?.id);
 
 const isSmallScreen = computed(
   () => windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
@@ -78,9 +101,12 @@ const openTouchesWorkspace = () => {
       'outbound_touches_index',
       {},
       {
-        conversation_id: props.currentChat.id,
-        remindable_id: props.currentChat.id,
-        remindable_type: 'Conversation',
+        conversation_id: activeConversationId.value,
+        remindable_id: remindableId.value,
+        remindable_type: remindableType.value,
+        ...(isCommunicationThread.value
+          ? { communication_thread_id: remindableId.value }
+          : {}),
       }
     )
   );
@@ -104,16 +130,16 @@ const openTouchesWorkspace = () => {
     <div class="flex flex-1 overflow-auto">
       <ContactPanel
         v-show="activeTab === 'contact'"
-        :conversation-id="currentChat.id"
-        :inbox-id="currentChat.inbox_id"
+        :conversation-id="activeConversationId"
+        :inbox-id="activeInboxId"
       />
       <div v-if="activeTab === 'touch'" class="min-w-0 flex-1">
         <TouchEditorDrawer
           :model-value="activeTab === 'touch'"
           display-mode="sidebar"
-          :conversation-id="currentChat.id"
-          remindable-type="Conversation"
-          :remindable-id="currentChat.id"
+          :conversation-id="activeConversationId"
+          :remindable-type="remindableType"
+          :remindable-id="remindableId"
           show-all-touches-action
           @close="closeTouchSidebar"
           @saved="closeTouchSidebar"

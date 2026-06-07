@@ -158,7 +158,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     message = voice_message
     return if message.blank?
 
-    content_attributes = (message.content_attributes || {}).deep_dup.deep_stringify_keys
+    content_attributes = normalized_content_attributes(message)
     content_attributes['data'] ||= {}
     content_attributes['data']['transcript_ref'] = transcript_ref
     content_attributes['data']['transcript'] = transcript
@@ -169,6 +169,23 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def voice_message
     @voice_message ||= call_session.voice_message_for_current_call
+  end
+
+  def normalized_content_attributes(message)
+    raw_attributes = message&.content_attributes
+    attributes = if raw_attributes.is_a?(String)
+                   JSON.parse(raw_attributes)
+                 elsif raw_attributes.respond_to?(:to_h)
+                   raw_attributes.to_h
+                 else
+                   {}
+                 end
+
+    return {} unless attributes.is_a?(Hash)
+
+    attributes.deep_dup.deep_stringify_keys
+  rescue JSON::ParserError
+    {}
   end
 
   def instrumentation_params(file_path)

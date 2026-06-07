@@ -65,10 +65,22 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
     id = params.require(:remindable_id)
     klass = type.safe_constantize
 
-    raise ArgumentError, 'Unsupported remindable_type' if klass.blank?
-    raise ArgumentError, 'Remindable must belong to current account' unless klass.column_names.include?('account_id')
+    raise ArgumentError, 'Unsupported remindable_type' unless account_scoped_model?(klass)
 
-    klass.find_by!(account_id: Current.account.id, id: id)
+    scope = klass.where(account_id: Current.account.id)
+    if display_id_reference?(klass)
+      scope.find_by(display_id: id) || scope.find(id)
+    else
+      scope.find(id)
+    end
+  end
+
+  def account_scoped_model?(klass)
+    klass.is_a?(Class) && klass < ApplicationRecord && klass.column_names.include?('account_id')
+  end
+
+  def display_id_reference?(klass)
+    [Conversation, CommunicationThread].include?(klass)
   end
 
   def set_touch_plan

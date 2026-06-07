@@ -15,7 +15,7 @@ class Telephony::InboundRoutingService
                  routed_decision
                end
 
-    ensure_route_lifecycle!(decision)
+    enqueue_route_lifecycle!(decision)
     decision
   end
 
@@ -81,12 +81,17 @@ class Telephony::InboundRoutingService
     fallback_decision(reason: ai_app_failure_reason)
   end
 
-  def ensure_route_lifecycle!(decision)
+  def enqueue_route_lifecycle!(decision)
     return if number_binding.blank?
     return if call_ref.blank? || caller_number.blank?
     return if diagnostic_route_probe?
 
-    Telephony::EventsIngestionService.new(payload: route_lifecycle_payload(decision)).perform
+    Telephony::InboundRouteLifecycleJob.perform_later(route_lifecycle_payload(decision))
+  rescue StandardError => e
+    Rails.logger.error(
+      'TELEPHONY_INBOUND_ROUTE_LIFECYCLE_ENQUEUE_FAILED ' \
+      "call_ref=#{call_ref} account_id=#{number_binding&.account_id} error=#{e.class.name}: #{e.message}"
+    )
   end
 
   def route_lifecycle_payload(decision)
@@ -121,7 +126,7 @@ class Telephony::InboundRoutingService
     candidates = decision[:operator_candidates] || decision['operator_candidates'] || []
     return {} if candidates.blank?
 
-    candidate_hashes = candidates.map { |candidate| candidate.deep_stringify_keys }
+    candidate_hashes = candidates.map(&:deep_stringify_keys)
     {
       operator_pool: true,
       operator_pool_size: candidate_hashes.size,
@@ -297,7 +302,7 @@ class Telephony::InboundRoutingService
       action: 'app',
       app_ref: resolved_primary_app_ref,
       reason: reason
-    }.merge(shared_context)
+    }.merge(shared_context(include_bridge_context: true))
   end
 
   def ai_decision(reason:)
@@ -306,15 +311,15 @@ class Telephony::InboundRoutingService
       ai_mode: routing_policy.ai_deployment_mode,
       app_ref: resolved_ai_app_ref,
       reason: reason
-    }.merge(shared_context)
+    }.merge(shared_context(include_bridge_context: true))
   end
 
-  def reject_decision(reason:, prefer_out_of_office_message: false)
+  def reject_decision(reason:, prefer_out_of_office_message: false, include_bridge_context: false)
     {
       action: 'reject',
       message: reject_message(prefer_out_of_office_message: prefer_out_of_office_message),
       reason: reason
-    }.merge(shared_context)
+    }.merge(shared_context(include_bridge_context: include_bridge_context))
   end
 
   def reject_message(prefer_out_of_office_message: false)
@@ -330,19 +335,22 @@ class Telephony::InboundRoutingService
     return if existing_voice_conversation.blank?
     return if active_bridge_call_ref_for_context.blank?
 
-    reject_decision(reason: 'recursive_runtime_call_active')
+    reject_decision(reason: 'recursive_runtime_call_active', include_bridge_context: true)
   end
 
-  def shared_context
+  def shared_context(include_bridge_context: false)
     return {} if number_binding.blank?
 
     context = {
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
       number_ref: number_binding.number_ref,
-      bridge_call_ref: bridge_call_ref_for_context,
       recording: recording_payload
     }
+
+    return context.compact unless include_bridge_context
+
+    context[:bridge_call_ref] = bridge_call_ref_for_context
 
     if existing_voice_conversation.present?
       context[:conversation_id] = existing_voice_conversation.id

@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   uiSettings: null,
   width: null,
   updateUISettings: vi.fn(),
+  routerPush: vi.fn(),
+  accountScopedRoute: vi.fn((name, params, query) => ({ name, params, query })),
 }));
 
 vi.mock('dashboard/composables/useUISettings', () => ({
@@ -21,13 +23,18 @@ vi.mock('@vueuse/core', () => ({
   useWindowSize: () => ({ width: mocks.width }),
 }));
 
-const mountComponent = () =>
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: mocks.routerPush }),
+}));
+
+vi.mock('dashboard/composables/useAccount', () => ({
+  useAccount: () => ({ accountScopedRoute: mocks.accountScopedRoute }),
+}));
+
+const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
   shallowMount(ConversationSidebar, {
     props: {
-      currentChat: {
-        id: 1,
-        inbox_id: 2,
-      },
+      currentChat,
     },
     global: {
       stubs: {
@@ -41,6 +48,8 @@ describe('ConversationSidebar', () => {
   beforeEach(() => {
     mocks.width = ref(390);
     mocks.updateUISettings.mockClear();
+    mocks.routerPush.mockClear();
+    mocks.accountScopedRoute.mockClear();
   });
 
   it('moves the mobile drawer off-canvas when no sidebar tab is open', () => {
@@ -66,5 +75,90 @@ describe('ConversationSidebar', () => {
 
     expect(wrapper.classes()).toContain('translate-x-0');
     expect(wrapper.classes()).not.toContain('pointer-events-none');
+  });
+
+  it('uses the active reply conversation for communication thread contact sidebar', () => {
+    mocks.uiSettings = ref({
+      is_contact_sidebar_open: true,
+      is_touch_sidebar_open: false,
+    });
+
+    const wrapper = mountComponent({
+      id: 10,
+      inbox_id: 2,
+      is_communication_thread: true,
+      active_reply_channel: {
+        conversation_id: 101,
+        inbox_id: 202,
+      },
+    });
+
+    const contactPanel = wrapper.findComponent({ name: 'ContactPanel' });
+    expect(contactPanel.props('conversationId')).toBe(101);
+    expect(contactPanel.props('inboxId')).toBe(202);
+  });
+
+  it('opens communication thread touch drawer with thread reminder context', () => {
+    mocks.uiSettings = ref({
+      is_contact_sidebar_open: false,
+      is_touch_sidebar_open: true,
+    });
+
+    const wrapper = mountComponent({
+      id: 10,
+      inbox_id: 2,
+      is_communication_thread: true,
+      active_reply_channel: {
+        conversation_id: 101,
+        inbox_id: 202,
+      },
+    });
+
+    const touchDrawer = wrapper.findComponent({ name: 'TouchEditorDrawer' });
+    expect(touchDrawer.props('conversationId')).toBe(101);
+    expect(touchDrawer.props('remindableType')).toBe('CommunicationThread');
+    expect(touchDrawer.props('remindableId')).toBe(10);
+  });
+
+  it('routes communication thread touches workspace with active reply conversation', async () => {
+    mocks.uiSettings = ref({
+      is_contact_sidebar_open: false,
+      is_touch_sidebar_open: true,
+    });
+
+    const wrapper = mountComponent({
+      id: 10,
+      inbox_id: 2,
+      is_communication_thread: true,
+      active_reply_channel: {
+        conversation_id: 101,
+        inbox_id: 202,
+      },
+    });
+
+    await wrapper
+      .findComponent({ name: 'TouchEditorDrawer' })
+      .vm.$emit('viewAll');
+
+    expect(mocks.accountScopedRoute).toHaveBeenCalledWith(
+      'outbound_touches_index',
+      {},
+      {
+        communication_thread_id: 10,
+        conversation_id: 101,
+        remindable_id: 10,
+        remindable_type: 'CommunicationThread',
+      }
+    );
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'outbound_touches_index',
+      params: {},
+      query: {
+        communication_thread_id: 10,
+        conversation_id: 101,
+        remindable_id: 10,
+        remindable_type: 'CommunicationThread',
+      },
+    });
   });
 });

@@ -210,7 +210,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
     ];
   });
 
-  it('renders a native settings form with assistant list and response mode', async () => {
+  it('renders a profile-style assistant dropdown and response mode', async () => {
     const wrapper = buildWrapper({ inbox: mockState.inbox });
     await flushPromises();
 
@@ -222,8 +222,13 @@ describe('Inbox BotConfiguration Captain settings', () => {
       wrapper.find('[data-testid="captain-inbox-auto-reply-mode"]').exists()
     ).toBe(true);
 
+    await wrapper
+      .get('[data-testid="captain-inbox-assistant"]')
+      .trigger('click');
+
     expect(wrapper.text()).toContain('Sales assistant');
     expect(wrapper.text()).toContain('Support assistant');
+    expect(wrapper.find('[data-testid="avatar"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('CAPTAIN.INBOXES.CHANNEL_SETTINGS.TITLE');
     expect(mockState.dispatch).toHaveBeenCalledWith('captainAssistants/get');
   });
@@ -234,7 +239,10 @@ describe('Inbox BotConfiguration Captain settings', () => {
 
     await wrapper
       .get('[data-testid="captain-inbox-assistant"]')
-      .setValue('101');
+      .trigger('click');
+    await wrapper
+      .get('[data-testid="captain-inbox-assistant-option-101"]')
+      .trigger('click');
     await flushPromises();
 
     expect(mockState.dispatch).toHaveBeenCalledWith('captainInboxes/create', {

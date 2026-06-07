@@ -18,6 +18,21 @@ RSpec.describe 'Touches API', type: :request do
     expect(response.parsed_body.dig('payload', 0, 'action_type')).to eq('send_message')
   end
 
+  it 'returns an empty list for unsupported remindable filters' do
+    create(:reminder, account: account, touch_conversation: conversation)
+
+    get path,
+        params: {
+          remindable_type: 'String',
+          remindable_id: '1'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(0)
+  end
+
   it 'creates a touch' do
     post path,
          params: {
@@ -41,6 +56,58 @@ RSpec.describe 'Touches API', type: :request do
     expect(response.parsed_body.dig('payload', 'repeat_mode')).to eq('weekly')
     expect(response.parsed_body.dig('payload', 'text_mode')).to eq('dynamic')
     expect(account.reminders.count).to eq(1)
+  end
+
+  it 'creates and filters a communication-thread touch using display identifiers' do
+    communication_thread = create(
+      :communication_thread,
+      account: account,
+      contact: conversation.contact,
+      display_id: 77
+    )
+    create(
+      :communication_thread_conversation,
+      account: account,
+      communication_thread: communication_thread,
+      conversation: conversation
+    )
+
+    post path,
+         params: {
+           remindable_type: 'CommunicationThread',
+           remindable_id: communication_thread.display_id,
+           conversation_id: conversation.display_id,
+           target_inbox_id: conversation.inbox_id,
+           scheduled_at: 1.hour.from_now.iso8601,
+           timezone: 'UTC',
+           body: 'Follow up in the unified thread'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    touch = account.reminders.sole
+    expect(touch).to have_attributes(
+      remindable: communication_thread,
+      conversation: conversation
+    )
+
+    get path,
+        params: {
+          remindable_type: 'CommunicationThread',
+          remindable_id: communication_thread.display_id,
+          conversation_id: conversation.display_id
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 0, 'id')).to eq(touch.id)
+    expect(response.parsed_body.dig('payload', 0, 'remindable')).to include(
+      'id' => communication_thread.display_id,
+      'type' => 'CommunicationThread'
+    )
   end
 
   it 'rejects touches for records outside the current account' do

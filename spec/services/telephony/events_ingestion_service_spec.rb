@@ -105,6 +105,93 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'recomputes zero completed duration for answered calls with a later ended_at' do
+      answered_at = Time.zone.parse(2.minutes.ago.iso8601)
+      ended_at = Time.zone.parse(30.seconds.ago.iso8601)
+      expected_duration = ended_at.to_i - answered_at.to_i
+      existing_call_session.update!(
+        status: 'in_progress',
+        started_at: answered_at - 5.seconds,
+        answered_at: answered_at,
+        duration_seconds: 0,
+        last_event_at: answered_at
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-native-completed-duration-1',
+          event: 'session_completed',
+          status: 'completed',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        duration_seconds: expected_duration
+      )
+      expect(result.conversation.reload.additional_attributes).to include(
+        'call_ended_at' => ended_at.to_i,
+        'call_duration' => expected_duration
+      )
+    end
+
+    it 'repairs zero duration on a stale completed retry after a later diagnostic event' do
+      answered_at = Time.zone.parse(3.minutes.ago.iso8601)
+      ended_at = Time.zone.parse(2.minutes.ago.iso8601)
+      later_event_at = ended_at + 30.seconds
+      expected_duration = ended_at.to_i - answered_at.to_i
+      existing_call_session.update!(
+        status: 'completed',
+        started_at: answered_at - 5.seconds,
+        answered_at: answered_at,
+        ended_at: ended_at,
+        duration_seconds: 0,
+        last_event_at: later_event_at
+      )
+      existing_call_session.conversation.update!(
+        additional_attributes: {
+          'call_status' => 'completed',
+          'call_started_at' => (answered_at - 5.seconds).to_i,
+          'call_ended_at' => ended_at.to_i,
+          'call_duration' => 0
+        }
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed', 'duration' => 0, 'call_sid' => 'call-retry-1' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-stale-completed-duration-repair-1',
+          event: 'session_completed',
+          status: 'completed',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        duration_seconds: expected_duration,
+        last_event_at: later_event_at
+      )
+      expect(result.conversation.reload.additional_attributes).to include(
+        'call_ended_at' => ended_at.to_i,
+        'call_duration' => expected_duration
+      )
+      expect(message.reload.content_attributes.dig('data', 'duration')).to eq(expected_duration)
+    end
+
     it 'preserves distinct native terminal reasons instead of collapsing them to failed or no-answer' do
       answered_at = Time.zone.parse(2.minutes.ago.iso8601)
       ended_at = Time.zone.parse(30.seconds.ago.iso8601)

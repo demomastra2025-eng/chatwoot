@@ -1,11 +1,14 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { OnClickOutside } from '@vueuse/components';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 
+import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Policy from 'dashboard/components/policy.vue';
 import SelectInput from 'dashboard/components-next/select/Select.vue';
@@ -32,6 +35,7 @@ const selectedAssistantId = ref(NO_ASSISTANT_VALUE);
 const selectedAutoReplyMode = ref(DEFAULT_AUTO_REPLY_MODE);
 const isUpdatingConnection = ref(false);
 const isUpdatingMode = ref(false);
+const isAssistantDropdownOpen = ref(false);
 
 const currentInboxId = computed(() =>
   Number(props.inbox?.id || route.params.inboxId)
@@ -65,16 +69,16 @@ const sortedAssistants = computed(() => {
     .sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
 });
 
-const assistantOptions = computed(() => [
-  {
-    value: NO_ASSISTANT_VALUE,
-    label: t('CAPTAIN.INBOXES.CHANNEL_SETTINGS.ASSISTANT.NO_AGENT'),
-  },
-  ...sortedAssistants.value.map(assistant => ({
-    value: String(assistant.id),
-    label: assistant.name || `#${assistant.id}`,
-  })),
-]);
+const selectedAssistant = computed(() =>
+  sortedAssistants.value.find(
+    assistant => String(assistant.id) === selectedAssistantId.value
+  )
+);
+const selectedAssistantName = computed(
+  () =>
+    selectedAssistant.value?.name ||
+    t('CAPTAIN.INBOXES.CHANNEL_SETTINGS.ASSISTANT.NO_AGENT')
+);
 
 const currentAutoReplyMode = computed(
   () => currentInbox.value?.captain_auto_reply_mode || DEFAULT_AUTO_REPLY_MODE
@@ -103,6 +107,9 @@ const hasAssistants = computed(() => sortedAssistants.value.length > 0);
 const canChangeSettings = computed(
   () => Boolean(currentInboxId.value) && !isFetching.value
 );
+const isAssistantTriggerDisabled = computed(
+  () => isUpdatingConnection.value || !canChangeSettings.value
+);
 const isAutoReplyModeDisabled = computed(
   () =>
     !selectedAssistantId.value ||
@@ -110,6 +117,27 @@ const isAutoReplyModeDisabled = computed(
     isUpdatingMode.value ||
     !canChangeSettings.value
 );
+
+const assistantUsageBadge = assistant => {
+  return assistant?.usage_mode === 'internal_assistant'
+    ? t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.INTERNAL_ASSISTANT.BADGE')
+    : t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.EXTERNAL_AGENT.BADGE');
+};
+
+const isAssistantSelected = assistantId => {
+  return (
+    String(assistantId || NO_ASSISTANT_VALUE) === selectedAssistantId.value
+  );
+};
+
+const closeAssistantDropdown = () => {
+  isAssistantDropdownOpen.value = false;
+};
+
+const toggleAssistantDropdown = () => {
+  if (isAssistantTriggerDisabled.value) return;
+  isAssistantDropdownOpen.value = !isAssistantDropdownOpen.value;
+};
 
 const fetchCaptainChannelData = async () => {
   await store.dispatch('captainAssistants/get');
@@ -154,9 +182,11 @@ const connectSelectedAssistant = async assistantId => {
   });
 };
 
-const handleAssistantSelection = async event => {
+const handleAssistantSelection = async valueOrEvent => {
   const nextAssistantId = String(
-    event?.target?.value ?? selectedAssistantId.value
+    valueOrEvent?.target
+      ? valueOrEvent.target.value
+      : (valueOrEvent ?? selectedAssistantId.value)
   );
   const previousAssistantId = connectedAssistantId.value
     ? String(connectedAssistantId.value)
@@ -196,6 +226,17 @@ const handleAssistantSelection = async event => {
   } finally {
     isUpdatingConnection.value = false;
   }
+};
+
+const selectAssistant = async assistantId => {
+  if (isAssistantTriggerDisabled.value) return;
+
+  const nextAssistantId = assistantId
+    ? String(assistantId)
+    : NO_ASSISTANT_VALUE;
+  selectedAssistantId.value = nextAssistantId;
+  closeAssistantDropdown();
+  await handleAssistantSelection(nextAssistantId);
 };
 
 watch(
@@ -301,15 +342,129 @@ const updateAutoReplyMode = async event => {
             >
               {{ t('CAPTAIN.INBOXES.CHANNEL_SETTINGS.ASSISTANT.LABEL') }}
             </label>
-            <SelectInput
-              id="captain-inbox-assistant"
-              v-model="selectedAssistantId"
-              class="w-full"
-              data-testid="captain-inbox-assistant"
-              :options="assistantOptions"
-              :disabled="isUpdatingConnection || !canChangeSettings"
-              @change="handleAssistantSelection"
-            />
+            <OnClickOutside @trigger="closeAssistantDropdown">
+              <div class="relative">
+                <Button
+                  id="captain-inbox-assistant"
+                  type="button"
+                  variant="outline"
+                  color="slate"
+                  size="md"
+                  trailing-icon
+                  icon="i-lucide-chevron-down"
+                  class="!h-auto !w-full !justify-between !px-3 !py-2 text-left"
+                  data-testid="captain-inbox-assistant"
+                  :disabled="isAssistantTriggerDisabled"
+                  :aria-expanded="isAssistantDropdownOpen"
+                  aria-haspopup="listbox"
+                  @click="toggleAssistantDropdown"
+                >
+                  <span class="flex min-w-0 items-center gap-2">
+                    <Avatar
+                      v-if="selectedAssistant"
+                      :src="selectedAssistant.avatar_url || ''"
+                      :name="selectedAssistant.name"
+                      :size="24"
+                      :icon-name="
+                        selectedAssistant.avatar_url ? null : 'i-woot-captain'
+                      "
+                      rounded-full
+                    />
+                    <span
+                      v-else
+                      class="grid size-6 shrink-0 place-items-center rounded-full bg-n-alpha-2 text-n-slate-11"
+                    >
+                      <Icon icon="i-woot-captain" class="size-3.5" />
+                    </span>
+                    <span class="min-w-0 truncate text-sm font-medium">
+                      {{ selectedAssistantName }}
+                    </span>
+                  </span>
+                </Button>
+
+                <div
+                  v-show="isAssistantDropdownOpen"
+                  class="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 flex max-h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-n-weak bg-n-solid-1 p-2 shadow-lg"
+                  role="listbox"
+                  aria-labelledby="captain-inbox-assistant"
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    color="slate"
+                    size="sm"
+                    class="!h-auto !justify-between !px-2 !py-2 text-left"
+                    :class="{
+                      'bg-n-alpha-2': isAssistantSelected(NO_ASSISTANT_VALUE),
+                    }"
+                    data-testid="captain-inbox-assistant-option-none"
+                    @click="selectAssistant(NO_ASSISTANT_VALUE)"
+                  >
+                    <span class="flex min-w-0 items-center gap-2">
+                      <span
+                        class="grid size-6 shrink-0 place-items-center rounded-full bg-n-alpha-2 text-n-slate-11"
+                      >
+                        <Icon icon="i-woot-captain" class="size-3.5" />
+                      </span>
+                      <span class="min-w-0 truncate text-sm font-medium">
+                        {{
+                          t(
+                            'CAPTAIN.INBOXES.CHANNEL_SETTINGS.ASSISTANT.NO_AGENT'
+                          )
+                        }}
+                      </span>
+                    </span>
+                    <Icon
+                      v-if="isAssistantSelected(NO_ASSISTANT_VALUE)"
+                      icon="i-lucide-check"
+                      class="size-4 shrink-0 text-n-teal-10"
+                    />
+                  </Button>
+
+                  <Button
+                    v-for="assistant in sortedAssistants"
+                    :key="assistant.id"
+                    type="button"
+                    variant="ghost"
+                    color="slate"
+                    size="sm"
+                    class="!h-auto !justify-between !px-2 !py-2 text-left hover:!bg-n-alpha-2"
+                    :class="{
+                      'bg-n-alpha-2': isAssistantSelected(assistant.id),
+                    }"
+                    :data-testid="`captain-inbox-assistant-option-${assistant.id}`"
+                    @click="selectAssistant(assistant.id)"
+                  >
+                    <span class="flex min-w-0 items-center gap-2">
+                      <Avatar
+                        :src="assistant.avatar_url || ''"
+                        :name="assistant.name"
+                        :size="24"
+                        :icon-name="
+                          assistant.avatar_url ? null : 'i-woot-captain'
+                        "
+                        rounded-full
+                      />
+                      <span class="flex min-w-0 flex-col text-left">
+                        <span
+                          class="min-w-0 truncate text-sm font-medium text-n-slate-12"
+                        >
+                          {{ assistant.name || `#${assistant.id}` }}
+                        </span>
+                        <span class="text-xs text-n-slate-11">
+                          {{ assistantUsageBadge(assistant) }}
+                        </span>
+                      </span>
+                    </span>
+                    <Icon
+                      v-if="isAssistantSelected(assistant.id)"
+                      icon="i-lucide-check"
+                      class="size-4 shrink-0 text-n-teal-10"
+                    />
+                  </Button>
+                </div>
+              </div>
+            </OnClickOutside>
           </div>
 
           <div class="flex min-w-0 flex-col gap-1.5">

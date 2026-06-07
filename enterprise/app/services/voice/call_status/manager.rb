@@ -9,13 +9,31 @@ class Voice::CallStatus::Manager
     return unless status
 
     current_status = Telephony::CallSession.normalize_status(conversation.additional_attributes&.dig('call_status'))
-    return if current_status == status
+    return if current_status == status && status_attributes_current?(status, duration: duration, timestamp: timestamp)
 
     apply_status(status, duration: duration, timestamp: timestamp)
     update_message(status)
   end
 
   private
+
+  def status_attributes_current?(status, duration:, timestamp:)
+    attrs = conversation.additional_attributes || {}
+
+    if status == 'in_progress'
+      return true if timestamp.nil?
+
+      return attrs['call_started_at'].to_i == timestamp.to_i
+    end
+
+    if TERMINAL_STATUSES.include?(status)
+      ended_at_current = timestamp.nil? || attrs['call_ended_at'].to_i == timestamp.to_i
+      duration_current = duration.nil? || attrs['call_duration'].to_i == duration.to_i
+      return ended_at_current && duration_current
+    end
+
+    true
+  end
 
   def apply_status(status, duration:, timestamp:)
     attrs = (conversation.additional_attributes || {}).dup
@@ -47,7 +65,7 @@ class Voice::CallStatus::Manager
     message = voice_message_for_call
     return unless message
 
-    data = (message.content_attributes || {}).dup
+    data = normalized_content_attributes(message)
     data['data'] ||= {}
     data['data']['status'] = status
 
@@ -64,10 +82,27 @@ class Voice::CallStatus::Manager
   end
 
   def voice_message_call_sid(message)
-    data = message.content_attributes.to_h['data'] || message.content_attributes.to_h[:data]
+    data = normalized_content_attributes(message)['data']
     return unless data.is_a?(Hash)
 
     data['call_sid'] || data[:call_sid] || data['callSid'] || data[:callSid]
+  end
+
+  def normalized_content_attributes(message)
+    raw_attributes = message&.content_attributes
+    attributes = if raw_attributes.is_a?(String)
+                   JSON.parse(raw_attributes)
+                 elsif raw_attributes.respond_to?(:to_h)
+                   raw_attributes.to_h
+                 else
+                   {}
+                 end
+
+    return {} unless attributes.is_a?(Hash)
+
+    attributes.deep_dup.deep_stringify_keys
+  rescue JSON::ParserError
+    {}
   end
 
   def now_seconds

@@ -1316,12 +1316,12 @@
     "TABS": {
       "SETTINGS": "Настройки",
       "COLLABORATORS": "Соавторы",
-      "CONFIGURATION": "Настройки",
+      "CONFIGURATION": "Конфигурация",
       "CAMPAIGN": "Рассылки кампаний",
       "PRE_CHAT_FORM": "Форма",
       "BUSINESS_HOURS": "Время работы",
       "WIDGET_BUILDER": "Конструктор виджетов",
-      "BOT_CONFIGURATION": "Конфигурация бота",
+      "BOT_CONFIGURATION": "Подключить ИИ-агента",
       "WHATSAPP_TEMPLATES": "Шаблоны",
       "ACCOUNT_HEALTH": "Здоровье аккаунта",
       "CSAT": "CSAT"

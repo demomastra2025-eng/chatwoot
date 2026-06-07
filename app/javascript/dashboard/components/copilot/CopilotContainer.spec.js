@@ -42,6 +42,7 @@ const testState = vi.hoisted(() => {
       },
     },
     route: { name: 'home', path: '/app/accounts/1/dashboard', query: {} },
+    selectedChat: { id: 42 },
     onClickOutsideDirective,
   };
 });
@@ -76,7 +77,7 @@ vi.mock('dashboard/composables/store', () => ({
       'captainAssistants/getRecords': refOf([{ id: 1 }]),
       'captainAssistants/getUIFlags': refOf({ fetchingList: false }),
       getCopilotAssistant: refOf(null),
-      getSelectedChat: refOf({ id: 42 }),
+      getSelectedChat: refOf(testState.selectedChat),
       getCurrentAccountId: refOf(1),
       'accounts/isFeatureEnabledonAccount': refOf(() => true),
     }[key];
@@ -134,6 +135,7 @@ describe('CopilotContainer', () => {
     testState.route.name = 'home';
     testState.route.path = '/app/accounts/1/dashboard';
     testState.route.query = {};
+    testState.selectedChat = { id: 42 };
   });
 
   afterEach(() => {
@@ -184,6 +186,32 @@ describe('CopilotContainer', () => {
       is_crm_deal_panel_open: false,
       is_touch_sidebar_open: false,
     });
+
+    wrapper.unmount();
+  });
+
+  it('sends copilot messages through the active reply conversation for communication threads', async () => {
+    testState.selectedChat = {
+      id: 10,
+      is_communication_thread: true,
+      active_reply_channel: { conversation_id: 101 },
+    };
+
+    const wrapper = mountComponent();
+    testState.storeDispatch.mockClear();
+
+    const copilot = wrapper.findComponent({ name: 'Copilot' });
+    const sendMessageEvent = 'send-message';
+    await copilot.vm.$emit(sendMessageEvent, 'Hi');
+
+    expect(testState.storeDispatch).toHaveBeenCalledWith(
+      'copilotThreads/create',
+      {
+        assistant_id: 1,
+        conversation_id: 101,
+        message: 'Hi',
+      }
+    );
 
     wrapper.unmount();
   });

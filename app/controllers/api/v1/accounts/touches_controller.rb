@@ -78,9 +78,9 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
     scope = scope.where(owner_id: params[:owner_id]) if params[:owner_id].present?
     scope = scope.where(remindable_type: params[:remindable_type]) if params[:remindable_type].present?
     if params[:remindable_id].present?
-      scope = if params[:remindable_type].to_s == Conversation.name
-                conversation = resolve_conversation_reference(params[:remindable_id])
-                conversation.present? ? scope.where(remindable_id: conversation.id) : scope.none
+      scope = if params[:remindable_type].present?
+                remindable = resolve_remindable_reference(params[:remindable_type], params[:remindable_id])
+                remindable.present? ? scope.where(remindable_id: remindable.id) : scope.none
               else
                 scope.where(remindable_id: params[:remindable_id])
               end
@@ -116,12 +116,36 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
     id = params.require(:remindable_id)
     klass = type.safe_constantize
 
-    raise ArgumentError, 'Unsupported remindable_type' if klass.blank?
-    raise ArgumentError, 'Remindable must belong to current account' unless klass.column_names.include?('account_id')
+    raise ArgumentError, 'Unsupported remindable_type' unless account_scoped_model?(klass)
 
-    return resolve_conversation_reference!(id) if klass == Conversation
+    resolve_account_scoped_reference!(klass, id)
+  end
 
-    klass.find_by!(account_id: Current.account.id, id: id)
+  def resolve_remindable_reference(type, value)
+    klass = type.to_s.safe_constantize
+    return unless account_scoped_model?(klass)
+
+    resolve_account_scoped_reference(klass, value)
+  end
+
+  def account_scoped_model?(klass)
+    klass.is_a?(Class) && klass < ApplicationRecord && klass.column_names.include?('account_id')
+  end
+
+  def resolve_account_scoped_reference!(klass, value)
+    resolve_account_scoped_reference(klass, value) ||
+      raise(ActiveRecord::RecordNotFound, "Couldn't find #{klass.name} for current account")
+  end
+
+  def resolve_account_scoped_reference(klass, value)
+    scope = klass.where(account_id: Current.account.id)
+    return scope.find_by(display_id: value) || scope.find_by(id: value) if display_id_reference?(klass)
+
+    scope.find_by(id: value)
+  end
+
+  def display_id_reference?(klass)
+    [Conversation, CommunicationThread].include?(klass)
   end
 
   def resolve_conversation_reference(value)

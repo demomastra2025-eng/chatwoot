@@ -93,7 +93,7 @@ export default {
     },
 
     shouldShowSidebar() {
-      if (!this.currentChat.id || this.currentChat.is_communication_thread) {
+      if (!this.currentChat.id) {
         return false;
       }
 
@@ -224,9 +224,7 @@ export default {
       :inbox-id="inboxId"
       :is-on-expanded-layout="isOnExpandedLayout"
     >
-      <SidepanelSwitch
-        v-if="currentChat.id && !currentChat.is_communication_thread"
-      />
+      <SidepanelSwitch v-if="currentChat.id" />
     </ConversationBox>
     <ConversationSidebar v-if="shouldShowSidebar" :current-chat="currentChat" />
     <CmdBarConversationSnooze />

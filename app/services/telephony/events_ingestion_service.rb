@@ -1,4 +1,5 @@
 require 'digest'
+require 'json'
 
 class Telephony::EventsIngestionService
   CALL_SESSION_CONFLICT_RETRIES = 2
@@ -442,13 +443,26 @@ class Telephony::EventsIngestionService
     return call_session.duration_seconds if stale_event?(call_session)
 
     explicit_duration = resolved_duration
-    return explicit_duration if explicit_duration.present?
-    return call_session.duration_seconds if call_session.duration_seconds.present? || !terminal_status?(status)
+    if explicit_duration.present?
+      explicit_duration = explicit_duration.to_i
+      return explicit_duration unless recomputable_completed_duration?(status, explicit_duration, answered_at, ended_at)
+    end
+
+    if call_session.duration_seconds.present?
+      current_duration = call_session.duration_seconds.to_i
+      return current_duration unless recomputable_completed_duration?(status, current_duration, answered_at, ended_at)
+    end
+
+    return unless terminal_status?(status)
 
     duration_start = answered_at || started_at
     return if duration_start.blank? || ended_at.blank?
 
     [ended_at.to_i - duration_start.to_i, 0].max
+  end
+
+  def recomputable_completed_duration?(status, duration, answered_at, ended_at)
+    status == 'completed' && duration.zero? && answered_at.present? && ended_at.present? && ended_at > answered_at
   end
 
   def next_legs(call_session, status)
@@ -469,8 +483,41 @@ class Telephony::EventsIngestionService
   def stale_event?(call_session)
     occurred_at = resolved_occurred_at
     return false if occurred_at.present? && terminal_status?(resolved_status) && !call_session.terminal?
+    return false if repairable_stale_terminal_event?(call_session, occurred_at)
 
     occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
+  end
+
+  def repairable_stale_terminal_event?(call_session, occurred_at)
+    return false if occurred_at.blank? || call_session.last_event_at.blank?
+    return false unless occurred_at < call_session.last_event_at
+    return false unless call_session.terminal?
+
+    status = resolved_status
+    return false unless terminal_status?(status)
+    return false unless status == call_session.status || repairable_terminal_upgrade?(call_session, status)
+
+    terminal_duration_repair_needed?(call_session, status, occurred_at)
+  end
+
+  def repairable_terminal_upgrade?(call_session, status)
+    status == 'completed' && call_session.status.in?(%w[no_answer missed cancelled failed]) && answered_terminal_evidence?(call_session)
+  end
+
+  def terminal_duration_repair_needed?(call_session, status, occurred_at)
+    return false unless status == 'completed'
+
+    answered_at = resolved_answered_at || call_session.answered_at
+    ended_at = resolved_ended_at || call_session.ended_at || occurred_at
+    recomputable_completed_duration?(status, call_session.duration_seconds.to_i, answered_at, ended_at)
+  end
+
+  def answered_terminal_evidence?(call_session)
+    return true if resolved_answered_at.present? || call_session.answered_at.present?
+
+    call_session.legs.to_a.any? do |leg|
+      leg.is_a?(Hash) && leg['status'].to_s == 'in_progress'
+    end
   end
 
   def terminal_status?(status)
@@ -592,7 +639,7 @@ class Telephony::EventsIngestionService
     message = voice_message_for(call_session) || build_voice_message!(call_session)
     return unless message
 
-    data = (message.content_attributes || {}).deep_dup.deep_stringify_keys
+    data = normalized_content_attributes(message)
     data['data'] ||= {}
     voice_meta = voice_message_meta(call_session)
     if voice_meta.present?
@@ -630,9 +677,9 @@ class Telephony::EventsIngestionService
     duplicate = call_session.exact_voice_message
     return if duplicate.blank? || canonical_message.blank? || duplicate.id == canonical_message.id
 
-    duplicate_attrs = (duplicate.content_attributes || {}).deep_dup.deep_stringify_keys
+    duplicate_attrs = normalized_content_attributes(duplicate)
     duplicate_attrs['data'] ||= {}
-    canonical_data = canonical_message.content_attributes.to_h.deep_stringify_keys.fetch('data', {})
+    canonical_data = normalized_content_attributes(canonical_message).fetch('data', {})
     duplicate_attrs['data']['status'] = canonical_data['status'] if canonical_data['status'].present?
     duplicate_attrs['data']['ai_voice'] = canonical_data['ai_voice'] if canonical_data['ai_voice'].is_a?(Hash)
     duplicate_attrs['data']['hidden'] = true
@@ -642,6 +689,23 @@ class Telephony::EventsIngestionService
       'canonical_call_sid' => canonical_data['call_sid']
     ).compact
     duplicate.update!(content_attributes: duplicate_attrs)
+  end
+
+  def normalized_content_attributes(message)
+    raw_attributes = message&.content_attributes
+    attributes = if raw_attributes.is_a?(String)
+                   JSON.parse(raw_attributes)
+                 elsif raw_attributes.respond_to?(:to_h)
+                   raw_attributes.to_h
+                 else
+                   {}
+                 end
+
+    return {} unless attributes.is_a?(Hash)
+
+    attributes.deep_dup.deep_stringify_keys
+  rescue JSON::ParserError
+    {}
   end
 
   def enqueue_call_recording_transcription(call_session)

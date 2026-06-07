@@ -1,15 +1,39 @@
 import { defineStore } from 'pinia';
 import { TERMINAL_STATUSES } from 'dashboard/helper/voice';
 
-const buildCallState = (callData, existingCall = null) => ({
-  ...(existingCall || {}),
-  ...(callData || {}),
-  isActive: existingCall?.isActive || false,
-  browserJoinSupported:
-    callData?.browserJoinSupported ??
-    existingCall?.browserJoinSupported ??
-    null,
-});
+const isPresent = value =>
+  value !== undefined && value !== null && value !== '';
+
+const sameValue = (left, right) =>
+  isPresent(left) && isPresent(right) && String(left) === String(right);
+
+const sameCallSid = (call, callSid) => sameValue(call?.callSid, callSid);
+
+const sameFonosterConversation = (call, callData) => {
+  if (call?.provider !== 'fonoster' || callData?.provider !== 'fonoster') {
+    return false;
+  }
+
+  return sameValue(call?.conversationId, callData?.conversationId);
+};
+
+const sameLiveCall = (call, callData) =>
+  sameCallSid(call, callData?.callSid) ||
+  sameFonosterConversation(call, callData);
+
+const buildCallState = (callData, existingCall = null) => {
+  const isSameProviderCall = sameCallSid(existingCall, callData?.callSid);
+
+  return {
+    ...(existingCall || {}),
+    ...(callData || {}),
+    isActive: isSameProviderCall ? existingCall?.isActive || false : false,
+    browserJoinSupported:
+      callData?.browserJoinSupported ??
+      (isSameProviderCall ? existingCall?.browserJoinSupported : null) ??
+      null,
+  };
+};
 
 const loadWebphoneClient = async () => {
   const { default: WebphoneClient } = await import(
@@ -40,31 +64,45 @@ export const useCallsStore = defineStore('calls', {
   },
 
   actions: {
-    handleCallStatusChanged({ callSid, status }) {
+    handleCallStatusChanged({ callSid, status, conversationId, provider }) {
       if (TERMINAL_STATUSES.includes(status)) {
-        this.removeCall(callSid);
+        this.removeCall(callSid, { conversationId, provider });
         return;
       }
 
       if (status === 'in_progress') {
-        const call = this.calls.find(item => item.callSid === callSid);
-        if (call && !call.isActive) this.dismissCall(callSid);
+        const call = this.calls.find(
+          item =>
+            sameCallSid(item, callSid) ||
+            sameFonosterConversation(item, { conversationId, provider })
+        );
+        if (call && !call.isActive) this.dismissCall(call.callSid);
       }
     },
 
     addCall(callData) {
       if (!callData?.callSid) return;
 
-      const existingCall = this.calls.find(
-        call => call.callSid === callData.callSid
+      const existingCallIndex = this.calls.findIndex(call =>
+        sameLiveCall(call, callData)
       );
 
-      if (existingCall) {
-        this.calls = this.calls.map(call =>
-          call.callSid === callData.callSid
-            ? buildCallState(callData, call)
-            : call
-        );
+      if (existingCallIndex >= 0) {
+        const existingCall = this.calls[existingCallIndex];
+        const replacedActiveCall =
+          existingCall?.isActive &&
+          !sameCallSid(existingCall, callData.callSid);
+        const mergedCall = buildCallState(callData, existingCall);
+        this.calls = this.calls.reduce((calls, call, index) => {
+          if (index === existingCallIndex) {
+            calls.push(mergedCall);
+            return calls;
+          }
+
+          if (!sameLiveCall(call, mergedCall)) calls.push(call);
+          return calls;
+        }, []);
+        if (replacedActiveCall) endClientCall(existingCall.provider);
         return;
       }
 
@@ -83,9 +121,13 @@ export const useCallsStore = defineStore('calls', {
       );
     },
 
-    async removeCall(callSid) {
-      const callToRemove = this.calls.find(c => c.callSid === callSid);
-      this.calls = this.calls.filter(c => c.callSid !== callSid);
+    async removeCall(callSid, { conversationId, provider } = {}) {
+      const target = { callSid, conversationId, provider };
+      const matchesTarget = call =>
+        sameCallSid(call, target.callSid) ||
+        sameFonosterConversation(call, target);
+      const callToRemove = this.calls.find(matchesTarget);
+      this.calls = this.calls.filter(c => !matchesTarget(c));
 
       if (callToRemove?.isActive) {
         await endClientCall(callToRemove.provider);

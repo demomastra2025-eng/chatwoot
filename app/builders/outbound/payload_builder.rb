@@ -62,7 +62,7 @@ module Outbound::PayloadBuilder
     return if record.blank?
 
     {
-      id: record.is_a?(Conversation) ? record.display_id : record.id,
+      id: display_id_reference(record) || record.id,
       type: record.class.name,
       title: remindable_title(record)
     }
@@ -74,6 +74,11 @@ module Outbound::PayloadBuilder
     return record.client_name if record.respond_to?(:client_name)
 
     record.class.name
+  end
+
+  def display_id_reference(record)
+    return record.display_id if record.is_a?(Conversation)
+    return record.display_id if record.is_a?(CommunicationThread)
   end
 
   def target_payload(reminder)

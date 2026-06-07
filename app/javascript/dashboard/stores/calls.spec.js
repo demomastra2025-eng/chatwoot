@@ -72,6 +72,37 @@ describe('useCallsStore', () => {
     );
   });
 
+  it('replaces a stale Fonoster call for the same conversation instead of stacking widgets', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'old-call-ref',
+      provider: 'fonoster',
+      conversationId: 612,
+      callDirection: 'outbound',
+    });
+    store.setCallActive('old-call-ref');
+
+    store.addCall({
+      callSid: 'new-call-ref',
+      provider: 'fonoster',
+      conversationId: 612,
+      callDirection: 'outbound',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'new-call-ref',
+        conversationId: 612,
+        isActive: false,
+        provider: 'fonoster',
+      }),
+    ]);
+    await vi.waitFor(() => {
+      expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    });
+  });
+
   it('removes calls for all canonical native terminal statuses', () => {
     const store = useCallsStore();
 
@@ -89,6 +120,29 @@ describe('useCallsStore', () => {
     });
 
     expect(store.calls).toEqual([]);
+  });
+
+  it('removes a stale active Fonoster call by conversation when terminal ref changed', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'old-call-ref',
+      provider: 'fonoster',
+      conversationId: 612,
+    });
+    store.setCallActive('old-call-ref');
+
+    store.handleCallStatusChanged({
+      callSid: 'new-terminal-ref',
+      status: 'completed',
+      conversationId: 612,
+      provider: 'fonoster',
+    });
+
+    expect(store.calls).toEqual([]);
+    await vi.waitFor(() => {
+      expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    });
   });
 
   it('dismisses a non-active ringing widget when another operator moves the call in progress', () => {

@@ -42,6 +42,43 @@ RSpec.describe Voice::CallStatus::Manager do
     expect(current_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
   end
 
+  it 'refreshes terminal metadata even when the canonical status is unchanged' do
+    conversation.update!(
+      additional_attributes: {
+        'call_status' => 'completed',
+        'call_started_at' => 100,
+        'call_ended_at' => 120,
+        'call_duration' => 20
+      }
+    )
+    message = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      content_type: 'voice_call',
+      source_id: 'voice_call:fresh-call-ref',
+      content_attributes: {
+        data: {
+          call_sid: 'fresh-call-ref',
+          status: 'completed'
+        }
+      }.to_json
+    )
+
+    described_class.new(conversation: conversation, call_sid: 'fresh-call-ref').process_status_update(
+      'completed',
+      duration: 0,
+      timestamp: 180
+    )
+
+    attrs = conversation.reload.additional_attributes
+    expect(attrs['call_ended_at']).to eq(180)
+    expect(attrs['call_duration']).to eq(0)
+    expect(message.reload.content_attributes).to be_a(Hash)
+    expect(message.content_attributes.dig('data', 'status')).to eq('completed')
+  end
+
   it 'does not mutate the latest voice call message when no message matches the call sid' do
     stale_message = create(
       :message,

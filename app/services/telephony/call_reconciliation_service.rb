@@ -219,6 +219,7 @@ class Telephony::CallReconciliationService
   end
 
   def missing_terminal_status(session)
+    return 'completed' if answered_session?(session)
     return 'rejected' if route_action(session) == 'reject'
     return 'no_answer' if route_action(session) == 'operator'
     return 'no_answer' if session.direction == 'outbound'
@@ -247,7 +248,7 @@ class Telephony::CallReconciliationService
     }
 
     if Telephony::CallSession::TERMINAL_STATUSES.include?(status_to_apply)
-      ended_at = parse_time(item['endedAt'] || item['ended_at']) || now
+      ended_at = terminal_ended_at_for(session, item)
       attrs[:ended_at] = ended_at
       attrs[:duration_seconds] = resolved_duration_seconds(session, item, ended_at)
       attrs[:end_reason] = target_status.blank? ? nil : end_reason_for(item, status_to_apply, target_status)
@@ -276,10 +277,27 @@ class Telephony::CallReconciliationService
   def terminal_fallback_status(session, item)
     return if parse_time(item['endedAt'] || item['ended_at']).blank?
 
+    return 'completed' if answered_session?(session)
     return 'completed' if raw_duration_seconds(item).to_i.positive?
     return 'no_answer' if session.direction == 'outbound'
 
     'missed'
+  end
+
+  def answered_session?(session)
+    return true if session.answered_at.present?
+
+    STATUS_PROGRESS.fetch(session.canonical_status, -1) >= STATUS_PROGRESS.fetch('in_progress')
+  end
+
+  def terminal_ended_at_for(session, item)
+    provider_ended_at = parse_time(item['endedAt'] || item['ended_at'])
+    return now if provider_ended_at.blank?
+
+    lifecycle_floor = [session.answered_at, session.started_at].compact.max
+    return provider_ended_at if lifecycle_floor.blank? || provider_ended_at >= lifecycle_floor
+
+    lifecycle_floor
   end
 
   def status_update_for(session, target_status)
@@ -300,9 +318,12 @@ class Telephony::CallReconciliationService
 
   def resolved_duration_seconds(session, item, ended_at)
     raw_duration = raw_duration_seconds(item)
-    return raw_duration.to_i if raw_duration.present?
+    if raw_duration.present?
+      parsed_duration = raw_duration.to_i
+      return parsed_duration unless parsed_duration.zero? && answered_session?(session)
+    end
 
-    started_at = parse_time(item['startedAt'] || item['started_at']) || session.started_at
+    started_at = session.answered_at || parse_time(item['startedAt'] || item['started_at']) || session.started_at
     return unless started_at.present? && ended_at.present?
 
     [ended_at.to_i - started_at.to_i, 0].max
@@ -313,6 +334,7 @@ class Telephony::CallReconciliationService
   end
 
   def missing_end_reason(session, target_status)
+    return 'bridge_missing_completed_call' if target_status == 'completed'
     return 'bridge_missing_operator_no_answer' if target_status == 'no_answer' && route_action(session) == 'operator'
     return 'bridge_missing_rejected_route' if target_status == 'rejected'
 
