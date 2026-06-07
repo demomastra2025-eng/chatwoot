@@ -86,7 +86,7 @@ gem 'devise_token_auth', '>= 1.2.3'
 # two-factor authentication
 gem 'devise-two-factor', '>= 5.0.0'
 # authorization
-gem 'jwt'
+gem 'jwt', '~> 2.10', '>= 2.10.3'
 gem 'pundit'
 
 # super admin
