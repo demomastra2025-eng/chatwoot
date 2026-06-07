@@ -77,20 +77,33 @@ class AutoAssignment::AssignmentService
   end
 
   def assign_conversation(conversation, agent)
-    Current.executed_by = inbox.assignment_policy || inbox
-    conversation.with_lock do
-      conversation.reload
-      return false unless assignable?(conversation)
+    return false unless claim_and_assign(conversation, agent)
 
-      conversation.update!(assignee: agent)
-    end
-    Current.executed_by = nil
+    conversation.reload
 
     rate_limiter = build_rate_limiter(agent)
     rate_limiter.track_assignment(conversation)
 
     dispatch_assignment_event(conversation, agent)
     true
+  end
+
+  # Atomically claim the conversation row so overlapping bulk runs cannot both
+  # assign the same unassigned conversation when an in-flight job gate expires.
+  def claim_and_assign(conversation, agent)
+    Current.executed_by = inbox.assignment_policy || inbox
+
+    Conversation.transaction do
+      locked_conversation = inbox.conversations
+                                 .open
+                                 .where(id: conversation.id, assignee_id: nil)
+                                 .lock('FOR UPDATE SKIP LOCKED')
+                                 .first
+      next false unless locked_conversation
+
+      locked_conversation.update!(assignee: agent)
+      true
+    end
   ensure
     Current.executed_by = nil
   end

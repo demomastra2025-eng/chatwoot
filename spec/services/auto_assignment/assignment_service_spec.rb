@@ -73,15 +73,16 @@ RSpec.describe AutoAssignment::AssignmentService do
         conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
 
         allow(service).to receive(:unassigned_conversations).and_return([conv])
-        allow(conv).to receive(:with_lock).and_wrap_original do |original, &block|
+        allow(service).to receive(:find_available_agent).and_wrap_original do |original, current_conversation|
           conv.update!(assignee: competing_agent)
-          original.call(&block)
+          original.call(current_conversation)
         end
 
         assigned_count = service.perform_bulk_assignment(limit: 1)
 
         expect(assigned_count).to eq(0)
         expect(conv.reload.assignee).to eq(competing_agent)
+        expect(rate_limiter).not_to have_received(:track_assignment)
         expect(Current.executed_by).to be_nil
       end
 
