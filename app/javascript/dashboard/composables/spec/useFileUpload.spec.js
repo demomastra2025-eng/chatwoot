@@ -3,8 +3,11 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { DirectUpload } from 'activestorage';
-import { checkFileSizeLimit } from 'shared/helpers/FileHelper';
-import { resolveConversationUploadLimit } from 'shared/helpers/FileHelper';
+import {
+  checkFileSizeLimit,
+  isFileTypeAllowedForChannel,
+  resolveConversationUploadLimit,
+} from 'shared/helpers/FileHelper';
 
 vi.mock('dashboard/composables/store');
 vi.mock('dashboard/composables', () => ({
@@ -14,6 +17,7 @@ vi.mock('vue-i18n');
 vi.mock('activestorage');
 vi.mock('shared/helpers/FileHelper', () => ({
   checkFileSizeLimit: vi.fn(),
+  isFileTypeAllowedForChannel: vi.fn(),
   resolveMaximumFileUploadSize: vi.fn(value => Number(value) || 40),
   resolveConversationUploadLimit: vi.fn(),
   DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE: 40,
@@ -49,6 +53,7 @@ describe('useFileUpload', () => {
 
     useI18n.mockReturnValue({ t: mockTranslate });
     checkFileSizeLimit.mockReturnValue(true);
+    isFileTypeAllowedForChannel.mockReturnValue(true);
     resolveConversationUploadLimit.mockReturnValue(25);
   });
 
@@ -126,6 +131,23 @@ describe('useFileUpload', () => {
     onFileUpload(mockFile);
 
     expect(useAlert).toHaveBeenCalledWith('File size exceeds limit');
+    expect(mockAttachFile).not.toHaveBeenCalled();
+  });
+
+  it('shows alert and skips upload for unsupported file types', () => {
+    isFileTypeAllowedForChannel.mockReturnValue(false);
+    mockTranslate.mockReturnValue('Unsupported file type');
+
+    const { onFileUpload } = useFileUpload({
+      inbox,
+      attachFile: mockAttachFile,
+    });
+
+    onFileUpload(mockFile);
+
+    expect(useAlert).toHaveBeenCalledWith('Unsupported file type');
+    expect(checkFileSizeLimit).not.toHaveBeenCalled();
+    expect(DirectUpload).not.toHaveBeenCalled();
     expect(mockAttachFile).not.toHaveBeenCalled();
   });
 

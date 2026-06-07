@@ -96,6 +96,7 @@
     "REGEX_ERROR": "Пожалуйста, предоставьте корректные данные"
   },
   "FILE_SIZE_LIMIT": "Превышен размер загружаемого файла - {MAXIMUM_FILE_UPLOAD_SIZE}",
+  "FILE_TYPE_NOT_SUPPORTED": "Тип файла {fileName} не поддерживается",
   "CHAT_FORM": {
     "INVALID": {
       "FIELD": "Неверное поле"

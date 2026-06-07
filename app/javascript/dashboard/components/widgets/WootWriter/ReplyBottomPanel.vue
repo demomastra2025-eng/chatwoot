@@ -8,6 +8,7 @@ import inboxMixin from 'shared/mixins/inboxMixin';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { getAllowedFileTypesByChannel } from '@chatwoot/utils';
 import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
+import { withBusinessCertificateFileTypes } from 'shared/helpers/FileHelper';
 import VideoCallButton from '../VideoCallButton.vue';
 import { useWhatsappCallInitiation } from 'dashboard/composables/useWhatsappCallInitiation';
 import PaymentActionButton from '../PaymentActionButton.vue';
@@ -298,10 +299,12 @@ export default {
         channelType = INBOX_TYPES.INSTAGRAM;
       }
 
-      return getAllowedFileTypesByChannel({
-        channelType,
-        medium: this.inbox?.medium,
-      });
+      return withBusinessCertificateFileTypes(
+        getAllowedFileTypesByChannel({
+          channelType,
+          medium: this.inbox?.medium,
+        })
+      );
     },
     enableDragAndDrop() {
       return !this.newConversationModalActive;

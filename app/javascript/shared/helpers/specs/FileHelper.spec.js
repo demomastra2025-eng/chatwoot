@@ -7,6 +7,7 @@ import {
   checkFileSizeLimit,
   resolveMaximumFileUploadSize,
   resolveConversationUploadLimit,
+  withBusinessCertificateFileTypes,
   isFileTypeAllowedForChannel,
 } from '../FileHelper';
 
@@ -113,6 +114,23 @@ describe('#File Helpers', () => {
     });
   });
 
+  describe('withBusinessCertificateFileTypes', () => {
+    it('adds PFX/P12 accept values when XML documents are allowed', () => {
+      expect(
+        withBusinessCertificateFileTypes('application/pdf, application/xml')
+      ).toContain('application/x-pkcs12');
+      expect(
+        withBusinessCertificateFileTypes('application/pdf, text/xml')
+      ).toContain('.pfx');
+    });
+
+    it('keeps restricted channels unchanged when XML documents are not allowed', () => {
+      expect(
+        withBusinessCertificateFileTypes('image/jpeg, application/pdf')
+      ).toBe('image/jpeg, application/pdf');
+    });
+  });
+
   describe('isFileTypeAllowedForChannel', () => {
     describe('edge cases', () => {
       it('should return false for null file', () => {
@@ -185,11 +203,72 @@ describe('#File Helpers', () => {
           })
         ).toBe(true);
       });
+
+      it('should allow XML documents on document-capable channels', () => {
+        const file = {
+          name: 'invoice.xml',
+          type: 'application/xml',
+          size: 1000,
+        };
+        expect(
+          isFileTypeAllowedForChannel(file, {
+            channelType: 'Channel::WebWidget',
+          })
+        ).toBe(true);
+      });
+
+      it('should allow PFX certificates on document-capable channels', () => {
+        const file = {
+          name: 'company-signing.pfx',
+          type: 'application/x-pkcs12',
+          size: 1000,
+        };
+        expect(
+          isFileTypeAllowedForChannel(file, {
+            channelType: 'Channel::WebWidget',
+          })
+        ).toBe(true);
+      });
+
+      it('should reject PFX certificates with a document MIME type', () => {
+        const file = {
+          name: 'company-signing.pfx',
+          type: 'application/xml',
+          size: 1000,
+        };
+        expect(
+          isFileTypeAllowedForChannel(file, {
+            channelType: 'Channel::WebWidget',
+          })
+        ).toBe(false);
+      });
+
+      it('should reject certificate MIME types without a certificate extension', () => {
+        const file = {
+          name: 'company-signing.bin',
+          type: 'application/x-pkcs12',
+          size: 1000,
+        };
+        expect(
+          isFileTypeAllowedForChannel(file, {
+            channelType: 'Channel::WebWidget',
+          })
+        ).toBe(false);
+      });
     });
 
     describe('file extensions', () => {
       it('should allow .3gpp extension when explicitly allowed', () => {
         const file = { name: 'test.3gpp', type: '', size: 1000 };
+        expect(
+          isFileTypeAllowedForChannel(file, {
+            channelType: 'Channel::WebWidget',
+          })
+        ).toBe(true);
+      });
+
+      it('should allow .pfx extension when browsers do not provide a MIME type', () => {
+        const file = { name: 'company-signing.PFX', type: '', size: 1000 };
         expect(
           isFileTypeAllowedForChannel(file, {
             channelType: 'Channel::WebWidget',
@@ -256,6 +335,19 @@ describe('#File Helpers', () => {
             channelType: 'Channel::Whatsapp',
           })
         ).toBe(true);
+      });
+
+      it('should not add PFX certificates to restricted WhatsApp channels', () => {
+        const file = {
+          name: 'company-signing.pfx',
+          type: 'application/x-pkcs12',
+          size: 1000,
+        };
+        expect(
+          isFileTypeAllowedForChannel(file, {
+            channelType: 'Channel::Whatsapp',
+          })
+        ).toBe(false);
       });
 
       it('should allow Twilio WhatsApp-specific file types', () => {

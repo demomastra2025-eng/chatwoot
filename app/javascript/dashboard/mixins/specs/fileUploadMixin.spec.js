@@ -1,11 +1,15 @@
 import { shallowMount } from '@vue/test-utils';
 import { useAlert } from 'dashboard/composables';
 import fileUploadMixin from 'dashboard/mixins/fileUploadMixin';
-import { checkFileSizeLimit } from 'shared/helpers/FileHelper';
+import {
+  checkFileSizeLimit,
+  isFileTypeAllowedForChannel,
+} from 'shared/helpers/FileHelper';
 import { reactive } from 'vue';
 
 vi.mock('shared/helpers/FileHelper', () => ({
   checkFileSizeLimit: vi.fn(),
+  isFileTypeAllowedForChannel: vi.fn(),
   resolveMaximumFileUploadSize: vi.fn(value => Number(value) || 40),
   resolveConversationUploadLimit: vi.fn(() => 25),
   DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE: 40,
@@ -28,6 +32,7 @@ describe('FileUploadMixin', () => {
   let mockCurrentUser;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     mockGlobalConfig = reactive({
       directUploadsEnabled: true,
       maximumFileUploadSize: 40,
@@ -58,6 +63,8 @@ describe('FileUploadMixin', () => {
       },
       template: '<div />',
     });
+    checkFileSizeLimit.mockReturnValue(true);
+    isFileTypeAllowedForChannel.mockReturnValue(true);
   });
 
   it('should call onDirectFileUpload when direct uploads are enabled', () => {
@@ -85,6 +92,22 @@ describe('FileUploadMixin', () => {
       wrapper.vm.onDirectFileUpload(fakeFile);
       expect(useAlert).toHaveBeenCalledWith(expect.any(String));
     });
+
+    it('blocks unsupported file types before direct upload', () => {
+      const fakeFile = {
+        name: 'company-signing.pfx',
+        type: 'application/xml',
+        size: 1000,
+      };
+      isFileTypeAllowedForChannel.mockReturnValue(false);
+
+      wrapper.vm.onDirectFileUpload(fakeFile);
+
+      expect(useAlert).toHaveBeenCalledWith(
+        'CONVERSATION.FILE_TYPE_NOT_SUPPORTED'
+      );
+      expect(checkFileSizeLimit).not.toHaveBeenCalled();
+    });
   });
 
   describe('onIndirectFileUpload', () => {
@@ -98,6 +121,22 @@ describe('FileUploadMixin', () => {
       checkFileSizeLimit.mockReturnValue(false); // Mock exceeding file size
       wrapper.vm.onIndirectFileUpload(fakeFile);
       expect(useAlert).toHaveBeenCalledWith(expect.any(String));
+    });
+
+    it('blocks unsupported file types before indirect upload', () => {
+      const fakeFile = {
+        name: 'company-signing.bin',
+        type: 'application/x-pkcs12',
+        size: 1000,
+      };
+      isFileTypeAllowedForChannel.mockReturnValue(false);
+
+      wrapper.vm.onIndirectFileUpload(fakeFile);
+
+      expect(useAlert).toHaveBeenCalledWith(
+        'CONVERSATION.FILE_TYPE_NOT_SUPPORTED'
+      );
+      expect(checkFileSizeLimit).not.toHaveBeenCalled();
     });
   });
 });

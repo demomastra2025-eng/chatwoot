@@ -32,7 +32,10 @@ const fileTypeIcon = computed(() => {
     zip: 'i-woot-file-zip',
   };
 
-  return fileIconMap[fileType] || 'i-teenyicons-text-document-solid';
+  return (
+    fileIconMap[(fileType || '').toLowerCase()] ||
+    'i-teenyicons-text-document-solid'
+  );
 });
 </script>
 

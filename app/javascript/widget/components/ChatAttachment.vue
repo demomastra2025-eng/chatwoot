@@ -3,6 +3,7 @@ import FileUpload from 'vue-upload-component';
 import Spinner from 'shared/components/Spinner.vue';
 import {
   checkFileSizeLimit,
+  isFileTypeAllowedForChannel,
   resolveMaximumFileUploadSize,
 } from 'shared/helpers/FileHelper';
 import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
@@ -12,6 +13,8 @@ import { DirectUpload } from 'activestorage';
 import { mapGetters } from 'vuex';
 import { emitter } from 'shared/helpers/mitt';
 import { useAttachments } from '../composables/useAttachments';
+
+const WEB_WIDGET_CHANNEL_TYPE = 'Channel::WebWidget';
 
 export default {
   components: { FluentIcon, FileUpload, Spinner },
@@ -66,6 +69,25 @@ export default {
     getFileType(fileType) {
       return fileType.includes('image') ? 'image' : 'file';
     },
+    alertUnsupportedFileType(file) {
+      const uploadFile = file?.file || file;
+      const fileName = uploadFile?.name || file?.name || '';
+      const translatedMessage = this.$t('FILE_TYPE_NOT_SUPPORTED', {
+        fileName,
+      });
+
+      emitter.emit(BUS_EVENTS.SHOW_ALERT, {
+        message:
+          translatedMessage === 'FILE_TYPE_NOT_SUPPORTED'
+            ? `This ${fileName} file type is not supported`
+            : translatedMessage,
+      });
+    },
+    isUploadFileTypeAllowed(file) {
+      return isFileTypeAllowedForChannel(file, {
+        channelType: WEB_WIDGET_CHANNEL_TYPE,
+      });
+    },
     async onFileUpload(file) {
       if (this.globalConfig.directUploadsEnabled) {
         await this.onDirectFileUpload(file);
@@ -77,6 +99,11 @@ export default {
       if (!file) {
         return;
       }
+      if (!this.isUploadFileTypeAllowed(file)) {
+        this.alertUnsupportedFileType(file);
+        return;
+      }
+
       this.isUploading = true;
       try {
         if (checkFileSizeLimit(file, this.fileUploadSizeLimit)) {
@@ -119,6 +146,11 @@ export default {
       if (!file) {
         return;
       }
+      if (!this.isUploadFileTypeAllowed(file)) {
+        this.alertUnsupportedFileType(file);
+        return;
+      }
+
       this.isUploading = true;
       try {
         if (checkFileSizeLimit(file, this.fileUploadSizeLimit)) {

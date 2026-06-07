@@ -36,23 +36,78 @@ RSpec.describe Attachment do
     let(:web_widget_inbox) { create(:inbox, channel: create(:channel_widget)) }
     let(:web_widget_message) { create(:message, inbox: web_widget_inbox, account: web_widget_inbox.account) }
 
-    it 'allows XML files for website widget uploads' do
+    def build_web_attachment(filename:, content_type:, body: 'test data')
       attachment = web_widget_message.attachments.new(account_id: web_widget_message.account_id, file_type: :file)
-      attachment.file.attach(io: StringIO.new('<root />'), filename: 'invoice.xml', content_type: 'application/xml')
-
-      expect(attachment).to be_valid
-      attachment.save!
-      expect(attachment.push_event_data).to include(extension: 'xml', content_type: 'application/xml')
+      attachment.file.attach(io: StringIO.new(body), filename: filename, content_type: content_type)
+      attachment
     end
 
-    it 'allows PFX files and exposes an attachment-disposition URL' do
-      attachment = web_widget_message.attachments.new(account_id: web_widget_message.account_id, file_type: :file)
-      attachment.file.attach(io: StringIO.new('fake pfx'), filename: 'certificate.pfx', content_type: 'application/x-pkcs12')
+    it 'accepts XML files on web widget inboxes and keeps browser access download-only' do
+      attachment = build_web_attachment(filename: 'invoice.xml', content_type: 'application/xml', body: '<invoice />')
 
       expect(attachment).to be_valid
+
       attachment.save!
-      expect(attachment.push_event_data).to include(extension: 'pfx', content_type: 'application/x-pkcs12')
-      expect(attachment.push_event_data[:data_url]).to include('disposition=attachment')
+      event_data = attachment.push_event_data
+      expect(event_data[:extension]).to eq('xml')
+      expect(event_data[:content_type]).to eq('application/xml')
+      expect(event_data[:data_url]).to include('disposition=attachment')
+    end
+
+    it 'accepts PFX certificate bundles and keeps them download-only' do
+      attachment = build_web_attachment(filename: 'company-signing.pfx', content_type: 'application/x-pkcs12')
+
+      expect(attachment).to be_valid
+
+      attachment.save!
+      event_data = attachment.push_event_data
+      expect(event_data[:extension]).to eq('pfx')
+      expect(event_data[:content_type]).to eq('application/x-pkcs12')
+      expect(event_data[:data_url]).to include('disposition=attachment')
+    end
+
+    it 'accepts P12 certificate bundles and keeps them download-only' do
+      attachment = build_web_attachment(filename: 'company-signing.p12', content_type: 'application/pkcs12')
+
+      expect(attachment).to be_valid
+
+      attachment.save!
+      event_data = attachment.push_event_data
+      expect(event_data[:extension]).to eq('p12')
+      expect(event_data[:content_type]).to eq('application/pkcs12')
+      expect(event_data[:data_url]).to include('disposition=attachment')
+    end
+
+    it 'accepts octet-stream PFX uploads when the certificate extension is present' do
+      attachment = build_web_attachment(filename: 'company-signing.PFX', content_type: 'application/octet-stream')
+
+      expect(attachment).to be_valid
+
+      attachment.save!
+      event_data = attachment.push_event_data
+      expect(event_data[:extension]).to eq('PFX')
+      expect(event_data[:data_url]).to include('disposition=attachment')
+    end
+
+    it 'rejects certificate extensions with document MIME types' do
+      attachment = build_web_attachment(filename: 'company-signing.pfx', content_type: 'application/xml')
+
+      expect(attachment).not_to be_valid
+      expect(attachment.errors[:file]).to include('type not supported: application/xml')
+    end
+
+    it 'does not trust certificate MIME types without a certificate extension' do
+      attachment = build_web_attachment(filename: 'company-signing.bin', content_type: 'application/x-pkcs12')
+
+      expect(attachment).not_to be_valid
+      expect(attachment.errors[:file]).to include('type not supported: application/x-pkcs12')
+    end
+
+    it 'reports the blocked content type explicitly' do
+      attachment = build_web_attachment(filename: 'malware.exe', content_type: 'application/x-msdownload')
+
+      expect(attachment).not_to be_valid
+      expect(attachment.errors[:file].first).to start_with('type not supported: application/')
     end
   end
 

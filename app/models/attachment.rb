@@ -27,7 +27,7 @@ class Attachment < ApplicationRecord
 
   ACCEPTABLE_FILE_TYPES = %w[
     text/csv text/html text/plain text/rtf text/xml application/xml
-    application/json application/pdf application/pkcs12 application/x-pkcs12
+    application/json application/pdf
     application/zip application/x-7z-compressed application/vnd.rar application/x-tar
     application/msword application/vnd.ms-excel application/vnd.ms-powerpoint application/rtf
     application/vnd.oasis.opendocument.text
@@ -35,6 +35,11 @@ class Attachment < ApplicationRecord
     application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
     application/vnd.openxmlformats-officedocument.wordprocessingml.document
   ].freeze
+  BUSINESS_CERTIFICATE_EXTENSIONS = %w[p12 pfx].freeze
+  BUSINESS_CERTIFICATE_CONTENT_TYPES = %w[application/pkcs12 application/x-pkcs12].freeze
+  GENERIC_BINARY_CONTENT_TYPES = %w[application/octet-stream].freeze
+  DOWNLOAD_ONLY_CONTENT_TYPES = %w[application/pkcs12 application/x-pkcs12 application/xml text/xml].freeze
+  DOWNLOAD_ONLY_EXTENSIONS = %w[p12 pfx xml].freeze
   belongs_to :account
   belongs_to :message
   has_one_attached :file
@@ -137,7 +142,7 @@ class Attachment < ApplicationRecord
   end
 
   def download_only_attachment?
-    file.content_type.in?(%w[application/pkcs12 application/x-pkcs12]) || extension.in?(%w[p12 pfx])
+    DOWNLOAD_ONLY_CONTENT_TYPES.include?(file.content_type) || DOWNLOAD_ONLY_EXTENSIONS.include?(attached_file_extension)
   end
 
   def file_metadata
@@ -221,7 +226,19 @@ class Attachment < ApplicationRecord
   end
 
   def validate_file_content_type(file_content_type)
-    errors.add(:file, 'type not supported') unless media_file?(file_content_type) || ACCEPTABLE_FILE_TYPES.include?(file_content_type)
+    normalized_content_type = file_content_type.to_s.downcase
+
+    if business_certificate_extension?
+      return if business_certificate_file?(normalized_content_type)
+
+      errors.add(:file, "type not supported: #{normalized_content_type.presence || attached_file_extension.presence || 'unknown'}")
+      return
+    end
+
+    return if media_file?(normalized_content_type)
+    return if ACCEPTABLE_FILE_TYPES.include?(normalized_content_type)
+
+    errors.add(:file, "type not supported: #{normalized_content_type.presence || attached_file_extension.presence || 'unknown'}")
   end
 
   def validate_file_size(byte_size)
@@ -233,6 +250,19 @@ class Attachment < ApplicationRecord
 
   def media_file?(file_content_type)
     file_content_type.start_with?('image/', 'video/', 'audio/')
+  end
+
+  def business_certificate_file?(file_content_type)
+    business_certificate_extension? &&
+      (BUSINESS_CERTIFICATE_CONTENT_TYPES + GENERIC_BINARY_CONTENT_TYPES).include?(file_content_type)
+  end
+
+  def business_certificate_extension?
+    BUSINESS_CERTIFICATE_EXTENSIONS.include?(attached_file_extension)
+  end
+
+  def attached_file_extension
+    (extension.to_s.presence || File.extname(file.filename.to_s).delete_prefix('.').presence).to_s.downcase
   end
 end
 

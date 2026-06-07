@@ -12,6 +12,13 @@ Rails.application.config.active_storage.content_types_allowed_inline += %w[
   audio/x-wav
 ]
 
+# PFX/P12 certificate bundles are business-critical for Kazakhstan/enterprise
+# customers, but they must remain download-only and never be browser-rendered.
+Rails.application.config.active_storage.content_types_to_serve_as_binary += %w[
+  application/pkcs12
+  application/x-pkcs12
+]
+
 module ActiveStorageDirectUploadMetadataFilter
   INTERNAL_METADATA_KEYS = %w[identified analyzed composed].freeze
 

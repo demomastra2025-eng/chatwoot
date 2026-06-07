@@ -6,15 +6,15 @@ import { getFileInfo } from '@chatwoot/utils';
 import FileIcon from 'next/icon/FileIcon.vue';
 import Icon from 'next/icon/Icon.vue';
 
-defineOptions({
-  inheritAttrs: false,
-});
-
 const { attachment } = defineProps({
   attachment: {
     type: Object,
     required: true,
   },
+});
+
+defineOptions({
+  inheritAttrs: false,
 });
 
 const { t } = useI18n();
@@ -44,6 +44,8 @@ const textColorClass = computed(() => {
     docx: 'dark:text-[#D6E1FF] text-[#1F2D5C]', // indigo-12
     json: 'text-n-slate-12',
     odt: 'dark:text-[#D6E1FF] text-[#1F2D5C]', // indigo-12
+    p12: 'text-n-slate-12',
+    pfx: 'text-n-slate-12',
     pdf: 'text-n-slate-12',
     ppt: 'dark:text-[#FFE0C2] text-[#582D1D]',
     pptx: 'dark:text-[#FFE0C2] text-[#582D1D]',
@@ -51,12 +53,13 @@ const textColorClass = computed(() => {
     rtf: 'dark:text-[#D6E1FF] text-[#1F2D5C]', // indigo-12
     tar: 'dark:text-[#EDEEF0] text-[#2F265F]',
     txt: 'text-n-slate-12',
+    xml: 'text-n-slate-12',
     xls: 'text-n-teal-12',
     xlsx: 'text-n-teal-12',
     zip: 'dark:text-[#EDEEF0] text-[#2F265F]',
   };
 
-  return colorMap[fileDetails.value.type] || 'text-n-slate-12';
+  return colorMap[fileDetails.value.type?.toLowerCase()] || 'text-n-slate-12';
 });
 
 const parsedText = computed(

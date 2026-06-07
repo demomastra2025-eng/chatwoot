@@ -34,6 +34,9 @@ export const CONVERSATION_PRIORITY_ORDER = {
   low: 1,
 };
 
+export const BUSINESS_CERTIFICATE_FILE_TYPES =
+  'application/pkcs12, application/x-pkcs12, .pfx, .p12';
+
 export const ALLOWED_FILE_TYPES =
   'image/*,' +
   'audio/*,' +
@@ -41,6 +44,7 @@ export const ALLOWED_FILE_TYPES =
   '.3gpp,' +
   'text/csv, text/plain, application/json, application/pdf, text/rtf,' +
   'application/xml, text/xml,' +
+  `${BUSINESS_CERTIFICATE_FILE_TYPES},` +
   'application/zip, application/x-7z-compressed application/vnd.rar application/x-tar,' +
   'application/msword, application/vnd.ms-excel, application/vnd.ms-powerpoint, application/vnd.oasis.opendocument.text,' +
   'application/vnd.openxmlformats-officedocument.presentationml.presentation, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,' +

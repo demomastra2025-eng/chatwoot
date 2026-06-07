@@ -96,6 +96,7 @@
     "REGEX_ERROR": "Please provide a valid input"
   },
   "FILE_SIZE_LIMIT": "File exceeds the {MAXIMUM_FILE_UPLOAD_SIZE} attachment limit",
+  "FILE_TYPE_NOT_SUPPORTED": "This {fileName} file type is not supported",
   "CHAT_FORM": {
     "INVALID": {
       "FIELD": "Invalid field"

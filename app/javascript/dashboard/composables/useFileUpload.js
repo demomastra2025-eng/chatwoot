@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { DirectUpload } from 'activestorage';
 import {
   checkFileSizeLimit,
+  isFileTypeAllowedForChannel,
   resolveMaximumFileUploadSize,
   resolveConversationUploadLimit,
 } from 'shared/helpers/FileHelper';
@@ -45,8 +46,29 @@ export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
       })
     );
 
+  const alertUnsupportedFileType = file => {
+    const uploadFile = file?.file || file;
+    useAlert(
+      t('CONVERSATION.FILE_TYPE_NOT_SUPPORTED', {
+        fileName: uploadFile?.name || file?.name || '',
+      })
+    );
+  };
+
+  const isUploadFileTypeAllowed = file =>
+    isFileTypeAllowedForChannel(file, {
+      channelType: inbox?.channel_type,
+      medium: inbox?.medium,
+      isOnPrivateNote: isPrivateNote,
+    });
+
   const handleDirectFileUpload = file => {
     if (!file) return;
+
+    if (!isUploadFileTypeAllowed(file)) {
+      alertUnsupportedFileType(file);
+      return;
+    }
 
     const mime = file.file?.type || file.type;
     const maxSizeMB = maxSizeFor(mime);
@@ -80,6 +102,11 @@ export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
 
   const handleIndirectFileUpload = file => {
     if (!file) return;
+
+    if (!isUploadFileTypeAllowed(file)) {
+      alertUnsupportedFileType(file);
+      return;
+    }
 
     const mime = file.file?.type || file.type;
     const maxSizeMB = maxSizeFor(mime);

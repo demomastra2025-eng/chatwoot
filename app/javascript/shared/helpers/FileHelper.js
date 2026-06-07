@@ -1,7 +1,10 @@
 import { getAllowedFileTypesByChannel } from '@chatwoot/utils';
 import { getMaxUploadSizeByChannel } from '@chatwoot/utils';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
-import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
+import {
+  ALLOWED_FILE_TYPES,
+  BUSINESS_CERTIFICATE_FILE_TYPES,
+} from 'shared/constants/messages';
 
 export const DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE = 40;
 export const WHATSAPP_VIDEO_UPLOAD_SIZE = 70;
@@ -90,6 +93,38 @@ export const resolveConversationUploadLimit = ({
   return Math.min(channelLimit, installationLimit);
 };
 
+const normalizeAcceptList = fileTypes =>
+  (fileTypes || '')
+    .split(',')
+    .map(type => type.trim())
+    .filter(Boolean);
+
+export const withBusinessCertificateFileTypes = fileTypes => {
+  const allowedTypes = normalizeAcceptList(fileTypes);
+
+  if (
+    !allowedTypes.includes('application/xml') &&
+    !allowedTypes.includes('text/xml')
+  ) {
+    return allowedTypes.join(', ');
+  }
+
+  normalizeAcceptList(BUSINESS_CERTIFICATE_FILE_TYPES).forEach(type => {
+    if (!allowedTypes.includes(type)) {
+      allowedTypes.push(type);
+    }
+  });
+
+  return allowedTypes.join(', ');
+};
+
+const BUSINESS_CERTIFICATE_EXTENSIONS = new Set(['.p12', '.pfx']);
+const BUSINESS_CERTIFICATE_CONTENT_TYPES = new Set([
+  'application/pkcs12',
+  'application/x-pkcs12',
+  'application/octet-stream',
+]);
+
 /**
  * Validates if a file type is allowed for a specific channel
  * @param {File} file - The file to validate
@@ -102,7 +137,8 @@ export const resolveConversationUploadLimit = ({
  * @returns {boolean} - True if file type is allowed, false otherwise
  */
 export const isFileTypeAllowedForChannel = (file, options = {}) => {
-  if (!file || file.size === 0) return false;
+  const uploadFile = file?.file || file;
+  if (!uploadFile || uploadFile.size === 0) return false;
 
   const {
     channelType: originalChannelType,
@@ -111,21 +147,44 @@ export const isFileTypeAllowedForChannel = (file, options = {}) => {
     isInstagramChannel,
     isOnPrivateNote,
   } = options;
+  const isInstagramConversation =
+    isInstagramChannel || conversationType === 'instagram_direct_message';
 
   // Use broader file types for private notes (matches file picker behavior)
   const allowedFileTypes = isOnPrivateNote
     ? ALLOWED_FILE_TYPES
-    : getAllowedFileTypesByChannel({
-        channelType:
-          isInstagramChannel || conversationType === 'instagram_direct_message'
+    : withBusinessCertificateFileTypes(
+        getAllowedFileTypesByChannel({
+          channelType: isInstagramConversation
             ? INBOX_TYPES.INSTAGRAM
             : originalChannelType,
-        medium,
-      });
+          medium,
+        })
+      );
 
   // Convert to array and validate
-  const allowedTypesArray = allowedFileTypes.split(',').map(t => t.trim());
-  const fileExtension = `.${file.name.split('.').pop()}`;
+  const allowedTypesArray = normalizeAcceptList(allowedFileTypes).map(type =>
+    type.toLowerCase()
+  );
+  const fileExtension = `.${uploadFile.name.split('.').pop()}`.toLowerCase();
+  const fileType = (uploadFile.type || '').toLowerCase();
+  const isBusinessCertificateExtension =
+    BUSINESS_CERTIFICATE_EXTENSIONS.has(fileExtension);
+  const isBusinessCertificateContentType =
+    BUSINESS_CERTIFICATE_CONTENT_TYPES.has(fileType);
+  const isBusinessCertificateAllowed = allowedTypesArray.some(
+    allowedType =>
+      BUSINESS_CERTIFICATE_EXTENSIONS.has(allowedType) ||
+      BUSINESS_CERTIFICATE_CONTENT_TYPES.has(allowedType)
+  );
+
+  if (isBusinessCertificateExtension || isBusinessCertificateContentType) {
+    return (
+      isBusinessCertificateAllowed &&
+      isBusinessCertificateExtension &&
+      (fileType === '' || isBusinessCertificateContentType)
+    );
+  }
 
   return allowedTypesArray.some(allowedType => {
     // Check for exact file extension match
@@ -134,10 +193,10 @@ export const isFileTypeAllowedForChannel = (file, options = {}) => {
     // Check for wildcard MIME type (e.g., image/*)
     if (allowedType.endsWith('/*')) {
       const prefix = allowedType.slice(0, -2); // Remove '/*'
-      return file.type.startsWith(prefix + '/');
+      return fileType.startsWith(prefix + '/');
     }
 
     // Check for exact MIME type match
-    return allowedType === file.type;
+    return allowedType === fileType;
   });
 };

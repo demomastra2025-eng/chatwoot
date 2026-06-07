@@ -3,6 +3,7 @@ import { useAlert } from 'dashboard/composables';
 import { DirectUpload } from 'activestorage';
 import {
   checkFileSizeLimit,
+  isFileTypeAllowedForChannel,
   resolveMaximumFileUploadSize,
   resolveConversationUploadLimit,
 } from 'shared/helpers/FileHelper';
@@ -36,6 +37,26 @@ export default {
         })
       );
     },
+    fileForValidation(file) {
+      return file?.file || file;
+    },
+    alertUnsupportedFileType(file) {
+      const uploadFile = this.fileForValidation(file);
+      useAlert(
+        this.$t('CONVERSATION.FILE_TYPE_NOT_SUPPORTED', {
+          fileName: uploadFile?.name || file?.name || '',
+        })
+      );
+    },
+    isUploadFileTypeAllowed(file) {
+      return isFileTypeAllowedForChannel(file, {
+        channelType: this.channelType || this.inbox?.channel_type,
+        medium: this.inbox?.medium,
+        conversationType: this.conversationType,
+        isInstagramChannel: this.isAnInstagramChannel,
+        isOnPrivateNote: this.isOnPrivateNote,
+      });
+    },
     onFileUpload(file) {
       if (this.globalConfig.directUploadsEnabled) {
         this.onDirectFileUpload(file);
@@ -46,6 +67,11 @@ export default {
 
     onDirectFileUpload(file) {
       if (!file) return;
+
+      if (!this.isUploadFileTypeAllowed(file)) {
+        this.alertUnsupportedFileType(file);
+        return;
+      }
 
       const mime = file.file?.type || file.type;
       const maxSizeMB = this.maxSizeFor(mime);
@@ -79,6 +105,11 @@ export default {
 
     onIndirectFileUpload(file) {
       if (!file) return;
+
+      if (!this.isUploadFileTypeAllowed(file)) {
+        this.alertUnsupportedFileType(file);
+        return;
+      }
 
       const mime = file.file?.type || file.type;
       const maxSizeMB = this.maxSizeFor(mime);
