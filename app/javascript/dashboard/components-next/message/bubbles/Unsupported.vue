@@ -6,9 +6,13 @@ import BaseBubble from './Base.vue';
 
 const { inboxId } = useMessageContext();
 
-const { isAFacebookInbox, isAnInstagramChannel, isATiktokChannel } = useInbox(
-  inboxId.value
-);
+const {
+  isAFacebookInbox,
+  isAnInstagramChannel,
+  isATiktokChannel,
+  isAWhatsAppChannel,
+  isAWhatsAppWebChannel,
+} = useInbox(inboxId.value);
 
 const unsupportedMessageKey = computed(() => {
   if (isAFacebookInbox.value)
@@ -16,12 +20,15 @@ const unsupportedMessageKey = computed(() => {
   if (isAnInstagramChannel.value)
     return 'CONVERSATION.UNSUPPORTED_MESSAGE_INSTAGRAM';
   if (isATiktokChannel.value) return 'CONVERSATION.UNSUPPORTED_MESSAGE_TIKTOK';
+  if (isAWhatsAppChannel.value || isAWhatsAppWebChannel.value)
+    return 'CONVERSATION.UNSUPPORTED_MESSAGE_WHATSAPP';
   return 'CONVERSATION.UNSUPPORTED_MESSAGE';
 });
 </script>
 
 <template>
   <BaseBubble class="px-4 py-3 text-sm" data-bubble-name="unsupported">
+    <!-- eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -->
     {{ $t(unsupportedMessageKey) }}
   </BaseBubble>
 </template>

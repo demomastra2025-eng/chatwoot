@@ -145,7 +145,7 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
               'name' => 'ticket_status_updated',
               'language' => 'en_US',
               'category' => 'UTILITY',
-              'processed_params' => { 'body' => { 'name' => 'John' } }
+              'processed_params' => { 'body' => { 'name' => 'John', 'last_name' => 'Doe', 'ticket_id' => 'TCK-1' } }
             }
           )
           conversation = create(
@@ -220,7 +220,7 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
             'name' => 'ticket_status_updated',
             'language' => 'en_US',
             'category' => 'UTILITY',
-            'processed_params' => { 'body' => { 'name' => 'John' } }
+            'processed_params' => { 'body' => { 'name' => 'John', 'last_name' => 'Doe', 'ticket_id' => 'TCK-1' } }
           }
         )
         conversation = create(

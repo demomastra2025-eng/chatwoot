@@ -99,7 +99,10 @@ const createWrapper = customProps =>
         EmbedBubble: { template: '<div />' },
         InstagramStoryBubble: { template: '<div />' },
         EmailBubble: { template: '<div />' },
-        UnsupportedBubble: { template: '<div />' },
+        UnsupportedBubble: {
+          name: 'UnsupportedBubble',
+          template: '<div data-test-id="unsupported-bubble" />',
+        },
         ContactBubble: { template: '<div />' },
         DyteBubble: { template: '<div />' },
         LocationBubble: { template: '<div />' },
@@ -167,6 +170,17 @@ describe('Message', () => {
     const contextMenu = wrapper.findComponent({ name: 'ContextMenu' });
 
     expect(contextMenu.props('enabledOptions').edit).toBe(false);
+  });
+
+  it('renders unsupported messages even when message content is blank', () => {
+    const wrapper = createWrapper({
+      content: '',
+      contentAttributes: { isUnsupported: true },
+    });
+
+    expect(wrapper.find('[data-test-id="unsupported-bubble"]').exists()).toBe(
+      true
+    );
   });
 
   it('adds the platform name to external echo native app advisory', () => {

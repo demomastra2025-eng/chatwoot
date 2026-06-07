@@ -222,6 +222,7 @@ ru:
       deleted: Это сообщение было удалено
       whatsapp:
         list_button_label: Выберите элемент
+        unavailable: 'Сообщение WhatsApp недоступно: %{error_title}'
       delivery_status:
         error_code: 'Код ошибки: %{error_code}'
     activity:

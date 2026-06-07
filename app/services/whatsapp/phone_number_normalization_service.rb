@@ -17,7 +17,7 @@ class Whatsapp::PhoneNumberNormalizationService
 
     # Find appropriate normalizer for the country
     normalizer = find_normalizer_for_country(clean_number)
-    return raw_number unless normalizer
+    return format_for_provider(clean_number, provider) unless normalizer
 
     # Normalize the clean number
     normalized_clean_number = normalizer.normalize(clean_number)
@@ -26,7 +26,7 @@ class Whatsapp::PhoneNumberNormalizationService
     provider_format = format_for_provider(normalized_clean_number, provider)
     existing_contact_inbox = find_existing_contact_inbox(provider_format)
 
-    existing_contact_inbox&.source_id || raw_number
+    existing_contact_inbox&.source_id || format_for_provider(clean_number, provider)
   end
 
   private
@@ -44,11 +44,13 @@ class Whatsapp::PhoneNumberNormalizationService
 
   # Extract clean number from provider-specific format
   def extract_clean_number(raw_number, provider)
+    value = raw_number.to_s.strip
+
     case provider
     when :twilio
-      raw_number.gsub(/^whatsapp:\+/, '') # Remove prefix: "whatsapp:+5541988887777" → "5541988887777"
+      value.gsub(/^whatsapp:\+/, '') # Remove prefix: "whatsapp:+554****7777" → "5541988887777"
     else
-      raw_number # Default fallback for unknown providers
+      value.delete_prefix('whatsapp:').delete_prefix('+')
     end
   end
 

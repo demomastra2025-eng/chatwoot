@@ -47,6 +47,7 @@ module Whatsapp::IncomingMessageServiceHelpers
       button_payload: button&.[](:payload),
       button_text: button&.[](:text),
       whatsapp_unavailable_message: unavailable_whatsapp_message?(message),
+      is_unsupported: (true if unavailable_whatsapp_message?(message)),
       whatsapp_error_code: unavailable_whatsapp_error(message)&.[](:code),
       whatsapp_error_title: unavailable_whatsapp_error(message)&.[](:title)
     }.compact
@@ -81,11 +82,14 @@ module Whatsapp::IncomingMessageServiceHelpers
     return unless unavailable_whatsapp_message?(message)
 
     error_title = unavailable_whatsapp_error(message)&.[](:title).presence || 'Message is unavailable'
-    "WhatsApp message unavailable: #{error_title}"
+    I18n.t('conversations.messages.whatsapp.unavailable', error_title: error_title)
   end
 
   def processed_waid(waid)
-    Whatsapp::PhoneNumberNormalizationService.new(inbox).normalize_and_find_contact_by_provider(waid, :cloud)
+    source_id = Whatsapp::ContactIdentityResolver.normalize_source_id(waid)
+    return if source_id.blank?
+
+    Whatsapp::PhoneNumberNormalizationService.new(inbox).normalize_and_find_contact_by_provider(source_id, :cloud)
   end
 
   def error_webhook_event?(message)

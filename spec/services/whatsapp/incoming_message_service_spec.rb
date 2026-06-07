@@ -129,9 +129,12 @@ describe Whatsapp::IncomingMessageService do
         message = whatsapp_channel.inbox.messages.first
         expect(whatsapp_channel.inbox.conversations.count).to eq(1)
         expect(Contact.count).to eq(1)
-        expect(message.content).to eq('WhatsApp message unavailable: Message type is currently not supported.')
+        expect(message.content).to eq(
+          I18n.t('conversations.messages.whatsapp.unavailable', error_title: 'Message type is currently not supported.')
+        )
         expect(message.content_attributes).to include(
           'whatsapp_unavailable_message' => true,
+          'is_unsupported' => true,
           'whatsapp_error_code' => 131_051,
           'whatsapp_error_title' => 'Message type is currently not supported.'
         )

@@ -114,15 +114,13 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def set_contact_from_echo
-    # For echo messages, contact phone is in the 'to' field
-    phone_number = messages_data.first[:to]
-    waid = processed_waid(phone_number)
-
-    contact_inbox = ::ContactInboxWithContactBuilder.new(
-      source_id: waid,
+    contact_inbox = Whatsapp::ContactIdentityResolver.new(
       inbox: inbox,
-      contact_attributes: { name: "+#{phone_number}", phone_number: "+#{phone_number}" }
+      message: messages_data.first,
+      outgoing_echo: true
     ).perform
+
+    return if contact_inbox.blank?
 
     @contact_inbox = contact_inbox
     @contact = contact_inbox.contact
@@ -132,13 +130,13 @@ class Whatsapp::IncomingMessageBaseService
     contact_params = @processed_params[:contacts]&.first
     return if contact_params.blank?
 
-    waid = processed_waid(contact_params[:wa_id])
-
-    contact_inbox = ::ContactInboxWithContactBuilder.new(
-      source_id: waid,
+    contact_inbox = Whatsapp::ContactIdentityResolver.new(
       inbox: inbox,
-      contact_attributes: { name: contact_params.dig(:profile, :name), phone_number: "+#{messages_data.first[:from]}" }
+      message: messages_data.first,
+      contact_params: contact_params
     ).perform
+
+    return if contact_inbox.blank?
 
     @contact_inbox = contact_inbox
     @contact = contact_inbox.contact
@@ -244,7 +242,9 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def contact_name_matches_phone_number?
-    phone_number = "+#{messages_data.first[:from]}"
+    phone_number = Whatsapp::ContactIdentityResolver.phone_number_for(messages_data.first[:from])
+    return false if phone_number.blank?
+
     formatted_phone_number = TelephoneNumber.parse(phone_number).international_number
     @contact.name == phone_number || @contact.name == formatted_phone_number
   end

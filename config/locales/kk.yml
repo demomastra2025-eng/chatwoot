@@ -205,6 +205,7 @@ kk:
       deleted: This message was deleted
       whatsapp:
         list_button_label: Choose an item
+        unavailable: 'WhatsApp message unavailable: %{error_title}'
       delivery_status:
         error_code: 'Error code: %{error_code}'
     activity:
