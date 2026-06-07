@@ -710,7 +710,7 @@ class Captain::Assistant::AgentRunnerService
       account_id: @assistant.account_id,
       assistant_id: @assistant.id,
       assistant_config: @assistant.config,
-      captain_runtime: @assistant.account.captain_preferences[:runtime]
+      captain_runtime: @assistant.account.captain_runtime_preferences
     }
     state[:source] = @source if @source.present?
     state[:runtime_clock] = runtime_clock_state

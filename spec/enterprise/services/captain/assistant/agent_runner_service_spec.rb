@@ -1160,6 +1160,18 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
+    it 'uses direct runtime preferences without resolving full model preferences' do
+      runtime_preferences = { 'assistant_moderation' => true }.with_indifferent_access
+
+      allow(assistant).to receive(:account).and_return(account)
+      allow(account).to receive(:captain_runtime_preferences).and_return(runtime_preferences)
+      allow(account).to receive(:captain_preferences).and_raise('full captain preferences should not be resolved in runtime state')
+
+      state = service.send(:build_state)
+
+      expect(state[:captain_runtime]).to eq(runtime_preferences)
+    end
+
     it 'includes conversation attributes when conversation is present' do
       state = service.send(:build_state)
 
