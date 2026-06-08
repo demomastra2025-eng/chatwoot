@@ -119,11 +119,11 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       account: account,
       agent_aor: 'sip:1001@example.test',
       enabled: true,
-      last_synced_at: 3.minutes.ago,
+      last_synced_at: 6.minutes.ago,
       metadata: {
         registration_state: 'registered',
         registered: true,
-        last_presence_event_at: 3.minutes.ago.iso8601
+        last_presence_event_at: 6.minutes.ago.iso8601
       }
     )
     number_binding.routing_policy.update!(
@@ -424,8 +424,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       to_number: voice_channel.phone_number
     )
     expect(call_session.conversation).to be_present
-    expect(call_session.conversation.identifier).to eq('inbound-route-lifecycle')
+    expect(call_session.conversation.identifier).to be_blank
+    expect(call_session.conversation.additional_attributes['fonoster_call_ref']).to eq('inbound-route-lifecycle')
     expect(call_session.conversation.messages.where(content_type: 'voice_call').count).to eq(1)
+    expect(call_session.conversation.messages.voice_calls.find_by!(source_id: 'voice_call:inbound-route-lifecycle')).to be_present
   end
 
   it 'normalizes trunk-prefix caller numbers in native route lifecycle records' do
@@ -516,24 +518,26 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
         end
       end.to change(Message, :count).by(1)
 
-      post '/internal/voice/inbound/event',
-           params: {
-             call_ref: 'existing-conversation-rejected-route',
-             event: 'rejected',
-             account_id: account.id,
-             inbox_id: voice_inbox.id,
-             number_ref: number_binding.number_ref,
-             caller_number: caller_number,
-             status: 'rejected',
-             terminal: true
-           },
-           headers: {
-             'X-Bridge-Secret' => 'bridge-secret'
-           },
-           as: :json
+      perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+        post '/internal/voice/inbound/event',
+             params: {
+               call_ref: 'existing-conversation-rejected-route',
+               event: 'rejected',
+               account_id: account.id,
+               inbox_id: voice_inbox.id,
+               number_ref: number_binding.number_ref,
+               caller_number: caller_number,
+               status: 'rejected',
+               terminal: true
+             },
+             headers: {
+               'X-Bridge-Secret' => 'bridge-secret'
+             },
+             as: :json
+      end
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'existing-conversation-rejected-route')
     expect(call_session.reload).to have_attributes(
       conversation_id: conversation.id,

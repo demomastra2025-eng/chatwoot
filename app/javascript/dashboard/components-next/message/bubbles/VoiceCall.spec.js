@@ -210,6 +210,26 @@ describe('VoiceCall bubble', () => {
     );
   });
 
+  it('renders newly created outbound call bubbles as outgoing ringing calls', () => {
+    const wrapper = buildWrapper({
+      messageType: ref(MESSAGE_TYPES.INCOMING),
+      contentAttributes: ref({
+        data: {
+          status: 'created',
+          call_direction: 'outbound',
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.OUTGOING_CALL');
+    expect(wrapper.text()).toContain(
+      'CONVERSATION.VOICE_CALL.NOT_ANSWERED_YET'
+    );
+    expect(wrapper.text()).not.toContain(
+      'CONVERSATION.VOICE_CALL.INCOMING_CALL'
+    );
+  });
+
   it('normalizes Rails no_answer status before rendering missed call state', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({

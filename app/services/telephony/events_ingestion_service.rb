@@ -10,6 +10,17 @@ class Telephony::EventsIngestionService
     missed
     no_answer
   ].freeze
+  OUTBOUND_CUSTOMER_ANSWER_EVENT_TYPES = %w[
+    answered
+    call_status
+    callee_answered
+    customer_answered
+    dial_status
+  ].freeze
+  OUTBOUND_OPERATOR_CANCEL_REASONS = %w[
+    operator_cancelled
+    operator_canceled
+  ].freeze
 
   EVENT_STATUS_MAP = {
     'created' => 'created',
@@ -54,7 +65,10 @@ class Telephony::EventsIngestionService
     'ai_speaking' => nil,
     'caller_interrupted' => nil,
     'ringing' => 'ringing',
+    'answer' => 'in_progress',
     'answered' => 'in_progress',
+    'callee_answered' => 'in_progress',
+    'customer_answered' => 'in_progress',
     'ai_answered' => 'in_progress',
     'transfer_answered' => 'in_progress',
     'in-progress' => 'in_progress',
@@ -138,6 +152,8 @@ class Telephony::EventsIngestionService
     call_session = nil
     linked_runtime_call_sessions = []
     immutable_ai_finalized_late_event = false
+    terminal_late_non_terminal_event = false
+    terminal_late_terminal_event = false
 
     ActiveRecord::Base.transaction do
       event.lock!
@@ -155,13 +171,25 @@ class Telephony::EventsIngestionService
           next
         end
 
+        if terminal_late_non_terminal_event?(call_session)
+          terminal_late_non_terminal_event = true
+          event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
+          next
+        end
+
+        if terminal_late_terminal_event?(call_session)
+          terminal_late_terminal_event = true
+          event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
+          next
+        end
+
         call_session = upsert_call_session!(call_session, account)
         linked_runtime_call_sessions = reconcile_linked_runtime_call_sessions!(account, call_session)
         event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
       end
     end
 
-    if call_session.present? && !immutable_ai_finalized_late_event
+    if call_session.present? && !immutable_ai_finalized_late_event && !terminal_late_non_terminal_event && !terminal_late_terminal_event
       run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
     end
     call_session
@@ -173,13 +201,47 @@ class Telephony::EventsIngestionService
     call_session.metadata.to_h.dig('ai_voice', 'finalize').present?
   end
 
+  def terminal_late_non_terminal_event?(call_session)
+    return false if post_finalize_recording_event?
+    return false unless call_session.terminal?
+
+    status = resolved_status
+    status.present? && !terminal_status?(status)
+  end
+
+  def terminal_late_terminal_event?(call_session)
+    return false if post_finalize_recording_event?
+    return false if webphone_release_event?
+    return false if bridge_reconciliation_event?
+    return false unless call_session.terminal?
+
+    status = resolved_status
+    return false unless terminal_status?(status)
+    return false if terminal_supersedes_existing_terminal?(call_session)
+    return false if terminal_duration_repair_needed?(call_session, status, resolved_occurred_at)
+
+    true
+  end
+
   def post_finalize_recording_event?
     resolved_event_type.in?(%w[recording_ready recording_incomplete]) || recording_error_event?
   end
 
+  def webphone_release_event?
+    event_key.to_s.start_with?('webphone:') ||
+      metadata_value('webphone_action').to_s == 'operator_release'
+  end
+
+  def bridge_reconciliation_event?
+    event_key.to_s.start_with?('bridge_reconciliation:') ||
+      metadata_value('source').to_s == 'bridge_reconciliation'
+  end
+
   def run_side_effects!(call_session, account, event, linked_runtime_call_sessions: [])
+    call_session.reload
     ensure_conversation!(call_session, account)
-    apply_call_status!(call_session)
+    call_session.reload
+    apply_call_status!(call_session) unless superseded_fonoster_conversation_call?(call_session)
     sync_voice_message!(call_session)
     linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
     enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
@@ -347,7 +409,7 @@ class Telephony::EventsIngestionService
     conversation = resolve_existing_conversation(account, call_session)
     inbox = resolve_inbox(account)
     number_binding = resolve_number_binding(account) || inbox&.telephony_number_binding
-    contact = resolve_contact(account, conversation)
+    contact = resolve_contact(account, conversation, call_session)
     resolved_agent_binding = resolve_agent_binding(account)
     status = next_status_for(call_session)
     agent_binding = next_agent_binding(call_session, resolved_agent_binding, status)
@@ -367,8 +429,8 @@ class Telephony::EventsIngestionService
                                        'providerCallId') || call_session.provider_call_sid,
       status: status,
       direction: next_direction(call_session),
-      from_number: resolved_from_number || call_session.from_number,
-      to_number: resolved_to_number || call_session.to_number,
+      from_number: next_from_number(call_session),
+      to_number: next_to_number(call_session),
       recording_ref: payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
         nested_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
         call_session.recording_ref,
@@ -393,7 +455,7 @@ class Telephony::EventsIngestionService
     return call_session.status if stale_event?(call_session)
     return call_session.status if call_session.terminal? && !terminal_status?(status)
 
-    status
+    outbound_unanswered_terminal_status(call_session, status) || status
   end
 
   def next_agent_binding(call_session, resolved_agent_binding, status)
@@ -428,6 +490,8 @@ class Telephony::EventsIngestionService
 
   def next_ended_at(call_session, status)
     return call_session.ended_at if stale_event?(call_session)
+    return call_session.ended_at if post_finalize_recording_event? && call_session.ended_at.present?
+    return event_time if terminal_supersedes_existing_terminal?(call_session)
 
     resolved_ended_at || call_session.ended_at || (event_time if terminal_status?(status))
   end
@@ -446,11 +510,143 @@ class Telephony::EventsIngestionService
     resolved_end_reason || call_session.end_reason || status
   end
 
+  def next_from_number(call_session)
+    incoming_number = resolved_from_number
+    if outbound_call_for?(call_session) && internal_outbound_number?(incoming_number, call_session)
+      return call_session.from_number.presence || call_session.number_binding&.phone_number || incoming_number
+    end
+
+    incoming_number || call_session.from_number
+  end
+
+  def next_to_number(call_session)
+    return resolved_outbound_customer_number(call_session) if outbound_call_for?(call_session)
+
+    resolved_to_number || call_session.to_number
+  end
+
   def next_direction(call_session)
     direction = resolved_direction
     return call_session.direction if preserve_existing_outbound_direction?(call_session, direction)
 
     direction || call_session.direction || 'inbound'
+  end
+
+  def outbound_call_for?(call_session)
+    call_session.direction == 'outbound' || resolved_direction == 'outbound'
+  end
+
+  def resolved_outbound_customer_number(call_session)
+    explicit_target = outbound_customer_target_number(call_session)
+    return explicit_target if explicit_target.present?
+
+    existing_target = call_session.to_number.presence
+    incoming_target = resolved_to_number
+    return existing_target if existing_target.present? && internal_outbound_number?(incoming_target, call_session)
+
+    incoming_target.presence || existing_target
+  end
+
+  def outbound_customer_target_number(call_session)
+    candidate = payload_value('outbound_target_number', 'outboundTargetNumber', 'customer_number', 'customerNumber',
+                              'target_number', 'targetNumber', 'original_to', 'originalTo') ||
+                nested_payload_value('outbound_target_number', 'outboundTargetNumber', 'customer_number', 'customerNumber',
+                                     'target_number', 'targetNumber', 'original_to', 'originalTo') ||
+                metadata_value('outbound_target_number', 'outboundTargetNumber', 'customer_number', 'customerNumber',
+                               'target_number', 'targetNumber', 'original_to', 'originalTo') ||
+                bridge_response_value(call_session, 'to', 'target_number', 'targetNumber', 'customer_number', 'customerNumber',
+                                      'original_to', 'originalTo')
+    normalize_phone_number(candidate) || candidate
+  end
+
+  def bridge_response_value(call_session, *keys)
+    return if call_session.blank?
+
+    bridge_response = call_session.metadata.to_h['bridge_response']
+    return unless bridge_response.is_a?(Hash)
+
+    candidates = [bridge_response]
+    candidates << bridge_response['request'] if bridge_response['request'].is_a?(Hash)
+    candidates << bridge_response['data'] if bridge_response['data'].is_a?(Hash)
+
+    candidates.each do |source|
+      source = source.deep_stringify_keys
+      keys.each do |key|
+        value = source[key.to_s]
+        return value if value.present?
+      end
+    end
+
+    nil
+  end
+
+  def internal_outbound_number?(value, call_session)
+    return false if value.blank?
+
+    normalized_candidate = normalized_phone(value)
+    return true if normalized_candidate.blank? || normalized_candidate.length <= 4
+    return true if normalized_candidate == normalized_phone(inbound_number)
+    return true if normalized_candidate == normalized_phone(call_session.number_binding&.phone_number)
+    return true if normalized_candidate == normalized_phone(call_session.inbox&.channel&.try(:phone_number))
+
+    false
+  end
+
+  def outbound_unanswered_terminal_status(call_session, status)
+    return unless status == 'completed'
+    return unless outbound_call_for?(call_session)
+    return if webphone_operator_completed_release_event?
+    return if outbound_customer_answered?(call_session)
+
+    outbound_operator_cancel_event? ? 'cancelled' : 'no_answer'
+  end
+
+  def webphone_operator_completed_release_event?
+    webphone_release_event? &&
+      metadata_value('webphone_action').to_s == 'operator_release' &&
+      resolved_end_reason.to_s == 'operator_hangup'
+  end
+
+  def outbound_customer_answered?(call_session)
+    outbound_customer_answer_event? ||
+      (call_session.answered_at.present? && !outbound_operator_only_answered?(call_session)) ||
+      Array.wrap(call_session.legs).any? { |leg| outbound_customer_answer_leg?(leg) }
+  end
+
+  def outbound_operator_only_answered?(call_session)
+    answered_legs = Array.wrap(call_session.legs).filter_map do |leg|
+      next unless leg.is_a?(Hash)
+
+      leg = leg.deep_stringify_keys
+      leg if leg['status'].to_s == 'in_progress'
+    end
+    return false if answered_legs.blank?
+
+    answered_legs.all? { |leg| leg['leg'].to_s == 'operator' }
+  end
+
+  def outbound_customer_answer_event?
+    return false unless resolved_status == 'in_progress'
+    return false unless OUTBOUND_CUSTOMER_ANSWER_EVENT_TYPES.include?(resolved_event_type.to_s)
+    return false if operator_leg_event?
+
+    true
+  end
+
+  def outbound_customer_answer_leg?(leg)
+    return false unless leg.is_a?(Hash)
+
+    leg = leg.deep_stringify_keys
+    return false unless leg['status'].to_s == 'in_progress'
+    return false unless OUTBOUND_CUSTOMER_ANSWER_EVENT_TYPES.include?(leg['event_type'].to_s)
+    return false if leg['leg'].to_s == 'operator'
+
+    true
+  end
+
+  def outbound_operator_cancel_event?
+    reason = resolved_end_reason.to_s.strip.downcase
+    OUTBOUND_OPERATOR_CANCEL_REASONS.include?(reason)
   end
 
   def preserve_existing_outbound_direction?(call_session, direction)
@@ -462,6 +658,8 @@ class Telephony::EventsIngestionService
 
   def outbound_origin_metadata?(call_session)
     metadata = call_session.metadata.to_h.deep_stringify_keys
+    return true if metadata['bridge_response'].present? || metadata['fonoster_call_ref'].present?
+
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_stringify_keys : {}
     outbound_values = %w[outbound to_pstn outbound_api outbound-dial outbound_api_call]
 
@@ -477,6 +675,11 @@ class Telephony::EventsIngestionService
 
   def next_duration_seconds(call_session, status, started_at, answered_at, ended_at)
     return call_session.duration_seconds if stale_event?(call_session)
+
+    if post_finalize_recording_event? && call_session.duration_seconds.present?
+      current_duration = call_session.duration_seconds.to_i
+      return current_duration unless recomputable_completed_duration?(status, current_duration, answered_at, ended_at)
+    end
 
     return [ended_at.to_i - started_at.to_i, 0].max if unanswered_terminal_status?(status) && started_at.present? && ended_at.present?
 
@@ -517,6 +720,7 @@ class Telephony::EventsIngestionService
   def next_last_event_at(call_session)
     occurred_at = resolved_occurred_at
     return call_session.last_event_at if stale_event?(call_session)
+    return call_session.last_event_at if post_finalize_recording_event? && call_session.terminal? && call_session.last_event_at.present?
     return [call_session.last_event_at, occurred_at].compact.max if occurred_at.present?
 
     Time.current
@@ -524,10 +728,51 @@ class Telephony::EventsIngestionService
 
   def stale_event?(call_session)
     occurred_at = resolved_occurred_at
-    return false if occurred_at.present? && terminal_status?(resolved_status) && !call_session.terminal?
-    return false if repairable_stale_terminal_event?(call_session, occurred_at)
+    return false if fresh_terminal_event?(call_session, occurred_at)
 
     occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
+  end
+
+  def fresh_terminal_event?(call_session, occurred_at)
+    terminal_supersedes_existing_terminal?(call_session) ||
+      (occurred_at.present? && terminal_status?(resolved_status) && !call_session.terminal?) ||
+      repairable_stale_terminal_event?(call_session, occurred_at)
+  end
+
+  def terminal_supersedes_existing_terminal?(call_session)
+    return false unless terminal_supersede_candidate?(call_session)
+
+    incoming_terminal_time < call_session.ended_at &&
+      incoming_terminal_priority >= existing_terminal_priority(call_session)
+  end
+
+  def terminal_supersede_candidate?(call_session)
+    call_session.terminal? &&
+      terminal_status?(resolved_status) &&
+      !post_finalize_recording_event? &&
+      incoming_terminal_time.present? &&
+      call_session.ended_at.present?
+  end
+
+  def incoming_terminal_time
+    resolved_ended_at || resolved_occurred_at
+  end
+
+  def incoming_terminal_priority
+    terminal_priority(resolved_ended_by, resolved_end_reason)
+  end
+
+  def existing_terminal_priority(call_session)
+    terminal_priority(call_session.ended_by, call_session.end_reason)
+  end
+
+  def terminal_priority(ended_by, end_reason)
+    value = [ended_by, end_reason].compact.join(' ').downcase
+    return 3 if value.include?('caller') || value.include?('remote')
+    return 2 if value.include?('operator') || value.include?('user:')
+    return 1 if value.present?
+
+    0
   end
 
   def repairable_stale_terminal_event?(call_session, occurred_at)
@@ -672,6 +917,8 @@ class Telephony::EventsIngestionService
     conversation = call_session.conversation
     return if conversation.blank?
 
+    prepare_reused_fonoster_conversation_for_call!(conversation, call_session)
+
     if resolved_status.present?
       timestamp = call_status_timestamp(call_session)
       Voice::CallStatus::Manager.new(
@@ -702,6 +949,53 @@ class Telephony::EventsIngestionService
     conversation.update!(update_attrs)
   end
 
+  def prepare_reused_fonoster_conversation_for_call!(conversation, call_session)
+    return unless fonoster_call_session?(call_session)
+
+    attrs = (conversation.additional_attributes || {}).deep_dup
+    previous_call_ref = attrs['fonoster_call_ref']
+    return if previous_call_ref.blank? || previous_call_ref == call_session.external_call_ref
+
+    reset_reused_fonoster_call_state!(attrs, call_session)
+    attrs['telephony_provider'] = call_session.provider
+    attrs['call_direction'] = call_session.direction
+    attrs['from_number'] = call_session.from_number if call_session.from_number.present?
+    attrs['to_number'] = call_session.to_number if call_session.to_number.present?
+    attrs['fonoster_call_ref'] = call_session.external_call_ref
+    conversation.update!(additional_attributes: attrs)
+    conversation.reload
+  end
+
+  def superseded_fonoster_conversation_call?(call_session)
+    return false unless fonoster_call_session?(call_session)
+
+    conversation = call_session.conversation
+    return false if conversation.blank?
+
+    attrs = (conversation.additional_attributes || {}).deep_stringify_keys
+    current_call_ref = attrs['fonoster_call_ref'].presence
+    return false if current_call_ref.blank? || current_call_ref == call_session.external_call_ref
+
+    current_call_started_at = fonoster_conversation_call_started_at(conversation, current_call_ref, attrs)
+    call_session_started_at = call_session.started_at || call_session.created_at
+    return false if current_call_started_at.blank? || call_session_started_at.blank?
+
+    current_call_started_at > call_session_started_at
+  end
+
+  def fonoster_conversation_call_started_at(conversation, call_ref, attrs)
+    current_session = conversation.account.telephony_call_sessions.find_by(external_call_ref: call_ref)
+    current_session&.started_at || current_session&.created_at || fonoster_conversation_attrs_started_at(attrs)
+  end
+
+  def fonoster_conversation_attrs_started_at(attrs)
+    meta = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
+    timestamp = meta['initiated_at'] || attrs['call_started_at']
+    return if timestamp.blank?
+
+    timestamp.to_s.match?(/\A\d+\z/) ? Time.zone.at(timestamp.to_i) : parse_time(timestamp)
+  end
+
   def call_status_timestamp(call_session)
     return (call_session.answered_at || call_session.started_at)&.to_i if call_session.status == 'in_progress'
     return (call_session.ended_at || call_session.started_at)&.to_i if terminal_status?(call_session.status)
@@ -730,7 +1024,10 @@ class Telephony::EventsIngestionService
   end
 
   def sync_voice_message!(call_session)
-    message = voice_message_for(call_session) || build_voice_message!(call_session)
+    message = voice_message_for(call_session)
+    return if message.blank? && superseded_fonoster_conversation_call?(call_session)
+
+    message ||= build_voice_message!(call_session)
     return unless message
 
     data = normalized_content_attributes(message)
@@ -747,6 +1044,8 @@ class Telephony::EventsIngestionService
       data['data']['from_number'] ||= call_session.from_number
       data['data']['to_number'] ||= call_session.to_number
     end
+    data['data']['provider'] ||= call_session.provider
+    data['data']['inbox_id'] ||= call_session.inbox_id
     existing_ai_voice = data['data']['ai_voice'].is_a?(Hash) ? data['data']['ai_voice'] : {}
     data['data']['ai_voice'] = existing_ai_voice.merge(voice_ai_message_state(call_session))
     tools = voice_ai_tool_events(call_session)
@@ -806,6 +1105,7 @@ class Telephony::EventsIngestionService
     return unless call_session.account.feature_enabled?('captain_integration')
     return unless call_session.account.captain_audio_transcription_enabled?
     return if call_recording_metadata(call_session)['storage_key'].blank?
+    return if outbound_without_customer_answer?(call_session)
 
     enqueue_job = false
     call_session.with_lock do
@@ -827,8 +1127,16 @@ class Telephony::EventsIngestionService
 
   def voice_message_for(call_session)
     return if call_session.conversation.blank?
+    return exact_voice_message_for(call_session) if superseded_fonoster_conversation_call?(call_session)
 
     call_session.voice_message_for_current_call
+  end
+
+  def exact_voice_message_for(call_session)
+    call_session.exact_voice_message ||
+      call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
+        normalized_content_attributes(message).dig('data', 'call_sid') == call_session.external_call_ref
+      end
   end
 
   def build_voice_message!(call_session)
@@ -852,6 +1160,8 @@ class Telephony::EventsIngestionService
           'call_direction' => call_session.direction,
           'from_number' => call_session.from_number,
           'to_number' => call_session.to_number,
+          'provider' => call_session.provider,
+          'inbox_id' => call_session.inbox_id,
           'meta' => {
             'created_at' => timestamp,
             'ringing_at' => timestamp
@@ -1111,13 +1421,14 @@ class Telephony::EventsIngestionService
     digits.presence
   end
 
-  def resolve_contact(account, conversation)
+  def resolve_contact(account, conversation, call_session = nil)
     return conversation.contact if conversation&.contact.present?
 
     contact_id = payload_value('contact_id', 'contactId') || metadata_value('chatwoot_contact_id', 'contact_id', 'contactId')
     return account.contacts.find_by(id: contact_id) if contact_id.present?
 
     phone_number = caller_number if resolved_direction == 'inbound'
+    phone_number ||= resolved_outbound_customer_number(call_session) if resolved_direction == 'outbound' && call_session.present?
     phone_number ||= resolved_to_number if resolved_direction == 'outbound'
     return if phone_number.blank?
 
@@ -1272,6 +1583,7 @@ class Telephony::EventsIngestionService
 
   def presentation_recording_metadata(call_session)
     return {} if unsafe_sipuni_external_recording?(call_session)
+    return {} if outbound_without_customer_answer?(call_session)
 
     metadata = call_recording_metadata(call_session).deep_dup
     return metadata unless proxy_external_recording?(call_session)
@@ -1283,9 +1595,14 @@ class Telephony::EventsIngestionService
 
   def recording_url(call_session)
     return if unsafe_sipuni_external_recording?(call_session)
+    return if outbound_without_customer_answer?(call_session)
     return internal_recording_url(call_session) if proxy_external_recording?(call_session)
 
     external_recording_url(call_session) || internal_recording_url(call_session)
+  end
+
+  def outbound_without_customer_answer?(call_session)
+    outbound_call_for?(call_session) && !outbound_customer_answered?(call_session)
   end
 
   def internal_recording_url(call_session)
@@ -1617,7 +1934,8 @@ class Telephony::EventsIngestionService
   def resolved_occurred_at
     parse_time(payload_value('occurred_at', 'occurredAt')) ||
       parse_time(payload_value('received_at', 'receivedAt')) ||
-      parse_time(payload_value('created_at', 'createdAt'))
+      parse_time(payload_value('created_at', 'createdAt')) ||
+      resolved_ended_at
   end
 
   def metadata

@@ -120,11 +120,21 @@ RSpec.describe Telephony::CallReconciliationService do
       )
     end
 
-    it 'keeps an answered UNKNOWN bridge record completed when reconciliation finalizes a call' do
-      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77172705175')
+    it 'does not finalize an answered outbound UNKNOWN bridge record with a zero-duration terminal edge' do
+      voice_channel = create(
+        :channel_voice,
+        :fonoster,
+        account: account,
+        phone_number: '+77172705175'
+      )
       voice_inbox = voice_channel.inbox
       contact = create(:contact, account: account, phone_number: '+77066318623')
-      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
+      contact_inbox = create(
+        :contact_inbox,
+        contact: contact,
+        inbox: voice_inbox,
+        source_id: contact.phone_number
+      )
       conversation = create(
         :conversation,
         account: account,
@@ -162,8 +172,42 @@ RSpec.describe Telephony::CallReconciliationService do
           }
         }.to_json
       )
+      original_content_attributes = message.content_attributes.deep_dup
       bridge_items << {
         'ref' => 'call-ref-sync-message',
+        'status' => 'UNKNOWN',
+        'startedAt' => (now - 2.minutes).iso8601,
+        'endedAt' => call_session.answered_at.iso8601,
+        'duration' => 0,
+        'direction' => 'TO_PSTN'
+      }
+
+      service.perform
+
+      expect(call_session.reload).to have_attributes(
+        status: 'in_progress',
+        end_reason: nil
+      )
+      expect(call_session.ended_at).to be_nil
+      expect(message.reload.content_attributes).to eq(original_content_attributes)
+      expect(call_session.metadata['bridge_reconciliation']).to include(
+        'provider_status' => 'UNKNOWN'
+      )
+      expect(call_session.metadata['bridge_reconciliation']).not_to have_key('target_status')
+    end
+
+    it 'finalizes an answered outbound UNKNOWN bridge record when the bridge terminal edge has elapsed duration' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        direction: 'outbound',
+        status: 'in_progress',
+        external_call_ref: 'call-ref-answered-unknown-with-duration',
+        started_at: now - 2.minutes,
+        answered_at: now - 90.seconds
+      )
+      bridge_items << {
+        'ref' => 'call-ref-answered-unknown-with-duration',
         'status' => 'UNKNOWN',
         'startedAt' => (now - 2.minutes).iso8601,
         'endedAt' => (now - 30.seconds).iso8601,
@@ -175,11 +219,45 @@ RSpec.describe Telephony::CallReconciliationService do
 
       expect(call_session.reload).to have_attributes(
         status: 'completed',
-        end_reason: 'bridge_unknown_terminal'
+        end_reason: 'bridge_unknown_terminal',
+        duration_seconds: 60
       )
-      expect(call_session.ended_at).to be >= call_session.answered_at
-      expect(message.reload.content_attributes).to be_a(Hash)
-      expect(message.content_attributes.dig('data', 'status')).to eq('completed')
+    end
+
+    it 'does not treat an outbound operator-only answered leg as a completed customer call' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        direction: 'outbound',
+        status: 'in_progress',
+        external_call_ref: 'call-ref-operator-only-outbound',
+        started_at: now - 2.minutes,
+        answered_at: now - 90.seconds,
+        legs: [
+          {
+            'event_key' => 'evt-operator-answer',
+            'event_type' => 'operator_answered',
+            'status' => 'in_progress',
+            'leg' => 'operator'
+          }
+        ]
+      )
+      bridge_items << {
+        'ref' => 'call-ref-operator-only-outbound',
+        'status' => 'UNKNOWN',
+        'startedAt' => (now - 2.minutes).iso8601,
+        'endedAt' => (now - 30.seconds).iso8601,
+        'duration' => 0,
+        'direction' => 'TO_PSTN'
+      }
+
+      service.perform
+
+      expect(call_session.reload).to have_attributes(
+        status: 'no_answer',
+        end_reason: 'bridge_unknown_terminal',
+        duration_seconds: 90
+      )
     end
 
     it 'keeps unanswered outbound UNKNOWN bridge records as no-answer' do
@@ -206,6 +284,79 @@ RSpec.describe Telephony::CallReconciliationService do
         status: 'no_answer',
         end_reason: 'bridge_unknown_terminal'
       )
+    end
+
+    it 'syncs the conversation and voice bubble when reconciliation finalizes an outbound call' do
+      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77172705175')
+      voice_inbox = voice_channel.inbox
+      contact = create(:contact, account: account, phone_number: '+77066318623')
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        additional_attributes: {
+          'call_status' => 'created',
+          'call_direction' => 'outbound',
+          'fonoster_call_ref' => 'call-ref-outbound-ui-sync'
+        }
+      )
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: contact,
+        inbox: voice_inbox,
+        number_binding: voice_inbox.telephony_number_binding,
+        direction: 'outbound',
+        status: 'created',
+        external_call_ref: 'call-ref-outbound-ui-sync',
+        from_number: voice_channel.phone_number,
+        to_number: contact.phone_number,
+        started_at: now - 2.minutes
+      )
+      message = conversation.messages.create!(
+        account: account,
+        inbox: voice_inbox,
+        message_type: :outgoing,
+        content_type: :voice_call,
+        content: 'Voice Call',
+        source_id: call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'call_sid' => call_session.external_call_ref,
+            'status' => 'created',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+      bridge_items << {
+        'ref' => 'call-ref-outbound-ui-sync',
+        'status' => 'UNKNOWN',
+        'startedAt' => (now - 2.minutes).iso8601,
+        'endedAt' => (now - 30.seconds).iso8601,
+        'duration' => 0,
+        'direction' => 'TO_PSTN'
+      }
+
+      service.perform
+
+      aggregate_failures do
+        expect(call_session.reload).to have_attributes(
+          status: 'no_answer',
+          end_reason: 'bridge_unknown_terminal'
+        )
+        expect(message.reload.content_attributes.dig('data', 'status')).to eq(
+          'no_answer'
+        )
+        expect(conversation.reload.additional_attributes).to include(
+          'call_status' => 'no_answer',
+          'call_direction' => 'outbound',
+          'fonoster_call_ref' => call_session.external_call_ref
+        )
+      end
     end
 
     it 'closes stale operator calls that disappeared from the bridge poll as no-answer' do

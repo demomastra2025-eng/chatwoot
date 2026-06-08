@@ -184,6 +184,207 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'keeps outbound direction for OneLink initiated Fonoster calls without nested route metadata' do
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'ringing',
+        metadata: {
+          'bridge_response' => {
+            'provider' => 'fonoster',
+            'call_ref' => existing_call_session.external_call_ref
+          },
+          'fonoster_call_ref' => existing_call_session.external_call_ref
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-operator-leg-answered-no-route-meta-1',
+          provider: 'fonoster',
+          event: 'operator_answered',
+          status: 'answered',
+          callDirection: 'inbound',
+          call_direction: 'inbound',
+          routingMode: 'operator',
+          routing_mode: 'operator',
+          leg: 'operator'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        direction: 'outbound',
+        status: 'in_progress'
+      )
+      expect(result.legs.last).to include(
+        'direction' => 'outbound',
+        'leg' => 'operator',
+        'status' => 'in_progress'
+      )
+    end
+
+    it 'preserves outbound customer number when operator-first events report the internal extension as to_number' do
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'ringing',
+        from_number: '+77172705175',
+        to_number: '+77066318623',
+        metadata: {
+          'bridge_response' => {
+            'from' => '9098',
+            'to' => '+77066318623',
+            'providerTo' => 'sip:1001@operator.cloud.vconsult.kz'
+          },
+          'fonoster_call_ref' => existing_call_session.external_call_ref
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-internal-extension-does-not-replace-target-1',
+          provider: 'fonoster',
+          event: 'session_started',
+          status: 'ringing',
+          direction: 'outbound',
+          ingress_number: '9098',
+          to_number: '9098',
+          from_number: '9098',
+          metadata: {
+            outbound_target_number: '+77066318623'
+          }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        direction: 'outbound',
+        from_number: '+77172705175',
+        to_number: '+77066318623'
+      )
+      expect(result.conversation.reload.additional_attributes).to include(
+        'to_number' => '+77066318623'
+      )
+    end
+
+    it 'closes an outbound operator-first call as no_answer when the customer never answered' do
+      started_at = Time.zone.parse(45.seconds.ago.iso8601)
+      ended_at = started_at + 18.seconds
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'ringing',
+        started_at: started_at,
+        last_event_at: started_at,
+        to_number: '+77066318623',
+        metadata: {
+          'bridge_response' => {
+            'from' => '9098',
+            'to' => '+77066318623'
+          },
+          'fonoster_call_ref' => existing_call_session.external_call_ref
+        },
+        legs: [
+          {
+            'event_key' => 'evt-outbound-trying-1',
+            'event_type' => 'dial_status',
+            'status' => 'ringing',
+            'direction' => 'outbound'
+          }
+        ]
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: {
+          'data' => {
+            'call_sid' => 'call-retry-1',
+            'status' => 'ringing',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-operator-hangup-before-customer-answer-1',
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'operator',
+          end_reason: 'operator_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'no_answer',
+        ended_at: ended_at,
+        ended_by: 'operator',
+        end_reason: 'operator_hangup',
+        duration_seconds: 18
+      )
+      expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
+      expect(result.conversation.reload.additional_attributes).to include(
+        'call_status' => 'no_answer',
+        'fonoster_call_ref' => existing_call_session.external_call_ref,
+        'to_number' => '+77066318623'
+      )
+    end
+
+    it 'keeps an outbound call completed when a customer answer event was observed before hangup' do
+      started_at = Time.zone.parse(60.seconds.ago.iso8601)
+      answered_at = started_at + 8.seconds
+      ended_at = answered_at + 22.seconds
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'ringing',
+        started_at: started_at,
+        last_event_at: started_at,
+        to_number: '+77066318623'
+      )
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-customer-answer-1',
+          provider: 'fonoster',
+          event: 'call_status',
+          status: 'answered',
+          direction: 'outbound',
+          occurred_at: answered_at.iso8601,
+          answered_at: answered_at.iso8601,
+          answered_by: 'provider'
+        )
+      ).perform
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-completed-after-customer-answer-1',
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'operator',
+          end_reason: 'operator_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        answered_at: answered_at,
+        ended_at: ended_at,
+        duration_seconds: 22
+      )
+    end
+
     it 'attaches a new Fonoster call event to the existing open contact conversation' do
       voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+15551230000')
       voice_inbox = voice_channel.inbox
@@ -259,6 +460,8 @@ RSpec.describe Telephony::EventsIngestionService do
         expect(existing_conversation.additional_attributes).not_to have_key('recording')
         expect(new_message.content_attributes.dig('data', 'call_sid')).to eq('fonoster-new-outbound-call-1')
         expect(new_message.content_attributes.dig('data', 'status')).to eq('ringing')
+        expect(new_message.content_attributes.dig('data', 'provider')).to eq('fonoster')
+        expect(new_message.content_attributes.dig('data', 'inbox_id')).to eq(voice_inbox.id)
       end
     end
 
@@ -543,6 +746,16 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'does not downgrade a terminal call session when a late non-terminal event arrives' do
       existing_call_session.update!(status: 'completed', ended_at: 1.minute.ago)
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed', 'call_sid' => 'call-retry-1' } }
+      )
+      original_content_attributes = message.content_attributes.deep_dup
 
       result = described_class.new(
         payload: payload.merge(
@@ -553,7 +766,121 @@ RSpec.describe Telephony::EventsIngestionService do
       ).perform
 
       expect(result.reload.status).to eq('completed')
+      expect(message.reload.content_attributes).to eq(original_content_attributes)
+      expect(message.content_attributes.dig('data', 'status')).to eq('completed')
       expect(account.telephony_events.find_by!(event_key: 'evt-late-answered-1')).to be_processed
+    end
+
+    it 'does not rewrite a terminal remote hangup with a later operator terminal event' do
+      remote_ended_at = 20.seconds.ago
+      existing_call_session.update!(
+        status: 'completed',
+        ended_at: remote_ended_at,
+        ended_by: 'caller',
+        end_reason: 'remote_hangup',
+        last_event_at: remote_ended_at
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed', 'call_sid' => 'call-retry-1' } }
+      )
+      original_content_attributes = message.content_attributes.deep_dup
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-operator-terminal-1',
+          event: 'session_completed',
+          status: 'completed',
+          ended_at: 10.seconds.ago.iso8601,
+          ended_by: 'operator',
+          end_reason: 'operator_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_by: 'caller',
+        end_reason: 'remote_hangup'
+      )
+      expect(result.ended_at.to_i).to eq(remote_ended_at.to_i)
+      expect(message.reload.content_attributes).to eq(original_content_attributes)
+      expect(account.telephony_events.find_by!(event_key: 'evt-late-operator-terminal-1')).to be_processed
+    end
+
+    it 'still runs voice bubble side effects for a local webphone release after the terminal state was applied' do
+      ended_at = Time.zone.parse(10.seconds.ago.iso8601)
+      existing_call_session.update!(
+        status: 'rejected',
+        ended_at: ended_at,
+        ended_by: 'user:7',
+        end_reason: 'operator_rejected_from_browser',
+        last_event_at: ended_at
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'ringing', 'call_sid' => 'call-retry-1' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'webphone:rejected:call-retry-1:7',
+          event: 'rejected',
+          status: 'rejected',
+          ended_at: (ended_at + 1.second).iso8601,
+          ended_by: 'user:7',
+          reason: 'operator_rejected_from_browser',
+          metadata: { webphone_action: 'operator_release', chatwoot_user_id: 7 }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'rejected',
+        ended_by: 'user:7',
+        end_reason: 'operator_rejected_from_browser'
+      )
+      expect(message.reload.content_attributes.dig('data', 'status')).to eq('rejected')
+      expect(account.telephony_events.find_by!(event_key: 'webphone:rejected:call-retry-1:7')).to be_processed
+    end
+
+    it 'lets an earlier remote terminal event correct an operator hangup race' do
+      operator_ended_at = 10.seconds.ago
+      remote_ended_at = operator_ended_at - 2.seconds
+      existing_call_session.update!(
+        status: 'completed',
+        ended_at: operator_ended_at,
+        ended_by: 'operator',
+        end_reason: 'operator_hangup',
+        last_event_at: operator_ended_at
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-earlier-remote-terminal-1',
+          event: 'call_status',
+          status: 'completed',
+          ended_at: remote_ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'remote_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_by: 'caller',
+        end_reason: 'remote_hangup'
+      )
+      expect(result.ended_at.to_i).to eq(remote_ended_at.to_i)
+      expect(account.telephony_events.find_by!(event_key: 'evt-earlier-remote-terminal-1')).to be_processed
     end
 
     it 'closes a linked runtime child session when the parent bridge session is terminal' do
@@ -1139,6 +1466,219 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(message.content_attributes.dig('data', 'status')).to eq('completed')
       expect(legacy_message.reload.content_attributes.dig('data', 'recording')).to be_blank
       expect(legacy_message.content_attributes.dig('data', 'recording_ref')).to be_blank
+    end
+
+    it 'does not expose or transcribe outbound recordings when the customer never answered' do
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'no_answer',
+        answered_at: nil,
+        started_at: 30.seconds.ago,
+        ended_at: 5.seconds.ago,
+        duration_seconds: 25
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'no_answer' } }
+      )
+      account.update!(captain_features: { 'audio_transcription' => true }, audio_transcriptions: true)
+      account.enable_features!('captain_integration')
+
+      result = nil
+
+      expect do
+        result = described_class.new(
+          payload: payload.merge(
+            event_key: 'evt-outbound-no-answer-recording-ready-1',
+            provider: 'fonoster',
+            direction: 'outbound',
+            call_direction: 'outbound',
+            event: 'recording_ready',
+            status: 'no_answer',
+            payload: {
+              recording_ref: 'recordings/accounts/1/calls/call-retry-1.wav',
+              storage_key: 'voice-recordings/1/no-answer-call-retry-1.wav',
+              content_type: 'audio/wav',
+              duration_ms: 25_000
+            }
+          )
+        ).perform
+      end.not_to have_enqueued_job(Telephony::CallRecordingTranscriptionJob)
+
+      aggregate_failures do
+        expect(result.reload.recording_ref).to eq('recordings/accounts/1/calls/call-retry-1.wav')
+        expect(result.metadata.dig('recording', 'storage_key')).to eq('voice-recordings/1/no-answer-call-retry-1.wav')
+        expect(message.reload.content_attributes.dig('data', 'recording')).to be_blank
+        expect(message.content_attributes.dig('data', 'recording_ref')).to be_blank
+        expect(message.content_attributes.dig('data', 'recording_url')).to be_blank
+        expect(result.metadata.dig('recording', 'transcription')).to be_blank
+      end
+    end
+
+    it 'keeps newer Fonoster conversation state when an older call recording arrives late' do
+      conversation = existing_call_session.conversation
+      old_started_at = Time.zone.parse(35.minutes.ago.iso8601)
+      old_ended_at = old_started_at + 8.seconds
+      new_started_at = Time.zone.parse(1.minute.ago.iso8601)
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'no_answer',
+        started_at: old_started_at,
+        ended_at: old_ended_at,
+        duration_seconds: 8,
+        last_event_at: old_ended_at
+      )
+      new_call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        provider: 'fonoster',
+        external_call_ref: 'call-current-1',
+        direction: 'outbound',
+        status: 'in_progress',
+        started_at: new_started_at,
+        answered_at: new_started_at + 2.seconds,
+        last_event_at: new_started_at + 2.seconds
+      )
+      conversation.update!(
+        additional_attributes: {
+          'telephony_provider' => 'fonoster',
+          'call_direction' => 'outbound',
+          'call_status' => 'in_progress',
+          'fonoster_call_ref' => new_call_session.external_call_ref,
+          'from_number' => new_call_session.from_number,
+          'to_number' => new_call_session.to_number,
+          'call_started_at' => new_call_session.answered_at.to_i,
+          'meta' => { 'initiated_at' => new_started_at.to_i }
+        }
+      )
+      old_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: {
+          'data' => {
+            'call_sid' => 'call-retry-1',
+            'status' => 'no_answer',
+            'duration' => 8
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-old-fonoster-recording-ready-1',
+          provider: 'fonoster',
+          event: 'recording_ready',
+          occurred_at: Time.current.iso8601,
+          recording_ref: 'voice-recordings/fonoster/530/call-retry-1/late.wav',
+          duration: 1800
+        )
+      ).perform
+
+      attrs = conversation.reload.additional_attributes
+      old_message_data = old_message.reload.content_attributes.dig('data')
+      aggregate_failures do
+        expect(result.reload).to have_attributes(
+          status: 'no_answer',
+          ended_at: old_ended_at,
+          duration_seconds: 8,
+          last_event_at: old_ended_at,
+          recording_ref: 'voice-recordings/fonoster/530/call-retry-1/late.wav'
+        )
+        expect(attrs).to include(
+          'call_status' => 'in_progress',
+          'fonoster_call_ref' => new_call_session.external_call_ref,
+          'from_number' => new_call_session.from_number,
+          'to_number' => new_call_session.to_number
+        )
+        expect(attrs['recording_ref']).to be_blank
+        expect(attrs['recording']).to be_blank
+        expect(old_message_data).to include(
+          'status' => 'no_answer',
+          'duration' => 8,
+          'recording_ref' => 'voice-recordings/fonoster/530/call-retry-1/late.wav'
+        )
+      end
+    end
+
+    it 'allows a newer Fonoster call to replace an older reusable conversation state' do
+      conversation = existing_call_session.conversation
+      old_started_at = Time.zone.parse(10.minutes.ago.iso8601)
+      new_started_at = Time.zone.parse(30.seconds.ago.iso8601)
+      existing_call_session.update!(
+        provider: 'fonoster',
+        external_call_ref: 'call-retry-1',
+        status: 'completed',
+        started_at: old_started_at,
+        ended_at: old_started_at + 20.seconds,
+        duration_seconds: 20,
+        last_event_at: old_started_at + 20.seconds
+      )
+      conversation.update!(
+        additional_attributes: {
+          'telephony_provider' => 'fonoster',
+          'call_status' => 'completed',
+          'fonoster_call_ref' => 'call-retry-1',
+          'call_started_at' => old_started_at.to_i,
+          'call_ended_at' => (old_started_at + 20.seconds).to_i,
+          'call_duration' => 20,
+          'meta' => { 'initiated_at' => old_started_at.to_i }
+        }
+      )
+      newer_call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        provider: 'fonoster',
+        external_call_ref: 'call-newer-terminal-1',
+        direction: 'outbound',
+        status: 'ringing',
+        started_at: new_started_at,
+        last_event_at: new_started_at
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-newer-fonoster-terminal-replaces-old-state-1',
+          call_ref: newer_call_session.external_call_ref,
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          occurred_at: (new_started_at + 12.seconds).iso8601,
+          ended_at: (new_started_at + 12.seconds).iso8601,
+          ended_by: 'operator',
+          end_reason: 'operator_hangup'
+        )
+      ).perform
+
+      attrs = conversation.reload.additional_attributes
+      aggregate_failures do
+        expect(result.reload).to have_attributes(status: 'no_answer', duration_seconds: 12)
+        expect(attrs).to include(
+          'call_status' => 'no_answer',
+          'fonoster_call_ref' => newer_call_session.external_call_ref,
+          'call_duration' => 12
+        )
+        expect(attrs['call_ended_at']).to eq((new_started_at + 12.seconds).to_i)
+      end
     end
 
     it 'stores recording scoped errors as recording metadata without failing the live call' do

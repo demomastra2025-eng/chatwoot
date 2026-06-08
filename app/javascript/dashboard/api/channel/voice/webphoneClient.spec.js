@@ -4,11 +4,15 @@ const {
   getWebphoneTokenMock,
   twilioInitializeMock,
   fonosterInitializeMock,
+  fonosterPrewarmMock,
+  fonosterStopPrewarmMock,
   fonosterDestroyMock,
 } = vi.hoisted(() => ({
   getWebphoneTokenMock: vi.fn(),
   twilioInitializeMock: vi.fn(),
   fonosterInitializeMock: vi.fn(),
+  fonosterPrewarmMock: vi.fn(),
+  fonosterStopPrewarmMock: vi.fn(),
   fonosterDestroyMock: vi.fn(),
 }));
 
@@ -33,6 +37,8 @@ vi.mock('dashboard/api/channel/voice/fonosterVoiceClient', () => ({
     addEventListener: vi.fn(),
     initializeDevice: fonosterInitializeMock,
     joinClientCall: vi.fn(),
+    prewarmMicrophone: fonosterPrewarmMock,
+    stopMicrophonePrewarm: fonosterStopPrewarmMock,
     rejectIncomingCall: vi.fn(),
     endClientCall: vi.fn(),
     destroyDevice: fonosterDestroyMock,
@@ -46,6 +52,8 @@ describe('webphoneClient', () => {
     getWebphoneTokenMock.mockReset();
     twilioInitializeMock.mockReset();
     fonosterInitializeMock.mockReset();
+    fonosterPrewarmMock.mockReset();
+    fonosterStopPrewarmMock.mockReset();
     fonosterDestroyMock.mockReset();
     WebphoneClient.activeProvider = null;
     WebphoneClient.providerSessions = {};
@@ -269,6 +277,29 @@ describe('webphoneClient', () => {
         callDirection: 'inbound',
       })
     ).toBe(true);
+  });
+
+  it('prewarms the active Fonoster microphone through the provider client', async () => {
+    fonosterPrewarmMock.mockResolvedValue({
+      provider: 'fonoster',
+      prewarmed: true,
+    });
+
+    const response = await WebphoneClient.prewarmMicrophone('fonoster', {
+      ttlMs: 10_000,
+    });
+
+    expect(response).toEqual({
+      provider: 'fonoster',
+      prewarmed: true,
+    });
+    expect(fonosterPrewarmMock).toHaveBeenCalledWith({ ttlMs: 10_000 });
+  });
+
+  it('stops the active Fonoster microphone prewarm through the provider client', () => {
+    WebphoneClient.stopMicrophonePrewarm('fonoster');
+
+    expect(fonosterStopPrewarmMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not advertise fonoster browser calling while SIP registration is not ready', () => {

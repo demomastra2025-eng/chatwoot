@@ -14,6 +14,12 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
   end
 
+  around do |example|
+    perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+      example.run
+    end
+  end
+
   it 'creates inbound conversation state from bridge callback payloads' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       post path,
@@ -36,7 +42,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
     expect(response.parsed_body['call_ref']).to eq('call-in-1')
 
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-1')
@@ -68,7 +74,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
 
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-kz-trunk-prefix')
     expect(call_session.from_number).to eq('+77066318623')
@@ -100,7 +106,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
     expect(response.parsed_body['call_ref']).to eq('call-in-2')
 
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-2')
@@ -132,7 +138,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
     expect(response.parsed_body['call_ref']).to eq('call-in-compat')
     expect(account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-compat')).to be_present
   end
@@ -156,9 +162,10 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
     expect(response.parsed_body).to include(
-      'status' => 'ok',
+      'status' => 'accepted',
+      'mode' => 'async',
       'call_ref' => 'call-side-effect-failure-1'
     )
 
@@ -190,7 +197,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
     expect(account.telephony_events.find_by!(event_key: 'evt-header-1')).to be_processed
   end
 
@@ -231,7 +238,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
 
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-outbound-meta')
     expect(call_session.status).to eq('in_progress')
@@ -264,7 +271,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
 
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-outbound-blank-account')
     expect(call_session.status).to eq('in_progress')
@@ -291,7 +298,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            },
            as: :json
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:accepted)
 
       late_event_payload = {
         call_ref: 'call-in-dup-1',
@@ -311,7 +318,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            },
            as: :json
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:accepted)
 
       post compatibility_path,
            params: late_event_payload.merge(
@@ -325,7 +332,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            },
            as: :json
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:accepted)
 
       post compatibility_path,
            params: late_event_payload.merge(
@@ -339,7 +346,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            },
            as: :json
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:accepted)
 
       post compatibility_path,
            params: late_event_payload.merge(
@@ -354,13 +361,46 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
     expect(account.telephony_call_sessions.where(external_call_ref: 'call-in-dup-1').count).to eq(1)
     expect(account.telephony_events.where(event_key: 'evt-dup-answered-1').count).to eq(1)
     expect(account.telephony_events.where(event_key: 'evt-dup-completed-1').count).to eq(1)
     expect(account.telephony_events.find_by!(event_key: 'evt-dup-answered-1')).to be_processed
     expect(account.telephony_events.find_by!(event_key: 'evt-dup-completed-1')).to be_processed
     expect(account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-dup-1').status).to eq('completed')
+  end
+
+  it 'processes events inline when the async lifecycle queue is unavailable' do
+    allow(Telephony::InboundRouteLifecycleJob).to receive(:perform_later)
+      .and_raise(ActiveJob::EnqueueError, 'redis down')
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post compatibility_path,
+           params: {
+             event_key: 'evt-queue-fallback-1',
+             call_ref: 'call-queue-fallback-1',
+             event: 'session_started',
+             status: 'ringing',
+             direction: 'FROM_PSTN',
+             number_ref: voice_inbox.telephony_number_binding.number_ref,
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15557650006'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'status' => 'ok',
+      'mode' => 'sync_fallback',
+      'call_ref' => 'call-queue-fallback-1'
+    )
+    expect(account.telephony_events.find_by!(event_key: 'evt-queue-fallback-1')).to be_processed
+    expect(account.telephony_call_sessions.find_by!(external_call_ref: 'call-queue-fallback-1')).to have_attributes(status: 'ringing')
   end
 
   it 'writes inbound event request and response to the dedicated telephony debug log' do
@@ -389,7 +429,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
            as: :json
     end
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:accepted)
 
     written_events = File.readlines(debug_log_file.path).map { |line| JSON.parse(line) }
     expect(written_events).to include(
@@ -404,7 +444,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
         'event' => 'telephony_inbound_event_response',
         'path' => compatibility_path,
         'call_ref' => 'call-in-log-1',
-        'response_payload' => include('status' => 'ok', 'call_ref' => 'call-in-log-1')
+        'response_payload' => include('status' => 'accepted', 'mode' => 'async', 'call_ref' => 'call-in-log-1')
       )
     )
   ensure

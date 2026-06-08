@@ -1,5 +1,10 @@
 export const frontendURL = (path, params) => {
-  const stringifiedParams = params ? `?${new URLSearchParams(params)}` : '';
+  const queryEntries = Object.entries(params || {}).filter(
+    ([, value]) => value !== undefined && value !== null && value !== ''
+  );
+  const stringifiedParams = queryEntries.length
+    ? `${path.includes('?') ? '&' : '?'}${new URLSearchParams(queryEntries)}`
+    : '';
   return `/app/${path}${stringifiedParams}`;
 };
 

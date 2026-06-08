@@ -3,7 +3,11 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { frontendURL } from '../helper/URLHelper';
 import dashboard from './dashboard/dashboard.routes';
 import store from 'dashboard/store';
-import { validateLoggedInRoutes } from '../helper/routeHelpers';
+import {
+  defaultRedirectPage,
+  validateLoggedInRoutes,
+} from '../helper/routeHelpers';
+import { getUserPermissions } from '../helper/permissionsHelper';
 
 const routes = [...dashboard.routes];
 
@@ -25,14 +29,14 @@ const trackPageView = to => {
     .catch(() => {});
 };
 
-const getRouteAccountFeatureSource = async to => {
-  if (!to.meta?.featureFlag || !to.params?.accountId) {
+const getAccountFeatureSource = async accountId => {
+  if (!accountId) {
     return null;
   }
 
   const getAccount = store.getters['accounts/getAccount'];
   const resolveAccount = () =>
-    typeof getAccount === 'function' ? getAccount(to.params.accountId) : null;
+    typeof getAccount === 'function' ? getAccount(accountId) : null;
 
   let account = resolveAccount();
   if (account?.id || account?.features) {
@@ -42,6 +46,26 @@ const getRouteAccountFeatureSource = async to => {
   await store.dispatch('accounts/get');
   account = resolveAccount();
   return account;
+};
+
+const getRouteAccountFeatureSource = async to => {
+  if (!to.params?.accountId) {
+    return null;
+  }
+
+  return getAccountFeatureSource(to.params.accountId);
+};
+
+const getDefaultAuthenticatedRoute = async (accountId, user) => {
+  const accountFeatureSource = await getAccountFeatureSource(accountId);
+  const permissions = getUserPermissions(user, accountId);
+
+  return defaultRedirectPage(
+    { params: { accountId } },
+    permissions,
+    user,
+    accountFeatureSource
+  );
 };
 
 export const validateAuthenticateRoutePermission = async (to, next) => {
@@ -62,10 +86,17 @@ export const validateAuthenticateRoutePermission = async (to, next) => {
   }
 
   if (to.name === 'no_accounts' || !to.name) {
-    return next(frontendURL(`accounts/${accountId}/dashboard`));
+    const defaultAccountId = to.params?.accountId || accountId;
+    const defaultRoute = await getDefaultAuthenticatedRoute(
+      defaultAccountId,
+      user
+    );
+
+    return next(frontendURL(defaultRoute));
   }
 
-  const accountFeatureSource = to.meta?.featureFlag
+  const needsAccountFeatureSource = to.meta?.featureFlag || to.name === 'home';
+  const accountFeatureSource = needsAccountFeatureSource
     ? await getRouteAccountFeatureSource(to)
     : null;
   const nextRoute = validateLoggedInRoutes(

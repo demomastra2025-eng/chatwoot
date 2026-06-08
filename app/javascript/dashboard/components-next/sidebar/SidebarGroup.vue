@@ -199,7 +199,7 @@ const matchesChildRoute = child => {
   }
 
   if (route.path === resolvePath(child.to) && queryMatches(child)) {
-    return true;
+    return !child.suppressExactPathActive;
   }
 
   if (child.activeOn?.includes(route.name)) {

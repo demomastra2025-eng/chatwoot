@@ -1,4 +1,4 @@
-class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseService
+class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseService # rubocop:disable Metrics/ClassLength
   def send_message(phone_number, message)
     @message = message
 
@@ -25,6 +25,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     response = HTTParty.post(
       "#{phone_id_path}/messages",
       headers: api_headers,
+      query: graph_api_query,
       body: request_body.to_json
     )
 
@@ -47,6 +48,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     HTTParty.post(
       "#{business_account_path}/message_templates",
       headers: api_headers,
+      query: graph_api_query,
       body: request_body.to_json,
       timeout: request_timeout
     )
@@ -56,13 +58,18 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     HTTParty.delete(
       "#{business_account_path}/message_templates",
       headers: api_headers,
-      query: { name: template_name },
+      query: graph_api_query(name: template_name),
       timeout: request_timeout
     )
   end
 
   def fetch_whatsapp_templates(url)
-    response = HTTParty.get(url, headers: api_headers, timeout: request_timeout)
+    response = HTTParty.get(
+      url,
+      headers: api_headers,
+      query: graph_api_query,
+      timeout: request_timeout
+    )
     unless response.success?
       record_provider_authorization_error(response)
       return nil
@@ -86,7 +93,12 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def validate_provider_config?
-    response = HTTParty.get("#{business_account_path}/message_templates", headers: api_headers, timeout: request_timeout)
+    response = HTTParty.get(
+      "#{business_account_path}/message_templates",
+      headers: api_headers,
+      query: graph_api_query,
+      timeout: request_timeout
+    )
     record_provider_authorization_error(response) unless response.success?
     response.success?
   end
@@ -116,6 +128,12 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
 
   def request_timeout = ENV.fetch('WHATSAPP_CLOUD_API_TIMEOUT', 20).to_i
 
+  def graph_api_query(extra_params = {})
+    extra_params.merge(
+      Whatsapp::FacebookApiClient.appsecret_proof_query(whatsapp_channel.provider_config['api_key'])
+    )
+  end
+
   def csat_template_service
     @csat_template_service ||= Whatsapp::CsatTemplateService.new(whatsapp_channel)
   end
@@ -140,6 +158,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     response = HTTParty.post(
       "#{phone_id_path}/messages",
       headers: api_headers,
+      query: graph_api_query,
       body: {
         messaging_product: 'whatsapp',
         context: whatsapp_reply_context(message),
@@ -155,14 +174,13 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   def send_attachment_message(phone_number, message)
     attachment = message.attachments.first
     type = %w[image audio video].include?(attachment.file_type) ? attachment.file_type : 'document'
-    type_content = {
-      'link': attachment.download_url
-    }
+    type_content = { link: attachment.download_url }
     type_content['caption'] = message.outgoing_content unless %w[audio sticker].include?(type)
     type_content['filename'] = attachment.file.filename if type == 'document'
     response = HTTParty.post(
       "#{phone_id_path}/messages",
       headers: api_headers,
+      query: graph_api_query,
       body: {
         :messaging_product => 'whatsapp',
         :context => whatsapp_reply_context(message),
@@ -232,6 +250,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     response = HTTParty.post(
       "#{phone_id_path}/messages",
       headers: api_headers,
+      query: graph_api_query,
       body: {
         messaging_product: 'whatsapp',
         to: phone_number,

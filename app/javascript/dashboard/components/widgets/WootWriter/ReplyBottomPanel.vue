@@ -12,8 +12,16 @@ import { withBusinessCertificateFileTypes } from 'shared/helpers/FileHelper';
 import VideoCallButton from '../VideoCallButton.vue';
 import { useWhatsappCallInitiation } from 'dashboard/composables/useWhatsappCallInitiation';
 import PaymentActionButton from '../PaymentActionButton.vue';
-import { INBOX_TYPES, getInboxIconByType } from 'dashboard/helper/inbox';
-import { getCommunicationChannelLabel } from 'dashboard/helper/communicationThreadHelper';
+import {
+  INBOX_TYPES,
+  CHANNEL_ICON_NEUTRAL_CLASS,
+  getInboxIconByType,
+} from 'dashboard/helper/inbox';
+import {
+  getCommunicationChannelLabel,
+  getCommunicationReplyChannels,
+  isCommunicationVoiceChannel,
+} from 'dashboard/helper/communicationThreadHelper';
 import { mapGetters } from 'vuex';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
@@ -43,6 +51,10 @@ export default {
       default: '',
     },
     showCommunicationChannelSelector: {
+      type: Boolean,
+      default: false,
+    },
+    isCommunicationThread: {
       type: Boolean,
       default: false,
     },
@@ -229,10 +241,13 @@ export default {
     currentConversation() {
       return this.$store.getters.getConversationById(this.conversationId) || {};
     },
+    replyableCommunicationChannels() {
+      return getCommunicationReplyChannels(this.communicationChannels);
+    },
     showReplyChannelMenu() {
       return (
         this.showCommunicationChannelSelector &&
-        this.communicationChannels.length > 1
+        this.replyableCommunicationChannels.length > 1
       );
     },
     activeReplyChannelIcon() {
@@ -248,6 +263,14 @@ export default {
       return this.$t('CONVERSATION.COMMUNICATION_THREAD.ACTIVE_CHANNEL', {
         channel: this.activeReplyChannelLabel,
       });
+    },
+    isCommunicationVoiceReplyAction() {
+      return (
+        this.isCommunicationThread &&
+        !this.isNote &&
+        !this.isOnPrivateNote &&
+        isCommunicationVoiceChannel(this.activeReplyChannel)
+      );
     },
     wrapClass() {
       return {
@@ -363,6 +386,7 @@ export default {
     showVoiceCallButton() {
       if (this.isEditorDisabled) return false;
       if (this.isNote || this.isOnPrivateNote) return false;
+      if (this.isCommunicationVoiceReplyAction) return false;
 
       return Boolean(this.contactId && this.contactPhone);
     },
@@ -382,21 +406,28 @@ export default {
   },
   methods: {
     replyChannelIcon(channel) {
-      return channel?.channel
-        ? getInboxIconByType(channel.channel, channel.medium)
-        : '';
+      if (!channel?.channel) return '';
+      const icon = getInboxIconByType(channel.channel, channel.medium);
+      if (!icon) return '';
+      return icon.includes(CHANNEL_ICON_NEUTRAL_CLASS)
+        ? icon
+        : `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
     },
     replyChannelLabel(channel) {
       return getCommunicationChannelLabel(channel);
     },
     isSelectedReplyChannel(channel) {
-      return (
-        String(channel?.channel_key || channel?.conversation_id) ===
-        String(
-          this.activeReplyChannel?.channel_key ||
-            this.activeReplyChannel?.conversation_id
-        )
-      );
+      const selectedKey =
+        this.activeReplyChannel?.channel_key ||
+        this.activeReplyChannel?.conversation_id;
+      const channelKey = channel?.channel_key || channel?.conversation_id;
+      const sameSelectedKey = String(channelKey) === String(selectedKey);
+      const sameInbox =
+        channel?.inbox_id &&
+        this.activeReplyChannel?.inbox_id &&
+        String(channel.inbox_id) === String(this.activeReplyChannel.inbox_id);
+
+      return sameSelectedKey || sameInbox;
     },
     closeReplyChannelDropdown() {
       this.showReplyChannelDropdown = false;
@@ -638,7 +669,22 @@ export default {
     </div>
     <div class="right-wrap">
       <div v-on-clickaway="closeReplyChannelDropdown" class="reply-send-group">
+        <VoiceCallButton
+          v-if="isCommunicationVoiceReplyAction && contactPhone"
+          :label="sendButtonText"
+          :contact-id="contactId"
+          :phone="contactPhone"
+          :inbox-id="activeReplyChannel?.inbox_id"
+          :disabled="false"
+          size="sm"
+          color="blue"
+          class="reply-send-button flex-shrink-0"
+          :class="
+            showReplyChannelMenu ? 'ltr:rounded-r-none rtl:rounded-l-none' : ''
+          "
+        />
         <NextButton
+          v-else
           :label="sendButtonText"
           type="submit"
           sm
@@ -667,7 +713,7 @@ export default {
           class="reply-channel-menu"
         >
           <button
-            v-for="channel in communicationChannels"
+            v-for="channel in replyableCommunicationChannels"
             :key="
               channel.channel_key ||
               `${channel.inbox_id}-${channel.conversation_id}`

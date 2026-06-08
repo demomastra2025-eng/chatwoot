@@ -1,5 +1,37 @@
+require 'openssl'
+
 class Whatsapp::FacebookApiClient
   BASE_URI = 'https://graph.facebook.com'.freeze
+
+  class << self
+    def appsecret_proof_query(access_token)
+      proof = appsecret_proof(access_token)
+      return {} if proof.blank?
+
+      { appsecret_proof: proof }
+    end
+
+    def appsecret_proof(access_token)
+      return nil unless ActiveModel::Type::Boolean.new.cast(ENV.fetch('WHATSAPP_GRAPH_APPSECRET_PROOF', false))
+      return nil if access_token.blank?
+
+      app_secret = GlobalConfigService.load('WHATSAPP_APP_SECRET', '')
+      return nil if app_secret.blank?
+
+      OpenSSL::HMAC.hexdigest(OpenSSL::Digest.new('sha256'), app_secret, access_token)
+    end
+  end
+
+  class Error < StandardError
+    attr_reader :payload, :status
+
+    def initialize(message, response)
+      @payload = response.parsed_response if response.respond_to?(:parsed_response)
+      @status = response.code if response.respond_to?(:code)
+
+      super("#{message}: #{response.body}")
+    end
+  end
 
   def initialize(access_token = nil)
     @access_token = access_token
@@ -22,7 +54,7 @@ class Whatsapp::FacebookApiClient
   def fetch_phone_numbers(waba_id)
     response = HTTParty.get(
       "#{BASE_URI}/#{@api_version}/#{waba_id}/phone_numbers",
-      query: { access_token: @access_token }
+      query: query_with_access_token
     )
 
     handle_response(response, 'WABA phone numbers fetch failed')
@@ -44,6 +76,7 @@ class Whatsapp::FacebookApiClient
     response = HTTParty.post(
       "#{BASE_URI}/#{@api_version}/#{phone_number_id}/register",
       headers: request_headers,
+      query: appsecret_proof_query,
       body: { messaging_product: 'whatsapp', pin: pin.to_s }.to_json
     )
 
@@ -53,7 +86,8 @@ class Whatsapp::FacebookApiClient
   def phone_number_verified?(phone_number_id)
     response = HTTParty.get(
       "#{BASE_URI}/#{@api_version}/#{phone_number_id}",
-      headers: request_headers
+      headers: request_headers,
+      query: appsecret_proof_query
     )
 
     data = handle_response(response, 'Phone status check failed')
@@ -73,7 +107,8 @@ class Whatsapp::FacebookApiClient
   def subscribe_app_to_waba(waba_id)
     response = HTTParty.post(
       "#{BASE_URI}/#{@api_version}/#{waba_id}/subscribed_apps",
-      headers: request_headers
+      headers: request_headers,
+      query: appsecret_proof_query
     )
 
     handle_response(response, 'App subscription to WABA failed')
@@ -83,6 +118,7 @@ class Whatsapp::FacebookApiClient
     response = HTTParty.post(
       "#{BASE_URI}/#{@api_version}/#{waba_id}/subscribed_apps",
       headers: request_headers,
+      query: appsecret_proof_query,
       body: {
         override_callback_uri: callback_url,
         verify_token: verify_token,
@@ -96,7 +132,8 @@ class Whatsapp::FacebookApiClient
   def unsubscribe_waba_webhook(waba_id)
     response = HTTParty.delete(
       "#{BASE_URI}/#{@api_version}/#{waba_id}/subscribed_apps",
-      headers: request_headers
+      headers: request_headers,
+      query: appsecret_proof_query
     )
 
     handle_response(response, 'Webhook unsubscription failed')
@@ -121,8 +158,16 @@ class Whatsapp::FacebookApiClient
     "#{app_id}|#{app_secret}"
   end
 
+  def query_with_access_token
+    { access_token: @access_token }.merge(appsecret_proof_query)
+  end
+
+  def appsecret_proof_query
+    self.class.appsecret_proof_query(@access_token)
+  end
+
   def handle_response(response, error_message)
-    raise "#{error_message}: #{response.body}" unless response.success?
+    raise Error.new(error_message, response) unless response.success?
 
     response.parsed_response
   end

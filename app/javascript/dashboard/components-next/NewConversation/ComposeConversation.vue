@@ -19,6 +19,7 @@ import {
   mergeInboxDetails,
 } from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper';
 import wootConstants from 'dashboard/constants/globals';
+import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 
 import ComposeNewConversationForm from 'dashboard/components-next/NewConversation/components/ComposeNewConversationForm.vue';
 
@@ -209,9 +210,17 @@ const createConversation = async ({ payload, isFromWhatsApp }) => {
       params: payload,
       isFromWhatsApp,
     });
+    const inboxId = data.inbox_id || data.inboxId;
+    const conversationPath = frontendURL(
+      conversationUrl({
+        accountId: data.account_id,
+        activeInbox: inboxId,
+        id: data.id,
+      })
+    );
     const action = {
       type: 'link',
-      to: `/app/accounts/${data.account_id}/conversations/${data.id}`,
+      to: conversationPath,
       message: t('COMPOSE_NEW_CONVERSATION.FORM.GO_TO_CONVERSATION'),
     };
     discardCompose();

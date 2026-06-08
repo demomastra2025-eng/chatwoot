@@ -76,6 +76,46 @@ describe('#validateAuthenticateRoutePermission', () => {
       });
     });
 
+    describe('when navigating to the account root', () => {
+      it('redirects to communication threads when the feature is enabled', async () => {
+        store.getters['accounts/getAccount'] = vi.fn(() => ({
+          id: 1,
+          features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+        }));
+
+        const to = {
+          name: undefined,
+          params: { accountId: 1 },
+          meta: {},
+        };
+
+        await validateAuthenticateRoutePermission(to, next);
+
+        expect(next).toHaveBeenCalledWith(
+          '/app/accounts/1/communication_threads?status=open'
+        );
+      });
+
+      it('redirects the legacy dashboard route to communication threads when the feature is enabled', async () => {
+        store.getters['accounts/getAccount'] = vi.fn(() => ({
+          id: 1,
+          features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+        }));
+
+        const to = {
+          name: 'home',
+          params: { accountId: 1 },
+          meta: { permissions: ['agent'] },
+        };
+
+        await validateAuthenticateRoutePermission(to, next);
+
+        expect(next).toHaveBeenCalledWith(
+          '/app/accounts/1/communication_threads?status=open'
+        );
+      });
+    });
+
     describe('when route is accessible to current user', () => {
       beforeEach(() => {
         // Adjust store getters to reflect the user has admin permissions

@@ -118,6 +118,19 @@ const voiceCallData = computed(() => ({
 
 const inboxId = computed(() => props.chat.inbox_id);
 
+const fallbackInboxId = computed(() => {
+  if (activeInbox.value) return activeInbox.value;
+  if (
+    props.activeLabel ||
+    props.teamId ||
+    props.foldersId ||
+    props.conversationType
+  ) {
+    return null;
+  }
+  return inboxId.value;
+});
+
 const inbox = computed(() => {
   return inboxId.value ? store.getters['inboxes/getInbox'](inboxId.value) : {};
 });
@@ -158,7 +171,7 @@ const conversationPath = computed(() => {
   return frontendURL(
     conversationUrl({
       accountId: accountId.value,
-      activeInbox: activeInbox.value,
+      activeInbox: fallbackInboxId.value,
       id: props.chat.id,
       label: props.activeLabel,
       teamId: props.teamId,

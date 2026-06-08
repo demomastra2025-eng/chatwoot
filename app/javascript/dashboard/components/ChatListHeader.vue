@@ -6,6 +6,7 @@ import wootConstants from 'dashboard/constants/globals';
 
 import ConversationBasicFilter from './widgets/conversation/ConversationBasicFilter.vue';
 import ConversationLocalSearch from './widgets/conversation/ConversationLocalSearch.vue';
+import ChatListChannelFilter from './widgets/conversation/ChatListChannelFilter.vue';
 import SwitchLayout from 'dashboard/routes/dashboard/conversation/search/SwitchLayout.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -13,10 +14,12 @@ const props = defineProps({
   pageTitle: { type: String, required: true },
   hasAppliedFilters: { type: Boolean, required: true },
   hasActiveFolders: { type: Boolean, required: true },
-  activeStatus: { type: String, required: true },
   isOnExpandedLayout: { type: Boolean, required: true },
   conversationStats: { type: Object, required: true },
   isListLoading: { type: Boolean, required: true },
+  showChannelFilter: { type: Boolean, default: false },
+  channelFilterItems: { type: Array, default: () => [] },
+  activeChannelFilterKey: { type: String, default: '' },
 });
 
 const emit = defineEmits([
@@ -25,6 +28,7 @@ const emit = defineEmits([
   'resetFilters',
   'basicFilterChange',
   'filtersModal',
+  'channelFilterSelect',
 ]);
 
 const localSearchQuery = defineModel('localSearchQuery', {
@@ -68,30 +72,32 @@ const toggleConversationLayout = () => {
       'border-b border-n-strong': hasAppliedFiltersOrActiveFolders,
     }"
   >
-    <div class="flex items-center justify-center min-w-0">
-      <h1
-        class="text-base font-medium truncate text-n-slate-12"
-        :title="pageTitle"
-      >
-        {{ pageTitle }}
-      </h1>
-      <span
-        v-if="
-          allCount > 0 && hasAppliedFiltersOrActiveFolders && !isListLoading
-        "
-        class="px-2 py-1 my-0.5 mx-1 rounded-md capitalize bg-n-slate-3 text-xxs text-n-slate-12 shrink-0"
-        :title="allCount"
-      >
-        {{ formattedAllCount }}
-      </span>
-      <span
-        v-if="!hasAppliedFiltersOrActiveFolders"
-        class="px-2 py-1 my-0.5 mx-1 rounded-md capitalize bg-n-slate-3 text-xxs text-n-slate-12 shrink-0"
-      >
-        {{ $t(`CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.${activeStatus}.TEXT`) }}
-      </span>
+    <div class="flex min-w-0 flex-1 items-center">
+      <ChatListChannelFilter
+        v-if="showChannelFilter"
+        :items="channelFilterItems"
+        :active-key="activeChannelFilterKey"
+        @select="emit('channelFilterSelect', $event)"
+      />
+      <template v-else>
+        <h1
+          class="truncate text-base font-medium text-n-slate-12"
+          :title="pageTitle"
+        >
+          {{ pageTitle }}
+        </h1>
+        <span
+          v-if="
+            allCount > 0 && hasAppliedFiltersOrActiveFolders && !isListLoading
+          "
+          class="mx-1 my-0.5 shrink-0 rounded-md bg-n-slate-3 px-2 py-1 text-xxs capitalize text-n-slate-12"
+          :title="allCount"
+        >
+          {{ formattedAllCount }}
+        </span>
+      </template>
     </div>
-    <div class="flex items-center gap-1">
+    <div class="flex shrink-0 items-center gap-1">
       <template v-if="hasAppliedFilters && !hasActiveFolders">
         <div class="relative">
           <NextButton

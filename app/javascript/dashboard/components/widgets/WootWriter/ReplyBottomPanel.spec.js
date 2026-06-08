@@ -43,6 +43,14 @@ const telegramChannel = {
   can_reply: false,
 };
 
+const voiceChannel = {
+  conversation_id: 33,
+  inbox_id: 4593,
+  inbox_name: 'Voice',
+  channel: 'Channel::Voice',
+  can_reply: true,
+};
+
 const NextButtonStub = {
   name: 'NextButton',
   props: ['label', 'icon', 'disabled', 'type'],
@@ -92,7 +100,7 @@ const mountComponent = props =>
       sendButtonText: 'Send (↵)',
       onSend: vi.fn(),
       showCommunicationChannelSelector: true,
-      communicationChannels: [whatsappChannel, telegramChannel],
+      communicationChannels: [whatsappChannel, telegramChannel, voiceChannel],
       activeReplyChannel: whatsappChannel,
       ...props,
     },
@@ -128,7 +136,9 @@ describe('ReplyBottomPanel', () => {
 
     const sendButton = wrapper.find('button[type="submit"]');
     const channelToggle = wrapper.find('.reply-channel-menu__toggle');
-    expect(channelToggle.attributes('data-icon')).toBe('i-ri-whatsapp-fill');
+    expect(channelToggle.attributes('data-icon')).toBe(
+      'i-ri-whatsapp-fill channel-icon-neutral'
+    );
     expect(channelToggle.text()).not.toContain('WhatsApp');
     expect(sendButton.text()).toContain('Send (↵)');
     expect(sendButton.text()).not.toContain('WhatsApp');
@@ -147,12 +157,22 @@ describe('ReplyBottomPanel', () => {
     expect(wrapper.find('.reply-channel-menu').exists()).toBe(true);
     const channelItems = wrapper.findAll('.reply-channel-menu__item');
     expect(channelItems).toHaveLength(2);
-    expect(channelItems[1].text()).toContain('Telegram');
-    expect(channelItems[1].text()).toContain('(reply restricted)');
+    expect(channelItems[0].text()).toContain('Voice');
+    expect(channelItems[1].text()).toContain('WhatsApp');
+    expect(channelItems.map(item => item.text()).join(' ')).not.toContain(
+      'Telegram'
+    );
+    expect(channelItems[0].find('.reply-channel-menu__icon').classes()).toEqual(
+      expect.arrayContaining([
+        'i-ri-phone-fill',
+        'channel-icon-voice',
+        'channel-icon-neutral',
+      ])
+    );
 
-    await channelItems[1].trigger('click');
+    await channelItems[0].trigger('click');
 
-    expect(wrapper.emitted('selectReplyChannel')).toEqual([[22]]);
+    expect(wrapper.emitted('selectReplyChannel')).toEqual([[33]]);
     expect(wrapper.find('.reply-channel-menu').exists()).toBe(false);
   });
 
@@ -164,12 +184,63 @@ describe('ReplyBottomPanel', () => {
     ).toBeDefined();
 
     await wrapper.find('.reply-channel-menu__toggle').trigger('click');
-    await wrapper.findAll('.reply-channel-menu__item')[1].trigger('click');
+    await wrapper.findAll('.reply-channel-menu__item')[0].trigger('click');
 
-    expect(wrapper.emitted('selectReplyChannel')).toEqual([[22]]);
+    expect(wrapper.emitted('selectReplyChannel')).toEqual([[33]]);
   });
 
-  it('renders the voice call action when the conversation contact has a phone number', () => {
+  it('uses the primary call action and hides the extra call icon for communication-thread voice replies', () => {
+    const wrapper = mountComponent({
+      isCommunicationThread: true,
+      sendButtonText: 'Позвонить',
+      contactId: 42,
+      contactPhone: '+770****8623',
+      communicationChannels: [voiceChannel, whatsappChannel],
+      activeReplyChannel: voiceChannel,
+    });
+
+    const voiceCallButtons = wrapper.findAllComponents({
+      name: 'VoiceCallButton',
+    });
+    expect(voiceCallButtons).toHaveLength(1);
+    expect(voiceCallButtons[0].props()).toMatchObject({
+      label: 'Позвонить',
+      contactId: 42,
+      phone: '+770****8623',
+      inboxId: 4593,
+      disabled: false,
+    });
+    expect(wrapper.find('button[type="submit"]').exists()).toBe(false);
+  });
+
+  it('uses normal private-note send action when a voice channel is selected', async () => {
+    const onSend = vi.fn();
+    const wrapper = mountComponent({
+      isCommunicationThread: true,
+      isNote: true,
+      isOnPrivateNote: true,
+      sendButtonText: 'Заметка (↵)',
+      contactId: 42,
+      contactPhone: '+770****8623',
+      communicationChannels: [voiceChannel, whatsappChannel],
+      activeReplyChannel: voiceChannel,
+      onSend,
+    });
+
+    expect(wrapper.findComponent({ name: 'VoiceCallButton' }).exists()).toBe(
+      false
+    );
+
+    const sendButton = wrapper.find('button[type="submit"]');
+    expect(sendButton.exists()).toBe(true);
+    expect(sendButton.text()).toContain('Заметка (↵)');
+    expect(sendButton.attributes('disabled')).toBeUndefined();
+
+    await sendButton.trigger('click');
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the voice call action when the non-thread conversation contact has a phone number', () => {
     const wrapper = mountComponent({
       contactId: 42,
       contactPhone: '+77066318623',

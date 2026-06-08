@@ -1,42 +1,42 @@
 class Whatsapp::TokenValidationService
-  def initialize(access_token, waba_id)
+  def initialize(access_token, waba_id, phone_number_id: nil)
     @access_token = access_token
     @waba_id = waba_id
-    @api_client = Whatsapp::FacebookApiClient.new(access_token)
+    @phone_number_id = phone_number_id
   end
 
   def perform
-    validate_parameters!
-    validate_token_waba_access
+    token_health = inspect_token
+    raise validation_error_message(token_health) if reauthorization_required?(token_health)
+
+    token_health
   end
 
   private
 
-  def validate_parameters!
-    raise ArgumentError, 'Access token is required' if @access_token.blank?
-    raise ArgumentError, 'WABA ID is required' if @waba_id.blank?
+  def inspect_token
+    Whatsapp::TokenInspectionService.new(
+      access_token: @access_token,
+      waba_id: @waba_id,
+      phone_number_id: @phone_number_id
+    ).perform
   end
 
-  def validate_token_waba_access
-    token_debug_data = @api_client.debug_token(@access_token)
-    waba_scope = extract_waba_scope(token_debug_data)
-    verify_waba_authorization(waba_scope)
+  def reauthorization_required?(token_health)
+    Whatsapp::TokenInspectionService::REAUTHORIZATION_STATUSES.include?(token_health['status'])
   end
 
-  def extract_waba_scope(token_data)
-    granular_scopes = token_data.dig('data', 'granular_scopes')
-    waba_scope = granular_scopes&.find { |scope| scope['scope'] == 'whatsapp_business_management' }
-
-    raise 'No WABA scope found in token' unless waba_scope
-
-    waba_scope
-  end
-
-  def verify_waba_authorization(waba_scope)
-    authorized_waba_ids = waba_scope['target_ids'] || []
-
-    return if authorized_waba_ids.include?(@waba_id)
-
-    raise "Token does not have access to WABA #{@waba_id}. Authorized WABAs: #{authorized_waba_ids}"
+  def validation_error_message(token_health)
+    case token_health['status']
+    when Whatsapp::TokenInspectionService::PERMISSION_MISSING_STATUS
+      "Token is missing required WhatsApp permissions: #{Array(token_health['missing_permissions']).join(', ')}"
+    when Whatsapp::TokenInspectionService::PHONE_NUMBER_MISMATCH_STATUS
+      available_phone_numbers = Array(token_health['available_phone_number_ids']).join(', ')
+      "Token does not have access to phone number #{@phone_number_id}. Available phone numbers: #{available_phone_numbers}"
+    when Whatsapp::TokenInspectionService::WABA_ACCESS_MISSING_STATUS
+      "Token does not have access to WABA #{@waba_id}: #{token_health.dig('error', 'message')}"
+    else
+      token_health.dig('error', 'message').presence || 'WhatsApp token is invalid'
+    end
   end
 end

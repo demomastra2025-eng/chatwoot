@@ -2,7 +2,7 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 6;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 7;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -28,8 +28,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Conversation:Resolved', 'SIDEBAR.RESOLVED_CONVERSATIONS'),
     item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
     item('Conversation:Teams', 'SIDEBAR.TEAMS'),
-    item('Conversation:Channels', 'SIDEBAR.CHANNELS'),
-    item('Conversation:AllChannels', 'SIDEBAR.ALL_CHANNELS'),
     item('Conversation:Labels', 'SIDEBAR.LABELS'),
   ]),
   item('Campaigns', 'SIDEBAR.OUTBOUND', [

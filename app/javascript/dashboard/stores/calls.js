@@ -9,8 +9,20 @@ const sameValue = (left, right) =>
 
 const sameCallSid = (call, callSid) => sameValue(call?.callSid, callSid);
 
-const sameFonosterConversation = (call, callData) => {
+const sameFonosterConversation = (
+  call,
+  callData,
+  { allowCallSidMismatch = false } = {}
+) => {
   if (call?.provider !== 'fonoster' || callData?.provider !== 'fonoster') {
+    return false;
+  }
+
+  if (
+    !allowCallSidMismatch &&
+    isPresent(call?.callSid) &&
+    isPresent(callData?.callSid)
+  ) {
     return false;
   }
 
@@ -19,7 +31,7 @@ const sameFonosterConversation = (call, callData) => {
 
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData?.callSid) ||
-  sameFonosterConversation(call, callData);
+  sameFonosterConversation(call, callData, { allowCallSidMismatch: true });
 
 const buildCallState = (callData, existingCall = null) => {
   const isSameProviderCall = sameCallSid(existingCall, callData?.callSid);
@@ -28,6 +40,9 @@ const buildCallState = (callData, existingCall = null) => {
     ...(existingCall || {}),
     ...(callData || {}),
     isActive: isSameProviderCall ? existingCall?.isActive || false : false,
+    browserJoined: isSameProviderCall
+      ? existingCall?.browserJoined || false
+      : false,
     browserJoinSupported:
       callData?.browserJoinSupported ??
       (isSameProviderCall ? existingCall?.browserJoinSupported : null) ??
@@ -64,7 +79,15 @@ export const useCallsStore = defineStore('calls', {
   },
 
   actions: {
-    handleCallStatusChanged({ callSid, status, conversationId, provider }) {
+    handleCallStatusChanged({
+      callSid,
+      status,
+      conversationId,
+      inboxId,
+      provider,
+      callDirection,
+      senderId,
+    }) {
       if (TERMINAL_STATUSES.includes(status)) {
         this.removeCall(callSid, { conversationId, provider });
         return;
@@ -76,10 +99,23 @@ export const useCallsStore = defineStore('calls', {
             sameCallSid(item, callSid) ||
             sameFonosterConversation(item, { conversationId, provider })
         );
+        const resolvedProvider = call?.provider || provider;
+        const resolvedCallDirection = call?.callDirection || callDirection;
         if (
-          call?.provider === 'fonoster' &&
-          call?.callDirection === 'outbound'
+          resolvedProvider === 'fonoster' &&
+          resolvedCallDirection === 'outbound'
         ) {
+          if (!call) {
+            this.addCall({
+              callSid,
+              conversationId,
+              inboxId,
+              provider: resolvedProvider,
+              callDirection: resolvedCallDirection,
+              senderId,
+            });
+          }
+          this.setCallActive(call?.callSid || callSid);
           return;
         }
         if (call && !call.isActive) this.dismissCall(call.callSid);
@@ -121,6 +157,18 @@ export const useCallsStore = defineStore('calls', {
           ? {
               ...call,
               browserJoinSupported: false,
+              provider: provider || call.provider,
+            }
+          : call
+      );
+    },
+
+    markBrowserJoined(callSid, provider) {
+      this.calls = this.calls.map(call =>
+        call.callSid === callSid
+          ? {
+              ...call,
+              browserJoined: true,
               provider: provider || call.provider,
             }
           : call

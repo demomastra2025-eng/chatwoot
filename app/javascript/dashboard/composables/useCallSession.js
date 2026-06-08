@@ -84,8 +84,24 @@ export function useCallSession() {
     };
   };
 
+  const failFonosterOutboundWithoutInvite = async callSid => {
+    await releaseFonosterIncomingCall(callSid, {
+      status: 'failed',
+      reason: 'sip_invite_not_received',
+    });
+    callsStore.dismissCall(callSid);
+    return {
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      callSid,
+    };
+  };
+
   const unknownCallReleaseKey = Symbol('unknown_call');
   const callReleaseKey = callSid => callSid || unknownCallReleaseKey;
+  const hasTrackedCall = callSid =>
+    callsStore.calls.some(call => String(call.callSid) === String(callSid));
 
   const runOnceForCall = async (lockSetRef, callSid, callback) => {
     const releaseKey = callReleaseKey(callSid);
@@ -99,13 +115,47 @@ export function useCallSession() {
     }
   };
 
+  const waitForFonosterOperatorReleaseHeadStart = releasePromise => {
+    return Promise.race([
+      releasePromise,
+      new Promise(resolve => {
+        setTimeout(resolve, 300);
+      }),
+    ]);
+  };
+
+  const findDisconnectedFonosterCall = event => {
+    const detail = event?.detail || {};
+    const callRef = detail.callRef || detail.callSid;
+
+    if (callRef) {
+      const call = callsStore.calls.find(
+        item =>
+          item.provider === 'fonoster' &&
+          String(item.callSid) === String(callRef)
+      );
+      if (call) return call;
+    }
+
+    if (resolveCallProvider(callsStore.activeCall) === 'fonoster') {
+      return callsStore.activeCall;
+    }
+
+    return null;
+  };
+
   const handleFonosterClientDisconnect = async call => {
     if (!call?.callSid) {
       await callsStore.clearActiveCall();
       return;
     }
 
-    await callsStore.clearActiveCall();
+    if (call.isActive) {
+      await callsStore.clearActiveCall();
+    } else {
+      callsStore.dismissCall(call.callSid);
+    }
+
     await runOnceForCall(endingCallSids, call.callSid, async () => {
       await releaseFonosterIncomingCall(call.callSid, {
         status: 'completed',
@@ -114,8 +164,15 @@ export function useCallSession() {
     });
   };
 
-  const handleClientDisconnect = async () => {
-    const call = callsStore.activeCall;
+  const handleClientDisconnect = async event => {
+    const detailProvider = event?.detail?.provider;
+    const call =
+      detailProvider === 'fonoster'
+        ? findDisconnectedFonosterCall(event)
+        : callsStore.activeCall;
+
+    if (detailProvider === 'fonoster' && !call) return;
+
     if (resolveCallProvider(call) === 'fonoster') {
       await handleFonosterClientDisconnect(call);
       return;
@@ -147,6 +204,12 @@ export function useCallSession() {
   const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
     if (provider === 'fonoster') {
       return runOnceForCall(endingCallSids, callSid, async () => {
+        const releaseResult = releaseFonosterIncomingCall(callSid, {
+          status: 'completed',
+          reason: 'operator_hangup',
+        });
+
+        await waitForFonosterOperatorReleaseHeadStart(releaseResult);
         try {
           await WebphoneClient.endClientCall(provider);
         } catch (error) {
@@ -154,11 +217,6 @@ export function useCallSession() {
           console.warn('Failed to end Fonoster browser call:', error);
         }
 
-        const releaseResult = await releaseFonosterIncomingCall(callSid, {
-          status: 'completed',
-          reason: 'operator_hangup',
-        });
-        if (!releaseResult) return null;
         durationTimer.stop();
         callDuration.value = 0;
         callsStore.dismissCall(callSid);
@@ -171,6 +229,31 @@ export function useCallSession() {
     durationTimer.stop();
     callsStore.clearActiveCall();
     return null;
+  };
+
+  const cancelFonosterOutboundCall = async call => {
+    const callSid = call?.callSid;
+    if (!callSid) return null;
+
+    return runOnceForCall(releasingCallSids, callSid, async () => {
+      const releaseResult = releaseFonosterIncomingCall(callSid, {
+        status: 'cancelled',
+        reason: 'operator_cancelled',
+      });
+
+      await waitForFonosterOperatorReleaseHeadStart(releaseResult);
+      try {
+        await WebphoneClient.endClientCall(call?.provider || 'fonoster');
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to cancel Fonoster browser call:', error);
+      }
+
+      durationTimer.stop();
+      callDuration.value = 0;
+      callsStore.dismissCall(callSid);
+      return releaseResult;
+    });
   };
 
   const joinCall = async ({
@@ -233,9 +316,16 @@ export function useCallSession() {
 
         if (!joinResult) {
           if (isOutbound) {
-            return releaseUnsupportedFonosterJoin(callSid, {
-              includeReason: true,
-            });
+            if (!hasTrackedCall(callSid)) {
+              return {
+                provider: 'fonoster',
+                joinSupported: false,
+                reason: 'call_closed',
+                callSid,
+              };
+            }
+
+            return failFonosterOutboundWithoutInvite(callSid);
           }
 
           if (webphoneSession.registered === true) {
@@ -249,8 +339,16 @@ export function useCallSession() {
           return releaseUnsupportedFonosterJoin(callSid);
         }
 
+        if (isOutbound) {
+          callsStore.markBrowserJoined(callSid, 'fonoster');
+          return {
+            provider: 'fonoster',
+            joinSupported: true,
+            waitingForAnswer: true,
+          };
+        }
+
         callsStore.setCallActive(callSid);
-        durationTimer.start();
 
         return {
           provider: 'fonoster',
@@ -304,6 +402,10 @@ export function useCallSession() {
     const provider = resolveCallProvider(call);
 
     if (provider === 'fonoster') {
+      if (isOutboundCallDirection(call?.callDirection)) {
+        return cancelFonosterOutboundCall(call);
+      }
+
       const releaseResult = await runOnceForCall(
         releasingCallSids,
         call?.callSid,

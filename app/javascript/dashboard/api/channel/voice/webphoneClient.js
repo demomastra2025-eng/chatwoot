@@ -298,6 +298,24 @@ class WebphoneClient extends EventTarget {
     return client.joinClientCall(payload);
   }
 
+  prewarmMicrophone(provider = this.activeProvider, options = {}) {
+    const client = this.getClient(provider);
+    if (!client || typeof client.prewarmMicrophone !== 'function') {
+      return Promise.resolve(null);
+    }
+
+    return client.prewarmMicrophone(options);
+  }
+
+  stopMicrophonePrewarm(provider = this.activeProvider) {
+    const client = this.getClient(provider);
+    if (!client || typeof client.stopMicrophonePrewarm !== 'function') {
+      return null;
+    }
+
+    return client.stopMicrophonePrewarm();
+  }
+
   async rejectIncomingCall(provider = this.activeProvider) {
     const client = this.getClient(provider);
     if (!client) return null;

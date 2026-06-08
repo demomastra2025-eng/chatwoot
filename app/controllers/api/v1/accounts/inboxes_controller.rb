@@ -207,8 +207,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def reauthorize_and_update_channel(channel_attributes)
+    channel_params = normalized_channel_update_params(channel_attributes)
     @inbox.channel.reauthorized! if @inbox.channel.respond_to?(:reauthorized!)
-    @inbox.channel.update!(permitted_params(channel_attributes)[:channel])
+    @inbox.channel.update!(channel_params)
     sync_voice_telephony!(@inbox.channel)
   end
 
@@ -357,10 +358,42 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def channel_create_attributes
     attrs = permitted_params(channel_type_from_params::EDITABLE_ATTRS)[:channel].except(:type).merge(account: Current.account)
+    attrs = enriched_whatsapp_cloud_channel_attributes(attrs) if channel_type_from_params == Channel::Whatsapp
     return attrs unless channel_type_from_params == Channel::WhatsappWeb
 
     attrs[:provider_config] = whatsapp_web_provider_config(attrs[:provider_config])
     attrs
+  end
+
+  def normalized_channel_update_params(channel_attributes)
+    channel_params = permitted_params(channel_attributes)[:channel]
+    return channel_params unless @inbox.channel.is_a?(Channel::Whatsapp)
+
+    enriched_whatsapp_cloud_channel_attributes(channel_params, existing_channel: @inbox.channel)
+  end
+
+  def enriched_whatsapp_cloud_channel_attributes(channel_params, existing_channel: nil)
+    attrs = channel_params.to_h.with_indifferent_access
+    provider = attrs[:provider].presence || existing_channel&.provider
+    return attrs unless provider == 'whatsapp_cloud'
+    return attrs if attrs[:provider_config].blank?
+
+    provider_config = existing_channel&.provider_config.to_h || {}
+    provider_config = provider_config.merge(attrs[:provider_config].to_h.deep_stringify_keys)
+    token_health = inspect_whatsapp_cloud_token(provider_config)
+    provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY] = token_health if token_health.present?
+    attrs[:provider_config] = provider_config
+    attrs
+  end
+
+  def inspect_whatsapp_cloud_token(provider_config)
+    return nil if provider_config['api_key'].blank? || provider_config['business_account_id'].blank?
+
+    Whatsapp::TokenValidationService.new(
+      provider_config['api_key'],
+      provider_config['business_account_id'],
+      phone_number_id: provider_config['phone_number_id']
+    ).perform
   end
 
   def whatsapp_web_provider_config(existing_config)

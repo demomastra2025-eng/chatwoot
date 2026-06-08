@@ -181,7 +181,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
                                        {}
                                      else
                                        accessible_links.where(communication_thread_id: thread_ids)
-                                                       .includes(:contact_inbox, :conversation, inbox: :channel)
+                                                       .includes({ contact_inbox: :channel_profile }, :conversation, inbox: :channel)
                                                        .group_by(&:communication_thread_id)
                                      end
     @channel_capabilities_by_thread_id = @accessible_links_by_thread_id.transform_values do |links|

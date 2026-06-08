@@ -108,6 +108,9 @@ export default {
     conversationId() {
       this.fetchConversationIfUnavailable();
     },
+    'currentChat.inbox_id'() {
+      this.normalizeConversationRoute();
+    },
   },
 
   created() {
@@ -172,6 +175,27 @@ export default {
       const [chat] = this.chatList.filter(c => c.id === conversationId);
       return chat;
     },
+    normalizeConversationRoute() {
+      if (
+        this.communicationThreadMode ||
+        this.$route.name !== 'inbox_conversation' ||
+        !this.conversationId ||
+        !this.currentChat?.inbox_id
+      ) {
+        return;
+      }
+
+      this.$router.replace({
+        name: 'conversation_through_inbox',
+        params: {
+          ...this.$route.params,
+          inbox_id: this.currentChat.inbox_id,
+          conversation_id: this.currentChat.id || this.conversationId,
+        },
+        query: this.$route.query,
+        hash: this.$route.hash,
+      });
+    },
     setActiveChat() {
       if (this.conversationId) {
         const selectedConversation = this.findConversation();
@@ -190,6 +214,7 @@ export default {
             after: messageId,
           })
           .then(() => {
+            this.normalizeConversationRoute();
             emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE, { messageId });
           });
       } else {

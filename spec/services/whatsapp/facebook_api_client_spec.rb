@@ -13,6 +13,18 @@ describe Whatsapp::FacebookApiClient do
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_APP_SECRET', '').and_return(app_secret)
   end
 
+  describe '.appsecret_proof_query' do
+    it 'returns appsecret_proof only when enabled' do
+      expect(described_class.appsecret_proof_query(access_token)).to eq({})
+
+      with_modified_env('WHATSAPP_GRAPH_APPSECRET_PROOF' => 'true') do
+        expected_proof = OpenSSL::HMAC.hexdigest(OpenSSL::Digest.new('sha256'), app_secret, access_token)
+
+        expect(described_class.appsecret_proof_query(access_token)).to eq(appsecret_proof: expected_proof)
+      end
+    end
+  end
+
   describe '#exchange_code_for_token' do
     let(:code) { 'test_code' }
 
@@ -158,13 +170,15 @@ describe Whatsapp::FacebookApiClient do
     let(:waba_id) { 'test_waba_id' }
     let(:callback_url) { 'https://example.com/webhook' }
     let(:verify_token) { 'test_verify_token' }
+    let(:subscribed_fields) { api_client.webhook_subscribed_fields }
 
     context 'when successful' do
       before do
         # Step 1: Subscribe app to WABA (no body)
         stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
           .with(
-            headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' }
+            headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' },
+            body: ''
           )
           .to_return(
             status: 200,
@@ -177,7 +191,7 @@ describe Whatsapp::FacebookApiClient do
           .with(
             headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' },
             body: { override_callback_uri: callback_url, verify_token: verify_token,
-                    subscribed_fields: %w[messages smb_message_echoes] }.to_json
+                    subscribed_fields: subscribed_fields }.to_json
           )
           .to_return(
             status: 200,
@@ -196,7 +210,8 @@ describe Whatsapp::FacebookApiClient do
       before do
         stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
           .with(
-            headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' }
+            headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' },
+            body: ''
           )
           .to_return(status: 400, body: { error: 'App subscription to WABA failed' }.to_json)
       end
@@ -211,7 +226,8 @@ describe Whatsapp::FacebookApiClient do
         # Step 1 succeeds
         stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
           .with(
-            headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' }
+            headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' },
+            body: ''
           )
           .to_return(
             status: 200,
@@ -224,7 +240,7 @@ describe Whatsapp::FacebookApiClient do
           .with(
             headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' },
             body: { override_callback_uri: callback_url, verify_token: verify_token,
-                    subscribed_fields: %w[messages smb_message_echoes] }.to_json
+                    subscribed_fields: subscribed_fields }.to_json
           )
           .to_return(status: 400, body: { error: 'Webhook callback override failed' }.to_json)
       end

@@ -160,6 +160,10 @@ class CommunicationThreads::MessageCreateService
   end
 
   def validate_text_delivery!(capability)
+    return if private_message?
+
+    raise Error, 'Selected channel cannot send messages: voice_call_only' if voice_channel?
+
     return if capability[:can_send_text] || capability[:requires_template]
 
     reason = capability[:disabled_reason].presence || 'not_replyable'
@@ -192,6 +196,10 @@ class CommunicationThreads::MessageCreateService
     ActiveModel::Type::Boolean.new.cast(params[:private])
   end
 
+  def voice_channel?
+    conversation.inbox.channel_type == 'Channel::Voice'
+  end
+
   def channel_capability_for(conversation)
     capabilities.find do |capability|
       String(capability[:conversation_id]) == String(conversation.display_id) ||
@@ -203,7 +211,9 @@ class CommunicationThreads::MessageCreateService
     @capabilities ||= CommunicationThreads::ChannelCapabilitiesBuilder.new(
       links: accessible_links.includes(:conversation, :contact_inbox, inbox: :channel),
       contact: communication_thread.contact,
-      available_inboxes: accessible_inboxes
+      available_inboxes: accessible_inboxes,
+      include_unlinked: true,
+      deduplicate_linked: false
     ).perform
   end
 

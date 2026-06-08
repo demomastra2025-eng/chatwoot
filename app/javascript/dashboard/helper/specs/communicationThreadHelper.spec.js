@@ -2,7 +2,11 @@ import {
   buildCommunicationThreadConversation,
   buildCommunicationChannelFromMessage,
   decoratePayloadWithCommunicationThread,
+  getCommunicationContactIdentityLabel,
   getCommunicationReplyChannel,
+  getCommunicationReplyChannels,
+  getUniqueCommunicationChannels,
+  isCommunicationVoiceChannel,
   isMessageInCommunicationThread,
 } from '../communicationThreadHelper';
 
@@ -45,7 +49,83 @@ const emailUnlinkedChannel = {
   channel_key: 'inbox:303',
 };
 
+const olderWhatsappDuplicate = {
+  ...whatsappChannel,
+  conversation_id: 44,
+  can_reply: false,
+  can_send_text: false,
+  last_activity_at: 50,
+  channel_key: 'conversation:44',
+};
+
+const disabledApiChannel = {
+  conversation_id: 55,
+  inbox_id: 505,
+  inbox_name: 'API',
+  channel: 'Channel::Api',
+  can_reply: false,
+  can_send_text: false,
+  requires_template: false,
+  last_activity_at: 500,
+  channel_key: 'conversation:55',
+};
+
 describe('communicationThreadHelper', () => {
+  describe('#getUniqueCommunicationChannels', () => {
+    it('deduplicates repeated child conversations by actual inbox channel', () => {
+      expect(
+        getUniqueCommunicationChannels([
+          olderWhatsappDuplicate,
+          telegramChannel,
+          whatsappChannel,
+        ])
+      ).toEqual([telegramChannel, whatsappChannel]);
+    });
+  });
+
+  describe('#getCommunicationReplyChannels', () => {
+    it('keeps only actionable reply channels after inbox deduplication', () => {
+      expect(
+        getCommunicationReplyChannels([
+          olderWhatsappDuplicate,
+          disabledApiChannel,
+          whatsappChannel,
+        ])
+      ).toEqual([whatsappChannel]);
+    });
+  });
+
+  describe('#getCommunicationContactIdentityLabel', () => {
+    it('prefers contact channel profile identity over target inbox names', () => {
+      expect(
+        getCommunicationContactIdentityLabel({
+          inbox_name: 'Business Telegram',
+          source_id: 'telegram-target',
+          channel_profile: { username: 'client_login' },
+        })
+      ).toBe('client_login');
+    });
+
+    it('falls back to contact inbox source id when no profile identity exists', () => {
+      expect(
+        getCommunicationContactIdentityLabel({
+          inbox_name: '+77100005175',
+          source_id: '+77000008623',
+        })
+      ).toBe('+77000008623');
+    });
+  });
+
+  describe('#isCommunicationVoiceChannel', () => {
+    it('detects voice channels only', () => {
+      expect(isCommunicationVoiceChannel({ channel: 'Channel::Voice' })).toBe(
+        true
+      );
+      expect(isCommunicationVoiceChannel(whatsappChannel)).toBe(false);
+      expect(isCommunicationVoiceChannel(null)).toBe(false);
+    });
+  });
+
   describe('#getCommunicationReplyChannel', () => {
     it('uses the channel of the latest incoming replyable message by default', () => {
       const chat = {
@@ -68,6 +148,15 @@ describe('communicationThreadHelper', () => {
       };
 
       expect(getCommunicationReplyChannel(chat, 11)).toEqual(whatsappChannel);
+    });
+
+    it('maps a selected duplicate child conversation back to the single inbox channel', () => {
+      const chat = {
+        channels: [whatsappChannel, olderWhatsappDuplicate, telegramChannel],
+        messages: [],
+      };
+
+      expect(getCommunicationReplyChannel(chat, 44)).toEqual(whatsappChannel);
     });
   });
 
@@ -194,7 +283,7 @@ describe('communicationThreadHelper', () => {
         inbox_id: 202,
         active_reply_channel_conversation_id: 22,
         can_reply: true,
-        conversation_ids: [11, 22],
+        conversation_ids: [22, 11],
         meta: { sender: { id: 5, name: 'Customer' } },
       });
     });

@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { frontendURL } from 'dashboard/helper/URLHelper.js';
+import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper.js';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
 import { useInbox } from 'dashboard/composables/useInbox';
@@ -51,7 +51,11 @@ const navigateTo = computed(() => {
     params.messageId = props.messageId;
   }
   return frontendURL(
-    `accounts/${props.accountId}/conversations/${props.id}`,
+    conversationUrl({
+      accountId: props.accountId,
+      activeInbox: props.inboxId,
+      id: props.id,
+    }),
     params
   );
 });

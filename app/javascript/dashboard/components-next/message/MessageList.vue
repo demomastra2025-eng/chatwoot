@@ -219,7 +219,7 @@ const getInReplyToMessage = parentMessage => {
         class="my-3 flex justify-center"
       >
         <span
-          class="inline-flex items-center rounded-full border border-n-weak bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-11"
+          class="inline-flex items-center rounded-full border border-n-weak px-2.5 py-1 text-xs font-medium text-n-slate-11"
         >
           {{ channelLabelForMessage(message) }}
         </span>

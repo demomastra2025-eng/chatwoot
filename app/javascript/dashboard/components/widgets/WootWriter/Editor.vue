@@ -95,6 +95,7 @@ const props = defineProps({
   enableCaptainTools: { type: Boolean, default: false },
   enableCaptainFields: { type: Boolean, default: false },
   enableCaptainSkills: { type: Boolean, default: false },
+  enableCopilotMenu: { type: Boolean, default: true },
   captainContextAssistantId: { type: Number, default: null },
   captainContextAccess: { type: Object, default: null },
   captainToolAccess: { type: Object, default: null },
@@ -138,6 +139,10 @@ const effectiveChannelType = computed(() =>
   getEffectiveChannelType(props.channelType, props.medium)
 );
 
+const shouldShowCopilotMenu = computed(
+  () => captainTasksEnabled.value && props.enableCopilotMenu
+);
+
 const editorSchema = computed(() => {
   if (!props.channelType) return messageSchema;
 
@@ -146,7 +151,7 @@ const editorSchema = computed(() => {
     : effectiveChannelType.value;
   const formatting = getFormattingForEditor(
     formatType,
-    captainTasksEnabled.value
+    shouldShowCopilotMenu.value
   );
   return buildMessageSchema(formatting.marks, formatting.nodes);
 });
@@ -157,7 +162,7 @@ const editorMenuOptions = computed(() => {
     : effectiveChannelType.value || DEFAULT_FORMATTING;
   const formatting = getFormattingForEditor(
     formatType,
-    captainTasksEnabled.value
+    shouldShowCopilotMenu.value
   );
 
   return formatting.menu;
@@ -505,6 +510,8 @@ function openFileBrowser() {
 }
 
 function handleCopilotClick() {
+  if (!shouldShowCopilotMenu.value) return;
+
   const isOpening = !showSelectionMenu.value;
   if (isOpening) {
     useTrack(CAPTAIN_EVENTS.EDITOR_AI_MENU_OPENED, {
@@ -1042,7 +1049,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       @select-skill="content => insertSpecialContent('skill', content)"
     />
     <CopilotMenuBar
-      v-if="showSelectionMenu"
+      v-if="showSelectionMenu && shouldShowCopilotMenu"
       v-on-click-outside="handleClickOutside"
       :has-selection="isTextSelected"
       :is-editor-menu-popover="isEditorMenuPopover"

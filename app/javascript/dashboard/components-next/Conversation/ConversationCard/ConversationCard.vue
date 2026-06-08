@@ -68,10 +68,16 @@ const showMessagePreviewWithoutMeta = computed(() => {
   );
 });
 
+const conversationInboxId = computed(
+  () =>
+    props.conversation.inbox_id || props.conversation.inboxId || inbox.value?.id
+);
+
 const onCardClick = e => {
   const path = frontendURL(
     conversationUrl({
       accountId: route.params.accountId,
+      activeInbox: conversationInboxId.value,
       id: props.conversation.id,
     })
   );

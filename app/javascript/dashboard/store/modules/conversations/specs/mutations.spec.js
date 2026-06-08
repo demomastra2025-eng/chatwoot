@@ -38,6 +38,29 @@ describe('#mutations', () => {
         call_status: 'completed',
       });
     });
+
+    it('does not update current Fonoster call_status from an older call ref', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            additional_attributes: {
+              fonoster_call_ref: 'current-call',
+              call_status: 'ringing',
+            },
+          },
+        ],
+      };
+      mutations[types.UPDATE_CONVERSATION_CALL_STATUS](state, {
+        conversationId: 1,
+        callSid: 'old-call',
+        callStatus: 'completed',
+      });
+      expect(state.allConversations[0].additional_attributes).toEqual({
+        fonoster_call_ref: 'current-call',
+        call_status: 'ringing',
+      });
+    });
   });
 
   describe('#UPDATE_MESSAGE_CALL_STATUS', () => {
@@ -96,6 +119,72 @@ describe('#mutations', () => {
       expect(
         state.allConversations[0].messages[1].content_attributes.data.status
       ).toBe('in-progress');
+    });
+
+    it('updates only the voice call message matching callSid', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            messages: [
+              {
+                id: 1,
+                source_id: 'voice_call:old-call',
+                content_type: 'voice_call',
+                content_attributes: {
+                  data: { call_sid: 'old-call', status: 'ringing' },
+                },
+              },
+              {
+                id: 2,
+                source_id: 'voice_call:current-call',
+                content_type: 'voice_call',
+                content_attributes: {
+                  data: { call_sid: 'current-call', status: 'ringing' },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      mutations[types.UPDATE_MESSAGE_CALL_STATUS](state, {
+        conversationId: 1,
+        callSid: 'old-call',
+        callStatus: 'no_answer',
+      });
+      expect(
+        state.allConversations[0].messages[0].content_attributes.data.status
+      ).toBe('no_answer');
+      expect(
+        state.allConversations[0].messages[1].content_attributes.data.status
+      ).toBe('ringing');
+    });
+
+    it('does not update another voice call message when callSid is unknown', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            messages: [
+              {
+                id: 1,
+                content_type: 'voice_call',
+                content_attributes: {
+                  data: { call_sid: 'current-call', status: 'ringing' },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      mutations[types.UPDATE_MESSAGE_CALL_STATUS](state, {
+        conversationId: 1,
+        callSid: 'old-call',
+        callStatus: 'completed',
+      });
+      expect(
+        state.allConversations[0].messages[0].content_attributes.data.status
+      ).toBe('ringing');
     });
 
     it('creates content_attributes.data if it does not exist', () => {

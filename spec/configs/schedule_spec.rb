@@ -52,4 +52,12 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('refresh_openrouter_key_health_job', 'class')).to eq('Internal::RefreshOpenRouterKeyHealthJob')
     expect(schedule.dig('refresh_openrouter_key_health_job', 'queue')).to eq('scheduled_jobs')
   end
+
+  it 'checks WhatsApp Cloud API token health on the scheduled jobs queue' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule.dig('whatsapp_token_health_check_job', 'cron')).to eq('23 */6 * * *')
+    expect(schedule.dig('whatsapp_token_health_check_job', 'class')).to eq('Whatsapp::TokenHealthCheckJob')
+    expect(schedule.dig('whatsapp_token_health_check_job', 'queue')).to eq('scheduled_jobs')
+  end
 end

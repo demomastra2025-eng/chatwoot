@@ -60,9 +60,51 @@ class Telephony::OperatorCallRejectService
   end
 
   def validate_release!
+    if outbound_operator_release?
+      raise_not_candidate! unless outbound_release_allowed?
+      return
+    end
+
     raise_not_candidate! unless rejectable_by_user?
     raise_claimed_by_other! if claimed_by_other?
     raise_not_candidate! unless candidate_agent?
+  end
+
+  def outbound_call?
+    call_session.direction == 'outbound'
+  end
+
+  def outbound_operator_release?
+    outbound_call? && outbound_originated_from_chatwoot?
+  end
+
+  def outbound_originated_from_chatwoot?
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    return true if metadata['bridge_response'].present? || metadata['fonoster_call_ref'].present?
+    return true if outbound_route_metadata?
+    return true if outbound_conversation_metadata?
+
+    false
+  end
+
+  def outbound_route_metadata?
+    outbound_values = %w[outbound to_pstn outbound_api outbound-dial outbound_api_call]
+    outbound_values.include?(route_metadata['direction'].to_s.strip.downcase) ||
+      outbound_values.include?(route_metadata['call_direction'].to_s.strip.downcase) ||
+      outbound_values.include?(route_metadata['callDirection'].to_s.strip.downcase)
+  end
+
+  def outbound_conversation_metadata?
+    attrs = (call_session.conversation&.additional_attributes || {}).deep_stringify_keys
+    attrs['call_direction'].to_s == 'outbound' &&
+      attrs['fonoster_call_ref'].to_s == call_session.external_call_ref.to_s
+  end
+
+  def outbound_release_allowed?
+    return false unless inbox_member?
+    return true if call_session.agent_binding.blank?
+
+    call_session.agent_binding.user_id == user.id
   end
 
   def operator_route?

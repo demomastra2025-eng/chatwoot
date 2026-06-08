@@ -129,6 +129,12 @@ describe('#URL Helpers', () => {
     it('should return url without params if params passed is not nil', () => {
       expect(frontendURL('main', { ping: 'pong' })).toBe('/app/main?ping=pong');
     });
+
+    it('should merge params when path already has query params', () => {
+      expect(frontendURL('main?status=open', { messageId: 42 })).toBe(
+        '/app/main?status=open&messageId=42'
+      );
+    });
   });
 
   describe('isValidURL', () => {

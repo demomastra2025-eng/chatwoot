@@ -7,6 +7,7 @@ import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useAlert } from 'dashboard/composables';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import { useCallsStore } from 'dashboard/stores/calls';
+import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -18,6 +19,8 @@ const props = defineProps({
   icon: { type: [String, Object, Function], default: '' },
   size: { type: String, default: 'sm' },
   tooltipLabel: { type: String, default: '' },
+  inboxId: { type: [String, Number], default: null },
+  disabled: { type: Boolean, default: false },
 });
 
 defineOptions({ inheritAttrs: false });
@@ -29,6 +32,7 @@ const store = useStore();
 const { t } = useI18n();
 
 const dialogRef = ref(null);
+const isPreparingCall = ref(false);
 
 const inboxesList = useMapGetter('inboxes/getInboxes');
 const contactsUiFlags = useMapGetter('contacts/getUIFlags');
@@ -38,7 +42,21 @@ const voiceInboxes = computed(() =>
     inbox => inbox.channel_type === INBOX_TYPES.VOICE
   )
 );
-const hasVoiceInboxes = computed(() => voiceInboxes.value.length > 0);
+const candidateVoiceInboxes = computed(() => {
+  if (!props.inboxId) return voiceInboxes.value;
+
+  const selectedInbox = voiceInboxes.value.find(
+    inbox => String(inbox.id) === String(props.inboxId)
+  );
+
+  return [
+    selectedInbox || {
+      id: props.inboxId,
+      channel_type: INBOX_TYPES.VOICE,
+    },
+  ];
+});
+const hasVoiceInboxes = computed(() => candidateVoiceInboxes.value.length > 0);
 
 // Unified behavior: hide when no phone
 const shouldRender = computed(() => hasVoiceInboxes.value && !!props.phone);
@@ -46,10 +64,20 @@ const shouldRender = computed(() => hasVoiceInboxes.value && !!props.phone);
 const isInitiatingCall = computed(() => {
   return contactsUiFlags.value?.isInitiatingCall || false;
 });
+const isCallButtonBusy = computed(
+  () => props.disabled || isPreparingCall.value || isInitiatingCall.value
+);
 
 const navigateToConversation = conversationId => {
   const accountId = route.params.accountId;
   if (conversationId && accountId) {
+    if (
+      String(route.params?.conversation_id || route.params?.conversationId) ===
+      String(conversationId)
+    ) {
+      return;
+    }
+
     const path = frontendURL(
       conversationUrl({
         accountId,
@@ -60,10 +88,47 @@ const navigateToConversation = conversationId => {
   }
 };
 
-const startCall = async inbox => {
-  if (isInitiatingCall.value) return;
+const isFonosterInbox = inbox => inbox?.provider === 'fonoster';
 
+const prepareFonosterWebphone = async inbox => {
+  if (!isFonosterInbox(inbox)) return true;
+
+  const microphonePrewarm = WebphoneClient.prewarmMicrophone('fonoster').catch(
+    error => ({
+      provider: 'fonoster',
+      prewarmed: false,
+      reason: error?.name || 'microphone_unavailable',
+    })
+  );
   try {
+    const session = await WebphoneClient.initializeDevice(inbox.id);
+    const microphone = await microphonePrewarm;
+    const ready =
+      session?.provider === 'fonoster' &&
+      session?.callingSupported !== false &&
+      session?.registered !== false &&
+      microphone?.prewarmed !== false;
+    if (!ready) WebphoneClient.stopMicrophonePrewarm('fonoster');
+    return ready;
+  } catch (error) {
+    WebphoneClient.stopMicrophonePrewarm('fonoster');
+    // eslint-disable-next-line no-console
+    console.warn('Failed to prepare Fonoster webphone:', error);
+    return false;
+  }
+};
+
+const startCall = async inbox => {
+  if (isCallButtonBusy.value) return;
+
+  isPreparingCall.value = true;
+  try {
+    const webphoneReady = await prepareFonosterWebphone(inbox);
+    if (!webphoneReady) {
+      useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'));
+      return;
+    }
+
     const response = await store.dispatch('contacts/initiateCall', {
       contactId: props.contactId,
       inboxId: inbox.id,
@@ -83,17 +148,24 @@ const startCall = async inbox => {
     useAlert(t('CONTACT_PANEL.CALL_INITIATED'));
     navigateToConversation(response?.conversation_id);
   } catch (error) {
+    if (isFonosterInbox(inbox)) {
+      WebphoneClient.stopMicrophonePrewarm('fonoster');
+    }
     const apiError = error?.message;
     useAlert(apiError || t('CONTACT_PANEL.CALL_FAILED'));
+  } finally {
+    isPreparingCall.value = false;
   }
 };
 
 const onClick = async () => {
-  if (voiceInboxes.value.length > 1) {
+  if (isCallButtonBusy.value) return;
+
+  if (candidateVoiceInboxes.value.length > 1) {
     dialogRef.value?.open();
     return;
   }
-  const [inbox] = voiceInboxes.value;
+  const [inbox] = candidateVoiceInboxes.value;
   await startCall(inbox);
 };
 
@@ -109,8 +181,8 @@ const onPickInbox = async inbox => {
       v-if="shouldRender"
       v-tooltip.top-end="tooltipLabel || null"
       v-bind="attrs"
-      :disabled="isInitiatingCall"
-      :is-loading="isInitiatingCall"
+      :disabled="isCallButtonBusy"
+      :is-loading="isCallButtonBusy"
       :label="label"
       :icon="icon"
       :size="size"
@@ -118,7 +190,7 @@ const onPickInbox = async inbox => {
     />
 
     <Dialog
-      v-if="shouldRender && voiceInboxes.length > 1"
+      v-if="shouldRender && candidateVoiceInboxes.length > 1"
       ref="dialogRef"
       :title="$t('CONTACT_PANEL.VOICE_INBOX_PICKER.TITLE')"
       show-cancel-button
@@ -127,7 +199,7 @@ const onPickInbox = async inbox => {
     >
       <div class="flex flex-col gap-2">
         <button
-          v-for="inbox in voiceInboxes"
+          v-for="inbox in candidateVoiceInboxes"
           :key="inbox.id"
           type="button"
           class="flex items-center justify-between w-full px-4 py-2 text-left rounded-lg hover:bg-n-alpha-2"

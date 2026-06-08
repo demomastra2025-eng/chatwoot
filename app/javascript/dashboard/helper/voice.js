@@ -83,7 +83,10 @@ export function handleVoiceCallCreated(message, currentUserId) {
       callSid,
       status,
       conversationId,
+      inboxId,
       provider,
+      callDirection,
+      senderId,
     });
     return;
   }
@@ -113,7 +116,7 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
   } = extractCallData(message);
 
   // Vuex message/conversation status updates apply to all call sources.
-  const callInfo = { conversationId, callStatus: status };
+  const callInfo = { conversationId, callSid, callStatus: status };
   commit(types.UPDATE_CONVERSATION_CALL_STATUS, callInfo);
   commit(types.UPDATE_MESSAGE_CALL_STATUS, callInfo);
 
@@ -126,7 +129,10 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     callSid,
     status,
     conversationId,
+    inboxId,
     provider,
+    callDirection,
+    senderId,
   });
 
   const isNewCall =

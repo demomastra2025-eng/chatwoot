@@ -219,7 +219,7 @@ class Telephony::CallReconciliationService
   end
 
   def missing_terminal_status(session)
-    return 'completed' if answered_session?(session)
+    return 'completed' if customer_answered_session?(session)
     return 'rejected' if route_action(session) == 'reject'
     return 'no_answer' if route_action(session) == 'operator'
     return 'no_answer' if session.direction == 'outbound'
@@ -250,7 +250,7 @@ class Telephony::CallReconciliationService
     if Telephony::CallSession::TERMINAL_STATUSES.include?(status_to_apply)
       ended_at = terminal_ended_at_for(session, item)
       attrs[:ended_at] = ended_at
-      attrs[:duration_seconds] = resolved_duration_seconds(session, item, ended_at)
+      attrs[:duration_seconds] = resolved_duration_seconds(session, item, ended_at, status_to_apply)
       attrs[:end_reason] = target_status.blank? ? nil : end_reason_for(item, status_to_apply, target_status)
       attrs[:last_event_at] = ended_at
     elsif status_to_apply == 'in_progress'
@@ -277,17 +277,60 @@ class Telephony::CallReconciliationService
   def terminal_fallback_status(session, item)
     return if parse_time(item['endedAt'] || item['ended_at']).blank?
 
-    return 'completed' if answered_session?(session)
+    return if unresolved_answered_outbound_terminal?(session, item)
+
+    return 'completed' if customer_answered_session?(session)
     return 'completed' if raw_duration_seconds(item).to_i.positive?
     return 'no_answer' if session.direction == 'outbound'
 
     'missed'
   end
 
+  def unresolved_answered_outbound_terminal?(session, item)
+    return false unless session.direction == 'outbound'
+    return false unless customer_answered_session?(session)
+    return false unless raw_duration_seconds(item).to_i.zero?
+
+    ended_at = parse_time(item['endedAt'] || item['ended_at'])
+    lifecycle_floor = session.answered_at || session.started_at
+    ended_at.blank? || lifecycle_floor.blank? || ended_at <= lifecycle_floor
+  end
+
   def answered_session?(session)
     return true if session.answered_at.present?
 
     STATUS_PROGRESS.fetch(session.canonical_status, -1) >= STATUS_PROGRESS.fetch('in_progress')
+  end
+
+  def customer_answered_session?(session)
+    return answered_session?(session) unless session.direction == 'outbound'
+    return true if outbound_customer_answer_leg?(session)
+    return false if outbound_operator_only_answered?(session)
+
+    session.answered_at.present?
+  end
+
+  def outbound_customer_answer_leg?(session)
+    Array.wrap(session.legs).any? do |leg|
+      next false unless leg.is_a?(Hash)
+
+      leg = leg.deep_stringify_keys
+      leg['status'].to_s == 'in_progress' &&
+        %w[answered call_status callee_answered customer_answered dial_status].include?(leg['event_type'].to_s) &&
+        leg['leg'].to_s != 'operator'
+    end
+  end
+
+  def outbound_operator_only_answered?(session)
+    answered_legs = Array.wrap(session.legs).filter_map do |leg|
+      next unless leg.is_a?(Hash)
+
+      leg = leg.deep_stringify_keys
+      leg if leg['status'].to_s == 'in_progress'
+    end
+    return false if answered_legs.blank?
+
+    answered_legs.all? { |leg| leg['leg'].to_s == 'operator' }
   end
 
   def terminal_ended_at_for(session, item)
@@ -316,14 +359,18 @@ class Telephony::CallReconciliationService
     target_status
   end
 
-  def resolved_duration_seconds(session, item, ended_at)
+  def resolved_duration_seconds(session, item, ended_at, status)
     raw_duration = raw_duration_seconds(item)
     if raw_duration.present?
       parsed_duration = raw_duration.to_i
-      return parsed_duration unless parsed_duration.zero? && answered_session?(session)
+      return parsed_duration unless parsed_duration.zero? && customer_answered_session?(session)
     end
 
-    started_at = session.answered_at || parse_time(item['startedAt'] || item['started_at']) || session.started_at
+    started_at = if status == 'completed' && customer_answered_session?(session)
+                   session.answered_at || parse_time(item['startedAt'] || item['started_at']) || session.started_at
+                 else
+                   parse_time(item['startedAt'] || item['started_at']) || session.started_at || session.created_at
+                 end
     return unless started_at.present? && ended_at.present?
 
     [ended_at.to_i - started_at.to_i, 0].max

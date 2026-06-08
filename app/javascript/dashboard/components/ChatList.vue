@@ -127,6 +127,9 @@ const participatingChatsList = useMapGetter('getParticipatingChats');
 const chatListLoading = useMapGetter('getChatListLoadingStatus');
 const activeInbox = useMapGetter('getSelectedInbox');
 const conversationStats = useMapGetter('conversationStats/getStats');
+const conversationSidebarUnreadCounts = useMapGetter(
+  'getConversationSidebarUnreadCounts'
+);
 const appliedFilters = useMapGetter('getAppliedConversationFiltersV2');
 const folders = useMapGetter('customViews/getConversationCustomViews');
 const agentList = useMapGetter('agents/getAgents');
@@ -259,6 +262,48 @@ const conversationCustomAttributes = useFunctionGetter(
   'attributes/getAttributesByModel',
   'conversation_attribute'
 );
+
+const sortedChannelInboxes = computed(() =>
+  inboxesList.value.slice().sort((a, b) => a.name.localeCompare(b.name))
+);
+
+const sidebarUnreadCount = (collection, key) => {
+  if (!key) return 0;
+  return Number(
+    conversationSidebarUnreadCounts.value?.[collection]?.[key] || 0
+  );
+};
+
+const allConversationUnreadCount = computed(() =>
+  Number(conversationSidebarUnreadCounts.value?.all || 0)
+);
+
+const channelFilterItems = computed(() => [
+  {
+    key: 'all',
+    label: t('CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS'),
+    icon: 'i-lucide-mailbox',
+    badge: allConversationUnreadCount.value,
+  },
+  ...sortedChannelInboxes.value.map(channelInbox => ({
+    key: `inbox:${channelInbox.id}`,
+    label: channelInbox.name,
+    inbox: channelInbox,
+    badge: sidebarUnreadCount('inboxes', channelInbox.id),
+  })),
+]);
+
+const activeChannelFilterKey = computed(() => {
+  if (props.conversationInbox) {
+    return `inbox:${props.conversationInbox}`;
+  }
+
+  return props.communicationThreadMode ? 'all' : '';
+});
+
+const shouldShowChannelFilter = computed(() => {
+  return props.communicationThreadMode || Boolean(props.conversationInbox);
+});
 
 const activeAssigneeTabCount = computed(() => {
   const count = assigneeTabItems.value.find(
@@ -711,6 +756,39 @@ function onBasicFilterChange(value, type) {
   resetAndFetchData();
 }
 
+function channelFilterQuery() {
+  const query = { ...route.query };
+  delete query.messageId;
+
+  return {
+    ...query,
+    status: activeStatus.value,
+  };
+}
+
+function onChannelFilterSelect(item) {
+  resetBulkActions();
+  clearLocalSearch();
+
+  const accountId = currentAccountId.value || route.params.accountId;
+  if (item.key === 'all') {
+    router.push({
+      name: 'communication_threads_dashboard',
+      params: { accountId },
+      query: channelFilterQuery(),
+    });
+    return;
+  }
+
+  if (!item.inbox?.id) return;
+
+  router.push({
+    name: 'inbox_dashboard',
+    params: { accountId, inbox_id: item.inbox.id },
+    query: channelFilterQuery(),
+  });
+}
+
 function openLastSavedItemInFolder() {
   const lastItemOfFolder = folders.value[folders.value.length - 1];
   const lastItemId = lastItemOfFolder.id;
@@ -1029,15 +1107,18 @@ watch(conversationFilters, (newVal, oldVal) => {
       :page-title="pageTitle"
       :has-applied-filters="hasAppliedFilters"
       :has-active-folders="hasActiveFolders"
-      :active-status="activeStatus"
       :is-on-expanded-layout="isOnExpandedLayout"
       :conversation-stats="conversationStats"
       :is-list-loading="chatListLoading && !conversationList.length"
+      :show-channel-filter="shouldShowChannelFilter"
+      :channel-filter-items="channelFilterItems"
+      :active-channel-filter-key="activeChannelFilterKey"
       @add-folders="onClickOpenAddFoldersModal"
       @delete-folders="onClickOpenDeleteFoldersModal"
       @filters-modal="onToggleAdvanceFiltersModal"
       @reset-filters="resetAndFetchData"
       @basic-filter-change="onBasicFilterChange"
+      @channel-filter-select="onChannelFilterSelect"
     />
 
     <TeleportWithDirection

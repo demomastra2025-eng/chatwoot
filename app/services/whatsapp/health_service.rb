@@ -28,7 +28,7 @@ class Whatsapp::HealthService
       query: {
         fields: health_fields,
         access_token: @access_token
-      }
+      }.merge(graph_api_query)
     )
 
     handle_response(response)
@@ -53,6 +53,10 @@ class Whatsapp::HealthService
       platform_type
       certificate
     ].join(',')
+  end
+
+  def graph_api_query
+    Whatsapp::FacebookApiClient.appsecret_proof_query(@access_token)
   end
 
   def handle_response(response)

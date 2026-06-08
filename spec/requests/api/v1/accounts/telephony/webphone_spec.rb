@@ -753,6 +753,94 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'allows an inbox member to cancel a pending outbound Fonoster call' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    conversation = create(:conversation, account: account, inbox: voice_inbox)
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      conversation: conversation,
+      contact: conversation.contact,
+      inbox: voice_inbox,
+      number_binding: voice_inbox.telephony_number_binding,
+      external_call_ref: 'outbound-pending-cancel-1',
+      status: 'created',
+      direction: 'outbound',
+      from_number: voice_channel.phone_number,
+      to_number: conversation.contact.phone_number || '+15551230001',
+      metadata: {
+        'bridge_response' => { 'status' => 'created' },
+        'fonoster_call_ref' => 'outbound-pending-cancel-1'
+      }
+    )
+    message = conversation.messages.create!(
+      account: account,
+      inbox: voice_inbox,
+      message_type: :outgoing,
+      content_type: :voice_call,
+      content: 'Voice Call',
+      source_id: call_session.voice_call_source_id,
+      content_attributes: {
+        'data' => {
+          'call_sid' => call_session.external_call_ref,
+          'status' => 'created',
+          'call_direction' => 'outbound'
+        }
+      }
+    )
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      terminate_request = stub_request(
+        :post,
+        'https://bridge.example/telephony/webphone/calls/outbound-pending-cancel-1/reject'
+      ).with(
+        body: hash_including(
+          reason: 'operator_cancelled',
+          actor: 'operator',
+          call_direction: 'outbound'
+        ),
+        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+      ).to_return(
+        status: 202,
+        body: { accepted: true }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: {
+             call_ref: call_session.external_call_ref,
+             status: 'cancelled',
+             reason: 'operator_cancelled'
+           },
+           headers: headers,
+           as: :json
+
+      expect(terminate_request).to have_been_requested
+    end
+
+    aggregate_failures do
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('payload', 'status')).to eq('cancelled')
+      expect(call_session.reload).to have_attributes(
+        status: 'cancelled',
+        direction: 'outbound',
+        ended_by: "user:#{administrator.id}",
+        end_reason: 'operator_cancelled'
+      )
+      expect(message.reload.content_attributes.dig('data', 'status')).to eq(
+        'cancelled'
+      )
+      expect(conversation.reload.additional_attributes).to include(
+        'call_status' => 'cancelled',
+        'call_direction' => 'outbound',
+        'fonoster_call_ref' => call_session.external_call_ref
+      )
+    end
+  end
+
   it 'rejects browser release attempts from unregistered operators before a claim' do
     agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
     call_session = create(

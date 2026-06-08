@@ -27,6 +27,7 @@ class Channel::Whatsapp < ApplicationRecord
   # default at the moment is 360dialog lets change later.
   PROVIDERS = %w[default whatsapp_cloud].freeze
   AUTHORIZATION_FAILURE_CONFIG_KEYS = %w[authorization_status authorization_error].freeze
+  TOKEN_HEALTH_CONFIG_KEY = 'token_health'.freeze
   AUTHORIZATION_ERROR_CODE = 190
   before_validation :ensure_webhook_verify_token
 
@@ -88,15 +89,21 @@ class Channel::Whatsapp < ApplicationRecord
     error_payload = self.class.provider_authorization_error(payload)
     return false unless error_payload
 
-    already_requires_reauthorization = reauthorization_required?
-    update_column(
-      :provider_config,
-      provider_config.to_h.merge(
-        'authorization_status' => 'reauthorization_required',
-        'authorization_error' => error_payload
-      )
+    record_reauthorization_error!(error_payload)
+    true
+  end
+
+  def record_provider_configuration_error!(message, code: nil, type: 'ConfigurationError')
+    return false if message.blank?
+
+    record_reauthorization_error!(
+      {
+        'code' => code,
+        'type' => type,
+        'message' => message,
+        'recorded_at' => Time.current.iso8601
+      }.compact
     )
-    prompt_reauthorization! unless already_requires_reauthorization
     true
   end
 
@@ -108,7 +115,25 @@ class Channel::Whatsapp < ApplicationRecord
   def clear_provider_authorization_error!
     return false if provider_config.to_h.slice(*AUTHORIZATION_FAILURE_CONFIG_KEYS).empty?
 
+    # rubocop:disable Rails/SkipsModelValidations
     update_column(:provider_config, provider_config.to_h.except(*AUTHORIZATION_FAILURE_CONFIG_KEYS))
+    # rubocop:enable Rails/SkipsModelValidations
+    true
+  end
+
+  def store_token_health!(metadata)
+    return false if metadata.blank?
+
+    updated_config = provider_config.to_h.merge(TOKEN_HEALTH_CONFIG_KEY => metadata.to_h.deep_stringify_keys)
+
+    if persisted?
+      # rubocop:disable Rails/SkipsModelValidations
+      update_column(:provider_config, updated_config)
+      # rubocop:enable Rails/SkipsModelValidations
+    else
+      self.provider_config = updated_config
+    end
+
     true
   end
 
@@ -142,6 +167,20 @@ class Channel::Whatsapp < ApplicationRecord
   end
 
   private
+
+  def record_reauthorization_error!(error_payload)
+    already_requires_reauthorization = reauthorization_required?
+    # rubocop:disable Rails/SkipsModelValidations
+    update_column(
+      :provider_config,
+      provider_config.to_h.merge(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => error_payload
+      )
+    )
+    # rubocop:enable Rails/SkipsModelValidations
+    prompt_reauthorization! unless already_requires_reauthorization
+  end
 
   def ensure_webhook_verify_token
     provider_config['webhook_verify_token'] ||= SecureRandom.hex(16) if provider == 'whatsapp_cloud'

@@ -131,6 +131,39 @@ RSpec.describe Channel::Whatsapp do
     end
   end
 
+  describe '#store_token_health!' do
+    let(:channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false) }
+
+    it 'stores safe token health metadata without removing provider credentials' do
+      channel.store_token_health!('status' => 'healthy', 'never_expires' => true)
+
+      expect(channel.reload.provider_config).to include(
+        'api_key' => 'test_key',
+        Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY => {
+          'status' => 'healthy',
+          'never_expires' => true
+        }
+      )
+    end
+  end
+
+  describe '#record_provider_configuration_error!' do
+    let(:channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false) }
+
+    it 'stores the configuration error and prompts reauthorization' do
+      channel.record_provider_configuration_error!('Token is missing WABA access', type: 'WhatsAppTokenHealth')
+
+      expect(channel.reload.provider_config).to include(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => hash_including(
+          'type' => 'WhatsAppTokenHealth',
+          'message' => 'Token is missing WABA access'
+        )
+      )
+      expect(channel.reauthorization_required?).to be(true)
+    end
+  end
+
   describe 'webhook setup after creation' do
     let(:account) { create(:account) }
     let(:webhook_service) { instance_double(Whatsapp::WebhookSetupService) }

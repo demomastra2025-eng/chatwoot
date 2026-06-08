@@ -96,7 +96,7 @@ class Whatsapp::TemplateAssetUploadService
         file_length: file_length,
         file_type: content_type,
         access_token: access_token
-      }
+      }.merge(graph_api_query)
     )
 
     parsed_response = parse_response(response, 'Failed to create WhatsApp upload session')
@@ -111,6 +111,7 @@ class Whatsapp::TemplateAssetUploadService
         'Authorization' => "OAuth #{access_token}",
         'file_offset' => '0'
       },
+      query: graph_api_query,
       body: file.read
     )
 
@@ -171,6 +172,10 @@ class Whatsapp::TemplateAssetUploadService
 
   def access_token
     whatsapp_channel.provider_config['api_key']
+  end
+
+  def graph_api_query
+    Whatsapp::FacebookApiClient.appsecret_proof_query(access_token)
   end
 
   def api_base_path

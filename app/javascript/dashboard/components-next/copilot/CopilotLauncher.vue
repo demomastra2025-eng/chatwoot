@@ -6,24 +6,17 @@ import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useMapGetter } from 'dashboard/composables/store';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import {
+  isAConversationRoute,
+  isAInboxViewRoute,
+} from 'dashboard/helper/routeHelpers';
 const route = useRoute();
 
 const { uiSettings, updateUISettings } = useUISettings();
 
-const isConversationRoute = computed(() => {
-  const CONVERSATION_ROUTES = [
-    'inbox_conversation',
-    'conversation_through_inbox',
-    'conversations_through_label',
-    'team_conversations_through_label',
-    'conversations_through_folders',
-    'conversation_through_mentions',
-    'conversation_through_unattended',
-    'conversation_through_participating',
-    'inbox_view_conversation',
-  ];
-  return CONVERSATION_ROUTES.includes(route.name);
-});
+const isConversationRoute = computed(
+  () => isAConversationRoute(route.name) || isAInboxViewRoute(route.name)
+);
 
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const isFeatureEnabledonAccount = useMapGetter(

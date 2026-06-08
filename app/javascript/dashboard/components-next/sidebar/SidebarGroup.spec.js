@@ -83,6 +83,47 @@ const mountComponent = () =>
             },
           ],
         },
+        {
+          name: 'Labels',
+          label: 'Tags',
+          icon: 'i-lucide-tag',
+          to: homeRoute,
+          activeOn: [],
+          suppressExactPathActive: true,
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'VIP-1',
+              label: 'VIP',
+              to: {
+                name: 'label_conversations',
+                path: '/label/VIP',
+                params: { label: 'VIP' },
+              },
+              activeOn: ['label_conversations'],
+            },
+          ],
+        },
+        {
+          name: 'Teams',
+          label: 'Teams',
+          icon: 'i-lucide-users',
+          to: homeRoute,
+          activeOn: [],
+          suppressExactPathActive: true,
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'Sales-1',
+              label: 'Sales',
+              to: {
+                name: 'team_conversations',
+                path: '/team/1',
+                params: { teamId: 1 },
+              },
+            },
+          ],
+        },
       ],
     },
     global: {
@@ -101,9 +142,15 @@ const mountComponent = () =>
             '<button data-test-id="group-header" type="button" @click="$emit(\'toggle\')">{{ label }}</button>',
         },
         SidebarSubGroup: {
-          props: ['label', 'headerActive', 'activeChildNames', 'children'],
+          props: [
+            'label',
+            'headerActive',
+            'activeChildNames',
+            'children',
+            'to',
+          ],
           template:
-            '<div data-test-id="sidebar-subgroup" :data-label="label" :data-header-active="headerActive ? \'true\' : \'false\'" :data-active-child-names="activeChildNames.join(\',\')" />',
+            '<div data-test-id="sidebar-subgroup" :data-label="label" :data-header-active="headerActive ? \'true\' : \'false\'" :data-has-to="to ? \'true\' : \'false\'" :data-active-child-names="activeChildNames.join(\',\')" />',
         },
         SidebarGroupLeaf: true,
         SidebarGroupEmptyLeaf: true,
@@ -137,5 +184,75 @@ describe('SidebarGroup', () => {
 
     expect(subGroup.attributes('data-header-active')).toBe('true');
     expect(subGroup.attributes('data-active-child-names')).toBe('Channels');
+  });
+
+  it('does not highlight the Tags subgroup on the unfiltered all-tags route', async () => {
+    const wrapper = mountComponent();
+
+    await nextTick();
+    await nextTick();
+
+    const tagsSubGroup = wrapper
+      .findAll('[data-test-id="sidebar-subgroup"]')
+      .find(node => node.attributes('data-label') === 'Tags');
+
+    expect(tagsSubGroup.attributes('data-header-active')).toBe('false');
+    expect(tagsSubGroup.attributes('data-active-child-names')).toBe('Channels');
+  });
+
+  it('highlights only the concrete tag child on a tag-filtered route', async () => {
+    Object.assign(routeState, {
+      name: 'label_conversations',
+      path: '/label/VIP',
+      query: { status: 'open' },
+      params: { label: 'VIP' },
+    });
+
+    const wrapper = mountComponent();
+
+    await nextTick();
+    await nextTick();
+
+    const tagsSubGroup = wrapper
+      .findAll('[data-test-id="sidebar-subgroup"]')
+      .find(node => node.attributes('data-label') === 'Tags');
+
+    expect(tagsSubGroup.attributes('data-header-active')).toBe('false');
+    expect(tagsSubGroup.attributes('data-active-child-names')).toBe('VIP-1');
+  });
+
+  it('gives the Teams subgroup a clear-filter header like Tags', async () => {
+    const wrapper = mountComponent();
+
+    await nextTick();
+    await nextTick();
+
+    const teamsSubGroup = wrapper
+      .findAll('[data-test-id="sidebar-subgroup"]')
+      .find(node => node.attributes('data-label') === 'Teams');
+
+    expect(teamsSubGroup.attributes('data-has-to')).toBe('true');
+    expect(teamsSubGroup.attributes('data-header-active')).toBe('false');
+  });
+
+  it('highlights only the concrete team child on a team-filtered route', async () => {
+    Object.assign(routeState, {
+      name: 'team_conversations',
+      path: '/team/1',
+      query: { status: 'open' },
+      params: { teamId: '1' },
+    });
+
+    const wrapper = mountComponent();
+
+    await nextTick();
+    await nextTick();
+
+    const teamsSubGroup = wrapper
+      .findAll('[data-test-id="sidebar-subgroup"]')
+      .find(node => node.attributes('data-label') === 'Teams');
+
+    expect(teamsSubGroup.attributes('data-header-active')).toBe('false');
+    expect(teamsSubGroup.attributes('data-active-child-names')).toBe('Sales-1');
   });
 });

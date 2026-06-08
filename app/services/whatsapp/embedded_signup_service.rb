@@ -13,9 +13,10 @@ class Whatsapp::EmbeddedSignupService
 
     access_token = exchange_code_for_token
     phone_info = fetch_phone_info(access_token)
-    validate_token_access(access_token)
+    token_health = validate_token_access(access_token)
 
     channel = create_or_reauthorize_channel(access_token, phone_info)
+    store_token_health(channel, token_health)
     # NOTE: We call setup_webhooks explicitly here instead of relying on after_commit callback because:
     # 1. Reauthorization flow updates an existing channel (not a create), so after_commit on: :create won't trigger
     # 2. We need to run check_channel_health_and_prompt_reauth after webhook setup completes
@@ -43,7 +44,14 @@ class Whatsapp::EmbeddedSignupService
   end
 
   def validate_token_access(access_token)
-    Whatsapp::TokenValidationService.new(access_token, @waba_id).perform
+    Whatsapp::TokenValidationService.new(access_token, @waba_id, phone_number_id: @phone_number_id).perform
+  end
+
+  def store_token_health(channel, token_health)
+    return if token_health.blank?
+    return unless channel.respond_to?(:store_token_health!)
+
+    channel.store_token_health!(token_health)
   end
 
   def create_or_reauthorize_channel(access_token, phone_info)

@@ -338,6 +338,24 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:success)
         expect(JSON.parse(response.body, symbolize_names: true)[:id]).to eq(conversation.display_id)
       end
+
+      it 'includes contact inbox identity metadata for conversation headers' do
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+        conversation.contact_inbox.update!(source_id: 'client-source-627')
+        create(:contact_channel_profile,
+               contact_inbox: conversation.contact_inbox,
+               username: 'client_login_627',
+               identifier: 'client-id-627')
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        body = JSON.parse(response.body, symbolize_names: true)
+        expect(body.dig(:meta, :contact_inbox, :source_id)).to eq('client-source-627')
+        expect(body.dig(:meta, :contact_inbox, :channel_profile, :username)).to eq('client_login_627')
+        expect(body.dig(:meta, :contact_inbox, :channel_profile, :identifier)).to eq('client-id-627')
+      end
     end
   end
 

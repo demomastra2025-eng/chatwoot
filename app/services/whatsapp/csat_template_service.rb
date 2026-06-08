@@ -20,27 +20,30 @@ class Whatsapp::CsatTemplateService
   def delete_template(template_name = nil)
     template_name ||= CsatTemplateNameService.csat_template_name(@whatsapp_channel.inbox.id)
     response = HTTParty.delete(
-      "#{business_account_path}/message_templates?name=#{template_name}",
-      headers: api_headers
+      "#{business_account_path}/message_templates",
+      headers: api_headers,
+      query: graph_api_query(name: template_name)
     )
     { success: response.success?, response_body: response.body }
   end
 
   def get_template_status(template_name)
-    response = HTTParty.get("#{business_account_path}/message_templates?name=#{template_name}", headers: api_headers)
+    response = HTTParty.get(
+      "#{business_account_path}/message_templates",
+      headers: api_headers,
+      query: graph_api_query(name: template_name)
+    )
 
-    if response.success? && response['data']&.any?
-      template_data = response['data'].first
-      {
-        success: true,
-        template: {
-          id: template_data['id'], name: template_data['name'],
-          status: template_data['status'], language: template_data['language']
-        }
+    return { success: false, error: 'Template not found' } unless response.success? && response['data']&.any?
+
+    template_data = response['data'].first
+    {
+      success: true,
+      template: {
+        id: template_data['id'], name: template_data['name'],
+        status: template_data['status'], language: template_data['language']
       }
-    else
-      { success: false, error: 'Template not found' }
-    end
+    }
   rescue StandardError => e
     Rails.logger.error "Error fetching template status: #{e.message}"
     { success: false, error: e.message }
@@ -98,6 +101,7 @@ class Whatsapp::CsatTemplateService
     HTTParty.post(
       "#{business_account_path}/message_templates",
       headers: api_headers,
+      query: graph_api_query,
       body: request_body.to_json
     )
   end
@@ -130,6 +134,12 @@ class Whatsapp::CsatTemplateService
       'Authorization' => "Bearer #{@whatsapp_channel.provider_config['api_key']}",
       'Content-Type' => 'application/json'
     }
+  end
+
+  def graph_api_query(extra_params = {})
+    extra_params.merge(
+      Whatsapp::FacebookApiClient.appsecret_proof_query(@whatsapp_channel.provider_config['api_key'])
+    )
   end
 
   def api_base_path

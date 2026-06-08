@@ -4,6 +4,7 @@ import { useTrack } from 'dashboard/composables';
 import TableFooter from 'dashboard/components/widgets/TableFooter.vue';
 
 import NotificationTable from './NotificationTable.vue';
+import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper.js';
 
 import { ACCOUNT_EVENTS } from '../../../../helper/AnalyticsHelper/events';
 export default {
@@ -31,7 +32,11 @@ export default {
       const {
         primary_actor_id: primaryActorId,
         primary_actor_type: primaryActorType,
-        primary_actor: { id: conversationId },
+        primary_actor: {
+          id: conversationId,
+          inbox_id: inboxId,
+          inboxId: camelInboxId,
+        },
         notification_type: notificationType,
       } = notification;
 
@@ -46,7 +51,13 @@ export default {
       });
 
       this.$router.push(
-        `/app/accounts/${this.accountId}/conversations/${conversationId}`
+        frontendURL(
+          conversationUrl({
+            accountId: this.accountId,
+            activeInbox: inboxId || camelInboxId,
+            id: conversationId,
+          })
+        )
       );
     },
     onMarkAllDoneClick() {

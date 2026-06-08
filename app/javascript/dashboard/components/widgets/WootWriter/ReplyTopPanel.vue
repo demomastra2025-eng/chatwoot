@@ -53,6 +53,10 @@ export default {
       type: String,
       default: undefined,
     },
+    showCopilotActions: {
+      type: Boolean,
+      default: true,
+    },
   },
   emits: ['setReplyMode', 'toggleEditorSize', 'executeCopilotAction'],
   setup(props, { emit }) {
@@ -162,7 +166,7 @@ export default {
       </div>
     </div>
     <div v-if="captainTasksEnabled" class="flex items-center gap-2">
-      <div class="relative">
+      <div v-if="showCopilotActions" class="relative">
         <NextButton
           ghost
           :disabled="disabled || isEditorDisabled"

@@ -199,4 +199,26 @@ describe('Message', () => {
       'This message was sent from the INBOX_MGMT.CHANNELS.WHATSAPP_WEB native app.'
     );
   });
+
+  it('shows a neutral channel icon avatar for incoming messages', () => {
+    useMapGetterMock.mockReturnValue(
+      ref(() => ({
+        channel_type: 'Channel::Voice',
+        medium: null,
+      }))
+    );
+
+    const wrapper = createWrapper({
+      messageType: MESSAGE_TYPES.INCOMING,
+      sender: { id: 2, type: 'Contact', name: 'Client', thumbnail: '' },
+      senderId: 2,
+      senderType: 'Contact',
+    });
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: '',
+      src: '',
+      iconName: 'i-ri-phone-fill channel-icon-voice channel-icon-neutral',
+    });
+  });
 });

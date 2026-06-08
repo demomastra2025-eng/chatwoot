@@ -10,22 +10,41 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
   SUPPORTED_UNLINKED_CHANNELS = (CONTACT_TARGET_REQUIREMENTS.keys + Inbox::API_CHANNEL_TYPES + ['Channel::WebWidget']).freeze
 
-  def initialize(links:, contact: nil, available_inboxes: [])
+  def initialize(links:, contact: nil, available_inboxes: [], include_unlinked: false, deduplicate_linked: true)
     @links = Array(links)
     @contact = contact || @links.first&.communication_thread&.contact
     @available_inboxes = Array(available_inboxes)
+    @include_unlinked = include_unlinked
+    @deduplicate_linked = deduplicate_linked
   end
 
   def perform
-    linked_channels + unlinked_channels
+    linked_channels + (include_unlinked ? unlinked_channels : [])
   end
 
   private
 
-  attr_reader :links, :contact, :available_inboxes
+  attr_reader :links, :contact, :available_inboxes, :include_unlinked, :deduplicate_linked
 
   def linked_channels
-    links.map { |link| build_linked_channel(link) }
+    selected_links = deduplicate_linked ? deduplicated_links : links
+    selected_links.map { |link| build_linked_channel(link) }
+  end
+
+  def deduplicated_links
+    links.group_by(&:inbox_id).values.map do |grouped_links|
+      grouped_links.max_by { |link| linked_channel_sort_key(link) }
+    end
+  end
+
+  def linked_channel_sort_key(link)
+    conversation = link.conversation
+    [
+      conversation&.can_reply? ? 1 : 0,
+      conversation&.open? ? 1 : 0,
+      conversation&.last_activity_at.to_i,
+      conversation&.id.to_i
+    ]
   end
 
   def unlinked_channels
@@ -42,6 +61,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     channel_payload({
       conversation_id: conversation.display_id,
       inbox: inbox,
+      contact_inbox: link.contact_inbox,
       contact_inbox_id: link.contact_inbox_id,
       status: conversation.status,
       primary: link.primary?,
@@ -50,13 +70,15 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   end
 
   def build_unlinked_channel(inbox)
+    contact_inbox = contact_inbox_by_inbox_id[inbox.id]
     target_error = contact_target_error(inbox)
     policy = delivery_policy(conversation: nil, inbox: inbox)
 
     channel_payload({
       conversation_id: nil,
       inbox: inbox,
-      contact_inbox_id: contact_inbox_by_inbox_id[inbox.id]&.id,
+      contact_inbox: contact_inbox,
+      contact_inbox_id: contact_inbox&.id,
       status: nil,
       primary: false,
       last_activity_at: nil
@@ -66,6 +88,9 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   def linked_capability(conversation:, inbox:, policy:)
     reply_window_open = policy.reply_window_open.nil? ? conversation.can_reply? : policy.reply_window_open
     reauthorization_required = reauthorization_required?(inbox)
+
+    return capability_payload(policy, false, true, reauthorization_required, nil, can_reply: true) if voice_channel?(inbox)
+
     can_send_text = reply_window_open && free_text_allowed?(policy, reauthorization_required)
     disabled_reason = linked_disabled_reason(
       reply_window_open: reply_window_open,
@@ -91,9 +116,9 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     capability_payload(policy, can_send_text, reply_window_open, reauthorization_required, disabled_reason)
   end
 
-  def capability_payload(policy, can_send_text, reply_window_open, reauthorization_required, disabled_reason)
+  def capability_payload(policy, can_send_text, reply_window_open, reauthorization_required, disabled_reason, can_reply: can_send_text)
     {
-      can_reply: can_send_text,
+      can_reply: can_reply,
       can_send_text: can_send_text,
       can_send_attachments: can_send_text,
       requires_template: policy.requires_template,
@@ -114,13 +139,16 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
   def base_channel_payload(payload)
     inbox = payload.fetch(:inbox)
+    contact_inbox = payload[:contact_inbox]
     conversation_id = payload[:conversation_id]
 
     {
       conversation_id: conversation_id,
       inbox_id: inbox.id,
       inbox_name: inbox.name,
+      source_id: contact_inbox&.source_id,
       contact_inbox_id: payload[:contact_inbox_id],
+      channel_profile: contact_inbox&.channel_profile&.push_event_data,
       channel: inbox.try(:channel_type),
       medium: inbox.channel.respond_to?(:medium) ? inbox.channel.medium : nil,
       status: payload[:status],
@@ -186,6 +214,10 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     policy.allowed? && policy.delivery_mode == 'free_text' && !reauthorization_required
   end
 
+  def voice_channel?(inbox)
+    inbox.try(:channel_type) == 'Channel::Voice'
+  end
+
   def channel_template_supported?(policy)
     Array(policy.allowed_content_kinds).include?('channel_template')
   end
@@ -198,7 +230,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     @contact_inbox_by_inbox_id ||= if contact.blank?
                                      {}
                                    else
-                                     ContactInbox.where(
+                                     ContactInbox.includes(:channel_profile).where(
                                        contact_id: contact.id,
                                        inbox_id: available_inboxes.map(&:id)
                                      ).index_by(&:inbox_id)

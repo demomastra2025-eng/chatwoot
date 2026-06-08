@@ -28,6 +28,13 @@ json.meta do
       participant.user_id == Current.user.id
     end
   )
+  if conversation.contact_inbox.present?
+    json.contact_inbox do
+      json.partial! 'api/v1/models/contact_inbox',
+                    formats: [:json],
+                    resource: conversation.contact_inbox
+    end
+  end
   json.hmac_verified conversation.contact_inbox&.hmac_verified
 end
 

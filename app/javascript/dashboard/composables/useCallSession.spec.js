@@ -182,6 +182,9 @@ describe('useCallSession', () => {
         status: 'completed',
       }
     );
+    expect(rejectBackendCallMock.mock.invocationCallOrder[0]).toBeLessThan(
+      endClientCallMock.mock.invocationCallOrder[0]
+    );
     expect(VoiceAPI.leaveConference).not.toHaveBeenCalled();
     expect(callsStore.calls).toEqual([]);
   });
@@ -245,6 +248,37 @@ describe('useCallSession', () => {
     );
   });
 
+  it('removes a pending outbound Fonoster call when the SIP client disconnects by call ref', async () => {
+    let disconnectHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-pending-outbound-disconnect',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+
+    mountUseCallSession();
+    await disconnectHandler?.({
+      detail: {
+        provider: 'fonoster',
+        callRef: 'call-pending-outbound-disconnect',
+        callDirection: 'outbound',
+      },
+    });
+
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-pending-outbound-disconnect',
+      {
+        reason: 'remote_hangup',
+        status: 'completed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+  });
+
   it('still releases an active Fonoster call when the local RTC hangup fails', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
@@ -296,12 +330,13 @@ describe('useCallSession', () => {
 
     const firstRelease = callSession.endCall(payload);
     const secondRelease = callSession.endCall(payload);
-    await secondRelease;
+    await Promise.resolve();
 
-    expect(endClientCallMock).toHaveBeenCalledTimes(1);
     expect(rejectBackendCallMock).toHaveBeenCalledTimes(1);
+    expect(endClientCallMock).not.toHaveBeenCalled();
     resolveRelease({ status: 'completed' });
-    await firstRelease;
+    await Promise.all([firstRelease, secondRelease]);
+    expect(endClientCallMock).toHaveBeenCalledTimes(1);
     expect(callsStore.calls).toEqual([]);
   });
 
@@ -332,11 +367,12 @@ describe('useCallSession', () => {
     });
     await Promise.resolve();
 
-    expect(endClientCallMock).toHaveBeenCalledTimes(2);
     expect(rejectBackendCallMock).toHaveBeenCalledTimes(2);
+    expect(endClientCallMock).not.toHaveBeenCalled();
     releaseResolvers['call-first-hangup']({ status: 'completed' });
     releaseResolvers['call-second-hangup']({ status: 'completed' });
     await Promise.all([firstRelease, secondRelease]);
+    expect(endClientCallMock).toHaveBeenCalledTimes(2);
     expect(callsStore.calls).toEqual([]);
   });
 
@@ -513,6 +549,7 @@ describe('useCallSession', () => {
     expect(result).toEqual({
       provider: 'fonoster',
       joinSupported: true,
+      waitingForAnswer: true,
     });
     expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
     expect(joinClientCallMock).toHaveBeenCalledWith({
@@ -521,13 +558,17 @@ describe('useCallSession', () => {
       callRef: 'call-outbound-browser-join',
       callDirection: 'outbound',
     });
-    expect(callsStore.activeCall).toMatchObject({
-      callSid: 'call-outbound-browser-join',
-      isActive: true,
-    });
+    expect(callsStore.activeCall).toBeNull();
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        browserJoined: true,
+        callSid: 'call-outbound-browser-join',
+        isActive: false,
+      }),
+    ]);
   });
 
-  it('releases outbound Fonoster calls when the operator SIP INVITE never reaches the browser', async () => {
+  it('fails and dismisses outbound Fonoster calls when the operator SIP INVITE never arrives', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-outbound-no-sip-invite',
@@ -548,16 +589,68 @@ describe('useCallSession', () => {
     expect(result).toEqual({
       provider: 'fonoster',
       joinSupported: false,
-      reason: 'browser_webphone_not_ready',
+      reason: 'sip_invite_not_received',
+      callSid: 'call-outbound-no-sip-invite',
     });
     expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-outbound-no-sip-invite',
       {
-        reason: 'browser_webphone_not_ready',
-        status: 'no_answer',
+        reason: 'sip_invite_not_received',
+        status: 'failed',
       }
     );
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('does not release an outbound Fonoster call again when it was already closed while waiting for SIP INVITE', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-outbound-closed-before-invite',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+    joinClientCallMock.mockImplementation(async () => {
+      callsStore.dismissCall('call-outbound-closed-before-invite');
+      return null;
+    });
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 6,
+      inboxId: 4083,
+      callSid: 'call-outbound-closed-before-invite',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'call_closed',
+      callSid: 'call-outbound-closed-before-invite',
+    });
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('cancels pending outbound Fonoster calls without using incoming SIP decline', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-outbound-cancel',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+    const callSession = mountUseCallSession();
+
+    await callSession.rejectIncomingCall(callsStore.calls[0]);
+
+    expect(rejectClientCallMock).not.toHaveBeenCalled();
+    expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectBackendCallMock).toHaveBeenCalledWith('call-outbound-cancel', {
+      reason: 'operator_cancelled',
+      status: 'cancelled',
+    });
     expect(callsStore.calls).toEqual([]);
   });
 

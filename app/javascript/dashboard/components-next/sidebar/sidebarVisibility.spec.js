@@ -21,6 +21,8 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Captain:Observability']).toBe(true);
     expect(visibilityState['Captain:FAQs']).toBe(true);
     expect(visibilityState['Captain:Documents']).toBeUndefined();
+    expect(visibilityState['Conversation:Channels']).toBeUndefined();
+    expect(visibilityState['Conversation:AllChannels']).toBeUndefined();
     expect(visibilityState.MyCompany).toBe(true);
     expect(visibilityState['MyCompany:Employees']).toBe(true);
     expect(visibilityState.Employees).toBeUndefined();
@@ -36,6 +38,8 @@ describe('sidebarVisibility', () => {
           'Reports',
           'Unknown',
           'Employees',
+          'Conversation:Channels',
+          'Conversation:AllChannels',
           'Settings:CustomAttributes',
           'Settings:Macros',
           'Settings:Workspace',

@@ -56,7 +56,9 @@ import { isFileTypeAllowedForChannel } from 'shared/helpers/FileHelper';
 import {
   decoratePayloadWithCommunicationThread,
   getCommunicationReplyChannel,
+  getCommunicationReplyChannels,
   isCommunicationThread,
+  isCommunicationVoiceChannel,
 } from 'dashboard/helper/communicationThreadHelper';
 
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
@@ -173,9 +175,7 @@ export default {
       return isCommunicationThread(this.currentChat);
     },
     communicationChannels() {
-      return Array.isArray(this.currentChat?.channels)
-        ? this.currentChat.channels
-        : [];
+      return getCommunicationReplyChannels(this.currentChat?.channels || []);
     },
     showCommunicationChannelSelector() {
       return (
@@ -261,6 +261,7 @@ export default {
       return this.maxLength - this.message.length;
     },
     isReplyButtonDisabled() {
+      if (this.isCommunicationVoiceReplyAction) return true;
       if (this.isEditorDisabled) return true;
       if (this.isATwitterInbox) return true;
       if (this.hasAttachments || this.hasRecordedAudio) return false;
@@ -356,16 +357,28 @@ export default {
         (this.isATiktokChannel && this.canUploadAttachmentToTiktok)
       );
     },
+    isCommunicationVoiceReplyAction() {
+      return (
+        this.isCommunicationThreadConversation &&
+        !this.isOnPrivateNote &&
+        isCommunicationVoiceChannel(this.activeReplyChannel)
+      );
+    },
     replyButtonLabel() {
+      if (this.isCommunicationVoiceReplyAction) {
+        return this.$t('CONVERSATION.COMMUNICATION_THREAD.CALL_ACTION');
+      }
+
+      const keyLabel = this.isEditorHotKeyEnabled('cmd_enter')
+        ? `(${this.shortcutKey})`
+        : '(↵)';
+
       let sendMessageText = this.isEditingMessage
         ? this.$t('CONVERSATION.UPDATE_MESSAGE')
         : this.$t('CONVERSATION.REPLYBOX.SEND');
       if (this.isPrivate) {
         sendMessageText = this.$t('CONVERSATION.REPLYBOX.CREATE');
       }
-      const keyLabel = this.isEditorHotKeyEnabled('cmd_enter')
-        ? `(${this.shortcutKey})`
-        : '(↵)';
       return `${sendMessageText} ${keyLabel}`;
     },
     replyBoxClass() {
@@ -825,6 +838,7 @@ export default {
     },
     isAValidEvent(selectedKey) {
       return (
+        !this.isCommunicationVoiceReplyAction &&
         !this.showUserMentions &&
         !this.showMentions &&
         !this.showCannedMenu &&
@@ -1461,6 +1475,7 @@ export default {
         showAudioRecorderEditor
       "
       :is-editor-disabled="isEditorDisabled"
+      :show-copilot-actions="!isCommunicationThreadConversation"
       :is-message-length-reaching-threshold="isMessageLengthReachingThreshold"
       :characters-remaining="charactersRemaining"
       :editor-content="message"
@@ -1551,6 +1566,7 @@ export default {
           :update-selection-with="updateEditorSelectionWith"
           :min-height="4"
           :disabled="isEditorDisabled"
+          :enable-copilot-menu="!isCommunicationThreadConversation"
           enable-variables
           :variables="messageVariables"
           :signature="messageSignature"
@@ -1636,6 +1652,7 @@ export default {
         :recording-audio-state="recordingAudioState"
         :send-button-text="replyButtonLabel"
         :show-communication-channel-selector="showCommunicationChannelSelector"
+        :is-communication-thread="isCommunicationThreadConversation"
         :communication-channels="communicationChannels"
         :active-reply-channel="activeReplyChannel"
         :show-audio-recorder="showAudioRecorder"

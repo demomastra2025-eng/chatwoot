@@ -223,6 +223,41 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(delivery_policy).not_to include('delivery_mode' => 'bypass')
     end
 
+    it 'rejects public text delivery through voice call channels' do
+      contact = create(:contact, phone_number: '+15550001234', account: account)
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
+      create(:inbox_member, user: agent, inbox: voice_inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'Do not send text into a call channel', conversation_id: conversation.display_id },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to include('voice_call_only')
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'allows private notes while a voice call channel is selected' do
+      contact = create(:contact, phone_number: '+15550001234', account: account)
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
+      create(:inbox_member, user: agent, inbox: voice_inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'Call note', conversation_id: conversation.display_id, private: true },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(conversation.messages.outgoing.last).to have_attributes(content: 'Call note', private: true)
+    end
+
     it 'rejects a linked child conversation hidden by the native conversation permission scope' do
       contact = create(:contact, :with_email, account: account)
       visible_conversation = create(:conversation, account: account, contact: contact, assignee: agent)
@@ -347,6 +382,40 @@ RSpec.describe 'Communication Threads API', type: :request do
         can_send_text: conversation.can_reply?,
         disabled: !conversation.can_reply?
       )
+    end
+
+    it 'returns only actual linked inbox channels and deduplicates repeated inbox conversations' do
+      contact = create(:contact, :with_email, account: account)
+      inbox = create(:inbox, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      older_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: inbox,
+        contact_inbox: contact_inbox,
+        last_activity_at: 2.days.ago
+      )
+      newer_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: inbox,
+        contact_inbox: contact_inbox,
+        last_activity_at: 1.hour.ago
+      )
+      unlinked_inbox = create(:inbox, account: account)
+      create(:inbox_member, user: agent, inbox: inbox)
+      create(:inbox_member, user: agent, inbox: unlinked_inbox)
+      thread = older_conversation.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/channels", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      channels = JSON.parse(response.body, symbolize_names: true).fetch(:payload)
+      expect(channels.pluck(:inbox_id)).to eq([inbox.id])
+      expect(channels.pluck(:conversation_id)).to eq([newer_conversation.display_id])
+      expect(channels.pluck(:inbox_id)).not_to include(unlinked_inbox.id)
     end
   end
 

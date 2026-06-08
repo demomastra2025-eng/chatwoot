@@ -56,6 +56,13 @@ const getCallInfo = call => {
 const openConversation = call => {
   if (!call?.conversationId) return;
 
+  if (
+    String(router.currentRoute.value.params?.conversation_id) ===
+    String(call.conversationId)
+  ) {
+    return;
+  }
+
   router.push({
     name: 'inbox_conversation',
     params: { conversation_id: call.conversationId },
@@ -119,6 +126,8 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   });
 
   if (result?.joinSupported === false) {
+    if (isOutboundCall(call)) return;
+
     handleBrowserJoinUnavailable(call, { notify: notifyOnUnavailable });
     return;
   }
@@ -134,6 +143,7 @@ watch(
   call => {
     if (
       call?.callDirection === 'outbound' &&
+      !call?.browserJoined &&
       !hasActiveCall.value &&
       WindowVisibilityHelper.isWindowVisible()
     ) {

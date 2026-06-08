@@ -11,6 +11,7 @@ import { LocalStorage } from 'shared/helpers/localStorage';
 import { ACCOUNT_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import {
+  CHANNEL_ICON_NEUTRAL_CLASS,
   getInboxIconByType,
   INBOX_TYPES,
   TWILIO_CHANNEL_MEDIUM,
@@ -298,7 +299,7 @@ const flexOrientationClass = computed(() => {
 
 const gridClass = computed(() => {
   const map = {
-    [ORIENTATION.LEFT]: 'grid grid-cols-[minmax(0,1fr)]',
+    [ORIENTATION.LEFT]: 'grid grid-cols-[24px_minmax(0,1fr)]',
     [ORIENTATION.RIGHT]: 'grid grid-cols-[minmax(0,1fr)_24px]',
   };
 
@@ -308,8 +309,8 @@ const gridClass = computed(() => {
 const gridTemplate = computed(() => {
   const map = {
     [ORIENTATION.LEFT]: `
-      "bubble"
-      "meta"
+      "avatar bubble"
+      "spacer meta"
     `,
     [ORIENTATION.RIGHT]: `
       "bubble avatar"
@@ -328,9 +329,8 @@ const shouldGroupWithNext = computed(() => {
 
 const shouldShowAvatar = computed(() => {
   if (props.messageType === MESSAGE_TYPES.ACTIVITY) return false;
-  if (orientation.value === ORIENTATION.LEFT) return false;
 
-  return true;
+  return [ORIENTATION.LEFT, ORIENTATION.RIGHT].includes(orientation.value);
 });
 
 const isVoiceNote = computed(() => {
@@ -541,6 +541,20 @@ function handleEdit() {
 }
 
 const avatarInfo = computed(() => {
+  if (orientation.value === ORIENTATION.LEFT) {
+    const { channel_type: channelType, medium } = inbox.value;
+    const iconName = getInboxIconByType(channelType, medium);
+    const neutralIconName = iconName.includes(CHANNEL_ICON_NEUTRAL_CLASS)
+      ? iconName
+      : `${iconName} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
+
+    return {
+      name: '',
+      src: '',
+      iconName: neutralIconName,
+    };
+  }
+
   if (props.contentAttributes?.externalEcho) {
     const { name, avatar_url, channel_type, medium } = inbox.value;
     const iconName = avatar_url

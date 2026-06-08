@@ -27,6 +27,82 @@ const sortByNewestChannelActivity = (firstChannel, secondChannel) => {
   );
 };
 
+export const isCommunicationVoiceChannel = channel =>
+  channel?.channel === 'Channel::Voice';
+
+export const isCommunicationChannelReplyable = channel => {
+  const canCall =
+    isCommunicationVoiceChannel(channel) && channel?.disabled !== true;
+
+  return Boolean(
+    channel?.can_reply ||
+      channel?.can_send_text ||
+      channel?.requires_template ||
+      canCall
+  );
+};
+
+const communicationChannelIdentity = channel => {
+  if (channel?.inbox_id) return `inbox:${channel.inbox_id}`;
+  if (channel?.channel_key) return channel.channel_key;
+  if (channel?.conversation_id) {
+    return `conversation:${channel.conversation_id}`;
+  }
+  return null;
+};
+
+const isBetterCommunicationChannel = (candidate, current) => {
+  if (!current) return true;
+
+  const candidateScore = [
+    isCommunicationChannelReplyable(candidate) ? 1 : 0,
+    candidate?.can_send_text ? 1 : 0,
+    candidate?.reply_window_open ? 1 : 0,
+    Number(candidate?.last_activity_at || 0),
+    Number(candidate?.conversation_id || 0),
+  ];
+  const currentScore = [
+    isCommunicationChannelReplyable(current) ? 1 : 0,
+    current?.can_send_text ? 1 : 0,
+    current?.reply_window_open ? 1 : 0,
+    Number(current?.last_activity_at || 0),
+    Number(current?.conversation_id || 0),
+  ];
+
+  for (let index = 0; index < candidateScore.length; index += 1) {
+    if (candidateScore[index] !== currentScore[index]) {
+      return candidateScore[index] > currentScore[index];
+    }
+  }
+
+  return false;
+};
+
+export const getUniqueCommunicationChannels = (channels = []) => {
+  const channelByIdentity = new Map();
+  const sourceChannels = Array.isArray(channels) ? channels : [];
+
+  sourceChannels.filter(Boolean).forEach(channel => {
+    const identity = communicationChannelIdentity(channel);
+    if (!identity) return;
+
+    const currentChannel = channelByIdentity.get(identity);
+    if (isBetterCommunicationChannel(channel, currentChannel)) {
+      channelByIdentity.set(identity, channel);
+    }
+  });
+
+  return Array.from(channelByIdentity.values()).sort(
+    sortByNewestChannelActivity
+  );
+};
+
+export const getCommunicationReplyChannels = (channels = []) => {
+  return getUniqueCommunicationChannels(channels).filter(
+    isCommunicationChannelReplyable
+  );
+};
+
 const isIncomingMessage = message => {
   return (
     message?.message_type === MESSAGE_TYPE.INCOMING ||
@@ -35,9 +111,15 @@ const isIncomingMessage = message => {
 };
 
 const channelForMessage = (channels, message) => {
-  return channels.find(
+  const exactChannel = channels.find(
     channel =>
       String(channel.conversation_id) === String(message?.conversation_id)
+  );
+  if (exactChannel) return exactChannel;
+
+  return channels.find(
+    channel =>
+      channel.inbox_id && String(channel.inbox_id) === String(message?.inbox_id)
   );
 };
 
@@ -55,36 +137,55 @@ const getLatestIncomingReplyableChannel = (channels, messages = []) => {
 };
 
 export const getPrimaryCommunicationChannel = channels => {
-  if (!Array.isArray(channels) || !channels.length) return null;
-  return channels.find(channel => channel.primary) || channels[0];
+  const uniqueChannels = getUniqueCommunicationChannels(channels);
+  if (!uniqueChannels.length) return null;
+  return uniqueChannels.find(channel => channel.primary) || uniqueChannels[0];
 };
 
 export const getDefaultReplyChannel = (channels, messages = []) => {
-  if (!Array.isArray(channels) || !channels.length) return null;
+  const uniqueChannels = getUniqueCommunicationChannels(channels);
+  if (!uniqueChannels.length) return null;
 
+  const replyChannels = getCommunicationReplyChannels(uniqueChannels);
   const latestIncomingReplyableChannel = getLatestIncomingReplyableChannel(
-    channels,
+    replyChannels,
     messages
   );
   if (latestIncomingReplyableChannel) return latestIncomingReplyableChannel;
 
-  const replyableChannels = channels.filter(channel => channel.can_reply);
-  if (replyableChannels.length) {
-    return [...replyableChannels].sort(sortByNewestChannelActivity)[0];
+  if (replyChannels.length) {
+    return replyChannels[0];
   }
 
-  return getPrimaryCommunicationChannel(channels);
+  return getPrimaryCommunicationChannel(uniqueChannels);
+};
+
+const sameCommunicationChannel = (channel, identifier) => {
+  return (
+    String(channel?.channel_key) === String(identifier) ||
+    String(channel?.conversation_id) === String(identifier) ||
+    String(channel?.inbox_id) === String(identifier)
+  );
+};
+
+const sameCommunicationInbox = (leftChannel, rightChannel) => {
+  if (!leftChannel?.inbox_id || !rightChannel?.inbox_id) return false;
+  return String(leftChannel.inbox_id) === String(rightChannel.inbox_id);
 };
 
 export const getCommunicationReplyChannel = (chat, conversationId = null) => {
-  const channels = Array.isArray(chat?.channels) ? chat.channels : [];
+  const rawChannels = Array.isArray(chat?.channels) ? chat.channels : [];
+  const channels = getUniqueCommunicationChannels(rawChannels);
   if (!channels.length) return null;
 
   if (conversationId) {
+    const selectedRawChannel = rawChannels.find(channel =>
+      sameCommunicationChannel(channel, conversationId)
+    );
     const selectedChannel = channels.find(
       channel =>
-        String(channel.channel_key) === String(conversationId) ||
-        String(channel.conversation_id) === String(conversationId)
+        sameCommunicationChannel(channel, conversationId) ||
+        sameCommunicationInbox(channel, selectedRawChannel)
     );
     if (selectedChannel) return selectedChannel;
   }
@@ -116,6 +217,27 @@ export const getCommunicationChannelLabel = channel => {
     CHANNEL_LABELS[channel.channel] ||
     channel.channel?.replace('Channel::', '') ||
     `#${channel.inbox_id}`
+  );
+};
+
+export const getCommunicationContactIdentityLabel = channel => {
+  if (!channel) return '';
+
+  const channelProfile =
+    channel.channel_profile || channel.channelProfile || {};
+
+  return (
+    channelProfile.phone_number ||
+    channelProfile.username ||
+    channelProfile.email ||
+    channelProfile.identifier ||
+    channelProfile.source_id ||
+    channel.source_id ||
+    channel.contact_source_id ||
+    channel.contact_identifier ||
+    channelProfile.display_name ||
+    channelProfile.name ||
+    ''
   );
 };
 
@@ -194,7 +316,9 @@ export const decoratePayloadWithCommunicationThread = (
 };
 
 export const buildCommunicationThreadConversation = thread => {
-  const channels = Array.isArray(thread?.channels) ? thread.channels : [];
+  const channels = getUniqueCommunicationChannels(
+    Array.isArray(thread?.channels) ? thread.channels : []
+  );
   const messages = Array.isArray(thread?.messages) ? thread.messages : [];
   const primaryChannel = getPrimaryCommunicationChannel(channels) || {};
   const replyChannel =
@@ -202,6 +326,7 @@ export const buildCommunicationThreadConversation = thread => {
 
   return {
     ...thread,
+    channels,
     id: thread.id,
     display_id: thread.id,
     communication_thread_id: thread.id,
@@ -211,7 +336,7 @@ export const buildCommunicationThreadConversation = thread => {
     active_reply_channel_key: replyChannel?.channel_key || null,
     active_reply_channel_inbox_id: replyChannel?.inbox_id || null,
     active_reply_channel: replyChannel || null,
-    can_reply: channels.some(channel => channel.can_reply),
+    can_reply: channels.some(isCommunicationChannelReplyable),
     conversation_ids:
       thread.conversation_ids ||
       channels.map(channel => channel.conversation_id).filter(Boolean),

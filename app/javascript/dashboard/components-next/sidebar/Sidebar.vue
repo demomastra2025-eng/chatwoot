@@ -21,8 +21,6 @@ import SidebarGroup from './SidebarGroup.vue';
 import SidebarProfileMenu from './SidebarProfileMenu.vue';
 import SidebarChangelogCard from './SidebarChangelogCard.vue';
 import SidebarChangelogButton from './SidebarChangelogButton.vue';
-import ChannelLeaf from './ChannelLeaf.vue';
-import ChannelStatusIcon from './ChannelStatusIcon.vue';
 import SidebarAccountSwitcher from './SidebarAccountSwitcher.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
@@ -117,6 +115,13 @@ const hasInboxManagement = computed(() => {
   return isFeatureEnabledonAccount.value(
     accountId.value,
     FEATURE_FLAGS.INBOX_MANAGEMENT
+  );
+});
+
+const hasCommunicationThreads = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.COMMUNICATION_THREADS
   );
 });
 
@@ -299,11 +304,7 @@ const getSidebarUnreadCount = (collection, key) => {
   );
 };
 
-const allConversationUnreadCount = computed(() =>
-  Number(conversationSidebarUnreadCounts.value?.all || 0)
-);
 const statusUnreadCount = status => getSidebarUnreadCount('statuses', status);
-const inboxUnreadCount = inboxId => getSidebarUnreadCount('inboxes', inboxId);
 const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
 const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
 
@@ -330,20 +331,7 @@ const conversationStatusActiveOn = [
   'folder_conversations',
   'conversations_through_folders',
 ];
-const allChannelsActiveOn = [
-  'communication_threads_dashboard',
-  'communication_thread_conversation',
-];
-const allLabelsActiveOn = [
-  'home',
-  'inbox_dashboard',
-  'inbox_conversation',
-  'conversation_through_inbox',
-  'team_conversations',
-  'conversations_through_team',
-  'folder_conversations',
-  'conversations_through_folders',
-];
+const allLabelsActiveOn = [];
 
 const currentConversationStatus = computed(() => {
   const routeStatus = route.query.status;
@@ -875,7 +863,13 @@ const menuItems = computed(() => {
         name: 'Conversation',
         label: t('SIDEBAR.CONVERSATIONS'),
         icon: 'i-lucide-message-circle',
-        to: accountScopedRoute('home', {}, { status: 'open' }),
+        to: accountScopedRoute(
+          hasCommunicationThreads.value
+            ? 'communication_threads_dashboard'
+            : 'home',
+          {},
+          { status: 'open' }
+        ),
         ...(checkPermissions(['administrator'])
           ? {
               actionTitle: t('SIDEBAR.CONVERSATION_WORKFLOW'),
@@ -936,81 +930,14 @@ const menuItems = computed(() => {
             })),
           },
           {
-            name: 'Channels',
-            visibilityKey: 'Conversation:Channels',
-            label: t('SIDEBAR.CHANNELS'),
-            icon: 'i-lucide-mailbox',
-            badge: allConversationUnreadCount.value,
-            to: withConversationStatus('home'),
-            activeOn: ['inbox_dashboard', 'conversation_through_inbox'],
-            suppressHeaderActiveWhenChildActive: true,
-            actionTitle: t('SETTINGS.INBOXES.NEW_INBOX'),
-            actionIcon: checkPermissions(['administrator'])
-              ? 'i-lucide-plus'
-              : '',
-            actionTo: checkPermissions(['administrator'])
-              ? accountScopedRoute(
-                  inboxFlowRouteNames.value.new,
-                  {},
-                  {
-                    ...(inboxFlowRouteNames.value ===
-                    INBOX_FLOW_ROUTE_NAMES.dialog
-                      ? { inboxFlow: 'dialogs' }
-                      : {}),
-                  }
-                )
-              : '',
-            children: [
-              {
-                name: 'AllChannels',
-                visibilityKey: 'Conversation:AllChannels',
-                label: t('SIDEBAR.ALL_CHANNELS'),
-                icon: 'i-lucide-mailbox',
-                badge: allConversationUnreadCount.value,
-                activeOn: allChannelsActiveOn,
-                to: withConversationStatus('communication_threads_dashboard'),
-              },
-              ...sortedInboxes.value.map(inbox => ({
-                name: `${inbox.name}-${inbox.id}`,
-                label: inbox.name,
-                icon: h(ChannelStatusIcon, { inbox, class: 'size-[16px]' }),
-                badge: inboxUnreadCount(inbox.id),
-                activeOn: [
-                  'inbox_dashboard',
-                  'conversation_through_inbox',
-                  inboxFlowRouteNames.value.show,
-                ],
-                to: withConversationStatus('inbox_dashboard', {
-                  inbox_id: inbox.id,
-                }),
-                component: leafProps =>
-                  h(ChannelLeaf, {
-                    label: leafProps.label,
-                    active: leafProps.active,
-                    badge: leafProps.badge,
-                    inbox,
-                    settingsRoute: accountScopedRoute(
-                      inboxFlowRouteNames.value.show,
-                      {
-                        inboxId: inbox.id,
-                      },
-                      {
-                        ...(inboxFlowRouteNames.value ===
-                        INBOX_FLOW_ROUTE_NAMES.dialog
-                          ? { inboxFlow: 'dialogs' }
-                          : {}),
-                      }
-                    ),
-                  }),
-              })),
-            ],
-          },
-          {
             name: 'Teams',
             visibilityKey: 'Conversation:Teams',
             label: t('SIDEBAR.TEAMS'),
             icon: 'i-lucide-users',
-            activeOn: ['conversations_through_team'],
+            to: withConversationStatus('home'),
+            suppressExactPathActive: true,
+            activeOn: [],
+            suppressHeaderActiveWhenChildActive: true,
             children: teams.value.map(team => ({
               name: `${team.name}-${team.id}`,
               label: team.name,
@@ -1035,6 +962,7 @@ const menuItems = computed(() => {
                     },
                   ],
                   to: withConversationStatus('home'),
+                  suppressExactPathActive: true,
                   activeOn: allLabelsActiveOn,
                   suppressHeaderActiveWhenChildActive: true,
                   children: [

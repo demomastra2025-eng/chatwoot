@@ -69,6 +69,9 @@ const { contentAttributes, messageType, createdAt } = useMessageContext();
 // applies useCamelCase(messages, { deep: true }) before rendering.
 const normalizeVoiceCallStatus = value => {
   const rawStatus = value?.toString();
+  if (['created', 'queued', 'initiated'].includes(rawStatus)) {
+    return VOICE_CALL_STATUS.RINGING;
+  }
   if (rawStatus === 'in_progress') return VOICE_CALL_STATUS.IN_PROGRESS;
   if (rawStatus === 'no_answer') return VOICE_CALL_STATUS.NO_ANSWER;
   if (rawStatus === 'missed') return VOICE_CALL_STATUS.MISSED;
@@ -505,7 +508,7 @@ const handleJoinCall = async () => {
 
       <details
         v-if="recordingAttachment && hasRenderableRecordingStatus"
-        class="voice-call-recording-accordion mx-3 mb-2 rounded-xl border border-n-weak bg-n-alpha-1"
+        class="voice-call-recording-accordion mx-3 mb-2 rounded-xl border border-n-weak"
         data-testid="voice-call-recording-accordion"
       >
         <summary

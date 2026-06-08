@@ -302,7 +302,8 @@
       "ALL_CHANNELS": "Барлық арналар",
       "REPLY_VIA": "Жауап беру арнасы",
       "ACTIVE_CHANNEL": "Белсенді арна: {channel}",
-      "REPLY_RESTRICTED_SUFFIX": "(жауап шектелген)"
+      "REPLY_RESTRICTED_SUFFIX": "(жауап шектелген)",
+      "CALL_ACTION": "Қоңырау шалу"
     },
     "SEND_FAILED": "Couldn't send message! Try again",
     "TRY_AGAIN": "retry",

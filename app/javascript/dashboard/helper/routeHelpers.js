@@ -59,11 +59,17 @@ export const defaultRedirectPage = (
     (user && getCurrentAccount(user, Number(accountId))) || null,
     accountFeatureSource
   );
+  const conversationPath = isFeatureEnabled(
+    currentAccount,
+    FEATURE_FLAGS.COMMUNICATION_THREADS
+  )
+    ? 'communication_threads?status=open'
+    : 'dashboard';
 
   const permissionRoutes = [
     {
       permissions: CONVERSATION_ACCESS_PERMISSIONS,
-      path: 'dashboard',
+      path: conversationPath,
     },
     { permissions: CONTACT_ACCESS_PERMISSIONS, path: 'contacts' },
     { permissions: [REPORTS_PERMISSIONS], path: 'reports/overview' },
@@ -112,6 +118,13 @@ const validateActiveAccountRoutes = (to, user, accountFeatureSource = null) => {
     accountFeatureSource
   );
   const userPermissions = getUserPermissions(user, to.params.accountId);
+
+  if (
+    to.name === 'home' &&
+    isFeatureEnabled(currentAccount, FEATURE_FLAGS.COMMUNICATION_THREADS)
+  ) {
+    return defaultRedirectPage(to, userPermissions, user, accountFeatureSource);
+  }
 
   const isAccessible = routeIsAccessibleFor(
     to,

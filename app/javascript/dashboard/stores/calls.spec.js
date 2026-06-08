@@ -72,6 +72,27 @@ describe('useCallsStore', () => {
     );
   });
 
+  it('marks a browser-joined outbound call without making it active', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'call-browser-joined',
+      callDirection: 'outbound',
+      provider: 'fonoster',
+    });
+    store.markBrowserJoined('call-browser-joined', 'fonoster');
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        browserJoined: true,
+        callSid: 'call-browser-joined',
+        isActive: false,
+        provider: 'fonoster',
+      }),
+    ]);
+    expect(store.activeCall).toBeNull();
+  });
+
   it('replaces a stale Fonoster call for the same conversation instead of stacking widgets', async () => {
     const store = useCallsStore();
 
@@ -122,18 +143,45 @@ describe('useCallsStore', () => {
     expect(store.calls).toEqual([]);
   });
 
-  it('removes a stale active Fonoster call by conversation when terminal ref changed', async () => {
+  it('does not remove an active Fonoster call by conversation when a different terminal call ref arrives', async () => {
     const store = useCallsStore();
 
     store.addCall({
-      callSid: 'old-call-ref',
+      callSid: 'current-call-ref',
       provider: 'fonoster',
       conversationId: 612,
     });
-    store.setCallActive('old-call-ref');
+    store.setCallActive('current-call-ref');
 
     store.handleCallStatusChanged({
-      callSid: 'new-terminal-ref',
+      callSid: 'old-terminal-ref',
+      status: 'completed',
+      conversationId: 612,
+      provider: 'fonoster',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'current-call-ref',
+        conversationId: 612,
+        isActive: true,
+        provider: 'fonoster',
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('removes a Fonoster call by conversation only when terminal event has no call ref', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'call-without-terminal-ref',
+      provider: 'fonoster',
+      conversationId: 612,
+    });
+    store.setCallActive('call-without-terminal-ref');
+
+    store.handleCallStatusChanged({
       status: 'completed',
       conversationId: 612,
       provider: 'fonoster',
@@ -157,7 +205,7 @@ describe('useCallsStore', () => {
     expect(store.calls).toEqual([]);
   });
 
-  it('keeps an outbound Fonoster call visible while the browser leg is joining', () => {
+  it('marks an outbound Fonoster call active when the backend reports in progress', () => {
     const store = useCallsStore();
 
     store.addCall({
@@ -175,7 +223,31 @@ describe('useCallsStore', () => {
       expect.objectContaining({
         callSid: 'outbound-call-1',
         callDirection: 'outbound',
-        isActive: false,
+        isActive: true,
+        provider: 'fonoster',
+      }),
+    ]);
+  });
+
+  it('creates an active outbound Fonoster call when in progress arrives before local ringing state', () => {
+    const store = useCallsStore();
+
+    store.handleCallStatusChanged({
+      callSid: 'outbound-call-2',
+      status: 'in_progress',
+      conversationId: 44,
+      inboxId: 88,
+      provider: 'fonoster',
+      callDirection: 'outbound',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'outbound-call-2',
+        callDirection: 'outbound',
+        conversationId: 44,
+        inboxId: 88,
+        isActive: true,
         provider: 'fonoster',
       }),
     ]);

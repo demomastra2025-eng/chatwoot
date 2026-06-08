@@ -15,8 +15,26 @@ const createCallUnregisteredEvent = detail =>
 
 const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 7_000;
-const WEBPHONE_OUTBOUND_CALL_WAIT_MS = 75_000;
+const WEBPHONE_OUTBOUND_CALL_WAIT_MS = 45_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
+const WEBPHONE_MICROPHONE_PREWARM_TTL_MS = 90_000;
+
+const stopMediaStream = stream => {
+  if (!stream || typeof stream.getTracks !== 'function') return;
+
+  stream.getTracks().forEach(track => track.stop());
+};
+
+const hasLiveAudioTrack = stream => {
+  if (!stream || typeof stream.getAudioTracks !== 'function') return false;
+
+  return stream.getAudioTracks().some(track => track.readyState !== 'ended');
+};
+
+const getMediaDevices = () => {
+  if (typeof navigator === 'undefined') return null;
+  return navigator.mediaDevices || null;
+};
 
 class FonosterVoiceClient extends EventTarget {
   constructor() {
@@ -33,6 +51,13 @@ class FonosterVoiceClient extends EventTarget {
     this.hasActiveCall = false;
     this.registrationPromise = null;
     this.presenceHeartbeatTimer = null;
+    this.currentCallRef = null;
+    this.currentCallDirection = null;
+    this.activeLocalMediaStream = null;
+    this.microphonePrewarmStream = null;
+    this.microphonePrewarmPromise = null;
+    this.microphonePrewarmTimer = null;
+    this.microphonePrewarmGeneration = 0;
   }
 
   static normalizeSessionConfig(sessionConfig = {}) {
@@ -96,7 +121,10 @@ class FonosterVoiceClient extends EventTarget {
       return this.sessionState(normalized);
     }
 
-    await this.destroyDevice({ preserveSessionConfig: true });
+    await this.destroyDevice({
+      preserveMicrophonePrewarm: true,
+      preserveSessionConfig: true,
+    });
 
     this.sessionSignature = signature;
     this.remoteAudioElement = this.ensureRemoteAudioElement();
@@ -115,16 +143,21 @@ class FonosterVoiceClient extends EventTarget {
       onCallAnswered: () => {
         this.pendingIncomingCall = false;
         this.hasActiveCall = true;
+        this.activeLocalMediaStream =
+          this.simpleUser?.localMediaStream || this.activeLocalMediaStream;
+        this.stopMicrophonePrewarm();
         this.remoteAudioElement?.play?.().catch(() => {});
       },
       onCallHangup: () => {
         const hadCall = this.pendingIncomingCall || this.hasActiveCall;
+        const detail = this.callEventDetail();
         this.pendingIncomingCall = false;
         this.hasActiveCall = false;
+        this.stopMicrophonePrewarm();
+        this.stopActiveLocalMedia();
+        this.resetCurrentCall();
         if (hadCall) {
-          this.dispatchEvent(
-            createCallDisconnectedEvent({ provider: 'fonoster' })
-          );
+          this.dispatchEvent(createCallDisconnectedEvent(detail));
         }
       },
       onRegistered: () => {
@@ -145,6 +178,7 @@ class FonosterVoiceClient extends EventTarget {
       onServerDisconnect: () => {
         const hadCall = this.pendingIncomingCall || this.hasActiveCall;
         const wasRegistered = this.registered;
+        const detail = this.callEventDetail();
         this.connected = false;
         this.registered = false;
         this.stopPresenceHeartbeat();
@@ -156,13 +190,17 @@ class FonosterVoiceClient extends EventTarget {
         }
         this.pendingIncomingCall = false;
         this.hasActiveCall = false;
+        this.stopMicrophonePrewarm();
+        this.stopActiveLocalMedia();
+        this.resetCurrentCall();
         if (hadCall) {
-          this.dispatchEvent(
-            createCallDisconnectedEvent({ provider: 'fonoster' })
-          );
+          this.dispatchEvent(createCallDisconnectedEvent(detail));
         }
       },
     };
+
+    const sessionDescriptionHandlerFactory =
+      this.createSessionDescriptionHandlerFactory();
 
     this.simpleUser = new Web.SimpleUser(normalized.signalingServer, {
       aor: normalized.targetAor,
@@ -179,6 +217,9 @@ class FonosterVoiceClient extends EventTarget {
         logBuiltinEnabled: false,
         logConfiguration: false,
         logLevel: 'error',
+        ...(sessionDescriptionHandlerFactory
+          ? { sessionDescriptionHandlerFactory }
+          : {}),
         transportOptions: {
           server: normalized.signalingServer,
           keepAliveInterval: 15,
@@ -215,6 +256,138 @@ class FonosterVoiceClient extends EventTarget {
     audio.style.display = 'none';
     document.body.appendChild(audio);
     return audio;
+  }
+
+  callEventDetail() {
+    return {
+      provider: 'fonoster',
+      callRef: this.currentCallRef,
+      callDirection: this.currentCallDirection,
+    };
+  }
+
+  resetCurrentCall() {
+    this.currentCallRef = null;
+    this.currentCallDirection = null;
+  }
+
+  scheduleMicrophonePrewarmCleanup(ttlMs) {
+    this.clearMicrophonePrewarmTimer();
+    this.microphonePrewarmTimer = window.setTimeout(() => {
+      this.stopMicrophonePrewarm();
+    }, ttlMs);
+  }
+
+  clearMicrophonePrewarmTimer() {
+    if (!this.microphonePrewarmTimer) return;
+
+    window.clearTimeout(this.microphonePrewarmTimer);
+    this.microphonePrewarmTimer = null;
+  }
+
+  async prewarmMicrophone({ ttlMs = WEBPHONE_MICROPHONE_PREWARM_TTL_MS } = {}) {
+    if (hasLiveAudioTrack(this.microphonePrewarmStream)) {
+      this.scheduleMicrophonePrewarmCleanup(ttlMs);
+      return { provider: 'fonoster', prewarmed: true, reused: true };
+    }
+
+    if (this.microphonePrewarmPromise) return this.microphonePrewarmPromise;
+
+    const mediaDevices = getMediaDevices();
+    if (typeof mediaDevices?.getUserMedia !== 'function') {
+      return {
+        provider: 'fonoster',
+        prewarmed: false,
+        reason: 'media_devices_unavailable',
+      };
+    }
+
+    const generation = this.microphonePrewarmGeneration;
+    this.microphonePrewarmPromise = mediaDevices
+      .getUserMedia({ audio: true, video: false })
+      .then(stream => {
+        if (generation !== this.microphonePrewarmGeneration) {
+          stopMediaStream(stream);
+          return {
+            provider: 'fonoster',
+            prewarmed: false,
+            reason: 'cancelled',
+          };
+        }
+
+        this.microphonePrewarmStream = stream;
+        this.scheduleMicrophonePrewarmCleanup(ttlMs);
+        return { provider: 'fonoster', prewarmed: true };
+      })
+      .catch(error => ({
+        provider: 'fonoster',
+        prewarmed: false,
+        reason: error?.name || 'microphone_unavailable',
+      }))
+      .finally(() => {
+        if (generation === this.microphonePrewarmGeneration) {
+          this.microphonePrewarmPromise = null;
+        }
+      });
+
+    return this.microphonePrewarmPromise;
+  }
+
+  takeMicrophonePrewarmStream(constraints = {}) {
+    if (constraints.audio === false) return null;
+    if (!hasLiveAudioTrack(this.microphonePrewarmStream)) {
+      this.microphonePrewarmStream = null;
+      return null;
+    }
+
+    const stream = this.microphonePrewarmStream;
+    this.microphonePrewarmStream = null;
+    this.clearMicrophonePrewarmTimer();
+    this.activeLocalMediaStream = stream;
+    return stream;
+  }
+
+  stopMicrophonePrewarm() {
+    this.microphonePrewarmGeneration += 1;
+    this.clearMicrophonePrewarmTimer();
+    stopMediaStream(this.microphonePrewarmStream);
+    this.microphonePrewarmStream = null;
+    this.microphonePrewarmPromise = null;
+    return { provider: 'fonoster', stopped: true };
+  }
+
+  stopActiveLocalMedia() {
+    stopMediaStream(this.activeLocalMediaStream);
+    this.activeLocalMediaStream = null;
+  }
+
+  createMediaStreamFactory() {
+    return constraints => {
+      const prewarmedStream = this.takeMicrophonePrewarmStream(constraints);
+      if (prewarmedStream) return Promise.resolve(prewarmedStream);
+
+      const mediaDevices = getMediaDevices();
+      if (typeof mediaDevices?.getUserMedia !== 'function') {
+        return Promise.reject(new Error('Browser microphone is unavailable'));
+      }
+
+      return mediaDevices.getUserMedia
+        .call(mediaDevices, constraints)
+        .then(stream => {
+          this.activeLocalMediaStream = stream;
+          return stream;
+        });
+    };
+  }
+
+  createSessionDescriptionHandlerFactory() {
+    if (typeof Web.defaultSessionDescriptionHandlerFactory !== 'function') {
+      return null;
+    }
+
+    return Web.defaultSessionDescriptionHandlerFactory(
+      this.createMediaStreamFactory()
+    );
   }
 
   async register() {
@@ -289,8 +462,11 @@ class FonosterVoiceClient extends EventTarget {
     return this.pendingIncomingCall;
   }
 
-  async joinClientCall({ callDirection } = {}) {
+  async joinClientCall({ callRef = null, callDirection } = {}) {
     if (!this.simpleUser || !this.initialized) return null;
+
+    this.currentCallRef = callRef || this.currentCallRef;
+    this.currentCallDirection = callDirection || this.currentCallDirection;
 
     await this.ensureConnectedAndRegistered();
 
@@ -300,39 +476,60 @@ class FonosterVoiceClient extends EventTarget {
         : WEBPHONE_INCOMING_CALL_WAIT_MS;
     const hasIncomingCall = await this.waitForPendingIncomingCall(waitMs);
     if (!hasIncomingCall) {
+      this.stopMicrophonePrewarm();
       return null;
     }
 
-    await this.simpleUser.answer();
+    try {
+      await this.simpleUser.answer();
+    } catch (error) {
+      this.stopMicrophonePrewarm();
+      this.stopActiveLocalMedia();
+      this.resetCurrentCall();
+      throw error;
+    }
     this.pendingIncomingCall = false;
     this.hasActiveCall = true;
     return { provider: 'fonoster', answered: true };
   }
 
   async rejectIncomingCall() {
-    if (!this.simpleUser || !this.pendingIncomingCall) return null;
+    if (!this.simpleUser || !this.pendingIncomingCall) {
+      this.stopMicrophonePrewarm();
+      return null;
+    }
 
     await this.simpleUser.decline();
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;
+    this.stopMicrophonePrewarm();
+    this.resetCurrentCall();
     return { provider: 'fonoster', declined: true };
   }
 
   async endClientCall() {
+    this.stopMicrophonePrewarm();
+    this.stopActiveLocalMedia();
+
     if (
       !this.simpleUser ||
       (!this.pendingIncomingCall && !this.hasActiveCall)
     ) {
+      this.resetCurrentCall();
       return null;
     }
 
     await this.simpleUser.hangup();
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;
+    this.resetCurrentCall();
     return { provider: 'fonoster', ended: true };
   }
 
-  async destroyDevice({ preserveSessionConfig = false } = {}) {
+  async destroyDevice({
+    preserveMicrophonePrewarm = false,
+    preserveSessionConfig = false,
+  } = {}) {
     const currentUser = this.simpleUser;
     const shouldReportOffline =
       this.initialized ||
@@ -351,6 +548,11 @@ class FonosterVoiceClient extends EventTarget {
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;
     this.registrationPromise = null;
+    if (!preserveMicrophonePrewarm) {
+      this.stopMicrophonePrewarm();
+    }
+    this.stopActiveLocalMedia();
+    this.resetCurrentCall();
 
     if (!preserveSessionConfig) {
       this.sessionConfig = null;
@@ -366,9 +568,7 @@ class FonosterVoiceClient extends EventTarget {
     } finally {
       if (this.remoteAudioElement) {
         const stream = this.remoteAudioElement.srcObject;
-        if (stream && typeof stream.getTracks === 'function') {
-          stream.getTracks().forEach(track => track.stop());
-        }
+        stopMediaStream(stream);
         this.remoteAudioElement.pause?.();
         this.remoteAudioElement.srcObject = null;
       }

@@ -133,10 +133,12 @@ describe('voice helper', () => {
     const callsStore = useCallsStore();
 
     expect(commit).toHaveBeenCalledWith('UPDATE_CONVERSATION_CALL_STATUS', {
+      callSid: 'call-456',
       callStatus: 'ringing',
       conversationId: 33,
     });
     expect(commit).toHaveBeenCalledWith('UPDATE_MESSAGE_CALL_STATUS', {
+      callSid: 'call-456',
       callStatus: 'ringing',
       conversationId: 33,
     });
@@ -147,5 +149,41 @@ describe('voice helper', () => {
         provider: 'fonoster',
       })
     );
+  });
+
+  it('restores an outbound Fonoster active call when an in-progress update arrives first', () => {
+    const commit = vi.fn();
+
+    handleVoiceCallUpdated(
+      commit,
+      {
+        content_type: 'voice_call',
+        conversation_id: 44,
+        inbox_id: 88,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'outbound-fonoster-1',
+            call_direction: 'outbound',
+            provider: 'fonoster',
+            status: 'in_progress',
+          },
+        },
+      },
+      7
+    );
+
+    const callsStore = useCallsStore();
+
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callDirection: 'outbound',
+        callSid: 'outbound-fonoster-1',
+        conversationId: 44,
+        inboxId: 88,
+        isActive: true,
+        provider: 'fonoster',
+      }),
+    ]);
   });
 });

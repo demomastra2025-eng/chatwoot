@@ -48,6 +48,24 @@ describe('#defaultRedirectPage', () => {
     expect(defaultRedirectPage(to, permissions)).toBe('accounts/2/dashboard');
   });
 
+  it('should return communication threads for conversation users when the feature is enabled', () => {
+    const permissions = ['conversation_manage', 'agent'];
+    const user = {
+      accounts: [
+        {
+          id: 2,
+          features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+          permissions,
+          status: 'active',
+        },
+      ],
+    };
+
+    expect(defaultRedirectPage(to, permissions, user)).toBe(
+      'accounts/2/communication_threads?status=open'
+    );
+  });
+
   it('should return contacts route for users with contact permissions', () => {
     const permissions = ['contact_manage'];
     expect(defaultRedirectPage(to, permissions)).toBe('accounts/2/contacts');

@@ -3,80 +3,68 @@ require 'rails_helper'
 describe Whatsapp::TokenValidationService do
   let(:access_token) { 'test_access_token' }
   let(:waba_id) { 'test_waba_id' }
-  let(:service) { described_class.new(access_token, waba_id) }
-  let(:api_client) { instance_double(Whatsapp::FacebookApiClient) }
-
-  before do
-    allow(Whatsapp::FacebookApiClient).to receive(:new).with(access_token).and_return(api_client)
-  end
+  let(:phone_number_id) { 'test_phone_number_id' }
+  let(:service) { described_class.new(access_token, waba_id, phone_number_id: phone_number_id) }
 
   describe '#perform' do
-    context 'when token has access to WABA' do
-      let(:debug_response) do
+    context 'when token health is valid' do
+      let(:token_health) do
         {
-          'data' => {
-            'granular_scopes' => [
-              {
-                'scope' => 'whatsapp_business_management',
-                'target_ids' => [waba_id, 'another_waba_id']
-              }
-            ]
-          }
+          'status' => 'healthy',
+          'required_permissions' => {
+            'whatsapp_business_management' => true,
+            'whatsapp_business_messaging' => true
+          },
+          'waba_access' => true,
+          'phone_number_access' => true
         }
       end
 
       before do
-        allow(api_client).to receive(:debug_token).with(access_token).and_return(debug_response)
+        token_inspection = instance_double(Whatsapp::TokenInspectionService, perform: token_health)
+        allow(Whatsapp::TokenInspectionService).to receive(:new)
+          .with(access_token: access_token, waba_id: waba_id, phone_number_id: phone_number_id)
+          .and_return(token_inspection)
       end
 
-      it 'validates successfully' do
-        expect { service.perform }.not_to raise_error
+      it 'returns token health metadata' do
+        expect(service.perform).to eq(token_health)
+      end
+    end
+
+    context 'when required permissions are missing' do
+      let(:token_health) do
+        {
+          'status' => 'permission_missing',
+          'missing_permissions' => ['whatsapp_business_messaging']
+        }
+      end
+
+      before do
+        token_inspection = instance_double(Whatsapp::TokenInspectionService, perform: token_health)
+        allow(Whatsapp::TokenInspectionService).to receive(:new).and_return(token_inspection)
+      end
+
+      it 'raises an error' do
+        expect { service.perform }.to raise_error(/Token is missing required WhatsApp permissions/)
       end
     end
 
     context 'when token does not have access to WABA' do
-      let(:debug_response) do
+      let(:token_health) do
         {
-          'data' => {
-            'granular_scopes' => [
-              {
-                'scope' => 'whatsapp_business_management',
-                'target_ids' => ['different_waba_id']
-              }
-            ]
-          }
+          'status' => 'waba_access_missing',
+          'error' => { 'message' => 'Permissions error' }
         }
       end
 
       before do
-        allow(api_client).to receive(:debug_token).with(access_token).and_return(debug_response)
+        token_inspection = instance_double(Whatsapp::TokenInspectionService, perform: token_health)
+        allow(Whatsapp::TokenInspectionService).to receive(:new).and_return(token_inspection)
       end
 
       it 'raises an error' do
         expect { service.perform }.to raise_error(/Token does not have access to WABA/)
-      end
-    end
-
-    context 'when no WABA scope is found' do
-      let(:debug_response) do
-        {
-          'data' => {
-            'granular_scopes' => [
-              {
-                'scope' => 'some_other_scope',
-                'target_ids' => ['some_id']
-              }
-            ]
-          }
-        }
-      end
-
-      before do
-        allow(api_client).to receive(:debug_token).with(access_token).and_return(debug_response)
-      end
-
-      it 'raises an error' do
-        expect { service.perform }.to raise_error('No WABA scope found in token')
       end
     end
 

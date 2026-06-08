@@ -90,6 +90,7 @@ export default {
           conversationUrl({
             id: this.conversationId,
             accountId: this.currentAccountId,
+            activeInbox: this.message.inbox_id || this.message.inboxId,
           })
         );
       await copyTextToClipboard(

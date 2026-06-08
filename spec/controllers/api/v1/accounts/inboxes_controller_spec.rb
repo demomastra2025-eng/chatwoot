@@ -1089,6 +1089,53 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(whatsapp_channel.reload).not_to be_reauthorization_required
       end
 
+      it 'stores token health when manually updating a WhatsApp Cloud API token' do
+        token_health = {
+          'status' => 'healthy',
+          'waba_access' => true,
+          'phone_number_access' => true
+        }
+        token_inspection = instance_double(Whatsapp::TokenInspectionService, perform: token_health)
+        allow(Whatsapp::TokenInspectionService).to receive(:new).with(
+          access_token: 'new_cloud_token',
+          waba_id: 'waba-1',
+          phone_number_id: 'phone-1'
+        ).and_return(token_inspection)
+
+        stub_request(:get, 'https://graph.facebook.com/v22.0/waba-1/message_templates')
+          .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          account: account,
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        whatsapp_channel.update!(
+          provider_config: {
+            'api_key' => 'old_cloud_token',
+            'business_account_id' => 'waba-1',
+            'phone_number_id' => 'phone-1',
+            'source' => 'embedded_signup'
+          }
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: { channel: { provider_config: { api_key: 'new_cloud_token' } } },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(whatsapp_channel.reload.provider_config).to include(
+          'api_key' => 'new_cloud_token',
+          'business_account_id' => 'waba-1',
+          'phone_number_id' => 'phone-1',
+          Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY => hash_including('status' => 'healthy')
+        )
+      end
+
       it 'rejects runtime identity updates for whatsapp web inboxes' do
         with_modified_env(
           'EVOLUTION_API_URL' => 'https://evolution.example.com',

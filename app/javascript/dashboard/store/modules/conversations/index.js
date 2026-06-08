@@ -295,11 +295,9 @@ export const mutations = {
     );
     if (!channel && chat.is_communication_thread && message.inbox_id) {
       channel = (chat.channels || []).find(
-        item =>
-          !item.conversation_id &&
-          String(item.inbox_id) === String(message.inbox_id)
+        item => String(item.inbox_id) === String(message.inbox_id)
       );
-      if (channel && message.conversation_id) {
+      if (channel && !channel.conversation_id && message.conversation_id) {
         channel.conversation_id = message.conversation_id;
         channel.contact_inbox_id ||= message.contact_inbox_id;
         channel.channel_key = `conversation:${message.conversation_id}`;
@@ -441,10 +439,20 @@ export const mutations = {
 
   [types.UPDATE_CONVERSATION_CALL_STATUS](
     _state,
-    { conversationId, callStatus }
+    { conversationId, callSid, callStatus }
   ) {
     const chat = getConversationById(_state)(conversationId);
     if (!chat) return;
+
+    const currentFonosterCallRef =
+      chat.additional_attributes?.fonoster_call_ref;
+    if (
+      currentFonosterCallRef &&
+      callSid &&
+      String(currentFonosterCallRef) !== String(callSid)
+    ) {
+      return;
+    }
 
     chat.additional_attributes = {
       ...chat.additional_attributes,
@@ -452,13 +460,25 @@ export const mutations = {
     };
   },
 
-  [types.UPDATE_MESSAGE_CALL_STATUS](_state, { conversationId, callStatus }) {
+  [types.UPDATE_MESSAGE_CALL_STATUS](
+    _state,
+    { conversationId, callSid, callStatus }
+  ) {
     const chat = getConversationById(_state)(conversationId);
     if (!chat) return;
 
-    const lastCall = (chat.messages || []).findLast(
-      m => m.content_type === CONTENT_TYPES.VOICE_CALL
+    const voiceCalls = (chat.messages || []).filter(
+      message => message.content_type === CONTENT_TYPES.VOICE_CALL
     );
+    const lastCall = callSid
+      ? voiceCalls.findLast(message => {
+          const data = message.content_attributes?.data || {};
+          return (
+            String(data.call_sid || data.callSid || '') === String(callSid) ||
+            String(message.source_id || '') === `voice_call:${callSid}`
+          );
+        })
+      : voiceCalls.at(-1);
 
     if (!lastCall) return;
 

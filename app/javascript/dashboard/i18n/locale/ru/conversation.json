@@ -323,7 +323,8 @@
       "ALL_CHANNELS": "Все каналы",
       "REPLY_VIA": "Ответить через",
       "ACTIVE_CHANNEL": "Активный канал: {channel}",
-      "REPLY_RESTRICTED_SUFFIX": "(ответ ограничен)"
+      "REPLY_RESTRICTED_SUFFIX": "(ответ ограничен)",
+      "CALL_ACTION": "Позвонить"
     },
     "SENT_BY": "Отправитель:",
     "BOT": "Бот",

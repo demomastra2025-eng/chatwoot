@@ -9,6 +9,7 @@ import EmailTranscriptModal from './EmailTranscriptModal.vue';
 import ResolveAction from '../../buttons/ResolveAction.vue';
 import ButtonV4 from 'dashboard/components-next/button/Button.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 
 import {
   CMD_MUTE_CONVERSATION,
@@ -24,9 +25,14 @@ const [showEmailActionsModal, toggleEmailModal] = useToggle(false);
 const [showActionsDropdown, toggleDropdown] = useToggle(false);
 
 const currentChat = computed(() => store.getters.getSelectedChat);
+const isCommunicationThreadConversation = computed(() =>
+  isCommunicationThread(currentChat.value)
+);
 
 const actionMenuItems = computed(() => {
   const items = [];
+
+  if (isCommunicationThreadConversation.value) return items;
 
   if (!currentChat.value.muted) {
     items.push({
@@ -54,8 +60,14 @@ const actionMenuItems = computed(() => {
   return items;
 });
 
+const openEmailTranscriptModal = () => {
+  if (isCommunicationThreadConversation.value) return;
+  toggleEmailModal();
+};
+
 const handleActionClick = ({ action }) => {
   toggleDropdown(false);
+  if (isCommunicationThreadConversation.value) return;
 
   if (action === 'mute') {
     store.dispatch('muteConversation', currentChat.value.id);
@@ -64,29 +76,31 @@ const handleActionClick = ({ action }) => {
     store.dispatch('unmuteConversation', currentChat.value.id);
     useAlert(t('CONTACT_PANEL.UNMUTED_SUCCESS'));
   } else if (action === 'send_transcript') {
-    toggleEmailModal();
+    openEmailTranscriptModal();
   }
 };
 
 // These functions are needed for the event listeners
 const mute = () => {
+  if (isCommunicationThreadConversation.value) return;
   store.dispatch('muteConversation', currentChat.value.id);
   useAlert(t('CONTACT_PANEL.MUTED_SUCCESS'));
 };
 
 const unmute = () => {
+  if (isCommunicationThreadConversation.value) return;
   store.dispatch('unmuteConversation', currentChat.value.id);
   useAlert(t('CONTACT_PANEL.UNMUTED_SUCCESS'));
 };
 
 emitter.on(CMD_MUTE_CONVERSATION, mute);
 emitter.on(CMD_UNMUTE_CONVERSATION, unmute);
-emitter.on(CMD_SEND_TRANSCRIPT, toggleEmailModal);
+emitter.on(CMD_SEND_TRANSCRIPT, openEmailTranscriptModal);
 
 onUnmounted(() => {
   emitter.off(CMD_MUTE_CONVERSATION, mute);
   emitter.off(CMD_UNMUTE_CONVERSATION, unmute);
-  emitter.off(CMD_SEND_TRANSCRIPT, toggleEmailModal);
+  emitter.off(CMD_SEND_TRANSCRIPT, openEmailTranscriptModal);
 });
 </script>
 
@@ -97,6 +111,7 @@ onUnmounted(() => {
       :status="currentChat.status"
     />
     <div
+      v-if="actionMenuItems.length"
       v-on-clickaway="() => toggleDropdown(false)"
       class="relative flex items-center group"
     >

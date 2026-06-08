@@ -18,7 +18,9 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         conversation_id: conversation.display_id,
         inbox_id: conversation.inbox_id,
         inbox_name: conversation.inbox.name,
+        source_id: conversation.contact_inbox.source_id,
         contact_inbox_id: conversation.contact_inbox_id,
+        channel_profile: nil,
         channel: conversation.inbox.channel_type,
         medium: conversation.inbox.channel.respond_to?(:medium) ? conversation.inbox.channel.medium : nil,
         provider: conversation.inbox.channel.class.name,
@@ -36,6 +38,28 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         disabled_reason: conversation.can_reply? ? nil : 'not_replyable',
         primary: link.primary?,
         last_activity_at: conversation.last_activity_at.to_i
+      )
+    end
+
+    it 'returns contact-facing channel identity metadata without replacing inbox metadata' do
+      contact = create(:contact, account: account)
+      inbox = create(:inbox, account: account, name: 'Business Telegram')
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: 'client-source-id')
+      create(:contact_channel_profile, contact_inbox: contact_inbox, username: 'client_login', identifier: 'telegram-user-id')
+      conversation = create(:conversation, account: account, contact: contact, inbox: inbox, contact_inbox: contact_inbox)
+      link = conversation.communication_thread_conversation
+
+      payload = described_class.new(links: [link]).perform.first
+
+      expect(payload).to include(
+        inbox_name: 'Business Telegram',
+        source_id: 'client-source-id',
+        contact_inbox_id: contact_inbox.id
+      )
+      expect(payload[:channel_profile]).to include(
+        username: 'client_login',
+        identifier: 'telegram-user-id',
+        source_id: 'client-source-id'
       )
     end
 
@@ -65,6 +89,57 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
       expect(payload[:reply_window_closes_at]).to be_present
     end
 
+    it 'marks voice channels as callable but not text-sendable' do
+      contact = create(:contact, phone_number: '+15550001234', account: account)
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
+      link = conversation.communication_thread_conversation
+
+      payload = described_class.new(links: [link]).perform.first
+
+      expect(payload).to include(
+        channel: 'Channel::Voice',
+        can_reply: true,
+        can_send_text: false,
+        can_send_attachments: false,
+        disabled: false,
+        disabled_reason: nil
+      )
+    end
+
+    it 'deduplicates linked conversations by inbox for selector payloads' do
+      contact = create(:contact, :with_email, account: account)
+      inbox = create(:inbox, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      older_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: inbox,
+        contact_inbox: contact_inbox,
+        last_activity_at: 2.days.ago
+      )
+      newer_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: inbox,
+        contact_inbox: contact_inbox,
+        last_activity_at: 1.hour.ago
+      )
+      links = [older_conversation, newer_conversation].map { |conversation| conversation.reload.communication_thread_conversation }
+
+      payload = described_class.new(links: links).perform
+
+      expect(payload.pluck(:inbox_id)).to contain_exactly(inbox.id)
+      expect(payload.first[:conversation_id]).to eq(newer_conversation.display_id)
+      expect(described_class.new(links: links, deduplicate_linked: false).perform.pluck(:conversation_id)).to contain_exactly(
+        older_conversation.display_id,
+        newer_conversation.display_id
+      )
+    end
+
     it 'returns unlinked channel capability with target contact inbox aliases' do
       contact = create(:contact, :with_email, account: account)
       conversation = create(:conversation, account: account, contact: contact)
@@ -75,7 +150,8 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
       payload = described_class.new(
         links: [link],
         contact: contact,
-        available_inboxes: [conversation.inbox, email_inbox]
+        available_inboxes: [conversation.inbox, email_inbox],
+        include_unlinked: true
       ).perform.find { |channel| channel[:inbox_id] == email_inbox.id }
 
       expect(payload).to include(

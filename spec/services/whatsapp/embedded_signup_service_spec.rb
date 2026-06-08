@@ -12,6 +12,13 @@ describe Whatsapp::EmbeddedSignupService do
   end
   let(:service) { described_class.new(account: account, params: params) }
   let(:access_token) { 'test_access_token' }
+  let(:token_health) do
+    {
+      'status' => 'healthy',
+      'waba_access' => true,
+      'phone_number_access' => true
+    }
+  end
   let(:phone_info) do
     {
       phone_number_id: params[:phone_number_id],
@@ -38,8 +45,8 @@ describe Whatsapp::EmbeddedSignupService do
 
       validation_service = instance_double(Whatsapp::TokenValidationService)
       allow(Whatsapp::TokenValidationService).to receive(:new)
-        .with(access_token, params[:waba_id]).and_return(validation_service)
-      allow(validation_service).to receive(:perform)
+        .with(access_token, params[:waba_id], phone_number_id: params[:phone_number_id]).and_return(validation_service)
+      allow(validation_service).to receive(:perform).and_return(token_health)
 
       channel_creation = instance_double(Whatsapp::ChannelCreationService)
       allow(Whatsapp::ChannelCreationService).to receive(:new)
@@ -48,6 +55,7 @@ describe Whatsapp::EmbeddedSignupService do
       allow(channel_creation).to receive(:perform).and_return(channel)
 
       allow(channel).to receive(:setup_webhooks)
+      allow(channel).to receive(:store_token_health!)
       allow(channel).to receive(:phone_number).and_return('+1234567890')
 
       health_service = instance_double(Whatsapp::HealthService)
@@ -64,6 +72,12 @@ describe Whatsapp::EmbeddedSignupService do
 
       result = service.perform
       expect(result).to eq(channel)
+    end
+
+    it 'stores token health metadata on the channel' do
+      expect(channel).to receive(:store_token_health!).with(token_health)
+
+      service.perform
     end
 
     it 'checks health status after channel creation' do

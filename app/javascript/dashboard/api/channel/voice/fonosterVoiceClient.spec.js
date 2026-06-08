@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   connectMock,
@@ -6,6 +6,7 @@ const {
   registerMock,
   unregisterMock,
   answerMock,
+  defaultSessionDescriptionHandlerFactoryMock,
   updateWebphonePresenceMock,
   simpleUserConstructorMock,
 } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const {
   registerMock: vi.fn(),
   unregisterMock: vi.fn(),
   answerMock: vi.fn(),
+  defaultSessionDescriptionHandlerFactoryMock: vi.fn(factory => factory),
   updateWebphonePresenceMock: vi.fn(),
   simpleUserConstructorMock: vi.fn(),
 }));
@@ -26,6 +28,8 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
 
 vi.mock('sip.js', () => ({
   Web: {
+    defaultSessionDescriptionHandlerFactory:
+      defaultSessionDescriptionHandlerFactoryMock,
     SimpleUser: simpleUserConstructorMock,
   },
 }));
@@ -47,12 +51,21 @@ const importClient = async () => {
 };
 
 describe('fonosterVoiceClient', () => {
+  const originalMediaDevicesDescriptor = Object.getOwnPropertyDescriptor(
+    navigator,
+    'mediaDevices'
+  );
+
   beforeEach(() => {
     connectMock.mockReset();
     disconnectMock.mockReset();
     registerMock.mockReset();
     unregisterMock.mockReset();
     answerMock.mockReset();
+    defaultSessionDescriptionHandlerFactoryMock.mockClear();
+    defaultSessionDescriptionHandlerFactoryMock.mockImplementation(
+      factory => factory
+    );
     updateWebphonePresenceMock.mockReset();
     simpleUserConstructorMock.mockReset();
 
@@ -61,6 +74,19 @@ describe('fonosterVoiceClient', () => {
     unregisterMock.mockResolvedValue(undefined);
     answerMock.mockResolvedValue(undefined);
     updateWebphonePresenceMock.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    if (originalMediaDevicesDescriptor) {
+      Object.defineProperty(
+        navigator,
+        'mediaDevices',
+        originalMediaDevicesDescriptor
+      );
+      return;
+    }
+
+    Reflect.deleteProperty(navigator, 'mediaDevices');
   });
 
   it('reports browser presence when SIP registration succeeds', async () => {
@@ -277,6 +303,186 @@ describe('fonosterVoiceClient', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('prewarms the microphone and reuses that stream for SIP media', async () => {
+    const audioTrack = { kind: 'audio', readyState: 'live', stop: vi.fn() };
+    const stream = {
+      getAudioTracks: () => [audioTrack],
+      getTracks: () => [audioTrack],
+    };
+    const getUserMediaMock = vi.fn().mockResolvedValue(stream);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: getUserMediaMock },
+    });
+    registerMock.mockResolvedValue(undefined);
+    simpleUserConstructorMock.mockImplementation(() => ({
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    const client = await importClient();
+    await client.initializeDevice(completeSessionConfig);
+    await expect(client.prewarmMicrophone()).resolves.toEqual({
+      provider: 'fonoster',
+      prewarmed: true,
+    });
+
+    const mediaStreamFactory =
+      simpleUserConstructorMock.mock.calls[0][1].userAgentOptions
+        .sessionDescriptionHandlerFactory;
+    await expect(
+      mediaStreamFactory({ audio: true, video: false })
+    ).resolves.toBe(stream);
+
+    expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+    expect(getUserMediaMock).toHaveBeenCalledWith({
+      audio: true,
+      video: false,
+    });
+  });
+
+  it('keeps an in-flight microphone prewarm during cold SIP initialization', async () => {
+    let resolveMedia;
+    const audioTrack = { kind: 'audio', readyState: 'live', stop: vi.fn() };
+    const stream = {
+      getAudioTracks: () => [audioTrack],
+      getTracks: () => [audioTrack],
+    };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(
+          () =>
+            new Promise(resolve => {
+              resolveMedia = resolve;
+            })
+        ),
+      },
+    });
+    registerMock.mockResolvedValue(undefined);
+    simpleUserConstructorMock.mockImplementation(() => ({
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    const client = await importClient();
+    const prewarmPromise = client.prewarmMicrophone();
+    await client.initializeDevice(completeSessionConfig);
+    resolveMedia(stream);
+
+    await expect(prewarmPromise).resolves.toEqual({
+      provider: 'fonoster',
+      prewarmed: true,
+    });
+    expect(audioTrack.stop).not.toHaveBeenCalled();
+  });
+
+  it('stops the prewarmed microphone if the outbound SIP INVITE never arrives', async () => {
+    vi.useFakeTimers();
+    const audioTrack = { kind: 'audio', readyState: 'live', stop: vi.fn() };
+    const stream = {
+      getAudioTracks: () => [audioTrack],
+      getTracks: () => [audioTrack],
+    };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    registerMock.mockResolvedValue(undefined);
+    simpleUserConstructorMock.mockImplementation(() => ({
+      answer: answerMock,
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    try {
+      const client = await importClient();
+      await client.initializeDevice(completeSessionConfig);
+      await client.prewarmMicrophone();
+      const joinPromise = client.joinClientCall({
+        callRef: 'call-no-invite',
+        callDirection: 'outbound',
+      });
+
+      await vi.advanceTimersByTimeAsync(45_000);
+
+      await expect(joinPromise).resolves.toBeNull();
+      expect(audioTrack.stop).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops a prewarmed microphone when ending a call without an active SIP leg', async () => {
+    const audioTrack = { kind: 'audio', readyState: 'live', stop: vi.fn() };
+    const stream = {
+      getAudioTracks: () => [audioTrack],
+      getTracks: () => [audioTrack],
+    };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    registerMock.mockResolvedValue(undefined);
+    simpleUserConstructorMock.mockImplementation(() => ({
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    const client = await importClient();
+    await client.initializeDevice(completeSessionConfig);
+    await client.prewarmMicrophone();
+
+    await expect(client.endClientCall()).resolves.toBeNull();
+    expect(audioTrack.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('includes the current call ref when the SIP leg disconnects', async () => {
+    registerMock.mockResolvedValue(undefined);
+    simpleUserConstructorMock.mockImplementation(() => ({
+      answer: answerMock,
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    const client = await importClient();
+    const listener = vi.fn();
+    client.addEventListener('call:disconnected', listener);
+    await client.initializeDevice(completeSessionConfig);
+
+    simpleUserConstructorMock.mock.calls[0][1].delegate.onCallReceived();
+    await client.joinClientCall({
+      callRef: 'call-ref-current',
+      callDirection: 'outbound',
+    });
+    simpleUserConstructorMock.mock.calls[0][1].delegate.onCallHangup();
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: {
+          provider: 'fonoster',
+          callRef: 'call-ref-current',
+          callDirection: 'outbound',
+        },
+      })
+    );
   });
 
   it('notifies aggregators that registration is unavailable after server disconnect', async () => {
