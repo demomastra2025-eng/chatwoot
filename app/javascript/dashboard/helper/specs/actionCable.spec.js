@@ -5,6 +5,7 @@ import {
   getOutboundCallState,
   useWhatsappCallsStore,
 } from 'dashboard/stores/whatsappCalls';
+import { useCallsStore } from 'dashboard/stores/calls';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
@@ -202,6 +203,35 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(actionCable.events['whatsapp_call.agent_disconnected']).toBe(
         actionCable.onWhatsappCallAgentDisconnected
       );
+    });
+
+    it('stores native voice incoming calls from lightweight realtime events', () => {
+      const callsStore = useCallsStore();
+
+      actionCable.onReceived({
+        event: 'voice_call.incoming',
+        data: {
+          account_id: 1,
+          call_sid: 'fonoster-inbound-1',
+          status: 'ringing',
+          call_direction: 'inbound',
+          provider: 'fonoster',
+          inbox_id: 4593,
+          conversation_id: 627,
+          conversation_display_id: 627,
+          caller: { phone_number: '+77066318623' },
+        },
+      });
+
+      expect(callsStore.incomingCalls[0]).toMatchObject({
+        callSid: 'fonoster-inbound-1',
+        status: 'ringing',
+        callDirection: 'inbound',
+        provider: 'fonoster',
+        inboxId: 4593,
+        conversationId: 627,
+        caller: { phone_number: '+77066318623' },
+      });
     });
 
     it('should reject account-scoped events without account_id', () => {

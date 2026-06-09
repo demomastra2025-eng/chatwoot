@@ -38,6 +38,7 @@ const getCallInfo = call => {
     call?.inboxId || conversation?.inbox_id
   );
   const sender = conversation?.meta?.sender;
+  const caller = call?.caller || {};
   const provider = call?.provider || inbox?.provider;
   return {
     conversation,
@@ -47,25 +48,47 @@ const getCallInfo = call => {
     contactName:
       sender?.name ||
       sender?.phone_number ||
+      caller?.name ||
+      caller?.phone_number ||
+      caller?.phone ||
       t('CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER'),
     inboxName: inbox?.name || t('CONVERSATION.VOICE_WIDGET.DEFAULT_INBOX_NAME'),
-    avatar: sender?.avatar || sender?.thumbnail,
+    avatar: sender?.avatar || sender?.thumbnail || caller?.avatar,
   };
 };
 
 const openConversation = call => {
   if (!call?.conversationId) return;
 
+  const { conversation } = getCallInfo(call);
+  const inboxId = call.inboxId || conversation?.inbox_id;
+  const accountId = router.currentRoute.value.params?.accountId;
+  const routeName = inboxId
+    ? 'conversation_through_inbox'
+    : 'inbox_conversation';
+  const routeParams = {
+    accountId,
+    conversation_id: call.conversationId,
+    ...(inboxId ? { inbox_id: inboxId } : {}),
+  };
+
+  const currentParams = router.currentRoute.value.params || {};
+  const sameConversation =
+    String(currentParams.conversation_id) === String(call.conversationId);
+  const sameInbox =
+    !inboxId || String(currentParams.inbox_id) === String(inboxId);
+
   if (
-    String(router.currentRoute.value.params?.conversation_id) ===
-    String(call.conversationId)
+    router.currentRoute.value.name === routeName &&
+    sameConversation &&
+    sameInbox
   ) {
     return;
   }
 
   router.push({
-    name: 'inbox_conversation',
-    params: { conversation_id: call.conversationId },
+    name: routeName,
+    params: routeParams,
   });
 };
 

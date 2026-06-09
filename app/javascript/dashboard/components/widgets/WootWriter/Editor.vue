@@ -110,6 +110,7 @@ const props = defineProps({
   medium: { type: String, default: '' },
   showImageResizeToolbar: { type: Boolean, default: false }, // A kill switch to show or hide the image toolbar
   focusOnMount: { type: Boolean, default: true },
+  compact: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -997,6 +998,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
     class="relative w-full"
     :class="{
       'opacity-50 cursor-not-allowed pointer-events-none': disabled,
+      'is-compact-composer': compact,
     }"
   >
     <TagAgents
@@ -1165,6 +1167,17 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       )
   ) {
   @apply min-h-[4.5rem] max-h-[7.5rem];
+}
+
+.is-compact-composer {
+  .ProseMirror-woot-style:not(
+      :where(
+          .resizable-editor-wrapper .ProseMirror-woot-style,
+          .auto-height-editor-wrapper .ProseMirror-woot-style
+        )
+    ) {
+    min-height: 2rem !important;
+  }
 }
 
 .auto-height-editor-wrapper {

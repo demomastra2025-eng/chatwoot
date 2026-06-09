@@ -93,6 +93,54 @@ describe('ReplyBox', () => {
     ).toBe(false);
   });
 
+  it('does not force direct voice-channel conversations into private note mode', () => {
+    expect(
+      ReplyBox.computed.isPrivate.call({
+        selectedChannelCanReply: false,
+        isAWhatsAppChannel: false,
+        isAPIInbox: false,
+        isAVoiceChannel: true,
+        isOnPrivateNote: false,
+      })
+    ).toBe(false);
+    expect(
+      ReplyBox.computed.isReplyRestricted.call({
+        selectedChannelCanReply: false,
+        isAWhatsAppChannel: false,
+        isAPIInbox: false,
+        isAVoiceChannel: true,
+      })
+    ).toBe(false);
+  });
+
+  it('treats communication-thread voice channels as replyable call channels', () => {
+    expect(
+      ReplyBox.computed.selectedChannelCanReply.call({
+        isCommunicationThreadConversation: true,
+        activeReplyChannel: {
+          channel: 'Channel::Voice',
+          can_reply: false,
+          disabled: false,
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('keeps reply mode when a selected communication-thread voice channel changes', () => {
+    const context = {
+      isOnPrivateNote: false,
+      selectedChannelCanReply: false,
+      isAWhatsAppChannel: false,
+      isAPIInbox: false,
+      isAVoiceChannel: true,
+      replyType: 'NOTE',
+    };
+
+    ReplyBox.methods.syncReplyModeWithSelectedChannel.call(context);
+
+    expect(context.replyType).toBe('REPLY');
+  });
+
   it('uses the selected child conversation for thread reply actions while keeping the route id synthetic', () => {
     const context = {
       isCommunicationThreadConversation: true,

@@ -200,7 +200,7 @@ describe('Message', () => {
     );
   });
 
-  it('shows a neutral channel icon avatar for incoming messages', () => {
+  it('shows a colored channel icon avatar for incoming messages', () => {
     useMapGetterMock.mockReturnValue(
       ref(() => ({
         channel_type: 'Channel::Voice',
@@ -218,7 +218,7 @@ describe('Message', () => {
     expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
       name: '',
       src: '',
-      iconName: 'i-ri-phone-fill channel-icon-voice channel-icon-neutral',
+      iconName: 'i-woot-voice',
     });
   });
 });

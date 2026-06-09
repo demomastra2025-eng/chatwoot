@@ -41,14 +41,14 @@ const mountComponent = props =>
   });
 
 describe('ChatListChannelFilter', () => {
-  it('renders only when there is more than one channel option', () => {
+  it('keeps the channel switcher visible with only All channels', () => {
     const wrapper = mountComponent({
       items: [{ key: 'all', label: 'Все каналы' }],
     });
 
     expect(
       wrapper.find('[data-test-id="chat-list-channel-filter"]').isVisible()
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('replaces the native select with a clean sidebar-style dropdown trigger', () => {
@@ -65,7 +65,7 @@ describe('ChatListChannelFilter', () => {
     expect(trigger.text()).toContain('WhatsApp');
     expect(trigger.find('[data-test-id="badge"]').text()).toBe('2');
     expect(trigger.find('[data-test-id="icon"]').attributes('data-icon')).toBe(
-      'i-woot-whatsapp channel-icon-neutral'
+      'i-woot-whatsapp'
     );
   });
 
@@ -78,7 +78,7 @@ describe('ChatListChannelFilter', () => {
     expect(trigger.text()).toContain('Все каналы');
     expect(trigger.find('[data-test-id="badge"]').text()).toBe('4');
     expect(trigger.find('[data-test-id="icon"]').attributes('data-icon')).toBe(
-      'i-lucide-mailbox channel-icon-neutral'
+      'i-lucide-mailbox'
     );
   });
 
@@ -97,7 +97,7 @@ describe('ChatListChannelFilter', () => {
     expect(items[0].text()).toContain('4');
     expect(items[1].text()).toContain('WhatsApp');
     expect(items[1].find('[data-test-id="icon"]').attributes('data-icon')).toBe(
-      'i-woot-whatsapp channel-icon-neutral'
+      'i-woot-whatsapp'
     );
 
     await items[1].trigger('click');

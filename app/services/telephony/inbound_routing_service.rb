@@ -16,6 +16,7 @@ class Telephony::InboundRoutingService
                end
 
     enqueue_route_lifecycle!(decision)
+    broadcast_fast_incoming_call!(decision)
     decision
   end
 
@@ -94,7 +95,145 @@ class Telephony::InboundRoutingService
     )
   end
 
+  def broadcast_fast_incoming_call!(decision)
+    return unless operator_decision?(decision)
+    return if number_binding.blank?
+    return if call_ref.blank? || caller_number.blank?
+    return if diagnostic_route_probe?
+
+    call_session = ensure_fast_incoming_call_session!(decision)
+    return if call_session.blank? || call_session.terminal?
+
+    tokens = fast_incoming_call_pubsub_tokens
+    return if tokens.blank?
+
+    event = {
+      event: 'voice_call.incoming',
+      data: fast_incoming_call_payload(decision)
+    }
+
+    tokens.each { |token| ActionCable.server.broadcast(token, event) }
+  rescue StandardError => e
+    Rails.logger.warn(
+      'TELEPHONY_FAST_INCOMING_BROADCAST_FAILED ' \
+      "call_ref=#{call_ref} account_id=#{number_binding&.account_id} error=#{e.class.name}: #{e.message}"
+    )
+  end
+
+  def fast_incoming_call_pubsub_tokens
+    operator_candidates.filter_map { |candidate| candidate.user&.pubsub_token }.uniq
+  end
+
+  def ensure_fast_incoming_call_session!(decision)
+    call_session = number_binding.account.telephony_call_sessions.create_or_find_by!(
+      external_call_ref: call_ref
+    ) do |record|
+      record.provider = number_binding.provider.presence || 'fonoster'
+      record.status = 'ringing'
+      record.direction = 'inbound'
+      record.started_at = Time.current
+      record.last_event_at = Time.current
+      record.legs = []
+      record.metadata = {}
+    end
+
+    call_session.with_lock do
+      call_session.reload
+      unless call_session.terminal?
+        call_session.assign_attributes(fast_incoming_call_session_attributes(decision, call_session))
+        call_session.save! if call_session.changed?
+      end
+    end
+
+    call_session
+  end
+
+  def fast_incoming_call_session_attributes(decision, call_session)
+    {
+      account: number_binding.account,
+      conversation: existing_voice_conversation || call_session.conversation,
+      contact: existing_voice_conversation&.contact || call_session.contact,
+      inbox: inbox || call_session.inbox,
+      number_binding: number_binding,
+      provider: number_binding.provider.presence || call_session.provider || 'fonoster',
+      status: call_session.status.presence || 'ringing',
+      direction: 'inbound',
+      from_number: caller_number,
+      to_number: inbound_number || number_binding.phone_number,
+      started_at: call_session.started_at || Time.current,
+      last_event_at: [call_session.last_event_at, Time.current].compact.max,
+      metadata: fast_incoming_call_session_metadata(decision, call_session)
+    }.compact
+  end
+
+  def fast_incoming_call_session_metadata(decision, call_session)
+    metadata = (call_session.metadata || {}).deep_dup.deep_stringify_keys
+    existing_route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_dup : {}
+    metadata['metadata'] = existing_route_metadata.deep_merge(
+      route_lifecycle_metadata(decision).deep_stringify_keys
+    )
+    metadata['fast_incoming_broadcast'] = {
+      'event' => 'voice_call.incoming',
+      'event_key' => route_lifecycle_event_key,
+      'created_at' => Time.current.iso8601
+    }
+    metadata.compact
+  end
+
+  def fast_incoming_call_payload(decision)
+    conversation = existing_voice_conversation
+    contact = conversation&.contact
+
+    {
+      account_id: number_binding.account_id,
+      inbox_id: number_binding.inbox_id,
+      number_ref: number_binding.number_ref,
+      provider: number_binding.provider,
+      call_sid: call_ref,
+      callSid: call_ref,
+      call_ref: call_ref,
+      status: 'ringing',
+      call_direction: 'inbound',
+      direction: 'inbound',
+      conversation_id: conversation&.display_id,
+      conversation_display_id: conversation&.display_id,
+      conversation_db_id: conversation&.id,
+      contact_id: contact&.id,
+      sender_id: contact&.id,
+      from_number: caller_number,
+      to_number: inbound_number || number_binding.phone_number,
+      caller: fast_incoming_call_caller_payload(contact),
+      operator_pool: decision[:operator_pool] || decision['operator_pool'],
+      operator_pool_size: decision[:operator_pool_size] || decision['operator_pool_size'],
+      created_at: Time.current.to_i
+    }.compact
+  end
+
+  def fast_incoming_call_caller_payload(contact)
+    {
+      id: contact&.id,
+      name: contact&.name,
+      phone_number: contact&.phone_number || caller_number
+    }.compact
+  end
+
   def route_lifecycle_payload(decision)
+    {
+      event_key: route_lifecycle_event_key,
+      event: 'session_started',
+      call_ref: call_ref,
+      account_id: number_binding.account_id,
+      inbox_id: number_binding.inbox_id,
+      number_ref: number_binding.number_ref,
+      provider: number_binding.provider,
+      direction: 'inbound',
+      ingress_number: inbound_number || number_binding.phone_number,
+      caller_number: caller_number,
+      metadata: route_lifecycle_metadata(decision)
+    }.compact
+  end
+
+  def route_lifecycle_metadata(decision)
     metadata = {
       route_action: decision[:action] || decision['action'],
       route_reason: decision[:reason] || decision['reason']
@@ -107,19 +246,7 @@ class Telephony::InboundRoutingService
       metadata[:chatwoot_conversation_status] = existing_voice_conversation.status
     end
 
-    {
-      event_key: route_lifecycle_event_key,
-      event: 'session_started',
-      call_ref: call_ref,
-      account_id: number_binding.account_id,
-      inbox_id: number_binding.inbox_id,
-      number_ref: number_binding.number_ref,
-      provider: number_binding.provider,
-      direction: 'inbound',
-      ingress_number: inbound_number || number_binding.phone_number,
-      caller_number: caller_number,
-      metadata: metadata.compact
-    }.compact
+    metadata.compact
   end
 
   def operator_route_metadata(decision)

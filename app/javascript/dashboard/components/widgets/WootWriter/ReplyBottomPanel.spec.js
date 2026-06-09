@@ -137,8 +137,9 @@ describe('ReplyBottomPanel', () => {
     const sendButton = wrapper.find('button[type="submit"]');
     const channelToggle = wrapper.find('.reply-channel-menu__toggle');
     expect(channelToggle.attributes('data-icon')).toBe(
-      'i-ri-whatsapp-fill channel-icon-neutral'
+      'i-woot-whatsapp channel-icon-neutral'
     );
+    expect(sendButton.attributes('data-icon')).toBeUndefined();
     expect(channelToggle.text()).not.toContain('WhatsApp');
     expect(sendButton.text()).toContain('Send (↵)');
     expect(sendButton.text()).not.toContain('WhatsApp');
@@ -163,11 +164,7 @@ describe('ReplyBottomPanel', () => {
       'Telegram'
     );
     expect(channelItems[0].find('.reply-channel-menu__icon').classes()).toEqual(
-      expect.arrayContaining([
-        'i-ri-phone-fill',
-        'channel-icon-voice',
-        'channel-icon-neutral',
-      ])
+      expect.arrayContaining(['i-woot-voice', 'channel-icon-neutral'])
     );
 
     await channelItems[0].trigger('click');
@@ -210,6 +207,7 @@ describe('ReplyBottomPanel', () => {
       inboxId: 4593,
       disabled: false,
     });
+    expect(voiceCallButtons[0].props('icon')).toBe('');
     expect(wrapper.find('button[type="submit"]').exists()).toBe(false);
   });
 

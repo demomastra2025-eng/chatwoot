@@ -60,6 +60,99 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('fallback_app_ref')
   end
 
+  it 'broadcasts a lightweight native voice incoming call event to operator candidates' do
+    agent = create(:user, account: account, role: :agent)
+    contact = create(:contact, account: account, phone_number: '+15559999999')
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: '+15559999999')
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      display_id: 627,
+      status: :open
+    )
+    agent_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: agent,
+      agent_aor: 'sip:1001@example.test',
+      enabled: true
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    allow(ActionCable.server).to receive(:broadcast)
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      expect do
+        post path,
+             params: {
+               call_ref: 'fast-inbound-route',
+               ingress_number: voice_channel.phone_number,
+               caller_number: '+15559999999'
+             },
+             headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+             as: :json
+      end.to have_enqueued_job(Telephony::InboundRouteLifecycleJob).on_queue('telephony_realtime')
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('action' => 'operator')
+
+    call_session = account.telephony_call_sessions.find_by!(
+      external_call_ref: 'fast-inbound-route'
+    )
+    expect(call_session).to have_attributes(
+      status: 'ringing',
+      direction: 'inbound',
+      inbox_id: voice_inbox.id,
+      number_binding_id: number_binding.id,
+      conversation_id: conversation.id,
+      contact_id: contact.id,
+      from_number: '+15559999999',
+      to_number: voice_channel.phone_number
+    )
+    expect(call_session.metadata.dig('metadata', 'route_action')).to eq(
+      'operator'
+    )
+    expect(
+      call_session.metadata.dig('metadata', 'operator_candidate_user_ids')
+    ).to include(agent.id)
+    expect(call_session.metadata.dig('fast_incoming_broadcast', 'event')).to eq(
+      'voice_call.incoming'
+    )
+
+    expect(ActionCable.server).to have_received(:broadcast).with(
+      agent.pubsub_token,
+      event: 'voice_call.incoming',
+      data: include(
+        account_id: account.id,
+        inbox_id: voice_inbox.id,
+        provider: 'fonoster',
+        call_sid: 'fast-inbound-route',
+        call_direction: 'inbound',
+        conversation_id: conversation.display_id,
+        from_number: '+15559999999',
+        to_number: voice_channel.phone_number,
+        caller: include(id: contact.id, phone_number: '+15559999999')
+      )
+    )
+
+    claim = Telephony::OperatorCallClaimService.new(
+      account: account,
+      user: agent,
+      call_ref: 'fast-inbound-route'
+    ).perform
+    expect(claim).to include(claimed: true, call_ref: 'fast-inbound-route')
+  end
+
   it 'does not persist route lifecycle or voice-call bubble for diagnostic audit probes' do
     caller_number = '+15550001010'
     contact = create(:contact, account: account, phone_number: caller_number)
@@ -87,6 +180,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       fallback_mode: 'reject'
     )
 
+    allow(ActionCable.server).to receive(:broadcast)
+
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       expect do
         post path,
@@ -110,6 +205,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('conversation_id')
     expect(response.parsed_body).not_to have_key('conversation_display_id')
     expect(response.parsed_body).not_to have_key('conversation_status')
+    expect(ActionCable.server).not_to have_received(:broadcast)
     expect(Message.voice_calls.where(source_id: 'voice_call:audit-call')).not_to exist
   end
 

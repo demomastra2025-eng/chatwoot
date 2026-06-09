@@ -33,6 +33,11 @@ import {
   getUnreadMessages,
 } from 'dashboard/helper/conversationHelper';
 
+import {
+  getCommunicationReplyChannels,
+  isCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
+
 // constants
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { REPLY_POLICY } from 'shared/constants/links';
@@ -245,6 +250,21 @@ export default {
           ? 'CONVERSATION.UNREAD_MESSAGES'
           : 'CONVERSATION.UNREAD_MESSAGE';
       return `${count} ${this.$t(label)}`;
+    },
+    hasCommunicationThreadReplyableChannel() {
+      if (!isCommunicationThread(this.currentChat)) return false;
+
+      return (
+        getCommunicationReplyChannels(this.currentChat?.channels || []).length >
+        0
+      );
+    },
+    shouldShowReplyWindowBanner() {
+      return (
+        !this.currentChat?.can_reply &&
+        !this.isAVoiceChannel &&
+        !this.hasCommunicationThreadReplyableChannel
+      );
     },
     inboxSupportsReplyTo() {
       const incoming = this.inboxHasFeature(INBOX_FEATURES.REPLY_TO);
@@ -490,7 +510,7 @@ export default {
   >
     <div ref="topBannerRef">
       <Banner
-        v-if="!currentChat.can_reply"
+        v-if="shouldShowReplyWindowBanner"
         color-scheme="alert"
         class="mx-2 mt-2 overflow-hidden rounded-lg"
         :banner-message="replyWindowBannerMessage"

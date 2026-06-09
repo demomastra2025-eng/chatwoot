@@ -264,14 +264,36 @@ const conversationCustomAttributes = useFunctionGetter(
   'conversation_attribute'
 );
 
-const sortedChannelInboxes = computed(() =>
-  (props.communicationThreadMode
-    ? getCommunicationThreadChannelInboxes(chatLists.value)
-    : inboxesList.value
-  )
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name))
+const communicationThreadChannelInboxes = ref([]);
+const currentCommunicationThreadChannelInboxes = computed(() =>
+  getCommunicationThreadChannelInboxes(chatLists.value)
 );
+
+watch(
+  [
+    () => props.communicationThreadMode,
+    currentCommunicationThreadChannelInboxes,
+  ],
+  ([isThreadMode, channelInboxes]) => {
+    if (!isThreadMode) {
+      communicationThreadChannelInboxes.value = [];
+      return;
+    }
+
+    if (channelInboxes.length) {
+      communicationThreadChannelInboxes.value = channelInboxes;
+    }
+  },
+  { immediate: true }
+);
+
+const sortedChannelInboxes = computed(() => {
+  const sourceInboxes = props.communicationThreadMode
+    ? communicationThreadChannelInboxes.value
+    : inboxesList.value;
+
+  return sourceInboxes.slice().sort((a, b) => a.name.localeCompare(b.name));
+});
 
 const sidebarUnreadCount = (collection, key) => {
   if (!key) return 0;

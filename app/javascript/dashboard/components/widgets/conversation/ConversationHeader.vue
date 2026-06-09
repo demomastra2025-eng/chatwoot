@@ -253,7 +253,7 @@ const statusMeta = computed(() => {
             <span
               v-for="identity in visibleContactIdentities"
               :key="identity"
-              class="inline-flex items-center px-2 py-0.5 rounded-full bg-n-alpha-1 text-n-slate-10 whitespace-nowrap"
+              class="inline-flex items-center py-0.5 text-n-slate-11 whitespace-nowrap"
             >
               {{ identity }}
             </span>

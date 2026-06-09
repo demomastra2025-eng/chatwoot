@@ -158,6 +158,9 @@ const {
 } = useInbox(props.inboxId);
 const { replaceInstallationName } = useBranding();
 
+const withoutNeutralChannelColor = iconName =>
+  iconName?.replace(CHANNEL_ICON_NEUTRAL_CLASS, '').trim() || '';
+
 const EXTERNAL_ECHO_PLATFORM_I18N_KEYS = {
   [INBOX_TYPES.WEB]: 'INBOX_MGMT.CHANNELS.WEB_WIDGET',
   [INBOX_TYPES.FB]: 'INBOX_MGMT.CHANNELS.MESSENGER',
@@ -543,15 +546,14 @@ function handleEdit() {
 const avatarInfo = computed(() => {
   if (orientation.value === ORIENTATION.LEFT) {
     const { channel_type: channelType, medium } = inbox.value;
-    const iconName = getInboxIconByType(channelType, medium);
-    const neutralIconName = iconName.includes(CHANNEL_ICON_NEUTRAL_CLASS)
-      ? iconName
-      : `${iconName} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
+    const iconName = withoutNeutralChannelColor(
+      getInboxIconByType(channelType, medium, 'line')
+    );
 
     return {
       name: '',
       src: '',
-      iconName: neutralIconName,
+      iconName,
     };
   }
 

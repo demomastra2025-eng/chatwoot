@@ -57,6 +57,7 @@ import {
   decoratePayloadWithCommunicationThread,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
+  isCommunicationChannelReplyable,
   isCommunicationThread,
   isCommunicationVoiceChannel,
 } from 'dashboard/helper/communicationThreadHelper';
@@ -194,7 +195,7 @@ export default {
       if (!this.isCommunicationThreadConversation) {
         return this.currentChat?.can_reply;
       }
-      return Boolean(this.activeReplyChannel?.can_reply);
+      return isCommunicationChannelReplyable(this.activeReplyChannel);
     },
     shouldShowReplyToMessage() {
       return (
@@ -220,7 +221,8 @@ export default {
       if (
         this.selectedChannelCanReply ||
         this.isAWhatsAppChannel ||
-        this.isAPIInbox
+        this.isAPIInbox ||
+        this.isAVoiceChannel
       ) {
         return this.isOnPrivateNote;
       }
@@ -229,7 +231,7 @@ export default {
     isReplyRestricted() {
       return (
         !this.selectedChannelCanReply &&
-        !(this.isAWhatsAppChannel || this.isAPIInbox)
+        !(this.isAWhatsAppChannel || this.isAPIInbox || this.isAVoiceChannel)
       );
     },
     inboxId() {
@@ -546,7 +548,12 @@ export default {
         return;
       }
 
-      if (canReply || this.isAWhatsAppChannel || this.isAPIInbox) {
+      if (
+        canReply ||
+        this.isAWhatsAppChannel ||
+        this.isAPIInbox ||
+        this.isAVoiceChannel
+      ) {
         this.replyType = REPLY_EDITOR_MODES.REPLY;
       } else {
         this.replyType = REPLY_EDITOR_MODES.NOTE;
@@ -658,7 +665,8 @@ export default {
       if (
         this.selectedChannelCanReply ||
         this.isAWhatsAppChannel ||
-        this.isAPIInbox
+        this.isAPIInbox ||
+        this.isAVoiceChannel
       ) {
         this.replyType = REPLY_EDITOR_MODES.REPLY;
       } else {
@@ -1561,6 +1569,7 @@ export default {
           :conversation-id="conversationId"
           :editor-id="editorStateId"
           class="input popover-prosemirror-menu"
+          compact
           :is-private="isOnPrivateNote"
           :placeholder="messagePlaceHolder"
           :update-selection-with="updateEditorSelectionWith"

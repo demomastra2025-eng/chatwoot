@@ -405,13 +405,16 @@ export default {
     ActiveStorage.start();
   },
   methods: {
+    neutralChannelIcon(channelType, medium) {
+      if (!channelType) return '';
+      const icon = getInboxIconByType(channelType, medium, 'line');
+      if (!icon) return '';
+      const neutralIcon = icon.replace(CHANNEL_ICON_NEUTRAL_CLASS, '').trim();
+      return `${neutralIcon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
+    },
     replyChannelIcon(channel) {
       if (!channel?.channel) return '';
-      const icon = getInboxIconByType(channel.channel, channel.medium);
-      if (!icon) return '';
-      return icon.includes(CHANNEL_ICON_NEUTRAL_CLASS)
-        ? icon
-        : `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
+      return this.neutralChannelIcon(channel.channel, channel.medium);
     },
     replyChannelLabel(channel) {
       return getCommunicationChannelLabel(channel);
@@ -779,6 +782,15 @@ export default {
 
 .reply-channel-menu__icon {
   @apply flex-shrink-0;
+}
+
+.reply-channel-menu__toggle {
+  @apply relative;
+
+  &::before {
+    content: '';
+    @apply absolute bottom-1 top-1 w-px bg-white/30 ltr:left-0 rtl:right-0;
+  }
 }
 
 ::v-deep .file-uploads {

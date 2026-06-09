@@ -33,13 +33,15 @@ const triggerItem = computed(() => activeItem.value || visibleItems.value[0]);
 
 const itemBadge = item => Number(item?.badge || 0);
 
+const withoutNeutralChannelColor = icon =>
+  icon?.replace(CHANNEL_ICON_NEUTRAL_CLASS, '').trim() || '';
+
 const itemIcon = item => {
   const icon = item?.inbox
     ? getInboxIconByType(item.inbox.channel_type, item.inbox.medium, 'line')
     : item?.icon || 'i-lucide-mailbox';
 
-  if (!icon || icon.includes(CHANNEL_ICON_NEUTRAL_CLASS)) return icon;
-  return `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
+  return withoutNeutralChannelColor(icon);
 };
 
 const toggleDropdown = () => {
@@ -59,7 +61,7 @@ const selectItem = item => {
 
 <template>
   <div
-    v-show="visibleItems.length > 1"
+    v-show="visibleItems.length > 0"
     v-on-clickaway="closeDropdown"
     class="relative min-w-0 shrink"
     data-test-id="chat-list-channel-filter"

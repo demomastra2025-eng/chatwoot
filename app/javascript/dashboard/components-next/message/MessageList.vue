@@ -9,6 +9,10 @@ import {
   getCommunicationChannelLabel,
   isCommunicationThread,
 } from 'dashboard/helper/communicationThreadHelper';
+import {
+  CHANNEL_ICON_NEUTRAL_CLASS,
+  getInboxIconByType,
+} from 'dashboard/helper/inbox';
 
 /**
  * Props definition for the component
@@ -71,6 +75,17 @@ const channelForMessage = message => {
   return communicationChannels.value.find(
     channel =>
       String(channel.conversation_id) === String(message?.conversationId)
+  );
+};
+
+const withoutNeutralChannelColor = iconName =>
+  iconName?.replace(CHANNEL_ICON_NEUTRAL_CLASS, '').trim() || '';
+
+const channelIconForMessage = message => {
+  const channel = channelForMessage(message);
+  if (!channel?.channel) return '';
+  return withoutNeutralChannelColor(
+    getInboxIconByType(channel.channel, channel.medium, 'line')
   );
 };
 
@@ -219,8 +234,13 @@ const getInReplyToMessage = parentMessage => {
         class="my-3 flex justify-center"
       >
         <span
-          class="inline-flex items-center rounded-full border border-n-weak px-2.5 py-1 text-xs font-medium text-n-slate-11"
+          class="inline-flex items-center gap-1.5 rounded-full border border-n-weak px-2.5 py-1 text-xs font-medium text-n-slate-11"
         >
+          <span
+            v-if="channelIconForMessage(message)"
+            :class="channelIconForMessage(message)"
+            class="size-3.5 shrink-0"
+          />
           {{ channelLabelForMessage(message) }}
         </span>
       </li>

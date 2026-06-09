@@ -8,6 +8,7 @@ import {
   useWhatsappCallsStore,
   getOutboundCallState,
 } from 'dashboard/stores/whatsappCalls';
+import { useCallsStore } from 'dashboard/stores/calls';
 import {
   clearPreparedInboundAgentAnswer,
   handleAgentOffer,
@@ -73,6 +74,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'account.cache_invalidated': this.onCacheInvalidate,
       'copilot.message.created': this.onCopilotMessageCreated,
       'auth.session_replaced': this.onSessionReplaced,
+      'voice_call.incoming': this.onVoiceCallIncoming,
       'whatsapp_call.incoming': this.onWhatsappCallIncoming,
       'whatsapp_call.accepted': this.onWhatsappCallAccepted,
       'whatsapp_call.ended': this.onWhatsappCallEnded,
@@ -314,6 +316,23 @@ class ActionCableConnector extends BaseActionCableConnector {
     this.app.$store.dispatch('labels/revalidate', { newKey: keys.label });
     this.app.$store.dispatch('inboxes/revalidate', { newKey: keys.inbox });
     this.app.$store.dispatch('teams/revalidate', { newKey: keys.team });
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onVoiceCallIncoming = data => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: data.call_sid || data.callSid || data.call_ref,
+      status: data.status || 'ringing',
+      callDirection: data.call_direction || data.direction || 'inbound',
+      conversationId: data.conversation_id || data.conversation_display_id,
+      conversationDisplayId:
+        data.conversation_display_id || data.conversation_id,
+      inboxId: data.inbox_id,
+      provider: data.provider || 'fonoster',
+      senderId: data.sender_id,
+      caller: data.caller,
+    });
   };
 
   // eslint-disable-next-line class-methods-use-this
