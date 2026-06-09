@@ -32,12 +32,34 @@ describe Messages::Facebook::MessageBuilder do
       expect(message.content).to eq('facebook message')
     end
 
-    it 'increments channel authorization_error_count when error is thrown' do
+    it 'keeps the inbound message when profile lookup requires reauthorization' do
       allow(Koala::Facebook::API).to receive(:new).and_return(fb_object)
       allow(fb_object).to receive(:get_object).and_raise(Koala::Facebook::AuthenticationError.new(500, 'Error validating access token'))
       message_builder
 
-      expect(facebook_channel.authorization_error_count).to eq(2)
+      message = facebook_channel.inbox.messages.first
+      contact = facebook_channel.inbox.contacts.first
+
+      expect(facebook_channel.authorization_error_count).to eq(1)
+      expect(facebook_channel.reauthorization_required?).to be false
+      expect(message.content).to eq('facebook message')
+      expect(contact.name).to eq('John Doe')
+    end
+
+    it 'keeps the inbound message when the inbox is already marked for reauthorization' do
+      allow(facebook_channel).to receive(:send_channel_reauthorization_email)
+      facebook_channel.prompt_reauthorization!
+
+      expect(Koala::Facebook::API).not_to receive(:new)
+
+      message_builder
+
+      message = facebook_channel.inbox.messages.first
+      contact = facebook_channel.inbox.contacts.first
+
+      expect(facebook_channel.reauthorization_required?).to be true
+      expect(message.content).to eq('facebook message')
+      expect(contact.name).to eq('John Doe')
     end
 
     it 'raises exception for non profile account' do

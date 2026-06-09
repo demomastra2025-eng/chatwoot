@@ -91,11 +91,10 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
     return capability_payload(policy, false, true, reauthorization_required, nil, can_reply: true) if voice_channel?(inbox)
 
-    can_send_text = reply_window_open && free_text_allowed?(policy, reauthorization_required)
+    can_send_text = reply_window_open && free_text_allowed?(policy)
     disabled_reason = linked_disabled_reason(
       reply_window_open: reply_window_open,
       template_required: policy.requires_template,
-      reauthorization_required: reauthorization_required,
       policy: policy
     )
 
@@ -105,11 +104,10 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   def unlinked_capability(inbox:, policy:, target_error:)
     reply_window_open = policy.reply_window_open.nil? ? policy.allowed? : policy.reply_window_open
     reauthorization_required = reauthorization_required?(inbox)
-    can_send_text = target_error.blank? && free_text_allowed?(policy, reauthorization_required)
+    can_send_text = target_error.blank? && free_text_allowed?(policy)
     disabled_reason = target_error || linked_disabled_reason(
       reply_window_open: reply_window_open,
       template_required: policy.requires_template,
-      reauthorization_required: reauthorization_required,
       policy: policy
     )
 
@@ -185,8 +183,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     }
   end
 
-  def linked_disabled_reason(reply_window_open:, template_required:, reauthorization_required:, policy:)
-    return 'reauthorization_required' if reauthorization_required
+  def linked_disabled_reason(reply_window_open:, template_required:, policy:)
     return 'template_required' if template_required
     return policy.reason if policy.reason.present?
     return 'not_replyable' unless reply_window_open || channel_template_supported?(policy)
@@ -210,8 +207,8 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     )
   end
 
-  def free_text_allowed?(policy, reauthorization_required)
-    policy.allowed? && policy.delivery_mode == 'free_text' && !reauthorization_required
+  def free_text_allowed?(policy)
+    policy.allowed? && policy.delivery_mode == 'free_text'
   end
 
   def voice_channel?(inbox)

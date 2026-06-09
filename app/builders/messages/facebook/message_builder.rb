@@ -18,9 +18,6 @@ class Messages::Facebook::MessageBuilder < Messages::Messenger::MessageBuilder
   end
 
   def perform
-    # This channel might require reauthorization, may be owner might have changed the fb password
-    return if @inbox.channel.reauthorization_required?
-
     ActiveRecord::Base.transaction do
       build_contact_inbox
       build_message
@@ -133,6 +130,8 @@ class Messages::Facebook::MessageBuilder < Messages::Messenger::MessageBuilder
   # rubocop:disable Metrics/AbcSize
   # rubocop:disable Metrics/MethodLength
   def contact_params
+    return process_contact_params_result({}) if @inbox.channel.reauthorization_required?
+
     begin
       k = Koala::Facebook::API.new(@inbox.channel.page_access_token) if @inbox.facebook?
       result = k.get_object(@sender_id) || {}
@@ -140,7 +139,7 @@ class Messages::Facebook::MessageBuilder < Messages::Messenger::MessageBuilder
       Rails.logger.warn("Facebook authentication error for inbox: #{@inbox.id} with error: #{e.message}")
       Rails.logger.error e
       @inbox.channel.authorization_error!
-      raise
+      result = {}
     rescue Koala::Facebook::ClientError => e
       result = {}
       # OAuthException, code: 100, error_subcode: 2018218, message: (#100) No profile available for this user

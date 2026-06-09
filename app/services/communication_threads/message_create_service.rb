@@ -142,15 +142,8 @@ class CommunicationThreads::MessageCreateService
     capability = channel_capability_for(conversation)
     raise Error, 'Selected channel is not available for this communication thread' if capability.blank?
 
-    validate_reauthorization!(capability)
     validate_template_requirement!(capability)
     validate_text_delivery!(capability)
-  end
-
-  def validate_reauthorization!(capability)
-    return unless capability[:reauthorization_required]
-
-    raise Error, 'Selected channel requires reauthorization'
   end
 
   def validate_template_requirement!(capability)

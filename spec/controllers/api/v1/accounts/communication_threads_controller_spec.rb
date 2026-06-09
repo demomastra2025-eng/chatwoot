@@ -203,6 +203,38 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
+    it 'keeps reauthorization as a warning while sending through a linked child conversation', :aggregate_failures do
+      stub_request(:post, /graph.facebook.com/)
+      facebook_channel = create(:channel_facebook_page, account: account)
+      allow(facebook_channel).to receive(:send_channel_reauthorization_email)
+      facebook_inbox = create(:inbox, account: account, channel: facebook_channel)
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: facebook_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: facebook_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: facebook_inbox, conversation: conversation, message_type: 'incoming')
+      create(:inbox_member, user: agent, inbox: facebook_inbox)
+      facebook_channel.prompt_reauthorization!
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'Reply despite auth warning', conversation_id: conversation.display_id },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      body = JSON.parse(response.body, symbolize_names: true)
+      message = conversation.messages.outgoing.last
+      channel_payload = body.dig(:communication_thread, :channels).find { |channel| channel[:conversation_id] == conversation.display_id }
+
+      expect(message.content).to eq('Reply despite auth warning')
+      expect(channel_payload).to include(
+        reauthorization_required: true,
+        can_send_text: true,
+        disabled: false,
+        disabled_reason: nil
+      )
+    end
+
     it 'evaluates delivery policy instead of trusting caller-provided metadata' do
       conversation = create(:conversation, account: account)
       create(:inbox_member, user: agent, inbox: conversation.inbox)

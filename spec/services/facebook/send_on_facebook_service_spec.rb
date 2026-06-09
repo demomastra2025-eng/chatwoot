@@ -53,6 +53,17 @@ describe Facebook::SendOnFacebookService do
         expect(bot).to have_received(:deliver)
       end
 
+      it 'still attempts delivery when the inbox is marked for reauthorization' do
+        allow(facebook_channel).to receive(:send_channel_reauthorization_email)
+        facebook_channel.prompt_reauthorization!
+
+        message = create(:message, message_type: 'outgoing', inbox: facebook_inbox, account: account, conversation: conversation)
+        described_class.new(message: message).perform
+
+        expect(facebook_channel.reauthorization_required?).to be true
+        expect(bot).to have_received(:deliver)
+      end
+
       it 'raise and exception to validate access token' do
         message = create(:message, message_type: 'outgoing', inbox: facebook_inbox, account: account, conversation: conversation)
         allow(bot).to receive(:deliver).and_raise(Facebook::Messenger::FacebookError.new('message' => 'Error validating access token'))

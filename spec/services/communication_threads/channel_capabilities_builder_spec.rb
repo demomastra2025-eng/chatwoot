@@ -90,7 +90,7 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
     end
 
     it 'marks voice channels as callable but not text-sendable' do
-      contact = create(:contact, phone_number: '+15550001234', account: account)
+      contact = create(:contact, account: account)
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
       conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
@@ -103,6 +103,29 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         can_reply: true,
         can_send_text: false,
         can_send_attachments: false,
+        disabled: false,
+        disabled_reason: nil
+      )
+    end
+
+    it 'keeps reauthorization as a warning without disabling a replyable linked channel' do
+      stub_request(:post, /graph.facebook.com/)
+      facebook_channel = create(:channel_facebook_page, account: account)
+      allow(facebook_channel).to receive(:send_channel_reauthorization_email)
+      facebook_inbox = create(:inbox, account: account, channel: facebook_channel)
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: facebook_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: facebook_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: facebook_inbox, conversation: conversation, message_type: 'incoming')
+      facebook_channel.prompt_reauthorization!
+
+      payload = described_class.new(links: [conversation.communication_thread_conversation]).perform.first
+
+      expect(payload).to include(
+        reauthorization_required: true,
+        can_reply: true,
+        can_send_text: true,
+        can_send_attachments: true,
         disabled: false,
         disabled_reason: nil
       )
