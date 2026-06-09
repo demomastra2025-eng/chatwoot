@@ -5,6 +5,7 @@ import {
   getCommunicationContactIdentityLabel,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
+  getCommunicationThreadChannelInboxes,
   getUniqueCommunicationChannels,
   isCommunicationVoiceChannel,
   isMessageInCommunicationThread,
@@ -92,6 +93,53 @@ describe('communicationThreadHelper', () => {
           whatsappChannel,
         ])
       ).toEqual([whatsappChannel]);
+    });
+  });
+
+  describe('#getCommunicationThreadChannelInboxes', () => {
+    it('builds chat-list filter inboxes from actual linked thread channels only', () => {
+      expect(
+        getCommunicationThreadChannelInboxes([
+          {
+            id: 7,
+            is_communication_thread: true,
+            channels: [
+              olderWhatsappDuplicate,
+              whatsappChannel,
+              telegramChannel,
+            ],
+          },
+          {
+            id: 8,
+            is_communication_thread: true,
+            channels: [disabledApiChannel],
+          },
+          {
+            id: 9,
+            is_communication_thread: false,
+            channels: [emailUnlinkedChannel],
+          },
+        ])
+      ).toEqual([
+        {
+          id: 505,
+          name: 'API',
+          channel_type: 'Channel::Api',
+          medium: undefined,
+        },
+        {
+          id: 202,
+          name: 'Telegram',
+          channel_type: 'Channel::Telegram',
+          medium: 'telegram',
+        },
+        {
+          id: 101,
+          name: 'WhatsApp',
+          channel_type: 'Channel::WhatsappWeb',
+          medium: 'whatsapp_web',
+        },
+      ]);
     });
   });
 

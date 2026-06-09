@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { LocalStorage } from 'shared/helpers/localStorage';
 import ReplyBox from './ReplyBox.vue';
 
 const replyButtonLabel = context =>
@@ -22,6 +23,10 @@ const replyButtonLabel = context =>
   });
 
 describe('ReplyBox', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('keeps the text editor enabled for communication-thread voice channels', () => {
     expect(
       ReplyBox.computed.isEditorDisabled.call({
@@ -86,6 +91,42 @@ describe('ReplyBox', () => {
         selectedChannelCanReply: true,
       })
     ).toBe(false);
+  });
+
+  it('uses the selected child conversation for thread reply actions while keeping the route id synthetic', () => {
+    const context = {
+      isCommunicationThreadConversation: true,
+      activeReplyChannel: { conversation_id: 22 },
+      currentChat: { id: 7 },
+    };
+
+    expect(ReplyBox.computed.conversationId.call(context)).toBe(22);
+    expect(ReplyBox.computed.conversationIdByRoute.call(context)).toBe(7);
+  });
+
+  it('uses the selected child conversation id for the reply-to banner state', () => {
+    const replyToMessage = {
+      id: 501,
+      conversation_id: 22,
+      content: 'quote me',
+    };
+    const storageSpy = vi
+      .spyOn(LocalStorage, 'getFromJsonStore')
+      .mockReturnValue(replyToMessage.id);
+    const context = {
+      conversationId: 22,
+      currentChat: {
+        id: 7,
+        is_communication_thread: true,
+        messages: [replyToMessage],
+      },
+      inReplyTo: null,
+    };
+
+    ReplyBox.methods.fetchAndSetReplyTo.call(context);
+
+    expect(storageSpy).toHaveBeenCalledWith(expect.any(String), 22);
+    expect(context.inReplyTo).toEqual(replyToMessage);
   });
 
   it('uses call text without keyboard shortcut for communication-thread voice channels', () => {

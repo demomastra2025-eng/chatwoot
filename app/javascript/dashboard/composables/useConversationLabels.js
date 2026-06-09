@@ -20,6 +20,9 @@ export function useConversationLabels() {
    * @type {import('vue').ComputedRef<number|null>}
    */
   const conversationId = computed(() => currentChat.value?.id);
+  const isCommunicationThread = computed(() =>
+    Boolean(currentChat.value?.is_communication_thread)
+  );
 
   /**
    * All labels available for the account
@@ -63,6 +66,7 @@ export function useConversationLabels() {
   const onUpdateLabels = async selectedLabels => {
     await store.dispatch('conversationLabels/update', {
       conversationId: conversationId.value,
+      isCommunicationThread: isCommunicationThread.value,
       labels: selectedLabels,
     });
   };

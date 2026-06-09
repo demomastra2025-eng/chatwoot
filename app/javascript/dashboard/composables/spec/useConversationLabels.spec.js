@@ -52,7 +52,21 @@ describe('useConversationLabels', () => {
 
     expect(store.dispatch).toHaveBeenCalledWith('conversationLabels/update', {
       conversationId: 1,
+      isCommunicationThread: false,
       labels: ['Label 1', 'Label 3'],
+    });
+  });
+
+  it('should update communication thread labels correctly', async () => {
+    getters.getSelectedChat.value = { id: 2, is_communication_thread: true };
+
+    const { onUpdateLabels } = useConversationLabels();
+    await onUpdateLabels(['Thread Label']);
+
+    expect(store.dispatch).toHaveBeenCalledWith('conversationLabels/update', {
+      conversationId: 2,
+      isCommunicationThread: true,
+      labels: ['Thread Label'],
     });
   });
 
@@ -66,6 +80,7 @@ describe('useConversationLabels', () => {
 
     expect(store.dispatch).toHaveBeenCalledWith('conversationLabels/update', {
       conversationId: 1,
+      isCommunicationThread: false,
       labels: ['Label 1', 'Label 2'],
     });
   });
@@ -81,6 +96,7 @@ describe('useConversationLabels', () => {
 
     expect(store.dispatch).toHaveBeenCalledWith('conversationLabels/update', {
       conversationId: 1,
+      isCommunicationThread: false,
       labels: ['Label 1'],
     });
   });

@@ -45,6 +45,34 @@ const getCommunicationThreadById = (state, conversationId) => {
   );
 };
 
+const resolveAttachmentTarget = (state, payload) => {
+  const conversationState = state || {};
+  const hasPayloadObject = payload && typeof payload === 'object';
+  const conversationId = hasPayloadObject ? payload.conversationId : payload;
+  const hasExplicitThreadFlag =
+    hasPayloadObject &&
+    Object.prototype.hasOwnProperty.call(payload, 'isCommunicationThread');
+
+  if (hasExplicitThreadFlag) {
+    return {
+      conversationId,
+      isCommunicationThread: Boolean(payload.isCommunicationThread),
+    };
+  }
+
+  const matchingChats = (conversationState.allConversations || []).filter(
+    conversation => Number(conversation.id) === Number(conversationId)
+  );
+  const selectedChat =
+    matchingChats.find(conversation => isCommunicationThread(conversation)) ||
+    matchingChats[0];
+
+  return {
+    conversationId,
+    isCommunicationThread: isCommunicationThread(selectedChat),
+  };
+};
+
 const commitCommunicationThreadUpdate = (commit, payload) => {
   const threadId = payload.communication_thread_id || payload.id;
   const communicationThread = buildCommunicationThreadConversation({
@@ -238,16 +266,24 @@ const actions = {
     }
   },
 
-  fetchAllAttachments: async ({ commit }, conversationId) => {
+  fetchAllAttachments: async ({ commit, state = {} }, payload) => {
     let attachments = [];
+    const { conversationId, isCommunicationThread: isThreadAttachmentTarget } =
+      resolveAttachmentTarget(state, payload);
+    const attachmentsApi = isThreadAttachmentTarget
+      ? CommunicationThreadApi.attachments(conversationId)
+      : ConversationApi.getAllAttachments(conversationId);
 
     try {
-      const { data } = await ConversationApi.getAllAttachments(conversationId);
+      const { data } = await attachmentsApi;
       attachments = data.payload;
     } catch (error) {
       // in case of error, log the error and continue
       Sentry.setContext('Conversation', {
         id: conversationId,
+        type: isThreadAttachmentTarget
+          ? 'communication_thread'
+          : 'conversation',
       });
       Sentry.captureException(error);
     } finally {

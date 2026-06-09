@@ -21,8 +21,20 @@ class CommunicationThreadApi extends ApiClient {
     });
   }
 
-  channels(threadId) {
-    return axios.get(`${this.url}/${threadId}/channels`);
+  channels(id) {
+    return axios.get(`${this.url}/${id}/channels`);
+  }
+
+  attachments(id) {
+    return axios.get(`${this.url}/${id}/attachments`);
+  }
+
+  labels(id) {
+    return axios.get(`${this.url}/${id}/labels`);
+  }
+
+  updateLabels(id, labels) {
+    return axios.post(`${this.url}/${id}/labels`, { labels });
   }
 
   messages(threadId, params = {}) {

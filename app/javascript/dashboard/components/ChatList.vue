@@ -67,6 +67,7 @@ import { matchesFilters } from '../store/modules/conversations/helpers/filterHel
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions.js';
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
+import { getCommunicationThreadChannelInboxes } from 'dashboard/helper/communicationThreadHelper';
 
 const props = defineProps({
   conversationInbox: { type: [String, Number], default: 0 },
@@ -264,7 +265,12 @@ const conversationCustomAttributes = useFunctionGetter(
 );
 
 const sortedChannelInboxes = computed(() =>
-  inboxesList.value.slice().sort((a, b) => a.name.localeCompare(b.name))
+  (props.communicationThreadMode
+    ? getCommunicationThreadChannelInboxes(chatLists.value)
+    : inboxesList.value
+  )
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
 );
 
 const sidebarUnreadCount = (collection, key) => {

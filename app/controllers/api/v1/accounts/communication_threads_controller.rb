@@ -1,14 +1,15 @@
 class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::BaseController
   FEATURE_NAME = 'communication_threads'.freeze
   JSON_MESSAGE_PARAMS = %i[content_attributes template_params delivery_policy].freeze
+  ATTACHMENT_RESULTS_PER_PAGE = 100
 
   rescue_from CommunicationThreadFinder::InvalidParameter, with: :render_communication_thread_parameter_error
   rescue_from CommunicationThreads::MessageCreateService::Error, with: :render_communication_thread_parameter_error
   rescue_from ArgumentError, with: :render_communication_thread_parameter_error
 
   before_action :ensure_communication_threads_feature_enabled!
-  before_action :communication_thread, only: [:show, :update, :messages, :channels, :create_message]
-  before_action :ensure_thread_accessible!, only: [:show, :update, :messages, :channels, :create_message]
+  before_action :communication_thread, only: [:show, :update, :messages, :channels, :attachments, :labels, :update_labels, :create_message]
+  before_action :ensure_thread_accessible!, only: [:show, :update, :messages, :channels, :attachments, :labels, :update_labels, :create_message]
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
   before_action :validate_update_params!, only: [:update]
 
@@ -46,6 +47,37 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     ).perform
   end
 
+  def attachments
+    conversation_ids = accessible_links_for(@communication_thread).select(:conversation_id)
+    message_ids = Message.where(account_id: Current.account.id, conversation_id: conversation_ids).select(:id)
+    @attachments_count = Attachment.where(message_id: message_ids).count
+    @attachments = Attachment.where(message_id: message_ids)
+                             .includes(
+                               { file_attachment: :blob },
+                               message: [
+                                 :inbox,
+                                 :sender,
+                                 { conversation: { contact_inbox: :channel_profile } }
+                               ]
+                             )
+                             .order(created_at: :desc)
+                             .page(attachment_params[:page])
+                             .per(ATTACHMENT_RESULTS_PER_PAGE)
+  end
+
+  def labels
+    @labels = thread_label_list
+  end
+
+  def update_labels
+    label_values = permitted_label_params[:labels] || []
+    accessible_links_for(@communication_thread).includes(:conversation).find_each do |link|
+      link.conversation.update_labels(label_values)
+    end
+    @labels = label_values
+    render :labels
+  end
+
   def create_message
     @message = CommunicationThreads::MessageCreateService.new(
       communication_thread: @communication_thread,
@@ -66,6 +98,21 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def permitted_update_params
     params.permit(:status, :priority, :assignee_id, :assignee_type, :team_id, :snoozed_until)
+  end
+
+  def attachment_params
+    params.permit(:page)
+  end
+
+  def permitted_label_params
+    params.permit(:id, labels: [])
+  end
+
+  def thread_label_list
+    accessible_links_for(@communication_thread)
+      .includes(:conversation)
+      .flat_map { |link| link.conversation.label_list }
+      .uniq
   end
 
   def permitted_message_params

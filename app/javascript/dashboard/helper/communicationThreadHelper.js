@@ -103,6 +103,31 @@ export const getCommunicationReplyChannels = (channels = []) => {
   );
 };
 
+export const getCommunicationThreadChannelInboxes = (threads = []) => {
+  const inboxesById = new Map();
+  const threadList = Array.isArray(threads) ? threads : [];
+
+  threadList
+    .filter(isCommunicationThread)
+    .flatMap(thread => getUniqueCommunicationChannels(thread.channels || []))
+    .filter(channel => channel?.inbox_id)
+    .forEach(channel => {
+      const inboxId = Number(channel.inbox_id);
+      if (inboxesById.has(inboxId)) return;
+
+      inboxesById.set(inboxId, {
+        id: inboxId,
+        name: channel.inbox_name,
+        channel_type: channel.channel,
+        medium: channel.medium,
+      });
+    });
+
+  return Array.from(inboxesById.values()).sort((leftInbox, rightInbox) =>
+    (leftInbox.name || '').localeCompare(rightInbox.name || '')
+  );
+};
+
 const isIncomingMessage = message => {
   return (
     message?.message_type === MESSAGE_TYPE.INCOMING ||

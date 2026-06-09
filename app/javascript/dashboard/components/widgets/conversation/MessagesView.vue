@@ -331,7 +331,12 @@ export default {
       );
     },
     fetchAllAttachmentsFromCurrentChat() {
-      this.$store.dispatch('fetchAllAttachments', this.currentChat.id);
+      this.$store.dispatch('fetchAllAttachments', {
+        conversationId: this.currentChat.id,
+        isCommunicationThread: Boolean(
+          this.currentChat.is_communication_thread
+        ),
+      });
     },
     removeBusListeners() {
       emitter.off(BUS_EVENTS.SCROLL_TO_MESSAGE, this.onScrollToMessage);

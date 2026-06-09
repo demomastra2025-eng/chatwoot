@@ -1,5 +1,28 @@
 import * as types from '../mutation-types';
 import ConversationAPI from '../../api/conversations';
+import CommunicationThreadAPI from '../../api/inbox/communicationThread';
+
+const hasOwnProperty = (object, key) =>
+  Object.prototype.hasOwnProperty.call(object, key);
+
+const resolveLabelTarget = (payload, rootGetters = {}) => {
+  const hasPayloadObject = payload && typeof payload === 'object';
+  const conversationId = hasPayloadObject ? payload.conversationId : payload;
+  const selectedChat = rootGetters.getSelectedChat || {};
+  const selectedChatIsThread = Boolean(
+    selectedChat?.is_communication_thread &&
+      Number(selectedChat.id) === Number(conversationId)
+  );
+  let isCommunicationThread = selectedChatIsThread;
+  if (hasPayloadObject && hasOwnProperty(payload, 'isCommunicationThread')) {
+    isCommunicationThread = Boolean(payload.isCommunicationThread);
+  }
+
+  return { conversationId, isCommunicationThread };
+};
+
+const labelsApi = isCommunicationThread =>
+  isCommunicationThread ? CommunicationThreadAPI : ConversationAPI;
 
 const state = {
   records: {},
@@ -20,12 +43,19 @@ export const getters = {
 };
 
 export const actions = {
-  get: async ({ commit }, conversationId) => {
+  get: async ({ commit, rootGetters }, payload) => {
+    const { conversationId, isCommunicationThread } = resolveLabelTarget(
+      payload,
+      rootGetters
+    );
     commit(types.default.SET_CONVERSATION_LABELS_UI_FLAG, {
       isFetching: true,
     });
     try {
-      const response = await ConversationAPI.getLabels(conversationId);
+      const api = labelsApi(isCommunicationThread);
+      const response = isCommunicationThread
+        ? await api.labels(conversationId)
+        : await api.getLabels(conversationId);
       commit(types.default.SET_CONVERSATION_LABELS, {
         id: conversationId,
         data: response.data.payload,
@@ -39,15 +69,20 @@ export const actions = {
       });
     }
   },
-  update: async ({ commit }, { conversationId, labels }) => {
+  update: async ({ commit, rootGetters }, payload) => {
+    const { labels } = payload;
+    const { conversationId, isCommunicationThread } = resolveLabelTarget(
+      payload,
+      rootGetters
+    );
     commit(types.default.SET_CONVERSATION_LABELS_UI_FLAG, {
       isUpdating: true,
     });
     try {
-      const response = await ConversationAPI.updateLabels(
-        conversationId,
-        labels
-      );
+      const api = labelsApi(isCommunicationThread);
+      const response = isCommunicationThread
+        ? await api.updateLabels(conversationId, labels)
+        : await api.updateLabels(conversationId, labels);
       commit(types.default.SET_CONVERSATION_LABELS, {
         id: conversationId,
         data: response.data.payload,

@@ -80,7 +80,12 @@ export default {
       if (!this.currentChat.id) {
         return;
       }
-      this.$store.dispatch('conversationLabels/get', this.currentChat.id);
+      this.$store.dispatch('conversationLabels/get', {
+        conversationId: this.currentChat.id,
+        isCommunicationThread: Boolean(
+          this.currentChat.is_communication_thread
+        ),
+      });
     },
     onDashboardAppTabChange(index) {
       this.activeIndex = index;

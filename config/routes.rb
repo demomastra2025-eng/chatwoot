@@ -283,6 +283,9 @@ Rails.application.routes.draw do
               get :messages
               post :messages, action: :create_message
               get :channels
+              get :attachments
+              get :labels
+              post :labels, action: :update_labels
             end
           end
 

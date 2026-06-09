@@ -419,6 +419,88 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/:account_id/communication_threads/:id/attachments' do
+    it 'returns attachments from linked child conversations through the thread endpoint' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'Reply with attachment', conversation_id: conversation.display_id, attachments: [file] },
+           headers: headers
+
+      expect(response).to have_http_status(:success)
+      attachment = conversation.messages.outgoing.last.attachments.first
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/attachments", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      body = JSON.parse(response.body, symbolize_names: true)
+      expect(body.dig(:meta, :total_count)).to eq(1)
+      expect(body[:payload].pluck(:id)).to eq([attachment.id])
+    end
+  end
+
+  describe 'GET /api/v1/accounts/:account_id/communication_threads/:id/labels' do
+    it 'returns the deduplicated label set from accessible child conversations' do
+      contact = create(:contact, :with_email, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact)
+      second_conversation = create(:conversation, account: account, contact: contact)
+      hidden_conversation = create(:conversation, account: account, contact: contact)
+      first_conversation.update_labels(%w[vip billing])
+      second_conversation.update_labels(%w[vip follow_up])
+      hidden_conversation.update_labels(%w[hidden])
+      create(:inbox_member, user: agent, inbox: first_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: second_conversation.inbox)
+      thread = first_conversation.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['payload']).to contain_exactly('vip', 'billing', 'follow_up')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/labels' do
+    it 'updates labels on all accessible linked child conversations' do
+      contact = create(:contact, :with_email, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact)
+      second_conversation = create(:conversation, account: account, contact: contact)
+      create(:inbox_member, user: agent, inbox: first_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: second_conversation.inbox)
+      thread = first_conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels",
+           params: { labels: %w[vip paid] },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['payload']).to eq(%w[vip paid])
+      expect(first_conversation.reload.label_list).to contain_exactly('vip', 'paid')
+      expect(second_conversation.reload.label_list).to contain_exactly('vip', 'paid')
+    end
+
+    it 'updates labels only on accessible linked child conversations when the thread has hidden channels' do
+      contact = create(:contact, :with_email, account: account)
+      accessible_conversation = create(:conversation, account: account, contact: contact)
+      inaccessible_conversation = create(:conversation, account: account, contact: contact)
+      inaccessible_conversation.update_labels(%w[hidden])
+      create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      thread = accessible_conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels",
+           params: { labels: %w[vip paid] },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(accessible_conversation.reload.label_list).to contain_exactly('vip', 'paid')
+      expect(inaccessible_conversation.reload.label_list).to contain_exactly('hidden')
+    end
+  end
+
   describe 'PATCH /api/v1/accounts/:account_id/communication_threads/:id' do
     it 'updates status, priority, assignee and team on accessible child conversations' do
       team = create(:team, account: account)
