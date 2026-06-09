@@ -33,6 +33,8 @@
 #  fk_rails_...  (pipeline_id => crm_pipelines.id)
 #
 class Crm::Stage < ApplicationRecord
+  include AccountCacheRevalidator
+
   self.table_name = 'crm_stages'
 
   OUTCOMES = %w[open won lost].freeze

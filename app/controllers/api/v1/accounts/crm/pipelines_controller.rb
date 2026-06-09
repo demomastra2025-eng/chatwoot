@@ -8,7 +8,9 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
 
     pipelines = policy_scope(::Crm::Pipeline).includes(:stages).ordered
     render_payload(
-      pipelines.map { |pipeline| ::Crm::PayloadBuilder.pipeline(pipeline) },
+      pipelines.map do |pipeline|
+        ::Crm::PayloadBuilder.pipeline(pipeline, include_inactive_stages: include_inactive_stages?)
+      end,
       meta: { count: pipelines.size }
     )
   end
@@ -52,6 +54,10 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
 
   def pipeline_params
     params.permit(:name, :code, :position, :active, :default)
+  end
+
+  def include_inactive_stages?
+    ActiveModel::Type::Boolean.new.cast(params[:include_inactive_stages])
   end
 
   def set_pipeline

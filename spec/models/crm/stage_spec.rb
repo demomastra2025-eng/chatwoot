@@ -81,4 +81,25 @@ RSpec.describe Crm::Stage do
     expect(stage).to be_invalid
     expect(stage.errors[:default]).to include('must be an active open stage')
   end
+
+  describe 'account cache invalidation' do
+    let(:stage) { create(:crm_stage, account: account, pipeline: pipeline, color: '#654321') }
+
+    before { create(:crm_stage, account: account, pipeline: pipeline, color: '#123456') }
+
+    it 'updates the CRM stage cache key after stage create' do
+      expect(account).to receive(:update_cache_key).with('crm/stage')
+      create(:crm_stage, account: account, pipeline: pipeline, color: '#ABCDEF')
+    end
+
+    it 'updates the CRM stage cache key after stage archive' do
+      expect(stage.account).to receive(:update_cache_key).with('crm/stage')
+      stage.update!(active: false)
+    end
+
+    it 'updates the CRM stage cache key after stage update' do
+      expect(stage.account).to receive(:update_cache_key).with('crm/stage')
+      stage.update!(name: 'Follow-up')
+    end
+  end
 end

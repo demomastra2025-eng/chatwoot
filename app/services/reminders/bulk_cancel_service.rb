@@ -21,6 +21,9 @@ class Reminders::BulkCancelService
     ensure_account_boundary!
 
     result = initial_result
+    terminal_scope.find_each do |reminder|
+      result[:skipped_touches] << skipped_touch_payload(reminder, skip_reason_for(reminder))
+    end
     active_scope.find_each do |reminder|
       collect_result(result, reminder)
     end
@@ -36,7 +39,7 @@ class Reminders::BulkCancelService
     {
       reason: reason,
       scope: scope_payload,
-      found_count: active_scope.count,
+      found_count: scoped_reminders.count,
       cancellable_count: cancellable_scope.count,
       cancelled_count: 0,
       cancelled_touch_ids: [],
@@ -86,9 +89,10 @@ class Reminders::BulkCancelService
     base_scope = account.reminders
     return base_scope.where(remindable: remindable) unless remindable.is_a?(Conversation)
 
-    base_scope.where(remindable: remindable)
-              .or(base_scope.where(conversation_id: remindable.id))
-              .or(base_scope.where(target_conversation_id: remindable.id))
+    base_scope.where(remindable: remindable).or(
+      base_scope.where(remindable_type: nil, remindable_id: nil)
+                .where('conversation_id = :conversation_id OR target_conversation_id = :conversation_id', conversation_id: remindable.id)
+    )
   end
 
   def active_status_values

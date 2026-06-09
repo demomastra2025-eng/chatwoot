@@ -1,7 +1,7 @@
 module Crm::PayloadBuilder
   module_function
 
-  def pipeline(pipeline, include_stages: true)
+  def pipeline(pipeline, include_stages: true, include_inactive_stages: true)
     {
       id: pipeline.id,
       account_id: pipeline.account_id,
@@ -11,7 +11,11 @@ module Crm::PayloadBuilder
       active: pipeline.active,
       default: pipeline.default,
       deal_count: pipeline.deals.count,
-      stages: include_stages ? pipeline.stages.map { |crm_stage| stage(crm_stage) } : nil,
+      stages: pipeline_stages_payload(
+        pipeline,
+        include_stages: include_stages,
+        include_inactive_stages: include_inactive_stages
+      ),
       created_at: pipeline.created_at&.iso8601,
       updated_at: pipeline.updated_at&.iso8601
     }.compact
@@ -170,6 +174,21 @@ module Crm::PayloadBuilder
       email: contact.email,
       phone_number: contact.phone_number
     }
+  end
+
+  def pipeline_stages_payload(pipeline, include_stages: true, include_inactive_stages: true)
+    return unless include_stages
+
+    stages_for_pipeline(pipeline, include_inactive_stages: include_inactive_stages).map do |crm_stage|
+      stage(crm_stage)
+    end
+  end
+
+  def stages_for_pipeline(pipeline, include_inactive_stages: true)
+    stages = pipeline.stages
+    return stages if include_inactive_stages
+
+    stages.select(&:active?)
   end
 
   def compact_conversation(conversation)

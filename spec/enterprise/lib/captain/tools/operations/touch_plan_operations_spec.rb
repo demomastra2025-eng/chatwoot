@@ -97,12 +97,14 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
 
       payload = operation.cancel_touches(touch_plan_id: touch_plan.id, reason: 'Stop sequence')
 
-      expect(payload[:found_count]).to eq(3)
+      expect(payload[:found_count]).to eq(4)
       expect(payload[:cancellable_count]).to eq(3)
       expect(payload[:cancelled_count]).to eq(3)
       expect(payload[:cancelled_touch_ids]).to contain_exactly(pending_touch.id, draft_touch.id, processing_touch.id)
-      expect(payload[:skipped_count]).to eq(0)
-      expect(payload[:skipped_touches]).to eq([])
+      expect(payload[:skipped_count]).to eq(1)
+      expect(payload[:skipped_touches]).to contain_exactly(
+        hash_including(touch_id: completed_touch.id, status: 'completed', reason: 'already_completed')
+      )
       expect(payload[:failed_count]).to eq(0)
       expect(payload[:failures]).to eq([])
       expect(payload[:already_terminal_count]).to eq(1)

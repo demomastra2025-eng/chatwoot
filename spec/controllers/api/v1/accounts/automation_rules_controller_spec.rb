@@ -294,6 +294,78 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(account.automation_rules.first.actions.first['action_name']).to eq('change_deal_stage')
       end
 
+      it 'saves deal automation rules when referenced stages are active' do
+        account.enable_features!('crm_deals')
+        pipeline = create(:crm_pipeline, account: account)
+        source_stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#F0F0F3')
+        target_stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#E8E8EC')
+
+        deal_params = params.merge(
+          event_name: 'deal_updated',
+          conditions: [
+            {
+              attribute_key: 'stage_id',
+              filter_operator: 'equal_to',
+              values: [source_stage.id],
+              query_operator: nil
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_deal_stage,
+              action_params: [target_stage.id]
+            }
+          ]
+        )
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: deal_params
+
+        expect(response).to have_http_status(:success)
+        expect(account.automation_rules.count).to eq(1)
+      end
+
+      it 'rejects deal automation rules with archived stage conditions with field context' do
+        account.enable_features!('crm_deals')
+        pipeline = create(:crm_pipeline, account: account)
+        archived_stage = create(:crm_stage, account: account, pipeline: pipeline, active: false, color: '#F0F0F3')
+        target_stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#E8E8EC')
+
+        deal_params = params.merge(
+          event_name: 'deal_updated',
+          conditions: [
+            {
+              attribute_key: 'stage_id',
+              filter_operator: 'equal_to',
+              values: [archived_stage.id],
+              query_operator: nil
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_deal_stage,
+              action_params: [target_stage.id]
+            }
+          ]
+        )
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: deal_params
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(account.automation_rules.count).to eq(0)
+        expect(response.parsed_body['errors']).to include(
+          a_hash_including(
+            'field' => 'conditions',
+            'path' => 'conditions[0].values[0]',
+            'code' => 'ARCHIVED_OR_DELETED_STAGE_REFERENCE',
+            'message' => 'Referenced follow-up stage is archived or deleted. Select an active stage before saving this automation.'
+          )
+        )
+      end
+
       it 'saves task automation rules with managed custom field conditions and native actions' do
         account.enable_features!('crm_tasks')
         create(
@@ -557,6 +629,79 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(automation_rule.reload.active).to be(false)
       end
 
+      it 'allows deactivating a deal automation rule with stale stage references' do
+        account.enable_features!('crm_deals')
+        pipeline = create(:crm_pipeline, account: account)
+        source_stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#F0F0F3')
+        target_stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#E8E8EC')
+        automation_rule.update!(
+          event_name: 'deal_updated',
+          conditions: [
+            {
+              attribute_key: 'stage_id',
+              filter_operator: 'equal_to',
+              values: [source_stage.id],
+              query_operator: nil
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_deal_stage,
+              action_params: [target_stage.id]
+            }
+          ]
+        )
+        target_stage.update!(active: false)
+
+        patch "/api/v1/accounts/#{account.id}/automation_rules/#{automation_rule.id}",
+              headers: administrator.create_new_auth_token,
+              params: { active: false }
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('payload', 'active')).to be(false)
+        expect(automation_rule.reload).not_to be_active
+      end
+
+      it 'rejects activating a deal automation rule with stale stage references' do
+        account.enable_features!('crm_deals')
+        pipeline = create(:crm_pipeline, account: account)
+        create(:crm_stage, account: account, pipeline: pipeline, color: '#F0F0F3')
+        target_stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#E8E8EC')
+        automation_rule.update!(
+          active: false,
+          event_name: 'deal_updated',
+          conditions: [
+            {
+              attribute_key: 'stage_id',
+              filter_operator: 'is_present',
+              values: [],
+              query_operator: nil
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_deal_stage,
+              action_params: [target_stage.id]
+            }
+          ]
+        )
+        target_stage.update!(active: false)
+
+        patch "/api/v1/accounts/#{account.id}/automation_rules/#{automation_rule.id}",
+              headers: administrator.create_new_auth_token,
+              params: { active: true }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['errors']).to include(
+          a_hash_including(
+            'field' => 'actions',
+            'path' => 'actions[0].action_params[0]',
+            'code' => 'ARCHIVED_OR_DELETED_STAGE_REFERENCE'
+          )
+        )
+        expect(automation_rule.reload).not_to be_active
+      end
+
       it 'allows update with existing blob_id' do
         blob = ActiveStorage::Blob.create_and_upload!(
           io: Rails.root.join('spec/assets/avatar.png').open,
@@ -619,6 +764,45 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(automation_rule.reload.files.count).to eq(1)
+      end
+
+      it 'rejects update with deleted stage action references with field context' do
+        account.enable_features!('crm_deals')
+        pipeline = create(:crm_pipeline, account: account)
+        deleted_stage = create(:crm_stage, account: account, pipeline: pipeline)
+        deleted_stage.destroy!
+
+        update_params.merge!(
+          event_name: 'deal_updated',
+          conditions: [
+            {
+              attribute_key: 'stage_id',
+              filter_operator: 'is_present',
+              values: [],
+              query_operator: nil
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_deal_stage,
+              action_params: [deleted_stage.id]
+            }
+          ]
+        )
+
+        patch "/api/v1/accounts/#{account.id}/automation_rules/#{automation_rule.id}",
+              headers: administrator.create_new_auth_token,
+              params: update_params
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['errors']).to include(
+          a_hash_including(
+            'field' => 'actions',
+            'path' => 'actions[0].action_params[0]',
+            'code' => 'ARCHIVED_OR_DELETED_STAGE_REFERENCE',
+            'message' => 'Referenced follow-up stage is archived or deleted. Select an active stage before saving this automation.'
+          )
+        )
       end
     end
   end

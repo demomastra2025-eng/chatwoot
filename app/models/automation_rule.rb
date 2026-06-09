@@ -81,6 +81,8 @@ class AutomationRule < ApplicationRecord
     create_touch
     cancel_touches
   ].freeze
+  STAGE_REFERENCE_ERROR_CODE = 'ARCHIVED_OR_DELETED_STAGE_REFERENCE'.freeze
+  STAGE_REFERENCE_ERROR_MESSAGE = 'Referenced follow-up stage is archived or deleted. Select an active stage before saving this automation.'.freeze
   TASK_ACTION_ATTRIBUTES = %w[
     send_webhook_event
     change_task_status
@@ -115,6 +117,7 @@ class AutomationRule < ApplicationRecord
   validate :conversation_action_params_supported
   validate :crm_condition_operators_supported
   validate :crm_action_params_supported
+  validate :crm_stage_references_active
   validate :query_operator_presence
   validate :query_operator_value
   validates :account_id, presence: true
@@ -341,7 +344,7 @@ class AutomationRule < ApplicationRecord
   def crm_action_params_supported?(action_name, action_params)
     case action_name
     when 'change_deal_stage'
-      account.crm_stages.active.exists?(id: normalized_action_param(action_params))
+      normalized_action_param(action_params).present?
     when 'assign_deal_owner', 'assign_task_assignee'
       optional_reference_supported?(account.users, action_params)
     when 'assign_deal_team', 'assign_task_team'
@@ -372,6 +375,73 @@ class AutomationRule < ApplicationRecord
     else
       true
     end
+  end
+
+  def crm_stage_references_active
+    return unless crm_entity_kind == 'deal'
+    return if account.blank?
+    return if deactivating_without_definition_changes?
+
+    validate_crm_stage_condition_references
+    validate_crm_stage_action_references
+  end
+
+  def deactivating_without_definition_changes?
+    return false unless persisted?
+    return false unless active == false
+
+    (changed_attribute_names_to_save.map(&:to_s) - ['active']).blank?
+  end
+
+  def validate_crm_stage_condition_references
+    Array(conditions).each_with_index do |condition, condition_index|
+      next unless condition['attribute_key'].to_s == 'stage_id'
+      next if condition['filter_operator'].to_s.in?(%w[is_present is_not_present])
+
+      Array(condition['values']).each_with_index do |value, value_index|
+        next if value.to_s.strip.blank?
+        next if active_crm_stage_reference?(value)
+
+        add_stage_reference_error(:conditions, "conditions[#{condition_index}].values[#{value_index}]")
+      end
+    end
+  end
+
+  def validate_crm_stage_action_references
+    Array(actions).each_with_index do |action, action_index|
+      next unless action['action_name'].to_s == 'change_deal_stage'
+
+      value = normalized_action_param(action['action_params'])
+      next if value.blank?
+      next if active_crm_stage_reference?(value)
+
+      add_stage_reference_error(:actions, "actions[#{action_index}].action_params[0]")
+    end
+  end
+
+  def active_crm_stage_reference?(value)
+    stage_id = normalized_reference_id(value)
+    return false if stage_id.blank?
+
+    account.crm_stages.active.exists?(id: stage_id)
+  end
+
+  def normalized_reference_id(value)
+    value = value.to_s.strip
+    return if value.blank?
+    return unless value.match?(/\A\d+\z/)
+
+    value
+  end
+
+  def add_stage_reference_error(attribute, path)
+    errors.add(
+      attribute,
+      :archived_or_deleted_stage_reference,
+      message: STAGE_REFERENCE_ERROR_MESSAGE,
+      code: STAGE_REFERENCE_ERROR_CODE,
+      path: path
+    )
   end
 
   def touch_plan_action_params_supported?(action_params, entity_kind)

@@ -139,6 +139,66 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(sales_pipeline['deal_count']).to eq(1)
   end
 
+  it 'returns only active stages in pipeline payloads by default' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    active_stage = pipeline.stages.find_by!(code: 'proposal')
+    archived_stage = pipeline.stages.find_by!(code: 'won')
+    archived_stage.update!(active: false)
+
+    get path, headers: headers, as: :json
+
+    sales_pipeline = response.parsed_body.fetch('payload').find { |item| item['id'] == pipeline.id }
+    stage_ids = sales_pipeline.fetch('stages').pluck('id')
+
+    expect(response).to have_http_status(:ok)
+    expect(stage_ids).to include(active_stage.id)
+    expect(stage_ids).not_to include(archived_stage.id)
+  end
+
+  it 'can include inactive stages when explicitly requested' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    inactive_stage = pipeline.stages.find_by!(code: 'won')
+    inactive_stage.update!(active: false)
+
+    get path, params: { include_inactive_stages: true }, headers: headers, as: :json
+
+    sales_pipeline = response.parsed_body.fetch('payload').find { |item| item['id'] == pipeline.id }
+    stage_ids = sales_pipeline.fetch('stages').pluck('id')
+
+    expect(response).to have_http_status(:ok)
+    expect(stage_ids).to include(inactive_stage.id)
+  end
+
+  it 'updates default stage list after stage create and archive' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+
+    post "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages",
+         params: { name: 'Follow-up', color: '#14B8A6', outcome: 'open' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    created_stage_id = response.parsed_body.dig('payload', 'id')
+
+    get path, headers: headers, as: :json
+    sales_pipeline = response.parsed_body.fetch('payload').find { |item| item['id'] == pipeline.id }
+    expect(sales_pipeline.fetch('stages').pluck('id')).to include(created_stage_id)
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{created_stage_id}",
+          params: { active: false },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+
+    get path, headers: headers, as: :json
+    sales_pipeline = response.parsed_body.fetch('payload').find { |item| item['id'] == pipeline.id }
+    expect(sales_pipeline.fetch('stages').pluck('id')).not_to include(created_stage_id)
+  end
+
   it 'deletes an archived pipeline without deals' do
     pipeline = create(:crm_pipeline, account: account, active: false, default: false)
     create(:crm_stage, account: account, pipeline: pipeline)

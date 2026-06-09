@@ -171,7 +171,7 @@ RSpec.describe 'Accounts API', type: :request do
           as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body['cache_keys'].keys).to match_array(%w[label inbox team])
+      expect(response.parsed_body['cache_keys'].keys).to match_array(%w[label inbox team crm/stage])
     end
 
     it 'sets the appropriate cache headers' do

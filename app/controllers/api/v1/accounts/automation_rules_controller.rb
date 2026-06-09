@@ -18,7 +18,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     @automation_rule.actions = actions
     @automation_rule.conditions = params[:conditions]
 
-    return render_could_not_create_error(@automation_rule.errors.messages) unless @automation_rule.valid?
+    return render_automation_rule_validation_error(@automation_rule) unless @automation_rule.valid?
 
     @automation_rule.save!
     blobs.each { |blob| @automation_rule.files.attach(blob) }
@@ -28,16 +28,19 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     blobs, actions, error = validate_and_prepare_attachments(params[:actions], @automation_rule)
     return render_could_not_create_error(error) if error
 
+    @automation_rule.assign_attributes(automation_rules_permit)
+    @automation_rule.actions = actions if params[:actions]
+    @automation_rule.conditions = params[:conditions] if params[:conditions]
+
+    return render_automation_rule_validation_error(@automation_rule) unless @automation_rule.valid?
+
     ActiveRecord::Base.transaction do
-      @automation_rule.assign_attributes(automation_rules_permit)
-      @automation_rule.actions = actions if params[:actions]
-      @automation_rule.conditions = params[:conditions] if params[:conditions]
       @automation_rule.save!
       blobs.each { |blob| @automation_rule.files.attach(blob) }
-    rescue StandardError => e
-      Rails.logger.error e
-      render_could_not_create_error(@automation_rule.errors.messages)
     end
+  rescue StandardError => e
+    Rails.logger.error e
+    render_automation_rule_validation_error(@automation_rule)
   end
 
   def destroy
@@ -64,5 +67,25 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
 
   def fetch_automation_rule
     @automation_rule = Current.account.automation_rules.find_by(id: params[:id])
+  end
+
+  def render_automation_rule_validation_error(automation_rule)
+    render json: {
+      error: automation_rule.errors.messages,
+      error_code: 'AUTOMATION_RULE_VALIDATION_FAILED',
+      message: 'Automation rule validation failed',
+      errors: automation_rule_validation_errors(automation_rule)
+    }, status: :unprocessable_content
+  end
+
+  def automation_rule_validation_errors(automation_rule)
+    automation_rule.errors.map do |error|
+      {
+        field: error.attribute.to_s,
+        path: error.options[:path],
+        code: (error.options[:code] || error.type).to_s.upcase,
+        message: error.message
+      }.compact
+    end
   end
 end

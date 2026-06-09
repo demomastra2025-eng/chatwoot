@@ -42,6 +42,8 @@ const { currentAccount, updateAccount } = useAccount();
 const { isLoadingTouchPlans, loadTouchPlans, touchPlanOptionsForEntityKind } =
   useTouchPlans();
 const { t } = useI18n();
+const loadSettingsPipelines = () =>
+  referencesStore.loadPipelines({ include_inactive_stages: true });
 const normalizedDefaultStageColor = String(DEFAULT_STAGE_COLOR || '')
   .trim()
   .toUpperCase();
@@ -436,10 +438,10 @@ const persistPipelineOrder = async () => {
       )
     );
 
-    await referencesStore.loadPipelines();
+    await loadSettingsPipelines();
   } catch (error) {
     useAlert(formatErrorMessage(error));
-    await referencesStore.loadPipelines();
+    await loadSettingsPipelines();
   } finally {
     pipelineOrderSaving.value = false;
     draggingPipelines.value = false;
@@ -742,11 +744,11 @@ const persistInlineStageOrder = async pipelineId => {
       )
     );
 
-    await referencesStore.loadPipelines();
+    await loadSettingsPipelines();
     useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_REORDER'));
   } catch (error) {
     useAlert(formatErrorMessage(error));
-    await referencesStore.loadPipelines();
+    await loadSettingsPipelines();
   } finally {
     setStageOrderSaving(pipelineId, false);
     setDraggingStagePipeline(pipelineId, false);
@@ -855,7 +857,7 @@ const saveDefaultDealTouchPlan = async () => {
 onMounted(async () => {
   await loadTouchPlans();
   if (dealsEnabled.value) {
-    await referencesStore.loadPipelines();
+    await loadSettingsPipelines();
   }
 
   resetStageForm();

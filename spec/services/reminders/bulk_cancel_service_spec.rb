@@ -132,16 +132,18 @@ RSpec.describe Reminders::BulkCancelService do
 
       expect(result).to include(
         reason: 'Customer replied',
-        found_count: 3,
+        found_count: 4,
         cancellable_count: 3,
         cancelled_count: 3,
-        skipped_count: 0,
+        skipped_count: 1,
         failed_count: 0,
         already_terminal_count: 1,
         remaining_open_count: 0
       )
       expect(result[:cancelled_touch_ids]).to contain_exactly(draft_touch.id, pending_touch.id, processing_touch.id)
-      expect(result[:skipped_touches]).to eq([])
+      expect(result[:skipped_touches]).to contain_exactly(
+        hash_including(touch_id: completed_touch.id, status: 'completed', reason: 'already_completed')
+      )
       expect(result[:failures]).to eq([])
       expect(result[:scope]).to include(
         account_id: account.id,
@@ -163,8 +165,10 @@ RSpec.describe Reminders::BulkCancelService do
 
       expect(result[:cancelled_count]).to eq(2)
       expect(result[:cancelled_touch_ids]).to contain_exactly(draft_touch.id, processing_touch.id)
-      expect(result[:skipped_count]).to eq(0)
-      expect(result[:skipped_touches]).to eq([])
+      expect(result[:skipped_count]).to eq(1)
+      expect(result[:skipped_touches]).to contain_exactly(
+        hash_including(touch_id: completed_touch.id, status: 'completed', reason: 'already_completed')
+      )
       expect(result[:failed_count]).to eq(1)
       expect(result[:failures]).to contain_exactly(
         hash_including(touch_id: pending_touch.id, status: 'pending')
@@ -188,10 +192,83 @@ RSpec.describe Reminders::BulkCancelService do
 
       expect(result[:cancelled_count]).to eq(3)
       expect(result[:cancelled_touch_ids]).to contain_exactly(draft_touch.id, pending_touch.id, processing_touch.id)
-      expect(result[:skipped_touches]).to eq([])
+      expect(result[:skipped_touches]).to contain_exactly(
+        hash_including(touch_id: completed_touch.id, status: 'completed', reason: 'already_completed')
+      )
       expect(pending_touch.reload).to be_cancelled
       expect(draft_touch.reload).to be_cancelled
       expect(processing_touch.reload).to be_cancelled
+    end
+
+    it 'returns an empty structured result when no touches match the scope' do
+      empty_conversation = create(:conversation, account: account)
+
+      result = described_class.new(account: account, remindable: empty_conversation).perform_with_details
+
+      expect(result).to include(
+        found_count: 0,
+        cancellable_count: 0,
+        cancelled_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
+        already_terminal_count: 0,
+        remaining_open_count: 0
+      )
+      expect(result[:cancelled_touch_ids]).to eq([])
+      expect(result[:skipped_touches]).to eq([])
+      expect(result[:failures]).to eq([])
+    end
+
+    it 'reports already-terminal touches without mutating them on repeat bulk cancel' do
+      service = described_class.new(
+        account: account,
+        remindable: conversation,
+        reminder_group: touch_plan,
+        reason: 'Stop sequence'
+      )
+      service.perform_with_details
+
+      result = service.perform_with_details
+
+      expect(result).to include(
+        found_count: 4,
+        cancellable_count: 0,
+        cancelled_count: 0,
+        skipped_count: 4,
+        failed_count: 0,
+        already_terminal_count: 4,
+        remaining_open_count: 0
+      )
+      expect(result[:cancelled_touch_ids]).to eq([])
+      expect(result[:skipped_touches]).to include(
+        hash_including(touch_id: draft_touch.id, status: 'cancelled', reason: 'already_cancelled'),
+        hash_including(touch_id: pending_touch.id, status: 'cancelled', reason: 'already_cancelled'),
+        hash_including(touch_id: processing_touch.id, status: 'cancelled', reason: 'already_cancelled'),
+        hash_including(touch_id: completed_touch.id, status: 'completed', reason: 'already_completed')
+      )
+      expect(draft_touch.reload).to be_cancelled
+      expect(pending_touch.reload).to be_cancelled
+      expect(processing_touch.reload).to be_cancelled
+      expect(completed_touch.reload).to be_completed
+    end
+
+    it 'does not cancel CRM reminders that are only routed through the conversation' do
+      deal = create(:crm_deal, account: account, originating_conversation: conversation)
+      create(:crm_deal_contact, account: account, deal: deal, contact: conversation.contact)
+      deal_touch = create(
+        :reminder,
+        account: account,
+        remindable: deal,
+        touch_conversation: conversation,
+        reminder_group: touch_plan,
+        status: :pending,
+        body: 'Deal follow-up'
+      )
+
+      result = described_class.new(account: account, remindable: conversation).perform_with_details
+
+      expect(result[:cancelled_touch_ids]).not_to include(deal_touch.id)
+      expect(deal_touch.reload).to be_pending
     end
   end
 end
