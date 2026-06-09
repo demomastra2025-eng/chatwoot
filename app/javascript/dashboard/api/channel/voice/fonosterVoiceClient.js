@@ -14,7 +14,7 @@ const createCallUnregisteredEvent = detail =>
   new CustomEvent('call:unregistered', { detail });
 
 const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
-const WEBPHONE_INCOMING_CALL_WAIT_MS = 7_000;
+const WEBPHONE_INCOMING_CALL_WAIT_MS = 20_000;
 const WEBPHONE_OUTBOUND_CALL_WAIT_MS = 45_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
 const WEBPHONE_MICROPHONE_PREWARM_TTL_MS = 90_000;

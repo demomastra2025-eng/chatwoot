@@ -250,7 +250,14 @@ describe('fonosterVoiceClient', () => {
       const client = await importClient();
       await client.initializeDevice(completeSessionConfig);
 
-      const joinPromise = client.joinClientCall();
+      let settled = false;
+      const joinPromise = client.joinClientCall().then(result => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(settled).toBe(false);
+
       await vi.advanceTimersByTimeAsync(2_000);
       simpleUserConstructorMock.mock.calls[0][1].delegate.onCallReceived();
       await vi.advanceTimersByTimeAsync(100);
