@@ -38,6 +38,8 @@ module Whatsapp::IncomingMessageServiceHelpers
     interactive_button_reply = message.dig(:interactive, :button_reply)
     interactive_list_reply = message.dig(:interactive, :list_reply)
     button = message[:button]
+    unsupported_message = unsupported_whatsapp_message?(message)
+    unavailable_error = unavailable_whatsapp_error(message)
 
     {
       whatsapp_message_type: message[:type],
@@ -46,10 +48,10 @@ module Whatsapp::IncomingMessageServiceHelpers
       interactive_reply_title: interactive_button_reply&.[](:title) || interactive_list_reply&.[](:title),
       button_payload: button&.[](:payload),
       button_text: button&.[](:text),
-      whatsapp_unavailable_message: unavailable_whatsapp_message?(message),
-      is_unsupported: (true if unavailable_whatsapp_message?(message)),
-      whatsapp_error_code: unavailable_whatsapp_error(message)&.[](:code),
-      whatsapp_error_title: unavailable_whatsapp_error(message)&.[](:title)
+      whatsapp_unavailable_message: (true if unsupported_message),
+      is_unsupported: (true if unsupported_message),
+      whatsapp_error_code: unavailable_error&.[](:code),
+      whatsapp_error_title: unavailable_error&.[](:title)
     }.compact
   end
 
@@ -65,13 +67,16 @@ module Whatsapp::IncomingMessageServiceHelpers
 
   def unprocessable_message_type?(message)
     type = (message.is_a?(Hash) ? message[:type] : message).to_s
-    return false if type == 'unsupported' && unavailable_whatsapp_message?(message)
 
-    %w[reaction ephemeral unsupported request_welcome].include?(type)
+    %w[reaction ephemeral request_welcome].include?(type)
+  end
+
+  def unsupported_whatsapp_message?(message)
+    message.is_a?(Hash) && message[:type].to_s == 'unsupported'
   end
 
   def unavailable_whatsapp_message?(message)
-    message.is_a?(Hash) && message[:type].to_s == 'unsupported' && unavailable_whatsapp_error(message).present?
+    unsupported_whatsapp_message?(message) && unavailable_whatsapp_error(message).present?
   end
 
   def unavailable_whatsapp_error(message)
@@ -79,21 +84,23 @@ module Whatsapp::IncomingMessageServiceHelpers
   end
 
   def unsupported_message_content(message)
-    return unless unavailable_whatsapp_message?(message)
+    return unless unsupported_whatsapp_message?(message)
 
-    error_title = unavailable_whatsapp_error(message)&.[](:title).presence || 'Message is unavailable'
-    I18n.t('conversations.messages.whatsapp.unavailable', error_title: error_title)
+    error_title = unavailable_whatsapp_error(message)&.[](:title).presence
+    return I18n.t('conversations.messages.whatsapp.unavailable', error_title: error_title) if error_title.present?
+
+    I18n.t('conversations.messages.whatsapp.unsupported_message', default: 'This message is unavailable.')
   end
 
   def processed_waid(waid)
-    source_id = Whatsapp::ContactIdentityResolver.normalize_source_id(waid)
+    source_id = Whatsapp::ContactIdentityResolver.phone_source_id(waid)
     return if source_id.blank?
 
     Whatsapp::PhoneNumberNormalizationService.new(inbox).normalize_and_find_contact_by_provider(source_id, :cloud)
   end
 
   def error_webhook_event?(message)
-    return false if unavailable_whatsapp_message?(message)
+    return false if unsupported_whatsapp_message?(message)
 
     message.key?('errors')
   end
@@ -104,6 +111,38 @@ module Whatsapp::IncomingMessageServiceHelpers
 
   def process_in_reply_to(message)
     @in_reply_to_external_id = message['context']&.[]('id')
+  end
+
+  def update_whatsapp_identifiers_from_status(status)
+    contact_inbox = @message&.conversation&.contact_inbox
+    return if contact_inbox.blank?
+
+    Whatsapp::IdentifierSyncService.new(contact_inbox: contact_inbox, contact: contact_inbox.contact).perform(
+      source_ids: status_source_ids(status),
+      phone_number: status_phone_number(status)
+    )
+  end
+
+  def status_source_ids(status)
+    contact_params = @processed_params[:contacts]&.first || {}
+
+    [
+      status_phone_source_id(status),
+      Whatsapp::ContactIdentityResolver.bsuid_source_id(status[:recipient_user_id]),
+      Whatsapp::ContactIdentityResolver.bsuid_source_id(status[:recipient_parent_user_id]),
+      Whatsapp::ContactIdentityResolver.bsuid_source_id(contact_params[:user_id]),
+      Whatsapp::ContactIdentityResolver.bsuid_source_id(contact_params[:parent_user_id])
+    ].compact_blank.uniq
+  end
+
+  def status_phone_number(status)
+    Whatsapp::ContactIdentityResolver.phone_number_for(status_phone_source_id(status))
+  end
+
+  def status_phone_source_id(status)
+    contact_params = @processed_params[:contacts]&.first || {}
+
+    processed_waid(contact_params[:wa_id].presence || status[:recipient_id])
   end
 
   def find_message_by_source_id(source_id)

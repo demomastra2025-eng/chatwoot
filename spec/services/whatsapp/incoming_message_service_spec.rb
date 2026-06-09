@@ -32,16 +32,82 @@ describe Whatsapp::IncomingMessageService do
         expect(whatsapp_channel.inbox.messages.first.content).to eq('Test')
       end
 
-      it 'stores business-scoped user id as contact inbox source while preserving the sender phone' do
+      it 'links real BSUID source ids to the same contact while preserving the sender phone' do
         bsuid_params = params.deep_dup
-        bsuid_params[:contacts].first[:wa_id] = '111122223333444'
+        bsuid_params[:contacts].first[:wa_id] = '77001234567'
+        bsuid_params[:contacts].first[:user_id] = 'IN.2081978709342942'
+        bsuid_params[:contacts].first[:parent_user_id] = 'IN.ENT.9081726354'
+        bsuid_params[:contacts].first[:profile][:username] = 'customer'
         bsuid_params[:messages].first[:from] = '77001234567'
+        bsuid_params[:messages].first[:from_user_id] = 'IN.2081978709342942'
+        bsuid_params[:messages].first[:from_parent_user_id] = 'IN.ENT.9081726354'
 
         described_class.new(inbox: whatsapp_channel.inbox, params: bsuid_params).perform
 
-        contact_inbox = whatsapp_channel.inbox.contact_inboxes.first
-        expect(contact_inbox.source_id).to eq('111122223333444')
-        expect(contact_inbox.contact.phone_number).to eq('+77001234567')
+        contact_inbox = whatsapp_channel.inbox.contact_inboxes.find_by!(source_id: 'IN.2081978709342942')
+        contact = contact_inbox.contact
+        expect(contact.phone_number).to eq('+77001234567')
+        expect(contact.additional_attributes).to include(
+          'social_whatsapp_user_name' => 'customer',
+          'social_profiles' => { 'whatsapp' => 'customer' }
+        )
+        expect(whatsapp_channel.inbox.contact_inboxes.pluck(:source_id)).to contain_exactly(
+          '77001234567',
+          'IN.2081978709342942',
+          'IN.ENT.9081726354'
+        )
+      end
+
+      it 'keeps phone-only follow-ups in the same conversation after BSUID identity sync' do
+        bsuid_params = params.deep_dup
+        bsuid_params[:contacts].first[:wa_id] = '77001234567'
+        bsuid_params[:contacts].first[:user_id] = 'IN.2081978709342942'
+        bsuid_params[:messages].first[:from] = '77001234567'
+        bsuid_params[:messages].first[:from_user_id] = 'IN.2081978709342942'
+        bsuid_params[:messages].first[:id] = 'wamid.phone-bsuid-first'
+        bsuid_params[:messages].first[:text][:body] = 'first message'
+
+        phone_only_params = params.deep_dup
+        phone_only_params[:contacts].first[:wa_id] = '77001234567'
+        phone_only_params[:messages].first[:from] = '77001234567'
+        phone_only_params[:messages].first[:id] = 'wamid.phone-only-follow-up'
+        phone_only_params[:messages].first[:text][:body] = 'follow up'
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: bsuid_params).perform
+        first_conversation_id = whatsapp_channel.inbox.messages.first.conversation_id
+        described_class.new(inbox: whatsapp_channel.inbox, params: phone_only_params).perform
+
+        expect(whatsapp_channel.inbox.conversations.count).to eq(1)
+        expect(whatsapp_channel.inbox.messages.order(:id).pluck(:content)).to eq(['first message', 'follow up'])
+        expect(whatsapp_channel.inbox.messages.pluck(:conversation_id).uniq).to eq([first_conversation_id])
+      end
+
+      it 'creates a contact and conversation when only BSUID is present' do
+        bsuid_params = {
+          'contacts' => [{
+            'profile' => { 'name' => 'Muhsin', 'username' => 'muhsin' },
+            'user_id' => 'IN.2081978709342942',
+            'parent_user_id' => 'IN.ENT.9081726354'
+          }],
+          'messages' => [{
+            'from_user_id' => 'IN.2081978709342942',
+            'from_parent_user_id' => 'IN.ENT.9081726354',
+            'id' => 'wamid.bsuid-only-message',
+            'text' => { 'body' => 'testing bsuid' },
+            'timestamp' => '1778579582',
+            'type' => 'text'
+          }]
+        }.with_indifferent_access
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: bsuid_params).perform
+
+        contact_inbox = whatsapp_channel.inbox.contact_inboxes.find_by!(source_id: 'IN.2081978709342942')
+        parent_contact_inbox = whatsapp_channel.inbox.contact_inboxes.find_by!(source_id: 'IN.ENT.9081726354')
+        contact = contact_inbox.contact
+        expect(whatsapp_channel.inbox.conversations.count).to eq(1)
+        expect(whatsapp_channel.inbox.messages.first.content).to eq('testing bsuid')
+        expect(contact).to have_attributes(name: 'Muhsin', phone_number: nil)
+        expect(parent_contact_inbox.contact).to eq(contact)
       end
 
       it 'appends to last conversation when if conversation already exists' do
@@ -139,6 +205,28 @@ describe Whatsapp::IncomingMessageService do
           'whatsapp_error_title' => 'Message type is currently not supported.'
         )
       end
+
+      it 'stores unsupported payloads without provider errors as a visible placeholder' do
+        params = {
+          'contacts' => [{ 'profile' => { 'name' => 'Sojan Jose' }, 'wa_id' => '2423423243' }],
+          'messages' => [{
+            :from => '2423423243', :id => 'wamid.unsupported-no-errors',
+            :timestamp => '1667047370', :type => 'unsupported'
+          }]
+        }.with_indifferent_access
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
+
+        message = whatsapp_channel.inbox.messages.first
+        expect(whatsapp_channel.inbox.conversations.count).to eq(1)
+        expect(Contact.count).to eq(1)
+        expect(message.content).to eq(I18n.t('conversations.messages.whatsapp.unsupported_message', default: 'This message is unavailable.'))
+        expect(message.content_attributes).to include(
+          'whatsapp_unavailable_message' => true,
+          'is_unsupported' => true
+        )
+        expect(message.content_attributes).not_to have_key('whatsapp_error_code')
+      end
     end
 
     context 'when valid status params' do
@@ -165,6 +253,34 @@ describe Whatsapp::IncomingMessageService do
         expect(message.status).to eq('sent')
         described_class.new(inbox: whatsapp_channel.inbox, params: status_params).perform
         expect(message.reload.status).to eq('read')
+      end
+
+      it 'stores BSUID source ids from status contacts' do
+        bsuid = 'IN.2081978709342942'
+        parent_bsuid = 'IN.ENT.9081726354'
+        status_params = {
+          'contacts' => [{ 'wa_id' => from, 'user_id' => bsuid, 'parent_user_id' => parent_bsuid }],
+          'statuses' => [{ 'recipient_id' => from, 'id' => from, 'status' => 'delivered' }]
+        }.with_indifferent_access
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: status_params).perform
+
+        source_rows = whatsapp_channel.inbox.contact_inboxes.where(source_id: [from, bsuid, parent_bsuid]).pluck(:source_id, :contact_id)
+        expect(source_rows).to contain_exactly(
+          [from, contact_inbox.contact_id],
+          [bsuid, contact_inbox.contact_id],
+          [parent_bsuid, contact_inbox.contact_id]
+        )
+      end
+
+      it 'ignores invalid BSUID source ids from status contacts' do
+        status_params = {
+          'contacts' => [{ 'wa_id' => from, 'user_id' => 'not-a-bsuid', 'parent_user_id' => 'also.invalid' }],
+          'statuses' => [{ 'recipient_id' => from, 'id' => from, 'status' => 'delivered' }]
+        }.with_indifferent_access
+
+        expect { described_class.new(inbox: whatsapp_channel.inbox, params: status_params).perform }
+          .not_to(change { whatsapp_channel.inbox.contact_inboxes.count })
       end
 
       it 'update status message to failed' do

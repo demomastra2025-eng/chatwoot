@@ -250,6 +250,7 @@ en:
       whatsapp:
         list_button_label: 'Choose an item'
         unavailable: 'WhatsApp message unavailable: %{error_title}'
+        unsupported_message: 'This message is unavailable.'
       delivery_status:
         error_code: 'Error code: %{error_code}'
     activity:

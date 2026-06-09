@@ -53,6 +53,7 @@ class Whatsapp::IncomingMessageBaseService
   def process_statuses
     status_payload = @processed_params[:statuses].first
     find_message_by_source_id(status_payload[:id])
+    update_whatsapp_identifiers_from_status(status_payload) if @message.present?
     update_message_with_status(@message, status_payload) if @message.present?
     update_campaign_delivery_with_status(status_payload)
   rescue ArgumentError => e
@@ -256,17 +257,23 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def existing_contact_conversation
-    return @contact_inbox.conversations.last if @inbox.lock_to_single_conversation
+    return contact_identity_conversations.last if @inbox.lock_to_single_conversation
 
-    @contact_inbox.conversations.where.not(status: :resolved).last || latest_campaign_conversation
+    contact_identity_conversations.where.not(status: :resolved).last || latest_campaign_conversation
   end
 
   def latest_campaign_conversation
-    latest_conversation = @contact_inbox.conversations.last
+    latest_conversation = contact_identity_conversations.last
     return unless latest_conversation&.resolved?
     return if latest_conversation.campaign_id.blank?
 
     latest_conversation
+  end
+
+  def contact_identity_conversations
+    @contact_identity_conversations ||= @inbox.conversations.where(
+      contact_inbox_id: @contact.contact_inboxes.where(inbox_id: @inbox.id).select(:id)
+    )
   end
 
   def after_message_persisted(_message); end

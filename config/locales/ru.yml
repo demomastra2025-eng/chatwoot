@@ -221,8 +221,9 @@ ru:
       instagram_shared_post_content: Поделился публикацией
       deleted: Это сообщение было удалено
       whatsapp:
-        list_button_label: Выберите элемент
+        list_button_label: 'Выберите элемент'
         unavailable: 'Сообщение WhatsApp недоступно: %{error_title}'
+        unsupported_message: 'Это сообщение WhatsApp недоступно.'
       delivery_status:
         error_code: 'Код ошибки: %{error_code}'
     activity:

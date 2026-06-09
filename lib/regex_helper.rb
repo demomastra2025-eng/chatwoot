@@ -13,7 +13,9 @@ module RegexHelper
   # while notifications use CommonMarker for better markdown processing
   MENTION_REGEX = Regexp.new('\[(@[^\\]]+)\]\(mention://(?:user|team)/\d+/([^)]+)\)')
 
-  TWILIO_CHANNEL_SMS_REGEX = Regexp.new('^\+\d{1,15}\z')
-  TWILIO_CHANNEL_WHATSAPP_REGEX = Regexp.new('^whatsapp:\+\d{1,15}\z')
-  WHATSAPP_CHANNEL_REGEX = Regexp.new('^\d{1,15}\z')
+  TWILIO_CHANNEL_SMS_REGEX = /\A\+\d{1,15}\z/
+  WHATSAPP_BSUID_PATTERN = '[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]{1,128}'.freeze
+  WHATSAPP_BSUID_REGEX = /\A#{WHATSAPP_BSUID_PATTERN}\z/
+  TWILIO_CHANNEL_WHATSAPP_REGEX = /\A(?:whatsapp:\+\d{1,15}|whatsapp:#{WHATSAPP_BSUID_PATTERN})\z/
+  WHATSAPP_CHANNEL_REGEX = /\A(?:\d{1,15}|#{WHATSAPP_BSUID_PATTERN})\z/
 end
