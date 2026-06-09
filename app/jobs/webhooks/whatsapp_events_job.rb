@@ -73,7 +73,6 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
 
   def channel_is_inactive?(channel)
     return true if channel.blank?
-    return true if channel.reauthorization_required?
     return true unless channel.account.active?
 
     false
