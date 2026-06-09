@@ -32,6 +32,28 @@ describe Whatsapp::TokenValidationService do
       end
     end
 
+    context 'when token health is healthy but permissions are unverified' do
+      let(:token_health) do
+        {
+          'status' => 'healthy_unverified',
+          'permissions_unverified' => true,
+          'waba_access' => true,
+          'phone_number_access' => true
+        }
+      end
+
+      before do
+        token_inspection = instance_double(Whatsapp::TokenInspectionService, perform: token_health)
+        allow(Whatsapp::TokenInspectionService).to receive(:new)
+          .with(access_token: access_token, waba_id: waba_id, phone_number_id: phone_number_id)
+          .and_return(token_inspection)
+      end
+
+      it 'returns token health metadata without requiring reauthorization' do
+        expect(service.perform).to eq(token_health)
+      end
+    end
+
     context 'when required permissions are missing' do
       let(:token_health) do
         {

@@ -19,6 +19,7 @@ class Whatsapp::TokenInspectionService
     @metadata = {}
     @status = nil
     @debug_token_failed = false
+    @permissions_unverified = false
   end
 
   def perform
@@ -117,6 +118,13 @@ class Whatsapp::TokenInspectionService
   end
 
   def inspect_required_permissions(data)
+    unless permission_data_present?(data)
+      @permissions_unverified = true
+      @metadata['permissions_unverified'] = true
+      @metadata['required_permissions'] = default_permission_metadata
+      return
+    end
+
     permissions = REQUIRED_PERMISSIONS.index_with { |permission| permission_granted?(data, permission) }
     @metadata['required_permissions'] = permissions
 
@@ -125,6 +133,10 @@ class Whatsapp::TokenInspectionService
 
     @metadata['missing_permissions'] = missing_permissions
     @status = PERMISSION_MISSING_STATUS
+  end
+
+  def permission_data_present?(data)
+    Array(data['scopes']).present? || Array(data['granular_scopes']).present?
   end
 
   def permission_granted?(data, permission)
@@ -153,7 +165,7 @@ class Whatsapp::TokenInspectionService
 
   def resolved_healthy_status
     return EXPIRING_SOON_STATUS if @status == EXPIRING_SOON_STATUS
-    return HEALTHY_UNVERIFIED_STATUS if @debug_token_failed
+    return HEALTHY_UNVERIFIED_STATUS if @debug_token_failed || @permissions_unverified
 
     HEALTHY_STATUS
   end

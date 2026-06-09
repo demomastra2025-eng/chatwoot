@@ -86,6 +86,58 @@ RSpec.describe Whatsapp::TokenInspectionService do
       expect(service.reauthorization_required?).to be(true)
     end
 
+    it 'does not require reauthorization when debug_token omits scopes but Graph WABA and phone access work' do
+      allow(api_client).to receive(:debug_token).with(access_token).and_return(
+        'data' => {
+          'app_id' => 'app-1',
+          'type' => 'SYSTEM_USER',
+          'is_valid' => true,
+          'expires_at' => 0,
+          'scopes' => [],
+          'granular_scopes' => []
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return('data' => [{ 'id' => phone_number_id }])
+
+      service = described_class.new(access_token: access_token, waba_id: waba_id, phone_number_id: phone_number_id, api_client: api_client)
+      result = service.perform
+
+      expect(result).to include(
+        'status' => 'healthy_unverified',
+        'permissions_unverified' => true,
+        'waba_access' => true,
+        'phone_number_access' => true
+      )
+      expect(result['required_permissions']).to include(
+        'whatsapp_business_management' => nil,
+        'whatsapp_business_messaging' => nil
+      )
+      expect(result).not_to include('missing_permissions')
+      expect(service.reauthorization_required?).to be(false)
+    end
+
+    it 'does not require reauthorization when debug_token lacks permission keys but Graph WABA and phone access work' do
+      allow(api_client).to receive(:debug_token).with(access_token).and_return(
+        'data' => {
+          'app_id' => 'app-1',
+          'type' => 'SYSTEM_USER',
+          'is_valid' => true,
+          'expires_at' => 0
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return('data' => [{ 'id' => phone_number_id }])
+
+      result = described_class.new(access_token: access_token, waba_id: waba_id, phone_number_id: phone_number_id, api_client: api_client).perform
+
+      expect(result).to include(
+        'status' => 'healthy_unverified',
+        'permissions_unverified' => true,
+        'waba_access' => true,
+        'phone_number_access' => true
+      )
+      expect(result).not_to include('missing_permissions')
+    end
+
     it 'falls back to graph access when debug_token cannot inspect a token from another app' do
       allow(api_client).to receive(:debug_token).and_raise(StandardError, 'Cannot inspect token')
       allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return('data' => [{ 'id' => phone_number_id }])

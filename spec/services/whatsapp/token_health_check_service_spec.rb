@@ -51,6 +51,35 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
     end
   end
 
+  context 'when token health is verified by Graph access but permissions are unverified' do
+    let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService, perform: healthy_unverified_token_health) }
+    let(:healthy_unverified_token_health) do
+      {
+        'status' => 'healthy_unverified',
+        'checked_at' => Time.current.iso8601,
+        'permissions_unverified' => true,
+        'waba_access' => true,
+        'phone_number_access' => true
+      }
+    end
+
+    it 'stores token health without prompting reauthorization' do
+      channel.record_provider_authorization_error!(
+        error: {
+          type: 'WhatsAppTokenHealth',
+          message: 'WhatsApp token health check failed: permission_missing'
+        }
+      )
+
+      described_class.new(channel).perform
+
+      expect(channel.reload.provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY]).to include('status' => 'healthy_unverified')
+      expect(channel.reauthorization_required?).to be(false)
+      expect(channel.provider_config).not_to include('authorization_status')
+      expect(channel.provider_config).not_to include('authorization_error')
+    end
+  end
+
   context 'when token health requires reauthorization' do
     let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService, perform: invalid_token_health) }
     let(:invalid_token_health) do
