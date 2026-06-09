@@ -164,6 +164,16 @@ describe Whatsapp::IncomingMessageService do
         described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
         expect(whatsapp_channel.inbox.messages.count).to eq(1)
       end
+
+      it 'processes the same provider source id independently for different inboxes' do
+        other_channel = create(:channel_whatsapp, sync_templates: false)
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
+        described_class.new(inbox: other_channel.inbox, params: params).perform
+
+        expect(whatsapp_channel.inbox.messages.where(source_id: params[:messages].first[:id]).count).to eq(1)
+        expect(other_channel.inbox.messages.where(source_id: params[:messages].first[:id]).count).to eq(1)
+      end
     end
 
     context 'when unsupported message types' do
@@ -271,6 +281,36 @@ describe Whatsapp::IncomingMessageService do
           [bsuid, contact_inbox.contact_id],
           [parent_bsuid, contact_inbox.contact_id]
         )
+      end
+
+      it 'syncs status identifiers only to the current inbox when source ids collide' do
+        other_channel = create(:channel_whatsapp, sync_templates: false)
+        other_contact_inbox = create(:contact_inbox, inbox: other_channel.inbox, source_id: from)
+        other_conversation = create(:conversation,
+                                    account: other_channel.inbox.account,
+                                    inbox: other_channel.inbox,
+                                    contact: other_contact_inbox.contact,
+                                    contact_inbox: other_contact_inbox)
+        other_message = create(:message,
+                               account: other_channel.inbox.account,
+                               inbox: other_channel.inbox,
+                               conversation: other_conversation,
+                               sender: other_contact_inbox.contact,
+                               source_id: from,
+                               status: :sent)
+        original_message = whatsapp_channel.inbox.messages.find_by!(source_id: from)
+        bsuid = 'IN.2081978709342942'
+        status_params = {
+          'contacts' => [{ 'wa_id' => from, 'user_id' => bsuid }],
+          'statuses' => [{ 'recipient_id' => from, 'id' => from, 'status' => 'delivered' }]
+        }.with_indifferent_access
+
+        described_class.new(inbox: other_channel.inbox, params: status_params).perform
+
+        expect(other_message.reload.status).to eq('delivered')
+        expect(original_message.reload.status).to eq('sent')
+        expect(other_channel.inbox.contact_inboxes.find_by!(source_id: bsuid).contact).to eq(other_contact_inbox.contact)
+        expect(whatsapp_channel.inbox.contact_inboxes.find_by(source_id: bsuid)).to be_nil
       end
 
       it 'ignores invalid BSUID source ids from status contacts' do
@@ -556,13 +596,13 @@ describe Whatsapp::IncomingMessageService do
                                     ] }] }.with_indifferent_access
 
         # Simulate another worker holding the lock
-        lock = Whatsapp::MessageDedupLock.new('wamid.SDFADSf23sfasdafasdfa')
+        lock = Whatsapp::MessageDedupLock.new(inbox_id: whatsapp_channel.inbox.id, source_id: 'wamid.SDFADSf23sfasdafasdfa')
         expect(lock.acquire!).to be_truthy
 
         described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
         expect(whatsapp_channel.inbox.messages.count).to eq(0)
       ensure
-        key = format(Redis::RedisKeys::MESSAGE_SOURCE_KEY, id: 'wamid.SDFADSf23sfasdafasdfa')
+        key = format(Redis::RedisKeys::MESSAGE_SOURCE_KEY, id: "whatsapp:#{whatsapp_channel.inbox.id}:wamid.SDFADSf23sfasdafasdfa")
         Redis::Alfred.delete(key)
       end
     end

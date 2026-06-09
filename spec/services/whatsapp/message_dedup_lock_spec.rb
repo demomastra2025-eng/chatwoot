@@ -1,11 +1,17 @@
 require 'rails_helper'
 
 describe Whatsapp::MessageDedupLock do
+  let(:inbox_id) { 42 }
   let(:source_id) { "wamid.test_#{SecureRandom.hex(8)}" }
-  let(:lock) { described_class.new(source_id) }
-  let(:redis_key) { format(Redis::RedisKeys::MESSAGE_SOURCE_KEY, id: source_id) }
+  let(:other_source_id) { "wamid.other_#{SecureRandom.hex(8)}" }
+  let(:lock) { described_class.new(inbox_id: inbox_id, source_id: source_id) }
 
-  after { Redis::Alfred.delete(redis_key) }
+  after do
+    [source_id, other_source_id].each do |id|
+      key_pattern = format(Redis::RedisKeys::MESSAGE_SOURCE_KEY, id: "whatsapp:*:#{id}")
+      Redis::Alfred.scan_each(match: key_pattern) { |key| Redis::Alfred.delete(key) }
+    end
+  end
 
   describe '#acquire!' do
     it 'returns truthy on first acquire' do
@@ -14,13 +20,19 @@ describe Whatsapp::MessageDedupLock do
 
     it 'returns falsy on second acquire for the same source_id' do
       lock.acquire!
-      expect(described_class.new(source_id).acquire!).to be_falsy
+      expect(described_class.new(inbox_id: inbox_id, source_id: source_id).acquire!).to be_falsy
     end
 
     it 'allows different source_ids to acquire independently' do
       lock.acquire!
-      other = described_class.new("wamid.other_#{SecureRandom.hex(8)}")
+      other = described_class.new(inbox_id: inbox_id, source_id: other_source_id)
       expect(other.acquire!).to be_truthy
+    end
+
+    it 'allows the same source_id to acquire independently for different inboxes' do
+      lock.acquire!
+
+      expect(described_class.new(inbox_id: inbox_id + 1, source_id: source_id).acquire!).to be_truthy
     end
 
     it 'lets exactly one thread win when two race for the same source_id' do
@@ -30,7 +42,7 @@ describe Whatsapp::MessageDedupLock do
       threads = Array.new(2) do
         Thread.new do
           barrier.wait
-          results << described_class.new(source_id).acquire!
+          results << described_class.new(inbox_id: inbox_id, source_id: source_id).acquire!
         end
       end
 
