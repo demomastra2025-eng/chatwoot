@@ -78,8 +78,8 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     new_default = account.crm_pipelines.find_by!(code: 'enterprise_sales')
 
     expect(response).to have_http_status(:created)
-    expect(new_default.default).to eq(true)
-    expect(original_default.reload.default).to eq(false)
+    expect(new_default.default).to be(true)
+    expect(original_default.reload.default).to be(false)
   end
 
   it 'switches the default pipeline when updating an existing pipeline' do
@@ -93,8 +93,8 @@ RSpec.describe 'CRM Pipelines API', type: :request do
           as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(pipeline.reload.default).to eq(true)
-    expect(original_default.reload.default).to eq(false)
+    expect(pipeline.reload.default).to be(true)
+    expect(original_default.reload.default).to be(false)
   end
 
   it 'creates a pipeline with a russian name and auto-generated code' do

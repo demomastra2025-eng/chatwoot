@@ -17,6 +17,7 @@
 #
 #  index_automation_rules_on_account_id  (account_id)
 #
+# rubocop:disable Metrics/ClassLength
 class AutomationRule < ApplicationRecord
   include AccountStorageLimitable
 
@@ -171,6 +172,7 @@ class AutomationRule < ApplicationRecord
 
   private
 
+  # rubocop:disable Metrics/CyclomaticComplexity
   def json_conditions_format
     return if conditions.blank? || !supported_event_name?
 
@@ -181,6 +183,7 @@ class AutomationRule < ApplicationRecord
     conditions -= crm_condition_catalog.custom_field_keys if crm_event?
     errors.add(:conditions, "Automation conditions #{conditions.join(',')} not supported.") if conditions.any?
   end
+  # rubocop:enable Metrics/CyclomaticComplexity
 
   def json_actions_format
     return if actions.blank? || !supported_event_name?
@@ -328,8 +331,6 @@ class AutomationRule < ApplicationRecord
     case action_name
     when 'change_appointment_status'
       Scheduling::Constants::APPOINTMENT_STATUSES.include?(normalized_action_param(action_params))
-    when 'cancel_appointment_payment'
-      true
     when 'apply_touch_plan'
       touch_plan_action_params_supported?(action_params, 'appointment')
     when 'create_touch'
@@ -341,6 +342,7 @@ class AutomationRule < ApplicationRecord
     end
   end
 
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength
   def crm_action_params_supported?(action_name, action_params)
     case action_name
     when 'change_deal_stage'
@@ -363,6 +365,7 @@ class AutomationRule < ApplicationRecord
       true
     end
   end
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength
 
   def conversation_action_params_supported?(action_name, action_params)
     case action_name
@@ -529,6 +532,7 @@ class AutomationRule < ApplicationRecord
     errors.add(:event_name, 'Automation event not supported.')
   end
 
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def feature_enabled_for_event
     return unless validating_event_name_constraints?
     return if account.blank?
@@ -547,11 +551,13 @@ class AutomationRule < ApplicationRecord
 
     errors.add(:event_name, "Automation event requires #{feature_name} feature.")
   end
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def validating_event_name_constraints?
     new_record? || will_save_change_to_event_name?
   end
 end
+# rubocop:enable Metrics/ClassLength
 
 AutomationRule.include_mod_with('Audit::AutomationRule')
 AutomationRule.prepend_mod_with('AutomationRule')

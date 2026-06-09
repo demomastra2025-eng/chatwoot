@@ -1,5 +1,6 @@
 require 'rails_helper'
 
+# rubocop:disable RSpec/SpecFilePathFormat
 RSpec.describe Captain::Tools::Operations::TouchOperations do
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -81,7 +82,7 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
   end
 
   describe '#cancel_touches' do
-    it 'bulk cancels non-terminal touches for the current entity with optional touch plan filtering' do
+    it 'bulk cancels non-terminal touches for the current entity with optional touch plan filtering', :aggregate_failures do
       touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'], touches: [conversation_touch_definition])
       other_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'], touches: [conversation_touch_definition])
       pending_touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, reminder_group: touch_plan,
@@ -176,3 +177,4 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
     end
   end
 end
+# rubocop:enable RSpec/SpecFilePathFormat

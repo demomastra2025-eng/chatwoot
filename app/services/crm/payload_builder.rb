@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ModuleLength
 module Crm::PayloadBuilder
   module_function
 
@@ -75,6 +76,7 @@ module Crm::PayloadBuilder
     }
   end
 
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def deal(deal)
     primary_contact =
       deal.deal_contacts.detect(&:primary?)&.contact || deal.deal_contacts.first&.contact
@@ -117,6 +119,7 @@ module Crm::PayloadBuilder
       updated_at: deal.updated_at&.iso8601
     }
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def ai_deal(deal)
     deal(deal).except(:amount_minor)
@@ -239,6 +242,7 @@ module Crm::PayloadBuilder
     }
   end
 
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def task(task)
     {
       id: task.id,
@@ -265,6 +269,7 @@ module Crm::PayloadBuilder
       updated_at: task.updated_at&.iso8601
     }
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
   def timeline_item(item_type, payload, occurred_at:)
     {
@@ -274,3 +279,4 @@ module Crm::PayloadBuilder
     }
   end
 end
+# rubocop:enable Metrics/ModuleLength

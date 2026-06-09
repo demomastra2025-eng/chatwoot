@@ -73,7 +73,7 @@ RSpec.describe Reminders::BulkCancelService do
   end
 
   describe '#perform' do
-    it 'cancels draft, pending, and processing touches scoped to the remindable and touch plan' do
+    it 'cancels draft, pending, and processing touches scoped to the remindable and touch plan', :aggregate_failures do
       cancelled_count = described_class.new(
         account: account,
         remindable: conversation,
@@ -153,8 +153,10 @@ RSpec.describe Reminders::BulkCancelService do
       )
     end
 
-    it 'continues cancelling and reports individual record failures' do
+    it 'continues cancelling and reports individual record failures', :aggregate_failures do
+      # rubocop:disable Rails/SkipsModelValidations
       pending_touch.update_column(:timezone, 'Invalid/Zone')
+      # rubocop:enable Rails/SkipsModelValidations
 
       result = described_class.new(
         account: account,
@@ -180,8 +182,10 @@ RSpec.describe Reminders::BulkCancelService do
     end
 
     it 'cancels legacy conversation-scoped touches without a remindable link' do
+      # rubocop:disable Rails/SkipsModelValidations
       pending_touch.update_columns(remindable_type: nil, remindable_id: nil)
       draft_touch.update_columns(remindable_type: nil, remindable_id: nil, conversation_id: nil)
+      # rubocop:enable Rails/SkipsModelValidations
 
       result = described_class.new(
         account: account,

@@ -4,13 +4,13 @@ class Reminders::BulkCancelService
 
   attr_reader :account, :remindable, :reminder_group, :actor, :reason, :metadata
 
-  def initialize(account:, remindable:, reminder_group: nil, actor: nil, reason: nil, metadata: {})
+  def initialize(account:, remindable:, **options)
     @account = account
     @remindable = remindable
-    @reminder_group = reminder_group
-    @actor = actor
-    @reason = reason.presence || 'отменен автоматизацией'
-    @metadata = (metadata || {}).to_h.stringify_keys
+    @reminder_group = options[:reminder_group]
+    @actor = options[:actor]
+    @reason = options[:reason].presence || 'отменен автоматизацией'
+    @metadata = (options[:metadata] || {}).to_h.stringify_keys
   end
 
   def perform

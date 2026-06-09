@@ -147,7 +147,8 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
       end
 
       it 'creates automation rules without attachments even when storage is over limit' do
-        allow_any_instance_of(AccountLimits::StorageUsageService).to receive(:within_limit?).and_return(false)
+        storage_service = instance_double(AccountLimits::StorageUsageService, within_limit?: false)
+        allow(AccountLimits::StorageUsageService).to receive(:new).and_return(storage_service)
 
         params[:conditions] = [
           {
