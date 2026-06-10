@@ -73,6 +73,14 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data);
   }
 
+  getVirtualPbxReadiness(inboxId) {
+    return axios
+      .post(
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/readiness_check`
+      )
+      .then(r => r.data);
+  }
+
   updateNumberRoute(numberRef, payload) {
     return axios
       .post(

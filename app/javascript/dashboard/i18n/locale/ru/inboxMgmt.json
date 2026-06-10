@@ -535,7 +535,22 @@
           "REFRESH": "Обновить",
           "WARNINGS_TITLE": "Предупреждения",
           "NO_WARNINGS": "Блокирующих предупреждений нет.",
-          "NO_DATA": "Для этого inbox пока нет данных готовности."
+          "NO_DATA": "Для этого inbox пока нет данных готовности.",
+          "VIRTUAL_PBX_DIAGNOSTICS": "Диагностика Виртуальной АТС",
+          "VIRTUAL_PBX_SAFE_MODE": "Только локальная конфигурация и dry-run диагностика. Remote-записи в Fonoster/Routr заблокированы.",
+          "PROVIDER_KIND": "Тип провайдера",
+          "PHONE_SPLIT": "Витринный → технический",
+          "OWNERSHIP": "Владение",
+          "MANAGED_LOCAL": "Локально управляется",
+          "LEGACY_READ_ONLY": "Legacy read-only",
+          "REMOTE_MUTATIONS": "Remote-записи",
+          "REMOTE_MUTATIONS_BLOCKED": "Заблокированы до явного согласования",
+          "DISPLAY_PHONE": "Витринный номер",
+          "INGRESS_NUMBER": "Технический номер",
+          "NUMBER_REF": "Идентификатор номера",
+          "TRUNK_REF": "Идентификатор транка",
+          "PROVIDER_CONNECTION": "Подключение провайдера",
+          "SIP_PROFILES": "SIP-профили"
         },
         "SUBMIT_BUTTON": "Создать канал звонков",
         "API": {

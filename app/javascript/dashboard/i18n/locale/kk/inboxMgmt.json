@@ -535,7 +535,22 @@
           "REFRESH": "Жаңарту",
           "WARNINGS_TITLE": "Ескертулер",
           "NO_WARNINGS": "Бұғаттайтын ескертулер жоқ.",
-          "NO_DATA": "Бұл inbox үшін әзірге дайындық дерегі жоқ."
+          "NO_DATA": "Бұл inbox үшін әзірге дайындық дерегі жоқ.",
+          "VIRTUAL_PBX_DIAGNOSTICS": "Virtual PBX диагностикасы",
+          "VIRTUAL_PBX_SAFE_MODE": "Тек жергілікті конфигурация және dry-run диагностикасы. Fonoster/Routr remote өзгерістері бұғатталған.",
+          "PROVIDER_KIND": "Провайдер түрі",
+          "PHONE_SPLIT": "Көрсетілетін → техникалық",
+          "OWNERSHIP": "Иелік",
+          "MANAGED_LOCAL": "Жергілікті басқарылады",
+          "LEGACY_READ_ONLY": "Legacy read-only",
+          "REMOTE_MUTATIONS": "Remote өзгерістер",
+          "REMOTE_MUTATIONS_BLOCKED": "Айқын келісімге дейін бұғатталған",
+          "DISPLAY_PHONE": "Көрсетілетін нөмір",
+          "INGRESS_NUMBER": "Техникалық нөмір",
+          "NUMBER_REF": "Нөмір идентификаторы",
+          "TRUNK_REF": "Транк идентификаторы",
+          "PROVIDER_CONNECTION": "Провайдер қосылымы",
+          "SIP_PROFILES": "SIP профильдері"
         },
         "SUBMIT_BUTTON": "Қоңыраулар арнасын құру",
         "API": {

@@ -535,7 +535,22 @@
           "REFRESH": "Refresh",
           "WARNINGS_TITLE": "Warnings",
           "NO_WARNINGS": "No blocking warnings detected.",
-          "NO_DATA": "No readiness data available for this inbox yet."
+          "NO_DATA": "No readiness data available for this inbox yet.",
+          "VIRTUAL_PBX_DIAGNOSTICS": "Virtual PBX diagnostics",
+          "VIRTUAL_PBX_SAFE_MODE": "Local configuration and dry-run diagnostics only. Remote Fonoster/Routr mutations are blocked.",
+          "PROVIDER_KIND": "Provider kind",
+          "PHONE_SPLIT": "Display → ingress",
+          "OWNERSHIP": "Ownership",
+          "MANAGED_LOCAL": "Managed locally",
+          "LEGACY_READ_ONLY": "Legacy read-only",
+          "REMOTE_MUTATIONS": "Remote mutations",
+          "REMOTE_MUTATIONS_BLOCKED": "Blocked until explicit approval",
+          "DISPLAY_PHONE": "Display phone",
+          "INGRESS_NUMBER": "Ingress number",
+          "NUMBER_REF": "Number ref",
+          "TRUNK_REF": "Trunk ref",
+          "PROVIDER_CONNECTION": "Provider connection",
+          "SIP_PROFILES": "SIP profiles"
         },
         "SUBMIT_BUTTON": "Create Calls Channel",
         "API": {
