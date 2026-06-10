@@ -339,6 +339,14 @@ const currentConversationStatus = computed(() => {
   return conversationStatuses.includes(routeStatus) ? routeStatus : 'open';
 });
 
+const resolveConversationRouteName = name => {
+  if (name === 'home' && hasCommunicationThreads.value) {
+    return 'communication_threads_dashboard';
+  }
+
+  return name;
+};
+
 const conversationSidebarRoute = computed(() => {
   if (isDialogConversationRoute(route.name)) {
     return true;
@@ -450,14 +458,14 @@ const dedicatedRuntimePollingInboxId = computed(() => {
 });
 
 const withConversationStatus = (name, params = {}) =>
-  accountScopedRoute(name, params, {
+  accountScopedRoute(resolveConversationRouteName(name), params, {
     ...route.query,
     status: currentConversationStatus.value,
   });
 
 const withCurrentConversationScopeStatus = status =>
   accountScopedRoute(
-    currentConversationScope.value.name,
+    resolveConversationRouteName(currentConversationScope.value.name),
     currentConversationScope.value.params,
     {
       ...route.query,

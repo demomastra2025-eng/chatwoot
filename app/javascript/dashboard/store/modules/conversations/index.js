@@ -7,7 +7,14 @@ import wootConstants from 'dashboard/constants/globals';
 import { BUS_EVENTS } from '../../../../shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { CONTENT_TYPES } from 'dashboard/components-next/message/constants.js';
-import { buildCommunicationChannelFromMessage } from 'dashboard/helper/communicationThreadHelper';
+import {
+  buildCommunicationChannelFromMessage,
+  getDefaultReplyChannel,
+  getPrimaryCommunicationChannel,
+  isCommunicationChannelReplyable,
+  isCommunicationThread,
+  isMessageInCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 
 const state = {
   allConversations: [],
@@ -17,6 +24,7 @@ const state = {
   chatSortFilter: wootConstants.SORT_BY_TYPE.LATEST,
   currentInbox: null,
   selectedChatId: null,
+  selectedChatType: null,
   appliedFilters: [],
   contextMenuChatId: null,
   conversationParticipants: [],
@@ -33,9 +41,78 @@ const state = {
   },
 };
 
-const getConversationById = _state => conversationId => {
-  return _state.allConversations.find(c => c.id === conversationId);
+const conversationIdMatches = (conversation, conversationId) =>
+  String(conversation?.id) === String(conversationId);
+
+const conversationStoreType = conversation =>
+  isCommunicationThread(conversation) ? 'communication_thread' : 'conversation';
+
+const findConversationByIdAndType = (
+  _state,
+  conversationId,
+  conversationType
+) =>
+  _state.allConversations.find(
+    conversation =>
+      conversationIdMatches(conversation, conversationId) &&
+      conversationStoreType(conversation) === conversationType
+  );
+
+const findConversationById = (
+  _state,
+  conversationId,
+  conversationType = null
+) => {
+  if (conversationType) {
+    return findConversationByIdAndType(
+      _state,
+      conversationId,
+      conversationType
+    );
+  }
+
+  const selectedType = conversationIdMatches(
+    { id: _state.selectedChatId },
+    conversationId
+  )
+    ? _state.selectedChatType
+    : null;
+
+  if (selectedType) {
+    return (
+      findConversationByIdAndType(_state, conversationId, selectedType) ||
+      _state.allConversations.find(conversation =>
+        conversationIdMatches(conversation, conversationId)
+      )
+    );
+  }
+
+  return (
+    findConversationByIdAndType(_state, conversationId, 'conversation') ||
+    _state.allConversations.find(conversation =>
+      conversationIdMatches(conversation, conversationId)
+    )
+  );
 };
+
+const getConversationById =
+  _state =>
+  (conversationId, conversationType = null) =>
+    findConversationById(_state, conversationId, conversationType);
+
+const conversationTargetFromPayload = payload => {
+  if (payload && typeof payload === 'object') {
+    return {
+      id: payload.id ?? payload.conversationId,
+      conversationType: payload.conversationType || null,
+    };
+  }
+
+  return { id: payload, conversationType: null };
+};
+
+const conversationSyncKey = (conversationId, conversationType = null) =>
+  conversationType ? `${conversationType}:${conversationId}` : conversationId;
 
 const sortMessagesByTimeline = (leftMessage, rightMessage) => {
   const createdAtDifference =
@@ -75,17 +152,59 @@ const mergeMessagesById = (existingMessages = [], incomingMessages = []) => {
   return mergedMessages.sort(sortMessagesByTimeline);
 };
 
+const sameConversationType = (existingConversation, incomingConversation) => {
+  return (
+    conversationStoreType(existingConversation) ===
+    conversationStoreType(incomingConversation)
+  );
+};
+
+const isSelectedConversation = (_state, conversation) => {
+  return (
+    conversationIdMatches(conversation, _state.selectedChatId) &&
+    (!_state.selectedChatType ||
+      conversationStoreType(conversation) === _state.selectedChatType)
+  );
+};
+
+const findConversationIndexByIdAndType = (_state, conversation) => {
+  return _state.allConversations.findIndex(
+    existingConversation =>
+      conversationIdMatches(existingConversation, conversation.id) &&
+      sameConversationType(existingConversation, conversation)
+  );
+};
+
+const refreshCommunicationThreadReplyState = chat => {
+  if (!isCommunicationThread(chat)) return;
+
+  const channels = Array.isArray(chat.channels) ? chat.channels : [];
+  const replyChannel =
+    getDefaultReplyChannel(channels, chat.messages || []) ||
+    getPrimaryCommunicationChannel(channels);
+
+  chat.active_reply_channel = replyChannel || null;
+  chat.active_reply_channel_conversation_id =
+    replyChannel?.conversation_id || null;
+  chat.active_reply_channel_key = replyChannel?.channel_key || null;
+  chat.active_reply_channel_inbox_id = replyChannel?.inbox_id || null;
+  chat.inbox_id = replyChannel?.inbox_id || null;
+  chat.can_reply = channels.some(isCommunicationChannelReplyable);
+};
+
 // mutations
 export const mutations = {
   [types.SET_ALL_CONVERSATION](_state, conversationList) {
     const newAllConversations = [..._state.allConversations];
     conversationList.forEach(conversation => {
       const indexInCurrentList = newAllConversations.findIndex(
-        c => c.id === conversation.id
+        existingConversation =>
+          conversationIdMatches(existingConversation, conversation.id) &&
+          sameConversationType(existingConversation, conversation)
       );
       if (indexInCurrentList < 0) {
         newAllConversations.push(conversation);
-      } else if (conversation.id !== _state.selectedChatId) {
+      } else if (!isSelectedConversation(_state, conversation)) {
         // If the conversation is already in the list, replace it
         // Added this to fix the issue of the conversation not being updated
         // When reconnecting to the websocket. If the selectedChatId is not the same as
@@ -108,43 +227,50 @@ export const mutations = {
   [types.EMPTY_ALL_CONVERSATION](_state) {
     _state.allConversations = [];
     _state.selectedChatId = null;
+    _state.selectedChatType = null;
   },
-  [types.SET_ALL_MESSAGES_LOADED](_state, conversationId) {
-    const chat = getConversationById(_state)(conversationId);
+  [types.SET_ALL_MESSAGES_LOADED](_state, payload) {
+    const { id, conversationType } = conversationTargetFromPayload(payload);
+    const chat = getConversationById(_state)(id, conversationType);
     if (chat) {
       chat.allMessagesLoaded = true;
     }
   },
 
-  [types.CLEAR_ALL_MESSAGES_LOADED](_state, conversationId) {
-    const chat = getConversationById(_state)(conversationId);
+  [types.CLEAR_ALL_MESSAGES_LOADED](_state, payload) {
+    const { id, conversationType } = conversationTargetFromPayload(payload);
+    const chat = getConversationById(_state)(id, conversationType);
     if (chat) {
       chat.allMessagesLoaded = false;
     }
   },
   [types.CLEAR_CURRENT_CHAT_WINDOW](_state) {
     _state.selectedChatId = null;
+    _state.selectedChatType = null;
   },
 
-  [types.SET_PREVIOUS_CONVERSATIONS](_state, { id, data }) {
+  [types.SET_PREVIOUS_CONVERSATIONS](_state, { id, data, conversationType }) {
     if (data.length) {
-      const [chat] = _state.allConversations.filter(c => c.id === id);
+      const chat = getConversationById(_state)(id, conversationType);
       if (!chat) return;
 
       chat.messages = mergeMessagesById(chat.messages, data);
+      refreshCommunicationThreadReplyState(chat);
     }
   },
   [types.SET_ALL_ATTACHMENTS](_state, { id, data }) {
     _state.attachments[id] = [...data];
   },
-  [types.SET_MISSING_MESSAGES](_state, { id, data }) {
-    const [chat] = _state.allConversations.filter(c => c.id === id);
+  [types.SET_MISSING_MESSAGES](_state, { id, data, conversationType }) {
+    const chat = getConversationById(_state)(id, conversationType);
     if (!chat) return;
     chat.messages = data;
+    refreshCommunicationThreadReplyState(chat);
   },
 
-  [types.SET_CHAT_DATA_FETCHED](_state, conversationId) {
-    const chat = getConversationById(_state)(conversationId);
+  [types.SET_CHAT_DATA_FETCHED](_state, payload) {
+    const { id, conversationType } = conversationTargetFromPayload(payload);
+    const chat = getConversationById(_state)(id, conversationType);
     if (chat) {
       chat.dataFetched = true;
     }
@@ -153,41 +279,47 @@ export const mutations = {
   [types.SET_CURRENT_CHAT_WINDOW](_state, activeChat) {
     if (activeChat) {
       _state.selectedChatId = activeChat.id;
+      _state.selectedChatType = conversationStoreType(activeChat);
     }
   },
 
   [types.ASSIGN_AGENT](_state, { conversationId, assignee }) {
-    const chat = getConversationById(_state)(conversationId);
+    const chat = getConversationById(_state)(conversationId, 'conversation');
     if (chat) {
       chat.meta.assignee = assignee;
     }
   },
 
   [types.ASSIGN_TEAM](_state, { team, conversationId }) {
-    const [chat] = _state.allConversations.filter(c => c.id === conversationId);
-    chat.meta.team = team;
+    const chat = getConversationById(_state)(conversationId, 'conversation');
+    if (chat) {
+      chat.meta.team = team;
+    }
   },
 
   [types.UPDATE_CONVERSATION_LAST_ACTIVITY](
     _state,
     { lastActivityAt, conversationId }
   ) {
-    const [chat] = _state.allConversations.filter(c => c.id === conversationId);
+    const chat = getConversationById(_state)(conversationId, 'conversation');
     if (chat) {
       chat.last_activity_at = lastActivityAt;
     }
   },
   [types.ASSIGN_PRIORITY](_state, { priority, conversationId }) {
-    const [chat] = _state.allConversations.filter(c => c.id === conversationId);
-    chat.priority = priority;
+    const chat = getConversationById(_state)(conversationId, 'conversation');
+    if (chat) {
+      chat.priority = priority;
+    }
   },
 
   [types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES](
     _state,
     { conversationId, customAttributes }
   ) {
-    const conversation = _state.allConversations.find(
-      c => c.id === conversationId
+    const conversation = getConversationById(_state)(
+      conversationId,
+      'conversation'
     );
     if (conversation) {
       conversation.custom_attributes = customAttributes || {};
@@ -199,7 +331,7 @@ export const mutations = {
     { conversationId, status, snoozedUntil }
   ) {
     const conversation =
-      getters.getConversationById(_state)(conversationId) || {};
+      getters.getConversationById(_state)(conversationId, 'conversation') || {};
     conversation.snoozed_until = snoozedUntil;
     conversation.status = status;
   },
@@ -250,12 +382,10 @@ export const mutations = {
     });
   },
 
-  [types.ADD_MESSAGE]({ allConversations, selectedChatId }, message) {
+  [types.ADD_MESSAGE](_state, message) {
     const { conversation_id: conversationId } = message;
-    const [chat] = getSelectedChatConversation({
-      allConversations,
-      selectedChatId: conversationId,
-    });
+    const { selectedChatId } = _state;
+    const chat = getConversationById(_state)(conversationId, 'conversation');
     if (!chat) return;
 
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
@@ -273,8 +403,9 @@ export const mutations = {
   },
 
   [types.ADD_MESSAGE_TO_CHAT](_state, { chatId, message }) {
-    const chat = getConversationById(_state)(Number(chatId));
+    const chat = getConversationById(_state)(chatId, 'communication_thread');
     if (!chat) return;
+    if (!isMessageInCommunicationThread(chat, message)) return;
 
     chat.messages ||= [];
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
@@ -342,6 +473,7 @@ export const mutations = {
         channel.disabled_reason = null;
       }
     }
+    refreshCommunicationThreadReplyState(chat);
 
     if (_state.selectedChatId === Number(chatId)) {
       emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
@@ -349,7 +481,11 @@ export const mutations = {
   },
 
   [types.ADD_CONVERSATION](_state, conversation) {
-    const exists = _state.allConversations.some(c => c.id === conversation.id);
+    const exists = _state.allConversations.some(
+      existingConversation =>
+        conversationIdMatches(existingConversation, conversation.id) &&
+        sameConversationType(existingConversation, conversation)
+    );
     if (!exists) {
       _state.allConversations.push(conversation);
     }
@@ -357,13 +493,15 @@ export const mutations = {
 
   [types.DELETE_CONVERSATION](_state, conversationId) {
     _state.allConversations = _state.allConversations.filter(
-      c => c.id !== conversationId
+      conversation =>
+        !conversationIdMatches(conversation, conversationId) ||
+        isCommunicationThread(conversation)
     );
   },
 
   [types.UPDATE_CONVERSATION](_state, conversation) {
     const { allConversations } = _state;
-    const index = allConversations.findIndex(c => c.id === conversation.id);
+    const index = findConversationIndexByIdAndType(_state, conversation);
 
     if (index > -1) {
       const selectedConversation = allConversations[index];
@@ -375,10 +513,26 @@ export const mutations = {
 
       const { messages, ...updates } = conversation;
       allConversations[index] = { ...selectedConversation, ...updates };
-      if (_state.selectedChatId === conversation.id) {
+      refreshCommunicationThreadReplyState(allConversations[index]);
+      if (isSelectedConversation(_state, allConversations[index])) {
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
       }
     } else {
+      const hasSameIdDifferentType = allConversations.some(
+        existingConversation =>
+          conversationIdMatches(existingConversation, conversation.id) &&
+          !sameConversationType(existingConversation, conversation)
+      );
+      if (hasSameIdDifferentType) return;
+
+      if (
+        isCommunicationThread(conversation) &&
+        !conversation.meta &&
+        !conversation.channels
+      ) {
+        return;
+      }
+
       const { conversationType } = _state.conversationFilters || {};
       const { MENTION, PARTICIPATING } = wootConstants.CONVERSATION_TYPE;
       if (![MENTION, PARTICIPATING].includes(conversationType)) {
@@ -399,7 +553,7 @@ export const mutations = {
     _state,
     { id, lastSeen, unreadCount = 0 }
   ) {
-    const [chat] = _state.allConversations.filter(c => c.id === id);
+    const chat = getConversationById(_state)(id, 'conversation');
     if (chat) {
       chat.agent_last_seen_at = lastSeen;
       chat.unread_count = unreadCount;
@@ -424,14 +578,14 @@ export const mutations = {
 
   // Update assignee on action cable message
   [types.UPDATE_ASSIGNEE](_state, payload) {
-    const chat = getConversationById(_state)(payload.id);
+    const chat = getConversationById(_state)(payload.id, 'conversation');
     if (chat) {
       chat.meta.assignee = payload.assignee;
     }
   },
 
   [types.UPDATE_CONVERSATION_CONTACT](_state, { conversationId, ...payload }) {
-    const [chat] = _state.allConversations.filter(c => c.id === conversationId);
+    const chat = getConversationById(_state)(conversationId, 'conversation');
     if (chat) {
       chat.meta.sender = payload;
     }
@@ -441,7 +595,7 @@ export const mutations = {
     _state,
     { conversationId, callSid, callStatus }
   ) {
-    const chat = getConversationById(_state)(conversationId);
+    const chat = getConversationById(_state)(conversationId, 'conversation');
     if (!chat) return;
 
     const currentFonosterCallRef =
@@ -464,7 +618,7 @@ export const mutations = {
     _state,
     { conversationId, callSid, callStatus }
   ) {
-    const chat = getConversationById(_state)(conversationId);
+    const chat = getConversationById(_state)(conversationId, 'conversation');
     if (!chat) return;
 
     const voiceCalls = (chat.messages || []).filter(
@@ -494,7 +648,7 @@ export const mutations = {
   },
 
   [types.SET_CONVERSATION_CAN_REPLY](_state, { conversationId, canReply }) {
-    const [chat] = _state.allConversations.filter(c => c.id === conversationId);
+    const chat = getConversationById(_state)(conversationId, 'conversation');
     if (chat) {
       chat.can_reply = canReply;
     }
@@ -517,9 +671,11 @@ export const mutations = {
 
   [types.SET_LAST_MESSAGE_ID_IN_SYNC_CONVERSATION](
     _state,
-    { conversationId, messageId }
+    { conversationId, conversationType, messageId }
   ) {
-    _state.syncConversationsMessages[conversationId] = messageId;
+    _state.syncConversationsMessages[
+      conversationSyncKey(conversationId, conversationType)
+    ] = messageId;
   },
 
   [types.SET_CONTEXT_MENU_CHAT_ID](_state, chatId) {

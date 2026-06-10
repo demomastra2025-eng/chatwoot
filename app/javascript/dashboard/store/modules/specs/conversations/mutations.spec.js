@@ -89,12 +89,24 @@ describe('#mutations', () => {
       const state = { selectedChatId: 1 };
       mutations[types.SET_CURRENT_CHAT_WINDOW](state, { id: 2 });
       expect(state.selectedChatId).toEqual(2);
+      expect(state.selectedChatType).toEqual('conversation');
     });
 
     it('does not set current chat window', () => {
-      const state = { selectedChatId: 1 };
+      const state = { selectedChatId: 1, selectedChatType: 'conversation' };
       mutations[types.SET_CURRENT_CHAT_WINDOW](state);
       expect(state.selectedChatId).toEqual(1);
+      expect(state.selectedChatType).toEqual('conversation');
+    });
+
+    it('stores communication thread selection type separately from conversation ids', () => {
+      const state = { selectedChatId: 1, selectedChatType: 'conversation' };
+      mutations[types.SET_CURRENT_CHAT_WINDOW](state, {
+        id: 2,
+        is_communication_thread: true,
+      });
+      expect(state.selectedChatId).toEqual(2);
+      expect(state.selectedChatType).toEqual('communication_thread');
     });
   });
 
@@ -114,6 +126,61 @@ describe('#mutations', () => {
       const state = { allConversations: [] };
       mutations[types.ADD_MESSAGE](state, { conversationId: 1 });
       expect(state.allConversations).toEqual([]);
+    });
+
+    it('does not add an unrelated child conversation message to a same-id communication thread', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            is_communication_thread: true,
+            conversation_ids: [99],
+            messages: [],
+          },
+        ],
+        selectedChatId: -1,
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 10,
+        conversation_id: 1,
+        content: 'Wrong namespace',
+        created_at: 1602256198,
+      });
+
+      expect(state.allConversations[0].messages).toEqual([]);
+    });
+
+    it('updates the concrete conversation when a same-id communication thread is also cached', () => {
+      const thread = {
+        id: 1,
+        is_communication_thread: true,
+        conversation_ids: [99],
+        messages: [],
+      };
+      const conversation = { id: 1, messages: [] };
+      const state = {
+        allConversations: [thread, conversation],
+        selectedChatId: 1,
+        selectedChatType: 'communication_thread',
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 20,
+        conversation_id: 1,
+        content: 'Concrete child conversation',
+        created_at: 1602256199,
+      });
+
+      expect(thread.messages).toEqual([]);
+      expect(conversation.messages).toEqual([
+        {
+          id: 20,
+          conversation_id: 1,
+          content: 'Concrete child conversation',
+          created_at: 1602256199,
+        },
+      ]);
     });
 
     it('add message to the conversation if it does not exist in the store', () => {
@@ -210,6 +277,110 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#ADD_MESSAGE_TO_CHAT', () => {
+    it('keeps communication thread reply state on the latest incoming channel', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 3,
+            is_communication_thread: true,
+            conversation_ids: [3508],
+            messages: [],
+            channels: [
+              {
+                conversation_id: 3508,
+                inbox_id: 4674,
+                channel: 'Channel::Telegram',
+                can_reply: false,
+                can_send_text: false,
+                can_send_attachments: false,
+                reply_window_open: false,
+                disabled: true,
+                disabled_reason: 'not_replyable',
+                last_activity_at: 100,
+                channel_key: 'conversation:3508',
+              },
+            ],
+            meta: { sender: { id: 42, name: 'Customer' } },
+            inbox_id: null,
+            active_reply_channel: null,
+            can_reply: false,
+          },
+        ],
+        selectedChatId: 3,
+        selectedChatType: 'communication_thread',
+      };
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, {
+        chatId: 3,
+        message: {
+          id: 10,
+          conversation_id: 3508,
+          inbox_id: 4674,
+          message_type: 0,
+          created_at: 200,
+        },
+      });
+
+      const thread = state.allConversations[0];
+      expect(thread.meta.sender).toEqual({ id: 42, name: 'Customer' });
+      expect(thread.can_reply).toBe(true);
+      expect(thread.inbox_id).toBe(4674);
+      expect(thread.active_reply_channel).toMatchObject({
+        conversation_id: 3508,
+        inbox_id: 4674,
+        channel: 'Channel::Telegram',
+        can_reply: true,
+        disabled: false,
+      });
+    });
+
+    it('updates the communication thread when a same-id conversation is also cached', () => {
+      const conversation = { id: 3, messages: [] };
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        conversation_ids: [3508],
+        messages: [],
+        channels: [
+          {
+            conversation_id: 3508,
+            inbox_id: 4674,
+            channel: 'Channel::Telegram',
+            channel_key: 'conversation:3508',
+          },
+        ],
+      };
+      const state = {
+        allConversations: [conversation, thread],
+        selectedChatId: 3,
+        selectedChatType: 'communication_thread',
+      };
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, {
+        chatId: 3,
+        message: {
+          id: 30,
+          conversation_id: 3508,
+          inbox_id: 4674,
+          message_type: 0,
+          created_at: 201,
+        },
+      });
+
+      expect(conversation.messages).toEqual([]);
+      expect(thread.messages).toEqual([
+        {
+          id: 30,
+          conversation_id: 3508,
+          inbox_id: 4674,
+          message_type: 0,
+          created_at: 201,
+        },
+      ]);
+    });
+  });
+
   describe('#CHANGE_CONVERSATION_STATUS', () => {
     it('updates the conversation status correctly', () => {
       const state = {
@@ -296,6 +467,21 @@ describe('#mutations', () => {
       const data = [{ id: 1, name: 'test' }];
       mutations[types.SET_ALL_CONVERSATION](state, data);
       expect(state.allConversations).toEqual(data);
+    });
+
+    it('keeps communication threads and conversations in separate id namespaces', () => {
+      const conversation = { id: 3, messages: [], meta: { sender: { id: 1 } } };
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        messages: [],
+        meta: { sender: { id: 2 } },
+      };
+      const state = { allConversations: [conversation] };
+
+      mutations[types.SET_ALL_CONVERSATION](state, [thread]);
+
+      expect(state.allConversations).toEqual([conversation, thread]);
     });
 
     it('set all conversation in reconnect if selected chat id and conversation id is the same', () => {
@@ -703,6 +889,31 @@ describe('#mutations', () => {
         { id: 3, content: 'local newest', created_at: 30 },
       ]);
     });
+
+    it('updates the typed communication thread when a same-id conversation is present first', () => {
+      const conversation = { id: 3, messages: [{ id: 'conversation-old' }] };
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        messages: [{ id: 'thread-old', created_at: 2 }],
+        channels: [],
+      };
+      const state = {
+        allConversations: [conversation, thread],
+      };
+
+      mutations[types.SET_PREVIOUS_CONVERSATIONS](state, {
+        id: 3,
+        conversationType: 'communication_thread',
+        data: [{ id: 'thread-new', created_at: 1 }],
+      });
+
+      expect(conversation.messages).toEqual([{ id: 'conversation-old' }]);
+      expect(thread.messages).toEqual([
+        { id: 'thread-new', created_at: 1 },
+        { id: 'thread-old', created_at: 2 },
+      ]);
+    });
   });
 
   describe('#SET_MISSING_MESSAGES', () => {
@@ -724,6 +935,29 @@ describe('#mutations', () => {
 
       mutations[types.SET_MISSING_MESSAGES](state, payload);
       expect(state.allConversations).toEqual([]);
+    });
+
+    it('replaces messages on the typed communication thread when ids collide', () => {
+      const conversation = { id: 3, messages: [{ id: 'conversation-old' }] };
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        messages: [{ id: 'thread-old' }],
+        channels: [],
+      };
+      const state = {
+        allConversations: [conversation, thread],
+      };
+      const payload = {
+        id: 3,
+        conversationType: 'communication_thread',
+        data: [{ id: 'thread-new' }],
+      };
+
+      mutations[types.SET_MISSING_MESSAGES](state, payload);
+
+      expect(conversation.messages).toEqual([{ id: 'conversation-old' }]);
+      expect(thread.messages).toEqual([{ id: 'thread-new' }]);
     });
   });
 
@@ -813,6 +1047,106 @@ describe('#mutations', () => {
         updated_at: 200,
         messages: [{ id: 'msg1' }],
       });
+    });
+
+    it('merges partial communication thread realtime updates without wiping detail state', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 3,
+            is_communication_thread: true,
+            status: 'pending',
+            updated_at: 100,
+            unread_count: 0,
+            conversation_ids: [3508],
+            channels: [
+              {
+                conversation_id: 3508,
+                inbox_id: 4674,
+                channel: 'Channel::Telegram',
+                can_reply: true,
+                can_send_text: true,
+                last_activity_at: 100,
+                channel_key: 'conversation:3508',
+              },
+            ],
+            active_reply_channel: {
+              conversation_id: 3508,
+              inbox_id: 4674,
+              channel: 'Channel::Telegram',
+              can_reply: true,
+              channel_key: 'conversation:3508',
+            },
+            inbox_id: 4674,
+            can_reply: true,
+            messages: [{ id: 1, conversation_id: 3508, created_at: 100 }],
+            meta: { sender: { id: 42, name: 'Customer' } },
+          },
+        ],
+        selectedChatId: 3,
+        selectedChatType: 'communication_thread',
+      };
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 3,
+        communication_thread_id: 3,
+        is_communication_thread: true,
+        status: 'open',
+        unread_count: 1,
+        updated_at: 200,
+        timestamp: 200,
+        source_event: 'message.created',
+      });
+
+      expect(state.allConversations[0]).toMatchObject({
+        id: 3,
+        is_communication_thread: true,
+        status: 'open',
+        unread_count: 1,
+        updated_at: 200,
+        inbox_id: 4674,
+        can_reply: true,
+        meta: { sender: { id: 42, name: 'Customer' } },
+        active_reply_channel: {
+          conversation_id: 3508,
+          inbox_id: 4674,
+          channel: 'Channel::Telegram',
+          can_reply: true,
+        },
+      });
+      expect(state.allConversations[0].channels).toHaveLength(1);
+      expect(state.allConversations[0].messages).toEqual([
+        { id: 1, conversation_id: 3508, created_at: 100 },
+      ]);
+    });
+
+    it('does not replace a same-display-id communication thread with a child conversation update', () => {
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        status: 'pending',
+        updated_at: 100,
+        conversation_ids: [3508],
+        channels: [],
+        messages: [],
+        meta: { sender: { id: 42, name: 'Customer' } },
+      };
+      const state = {
+        allConversations: [thread],
+        selectedChatId: 3,
+        selectedChatType: 'communication_thread',
+      };
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 3,
+        status: 'open',
+        updated_at: 200,
+        inbox_id: 4674,
+        can_reply: false,
+        meta: { sender: { id: 999, name: 'Unknown subscriber' } },
+      });
+
+      expect(state.allConversations).toEqual([thread]);
     });
 
     it('should add conversation if not found on normal view', () => {
@@ -1071,6 +1405,21 @@ describe('#mutations', () => {
       mutations[types.DELETE_CONVERSATION](state, 1);
       expect(state.allConversations).toEqual([]);
     });
+
+    it('does not delete a same-id communication thread when deleting a concrete conversation', () => {
+      const thread = {
+        id: 1,
+        is_communication_thread: true,
+        messages: [],
+      };
+      const state = {
+        allConversations: [{ id: 1, messages: [] }, thread],
+      };
+
+      mutations[types.DELETE_CONVERSATION](state, 1);
+
+      expect(state.allConversations).toEqual([thread]);
+    });
   });
 
   describe('#SET_LIST_LOADING_STATUS', () => {
@@ -1134,6 +1483,23 @@ describe('#mutations', () => {
       });
 
       expect(state.syncConversationsMessages[1]).toBe(100);
+    });
+
+    it('keeps sync cursors separate for typed communication threads', () => {
+      const state = {
+        syncConversationsMessages: {},
+      };
+
+      mutations[types.SET_LAST_MESSAGE_ID_IN_SYNC_CONVERSATION](state, {
+        conversationId: 1,
+        conversationType: 'communication_thread',
+        messageId: 100,
+      });
+
+      expect(state.syncConversationsMessages['communication_thread:1']).toBe(
+        100
+      );
+      expect(state.syncConversationsMessages[1]).toBeUndefined();
     });
   });
 });

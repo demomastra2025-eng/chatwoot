@@ -63,16 +63,46 @@ describe('#validateAuthenticateRoutePermission', () => {
     });
 
     describe('when route is not accessible to current user', () => {
-      it('should redirect to dashboard', () => {
+      it('should redirect to dashboard', async () => {
         const to = {
           name: 'general_settings_index',
           params: { accountId: 1 },
           meta: { permissions: ['administrator'] },
         };
 
-        validateAuthenticateRoutePermission(to, next);
+        await validateAuthenticateRoutePermission(to, next);
 
         expect(next).toHaveBeenCalledWith('/app/accounts/1/dashboard');
+      });
+
+      it('hydrates account features before choosing the fallback route', async () => {
+        let hasHydratedAccount = false;
+        store.dispatch = vi.fn().mockImplementation(async action => {
+          if (action === 'accounts/get') {
+            hasHydratedAccount = true;
+          }
+        });
+        store.getters['accounts/getAccount'] = vi.fn(() =>
+          hasHydratedAccount
+            ? {
+                id: 1,
+                features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+              }
+            : { id: 1 }
+        );
+
+        const to = {
+          name: 'general_settings_index',
+          params: { accountId: 1 },
+          meta: { permissions: ['administrator'] },
+        };
+
+        await validateAuthenticateRoutePermission(to, next);
+
+        expect(store.dispatch).toHaveBeenCalledWith('accounts/get');
+        expect(next).toHaveBeenCalledWith(
+          '/app/accounts/1/communication_threads?status=open'
+        );
       });
     });
 
@@ -91,6 +121,36 @@ describe('#validateAuthenticateRoutePermission', () => {
 
         await validateAuthenticateRoutePermission(to, next);
 
+        expect(next).toHaveBeenCalledWith(
+          '/app/accounts/1/communication_threads?status=open'
+        );
+      });
+
+      it('hydrates account features when the cached account record is incomplete', async () => {
+        let hasHydratedAccount = false;
+        store.dispatch = vi.fn().mockImplementation(async action => {
+          if (action === 'accounts/get') {
+            hasHydratedAccount = true;
+          }
+        });
+        store.getters['accounts/getAccount'] = vi.fn(() =>
+          hasHydratedAccount
+            ? {
+                id: 1,
+                features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+              }
+            : { id: 1 }
+        );
+
+        const to = {
+          name: undefined,
+          params: { accountId: 1 },
+          meta: {},
+        };
+
+        await validateAuthenticateRoutePermission(to, next);
+
+        expect(store.dispatch).toHaveBeenCalledWith('accounts/get');
         expect(next).toHaveBeenCalledWith(
           '/app/accounts/1/communication_threads?status=open'
         );
@@ -133,14 +193,14 @@ describe('#validateAuthenticateRoutePermission', () => {
         };
       });
 
-      it('should go to the intended route', () => {
+      it('should go to the intended route', async () => {
         const to = {
           name: 'general_settings_index',
           params: { accountId: 1 },
           meta: { permissions: ['administrator'] },
         };
 
-        validateAuthenticateRoutePermission(to, next);
+        await validateAuthenticateRoutePermission(to, next);
 
         expect(next).toHaveBeenCalledWith();
       });

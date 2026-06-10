@@ -266,7 +266,7 @@ const conversationCustomAttributes = useFunctionGetter(
 
 const communicationThreadChannelInboxes = ref([]);
 const currentCommunicationThreadChannelInboxes = computed(() =>
-  getCommunicationThreadChannelInboxes(chatLists.value)
+  getCommunicationThreadChannelInboxes(chatLists.value, activeStatus.value)
 );
 
 watch(
@@ -280,9 +280,7 @@ watch(
       return;
     }
 
-    if (channelInboxes.length) {
-      communicationThreadChannelInboxes.value = channelInboxes;
-    }
+    communicationThreadChannelInboxes.value = channelInboxes;
   },
   { immediate: true }
 );
@@ -315,7 +313,7 @@ const channelFilterItems = computed(() => [
   },
   ...sortedChannelInboxes.value.map(channelInbox => ({
     key: `inbox:${channelInbox.id}`,
-    label: channelInbox.name,
+    label: channelInbox.display_name || channelInbox.name,
     inbox: channelInbox,
     badge: sidebarUnreadCount('inboxes', channelInbox.id),
   })),

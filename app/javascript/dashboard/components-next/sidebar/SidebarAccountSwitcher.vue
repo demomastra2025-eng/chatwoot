@@ -63,7 +63,7 @@ const isCompanyMenuActive = computed(() => {
 });
 
 const onChangeAccount = newId => {
-  const accountUrl = `/app/accounts/${newId}/dashboard`;
+  const accountUrl = `/app/accounts/${newId}`;
   window.location.href = accountUrl;
 };
 

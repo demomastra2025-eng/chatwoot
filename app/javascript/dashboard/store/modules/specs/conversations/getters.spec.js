@@ -308,6 +308,59 @@ describe('#getters', () => {
       };
       expect(getters.getConversationById(state)(1)).toEqual({ id: 1 });
     });
+
+    it('uses explicit type to disambiguate same-id conversations and threads', () => {
+      const conversation = { id: 3, meta: { sender: { id: 1 } } };
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        meta: { sender: { id: 2 } },
+      };
+      const state = {
+        allConversations: [thread, conversation],
+      };
+
+      expect(getters.getConversationById(state)(3, 'conversation')).toEqual(
+        conversation
+      );
+      expect(
+        getters.getConversationById(state)(3, 'communication_thread')
+      ).toEqual(thread);
+    });
+
+    it('uses selected chat type when no explicit type is passed', () => {
+      const conversation = { id: 3, meta: { sender: { id: 1 } } };
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        meta: { sender: { id: 2 } },
+      };
+      const state = {
+        allConversations: [conversation, thread],
+        selectedChatId: 3,
+        selectedChatType: 'communication_thread',
+      };
+
+      expect(getters.getConversationById(state)(3)).toEqual(thread);
+    });
+  });
+
+  describe('#getSelectedChat', () => {
+    it('uses selected chat type to disambiguate communication threads from conversations', () => {
+      const conversation = { id: 3, meta: { sender: { id: 1 } } };
+      const thread = {
+        id: 3,
+        is_communication_thread: true,
+        meta: { sender: { id: 2 } },
+      };
+      const state = {
+        allConversations: [conversation, thread],
+        selectedChatId: 3,
+        selectedChatType: 'communication_thread',
+      };
+
+      expect(getters.getSelectedChat(state)).toEqual(thread);
+    });
   });
 
   describe('#getAppliedConversationFilters', () => {

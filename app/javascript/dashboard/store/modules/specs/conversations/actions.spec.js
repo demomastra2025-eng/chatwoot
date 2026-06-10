@@ -124,7 +124,7 @@ describe('#actions', () => {
   });
 
   describe('#updateCommunicationThreadRealtime', () => {
-    it('commits thread realtime payload without requiring conversation meta', () => {
+    it('commits partial thread realtime payload without fabricating empty meta/channels', () => {
       const payload = {
         id: 7,
         communication_thread_id: 7,
@@ -140,23 +140,10 @@ describe('#actions', () => {
       expect(commit.mock.calls).toEqual([
         [
           types.UPDATE_CONVERSATION,
-          expect.objectContaining({
-            id: 7,
+          {
+            ...payload,
             display_id: 7,
-            communication_thread_id: 7,
-            is_communication_thread: true,
-            conversation_ids: [11, 22],
-            unread_count: 3,
-            timestamp: 1710000000,
-            updated_at: 1710000000.25,
-            messages: [],
-            labels: [],
-            meta: {
-              sender: {},
-              assignee: null,
-              team: null,
-            },
-          }),
+          },
         ],
       ]);
     });
@@ -903,12 +890,19 @@ describe('#addMentions', () => {
 
       expect(localCommit.mock.calls).toEqual([
         [types.SET_CURRENT_CHAT_WINDOW, data],
-        [types.CLEAR_ALL_MESSAGES_LOADED, 42],
-        [types.SET_CHAT_DATA_FETCHED, 42],
+        [
+          types.CLEAR_ALL_MESSAGES_LOADED,
+          { id: 42, conversationType: 'conversation' },
+        ],
+        [
+          types.SET_CHAT_DATA_FETCHED,
+          { id: 42, conversationType: 'conversation' },
+        ],
       ]);
       expect(localDispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
         after: undefined,
         conversationId: 42,
+        conversationType: 'conversation',
       });
     });
 
@@ -924,13 +918,20 @@ describe('#addMentions', () => {
 
       expect(localCommit.mock.calls).toEqual([
         [types.SET_CURRENT_CHAT_WINDOW, data],
-        [types.CLEAR_ALL_MESSAGES_LOADED, 42],
-        [types.SET_CHAT_DATA_FETCHED, 42],
+        [
+          types.CLEAR_ALL_MESSAGES_LOADED,
+          { id: 42, conversationType: 'conversation' },
+        ],
+        [
+          types.SET_CHAT_DATA_FETCHED,
+          { id: 42, conversationType: 'conversation' },
+        ],
       ]);
       expect(localDispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
         after: 99,
         before: 100,
         conversationId: 42,
+        conversationType: 'conversation',
       });
     });
 
@@ -946,7 +947,10 @@ describe('#addMentions', () => {
 
       expect(localCommit.mock.calls).toEqual([
         [types.SET_CURRENT_CHAT_WINDOW, data],
-        [types.CLEAR_ALL_MESSAGES_LOADED, 42],
+        [
+          types.CLEAR_ALL_MESSAGES_LOADED,
+          { id: 42, conversationType: 'conversation' },
+        ],
       ]);
       expect(localDispatch).not.toHaveBeenCalled();
     });
@@ -965,7 +969,10 @@ describe('#addMentions', () => {
       expect(data.dataFetched).toBeUndefined();
 
       // Instead it commits a mutation that finds the conversation by ID in the store
-      expect(localCommit).toHaveBeenCalledWith(types.SET_CHAT_DATA_FETCHED, 42);
+      expect(localCommit).toHaveBeenCalledWith(types.SET_CHAT_DATA_FETCHED, {
+        id: 42,
+        conversationType: 'conversation',
+      });
     });
   });
 

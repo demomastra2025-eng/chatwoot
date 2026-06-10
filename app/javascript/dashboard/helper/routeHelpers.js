@@ -106,19 +106,17 @@ export const defaultRedirectPage = (
 
 const validateActiveAccountRoutes = (to, user, accountFeatureSource = null) => {
   // If the current account is active, then check for the route permissions
-  const accountDashboardURL = `accounts/${to.params.accountId}/dashboard`;
+  const userPermissions = getUserPermissions(user, to.params.accountId);
 
   // If the user is trying to access suspended route, redirect them to dashboard
   if (to.name === 'account_suspended') {
-    return accountDashboardURL;
+    return defaultRedirectPage(to, userPermissions, user, accountFeatureSource);
   }
 
   const currentAccount = withRouteAccountFeatures(
     getCurrentAccount(user, Number(to.params.accountId)),
     accountFeatureSource
   );
-  const userPermissions = getUserPermissions(user, to.params.accountId);
-
   if (
     to.name === 'home' &&
     isFeatureEnabled(currentAccount, FEATURE_FLAGS.COMMUNICATION_THREADS)

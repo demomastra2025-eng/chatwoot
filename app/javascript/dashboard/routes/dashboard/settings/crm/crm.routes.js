@@ -77,7 +77,7 @@ const redirectToCrmLanding = (to, _from, next) => {
   }
 
   next({
-    path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
+    path: frontendURL(`accounts/${to.params.accountId}`),
   });
 };
 
@@ -97,7 +97,7 @@ const requireCrmDeals = (to, _from, next) => {
   }
 
   next({
-    path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
+    path: frontendURL(`accounts/${to.params.accountId}`),
   });
 };
 
@@ -117,7 +117,7 @@ const requireCrmTasks = (to, _from, next) => {
   }
 
   next({
-    path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
+    path: frontendURL(`accounts/${to.params.accountId}`),
   });
 };
 

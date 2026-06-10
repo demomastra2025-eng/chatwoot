@@ -38,7 +38,59 @@ const addMessageToCommunicationThreads = (commit, state, message) => {
   });
 };
 
+const conversationStoreType = conversation =>
+  isCommunicationThread(conversation) ? 'communication_thread' : 'conversation';
+
+const conversationIdMatches = (conversation, conversationId) =>
+  String(conversation?.id) === String(conversationId);
+
+const findChatByIdAndType = (state, conversationId, conversationType) =>
+  (state?.allConversations || []).find(
+    chat =>
+      conversationIdMatches(chat, conversationId) &&
+      conversationStoreType(chat) === conversationType
+  );
+
+const findActiveChatById = (state, conversationId) => {
+  if (
+    String(state?.selectedChatId) === String(conversationId) &&
+    state?.selectedChatType
+  ) {
+    const selectedChat = findChatByIdAndType(
+      state,
+      conversationId,
+      state.selectedChatType
+    );
+    if (selectedChat) return selectedChat;
+  }
+
+  return (state?.allConversations || []).find(chat =>
+    conversationIdMatches(chat, conversationId)
+  );
+};
+
+const activeChatTypeForPayload = (state, payload) => {
+  if (payload?.conversationType) return payload.conversationType;
+  if (
+    String(state?.selectedChatId) === String(payload?.conversationId) &&
+    state?.selectedChatType
+  ) {
+    return state.selectedChatType;
+  }
+  return null;
+};
+
+const withConversationType = (payload, conversationType) =>
+  conversationType ? { ...payload, conversationType } : payload;
+
 const getCommunicationThreadById = (state, conversationId) => {
+  if (
+    String(state?.selectedChatId) === String(conversationId) &&
+    state?.selectedChatType === 'conversation'
+  ) {
+    return null;
+  }
+
   return (state?.allConversations || []).find(
     chat =>
       String(chat.id) === String(conversationId) && isCommunicationThread(chat)
@@ -73,12 +125,31 @@ const resolveAttachmentTarget = (state, payload) => {
   };
 };
 
-const commitCommunicationThreadUpdate = (commit, payload) => {
+const hasFullCommunicationThreadPayload = payload => {
+  return ['meta', 'contact', 'channels', 'messages'].some(key =>
+    Object.prototype.hasOwnProperty.call(payload || {}, key)
+  );
+};
+
+const buildCommunicationThreadRealtimePatch = payload => {
   const threadId = payload.communication_thread_id || payload.id;
-  const communicationThread = buildCommunicationThreadConversation({
+  return {
     ...payload,
     id: threadId,
-  });
+    display_id: threadId,
+    communication_thread_id: threadId,
+    is_communication_thread: true,
+  };
+};
+
+const commitCommunicationThreadUpdate = (commit, payload) => {
+  const threadId = payload.communication_thread_id || payload.id;
+  const communicationThread = hasFullCommunicationThreadPayload(payload)
+    ? buildCommunicationThreadConversation({
+        ...payload,
+        id: threadId,
+      })
+    : buildCommunicationThreadRealtimePatch(payload);
   commit(types.UPDATE_CONVERSATION, communicationThread);
   return communicationThread;
 };
@@ -217,9 +288,8 @@ const actions = {
 
   fetchPreviousMessages: async ({ commit, state }, data) => {
     try {
-      const selectedChat = state.allConversations.find(
-        conversation => conversation.id === Number(data.conversationId)
-      );
+      const selectedChat = findActiveChatById(state, data.conversationId);
+      const conversationType = activeChatTypeForPayload(state, data);
 
       if (selectedChat?.is_communication_thread) {
         const {
@@ -237,12 +307,21 @@ const actions = {
           id: data.conversationId,
           data: meta,
         });
-        commit(types.SET_PREVIOUS_CONVERSATIONS, {
-          id: data.conversationId,
-          data: payload,
-        });
+        commit(
+          types.SET_PREVIOUS_CONVERSATIONS,
+          withConversationType(
+            {
+              id: data.conversationId,
+              data: payload,
+            },
+            conversationType
+          )
+        );
         if (!payload.length) {
-          commit(types.SET_ALL_MESSAGES_LOADED, data.conversationId);
+          commit(
+            types.SET_ALL_MESSAGES_LOADED,
+            withConversationType({ id: data.conversationId }, conversationType)
+          );
         }
         return;
       }
@@ -254,12 +333,21 @@ const actions = {
         id: data.conversationId,
         data: meta,
       });
-      commit(types.SET_PREVIOUS_CONVERSATIONS, {
-        id: data.conversationId,
-        data: payload,
-      });
+      commit(
+        types.SET_PREVIOUS_CONVERSATIONS,
+        withConversationType(
+          {
+            id: data.conversationId,
+            data: payload,
+          },
+          conversationType
+        )
+      );
       if (!payload.length) {
-        commit(types.SET_ALL_MESSAGES_LOADED, data.conversationId);
+        commit(
+          types.SET_ALL_MESSAGES_LOADED,
+          withConversationType({ id: data.conversationId }, conversationType)
+        );
       }
     } catch (error) {
       // Handle error
@@ -300,12 +388,18 @@ const actions = {
     { commit, state, dispatch },
     { conversationId }
   ) => {
-    const { allConversations, syncConversationsMessages } = state;
-    const lastMessageId = syncConversationsMessages[conversationId];
-    const selectedChat = allConversations.find(
-      conversation => conversation.id === conversationId
-    );
+    const { syncConversationsMessages } = state;
+    const selectedChat = findActiveChatById(state, conversationId);
     if (!selectedChat) return;
+    const conversationType =
+      activeChatTypeForPayload(state, { conversationId }) ||
+      (isCommunicationThread(selectedChat) ? 'communication_thread' : null);
+    const syncKey = conversationType
+      ? `${conversationType}:${conversationId}`
+      : conversationId;
+    const lastMessageId =
+      syncConversationsMessages[syncKey] ||
+      syncConversationsMessages[conversationId];
     try {
       const { messages } = selectedChat;
       const syncMessagesApi = selectedChat.is_communication_thread
@@ -336,12 +430,19 @@ const actions = {
       const sortedMessages = selectedChat.messages.sort((a, b) => {
         return Number(a.created_at || 0) - Number(b.created_at || 0);
       });
-      commit(types.SET_MISSING_MESSAGES, {
-        id: conversationId,
-        data: sortedMessages,
-      });
+      commit(
+        types.SET_MISSING_MESSAGES,
+        withConversationType(
+          {
+            id: conversationId,
+            data: sortedMessages,
+          },
+          conversationType
+        )
+      );
       commit(types.SET_LAST_MESSAGE_ID_IN_SYNC_CONVERSATION, {
         conversationId,
+        ...(conversationType ? { conversationType } : {}),
         messageId: null,
       });
       if (selectedChat.is_communication_thread) {
@@ -362,28 +463,34 @@ const actions = {
     { commit, state },
     { conversationId }
   ) => {
-    const { allConversations } = state;
-    const selectedChat = allConversations.find(
-      conversation => conversation.id === conversationId
-    );
+    const selectedChat = findActiveChatById(state, conversationId);
     if (!selectedChat) return;
+    const conversationType =
+      activeChatTypeForPayload(state, { conversationId }) ||
+      (isCommunicationThread(selectedChat) ? 'communication_thread' : null);
     const { messages } = selectedChat;
     const lastMessage = messages.last();
     if (!lastMessage) return;
     commit(types.SET_LAST_MESSAGE_ID_IN_SYNC_CONVERSATION, {
       conversationId,
+      ...(conversationType ? { conversationType } : {}),
       messageId: lastMessage.id,
     });
   },
 
   async setActiveChat({ commit, dispatch }, { data, after }) {
     commit(types.SET_CURRENT_CHAT_WINDOW, data);
-    commit(types.CLEAR_ALL_MESSAGES_LOADED, data.id);
+    const conversationType = conversationStoreType(data);
+    commit(types.CLEAR_ALL_MESSAGES_LOADED, {
+      id: data.id,
+      conversationType,
+    });
     if (data.dataFetched === undefined) {
       try {
         const fetchParams = {
           after,
           conversationId: data.id,
+          conversationType,
         };
 
         if (after) {
@@ -391,7 +498,10 @@ const actions = {
         }
 
         await dispatch('fetchPreviousMessages', fetchParams);
-        commit(types.SET_CHAT_DATA_FETCHED, data.id);
+        commit(types.SET_CHAT_DATA_FETCHED, {
+          id: data.id,
+          conversationType,
+        });
       } catch (error) {
         // Ignore error
       }
@@ -411,14 +521,7 @@ const actions = {
         const response = await CommunicationThreadApi.update(conversationId, {
           assignee_id: agentId,
         });
-        const updatedThread = commitCommunicationThreadUpdate(
-          commit,
-          response.data
-        );
-        dispatch('setCurrentChatAssignee', {
-          conversationId,
-          assignee: updatedThread.meta?.assignee || null,
-        });
+        commitCommunicationThreadUpdate(commit, response.data);
         return;
       }
 
@@ -452,14 +555,7 @@ const actions = {
         const response = await CommunicationThreadApi.update(conversationId, {
           team_id: teamId,
         });
-        const updatedThread = commitCommunicationThreadUpdate(
-          commit,
-          response.data
-        );
-        dispatch('setCurrentChatTeam', {
-          team: updatedThread.meta?.team || null,
-          conversationId,
-        });
+        commitCommunicationThreadUpdate(commit, response.data);
         return;
       }
 
@@ -491,15 +587,7 @@ const actions = {
           status,
           snoozed_until: snoozedUntil,
         });
-        const updatedThread = commitCommunicationThreadUpdate(
-          commit,
-          response.data
-        );
-        commit(types.CHANGE_CONVERSATION_STATUS, {
-          conversationId,
-          status: updatedThread.status,
-          snoozedUntil,
-        });
+        commitCommunicationThreadUpdate(commit, response.data);
         return;
       }
 
@@ -833,14 +921,7 @@ const actions = {
         const response = await CommunicationThreadApi.update(conversationId, {
           priority,
         });
-        const updatedThread = commitCommunicationThreadUpdate(
-          commit,
-          response.data
-        );
-        dispatch('setCurrentChatPriority', {
-          priority: updatedThread.priority,
-          conversationId,
-        });
+        commitCommunicationThreadUpdate(commit, response.data);
         return;
       }
 

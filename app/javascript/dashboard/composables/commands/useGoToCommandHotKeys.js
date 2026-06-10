@@ -29,7 +29,10 @@ const GO_TO_COMMANDS = [
     title: 'COMMAND_BAR.COMMANDS.GO_TO_CONVERSATION_DASHBOARD',
     section: 'COMMAND_BAR.SECTIONS.GENERAL',
     icon: ICON_CONVERSATION_DASHBOARD,
-    path: accountId => `accounts/${accountId}/dashboard`,
+    path: (accountId, { communicationThreadsEnabled = false } = {}) =>
+      communicationThreadsEnabled
+        ? `accounts/${accountId}/communication_threads?status=open`
+        : `accounts/${accountId}/dashboard`,
     role: ['administrator', 'agent'],
   },
   {
@@ -208,7 +211,15 @@ export function useGoToCommandHotKeys() {
       section: t(command.section),
       title: t(command.title),
       icon: command.icon,
-      handler: () => openRoute(command.path(currentAccountId.value)),
+      handler: () =>
+        openRoute(
+          command.path(currentAccountId.value, {
+            communicationThreadsEnabled: isFeatureEnabledOnAccount.value(
+              currentAccountId.value,
+              FEATURE_FLAGS.COMMUNICATION_THREADS
+            ),
+          })
+        ),
     }));
   });
 

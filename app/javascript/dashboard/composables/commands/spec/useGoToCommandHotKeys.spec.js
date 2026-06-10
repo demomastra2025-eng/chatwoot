@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { useAdmin } from 'dashboard/composables/useAdmin';
 import { frontendURL } from 'dashboard/helper/URLHelper';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { MOCK_FEATURE_FLAGS } from './fixtures';
 
 vi.mock('dashboard/composables/store');
@@ -148,6 +149,23 @@ describe('useGoToCommandHotKeys', () => {
       command.handler();
       expect(useRouter().push).toHaveBeenCalledWith(expect.any(String));
     });
+  });
+
+  it('should route the conversation dashboard command to communication threads when enabled', () => {
+    store.getters['accounts/isFeatureEnabledonAccount'] = vi.fn(
+      (_accountId, flag) => flag === FEATURE_FLAGS.COMMUNICATION_THREADS
+    );
+
+    const { goToCommandHotKeys } = useGoToCommandHotKeys();
+    const command = goToCommandHotKeys.value.find(
+      cmd => cmd.id === 'goto_conversation_dashboard'
+    );
+
+    command.handler();
+
+    expect(useRouter().push).toHaveBeenCalledWith(
+      'accounts/1/communication_threads?status=open'
+    );
   });
 
   it('should use current account ID in the path', () => {

@@ -103,13 +103,58 @@ export const getCommunicationReplyChannels = (channels = []) => {
   );
 };
 
-export const getCommunicationThreadChannelInboxes = (threads = []) => {
+const normalizeChannelStatus = status => String(status || '').trim();
+
+const channelMatchesStatus = (channel, status) => {
+  const normalizedStatus = normalizeChannelStatus(status);
+  if (!normalizedStatus) return true;
+  if (!channel?.status) return true;
+
+  return normalizeChannelStatus(channel.status) === normalizedStatus;
+};
+
+const channelInboxLabel = inbox => inbox.name || `#${inbox.id}`;
+
+const channelInboxDuplicateKey = inbox =>
+  [
+    inbox.channel_type || '',
+    channelInboxLabel(inbox).trim().toLowerCase(),
+  ].join(':');
+
+const disambiguateDuplicateChannelInboxLabels = inboxes => {
+  const labelCounts = inboxes.reduce((counts, inbox) => {
+    const key = channelInboxDuplicateKey(inbox);
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map());
+
+  return inboxes.map(inbox => {
+    const key = channelInboxDuplicateKey(inbox);
+    if (labelCounts.get(key) <= 1) return inbox;
+
+    return {
+      ...inbox,
+      display_name: `${channelInboxLabel(inbox)} #${inbox.id}`,
+    };
+  });
+};
+
+export const getCommunicationThreadChannelInboxes = (
+  threads = [],
+  activeStatus = null
+) => {
   const inboxesById = new Map();
   const threadList = Array.isArray(threads) ? threads : [];
 
   threadList
     .filter(isCommunicationThread)
-    .flatMap(thread => getUniqueCommunicationChannels(thread.channels || []))
+    .flatMap(thread =>
+      getUniqueCommunicationChannels(
+        (thread.channels || []).filter(channel =>
+          channelMatchesStatus(channel, activeStatus)
+        )
+      )
+    )
     .filter(channel => channel?.inbox_id)
     .forEach(channel => {
       const inboxId = Number(channel.inbox_id);
@@ -123,9 +168,18 @@ export const getCommunicationThreadChannelInboxes = (threads = []) => {
       });
     });
 
-  return Array.from(inboxesById.values()).sort((leftInbox, rightInbox) =>
-    (leftInbox.name || '').localeCompare(rightInbox.name || '')
+  const sortedInboxes = Array.from(inboxesById.values()).sort(
+    (leftInbox, rightInbox) => {
+      const nameComparison = (leftInbox.name || '').localeCompare(
+        rightInbox.name || ''
+      );
+      if (nameComparison !== 0) return nameComparison;
+
+      return Number(leftInbox.id || 0) - Number(rightInbox.id || 0);
+    }
   );
+
+  return disambiguateDuplicateChannelInboxLabels(sortedInboxes);
 };
 
 const isIncomingMessage = message => {

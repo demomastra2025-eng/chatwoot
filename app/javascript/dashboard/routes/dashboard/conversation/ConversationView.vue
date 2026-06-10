@@ -10,6 +10,7 @@ import CmdBarConversationSnooze from 'dashboard/routes/dashboard/commands/CmdBar
 import { emitter } from 'shared/helpers/mitt';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 
 export default {
   components: {
@@ -172,7 +173,11 @@ export default {
     },
     findConversation() {
       const conversationId = parseInt(this.conversationId, 10);
-      const [chat] = this.chatList.filter(c => c.id === conversationId);
+      const [chat] = this.chatList.filter(
+        c =>
+          c.id === conversationId &&
+          isCommunicationThread(c) === this.communicationThreadMode
+      );
       return chat;
     },
     normalizeConversationRoute() {
@@ -201,10 +206,14 @@ export default {
         const selectedConversation = this.findConversation();
         // If conversation doesn't exist or selected conversation is same as the active
         // conversation, don't set active conversation.
-        if (
-          !selectedConversation ||
-          selectedConversation.id === this.currentChat.id
-        ) {
+        if (!selectedConversation) {
+          return;
+        }
+        const isSameActiveChat =
+          String(selectedConversation.id) === String(this.currentChat.id) &&
+          isCommunicationThread(selectedConversation) ===
+            isCommunicationThread(this.currentChat);
+        if (isSameActiveChat) {
           return;
         }
         const { messageId } = this.$route.query;

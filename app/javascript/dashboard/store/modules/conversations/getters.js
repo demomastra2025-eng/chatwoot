@@ -7,12 +7,31 @@ import {
   getUserRole,
 } from '../../../helper/permissionsHelper';
 import camelcaseKeys from 'camelcase-keys';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
+
+const conversationStoreType = conversation =>
+  isCommunicationThread(conversation) ? 'communication_thread' : 'conversation';
+
+const selectedChatMatches = (
+  conversation,
+  selectedChatId,
+  selectedChatType
+) => {
+  return (
+    conversation.id === selectedChatId &&
+    (!selectedChatType ||
+      conversationStoreType(conversation) === selectedChatType)
+  );
+};
 
 export const getSelectedChatConversation = ({
   allConversations,
   selectedChatId,
+  selectedChatType,
 }) =>
-  allConversations.filter(conversation => conversation.id === selectedChatId);
+  allConversations.filter(conversation =>
+    selectedChatMatches(conversation, selectedChatId, selectedChatType)
+  );
 
 const isConversationPinned = conversation =>
   Boolean(conversation?.custom_attributes?.pinned);
@@ -72,9 +91,9 @@ const getters = {
 
     return sortConversations(filteredConversations, chatSortFilter);
   },
-  getSelectedChat: ({ selectedChatId, allConversations }) => {
-    const selectedChat = allConversations.find(
-      conversation => conversation.id === selectedChatId
+  getSelectedChat: ({ selectedChatId, selectedChatType, allConversations }) => {
+    const selectedChat = allConversations.find(conversation =>
+      selectedChatMatches(conversation, selectedChatId, selectedChatType)
     );
     return selectedChat || {};
   },
@@ -192,11 +211,39 @@ const getters = {
   getChatStatusFilter: ({ chatStatusFilter }) => chatStatusFilter,
   getChatSortFilter: ({ chatSortFilter }) => chatSortFilter,
   getSelectedInbox: ({ currentInbox }) => currentInbox,
-  getConversationById: _state => conversationId => {
-    return _state.allConversations.find(
-      value => value.id === Number(conversationId)
-    );
-  },
+  getConversationById:
+    _state =>
+    (conversationId, selectedType = null) => {
+      const matchingConversations = _state.allConversations.filter(
+        conversation => String(conversation.id) === String(conversationId)
+      );
+
+      if (selectedType) {
+        return matchingConversations.find(
+          conversation => conversationStoreType(conversation) === selectedType
+        );
+      }
+
+      const selectedChatType =
+        String(_state.selectedChatId) === String(conversationId)
+          ? _state.selectedChatType
+          : null;
+
+      if (selectedChatType) {
+        return (
+          matchingConversations.find(
+            conversation =>
+              conversationStoreType(conversation) === selectedChatType
+          ) || matchingConversations[0]
+        );
+      }
+
+      return (
+        matchingConversations.find(
+          conversation => conversationStoreType(conversation) === 'conversation'
+        ) || matchingConversations[0]
+      );
+    },
   getConversationParticipants: _state => {
     return _state.conversationParticipants;
   },

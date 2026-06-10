@@ -92,7 +92,7 @@ const legacyAttributesFallbackRoute = to => {
   }
 
   return {
-    path: frontendURL(`accounts/${accountId}/dashboard`),
+    path: frontendURL(`accounts/${accountId}`),
   };
 };
 
@@ -103,7 +103,7 @@ const requireLegacyAttributes = (to, _from, next) => {
   }
 
   next({
-    path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
+    path: frontendURL(`accounts/${to.params.accountId}`),
   });
 };
 
@@ -117,7 +117,7 @@ const requireCompanyAttributes = (to, _from, next) => {
   }
 
   next({
-    path: frontendURL(`accounts/${to.params.accountId}/dashboard`),
+    path: frontendURL(`accounts/${to.params.accountId}`),
   });
 };
 

@@ -141,6 +141,81 @@ describe('communicationThreadHelper', () => {
         },
       ]);
     });
+
+    it('keeps the channel switcher aligned with the active status route', () => {
+      expect(
+        getCommunicationThreadChannelInboxes(
+          [
+            {
+              id: 7,
+              is_communication_thread: true,
+              channels: [
+                {
+                  ...telegramChannel,
+                  conversation_id: 44,
+                  inbox_id: 404,
+                  contact_inbox_id: 4004,
+                  status: 'resolved',
+                  last_activity_at: 300,
+                },
+                {
+                  ...telegramChannel,
+                  status: 'open',
+                },
+              ],
+            },
+          ],
+          'open'
+        )
+      ).toEqual([
+        {
+          id: 202,
+          name: 'Telegram',
+          channel_type: 'Channel::Telegram',
+          medium: 'telegram',
+        },
+      ]);
+    });
+
+    it('disambiguates duplicate channel labels without changing routing ids', () => {
+      expect(
+        getCommunicationThreadChannelInboxes(
+          [
+            {
+              id: 7,
+              is_communication_thread: true,
+              channels: [
+                { ...telegramChannel, status: 'open' },
+                {
+                  ...telegramChannel,
+                  conversation_id: 33,
+                  inbox_id: 203,
+                  contact_inbox_id: 2003,
+                  status: 'open',
+                  channel_key: 'conversation:33',
+                },
+              ],
+            },
+          ],
+          'open'
+        )
+      ).toEqual([
+        {
+          id: 202,
+          name: 'Telegram',
+          display_name: 'Telegram #202',
+          channel_type: 'Channel::Telegram',
+          medium: 'telegram',
+        },
+        {
+          id: 203,
+          name: 'Telegram',
+          display_name: 'Telegram #203',
+          channel_type: 'Channel::Telegram',
+          medium: 'telegram',
+        },
+      ]);
+    });
   });
 
   describe('#getCommunicationContactIdentityLabel', () => {

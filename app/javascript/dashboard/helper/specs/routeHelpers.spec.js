@@ -200,6 +200,32 @@ describe('#validateLoggedInRoutes', () => {
             )
           ).toEqual(`accounts/1/dashboard`);
         });
+
+        it('returns communication threads as fallback when the feature source is enabled', () => {
+          expect(
+            validateLoggedInRoutes(
+              {
+                name: 'billing',
+                params: { accountId: 1 },
+                meta: { permissions: ['administrator'] },
+              },
+              {
+                accounts: [
+                  {
+                    id: 1,
+                    role: 'agent',
+                    permissions: ['agent'],
+                    status: 'active',
+                  },
+                ],
+              },
+              {
+                id: 1,
+                features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+              }
+            )
+          ).toEqual(`accounts/1/communication_threads?status=open`);
+        });
       });
       describe('when route is suspended route', () => {
         it('returns dashboard url', () => {
@@ -209,6 +235,28 @@ describe('#validateLoggedInRoutes', () => {
               { accounts: [{ id: 1, role: 'agent', status: 'active' }] }
             )
           ).toEqual(`accounts/1/dashboard`);
+        });
+
+        it('returns communication threads when active account has communication thread feature', () => {
+          expect(
+            validateLoggedInRoutes(
+              { name: 'account_suspended', params: { accountId: 1 } },
+              {
+                accounts: [
+                  {
+                    id: 1,
+                    role: 'agent',
+                    permissions: ['agent'],
+                    status: 'active',
+                  },
+                ],
+              },
+              {
+                id: 1,
+                features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+              }
+            )
+          ).toEqual(`accounts/1/communication_threads?status=open`);
         });
       });
     });

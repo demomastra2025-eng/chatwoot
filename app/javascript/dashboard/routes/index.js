@@ -39,7 +39,7 @@ const getAccountFeatureSource = async accountId => {
     typeof getAccount === 'function' ? getAccount(accountId) : null;
 
   let account = resolveAccount();
-  if (account?.id || account?.features) {
+  if (account?.features) {
     return account;
   }
 
@@ -95,10 +95,7 @@ export const validateAuthenticateRoutePermission = async (to, next) => {
     return next(frontendURL(defaultRoute));
   }
 
-  const needsAccountFeatureSource = to.meta?.featureFlag || to.name === 'home';
-  const accountFeatureSource = needsAccountFeatureSource
-    ? await getRouteAccountFeatureSource(to)
-    : null;
+  const accountFeatureSource = await getRouteAccountFeatureSource(to);
   const nextRoute = validateLoggedInRoutes(
     to,
     store.getters.getCurrentUser,
