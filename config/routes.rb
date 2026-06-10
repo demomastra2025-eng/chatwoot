@@ -462,6 +462,9 @@ Rails.application.routes.draw do
             get 'numbers/:number_ref', to: 'resources#number'
             get :trunks, to: 'resources#trunks'
             get :agents, to: 'resources#agents'
+            resources :virtual_pbx_channels, only: %i[show create update destroy] do
+              post :readiness_check, on: :member
+            end
 
             post 'numbers/:number_ref/route', to: 'routing#update'
             post 'agents/:agent_ref/enabled', to: 'agents#enabled'

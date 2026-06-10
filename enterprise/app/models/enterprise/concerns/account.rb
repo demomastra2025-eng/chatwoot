@@ -18,7 +18,9 @@ module Enterprise::Concerns::Account
 
     has_many :copilot_threads, dependent: :destroy_async
     has_many :companies, dependent: :destroy_async
+    has_many :telephony_provider_connections, dependent: :destroy_async, class_name: '::Telephony::ProviderConnection'
     has_many :telephony_number_bindings, dependent: :destroy_async, class_name: '::Telephony::NumberBinding'
+    has_many :telephony_sip_profiles, dependent: :destroy_async, class_name: '::Telephony::SipProfile'
     has_many :telephony_agent_bindings, dependent: :destroy_async, class_name: '::Telephony::AgentBinding'
     has_many :telephony_call_sessions, dependent: :destroy_async, class_name: '::Telephony::CallSession'
     has_many :telephony_routing_policies, dependent: :destroy_async, class_name: '::Telephony::RoutingPolicy'

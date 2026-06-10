@@ -9,6 +9,7 @@ module Enterprise::Concerns::Inbox
     has_many :inbox_capacity_limits, dependent: :destroy
     has_many :calls, dependent: :destroy_async
     has_one :telephony_number_binding, dependent: :destroy, class_name: '::Telephony::NumberBinding'
+    has_many :telephony_sip_profiles, dependent: :destroy, class_name: '::Telephony::SipProfile'
     validate :ensure_within_non_web_inbox_limit, on: :create
   end
 

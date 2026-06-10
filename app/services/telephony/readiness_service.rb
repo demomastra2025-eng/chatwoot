@@ -90,12 +90,13 @@ class Telephony::ReadinessService
     channel = inbox.channel
     binding = inbox.telephony_number_binding
     policy = binding&.routing_policy
-    warnings = build_inbox_warnings(channel, binding, policy)
+    virtual_pbx = virtual_pbx_config(inbox)
+    warnings = build_inbox_warnings(channel, binding, policy, virtual_pbx)
     {
       id: inbox.id,
       name: inbox.name,
       channel_id: channel&.id,
-      phone_number: channel&.phone_number || binding&.phone_number,
+      phone_number: virtual_pbx&.dig(:phone_numbers, :display_phone_number) || channel&.phone_number || binding&.phone_number,
       provider: channel&.provider || binding&.provider,
       ready: warnings.empty?,
       number_binding_present: binding.present?,
@@ -103,14 +104,15 @@ class Telephony::ReadinessService
       last_synced_at: binding&.last_synced_at,
       number_ref: binding&.number_ref,
       route: build_route_payload(binding, policy),
+      virtual_pbx: virtual_pbx,
       warnings: warnings
     }.compact
   end
 
-  def build_inbox_warnings(channel, binding, policy)
+  def build_inbox_warnings(channel, binding, policy, virtual_pbx)
     return [warning('missing_number_binding', 'Telephony number binding is missing')] if binding.blank?
 
-    warnings = binding_warnings(channel, binding)
+    warnings = binding_warnings(channel, binding, virtual_pbx)
     return warnings + [warning('missing_routing_policy', 'Telephony routing policy is missing')] if policy.blank?
 
     warnings + build_route_warnings(binding, policy)
@@ -142,9 +144,9 @@ class Telephony::ReadinessService
     route_warnings + fallback_route_warnings(binding, policy)
   end
 
-  def warning(code, message); { code: code, message: message }; end
+  def warning(code, message) = { code: code, message: message }
 
-  def bridge_configured?; ENV.fetch('TELEPHONY_BRIDGE_BASE_URL', '').to_s.present?; end
+  def bridge_configured? = ENV.fetch('TELEPHONY_BRIDGE_BASE_URL', '').to_s.present?
 
   def bridge_warnings(bridge)
     [].tap do |warnings|
@@ -161,12 +163,12 @@ class Telephony::ReadinessService
     [warning('inboxes_not_ready', "#{unready_count} Fonoster inboxes have blocking warnings")]
   end
 
-  def binding_warnings(channel, binding)
+  def binding_warnings(channel, binding, virtual_pbx)
     [
       (warning('missing_number_ref', 'Telephony number ref is missing') if binding.number_ref.blank?),
       binding_provider_warning(binding),
       (warning('missing_last_synced_at', 'Telephony number binding has never been synced') if binding.last_synced_at.blank?),
-      phone_number_mismatch_warning(channel, binding)
+      phone_number_mismatch_warning(channel, binding, virtual_pbx)
     ].compact
   end
 
@@ -176,12 +178,29 @@ class Telephony::ReadinessService
     warning('binding_provider_mismatch', 'Telephony number binding provider does not match inbox provider')
   end
 
-  def phone_number_mismatch_warning(channel, binding)
+  def phone_number_mismatch_warning(channel, binding, virtual_pbx)
     return if channel&.phone_number.blank?
     return if binding.phone_number.blank?
     return if binding.phone_number == channel.phone_number
+    return if virtual_pbx_phone_split_allowed?(virtual_pbx)
 
     warning('phone_number_mismatch', 'Telephony number binding phone does not match inbox phone')
+  end
+
+  def virtual_pbx_phone_split_allowed?(virtual_pbx)
+    phone_numbers = virtual_pbx&.dig(:phone_numbers)
+    return false if phone_numbers.blank?
+
+    phone_numbers[:split_allowed] &&
+      phone_numbers[:display_phone_number].present? &&
+      phone_numbers[:ingress_number].present? &&
+      phone_numbers[:display_phone_number] != phone_numbers[:ingress_number]
+  end
+
+  def virtual_pbx_config(inbox)
+    Telephony::VirtualPbx::ConfigBuilder.new(account: account).for_inbox(inbox)
+  rescue Telephony::Error, ActiveRecord::RecordNotFound
+    nil
   end
 
   def bridge_mode_downgrade_warning(policy)

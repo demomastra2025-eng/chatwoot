@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_05_080630) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_10_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2481,6 +2481,37 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_05_080630) do
     t.index ["call_session_id"], name: "index_telephony_events_on_call_session_id"
   end
 
+  create_table "telephony_provider_connections", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "provider_kind", null: false
+    t.string "name", null: false
+    t.string "host"
+    t.integer "port"
+    t.string "transport", default: "udp", null: false
+    t.string "username"
+    t.string "password_secret_ref"
+    t.string "credentials_ref"
+    t.string "fonoster_trunk_ref"
+    t.string "fonoster_credentials_ref"
+    t.string "fonoster_acl_ref"
+    t.boolean "send_register", default: false, null: false
+    t.string "status", default: "draft", null: false
+    t.string "managed_by", default: "onelink", null: false
+    t.string "ownership_status", default: "local", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "last_synced_at"
+    t.bigint "created_by_id"
+    t.bigint "updated_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "fonoster_trunk_ref"], name: "idx_tel_provider_connections_account_trunk_ref", unique: true, where: "(fonoster_trunk_ref IS NOT NULL)"
+    t.index ["account_id", "provider_kind", "name"], name: "idx_tel_provider_connections_account_kind_name", unique: true
+    t.index ["account_id", "status"], name: "idx_tel_provider_connections_account_status"
+    t.index ["account_id"], name: "index_telephony_provider_connections_on_account_id"
+    t.index ["created_by_id"], name: "index_telephony_provider_connections_on_created_by_id"
+    t.index ["updated_by_id"], name: "index_telephony_provider_connections_on_updated_by_id"
+  end
+
   create_table "telephony_number_bindings", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id", null: false
@@ -2493,10 +2524,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_05_080630) do
     t.datetime "last_synced_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "provider_connection_id"
+    t.string "display_phone_number"
+    t.string "provider_account_number"
+    t.string "ingress_number"
+    t.string "fonoster_tel_url"
+    t.string "managed_by"
+    t.string "ownership_status", default: "legacy_reference", null: false
+    t.index ["account_id", "ingress_number"], name: "idx_tel_number_bindings_account_ingress"
     t.index ["account_id", "number_ref"], name: "index_telephony_number_bindings_on_account_number_ref", unique: true
+    t.index ["account_id", "ownership_status"], name: "idx_tel_number_bindings_account_ownership"
     t.index ["account_id", "phone_number"], name: "index_telephony_number_bindings_on_account_phone"
+    t.index ["account_id", "provider_connection_id"], name: "idx_tel_number_bindings_account_provider_connection"
     t.index ["account_id"], name: "index_telephony_number_bindings_on_account_id"
     t.index ["inbox_id"], name: "index_telephony_number_bindings_on_inbox_id", unique: true
+    t.index ["provider_connection_id"], name: "index_telephony_number_bindings_on_provider_connection_id"
   end
 
   create_table "telephony_routing_policies", force: :cascade do |t|
@@ -2524,6 +2566,39 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_05_080630) do
     t.index ["account_id"], name: "index_telephony_routing_policies_on_account_id"
     t.index ["captain_assistant_id"], name: "index_telephony_routing_policies_on_captain_assistant_id"
     t.index ["number_binding_id"], name: "index_telephony_routing_policies_on_number_binding_id", unique: true
+  end
+
+  create_table "telephony_sip_profiles", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id"
+    t.bigint "user_id", null: false
+    t.bigint "provider_connection_id"
+    t.string "internal_extension", null: false
+    t.string "sip_username"
+    t.string "password_secret_ref"
+    t.string "sip_host"
+    t.string "agent_ref"
+    t.string "agent_aor"
+    t.string "fonoster_agent_ref"
+    t.string "credentials_ref"
+    t.string "fonoster_credentials_ref"
+    t.boolean "enabled", default: true, null: false
+    t.string "availability_mode", default: "external_extension", null: false
+    t.string "status", default: "draft", null: false
+    t.string "managed_by", default: "onelink", null: false
+    t.string "ownership_status", default: "local", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "last_synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "agent_aor"], name: "idx_tel_sip_profiles_account_agent_aor", unique: true, where: "(agent_aor IS NOT NULL)"
+    t.index ["account_id", "agent_ref"], name: "idx_tel_sip_profiles_account_agent_ref", unique: true, where: "(agent_ref IS NOT NULL)"
+    t.index ["account_id", "inbox_id", "user_id", "internal_extension"], name: "idx_tel_sip_profiles_account_inbox_user_ext", unique: true
+    t.index ["account_id", "provider_connection_id"], name: "idx_tel_sip_profiles_account_provider_connection"
+    t.index ["account_id"], name: "index_telephony_sip_profiles_on_account_id"
+    t.index ["inbox_id"], name: "index_telephony_sip_profiles_on_inbox_id"
+    t.index ["provider_connection_id"], name: "index_telephony_sip_profiles_on_provider_connection_id"
+    t.index ["user_id"], name: "index_telephony_sip_profiles_on_user_id"
   end
 
   create_table "users", id: :serial, force: :cascade do |t|
@@ -2730,11 +2805,19 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_05_080630) do
   add_foreign_key "telephony_call_sessions", "telephony_number_bindings", column: "number_binding_id"
   add_foreign_key "telephony_events", "accounts"
   add_foreign_key "telephony_events", "telephony_call_sessions", column: "call_session_id"
+  add_foreign_key "telephony_provider_connections", "accounts"
+  add_foreign_key "telephony_provider_connections", "users", column: "created_by_id"
+  add_foreign_key "telephony_provider_connections", "users", column: "updated_by_id"
   add_foreign_key "telephony_number_bindings", "accounts"
   add_foreign_key "telephony_number_bindings", "inboxes"
+  add_foreign_key "telephony_number_bindings", "telephony_provider_connections", column: "provider_connection_id"
   add_foreign_key "telephony_routing_policies", "accounts"
   add_foreign_key "telephony_routing_policies", "captain_assistants"
   add_foreign_key "telephony_routing_policies", "telephony_number_bindings", column: "number_binding_id"
+  add_foreign_key "telephony_sip_profiles", "accounts"
+  add_foreign_key "telephony_sip_profiles", "inboxes"
+  add_foreign_key "telephony_sip_profiles", "telephony_provider_connections", column: "provider_connection_id"
+  add_foreign_key "telephony_sip_profiles", "users"
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()

@@ -2,33 +2,48 @@
 #
 # Table name: telephony_number_bindings
 #
-#  id             :bigint           not null, primary key
-#  app_ref        :string
-#  last_synced_at :datetime
-#  metadata       :jsonb            not null
-#  number_ref     :string           not null
-#  phone_number   :string
-#  provider       :string           default("fonoster"), not null
-#  trunk_ref      :string
-#  created_at     :datetime         not null
-#  updated_at     :datetime         not null
-#  account_id     :bigint           not null
-#  inbox_id       :bigint           not null
+#  id                      :bigint           not null, primary key
+#  app_ref                 :string
+#  display_phone_number    :string
+#  fonoster_tel_url        :string
+#  ingress_number          :string
+#  last_synced_at          :datetime
+#  managed_by              :string
+#  metadata                :jsonb            not null
+#  number_ref              :string           not null
+#  ownership_status        :string           default("legacy_reference"), not null
+#  phone_number            :string
+#  provider                :string           default("fonoster"), not null
+#  provider_account_number :string
+#  trunk_ref               :string
+#  created_at              :datetime         not null
+#  updated_at              :datetime         not null
+#  account_id              :bigint           not null
+#  inbox_id                :bigint           not null
+#  provider_connection_id  :bigint
 #
 # Indexes
 #
-#  index_telephony_number_bindings_on_account_id          (account_id)
-#  index_telephony_number_bindings_on_account_number_ref  (account_id,number_ref) UNIQUE
-#  index_telephony_number_bindings_on_account_phone       (account_id,phone_number)
-#  index_telephony_number_bindings_on_inbox_id            (inbox_id) UNIQUE
+#  index_telephony_number_bindings_on_account_id                   (account_id)
+#  index_telephony_number_bindings_on_account_ingress              (account_id,ingress_number)
+#  index_telephony_number_bindings_on_account_number_ref           (account_id,number_ref) UNIQUE
+#  index_telephony_number_bindings_on_account_ownership            (account_id,ownership_status)
+#  index_telephony_number_bindings_on_account_phone                (account_id,phone_number)
+#  idx_tel_number_bindings_account_provider_connection             (account_id,provider_connection_id)
+#  index_telephony_number_bindings_on_inbox_id                     (inbox_id) UNIQUE
+#  index_telephony_number_bindings_on_provider_connection_id       (provider_connection_id)
 #
 # Foreign Keys
 #
 #  fk_rails_...  (account_id => accounts.id)
 #  fk_rails_...  (inbox_id => inboxes.id)
+#  fk_rails_...  (provider_connection_id => telephony_provider_connections.id)
 #
 class Telephony::NumberBinding < ApplicationRecord
   self.table_name = 'telephony_number_bindings'
+
+  MANAGED_BY_ONELINK = 'onelink'
+  MANAGED_OWNERSHIP_STATUSES = %w[local managed].freeze
 
   KNOWN_PROVIDER_CONFIG_KEYS = %w[
     number_ref
@@ -51,19 +66,30 @@ class Telephony::NumberBinding < ApplicationRecord
     operator_agent_aor
     fallback_mode
     fallback_message
+    display_phone_number
+    provider_account_number
+    ingress_number
+    fonoster_tel_url
+    provider_connection_id
+    managed_by
+    ownership_status
   ].freeze
 
   belongs_to :account, class_name: '::Account'
   belongs_to :inbox, class_name: '::Inbox'
+  belongs_to :provider_connection, class_name: '::Telephony::ProviderConnection', optional: true, inverse_of: :number_bindings
 
   has_one :routing_policy, class_name: '::Telephony::RoutingPolicy', dependent: :destroy
   has_many :call_sessions, class_name: '::Telephony::CallSession', dependent: :nullify
+  has_many :sip_profiles, through: :inbox, source: :telephony_sip_profiles
 
   validates :provider, presence: true
   validates :number_ref, presence: true, uniqueness: { scope: :account_id }
   validates :inbox_id, uniqueness: true
+  validate :provider_connection_belongs_to_account
 
   scope :recent, -> { order(updated_at: :desc, id: :desc) }
+  scope :managed, -> { where(managed_by: MANAGED_BY_ONELINK, ownership_status: MANAGED_OWNERSHIP_STATUSES) }
 
   def self.sync_from_voice_channel!(voice_channel)
     return unless voice_channel&.provider == 'fonoster'
@@ -73,12 +99,19 @@ class Telephony::NumberBinding < ApplicationRecord
 
     transaction do
       binding = find_or_initialize_by(inbox_id: voice_channel.inbox.id)
+      phone_fields = phone_fields_from_config(config, voice_channel)
       binding.account = voice_channel.account
       binding.provider = voice_channel.provider
       binding.number_ref = config[:number_ref] || config[:fonoster_number_ref]
-      binding.phone_number = voice_channel.phone_number
+      binding.phone_number = phone_fields[:ingress_number] || voice_channel.phone_number
+      binding.display_phone_number = phone_fields[:display_phone_number]
+      binding.provider_account_number = phone_fields[:provider_account_number]
+      binding.ingress_number = phone_fields[:ingress_number]
+      binding.fonoster_tel_url = phone_fields[:fonoster_tel_url]
       binding.app_ref = config[:app_ref]
       binding.trunk_ref = config[:trunk_ref]
+      binding.managed_by = config[:managed_by]
+      binding.ownership_status = config[:ownership_status].presence || binding.ownership_status || 'legacy_reference'
       binding.metadata = normalized_metadata(config)
       binding.last_synced_at = Time.current
       binding.save!
@@ -165,6 +198,36 @@ class Telephony::NumberBinding < ApplicationRecord
     routing_policy&.mode || 'operator'
   end
 
+  def managed?
+    managed_by == MANAGED_BY_ONELINK && ownership_status.in?(MANAGED_OWNERSHIP_STATUSES)
+  end
+
+  def read_only?
+    !managed?
+  end
+
+  def effective_display_phone_number
+    display_phone_number.presence || voice_channel&.phone_number || phone_number
+  end
+
+  def effective_provider_account_number
+    provider_account_number.presence || metadata_value('provider_account_number', 'account_number') || ingress_number.presence || phone_number
+  end
+
+  def effective_ingress_number
+    ingress_number.presence || metadata_value('ingress_number') || phone_number
+  end
+
+  def effective_fonoster_tel_url
+    fonoster_tel_url.presence || metadata_value('fonoster_tel_url', 'tel_url') || tel_url_for(effective_ingress_number)
+  end
+
+  def phone_split_allowed?
+    effective_display_phone_number.present? &&
+      effective_ingress_number.present? &&
+      effective_display_phone_number != effective_ingress_number
+  end
+
   def bridge_route_payload
     runtime_ref = runtime_app_ref
     return { mode: 'app', app_ref: runtime_ref } if runtime_ref.present?
@@ -177,12 +240,33 @@ class Telephony::NumberBinding < ApplicationRecord
       provider: provider,
       number_ref: number_ref,
       phone_number: phone_number,
+      display_phone_number: effective_display_phone_number,
+      provider_account_number: effective_provider_account_number,
+      ingress_number: effective_ingress_number,
+      fonoster_tel_url: effective_fonoster_tel_url,
       app_ref: configured_app_ref,
       effective_app_ref: app_ref_for_policy(routing_policy),
       trunk_ref: trunk_ref,
+      provider_connection_id: provider_connection_id,
+      managed_by: managed_by,
+      ownership_status: ownership_status,
       last_synced_at: last_synced_at,
       routing_policy: routing_policy&.to_telephony_h
     }.compact
+  end
+
+  def self.phone_fields_from_config(config, voice_channel)
+    display_phone_number = first_present(config[:display_phone_number], voice_channel.phone_number)
+    provider_account_number = first_present(config[:provider_account_number], config[:account_number])
+    fonoster_tel_url = first_present(config[:fonoster_tel_url], config[:tel_url])
+    ingress_number = first_present(config[:ingress_number], tel_url_number(fonoster_tel_url), provider_account_number, display_phone_number)
+
+    {
+      display_phone_number: display_phone_number,
+      provider_account_number: provider_account_number,
+      ingress_number: ingress_number,
+      fonoster_tel_url: fonoster_tel_url.presence || tel_url_for(ingress_number)
+    }
   end
 
   def self.normalized_metadata(config)
@@ -205,5 +289,34 @@ class Telephony::NumberBinding < ApplicationRecord
 
   def self.captain_ai_configured?(config)
     config[:captain_assistant_id].present? || config[:onelink_ai_app_ref].present?
+  end
+
+  def self.first_present(*values)
+    values.find(&:present?)
+  end
+
+  def self.tel_url_number(value)
+    value.to_s.sub(/\Atel:/i, '').presence
+  end
+
+  def self.tel_url_for(value)
+    value.present? ? "tel:#{value}" : nil
+  end
+
+  private
+
+  def metadata_value(*keys)
+    source = (metadata || {}).with_indifferent_access
+    keys.lazy.map { |key| source[key] }.find(&:present?)
+  end
+
+  def tel_url_for(value)
+    self.class.tel_url_for(value)
+  end
+
+  def provider_connection_belongs_to_account
+    return if provider_connection.blank? || provider_connection.account_id == account_id
+
+    errors.add(:provider_connection, 'must belong to account')
   end
 end
