@@ -454,6 +454,67 @@
             "PLACEHOLDER": "Қоңырау қабылданбағанда ойналатын қосымша хабарлама"
           }
         },
+        "VIRTUAL_PBX": {
+          "CHANNEL_NAME": {
+            "LABEL": "Inbox атауы",
+            "PLACEHOLDER": "Қоңыраулар inbox атауын енгізіңіз",
+            "REQUIRED": "Inbox атауы міндетті"
+          },
+          "PROVIDER_KIND": {
+            "LABEL": "Virtual PBX провайдері",
+            "SIPUNI": "Sipuni / ішкі Asterisk",
+            "ASTERISK_ANALOG": "Asterisk analog"
+          },
+          "PROVIDER_ACCOUNT_NUMBER": {
+            "LABEL": "Провайдердегі нөмір/аккаунт",
+            "PLACEHOLDER": "Провайдер жағындағы қосымша нөмір немесе аккаунт"
+          },
+          "INGRESS_NUMBER": {
+            "LABEL": "Техникалық нөмір",
+            "PLACEHOLDER": "Провайдер қабылдайтын нөмір",
+            "REQUIRED": "Техникалық нөмір міндетті"
+          },
+          "CONNECTION_HOST": {
+            "LABEL": "SIP host",
+            "PLACEHOLDER": "PBX host немесе trunk endpoint",
+            "REQUIRED": "SIP host міндетті"
+          },
+          "CONNECTION_PORT": {
+            "LABEL": "SIP port",
+            "PLACEHOLDER": "5060",
+            "REQUIRED": "SIP port міндетті",
+            "INVALID": "SIP port 1 мен 65535 аралығындағы сан болуы керек"
+          },
+          "TRANSPORT": {
+            "LABEL": "SIP transport"
+          },
+          "CONNECTION_USERNAME": {
+            "LABEL": "SIP username",
+            "PLACEHOLDER": "Қосымша SIP username"
+          },
+          "CONNECTION_PASSWORD": {
+            "LABEL": "SIP password",
+            "PLACEHOLDER": "Бар secret-ті сақтау үшін бос қалдырыңыз"
+          },
+          "INTERNAL_EXTENSION": {
+            "LABEL": "Оператордың ішкі нөмірі",
+            "PLACEHOLDER": "1001",
+            "REQUIRED": "Оператордың ішкі нөмірі міндетті"
+          },
+          "MANAGEMENT_TITLE": "Virtual PBX жергілікті конфигурациясы",
+          "MANAGEMENT_SUBTITLE": "Жергілікті OneLink PBX bundle-ін өзгертіңіз немесе dry-run тексерістерінен кейін өшіріңіз. Fonoster/Routr remote өзгерістері бұғатталған күйде қалады.",
+          "CURRENT_USER_REQUIRED": "Оператордың SIP профилін құру үшін ағымдағы пайдаланушы қажет",
+          "REQUIRED_FIELDS": "Inbox атауын, көрсетілетін нөмірді, техникалық нөмірді және SIP host мәнін толтырыңыз",
+          "READ_ONLY": "Бұл арнада legacy/read-only иелік бар, оны жергілікті PBX provisioning арқылы өзгертуге болмайды.",
+          "LOAD_ERROR": "Virtual PBX конфигурациясын жүктеу мүмкін болмады.",
+          "CREATE_SUCCESS": "Virtual PBX арнасы жергілікті құрылды",
+          "UPDATE_SUCCESS": "Virtual PBX арнасы жергілікті жаңартылды",
+          "UPDATE_ERROR": "Virtual PBX конфигурациясын жаңарту мүмкін болмады",
+          "DELETE_CONFIRM": "Dry-run тексерістерінен кейін осы жергілікті Virtual PBX арнасын өшіру керек пе? Fonoster/Routr remote ресурстары өзгермейді.",
+          "DELETE_SUCCESS": "Virtual PBX арнасы жергілікті өшірілді",
+          "UPDATE_BUTTON": "Жергілікті PBX жаңарту",
+          "DELETE_BUTTON": "Жергілікті PBX өшіру"
+        },
         "TWILIO": {
           "ACCOUNT_SID": {
             "LABEL": "Аккаунт SID",

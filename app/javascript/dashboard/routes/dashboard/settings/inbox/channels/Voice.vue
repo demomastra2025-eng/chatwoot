@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, computed } from 'vue';
+import { reactive, computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useVuelidate } from '@vuelidate/core';
@@ -8,6 +8,7 @@ import { useAlert } from 'dashboard/composables';
 import { isPhoneE164 } from 'shared/helpers/Validators';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
+import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -27,14 +28,19 @@ const PROVIDER_TYPES = {
 };
 
 const kazakhstanState = reactive({
+  channelName: '',
   phoneNumber: '',
-  numberRef: '',
-  appRef: '',
-  trunkRef: '',
+  providerKind: 'sipuni',
+  providerAccountNumber: '',
+  ingressNumber: '',
+  connectionHost: '',
+  connectionPort: '5060',
+  connectionTransport: 'udp',
+  connectionUsername: '',
+  connectionPassword: '',
   routingMode: 'operator',
-  aiAppRef: '',
   operatorAgentAor: '',
-  fallbackMessage: '',
+  internalExtension: '',
 });
 
 const twilioState = reactive({
@@ -57,7 +63,23 @@ const normalizeE164Input = value =>
 
 const isNormalizablePhoneE164 = value => isPhoneE164(normalizeE164Input(value));
 
+const isValidSipPort = value => {
+  const port = String(value || '').trim();
+  if (!/^\d+$/.test(port)) return false;
+
+  const numericPort = Number(port);
+  return (
+    Number.isInteger(numericPort) && numericPort >= 1 && numericPort <= 65535
+  );
+};
+
 const uiFlags = useMapGetter('inboxes/getUIFlags');
+const currentUser = useMapGetter('getCurrentUser');
+const isCreatingVirtualPbx = ref(false);
+
+const getterValue = getter => getter?.value ?? getter;
+
+const currentUserId = computed(() => getterValue(currentUser)?.id || null);
 
 const selectedProvider = computed(() => {
   return Object.values(PROVIDER_TYPES).includes(route.query.provider)
@@ -97,18 +119,17 @@ const selectedProviderCard = computed(() => {
 });
 
 const kazakhstanValidationRules = computed(() => ({
+  channelName: { required },
   phoneNumber: { required, isPhoneE164 },
-  numberRef: { required },
+  providerKind: { required },
+  ingressNumber: { required },
+  connectionHost: { required },
+  connectionPort: { required, isValidSipPort },
   routingMode: { required },
-  appRef: {
-    required: requiredIf(() => kazakhstanState.routingMode === 'app'),
-  },
-  aiAppRef: {
-    required: requiredIf(() => kazakhstanState.routingMode === 'ai'),
-  },
   operatorAgentAor: {
     required: requiredIf(() => kazakhstanState.routingMode === 'operator'),
   },
+  internalExtension: { required },
 }));
 
 const twilioValidationRules = computed(() => ({
@@ -140,34 +161,45 @@ const routingOptions = computed(() => [
     label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.OPERATOR'),
   },
   {
-    value: 'app',
-    label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.APP'),
-  },
-  {
-    value: 'ai',
-    label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.AI'),
-  },
-  {
     value: 'reject',
     label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.REJECT'),
   },
 ]);
 
+const virtualPbxProviderOptions = computed(() => [
+  {
+    value: 'sipuni',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.SIPUNI'),
+  },
+  {
+    value: 'asterisk_analog',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.ASTERISK_ANALOG'),
+  },
+]);
+
+const transportOptions = ['udp', 'tcp', 'tls'];
+
 const kazakhstanFormErrors = computed(() => ({
+  channelName: kazakhstanV$.value.channelName?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.REQUIRED')
+    : '',
   phoneNumber: kazakhstanV$.value.phoneNumber?.$error
     ? t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.ERROR')
     : '',
-  numberRef: kazakhstanV$.value.numberRef?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.FONOSTER.NUMBER_REF.REQUIRED')
+  ingressNumber: kazakhstanV$.value.ingressNumber?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.REQUIRED')
     : '',
-  appRef: kazakhstanV$.value.appRef?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.FONOSTER.APP_REF.REQUIRED')
+  connectionHost: kazakhstanV$.value.connectionHost?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.REQUIRED')
     : '',
-  aiAppRef: kazakhstanV$.value.aiAppRef?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.FONOSTER.AI_APP_REF.REQUIRED')
+  connectionPort: kazakhstanV$.value.connectionPort?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID')
     : '',
   operatorAgentAor: kazakhstanV$.value.operatorAgentAor?.$error
     ? t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.REQUIRED')
+    : '',
+  internalExtension: kazakhstanV$.value.internalExtension?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.REQUIRED')
     : '',
 }));
 
@@ -220,17 +252,49 @@ function resetProviderSelection() {
   });
 }
 
-function getKazakhstanProviderConfig() {
+function getVirtualPbxPayload() {
+  const ingressNumber = kazakhstanState.ingressNumber.trim();
+  const providerAccountNumber =
+    kazakhstanState.providerAccountNumber.trim() || ingressNumber;
+
   return {
-    number_ref: kazakhstanState.numberRef,
-    app_ref: kazakhstanState.appRef,
-    trunk_ref: kazakhstanState.trunkRef,
-    routing_mode: kazakhstanState.routingMode,
-    ai_app_ref: kazakhstanState.aiAppRef,
-    operator_agent_aor: kazakhstanState.operatorAgentAor,
-    fallback_mode: 'reject',
-    fallback_message: kazakhstanState.fallbackMessage,
+    provider_kind: kazakhstanState.providerKind,
+    channel_name: kazakhstanState.channelName.trim(),
+    display_phone_number: kazakhstanState.phoneNumber.trim(),
+    provider_account_number: providerAccountNumber,
+    ingress_number: ingressNumber,
+    connection: {
+      host: kazakhstanState.connectionHost.trim(),
+      port: kazakhstanState.connectionPort.trim(),
+      transport: kazakhstanState.connectionTransport,
+      username: kazakhstanState.connectionUsername.trim() || undefined,
+      password: kazakhstanState.connectionPassword || undefined,
+    },
+    routing: {
+      mode: kazakhstanState.routingMode,
+      fallback_mode: 'reject',
+      operator_agent_aor: kazakhstanState.operatorAgentAor.trim() || undefined,
+    },
+    profiles: [
+      {
+        user_id: currentUserId.value,
+        internal_extension: kazakhstanState.internalExtension.trim(),
+        enabled: true,
+      },
+    ],
+    metadata: {
+      source: 'virtual_pbx_ui',
+    },
   };
+}
+
+function provisioningErrorMessage(response) {
+  const errors = response?.payload?.errors || response?.errors || [];
+  if (errors.length) {
+    return errors.map(error => error.message || error.code).join(', ');
+  }
+
+  return '';
 }
 
 function handleCreateError(error) {
@@ -247,25 +311,43 @@ function agentsRouteParams(inboxId) {
 }
 
 async function createKazakhstanChannel() {
+  kazakhstanState.phoneNumber = normalizeE164Input(kazakhstanState.phoneNumber);
+
   const isFormValid = await kazakhstanV$.value.$validate();
   if (!isFormValid) return;
 
-  try {
-    const channel = await store.dispatch('inboxes/createVoiceChannel', {
-      name: kazakhstanState.phoneNumber,
-      voice: {
-        phone_number: kazakhstanState.phoneNumber,
-        provider: 'fonoster',
-        provider_config: getKazakhstanProviderConfig(),
-      },
-    });
+  if (!currentUserId.value) {
+    useAlert(t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CURRENT_USER_REQUIRED'));
+    return;
+  }
 
+  isCreatingVirtualPbx.value = true;
+  try {
+    const response = await VoiceAPI.createVirtualPbxChannel(
+      getVirtualPbxPayload(),
+      { dryRun: false, remoteCommit: false }
+    );
+    const provisioningError = provisioningErrorMessage(response);
+    if (provisioningError) {
+      useAlert(provisioningError);
+      return;
+    }
+
+    const inboxId = response?.payload?.config?.inbox_id;
+    if (!inboxId) {
+      useAlert(t('INBOX_MGMT.ADD.VOICE.API.ERROR_MESSAGE'));
+      return;
+    }
+
+    useAlert(t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CREATE_SUCCESS'));
     router.replace({
       name: getInboxFlowRouteName(route, 'agents'),
-      params: agentsRouteParams(channel.id),
+      params: agentsRouteParams(inboxId),
     });
   } catch (error) {
     handleCreateError(error);
+  } finally {
+    isCreatingVirtualPbx.value = false;
   }
 }
 
@@ -378,6 +460,17 @@ async function createSipuniChannel() {
         @submit.prevent="createKazakhstanChannel"
       >
         <Input
+          v-model="kazakhstanState.channelName"
+          :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL')"
+          :placeholder="
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.PLACEHOLDER')
+          "
+          :message="kazakhstanFormErrors.channelName"
+          :message-type="kazakhstanFormErrors.channelName ? 'error' : 'info'"
+          @blur="kazakhstanV$.channelName?.$touch"
+        />
+
+        <Input
           v-model="kazakhstanState.phoneNumber"
           :label="t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL')"
           :placeholder="t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.PLACEHOLDER')"
@@ -386,32 +479,132 @@ async function createSipuniChannel() {
           @blur="kazakhstanV$.phoneNumber?.$touch"
         />
 
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
+          </label>
+          <Select
+            v-model="kazakhstanState.providerKind"
+            class="w-full px-3 py-2"
+            @blur="kazakhstanV$.providerKind?.$touch"
+          >
+            <option
+              v-for="option in virtualPbxProviderOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </Select>
+        </div>
+
         <Input
-          v-model="kazakhstanState.numberRef"
-          :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.NUMBER_REF.LABEL')"
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.FONOSTER.NUMBER_REF.PLACEHOLDER')
+          v-model="kazakhstanState.providerAccountNumber"
+          :label="
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.LABEL')
           "
-          :message="kazakhstanFormErrors.numberRef"
-          :message-type="kazakhstanFormErrors.numberRef ? 'error' : 'info'"
-          @blur="kazakhstanV$.numberRef?.$touch"
+          :placeholder="
+            t(
+              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.PLACEHOLDER'
+            )
+          "
         />
 
         <Input
-          v-model="kazakhstanState.appRef"
-          :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.APP_REF.LABEL')"
-          :placeholder="t('INBOX_MGMT.ADD.VOICE.FONOSTER.APP_REF.PLACEHOLDER')"
-          :message="kazakhstanFormErrors.appRef"
-          :message-type="kazakhstanFormErrors.appRef ? 'error' : 'info'"
-          @blur="kazakhstanV$.appRef?.$touch"
+          v-model="kazakhstanState.ingressNumber"
+          :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL')"
+          :placeholder="
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.PLACEHOLDER')
+          "
+          :message="kazakhstanFormErrors.ingressNumber"
+          :message-type="kazakhstanFormErrors.ingressNumber ? 'error' : 'info'"
+          @blur="kazakhstanV$.ingressNumber?.$touch"
         />
 
         <Input
-          v-model="kazakhstanState.trunkRef"
-          :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.TRUNK_REF.LABEL')"
+          v-model="kazakhstanState.connectionHost"
+          :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL')"
           :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.FONOSTER.TRUNK_REF.PLACEHOLDER')
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.PLACEHOLDER')
           "
+          :message="kazakhstanFormErrors.connectionHost"
+          :message-type="kazakhstanFormErrors.connectionHost ? 'error' : 'info'"
+          @blur="kazakhstanV$.connectionHost?.$touch"
+        />
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Input
+            v-model="kazakhstanState.connectionPort"
+            type="number"
+            min="1"
+            max="65535"
+            :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL')"
+            :placeholder="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.PLACEHOLDER')
+            "
+            :message="kazakhstanFormErrors.connectionPort"
+            :message-type="
+              kazakhstanFormErrors.connectionPort ? 'error' : 'info'
+            "
+            @blur="kazakhstanV$.connectionPort?.$touch"
+          />
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{ t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL') }}
+            </label>
+            <Select
+              v-model="kazakhstanState.connectionTransport"
+              class="w-full px-3 py-2"
+            >
+              <option
+                v-for="option in transportOptions"
+                :key="option"
+                :value="option"
+              >
+                {{ option.toUpperCase() }}
+              </option>
+            </Select>
+          </div>
+        </div>
+
+        <Input
+          v-model="kazakhstanState.connectionUsername"
+          :label="
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL')
+          "
+          :placeholder="
+            t(
+              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.PLACEHOLDER'
+            )
+          "
+        />
+
+        <Input
+          v-model="kazakhstanState.connectionPassword"
+          type="password"
+          :label="
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL')
+          "
+          :placeholder="
+            t(
+              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.PLACEHOLDER'
+            )
+          "
+        />
+
+        <Input
+          v-model="kazakhstanState.internalExtension"
+          :label="
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL')
+          "
+          :placeholder="
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER')
+          "
+          :message="kazakhstanFormErrors.internalExtension"
+          :message-type="
+            kazakhstanFormErrors.internalExtension ? 'error' : 'info'
+          "
+          @blur="kazakhstanV$.internalExtension?.$touch"
         />
 
         <div class="flex flex-col gap-2">
@@ -434,18 +627,6 @@ async function createSipuniChannel() {
         </div>
 
         <Input
-          v-if="kazakhstanState.routingMode === 'ai'"
-          v-model="kazakhstanState.aiAppRef"
-          :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.AI_APP_REF.LABEL')"
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.FONOSTER.AI_APP_REF.PLACEHOLDER')
-          "
-          :message="kazakhstanFormErrors.aiAppRef"
-          :message-type="kazakhstanFormErrors.aiAppRef ? 'error' : 'info'"
-          @blur="kazakhstanV$.aiAppRef?.$touch"
-        />
-
-        <Input
           v-if="kazakhstanState.routingMode === 'operator'"
           v-model="kazakhstanState.operatorAgentAor"
           :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.LABEL')"
@@ -459,19 +640,10 @@ async function createSipuniChannel() {
           @blur="kazakhstanV$.operatorAgentAor?.$touch"
         />
 
-        <Input
-          v-if="kazakhstanState.routingMode === 'reject'"
-          v-model="kazakhstanState.fallbackMessage"
-          :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.FALLBACK_MESSAGE.LABEL')"
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.FONOSTER.FALLBACK_MESSAGE.PLACEHOLDER')
-          "
-        />
-
         <div>
           <NextButton
-            :is-loading="uiFlags.isCreating"
-            :disabled="isKazakhstanSubmitDisabled"
+            :is-loading="isCreatingVirtualPbx || uiFlags.isCreating"
+            :disabled="isKazakhstanSubmitDisabled || !currentUserId"
             :label="t('INBOX_MGMT.ADD.VOICE.SUBMIT_BUTTON')"
             type="submit"
           />

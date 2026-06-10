@@ -7,6 +7,14 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
     render_payload(provisioning_service.show(inbox_id: params.require(:id)))
   end
 
+  def templates
+    render_payload(provisioning_service.templates)
+  end
+
+  def status
+    render_payload(provisioning_service.status(inbox_id: params.require(:id)))
+  end
+
   def create
     render_payload(provisioning_service.create_channel(virtual_pbx_payload, dry_run: dry_run?, remote_commit: remote_commit?))
   end

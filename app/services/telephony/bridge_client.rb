@@ -1,7 +1,9 @@
 class Telephony::BridgeClient
   DEFAULT_TIMEOUT_SECONDS = 10
+  WRITE_BODY_METHODS = %i[post put patch].freeze
 
-  def initialize(base_url: ENV.fetch('TELEPHONY_BRIDGE_BASE_URL', ''), secret: ENV.fetch('TELEPHONY_BRIDGE_SHARED_SECRET', ''), account_id: nil, request_id: Current.request_id, debug_log_path: Telephony::DebugLogger.default_log_path)
+  def initialize(base_url: ENV.fetch('TELEPHONY_BRIDGE_BASE_URL', ''), secret: ENV.fetch('TELEPHONY_BRIDGE_SHARED_SECRET', ''), account_id: nil,
+                 request_id: Current.request_id, debug_log_path: Telephony::DebugLogger.default_log_path)
     @base_url = base_url.to_s
     @secret = secret.to_s
     @account_id = account_id.presence
@@ -17,12 +19,27 @@ class Telephony::BridgeClient
     perform_request(:post, path, payload: payload)
   end
 
+  def put(path, payload = {})
+    perform_request(:put, path, payload: payload)
+  end
+
+  def patch(path, payload = {})
+    perform_request(:patch, path, payload: payload)
+  end
+
+  def delete(path, payload = nil, query: {})
+    perform_request(:delete, path, query: query, payload: payload)
+  end
+
   private
 
   attr_reader :account_id, :base_url, :debug_log_path, :request_id, :secret
 
   def perform_request(method, path, query: nil, payload: nil)
-    raise Telephony::Error.new(code: 'BRIDGE_NOT_CONFIGURED', message: 'Telephony bridge is not configured', status: :service_unavailable) if base_url.blank?
+    if base_url.blank?
+      raise Telephony::Error.new(code: 'BRIDGE_NOT_CONFIGURED', message: 'Telephony bridge is not configured',
+                                 status: :service_unavailable)
+    end
 
     url = URI.join(normalized_base_url, normalized_path(path)).to_s
     options = {
@@ -30,7 +47,7 @@ class Telephony::BridgeClient
       timeout: DEFAULT_TIMEOUT_SECONDS
     }
     options[:query] = query if query.present?
-    options[:body] = payload.to_json if payload.present? || method == :post
+    options[:body] = payload.to_json if request_body_required?(method, payload)
 
     log_debug_request(method, path, url, payload)
     response = HTTParty.public_send(method, url, options)
@@ -55,6 +72,10 @@ class Telephony::BridgeClient
       message: "Telephony bridge request failed: #{e.message}",
       status: :bad_gateway
     )
+  end
+
+  def request_body_required?(method, payload)
+    payload.present? || WRITE_BODY_METHODS.include?(method.to_sym)
   end
 
   def handle_response(response, method:, path:)

@@ -13,6 +13,7 @@ import TextArea from 'next/textarea/TextArea.vue';
 import WhatsappReauthorize from '../channels/whatsapp/Reauthorize.vue';
 import FonosterReadiness from '../components/FonosterReadiness.vue';
 import FonosterRoutingForm from '../components/FonosterRoutingForm.vue';
+import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 
 export default {
@@ -51,6 +52,25 @@ export default {
       aiVoiceEnabled: false,
       isSettingDefaults: false,
       fonosterReadinessKey: 0,
+      virtualPbxStatusPayload: null,
+      virtualPbxLoadError: '',
+      isLoadingVirtualPbxStatus: false,
+      isUpdatingVirtualPbx: false,
+      isDeletingVirtualPbx: false,
+      virtualPbxForm: {
+        channelName: '',
+        providerKind: 'sipuni',
+        displayPhoneNumber: '',
+        providerAccountNumber: '',
+        ingressNumber: '',
+        connectionHost: '',
+        connectionPort: '5060',
+        connectionTransport: 'udp',
+        connectionUsername: '',
+        connectionPassword: '',
+        routingMode: 'operator',
+        operatorAgentAor: '',
+      },
       sipuniIntegrationSecret: '',
       isUpdatingSipuniIntegrationSecret: false,
     };
@@ -71,10 +91,60 @@ export default {
     isAWhatsAppWebInbox() {
       return this.inbox.channel_type === 'Channel::WhatsappWeb';
     },
+    isVirtualPbxVoiceInbox() {
+      return (
+        this.inbox.channel_type === 'Channel::Voice' &&
+        this.inbox.provider === 'fonoster'
+      );
+    },
+    virtualPbxConfig() {
+      return this.virtualPbxStatusPayload?.config || null;
+    },
+    virtualPbxWarnings() {
+      return this.virtualPbxStatusPayload?.warnings || [];
+    },
+    virtualPbxErrors() {
+      return this.virtualPbxStatusPayload?.errors || [];
+    },
+    isVirtualPbxReadOnly() {
+      return !!this.virtualPbxConfig?.ownership?.read_only;
+    },
+    virtualPbxTransportOptions() {
+      return ['udp', 'tcp', 'tls'];
+    },
+    virtualPbxProviderOptions() {
+      return [
+        {
+          value: 'sipuni',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.SIPUNI'
+          ),
+        },
+        {
+          value: 'asterisk_analog',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.ASTERISK_ANALOG'
+          ),
+        },
+      ];
+    },
+    virtualPbxRoutingOptions() {
+      return [
+        {
+          value: 'operator',
+          label: this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.OPERATOR'),
+        },
+        {
+          value: 'reject',
+          label: this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.REJECT'),
+        },
+      ];
+    },
   },
   watch: {
     inbox() {
       this.setDefaults();
+      this.loadVirtualPbxStatus();
     },
     allowMobileWebview() {
       if (!this.isSettingDefaults) this.handleMobileWebviewFlag();
@@ -86,6 +156,7 @@ export default {
   },
   mounted() {
     this.setDefaults();
+    this.loadVirtualPbxStatus();
   },
   methods: {
     setDefaults() {
@@ -200,6 +271,209 @@ export default {
     },
     handleFonosterRouteSaved() {
       this.fonosterReadinessKey += 1;
+      this.loadVirtualPbxStatus();
+    },
+    formatVirtualPbxMessages(messages) {
+      return (messages || []).map(item => item.message || item.code).join(', ');
+    },
+    isValidVirtualPbxPort(value) {
+      const port = String(value || '').trim();
+      if (!/^\d+$/.test(port)) return false;
+
+      const numericPort = Number(port);
+      return (
+        Number.isInteger(numericPort) &&
+        numericPort >= 1 &&
+        numericPort <= 65535
+      );
+    },
+    handleVirtualPbxError(error) {
+      useAlert(
+        error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_ERROR')
+      );
+    },
+    async loadVirtualPbxStatus() {
+      if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) {
+        this.virtualPbxStatusPayload = null;
+        this.virtualPbxLoadError = '';
+        return;
+      }
+
+      this.isLoadingVirtualPbxStatus = true;
+      this.virtualPbxLoadError = '';
+      try {
+        const response = await VoiceAPI.getVirtualPbxStatus(this.inbox.id);
+        this.virtualPbxStatusPayload = response?.payload || null;
+        this.prefillVirtualPbxForm();
+      } catch (error) {
+        this.virtualPbxStatusPayload = null;
+        this.virtualPbxLoadError =
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.LOAD_ERROR');
+      } finally {
+        this.isLoadingVirtualPbxStatus = false;
+      }
+    },
+    prefillVirtualPbxForm() {
+      const config = this.virtualPbxConfig;
+      if (!config) return;
+
+      const phoneNumbers = config.phone_numbers || {};
+      const providerConnection = config.resources?.provider_connection || {};
+      const routing = config.routing || {};
+
+      this.virtualPbxForm = {
+        ...this.virtualPbxForm,
+        channelName: config.name || this.inbox.name || '',
+        providerKind: config.provider_kind || 'sipuni',
+        displayPhoneNumber:
+          phoneNumbers.display_phone_number || this.inbox.phone_number || '',
+        providerAccountNumber: phoneNumbers.provider_account_number || '',
+        ingressNumber: phoneNumbers.ingress_number || '',
+        connectionHost: providerConnection.host || '',
+        connectionPort: String(providerConnection.port || 5060),
+        connectionTransport: providerConnection.transport || 'udp',
+        connectionUsername: providerConnection.username || '',
+        connectionPassword: '',
+        routingMode: routing.mode || 'operator',
+        operatorAgentAor: routing.operator_agent_aor || '',
+      };
+    },
+    validateVirtualPbxForm() {
+      const form = this.virtualPbxForm;
+      if (
+        !form.channelName.trim() ||
+        !form.displayPhoneNumber.trim() ||
+        !form.ingressNumber.trim() ||
+        !form.connectionHost.trim() ||
+        !form.connectionPort.trim()
+      ) {
+        useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.REQUIRED_FIELDS'));
+        return false;
+      }
+
+      if (!this.isValidVirtualPbxPort(form.connectionPort)) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID')
+        );
+        return false;
+      }
+
+      if (form.routingMode === 'operator' && !form.operatorAgentAor.trim()) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.REQUIRED')
+        );
+        return false;
+      }
+
+      return true;
+    },
+    virtualPbxUpdatePayload() {
+      const form = this.virtualPbxForm;
+      return {
+        provider_kind: form.providerKind,
+        channel_name: form.channelName.trim(),
+        display_phone_number: form.displayPhoneNumber.trim(),
+        provider_account_number: form.providerAccountNumber.trim() || undefined,
+        ingress_number: form.ingressNumber.trim(),
+        connection: {
+          host: form.connectionHost.trim(),
+          port: form.connectionPort.trim(),
+          transport: form.connectionTransport,
+          username: form.connectionUsername.trim() || undefined,
+          password: form.connectionPassword || undefined,
+        },
+        routing: {
+          mode: form.routingMode,
+          fallback_mode: 'reject',
+          operator_agent_aor: form.operatorAgentAor.trim() || undefined,
+        },
+        metadata: {
+          source: 'virtual_pbx_ui',
+        },
+      };
+    },
+    async updateVirtualPbxChannel() {
+      if (this.isVirtualPbxReadOnly) {
+        useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.READ_ONLY'));
+        return;
+      }
+
+      if (!this.validateVirtualPbxForm()) return;
+
+      this.isUpdatingVirtualPbx = true;
+      try {
+        const response = await VoiceAPI.updateVirtualPbxChannel(
+          this.inbox.id,
+          this.virtualPbxUpdatePayload(),
+          { dryRun: false, remoteCommit: false }
+        );
+        const errors = response?.payload?.errors || [];
+        if (errors.length) {
+          useAlert(this.formatVirtualPbxMessages(errors));
+          return;
+        }
+
+        useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_SUCCESS'));
+        this.fonosterReadinessKey += 1;
+        await this.loadVirtualPbxStatus();
+      } catch (error) {
+        this.handleVirtualPbxError(error);
+      } finally {
+        this.isUpdatingVirtualPbx = false;
+      }
+    },
+    async deleteVirtualPbxChannel() {
+      if (this.isVirtualPbxReadOnly) {
+        useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.READ_ONLY'));
+        return;
+      }
+
+      this.isDeletingVirtualPbx = true;
+      try {
+        const dryRun = await VoiceAPI.deleteVirtualPbxChannel(this.inbox.id, {
+          confirm: true,
+          dryRun: true,
+          remoteCommit: false,
+        });
+        const errors = dryRun?.payload?.errors || [];
+        if (errors.length) {
+          useAlert(this.formatVirtualPbxMessages(errors));
+          return;
+        }
+
+        // eslint-disable-next-line no-alert
+        const confirmed = window.confirm(
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_CONFIRM')
+        );
+        if (!confirmed) return;
+
+        const response = await VoiceAPI.deleteVirtualPbxChannel(this.inbox.id, {
+          confirm: true,
+          dryRun: false,
+          remoteCommit: false,
+        });
+        const deleteErrors = response?.payload?.errors || [];
+        if (deleteErrors.length) {
+          useAlert(this.formatVirtualPbxMessages(deleteErrors));
+          return;
+        }
+
+        useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_SUCCESS'));
+        this.$router.push({
+          name: 'settings_inbox_list',
+          params: { accountId: this.$route.params.accountId },
+        });
+      } catch (error) {
+        this.handleVirtualPbxError(error);
+      } finally {
+        this.isDeletingVirtualPbx = false;
+      }
     },
     async handleReconfigure() {
       if (this.$refs.whatsappReauth) {
@@ -446,6 +720,237 @@ export default {
         "
       >
         <FonosterReadiness :key="fonosterReadinessKey" :inbox="inbox" />
+      </SettingsFieldSection>
+      <SettingsFieldSection
+        :label="$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_TITLE')"
+        :help-text="$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_SUBTITLE')"
+      >
+        <div v-if="isLoadingVirtualPbxStatus" class="text-sm text-n-slate-11">
+          {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LOADING') }}
+        </div>
+        <div
+          v-else-if="virtualPbxLoadError"
+          class="rounded-xl border border-n-ruby-4 bg-n-ruby-2/40 p-4 text-sm text-n-ruby-11"
+        >
+          {{ virtualPbxLoadError }}
+        </div>
+        <form
+          v-else
+          class="flex flex-col gap-4"
+          @submit.prevent="updateVirtualPbxChannel"
+        >
+          <div
+            v-if="isVirtualPbxReadOnly"
+            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+          >
+            {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.READ_ONLY') }}
+          </div>
+          <div
+            v-if="virtualPbxWarnings.length"
+            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+          >
+            <div class="mb-1 font-medium">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.WARNINGS_TITLE') }}
+            </div>
+            <ul class="list-disc pl-5">
+              <li v-for="warning in virtualPbxWarnings" :key="warning.code">
+                {{ warning.message || warning.code }}
+              </li>
+            </ul>
+          </div>
+          <div
+            v-if="virtualPbxErrors.length"
+            class="rounded-xl border border-n-ruby-4 bg-n-ruby-2/40 p-4 text-sm text-n-ruby-11"
+          >
+            <ul class="list-disc pl-5">
+              <li v-for="error in virtualPbxErrors" :key="error.code">
+                {{ error.message || error.code }}
+              </li>
+            </ul>
+          </div>
+
+          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL') }}
+            <input
+              v-model="virtualPbxForm.channelName"
+              class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+              :disabled="isVirtualPbxReadOnly"
+              type="text"
+            />
+          </label>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
+              <select
+                v-model="virtualPbxForm.providerKind"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+              >
+                <option
+                  v-for="option in virtualPbxProviderOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL') }}
+              <input
+                v-model="virtualPbxForm.displayPhoneNumber"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="text"
+              />
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.LABEL'
+                )
+              }}
+              <input
+                v-model="virtualPbxForm.providerAccountNumber"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="text"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL') }}
+              <input
+                v-model="virtualPbxForm.ingressNumber"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="text"
+              />
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <label
+              class="flex flex-col gap-1 text-sm text-n-slate-12 md:col-span-1"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL') }}
+              <input
+                v-model="virtualPbxForm.connectionHost"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="text"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL') }}
+              <input
+                v-model="virtualPbxForm.connectionPort"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="number"
+                min="1"
+                max="65535"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL') }}
+              <select
+                v-model="virtualPbxForm.connectionTransport"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+              >
+                <option
+                  v-for="option in virtualPbxTransportOptions"
+                  :key="option"
+                  :value="option"
+                >
+                  {{ option.toUpperCase() }}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL')
+              }}
+              <input
+                v-model="virtualPbxForm.connectionUsername"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="text"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL')
+              }}
+              <input
+                v-model="virtualPbxForm.connectionPassword"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="password"
+              />
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
+              <select
+                v-model="virtualPbxForm.routingMode"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+              >
+                <option
+                  v-for="option in virtualPbxRoutingOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label
+              v-if="virtualPbxForm.routingMode === 'operator'"
+              class="flex flex-col gap-1 text-sm text-n-slate-12"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR') }}
+              <input
+                v-model="virtualPbxForm.operatorAgentAor"
+                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="text"
+              />
+            </label>
+          </div>
+
+          <p class="text-sm text-n-slate-11">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.VIRTUAL_PBX_SAFE_MODE') }}
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <NextButton
+              :disabled="isVirtualPbxReadOnly"
+              :is-loading="isUpdatingVirtualPbx"
+              type="submit"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_BUTTON') }}
+            </NextButton>
+            <NextButton
+              color="ruby"
+              type="button"
+              :disabled="isVirtualPbxReadOnly"
+              :is-loading="isDeletingVirtualPbx"
+              @click="deleteVirtualPbxChannel"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_BUTTON') }}
+            </NextButton>
+          </div>
+        </form>
       </SettingsFieldSection>
     </template>
   </div>

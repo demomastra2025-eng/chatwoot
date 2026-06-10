@@ -6,6 +6,7 @@ class Telephony::VirtualPbx::ProvisioningService
   DEFAULT_FALLBACK_MODE = 'reject'
   MANAGED_BY_ONELINK = 'onelink'
   LOCAL_OWNERSHIP_STATUS = 'local'
+  REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
 
   def initialize(account:, current_user:, bridge_client: nil)
     @account = account
@@ -36,6 +37,29 @@ class Telephony::VirtualPbx::ProvisioningService
     }
   end
 
+  def templates
+    {
+      operation: 'templates',
+      remote_commit: false,
+      mutation_allowed: false,
+      provider_templates: Telephony::VirtualPbx::ConfigBuilder.provider_templates
+    }
+  end
+
+  def status(inbox_id:)
+    config = config_builder.for_inbox(inbox_id)
+
+    {
+      operation: 'status',
+      remote_commit: false,
+      mutation_allowed: false,
+      ready: config[:ready],
+      status: config[:ready] ? 'ready' : 'action_required',
+      config: config,
+      warnings: config[:warnings]
+    }
+  end
+
   def create_channel(payload, dry_run: true, remote_commit: false)
     ensure_remote_mutation_not_requested!(remote_commit)
     normalized = normalize_payload(payload)
@@ -53,13 +77,18 @@ class Telephony::VirtualPbx::ProvisioningService
     ensure_remote_mutation_not_requested!(remote_commit)
     existing_config = config_builder.for_inbox(inbox_id)
     normalized = normalize_payload(payload, fallback: existing_config)
-    errors = validation_errors(normalized, require_profiles: normalized[:profiles_supplied], check_duplicate_number_ref: false)
+    errors = validation_errors(
+      normalized,
+      require_profiles: normalized[:profiles_supplied],
+      exclude_inbox_id: inbox_id
+    )
     if existing_config.dig(
       :ownership, :read_only
     )
       errors << error('managed_ownership_required',
                       'Legacy/reference resources are read-only until managed migration is approved')
     end
+    errors << error('active_calls_present', 'Channel has active calls and cannot be updated') if active_calls_present?(inbox_id)
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'update', normalized_payload: normalized, errors: errors, existing_config: existing_config,
@@ -87,7 +116,13 @@ class Telephony::VirtualPbx::ProvisioningService
                              existing_config: existing_config, steps: delete_steps(existing_config))
     end
 
-    mutation_payload('delete', delete_local_channel!(inbox_id), { inbox_id: inbox_id, confirm: confirm }, delete_steps(existing_config))
+    mutation_payload(
+      'delete',
+      delete_local_channel!(inbox_id),
+      { inbox_id: inbox_id, confirm: confirm },
+      delete_steps(existing_config),
+      existing_config: existing_config
+    )
   end
 
   private
@@ -104,10 +139,15 @@ class Telephony::VirtualPbx::ProvisioningService
       remote_commit: false,
       mutation_allowed: false,
       mutation_reason: 'phase1_read_only_dry_run',
+      remote_mutation_allowed: false,
+      remote_mutation_reason: REMOTE_MUTATION_REASON,
+      status: dry_run_status(errors),
       account_id: account.id,
       requested_by_id: current_user&.id,
       payload: sanitized_payload,
-      generated_refs: generated_refs(normalized_payload),
+      provider_template: provider_template_for(normalized_payload, existing_config),
+      generated_refs: generated_refs_for(normalized_payload, existing_config),
+      bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
       existing_config: existing_config,
       steps: steps,
       errors: errors,
@@ -115,20 +155,24 @@ class Telephony::VirtualPbx::ProvisioningService
     }.compact
   end
 
-  def mutation_payload(operation, mutation_result, normalized_payload, steps)
+  def mutation_payload(operation, mutation_result, normalized_payload, steps, existing_config: nil)
     {
       operation: operation,
       dry_run: false,
       valid: true,
+      status: 'local_committed',
       local_commit: true,
       remote_commit: false,
       mutation_allowed: true,
       remote_mutation_allowed: false,
+      remote_mutation_reason: REMOTE_MUTATION_REASON,
       mutation_reason: 'local_commit_remote_mutation_disabled',
       account_id: account.id,
       requested_by_id: current_user&.id,
       payload: Telephony::VirtualPbx::ConfigBuilder.sanitize(normalized_payload),
-      generated_refs: generated_refs(normalized_payload),
+      provider_template: provider_template_for(normalized_payload, existing_config),
+      generated_refs: generated_refs_for(normalized_payload, existing_config),
+      bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
       config: mutation_result[:inbox_id].present? ? config_builder.for_inbox(mutation_result[:inbox_id]) : nil,
       deleted: mutation_result[:deleted],
       deleted_inbox_id: mutation_result[:deleted_inbox_id],
@@ -169,15 +213,24 @@ class Telephony::VirtualPbx::ProvisioningService
     source = source.to_h.deep_stringify_keys
     fallback = (fallback || {}).with_indifferent_access
     template = Telephony::VirtualPbx::ConfigBuilder::PROVIDER_TEMPLATES.fetch(provider_kind, {})
+    port_source = source.key?('port') ? source['port'] : first_present(fallback[:port], template[:default_port], 5060)
 
     {
       host: first_present(source['host'], fallback[:host]),
-      port: (first_present(source['port'], fallback[:port], template[:default_port], 5060)).to_i,
+      port: normalize_port(port_source),
       transport: first_present(source['transport'], fallback[:transport], template[:default_transport], 'udp'),
       username: first_present(source['username'], fallback[:username]),
       password: source['password'].presence,
       send_register: source.key?('send_register') ? ActiveModel::Type::Boolean.new.cast(source['send_register']) : fallback[:send_register]
     }.compact
+  end
+
+  def normalize_port(value)
+    normalized = value.to_s.strip
+    return if normalized.blank? || !normalized.match?(/\A\d+\z/)
+
+    port = normalized.to_i
+    port if (1..65_535).cover?(port)
   end
 
   def normalize_profiles(source)
@@ -219,7 +272,7 @@ class Telephony::VirtualPbx::ProvisioningService
     source.to_h.deep_stringify_keys.slice('environment', 'source', 'notes')
   end
 
-  def validation_errors(payload, require_profiles: true, check_duplicate_number_ref: true)
+  def validation_errors(payload, require_profiles: true, check_duplicate_number_ref: true, exclude_inbox_id: nil)
     [].tap do |errors|
       unless payload[:provider_kind].in?(ALLOWED_PROVIDER_KINDS)
         errors << error('provider_kind_invalid',
@@ -232,11 +285,16 @@ class Telephony::VirtualPbx::ProvisioningService
       end
       errors << error('ingress_number_required', 'ingress_number is required') if payload[:ingress_number].blank?
       errors << error('connection_host_required', 'connection.host is required') if payload.dig(:connection, :host).blank?
-      if check_duplicate_number_ref && number_ref_taken?(payload)
+      errors << connection_port_invalid_error if payload.dig(:connection, :port).blank?
+      if check_duplicate_number_ref && number_ref_taken?(payload, exclude_inbox_id: exclude_inbox_id)
         errors << error('number_ref_taken', 'Generated number_ref is already used by another channel')
       end
       errors.concat(profile_errors(payload[:profiles])) if require_profiles
     end
+  end
+
+  def connection_port_invalid_error
+    error('connection_port_invalid', 'connection.port must be an integer between 1 and 65535')
   end
 
   def profile_errors(profiles)
@@ -443,15 +501,17 @@ class Telephony::VirtualPbx::ProvisioningService
     "sip:#{extension}@#{host}"
   end
 
-  def number_ref_taken?(payload)
+  def number_ref_taken?(payload, exclude_inbox_id: nil)
     number_ref = generated_refs(payload)[:number_ref]
     return false if number_ref.blank?
 
-    account.telephony_number_bindings.where(number_ref: number_ref).exists?
+    scope = account.telephony_number_bindings.where(number_ref: number_ref)
+    scope = scope.where.not(inbox_id: exclude_inbox_id) if exclude_inbox_id.present?
+    scope.exists?
   end
 
   def active_calls_present?(inbox_id)
-    Telephony::CallSession.where(account: account, inbox_id: inbox_id, status: %w[ringing initiated active in_progress answered]).exists?
+    Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).exists?
   end
 
   def destroy_provider_connection_if_orphaned!(provider_connection)
@@ -513,6 +573,119 @@ class Telephony::VirtualPbx::ProvisioningService
       profile_refs: profiles.map { |profile| "profile-#{account.id}-#{profile[:user_id]}-#{profile[:internal_extension]}" },
       profile_secret_refs: profiles.map { |profile| "cred-profile-#{account.id}-#{profile[:user_id]}-#{profile[:internal_extension]}" }
     }
+  end
+
+  def generated_refs_for(payload, existing_config)
+    return generated_refs(payload) if payload[:provider_kind].present? && payload[:ingress_number].present?
+
+    existing_config_refs(existing_config)
+  end
+
+  def existing_config_refs(existing_config)
+    config = (existing_config || {}).with_indifferent_access
+    resources = (config[:resources] || {}).with_indifferent_access
+    provider_connection = (resources[:provider_connection] || {}).with_indifferent_access
+
+    {
+      number_ref: resources[:number_ref],
+      trunk_ref: resources[:trunk_ref] || provider_connection[:fonoster_trunk_ref],
+      credentials_ref: provider_connection[:credentials_ref] || provider_connection[:fonoster_credentials_ref],
+      profile_refs: Array.wrap(config[:profiles]).filter_map { |profile| profile.with_indifferent_access[:agent_ref] },
+      profile_secret_refs: Array.wrap(config[:profiles]).filter_map { |profile| profile.with_indifferent_access[:credentials_ref] }
+    }.compact
+  end
+
+  def provider_template_for(payload, existing_config)
+    provider_kind = payload[:provider_kind].presence || existing_config&.dig(:provider_kind)
+    return if provider_kind.blank?
+
+    Telephony::VirtualPbx::ConfigBuilder.provider_templates[provider_kind]
+  end
+
+  def bridge_operations_for(operation, payload, existing_config: nil)
+    case operation
+    when 'create'
+      create_bridge_operations(payload)
+    when 'update'
+      update_bridge_operations(payload)
+    when 'delete'
+      delete_bridge_operations(existing_config)
+    else
+      []
+    end
+  end
+
+  def create_bridge_operations(payload)
+    refs = generated_refs(payload)
+    compact_bridge_operations([
+                                bridge_operation('upsert_credentials', 'PUT', bridge_path('/telephony/credentials/', refs[:credentials_ref]),
+                                                 'Upsert provider credentials'),
+                                bridge_operation('upsert_trunk', 'PUT', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
+                                                 'Upsert provider trunk'),
+                                bridge_operation('upsert_number', 'PUT', bridge_path('/telephony/numbers/', refs[:number_ref]),
+                                                 'Upsert inbound number'),
+                                bridge_operation('update_number_route', 'PATCH', bridge_path('/telephony/numbers/', refs[:number_ref], '/route'),
+                                                 'Point number route to OneLink runtime bridge'),
+                                *profile_bridge_operations(payload, refs, 'PUT')
+                              ])
+  end
+
+  def update_bridge_operations(payload)
+    refs = generated_refs(payload)
+    compact_bridge_operations([
+                                bridge_operation('patch_trunk', 'PATCH', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
+                                                 'Patch provider trunk metadata'),
+                                bridge_operation('patch_number', 'PATCH', bridge_path('/telephony/numbers/', refs[:number_ref]),
+                                                 'Patch inbound number metadata'),
+                                bridge_operation('patch_number_route', 'PATCH', bridge_path('/telephony/numbers/', refs[:number_ref], '/route'),
+                                                 'Patch number route headers'),
+                                *profile_bridge_operations(payload, refs, 'PUT')
+                              ])
+  end
+
+  def delete_bridge_operations(existing_config)
+    refs = existing_config_refs(existing_config)
+    compact_bridge_operations([
+                                bridge_operation('delete_number', 'DELETE', bridge_path('/telephony/numbers/', refs[:number_ref]),
+                                                 'Delete owned inbound number'),
+                                bridge_operation('delete_trunk', 'DELETE', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
+                                                 'Delete channel-owned trunk when it is not shared'),
+                                bridge_operation('delete_credentials', 'DELETE', bridge_path('/telephony/credentials/', refs[:credentials_ref]),
+                                                 'Delete channel-owned credentials when they are not shared')
+                              ])
+  end
+
+  def profile_bridge_operations(payload, refs, method)
+    Array.wrap(payload[:profiles]).each_with_index.map do |_profile, index|
+      bridge_operation('upsert_agent', method, bridge_path('/telephony/agents/', refs[:profile_refs][index]),
+                       'Upsert employee SIP agent profile')
+    end
+  end
+
+  def bridge_operation(code, method, path, description)
+    {
+      code: code,
+      method: method,
+      path: path,
+      description: description,
+      remote: true,
+      blocked: true,
+      reason: REMOTE_MUTATION_REASON
+    }
+  end
+
+  def bridge_path(prefix, ref, suffix = nil)
+    return if ref.blank?
+
+    "#{prefix}#{ref}#{suffix}"
+  end
+
+  def compact_bridge_operations(operations)
+    operations.compact.select { |operation| operation[:path].present? }
+  end
+
+  def dry_run_status(errors)
+    errors.empty? ? 'dry_run_ready' : 'validation_failed'
   end
 
   def dry_run_warnings(existing_config)

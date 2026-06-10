@@ -454,6 +454,67 @@
             "PLACEHOLDER": "Необязательное сообщение, которое проигрывается при отклонении звонка"
           }
         },
+        "VIRTUAL_PBX": {
+          "CHANNEL_NAME": {
+            "LABEL": "Название inbox",
+            "PLACEHOLDER": "Введите название inbox для звонков",
+            "REQUIRED": "Название inbox обязательно"
+          },
+          "PROVIDER_KIND": {
+            "LABEL": "Провайдер виртуальной АТС",
+            "SIPUNI": "Sipuni / внутренний Asterisk",
+            "ASTERISK_ANALOG": "Asterisk analog"
+          },
+          "PROVIDER_ACCOUNT_NUMBER": {
+            "LABEL": "Номер/аккаунт у провайдера",
+            "PLACEHOLDER": "Необязательный номер или аккаунт на стороне провайдера"
+          },
+          "INGRESS_NUMBER": {
+            "LABEL": "Технический номер",
+            "PLACEHOLDER": "Номер, который принимает провайдер",
+            "REQUIRED": "Технический номер обязателен"
+          },
+          "CONNECTION_HOST": {
+            "LABEL": "SIP host",
+            "PLACEHOLDER": "PBX host или endpoint транка",
+            "REQUIRED": "SIP host обязателен"
+          },
+          "CONNECTION_PORT": {
+            "LABEL": "SIP port",
+            "PLACEHOLDER": "5060",
+            "REQUIRED": "SIP port обязателен",
+            "INVALID": "SIP port должен быть числом от 1 до 65535"
+          },
+          "TRANSPORT": {
+            "LABEL": "SIP transport"
+          },
+          "CONNECTION_USERNAME": {
+            "LABEL": "SIP username",
+            "PLACEHOLDER": "Необязательный SIP username"
+          },
+          "CONNECTION_PASSWORD": {
+            "LABEL": "SIP password",
+            "PLACEHOLDER": "Оставьте пустым, чтобы сохранить текущий secret"
+          },
+          "INTERNAL_EXTENSION": {
+            "LABEL": "Внутренний номер оператора",
+            "PLACEHOLDER": "1001",
+            "REQUIRED": "Внутренний номер оператора обязателен"
+          },
+          "MANAGEMENT_TITLE": "Локальная конфигурация Виртуальной АТС",
+          "MANAGEMENT_SUBTITLE": "Редактируйте локальный PBX-срез OneLink или удаляйте его после dry-run проверок. Remote-записи в Fonoster/Routr остаются заблокированы.",
+          "CURRENT_USER_REQUIRED": "Текущий пользователь нужен для создания SIP-профиля оператора",
+          "REQUIRED_FIELDS": "Заполните название inbox, витринный номер, технический номер и SIP host",
+          "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять через локальный PBX provisioning.",
+          "LOAD_ERROR": "Не удалось загрузить конфигурацию Виртуальной АТС.",
+          "CREATE_SUCCESS": "Канал Виртуальной АТС создан локально",
+          "UPDATE_SUCCESS": "Канал Виртуальной АТС обновлён локально",
+          "UPDATE_ERROR": "Не удалось обновить конфигурацию Виртуальной АТС",
+          "DELETE_CONFIRM": "Удалить локальный канал Виртуальной АТС после dry-run проверок? Remote-ресурсы Fonoster/Routr не будут изменены.",
+          "DELETE_SUCCESS": "Канал Виртуальной АТС удалён локально",
+          "UPDATE_BUTTON": "Обновить локальную АТС",
+          "DELETE_BUTTON": "Удалить локальную АТС"
+        },
         "TWILIO": {
           "ACCOUNT_SID": {
             "LABEL": "SID аккаунта",

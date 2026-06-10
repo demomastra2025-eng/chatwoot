@@ -64,6 +64,10 @@ class Telephony::VirtualPbx::ConfigBuilder
     new(account: nil).sanitize(value)
   end
 
+  def self.provider_templates
+    PROVIDER_TEMPLATES.deep_dup
+  end
+
   def sanitize(value, parent_key = nil)
     case value
     when Hash

@@ -73,11 +73,65 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data);
   }
 
+  getVirtualPbxTemplates() {
+    return axios
+      .get(`${this.baseUrl()}/telephony/virtual_pbx_channels/templates`)
+      .then(r => r.data);
+  }
+
   getVirtualPbxReadiness(inboxId) {
     return axios
       .post(
         `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/readiness_check`
       )
+      .then(r => r.data);
+  }
+
+  getVirtualPbxStatus(inboxId) {
+    return axios
+      .get(`${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/status`)
+      .then(r => r.data);
+  }
+
+  createVirtualPbxChannel(
+    payload,
+    { dryRun = false, remoteCommit = false } = {}
+  ) {
+    return axios
+      .post(`${this.baseUrl()}/telephony/virtual_pbx_channels`, {
+        virtual_pbx_channel: payload,
+        dry_run: dryRun,
+        remote_commit: remoteCommit,
+      })
+      .then(r => r.data);
+  }
+
+  updateVirtualPbxChannel(
+    inboxId,
+    payload,
+    { dryRun = false, remoteCommit = false } = {}
+  ) {
+    return axios
+      .patch(`${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}`, {
+        virtual_pbx_channel: payload,
+        dry_run: dryRun,
+        remote_commit: remoteCommit,
+      })
+      .then(r => r.data);
+  }
+
+  deleteVirtualPbxChannel(
+    inboxId,
+    { confirm = false, dryRun = true, remoteCommit = false } = {}
+  ) {
+    return axios
+      .delete(`${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}`, {
+        params: {
+          confirm,
+          dry_run: dryRun,
+          remote_commit: remoteCommit,
+        },
+      })
       .then(r => r.data);
   }
 

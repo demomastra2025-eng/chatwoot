@@ -463,6 +463,8 @@ Rails.application.routes.draw do
             get :trunks, to: 'resources#trunks'
             get :agents, to: 'resources#agents'
             resources :virtual_pbx_channels, only: %i[show create update destroy] do
+              get :templates, on: :collection
+              get :status, on: :member
               post :readiness_check, on: :member
             end
 
