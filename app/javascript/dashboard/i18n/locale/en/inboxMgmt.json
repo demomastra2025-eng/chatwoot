@@ -493,8 +493,17 @@
             "PLACEHOLDER": "Optional SIP username"
           },
           "CONNECTION_PASSWORD": {
-            "LABEL": "SIP password",
-            "PLACEHOLDER": "Leave blank to keep the existing secret"
+            "LABEL": "Shared SIP password",
+            "PLACEHOLDER": "Optional shared SIP password"
+          },
+          "EMPLOYEE_CREDENTIALS_HINT": "Leave these blank when the provider login/password is shared. Fill them only when this employee has separate SIP credentials.",
+          "EMPLOYEE_SIP_USERNAME": {
+            "LABEL": "Employee SIP username",
+            "PLACEHOLDER": "Optional employee SIP username"
+          },
+          "EMPLOYEE_SIP_PASSWORD": {
+            "LABEL": "Employee SIP password",
+            "PLACEHOLDER": "Optional employee SIP password"
           },
           "INTERNAL_EXTENSION": {
             "LABEL": "Operator internal extension",
@@ -504,7 +513,7 @@
           "MANAGEMENT_TITLE": "Virtual PBX local configuration",
           "MANAGEMENT_SUBTITLE": "Edit the local OneLink PBX bundle or delete it after dry-run checks. Remote Fonoster/Routr writes stay blocked.",
           "CURRENT_USER_REQUIRED": "Current user is required to create an operator SIP profile",
-          "REQUIRED_FIELDS": "Fill in inbox name, display phone, ingress number, and SIP host",
+          "REQUIRED_FIELDS": "Fill in inbox name, display phone, SIP host, and operator internal extension",
           "READ_ONLY": "This channel uses legacy/read-only ownership and cannot be changed by local PBX provisioning.",
           "LOAD_ERROR": "We were not able to load Virtual PBX configuration.",
           "CREATE_SUCCESS": "Virtual PBX channel has been created locally",
@@ -513,7 +522,11 @@
           "DELETE_CONFIRM": "Delete this local Virtual PBX channel after dry-run checks? Remote Fonoster/Routr resources will not be changed.",
           "DELETE_SUCCESS": "Virtual PBX channel has been deleted locally",
           "UPDATE_BUTTON": "Update local PBX",
-          "DELETE_BUTTON": "Delete local PBX"
+          "DELETE_BUTTON": "Delete local PBX",
+          "ADVANCED_FIELDS": {
+            "SHOW": "Show advanced provider fields",
+            "HIDE": "Hide advanced provider fields"
+          }
         },
         "TWILIO": {
           "ACCOUNT_SID": {

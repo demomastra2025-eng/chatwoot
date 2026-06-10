@@ -489,12 +489,21 @@
             "LABEL": "SIP transport"
           },
           "CONNECTION_USERNAME": {
-            "LABEL": "SIP username",
-            "PLACEHOLDER": "Необязательный SIP username"
+            "LABEL": "Общий SIP username",
+            "PLACEHOLDER": "Необязательный общий SIP username"
           },
           "CONNECTION_PASSWORD": {
-            "LABEL": "SIP password",
-            "PLACEHOLDER": "Оставьте пустым, чтобы сохранить текущий secret"
+            "LABEL": "Общий SIP password",
+            "PLACEHOLDER": "Необязательный общий SIP password"
+          },
+          "EMPLOYEE_CREDENTIALS_HINT": "Оставьте пустым, если логин/пароль общий у провайдера. Заполняйте только если у этого сотрудника отдельные SIP credentials.",
+          "EMPLOYEE_SIP_USERNAME": {
+            "LABEL": "SIP username сотрудника",
+            "PLACEHOLDER": "Необязательный SIP username сотрудника"
+          },
+          "EMPLOYEE_SIP_PASSWORD": {
+            "LABEL": "SIP password сотрудника",
+            "PLACEHOLDER": "Необязательный SIP password сотрудника"
           },
           "INTERNAL_EXTENSION": {
             "LABEL": "Внутренний номер оператора",
@@ -504,7 +513,7 @@
           "MANAGEMENT_TITLE": "Локальная конфигурация Виртуальной АТС",
           "MANAGEMENT_SUBTITLE": "Редактируйте локальный PBX-срез OneLink или удаляйте его после dry-run проверок. Remote-записи в Fonoster/Routr остаются заблокированы.",
           "CURRENT_USER_REQUIRED": "Текущий пользователь нужен для создания SIP-профиля оператора",
-          "REQUIRED_FIELDS": "Заполните название inbox, витринный номер, технический номер и SIP host",
+          "REQUIRED_FIELDS": "Заполните название inbox, витринный номер, SIP host и внутренний номер оператора",
           "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять через локальный PBX provisioning.",
           "LOAD_ERROR": "Не удалось загрузить конфигурацию Виртуальной АТС.",
           "CREATE_SUCCESS": "Канал Виртуальной АТС создан локально",
@@ -513,7 +522,11 @@
           "DELETE_CONFIRM": "Удалить локальный канал Виртуальной АТС после dry-run проверок? Remote-ресурсы Fonoster/Routr не будут изменены.",
           "DELETE_SUCCESS": "Канал Виртуальной АТС удалён локально",
           "UPDATE_BUTTON": "Обновить локальную АТС",
-          "DELETE_BUTTON": "Удалить локальную АТС"
+          "DELETE_BUTTON": "Удалить локальную АТС",
+          "ADVANCED_FIELDS": {
+            "SHOW": "Показать технические поля провайдера",
+            "HIDE": "Скрыть технические поля провайдера"
+          }
         },
         "TWILIO": {
           "ACCOUNT_SID": {

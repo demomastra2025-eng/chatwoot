@@ -104,7 +104,7 @@ describe('Voice channel setup', () => {
     });
   });
 
-  it('creates a local Virtual PBX channel with current user profile', async () => {
+  it('creates a simple local Virtual PBX channel with current user profile', async () => {
     routeMock.query = { provider: 'kazakhstan' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { config: { inbox_id: 202 }, errors: [] },
@@ -113,11 +113,9 @@ describe('Voice channel setup', () => {
     const inputs = wrapper.findAll('input');
 
     await inputs[0].setValue('Virtual PBX');
-    await inputs[1].setValue('+7 727 123-45-67');
-    await inputs[3].setValue('3100000');
-    await inputs[4].setValue('sip.provider.local');
-    await inputs[8].setValue('100');
-    await inputs[9].setValue('sip:100@sip.provider.local');
+    await inputs[1].setValue('+1 555 123 4567');
+    await inputs[2].setValue('sip.provider.local');
+    await inputs[3].setValue('100');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
@@ -125,9 +123,9 @@ describe('Voice channel setup', () => {
       {
         provider_kind: 'sipuni',
         channel_name: 'Virtual PBX',
-        display_phone_number: '+77271234567',
-        provider_account_number: '3100000',
-        ingress_number: '3100000',
+        display_phone_number: '+15551234567',
+        provider_account_number: '+15551234567',
+        ingress_number: '+15551234567',
         connection: {
           host: 'sip.provider.local',
           port: '5060',
@@ -138,12 +136,14 @@ describe('Voice channel setup', () => {
         routing: {
           mode: 'operator',
           fallback_mode: 'reject',
-          operator_agent_aor: 'sip:100@sip.provider.local',
+          operator_agent_aor: undefined,
         },
         profiles: [
           {
             user_id: 501,
             internal_extension: '100',
+            sip_username: undefined,
+            sip_password: undefined,
             enabled: true,
           },
         ],
@@ -160,5 +160,59 @@ describe('Voice channel setup', () => {
         inbox_id: 202,
       },
     });
+  });
+
+  it('keeps advanced Virtual PBX provider and ingress overrides optional', async () => {
+    routeMock.query = { provider: 'kazakhstan' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { config: { inbox_id: 203 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+
+    const advancedToggle = wrapper
+      .findAll('button')
+      .find(button =>
+        button.text().includes('VIRTUAL_PBX.ADVANCED_FIELDS.SHOW')
+      );
+    await advancedToggle.trigger('click');
+    await flushPromises();
+    const inputs = wrapper.findAll('input');
+
+    await inputs[0].setValue('Virtual PBX');
+    await inputs[1].setValue('+1 555 123 4567');
+    await inputs[2].setValue('3100000');
+    await inputs[3].setValue('3100001');
+    await inputs[4].setValue('sip.provider.local');
+    await inputs[6].setValue('shared-login');
+    await inputs[7].setValue('shared-password');
+    await inputs[8].setValue('100');
+    await inputs[9].setValue('employee-login');
+    await inputs[10].setValue('employee-password');
+    await inputs[11].setValue('sip:100@sip.provider.local');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider_account_number: '3100000',
+        ingress_number: '3100001',
+        connection: expect.objectContaining({
+          username: 'shared-login',
+          password: 'shared-password',
+        }),
+        profiles: [
+          expect.objectContaining({
+            user_id: 501,
+            internal_extension: '100',
+            sip_username: 'employee-login',
+            sip_password: 'employee-password',
+          }),
+        ],
+        routing: expect.objectContaining({
+          operator_agent_aor: 'sip:100@sip.provider.local',
+        }),
+      }),
+      { dryRun: false, remoteCommit: false }
+    );
   });
 });

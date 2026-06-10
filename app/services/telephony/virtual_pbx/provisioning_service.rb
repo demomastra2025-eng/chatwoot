@@ -188,9 +188,19 @@ class Telephony::VirtualPbx::ProvisioningService
     fallback_routing = fallback&.fetch(:routing, {}) || {}
 
     provider_kind = normalize_provider_kind(source['provider_kind'].presence || fallback&.dig(:provider_kind))
-    ingress_number = first_present(source['ingress_number'], source['provider_number'], fallback_phone_numbers[:ingress_number])
-    provider_account_number = first_present(source['provider_account_number'], source['account_number'],
-                                            fallback_phone_numbers[:provider_account_number], ingress_number)
+    ingress_number = first_present(
+      source['ingress_number'],
+      source['sipuni_ingress_number'],
+      source['provider_number'],
+      fallback_phone_numbers[:ingress_number]
+    )
+    provider_account_number = first_present(
+      source['provider_account_number'],
+      source['sipuni_account_number'],
+      source['account_number'],
+      fallback_phone_numbers[:provider_account_number],
+      ingress_number
+    )
     profiles_supplied = source.key?('profiles')
 
     {

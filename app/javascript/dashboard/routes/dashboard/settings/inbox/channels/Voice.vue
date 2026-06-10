@@ -3,7 +3,7 @@ import { reactive, computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useVuelidate } from '@vuelidate/core';
-import { required, requiredIf } from '@vuelidate/validators';
+import { required } from '@vuelidate/validators';
 import { useAlert } from 'dashboard/composables';
 import { isPhoneE164 } from 'shared/helpers/Validators';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
@@ -41,6 +41,8 @@ const kazakhstanState = reactive({
   routingMode: 'operator',
   operatorAgentAor: '',
   internalExtension: '',
+  employeeSipUsername: '',
+  employeeSipPassword: '',
 });
 
 const twilioState = reactive({
@@ -76,6 +78,7 @@ const isValidSipPort = value => {
 const uiFlags = useMapGetter('inboxes/getUIFlags');
 const currentUser = useMapGetter('getCurrentUser');
 const isCreatingVirtualPbx = ref(false);
+const isVirtualPbxAdvancedVisible = ref(false);
 
 const getterValue = getter => getter?.value ?? getter;
 
@@ -122,13 +125,9 @@ const kazakhstanValidationRules = computed(() => ({
   channelName: { required },
   phoneNumber: { required, isPhoneE164 },
   providerKind: { required },
-  ingressNumber: { required },
   connectionHost: { required },
   connectionPort: { required, isValidSipPort },
   routingMode: { required },
-  operatorAgentAor: {
-    required: requiredIf(() => kazakhstanState.routingMode === 'operator'),
-  },
   internalExtension: { required },
 }));
 
@@ -253,14 +252,16 @@ function resetProviderSelection() {
 }
 
 function getVirtualPbxPayload() {
-  const ingressNumber = kazakhstanState.ingressNumber.trim();
+  const displayPhoneNumber = kazakhstanState.phoneNumber.trim();
+  const ingressNumber =
+    kazakhstanState.ingressNumber.trim() || displayPhoneNumber;
   const providerAccountNumber =
     kazakhstanState.providerAccountNumber.trim() || ingressNumber;
 
   return {
     provider_kind: kazakhstanState.providerKind,
     channel_name: kazakhstanState.channelName.trim(),
-    display_phone_number: kazakhstanState.phoneNumber.trim(),
+    display_phone_number: displayPhoneNumber,
     provider_account_number: providerAccountNumber,
     ingress_number: ingressNumber,
     connection: {
@@ -279,6 +280,8 @@ function getVirtualPbxPayload() {
       {
         user_id: currentUserId.value,
         internal_extension: kazakhstanState.internalExtension.trim(),
+        sip_username: kazakhstanState.employeeSipUsername.trim() || undefined,
+        sip_password: kazakhstanState.employeeSipPassword || undefined,
         enabled: true,
       },
     ],
@@ -498,28 +501,48 @@ async function createSipuniChannel() {
           </Select>
         </div>
 
-        <Input
-          v-model="kazakhstanState.providerAccountNumber"
-          :label="
-            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.LABEL')
-          "
-          :placeholder="
+        <button
+          type="button"
+          class="text-sm font-medium text-n-brand hover:opacity-80 text-left"
+          @click="isVirtualPbxAdvancedVisible = !isVirtualPbxAdvancedVisible"
+        >
+          {{
             t(
-              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.PLACEHOLDER'
+              isVirtualPbxAdvancedVisible
+                ? 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.HIDE'
+                : 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.SHOW'
             )
-          "
-        />
+          }}
+        </button>
 
-        <Input
-          v-model="kazakhstanState.ingressNumber"
-          :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL')"
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.PLACEHOLDER')
-          "
-          :message="kazakhstanFormErrors.ingressNumber"
-          :message-type="kazakhstanFormErrors.ingressNumber ? 'error' : 'info'"
-          @blur="kazakhstanV$.ingressNumber?.$touch"
-        />
+        <div v-if="isVirtualPbxAdvancedVisible" class="flex flex-col gap-4">
+          <Input
+            v-model="kazakhstanState.providerAccountNumber"
+            :label="
+              t(
+                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.LABEL'
+              )
+            "
+            :placeholder="
+              t(
+                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.PLACEHOLDER'
+              )
+            "
+          />
+
+          <Input
+            v-model="kazakhstanState.ingressNumber"
+            :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL')"
+            :placeholder="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.PLACEHOLDER')
+            "
+            :message="kazakhstanFormErrors.ingressNumber"
+            :message-type="
+              kazakhstanFormErrors.ingressNumber ? 'error' : 'info'
+            "
+            @blur="kazakhstanV$.ingressNumber?.$touch"
+          />
+        </div>
 
         <Input
           v-model="kazakhstanState.connectionHost"
@@ -532,7 +555,10 @@ async function createSipuniChannel() {
           @blur="kazakhstanV$.connectionHost?.$touch"
         />
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div
+          v-if="isVirtualPbxAdvancedVisible"
+          class="grid grid-cols-1 gap-4 md:grid-cols-2"
+        >
           <Input
             v-model="kazakhstanState.connectionPort"
             type="number"
@@ -567,30 +593,32 @@ async function createSipuniChannel() {
           </div>
         </div>
 
-        <Input
-          v-model="kazakhstanState.connectionUsername"
-          :label="
-            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL')
-          "
-          :placeholder="
-            t(
-              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.PLACEHOLDER'
-            )
-          "
-        />
+        <div v-if="isVirtualPbxAdvancedVisible" class="flex flex-col gap-4">
+          <Input
+            v-model="kazakhstanState.connectionUsername"
+            :label="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL')
+            "
+            :placeholder="
+              t(
+                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.PLACEHOLDER'
+              )
+            "
+          />
 
-        <Input
-          v-model="kazakhstanState.connectionPassword"
-          type="password"
-          :label="
-            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL')
-          "
-          :placeholder="
-            t(
-              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.PLACEHOLDER'
-            )
-          "
-        />
+          <Input
+            v-model="kazakhstanState.connectionPassword"
+            type="password"
+            :label="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL')
+            "
+            :placeholder="
+              t(
+                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.PLACEHOLDER'
+              )
+            "
+          />
+        </div>
 
         <Input
           v-model="kazakhstanState.internalExtension"
@@ -607,7 +635,41 @@ async function createSipuniChannel() {
           @blur="kazakhstanV$.internalExtension?.$touch"
         />
 
-        <div class="flex flex-col gap-2">
+        <div
+          v-if="isVirtualPbxAdvancedVisible"
+          class="flex flex-col gap-4 rounded-xl border border-n-weak p-4"
+        >
+          <p class="text-sm text-n-slate-11">
+            {{
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_CREDENTIALS_HINT')
+            }}
+          </p>
+          <Input
+            v-model="kazakhstanState.employeeSipUsername"
+            :label="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL')
+            "
+            :placeholder="
+              t(
+                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.PLACEHOLDER'
+              )
+            "
+          />
+          <Input
+            v-model="kazakhstanState.employeeSipPassword"
+            type="password"
+            :label="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL')
+            "
+            :placeholder="
+              t(
+                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.PLACEHOLDER'
+              )
+            "
+          />
+        </div>
+
+        <div v-if="isVirtualPbxAdvancedVisible" class="flex flex-col gap-2">
           <label class="text-sm font-medium text-n-slate-12">
             {{ t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.LABEL') }}
           </label>
@@ -627,7 +689,10 @@ async function createSipuniChannel() {
         </div>
 
         <Input
-          v-if="kazakhstanState.routingMode === 'operator'"
+          v-if="
+            isVirtualPbxAdvancedVisible &&
+            kazakhstanState.routingMode === 'operator'
+          "
           v-model="kazakhstanState.operatorAgentAor"
           :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.LABEL')"
           :placeholder="

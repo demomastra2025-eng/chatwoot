@@ -140,6 +140,8 @@ class Telephony::VirtualPbx::ConfigBuilder
       binding&.provider_account_number,
       provider_config[:provider_account_number],
       metadata[:provider_account_number],
+      provider_config[:sipuni_account_number],
+      metadata[:sipuni_account_number],
       provider_config[:account_number],
       metadata[:account_number]
     )
@@ -154,6 +156,8 @@ class Telephony::VirtualPbx::ConfigBuilder
       binding&.ingress_number,
       provider_config[:ingress_number],
       metadata[:ingress_number],
+      provider_config[:sipuni_ingress_number],
+      metadata[:sipuni_ingress_number],
       tel_url_number(fonoster_tel_url),
       binding&.phone_number,
       provider_account_number,

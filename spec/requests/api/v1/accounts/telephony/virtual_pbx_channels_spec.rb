@@ -122,6 +122,62 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(config.dig('ownership', 'read_only')).to be(true)
   end
 
+  it 'maps legacy Sipuni account and ingress keys into split phone parts' do
+    voice_channel = create(
+      :channel_voice,
+      :fonoster,
+      account: account,
+      phone_number: '+17705550124',
+      provider_config: {
+        number_ref: 'sipuni-internal-asterisk-056124100014',
+        app_ref: 'runtime-app-ref',
+        provider_kind: 'sipuni',
+        display_phone_number: '+17705550124',
+        sipuni_account_number: '056124100014',
+        sipuni_ingress_number: '056124100014',
+        fonoster_tel_url: 'tel:056124100014',
+        routing_mode: 'operator',
+        operator_agent_aor: Telephony::RoutingPolicy::CURRENT_FONOSTER_OPERATOR_AGENT_AOR
+      }
+    )
+    voice_channel.inbox.telephony_number_binding.update!(
+      phone_number: '056124100014',
+      metadata: {
+        source: 'sipuni_internal_asterisk_gateway',
+        display_phone_number: '+17705550124',
+        sipuni_account_number: '056124100014',
+        sipuni_ingress_number: '056124100014'
+      }
+    )
+
+    get "#{base_path}/#{voice_channel.inbox.id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    phone_numbers = response.parsed_body.dig('payload', 'config', 'phone_numbers')
+    expect(phone_numbers).to include(
+      'display_phone_number' => '+17705550124',
+      'provider_account_number' => '056124100014',
+      'ingress_number' => '056124100014',
+      'fonoster_tel_url' => 'tel:056124100014',
+      'split_allowed' => true
+    )
+  end
+
+  it 'accepts Sipuni account and ingress aliases during create dry-run' do
+    payload = valid_create_payload.deep_dup
+    payload[:sipuni_account_number] = payload.delete(:provider_account_number)
+    payload[:sipuni_ingress_number] = payload.delete(:ingress_number)
+
+    post base_path, params: payload, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
+    expect(body.dig('payload', 'provider_account_number')).to eq('056124100014')
+    expect(body.dig('payload', 'ingress_number')).to eq('056124100014')
+    expect(body.dig('generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
+  end
+
   it 'builds a create dry-run without changing local records or calling the bridge' do
     counts_before = local_record_counts
 
@@ -150,6 +206,38 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(payload.to_json).not_to include('do-not-return-this-profile-secret')
     expect(payload.dig('payload', 'connection', 'password')).to eq('[REDACTED]')
     expect(payload.dig('payload', 'profiles', 0, 'sip_password')).to eq('[REDACTED]')
+  end
+
+  it 'accepts shared provider credentials without per-employee SIP credentials' do
+    payload = valid_create_payload.deep_dup
+    payload[:profiles].first.delete(:sip_username)
+    payload[:profiles].first.delete(:sip_password)
+
+    post base_path, params: payload, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
+    expect(body.dig('payload', 'connection', 'username')).to eq('056124100014')
+    expect(body.dig('payload', 'connection', 'password')).to eq('[REDACTED]')
+    expect(body.dig('payload', 'profiles', 0)).not_to include('sip_username')
+    expect(body.dig('payload', 'profiles', 0)).not_to include('sip_password')
+  end
+
+  it 'accepts per-employee SIP credentials without shared provider credentials' do
+    payload = valid_create_payload.deep_dup
+    payload[:connection].delete(:username)
+    payload[:connection].delete(:password)
+
+    post base_path, params: payload, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
+    expect(body.dig('payload', 'connection')).not_to include('username')
+    expect(body.dig('payload', 'connection')).not_to include('password')
+    expect(body.dig('payload', 'profiles', 0, 'sip_username')).to eq('056124100014')
+    expect(body.dig('payload', 'profiles', 0, 'sip_password')).to eq('[REDACTED]')
   end
 
   it 'blocks remote mutation even when a caller asks for remote_commit' do

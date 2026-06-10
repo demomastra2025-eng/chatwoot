@@ -489,12 +489,21 @@
             "LABEL": "SIP transport"
           },
           "CONNECTION_USERNAME": {
-            "LABEL": "SIP username",
-            "PLACEHOLDER": "Қосымша SIP username"
+            "LABEL": "Ортақ SIP username",
+            "PLACEHOLDER": "Қосымша ортақ SIP username"
           },
           "CONNECTION_PASSWORD": {
-            "LABEL": "SIP password",
-            "PLACEHOLDER": "Бар secret-ті сақтау үшін бос қалдырыңыз"
+            "LABEL": "Ортақ SIP password",
+            "PLACEHOLDER": "Қосымша ортақ SIP password"
+          },
+          "EMPLOYEE_CREDENTIALS_HINT": "Провайдер логині/құпиясөзі ортақ болса, бос қалдырыңыз. Бұл қызметкерде бөлек SIP credentials болса ғана толтырыңыз.",
+          "EMPLOYEE_SIP_USERNAME": {
+            "LABEL": "Қызметкердің SIP username",
+            "PLACEHOLDER": "Қосымша қызметкер SIP username"
+          },
+          "EMPLOYEE_SIP_PASSWORD": {
+            "LABEL": "Қызметкердің SIP password",
+            "PLACEHOLDER": "Қосымша қызметкер SIP password"
           },
           "INTERNAL_EXTENSION": {
             "LABEL": "Оператордың ішкі нөмірі",
@@ -504,7 +513,7 @@
           "MANAGEMENT_TITLE": "Virtual PBX жергілікті конфигурациясы",
           "MANAGEMENT_SUBTITLE": "Жергілікті OneLink PBX bundle-ін өзгертіңіз немесе dry-run тексерістерінен кейін өшіріңіз. Fonoster/Routr remote өзгерістері бұғатталған күйде қалады.",
           "CURRENT_USER_REQUIRED": "Оператордың SIP профилін құру үшін ағымдағы пайдаланушы қажет",
-          "REQUIRED_FIELDS": "Inbox атауын, көрсетілетін нөмірді, техникалық нөмірді және SIP host мәнін толтырыңыз",
+          "REQUIRED_FIELDS": "Inbox атауын, көрсетілетін нөмірді, SIP host және оператордың ішкі нөмірін толтырыңыз",
           "READ_ONLY": "Бұл арнада legacy/read-only иелік бар, оны жергілікті PBX provisioning арқылы өзгертуге болмайды.",
           "LOAD_ERROR": "Virtual PBX конфигурациясын жүктеу мүмкін болмады.",
           "CREATE_SUCCESS": "Virtual PBX арнасы жергілікті құрылды",
@@ -513,7 +522,11 @@
           "DELETE_CONFIRM": "Dry-run тексерістерінен кейін осы жергілікті Virtual PBX арнасын өшіру керек пе? Fonoster/Routr remote ресурстары өзгермейді.",
           "DELETE_SUCCESS": "Virtual PBX арнасы жергілікті өшірілді",
           "UPDATE_BUTTON": "Жергілікті PBX жаңарту",
-          "DELETE_BUTTON": "Жергілікті PBX өшіру"
+          "DELETE_BUTTON": "Жергілікті PBX өшіру",
+          "ADVANCED_FIELDS": {
+            "SHOW": "Провайдердің техникалық өрістерін көрсету",
+            "HIDE": "Провайдердің техникалық өрістерін жасыру"
+          }
         },
         "TWILIO": {
           "ACCOUNT_SID": {
