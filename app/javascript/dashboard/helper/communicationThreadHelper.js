@@ -6,6 +6,22 @@ export const isCommunicationThread = chat => {
   );
 };
 
+export const matchesCommunicationThreadMode = (
+  conversation,
+  communicationThreadMode = false
+) => isCommunicationThread(conversation) === Boolean(communicationThreadMode);
+
+export const filterConversationsByCommunicationThreadMode = (
+  conversations = [],
+  communicationThreadMode = false
+) => {
+  const conversationList = Array.isArray(conversations) ? conversations : [];
+
+  return conversationList.filter(conversation =>
+    matchesCommunicationThreadMode(conversation, communicationThreadMode)
+  );
+};
+
 const sortByNewestMessage = (firstMessage, secondMessage) => {
   const createdAtDifference =
     Number(secondMessage?.created_at || 0) -

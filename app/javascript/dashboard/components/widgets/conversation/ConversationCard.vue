@@ -5,6 +5,7 @@ import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { getLastMessage } from 'dashboard/helper/conversationHelper';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import MessagePreview from './MessagePreview.vue';
@@ -80,6 +81,9 @@ const activeInbox = useMapGetter('getSelectedInbox');
 const accountId = useMapGetter('getCurrentAccountId');
 
 const chatMetadata = computed(() => props.chat.meta || {});
+const isCommunicationThreadChat = computed(() =>
+  isCommunicationThread(props.chat)
+);
 
 const assignee = computed(() => chatMetadata.value.assignee || {});
 
@@ -91,8 +95,17 @@ const currentContact = computed(() => {
     : {};
 });
 
+const cardMatchesListMode = computed(
+  () =>
+    Boolean(props.communicationThreadMode) === isCommunicationThreadChat.value
+);
+
 const isActiveChat = computed(() => {
-  return currentChat.value.id === props.chat.id;
+  return (
+    cardMatchesListMode.value &&
+    String(currentChat.value?.id) === String(props.chat.id) &&
+    isCommunicationThread(currentChat.value) === isCommunicationThreadChat.value
+  );
 });
 
 const unreadCount = computed(() => props.chat.unread_count);
@@ -178,8 +191,7 @@ const conversationPath = computed(() => {
       conversationType: props.conversationType,
       foldersId: props.foldersId,
       status: props.activeStatus,
-      communicationThread:
-        props.communicationThreadMode || props.chat.is_communication_thread,
+      communicationThread: isCommunicationThreadChat.value,
     })
   );
 });

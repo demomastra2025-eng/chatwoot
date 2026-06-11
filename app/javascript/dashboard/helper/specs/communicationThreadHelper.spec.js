@@ -2,6 +2,7 @@ import {
   buildCommunicationThreadConversation,
   buildCommunicationChannelFromMessage,
   decoratePayloadWithCommunicationThread,
+  filterConversationsByCommunicationThreadMode,
   getCommunicationContactIdentityLabel,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
@@ -72,6 +73,31 @@ const disabledApiChannel = {
 };
 
 describe('communicationThreadHelper', () => {
+  describe('#filterConversationsByCommunicationThreadMode', () => {
+    it('keeps same-id child conversations out of communication thread lists', () => {
+      const childConversation = {
+        id: 630,
+        status: 'open',
+        meta: { sender: { id: 1 } },
+      };
+      const communicationThread = {
+        id: 630,
+        communication_thread_id: 630,
+        is_communication_thread: true,
+        status: 'open',
+        meta: { sender: { id: 1 } },
+      };
+      const conversationList = [childConversation, communicationThread];
+
+      expect(
+        filterConversationsByCommunicationThreadMode(conversationList, true)
+      ).toEqual([communicationThread]);
+      expect(
+        filterConversationsByCommunicationThreadMode(conversationList, false)
+      ).toEqual([childConversation]);
+    });
+  });
+
   describe('#getUniqueCommunicationChannels', () => {
     it('deduplicates repeated child conversations by actual inbox channel', () => {
       expect(

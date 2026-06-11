@@ -67,7 +67,10 @@ import { matchesFilters } from '../store/modules/conversations/helpers/filterHel
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions.js';
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
-import { getCommunicationThreadChannelInboxes } from 'dashboard/helper/communicationThreadHelper';
+import {
+  filterConversationsByCommunicationThreadMode,
+  getCommunicationThreadChannelInboxes,
+} from 'dashboard/helper/communicationThreadHelper';
 
 const props = defineProps({
   conversationInbox: { type: [String, Number], default: 0 },
@@ -452,7 +455,10 @@ const conversationList = computed(() => {
     });
   }
 
-  return localConversationList;
+  return filterConversationsByCommunicationThreadMode(
+    localConversationList,
+    props.communicationThreadMode
+  );
 });
 
 const displayedConversationList = computed(() => {
