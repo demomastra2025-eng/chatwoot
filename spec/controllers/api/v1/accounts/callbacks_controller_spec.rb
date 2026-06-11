@@ -68,6 +68,20 @@ RSpec.describe 'Callbacks API', type: :request do
 
         expect(response).to have_http_status(:success)
       end
+
+      it 'rolls back page and inbox creation when initial webhook subscription fails' do
+        allow(Facebook::Messenger::Subscriptions).to receive(:subscribe).and_raise(StandardError, 'subscribed_apps failed')
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/callbacks/register_facebook_page",
+               headers: admin.create_new_auth_token,
+               params: valid_params,
+               as: :json
+        end.to not_change(Channel::FacebookPage, :count).and not_change(Inbox, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq(Api::V1::Accounts::CallbacksController::FACEBOOK_REGISTER_ERROR_MESSAGE)
+      end
     end
   end
 

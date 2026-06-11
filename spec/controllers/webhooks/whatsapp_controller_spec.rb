@@ -138,6 +138,20 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       expect(Rails.logger).to have_received(:warn).with(/skipping HMAC validation/)
     end
 
+    it 'rejects embedded-signup whatsapp cloud channels when no app secret is configured' do
+      channel.update!(
+        provider_config: channel.provider_config
+                                .merge('source' => 'embedded_signup')
+                                .except('app_secret', 'app_secret_key', 'api_secret', 'client_secret')
+      )
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+
+      post_unsigned_whatsapp_webhook("/webhooks/whatsapp/#{channel.phone_number}", body, env: {})
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+    end
+
     it 'returns unauthorized when signature is missing and verification is required' do
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
 

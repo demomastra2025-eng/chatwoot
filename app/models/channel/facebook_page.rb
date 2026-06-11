@@ -21,6 +21,8 @@ class Channel::FacebookPage < ApplicationRecord
   include Channelable
   include Reauthorizable
 
+  attr_accessor :skip_auto_subscribe
+
   # TODO: Remove guard once encryption keys become mandatory (target 3-4 releases out).
   if Chatwoot.encryption_configured?
     encrypts :page_access_token
@@ -31,7 +33,7 @@ class Channel::FacebookPage < ApplicationRecord
 
   validates :page_id, uniqueness: { scope: :account_id }
 
-  after_create_commit :subscribe
+  after_create_commit :subscribe, unless: :skip_auto_subscribe?
   before_destroy :unsubscribe
 
   def name
@@ -59,6 +61,10 @@ class Channel::FacebookPage < ApplicationRecord
     raise if raise_on_error
 
     true
+  end
+
+  def skip_auto_subscribe?
+    ActiveModel::Type::Boolean.new.cast(skip_auto_subscribe)
   end
 
   def unsubscribe

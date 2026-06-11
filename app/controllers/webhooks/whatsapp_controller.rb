@@ -39,9 +39,14 @@ class Webhooks::WhatsappController < ActionController::API
     return true if whatsapp_channel.blank?
     return false unless whatsapp_channel.provider == 'whatsapp_cloud'
     return true if meta_app_secrets.compact_blank.present?
+    return true if embedded_signup_channel?
 
     Rails.logger.warn("[WHATSAPP_WEBHOOK] skipping HMAC validation: missing app secret for channel=#{whatsapp_channel.id}")
     false
+  end
+
+  def embedded_signup_channel?
+    whatsapp_channel.provider_config.to_h.with_indifferent_access[:source] == 'embedded_signup'
   end
 
   def whatsapp_business_payload_channel

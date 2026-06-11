@@ -92,6 +92,12 @@ describe Whatsapp::FacebookApiClient do
     end
   end
 
+  describe '#webhook_subscribed_fields' do
+    it 'includes the Meta WhatsApp Calling webhook field from the reference flow' do
+      expect(api_client.webhook_subscribed_fields).to eq(%w[messages smb_message_echoes calls])
+    end
+  end
+
   describe '#debug_token' do
     let(:input_token) { 'test_input_token' }
     let(:app_access_token) { "#{app_id}|#{app_secret}" }

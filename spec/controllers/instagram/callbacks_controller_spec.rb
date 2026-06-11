@@ -67,6 +67,24 @@ RSpec.describe Instagram::CallbacksController do
         expect(existing_channel.reauthorization_required?).to be false
       end
 
+      it 'does not create channel or inbox when initial webhook subscription fails' do
+        stub_request(:post, %r{https://graph\.instagram\.com/v22\.0/12345/subscribed_apps})
+          .to_return(status: 400, body: 'subscribe failed', headers: {})
+
+        expect do
+          get :show, params: valid_params
+        end.to not_change(Channel::Instagram, :count).and not_change(Inbox, :count)
+
+        expect(response).to redirect_to(
+          app_new_instagram_inbox_url(
+            account_id: account.id,
+            error_type: 'RuntimeError',
+            code: 500,
+            error_message: 'Instagram webhook subscription failed: 400 - subscribe failed'
+          )
+        )
+      end
+
       it 'does not update existing reauthorization channel when strict subscription fails' do
         existing_channel = create(:channel_instagram, account: account, instagram_id: '12345', access_token: 'old_token')
         inbox = create(:inbox, channel: existing_channel, account: account, name: 'old_username')

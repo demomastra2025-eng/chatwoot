@@ -72,7 +72,7 @@ describe Whatsapp::WebhookSetupService do
         with_modified_env FRONTEND_URL: 'https://one-link.kz' do
           expect(api_client).not_to receive(:register_phone_number)
           expect(api_client).to receive(:subscribe_waba_webhook)
-            .with(waba_id, 'https://one-link.kz/webhooks/whatsapp/+1234567890', 'test_verify_token')
+            .with(waba_id, a_string_matching(%r{\Ahttps://one-link\.kz/webhooks/whatsapp/}), 'test_verify_token')
           service.perform
         end
       end

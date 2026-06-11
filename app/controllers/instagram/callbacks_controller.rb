@@ -95,6 +95,7 @@ class Instagram::CallbacksController < ApplicationController
     channel_exists = channel_instagram.present?
 
     if channel_instagram
+      subscribe_channel!(channel_instagram)
       update_channel(channel_instagram, user_details)
     else
       channel_instagram = create_channel_with_inbox(user_details)
@@ -148,18 +149,22 @@ class Instagram::CallbacksController < ApplicationController
     ActiveRecord::Base.transaction do
       expires_at = Time.current + @long_lived_token_response['expires_in'].seconds
 
-      channel_instagram = Channel::Instagram.create!(
+      channel_instagram = Channel::Instagram.new(
         access_token: @long_lived_token_response['access_token'],
         instagram_id: user_details['user_id'].to_s,
         account: account,
         expires_at: expires_at
       )
+      channel_instagram.skip_auto_subscribe = true
+      channel_instagram.save!
 
       account.inboxes.create!(
         account: account,
         channel: channel_instagram,
         name: user_details['username']
       )
+
+      subscribe_channel!(channel_instagram)
 
       channel_instagram
     end

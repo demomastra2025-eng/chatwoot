@@ -1,27 +1,17 @@
 class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   FACEBOOK_FETCH_ERROR_MESSAGE = 'Failed to fetch Facebook pages. Please try again.'.freeze
+  FACEBOOK_REGISTER_ERROR_MESSAGE = 'Failed to register Facebook page. Please try again.'.freeze
 
   before_action :inbox, only: [:reauthorize_page]
 
   def register_facebook_page
-    user_access_token = params[:user_access_token]
-    page_access_token = params[:page_access_token]
-    page_id = params[:page_id]
-    inbox_name = params[:inbox_name]
-    ActiveRecord::Base.transaction do
-      facebook_channel = Current.account.facebook_pages.create!(
-        page_id: page_id, user_access_token: user_access_token,
-        page_access_token: page_access_token
-      )
-      @facebook_inbox = Current.account.inboxes.create!(name: inbox_name, channel: facebook_channel)
-      set_instagram_id(page_access_token, facebook_channel)
-      set_avatar(@facebook_inbox, page_id)
-    end
+    ActiveRecord::Base.transaction { register_facebook_page! }
   rescue StandardError => e
     ChatwootExceptionTracker.new(e).capture_exception
     Rails.logger.error "Error in register_facebook_page: #{e.message}"
     # Additional log statements
     log_additional_info
+    render_facebook_error(FACEBOOK_REGISTER_ERROR_MESSAGE)
   end
 
   def log_additional_info
@@ -72,6 +62,25 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   end
 
   private
+
+  def register_facebook_page!
+    facebook_channel = create_facebook_channel!
+    @facebook_inbox = Current.account.inboxes.create!(name: params[:inbox_name], channel: facebook_channel)
+    set_instagram_id(params[:page_access_token], facebook_channel)
+    set_avatar(@facebook_inbox, params[:page_id])
+    facebook_channel.subscribe(raise_on_error: true)
+  end
+
+  def create_facebook_channel!
+    Current.account.facebook_pages.build(
+      page_id: params[:page_id],
+      user_access_token: params[:user_access_token],
+      page_access_token: params[:page_access_token]
+    ).tap do |facebook_channel|
+      facebook_channel.skip_auto_subscribe = true
+      facebook_channel.save!
+    end
+  end
 
   def inbox
     @inbox = Current.account.inboxes.find_by(id: params[:inbox_id])
