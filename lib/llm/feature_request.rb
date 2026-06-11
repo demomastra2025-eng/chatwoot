@@ -286,12 +286,8 @@ class Llm::FeatureRequest
     value
   end
 
-  def normalize_parallel_tool_calls(value)
-    return false if value.nil? && mutating_tool_flow?
-    return if value.nil?
-    return false unless optional_boolean(value)
-
-    !mutating_tool_flow?
+  def normalize_parallel_tool_calls(_value)
+    nil
   end
 
   def normalize_optional_boolean(value)

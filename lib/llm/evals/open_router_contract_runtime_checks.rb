@@ -103,7 +103,7 @@ module Llm::Evals::OpenRouterContractRuntimeChecks
       image: { multimodal: image_request.multimodal?, image: image_request.image? },
       audio: { multimodal: audio_request.multimodal?, audio: audio_request.audio? },
       mutating_parallel_tool_calls: mutating_request.parallel_tool_calls,
-      expected: { image_multimodal: true, audio_multimodal: true, mutating_parallel_tool_calls: false },
+      expected: { image_multimodal: true, audio_multimodal: true, mutating_parallel_tool_calls: nil },
       failures: failures
     }
   end
@@ -377,7 +377,7 @@ module Llm::Evals::OpenRouterContractRuntimeChecks
     failures = []
     failures << 'image request must be multimodal image' unless image_request.multimodal? && image_request.image?
     failures << 'audio request must be multimodal audio' unless audio_request.multimodal? && audio_request.audio?
-    failures << 'mutating tool flow must disable parallel tool calls' unless mutating_request.parallel_tool_calls == false
+    failures << 'mutating tool flow must not emit parallel tool calls routing' unless mutating_request.parallel_tool_calls.nil?
     failures
   end
 

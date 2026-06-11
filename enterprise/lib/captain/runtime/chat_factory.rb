@@ -146,15 +146,7 @@ class Captain::Runtime::ChatFactory
     end
 
     def merged_params(agent, runtime_params)
-      Captain::Runtime::HashNormalizer.merge(agent.params, runtime_params).tap do |params|
-        params[:parallel_tool_calls] = false if mutating_tools?(agent)
-      end
-    end
-
-    def mutating_tools?(agent)
-      return true if agent.handoff_agents.present?
-
-      agent.tools.present? && agent.tools.any? { |tool| Llm::ToolRiskPolicy.mutating?(tool) }
+      Captain::Runtime::HashNormalizer.merge(agent.params, runtime_params)
     end
 
     def thinking_options(agent, context_wrapper, account: nil)

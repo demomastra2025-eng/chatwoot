@@ -309,7 +309,6 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       route: 'fallback',
       session_id: 'llm:copilot:42:conv-1',
       tool_choice: 'required',
-      parallel_tool_calls: true,
       reasoning: { effort: 'low' },
       max_tokens: 256,
       temperature: 0,
@@ -329,15 +328,7 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     )
   end
 
-  it 'suppresses false optional routing params that no selected endpoint supports under require_parameters' do
-    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
-      [
-        {
-          'supported_parameters' => %w[tools tool_choice response_format structured_outputs]
-        }
-      ]
-    )
-
+  it 'drops parallel tool call routing params under require_parameters' do
     compiled = compile(
       feature: :captain_agent,
       tools: true,
@@ -346,10 +337,10 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     )
 
     expect(compiled.params).not_to include(:parallel_tool_calls)
-    expect(compiled.metadata).to include(openrouter_suppressed_params: ['parallel_tool_calls'])
+    expect(compiled.metadata).not_to include(:openrouter_suppressed_params)
   end
 
-  it 'keeps false optional routing params when a selected endpoint supports them' do
+  it 'drops parallel tool call routing params even when caller requested them' do
     allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
       [
         {
@@ -362,10 +353,10 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       feature: :captain_agent,
       tools: true,
       schema: true,
-      base_params: { parallel_tool_calls: false }
+      base_params: { parallel_tool_calls: true }
     )
 
-    expect(compiled.params).to include(parallel_tool_calls: false)
+    expect(compiled.params).not_to include(:parallel_tool_calls)
     expect(compiled.metadata).not_to include(:openrouter_suppressed_params)
   end
 

@@ -105,7 +105,7 @@ RSpec.describe Llm::FeatureRequest do
     expect(request.openrouter_feature_policy.allowed_server_tools).to eq(['openrouter:datetime'])
   end
 
-  it 'allows parallel tool calls only for read-only tool flows' do
+  it 'ignores parallel tool call routing hints for read-only tool flows' do
     read_only_tool = runtime_tool(id: 'lookup_contact', risk_level: 'low')
     request = described_class.new(
       feature: :captain_agent,
@@ -116,10 +116,10 @@ RSpec.describe Llm::FeatureRequest do
 
     expect(request.read_only_tool_flow?).to be(true)
     expect(request.mutating_tool_flow?).to be(false)
-    expect(request.parallel_tool_calls).to be(true)
+    expect(request.parallel_tool_calls).to be_nil
   end
 
-  it 'disables parallel tool calls for mutating or unknown-idempotency tools' do
+  it 'ignores parallel tool call routing hints for mutating or unknown-idempotency tools' do
     mutating_tool = runtime_tool(id: 'create_deal', risk_level: 'high', idempotent: false)
     unknown_tool = instance_double(RubyLLM::Tool, name: 'unknown_runtime_tool')
 
@@ -143,10 +143,10 @@ RSpec.describe Llm::FeatureRequest do
 
     expect(mutating_request.mutating_tool_flow?).to be(true)
     expect(mutating_request.read_only_tool_flow?).to be(false)
-    expect(mutating_request.parallel_tool_calls).to be(false)
-    expect(mutating_default_request.parallel_tool_calls).to be(false)
+    expect(mutating_request.parallel_tool_calls).to be_nil
+    expect(mutating_default_request.parallel_tool_calls).to be_nil
     expect(unknown_request.mutating_tool_flow?).to be(true)
-    expect(unknown_request.parallel_tool_calls).to be(false)
+    expect(unknown_request.parallel_tool_calls).to be_nil
   end
 
   it 'detects native endpoint preference without forcing chat-audio requests onto native endpoints' do

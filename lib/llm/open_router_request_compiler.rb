@@ -7,7 +7,6 @@ class Llm::OpenRouterRequestCompiler
     quantizations sort preferred_min_throughput preferred_max_latency max_price
   ].freeze
   CALLER_PROVIDER_CONTROL_KEYS = %w[require_parameters allow_fallbacks data_collection zdr sort].freeze
-  ROUTING_SENSITIVE_OPTIONAL_PARAMS = %w[parallel_tool_calls].freeze
 
   Compiled = Struct.new(:model, :models, :params, :headers, :native_endpoint, :metadata, keyword_init: true)
 
@@ -64,7 +63,6 @@ class Llm::OpenRouterRequestCompiler
       trace_capture_allowed: feature_policy.workspace_policy&.trace_capture_allowed?
     )
     apply_request_params!(params)
-    suppressed_params = suppress_non_routable_optional_params!(params, models, provider_params)
     apply_feature_policy_params!(params, feature_policy)
     params[:models] = models if models.present?
     params[:provider] = provider_params if provider_params.present?
@@ -75,7 +73,7 @@ class Llm::OpenRouterRequestCompiler
       feature_policy: feature_policy,
       models: models,
       provider_params: provider_params,
-      extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan, suppressed_params: suppressed_params },
+      extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan },
       header_metadata: header_result.metadata
     )
 
@@ -131,6 +129,8 @@ class Llm::OpenRouterRequestCompiler
       params.delete('openrouter_server_tools')
       params.delete(:service_tier)
       params.delete('service_tier')
+      params.delete(:parallel_tool_calls)
+      params.delete('parallel_tool_calls')
     end
   end
 
@@ -146,7 +146,6 @@ class Llm::OpenRouterRequestCompiler
     set_param_if_present(params, :route, request_option(:route))
     set_param_if_present(params, :session_id, request_session_id)
     set_param_if_present(params, :tool_choice, request_value(:tool_choice))
-    set_param_unless_nil(params, :parallel_tool_calls, request_value(:parallel_tool_calls))
     set_param_if_present(params, :reasoning, request_value(:reasoning)) if reasoning_request?
     set_param_if_present(params, :max_tokens, request_value(:max_tokens))
     set_param_if_present(params, :temperature, request_value(:temperature))
@@ -159,13 +158,6 @@ class Llm::OpenRouterRequestCompiler
 
   def set_param_if_present(params, key, value)
     return if value.blank?
-    return if params.key?(key) || params.key?(key.to_s)
-
-    params[key] = value
-  end
-
-  def set_param_unless_nil(params, key, value)
-    return if value.nil?
     return if params.key?(key) || params.key?(key.to_s)
 
     params[key] = value
@@ -288,8 +280,7 @@ class Llm::OpenRouterRequestCompiler
       openrouter_cache_policy: feature_policy.cache_policy,
       openrouter_plugin_policy: feature_policy.plugin_policy,
       openrouter_transform_policy: feature_policy.transform_policy,
-      openrouter_budget_policy: feature_policy.budget_policy,
-      openrouter_suppressed_params: extensions[:suppressed_params].presence
+      openrouter_budget_policy: feature_policy.budget_policy
     }.merge(extensions[:transform_plan]&.to_metadata || {}).merge(header_metadata || {}).compact
   end
 
@@ -350,40 +341,6 @@ class Llm::OpenRouterRequestCompiler
 
   def requires_parameters?(profile_preferences)
     profile_preferences[:require_parameters] == true || schema_request? || tool_flow? || reasoning_request?
-  end
-
-  def suppress_non_routable_optional_params!(params, models, provider_params)
-    return [] unless provider_params[:require_parameters] == true
-
-    ROUTING_SENSITIVE_OPTIONAL_PARAMS.filter_map do |param|
-      next unless false_param?(params, param)
-      next if parameter_supported_by_any_endpoint?(models, param)
-
-      delete_param!(params, param)
-      param
-    end
-  end
-
-  def false_param?(params, key)
-    params[key.to_sym] == false || params[key.to_s] == false
-  end
-
-  def delete_param!(params, key)
-    params.delete(key.to_sym)
-    params.delete(key.to_s)
-  end
-
-  def parameter_supported_by_any_endpoint?(models, parameter)
-    endpoints = Array(models).flat_map do |model|
-      Llm::OpenRouterEndpointCatalog.endpoints_for(model)
-    end
-    return true if endpoints.blank?
-
-    endpoints.any? do |endpoint|
-      Array(endpoint['supported_parameters']).map(&:to_s).include?(parameter.to_s)
-    end
-  rescue StandardError
-    true
   end
 
   def schema_request?
