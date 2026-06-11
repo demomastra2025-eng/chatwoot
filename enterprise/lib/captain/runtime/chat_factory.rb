@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'securerandom'
+
 class Captain::Runtime::ChatFactory
   FINALIZATION_ONLY_INSTRUCTIONS = <<~PROMPT.squish.freeze
     Finalize the customer-facing Captain response using only the completed tool result messages already present in the conversation history.
@@ -52,6 +54,7 @@ class Captain::Runtime::ChatFactory
 
       system_prompt = system_prompt_for(agent, context_wrapper, finalization_only: finalization_only)
       chat.with_instructions(system_prompt) if system_prompt.present?
+      track_tool_call_batches!(chat, context_wrapper)
       enforce_openrouter_tool_parameters!(chat, agent_tools, account: account, schema: agent.response_schema)
       chat.with_tools(*agent_tools, replace: true) if agent_tools.present?
       Llm::StructuredOutputPolicy.bind!(chat: chat, schema: agent.response_schema) if agent.response_schema.present?
@@ -89,6 +92,26 @@ class Captain::Runtime::ChatFactory
         tools: true,
         schema: schema.present?
       )
+    end
+
+    def track_tool_call_batches!(chat, context_wrapper)
+      return unless chat.respond_to?(:after_message)
+
+      chat.after_message do |message|
+        next unless assistant_tool_call_message?(message)
+
+        batch_id = SecureRandom.uuid
+        context_wrapper.context[:captain_v2_current_tool_batch_id] = batch_id
+        context_wrapper.context[:captain_v2_mutating_tool_calls_by_batch] ||= {}
+        context_wrapper.context[:captain_v2_mutating_tool_calls_by_batch][batch_id] = []
+      end
+    end
+
+    def assistant_tool_call_message?(message)
+      message.respond_to?(:role) &&
+        message.role.to_s == 'assistant' &&
+        message.respond_to?(:tool_call?) &&
+        message.tool_call?
     end
 
     def model_id_for(chat)

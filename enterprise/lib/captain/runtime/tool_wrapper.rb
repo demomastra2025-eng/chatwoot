@@ -4,6 +4,7 @@ require 'digest'
 
 class Captain::Runtime::ToolWrapper
   TOOL_NOT_BOUND_ERROR = 'Tool is not available for the current agent runtime'
+  PARALLEL_MUTATING_TOOL_ERROR = 'Only one action tool can run per assistant tool-call batch'
   TOOL_RESULT_CACHE_KEY = :captain_v2_tool_result_cache
 
   def initialize(tool, context_wrapper)
@@ -23,6 +24,7 @@ class Captain::Runtime::ToolWrapper
     pre_execution_error = pre_execution_error(normalized_args)
     return complete_and_render(pre_execution_error) if pre_execution_error
 
+    remember_mutating_tool_call(normalized_args)
     cached_result = cached_mutating_tool_result(normalized_args)
     return complete_and_render(cached_result) if cached_result
 
@@ -101,7 +103,9 @@ class Captain::Runtime::ToolWrapper
   end
 
   def pre_execution_error(normalized_args)
-    bound_tool_error_for_current_agent || tool_safety_error_for(:tool_arguments, normalized_args)
+    bound_tool_error_for_current_agent ||
+      parallel_mutating_tool_error ||
+      tool_safety_error_for(:tool_arguments, normalized_args)
   end
 
   def complete_and_render(result)
@@ -204,7 +208,54 @@ class Captain::Runtime::ToolWrapper
   end
 
   def cache_mutating_tool_results?
+    mutating_tool?
+  end
+
+  def mutating_tool?
     Llm::ToolRiskPolicy.mutating?(@tool)
+  end
+
+  def parallel_mutating_tool_error
+    return unless mutating_tool?
+    return if current_tool_batch_id.blank?
+    return if mutating_tool_calls_for_current_batch.blank?
+
+    Captain::ToolResult.failure(
+      error: PARALLEL_MUTATING_TOOL_ERROR,
+      retryable: false,
+      audit: {
+        failure_stage: 'tool_arguments',
+        failure_reason: 'parallel_mutating_tool_call',
+        batch_id: current_tool_batch_id,
+        existing_tool_calls: mutating_tool_calls_for_current_batch.map { |entry| entry[:tool_name] }
+      }
+    )
+  end
+
+  def remember_mutating_tool_call(normalized_args)
+    return unless mutating_tool?
+    return if current_tool_batch_id.blank?
+
+    mutating_tool_calls_for_current_batch << {
+      tool_name: @tool.name.to_s,
+      arguments: normalized_args.deep_dup,
+      started_at: Time.current.iso8601
+    }
+  rescue StandardError
+    nil
+  end
+
+  def current_tool_batch_id
+    context_wrapper_context[:captain_v2_current_tool_batch_id] ||
+      context_wrapper_context['captain_v2_current_tool_batch_id']
+  end
+
+  def mutating_tool_calls_for_current_batch
+    calls_by_batch = context_wrapper_context[:captain_v2_mutating_tool_calls_by_batch] ||
+                     context_wrapper_context['captain_v2_mutating_tool_calls_by_batch']
+    return [] unless calls_by_batch.respond_to?(:[])
+
+    calls_by_batch[current_tool_batch_id] ||= []
   end
 
   def tool_safety_error_for(stage, content)

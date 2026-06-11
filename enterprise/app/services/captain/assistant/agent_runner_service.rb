@@ -43,14 +43,10 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def generate_response(message_history: [])
-    Llm::Config.initialize!
-
-    message_to_process, context = run_payload(message_history)
-    Llm::EventBus.with_context(request_event_context(context)) do
-      input_moderation_response = moderate_input(message_to_process, context)
-      return input_moderation_response if input_moderation_response
-
-      run_agent_with_blank_response_retries(message_to_process, context)
+    Llm::Config.with_runtime_cache do
+      with_llm_catalog_snapshots do
+        generate_response_with_runtime_cache(message_history)
+      end
     end
   rescue StandardError => e
     # In rake/local runs, conversation may not be present, so account is optional here.
@@ -62,6 +58,24 @@ class Captain::Assistant::AgentRunnerService
   end
 
   private
+
+  def with_llm_catalog_snapshots(&)
+    Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+      Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot(&)
+    end
+  end
+
+  def generate_response_with_runtime_cache(message_history)
+    time_phase('config.initialize') { Llm::Config.initialize! }
+
+    message_to_process, context = time_phase('run_payload') { run_payload(message_history) }
+    Llm::EventBus.with_context(request_event_context(context)) do
+      input_moderation_response = time_phase('moderate_input') { moderate_input(message_to_process, context) }
+      return input_moderation_response if input_moderation_response
+
+      time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
+    end
+  end
 
   def run_agent_with_blank_response_retries(message_to_process, context)
     attempts = 0
@@ -100,15 +114,17 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def run_agent(message_to_process, context, runtime_options: {})
-    runner.run(
-      message_to_process,
-      context: context,
-      max_turns: MAX_RUNTIME_TURNS,
-      runtime_options: {
-        llm_context: llm_context_for_run,
-        account: @assistant.account
-      }.merge(runtime_options)
-    )
+    time_phase('runner.run') do
+      runner.run(
+        message_to_process,
+        context: context,
+        max_turns: MAX_RUNTIME_TURNS,
+        runtime_options: {
+          llm_context: llm_context_for_run,
+          account: @assistant.account
+        }.merge(runtime_options)
+      )
+    end
   end
 
   def retry_blank_response?(response, result, attempts)
@@ -715,8 +731,8 @@ class Captain::Assistant::AgentRunnerService
     state[:source] = @source if @source.present?
     state[:runtime_clock] = runtime_clock_state
 
-    build_conversation_state(state) if @conversation
-    state[:prompt_context] = @assistant.prompt_context_state(state)
+    time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation
+    state[:prompt_context] = time_phase('prompt_context_state') { @assistant.prompt_context_state(state) }
     state
   end
 
@@ -995,10 +1011,11 @@ class Captain::Assistant::AgentRunnerService
 
   def runner
     @runner ||= begin
-      configured_runner = Captain::Runtime::Runner.with_agents(*build_and_wire_agents)
+      agents = time_phase('build_and_wire_agents') { build_and_wire_agents }
+      configured_runner = Captain::Runtime::Runner.with_agents(*agents)
       configured_runner = add_usage_metadata_callback(configured_runner)
       configured_runner = add_callbacks_to_runner(configured_runner) if @callbacks.any?
-      install_instrumentation(configured_runner)
+      time_phase('install_instrumentation') { install_instrumentation(configured_runner) }
       configured_runner
     end
   end
@@ -1033,6 +1050,19 @@ class Captain::Assistant::AgentRunnerService
       account: @assistant.account,
       preferences: runtime_preferences
     )
+  end
+
+  def time_phase(name)
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    yield
+  ensure
+    duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    if duration_ms >= 250
+      Rails.logger.info(
+        "[CAPTAIN][Timing] assistant_id=#{@assistant&.id} conversation_id=#{@conversation&.id} " \
+        "phase=#{name} duration_ms=#{duration_ms}"
+      )
+    end
   end
 
   def blocked_by_moderation_response(reason)

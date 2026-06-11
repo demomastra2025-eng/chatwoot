@@ -37,15 +37,15 @@ class Llm::ModerationService
 
   class << self
     def check!(feature:, stage:, content:, account: nil, preferences: nil)
-      model = moderation_model_for(account)
-      provider = moderation_provider_for(account, model: model)
-
       return check_result(status: :skipped, feature: feature, stage: stage, reason: :blank_content) if content.blank?
       return check_result(status: :disabled, feature: feature, stage: stage) unless Llm::RuntimePolicy.moderation_enabled?(
         feature: feature,
         account: account,
         preferences: preferences
       )
+
+      model = moderation_model_for(account)
+      provider = moderation_provider_for(account, model: model)
 
       if api_key_for(provider, account).blank?
         return handle_unavailable!(

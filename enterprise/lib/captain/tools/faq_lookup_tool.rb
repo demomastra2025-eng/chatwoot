@@ -4,6 +4,9 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   SEMANTIC_RESULT_LIMIT = 5
   CACHE_FETCH_TIMEOUT_SECONDS = 3
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
+  TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
+
+  class TotalLookupTimeout < Timeout::Error; end
 
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: 'string', desc: 'The question or topic to search for in the FAQ database'
@@ -11,11 +14,13 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   def perform(_tool_context, query:, semantic: true)
     log_tool_usage('searching', { query: query })
 
-    cache = answer_cache(query: query, semantic: semantic)
-    cached_payload = bounded_cache_fetch(cache, query: query)
-    return JSON.pretty_generate(cached_payload) if cached_payload.present?
+    Timeout.timeout(TOTAL_LOOKUP_TIMEOUT_SECONDS, TotalLookupTimeout) do
+      cache = answer_cache(query: query, semantic: semantic)
+      cached_payload = bounded_cache_fetch(cache, query: query)
+      return JSON.pretty_generate(cached_payload) if cached_payload.present?
 
-    JSON.pretty_generate(cache.write(semantic_payload(query: query, semantic: semantic)))
+      JSON.pretty_generate(cache.write(semantic_payload(query: query, semantic: semantic)))
+    end
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
     Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
     JSON.pretty_generate(semantic_unavailable_payload(query, error: e))
@@ -45,6 +50,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def semantic_error_fallback_reason(error)
+    return 'lookup_timeout' if error.is_a?(TotalLookupTimeout)
     return 'semantic_not_configured' if error.is_a?(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError) ||
                                         error.is_a?(RubyLLM::ConfigurationError)
     return 'semantic_timeout' if error.is_a?(Timeout::Error)
@@ -94,16 +100,26 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     'semantic_no_matches'
   end
 
-  def lexical_fallback_responses(query)
-    tokens = lexical_tokens(query)
-    return Captain::AssistantResponse.none if tokens.blank?
+  def lexical_fallback_responses(*queries)
+    queries.compact.each do |candidate_query|
+      tokens = lexical_tokens(candidate_query)
+      next if tokens.blank?
 
+      faq_responses = lexical_faq_responses(tokens)
+      return faq_responses if faq_responses.any?
+
+      document_chunks = lexical_document_chunks(tokens)
+      return document_chunks if document_chunks.any?
+    end
+
+    Captain::AssistantResponse.none
+  end
+
+  def lexical_faq_responses(tokens)
     conditions = tokens.each_with_index.map do |_token, index|
       "LOWER(question) LIKE :term_#{index} OR LOWER(answer) LIKE :term_#{index}"
     end.join(' OR ')
-    bind_values = tokens.each_with_index.to_h do |token, index|
-      ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token.downcase)}%"]
-    end
+    bind_values = lexical_bind_values(tokens)
 
     account.captain_assistant_responses
            .approved
@@ -113,8 +129,25 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
            .limit(5)
   end
 
-  def lexical_tokens(query)
-    query.to_s.downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.first(5)
+  def lexical_document_chunks(tokens)
+    conditions = tokens.each_with_index.map do |_token, index|
+      "LOWER(captain_document_chunks.content) LIKE :term_#{index}"
+    end.join(' OR ')
+
+    visible_document_chunks
+      .where(conditions, lexical_bind_values(tokens))
+      .order(:document_id, :chunk_index)
+      .limit(5)
+  end
+
+  def lexical_bind_values(tokens)
+    tokens.each_with_index.to_h do |token, index|
+      ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token.downcase)}%"]
+    end
+  end
+
+  def lexical_tokens(*queries)
+    queries.compact.join(' ').downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.uniq.first(5)
   end
 
   def answer_cache(query:, semantic:)

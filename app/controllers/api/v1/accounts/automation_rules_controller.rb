@@ -66,7 +66,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
   end
 
   def fetch_automation_rule
-    @automation_rule = Current.account.automation_rules.find_by(id: params[:id])
+    @automation_rule = Current.account.automation_rules.find(params[:id] || params[:automation_rule_id])
   end
 
   def render_automation_rule_validation_error(automation_rule)

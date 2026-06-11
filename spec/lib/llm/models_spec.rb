@@ -706,6 +706,32 @@ RSpec.describe Llm::Models do
     end
   end
 
+  describe '.model_allowed_for_feature?' do
+    it 'checks a selected OpenRouter model without building the full feature model list' do
+      account = create(:account)
+      model_id = 'deepseek/deepseek-v4-pro'
+
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        model_id => {
+          'provider' => 'openrouter',
+          'display_name' => 'DeepSeek V4 Pro',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output structured_output tool_calling],
+          'context_length' => 128_000
+        }
+      )
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).with(model_id).and_return(
+        'endpoints' => [
+          { 'provider_name' => 'deepseek', 'capabilities' => %w[structured_output tool_calling] }
+        ]
+      )
+      expect(described_class).not_to receive(:models_for)
+
+      expect(described_class.model_allowed_for_feature?(:assistant, model_id, account: account)).to be true
+    end
+  end
+
   describe 'pricing helpers' do
     it 'exposes configured credit multipliers' do
       expect(described_class.credit_multiplier_for('gpt-4.1-mini')).to eq(1)

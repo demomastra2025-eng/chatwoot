@@ -20,18 +20,18 @@ class Captain::SkillCatalog
   SUPPORTED_SCRIPT_RUNTIMES = %w[ruby node python].freeze
 
   class << self
-    def all(account: nil)
-      (account_skills(account) + file_skills)
+    def all(account: nil, include_tree: true)
+      (account_skills(account) + file_skills(include_tree: include_tree))
         .uniq { |skill| skill[:id] }
         .sort_by { |skill| skill_sort_key(skill) }
     end
 
     def find(id, account: nil)
-      all(account: account).find { |skill| skill[:id].to_s == id.to_s }
+      all(account: account, include_tree: true).find { |skill| skill[:id].to_s == id.to_s }
     end
 
     def available_ids(account: nil)
-      all(account: account).pluck(:id)
+      all(account: account, include_tree: false).pluck(:id)
     end
 
     def extract_skill_ids_from_text(text)
@@ -69,7 +69,7 @@ class Captain::SkillCatalog
       normalized_ids = Array(skill_ids).map(&:to_s).uniq
       return [] if normalized_ids.empty?
 
-      all(account: account)
+      all(account: account, include_tree: false)
         .select { |skill| normalized_ids.include?(skill[:id].to_s) }
         .map do |skill|
           {
@@ -86,7 +86,7 @@ class Captain::SkillCatalog
     def script_tools_for(account: nil, skill_ids: nil)
       selected_skill_ids = Array(skill_ids).map(&:to_s).presence
 
-      all(account: account)
+      all(account: account, include_tree: false)
         .select { |skill| selected_skill_ids.blank? || selected_skill_ids.include?(skill[:id].to_s) }
         .flat_map { |skill| Array(skill[:scripts]) }
         .map { |script| script_tool_definition(script) }
@@ -94,7 +94,7 @@ class Captain::SkillCatalog
     end
 
     def script_for_tool_id(tool_id, account: nil)
-      all(account: account)
+      all(account: account, include_tree: false)
         .flat_map { |skill| Array(skill[:scripts]) }
         .find { |script| script[:tool_id].to_s == tool_id.to_s }
     end
@@ -105,9 +105,9 @@ class Captain::SkillCatalog
 
     private
 
-    def file_skills
-      Rails.cache.fetch(cache_key, expires_in: 5.minutes) do
-        skill_dirs.filter_map { |dir| parse_skill_dir(dir) }
+    def file_skills(include_tree:)
+      Rails.cache.fetch(cache_key(include_tree: include_tree), expires_in: 5.minutes) do
+        skill_dirs.filter_map { |dir| parse_skill_dir(dir, include_tree: include_tree) }
                   .uniq { |skill| skill[:id] }
       end
     end
@@ -128,7 +128,7 @@ class Captain::SkillCatalog
       ]
     end
 
-    def cache_key
+    def cache_key(include_tree:)
       source_state = configured_source_dirs.map do |dir|
         path = Pathname.new(dir)
         next "#{dir}:missing" unless path.directory?
@@ -139,7 +139,7 @@ class Captain::SkillCatalog
         "#{dir}:error"
       end
 
-      ['captain', 'skill_catalog', Digest::SHA256.hexdigest(source_state.join('|'))].join(':')
+      ['captain', 'skill_catalog', include_tree ? 'tree' : 'runtime', Digest::SHA256.hexdigest(source_state.join('|'))].join(':')
     end
 
     def configured_source_dirs
@@ -182,7 +182,7 @@ class Captain::SkillCatalog
       []
     end
 
-    def parse_skill_dir(dir)
+    def parse_skill_dir(dir, include_tree: true)
       skill_path = dir.join(SKILL_FILE_NAME)
       return unless skill_path.file?
       return if skill_path.size > MAX_SKILL_BYTES
@@ -201,7 +201,7 @@ class Captain::SkillCatalog
         source_path: dir.to_s,
         content: content.to_s.strip,
         scripts: scripts_for(dir, skill_id: normalize_skill_id(name), skill_title: name),
-        tree: tree_for(dir),
+        tree: include_tree ? tree_for(dir) : [],
         editable: false,
         source_type: 'catalog'
       }

@@ -20,6 +20,10 @@ RSpec.describe Captain::Runtime::ChatFactory do
     end
     let(:context_wrapper) { Captain::Runtime::RunContext.new({}) }
 
+    before do
+      allow(chat).to receive(:after_message).and_return(chat)
+    end
+
     it 'constructs Captain chats through the LLM runtime facade' do
       allow(chat).to receive(:model).and_return('openai/gpt-5.4-mini')
       allow(chat).to receive(:with_instructions).and_return(chat)

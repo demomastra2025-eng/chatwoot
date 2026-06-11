@@ -4,6 +4,9 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   SEMANTIC_RESULT_LIMIT = 5
   CACHE_FETCH_TIMEOUT_SECONDS = 3
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
+  TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
+
+  class TotalLookupTimeout < Timeout::Error; end
 
   def self.name
     'faq_lookup'
@@ -13,13 +16,17 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   param :query, type: :string, desc: 'The question or topic to search for in the FAQ database', required: true
 
   def execute(query:, semantic: true)
-    translated_query = semantic ? translated_query_for(query) : query
+    translated_query = query
 
-    cache = answer_cache(query: translated_query, semantic: semantic)
-    cached_payload = bounded_cache_fetch(cache, query: query, translated_query: translated_query)
-    return formatted_payload(cached_payload) if cached_payload.present?
+    Timeout.timeout(TOTAL_LOOKUP_TIMEOUT_SECONDS, TotalLookupTimeout) do
+      translated_query = semantic ? translated_query_for(query) : query
 
-    formatted_payload(cache.write(semantic_payload(query: query, translated_query: translated_query, semantic: semantic)))
+      cache = answer_cache(query: translated_query, semantic: semantic)
+      cached_payload = bounded_cache_fetch(cache, query: query, translated_query: translated_query)
+      return formatted_payload(cached_payload) if cached_payload.present?
+
+      formatted_payload(cache.write(semantic_payload(query: query, translated_query: translated_query, semantic: semantic)))
+    end
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
     log_semantic_unavailable(e)
     formatted_payload(semantic_unavailable_payload(query: query, translated_query: translated_query || query, error: e))
@@ -49,13 +56,14 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     faq_result_payload(
       query: query,
       translated_query: translated_query,
-      responses: lexical_fallback_responses(translated_query, query),
+      responses: lexical_fallback_responses(query, translated_query),
       lookup_strategy: 'lexical',
       trace_context: trace_context(semantic_attempted: true, fallback_reason: semantic_error_fallback_reason(error))
     )
   end
 
   def semantic_error_fallback_reason(error)
+    return 'lookup_timeout' if error.is_a?(TotalLookupTimeout)
     return 'semantic_not_configured' if error.is_a?(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError) ||
                                         error.is_a?(RubyLLM::ConfigurationError)
     return 'semantic_timeout' if error.is_a?(Timeout::Error)
@@ -70,6 +78,8 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   end
 
   def lookup_responses(query, fallback_query = nil, semantic: true)
+    rerank_trace = nil
+
     if semantic
       responses, rerank_trace = semantic_responses(query)
       return [responses, 'semantic_chunk', nil, rerank_trace] if responses.any?
@@ -190,15 +200,25 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   end
 
   def lexical_fallback_responses(*queries)
-    tokens = lexical_tokens(*queries)
-    return Captain::AssistantResponse.none if tokens.blank?
+    queries.compact.each do |candidate_query|
+      tokens = lexical_tokens(candidate_query)
+      next if tokens.blank?
 
+      faq_responses = lexical_faq_responses(tokens)
+      return faq_responses if faq_responses.any?
+
+      document_chunks = lexical_document_chunks(tokens)
+      return document_chunks if document_chunks.any?
+    end
+
+    Captain::AssistantResponse.none
+  end
+
+  def lexical_faq_responses(tokens)
     conditions = tokens.each_with_index.map do |_token, index|
       "LOWER(question) LIKE :term_#{index} OR LOWER(answer) LIKE :term_#{index}"
     end.join(' OR ')
-    bind_values = tokens.each_with_index.to_h do |token, index|
-      ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token.downcase)}%"]
-    end
+    bind_values = lexical_bind_values(tokens)
 
     account.captain_assistant_responses
            .approved
@@ -206,6 +226,23 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
            .where(conditions, bind_values)
            .ordered
            .limit(5)
+  end
+
+  def lexical_document_chunks(tokens)
+    conditions = tokens.each_with_index.map do |_token, index|
+      "LOWER(captain_document_chunks.content) LIKE :term_#{index}"
+    end.join(' OR ')
+
+    account_document_chunks
+      .where(conditions, lexical_bind_values(tokens))
+      .order(:document_id, :chunk_index)
+      .limit(5)
+  end
+
+  def lexical_bind_values(tokens)
+    tokens.each_with_index.to_h do |token, index|
+      ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token.downcase)}%"]
+    end
   end
 
   def account_document_chunks

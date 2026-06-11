@@ -87,6 +87,24 @@ RSpec.describe Llm::ModerationService do
       )
     end
 
+    it 'returns disabled without resolving provider configuration when moderation is disabled' do
+      allow(Llm::RuntimePolicy).to receive(:moderation_enabled?).and_return(false)
+
+      expect(Llm::Config).not_to receive(:moderation_model)
+      expect(Llm::Config).not_to receive(:provider_for_model)
+      expect(Llm::Runtime).not_to receive(:build_chat)
+
+      result = described_class.check!(
+        feature: :assistant,
+        stage: :output,
+        content: 'Hello'
+      )
+
+      expect(result.status).to eq(:disabled)
+      expect(result.feature).to eq(:assistant)
+      expect(result.stage).to eq(:output)
+    end
+
     it 'raises when moderation is unavailable in fail_closed mode' do
       allow(Llm::Config).to receive(:api_key).with('openrouter').and_return(nil)
       allow(Llm::RuntimePolicy).to receive(:fail_closed_moderation?).and_return(true)

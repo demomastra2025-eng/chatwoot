@@ -190,7 +190,7 @@ onUnmounted(() => {
       v-bind="attrs"
       class="px-2 absolute bottom-20 sm:bottom-4 left-1/2 -translate-x-1/2 z-30 w-full origin-bottom pointer-events-none"
     >
-      <div class="pointer-events-auto mx-auto max-w-5xl">
+      <div class="pointer-events-auto mx-auto max-w-4xl">
         <div
           v-if="allConversationsSelected"
           class="bg-n-amber-2 outline -outline-offset-1 outline-1 outline-n-amber-5 rounded-lg text-sm mb-2 py-1.5 px-2 text-n-amber-text"

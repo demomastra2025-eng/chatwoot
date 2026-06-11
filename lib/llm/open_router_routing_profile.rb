@@ -150,7 +150,13 @@ class Llm::OpenRouterRoutingProfile
     base = workspace_policy.provider_preferences.deep_dup
 
     feature_preferences = case feature_key
-                          when 'captain_agent', 'moderation'
+                          when 'captain_agent'
+                            {
+                              require_parameters: true,
+                              sort: { by: 'latency', partition: 'none' },
+                              preferred_max_latency: { p90: 3 }
+                            }
+                          when 'moderation'
                             { require_parameters: true }
                           when 'copilot'
                             { require_parameters: true, sort: { by: 'latency', partition: 'none' } }

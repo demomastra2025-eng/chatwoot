@@ -119,13 +119,41 @@ RSpec.describe Captain::SkillCatalog do
         end
       end
     end
+
+    it 'does not build preview trees while compiling runtime tool metadata' do
+      Dir.mktmpdir do |dir|
+        skill_dir = File.join(dir, 'support')
+        FileUtils.mkdir_p(File.join(skill_dir, 'scripts'))
+        File.write(
+          File.join(skill_dir, 'SKILL.md'),
+          <<~MARKDOWN
+            ---
+            name: Support Flow
+            description: Handles support escalation behavior.
+            ---
+            Escalate with context.
+          MARKDOWN
+        )
+        File.write(File.join(skill_dir, 'scripts', 'summarize.rb'), 'puts STDIN.read')
+        File.write(
+          File.join(skill_dir, 'skill.json'),
+          JSON.generate(scripts: [{ id: 'summarize', command: 'scripts/summarize.rb', runtime: 'ruby', risk: 'low' }])
+        )
+
+        with_modified_env('CAPTAIN_SKILL_DIRS' => dir) do
+          allow(described_class).to receive(:tree_for).and_raise('tree building should not run in runtime path')
+
+          expect(described_class.script_tools_for(skill_ids: ['support-flow']).pluck(:skill_id)).to eq(['support-flow'])
+        end
+      end
+    end
   end
 
   describe '.extract_skill_ids_from_text' do
     it 'normalizes markdown skill references' do
       text = 'Use [Support Flow](skill://support-flow) and [RU](skill://Русский Навык).'
 
-      expect(described_class.extract_skill_ids_from_text(text)).to eq(['support-flow', 'skill-50afd9149324'])
+      expect(described_class.extract_skill_ids_from_text(text)).to eq(%w[support-flow skill-50afd9149324])
     end
   end
 
@@ -154,7 +182,7 @@ RSpec.describe Captain::SkillCatalog do
         )
 
         with_modified_env('CAPTAIN_SKILL_DIRS' => dir) do
-          blocks = described_class.prompt_blocks_for(account: nil, skill_ids: ['support-flow', 'missing'])
+          blocks = described_class.prompt_blocks_for(account: nil, skill_ids: %w[support-flow missing])
 
           expect(blocks).to contain_exactly(
             hash_including(

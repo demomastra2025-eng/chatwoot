@@ -123,9 +123,36 @@ RSpec.describe Onelink::Mcp::OpenapiCatalog do
       end
 
       result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 12 })
-
       expect(result[:isError]).to be(false)
+      expect(result[:structuredContent]).to eq('resource' => { 'id' => 12 })
       expect(Rack::MiniProfiler.current).to equal(profiler_context)
+    end
+
+    it 'returns structured content for parsed non-2xx Rails API responses' do
+      response_body = ['{"error":"Resource could not be found"}']
+
+      allow(Rails.application).to receive(:call).and_return(
+        [404, { 'Content-Type' => 'application/json' }, response_body]
+      )
+
+      result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 404 })
+
+      expect(result[:isError]).to be(true)
+      expect(result[:structuredContent]).to eq('error' => 'Resource could not be found')
+      expect(result.dig(:content, 0, :text)).to include('Resource could not be found')
+    end
+
+    it 'normalizes raised ActiveRecord not found errors without leaking model internals' do
+      allow(Rails.application).to receive(:call).and_raise(
+        ActiveRecord::RecordNotFound, "Couldn't find AutomationRule with 'id'=404"
+      )
+
+      result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 404 })
+
+      expect(result[:isError]).to be(true)
+      expect(result[:structuredContent]).to include(code: 'not_found', message: 'Resource could not be found')
+      expect(result.dig(:content, 0, :text)).not_to include('ActiveRecord::RecordNotFound')
+      expect(result.dig(:content, 0, :text)).not_to include('AutomationRule')
     end
 
     context 'when a mutating OpenAPI tool is enabled' do

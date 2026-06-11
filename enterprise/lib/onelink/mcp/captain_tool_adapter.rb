@@ -41,7 +41,13 @@ module Onelink
 
         execution_arguments = sanitized_arguments(arguments)
         tool = build_tool(tool_definition, arguments: execution_arguments, meta: meta)
-        return error_tool_response("Tool '#{name}' is not active for this workspace") if tool.blank? || !tool.active?
+        if tool.blank? || !tool.active?
+          return error_tool_response(
+            "Tool '#{name}' is not active for this workspace",
+            code: 'not_active',
+            tool: name.to_s
+          )
+        end
 
         result = execute_tool(tool, execution_arguments)
         audit_captain_tool_call(tool_definition: tool_definition, arguments: execution_arguments, result: result)
@@ -54,7 +60,7 @@ module Onelink
         Rails.logger.warn do
           "#{self.class.name} failed account=#{auth_context.account.id} user=#{auth_context.user.id} tool=#{name}: #{e.class} #{e.message}"
         end
-        error_tool_response(redact_value("#{e.class.name}: #{e.message}").to_s)
+        exception_tool_response(e)
       end
 
       private
@@ -451,8 +457,19 @@ module Onelink
         nil
       end
 
-      def error_tool_response(message)
-        {
+      def exception_tool_response(error)
+        case error
+        when ActiveRecord::RecordNotFound
+          error_tool_response('Resource could not be found', code: 'not_found')
+        when ArgumentError
+          error_tool_response(redact_value(error.message).to_s, code: 'invalid_request')
+        else
+          error_tool_response('Captain tool execution failed', code: 'execution_failed')
+        end
+      end
+
+      def error_tool_response(message, code: nil, **details)
+        payload = {
           content: [
             {
               type: 'text',
@@ -461,6 +478,12 @@ module Onelink
           ],
           isError: true
         }
+        return payload if code.blank?
+
+        structured_content = { code: code.to_s, message: message.to_s }.merge(details.compact)
+        payload[:structuredContent] = structured_content
+        payload[:content].first[:text] = JSON.pretty_generate(redact_value(structured_content))
+        payload
       end
     end
   end

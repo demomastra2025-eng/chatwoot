@@ -1,0 +1,249 @@
+tool,source,risk,mutation_like,required_params,param_count,invoked,confirm_gate,grade,notes
+add_appointment_payment,captain,high,true,payment_method;_confirm,3,yes,pass,A,no-confirm gate OK
+add_contact_note,captain,medium,true,note;_confirm,2,yes,pass,A,no-confirm gate OK
+add_deal_comment,captain,medium,true,body;_confirm,2,yes,pass,A,no-confirm gate OK
+add_label_to_conversation,captain,medium,true,label_name;_confirm,3,yes,pass,A,no-confirm gate OK
+add_private_note,captain,medium,true,note;_confirm,3,yes,pass,A,no-confirm gate OK
+add_task_comment,captain,medium,true,body;_confirm,2,yes,pass,A,no-confirm gate OK
+api__add_new_agent_to_account,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_agent_to_inbox,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_agent_to_team,openapi,high,true,team_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_article_to_account,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_automation_rule_to_account,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_canned_response_to_account,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_category_to_account,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_custom_attribute_to_account,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__add_new_portal_to_account,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__assign_a_conversation,openapi,medium,true,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__cancel_scheduling_appointment,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__cancel_scheduling_appointment_payments,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contact_add_labels,openapi,medium,false,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactableinboxesget,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactconversations,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactcreate,openapi,medium,false,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactdelete,openapi,high,false,id;_confirm,3,yes,pass,C,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name; cleanup lifecycle failure when contact has linked conversation/CRM/scheduling artifacts
+api__contactdetails,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactfilter,openapi,medium,false,body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactinboxcreation,openapi,high,false,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactlist,openapi,low,false,,2,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactmerge,openapi,medium,false,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactsearch,openapi,low,false,,3,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__contactupdate,openapi,medium,false,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__conversation_add_labels,openapi,medium,false,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__conversationfilter,openapi,medium,false,body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__conversationlist,openapi,low,false,,7,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__conversationlistmeta,openapi,low,false,,5,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_a_custom_filter,openapi,medium,true,body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_a_label,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_a_new_message_in_a_conversation,openapi,high,true,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_a_team,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_a_webhook,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name; duplicate-url validation returned localized message; okay but not machine-coded
+api__create_an_account_agent_bot,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_an_integration_hook,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_crm_field_definition,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_appointment,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_appointment_payment,openapi,high,true,appointment_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_contact,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_holiday,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_resource,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_service,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_time_off,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__create_scheduling_workday_override,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_a_custom_filter,openapi,high,true,custom_filter_id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_a_label,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_a_message,openapi,high,true,conversation_id;message_id;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_a_team,openapi,high,true,team_id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_a_webhook,openapi,high,true,webhook_id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_agent_from_account,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_agent_in_inbox,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_agent_in_team,openapi,high,true,team_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_an_account_agent_bot,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_an_integration_hook,openapi,high,true,hook_id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_automation_rule_from_account,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_canned_response_from_account,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_crm_field_definition,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_custom_attribute_from_account,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_scheduling_holiday,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_scheduling_resource,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_scheduling_service,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_scheduling_time_off,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__delete_scheduling_workday_override,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__destroy_custom_attributes_of_a_conversation,openapi,high,false,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__disconnectwhatsappweb,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_account_agents,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_account_audit_logs,openapi,low,false,,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_account_automation_rule,openapi,low,false,,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_account_canned_response,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_account_custom_attribute,openapi,low,false,attribute_model,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_account_details,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_account_reporting_events,openapi,low,false,,6,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_conversation_reporting_events,openapi,low,false,conversation_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_details_of_a_conversation,openapi,low,false,conversation_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_details_of_a_single_account_agent_bot,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_details_of_a_single_automation_rule,openapi,low,false,id,1,yes,n/a,D,OpenAPI fallback; functional but less native naming; generated-openapi-name; 500 Internal Server Error for missing automation rule
+api__get_details_of_a_single_custom_attribute,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_details_of_a_single_custom_filter,openapi,low,false,custom_filter_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_details_of_a_single_label,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_details_of_a_single_team,openapi,low,false,team_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_details_of_all_integrations,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_inbox_members,openapi,low,false,inbox_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_portal,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_scheduling_appointment,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_scheduling_break_rules,openapi,low,false,resource_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_scheduling_calendar,openapi,low,false,from;to,7,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_scheduling_resource,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_scheduling_service,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_scheduling_work_rules,openapi,low,false,resource_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__get_team_members,openapi,low,false,team_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__getinbox,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__getinboxagentbot,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__inboxcreation,openapi,high,false,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_account_agent_bots,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_filters,openapi,low,false,,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_labels,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_labels_of_a_contact,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_labels_of_a_conversation,openapi,low,false,conversation_id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_messages,openapi,low,false,conversation_id,3,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_teams,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_all_webhooks,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_crm_field_definitions,openapi,low,false,,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_appointments,openapi,low,false,,6,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_contacts,openapi,low,false,,2,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_expenses,openapi,low,false,,4,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_holidays,openapi,low,false,,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_payments,openapi,low,false,,5,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_resources,openapi,low,false,,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_services,openapi,low,false,,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_time_offs,openapi,low,false,,3,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__list_scheduling_workday_overrides,openapi,low,false,,3,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__listallinboxes,openapi,low,false,,0,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__newconversation,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__pay_all_scheduling_expenses,openapi,medium,true,_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__pay_scheduling_expense,openapi,medium,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__reconnectwhatsappweb,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__refreshwhatsappwebqr,openapi,high,true,id;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__repairwhatsappweb,openapi,high,true,id;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__toggle_priority_of_a_conversation,openapi,medium,true,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__toggle_status_of_a_conversation,openapi,medium,true,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__toggle_typing_status_of_a_conversation,openapi,medium,true,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_a_custom_filter,openapi,medium,true,custom_filter_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_a_label,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_a_team,openapi,high,true,team_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_a_webhook,openapi,high,true,webhook_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_account,openapi,medium,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_agent_in_account,openapi,high,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_agents_in_inbox,openapi,high,true,body;_confirm,3,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_agents_in_team,openapi,high,true,team_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_an_account_agent_bot,openapi,high,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_an_integrations_hook,openapi,medium,true,hook_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_automation_rule_in_account,openapi,high,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_canned_response_in_account,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_conversation,openapi,medium,true,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_crm_field_definition,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_custom_attribute_in_account,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_custom_attributes_of_a_conversation,openapi,medium,true,conversation_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_portal_to_account,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_appointment,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_break_rules,openapi,medium,true,resource_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_contact,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_holiday,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_resource,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_service,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_time_off,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_work_rules,openapi,medium,true,resource_id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__update_scheduling_workday_override,openapi,medium,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__updateagentbot,openapi,high,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__updateinbox,openapi,high,true,id;body;_confirm,4,yes,pass,B,no-confirm gate OK; OpenAPI fallback; functional but less native naming; generated-openapi-name
+api__whatsappwebdiagnostics,openapi,low,false,id,1,yes,n/a,B,OpenAPI fallback; functional but less native naming; generated-openapi-name
+apply_touch_plan,captain,high,true,_confirm,4,yes,pass,A,no-confirm gate OK
+archive_touch_plan,captain,high,true,_confirm,3,yes,pass,A,no-confirm gate OK
+assign_conversation,captain,medium,true,conversation_id;_confirm,5,yes,pass,A,no-confirm gate OK
+cancel_appointment,captain,high,true,_confirm,1,yes,pass,A,no-confirm gate OK
+cancel_response,captain,low,true,,1,yes,n/a,C,exposed-but-inactive/not-active
+cancel_touch,captain,high,true,touch_id;_confirm,3,yes,pass,A,no-confirm gate OK
+cancel_touches,captain,high,true,_confirm,5,yes,pass,A,no-confirm gate OK
+change_task_status,captain,high,true,_confirm,4,yes,pass,A,no-confirm gate OK
+complete_task,captain,medium,true,task_id;_confirm,2,yes,pass,A,no-confirm gate OK
+create_appointment,captain,high,true,resource_id;starts_at;_confirm,9,yes,pass,A,no-confirm gate OK
+create_canned_response,captain,high,true,short_code;content;_confirm,3,yes,pass,A,no-confirm gate OK
+create_company,captain,high,true,name;_confirm,4,yes,pass,C,no-confirm gate OK; exposed-but-inactive/not-active
+create_contact,captain,medium,true,_confirm,8,yes,pass,A,no-confirm gate OK
+create_deal,captain,high,true,title;_confirm,13,yes,pass,A,no-confirm gate OK
+create_label,captain,medium,true,title;_confirm,5,yes,pass,A,no-confirm gate OK
+create_task,captain,high,true,title;_confirm,12,yes,pass,A,no-confirm gate OK
+create_touch,captain,high,true,relative_offset_minutes;_confirm,12,yes,pass,A,no-confirm gate OK
+create_touch_plan,captain,high,true,name;touches;_confirm,5,yes,pass,A,no-confirm gate OK
+create_webhook,captain,high,true,url;subscriptions;_confirm,5,yes,pass,A,no-confirm gate OK
+delete_touch,captain,high,true,touch_id;_confirm,2,yes,pass,A,no-confirm gate OK
+edit_message,captain,high,true,message_id;content;_confirm,3,yes,pass,A,no-confirm gate OK
+execute_macro,captain,high,true,macro_id;_confirm,3,yes,pass,A,no-confirm gate OK
+faq_lookup,captain,low,false,query,1,yes,n/a,C,slow-knowledge-path-13s
+get_account_health,captain,low,false,,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_appointment,captain,low,false,appointment_id,1,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_article,captain,low,false,article_id,1,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_campaign_analytics,captain,low,false,campaign_id,1,yes,n/a,C,raw ActiveRecord::RecordNotFound for missing campaign
+get_channel_health,captain,low,false,,4,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_company,captain,low,false,company_id,1,yes,n/a,A,short-description
+get_contact,captain,low,false,contact_id,1,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_conversation,captain,low,false,conversation_id,1,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_deal,captain,low,false,deal_id,1,yes,n/a,A,short-description
+get_deal_timeline,captain,low,false,deal_id,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_kaspi_pay_integration_status,captain,low,false,,0,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_recent_account_errors,captain,low,false,,5,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_scheduling_resource_availability,captain,low,false,resource_id;from;to,6,yes,n/a,A,raw Specialist not found for invalid/missing resource
+get_scheduling_resource_schedule,captain,low,false,resource_id;from;to,6,yes,n/a,A,raw Specialist not found for invalid/missing resource
+get_task,captain,low,false,task_id,1,yes,n/a,A,short-description
+get_task_timeline,captain,low,false,task_id,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_tool_execution_log,captain,low,false,,6,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+get_whatsapp_web_diagnostics,captain,low,false,inbox_id,1,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+handoff,captain,medium,true,_confirm,2,yes,pass,A,no-confirm gate OK
+list_account_users,captain,low,false,,4,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_appointment_custom_fields,captain,low,false,,0,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_campaigns,captain,low,false,,4,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_captain_documents,captain,low,false,,3,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_channel_templates,captain,low,false,,6,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_deal_custom_fields,captain,low,false,,0,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_deal_pipelines,captain,low,false,,1,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_deal_stages,captain,low,false,,5,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_scheduling_resources,captain,low,false,,3,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_task_custom_fields,captain,low,false,,0,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+list_teams,captain,low,false,,3,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+merge_contacts,captain,high,true,base_contact_id;mergee_contact_id;_confirm,3,yes,pass,A,no-confirm gate OK
+preview_campaign,captain,low,false,inbox_id;audience,7,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+reconnect_whatsapp_web,captain,medium,true,inbox_id;_confirm,2,yes,pass,A,no-confirm gate OK
+remove_label_from_conversation,captain,medium,true,label_name;_confirm,3,yes,pass,A,no-confirm gate OK
+request_confirmation,captain,high,false,title;body;_confirm,9,yes,pass,C,no-confirm gate OK; raw ActiveRecord not_found in one fixture context; real-case request passed but output filtered; payload fully filtered; safe confirmation_request_id not exposed for chaining
+resolve_confirmation,captain,high,true,confirmation_request_id;decision;source;_confirm,6,yes,pass,A,no-confirm gate OK
+resolve_conversation,captain,medium,true,_confirm,2,yes,pass,A,no-confirm gate OK
+retry_failed_campaign_deliveries,captain,high,true,campaign_id;_confirm,2,yes,pass,A,no-confirm gate OK
+retry_failed_message,captain,high,true,message_id;_confirm,2,yes,pass,A,no-confirm gate OK
+search_appointments,captain,low,false,,8,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_articles,captain,low,false,,4,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_available_slots,captain,low,false,from;to,6,yes,n/a,C,date-range validation string; should be structured error
+search_canned_responses,captain,low,false,,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_companies,captain,low,false,,3,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_contacts,captain,low,false,,4,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_conversations,captain,low,false,,5,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_deals,captain,low,false,,11,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_documentation,captain,low,false,query,1,yes,n/a,C,slow-knowledge-path-13s
+search_linear_issues,captain,low,false,term,2,yes,n/a,C,exposed-but-inactive/not-active
+search_scheduling_resources,captain,low,false,,5,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_scheduling_services,captain,low,false,,3,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+search_tasks,captain,low,false,,7,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+send_kaspi_pay_phone,captain,medium,true,process_id;phone_number;_confirm,3,yes,pass,A,no-confirm gate OK
+send_message_to_conversation,captain,high,true,_confirm,13,yes,pass,A,no-confirm gate OK
+send_notification,captain,medium,true,message;_confirm,8,yes,pass,A,no-confirm gate OK
+start_kaspi_pay_connection,captain,medium,true,_confirm,1,yes,pass,A,no-confirm gate OK
+trace_ai_response,captain,low,false,,8,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+trace_message_delivery,captain,low,false,conversation_id,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+transition_deal_stage,captain,high,false,_confirm,7,yes,pass,A,no-confirm gate OK
+translate_message,captain,low,false,message_id;target_language,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
+update_appointment,captain,high,true,_confirm,9,yes,pass,A,no-confirm gate OK
+update_company,captain,medium,true,_confirm,4,yes,pass,A,no-confirm gate OK
+update_contact,captain,medium,true,_confirm,6,yes,pass,C,no-confirm gate OK; exposed-but-inactive/not-active
+update_deal,captain,medium,true,_confirm,14,yes,pass,A,no-confirm gate OK
+update_label,captain,medium,true,label_id;_confirm,6,yes,pass,A,no-confirm gate OK
+update_priority,captain,medium,true,priority;_confirm,2,yes,pass,C,no-confirm gate OK; exposed-but-inactive/not-active
+update_task,captain,medium,true,_confirm,7,yes,pass,A,no-confirm gate OK
+update_webhook,captain,high,true,webhook_id;_confirm,6,yes,pass,A,no-confirm gate OK
+verify_kaspi_pay_otp,captain,high,true,process_id;otp;_confirm,7,yes,pass,A,no-confirm gate OK

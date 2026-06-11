@@ -392,6 +392,8 @@ class Llm::OpenRouterRuntime
       routing_profile: routing_profile_name(profile, provider),
       openrouter_provider_order: Array(provider[:order]).presence,
       openrouter_provider_sort: provider_sort(provider),
+      openrouter_preferred_max_latency: provider[:preferred_max_latency],
+      openrouter_preferred_min_throughput: provider[:preferred_min_throughput],
       openrouter_allow_fallbacks: provider[:allow_fallbacks],
       openrouter_require_parameters: provider[:require_parameters],
       openrouter_data_collection: provider[:data_collection],

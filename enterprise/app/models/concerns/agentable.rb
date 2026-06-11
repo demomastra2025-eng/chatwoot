@@ -5,17 +5,17 @@ module Concerns::Agentable
     Captain::Runtime::Agent.new(
       name: agent_name,
       instructions: ->(context) { agent_instructions(context) },
-      tools: agent_tools,
-      model: agent_model,
-      temperature: agent_temperature,
-      response_schema: agent_response_schema
+      tools: time_agent_phase('agent_tools') { agent_tools },
+      model: time_agent_phase('agent_model') { agent_model },
+      temperature: time_agent_phase('agent_temperature') { agent_temperature },
+      response_schema: time_agent_phase('agent_response_schema') { agent_response_schema }
     )
   end
 
   def agent_instructions(context = nil)
     state = context&.context&.[](:state) || {}
     prompt_state = state[:prompt_context] || {}
-    enhanced_context = prompt_context.merge(default_prompt_runtime_context)
+    enhanced_context = time_agent_phase('prompt_context') { prompt_context }.merge(default_prompt_runtime_context)
 
     if state.present?
       explicit_prompt_context = state.key?(:prompt_context)
@@ -60,9 +60,13 @@ module Concerns::Agentable
       )
     end
 
-    enhanced_context = resolve_runtime_prompt_context(enhanced_context, prompt_state) if respond_to?(:resolve_runtime_prompt_context, true)
+    if respond_to?(:resolve_runtime_prompt_context, true)
+      enhanced_context = time_agent_phase('resolve_runtime_prompt_context') do
+        resolve_runtime_prompt_context(enhanced_context, prompt_state)
+      end
+    end
 
-    Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access)
+    time_agent_phase('prompt_render') { Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access) }
   end
 
   private
@@ -161,5 +165,18 @@ module Concerns::Agentable
       end
 
     Captain::ContextFields.custom_attribute_label_maps_for_definitions(definitions)
+  end
+
+  def time_agent_phase(name)
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    yield
+  ensure
+    duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    if duration_ms >= 250
+      Rails.logger.info(
+        "[CAPTAIN][Timing] record=#{self.class.name} id=#{respond_to?(:id) ? id : nil} " \
+        "phase=#{name} duration_ms=#{duration_ms}"
+      )
+    end
   end
 end

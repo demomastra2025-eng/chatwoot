@@ -199,6 +199,44 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(payload['matches'].first).to include('answer' => 'Click forgot password')
   end
 
+  it 'uses a total lookup budget around cache and semantic lookup' do
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::TOTAL_LOOKUP_TIMEOUT_SECONDS, described_class::TotalLookupTimeout)
+      .and_raise(described_class::TotalLookupTimeout, 'execution expired')
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'lookup_timeout',
+      'match_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Click forgot password')
+  end
+
+  it 'falls back to lexical document chunks when semantic lookup is unavailable' do
+    chunk_only_document = create(:captain_document, account: account, assistant: assistant)
+    chunk_only = chunk_only_document.document_chunks.create!(
+      account: account,
+      assistant: assistant,
+      chunk_index: 0,
+      content: 'Chunkonly recovery source'
+    )
+    allow(Captain::DocumentChunk).to receive(:search)
+      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'chunkonly'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload.dig('retrieval_trace', 'document_chunk_ids')).to contain_exactly(chunk_only.id)
+    expect(payload['matches'].first).to include(
+      'type' => 'document_chunk',
+      'answer' => 'Chunkonly recovery source'
+    )
+  end
+
   it 'can skip semantic lookup for realtime voice calls' do
     expect(Captain::DocumentChunk).not_to receive(:search)
 

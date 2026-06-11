@@ -50,9 +50,11 @@ RSpec.describe Llm::OpenRouterRuntime do
           provider: 'openrouter',
           feature: 'captain_agent',
           requested_model: 'openai/gpt-5.4-mini',
-          routing_profile: 'balanced',
+          routing_profile: 'latency',
           openrouter_allow_fallbacks: true,
           openrouter_require_parameters: true,
+          openrouter_provider_sort: 'latency',
+          openrouter_preferred_max_latency: { p90: 3 },
           openrouter_plugins: ['response-healing'],
           openrouter_cache_policy: 'session'
         )
@@ -113,12 +115,12 @@ RSpec.describe Llm::OpenRouterRuntime do
         observability: hash_including(
           provider: 'openrouter',
           requested_model: 'openai/gpt-5.4-mini',
-          routing_profile: 'balanced',
+          routing_profile: 'latency',
           openrouter_require_parameters: true
         ),
         routing_metadata: hash_including(
           requested_model: 'openai/gpt-5.4-mini',
-          routing_profile: 'balanced',
+          routing_profile: 'latency',
           openrouter_require_parameters: true
         ),
         params: hash_including(

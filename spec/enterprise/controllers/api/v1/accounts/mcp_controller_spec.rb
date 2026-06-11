@@ -364,6 +364,22 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(json_response.dig(:result, :structuredContent, :users).length).to eq(1)
     end
 
+    it 'returns structured errors for OpenAPI fallback not-found responses' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-openapi-not-found-1',
+             method: 'tools/call',
+             params: { name: 'api__get_details_of_a_single_automation_rule', arguments: { id: 999_999 } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(true)
+      expect(json_response.dig(:result, :structuredContent)).to include(error: 'Resource could not be found')
+      expect(response.body).not_to include('Internal Server Error')
+      expect(response.body).not_to include('AutomationRule')
+    end
+
     it 'honors explicit assistant tool IDs even when the registry tool is not selected by default' do
       assistant.update!(
         config: {

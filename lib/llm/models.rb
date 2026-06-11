@@ -144,10 +144,40 @@ module Llm::Models
       models_for(feature, account: account).include?(canonical_model_name(model_name))
     end
 
+    def model_allowed_for_feature?(feature, model_name, account: nil, runtime_filtered: true)
+      feature_key = feature.to_s
+      canonical_name = canonical_model_name(model_name)
+      return false if feature_key.blank? || canonical_name.blank?
+
+      model_config = model_config(canonical_name, account: account)
+      return false if model_config.blank?
+
+      if configured_static_model_for_feature?(feature_key, canonical_name)
+        return model_config_allowed_for_feature?(
+          feature_key,
+          model_config,
+          account: account,
+          runtime_filtered: runtime_filtered
+        )
+      end
+
+      return false unless openrouter_only_feature?(feature_key)
+      return false unless openrouter_catalog_enabled?(account: account)
+      return false unless provider_for(canonical_name, account: account) == OPENROUTER_PROVIDER
+
+      dynamic_model_allowed_for_feature?(
+        feature_key,
+        model_config,
+        required_capabilities_for(feature_key),
+        account: account,
+        runtime_preferences: runtime_preferences_for(account),
+        runtime_filtered: runtime_filtered,
+        model_id: canonical_name
+      )
+    end
+
     def configured_model_for_feature?(feature, model_name, account: nil)
-      Array(CONFIG.dig('features', feature.to_s, 'models'))
-        .map { |configured_model| canonical_model_name(configured_model) }
-        .include?(canonical_model_name(model_name)) &&
+      configured_static_model_for_feature?(feature.to_s, model_name) &&
         model_config_allowed_for_feature?(feature.to_s, model_config(model_name, account: account), account: account)
     end
 
@@ -363,6 +393,12 @@ module Llm::Models
       return {} unless openrouter_catalog_enabled?(account: account)
 
       Llm::OpenRouterModelCatalog.model_configs
+    end
+
+    def configured_static_model_for_feature?(feature_key, model_name)
+      Array(CONFIG.dig('features', feature_key.to_s, 'models'))
+        .map { |configured_model| canonical_model_name(configured_model) }
+        .include?(canonical_model_name(model_name))
     end
 
     def account_static_models_for_feature(feature_key, static_models, account, runtime_filtered: true)

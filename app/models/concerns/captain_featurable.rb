@@ -150,7 +150,7 @@ module CaptainFeaturable
 
     migrated_model = Llm::OpenRouterModelMigration.resolve(model_name, feature: feature_key, account: self)
     candidate = migrated_model.presence || Llm::Models.canonical_model_name(model_name)
-    return candidate if Llm::Models.valid_model_for?(feature_key, candidate, account: self)
+    return candidate if Llm::Models.model_allowed_for_feature?(feature_key, candidate, account: self)
     return candidate if Llm::Models.configured_model_for_feature?(feature_key, candidate, account: self)
   end
 end

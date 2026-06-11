@@ -89,6 +89,7 @@ RSpec.describe Captain::Tools::SearchDocumentationService do
       answer: 'Bounded timeout fallback answer',
       status: :approved
     )
+    allow(Timeout).to receive(:timeout).and_call_original
     expect(Timeout).to receive(:timeout)
       .with(described_class::SEMANTIC_LOOKUP_TIMEOUT_SECONDS)
       .and_raise(Timeout::Error, 'execution expired')
@@ -97,5 +98,76 @@ RSpec.describe Captain::Tools::SearchDocumentationService do
 
     expect(result).to include('Bounded timeout fallback answer')
     expect(result).not_to include('temporarily unavailable')
+  end
+
+  it 'returns structured degraded metadata when semantic documentation lookup times out' do
+    create(
+      :captain_assistant_response,
+      assistant: assistant,
+      account: account,
+      question: 'visibilityscope structured timeout',
+      answer: 'Structured timeout fallback answer',
+      status: :approved
+    )
+    allow(Captain::DocumentChunk).to receive(:search).and_raise(Timeout::Error, 'execution expired')
+
+    payload = JSON.parse(service.execute(query: 'visibilityscope'))
+
+    expect(payload).to include(
+      'query' => 'visibilityscope',
+      'translated_query' => 'visibilityscope',
+      'lookup_strategy' => 'lexical',
+      'total_count' => 1
+    )
+    expect(payload['matches'].first).to include('answer' => 'Structured timeout fallback answer')
+    expect(payload['retrieval_trace']).to include(
+      'strategy' => 'lexical',
+      'degraded' => true,
+      'semantic_attempted' => true,
+      'fallback_reason' => 'semantic_timeout',
+      'match_count' => 1
+    )
+  end
+
+  it 'falls back to lexical document chunk matches when embeddings are unavailable' do
+    document = create(:captain_document, account: account, assistant: assistant)
+    chunk = document.document_chunks.create!(
+      account: account,
+      assistant: assistant,
+      chunk_index: 0,
+      content: 'Chunkonly troubleshooting guide'
+    )
+    allow(Captain::DocumentChunk).to receive(:search)
+      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
+
+    payload = JSON.parse(service.execute(query: 'chunkonly'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload.dig('retrieval_trace', 'document_chunk_ids')).to contain_exactly(chunk.id)
+    expect(payload['matches'].first).to include(
+      'type' => 'document_chunk',
+      'answer' => 'Chunkonly troubleshooting guide'
+    )
+  end
+
+  it 'uses a total lookup budget around translation and semantic lookup' do
+    create(
+      :captain_assistant_response,
+      assistant: assistant,
+      account: account,
+      question: 'visibilityscope total timeout',
+      answer: 'Total timeout fallback answer',
+      status: :approved
+    )
+    allow(Timeout).to receive(:timeout).and_call_original
+    expect(Timeout).to receive(:timeout)
+      .with(described_class::TOTAL_LOOKUP_TIMEOUT_SECONDS, described_class::TotalLookupTimeout)
+      .and_raise(described_class::TotalLookupTimeout, 'execution expired')
+
+    payload = JSON.parse(service.execute(query: 'visibilityscope'))
+
+    expect(payload['lookup_strategy']).to eq('lexical')
+    expect(payload['retrieval_trace']).to include('degraded' => true, 'fallback_reason' => 'lookup_timeout')
+    expect(payload['matches'].first).to include('answer' => 'Total timeout fallback answer')
   end
 end

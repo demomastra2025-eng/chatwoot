@@ -322,7 +322,7 @@ module Llm::Config
     end
 
     def feature_model_allowed?(feature_key, model_name, account: nil)
-      return true if Llm::Models.valid_model_for?(feature_key, model_name, account: account)
+      return true if Llm::Models.model_allowed_for_feature?(feature_key, model_name, account: account)
       return false if feature_key.to_s == 'help_center_search' && Llm::Models.openrouter_no_fallback_active_for?(feature_key, account: account)
 
       Llm::Models.configured_model_for_feature?(feature_key, model_name, account: account)

@@ -7,6 +7,7 @@ class Llm::OpenRouterRequestCompiler
     quantizations sort preferred_min_throughput preferred_max_latency max_price
   ].freeze
   CALLER_PROVIDER_CONTROL_KEYS = %w[require_parameters allow_fallbacks data_collection zdr sort].freeze
+  ROUTING_SENSITIVE_OPTIONAL_PARAMS = %w[parallel_tool_calls].freeze
 
   Compiled = Struct.new(:model, :models, :params, :headers, :native_endpoint, :metadata, keyword_init: true)
 
@@ -62,21 +63,21 @@ class Llm::OpenRouterRequestCompiler
       privacy_profile: feature_policy.privacy_profile,
       trace_capture_allowed: feature_policy.workspace_policy&.trace_capture_allowed?
     )
-    metadata = compiled_metadata(
-      profile: profile,
-      feature_policy: feature_policy,
-      models: models,
-      provider_params: provider_params,
-      extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan },
-      header_metadata: header_result.metadata
-    )
-
     apply_request_params!(params)
+    suppressed_params = suppress_non_routable_optional_params!(params, models, provider_params)
     apply_feature_policy_params!(params, feature_policy)
     params[:models] = models if models.present?
     params[:provider] = provider_params if provider_params.present?
     params[:plugins] = plugins if plugins.present?
     apply_server_tools!(params, server_tools)
+    metadata = compiled_metadata(
+      profile: profile,
+      feature_policy: feature_policy,
+      models: models,
+      provider_params: provider_params,
+      extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan, suppressed_params: suppressed_params },
+      header_metadata: header_result.metadata
+    )
 
     Compiled.new(
       model: @model,
@@ -272,6 +273,8 @@ class Llm::OpenRouterRequestCompiler
       routing_profile: routing_profile_name(profile, provider_params),
       openrouter_provider_order: Array(provider_params[:order]).presence,
       openrouter_provider_sort: provider_sort(provider_params),
+      openrouter_preferred_max_latency: provider_params[:preferred_max_latency],
+      openrouter_preferred_min_throughput: provider_params[:preferred_min_throughput],
       openrouter_allow_fallbacks: provider_params[:allow_fallbacks],
       openrouter_require_parameters: provider_params[:require_parameters],
       openrouter_data_collection: provider_params[:data_collection],
@@ -285,7 +288,8 @@ class Llm::OpenRouterRequestCompiler
       openrouter_cache_policy: feature_policy.cache_policy,
       openrouter_plugin_policy: feature_policy.plugin_policy,
       openrouter_transform_policy: feature_policy.transform_policy,
-      openrouter_budget_policy: feature_policy.budget_policy
+      openrouter_budget_policy: feature_policy.budget_policy,
+      openrouter_suppressed_params: extensions[:suppressed_params].presence
     }.merge(extensions[:transform_plan]&.to_metadata || {}).merge(header_metadata || {}).compact
   end
 
@@ -346,6 +350,40 @@ class Llm::OpenRouterRequestCompiler
 
   def requires_parameters?(profile_preferences)
     profile_preferences[:require_parameters] == true || schema_request? || tool_flow? || reasoning_request?
+  end
+
+  def suppress_non_routable_optional_params!(params, models, provider_params)
+    return [] unless provider_params[:require_parameters] == true
+
+    ROUTING_SENSITIVE_OPTIONAL_PARAMS.filter_map do |param|
+      next unless false_param?(params, param)
+      next if parameter_supported_by_any_endpoint?(models, param)
+
+      delete_param!(params, param)
+      param
+    end
+  end
+
+  def false_param?(params, key)
+    params[key.to_sym] == false || params[key.to_s] == false
+  end
+
+  def delete_param!(params, key)
+    params.delete(key.to_sym)
+    params.delete(key.to_s)
+  end
+
+  def parameter_supported_by_any_endpoint?(models, parameter)
+    endpoints = Array(models).flat_map do |model|
+      Llm::OpenRouterEndpointCatalog.endpoints_for(model)
+    end
+    return true if endpoints.blank?
+
+    endpoints.any? do |endpoint|
+      Array(endpoint['supported_parameters']).map(&:to_s).include?(parameter.to_s)
+    end
+  rescue StandardError
+    true
   end
 
   def schema_request?

@@ -4,7 +4,7 @@ require 'rails_helper'
 
 RSpec.describe Llm::OpenRouterRoutingProfile do
   describe '.for' do
-    it 'builds a tool-safe Captain agent routing profile without price sorting' do
+    it 'builds a tool-safe low-latency Captain agent routing profile' do
       profile = described_class.for(feature: :captain_agent, model: 'moonshotai/kimi-k2.6')
 
       expect(profile.feature_key).to eq('captain_agent')
@@ -12,9 +12,10 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(profile.provider_preferences).to include(
         require_parameters: true,
         allow_fallbacks: true,
-        data_collection: 'deny'
+        data_collection: 'deny',
+        sort: { by: 'latency', partition: 'none' },
+        preferred_max_latency: { p90: 3 }
       )
-      expect(profile.provider_preferences).not_to include(:sort)
       expect(profile.to_h).to include(
         models: profile.models,
         provider: profile.provider_preferences
@@ -147,6 +148,7 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
 
       expect(exacto_profile.provider_preferences).not_to include(:order)
       expect(exacto_profile.provider_preferences).to include(allow_fallbacks: true)
+      expect(exacto_profile.provider_preferences).to include(sort: { by: 'latency', partition: 'none' })
       expect(auto_exacto_profile.provider_preferences).not_to include(:order)
       expect(auto_exacto_profile.provider_preferences).to include(sort: { by: 'latency', partition: 'none' })
     end

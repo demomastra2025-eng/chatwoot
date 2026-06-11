@@ -265,6 +265,38 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
+  it 'blocks a second mutating tool call in the same assistant tool-call batch' do
+    mutating_tool = ToolWrapperSpecMutatingTool.new
+    mutating_wrapper = described_class.new(mutating_tool, context_wrapper)
+    context_wrapper.context[:captain_v2_current_tool_batch_id] = 'batch-1'
+    context_wrapper.context[:captain_v2_mutating_tool_calls_by_batch] = { 'batch-1' => [] }
+
+    first_result = mutating_wrapper.call(title: 'Premium lead')
+    second_result = mutating_wrapper.call(title: 'Enterprise lead')
+
+    expect(JSON.parse(first_result)).to include('message' => 'created Premium lead')
+    expect(second_result).to eq('ERROR: Only one action tool can run per assistant tool-call batch')
+    expect(mutating_tool.calls).to eq(1)
+    expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_mutating_spec'])
+    expect(events.last[2]).to include(
+      success: false,
+      error: 'Only one action tool can run per assistant tool-call batch',
+      retryable: false
+    )
+  end
+
+  it 'allows repeated read-only tool calls in the same assistant tool-call batch' do
+    read_only_tool = ToolWrapperSpecReadOnlyTool.new
+    read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
+    context_wrapper.context[:captain_v2_current_tool_batch_id] = 'batch-1'
+    context_wrapper.context[:captain_v2_mutating_tool_calls_by_batch] = { 'batch-1' => [] }
+
+    read_only_wrapper.call(result: 'lookup one')
+    read_only_wrapper.call(result: 'lookup two')
+
+    expect(read_only_tool.calls).to eq(2)
+  end
+
   it 'does not cache read-only tool calls that can safely execute repeatedly' do
     read_only_tool = ToolWrapperSpecReadOnlyTool.new
     read_only_wrapper = described_class.new(read_only_tool, context_wrapper)

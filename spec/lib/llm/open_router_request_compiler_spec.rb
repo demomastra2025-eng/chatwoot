@@ -78,15 +78,17 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     expect(compiled.params[:provider]).not_to include('allow_fallbacks')
     expect(compiled.params[:provider]).not_to include('data_collection')
     expect(compiled.params[:provider]).not_to include('sort')
-    expect(compiled.params[:provider]).not_to include(:sort)
+    expect(compiled.params[:provider]).to include(sort: { by: 'latency', partition: 'none' })
     expect(compiled.params[:plugins].count { |plugin| plugin[:id] == 'response-healing' || plugin['id'] == 'response-healing' }).to eq(1)
     expect(compiled.params[:plugins]).not_to include({ id: 'web' })
     expect(compiled.metadata).to include(
       requested_model: 'moonshotai/kimi-k2.6',
-      routing_profile: 'balanced',
+      routing_profile: 'latency',
       openrouter_allow_fallbacks: true,
       openrouter_require_parameters: true,
       openrouter_data_collection: 'deny',
+      openrouter_preferred_max_latency: { p90: 3 },
+      openrouter_provider_sort: 'latency',
       openrouter_plugins: ['response-healing'],
       openrouter_cache_policy: 'session',
       openrouter_plugin_policy: 'structured_output_and_overflow_only'
@@ -325,6 +327,46 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       require_parameters: true,
       data_collection: 'deny'
     )
+  end
+
+  it 'suppresses false optional routing params that no selected endpoint supports under require_parameters' do
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+      [
+        {
+          'supported_parameters' => %w[tools tool_choice response_format structured_outputs]
+        }
+      ]
+    )
+
+    compiled = compile(
+      feature: :captain_agent,
+      tools: true,
+      schema: true,
+      base_params: { parallel_tool_calls: false }
+    )
+
+    expect(compiled.params).not_to include(:parallel_tool_calls)
+    expect(compiled.metadata).to include(openrouter_suppressed_params: ['parallel_tool_calls'])
+  end
+
+  it 'keeps false optional routing params when a selected endpoint supports them' do
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+      [
+        {
+          'supported_parameters' => %w[tools tool_choice response_format structured_outputs parallel_tool_calls]
+        }
+      ]
+    )
+
+    compiled = compile(
+      feature: :captain_agent,
+      tools: true,
+      schema: true,
+      base_params: { parallel_tool_calls: false }
+    )
+
+    expect(compiled.params).to include(parallel_tool_calls: false)
+    expect(compiled.metadata).not_to include(:openrouter_suppressed_params)
   end
 
   it 'does not treat explicit empty tool or reasoning options as OpenRouter feature requirements' do

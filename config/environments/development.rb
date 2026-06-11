@@ -43,7 +43,7 @@ Rails.application.configure do
   config.active_record.migration_error = :page_load
 
   # Highlight code that triggered database queries in logs.
-  config.active_record.verbose_query_logs = true
+  config.active_record.verbose_query_logs = ActiveModel::Type::Boolean.new.cast(ENV.fetch('VERBOSE_QUERY_LOGS', 'false'))
 
   # Debug mode disables concatenation and preprocessing of assets.
   # This option may cause significant delays in view rendering with a large
@@ -56,27 +56,38 @@ Rails.application.configure do
   # Raises error for missing translations.
   # config.action_view.raise_on_missing_translations = true
 
-  # Use an evented file watcher to asynchronously detect changes in source code,
-  # routes, locales, etc. This feature depends on the listen gem.
-  config.file_watcher = ActiveSupport::EventedFileUpdateChecker
+  # Evented watchers are expensive in the shared dev runtime because every Rails
+  # process owns a watcher. Use request-time checks by default; opt in when needed.
+  config.file_watcher =
+    if ENV.fetch('RAILS_FILE_WATCHER', 'file_update_checker') == 'evented'
+      ActiveSupport::EventedFileUpdateChecker
+    else
+      ActiveSupport::FileUpdateChecker
+    end
 
   # Disable host check during development
   config.hosts = nil
 
   # Barnes targets a local StatsD agent on the foreman-assigned PORT, which is not present in dev-lite.
   config.barnes[:statsd] = nil
-  
+
   # GitHub Codespaces configuration
   if ENV['CODESPACES']
     # Allow web console access from any IP
-    config.web_console.allowed_ips = %w(0.0.0.0/0 ::/0)
+    config.web_console.allowed_ips = %w[0.0.0.0/0 ::/0]
     # Allow CSRF from codespace URLs
     config.force_ssl = false
     config.action_controller.forgery_protection_origin_check = false
   end
 
   # customize using the environment variables
-  config.log_level = ENV.fetch('LOG_LEVEL', 'debug').to_sym
+  config.log_level = ENV.fetch('LOG_LEVEL', 'info').to_sym
+
+  config.after_initialize do
+    if ActiveJob::Base.respond_to?(:log_arguments=)
+      ActiveJob::Base.log_arguments = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ACTIVE_JOB_LOG_ARGUMENTS', 'false'))
+    end
+  end
 
   # Use a different logger for distributed setups.
   # require 'syslog/logger'
@@ -84,6 +95,8 @@ Rails.application.configure do
 
   # Bullet configuration to fix the N+1 queries
   config.after_initialize do
+    next unless ActiveModel::Type::Boolean.new.cast(ENV.fetch('BULLET_ENABLED', 'false'))
+
     Bullet.enable = true
     Bullet.bullet_logger = true
     Bullet.rails_logger = true

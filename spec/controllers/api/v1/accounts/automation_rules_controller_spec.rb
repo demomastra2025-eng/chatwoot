@@ -537,6 +537,14 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(body[:payload]).to be_present
         expect(body[:payload][:id]).to eq(automation_rule.id)
       end
+
+      it 'returns not found instead of rendering a nil automation rule' do
+        get "/api/v1/accounts/#{account.id}/automation_rules/999999",
+            headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:not_found)
+        expect(response.parsed_body).to include('error' => 'Resource could not be found')
+      end
     end
   end
 

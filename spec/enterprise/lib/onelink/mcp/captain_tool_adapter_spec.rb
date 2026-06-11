@@ -78,6 +78,7 @@ RSpec.describe Onelink::Mcp::CaptainToolAdapter do
         agent_high_risk: %w[high custom].include?(tool_definition[:risk_level].to_s)
       }
     end
+    allow(Captain::ToolExecutionAuditService).to receive(:record)
   end
 
   describe '#catalog_entries' do
@@ -152,6 +153,52 @@ RSpec.describe Onelink::Mcp::CaptainToolAdapter do
         expect(tool.dig(:annotations, :idempotentHint)).to be(true)
         expect(tool.dig(:annotations, :destructiveHint)).to be(true)
       end
+    end
+  end
+
+  describe '#call_tool' do
+    before do
+      allow(Captain::ToolRegistry).to receive(:definition_for).and_return(nil)
+    end
+
+    it 'returns a machine-readable not_active error when the runtime tool is inactive' do
+      inactive_tool = instance_double(Captain::Tools::BaseTool, active?: false)
+
+      allow(Captain::ToolCatalog).to receive(:build_tool).and_return(inactive_tool)
+
+      result = adapter.call_tool(name: 'allowed_tool', arguments: { query: 'shipping' })
+
+      expect(result[:isError]).to be(true)
+      expect(result[:structuredContent]).to include(
+        code: 'not_active',
+        tool: 'allowed_tool',
+        message: "Tool 'allowed_tool' is not active for this workspace"
+      )
+      expect(result.dig(:content, 0, :text)).to include('not active')
+    end
+
+    it 'does not expose raw ActiveRecord exception class names to external MCP clients' do
+      failing_tool = Class.new do
+        def active?
+          true
+        end
+
+        def execute(**)
+          raise ActiveRecord::RecordNotFound, "Couldn't find Captain::Campaign with 'id'=404"
+        end
+      end.new
+
+      allow(Captain::ToolCatalog).to receive(:build_tool).and_return(failing_tool)
+
+      result = adapter.call_tool(name: 'allowed_tool', arguments: { query: 'missing' })
+
+      expect(result[:isError]).to be(true)
+      expect(result[:structuredContent]).to include(
+        code: 'not_found',
+        message: 'Resource could not be found'
+      )
+      expect(result.dig(:content, 0, :text)).not_to include('ActiveRecord::RecordNotFound')
+      expect(result.dig(:content, 0, :text)).not_to include('Captain::Campaign')
     end
   end
 end
