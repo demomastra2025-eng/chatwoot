@@ -7,6 +7,9 @@ class Llm::OpenRouterRequestCompiler
     quantizations sort preferred_min_throughput preferred_max_latency max_price
   ].freeze
   CALLER_PROVIDER_CONTROL_KEYS = %w[require_parameters allow_fallbacks data_collection zdr sort].freeze
+  ENDPOINT_SCOPED_REQUEST_PARAMS = {
+    temperature: 'temperature'
+  }.freeze
 
   Compiled = Struct.new(:model, :models, :params, :headers, :native_endpoint, :metadata, keyword_init: true)
 
@@ -42,6 +45,7 @@ class Llm::OpenRouterRequestCompiler
     @tools = tools
     @reasoning = reasoning
     @trusted_provider_params = trusted_provider_params
+    @omitted_params = []
   end
 
   def call
@@ -62,7 +66,7 @@ class Llm::OpenRouterRequestCompiler
       privacy_profile: feature_policy.privacy_profile,
       trace_capture_allowed: feature_policy.workspace_policy&.trace_capture_allowed?
     )
-    apply_request_params!(params)
+    apply_request_params!(params, provider_params: provider_params, models: models)
     apply_feature_policy_params!(params, feature_policy)
     params[:models] = models if models.present?
     params[:provider] = provider_params if provider_params.present?
@@ -142,13 +146,15 @@ class Llm::OpenRouterRequestCompiler
     Array(request_value(:models)).filter_map { |candidate| candidate.to_s.strip.presence }.uniq
   end
 
-  def apply_request_params!(params)
+  def apply_request_params!(params, provider_params:, models:)
     set_param_if_present(params, :route, request_option(:route))
     set_param_if_present(params, :session_id, request_session_id)
     set_param_if_present(params, :tool_choice, request_value(:tool_choice))
     set_param_if_present(params, :reasoning, request_value(:reasoning)) if reasoning_request?
     set_param_if_present(params, :max_tokens, request_value(:max_tokens))
-    set_param_if_present(params, :temperature, request_value(:temperature))
+    unless suppress_unsupported_endpoint_param!(params, :temperature, request_value(:temperature), provider_params: provider_params, models: models)
+      set_param_if_present(params, :temperature, request_value(:temperature))
+    end
     set_param_if_present(params, :user, request_value(:user_id))
   end
 
@@ -280,7 +286,8 @@ class Llm::OpenRouterRequestCompiler
       openrouter_cache_policy: feature_policy.cache_policy,
       openrouter_plugin_policy: feature_policy.plugin_policy,
       openrouter_transform_policy: feature_policy.transform_policy,
-      openrouter_budget_policy: feature_policy.budget_policy
+      openrouter_budget_policy: feature_policy.budget_policy,
+      openrouter_omitted_params: @omitted_params.uniq.presence
     }.merge(extensions[:transform_plan]&.to_metadata || {}).merge(header_metadata || {}).compact
   end
 
@@ -341,6 +348,82 @@ class Llm::OpenRouterRequestCompiler
 
   def requires_parameters?(profile_preferences)
     profile_preferences[:require_parameters] == true || schema_request? || tool_flow? || reasoning_request?
+  end
+
+  def suppress_unsupported_endpoint_param!(params, key, request_value, provider_params:, models:)
+    return false unless strict_parameter_routing?(provider_params)
+    return false unless endpoint_scoped_request_param?(key)
+    return false if route_supports_endpoint_param?(models, key, provider_params: provider_params)
+    return false unless params.key?(key) || params.key?(key.to_s) || request_value.present?
+
+    params.delete(key)
+    params.delete(key.to_s)
+    params[Llm::OpenRouterServerToolsPatch::OMIT_TEMPERATURE_PARAM] = true if key == :temperature
+    @omitted_params << key.to_s
+    true
+  end
+
+  def strict_parameter_routing?(provider_params)
+    provider_params.respond_to?(:to_h) && provider_params.to_h.with_indifferent_access[:require_parameters] == true
+  end
+
+  def endpoint_scoped_request_param?(key)
+    ENDPOINT_SCOPED_REQUEST_PARAMS.key?(key.to_sym)
+  end
+
+  def route_supports_endpoint_param?(models, key, provider_params:)
+    endpoint_param = ENDPOINT_SCOPED_REQUEST_PARAMS.fetch(key.to_sym)
+    supported_parameters = primary_route_supported_parameters(models, provider_params: provider_params)
+    return true if supported_parameters.blank?
+
+    supported_parameters.include?(endpoint_param)
+  rescue StandardError
+    true
+  end
+
+  def primary_route_supported_parameters(models, provider_params:)
+    primary_model = @model.presence || Array(models).first
+    return [] if primary_model.blank?
+
+    endpoint_parameters = constrained_primary_route_endpoints(primary_model, provider_params: provider_params).flat_map do |endpoint|
+      Array(endpoint.to_h['supported_parameters']).map(&:to_s)
+    end.uniq
+    return endpoint_parameters if endpoint_parameters.present?
+
+    model_config = Llm::Models.model_config(primary_model, account: @account)
+    Array(model_config.to_h['supported_parameters'] || model_config.to_h[:supported_parameters]).map(&:to_s).uniq
+  end
+
+  def constrained_primary_route_endpoints(primary_model, provider_params:)
+    endpoints = Llm::OpenRouterEndpointCatalog.endpoints_for(primary_model)
+    return endpoints if endpoints.blank?
+
+    provider = provider_params.respond_to?(:to_h) ? provider_params.to_h.with_indifferent_access : {}
+    provider_names = endpoint_provider_filter(provider)
+    ignored_provider_names = normalize_provider_names(provider[:ignore])
+    endpoints = endpoints.reject { |endpoint| ignored_provider_names.include?(endpoint_provider_name(endpoint)) } if ignored_provider_names.present?
+    return endpoints if provider_names.blank?
+
+    filtered = endpoints.select { |endpoint| provider_names.include?(endpoint_provider_name(endpoint)) }
+    filtered.presence || endpoints
+  end
+
+  def endpoint_provider_filter(provider)
+    only = normalize_provider_names(provider[:only])
+    return only if only.present?
+
+    normalize_provider_names(provider[:order])
+  end
+
+  def normalize_provider_names(value)
+    Array(value).filter_map { |provider| provider.to_s.strip.downcase.presence }.uniq
+  end
+
+  def endpoint_provider_name(endpoint)
+    hash = endpoint.respond_to?(:to_h) ? endpoint.to_h.with_indifferent_access : {}
+    (hash[:provider_name].presence || hash.dig(:provider, :name).presence || hash[:name].presence).to_s.strip.downcase
+  rescue StandardError
+    ''
   end
 
   def schema_request?

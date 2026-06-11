@@ -11,6 +11,7 @@ class Llm::ObservabilityPayload
     openrouter_budget_policy openrouter_attribution openrouter_app_referer
     openrouter_app_title openrouter_response_cache openrouter_response_cache_ttl
     openrouter_response_cache_clear openrouter_response_cache_reason
+    openrouter_omitted_params
   ].freeze
 
   MAX_GENERATION_ID_SEARCH_DEPTH = 8

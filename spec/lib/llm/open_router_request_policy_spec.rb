@@ -26,6 +26,11 @@ class OpenRouterRequestPolicySpecChat
     @with_headers_calls << headers
     self
   end
+
+  def with_temperature(temperature)
+    @temperature = temperature
+    self
+  end
 end
 
 RSpec.describe Llm::OpenRouterRequestPolicy do
@@ -165,6 +170,34 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
       )
     end
 
+    it 'omits unsupported chat temperature when recompiling late strict OpenRouter params' do
+      chat = OpenRouterRequestPolicySpecChat.new(
+        model: OpenRouterRequestPolicySpecModel.new('openai/gpt-5.4', 'openrouter')
+      ).with_temperature(1.0)
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for)
+        .with('openai/gpt-5.4')
+        .and_return(
+          [
+            {
+              'provider_name' => 'OpenAI',
+              'supported_parameters' => %w[tools tool_choice response_format structured_outputs]
+            }
+          ]
+        )
+
+      described_class.require_parameters!(chat, feature: :captain_agent, tools: true, schema: true)
+
+      expect(chat.params).not_to include(:temperature)
+      expect(chat.params).to include(
+        Llm::OpenRouterServerToolsPatch::OMIT_TEMPERATURE_PARAM => true,
+        :provider => include(require_parameters: true)
+      )
+      expect(described_class.observability_metadata(chat)).to include(
+        openrouter_omitted_params: ['temperature'],
+        openrouter_require_parameters: true
+      )
+    end
+
     it 'preserves sensitive privacy cache disablement when recompiling existing chat params' do
       chat = OpenRouterRequestPolicySpecChat.new(
         model: OpenRouterRequestPolicySpecModel.new('openai/gpt-5.4-mini', 'openrouter'),
@@ -263,7 +296,7 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
       described_class.require_structured_output!(chat)
 
       expect(chat.params).to include(
-        provider: include(sort: 'latency', require_parameters: true),
+        provider: include(sort: { by: 'latency', partition: 'none' }, require_parameters: true),
         plugins: contain_exactly({ id: 'response-healing' })
       )
     end

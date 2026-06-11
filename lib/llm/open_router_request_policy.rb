@@ -4,7 +4,7 @@ class Llm::OpenRouterRequestPolicy
   OPENROUTER_PROVIDER = 'openrouter'
   RESPONSE_HEALING_PLUGIN_ID = 'response-healing'
   ROUTING_METADATA_IVAR = :@onelink_openrouter_routing_metadata
-  RecompileRequest = Struct.new(:feature_key, :runtime_preferences, :privacy_profile, :options, keyword_init: true)
+  RecompileRequest = Struct.new(:feature_key, :runtime_preferences, :privacy_profile, :options, :temperature, keyword_init: true)
   CACHE_HEADER_KEYS = %w[X-OpenRouter-Cache X-OpenRouter-Cache-TTL X-OpenRouter-Cache-Clear].freeze
 
   class << self
@@ -124,7 +124,7 @@ class Llm::OpenRouterRequestPolicy
     def compile_chat_params(chat, account:, feature:, model:, tools:, schema:, reasoning:, stream:)
       metadata = routing_metadata(chat)
       Llm::OpenRouterRequestCompiler.call(
-        request: recompile_request(metadata),
+        request: recompile_request(metadata, chat: chat),
         feature: feature.presence || metadata[:feature],
         model: model.presence || metadata[:model].presence || model_id_for(chat),
         account: account.presence || metadata[:account],
@@ -160,13 +160,14 @@ class Llm::OpenRouterRequestPolicy
       chat
     end
 
-    def recompile_request(metadata)
+    def recompile_request(metadata, chat:)
       privacy_profile = metadata[:openrouter_privacy_profile].to_s.presence
       RecompileRequest.new(
         feature_key: metadata[:feature],
         privacy_profile: privacy_profile,
         runtime_preferences: recompile_runtime_preferences(metadata, privacy_profile),
-        options: recompile_cache_options(metadata)
+        options: recompile_cache_options(metadata),
+        temperature: chat_temperature(chat)
       )
     end
 
@@ -221,6 +222,14 @@ class Llm::OpenRouterRequestPolicy
       raw_params.to_h.deep_dup
     rescue StandardError
       {}
+    end
+
+    def chat_temperature(chat)
+      return unless chat.respond_to?(:instance_variable_get)
+
+      chat.instance_variable_get(:@temperature)
+    rescue StandardError
+      nil
     end
 
     def extract_plugins(params)

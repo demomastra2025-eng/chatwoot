@@ -29,6 +29,20 @@ RSpec.describe Llm::OpenRouterServerToolsPatch do
         }.compact
       end
 
+      def complete(messages, tools:, temperature:, model:, params: {}, headers: {}, schema: nil, thinking: nil, tool_prefs: nil, &)
+        payload = render_payload(
+          messages,
+          tools: tools,
+          temperature: maybe_normalize_temperature(temperature, model),
+          model: model,
+          stream: block_given?,
+          schema: schema,
+          thinking: thinking,
+          tool_prefs: tool_prefs
+        ).merge(params)
+        block_given? ? stream_response(@connection, payload, headers, &) : sync_response(@connection, payload, headers)
+      end
+
       def sync_response(_connection, payload, headers)
         @payload = payload
         @headers = headers
@@ -70,6 +84,27 @@ RSpec.describe Llm::OpenRouterServerToolsPatch do
     expect(provider.payload).to include(max_tokens: 250)
     expect(provider.payload).not_to include(described_class::SERVER_TOOLS_PARAM)
     expect(provider.headers).to include('HTTP-Referer' => 'https://one-link.kz')
+  end
+
+  it 'omits temperature and removes the internal sentinel without server tools' do
+    provider = provider_class.new
+
+    result = provider.complete(
+      [],
+      tools: function_tools,
+      temperature: 1.0,
+      model: 'openai/gpt-5.4',
+      params: {
+        described_class::OMIT_TEMPERATURE_PARAM => true,
+        :max_tokens => 250
+      },
+      headers: {}
+    )
+
+    expect(result).to eq(:sync_response)
+    expect(provider.payload).not_to include(:temperature)
+    expect(provider.payload).not_to include(described_class::OMIT_TEMPERATURE_PARAM)
+    expect(provider.payload).to include(max_tokens: 250)
   end
 
   it 'adds OpenRouter server tools to streaming payload' do

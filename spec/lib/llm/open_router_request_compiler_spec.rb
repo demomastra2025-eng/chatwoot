@@ -12,6 +12,7 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
   :runtime_preferences,
   :privacy_profile,
   :options,
+  :temperature,
   keyword_init: true
 ) do
   def requires_tools? = tools_required == true
@@ -30,7 +31,8 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       messages: options[:messages],
       runtime_preferences: options[:runtime_preferences],
       privacy_profile: options[:privacy_profile],
-      options: options[:request_options] || {}
+      options: options[:request_options] || {},
+      temperature: options[:temperature]
     )
 
     described_class.call(
@@ -358,6 +360,104 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
 
     expect(compiled.params).not_to include(:parallel_tool_calls)
     expect(compiled.metadata).not_to include(:openrouter_suppressed_params)
+  end
+
+  it 'omits temperature for strict routes when the primary OpenRouter endpoint does not support it' do
+    account = instance_double(Account, id: 42)
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for)
+      .with('openai/gpt-5.4')
+      .and_return(
+        [
+          {
+            'provider_name' => 'OpenAI',
+            'supported_parameters' => %w[tools tool_choice response_format structured_outputs]
+          }
+        ]
+      )
+    request = Llm::FeatureRequest.new(
+      feature: :captain_agent,
+      account: account,
+      model: 'openai/gpt-5.4',
+      tools: [instance_double(RubyLLM::Tool, name: 'lookup_contact')],
+      schema: Captain::ResponseSchema,
+      temperature: 1.0
+    )
+
+    compiled = described_class.call(
+      request: request,
+      model: 'openai/gpt-5.4',
+      account: account
+    )
+
+    expect(compiled.params).not_to include(:temperature)
+    expect(compiled.params).to include(Llm::OpenRouterServerToolsPatch::OMIT_TEMPERATURE_PARAM => true)
+    expect(compiled.metadata).to include(openrouter_omitted_params: ['temperature'])
+  end
+
+  it 'keeps temperature for strict routes when the primary OpenRouter endpoint supports it' do
+    account = instance_double(Account, id: 42)
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for)
+      .with('openai/gpt-5.4-mini')
+      .and_return(
+        [
+          {
+            'provider_name' => 'OpenAI',
+            'supported_parameters' => %w[temperature tools tool_choice response_format structured_outputs]
+          }
+        ]
+      )
+    request = Llm::FeatureRequest.new(
+      feature: :captain_agent,
+      account: account,
+      model: 'openai/gpt-5.4-mini',
+      tools: [instance_double(RubyLLM::Tool, name: 'lookup_contact')],
+      schema: Captain::ResponseSchema,
+      temperature: 0.7
+    )
+
+    compiled = described_class.call(
+      request: request,
+      model: 'openai/gpt-5.4-mini',
+      account: account
+    )
+
+    expect(compiled.params).to include(temperature: 0.7)
+    expect(compiled.params).not_to include(Llm::OpenRouterServerToolsPatch::OMIT_TEMPERATURE_PARAM)
+    expect(compiled.metadata).not_to include(:openrouter_omitted_params)
+  end
+
+  it 'omits temperature when provider order selects an endpoint that does not support it' do
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for)
+      .with('openai/gpt-5.4')
+      .and_return(
+        [
+          {
+            'provider_name' => 'OpenAI',
+            'supported_parameters' => %w[temperature tools tool_choice response_format structured_outputs]
+          },
+          {
+            'provider_name' => 'Azure',
+            'supported_parameters' => %w[tools tool_choice response_format structured_outputs]
+          }
+        ]
+      )
+
+    compiled = compile(
+      feature: :copilot,
+      model: 'openai/gpt-5.4',
+      tools: true,
+      schema: true,
+      temperature: 1.0,
+      runtime_preferences: {
+        openrouter_routing_strategy: 'auto_exacto',
+        openrouter_provider_order: ['Azure']
+      }
+    )
+
+    expect(compiled.params[:provider]).to include(order: ['Azure'])
+    expect(compiled.params).not_to include(:temperature)
+    expect(compiled.params).to include(Llm::OpenRouterServerToolsPatch::OMIT_TEMPERATURE_PARAM => true)
+    expect(compiled.metadata).to include(openrouter_omitted_params: ['temperature'])
   end
 
   it 'does not treat explicit empty tool or reasoning options as OpenRouter feature requirements' do
