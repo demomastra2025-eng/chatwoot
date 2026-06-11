@@ -38,10 +38,11 @@ class Instagram::CallbacksController < ApplicationController
   # Handle all errors that might occur during authorization
   # https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login#sample-rejected-response
   def handle_error(error)
-    Rails.logger.error("Instagram Channel creation Error: #{error.message}")
-    ChatwootExceptionTracker.new(error).capture_exception
+    sanitized_error = sanitized_provider_exception(error)
+    Rails.logger.error("Instagram Channel creation Error: #{sanitized_error.message}")
+    ChatwootExceptionTracker.new(sanitized_error).capture_exception
 
-    error_info = extract_error_info(error)
+    error_info = sanitize_error_info(extract_error_info(error))
     redirect_to_error_page(error_info)
   end
 
@@ -68,7 +69,7 @@ class Instagram::CallbacksController < ApplicationController
     error_info = {
       'error_type' => params[:error] || 'authorization_error',
       'code' => 400,
-      'error_message' => params[:error_description] || 'Authorization was denied'
+      'error_message' => sanitized_provider_error_message(params[:error_description] || 'Authorization was denied')
     }
 
     Rails.logger.error("Instagram Authorization Error: #{error_info['error_message']}")
@@ -85,6 +86,28 @@ class Instagram::CallbacksController < ApplicationController
       code: error_info['code'],
       error_message: error_info['error_message']
     )
+  end
+
+  def sanitize_error_info(error_info)
+    error_info.merge('error_message' => sanitized_provider_error_message(error_info['error_message']))
+  end
+
+  def sanitized_provider_exception(error)
+    StandardError.new(sanitized_provider_error_message(error.message)).tap do |sanitized_error|
+      sanitized_error.set_backtrace(error.backtrace)
+    end
+  end
+
+  def sanitized_provider_error_message(message)
+    sensitive_values = [
+      @response&.token,
+      @long_lived_token_response&.[]('access_token'),
+      params[:code]
+    ].compact_blank
+
+    sensitive_values.each_with_object(message.to_s.dup) do |value, sanitized_message|
+      sanitized_message.gsub!(value.to_s, '[FILTERED]')
+    end.gsub(/access_token=[^&\s]+/, 'access_token=[FILTERED]')
   end
 
   def find_or_create_inbox

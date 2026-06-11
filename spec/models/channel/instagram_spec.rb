@@ -16,6 +16,36 @@ RSpec.describe Channel::Instagram do
     expect(channel.name).to eq('Instagram')
   end
 
+  describe '#subscribe' do
+    before do
+      stub_request(:post, /graph.instagram.com/)
+    end
+
+    it 'redacts access tokens from rescued subscription error logs' do
+      instagram_channel = build(:channel_instagram, access_token: 'stored-token', instagram_id: '12345')
+      messages = []
+
+      allow(HTTParty).to receive(:post)
+        .and_raise(StandardError, 'failed access_token=explicit-token')
+      allow(Rails.logger).to receive(:debug) { |&block| messages << block.call }
+
+      expect(instagram_channel.subscribe(access_token: 'explicit-token')).to be true
+      expect(messages.join).to include('[FILTERED]')
+      expect(messages.join).not_to include('explicit-token')
+    end
+
+    it 'raises only a redacted error message for strict subscription failures' do
+      instagram_channel = build(:channel_instagram, access_token: 'stored-token', instagram_id: '12345')
+      allow(HTTParty).to receive(:post)
+        .and_raise(StandardError, 'failed access_token=explicit-token')
+
+      expect { instagram_channel.subscribe(raise_on_error: true, access_token: 'explicit-token') }.to raise_error(StandardError) do |error|
+        expect(error.message).to include('[FILTERED]')
+        expect(error.message).not_to include('explicit-token')
+      end
+    end
+  end
+
   describe 'concerns' do
     it_behaves_like 'reauthorizable'
 

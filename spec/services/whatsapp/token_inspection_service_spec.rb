@@ -116,6 +116,22 @@ RSpec.describe Whatsapp::TokenInspectionService do
       expect(service.reauthorization_required?).to be(true)
     end
 
+    it 'keeps app id mismatch as the primary status when the wrong-app token also lacks permissions' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'app_id' => 'other-app',
+          'is_valid' => true,
+          'scopes' => []
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return('data' => [{ 'id' => phone_number_id }])
+
+      result = described_class.new(access_token: access_token, waba_id: waba_id, phone_number_id: phone_number_id, api_client: api_client).perform
+
+      expect(result['status']).to eq('app_id_mismatch')
+      expect(result['missing_permissions']).to eq(%w[whatsapp_business_management whatsapp_business_messaging])
+    end
+
     it 'requires reauthorization when the token cannot access the configured phone number' do
       allow(api_client).to receive(:debug_token).and_return(
         'data' => {

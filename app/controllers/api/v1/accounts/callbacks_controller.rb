@@ -7,8 +7,9 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   def register_facebook_page
     ActiveRecord::Base.transaction { register_facebook_page! }
   rescue StandardError => e
-    ChatwootExceptionTracker.new(e).capture_exception
-    Rails.logger.error "Error in register_facebook_page: #{e.message}"
+    sanitized_error = sanitized_provider_exception(e)
+    ChatwootExceptionTracker.new(sanitized_error).capture_exception
+    Rails.logger.error "Error in register_facebook_page: #{sanitized_error.message}"
     # Additional log statements
     log_additional_info
     render_facebook_error(FACEBOOK_REGISTER_ERROR_MESSAGE)
@@ -147,7 +148,27 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   end
 
   def log_facebook_callback_error(action, error)
-    ChatwootExceptionTracker.new(error).capture_exception
-    Rails.logger.error "Error in #{action}: #{error.message}"
+    sanitized_error = sanitized_provider_exception(error)
+    ChatwootExceptionTracker.new(sanitized_error).capture_exception
+    Rails.logger.error "Error in #{action}: #{sanitized_error.message}"
+  end
+
+  def sanitized_provider_exception(error)
+    StandardError.new(sanitized_provider_error_message(error)).tap do |sanitized_error|
+      sanitized_error.set_backtrace(error.backtrace)
+    end
+  end
+
+  def sanitized_provider_error_message(error)
+    sensitive_values = [
+      params[:omniauth_token],
+      params[:user_access_token],
+      params[:page_access_token],
+      @user_access_token
+    ].compact_blank
+
+    sensitive_values.each_with_object(error.message.to_s.dup) do |value, message|
+      message.gsub!(value.to_s, '[FILTERED]')
+    end.gsub(/access_token=[^&\s]+/, 'access_token=[FILTERED]')
   end
 end

@@ -78,7 +78,7 @@ RSpec.describe Instagram::CallbacksController do
         expect(response).to redirect_to(
           app_new_instagram_inbox_url(
             account_id: account.id,
-            error_type: 'RuntimeError',
+            error_type: 'StandardError',
             code: 500,
             error_message: 'Instagram webhook subscription failed: 400 - subscribe failed'
           )
@@ -92,7 +92,7 @@ RSpec.describe Instagram::CallbacksController do
         allow(controller).to receive(:instagram_state_payload).and_return({ 'sub' => account.id, 'inbox_id' => inbox.id })
         expect_any_instance_of(Channel::Instagram).to receive(:subscribe)
           .with(raise_on_error: true, access_token: 'long_lived_test_token')
-          .and_raise(StandardError, 'Instagram webhook subscription failed')
+          .and_raise(StandardError, 'Instagram webhook subscription failed access_token=long_lived_test_token')
 
         get :show, params: valid_params
 
@@ -101,7 +101,28 @@ RSpec.describe Instagram::CallbacksController do
             account_id: account.id,
             error_type: 'StandardError',
             code: 500,
-            error_message: 'Instagram webhook subscription failed'
+            error_message: 'Instagram webhook subscription failed access_token=[FILTERED]'
+          )
+        )
+        expect(existing_channel.reload.access_token).to eq('old_token')
+        expect(inbox.reload.name).to eq('old_username')
+        expect(existing_channel.reauthorization_required?).to be true
+      end
+
+      it 'rejects reauthorization when OAuth returns a different Instagram account' do
+        existing_channel = create(:channel_instagram, account: account, instagram_id: 'different_account', access_token: 'old_token')
+        inbox = create(:inbox, channel: existing_channel, account: account, name: 'old_username')
+        existing_channel.prompt_reauthorization!
+        allow(controller).to receive(:instagram_state_payload).and_return({ 'sub' => account.id, 'inbox_id' => inbox.id })
+
+        get :show, params: valid_params
+
+        expect(response).to redirect_to(
+          app_new_instagram_inbox_url(
+            account_id: account.id,
+            error_type: 'StandardError',
+            code: 500,
+            error_message: 'Instagram account mismatch. Please authorize the same Instagram account connected to this inbox.'
           )
         )
         expect(existing_channel.reload.access_token).to eq('old_token')

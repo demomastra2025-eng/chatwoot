@@ -57,8 +57,9 @@ class Channel::FacebookPage < ApplicationRecord
       ]
     )
   rescue StandardError => e
-    Rails.logger.debug { "Rescued: #{e.inspect}" }
-    raise if raise_on_error
+    redacted_error = redacted_subscription_error(e)
+    Rails.logger.debug { "Rescued: #{e.class}: #{redacted_error}" }
+    raise StandardError, redacted_error if raise_on_error
 
     true
   end
@@ -72,5 +73,13 @@ class Channel::FacebookPage < ApplicationRecord
   rescue StandardError => e
     Rails.logger.debug { "Rescued: #{e.inspect}" }
     true
+  end
+
+  private
+
+  def redacted_subscription_error(error)
+    [page_access_token, user_access_token].compact_blank.each_with_object(error.message.to_s.dup) do |token, message|
+      message.gsub!(token.to_s, '[FILTERED]')
+    end.gsub(/access_token=[^&\s]+/, 'access_token=[FILTERED]')
   end
 end

@@ -35,4 +35,40 @@ RSpec.describe Channel::FacebookPage do
   it 'has a valid name' do
     expect(channel.name).to eq('Facebook')
   end
+
+  describe '#subscribe' do
+    it 'redacts tokens from rescued subscription error logs' do
+      page = build(
+        :channel_facebook_page,
+        page_access_token: 'page-secret-token',
+        user_access_token: 'user-secret-token'
+      )
+      messages = []
+
+      allow(Facebook::Messenger::Subscriptions).to receive(:subscribe)
+        .and_raise(StandardError, 'failed access_token=page-secret-token user-secret-token')
+      allow(Rails.logger).to receive(:debug) { |&block| messages << block.call }
+
+      expect(page.subscribe).to be true
+      expect(messages.join).to include('[FILTERED]')
+      expect(messages.join).not_to include('page-secret-token')
+      expect(messages.join).not_to include('user-secret-token')
+    end
+
+    it 'raises only a redacted error message for strict subscription failures' do
+      page = build(
+        :channel_facebook_page,
+        page_access_token: 'page-secret-token',
+        user_access_token: 'user-secret-token'
+      )
+      allow(Facebook::Messenger::Subscriptions).to receive(:subscribe)
+        .and_raise(StandardError, 'failed access_token=page-secret-token user-secret-token')
+
+      expect { page.subscribe(raise_on_error: true) }.to raise_error(StandardError) do |error|
+        expect(error.message).to include('[FILTERED]')
+        expect(error.message).not_to include('page-secret-token')
+        expect(error.message).not_to include('user-secret-token')
+      end
+    end
+  end
 end

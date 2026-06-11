@@ -70,7 +70,10 @@ RSpec.describe 'Callbacks API', type: :request do
       end
 
       it 'rolls back page and inbox creation when initial webhook subscription fails' do
-        allow(Facebook::Messenger::Subscriptions).to receive(:subscribe).and_raise(StandardError, 'subscribed_apps failed')
+        token = valid_params[:page_access_token]
+        error_messages = []
+        allow(Facebook::Messenger::Subscriptions).to receive(:subscribe).and_raise(StandardError, "subscribed_apps failed access_token=#{token}")
+        allow(Rails.logger).to receive(:error) { |message| error_messages << message }
 
         expect do
           post "/api/v1/accounts/#{account.id}/callbacks/register_facebook_page",
@@ -81,6 +84,8 @@ RSpec.describe 'Callbacks API', type: :request do
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(Api::V1::Accounts::CallbacksController::FACEBOOK_REGISTER_ERROR_MESSAGE)
+        expect(error_messages.join).to include('access_token=[FILTERED]')
+        expect(error_messages.join).not_to include(token)
       end
     end
   end
@@ -168,6 +173,23 @@ RSpec.describe 'Callbacks API', type: :request do
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(Api::V1::Accounts::CallbacksController::FACEBOOK_FETCH_ERROR_MESSAGE)
+      end
+
+      it 'does not update stored tokens when strict subscription fails during reauthorization' do
+        old_user_access_token = facebook_page.user_access_token
+        old_page_access_token = facebook_page.page_access_token
+        allow(Facebook::Messenger::Subscriptions).to receive(:subscribe).and_raise(StandardError, 'subscribed_apps failed')
+        params = { inbox_id: inbox.id }
+
+        post "/api/v1/accounts/#{account.id}/callbacks/reauthorize_page",
+             headers: admin.create_new_auth_token,
+             params: params,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq(Api::V1::Accounts::CallbacksController::FACEBOOK_FETCH_ERROR_MESSAGE)
+        expect(facebook_page.reload.user_access_token).to eq(old_user_access_token)
+        expect(facebook_page.page_access_token).to eq(old_page_access_token)
       end
     end
   end

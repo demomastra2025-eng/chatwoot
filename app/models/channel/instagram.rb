@@ -62,8 +62,9 @@ class Channel::Instagram < ApplicationRecord
 
     response
   rescue StandardError => e
-    Rails.logger.debug { "Rescued: #{e.inspect}" }
-    raise if raise_on_error
+    redacted_error = redacted_subscription_error(e, subscription_access_token)
+    Rails.logger.debug { "Rescued: #{e.class}: #{redacted_error}" }
+    raise StandardError, redacted_error if raise_on_error
 
     true
   end
@@ -87,5 +88,13 @@ class Channel::Instagram < ApplicationRecord
 
   def access_token
     Instagram::RefreshOauthTokenService.new(channel: self).access_token
+  end
+
+  private
+
+  def redacted_subscription_error(error, token)
+    Array.wrap(token).compact_blank.each_with_object(error.message.to_s.dup) do |token_value, message|
+      message.gsub!(token_value.to_s, '[FILTERED]')
+    end.gsub(/access_token=[^&\s]+/, 'access_token=[FILTERED]')
   end
 end

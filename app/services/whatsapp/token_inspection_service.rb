@@ -9,6 +9,13 @@ class Whatsapp::TokenInspectionService
   APP_ID_MISMATCH_STATUS = 'app_id_mismatch'.freeze
   WABA_ACCESS_MISSING_STATUS = 'waba_access_missing'.freeze
   PHONE_NUMBER_MISMATCH_STATUS = 'phone_number_mismatch'.freeze
+  REAUTHORIZATION_STATUS_PRIORITY = {
+    PERMISSION_MISSING_STATUS => 10,
+    PHONE_NUMBER_MISMATCH_STATUS => 20,
+    WABA_ACCESS_MISSING_STATUS => 30,
+    APP_ID_MISMATCH_STATUS => 40,
+    INVALID_STATUS => 50
+  }.freeze
 
   attr_reader :metadata
 
@@ -73,11 +80,11 @@ class Whatsapp::TokenInspectionService
     return if @metadata['phone_number_access']
 
     @metadata['available_phone_number_ids'] = phone_number_ids
-    @status = PHONE_NUMBER_MISMATCH_STATUS
+    assign_reauthorization_status(PHONE_NUMBER_MISMATCH_STATUS)
   rescue StandardError => e
     @metadata['waba_access'] = false
     @metadata['error'] = error_metadata(e)
-    @status = oauth_token_error?(e) ? INVALID_STATUS : WABA_ACCESS_MISSING_STATUS
+    assign_reauthorization_status(oauth_token_error?(e) ? INVALID_STATUS : WABA_ACCESS_MISSING_STATUS)
   end
 
   def fetch_phone_number_ids
@@ -136,7 +143,7 @@ class Whatsapp::TokenInspectionService
 
     @metadata['expected_app_id'] = expected_app_id
     @metadata['app_id_matches_config'] = false
-    @status = APP_ID_MISMATCH_STATUS
+    assign_reauthorization_status(APP_ID_MISMATCH_STATUS)
   end
 
   def apply_expiry_metadata(metadata, data)
@@ -158,7 +165,7 @@ class Whatsapp::TokenInspectionService
     return if missing_permissions.empty?
 
     @metadata['missing_permissions'] = missing_permissions
-    @status = PERMISSION_MISSING_STATUS
+    assign_reauthorization_status(PERMISSION_MISSING_STATUS)
   end
 
   def permission_granted?(data, permission)
@@ -197,6 +204,12 @@ class Whatsapp::TokenInspectionService
     return HEALTHY_UNVERIFIED_STATUS if @debug_token_failed
 
     HEALTHY_STATUS
+  end
+
+  def assign_reauthorization_status(status)
+    current_priority = REAUTHORIZATION_STATUS_PRIORITY.fetch(@status, 0)
+    next_priority = REAUTHORIZATION_STATUS_PRIORITY.fetch(status, 0)
+    @status = status if next_priority >= current_priority
   end
 
   def mark_invalid(message)
