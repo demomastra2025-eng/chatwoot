@@ -1,4 +1,6 @@
 import axios from 'axios';
+import MessageApi from 'dashboard/api/inbox/message';
+import CommunicationThreadApi from 'dashboard/api/inbox/communicationThread';
 import actions, {
   hasMessageFailedWithExternalError,
 } from '../../conversations/actions';
@@ -717,6 +719,51 @@ describe('#deleteMessage', () => {
           },
         ],
       ]);
+    });
+  });
+
+  describe('#sendMessageWithData', () => {
+    it('uses the communication thread endpoint when a thread id is present', async () => {
+      const localCommit = vi.fn();
+      const pendingMessage = {
+        id: 'echo-1',
+        conversation_id: 12,
+        communication_thread_id: 99,
+        message: 'Hello from thread',
+      };
+      const response = {
+        data: {
+          id: 501,
+          conversation_id: 12,
+          content: 'Hello from thread',
+        },
+      };
+      const threadCreateSpy = vi
+        .spyOn(CommunicationThreadApi, 'createMessage')
+        .mockResolvedValue(response);
+      const messageCreateSpy = vi
+        .spyOn(MessageApi, 'create')
+        .mockResolvedValue(response);
+
+      try {
+        await actions.sendMessageWithData(
+          { commit: localCommit },
+          pendingMessage
+        );
+
+        expect(threadCreateSpy).toHaveBeenCalledWith(99, pendingMessage);
+        expect(messageCreateSpy).not.toHaveBeenCalled();
+        expect(localCommit).toHaveBeenCalledWith(types.ADD_MESSAGE_TO_CHAT, {
+          chatId: 99,
+          message: expect.objectContaining({
+            id: 'echo-1',
+            status: 'progress',
+          }),
+        });
+      } finally {
+        threadCreateSpy.mockRestore();
+        messageCreateSpy.mockRestore();
+      }
     });
   });
 });

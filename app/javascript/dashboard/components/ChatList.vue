@@ -861,6 +861,117 @@ function redirectToConversationList() {
   );
 }
 
+function normalizeContextConversationId(conversationId) {
+  return Array.isArray(conversationId) ? conversationId[0] : conversationId;
+}
+
+function currentLabelsForContextConversation(conversationId) {
+  return getConversationById.value(conversationId)?.labels || [];
+}
+
+async function updateCommunicationThreadLabels(conversationId, labelList) {
+  await store.dispatch('updateCommunicationThreadLabels', {
+    conversationId,
+    labels: labelList,
+  });
+}
+
+async function handleAssignAgent(agent, conversationId = null) {
+  const targetConversationId = normalizeContextConversationId(conversationId);
+  if (props.communicationThreadMode && targetConversationId) {
+    try {
+      await store.dispatch('assignAgent', {
+        conversationId: targetConversationId,
+        agentId: agent.id,
+      });
+      useAlert(
+        t('CONVERSATION.CARD_CONTEXT_MENU.API.AGENT_ASSIGNMENT.SUCCESFUL', {
+          agentName: agent.name,
+          conversationId: targetConversationId,
+        })
+      );
+    } catch (error) {
+      useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.API.AGENT_ASSIGNMENT.FAILED'));
+    }
+    return;
+  }
+
+  await onAssignAgent(agent, conversationId);
+}
+
+async function handleAssignTeam(team, conversationId = null) {
+  const targetConversationId = normalizeContextConversationId(conversationId);
+  if (targetConversationId) {
+    try {
+      await store.dispatch('assignTeam', {
+        conversationId: targetConversationId,
+        teamId: team.id,
+      });
+      useAlert(
+        t('CONVERSATION.CARD_CONTEXT_MENU.API.TEAM_ASSIGNMENT.SUCCESFUL', {
+          team: team.name,
+          conversationId: targetConversationId,
+        })
+      );
+    } catch (error) {
+      useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.API.TEAM_ASSIGNMENT.FAILED'));
+    }
+    return;
+  }
+
+  await onAssignTeamsForBulk(team);
+}
+
+async function handleAssignLabels(newLabels, conversationId = null) {
+  const targetConversationId = normalizeContextConversationId(conversationId);
+  if (props.communicationThreadMode && targetConversationId) {
+    try {
+      const nextLabels = Array.from(
+        new Set([
+          ...currentLabelsForContextConversation(targetConversationId),
+          ...newLabels,
+        ])
+      );
+      await updateCommunicationThreadLabels(targetConversationId, nextLabels);
+      useAlert(
+        t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_ASSIGNMENT.SUCCESFUL', {
+          labelName: newLabels[0],
+          conversationId: targetConversationId,
+        })
+      );
+    } catch (error) {
+      useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_ASSIGNMENT.FAILED'));
+    }
+    return;
+  }
+
+  await onAssignLabels(newLabels, conversationId);
+}
+
+async function handleRemoveLabels(labelsToRemove, conversationId = null) {
+  const targetConversationId = normalizeContextConversationId(conversationId);
+  if (props.communicationThreadMode && targetConversationId) {
+    try {
+      const labelsToRemoveSet = new Set(labelsToRemove);
+      const nextLabels = currentLabelsForContextConversation(
+        targetConversationId
+      ).filter(label => !labelsToRemoveSet.has(label));
+      await updateCommunicationThreadLabels(targetConversationId, nextLabels);
+      useAlert(
+        t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_REMOVAL.SUCCESFUL', {
+          labelName: labelsToRemove[0],
+          conversationId: targetConversationId,
+        })
+      );
+    } catch (error) {
+      useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_REMOVAL.FAILED'));
+    }
+    return;
+  }
+
+  await onRemoveLabels(labelsToRemove, conversationId);
+}
+
 async function assignPriority(priority, conversationId = null) {
   store.dispatch('setCurrentChatPriority', {
     priority,
@@ -897,23 +1008,6 @@ async function markAsRead(conversationId) {
     });
   } catch (error) {
     // Ignore error
-  }
-}
-
-async function onAssignTeam(team, conversationId = null) {
-  try {
-    await store.dispatch('assignTeam', {
-      conversationId,
-      teamId: team.id,
-    });
-    useAlert(
-      t('CONVERSATION.CARD_CONTEXT_MENU.API.TEAM_ASSIGNMENT.SUCCESFUL', {
-        team: team.name,
-        conversationId,
-      })
-    );
-  } catch (error) {
-    useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.API.TEAM_ASSIGNMENT.FAILED'));
   }
 }
 
@@ -1036,10 +1130,10 @@ const handleDelete = conversationId => {
 
 provide('selectConversation', selectConversation);
 provide('deSelectConversation', deSelectConversation);
-provide('assignAgent', onAssignAgent);
-provide('assignTeam', onAssignTeam);
-provide('assignLabels', onAssignLabels);
-provide('removeLabels', onRemoveLabels);
+provide('assignAgent', handleAssignAgent);
+provide('assignTeam', handleAssignTeam);
+provide('assignLabels', handleAssignLabels);
+provide('removeLabels', handleRemoveLabels);
 provide('updateConversationStatus', handleResolveConversation);
 provide('toggleContextMenu', onContextMenuToggle);
 provide('markAsUnread', markAsUnread);
@@ -1192,10 +1286,10 @@ watch(conversationFilters, (newVal, oldVal) => {
       :show-resolved-action="allSelectedConversationsStatus('resolved')"
       :show-snoozed-action="allSelectedConversationsStatus('snoozed')"
       @select-all-conversations="toggleSelectAll"
-      @assign-agent="onAssignAgent"
+      @assign-agent="handleAssignAgent"
       @update-conversations="onUpdateConversations"
-      @assign-labels="onAssignLabels"
-      @assign-team="onAssignTeamsForBulk"
+      @assign-labels="handleAssignLabels"
+      @assign-team="handleAssignTeam"
       @mark-read="onMarkConversationsRead"
     />
     <div

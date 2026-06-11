@@ -68,7 +68,20 @@ export default {
     :selected="isConversationSelected(source.id)"
     :show-assignee="showAssignee"
     :selectable="!communicationThreadMode"
-    :enable-context-menu="!communicationThreadMode"
+    enable-context-menu
+    :allowed-context-menu-options="
+      communicationThreadMode
+        ? [
+            'priority',
+            'status',
+            'agent',
+            'team',
+            'label',
+            'open-new-tab',
+            'copy-link',
+          ]
+        : []
+    "
     @select-conversation="selectConversation"
     @de-select-conversation="deSelectConversation"
     @assign-agent="assignAgent"

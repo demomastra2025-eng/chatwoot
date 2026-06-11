@@ -626,6 +626,22 @@ const actions = {
     }
   },
 
+  updateCommunicationThreadLabels: async (
+    { commit },
+    { conversationId, labels }
+  ) => {
+    const response = await CommunicationThreadApi.updateLabels(
+      conversationId,
+      labels
+    );
+    const updatedLabels = response.data?.payload || labels;
+    commitCommunicationThreadUpdate(commit, {
+      id: conversationId,
+      labels: updatedLabels,
+    });
+    return updatedLabels;
+  },
+
   createPendingMessageAndSend: async ({ dispatch }, data) => {
     const pendingMessage = createPendingMessage(data);
     dispatch('sendMessageWithData', pendingMessage);
