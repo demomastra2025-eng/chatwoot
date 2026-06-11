@@ -55,6 +55,8 @@ export default {
       virtualPbxStatusPayload: null,
       virtualPbxLoadError: '',
       isLoadingVirtualPbxStatus: false,
+      virtualPbxInboxMembers: [],
+      virtualPbxProfileCounter: 0,
       isUpdatingVirtualPbx: false,
       isDeletingVirtualPbx: false,
       virtualPbxForm: {
@@ -70,6 +72,7 @@ export default {
         connectionPassword: '',
         routingMode: 'operator',
         operatorAgentAor: '',
+        profiles: [],
       },
       sipuniIntegrationSecret: '',
       isUpdatingSipuniIntegrationSecret: false,
@@ -140,11 +143,45 @@ export default {
         },
       ];
     },
+    virtualPbxMemberOptions() {
+      const byId = new Map();
+      const addMember = member => {
+        const id = Number(member?.id || member?.user_id);
+        if (!id || byId.has(id)) return;
+
+        byId.set(id, {
+          value: id,
+          label:
+            member.name ||
+            member.user_name ||
+            member.available_name ||
+            member.email ||
+            `#${id}`,
+        });
+      };
+
+      (this.virtualPbxInboxMembers || []).forEach(addMember);
+      (
+        this.inbox.members ||
+        this.inbox.agents ||
+        this.inbox.users ||
+        []
+      ).forEach(addMember);
+      (this.virtualPbxConfig?.profiles || []).forEach(profile =>
+        addMember({
+          id: profile.user_id,
+          name: profile.user_name,
+        })
+      );
+
+      return Array.from(byId.values());
+    },
   },
   watch: {
     inbox() {
       this.setDefaults();
       this.loadVirtualPbxStatus();
+      this.loadVirtualPbxMembers();
     },
     allowMobileWebview() {
       if (!this.isSettingDefaults) this.handleMobileWebviewFlag();
@@ -157,6 +194,7 @@ export default {
   mounted() {
     this.setDefaults();
     this.loadVirtualPbxStatus();
+    this.loadVirtualPbxMembers();
   },
   methods: {
     setDefaults() {
@@ -319,6 +357,70 @@ export default {
         this.isLoadingVirtualPbxStatus = false;
       }
     },
+    async loadVirtualPbxMembers() {
+      if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) {
+        this.virtualPbxInboxMembers = [];
+        return;
+      }
+
+      try {
+        const response = await this.$store.dispatch('inboxMembers/get', {
+          inboxId: this.inbox.id,
+        });
+        this.virtualPbxInboxMembers = this.normalizeVirtualPbxMembers(
+          response?.data?.payload || response?.payload || response || []
+        );
+      } catch {
+        this.virtualPbxInboxMembers = [];
+      }
+    },
+    normalizeVirtualPbxMembers(members) {
+      return (members || [])
+        .map(member => ({
+          id: Number(member.id || member.user_id),
+          name:
+            member.name ||
+            member.user_name ||
+            member.available_name ||
+            member.email ||
+            '',
+        }))
+        .filter(member => member.id);
+    },
+    nextVirtualPbxProfileId() {
+      this.virtualPbxProfileCounter += 1;
+      return `virtual-pbx-profile-${this.virtualPbxProfileCounter}`;
+    },
+    emptyVirtualPbxProfile() {
+      return {
+        clientId: this.nextVirtualPbxProfileId(),
+        userId: '',
+        userName: '',
+        internalExtension: '',
+        sipUsername: '',
+        sipPassword: '',
+        sipPasswordConfigured: false,
+        enabled: true,
+      };
+    },
+    normalizeVirtualPbxProfiles(profiles) {
+      return (profiles || []).map(profile => ({
+        clientId: this.nextVirtualPbxProfileId(),
+        userId: Number(profile.user_id) || '',
+        userName: profile.user_name || '',
+        internalExtension: profile.internal_extension || '',
+        sipUsername: profile.sip_username || '',
+        sipPassword: '',
+        sipPasswordConfigured: !!profile.sip_password_configured,
+        enabled: profile.enabled !== false,
+      }));
+    },
+    addVirtualPbxProfile() {
+      this.virtualPbxForm.profiles.push(this.emptyVirtualPbxProfile());
+    },
+    removeVirtualPbxProfile(index) {
+      this.virtualPbxForm.profiles.splice(index, 1);
+    },
     prefillVirtualPbxForm() {
       const config = this.virtualPbxConfig;
       if (!config) return;
@@ -342,6 +444,7 @@ export default {
         connectionPassword: '',
         routingMode: routing.mode || 'operator',
         operatorAgentAor: routing.operator_agent_aor || '',
+        profiles: this.normalizeVirtualPbxProfiles(config.profiles || []),
       };
     },
     validateVirtualPbxForm() {
@@ -371,7 +474,48 @@ export default {
         return false;
       }
 
-      return true;
+      return this.validateVirtualPbxProfiles();
+    },
+    validateVirtualPbxProfiles() {
+      const invalidProfile = this.virtualPbxForm.profiles.find(profile => {
+        const hasSipUsername = !!profile.sipUsername.trim();
+        const hasSipPassword = !!profile.sipPassword;
+        const hasStoredSipPassword = !!profile.sipPasswordConfigured;
+
+        return (
+          !profile.userId ||
+          !profile.internalExtension.trim() ||
+          (!hasSipUsername && hasSipPassword) ||
+          (hasSipUsername && !hasSipPassword && !hasStoredSipPassword)
+        );
+      });
+
+      if (!invalidProfile) return true;
+
+      const hasPartialSipCredentials =
+        !!invalidProfile.sipUsername.trim() !== !!invalidProfile.sipPassword;
+      if (hasPartialSipCredentials) {
+        useAlert(
+          this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SIP_PAIR_REQUIRED'
+          )
+        );
+        return false;
+      }
+
+      useAlert(
+        this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REQUIRED')
+      );
+      return false;
+    },
+    virtualPbxProfilesPayload() {
+      return this.virtualPbxForm.profiles.map(profile => ({
+        user_id: profile.userId,
+        internal_extension: profile.internalExtension.trim(),
+        sip_username: profile.sipUsername.trim() || undefined,
+        sip_password: profile.sipPassword || undefined,
+        enabled: profile.enabled !== false,
+      }));
     },
     virtualPbxUpdatePayload() {
       const form = this.virtualPbxForm;
@@ -393,6 +537,7 @@ export default {
           fallback_mode: 'reject',
           operator_agent_aor: form.operatorAgentAor.trim() || undefined,
         },
+        profiles: this.virtualPbxProfilesPayload(),
         metadata: {
           source: 'virtual_pbx_ui',
         },
@@ -896,6 +1041,139 @@ export default {
                 type="password"
               />
             </label>
+          </div>
+
+          <div class="rounded-xl border border-n-weak p-4">
+            <div class="mb-3 space-y-1">
+              <h3 class="text-sm font-medium text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE')
+                }}
+              </h3>
+              <p class="text-sm text-n-slate-11">
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.HINT')
+                }}
+              </p>
+            </div>
+
+            <div class="flex flex-col gap-3">
+              <div
+                v-for="(profile, index) in virtualPbxForm.profiles"
+                :key="profile.clientId"
+                class="grid grid-cols-1 gap-3 rounded-lg border border-n-weak p-3 md:grid-cols-2"
+              >
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.EMPLOYEE_LABEL'
+                    )
+                  }}
+                  <select
+                    v-model.number="profile.userId"
+                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                  >
+                    <option disabled value="">
+                      {{
+                        $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SELECT_PLACEHOLDER'
+                        )
+                      }}
+                    </option>
+                    <option
+                      v-for="option in virtualPbxMemberOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="profile.internalExtension"
+                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="profile.sipUsername"
+                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="profile.sipPassword"
+                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="password"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+
+                <div class="md:col-span-2">
+                  <button
+                    type="button"
+                    class="text-sm text-n-ruby-10"
+                    :disabled="isVirtualPbxReadOnly"
+                    @click="removeVirtualPbxProfile(index)"
+                  >
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REMOVE',
+                        { index: index + 1 }
+                      )
+                    }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="mt-3 rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12"
+              :disabled="isVirtualPbxReadOnly"
+              @click="addVirtualPbxProfile"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.ADD') }}
+            </button>
           </div>
 
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">

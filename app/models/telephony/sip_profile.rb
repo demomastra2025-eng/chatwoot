@@ -46,6 +46,7 @@ class Telephony::SipProfile < ApplicationRecord
       provider_connection_id: provider_connection_id,
       internal_extension: internal_extension,
       sip_username: sip_username,
+      sip_password_configured: password_secret_ref.present?,
       sip_host: sip_host,
       agent_ref: agent_ref,
       agent_aor: agent_aor,

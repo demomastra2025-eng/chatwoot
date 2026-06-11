@@ -208,12 +208,11 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def profiles_payload(inbox:, policy:)
-    sip_profiles = account.telephony_sip_profiles.where(inbox: inbox).recent.limit(20)
-    return sip_profiles.map { |profile| sanitize(profile.to_telephony_h) } if sip_profiles.exists?
-
-    scope = account.telephony_agent_bindings.where(provider: 'fonoster')
-    scope = scope.where(agent_ref: policy.operator_agent_ref) if policy&.operator_agent_ref.present?
-    scope.recent.limit(20).map { |binding| sanitize(binding.to_telephony_h) }
+    account.telephony_sip_profiles
+           .where(inbox: inbox)
+           .recent
+           .limit(20)
+           .map { |profile| sanitize(profile.to_telephony_h) }
   end
 
   def ownership_payload(channel:, binding:)

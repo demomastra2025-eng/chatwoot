@@ -496,7 +496,19 @@
             "LABEL": "Shared SIP password",
             "PLACEHOLDER": "Optional shared SIP password"
           },
-          "EMPLOYEE_CREDENTIALS_HINT": "Leave these blank when the provider login/password is shared. Fill them only when this employee has separate SIP credentials.",
+          "EMPLOYEE_CREDENTIALS_HINT": "The SIP username/password in an employee row are that employee's own SIP credentials. Leave them blank to use the shared provider settings.",
+          "EMPLOYEE_PROFILES": {
+            "TITLE": "Employees, extensions, and SIP access",
+            "CREATE_HINT": "Create the Virtual PBX channel first. Add employees in inbox collaborators, then assign personal extensions/SIP credentials from settings when needed.",
+            "HINT": "Bind each OneLink employee to an internal PBX extension and add their own SIP username/password when needed.",
+            "EMPLOYEE_LABEL": "OneLink employee",
+            "SELECT_PLACEHOLDER": "Use current user or select employee",
+            "CURRENT_USER": "Current user",
+            "ADD": "Add employee extension",
+            "REMOVE": "Remove employee {index}",
+            "REQUIRED": "Select an employee and enter an internal extension for each row",
+            "SIP_PAIR_REQUIRED": "Employee SIP username/password must be filled together"
+          },
           "EMPLOYEE_SIP_USERNAME": {
             "LABEL": "Employee SIP username",
             "PLACEHOLDER": "Optional employee SIP username"
@@ -506,14 +518,14 @@
             "PLACEHOLDER": "Optional employee SIP password"
           },
           "INTERNAL_EXTENSION": {
-            "LABEL": "Operator internal extension",
+            "LABEL": "Employee internal extension",
             "PLACEHOLDER": "1001",
-            "REQUIRED": "Operator internal extension is required"
+            "REQUIRED": "Employee internal extension is required"
           },
           "MANAGEMENT_TITLE": "Virtual PBX local configuration",
           "MANAGEMENT_SUBTITLE": "Edit the local OneLink PBX bundle or delete it after dry-run checks. Remote Fonoster/Routr writes stay blocked.",
-          "CURRENT_USER_REQUIRED": "Current user is required to create an operator SIP profile",
-          "REQUIRED_FIELDS": "Fill in inbox name, display phone, SIP host, and operator internal extension",
+          "CURRENT_USER_REQUIRED": "Current user is required to create an employee SIP profile",
+          "REQUIRED_FIELDS": "Fill in inbox name, display phone, and SIP host",
           "READ_ONLY": "This channel uses legacy/read-only ownership and cannot be changed by local PBX provisioning.",
           "LOAD_ERROR": "We were not able to load Virtual PBX configuration.",
           "CREATE_SUCCESS": "Virtual PBX channel has been created locally",

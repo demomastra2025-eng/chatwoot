@@ -63,7 +63,7 @@ class Telephony::VirtualPbx::ProvisioningService
   def create_channel(payload, dry_run: true, remote_commit: false)
     ensure_remote_mutation_not_requested!(remote_commit)
     normalized = normalize_payload(payload)
-    errors = validation_errors(normalized)
+    errors = validation_errors(normalized, require_profiles: normalized[:profiles_supplied])
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'create', normalized_payload: normalized, errors: errors, existing_config: nil,
@@ -80,6 +80,7 @@ class Telephony::VirtualPbx::ProvisioningService
     errors = validation_errors(
       normalized,
       require_profiles: normalized[:profiles_supplied],
+      profile_inbox_id: inbox_id,
       exclude_inbox_id: inbox_id
     )
     if existing_config.dig(
@@ -251,6 +252,7 @@ class Telephony::VirtualPbx::ProvisioningService
         internal_extension: attrs['internal_extension'].presence,
         sip_username: attrs['sip_username'].presence,
         sip_password: attrs['sip_password'].presence,
+        sip_password_configured: ActiveModel::Type::Boolean.new.cast(attrs['sip_password_configured']),
         enabled: attrs.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(attrs['enabled']) : true
       }.compact
     end
@@ -263,6 +265,7 @@ class Telephony::VirtualPbx::ProvisioningService
         user_id: attrs[:user_id],
         internal_extension: attrs[:internal_extension],
         sip_username: attrs[:sip_username],
+        sip_password_configured: ActiveModel::Type::Boolean.new.cast(attrs[:sip_password_configured]),
         enabled: attrs.key?(:enabled) ? attrs[:enabled] : true
       }.compact
     end
@@ -282,7 +285,7 @@ class Telephony::VirtualPbx::ProvisioningService
     source.to_h.deep_stringify_keys.slice('environment', 'source', 'notes')
   end
 
-  def validation_errors(payload, require_profiles: true, check_duplicate_number_ref: true, exclude_inbox_id: nil)
+  def validation_errors(payload, require_profiles: true, profile_inbox_id: nil, check_duplicate_number_ref: true, exclude_inbox_id: nil)
     [].tap do |errors|
       unless payload[:provider_kind].in?(ALLOWED_PROVIDER_KINDS)
         errors << error('provider_kind_invalid',
@@ -299,7 +302,7 @@ class Telephony::VirtualPbx::ProvisioningService
       if check_duplicate_number_ref && number_ref_taken?(payload, exclude_inbox_id: exclude_inbox_id)
         errors << error('number_ref_taken', 'Generated number_ref is already used by another channel')
       end
-      errors.concat(profile_errors(payload[:profiles])) if require_profiles
+      errors.concat(profile_errors(payload[:profiles], inbox_id: profile_inbox_id)) if require_profiles
     end
   end
 
@@ -307,22 +310,52 @@ class Telephony::VirtualPbx::ProvisioningService
     error('connection_port_invalid', 'connection.port must be an integer between 1 and 65535')
   end
 
-  def profile_errors(profiles)
-    return [error('profiles_required', 'At least one employee SIP profile is required')] if profiles.blank?
-
-    profiles.each_with_index.with_object([]) do |(profile, index), errors|
+  def profile_errors(profiles, inbox_id: nil)
+    Array.wrap(profiles).each_with_index.with_object([]) do |(profile, index), errors|
       errors << error('profile_user_required', "profiles[#{index}].user_id is required") if profile[:user_id].blank?
       if profile[:internal_extension].blank?
         errors << error('profile_internal_extension_required',
                         "profiles[#{index}].internal_extension is required")
       end
-      if profile[:sip_username].present? ^ profile[:sip_password].present?
+      if sip_credentials_pair_invalid?(profile, inbox_id: inbox_id)
         errors << error('profile_sip_credentials_pair_required', "profiles[#{index}] SIP username/password must be provided together")
       end
-      next if profile[:user_id].blank? || account.account_users.exists?(user_id: profile[:user_id])
+      next if profile[:user_id].blank?
 
-      errors << error('profile_user_not_in_account', "profiles[#{index}].user_id must belong to the account")
+      unless account.account_users.exists?(user_id: profile[:user_id])
+        errors << error('profile_user_not_in_account', "profiles[#{index}].user_id must belong to the account")
+        next
+      end
+
+      next if inbox_id.blank? || InboxMember.exists?(inbox_id: inbox_id, user_id: profile[:user_id])
+
+      errors << error('profile_user_not_in_inbox', "profiles[#{index}].user_id must be an inbox collaborator before SIP assignment")
     end
+  end
+
+  def sip_credentials_pair_invalid?(profile, inbox_id: nil)
+    has_username = profile[:sip_username].present?
+    has_password = profile[:sip_password].present?
+    return has_password unless has_username
+    return false if has_password
+
+    !existing_sip_profile_password_configured?(profile, inbox_id: inbox_id)
+  end
+
+  def existing_sip_profile_password_configured?(profile, inbox_id: nil)
+    return false if inbox_id.blank? || profile[:user_id].blank? || profile[:internal_extension].blank?
+
+    account.telephony_sip_profiles
+           .where(inbox_id: inbox_id, user_id: profile[:user_id], internal_extension: profile[:internal_extension])
+           .where.not(password_secret_ref: [nil, ''])
+           .exists?
+  end
+
+  def password_secret_ref_for(profile_record, profile, payload, index)
+    return nil if profile[:sip_username].blank?
+    return generated_refs(payload)[:profile_secret_refs][index] if profile[:sip_password].present?
+
+    profile_record.password_secret_ref
   end
 
   def create_local_channel!(payload)
@@ -332,10 +365,8 @@ class Telephony::VirtualPbx::ProvisioningService
       channel = Channel::Voice.create!(account: account, phone_number: payload[:display_phone_number], provider: 'fonoster',
                                        provider_config: provider_config_for(payload, provider_connection))
       inbox = Inbox.create!(account: account, channel: channel, name: payload[:channel_name])
-      sync_inbox_members!(inbox, payload[:profiles])
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection)
       upsert_routing_policy!(binding, payload)
-      upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles].present?
       result = { inbox_id: inbox.id }
     end
     result
@@ -352,7 +383,6 @@ class Telephony::VirtualPbx::ProvisioningService
       inbox.update!(name: payload[:channel_name])
       channel.update!(phone_number: payload[:display_phone_number],
                       provider_config: provider_config_for(payload, provider_connection, channel.provider_config_hash))
-      sync_inbox_members!(inbox, payload[:profiles]) if payload[:profiles_supplied]
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection)
       upsert_routing_policy!(binding, payload)
       upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
@@ -451,12 +481,12 @@ class Telephony::VirtualPbx::ProvisioningService
       profile_record.assign_attributes(
         provider_connection: provider_connection,
         sip_username: profile[:sip_username],
-        password_secret_ref: profile[:sip_password].present? ? generated_refs(payload)[:profile_secret_refs][index] : profile_record.password_secret_ref,
+        password_secret_ref: password_secret_ref_for(profile_record, profile, payload, index),
         sip_host: payload.dig(:connection, :host),
         agent_ref: generated_refs(payload)[:profile_refs][index],
         agent_aor: generated_profile_aor(profile, payload),
         fonoster_agent_ref: generated_refs(payload)[:profile_refs][index],
-        credentials_ref: generated_refs(payload)[:profile_secret_refs][index],
+        credentials_ref: profile[:sip_username].present? ? generated_refs(payload)[:profile_secret_refs][index] : nil,
         enabled: profile.fetch(:enabled, true),
         availability_mode: 'external_extension',
         status: 'draft',
@@ -468,14 +498,6 @@ class Telephony::VirtualPbx::ProvisioningService
       desired_keys << profile_record.id
     end
     inbox.telephony_sip_profiles.where.not(id: desired_keys).destroy_all
-  end
-
-  def sync_inbox_members!(inbox, profiles)
-    user_ids = Array.wrap(profiles).filter_map { |profile| profile[:user_id] }.uniq
-    inbox.inbox_members.where.not(user_id: user_ids).destroy_all
-    user_ids.each do |user_id|
-      inbox.inbox_members.find_or_create_by!(user_id: user_id)
-    end
   end
 
   def provider_config_for(payload, provider_connection, base = {})
@@ -534,14 +556,14 @@ class Telephony::VirtualPbx::ProvisioningService
   def create_steps(payload)
     refs = generated_refs(payload)
     [
-      step('validate_payload', 'Validate channel, provider connection, and employee SIP profiles'),
+      step('validate_payload', 'Validate channel, provider connection, and optional employee SIP profiles'),
       step('upsert_provider_connection', 'Upsert local provider connection/trunk ownership metadata', local_model: 'Telephony::ProviderConnection'),
       step('create_channel_voice', 'Create Channel::Voice with display_phone_number and sanitized provider_config', local_model: 'Channel::Voice'),
-      step('create_inbox', 'Create inbox and inbox members for selected employees', local_model: 'Inbox'),
+      step('create_inbox', 'Create inbox; collaborators are managed by the normal inbox members flow', local_model: 'Inbox'),
       step('create_number_binding', 'Create telephony number binding with ingress_number and deterministic number_ref',
            local_model: 'Telephony::NumberBinding', ref: refs[:number_ref]),
       step('create_routing_policy', 'Create routing policy as runtime source of truth', local_model: 'Telephony::RoutingPolicy'),
-      step('create_sip_profiles', 'Create SIP profiles without storing raw passwords', local_model: 'Telephony::SipProfile'),
+      step('defer_sip_profiles', 'Assign inbox collaborators and employee SIP profiles later in settings'),
       step('skip_remote_bridge_mutation', 'Remote Fonoster/Routr/bridge writes are blocked', remote: true)
     ]
   end

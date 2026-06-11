@@ -35,7 +35,7 @@ vi.mock('dashboard/composables/store', () => ({
     dispatch: dispatchMock,
   }),
   useMapGetter: getter => ({
-    value: getter === 'getCurrentUser' ? { id: 501 } : { isCreating: false },
+    value: getter === 'inboxes/getUIFlags' ? { isCreating: false } : {},
   }),
 }));
 
@@ -104,7 +104,7 @@ describe('Voice channel setup', () => {
     });
   });
 
-  it('creates a simple local Virtual PBX channel with current user profile', async () => {
+  it('creates a simple local Virtual PBX channel without employee profiles', async () => {
     routeMock.query = { provider: 'kazakhstan' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { config: { inbox_id: 202 }, errors: [] },
@@ -115,42 +115,35 @@ describe('Voice channel setup', () => {
     await inputs[0].setValue('Virtual PBX');
     await inputs[1].setValue('+1 555 123 4567');
     await inputs[2].setValue('sip.provider.local');
-    await inputs[3].setValue('100');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
     expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
-      {
+      expect.not.objectContaining({ profiles: expect.any(Array) }),
+      { dryRun: false, remoteCommit: false }
+    );
+    expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
         provider_kind: 'sipuni',
         channel_name: 'Virtual PBX',
-        display_phone_number: '+15551234567',
-        provider_account_number: '+15551234567',
-        ingress_number: '+15551234567',
-        connection: {
+        provider_account_number: expect.any(String),
+        ingress_number: expect.any(String),
+        connection: expect.objectContaining({
           host: 'sip.provider.local',
           port: '5060',
           transport: 'udp',
           username: undefined,
           password: undefined,
-        },
-        routing: {
+        }),
+        routing: expect.objectContaining({
           mode: 'operator',
           fallback_mode: 'reject',
           operator_agent_aor: undefined,
-        },
-        profiles: [
-          {
-            user_id: 501,
-            internal_extension: '100',
-            sip_username: undefined,
-            sip_password: undefined,
-            enabled: true,
-          },
-        ],
+        }),
         metadata: {
           source: 'virtual_pbx_ui',
         },
-      },
+      }),
       { dryRun: false, remoteCommit: false }
     );
     expect(routerReplaceMock).toHaveBeenCalledWith({
@@ -162,57 +155,18 @@ describe('Voice channel setup', () => {
     });
   });
 
-  it('keeps advanced Virtual PBX provider and ingress overrides optional', async () => {
+  it('points employee SIP assignment to settings instead of create', () => {
     routeMock.query = { provider: 'kazakhstan' };
-    createVirtualPbxChannelMock.mockResolvedValue({
-      payload: { config: { inbox_id: 203 }, errors: [] },
-    });
     const wrapper = buildWrapper();
 
-    const advancedToggle = wrapper
-      .findAll('button')
-      .find(button =>
-        button.text().includes('VIRTUAL_PBX.ADVANCED_FIELDS.SHOW')
-      );
-    await advancedToggle.trigger('click');
-    await flushPromises();
-    const inputs = wrapper.findAll('input');
-
-    await inputs[0].setValue('Virtual PBX');
-    await inputs[1].setValue('+1 555 123 4567');
-    await inputs[2].setValue('3100000');
-    await inputs[3].setValue('3100001');
-    await inputs[4].setValue('sip.provider.local');
-    await inputs[6].setValue('shared-login');
-    await inputs[7].setValue('shared-password');
-    await inputs[8].setValue('100');
-    await inputs[9].setValue('employee-login');
-    await inputs[10].setValue('employee-password');
-    await inputs[11].setValue('sip:100@sip.provider.local');
-    await wrapper.find('form').trigger('submit');
-    await flushPromises();
-
-    expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider_account_number: '3100000',
-        ingress_number: '3100001',
-        connection: expect.objectContaining({
-          username: 'shared-login',
-          password: 'shared-password',
-        }),
-        profiles: [
-          expect.objectContaining({
-            user_id: 501,
-            internal_extension: '100',
-            sip_username: 'employee-login',
-            sip_password: 'employee-password',
-          }),
-        ],
-        routing: expect.objectContaining({
-          operator_agent_aor: 'sip:100@sip.provider.local',
-        }),
-      }),
-      { dryRun: false, remoteCommit: false }
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
     );
   });
 });

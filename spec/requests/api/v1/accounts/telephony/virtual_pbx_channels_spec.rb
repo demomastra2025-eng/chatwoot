@@ -15,16 +15,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
         transport: 'udp',
         username: '056124100014',
         password: 'do-not-return-this-secret'
-      },
-      profiles: [
-        {
-          user_id: agent.id,
-          internal_extension: '207',
-          sip_username: '056124100014',
-          sip_password: 'do-not-return-this-profile-secret',
-          enabled: true
-        }
-      ]
+      }
     }
   end
   let(:administrator) { create(:user, account: account, role: :administrator) }
@@ -91,14 +82,12 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     }
   end
 
-  def create_payload_variant(display_phone_number:, provider_account_number:, ingress_number:, internal_extension:, source: nil)
+  def create_payload_variant(display_phone_number:, provider_account_number:, ingress_number:, internal_extension: nil, source: nil)
     valid_create_payload.deep_dup.tap do |payload|
       payload[:display_phone_number] = display_phone_number
       payload[:provider_account_number] = provider_account_number
       payload[:ingress_number] = ingress_number
       payload[:connection][:username] = provider_account_number
-      payload[:profiles].first[:internal_extension] = internal_extension
-      payload[:profiles].first[:sip_username] = provider_account_number
       payload[:metadata] = { source: source } if source.present?
     end
   end
@@ -203,28 +192,22 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(payload.fetch('bridge_operations')).to all(include('blocked' => true))
     expect(payload.dig('generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
     expect(payload.to_json).not_to include('do-not-return-this-secret')
-    expect(payload.to_json).not_to include('do-not-return-this-profile-secret')
     expect(payload.dig('payload', 'connection', 'password')).to eq('[REDACTED]')
-    expect(payload.dig('payload', 'profiles', 0, 'sip_password')).to eq('[REDACTED]')
   end
 
-  it 'accepts shared provider credentials without per-employee SIP credentials' do
-    payload = valid_create_payload.deep_dup
-    payload[:profiles].first.delete(:sip_username)
-    payload[:profiles].first.delete(:sip_password)
-
-    post base_path, params: payload, headers: headers, as: :json
+  it 'accepts simple create dry-run without employee SIP profiles' do
+    post base_path, params: valid_create_payload, headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
     expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
     expect(body.dig('payload', 'connection', 'username')).to eq('056124100014')
     expect(body.dig('payload', 'connection', 'password')).to eq('[REDACTED]')
-    expect(body.dig('payload', 'profiles', 0)).not_to include('sip_username')
-    expect(body.dig('payload', 'profiles', 0)).not_to include('sip_password')
+    expect(body.dig('payload', 'profiles')).to eq([])
+    expect(body.fetch('errors')).to eq([])
   end
 
-  it 'accepts per-employee SIP credentials without shared provider credentials' do
+  it 'accepts simple create dry-run without shared provider credentials' do
     payload = valid_create_payload.deep_dup
     payload[:connection].delete(:username)
     payload[:connection].delete(:password)
@@ -236,8 +219,31 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
     expect(body.dig('payload', 'connection')).not_to include('username')
     expect(body.dig('payload', 'connection')).not_to include('password')
-    expect(body.dig('payload', 'profiles', 0, 'sip_username')).to eq('056124100014')
-    expect(body.dig('payload', 'profiles', 0, 'sip_password')).to eq('[REDACTED]')
+    expect(body.dig('payload', 'profiles')).to eq([])
+  end
+
+  it 'rejects explicitly supplied invalid SIP profile rows during create dry-run' do
+    other_account = create(:account)
+    outsider = create(:user, account: other_account, role: :agent)
+    payload = valid_create_payload.deep_dup.merge(
+      profiles: [
+        {
+          user_id: outsider.id,
+          internal_extension: '207',
+          sip_username: '056124100014',
+          sip_password: 'do-not-return-this-profile-secret',
+          enabled: true
+        }
+      ]
+    )
+
+    post base_path, params: payload, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => false)
+    expect(body.fetch('errors').map { |error| error['code'] }).to include('profile_user_not_in_account')
+    expect(body.to_json).not_to include('do-not-return-this-profile-secret')
   end
 
   it 'blocks remote mutation even when a caller asks for remote_commit' do
@@ -274,18 +280,56 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.fetch('errors').map { |error| error['code'] }).to include('connection_port_invalid')
   end
 
-  it 'rejects SIP profile users outside the current account' do
+  it 'rejects SIP profile users outside the current account during settings assignment' do
+    post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
     other_account = create(:account)
     outsider = create(:user, account: other_account, role: :agent)
-    payload = valid_create_payload.deep_dup
-    payload[:profiles].first[:user_id] = outsider.id
 
-    post base_path, params: payload, headers: headers, as: :json
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          profiles: [
+            {
+              user_id: outsider.id,
+              internal_extension: '207',
+              sip_username: '056124100014',
+              sip_password: 'do-not-return-this-profile-secret',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
-    expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => false)
+    expect(body).to include('operation' => 'update', 'dry_run' => true, 'valid' => false)
     expect(body.fetch('errors').map { |error| error['code'] }).to include('profile_user_not_in_account')
+  end
+
+  it 'rejects SIP profile assignment before the user is an inbox collaborator' do
+    post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '207',
+              sip_username: '056124100014',
+              sip_password: 'do-not-return-this-profile-secret',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('operation' => 'update', 'dry_run' => true, 'valid' => false)
+    expect(body.fetch('errors').map { |error| error['code'] }).to include('profile_user_not_in_inbox')
   end
 
   it 'creates a managed local Virtual PBX bundle when dry_run is explicitly disabled' do
@@ -310,19 +354,102 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       routing_policies: counts_before[:routing_policies] + 1,
       agent_bindings: counts_before[:agent_bindings],
       provider_connections: counts_before[:provider_connections] + 1,
-      sip_profiles: counts_before[:sip_profiles] + 1
+      sip_profiles: counts_before[:sip_profiles]
     )
     expect(payload.dig('config', 'ownership', 'read_only')).to be(false)
     expect(payload.dig('config', 'resources', 'provider_connection')).to be_present
+    inbox = Inbox.find(inbox_id)
+    expect(inbox.inbox_members).to be_empty
+    expect(inbox.telephony_sip_profiles).to be_empty
     expect(Telephony::NumberBinding.find_by!(inbox_id: inbox_id)).to be_managed
     expect(payload.to_json).not_to include('do-not-return-this-secret')
-    expect(payload.to_json).not_to include('do-not-return-this-profile-secret')
 
     get "#{base_path}/#{inbox_id}", headers: headers
 
     show_payload = response.parsed_body.fetch('payload')
     expect(show_payload.to_json).not_to include('do-not-return-this-secret')
-    expect(show_payload.to_json).not_to include('do-not-return-this-profile-secret')
+  end
+
+  it 'binds employee extensions to existing inbox collaborators during settings update' do
+    second_agent = create(:user, account: account, role: :agent)
+    post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox = Inbox.find(inbox_id)
+    inbox.inbox_members.find_or_create_by!(user_id: agent.id)
+    inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '207',
+              sip_username: '056124100014',
+              sip_password: 'do-not-return-this-profile-secret',
+              enabled: true
+            },
+            {
+              user_id: second_agent.id,
+              internal_extension: '208',
+              sip_username: '056124100015',
+              sip_password: 'do-not-return-second-profile-secret',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(inbox.reload.inbox_members.pluck(:user_id)).to contain_exactly(agent.id, second_agent.id)
+    expect(inbox.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
+      [agent.id, '207', '056124100014'],
+      [second_agent.id, '208', '056124100015']
+    )
+    expect(response.parsed_body.to_json).not_to include('do-not-return-this-profile-secret')
+    expect(response.parsed_body.to_json).not_to include('do-not-return-second-profile-secret')
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '207',
+              sip_username: '056124100014',
+              enabled: true
+            },
+            {
+              user_id: second_agent.id,
+              internal_extension: '208',
+              sip_username: '056124100015',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
+      [agent.id, '207', '056124100014'],
+      [second_agent.id, '208', '056124100015']
+    )
+
+    put "#{base_path}/#{inbox_id}",
+        params: { dry_run: false, channel_name: 'Renamed Sipuni line' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
+      [agent.id, '207', '056124100014'],
+      [second_agent.id, '208', '056124100015']
+    )
   end
 
   it 'returns a status contract for a managed local bundle' do

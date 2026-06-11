@@ -496,7 +496,19 @@
             "LABEL": "Ортақ SIP password",
             "PLACEHOLDER": "Қосымша ортақ SIP password"
           },
-          "EMPLOYEE_CREDENTIALS_HINT": "Провайдер логині/құпиясөзі ортақ болса, бос қалдырыңыз. Бұл қызметкерде бөлек SIP credentials болса ғана толтырыңыз.",
+          "EMPLOYEE_CREDENTIALS_HINT": "Қызметкер жолындағы SIP username/password — сол қызметкердің жеке SIP credentials. Бос қалса, провайдердің ортақ баптаулары қолданылады.",
+          "EMPLOYEE_PROFILES": {
+            "TITLE": "Қызметкерлер, ішкі нөмірлер және SIP қолжетімдері",
+            "CREATE_HINT": "Алдымен Virtual PBX арнасын құрыңыз. Қызметкерлерді inbox қатысушылары арқылы қосып, қажет болса жеке ішкі нөмір/SIP қолжетімдерін баптаулардан тағайындаңыз.",
+            "HINT": "Әр OneLink қызметкерін АТС ішкі нөміріне байлап, қажет болса оның жеке SIP username/password мәндерін енгізіңіз.",
+            "EMPLOYEE_LABEL": "OneLink қызметкері",
+            "SELECT_PLACEHOLDER": "Ағымдағы пайдаланушы немесе қызметкерді таңдаңыз",
+            "CURRENT_USER": "Ағымдағы пайдаланушы",
+            "ADD": "Қызметкер қосу",
+            "REMOVE": "Қызметкерді өшіру {index}",
+            "REQUIRED": "Әр жолда қызметкерді таңдап, ішкі нөмірді енгізіңіз",
+            "SIP_PAIR_REQUIRED": "Қызметкердің SIP username/password бірге толтырылуы керек"
+          },
           "EMPLOYEE_SIP_USERNAME": {
             "LABEL": "Қызметкердің SIP username",
             "PLACEHOLDER": "Қосымша қызметкер SIP username"
@@ -506,14 +518,14 @@
             "PLACEHOLDER": "Қосымша қызметкер SIP password"
           },
           "INTERNAL_EXTENSION": {
-            "LABEL": "Оператордың ішкі нөмірі",
+            "LABEL": "Қызметкердің ішкі нөмірі",
             "PLACEHOLDER": "1001",
-            "REQUIRED": "Оператордың ішкі нөмірі міндетті"
+            "REQUIRED": "Қызметкердің ішкі нөмірі міндетті"
           },
           "MANAGEMENT_TITLE": "Virtual PBX жергілікті конфигурациясы",
           "MANAGEMENT_SUBTITLE": "Жергілікті OneLink PBX bundle-ін өзгертіңіз немесе dry-run тексерістерінен кейін өшіріңіз. Fonoster/Routr remote өзгерістері бұғатталған күйде қалады.",
-          "CURRENT_USER_REQUIRED": "Оператордың SIP профилін құру үшін ағымдағы пайдаланушы қажет",
-          "REQUIRED_FIELDS": "Inbox атауын, көрсетілетін нөмірді, SIP host және оператордың ішкі нөмірін толтырыңыз",
+          "CURRENT_USER_REQUIRED": "Қызметкердің SIP профилін құру үшін ағымдағы пайдаланушы қажет",
+          "REQUIRED_FIELDS": "Inbox атауын, көрсетілетін нөмірді және SIP host толтырыңыз",
           "READ_ONLY": "Бұл арнада legacy/read-only иелік бар, оны жергілікті PBX provisioning арқылы өзгертуге болмайды.",
           "LOAD_ERROR": "Virtual PBX конфигурациясын жүктеу мүмкін болмады.",
           "CREATE_SUCCESS": "Virtual PBX арнасы жергілікті құрылды",

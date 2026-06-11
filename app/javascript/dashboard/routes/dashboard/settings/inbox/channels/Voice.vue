@@ -40,9 +40,6 @@ const kazakhstanState = reactive({
   connectionPassword: '',
   routingMode: 'operator',
   operatorAgentAor: '',
-  internalExtension: '',
-  employeeSipUsername: '',
-  employeeSipPassword: '',
 });
 
 const twilioState = reactive({
@@ -76,13 +73,8 @@ const isValidSipPort = value => {
 };
 
 const uiFlags = useMapGetter('inboxes/getUIFlags');
-const currentUser = useMapGetter('getCurrentUser');
 const isCreatingVirtualPbx = ref(false);
 const isVirtualPbxAdvancedVisible = ref(false);
-
-const getterValue = getter => getter?.value ?? getter;
-
-const currentUserId = computed(() => getterValue(currentUser)?.id || null);
 
 const selectedProvider = computed(() => {
   return Object.values(PROVIDER_TYPES).includes(route.query.provider)
@@ -128,7 +120,6 @@ const kazakhstanValidationRules = computed(() => ({
   connectionHost: { required },
   connectionPort: { required, isValidSipPort },
   routingMode: { required },
-  internalExtension: { required },
 }));
 
 const twilioValidationRules = computed(() => ({
@@ -196,9 +187,6 @@ const kazakhstanFormErrors = computed(() => ({
     : '',
   operatorAgentAor: kazakhstanV$.value.operatorAgentAor?.$error
     ? t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.REQUIRED')
-    : '',
-  internalExtension: kazakhstanV$.value.internalExtension?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.REQUIRED')
     : '',
 }));
 
@@ -276,15 +264,6 @@ function getVirtualPbxPayload() {
       fallback_mode: 'reject',
       operator_agent_aor: kazakhstanState.operatorAgentAor.trim() || undefined,
     },
-    profiles: [
-      {
-        user_id: currentUserId.value,
-        internal_extension: kazakhstanState.internalExtension.trim(),
-        sip_username: kazakhstanState.employeeSipUsername.trim() || undefined,
-        sip_password: kazakhstanState.employeeSipPassword || undefined,
-        enabled: true,
-      },
-    ],
     metadata: {
       source: 'virtual_pbx_ui',
     },
@@ -318,11 +297,6 @@ async function createKazakhstanChannel() {
 
   const isFormValid = await kazakhstanV$.value.$validate();
   if (!isFormValid) return;
-
-  if (!currentUserId.value) {
-    useAlert(t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CURRENT_USER_REQUIRED'));
-    return;
-  }
 
   isCreatingVirtualPbx.value = true;
   try {
@@ -507,11 +481,9 @@ async function createSipuniChannel() {
           @click="isVirtualPbxAdvancedVisible = !isVirtualPbxAdvancedVisible"
         >
           {{
-            t(
-              isVirtualPbxAdvancedVisible
-                ? 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.HIDE'
-                : 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.SHOW'
-            )
+            isVirtualPbxAdvancedVisible
+              ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.HIDE')
+              : t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.SHOW')
           }}
         </button>
 
@@ -620,54 +592,11 @@ async function createSipuniChannel() {
           />
         </div>
 
-        <Input
-          v-model="kazakhstanState.internalExtension"
-          :label="
-            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL')
-          "
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER')
-          "
-          :message="kazakhstanFormErrors.internalExtension"
-          :message-type="
-            kazakhstanFormErrors.internalExtension ? 'error' : 'info'
-          "
-          @blur="kazakhstanV$.internalExtension?.$touch"
-        />
-
-        <div
-          v-if="isVirtualPbxAdvancedVisible"
-          class="flex flex-col gap-4 rounded-xl border border-n-weak p-4"
-        >
-          <p class="text-sm text-n-slate-11">
-            {{
-              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_CREDENTIALS_HINT')
-            }}
-          </p>
-          <Input
-            v-model="kazakhstanState.employeeSipUsername"
-            :label="
-              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL')
-            "
-            :placeholder="
-              t(
-                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.PLACEHOLDER'
-              )
-            "
-          />
-          <Input
-            v-model="kazakhstanState.employeeSipPassword"
-            type="password"
-            :label="
-              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL')
-            "
-            :placeholder="
-              t(
-                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.PLACEHOLDER'
-              )
-            "
-          />
-        </div>
+        <p class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11">
+          {{
+            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT')
+          }}
+        </p>
 
         <div v-if="isVirtualPbxAdvancedVisible" class="flex flex-col gap-2">
           <label class="text-sm font-medium text-n-slate-12">
@@ -708,7 +637,7 @@ async function createSipuniChannel() {
         <div>
           <NextButton
             :is-loading="isCreatingVirtualPbx || uiFlags.isCreating"
-            :disabled="isKazakhstanSubmitDisabled || !currentUserId"
+            :disabled="isKazakhstanSubmitDisabled"
             :label="t('INBOX_MGMT.ADD.VOICE.SUBMIT_BUTTON')"
             type="submit"
           />
