@@ -2,7 +2,7 @@ require 'rails_helper'
 
 describe Whatsapp::ChannelCreationService do
   let(:account) { create(:account) }
-  let(:waba_info) { { waba_id: 'test_waba_id', business_name: 'Test Business' } }
+  let(:waba_info) { { waba_id: 'test_waba_id', business_id: 'test_business_id', business_name: 'Test Business' } }
   let(:phone_info) do
     {
       phone_number_id: 'test_phone_id',
@@ -43,13 +43,14 @@ describe Whatsapp::ChannelCreationService do
         expect { service.perform }.to change(Channel::Whatsapp, :count).by(1)
       end
 
-      it 'creates channel with correct attributes' do
+      it 'creates channel with correct attributes', :aggregate_failures do
         channel = service.perform
         expect(channel.phone_number).to eq('+123****7890')
         expect(channel.provider).to eq('whatsapp_cloud')
         expect(channel.provider_config['api_key']).to eq(access_token)
         expect(channel.provider_config['phone_number_id']).to eq('test_phone_id')
         expect(channel.provider_config['business_account_id']).to eq('test_waba_id')
+        expect(channel.provider_config['business_id']).to eq('test_business_id')
         expect(channel.provider_config['source']).to eq('embedded_signup')
         expect(channel.provider_config['calling_enabled']).to be_nil
       end

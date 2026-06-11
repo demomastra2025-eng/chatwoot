@@ -21,6 +21,14 @@ RSpec.describe Instagram::IntegrationHelper do
       expect(decoded_token['iat']).to eq(current_time.to_i)
     end
 
+    it 'includes inbox_id for reauthorization flows' do
+      token = generate_instagram_token(account_id, inbox_id: 42)
+      decoded_token = JWT.decode(token, client_secret, true, algorithm: 'HS256').first
+
+      expect(decoded_token['sub']).to eq(account_id)
+      expect(decoded_token['inbox_id']).to eq(42)
+    end
+
     context 'when client secret is not configured' do
       let(:client_secret) { nil }
 
@@ -50,10 +58,11 @@ RSpec.describe Instagram::IntegrationHelper do
     end
 
     it 'returns a hash with the correct structure' do
-      payload = token_payload(account_id)
+      payload = token_payload(account_id, inbox_id: 42)
 
       expect(payload).to be_a(Hash)
       expect(payload[:sub]).to eq(account_id)
+      expect(payload[:inbox_id]).to eq(42)
       expect(payload[:iat]).to eq(current_time.to_i)
     end
   end
@@ -61,8 +70,9 @@ RSpec.describe Instagram::IntegrationHelper do
   describe '#verify_instagram_token' do
     let(:account_id) { 1 }
     let(:client_secret) { 'test_secret' }
+    let(:signing_secret) { 'test_secret' }
     let(:valid_token) do
-      JWT.encode({ sub: account_id, iat: Time.current.to_i }, client_secret, 'HS256')
+      JWT.encode({ sub: account_id, iat: Time.current.to_i }, signing_secret, 'HS256')
     end
 
     before do

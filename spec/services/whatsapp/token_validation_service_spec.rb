@@ -50,6 +50,25 @@ describe Whatsapp::TokenValidationService do
       end
     end
 
+    context 'when token belongs to a different Meta App' do
+      let(:token_health) do
+        {
+          'status' => 'app_id_mismatch',
+          'app_id' => 'other-app',
+          'expected_app_id' => 'app-1'
+        }
+      end
+
+      before do
+        token_inspection = instance_double(Whatsapp::TokenInspectionService, perform: token_health)
+        allow(Whatsapp::TokenInspectionService).to receive(:new).and_return(token_inspection)
+      end
+
+      it 'raises an error' do
+        expect { service.perform }.to raise_error(/Token belongs to Meta App other-app, expected app-1/)
+      end
+    end
+
     context 'when token does not have access to WABA' do
       let(:token_health) do
         {

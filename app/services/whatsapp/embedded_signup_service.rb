@@ -15,13 +15,7 @@ class Whatsapp::EmbeddedSignupService
     phone_info = fetch_phone_info(access_token)
     token_health = validate_token_access(access_token)
 
-    channel = create_or_reauthorize_channel(access_token, phone_info)
-    store_token_health(channel, token_health)
-    # NOTE: We call setup_webhooks explicitly here instead of relying on after_commit callback because:
-    # 1. Reauthorization flow updates an existing channel (not a create), so after_commit on: :create won't trigger
-    # 2. We need to run check_channel_health_and_prompt_reauth after webhook setup completes
-    # 3. The channel is marked with source: 'embedded_signup' to skip the after_commit callback
-    channel.setup_webhooks
+    channel = create_or_reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
     # Skip health check during reauthorization — phone numbers in pending provisioning state
     # (platform_type: NOT_APPLICABLE) would incorrectly trigger a disconnect email right after
     # a successful reauth. Only run health check for new channel creation.
@@ -54,16 +48,52 @@ class Whatsapp::EmbeddedSignupService
     channel.store_token_health!(token_health)
   end
 
+  def create_or_reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
+    return reauthorize_channel_with_webhooks(access_token, phone_info, token_health) if @inbox_id.present?
+
+    channel = nil
+    ActiveRecord::Base.transaction do
+      channel = create_or_reauthorize_channel(access_token, phone_info)
+      store_token_health(channel, token_health)
+      setup_webhooks!(channel)
+    end
+    channel
+  end
+
+  def reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
+    channel = nil
+    ActiveRecord::Base.transaction do
+      channel = create_or_reauthorize_channel(access_token, phone_info)
+      store_token_health(channel, token_health)
+      setup_webhooks!(channel)
+      mark_channel_reauthorized(channel)
+    end
+    channel
+  end
+
+  def mark_channel_reauthorized(channel)
+    channel.reauthorized! if channel.respond_to?(:reauthorized!)
+  end
+
+  def setup_webhooks!(channel)
+    # NOTE: We call setup_webhooks explicitly here instead of relying on after_commit callback because:
+    # 1. Reauthorization flow updates an existing channel (not a create), so after_commit on: :create won't trigger
+    # 2. We need to run check_channel_health_and_prompt_reauth after webhook setup completes
+    # 3. The channel is marked with source: 'embedded_signup' to skip the after_commit callback
+    channel.setup_webhooks(strict: true)
+  end
+
   def create_or_reauthorize_channel(access_token, phone_info)
     if @inbox_id.present?
       Whatsapp::ReauthorizationService.new(
         account: @account,
         inbox_id: @inbox_id,
         phone_number_id: @phone_number_id,
-        business_id: @business_id
+        business_id: @business_id,
+        waba_id: @waba_id
       ).perform(access_token, phone_info)
     else
-      waba_info = { waba_id: @waba_id, business_name: phone_info[:business_name] }
+      waba_info = { waba_id: @waba_id, business_id: @business_id, business_name: phone_info[:business_name] }
       Whatsapp::ChannelCreationService.new(@account, waba_info, phone_info, access_token).perform
     end
   end
@@ -91,6 +121,7 @@ class Whatsapp::EmbeddedSignupService
     missing_params << 'code' if @code.blank?
     missing_params << 'business_id' if @business_id.blank?
     missing_params << 'waba_id' if @waba_id.blank?
+    missing_params << 'phone_number_id' if @phone_number_id.blank?
 
     return if missing_params.empty?
 

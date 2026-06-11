@@ -3,7 +3,15 @@ require 'rails_helper'
 RSpec.describe Whatsapp::HealthService do
   let(:api_version) { 'v22.0' }
   let(:whatsapp_channel) do
-    create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+    create(:channel_whatsapp, provider: 'whatsapp_cloud',
+                              provider_config: {
+                                'api_key' => 'token-1',
+                                'phone_number_id' => '123456789',
+                                'business_account_id' => 'waba-1',
+                                'business_id' => 'business-1',
+                                'source' => 'embedded_signup'
+                              },
+                              validate_provider_config: false, sync_templates: false)
   end
 
   before do
@@ -68,6 +76,7 @@ RSpec.describe Whatsapp::HealthService do
     result = described_class.new(whatsapp_channel).fetch_health_status
 
     expect(result[:verified_name]).to eq('Healthy Business')
+    expect(result[:business_id]).to eq('business-1')
     expect(whatsapp_channel.reload.reauthorization_required?).to be(false)
     expect(whatsapp_channel.provider_config).not_to include('authorization_status')
     expect(whatsapp_channel.provider_config).not_to include('authorization_error')

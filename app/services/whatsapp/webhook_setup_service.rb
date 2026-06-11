@@ -1,9 +1,10 @@
 class Whatsapp::WebhookSetupService
-  def initialize(channel, waba_id = nil, access_token = nil)
+  def initialize(channel, waba_id = nil, access_token = nil, strict: false)
     @channel = channel
     @waba_id = waba_id || channel.provider_config['business_account_id']
     @access_token = access_token || channel.provider_config['api_key']
     @api_client = Whatsapp::FacebookApiClient.new(@access_token)
+    @strict = strict
   end
 
   def perform
@@ -37,7 +38,8 @@ class Whatsapp::WebhookSetupService
     @api_client.register_phone_number(phone_number_id, pin)
     store_pin(pin)
   rescue StandardError => e
-    Rails.logger.warn("[WHATSAPP] Phone registration failed but continuing: #{e.message}")
+    Rails.logger.warn("[WHATSAPP] Phone registration failed#{@strict ? '' : ' but continuing'}: #{e.message}")
+    raise if @strict
   end
 
   def fetch_or_create_pin
@@ -109,6 +111,7 @@ class Whatsapp::WebhookSetupService
     # - platform_type: "NOT_APPLICABLE" means not fully set up
     # - throughput.level: "NOT_APPLICABLE" means no messaging capacity assigned
     health_data[:platform_type] == 'NOT_APPLICABLE' ||
+      health_data.dig(:throughput, 'level') == 'NOT_APPLICABLE' ||
       health_data.dig(:throughput, :level) == 'NOT_APPLICABLE'
 
   rescue StandardError => e

@@ -42,17 +42,27 @@ class Channel::Instagram < ApplicationRecord
                                                           }).perform
   end
 
-  def subscribe
+  def subscribe(raise_on_error: false, access_token: nil)
+    subscription_access_token = access_token.presence || self.access_token
+
     # ref https://developers.facebook.com/docs/instagram-platform/webhooks#enable-subscriptions
-    HTTParty.post(
+    response = HTTParty.post(
       "https://graph.instagram.com/v22.0/#{instagram_id}/subscribed_apps",
       query: {
         subscribed_fields: %w[messages message_reactions messaging_seen],
-        access_token: access_token
+        access_token: subscription_access_token
       }
     )
+
+    if raise_on_error && response.respond_to?(:success?) && !response.success?
+      raise "Instagram webhook subscription failed: #{response.code} - #{response.body}"
+    end
+
+    response
   rescue StandardError => e
     Rails.logger.debug { "Rescued: #{e.inspect}" }
+    raise if raise_on_error
+
     true
   end
 

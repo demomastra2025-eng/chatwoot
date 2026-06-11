@@ -70,28 +70,46 @@ describe Whatsapp::PhoneInfoService do
       end
     end
 
-    context 'when phone_number_id is not provided' do
-      let(:phone_number_id) { nil }
-      let(:phone_response) do
+    context 'when phone number is on a later Meta page' do
+      let(:first_page_response) do
+        {
+          'data' => [{ 'id' => 'other_phone_id' }],
+          'paging' => {
+            'next' => 'https://graph.facebook.com/v22.0/test_waba_id/phone_numbers?after=cursor_1',
+            'cursors' => { 'after' => 'cursor_1' }
+          }
+        }
+      end
+      let(:second_page_response) do
         {
           'data' => [
             {
-              'id' => 'first_phone_id',
+              'id' => phone_number_id,
               'display_phone_number' => '1234567890',
-              'verified_name' => 'Test Business',
+              'verified_name' => 'Paged Business',
               'code_verification_status' => 'VERIFIED'
             }
           ]
         }
       end
 
-      before do
-        allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(phone_response)
-      end
+      it 'paginates until it finds the requested phone number' do
+        expect(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(first_page_response)
+        expect(api_client).to receive(:fetch_phone_numbers).with(waba_id, after: 'cursor_1').and_return(second_page_response)
 
-      it 'uses the first available phone number' do
         result = service.perform
-        expect(result[:phone_number_id]).to eq('first_phone_id')
+        expect(result[:phone_number_id]).to eq(phone_number_id)
+        expect(result[:business_name]).to eq('Paged Business')
+      end
+    end
+
+    context 'when phone_number_id is not provided' do
+      let(:phone_number_id) { nil }
+
+      it 'raises an error instead of silently choosing the first available phone number' do
+        expect(api_client).not_to receive(:fetch_phone_numbers)
+
+        expect { service.perform }.to raise_error(ArgumentError, 'Phone number ID is required')
       end
     end
 
@@ -114,10 +132,9 @@ describe Whatsapp::PhoneInfoService do
         allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(phone_response)
       end
 
-      it 'uses the first available phone number as fallback' do
-        result = service.perform
-        expect(result[:phone_number_id]).to eq('available_phone_id')
-        expect(result[:phone_number]).to eq('+9876543210')
+      it 'raises an error instead of creating the inbox for a different number' do
+        expect { service.perform }
+          .to raise_error(/Phone number different_id is not available for WABA test_waba_id/)
       end
     end
 
@@ -129,7 +146,7 @@ describe Whatsapp::PhoneInfoService do
       end
 
       it 'raises an error' do
-        expect { service.perform }.to raise_error(/No phone numbers found for WABA/)
+        expect { service.perform }.to raise_error(/Phone number test_phone_number_id is not available for WABA test_waba_id/)
       end
     end
 

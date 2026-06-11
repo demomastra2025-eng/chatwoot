@@ -180,6 +180,15 @@ describe Whatsapp::WebhookSetupService do
           expect { service.perform }.not_to raise_error
         end
       end
+
+      it 'raises in strict embedded-signup mode' do
+        strict_service = described_class.new(channel, waba_id, access_token, strict: true)
+        with_modified_env FRONTEND_URL: 'https://one-link.kz' do
+          expect(api_client).to receive(:register_phone_number)
+          expect(api_client).not_to receive(:subscribe_waba_webhook)
+          expect { strict_service.perform }.to raise_error('Registration failed')
+        end
+      end
     end
 
     context 'when webhook setup fails (should raise)' do

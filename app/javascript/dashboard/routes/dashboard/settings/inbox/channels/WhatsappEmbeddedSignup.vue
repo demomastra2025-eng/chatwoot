@@ -15,12 +15,15 @@ import {
   initWhatsAppEmbeddedSignup,
   createMessageHandler,
   isValidBusinessData,
+  getWhatsAppEmbeddedSignupConfigErrors,
 } from './whatsapp/utils';
 
 const store = useStore();
 const router = useRouter();
 const route = useRoute();
 const { t } = useI18n();
+
+const SIGNUP_TIMEOUT_MS = 10 * 60 * 1000;
 
 // State
 const fbSdkLoaded = ref(false);
@@ -30,6 +33,21 @@ const authCodeReceived = ref(false);
 const authCode = ref(null);
 const businessData = ref(null);
 const isAuthenticating = ref(false);
+let handleSignupMessage = null;
+let signupTimeout = null;
+
+const clearSignupTimeout = () => {
+  if (!signupTimeout) return;
+
+  window.clearTimeout(signupTimeout);
+  signupTimeout = null;
+};
+
+const cleanupMessageListener = () => {
+  if (!handleSignupMessage) return;
+
+  window.removeEventListener('message', handleSignupMessage);
+};
 
 const benefits = computed(() => [
   {
@@ -48,28 +66,56 @@ const benefits = computed(() => [
 
 const showLoader = computed(() => isAuthenticating.value || isProcessing.value);
 
+const getEmbeddedSignupConfigurationError = () => {
+  const missingConfig = getWhatsAppEmbeddedSignupConfigErrors(
+    window.chatwootConfig
+  );
+  if (missingConfig.includes('WHATSAPP_APP_ID')) {
+    return t('INBOX.REAUTHORIZE.WHATSAPP_APP_ID_MISSING');
+  }
+  if (missingConfig.includes('WHATSAPP_CONFIGURATION_ID')) {
+    return t('INBOX.REAUTHORIZE.WHATSAPP_CONFIG_ID_MISSING');
+  }
+  return '';
+};
+
 // Error handling
-const handleSignupError = data => {
+function handleSignupError(data) {
+  clearSignupTimeout();
   isProcessing.value = false;
   authCodeReceived.value = false;
   isAuthenticating.value = false;
+  cleanupMessageListener();
 
   const errorMessage =
     data.error ||
     data.message ||
     t('INBOX_MGMT.ADD.WHATSAPP.API.ERROR_MESSAGE');
   useAlert(errorMessage);
+}
+
+const startSignupTimeout = () => {
+  clearSignupTimeout();
+  signupTimeout = window.setTimeout(() => {
+    handleSignupError({
+      error: t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.SIGNUP_ERROR'),
+    });
+  }, SIGNUP_TIMEOUT_MS);
 };
 
 const handleSignupCancellation = () => {
+  clearSignupTimeout();
   isProcessing.value = false;
   authCodeReceived.value = false;
   isAuthenticating.value = false;
+  cleanupMessageListener();
 };
 
 const handleSignupSuccess = inboxData => {
+  clearSignupTimeout();
   isProcessing.value = false;
   isAuthenticating.value = false;
+  cleanupMessageListener();
 
   if (inboxData && inboxData.id) {
     useAlert(t('INBOX_MGMT.FINISH.MESSAGE'));
@@ -162,10 +208,25 @@ const handleEmbeddedSignupData = async data => {
   }
 };
 
-const handleSignupMessage = createMessageHandler(handleEmbeddedSignupData);
+handleSignupMessage = createMessageHandler(handleEmbeddedSignupData);
+
+function setupMessageListener() {
+  cleanupMessageListener();
+  window.addEventListener('message', handleSignupMessage);
+}
 
 const launchEmbeddedSignup = async () => {
+  const configurationError = getEmbeddedSignupConfigurationError();
+  if (configurationError) {
+    handleSignupError({ error: configurationError });
+    return;
+  }
+
   try {
+    authCode.value = null;
+    authCodeReceived.value = false;
+    businessData.value = null;
+    setupMessageListener();
     isAuthenticating.value = true;
     processingMessage.value = t(
       'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.AUTH_PROCESSING'
@@ -177,6 +238,7 @@ const launchEmbeddedSignup = async () => {
     );
     fbSdkLoaded.value = true;
 
+    startSignupTimeout();
     const code = await initWhatsAppEmbeddedSignup(
       window.chatwootConfig?.whatsappConfigurationId
     );
@@ -192,8 +254,7 @@ const launchEmbeddedSignup = async () => {
     }
   } catch (error) {
     if (error.message === 'Login cancelled') {
-      isProcessing.value = false;
-      isAuthenticating.value = false;
+      handleSignupCancellation();
       useAlert(t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.CANCELLED'));
     } else {
       handleSignupError({
@@ -206,14 +267,6 @@ const launchEmbeddedSignup = async () => {
 };
 
 // Lifecycle
-const setupMessageListener = () => {
-  window.addEventListener('message', handleSignupMessage);
-};
-
-const cleanupMessageListener = () => {
-  window.removeEventListener('message', handleSignupMessage);
-};
-
 const initialize = () => {
   setupMessageListener();
 };
@@ -223,6 +276,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearSignupTimeout();
   cleanupMessageListener();
 });
 </script>

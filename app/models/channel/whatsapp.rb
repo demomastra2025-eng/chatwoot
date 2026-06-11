@@ -78,11 +78,12 @@ class Channel::Whatsapp < ApplicationRecord
   delegate :media_url, to: :provider_service
   delegate :api_headers, to: :provider_service
 
-  def setup_webhooks
-    perform_webhook_setup
+  def setup_webhooks(strict: false)
+    perform_webhook_setup(strict: strict)
   rescue StandardError => e
     Rails.logger.error "[WHATSAPP] Webhook setup failed: #{e.message}"
     prompt_reauthorization!
+    raise if strict
   end
 
   def record_provider_authorization_error!(payload)
@@ -190,11 +191,11 @@ class Channel::Whatsapp < ApplicationRecord
     errors.add(:provider_config, 'Invalid Credentials') unless provider_service.validate_provider_config?
   end
 
-  def perform_webhook_setup
+  def perform_webhook_setup(strict: false)
     business_account_id = provider_config['business_account_id']
     api_key = provider_config['api_key']
 
-    Whatsapp::WebhookSetupService.new(self, business_account_id, api_key).perform
+    Whatsapp::WebhookSetupService.new(self, business_account_id, api_key, strict: strict).perform
   end
 
   def teardown_webhooks

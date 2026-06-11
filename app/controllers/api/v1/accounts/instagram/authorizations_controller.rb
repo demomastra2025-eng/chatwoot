@@ -11,7 +11,7 @@ class Api::V1::Accounts::Instagram::AuthorizationsController < Api::V1::Accounts
         enable_fb_login: '0',
         force_authentication: '1',
         response_type: 'code',
-        state: generate_instagram_token(Current.account.id)
+        state: generate_instagram_token(Current.account.id, inbox_id: instagram_reauthorization_inbox_id)
       }
     )
     if redirect_url
@@ -19,5 +19,16 @@ class Api::V1::Accounts::Instagram::AuthorizationsController < Api::V1::Accounts
     else
       render json: { success: false }, status: :unprocessable_content
     end
+  end
+
+  private
+
+  def instagram_reauthorization_inbox_id
+    return if params[:inbox_id].blank?
+
+    inbox = Current.account.inboxes.find(params[:inbox_id])
+    return inbox.id if inbox.instagram?
+
+    raise Pundit::NotAuthorizedError
   end
 end

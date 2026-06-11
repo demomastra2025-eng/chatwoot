@@ -809,9 +809,7 @@ export const actions = {
       ...currentInbox,
       ...response.data,
       reauthorization_required: false,
-      provider_config: currentProviderConfig
-        ? providerConfig
-        : currentProviderConfig,
+      provider_config: providerConfig || currentProviderConfig,
     };
 
     commit(types.default.EDIT_INBOXES, updatedInbox);

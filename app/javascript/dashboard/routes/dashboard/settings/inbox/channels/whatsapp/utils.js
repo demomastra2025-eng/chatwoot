@@ -30,12 +30,40 @@ export const initializeFacebook = (appId, apiVersion) => {
 };
 
 export const isValidBusinessData = businessData => {
-  return businessData && businessData.business_id && businessData.waba_id;
+  return !!(
+    businessData &&
+    businessData.business_id &&
+    businessData.waba_id &&
+    businessData.phone_number_id
+  );
+};
+
+export const getWhatsAppEmbeddedSignupConfigErrors = config => {
+  const missingConfig = [];
+  if (!config?.whatsappAppId || config.whatsappAppId === 'none') {
+    missingConfig.push('WHATSAPP_APP_ID');
+  }
+  if (
+    !config?.whatsappConfigurationId ||
+    config.whatsappConfigurationId === 'none'
+  ) {
+    missingConfig.push('WHATSAPP_CONFIGURATION_ID');
+  }
+  return missingConfig;
+};
+
+const isAllowedFacebookOrigin = origin => {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === 'facebook.com' || hostname.endsWith('.facebook.com');
+  } catch {
+    return false;
+  }
 };
 
 export const createMessageHandler = onEmbeddedSignupData => {
   return event => {
-    if (!event.origin.endsWith('facebook.com')) return;
+    if (!isAllowedFacebookOrigin(event.origin)) return;
 
     try {
       let data;

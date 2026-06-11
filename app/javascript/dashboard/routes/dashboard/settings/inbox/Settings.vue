@@ -890,17 +890,11 @@ export default {
     },
     whatsappUnauthorized() {
       return (
-        this.isAWhatsAppCloudChannel &&
-        this.isEmbeddedSignupWhatsApp &&
-        this.inbox.reauthorization_required
+        this.isAWhatsAppCloudChannel && this.inbox.reauthorization_required
       );
     },
     whatsappRegistrationIncomplete() {
-      if (
-        !this.healthData ||
-        !this.isAWhatsAppCloudChannel ||
-        !this.isEmbeddedSignupWhatsApp
-      ) {
+      if (!this.healthData || !this.isAWhatsAppCloudChannel) {
         return false;
       }
 

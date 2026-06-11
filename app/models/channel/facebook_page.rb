@@ -46,7 +46,7 @@ class Channel::FacebookPage < ApplicationRecord
                                                           }).perform
   end
 
-  def subscribe
+  def subscribe(raise_on_error: false)
     # ref https://developers.facebook.com/docs/messenger-platform/reference/webhook-events
     Facebook::Messenger::Subscriptions.subscribe(
       access_token: page_access_token,
@@ -56,6 +56,8 @@ class Channel::FacebookPage < ApplicationRecord
     )
   rescue StandardError => e
     Rails.logger.debug { "Rescued: #{e.inspect}" }
+    raise if raise_on_error
+
     true
   end
 

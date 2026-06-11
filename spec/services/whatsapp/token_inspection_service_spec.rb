@@ -97,6 +97,25 @@ RSpec.describe Whatsapp::TokenInspectionService do
       expect(result['phone_number_access']).to be(true)
     end
 
+    it 'requires reauthorization when the token belongs to a different Meta App' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'app_id' => 'other-app',
+          'is_valid' => true,
+          'scopes' => %w[whatsapp_business_management whatsapp_business_messaging]
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return('data' => [{ 'id' => phone_number_id }])
+
+      service = described_class.new(access_token: access_token, waba_id: waba_id, phone_number_id: phone_number_id, api_client: api_client)
+      result = service.perform
+
+      expect(result['status']).to eq('app_id_mismatch')
+      expect(result['app_id']).to eq('other-app')
+      expect(result['expected_app_id']).to eq('app-1')
+      expect(service.reauthorization_required?).to be(true)
+    end
+
     it 'requires reauthorization when the token cannot access the configured phone number' do
       allow(api_client).to receive(:debug_token).and_return(
         'data' => {
@@ -110,6 +129,27 @@ RSpec.describe Whatsapp::TokenInspectionService do
 
       expect(result['status']).to eq('phone_number_mismatch')
       expect(result['available_phone_number_ids']).to eq(['different-phone'])
+    end
+
+    it 'accepts configured phone numbers returned on a later WABA phone-number page' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'is_valid' => true,
+          'scopes' => %w[whatsapp_business_management whatsapp_business_messaging]
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(
+        'data' => [{ 'id' => 'different-phone' }],
+        'paging' => { 'next' => 'https://graph.facebook.com/next', 'cursors' => { 'after' => 'cursor-1' } }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id, after: 'cursor-1').and_return(
+        'data' => [{ 'id' => phone_number_id }]
+      )
+
+      result = described_class.new(access_token: access_token, waba_id: waba_id, phone_number_id: phone_number_id, api_client: api_client).perform
+
+      expect(result['status']).to eq('healthy')
+      expect(result['phone_number_access']).to be(true)
     end
   end
 end

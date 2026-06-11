@@ -92,6 +92,7 @@ export default {
         this.runFBInit(); // run init anyway, `tryFBlogin` won't wait for `fbAsyncInit` otherwise.
         this.tryFBlogin(); // make an attempt to login
       } catch (error) {
+        this.hasLoginStarted = false;
         if (error.name === 'ScriptLoaderError') {
           // if the error was related to script loading, we show a toast
           useAlert(this.$t('INBOX_MGMT.DETAILS.ERROR_FB_LOADING'));
@@ -185,6 +186,13 @@ export default {
         } = response;
         this.pageList = data.page_details;
         this.user_access_token = data.user_access_token;
+        if (!this.getSelectablePages.length) {
+          this.hasError = true;
+          this.errorStateMessage = this.$t('INBOX_MGMT.DETAILS.ERROR_FB_AUTH');
+          this.errorStateDescription = this.$t(
+            'INBOX_MGMT.DETAILS.ERROR_FB_UNAUTHORIZED_HELP'
+          );
+        }
       } catch (error) {
         this.hasError = true;
         this.errorStateMessage =
@@ -217,8 +225,13 @@ export default {
               params: { page: 'new', inbox_id: data.id },
             });
           })
-          .catch(() => {
+          .catch(error => {
             this.isCreating = false;
+            useAlert(
+              error?.response?.data?.error ||
+                error.message ||
+                this.$t('INBOX_MGMT.DETAILS.ERROR_FB_AUTH')
+            );
           });
       }
     },

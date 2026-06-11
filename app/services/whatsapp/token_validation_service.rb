@@ -30,6 +30,8 @@ class Whatsapp::TokenValidationService
     case token_health['status']
     when Whatsapp::TokenInspectionService::PERMISSION_MISSING_STATUS
       "Token is missing required WhatsApp permissions: #{Array(token_health['missing_permissions']).join(', ')}"
+    when Whatsapp::TokenInspectionService::APP_ID_MISMATCH_STATUS
+      "Token belongs to Meta App #{token_health['app_id']}, expected #{token_health['expected_app_id']}"
     when Whatsapp::TokenInspectionService::PHONE_NUMBER_MISMATCH_STATUS
       available_phone_numbers = Array(token_health['available_phone_number_ids']).join(', ')
       "Token does not have access to phone number #{@phone_number_id}. Available phone numbers: #{available_phone_numbers}"

@@ -26,21 +26,14 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
 
   def log_additional_info
     Rails.logger.debug do
-      "user_access_token: #{params[:user_access_token]} , page_access_token: #{params[:page_access_token]} ,
-      page_id: #{params[:page_id]}, inbox_name: #{params[:inbox_name]}"
+      "facebook_page_callback page_id: #{params[:page_id]}, inbox_name: #{params[:inbox_name]}, tokens: [FILTERED]"
     end
   end
 
   def facebook_pages
     return render_facebook_error unless fb_object
 
-    pages = []
-    fb_pages = fb_object.get_connections('me', 'accounts')
-    pages.concat(fb_pages)
-    while fb_pages.respond_to?(:next_page) && (next_page = fb_pages.next_page)
-      fb_pages = next_page
-      pages.concat(fb_pages)
-    end
+    pages = fetch_all_facebook_pages(fb_object)
     @page_details = mark_already_existing_facebook_pages(pages)
   rescue StandardError => e
     log_facebook_callback_error('facebook_pages', e)
@@ -64,7 +57,7 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
 
     if @inbox&.facebook?
       fb_page_id = @inbox.channel.page_id
-      page_details = fb_object.get_connections('me', 'accounts')
+      page_details = fetch_all_facebook_pages(fb_object)
 
       if (page_detail = (page_details || []).detect { |page| fb_page_id == page['id'] })
         update_fb_page(fb_page_id, page_detail['access_token'])
@@ -86,14 +79,25 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
 
   def update_fb_page(fb_page_id, access_token)
     fb_page = get_fb_page(fb_page_id)
+    raise ActiveRecord::RecordNotFound, 'Facebook page channel not found' unless fb_page
+
     ActiveRecord::Base.transaction do
-      fb_page&.update!(user_access_token: @user_access_token, page_access_token: access_token)
+      fb_page.update!(user_access_token: @user_access_token, page_access_token: access_token)
       set_instagram_id(access_token, fb_page)
-      fb_page&.reauthorized!
-    rescue StandardError => e
-      ChatwootExceptionTracker.new(e).capture_exception
-      Rails.logger.error "Error in update_fb_page: #{e.message}"
+      fb_page.subscribe(raise_on_error: true)
+      fb_page.reauthorized!
     end
+  end
+
+  def fetch_all_facebook_pages(facebook_api)
+    pages = []
+    fb_pages = facebook_api.get_connections('me', 'accounts')
+    pages.concat(fb_pages || [])
+    while fb_pages.respond_to?(:next_page) && (next_page = fb_pages.next_page)
+      fb_pages = next_page
+      pages.concat(fb_pages || [])
+    end
+    pages
   end
 
   def get_fb_page(fb_page_id)

@@ -35,12 +35,27 @@ onMounted(() => {
 
 const requestAuthorization = async () => {
   isRequestingAuthorization.value = true;
-  const response = await instagramClient.generateAuthorization();
-  const {
-    data: { url },
-  } = response;
+  hasError.value = false;
 
-  window.location.href = url;
+  try {
+    const response = await instagramClient.generateAuthorization();
+    const {
+      data: { url },
+    } = response;
+
+    if (!url) throw new Error(t('INBOX_MGMT.ADD.INSTAGRAM.ERROR_AUTH'));
+
+    window.location.href = url;
+  } catch (error) {
+    hasError.value = true;
+    errorStateMessage.value = t('INBOX_MGMT.ADD.INSTAGRAM.ERROR_MESSAGE');
+    errorStateDescription.value =
+      error?.response?.data?.error ||
+      error.message ||
+      t('INBOX_MGMT.ADD.INSTAGRAM.ERROR_AUTH');
+  } finally {
+    isRequestingAuthorization.value = false;
+  }
 };
 </script>
 

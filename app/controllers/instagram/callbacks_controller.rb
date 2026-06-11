@@ -89,6 +89,8 @@ class Instagram::CallbacksController < ApplicationController
 
   def find_or_create_inbox
     user_details = fetch_instagram_user_details(@long_lived_token_response['access_token'])
+    return reauthorize_existing_inbox(user_details) if reauthorization_inbox_id.present?
+
     channel_instagram = find_channel_by_instagram_id(user_details['user_id'].to_s)
     channel_exists = channel_instagram.present?
 
@@ -107,6 +109,26 @@ class Instagram::CallbacksController < ApplicationController
 
   def find_channel_by_instagram_id(instagram_id)
     Channel::Instagram.find_by(instagram_id: instagram_id, account: account)
+  end
+
+  def reauthorize_existing_inbox(user_details)
+    inbox = account.inboxes.find(reauthorization_inbox_id)
+    channel_instagram = inbox.channel
+    unless channel_instagram.is_a?(Channel::Instagram) && channel_instagram.instagram_id == user_details['user_id'].to_s
+      raise StandardError, 'Instagram account mismatch. Please authorize the same Instagram account connected to this inbox.'
+    end
+
+    subscribe_channel!(channel_instagram)
+    update_channel(channel_instagram, user_details)
+    channel_instagram.reauthorized!
+    [inbox, true]
+  end
+
+  def subscribe_channel!(channel_instagram)
+    channel_instagram.subscribe(
+      raise_on_error: true,
+      access_token: @long_lived_token_response['access_token']
+    )
   end
 
   def update_channel(channel_instagram, user_details)
@@ -144,9 +166,20 @@ class Instagram::CallbacksController < ApplicationController
   end
 
   def account_id
+    instagram_state_payload&.[]('sub')
+  end
+
+  def reauthorization_inbox_id
+    instagram_state_payload&.[]('inbox_id')
+  end
+
+  def instagram_state_payload
     return unless params[:state]
 
-    verify_instagram_token(params[:state])
+    @instagram_state_payload ||= begin
+      payload = instagram_token_payload(params[:state])
+      payload.presence || { 'sub' => verify_instagram_token(params[:state]) }.compact
+    end
   end
 
   def oauth_code

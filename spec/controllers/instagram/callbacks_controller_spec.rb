@@ -54,7 +54,6 @@ RSpec.describe Instagram::CallbacksController do
       end
 
       it 'updates existing channel with new token' do
-        # Create an existing channel
         existing_channel = create(:channel_instagram, account: account, instagram_id: '12345', access_token: 'old_token')
         create(:inbox, channel: existing_channel, account: account, name: 'old_username')
 
@@ -66,6 +65,30 @@ RSpec.describe Instagram::CallbacksController do
         expect(existing_channel.access_token).to eq('long_lived_test_token')
         expect(existing_channel.instagram_id).to eq('12345')
         expect(existing_channel.reauthorization_required?).to be false
+      end
+
+      it 'does not update existing reauthorization channel when strict subscription fails' do
+        existing_channel = create(:channel_instagram, account: account, instagram_id: '12345', access_token: 'old_token')
+        inbox = create(:inbox, channel: existing_channel, account: account, name: 'old_username')
+        existing_channel.prompt_reauthorization!
+        allow(controller).to receive(:instagram_state_payload).and_return({ 'sub' => account.id, 'inbox_id' => inbox.id })
+        expect_any_instance_of(Channel::Instagram).to receive(:subscribe)
+          .with(raise_on_error: true, access_token: 'long_lived_test_token')
+          .and_raise(StandardError, 'Instagram webhook subscription failed')
+
+        get :show, params: valid_params
+
+        expect(response).to redirect_to(
+          app_new_instagram_inbox_url(
+            account_id: account.id,
+            error_type: 'StandardError',
+            code: 500,
+            error_message: 'Instagram webhook subscription failed'
+          )
+        )
+        expect(existing_channel.reload.access_token).to eq('old_token')
+        expect(inbox.reload.name).to eq('old_username')
+        expect(existing_channel.reauthorization_required?).to be true
       end
     end
 

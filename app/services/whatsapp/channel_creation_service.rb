@@ -52,6 +52,7 @@ class Whatsapp::ChannelCreationService
       api_key: @access_token,
       phone_number_id: @phone_info[:phone_number_id],
       business_account_id: @waba_info[:waba_id],
+      business_id: @waba_info[:business_id],
       source: 'embedded_signup',
       calling_capable: @phone_info[:calling_capable],
       calling_capabilities: @phone_info[:calling_capabilities]

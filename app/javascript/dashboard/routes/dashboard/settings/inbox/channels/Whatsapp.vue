@@ -7,6 +7,7 @@ import ThreeSixtyDialogWhatsapp from './360DialogWhatsapp.vue';
 import CloudWhatsapp from './CloudWhatsapp.vue';
 import WhatsappEmbeddedSignup from './WhatsappEmbeddedSignup.vue';
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
+import { getWhatsAppEmbeddedSignupConfigErrors } from './whatsapp/utils';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 const route = useRoute();
@@ -23,10 +24,9 @@ const PROVIDER_TYPES = {
   THREE_SIXTY_DIALOG: '360dialog',
 };
 
-const hasWhatsappAppId = computed(() => {
+const hasWhatsappEmbeddedSignupConfig = computed(() => {
   return (
-    window.chatwootConfig?.whatsappAppId &&
-    window.chatwootConfig.whatsappAppId !== 'none'
+    getWhatsAppEmbeddedSignupConfigErrors(window.chatwootConfig).length === 0
   );
 });
 
@@ -79,7 +79,8 @@ const selectProvider = providerValue => {
 const shouldShowCloudWhatsapp = provider => {
   return (
     provider === PROVIDER_TYPES.WHATSAPP_MANUAL ||
-    (provider === PROVIDER_TYPES.WHATSAPP && !hasWhatsappAppId.value)
+    (provider === PROVIDER_TYPES.WHATSAPP &&
+      !hasWhatsappEmbeddedSignupConfig.value)
   );
 };
 
@@ -117,7 +118,8 @@ const handleManualLinkClick = () => {
         <!-- Show embedded signup if app ID is configured -->
         <div
           v-if="
-            hasWhatsappAppId && selectedProvider === PROVIDER_TYPES.WHATSAPP
+            hasWhatsappEmbeddedSignupConfig &&
+            selectedProvider === PROVIDER_TYPES.WHATSAPP
           "
         >
           <WhatsappEmbeddedSignup />

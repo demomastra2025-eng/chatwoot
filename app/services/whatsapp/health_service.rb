@@ -90,7 +90,7 @@ class Whatsapp::HealthService
       last_onboarded_time: response['last_onboarded_time'],
       platform_type: response['platform_type'],
       certificate: response['certificate'],
-      business_id: @channel.provider_config['business_account_id']
+      business_id: @channel.provider_config['business_id'].presence || @channel.provider_config['business_account_id']
     }
   end
 

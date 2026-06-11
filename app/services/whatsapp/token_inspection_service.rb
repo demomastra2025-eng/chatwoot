@@ -1,11 +1,12 @@
 class Whatsapp::TokenInspectionService
   REQUIRED_PERMISSIONS = %w[whatsapp_business_management whatsapp_business_messaging].freeze
-  REAUTHORIZATION_STATUSES = %w[invalid permission_missing waba_access_missing phone_number_mismatch].freeze
+  REAUTHORIZATION_STATUSES = %w[invalid permission_missing app_id_mismatch waba_access_missing phone_number_mismatch].freeze
   EXPIRING_SOON_STATUS = 'expiring'.freeze
   HEALTHY_STATUS = 'healthy'.freeze
   HEALTHY_UNVERIFIED_STATUS = 'healthy_unverified'.freeze
   INVALID_STATUS = 'invalid'.freeze
   PERMISSION_MISSING_STATUS = 'permission_missing'.freeze
+  APP_ID_MISMATCH_STATUS = 'app_id_mismatch'.freeze
   WABA_ACCESS_MISSING_STATUS = 'waba_access_missing'.freeze
   PHONE_NUMBER_MISMATCH_STATUS = 'phone_number_mismatch'.freeze
 
@@ -53,6 +54,7 @@ class Whatsapp::TokenInspectionService
 
     mark_invalid('Token is not valid') if data.key?('is_valid') && !data['is_valid']
     mark_invalid('Token has expired') if token_expired?(data)
+    inspect_app_id(data) unless invalid_status?
     inspect_required_permissions(data) unless invalid_status?
   rescue StandardError => e
     @debug_token_failed = true
@@ -60,15 +62,13 @@ class Whatsapp::TokenInspectionService
   end
 
   def verify_waba_access
-    response = @api_client.fetch_phone_numbers(@waba_id)
-    phone_numbers = Array(response['data'])
+    phone_number_ids = fetch_phone_number_ids
 
     @metadata['waba_access'] = true
     @metadata['phone_number_id'] = @phone_number_id if @phone_number_id.present?
 
     return if @phone_number_id.blank?
 
-    phone_number_ids = phone_numbers.pluck('id').map(&:to_s)
     @metadata['phone_number_access'] = phone_number_ids.include?(@phone_number_id)
     return if @metadata['phone_number_access']
 
@@ -78,6 +78,27 @@ class Whatsapp::TokenInspectionService
     @metadata['waba_access'] = false
     @metadata['error'] = error_metadata(e)
     @status = oauth_token_error?(e) ? INVALID_STATUS : WABA_ACCESS_MISSING_STATUS
+  end
+
+  def fetch_phone_number_ids
+    response = @api_client.fetch_phone_numbers(@waba_id)
+    phone_number_ids = []
+
+    loop do
+      phone_number_ids.concat(Array(response['data']).pluck('id').map(&:to_s))
+      break if @phone_number_id.present? && phone_number_ids.include?(@phone_number_id)
+
+      after = next_phone_page_cursor(response)
+      break if after.blank?
+
+      response = @api_client.fetch_phone_numbers(@waba_id, after: after)
+    end
+
+    phone_number_ids.uniq
+  end
+
+  def next_phone_page_cursor(response)
+    response.dig('paging', 'cursors', 'after') if response.dig('paging', 'next').present?
   end
 
   def finalize_metadata
@@ -101,8 +122,21 @@ class Whatsapp::TokenInspectionService
       'application' => data['application'],
       'user_id' => data['user_id'],
       'is_valid' => data['is_valid'],
+      'scopes' => Array(data['scopes']).map(&:to_s),
+      'data_access_expires_at' => timestamp_metadata(data['data_access_expires_at']),
+      'last_debug_at' => Time.current.iso8601,
       'granular_scopes' => token_granular_scope_summary(data)
     }.compact
+  end
+
+  def inspect_app_id(data)
+    expected_app_id = GlobalConfigService.load('WHATSAPP_APP_ID', '').to_s
+    token_app_id = data['app_id'].to_s
+    return if expected_app_id.blank? || token_app_id.blank? || token_app_id == expected_app_id
+
+    @metadata['expected_app_id'] = expected_app_id
+    @metadata['app_id_matches_config'] = false
+    @status = APP_ID_MISMATCH_STATUS
   end
 
   def apply_expiry_metadata(metadata, data)
@@ -149,6 +183,13 @@ class Whatsapp::TokenInspectionService
   def token_expired?(data)
     expires_at = data['expires_at'].to_i
     expires_at.positive? && Time.at(expires_at).utc <= Time.current
+  end
+
+  def timestamp_metadata(value)
+    timestamp = value.to_i
+    return nil unless timestamp.positive?
+
+    Time.at(timestamp).utc.iso8601
   end
 
   def resolved_healthy_status

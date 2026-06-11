@@ -51,10 +51,13 @@ class Whatsapp::FacebookApiClient
     handle_response(response, 'Token exchange failed')
   end
 
-  def fetch_phone_numbers(waba_id)
+  def fetch_phone_numbers(waba_id, after: nil)
+    query = query_with_access_token
+    query[:after] = after if after.present?
+
     response = HTTParty.get(
       "#{BASE_URI}/#{@api_version}/#{waba_id}/phone_numbers",
-      query: query_with_access_token
+      query: query
     )
 
     handle_response(response, 'WABA phone numbers fetch failed')

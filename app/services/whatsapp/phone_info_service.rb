@@ -17,27 +17,36 @@ class Whatsapp::PhoneInfoService
 
   def validate_parameters!
     raise ArgumentError, 'WABA ID is required' if @waba_id.blank?
+    raise ArgumentError, 'Phone number ID is required' if @phone_number_id.blank?
     raise ArgumentError, 'Access token is required' if @access_token.blank?
   end
 
   def fetch_and_process_phone_info
     response = @api_client.fetch_phone_numbers(@waba_id)
-    phone_numbers = response['data']
+    phone_data = find_phone_data(response['data'])
 
-    phone_data = find_phone_data(phone_numbers)
-    raise "No phone numbers found for WABA #{@waba_id}" if phone_data.nil?
+    while phone_data.nil? && next_phone_page_cursor(response).present?
+      response = @api_client.fetch_phone_numbers(@waba_id, after: next_phone_page_cursor(response))
+      phone_data = find_phone_data(response['data'])
+    end
+
+    raise missing_phone_number_message if phone_data.nil?
 
     build_phone_info(phone_data)
+  end
+
+  def next_phone_page_cursor(response)
+    response.dig('paging', 'cursors', 'after') if response.dig('paging', 'next').present?
   end
 
   def find_phone_data(phone_numbers)
     return nil if phone_numbers.blank?
 
-    if @phone_number_id.present?
-      phone_numbers.find { |phone| phone['id'] == @phone_number_id } || phone_numbers.first
-    else
-      phone_numbers.first
-    end
+    phone_numbers.find { |phone| phone['id'].to_s == @phone_number_id.to_s }
+  end
+
+  def missing_phone_number_message
+    "Phone number #{@phone_number_id} is not available for WABA #{@waba_id}"
   end
 
   def build_phone_info(phone_data)

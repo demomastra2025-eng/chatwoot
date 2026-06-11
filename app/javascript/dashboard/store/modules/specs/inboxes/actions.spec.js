@@ -501,6 +501,105 @@ describe('#actions', () => {
     });
   });
 
+  describe('#reauthorizeWhatsApp', () => {
+    it('merges returned provider config and clears local authorization errors', async () => {
+      const currentInbox = {
+        id: 321,
+        name: 'WhatsApp sales',
+        reauthorization_required: true,
+        provider_config: {
+          phone_number_id: 'old-phone',
+          business_account_id: 'old-waba',
+          authorization_status: 'reauthorization_required',
+          authorization_error: { message: 'Expired token' },
+        },
+      };
+      const responseInbox = {
+        id: 321,
+        name: 'WhatsApp sales',
+        provider_config: {
+          phone_number_id: 'new-phone',
+          business_account_id: 'new-waba',
+          business_id: 'new-business',
+          source: 'embedded_signup',
+        },
+      };
+      const getters = {
+        getInbox: id => (id === 321 ? currentInbox : null),
+      };
+
+      axios.post.mockResolvedValue({ data: responseInbox });
+
+      const updatedInbox = await actions.reauthorizeWhatsApp(
+        { commit, getters },
+        {
+          inboxId: 321,
+          code: 'auth-code',
+          business_id: 'new-business',
+          waba_id: 'new-waba',
+          phone_number_id: 'new-phone',
+        }
+      );
+
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/whatsapp/authorization',
+        {
+          code: 'auth-code',
+          business_id: 'new-business',
+          waba_id: 'new-waba',
+          phone_number_id: 'new-phone',
+          inbox_id: 321,
+        }
+      );
+      expect(updatedInbox.reauthorization_required).toBe(false);
+      expect(updatedInbox.provider_config).toEqual({
+        phone_number_id: 'new-phone',
+        business_account_id: 'new-waba',
+        business_id: 'new-business',
+        source: 'embedded_signup',
+      });
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        updatedInbox
+      );
+    });
+
+    it('keeps response provider config even when the inbox is not already in the local store', async () => {
+      const responseInbox = {
+        id: 322,
+        name: 'Imported WhatsApp',
+        provider_config: {
+          phone_number_id: 'phone-322',
+          business_account_id: 'waba-322',
+          business_id: 'business-322',
+          source: 'embedded_signup',
+        },
+      };
+      const getters = { getInbox: () => null };
+
+      axios.post.mockResolvedValue({ data: responseInbox });
+
+      const updatedInbox = await actions.reauthorizeWhatsApp(
+        { commit, getters },
+        {
+          inboxId: 322,
+          code: 'auth-code',
+          business_id: 'business-322',
+          waba_id: 'waba-322',
+          phone_number_id: 'phone-322',
+        }
+      );
+
+      expect(updatedInbox.provider_config).toEqual(
+        responseInbox.provider_config
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        updatedInbox
+      );
+    });
+  });
+
   describe('#requestTelegramPersonalQr', () => {
     it('updates the inbox when qr login request succeeds', async () => {
       axios.post.mockResolvedValue({ data: inboxList[0] });

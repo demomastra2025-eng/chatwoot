@@ -34,6 +34,15 @@ describe '/app/login', type: :request do
       expect(html_class).not_to include('auth-page-scrollable')
       expect(body_class).not_to include('auth-page-scrollable')
     end
+
+    it 'exposes the WhatsApp Graph API version to the embedded signup UI' do
+      allow(GlobalConfigService).to receive(:load).and_call_original
+      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
+
+      get '/app'
+
+      expect(response.body).to include("whatsappApiVersion: 'v22.0'")
+    end
   end
 
   context 'with DEFAULT_LOCALE' do
