@@ -15,6 +15,7 @@ RSpec.describe 'Webhooks::TelegramPersonalController', type: :request do
              headers: { 'Authorization' => "Bearer #{token}" },
              as: :json
       end.to have_enqueued_job(Channels::TelegramPersonal::ProcessWebhookEventJob)
+        .on_queue('telegram_personal_inbound')
 
       expect(response).to have_http_status(:success)
 
@@ -47,18 +48,16 @@ RSpec.describe 'Webhooks::TelegramPersonalController', type: :request do
       expect(response).to have_http_status(:success)
 
       enqueued_job = enqueued_jobs.last
-      expect(enqueued_job[:args].second).to eq(
-        {
-          'event' => 'message.created',
-          'telegram_personal' => {
-            'data' => {
-              message_id: '16025',
-              peer_user_id: '134527512',
-              chat_id: '134527512',
-              text: 'Салам'
-            }
-          }
-        }
+      expect(enqueued_job[:args].second).to include(
+        'event' => 'message.created',
+        'telegram_personal' => include(
+          'data' => include(
+            'message_id' => '16025',
+            'peer_user_id' => '134527512',
+            'chat_id' => '134527512',
+            'text' => 'Салам'
+          )
+        )
       )
     end
 

@@ -66,6 +66,49 @@ services:
       - shared-services
     restart: always
 
+  telegram-inbound-worker:
+    <<: *base
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=false
+      - ENABLE_SIDEKIQ_CRON=false
+      - DISABLE_SIDEKIQ_ALIVE=true
+      - TELEGRAM_INBOUND_SIDEKIQ_CONCURRENCY=${TELEGRAM_INBOUND_SIDEKIQ_CONCURRENCY:-2}
+    entrypoint: docker/entrypoints/rails.sh
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_telegram_inbound.yml']
+    networks:
+      - default
+      - shared-services
+    restart: always
+
+  telegram-personal-inbound-worker:
+    <<: *base
+    depends_on:
+      - postgres
+      - redis
+      - telegram-personal-gateway
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=false
+      - ENABLE_SIDEKIQ_CRON=false
+      - DISABLE_SIDEKIQ_ALIVE=true
+      - TELEGRAM_PERSONAL_GATEWAY_URL=${TELEGRAM_PERSONAL_GATEWAY_URL:-http://telegram-personal-gateway:8000}
+      - TELEGRAM_PERSONAL_GATEWAY_TOKEN=${TELEGRAM_PERSONAL_GATEWAY_TOKEN:-replace_with_strong_shared_gateway_token}
+      - TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY=${TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY:-2}
+    entrypoint: docker/entrypoints/rails.sh
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_telegram_personal_inbound.yml']
+    networks:
+      - default
+      - shared-services
+    restart: always
+
   whatsapp-calls-worker:
     <<: *base
     depends_on:

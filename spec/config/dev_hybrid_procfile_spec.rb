@@ -10,5 +10,12 @@ RSpec.describe 'dev hybrid Procfile' do
     expect(procfile).to include('captain_runtime_worker:')
     expect(procfile).to include('bundle exec sidekiq -C config/sidekiq_captain_runtime.yml')
   end
+
+  it 'starts dedicated Telegram inbound Sidekiq workers' do
+    expect(procfile).to include('telegram_inbound_worker:')
+    expect(procfile).to include('bundle exec sidekiq -C config/sidekiq_telegram_inbound.yml')
+    expect(procfile).to include('telegram_personal_inbound_worker:')
+    expect(procfile).to include('bundle exec sidekiq -C config/sidekiq_telegram_personal_inbound.yml')
+  end
 end
 # rubocop:enable RSpec/DescribeClass

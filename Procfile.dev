@@ -1,6 +1,8 @@
 backend: bin/rails s -p 3000
 # https://github.com/mperham/sidekiq/issues/3090#issuecomment-389748695
 worker: ENABLE_SIDEKIQ_CRON=true dotenv bundle exec sidekiq -C config/sidekiq.yml
+telegram_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true TELEGRAM_INBOUND_SIDEKIQ_CONCURRENCY=${TELEGRAM_INBOUND_SIDEKIQ_CONCURRENCY:-1} dotenv bundle exec sidekiq -C config/sidekiq_telegram_inbound.yml
+telegram_personal_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY=${TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY:-1} dotenv bundle exec sidekiq -C config/sidekiq_telegram_personal_inbound.yml
 outbound_messages_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_outbound_messages.yml
 reminders_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_reminders.yml
 whatsapp_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsapp_inbound.yml

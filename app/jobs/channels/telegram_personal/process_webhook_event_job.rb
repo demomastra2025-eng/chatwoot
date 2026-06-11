@@ -1,5 +1,5 @@
 class Channels::TelegramPersonal::ProcessWebhookEventJob < ApplicationJob
-  queue_as :high
+  queue_as :telegram_personal_inbound
 
   def perform(channel_id, payload)
     channel = Channel::TelegramPersonal.find_by(id: channel_id)

@@ -1,0 +1,13 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY", 2) %>
+:timeout: 25
+:max_retries: 3
+
+:queues:
+  - telegram_personal_inbound
+
+production:
+  :concurrency: <%= ENV.fetch("TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY", 2) %>
+staging:
+  :concurrency: <%= ENV.fetch("TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY", 2) %>
