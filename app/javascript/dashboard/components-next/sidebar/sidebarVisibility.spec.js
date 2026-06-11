@@ -24,6 +24,7 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Conversation:Channels']).toBeUndefined();
     expect(visibilityState['Conversation:AllChannels']).toBeUndefined();
     expect(visibilityState.MyCompany).toBe(true);
+    expect(visibilityState['MyCompany:Tags']).toBe(true);
     expect(visibilityState['MyCompany:Employees']).toBe(true);
     expect(visibilityState.Employees).toBeUndefined();
     expect(visibilityState.Settings).toBe(true);
@@ -43,10 +44,16 @@ describe('sidebarVisibility', () => {
           'Settings:CustomAttributes',
           'Settings:Macros',
           'Settings:Workspace',
+          'MyCompany:Tags',
           'Reports',
         ],
       })
-    ).toEqual(['MyCompany:Employees', 'Reports', 'Settings:Macros']);
+    ).toEqual([
+      'MyCompany:Tags',
+      'MyCompany:Employees',
+      'Reports',
+      'Settings:Macros',
+    ]);
   });
 
   it('keeps company settings immediately before reports in the visibility menu', () => {

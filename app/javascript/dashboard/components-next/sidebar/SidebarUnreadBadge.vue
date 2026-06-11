@@ -9,7 +9,9 @@ defineOptions({ inheritAttrs: false });
 
 const attrs = useAttrs();
 const count = computed(() => Number(props.value) || 0);
-const label = computed(() => (count.value > 99 ? '99+' : String(count.value)));
+const label = computed(() =>
+  count.value > 999 ? '999+' : String(count.value)
+);
 </script>
 
 <template>

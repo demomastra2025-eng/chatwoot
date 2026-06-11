@@ -36,7 +36,7 @@ const defaultChildren = [
     name: 'Labels',
     label: 'Tags',
     icon: 'i-lucide-tag',
-    badge: 123,
+    badge: 1234,
     to: allLabelsRoute,
     actionItems: [
       {
@@ -168,7 +168,7 @@ describe('SidebarCollapsedPopover', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').text()).toBe(
-      '99+'
+      '999+'
     );
   });
 });

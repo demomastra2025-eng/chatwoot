@@ -37,12 +37,12 @@ describe('SidebarNotificationBell', () => {
   });
 
   it('caps large notification counts through the shared badge', () => {
-    notificationMeta.value = { unreadCount: 120 };
+    notificationMeta.value = { unreadCount: 1200 };
 
     const wrapper = mountComponent();
 
     expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').text()).toBe(
-      '99+'
+      '999+'
     );
   });
 

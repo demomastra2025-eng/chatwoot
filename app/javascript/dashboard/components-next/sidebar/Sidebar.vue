@@ -759,6 +759,12 @@ const settingsInboxRouteNames = [
   'settings_inbox_show',
 ];
 
+const contactTagSettingsRouteNames = [
+  'contact_tags_settings_index',
+  'labels_wrapper',
+  'labels_list',
+];
+
 const activeOnForEmployeeTab = routeName =>
   employeeSettingsTabs.find(tab => tab.routeName === routeName)?.activeOn || [
     routeName,
@@ -771,6 +777,7 @@ const buildMyCompanyMenuItem = () => ({
   activeOn: [
     ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
     ...settingsInboxRouteNames,
+    ...contactTagSettingsRouteNames,
     ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
     'auditlogs_list',
   ],
@@ -795,6 +802,14 @@ const buildMyCompanyMenuItem = () => ({
           },
         ]
       : []),
+    {
+      name: 'Tags',
+      visibilityKey: 'MyCompany:Tags',
+      label: t('SIDEBAR.LABELS'),
+      icon: 'i-lucide-tag',
+      activeOn: contactTagSettingsRouteNames,
+      to: accountScopedRoute('contact_tags_settings_index'),
+    },
     {
       name: 'Employees',
       visibilityKey: 'MyCompany:Employees',
@@ -1122,9 +1137,7 @@ const menuItems = computed(() => {
         actionIcon: hasContactSettingsAccess.value ? 'i-lucide-settings-2' : '',
         actionActiveOn: [
           'contact_fields_settings_index',
-          'contact_tags_settings_index',
-          'labels_list',
-          'labels_wrapper',
+          ...contactTagSettingsRouteNames,
         ],
         actionTo: hasContactSettingsAccess.value
           ? accountScopedRoute(

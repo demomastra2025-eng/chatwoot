@@ -26,7 +26,7 @@ const router = useRouter();
 const showBadge = useMapGetter(props.getterKeys.badge);
 const dynamicCount = useMapGetter(props.getterKeys.count);
 const count = computed(() =>
-  dynamicCount.value > 99 ? '99+' : dynamicCount.value
+  dynamicCount.value > 999 ? '999+' : dynamicCount.value
 );
 
 const hasAction = computed(

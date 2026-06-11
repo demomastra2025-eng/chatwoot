@@ -14,13 +14,33 @@ describe('SidebarUnreadBadge', () => {
     );
   });
 
-  it('caps large counts at 99+', () => {
+  it('shows three-digit counts without capping', () => {
     const wrapper = mount(SidebarUnreadBadge, {
       props: { value: 120 },
     });
 
     expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').text()).toBe(
-      '99+'
+      '120'
+    );
+  });
+
+  it('does not cap the boundary count', () => {
+    const wrapper = mount(SidebarUnreadBadge, {
+      props: { value: 999 },
+    });
+
+    expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').text()).toBe(
+      '999'
+    );
+  });
+
+  it('caps large counts at 999+', () => {
+    const wrapper = mount(SidebarUnreadBadge, {
+      props: { value: 1200 },
+    });
+
+    expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').text()).toBe(
+      '999+'
     );
   });
 
