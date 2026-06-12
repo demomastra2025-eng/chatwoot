@@ -8,6 +8,7 @@ import {
   validateLoggedInRoutes,
 } from '../helper/routeHelpers';
 import { getUserPermissions } from '../helper/permissionsHelper';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
 const routes = [...dashboard.routes];
 
@@ -29,7 +30,7 @@ const trackPageView = to => {
     .catch(() => {});
 };
 
-const getAccountFeatureSource = async accountId => {
+const getAccountFeatureSource = async (accountId, requiredFeature = null) => {
   if (!accountId) {
     return null;
   }
@@ -39,7 +40,11 @@ const getAccountFeatureSource = async accountId => {
     typeof getAccount === 'function' ? getAccount(accountId) : null;
 
   let account = resolveAccount();
-  if (account?.features) {
+  if (
+    account?.features &&
+    (!requiredFeature ||
+      Object.prototype.hasOwnProperty.call(account.features, requiredFeature))
+  ) {
     return account;
   }
 
@@ -53,11 +58,16 @@ const getRouteAccountFeatureSource = async to => {
     return null;
   }
 
-  return getAccountFeatureSource(to.params.accountId);
+  const requiredFeature =
+    to.meta?.featureFlag || FEATURE_FLAGS.COMMUNICATION_THREADS;
+  return getAccountFeatureSource(to.params.accountId, requiredFeature);
 };
 
 const getDefaultAuthenticatedRoute = async (accountId, user) => {
-  const accountFeatureSource = await getAccountFeatureSource(accountId);
+  const accountFeatureSource = await getAccountFeatureSource(
+    accountId,
+    FEATURE_FLAGS.COMMUNICATION_THREADS
+  );
   const permissions = getUserPermissions(user, accountId);
 
   return defaultRedirectPage(

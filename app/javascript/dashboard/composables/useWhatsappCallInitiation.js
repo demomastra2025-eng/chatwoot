@@ -1,11 +1,11 @@
-import { computed, ref } from 'vue';
+import { computed, ref, unref } from 'vue';
 import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
-import { useInbox } from 'dashboard/composables/useInbox';
+import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import {
   useWhatsappCallsStore,
   setOutboundCallProperty,
@@ -52,21 +52,35 @@ const waitForOutboundIceGathering = pc =>
     };
   });
 
-export const useWhatsappCallInitiation = () => {
+export const useWhatsappCallInitiation = (options = {}) => {
   const { t } = useI18n();
   const store = useStore();
-  const { isAWhatsAppCloudChannel } = useInbox();
   const whatsappCallsStore = useWhatsappCallsStore();
   const isInitiatingCall = ref(false);
 
   const currentChat = computed(() => store.getters.getSelectedChat || {});
+  const selectedConversationId = computed(
+    () => unref(options.conversationId) || currentChat.value?.id
+  );
+  const selectedInboxId = computed(
+    () => unref(options.inboxId) || currentChat.value?.inbox_id
+  );
   const inbox = computed(() => {
-    const inboxId = currentChat.value?.inbox_id;
+    const inboxId = selectedInboxId.value;
     return inboxId ? store.getters['inboxes/getInbox'](inboxId) : null;
   });
   const currentContact = computed(() => {
+    const optionContact = unref(options.contact);
+    if (optionContact?.id) return optionContact;
+
     const senderId = currentChat.value?.meta?.sender?.id;
     return senderId ? store.getters['contacts/getContact'](senderId) : {};
+  });
+  const isAWhatsAppCloudChannel = computed(() => {
+    return (
+      inbox.value?.channel_type === INBOX_TYPES.WHATSAPP &&
+      inbox.value?.provider === 'whatsapp_cloud'
+    );
   });
 
   const canInitiateWhatsappCall = computed(() => {
@@ -135,7 +149,7 @@ export const useWhatsappCallInitiation = () => {
       direction: 'outbound',
       status: 'ringing',
       serverRelay: isMediaServerEnabled.value,
-      conversationId: currentChat.value.id,
+      conversationId: selectedConversationId.value,
       caller: {
         name: currentContact.value?.name,
         phone: currentContact.value?.phone_number,
@@ -184,7 +198,7 @@ export const useWhatsappCallInitiation = () => {
   };
 
   const initiateServerRelayCall = async () => {
-    if (isInitiatingCall.value || !currentChat.value?.id) return;
+    if (isInitiatingCall.value || !selectedConversationId.value) return;
     isInitiatingCall.value = true;
     let preparedCallId = null;
     let dialStarted = false;
@@ -192,7 +206,7 @@ export const useWhatsappCallInitiation = () => {
     try {
       showCallingAlert();
       const response = await WhatsappCallsAPI.prepareOutbound(
-        currentChat.value.id
+        selectedConversationId.value
       );
       if (handleInitiatePermissionStatus(response)) return;
       preparedCallId = response.data?.id;
@@ -235,7 +249,7 @@ export const useWhatsappCallInitiation = () => {
   };
 
   const initiateLegacyCall = async () => {
-    if (isInitiatingCall.value || !currentChat.value?.id) return;
+    if (isInitiatingCall.value || !selectedConversationId.value) return;
     isInitiatingCall.value = true;
     let pc = null;
     let localStream = null;
@@ -263,7 +277,7 @@ export const useWhatsappCallInitiation = () => {
       const completeSdp = pc.localDescription.sdp;
 
       const response = await WhatsappCallsAPI.initiate(
-        currentChat.value.id,
+        selectedConversationId.value,
         completeSdp
       );
 

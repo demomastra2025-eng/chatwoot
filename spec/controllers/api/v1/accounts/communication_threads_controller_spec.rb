@@ -460,7 +460,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
-    it 'returns only actual linked inbox channels and deduplicates repeated inbox conversations' do
+    it 'returns linked channels and supported unlinked contact channels' do
       contact = create(:contact, :with_email, account: account)
       inbox = create(:inbox, account: account)
       contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
@@ -480,7 +480,8 @@ RSpec.describe 'Communication Threads API', type: :request do
         contact_inbox: contact_inbox,
         last_activity_at: 1.hour.ago
       )
-      unlinked_inbox = create(:inbox, account: account)
+      unlinked_inbox = create(:inbox, :with_email, account: account)
+      create(:contact_inbox, contact: contact, inbox: unlinked_inbox)
       create(:inbox_member, user: agent, inbox: inbox)
       create(:inbox_member, user: agent, inbox: unlinked_inbox)
       thread = older_conversation.reload.communication_thread
@@ -489,9 +490,14 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:success)
       channels = JSON.parse(response.body, symbolize_names: true).fetch(:payload)
-      expect(channels.pluck(:inbox_id)).to eq([inbox.id])
-      expect(channels.pluck(:conversation_id)).to eq([newer_conversation.display_id])
-      expect(channels.pluck(:inbox_id)).not_to include(unlinked_inbox.id)
+      expect(channels.pluck(:inbox_id)).to contain_exactly(inbox.id, unlinked_inbox.id)
+      expect(channels.find { |channel| channel[:inbox_id] == inbox.id }[:conversation_id]).to eq(newer_conversation.display_id)
+      expect(channels.find { |channel| channel[:inbox_id] == unlinked_inbox.id }).to include(
+        conversation_id: nil,
+        can_send_text: true,
+        disabled: false,
+        channel_key: "inbox:#{unlinked_inbox.id}"
+      )
     end
   end
 

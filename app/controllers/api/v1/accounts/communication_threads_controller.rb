@@ -21,7 +21,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def show
-    preload_accessible_links([@communication_thread])
+    preload_accessible_links([@communication_thread], include_unlinked: true)
   end
 
   def update
@@ -30,16 +30,16 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       params: permitted_update_params,
       accessible_links: accessible_links_for(@communication_thread)
     ).perform
-    preload_accessible_links([@communication_thread])
+    preload_accessible_links([@communication_thread], include_unlinked: true)
     render :show
   end
 
   def channels
-    preload_accessible_links([@communication_thread])
+    preload_accessible_links([@communication_thread], include_unlinked: true)
   end
 
   def messages
-    preload_accessible_links([@communication_thread])
+    preload_accessible_links([@communication_thread], include_unlinked: true)
     @messages = CommunicationThreadMessageFinder.new(
       communication_thread: @communication_thread,
       current_user: Current.user,
@@ -86,7 +86,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       accessible_inboxes: accessible_inboxes,
       accessible_links: accessible_links_for(@communication_thread)
     ).perform
-    preload_accessible_links([@communication_thread])
+    preload_accessible_links([@communication_thread], include_unlinked: true)
     render :message
   end
 
@@ -222,7 +222,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
   end
 
-  def preload_accessible_links(communication_threads)
+  def preload_accessible_links(communication_threads, include_unlinked: false)
     thread_ids = communication_threads.map(&:id)
     @accessible_links_by_thread_id = if thread_ids.empty?
                                        {}
@@ -235,6 +235,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       CommunicationThreads::ChannelCapabilitiesBuilder.new(
         links: links,
         available_inboxes: accessible_inboxes,
+        include_unlinked: include_unlinked,
         preferred_status: preferred_channel_status
       ).perform
     end

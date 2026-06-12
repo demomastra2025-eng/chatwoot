@@ -5,6 +5,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     'Channel::Email' => [:email],
     'Channel::Sms' => [:phone_number],
     'Channel::TwilioSms' => [:phone_number],
+    'Channel::Voice' => [:phone_number],
     'Channel::Whatsapp' => [:phone_number]
   }.freeze
 
@@ -106,6 +107,8 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   def unlinked_capability(inbox:, policy:, target_error:)
     reply_window_open = policy.reply_window_open.nil? ? policy.allowed? : policy.reply_window_open
     reauthorization_required = reauthorization_required?(inbox)
+    return capability_payload(policy, false, true, reauthorization_required, target_error, can_reply: target_error.blank?) if voice_channel?(inbox)
+
     can_send_text = target_error.blank? && free_text_allowed?(policy)
     disabled_reason = target_error || linked_disabled_reason(
       reply_window_open: reply_window_open,

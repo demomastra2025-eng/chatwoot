@@ -186,5 +186,30 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         channel_key: "inbox:#{email_inbox.id}"
       )
     end
+
+    it 'returns unlinked voice channels as call-only capabilities when the contact has a phone number' do
+      contact = create(:contact, :with_phone_number, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+
+      payload = described_class.new(
+        links: [conversation.communication_thread_conversation],
+        contact: contact,
+        available_inboxes: [conversation.inbox, voice_inbox],
+        include_unlinked: true
+      ).perform.find { |channel| channel[:inbox_id] == voice_inbox.id }
+
+      expect(payload).to include(
+        conversation_id: nil,
+        inbox_id: voice_inbox.id,
+        channel: 'Channel::Voice',
+        can_reply: true,
+        can_send_text: false,
+        can_send_attachments: false,
+        disabled: false,
+        disabled_reason: nil,
+        channel_key: "inbox:#{voice_inbox.id}"
+      )
+    end
   end
 end

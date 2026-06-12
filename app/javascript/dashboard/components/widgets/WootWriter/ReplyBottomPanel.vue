@@ -1,5 +1,5 @@
 <script>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 import FileUpload from 'vue-upload-component';
@@ -191,7 +191,10 @@ export default {
       canInitiateWhatsappCall,
       initiateWhatsappCall,
       isInitiatingWhatsappCall,
-    } = useWhatsappCallInitiation();
+    } = useWhatsappCallInitiation({
+      conversationId: computed(() => props.conversationId),
+      inboxId: computed(() => props.inbox?.id),
+    });
 
     const uploadRef = ref(false);
 

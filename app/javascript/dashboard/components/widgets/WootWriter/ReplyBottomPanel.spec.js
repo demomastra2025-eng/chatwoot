@@ -4,6 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import ReplyBottomPanel from './ReplyBottomPanel.vue';
 
+const useWhatsappCallInitiationMock = vi.fn(() => ({
+  canInitiateWhatsappCall: false,
+  initiateWhatsappCall: vi.fn(),
+  isInitiatingWhatsappCall: false,
+}));
+
 vi.mock('activestorage', () => ({
   start: vi.fn(),
 }));
@@ -20,11 +26,7 @@ vi.mock('dashboard/composables/useUISettings', () => ({
 }));
 
 vi.mock('dashboard/composables/useWhatsappCallInitiation', () => ({
-  useWhatsappCallInitiation: () => ({
-    canInitiateWhatsappCall: false,
-    initiateWhatsappCall: vi.fn(),
-    isInitiatingWhatsappCall: false,
-  }),
+  useWhatsappCallInitiation: options => useWhatsappCallInitiationMock(options),
 }));
 
 const whatsappChannel = {
@@ -130,6 +132,21 @@ const mountComponent = props =>
   });
 
 describe('ReplyBottomPanel', () => {
+  it('passes selected conversation and inbox context to WhatsApp call initiation', () => {
+    mountComponent({
+      conversationId: 481,
+      inbox: {
+        id: 57,
+        channel_type: 'Channel::Whatsapp',
+        provider: 'whatsapp_cloud',
+      },
+    });
+
+    const [options] = useWhatsappCallInitiationMock.mock.calls.at(-1);
+    expect(options.conversationId.value).toBe(481);
+    expect(options.inboxId.value).toBe(57);
+  });
+
   it('shows selected communication channel as an icon on the send dropdown button', async () => {
     const onSend = vi.fn();
     const wrapper = mountComponent({ onSend });
