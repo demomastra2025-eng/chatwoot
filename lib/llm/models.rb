@@ -141,7 +141,7 @@ module Llm::Models
     end
 
     def valid_model_for?(feature, model_name, account: nil)
-      models_for(feature, account: account).include?(canonical_model_name(model_name))
+      model_allowed_for_feature?(feature, model_name, account: account)
     end
 
     def model_allowed_for_feature?(feature, model_name, account: nil, runtime_filtered: true)

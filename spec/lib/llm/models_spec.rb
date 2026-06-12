@@ -56,6 +56,19 @@ RSpec.describe Llm::Models do
     end
   end
 
+  describe '.valid_model_for?' do
+    it 'checks the requested model without expanding the full feature model list' do
+      account = create(:account)
+
+      expect(described_class).not_to receive(:models_for)
+      allow(described_class).to receive(:model_allowed_for_feature?)
+        .with(:assistant, 'openai/gpt-5.4', account: account)
+        .and_return(true)
+
+      expect(described_class.valid_model_for?(:assistant, 'openai/gpt-5.4', account: account)).to be true
+    end
+  end
+
   describe '.provider_for' do
     it 'returns the configured provider for a model' do
       expect(described_class.provider_for('claude-sonnet-4-6')).to eq('anthropic')
