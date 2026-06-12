@@ -74,7 +74,8 @@ class Channel::TelegramPersonal < ApplicationRecord
     'contacts_sync_cancelled_at' => nil,
     'contacts_sync_error' => nil,
     'contacts_sync_count' => 0,
-    'contacts_synced_until' => nil
+    'contacts_synced_until' => nil,
+    'ignored_chat_ids' => []
   }.freeze
 
   has_secure_token :webhook_identifier
@@ -216,6 +217,12 @@ class Channel::TelegramPersonal < ApplicationRecord
       runtime['history_sync_count'] = runtime['history_sync_count'].to_i
       runtime['history_dialog_count'] = runtime['history_dialog_count'].to_i
       runtime['contacts_sync_count'] = runtime['contacts_sync_count'].to_i
+      runtime['ignored_chat_ids'] =
+        Array.wrap(runtime['ignored_chat_ids'])
+             .flat_map { |item| item.to_s.split(/[,\s;]+/) }
+             .map(&:presence)
+             .compact
+             .uniq
       runtime.compact_blank!
     end
   end
