@@ -161,6 +161,8 @@ export default {
       telegramPersonalCode: '',
       telegramPersonalPassword: '',
       telegramPersonalQrCode: '',
+      telegramPersonalIgnoredChatId: '',
+      isSavingTelegramPersonalIgnoredChats: false,
       linkedinPersonalDiagnostics: null,
       isLoadingLinkedinPersonalDiagnostics: false,
       isRunningLinkedinPersonalReconnect: false,
@@ -298,6 +300,11 @@ export default {
     },
     telegramPersonalRuntimeState() {
       return this.inbox?.runtime_state || {};
+    },
+    telegramPersonalIgnoredChatIds() {
+      return this.normalizeTelegramPersonalIgnoredChatIds(
+        this.telegramPersonalRuntimeState.ignored_chat_ids
+      );
     },
     telegramPersonalLifecycleState() {
       return (
@@ -1353,7 +1360,7 @@ export default {
         this.isLoadingWhatsappWebDiagnostics = false;
       }
     },
-    async fetchTelegramPersonalDiagnostics() {
+    async fetchTelegramPersonalDiagnostics(force = false) {
       if (!this.isATelegramPersonalChannel || !this.currentInboxId) {
         this.telegramPersonalDiagnostics = null;
         return;
@@ -1363,12 +1370,78 @@ export default {
         this.isLoadingTelegramPersonalDiagnostics = true;
         this.telegramPersonalDiagnostics = await this.$store.dispatch(
           'inboxes/getTelegramPersonalDiagnostics',
-          this.currentInboxId
+          force
+            ? { inboxId: this.currentInboxId, force: true }
+            : this.currentInboxId
         );
       } catch (error) {
         this.telegramPersonalDiagnostics = null;
       } finally {
         this.isLoadingTelegramPersonalDiagnostics = false;
+      }
+    },
+    normalizeTelegramPersonalIgnoredChatIds(value) {
+      const values = Array.isArray(value) ? value : [value];
+
+      return [
+        ...new Set(
+          values
+            .flatMap(item => String(item || '').split(/[,\s;]+/))
+            .map(item => item.trim())
+            .filter(Boolean)
+        ),
+      ];
+    },
+    async addTelegramPersonalIgnoredChatId() {
+      const chatIds = this.normalizeTelegramPersonalIgnoredChatIds(
+        this.telegramPersonalIgnoredChatId
+      );
+
+      if (!chatIds.length) {
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHAT_ID_REQUIRED')
+        );
+        return;
+      }
+
+      await this.saveTelegramPersonalIgnoredChatIds([
+        ...this.telegramPersonalIgnoredChatIds,
+        ...chatIds,
+      ]);
+      this.telegramPersonalIgnoredChatId = '';
+    },
+    async removeTelegramPersonalIgnoredChatId(chatId) {
+      await this.saveTelegramPersonalIgnoredChatIds(
+        this.telegramPersonalIgnoredChatIds.filter(item => item !== chatId)
+      );
+    },
+    async saveTelegramPersonalIgnoredChatIds(chatIds) {
+      const ignoredChatIds =
+        this.normalizeTelegramPersonalIgnoredChatIds(chatIds);
+
+      try {
+        this.isSavingTelegramPersonalIgnoredChats = true;
+        await this.$store.dispatch('inboxes/updateInbox', {
+          id: this.currentInboxId,
+          formData: false,
+          channel: {
+            runtime_state: {
+              ...this.telegramPersonalRuntimeState,
+              ignored_chat_ids: ignoredChatIds,
+            },
+          },
+        });
+        await this.fetchTelegramPersonalDiagnostics(true);
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_ERROR')
+        );
+      } finally {
+        this.isSavingTelegramPersonalIgnoredChats = false;
       }
     },
     stopWhatsappWebPolling() {
@@ -3923,6 +3996,103 @@ export default {
                       @click="contactsSyncTelegramPersonal"
                     />
                   </div>
+                </div>
+
+                <div class="rounded-2xl border border-n-strong p-5">
+                  <div
+                    class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                  >
+                    <div>
+                      <p class="text-sm font-medium text-n-slate-12">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_SECTION'
+                          )
+                        }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-slate-10">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_SECTION_SUBTITLE'
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <span
+                      class="inline-flex items-center self-start rounded-full bg-n-alpha-2 px-3 py-1 text-xs font-medium text-n-slate-11"
+                    >
+                      {{
+                        $t(
+                          'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_COUNT',
+                          { count: telegramPersonalIgnoredChatIds.length }
+                        )
+                      }}
+                    </span>
+                  </div>
+
+                  <div class="mt-5 flex flex-col gap-3 sm:flex-row">
+                    <input
+                      v-model="telegramPersonalIgnoredChatId"
+                      class="!mb-0 min-w-0 flex-1 rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      :placeholder="
+                        $t(
+                          'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHAT_ID_PLACEHOLDER'
+                        )
+                      "
+                      @keyup.enter="addTelegramPersonalIgnoredChatId"
+                    />
+                    <NextButton
+                      class="w-full sm:w-auto"
+                      solid
+                      blue
+                      start
+                      icon="i-lucide-plus"
+                      :label="
+                        $t(
+                          'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_ADD'
+                        )
+                      "
+                      :is-loading="isSavingTelegramPersonalIgnoredChats"
+                      @click="addTelegramPersonalIgnoredChatId"
+                    />
+                  </div>
+
+                  <div
+                    v-if="telegramPersonalIgnoredChatIds.length"
+                    class="mt-4 flex flex-wrap gap-2"
+                  >
+                    <span
+                      v-for="chatId in telegramPersonalIgnoredChatIds"
+                      :key="chatId"
+                      class="inline-flex max-w-full items-center gap-2 rounded-lg bg-n-alpha-2 px-3 py-2 text-sm text-n-slate-12"
+                    >
+                      <span class="break-all font-mono">{{ chatId }}</span>
+                      <button
+                        type="button"
+                        class="inline-flex size-5 shrink-0 items-center justify-center rounded-md text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-ruby-11 disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="isSavingTelegramPersonalIgnoredChats"
+                        :aria-label="
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_REMOVE',
+                            { chatId }
+                          )
+                        "
+                        @click="removeTelegramPersonalIgnoredChatId(chatId)"
+                      >
+                        <Icon icon="i-lucide-x" class="size-3.5" />
+                      </button>
+                    </span>
+                  </div>
+                  <p v-else class="mt-4 text-sm text-n-slate-10">
+                    {{
+                      $t(
+                        'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_EMPTY'
+                      )
+                    }}
+                  </p>
                 </div>
 
                 <div class="rounded-2xl border border-n-strong p-5">

@@ -808,7 +808,7 @@ const buildMyCompanyMenuItem = () => ({
       label: t('SIDEBAR.LABELS'),
       icon: 'i-lucide-tag',
       activeOn: contactTagSettingsRouteNames,
-      to: accountScopedRoute('contact_tags_settings_index'),
+      to: accountScopedRoute('labels_list'),
     },
     {
       name: 'Employees',
@@ -1143,7 +1143,7 @@ const menuItems = computed(() => {
           ? accountScopedRoute(
               hasLegacyCustomAttributes.value
                 ? 'contact_fields_settings_index'
-                : 'contact_tags_settings_index'
+                : 'labels_list'
             )
           : '',
         children: [

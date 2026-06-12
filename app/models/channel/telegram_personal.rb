@@ -30,7 +30,13 @@ class Channel::TelegramPersonal < ApplicationRecord
 
   self.table_name = 'channel_telegram_personal'
 
-  EDITABLE_ATTRS = %i[api_id api_hash phone_number string_session].freeze
+  EDITABLE_ATTRS = [
+    :api_id,
+    :api_hash,
+    :phone_number,
+    :string_session,
+    { runtime_state: [ignored_chat_ids: []] }
+  ].freeze
   CONNECTION_STATES = %w[disconnected connecting connected auth_required failed flood_wait].freeze
   LIFECYCLE_STATES = %w[pending_auth code_sent qr_ready qr_expired password_required connected disconnected failed].freeze
   IMMUTABLE_RUNTIME_ATTRS = %i[api_id phone_number].freeze

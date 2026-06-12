@@ -65,6 +65,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def update
+    @sync_telegram_personal_channel_after_update = false
+
     ActiveRecord::Base.transaction do
       inbox_params = permitted_params.except(:channel, :csat_config)
       inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
@@ -72,6 +74,10 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       update_inbox_working_hours
       update_channel if channel_update_required?
     end
+
+    sync_telegram_personal_channel_after_update!
+  rescue TelegramPersonal::GatewayClient::GatewayError => e
+    render json: { error: e.message }, status: :unprocessable_content
   end
 
   def agent_bot
@@ -210,7 +216,19 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     channel_params = normalized_channel_update_params(channel_attributes)
     @inbox.channel.reauthorized! if @inbox.channel.respond_to?(:reauthorized!)
     @inbox.channel.update!(channel_params)
+    @sync_telegram_personal_channel_after_update ||= telegram_personal_runtime_state_update?(channel_params)
     sync_voice_telephony!(@inbox.channel)
+  end
+
+  def telegram_personal_runtime_state_update?(channel_params)
+    @inbox.channel.is_a?(Channel::TelegramPersonal) &&
+      (channel_params.key?(:runtime_state) || channel_params.key?('runtime_state'))
+  end
+
+  def sync_telegram_personal_channel_after_update!
+    return unless @sync_telegram_personal_channel_after_update
+
+    TelegramPersonal::GatewayClient.new(channel: @inbox.channel).sync_channel!
   end
 
   def update_channel_feature_flags
@@ -367,9 +385,18 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def normalized_channel_update_params(channel_attributes)
     channel_params = permitted_params(channel_attributes)[:channel]
+    return normalized_telegram_personal_channel_params(channel_params) if @inbox.channel.is_a?(Channel::TelegramPersonal)
     return channel_params unless @inbox.channel.is_a?(Channel::Whatsapp)
 
     enriched_whatsapp_cloud_channel_attributes(channel_params, existing_channel: @inbox.channel)
+  end
+
+  def normalized_telegram_personal_channel_params(channel_params)
+    attrs = channel_params.to_h.with_indifferent_access
+    return attrs unless attrs.key?(:runtime_state)
+
+    attrs[:runtime_state] = @inbox.channel.runtime_state_payload.merge(attrs[:runtime_state].to_h)
+    attrs
   end
 
   def enriched_whatsapp_cloud_channel_attributes(channel_params, existing_channel: nil)
