@@ -460,14 +460,15 @@ class Telephony::VirtualPbx::ProvisioningService
   def normalize_profiles(source)
     Array.wrap(source).map do |profile|
       attrs = profile.to_h.deep_stringify_keys
-      {
+      normalized = {
         user_id: attrs['user_id'].presence&.to_i,
         internal_extension: attrs['internal_extension'].presence,
-        sip_username: attrs['sip_username'].presence,
-        sip_password: attrs['sip_password'].presence,
         sip_password_configured: ActiveModel::Type::Boolean.new.cast(attrs['sip_password_configured']),
         enabled: attrs.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(attrs['enabled']) : true
       }.compact
+      normalized[:sip_username] = attrs['sip_username'].presence if attrs.key?('sip_username')
+      normalized[:sip_password] = attrs['sip_password'].presence if attrs.key?('sip_password')
+      normalized
     end
   end
 
@@ -564,11 +565,18 @@ class Telephony::VirtualPbx::ProvisioningService
            .exists?
   end
 
-  def password_secret_ref_for(profile_record, profile, payload, index)
-    return nil if profile[:sip_username].blank?
+  def password_secret_ref_for(profile_record, profile, payload, index, sip_username:)
+    return nil if sip_username.blank?
     return generated_refs(payload)[:profile_secret_refs][index] if profile[:sip_password].present?
 
     profile_record.password_secret_ref
+  end
+
+  def credentials_ref_for(profile_record, profile, payload, index, sip_username:)
+    return nil if sip_username.blank?
+    return generated_refs(payload)[:profile_secret_refs][index] if profile[:sip_password].present?
+
+    profile_record.credentials_ref
   end
 
   def create_local_channel!(payload)
@@ -693,15 +701,16 @@ class Telephony::VirtualPbx::ProvisioningService
         user_id: profile[:user_id],
         internal_extension: profile[:internal_extension]
       )
+      sip_username = profile.key?(:sip_username) ? profile[:sip_username] : profile_record.sip_username
       profile_record.assign_attributes(
         provider_connection: provider_connection,
-        sip_username: profile[:sip_username],
-        password_secret_ref: password_secret_ref_for(profile_record, profile, payload, index),
+        sip_username: sip_username,
+        password_secret_ref: password_secret_ref_for(profile_record, profile, payload, index, sip_username: sip_username),
         sip_host: payload.dig(:connection, :host),
         agent_ref: generated_refs(payload)[:profile_refs][index],
         agent_aor: generated_profile_aor(profile, payload),
         fonoster_agent_ref: generated_refs(payload)[:profile_refs][index],
-        credentials_ref: profile[:sip_username].present? ? generated_refs(payload)[:profile_secret_refs][index] : nil,
+        credentials_ref: credentials_ref_for(profile_record, profile, payload, index, sip_username: sip_username),
         enabled: profile.fetch(:enabled, true),
         availability_mode: 'external_extension',
         status: 'draft',

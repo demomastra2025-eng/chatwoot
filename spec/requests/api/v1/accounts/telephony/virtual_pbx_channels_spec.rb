@@ -407,6 +407,41 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
     expect(response.parsed_body.to_json).not_to include('do-not-return-this-profile-secret')
     expect(response.parsed_body.to_json).not_to include('do-not-return-second-profile-secret')
+    first_profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
+    first_profile.update!(credentials_ref: "legacy-secret-ref-#{first_profile.id}")
+    credentials_before = inbox.telephony_sip_profiles.index_by(&:user_id).transform_values do |profile|
+      [profile.sip_username, profile.password_secret_ref, profile.credentials_ref]
+    end
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '207',
+              enabled: true
+            },
+            {
+              user_id: second_agent.id,
+              internal_extension: '208',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
+      [agent.id, '207', '056124100014'],
+      [second_agent.id, '208', '056124100015']
+    )
+    credentials_after = inbox.telephony_sip_profiles.index_by(&:user_id).transform_values do |profile|
+      [profile.sip_username, profile.password_secret_ref, profile.credentials_ref]
+    end
+    expect(credentials_after).to eq(credentials_before)
 
     put "#{base_path}/#{inbox_id}",
         params: {
@@ -431,9 +466,39 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
-    expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
-      [agent.id, '207', '056124100014'],
-      [second_agent.id, '208', '056124100015']
+    credentials_after_username_only = inbox.reload.telephony_sip_profiles.index_by(&:user_id).transform_values do |profile|
+      [profile.sip_username, profile.password_secret_ref, profile.credentials_ref]
+    end
+    expect(credentials_after_username_only).to eq(credentials_before)
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '207',
+              sip_username: '',
+              enabled: true
+            },
+            {
+              user_id: second_agent.id,
+              internal_extension: '208',
+              sip_username: nil,
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    profile_credentials = inbox.reload.telephony_sip_profiles.pluck(
+      :user_id, :internal_extension, :sip_username, :password_secret_ref, :credentials_ref
+    )
+    expect(profile_credentials).to contain_exactly(
+      [agent.id, '207', nil, nil, nil],
+      [second_agent.id, '208', nil, nil, nil]
     )
 
     put "#{base_path}/#{inbox_id}",
@@ -443,8 +508,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
-      [agent.id, '207', '056124100014'],
-      [second_agent.id, '208', '056124100015']
+      [agent.id, '207', nil],
+      [second_agent.id, '208', nil]
     )
   end
 
