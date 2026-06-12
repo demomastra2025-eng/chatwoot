@@ -59,11 +59,11 @@ export const isCommunicationChannelReplyable = channel => {
 };
 
 const communicationChannelIdentity = channel => {
-  if (channel?.inbox_id) return `inbox:${channel.inbox_id}`;
   if (channel?.channel_key) return channel.channel_key;
   if (channel?.conversation_id) {
     return `conversation:${channel.conversation_id}`;
   }
+  if (channel?.inbox_id) return `inbox:${channel.inbox_id}`;
   return null;
 };
 
@@ -347,6 +347,39 @@ export const isMessageInCommunicationThread = (chat, message) => {
     conversationId =>
       String(conversationId) === String(message?.conversation_id)
   );
+};
+
+export const getCommunicationThreadTypingTargetIds = chat => {
+  const ids = [chat?.id];
+  if (isCommunicationThread(chat)) {
+    ids.push(...(chat.conversation_ids || []));
+  }
+
+  return [...new Set(ids.filter(id => id !== undefined && id !== null))];
+};
+
+export const buildCommunicationChannelFromRealtimePayload = payload => {
+  if (!payload?.conversation_id || !payload?.inbox_id) return null;
+
+  return {
+    conversation_id: payload.conversation_id,
+    inbox_id: payload.inbox_id,
+    inbox_name: payload.inbox_name,
+    contact_inbox_id: payload.contact_inbox_id,
+    channel: payload.channel,
+    medium: payload.medium,
+    can_reply: payload.can_reply,
+    can_send_text: payload.can_send_text ?? payload.can_reply,
+    can_send_attachments: payload.can_send_attachments ?? payload.can_reply,
+    requires_template: payload.requires_template || false,
+    reply_window_open: payload.reply_window_open ?? payload.can_reply,
+    reauthorization_required: payload.reauthorization_required || false,
+    disabled: payload.disabled ?? payload.can_reply === false,
+    disabled_reason: payload.disabled_reason || null,
+    primary: payload.primary || false,
+    last_activity_at: payload.last_activity_at || payload.timestamp || 0,
+    channel_key: `conversation:${payload.conversation_id}`,
+  };
 };
 
 export const buildCommunicationChannelFromMessage = message => {

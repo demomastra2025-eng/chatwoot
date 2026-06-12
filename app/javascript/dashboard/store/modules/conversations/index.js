@@ -8,9 +8,11 @@ import { BUS_EVENTS } from '../../../../shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { CONTENT_TYPES } from 'dashboard/components-next/message/constants.js';
 import {
+  buildCommunicationChannelFromRealtimePayload,
   buildCommunicationChannelFromMessage,
   getDefaultReplyChannel,
   getPrimaryCommunicationChannel,
+  getUniqueCommunicationChannels,
   isCommunicationChannelReplyable,
   isCommunicationThread,
   isMessageInCommunicationThread,
@@ -122,6 +124,80 @@ const sortMessagesByTimeline = (leftMessage, rightMessage) => {
   return String(leftMessage.id || '').localeCompare(
     String(rightMessage.id || '')
   );
+};
+
+const mergeUniqueIds = (...idLists) => {
+  const ids = idLists.flat().filter(id => id !== undefined && id !== null);
+  return [...new Set(ids.map(id => String(id)))].map(id => {
+    const numberId = Number(id);
+    return Number.isNaN(numberId) ? id : numberId;
+  });
+};
+
+const communicationThreadUpdatesWithRealtimeChannel = (
+  selectedConversation,
+  updates
+) => {
+  if (
+    !isCommunicationThread(selectedConversation) ||
+    !isCommunicationThread(updates)
+  ) {
+    return updates;
+  }
+
+  const mergedUpdates = updates.meta
+    ? {
+        ...updates,
+        meta: { ...(selectedConversation.meta || {}), ...updates.meta },
+      }
+    : updates;
+  const incomingChannels = Array.isArray(updates.channels)
+    ? updates.channels
+    : null;
+  if (incomingChannels) {
+    return {
+      ...mergedUpdates,
+      channels: incomingChannels,
+      conversation_ids:
+        updates.conversation_ids ||
+        mergeUniqueIds(
+          incomingChannels.map(
+            incomingChannel => incomingChannel.conversation_id
+          )
+        ),
+    };
+  }
+
+  const channel = buildCommunicationChannelFromRealtimePayload(updates);
+  if (!channel) return mergedUpdates;
+
+  return {
+    ...mergedUpdates,
+    channels: getUniqueCommunicationChannels([
+      ...(selectedConversation.channels || []),
+      channel,
+    ]),
+    conversation_ids: mergeUniqueIds(
+      selectedConversation.conversation_ids || [],
+      updates.conversation_ids || [],
+      [channel.conversation_id]
+    ),
+  };
+};
+
+const addAttachmentsForChat = (_state, id, message) => {
+  if (message.status !== MESSAGE_STATUS.SENT || !message.attachments?.length) {
+    return;
+  }
+
+  const existingAttachments = _state.attachments[id] || [];
+  const attachmentsToAdd = message.attachments.filter(attachment => {
+    return !existingAttachments.some(
+      existingAttachment => existingAttachment.id === attachment.id
+    );
+  });
+
+  _state.attachments[id] = [...existingAttachments, ...attachmentsToAdd];
 };
 
 const mergeMessagesById = (existingMessages = [], incomingMessages = []) => {
@@ -347,27 +423,7 @@ export const mutations = {
   },
 
   [types.ADD_CONVERSATION_ATTACHMENTS](_state, message) {
-    // early return if the message has not been sent, or has no attachments
-    if (
-      message.status !== MESSAGE_STATUS.SENT ||
-      !message.attachments?.length
-    ) {
-      return;
-    }
-
-    const id = message.conversation_id;
-    const existingAttachments = _state.attachments[id] || [];
-
-    const attachmentsToAdd = message.attachments.filter(attachment => {
-      // if the attachment is not already in the store, add it
-      // this is to prevent duplicates
-      return !existingAttachments.some(
-        existingAttachment => existingAttachment.id === attachment.id
-      );
-    });
-
-    // replace the attachments in the store
-    _state.attachments[id] = [...existingAttachments, ...attachmentsToAdd];
+    addAttachmentsForChat(_state, message.conversation_id, message);
   },
 
   [types.DELETE_CONVERSATION_ATTACHMENTS](_state, message) {
@@ -473,6 +529,7 @@ export const mutations = {
         channel.disabled_reason = null;
       }
     }
+    addAttachmentsForChat(_state, chatId, message);
     refreshCommunicationThreadReplyState(chat);
 
     if (_state.selectedChatId === Number(chatId)) {
@@ -512,7 +569,14 @@ export const mutations = {
       }
 
       const { messages, ...updates } = conversation;
-      allConversations[index] = { ...selectedConversation, ...updates };
+      const normalizedUpdates = communicationThreadUpdatesWithRealtimeChannel(
+        selectedConversation,
+        updates
+      );
+      allConversations[index] = {
+        ...selectedConversation,
+        ...normalizedUpdates,
+      };
       refreshCommunicationThreadReplyState(allConversations[index]);
       if (isSelectedConversation(_state, allConversations[index])) {
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
@@ -589,6 +653,19 @@ export const mutations = {
     if (chat) {
       chat.meta.sender = payload;
     }
+  },
+
+  [types.UPDATE_CONTACT_IN_CONVERSATIONS](_state, contact) {
+    if (!contact?.id) return;
+
+    _state.allConversations.forEach(chat => {
+      if (String(chat?.meta?.sender?.id) !== String(contact.id)) return;
+
+      chat.meta.sender = {
+        ...chat.meta.sender,
+        ...contact,
+      };
+    });
   },
 
   [types.UPDATE_CONVERSATION_CALL_STATUS](

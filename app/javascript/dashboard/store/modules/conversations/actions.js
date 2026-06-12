@@ -126,7 +126,7 @@ const resolveAttachmentTarget = (state, payload) => {
 };
 
 const hasFullCommunicationThreadPayload = payload => {
-  return ['meta', 'contact', 'channels', 'messages'].some(key =>
+  return ['contact', 'channels', 'messages'].some(key =>
     Object.prototype.hasOwnProperty.call(payload || {}, key)
   );
 };
@@ -709,6 +709,11 @@ const actions = {
         conversationId: message.conversation_id,
         canReply: true,
       });
+    }
+    if (
+      message.message_type === MESSAGE_TYPE.INCOMING ||
+      message.attachments?.length
+    ) {
       commit(types.ADD_CONVERSATION_ATTACHMENTS, message);
     }
     handleVoiceCallCreated(message, rootGetters?.getCurrentUserID);
@@ -717,6 +722,9 @@ const actions = {
   updateMessage({ commit, rootGetters, state }, message) {
     commit(types.ADD_MESSAGE, message);
     addMessageToCommunicationThreads(commit, state, message);
+    if (message.attachments?.length) {
+      commit(types.ADD_CONVERSATION_ATTACHMENTS, message);
+    }
     handleVoiceCallUpdated(commit, message, rootGetters?.getCurrentUserID);
   },
 
@@ -804,8 +812,24 @@ const actions = {
     dispatch('contacts/setContact', sender);
   },
 
-  updateCommunicationThreadRealtime({ commit }, payload) {
-    commitCommunicationThreadUpdate(commit, payload);
+  updateCommunicationThreadRealtime({ commit, dispatch }, payload) {
+    const communicationThread = commitCommunicationThreadUpdate(
+      commit,
+      payload
+    );
+    const sender = payload?.meta?.sender;
+    if (sender?.id) {
+      dispatch('contacts/setContact', sender);
+    }
+    if (Object.prototype.hasOwnProperty.call(payload || {}, 'labels')) {
+      dispatch('conversationLabels/setConversationLabel', {
+        id: communicationThread.id,
+        data: payload.labels,
+      });
+    }
+    if (payload?.source_event === 'conversation.contact_changed') {
+      dispatch('fetchCommunicationThreads');
+    }
   },
 
   updateConversationLastActivity(
@@ -835,6 +859,10 @@ const actions = {
       commit(`contacts/${types.SET_CONTACT_ITEM}`, data);
     }
     commit(types.UPDATE_CONVERSATION_CONTACT, data);
+  },
+
+  updateContactInConversations({ commit }, contact) {
+    commit(types.UPDATE_CONTACT_IN_CONVERSATIONS, contact);
   },
 
   setActiveInbox({ commit }, inboxId) {

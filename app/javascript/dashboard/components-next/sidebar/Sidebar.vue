@@ -1201,6 +1201,7 @@ const menuItems = computed(() => {
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: label.title,
+                    badge: label.contacts_count,
                     icon: h('span', {
                       class: `size-[8px] rounded-sm`,
                       style: { backgroundColor: label.color },

@@ -65,6 +65,39 @@ RSpec.describe Whatsapp::IncomingCallService do
       )
     end
 
+    it 'uses the phone contact inbox for calls that include both phone and BSUID identities' do
+      contact = create(:contact, account: account, phone_number: '+77475318623')
+      phone_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '77475318623')
+      bsuid_source_id = 'KZ.4378991855667096'
+      allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(instance_double(Message, id: 124))
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          contacts: [
+            {
+              wa_id: '77475318623',
+              user_id: bsuid_source_id,
+              profile: { name: 'Ahan' }
+            }
+          ],
+          calls: [
+            {
+              id: 'wa-phone-bsuid-call-1',
+              from: '77475318623',
+              from_user_id: bsuid_source_id,
+              event: 'connect',
+              session: { sdp_type: 'offer', sdp: 'v=0' }
+            }
+          ]
+        }
+      ).perform
+
+      call = Call.whatsapp.find_by!(provider_call_id: 'wa-phone-bsuid-call-1')
+      expect(call.conversation.contact_inbox_id).to eq(phone_contact_inbox.id)
+      expect(inbox.contact_inboxes.find_by!(source_id: bsuid_source_id).contact_id).to eq(contact.id)
+    end
+
     it 'prepares the media-server agent leg as soon as an inbound connect rings operators' do
       channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
       message = instance_double(Message, id: 123)

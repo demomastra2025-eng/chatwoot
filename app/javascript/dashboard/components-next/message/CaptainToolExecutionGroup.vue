@@ -44,15 +44,21 @@ const openFullTrace = () => {
 
 <template>
   <div v-show="traceMessages.length" class="flex flex-col gap-1.5">
-    <CopilotThinkingGroup :messages="traceMessages" default-collapsed />
-    <button
-      v-if="showOpenTraceAction && traceQuery"
-      type="button"
-      class="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-n-slate-10 transition-colors hover:text-n-slate-12"
-      @click="openFullTrace"
-    >
-      <i class="i-lucide-file-text h-3 w-3" />
-      <span>{{ t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE') }}</span>
-    </button>
+    <CopilotThinkingGroup :messages="traceMessages" default-collapsed>
+      <template #headerAction>
+        <button
+          v-if="showOpenTraceAction && traceQuery"
+          type="button"
+          class="skip-context-menu inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.625rem] font-medium text-n-slate-10 transition-colors hover:text-n-slate-12"
+          :title="t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE')"
+          :aria-label="t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE')"
+          data-testid="captain-trace-logs"
+          @click.stop="openFullTrace"
+        >
+          <i class="i-lucide-file-text size-3 shrink-0" aria-hidden="true" />
+          <span>{{ t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE') }}</span>
+        </button>
+      </template>
+    </CopilotThinkingGroup>
   </div>
 </template>

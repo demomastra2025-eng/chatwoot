@@ -60,6 +60,42 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(CommunicationThreadConversation.count).to eq(1)
     end
 
+    it 'moves a conversation to the thread for the current contact', :aggregate_failures do
+      old_contact = create(:contact, account: account)
+      old_inbox = create(:inbox, account: account)
+      old_contact_inbox = create(:contact_inbox, contact: old_contact, inbox: old_inbox)
+      moved_conversation = create(
+        :conversation,
+        account: account,
+        contact: old_contact,
+        inbox: old_inbox,
+        contact_inbox: old_contact_inbox
+      )
+      remaining_conversation = create(:conversation, account: account, contact: old_contact)
+      old_thread = described_class.new(conversation: moved_conversation).perform
+      described_class.new(conversation: remaining_conversation).perform
+      new_contact = create(:contact, account: account)
+      new_contact_inbox = create(:contact_inbox, contact: new_contact, inbox: old_inbox)
+
+      # rubocop:disable Rails/SkipsModelValidations
+      moved_conversation.update_columns(
+        contact_id: new_contact.id,
+        contact_inbox_id: new_contact_inbox.id,
+        updated_at: Time.current
+      )
+      # rubocop:enable Rails/SkipsModelValidations
+
+      new_thread = described_class.new(conversation: moved_conversation.reload).perform
+
+      expect(new_thread).not_to eq(old_thread)
+      expect(new_thread.contact).to eq(new_contact)
+      expect(new_thread.conversations).to contain_exactly(moved_conversation)
+      expect(old_thread.reload.conversations).to contain_exactly(remaining_conversation)
+      primary_links = old_thread.communication_thread_conversations.where(primary: true)
+      expect(primary_links.count).to eq(1)
+      expect(moved_conversation.reload.communication_thread).to eq(new_thread)
+    end
+
     it 'refreshes aggregate fields from linked conversations', :aggregate_failures do
       contact = create(:contact, :with_email, account: account)
       first_conversation = create(:conversation, account: account, contact: contact)
@@ -106,6 +142,19 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(thread.priority).to eq('urgent')
       expect(thread.last_activity_at).to be_within(1.second).of(latest_activity_at)
       expect(thread.unread_count).to eq(2)
+    end
+
+    it 'uses the latest active linked conversation status instead of always preferring open' do
+      contact = create(:contact, account: account)
+      open_conversation = create(:conversation, account: account, contact: contact, status: :open)
+      pending_conversation = create(:conversation, account: account, contact: contact, status: :pending)
+
+      open_conversation.update_column(:updated_at, 10.minutes.ago)
+      pending_conversation.update_column(:updated_at, Time.current)
+
+      thread = described_class.new(conversation: pending_conversation.reload).perform
+
+      expect(thread.status).to eq('pending')
     end
   end
 end

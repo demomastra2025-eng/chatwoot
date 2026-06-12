@@ -125,7 +125,7 @@ const copyTracePanel = async value => {
 
 <template>
   <div
-    class="flex flex-col gap-1.5 rounded-lg border border-n-weak bg-n-solid-2 p-2"
+    class="flex flex-col gap-1.5 rounded-lg p-2"
     :data-tool-name="toolName || undefined"
   >
     <div class="flex items-start gap-1.5">

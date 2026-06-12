@@ -34,6 +34,7 @@ import {
 } from 'dashboard/helper/conversationHelper';
 
 import {
+  getCommunicationThreadTypingTargetIds,
   getCommunicationReplyChannels,
   isCommunicationThread,
 } from 'dashboard/helper/communicationThreadHelper';
@@ -122,10 +123,15 @@ export default {
       return this.$store.getters['inboxes/getInbox'](this.inboxId);
     },
     typingUsersList() {
-      const userList = this.$store.getters[
-        'conversationTypingStatus/getUserList'
-      ](this.currentChat.id);
-      return userList;
+      const getTypingUsers =
+        this.$store.getters['conversationTypingStatus/getUserList'];
+      const userByKey = new Map();
+      getCommunicationThreadTypingTargetIds(this.currentChat).forEach(id => {
+        getTypingUsers(id).forEach(user => {
+          userByKey.set(`${user.type}:${user.id}`, user);
+        });
+      });
+      return [...userByKey.values()];
     },
     isAnyoneTyping() {
       const userList = this.typingUsersList;

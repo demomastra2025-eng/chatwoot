@@ -67,6 +67,7 @@ RSpec.describe Whatsapp::ContactIdentityResolver do
     contact_inbox = described_class.new(inbox: inbox, message: message, contact_params: contact_params).perform
 
     expect(contact_inbox.contact_id).to eq(contact.id)
+    expect(contact_inbox.source_id).to eq(sender_phone_source_id)
     expect(contact.reload.phone_number).to eq("+#{sender_phone_source_id}")
     expect(inbox.contact_inboxes.find_by!(source_id: sender_phone_source_id).contact_id).to eq(contact.id)
   end

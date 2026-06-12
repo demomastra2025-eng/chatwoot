@@ -355,6 +355,7 @@ describe('#mutations', () => {
         allConversations: [conversation, thread],
         selectedChatId: 3,
         selectedChatType: 'communication_thread',
+        attachments: {},
       };
 
       mutations[types.ADD_MESSAGE_TO_CHAT](state, {
@@ -378,6 +379,34 @@ describe('#mutations', () => {
           created_at: 201,
         },
       ]);
+    });
+
+    it('updates thread-scoped attachment cache from linked child messages', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 3,
+            is_communication_thread: true,
+            conversation_ids: [3508],
+            messages: [],
+            channels: [{ conversation_id: 3508, inbox_id: 4674 }],
+          },
+        ],
+        attachments: { 3: [{ id: 1 }] },
+      };
+      const message = {
+        id: 30,
+        conversation_id: 3508,
+        inbox_id: 4674,
+        message_type: 1,
+        status: 'sent',
+        attachments: [{ id: 2 }],
+        created_at: 201,
+      };
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, { chatId: 3, message });
+
+      expect(state.attachments[3]).toEqual([{ id: 1 }, { id: 2 }]);
     });
   });
 
@@ -1120,6 +1149,145 @@ describe('#mutations', () => {
       ]);
     });
 
+    it('merges new linked child channels from partial thread realtime patches', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 3,
+            is_communication_thread: true,
+            status: 'open',
+            updated_at: 100,
+            conversation_ids: [3508],
+            channels: [
+              {
+                conversation_id: 3508,
+                inbox_id: 4674,
+                channel: 'Channel::Telegram',
+                channel_key: 'conversation:3508',
+                last_activity_at: 100,
+              },
+            ],
+            messages: [],
+            meta: {
+              sender: { id: 42, name: 'Customer' },
+              channel: 'CommunicationThread',
+              assignee: { id: 9, name: 'Agent' },
+            },
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 3,
+        communication_thread_id: 3,
+        is_communication_thread: true,
+        conversation_id: 630,
+        conversation_ids: [3508, 630],
+        inbox_id: 4675,
+        inbox_name: 'WhatsApp',
+        channel: 'Channel::Whatsapp',
+        contact_inbox_id: 880,
+        can_reply: true,
+        meta: {
+          sender: { id: 43, name: 'Merged customer' },
+          channel: 'CommunicationThread',
+        },
+        updated_at: 200,
+        timestamp: 200,
+      });
+
+      expect(state.allConversations[0].conversation_ids).toEqual([3508, 630]);
+      expect(state.allConversations[0].channels).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            conversation_id: 630,
+            inbox_id: 4675,
+            inbox_name: 'WhatsApp',
+            channel: 'Channel::Whatsapp',
+            can_reply: true,
+          }),
+        ])
+      );
+      expect(state.allConversations[0].meta).toEqual({
+        sender: { id: 43, name: 'Merged customer' },
+        channel: 'CommunicationThread',
+        assignee: { id: 9, name: 'Agent' },
+      });
+    });
+
+    it('replaces stale channels with the server channel list from full realtime patches', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 3,
+            is_communication_thread: true,
+            updated_at: 100,
+            conversation_ids: [3508, 630],
+            channels: [
+              {
+                conversation_id: 3508,
+                inbox_id: 4674,
+                channel: 'Channel::Telegram',
+                channel_key: 'conversation:3508',
+              },
+              {
+                conversation_id: 630,
+                inbox_id: 4675,
+                channel: 'Channel::Whatsapp',
+                channel_key: 'conversation:630',
+              },
+            ],
+            messages: [],
+            meta: { sender: { id: 42, name: 'Customer' } },
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 3,
+        communication_thread_id: 3,
+        is_communication_thread: true,
+        conversation_id: 630,
+        conversation_ids: [630],
+        inbox_id: 4675,
+        inbox_name: 'WhatsApp',
+        channel: 'Channel::Whatsapp',
+        can_reply: false,
+        can_send_text: false,
+        requires_template: true,
+        disabled: false,
+        channels: [
+          {
+            conversation_id: 630,
+            inbox_id: 4675,
+            inbox_name: 'WhatsApp',
+            channel: 'Channel::Whatsapp',
+            can_reply: false,
+            can_send_text: false,
+            requires_template: true,
+            disabled: false,
+            channel_key: 'conversation:630',
+          },
+        ],
+        updated_at: 200,
+        timestamp: 200,
+      });
+
+      expect(state.allConversations[0].conversation_ids).toEqual([630]);
+      expect(state.allConversations[0].channels).toHaveLength(1);
+      expect(state.allConversations[0].channels[0]).toMatchObject({
+        conversation_id: 630,
+        inbox_id: 4675,
+        requires_template: true,
+      });
+      expect(state.allConversations[0].channels).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ conversation_id: 3508 }),
+        ])
+      );
+      expect(state.allConversations[0].can_reply).toBe(true);
+    });
+
     it('does not replace a same-display-id communication thread with a child conversation update', () => {
       const thread = {
         id: 3,
@@ -1335,6 +1503,43 @@ describe('#mutations', () => {
 
       mutations[types.UPDATE_CONVERSATION_CONTACT](state, payload);
       expect(state.allConversations).toEqual([]);
+    });
+  });
+
+  describe('#UPDATE_CONTACT_IN_CONVERSATIONS', () => {
+    it('updates loaded direct conversations and communication threads for a contact update', () => {
+      const state = {
+        allConversations: [
+          { id: 1, meta: { sender: { id: 42, name: 'Old direct' } } },
+          {
+            id: 3,
+            is_communication_thread: true,
+            meta: {
+              sender: { id: 42, name: 'Old thread', phone_number: '+7700' },
+            },
+          },
+          { id: 9, meta: { sender: { id: 99, name: 'Other' } } },
+        ],
+      };
+
+      mutations[types.UPDATE_CONTACT_IN_CONVERSATIONS](state, {
+        id: 42,
+        name: 'Updated customer',
+      });
+
+      expect(state.allConversations[0].meta.sender).toEqual({
+        id: 42,
+        name: 'Updated customer',
+      });
+      expect(state.allConversations[1].meta.sender).toEqual({
+        id: 42,
+        name: 'Updated customer',
+        phone_number: '+7700',
+      });
+      expect(state.allConversations[2].meta.sender).toEqual({
+        id: 99,
+        name: 'Other',
+      });
     });
   });
 

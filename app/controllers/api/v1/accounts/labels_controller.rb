@@ -5,6 +5,7 @@ class Api::V1::Accounts::LabelsController < Api::V1::Accounts::BaseController
 
   def index
     @labels = policy_scope(Current.account.labels)
+    @contact_counts_by_label = contact_counts_by_label
   end
 
   def show; end
@@ -30,5 +31,20 @@ class Api::V1::Accounts::LabelsController < Api::V1::Accounts::BaseController
 
   def permitted_params
     params.require(:label).permit(:title, :description, :color, :show_on_sidebar)
+  end
+
+  def contact_counts_by_label
+    return {} if @labels.blank?
+
+    Current.account.contacts
+           .joins(
+             'INNER JOIN taggings ON taggings.taggable_id = contacts.id ' \
+             "AND taggings.taggable_type = 'Contact' " \
+             "AND taggings.context = 'labels'"
+           )
+           .joins('INNER JOIN tags ON tags.id = taggings.tag_id')
+           .where(tags: { name: @labels.map(&:title) })
+           .group('tags.name')
+           .count('DISTINCT contacts.id')
   end
 end

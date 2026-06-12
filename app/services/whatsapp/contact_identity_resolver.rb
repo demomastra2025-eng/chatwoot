@@ -11,7 +11,7 @@ class Whatsapp::ContactIdentityResolver
 
     contact_inbox = find_or_create_contact_inbox
     sync_contact_identifiers(contact_inbox)
-    contact_inbox
+    preferred_contact_inbox(contact_inbox)
   end
 
   def source_id
@@ -81,6 +81,14 @@ class Whatsapp::ContactIdentityResolver
       username: contact_params&.dig(:profile, :username),
       phone_number: contact_phone_number
     )
+  end
+
+  def preferred_contact_inbox(contact_inbox)
+    Whatsapp::PreferredContactInboxResolver.new(
+      contact: contact_inbox.contact,
+      inbox: inbox,
+      fallback_contact_inbox: contact_inbox
+    ).perform
   end
 
   def contact_attributes

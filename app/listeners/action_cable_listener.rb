@@ -81,6 +81,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
 
     broadcast(account, tokens, CONVERSATION_CREATED, conversation.push_event_data)
+    broadcast_communication_thread_update(conversation, CONVERSATION_CREATED)
   end
 
   def conversation_read(event)
@@ -160,6 +161,7 @@ class ActionCableListener < BaseListener
     tokens = user_tokens(account, conversation.inbox.members)
 
     broadcast(account, tokens, CONVERSATION_CONTACT_CHANGED, conversation.push_event_data)
+    broadcast_communication_thread_update(conversation, CONVERSATION_CONTACT_CHANGED)
   end
 
   def contact_created(event)
@@ -226,7 +228,11 @@ class ActionCableListener < BaseListener
     return if communication_thread.blank?
 
     communication_thread.reload
-    links = communication_thread.communication_thread_conversations.includes(:conversation, inbox: [:members, :channel]).to_a
+    links = communication_thread.communication_thread_conversations.includes(
+      :conversation,
+      { contact_inbox: :channel_profile },
+      inbox: [:members, :channel]
+    ).to_a
     broadcast_communication_thread_dashboard_updates(account, communication_thread, links, conversation, source_event, message)
   rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
     Rails.logger.warn("[CommunicationThreads] realtime refresh skipped conversation=#{conversation&.id}: #{e.class}: #{e.message}")
@@ -259,24 +265,30 @@ class ActionCableListener < BaseListener
   end
 
   def communication_thread_realtime_payload(communication_thread, links, source_conversation, source_event, message)
+    channels = communication_thread_channel_payloads(communication_thread, links)
+
     {
       id: communication_thread.display_id,
       communication_thread_id: communication_thread.display_id,
       is_communication_thread: true,
+      meta: communication_thread_meta(communication_thread, source_conversation),
       source_event: source_event,
       message_id: message&.id,
       conversation_id: source_conversation.display_id,
       conversation_ids: links.map { |link| link.conversation.display_id },
+      channels: channels,
       contact_id: communication_thread.contact_id,
       inbox_id: source_conversation.inbox_id,
       inbox_name: source_conversation.inbox&.name,
       contact_inbox_id: source_conversation.contact_inbox_id,
       channel: source_conversation.inbox&.channel_type,
       medium: communication_thread_medium(source_conversation.inbox),
+      can_reply: channels.any? { |channel| communication_thread_channel_replyable?(channel) },
       status: communication_thread.status,
       priority: communication_thread.priority,
       assignee_id: communication_thread.assignee_id,
       team_id: communication_thread.team_id,
+      labels: communication_thread_label_list(links),
       unread_count: communication_thread.unread_count,
       last_activity_at: communication_thread.last_activity_at.to_i,
       timestamp: communication_thread.last_activity_at.to_i,
@@ -286,6 +298,30 @@ class ActionCableListener < BaseListener
 
   def communication_thread_medium(inbox)
     inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil
+  end
+
+  def communication_thread_meta(communication_thread, source_conversation)
+    {
+      sender: communication_thread.contact.push_event_data(contact_inbox: source_conversation.contact_inbox),
+      channel: 'CommunicationThread'
+    }
+  end
+
+  def communication_thread_channel_payloads(communication_thread, links)
+    CommunicationThreads::ChannelCapabilitiesBuilder.new(
+      links: links,
+      contact: communication_thread.contact,
+      deduplicate_linked: false
+    ).perform
+  end
+
+  def communication_thread_channel_replyable?(channel)
+    channel[:can_reply] || channel[:can_send_text] || channel[:requires_template] ||
+      (channel[:channel] == 'Channel::Voice' && !channel[:disabled])
+  end
+
+  def communication_thread_label_list(links)
+    links.flat_map { |link| link.conversation&.label_list }.compact.uniq
   end
 
   def typing_event_listener_tokens(account, conversation, user)

@@ -158,7 +158,7 @@ describe('MessageMeta', () => {
     expect(wrapper.text()).toContain('AI менеджер');
   });
 
-  it('shows a compact Captain logs action in the metadata row', async () => {
+  it('does not render the Captain logs action in the message metadata row', () => {
     useMessageContextMock.mockReturnValue({
       ...baseMessageContext(MESSAGE_STATUS.READ),
       additionalAttributes: ref({
@@ -171,32 +171,12 @@ describe('MessageMeta', () => {
     });
 
     const wrapper = mountComponent();
-    const logsButton = wrapper.find('[data-testid="captain-trace-logs"]');
 
-    expect(logsButton.exists()).toBe(true);
-    expect(logsButton.text()).toBe('Logs');
-    expect(wrapper.find('time').element.previousElementSibling).toBe(
-      logsButton.element
+    expect(wrapper.find('[data-testid="captain-trace-logs"]').exists()).toBe(
+      false
     );
-    expect(wrapper.find('.message-meta-root').classes()).toContain('text-xs');
-    expect(logsButton.classes()).not.toContain('ltr:mr-auto');
-    expect(logsButton.classes()).not.toContain('font-mono');
-    expect(logsButton.classes()).toContain('text-[0.625rem]');
-    expect(logsButton.find('i').classes()).toContain('i-lucide-file-text');
-    expect(logsButton.find('i').classes()).toContain('size-3');
-
-    await logsButton.trigger('click');
-
-    expect(routerMocks.push).toHaveBeenCalledWith({
-      name: 'captain_observability_index',
-      params: { accountId: '530' },
-      query: {
-        tab: 'traces',
-        trace_id: 'trace-1',
-        session_id: 'session-1',
-        conversation_display_id: '5',
-      },
-    });
+    expect(wrapper.find('time').exists()).toBe(true);
+    expect(routerMocks.push).not.toHaveBeenCalled();
   });
 
   it('does not show a sending status for native AI voice transcript messages', () => {

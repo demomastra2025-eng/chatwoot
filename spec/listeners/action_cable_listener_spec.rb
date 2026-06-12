@@ -85,7 +85,17 @@ describe ActionCableListener do
         message_id: message.id,
         conversation_id: conversation.display_id,
         conversation_ids: [conversation.display_id],
+        channels: [hash_including(
+          conversation_id: conversation.display_id,
+          inbox_id: inbox.id,
+          channel: inbox.channel_type,
+          channel_key: "conversation:#{conversation.display_id}"
+        )],
         contact_id: conversation.contact_id,
+        meta: hash_including(
+          sender: hash_including(id: conversation.contact_id),
+          channel: 'CommunicationThread'
+        ),
         inbox_id: inbox.id,
         channel: inbox.channel_type,
         status: communication_thread.reload.status,
@@ -132,6 +142,55 @@ describe ActionCableListener do
         anything
       )
       expect(communication_thread.communication_thread_conversations.count).to eq(2)
+    end
+  end
+
+  describe '#conversation_created' do
+    let(:event_name) { :'conversation.created' }
+    let!(:event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation) }
+
+    it 'broadcasts a communication thread refresh so new linked channels appear without waiting for a message' do
+      account.enable_features!('communication_threads')
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.conversation_created(event)
+
+      communication_thread = conversation.reload.communication_thread
+      expected_payload = hash_including(
+        account_id: account.id,
+        id: communication_thread.display_id,
+        communication_thread_id: communication_thread.display_id,
+        is_communication_thread: true,
+        source_event: 'conversation.created',
+        conversation_id: conversation.display_id,
+        conversation_ids: [conversation.display_id],
+        channels: [hash_including(
+          conversation_id: conversation.display_id,
+          inbox_id: inbox.id,
+          channel: inbox.channel_type,
+          channel_key: "conversation:#{conversation.display_id}"
+        )],
+        contact_id: conversation.contact_id,
+        meta: hash_including(
+          sender: hash_including(id: conversation.contact_id),
+          channel: 'CommunicationThread'
+        ),
+        inbox_id: inbox.id,
+        inbox_name: inbox.name,
+        channel: inbox.channel_type,
+        can_reply: conversation.can_reply?,
+        labels: []
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        expected_payload
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [admin.pubsub_token],
+        'communication_thread.updated',
+        expected_payload
+      )
     end
   end
 
@@ -212,6 +271,40 @@ describe ActionCableListener do
                                      is_private: false }
       )
       listener.conversation_typing_off(event)
+    end
+  end
+
+  describe '#conversation_contact_changed' do
+    let(:event_name) { :'conversation.contact_changed' }
+    let!(:event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation) }
+
+    it 'broadcasts a communication thread refresh when contact identity/grouping changes' do
+      account.enable_features!('communication_threads')
+      conversation.refresh_communication_thread!
+      new_contact = create(:contact, account: account)
+      new_contact_inbox = create(:contact_inbox, contact: new_contact, inbox: inbox)
+
+      conversation.update!(contact: new_contact, contact_inbox: new_contact_inbox)
+      communication_thread = conversation.reload.communication_thread
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.conversation_contact_changed(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(
+          account_id: account.id,
+          id: communication_thread.display_id,
+          source_event: 'conversation.contact_changed',
+          conversation_id: conversation.display_id,
+          contact_id: new_contact.id,
+          meta: hash_including(
+            sender: hash_including(id: new_contact.id),
+            channel: 'CommunicationThread'
+          )
+        )
+      )
     end
   end
 

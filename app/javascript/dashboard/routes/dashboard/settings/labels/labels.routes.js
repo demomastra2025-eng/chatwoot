@@ -1,6 +1,7 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 
 const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const LabelsHome = () => import('./Index.vue');
 export default {
   routes: [
     {
@@ -14,17 +15,15 @@ export default {
             permissions: ['administrator'],
           },
           redirect: to => {
-            return { name: 'contact_tags_settings_index', params: to.params };
+            return { name: 'labels_list', params: to.params };
           },
         },
         {
           path: 'list',
           name: 'labels_list',
+          component: LabelsHome,
           meta: {
             permissions: ['administrator'],
-          },
-          redirect: to => {
-            return { name: 'contact_tags_settings_index', params: to.params };
           },
         },
       ],

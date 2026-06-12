@@ -72,6 +72,46 @@ describe Whatsapp::SendOnWhatsappService do
         expect(message.reload.source_id).to eq('123456789')
       end
 
+      it 'sends session replies to the phone contact inbox before a BSUID contact inbox' do
+        contact = create(:contact, account: whatsapp_channel.account, phone_number: '+77475318623')
+        phone_contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, contact: contact, source_id: '77475318623')
+        bsuid_contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, contact: contact, source_id: 'KZ.4378991855667096')
+        bsuid_conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox,
+                                                   contact: contact, contact_inbox: bsuid_contact_inbox)
+        create(:message, message_type: :incoming, content: 'test',
+                         conversation: bsuid_conversation, account: bsuid_conversation.account)
+        message = create(:message, message_type: :outgoing, content: 'reply',
+                                   conversation: bsuid_conversation, account: bsuid_conversation.account)
+
+        stub_request(:post, 'https://waba.360dialog.io/v1/messages')
+          .with(
+            headers: headers,
+            body: { 'to' => phone_contact_inbox.source_id, 'text' => { 'body' => 'reply' }, 'type' => 'text' }.to_json
+          )
+          .to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.source_id).to eq('123456789')
+      end
+
+      it 'marks session replies as failed when only a BSUID contact inbox exists' do
+        contact = create(:contact, account: whatsapp_channel.account, phone_number: nil)
+        bsuid_contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, contact: contact, source_id: 'KZ.4378991855667096')
+        bsuid_conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox,
+                                                   contact: contact, contact_inbox: bsuid_contact_inbox)
+        create(:message, message_type: :incoming, content: 'test',
+                         conversation: bsuid_conversation, account: bsuid_conversation.account)
+        message = create(:message, message_type: :outgoing, content: 'reply',
+                                   conversation: bsuid_conversation, account: bsuid_conversation.account)
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to eq(described_class::MISSING_PHONE_RECIPIENT_ERROR)
+        expect(WebMock).not_to have_requested(:post, 'https://waba.360dialog.io/v1/messages')
+      end
+
       it 'marks message as failed when template name is blank' do
         processor = instance_double(Whatsapp::TemplateProcessorService)
         allow(Whatsapp::TemplateProcessorService).to receive(:new).and_return(processor)
@@ -110,7 +150,7 @@ describe Whatsapp::SendOnWhatsappService do
             'name' => 'ticket_status_updated',
             'language' => 'en_US',
             'category' => 'UTILITY',
-            'processed_params' => { 'body' => { 'name' => 'John' } }
+            'processed_params' => { 'body' => { 'last_name' => 'Dale', 'ticket_id' => '2332' } }
           }
         )
         delivery = create(

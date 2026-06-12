@@ -51,13 +51,13 @@ class Whatsapp::EmbeddedSignupService
   def create_or_reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
     return reauthorize_channel_with_webhooks(access_token, phone_info, token_health) if @inbox_id.present?
 
-    channel = nil
-    ActiveRecord::Base.transaction do
-      channel = create_or_reauthorize_channel(access_token, phone_info)
-      store_token_health(channel, token_health)
-      setup_webhooks!(channel)
-    end
+    channel = create_or_reauthorize_channel(access_token, phone_info)
+    store_token_health(channel, token_health)
+    setup_webhooks!(channel)
     channel
+  rescue StandardError
+    cleanup_failed_initial_channel(channel)
+    raise
   end
 
   def reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
@@ -80,7 +80,17 @@ class Whatsapp::EmbeddedSignupService
     # 1. Reauthorization flow updates an existing channel (not a create), so after_commit on: :create won't trigger
     # 2. We need to run check_channel_health_and_prompt_reauth after webhook setup completes
     # 3. The channel is marked with source: 'embedded_signup' to skip the after_commit callback
+    # For initial signup, this must run after the channel transaction commits; Meta verifies
+    # the callback URL immediately and the public verifier reads the channel token from DB.
     channel.setup_webhooks(strict: true)
+  end
+
+  def cleanup_failed_initial_channel(channel)
+    return if channel.blank?
+
+    channel.inbox&.destroy!
+  rescue StandardError => e
+    Rails.logger.error("[WHATSAPP] Failed to cleanup channel after embedded signup error: #{e.message}")
   end
 
   def create_or_reauthorize_channel(access_token, phone_info)

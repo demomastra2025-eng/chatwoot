@@ -38,6 +38,10 @@ class Label < ApplicationRecord
     account.conversations.tagged_with(title)
   end
 
+  def contacts_count
+    account.contacts.tagged_with(title).count
+  end
+
   def messages
     account.messages.where(conversation_id: conversations.pluck(:id))
   end

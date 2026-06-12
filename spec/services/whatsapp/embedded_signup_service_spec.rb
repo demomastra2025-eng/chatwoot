@@ -81,6 +81,24 @@ describe Whatsapp::EmbeddedSignupService do
       service.perform
     end
 
+    it 'sets up webhooks after the initial channel is committed' do
+      baseline_open_transactions = ActiveRecord::Base.connection.open_transactions
+
+      allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
+      allow_any_instance_of(Channel::Whatsapp).to receive(:validate_provider_config).and_return(true)
+      allow_any_instance_of(Channel::Whatsapp).to receive(:sync_templates).and_return(true)
+
+      webhook_service = instance_double(Whatsapp::WebhookSetupService)
+      allow(webhook_service).to receive(:perform).and_return(true)
+      allow(Whatsapp::WebhookSetupService).to receive(:new) do |created_channel, _waba_id, _access_token, _options|
+        expect(created_channel).to be_persisted
+        expect(ActiveRecord::Base.connection.open_transactions).to eq(baseline_open_transactions)
+        webhook_service
+      end
+
+      service.perform
+    end
+
     it 'checks health status after channel creation' do
       health_service = instance_double(Whatsapp::HealthService)
       allow(Whatsapp::HealthService).to receive(:new).and_return(health_service)
@@ -145,6 +163,7 @@ describe Whatsapp::EmbeddedSignupService do
         allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
         allow_any_instance_of(Channel::Whatsapp).to receive(:validate_provider_config).and_return(true)
         allow_any_instance_of(Channel::Whatsapp).to receive(:sync_templates).and_return(true)
+        allow_any_instance_of(Channel::Whatsapp).to receive(:teardown_webhooks).and_return(true)
         webhook_service = instance_double(Whatsapp::WebhookSetupService)
         allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
         allow(webhook_service).to receive(:perform).and_raise('Webhook setup error')

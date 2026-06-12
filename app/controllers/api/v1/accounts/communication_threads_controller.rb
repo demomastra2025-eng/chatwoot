@@ -234,7 +234,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @channel_capabilities_by_thread_id = @accessible_links_by_thread_id.transform_values do |links|
       CommunicationThreads::ChannelCapabilitiesBuilder.new(
         links: links,
-        available_inboxes: accessible_inboxes
+        available_inboxes: accessible_inboxes,
+        preferred_status: preferred_channel_status
       ).perform
     end
     preload_last_public_messages_by_thread
@@ -286,5 +287,12 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       inboxes = Current.account.inboxes.includes(:channel)
       Current.account_user&.administrator? ? inboxes : inboxes.where(id: Current.user.inboxes.where(account_id: Current.account.id).select(:id))
     end
+  end
+
+  def preferred_channel_status
+    return if params[:status].blank? || params[:status] == 'all'
+    return unless CommunicationThread.statuses.key?(params[:status].to_s)
+
+    params[:status].to_s
   end
 end

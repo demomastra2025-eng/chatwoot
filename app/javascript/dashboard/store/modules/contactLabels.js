@@ -39,7 +39,7 @@ export const actions = {
       });
     }
   },
-  update: async ({ commit }, { contactId, labels }) => {
+  update: async ({ commit, dispatch }, { contactId, labels }) => {
     commit(types.SET_CONTACT_LABELS_UI_FLAG, {
       isUpdating: true,
     });
@@ -53,6 +53,7 @@ export const actions = {
         isUpdating: false,
         isError: false,
       });
+      dispatch('labels/get', null, { root: true });
     } catch (error) {
       commit(types.SET_CONTACT_LABELS_UI_FLAG, {
         isUpdating: false,

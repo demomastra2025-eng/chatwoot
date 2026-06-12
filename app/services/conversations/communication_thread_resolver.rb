@@ -5,10 +5,13 @@ class Conversations::CommunicationThreadResolver
 
   def perform
     CommunicationThread.transaction do
+      previous_thread = conversation.communication_thread
       thread = existing_thread || build_thread
       thread.save! if thread.new_record?
-      create_link!(thread)
+      create_or_update_link!(thread)
+      reset_conversation_thread_associations
       refresh_thread!(thread)
+      refresh_previous_thread!(previous_thread, thread)
       thread
     end
   end
@@ -18,10 +21,12 @@ class Conversations::CommunicationThreadResolver
   attr_reader :conversation
 
   def existing_thread
-    conversation.communication_thread ||
-      CommunicationThread.where(account_id: conversation.account_id, contact_id: conversation.contact_id)
-                         .order(Arel.sql('last_activity_at DESC NULLS LAST'), id: :asc)
-                         .first
+    linked_thread = conversation.communication_thread
+    return linked_thread if linked_thread&.contact_id == conversation.contact_id
+
+    CommunicationThread.where(account_id: conversation.account_id, contact_id: conversation.contact_id)
+                       .order(Arel.sql('last_activity_at DESC NULLS LAST'), id: :asc)
+                       .first
   end
 
   def build_thread
@@ -37,8 +42,12 @@ class Conversations::CommunicationThreadResolver
     )
   end
 
-  def create_link!(thread)
-    return if CommunicationThreadConversation.exists?(communication_thread_id: thread.id, conversation_id: conversation.id)
+  def create_or_update_link!(thread)
+    existing_link = CommunicationThreadConversation.find_by(
+      account_id: conversation.account_id,
+      conversation_id: conversation.id
+    )
+    return update_link!(existing_link, thread) if existing_link.present?
 
     CommunicationThreadConversation.create!(
       account_id: conversation.account_id,
@@ -48,6 +57,54 @@ class Conversations::CommunicationThreadResolver
       contact_inbox_id: conversation.contact_inbox_id,
       primary: CommunicationThreadConversation.where(communication_thread_id: thread.id).none?
     )
+  end
+
+  def update_link!(link, thread)
+    link.update!(
+      communication_thread_id: thread.id,
+      inbox_id: conversation.inbox_id,
+      contact_inbox_id: conversation.contact_inbox_id,
+      primary: link_primary_value(link, thread)
+    )
+  end
+
+  def link_primary_value(link, thread)
+    return link.primary? if link.communication_thread_id == thread.id
+
+    CommunicationThreadConversation
+      .where(communication_thread_id: thread.id)
+      .where.not(id: link.id)
+      .none?
+  end
+
+  def reset_conversation_thread_associations
+    conversation.association(:communication_thread_conversation).reset
+    conversation.association(:communication_thread).reset
+  end
+
+  def refresh_previous_thread!(previous_thread, current_thread)
+    return if previous_thread.blank? || previous_thread.id == current_thread.id
+
+    previous_thread.reload
+    if previous_thread.communication_thread_conversations.exists?
+      ensure_primary_link!(previous_thread)
+      refresh_thread!(previous_thread)
+    else
+      previous_thread.destroy!
+    end
+  end
+
+  def ensure_primary_link!(thread)
+    primary_link_exists = CommunicationThreadConversation.exists?(
+      communication_thread_id: thread.id,
+      primary: true
+    )
+    return if primary_link_exists
+
+    CommunicationThreadConversation
+      .where(communication_thread_id: thread.id)
+      .order(:created_at, :id)
+      .first&.update!(primary: true)
   end
 
   def refresh_thread!(thread)
@@ -63,11 +120,19 @@ class Conversations::CommunicationThreadResolver
 
   def aggregate_status(thread)
     conversations = linked_conversations(thread)
-    return 'open' if conversations.any?(&:open?)
-    return 'pending' if conversations.any?(&:pending?)
-    return 'snoozed' if conversations.any?(&:snoozed?)
+    active_conversation = conversations
+                          .reject(&:resolved?)
+                          .max_by { |linked_conversation| status_sort_key(linked_conversation) }
+    return active_conversation.status if active_conversation.present?
 
     'resolved'
+  end
+
+  def status_sort_key(linked_conversation)
+    [
+      linked_conversation.updated_at || linked_conversation.last_activity_at,
+      linked_conversation.id
+    ]
   end
 
   def aggregate_priority(thread)

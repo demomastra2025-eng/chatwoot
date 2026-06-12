@@ -167,6 +167,24 @@ describe('ActionCableConnector - Copilot Tests', () => {
       );
       expect(emitter.emit).toHaveBeenCalledWith('fetch_conversation_stats');
     });
+
+    it('updates cached conversation/thread contact identities from contact updates', () => {
+      const payload = { account_id: 1, id: 42, name: 'Updated customer' };
+
+      actionCable.onReceived({
+        event: 'contact.updated',
+        data: payload,
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'contacts/updateContact',
+        payload
+      );
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'updateContactInConversations',
+        payload
+      );
+    });
   });
 
   describe('copilot event handlers', () => {

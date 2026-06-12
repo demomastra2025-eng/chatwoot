@@ -87,7 +87,14 @@ class CommunicationThreadFinder
   def filter_by_status
     return if params[:status] == 'all'
 
-    @communication_threads = @communication_threads.where(status: params[:status] || DEFAULT_STATUS)
+    status = params[:status].presence || DEFAULT_STATUS
+    @communication_threads = @communication_threads.where(
+      'communication_threads.status = :thread_status OR communication_thread_conversations.conversation_id IN (:matching_conversation_ids)',
+      thread_status: CommunicationThread.statuses.fetch(status),
+      matching_conversation_ids: accessible_conversations
+        .where(status: Conversation.statuses.fetch(status))
+        .select(:id)
+    )
   end
 
   def filter_by_inbox

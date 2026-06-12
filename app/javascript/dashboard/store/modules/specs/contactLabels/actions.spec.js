@@ -35,10 +35,14 @@ describe('#actions', () => {
 
   describe('#update', () => {
     it('updates correct actions if API is success', async () => {
+      const dispatch = vi.fn();
       axios.post.mockResolvedValue({
         data: { payload: { contactId: '1', labels: ['on-hold'] } },
       });
-      await actions.update({ commit }, { contactId: '1', labels: ['on-hold'] });
+      await actions.update(
+        { commit, dispatch },
+        { contactId: '1', labels: ['on-hold'] }
+      );
 
       expect(commit.mock.calls).toEqual([
         [types.default.SET_CONTACT_LABELS_UI_FLAG, { isUpdating: true }],
@@ -54,6 +58,9 @@ describe('#actions', () => {
           { isUpdating: false, isError: false },
         ],
       ]);
+      expect(dispatch).toHaveBeenCalledWith('labels/get', null, {
+        root: true,
+      });
     });
 
     it('sends correct actions if API is error', async () => {

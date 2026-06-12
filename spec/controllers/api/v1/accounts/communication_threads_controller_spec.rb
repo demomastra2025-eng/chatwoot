@@ -79,6 +79,50 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(payload.pluck(:id)).to eq([matching_conversation.reload.communication_thread.display_id])
     end
 
+    it 'filters by child conversation status and prefers the matching channel payload' do
+      contact = create(:contact, account: account)
+      inbox = create(:inbox, account: account)
+      open_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      pending_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      open_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: inbox,
+        contact_inbox: open_contact_inbox,
+        status: :open,
+        updated_at: 2.minutes.ago
+      )
+      pending_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: inbox,
+        contact_inbox: pending_contact_inbox,
+        status: :pending
+      )
+      thread = pending_conversation.reload.communication_thread
+      thread.update_column(:status, CommunicationThread.statuses[:open])
+      create(:inbox_member, user: agent, inbox: inbox)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'pending' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      expect(payload.pluck(:id)).to eq([thread.display_id])
+      expect(payload.first[:channels]).to contain_exactly(
+        a_hash_including(
+          conversation_id: pending_conversation.display_id,
+          inbox_id: inbox.id,
+          status: 'pending'
+        )
+      )
+      expect(payload.first[:channels].pluck(:conversation_id)).not_to include(open_conversation.display_id)
+    end
+
     it 'sorts threads by supported sort options' do
       low_priority = create(:conversation, account: account, priority: :low)
       urgent_priority = create(:conversation, account: account, priority: :urgent)

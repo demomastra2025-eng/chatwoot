@@ -1,12 +1,14 @@
 import {
   buildCommunicationThreadConversation,
   buildCommunicationChannelFromMessage,
+  buildCommunicationChannelFromRealtimePayload,
   decoratePayloadWithCommunicationThread,
   filterConversationsByCommunicationThreadMode,
   getCommunicationContactIdentityLabel,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
   getCommunicationThreadChannelInboxes,
+  getCommunicationThreadTypingTargetIds,
   getUniqueCommunicationChannels,
   isCommunicationVoiceChannel,
   isMessageInCommunicationThread,
@@ -99,14 +101,23 @@ describe('communicationThreadHelper', () => {
   });
 
   describe('#getUniqueCommunicationChannels', () => {
-    it('deduplicates repeated child conversations by actual inbox channel', () => {
+    it('keeps distinct linked conversations even when they share an inbox', () => {
       expect(
         getUniqueCommunicationChannels([
           olderWhatsappDuplicate,
           telegramChannel,
           whatsappChannel,
         ])
-      ).toEqual([telegramChannel, whatsappChannel]);
+      ).toEqual([telegramChannel, whatsappChannel, olderWhatsappDuplicate]);
+    });
+
+    it('deduplicates repeated snapshots of the same linked conversation', () => {
+      expect(
+        getUniqueCommunicationChannels([
+          { ...whatsappChannel, can_reply: false, last_activity_at: 50 },
+          whatsappChannel,
+        ])
+      ).toEqual([whatsappChannel]);
     });
   });
 
@@ -386,6 +397,48 @@ describe('communicationThreadHelper', () => {
       expect(
         isMessageInCommunicationThread(chat, { conversation_id: 99 })
       ).toBe(false);
+    });
+  });
+
+  describe('#getCommunicationThreadTypingTargetIds', () => {
+    it('includes the aggregate thread id and linked child conversation ids', () => {
+      expect(
+        getCommunicationThreadTypingTargetIds({
+          id: 7,
+          is_communication_thread: true,
+          conversation_ids: [11, 22, 11],
+        })
+      ).toEqual([7, 11, 22]);
+    });
+
+    it('keeps direct conversations scoped to their own id', () => {
+      expect(getCommunicationThreadTypingTargetIds({ id: 11 })).toEqual([11]);
+    });
+  });
+
+  describe('#buildCommunicationChannelFromRealtimePayload', () => {
+    it('builds a channel entry from a partial thread realtime patch', () => {
+      expect(
+        buildCommunicationChannelFromRealtimePayload({
+          conversation_id: 99,
+          inbox_id: 303,
+          inbox_name: 'Email',
+          channel: 'Channel::Email',
+          contact_inbox_id: 404,
+          can_reply: true,
+          timestamp: 300,
+        })
+      ).toMatchObject({
+        conversation_id: 99,
+        inbox_id: 303,
+        inbox_name: 'Email',
+        channel: 'Channel::Email',
+        contact_inbox_id: 404,
+        can_reply: true,
+        can_send_text: true,
+        channel_key: 'conversation:99',
+        last_activity_at: 300,
+      });
     });
   });
 

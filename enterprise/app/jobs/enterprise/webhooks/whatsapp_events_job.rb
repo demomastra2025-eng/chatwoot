@@ -35,7 +35,10 @@ module Enterprise::Webhooks::WhatsappEventsJob
 
     Array(value[:calls]).each do |call_payload|
       with_call_lock(channel, call_payload[:id]) do
-        Whatsapp::IncomingCallService.new(inbox: channel.inbox, params: { calls: [call_payload] }).perform
+        Whatsapp::IncomingCallService.new(
+          inbox: channel.inbox,
+          params: { calls: [call_payload], contacts: Array(value[:contacts]) }
+        ).perform
       end
     end
 

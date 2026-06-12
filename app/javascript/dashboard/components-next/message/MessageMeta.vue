@@ -1,9 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute, useRouter } from 'vue-router';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
-import { buildCaptainTraceQuery } from './helpers/captainTraceRoute';
 
 import MessageStatus from './MessageStatus.vue';
 import Icon from 'next/icon/Icon.vue';
@@ -42,26 +40,10 @@ const {
   orientation,
 } = useMessageContext();
 const { t } = useI18n();
-const route = useRoute();
-const router = useRouter();
 
 const readableTime = computed(() =>
   messageTimestamp(createdAt.value, 'LLL d, h:mm a')
 );
-
-const traceQuery = computed(() =>
-  buildCaptainTraceQuery(additionalAttributes.value, route.params)
-);
-
-const openCaptainTrace = () => {
-  if (!traceQuery.value) return;
-
-  router.push({
-    name: 'captain_observability_index',
-    params: { accountId: route.params.accountId },
-    query: traceQuery.value,
-  });
-};
 
 const formatAgentName = agentName => {
   if (!agentName) return '';
@@ -243,18 +225,6 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
       {{ audioTimeLabel }}
     </span>
     <div class="inline-flex items-center gap-1.5">
-      <button
-        v-if="traceQuery"
-        type="button"
-        class="skip-context-menu inline-flex items-center gap-1 whitespace-nowrap text-[0.625rem] transition-colors hover:text-n-slate-12"
-        :title="t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE')"
-        :aria-label="t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE')"
-        data-testid="captain-trace-logs"
-        @click.stop="openCaptainTrace"
-      >
-        <i class="i-lucide-file-text size-3 shrink-0" aria-hidden="true" />
-        <span>{{ t('CAPTAIN.COPILOT.TOOL_TRACE.OPEN_TRACE') }}</span>
-      </button>
       <time class="inline">{{ readableTime }}</time>
     </div>
     <span v-if="subagentName" class="inline text-n-slate-11/90 font-medium">

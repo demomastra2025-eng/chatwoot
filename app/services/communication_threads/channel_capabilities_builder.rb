@@ -10,12 +10,13 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
   SUPPORTED_UNLINKED_CHANNELS = (CONTACT_TARGET_REQUIREMENTS.keys + Inbox::API_CHANNEL_TYPES + ['Channel::WebWidget']).freeze
 
-  def initialize(links:, contact: nil, available_inboxes: [], include_unlinked: false, deduplicate_linked: true)
+  def initialize(links:, contact: nil, available_inboxes: [], include_unlinked: false, deduplicate_linked: true, preferred_status: nil)
     @links = Array(links)
     @contact = contact || @links.first&.communication_thread&.contact
     @available_inboxes = Array(available_inboxes)
     @include_unlinked = include_unlinked
     @deduplicate_linked = deduplicate_linked
+    @preferred_status = preferred_status.to_s.presence
   end
 
   def perform
@@ -24,7 +25,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
   private
 
-  attr_reader :links, :contact, :available_inboxes, :include_unlinked, :deduplicate_linked
+  attr_reader :links, :contact, :available_inboxes, :include_unlinked, :deduplicate_linked, :preferred_status
 
   def linked_channels
     selected_links = deduplicate_linked ? deduplicated_links : links
@@ -40,6 +41,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   def linked_channel_sort_key(link)
     conversation = link.conversation
     [
+      preferred_status.present? && conversation&.status == preferred_status ? 1 : 0,
       conversation&.can_reply? ? 1 : 0,
       conversation&.open? ? 1 : 0,
       conversation&.last_activity_at.to_i,

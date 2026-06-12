@@ -72,18 +72,23 @@ watch(
 
 <template>
   <div class="flex flex-col gap-2">
-    <button
-      class="group flex items-center gap-2 text-xs text-n-slate-10 hover:text-n-slate-11 transition-colors duration-200 -ml-3"
-      @click="isExpanded = !isExpanded"
-    >
-      <Icon
-        :icon="isExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
-        class="w-4 h-4 transition-transform duration-200 group-hover:scale-110"
-      />
-      <span class="text-xs font-medium text-n-slate-10">
-        {{ showStepsLabel }}
-      </span>
-    </button>
+    <div class="flex items-center justify-between gap-2">
+      <button
+        class="group -ml-3 flex min-w-0 items-center gap-2 text-xs text-n-slate-10 transition-colors duration-200 hover:text-n-slate-11"
+        @click="isExpanded = !isExpanded"
+      >
+        <Icon
+          :icon="
+            isExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'
+          "
+          class="h-4 w-4 flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
+        />
+        <span class="truncate text-xs font-medium text-n-slate-10">
+          {{ showStepsLabel }}
+        </span>
+      </button>
+      <slot name="headerAction" />
+    </div>
     <div
       v-show="isExpanded"
       class="space-y-3 transition-all duration-200"

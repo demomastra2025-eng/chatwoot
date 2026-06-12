@@ -31,7 +31,8 @@ vi.mock('dashboard/components-next/copilot/CopilotThinkingGroup.vue', () => ({
       messages: { type: Array, required: true },
       defaultCollapsed: { type: Boolean, default: false },
     },
-    template: '<div data-testid="thinking-group">{{ messages.length }}</div>',
+    template:
+      '<div data-testid="thinking-group">{{ messages.length }}<slot name="headerAction" /></div>',
   },
 }));
 
@@ -69,7 +70,7 @@ describe('CaptainToolExecutionGroup', () => {
     });
   });
 
-  it('can hide the trace page action when message metadata renders it', () => {
+  it('can hide the trace page action', () => {
     const wrapper = mount(CaptainToolExecutionGroup, {
       props: {
         showOpenTraceAction: false,

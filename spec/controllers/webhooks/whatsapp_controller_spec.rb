@@ -45,7 +45,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
     it 'returns challenge when valid params' do
       get "/webhooks/whatsapp/#{channel.phone_number}",
           params: { 'hub.challenge' => '123456', 'hub.mode' => 'subscribe', 'hub.verify_token' => channel.provider_config['webhook_verify_token'] }
-      expect(response.body).to include '123456'
+      expect(response.body).to eq '123456'
     end
   end
 

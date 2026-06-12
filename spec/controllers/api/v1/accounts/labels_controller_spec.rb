@@ -17,12 +17,17 @@ RSpec.describe 'Label API', type: :request do
       let(:agent) { create(:user, account: account, role: :administrator) }
 
       it 'returns all the labels in account' do
+        tagged_contact = create(:contact, account: account)
+        create(:contact, account: account)
+        tagged_contact.update_labels([label.title])
+
         get "/api/v1/accounts/#{account.id}/labels",
             headers: agent.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include(label.title)
+        expect(response.parsed_body['payload'].first['contacts_count']).to eq(1)
       end
 
       it 'allows custom-role users with runtime permissions to list labels' do

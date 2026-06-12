@@ -118,10 +118,11 @@ class Whatsapp::IncomingCallService
   end
 
   def create_inbound_call(call_payload)
-    contact = find_or_create_contact("+#{call_payload[:from]}")
-    return unless contact
+    contact_inbox = find_or_create_contact_inbox(call_payload)
+    return unless contact_inbox
 
-    conversation = find_or_create_conversation(contact)
+    contact = contact_inbox.contact
+    conversation = find_or_create_conversation(contact, contact_inbox)
     return unless conversation
 
     call = create_call_record(call_payload, conversation, contact, :incoming)
@@ -358,23 +359,48 @@ class Whatsapp::IncomingCallService
     call.in_progress? || duration.to_i.positive? || (call.incoming? && call.accepted_by_agent_id.present?)
   end
 
-  def find_or_create_contact(phone_number)
-    waid = phone_number.delete('+')
-
-    contact_inbox = ::ContactInboxWithContactBuilder.new(
-      source_id: waid,
+  def find_or_create_contact_inbox(call_payload)
+    Whatsapp::ContactIdentityResolver.new(
       inbox: inbox,
-      contact_attributes: {
-        name: phone_number,
-        phone_number: phone_number
-      }
+      message: call_identity_message(call_payload),
+      contact_params: call_contact_params(call_payload)
     ).perform
-
-    contact_inbox&.contact
   end
 
-  def find_or_create_conversation(contact)
-    contact_inbox = contact.contact_inboxes.find_by(inbox: inbox)
+  def call_identity_message(call_payload)
+    {
+      from: call_payload[:from],
+      from_user_id: call_payload[:from_user_id],
+      from_parent_user_id: call_payload[:from_parent_user_id]
+    }.compact
+  end
+
+  def call_contact_params(call_payload)
+    contact_params = Array(params[:contacts]).find do |contact|
+      contact = contact.with_indifferent_access
+      contact_phone = Whatsapp::ContactIdentityResolver.phone_source_id(contact[:wa_id])
+      contact_bsuid = Whatsapp::ContactIdentityResolver.bsuid_source_id(contact[:user_id])
+      call_phone = Whatsapp::ContactIdentityResolver.phone_source_id(call_payload[:from])
+      call_bsuid = Whatsapp::ContactIdentityResolver.bsuid_source_id(call_payload[:from_user_id])
+
+      (contact_phone.present? && contact_phone == call_phone) ||
+        (contact_bsuid.present? && contact_bsuid == call_bsuid)
+    end
+
+    (contact_params&.with_indifferent_access || fallback_call_contact_params(call_payload).with_indifferent_access)
+  end
+
+  def fallback_call_contact_params(call_payload)
+    phone_source_id = Whatsapp::ContactIdentityResolver.phone_source_id(call_payload[:from])
+    {
+      wa_id: phone_source_id,
+      user_id: call_payload[:from_user_id],
+      parent_user_id: call_payload[:from_parent_user_id],
+      profile: { name: Whatsapp::ContactIdentityResolver.phone_number_for(phone_source_id) || call_payload[:from_user_id] }
+    }.compact
+  end
+
+  def find_or_create_conversation(contact, contact_inbox)
     return unless contact_inbox
 
     conversation = contact_inbox.conversations.where.not(status: :resolved).last

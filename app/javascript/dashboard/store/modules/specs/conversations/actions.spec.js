@@ -149,6 +149,79 @@ describe('#actions', () => {
         ],
       ]);
     });
+
+    it('keeps the thread label side panel in sync from realtime patches', () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      const payload = {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        labels: ['support'],
+        updated_at: 1710000000.25,
+      };
+
+      actions.updateCommunicationThreadRealtime(
+        { commit: localCommit, dispatch: localDispatch },
+        payload
+      );
+
+      expect(localCommit).toHaveBeenCalledWith(
+        types.UPDATE_CONVERSATION,
+        expect.objectContaining({ id: 7, labels: ['support'] })
+      );
+      expect(localDispatch).toHaveBeenCalledWith(
+        'conversationLabels/setConversationLabel',
+        { id: 7, data: ['support'] }
+      );
+    });
+
+    it('stores the latest thread sender from contact-change realtime patches', () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      const sender = { id: 42, name: 'Updated customer' };
+      const payload = {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        meta: { sender, channel: 'CommunicationThread' },
+        updated_at: 1710000000.25,
+      };
+
+      actions.updateCommunicationThreadRealtime(
+        { commit: localCommit, dispatch: localDispatch },
+        payload
+      );
+
+      expect(localCommit).toHaveBeenCalledWith(
+        types.UPDATE_CONVERSATION,
+        expect.objectContaining({
+          id: 7,
+          meta: expect.objectContaining(payload.meta),
+        })
+      );
+      expect(localDispatch).toHaveBeenCalledWith('contacts/setContact', sender);
+    });
+
+    it('refreshes the thread list after contact-change patches so stale old groups are removed', () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      const payload = {
+        id: 8,
+        communication_thread_id: 8,
+        is_communication_thread: true,
+        source_event: 'conversation.contact_changed',
+        meta: { sender: { id: 51, name: 'New contact' } },
+        updated_at: 1710000000.25,
+      };
+
+      actions.updateCommunicationThreadRealtime(
+        { commit: localCommit, dispatch: localDispatch },
+        payload
+      );
+
+      expect(localDispatch).toHaveBeenCalledWith('fetchCommunicationThreads');
+    });
   });
 
   describe('#addConversation', () => {
@@ -318,6 +391,24 @@ describe('#actions', () => {
       };
       actions.addMessage({ commit }, message);
       expect(commit.mock.calls).toEqual([[types.ADD_MESSAGE, message]]);
+    });
+
+    it('updates the attachment panel for outgoing realtime messages with attachments', () => {
+      const localCommit = vi.fn();
+      const message = {
+        id: 1,
+        message_type: 1,
+        conversation_id: 1,
+        status: 'sent',
+        attachments: [{ id: 10 }],
+      };
+
+      actions.addMessage({ commit: localCommit }, message);
+
+      expect(localCommit.mock.calls).toEqual([
+        [types.ADD_MESSAGE, message],
+        [types.ADD_CONVERSATION_ATTACHMENTS, message],
+      ]);
     });
   });
 
