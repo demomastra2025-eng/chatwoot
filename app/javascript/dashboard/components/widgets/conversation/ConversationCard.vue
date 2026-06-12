@@ -458,7 +458,7 @@ const togglePinnedConversation = async nextPinnedState => {
         </span>
         <span
           v-if="hasUnread"
-          class="shadow-lg inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-white bg-n-ruby-9"
+          class="shadow-lg inline-flex items-center justify-center rounded-md text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-n-brand-contrast bg-n-brand-solid"
           :class="unreadBadgeClass"
         >
           {{ unreadBadgeLabel }}

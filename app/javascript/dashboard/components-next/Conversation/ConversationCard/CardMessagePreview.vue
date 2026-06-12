@@ -66,10 +66,12 @@ const unreadBadgeClass = computed(() => {
       />
       <div
         v-if="unreadMessagesCount > 0"
-        class="inline-flex items-center justify-center rounded-full bg-n-ruby-9"
+        class="inline-flex items-center justify-center rounded-md bg-n-brand-solid"
         :class="unreadBadgeClass"
       >
-        <span class="text-[11px] font-semibold leading-none text-white">
+        <span
+          class="text-[11px] font-semibold leading-none text-n-brand-contrast"
+        >
           {{ unreadBadgeLabel }}
         </span>
       </div>
