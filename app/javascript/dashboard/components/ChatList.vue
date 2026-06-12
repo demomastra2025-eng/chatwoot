@@ -1445,7 +1445,7 @@ watch(conversationFilters, (newVal, oldVal) => {
         class="sticky bottom-3 z-20 flex justify-center pointer-events-none"
       >
         <span
-          class="rounded-md bg-n-alpha-3 px-2 py-1 text-xs font-medium text-n-slate-11 shadow-sm backdrop-blur"
+          class="rounded-full bg-n-alpha-1 px-2 py-1 text-xs font-medium text-n-slate-11 shadow-sm backdrop-blur"
         >
           {{ listCountLabel }}
         </span>
