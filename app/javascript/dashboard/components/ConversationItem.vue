@@ -67,7 +67,7 @@ export default {
     :communication-thread-mode="communicationThreadMode"
     :selected="isConversationSelected(source.id)"
     :show-assignee="showAssignee"
-    :selectable="!communicationThreadMode"
+    selectable
     enable-context-menu
     :allowed-context-menu-options="
       communicationThreadMode

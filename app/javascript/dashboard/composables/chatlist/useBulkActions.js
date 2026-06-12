@@ -17,21 +17,31 @@ export function useBulkActions() {
   );
   const selectedInboxes = ref([]);
 
-  function selectConversation(conversationId, inboxId) {
+  const normalizeInboxIds = inboxIds => {
+    const ids = Array.isArray(inboxIds) ? inboxIds : [inboxIds];
+    return ids.filter(Boolean);
+  };
+
+  function selectConversation(conversationId, inboxIds) {
     store.dispatch('bulkActions/setSelectedConversationIds', conversationId);
-    selectedInboxes.value = [...selectedInboxes.value, inboxId];
+    selectedInboxes.value = [
+      ...selectedInboxes.value,
+      ...normalizeInboxIds(inboxIds),
+    ];
   }
 
-  function deSelectConversation(conversationId, inboxId) {
+  function deSelectConversation(conversationId, inboxIds) {
     store.dispatch('bulkActions/removeSelectedConversationIds', conversationId);
-    const index = selectedInboxes.value.indexOf(inboxId);
+    normalizeInboxIds(inboxIds).forEach(inboxId => {
+      const index = selectedInboxes.value.indexOf(inboxId);
 
-    if (index > -1) {
-      selectedInboxes.value = [
-        ...selectedInboxes.value.slice(0, index),
-        ...selectedInboxes.value.slice(index + 1),
-      ];
-    }
+      if (index > -1) {
+        selectedInboxes.value = [
+          ...selectedInboxes.value.slice(0, index),
+          ...selectedInboxes.value.slice(index + 1),
+        ];
+      }
+    });
   }
 
   function resetBulkActions() {
@@ -46,7 +56,13 @@ export function useBulkActions() {
         'bulkActions/setSelectedConversationIds',
         availableConversations.map(item => item.id)
       );
-      selectedInboxes.value = availableConversations.map(item => item.inbox_id);
+      selectedInboxes.value = availableConversations.flatMap(item =>
+        item?.is_communication_thread
+          ? (item.channels || [])
+              .map(channel => channel.inbox_id)
+              .filter(Boolean)
+          : [item.inbox_id].filter(Boolean)
+      );
     } else {
       resetBulkActions();
     }
@@ -57,10 +73,22 @@ export function useBulkActions() {
   }
 
   // Same method used in context menu, conversationId being passed from there.
-  async function onAssignAgent(agent, conversationId = null) {
+  function bulkType(isCommunicationThreadMode = false) {
+    return isCommunicationThreadMode ? 'CommunicationThread' : 'Conversation';
+  }
+
+  function storeConversationType(isCommunicationThreadMode = false) {
+    return isCommunicationThreadMode ? 'communication_thread' : 'conversation';
+  }
+
+  async function onAssignAgent(
+    agent,
+    conversationId = null,
+    isCommunicationThreadMode = false
+  ) {
     try {
       await store.dispatch('bulkActions/process', {
-        type: 'Conversation',
+        type: bulkType(isCommunicationThreadMode),
         ids: conversationId || selectedConversations.value,
         fields: {
           assignee_id: agent.id,
@@ -83,10 +111,14 @@ export function useBulkActions() {
   }
 
   // Same method used in context menu, conversationId being passed from there.
-  async function onAssignLabels(newLabels, conversationId = null) {
+  async function onAssignLabels(
+    newLabels,
+    conversationId = null,
+    isCommunicationThreadMode = false
+  ) {
     try {
       await store.dispatch('bulkActions/process', {
-        type: 'Conversation',
+        type: bulkType(isCommunicationThreadMode),
         ids: conversationId || selectedConversations.value,
         labels: {
           add: newLabels,
@@ -130,10 +162,10 @@ export function useBulkActions() {
     }
   }
 
-  async function onAssignTeamsForBulk(team) {
+  async function onAssignTeamsForBulk(team, isCommunicationThreadMode = false) {
     try {
       await store.dispatch('bulkActions/process', {
-        type: 'Conversation',
+        type: bulkType(isCommunicationThreadMode),
         ids: selectedConversations.value,
         fields: {
           team_id: team.id,
@@ -146,7 +178,11 @@ export function useBulkActions() {
     }
   }
 
-  async function onUpdateConversations(status, snoozedUntil) {
+  async function onUpdateConversations(
+    status,
+    snoozedUntil,
+    isCommunicationThreadMode = false
+  ) {
     if (selectedConversations.value.length === 0) return;
 
     let conversationIds = selectedConversations.value;
@@ -156,7 +192,10 @@ export function useBulkActions() {
     if (status === wootConstants.STATUS_TYPE.RESOLVED) {
       const { validIds, skippedIds } = selectedConversations.value.reduce(
         (acc, id) => {
-          const conversation = store.getters.getConversationById(id);
+          const conversation = store.getters.getConversationById(
+            id,
+            storeConversationType(isCommunicationThreadMode)
+          );
           const currentCustomAttributes = conversation?.custom_attributes || {};
           const { hasMissing } = checkMissingAttributes(
             currentCustomAttributes
@@ -188,7 +227,7 @@ export function useBulkActions() {
     try {
       if (conversationIds.length > 0) {
         await store.dispatch('bulkActions/process', {
-          type: 'Conversation',
+          type: bulkType(isCommunicationThreadMode),
           ids: conversationIds,
           fields: {
             status,
@@ -201,6 +240,7 @@ export function useBulkActions() {
             conversationId,
             status,
             snoozedUntil,
+            conversationType: storeConversationType(isCommunicationThreadMode),
           });
         });
       }
@@ -217,10 +257,10 @@ export function useBulkActions() {
     }
   }
 
-  async function onMarkConversationsRead() {
+  async function onMarkConversationsRead(isCommunicationThreadMode = false) {
     try {
       await store.dispatch('bulkActions/process', {
-        type: 'Conversation',
+        type: bulkType(isCommunicationThreadMode),
         ids: selectedConversations.value,
         action_name: 'mark_read',
       });
@@ -229,6 +269,7 @@ export function useBulkActions() {
           id,
           lastSeen: new Date().toISOString(),
           unreadCount: 0,
+          conversationType: storeConversationType(isCommunicationThreadMode),
         });
       });
       resetBulkActions();

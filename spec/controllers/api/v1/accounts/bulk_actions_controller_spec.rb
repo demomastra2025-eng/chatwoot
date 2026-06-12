@@ -67,6 +67,26 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
         expect(Conversation.first.assignee_id).to be_nil
       end
 
+      it 'accepts communication thread bulk actions' do
+        contact = create(:contact, account: account)
+        thread = create(:communication_thread, account: account, contact: contact)
+        conversation = create(:conversation, account: account, contact: contact)
+        CommunicationThreadConversation.where(account_id: account.id, conversation_id: conversation.id).delete_all
+        conversation.association(:communication_thread_conversation).reset
+        conversation.association(:communication_thread).reset
+        account.enable_features!('communication_threads')
+        create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
+        create(:inbox_member, inbox: conversation.inbox, user: agent)
+
+        post "/api/v1/accounts/#{account.id}/bulk_actions",
+             headers: agent.create_new_auth_token,
+             params: { type: 'CommunicationThread', fields: { status: 'resolved' }, ids: [thread.display_id] }
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('payload', 'resource_type')).to eq('CommunicationThread')
+        expect(response.parsed_body.dig('payload', 'action_name')).to eq('update_status')
+      end
+
       it 'returns the bulk action run status for the current user' do
         auth_headers = agent.create_new_auth_token
 

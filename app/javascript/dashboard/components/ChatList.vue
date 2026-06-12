@@ -902,7 +902,7 @@ async function handleAssignAgent(agent, conversationId = null) {
     return;
   }
 
-  await onAssignAgent(agent, conversationId);
+  await onAssignAgent(agent, conversationId, props.communicationThreadMode);
 }
 
 async function handleAssignTeam(team, conversationId = null) {
@@ -925,7 +925,7 @@ async function handleAssignTeam(team, conversationId = null) {
     return;
   }
 
-  await onAssignTeamsForBulk(team);
+  await onAssignTeamsForBulk(team, props.communicationThreadMode);
 }
 
 async function handleAssignLabels(newLabels, conversationId = null) {
@@ -951,7 +951,11 @@ async function handleAssignLabels(newLabels, conversationId = null) {
     return;
   }
 
-  await onAssignLabels(newLabels, conversationId);
+  await onAssignLabels(
+    newLabels,
+    conversationId,
+    props.communicationThreadMode
+  );
 }
 
 async function handleRemoveLabels(labelsToRemove, conversationId = null) {
@@ -1293,10 +1297,13 @@ watch(conversationFilters, (newVal, oldVal) => {
       :show-snoozed-action="allSelectedConversationsStatus('snoozed')"
       @select-all-conversations="toggleSelectAll"
       @assign-agent="handleAssignAgent"
-      @update-conversations="onUpdateConversations"
+      @update-conversations="
+        (status, snoozedUntil) =>
+          onUpdateConversations(status, snoozedUntil, communicationThreadMode)
+      "
       @assign-labels="handleAssignLabels"
       @assign-team="handleAssignTeam"
-      @mark-read="onMarkConversationsRead"
+      @mark-read="() => onMarkConversationsRead(communicationThreadMode)"
     />
     <div
       ref="conversationListRef"

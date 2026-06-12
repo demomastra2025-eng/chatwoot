@@ -148,6 +148,20 @@ const inbox = computed(() => {
   return inboxId.value ? store.getters['inboxes/getInbox'](inboxId.value) : {};
 });
 
+const selectionInboxIds = computed(() => {
+  if (isCommunicationThreadChat.value) {
+    return [
+      ...new Set(
+        (props.chat.channels || [])
+          .map(channel => channel.inbox_id)
+          .filter(Boolean)
+      ),
+    ];
+  }
+
+  return inbox.value.id ? [inbox.value.id] : [];
+});
+
 const showInboxName = computed(() => {
   return (
     !props.hideInboxName &&
@@ -227,9 +241,9 @@ const onThumbnailLeave = () => {
 
 const onSelectConversation = checked => {
   if (checked) {
-    emit('selectConversation', props.chat.id, inbox.value.id);
+    emit('selectConversation', props.chat.id, selectionInboxIds.value);
   } else {
-    emit('deSelectConversation', props.chat.id, inbox.value.id);
+    emit('deSelectConversation', props.chat.id, selectionInboxIds.value);
   }
 };
 

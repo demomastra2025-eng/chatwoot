@@ -1,7 +1,10 @@
 class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseController
   def create
     case normalized_type
-    when 'Conversation'
+    when 'Conversation', 'CommunicationThread'
+      ensure_communication_threads_feature_enabled! if normalized_type == 'CommunicationThread'
+      return if performed?
+
       bulk_action_run = create_conversation_bulk_action_run!
       enqueue_conversation_job(bulk_action_run)
       render json: { payload: bulk_action_run.as_progress_json }, status: :ok
@@ -69,7 +72,7 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
   def create_conversation_bulk_action_run!
     @current_account.bulk_action_runs.create!(
       user: current_user,
-      resource_type: 'Conversation',
+      resource_type: normalized_type,
       action_name: conversation_action_name,
       metadata: {
         selected_count: Array(params[:ids]).size
@@ -95,5 +98,11 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
     @conversation_fields ||= params.fetch(:fields, ActionController::Parameters.new)
                                    .permit(:status, :assignee_id, :team_id)
                                    .to_h
+  end
+
+  def ensure_communication_threads_feature_enabled!
+    return if Current.account&.feature_enabled?('communication_threads')
+
+    render json: { error: 'Communication threads feature is disabled' }, status: :forbidden
   end
 end

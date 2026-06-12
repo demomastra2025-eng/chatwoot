@@ -404,10 +404,11 @@ export const mutations = {
 
   [types.CHANGE_CONVERSATION_STATUS](
     _state,
-    { conversationId, status, snoozedUntil }
+    { conversationId, status, snoozedUntil, conversationType = 'conversation' }
   ) {
     const conversation =
-      getters.getConversationById(_state)(conversationId, 'conversation') || {};
+      getters.getConversationById(_state)(conversationId, conversationType) ||
+      {};
     conversation.snoozed_until = snoozedUntil;
     conversation.status = status;
   },
@@ -615,9 +616,9 @@ export const mutations = {
 
   [types.UPDATE_MESSAGE_UNREAD_COUNT](
     _state,
-    { id, lastSeen, unreadCount = 0 }
+    { id, lastSeen, unreadCount = 0, conversationType = 'conversation' }
   ) {
-    const chat = getConversationById(_state)(id, 'conversation');
+    const chat = getConversationById(_state)(id, conversationType);
     if (chat) {
       chat.agent_last_seen_at = lastSeen;
       chat.unread_count = unreadCount;

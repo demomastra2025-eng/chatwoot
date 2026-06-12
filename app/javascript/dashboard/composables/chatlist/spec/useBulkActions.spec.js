@@ -53,6 +53,29 @@ describe('useBulkActions', () => {
     );
   });
 
+  it('selects all inboxes from communication thread channels', () => {
+    const { selectedInboxes, selectAllConversations } = useBulkActions();
+
+    selectAllConversations(true, [
+      {
+        id: 7,
+        is_communication_thread: true,
+        channels: [{ inbox_id: 10 }, { inbox_id: 20 }, { inbox_id: null }],
+      },
+      {
+        id: 8,
+        is_communication_thread: true,
+        channels: [{ inbox_id: 30 }],
+      },
+    ]);
+
+    expect(selectedInboxes.value).toEqual([10, 20, 30]);
+    expect(store.dispatch).toHaveBeenLastCalledWith(
+      'bulkActions/setSelectedConversationIds',
+      [7, 8]
+    );
+  });
+
   it('updates selected conversations locally after bulk status change', async () => {
     const { onUpdateConversations } = useBulkActions();
 
@@ -69,16 +92,95 @@ describe('useBulkActions', () => {
     expect(store.commit.mock.calls).toEqual([
       [
         mutationTypes.CHANGE_CONVERSATION_STATUS,
-        { conversationId: 1, status: 'resolved', snoozedUntil: null },
+        {
+          conversationId: 1,
+          status: 'resolved',
+          snoozedUntil: null,
+          conversationType: 'conversation',
+        },
       ],
       [
         mutationTypes.CHANGE_CONVERSATION_STATUS,
-        { conversationId: 2, status: 'resolved', snoozedUntil: null },
+        {
+          conversationId: 2,
+          status: 'resolved',
+          snoozedUntil: null,
+          conversationType: 'conversation',
+        },
       ],
     ]);
     expect(store.dispatch).toHaveBeenNthCalledWith(
       2,
       'bulkActions/clearSelectedConversationIds'
     );
+  });
+
+  it('uses communication thread payloads for thread bulk status updates', async () => {
+    const { onUpdateConversations } = useBulkActions();
+
+    await onUpdateConversations('resolved', null, true);
+
+    expect(store.dispatch).toHaveBeenNthCalledWith(1, 'bulkActions/process', {
+      type: 'CommunicationThread',
+      ids: [1, 2],
+      fields: {
+        status: 'resolved',
+      },
+      snoozed_until: null,
+    });
+    expect(store.getters.getConversationById).toHaveBeenCalledWith(
+      1,
+      'communication_thread'
+    );
+    expect(store.commit.mock.calls).toEqual([
+      [
+        mutationTypes.CHANGE_CONVERSATION_STATUS,
+        {
+          conversationId: 1,
+          status: 'resolved',
+          snoozedUntil: null,
+          conversationType: 'communication_thread',
+        },
+      ],
+      [
+        mutationTypes.CHANGE_CONVERSATION_STATUS,
+        {
+          conversationId: 2,
+          status: 'resolved',
+          snoozedUntil: null,
+          conversationType: 'communication_thread',
+        },
+      ],
+    ]);
+  });
+
+  it('uses communication thread payloads for thread bulk mark read', async () => {
+    const { onMarkConversationsRead } = useBulkActions();
+
+    await onMarkConversationsRead(true);
+
+    expect(store.dispatch).toHaveBeenNthCalledWith(1, 'bulkActions/process', {
+      type: 'CommunicationThread',
+      ids: [1, 2],
+      action_name: 'mark_read',
+    });
+    expect(store.commit.mock.calls).toEqual([
+      [
+        mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT,
+        expect.objectContaining({
+          id: 1,
+          unreadCount: 0,
+          conversationType: 'communication_thread',
+        }),
+      ],
+      [
+        mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT,
+        expect.objectContaining({
+          id: 2,
+          unreadCount: 0,
+          conversationType: 'communication_thread',
+        }),
+      ],
+    ]);
   });
 });
