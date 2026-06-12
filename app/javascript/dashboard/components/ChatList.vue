@@ -223,6 +223,68 @@ const userPermissions = computed(() => {
   return getUserPermissions(currentUser.value, currentAccountId.value);
 });
 
+const tabTotalCount = tabKey => {
+  const countKey = ASSIGNEE_TYPE_TAB_PERMISSIONS[tabKey]?.count;
+  return Number(conversationStats.value[countKey] || 0);
+};
+
+const filterListByMode = list =>
+  filterConversationsByCommunicationThreadMode(
+    list,
+    props.communicationThreadMode
+  );
+
+const unreadChatCount = list =>
+  filterListByMode(list).filter(conversation => conversation.unread_count > 0)
+    .length;
+
+const tabListFilters = tabKey => ({
+  inboxId: props.conversationInbox ? props.conversationInbox : undefined,
+  assigneeType: tabKey,
+  status: activeStatus.value,
+  sortBy: activeSortBy.value,
+  labels: props.label ? [props.label] : undefined,
+  teamId: props.teamId || undefined,
+  conversationType: props.conversationType || undefined,
+});
+
+const missedCountForAssigneeTab = tabKey => {
+  const filters = tabListFilters(tabKey);
+
+  if (
+    props.conversationType === wootConstants.CONVERSATION_TYPE.PARTICIPATING
+  ) {
+    const conversations = participatingChatsList.value(filters);
+
+    if (tabKey === wootConstants.ASSIGNEE_TYPE.ME) {
+      return unreadChatCount(
+        conversations.filter(
+          conversation =>
+            conversation.meta?.assignee?.id === currentUser.value?.id
+        )
+      );
+    }
+
+    if (tabKey === wootConstants.ASSIGNEE_TYPE.UNASSIGNED) {
+      return unreadChatCount(
+        conversations.filter(conversation => !conversation.meta?.assignee)
+      );
+    }
+
+    return unreadChatCount(conversations);
+  }
+
+  if (tabKey === wootConstants.ASSIGNEE_TYPE.ME) {
+    return unreadChatCount(mineChatsList.value(filters));
+  }
+
+  if (tabKey === wootConstants.ASSIGNEE_TYPE.UNASSIGNED) {
+    return unreadChatCount(unAssignedChatsList.value(filters));
+  }
+
+  return unreadChatCount(allChatList.value(filters));
+};
+
 const assigneeTabItems = computed(() => {
   return filterItemsByPermission(
     ASSIGNEE_TYPE_TAB_PERMISSIONS,
@@ -231,7 +293,8 @@ const assigneeTabItems = computed(() => {
   ).map(({ key, count: countKey }) => ({
     key,
     name: t(`CHAT_LIST.ASSIGNEE_TYPE_TABS.${key}`),
-    count: conversationStats.value[countKey] || 0,
+    totalCount: conversationStats.value[countKey] || 0,
+    count: missedCountForAssigneeTab(key),
   }));
 });
 
@@ -335,10 +398,7 @@ const shouldShowChannelFilter = computed(() => {
 });
 
 const activeAssigneeTabCount = computed(() => {
-  const count = assigneeTabItems.value.find(
-    item => item.key === activeAssigneeTab.value
-  ).count;
-  return count;
+  return tabTotalCount(activeAssigneeTab.value);
 });
 
 const conversationListPagination = computed(() => {
@@ -485,6 +545,26 @@ const showEndOfListMessage = computed(() => {
     !chatListLoading.value
   );
 });
+
+const shownConversationCount = computed(
+  () => displayedConversationList.value.length
+);
+
+const totalConversationCount = computed(() => {
+  if (hasAppliedFiltersOrActiveFolders.value) {
+    return conversationList.value.length;
+  }
+
+  return activeAssigneeTabCount.value;
+});
+
+const shouldShowListCountLabel = computed(() => {
+  return totalConversationCount.value > 0 && shownConversationCount.value > 0;
+});
+
+const listCountLabel = computed(
+  () => `${shownConversationCount.value} / ${totalConversationCount.value}`
+);
 
 const allConversationsSelected = computed(() => {
   if (!displayedConversationList.value.length) {
@@ -1350,6 +1430,16 @@ watch(conversationFilters, (newVal, oldVal) => {
         :options="intersectionObserverOptions"
         @observed="loadMoreConversations"
       />
+      <div
+        v-if="shouldShowListCountLabel"
+        class="sticky bottom-3 z-20 flex justify-center pointer-events-none"
+      >
+        <span
+          class="rounded-md bg-n-alpha-3 px-2 py-1 text-xs font-medium text-n-slate-11 shadow-sm backdrop-blur"
+        >
+          {{ listCountLabel }}
+        </span>
+      </div>
     </div>
     <Dialog
       ref="deleteConversationDialogRef"
