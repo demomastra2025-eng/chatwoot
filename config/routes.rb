@@ -286,6 +286,7 @@ Rails.application.routes.draw do
               get :attachments
               get :labels
               post :labels, action: :update_labels
+              post :update_last_seen
             end
           end
 

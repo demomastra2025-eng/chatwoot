@@ -2,14 +2,15 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   FEATURE_NAME = 'communication_threads'.freeze
   JSON_MESSAGE_PARAMS = %i[content_attributes template_params delivery_policy].freeze
   ATTACHMENT_RESULTS_PER_PAGE = 100
+  MEMBER_THREAD_ACTIONS = [:show, :update, :messages, :channels, :attachments, :labels, :update_labels, :create_message, :update_last_seen].freeze
 
   rescue_from CommunicationThreadFinder::InvalidParameter, with: :render_communication_thread_parameter_error
   rescue_from CommunicationThreads::MessageCreateService::Error, with: :render_communication_thread_parameter_error
   rescue_from ArgumentError, with: :render_communication_thread_parameter_error
 
   before_action :ensure_communication_threads_feature_enabled!
-  before_action :communication_thread, only: [:show, :update, :messages, :channels, :attachments, :labels, :update_labels, :create_message]
-  before_action :ensure_thread_accessible!, only: [:show, :update, :messages, :channels, :attachments, :labels, :update_labels, :create_message]
+  before_action :communication_thread, only: MEMBER_THREAD_ACTIONS
+  before_action :ensure_thread_accessible!, only: MEMBER_THREAD_ACTIONS
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
   before_action :validate_update_params!, only: [:update]
 
@@ -88,6 +89,17 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     render :message
+  end
+
+  def update_last_seen
+    @communication_thread = CommunicationThreads::MarkReadService.new(
+      communication_thread: @communication_thread,
+      current_user: Current.user,
+      current_account: Current.account,
+      accessible_links: accessible_links_for(@communication_thread)
+    ).perform
+    preload_accessible_links([@communication_thread], include_unlinked: true)
+    render :show
   end
 
   private

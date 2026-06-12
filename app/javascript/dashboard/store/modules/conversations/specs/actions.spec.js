@@ -10,6 +10,41 @@ describe('conversation actions', () => {
     vi.restoreAllMocks();
   });
 
+  describe('#markCommunicationThreadRead', () => {
+    it('marks the thread read through the communication thread endpoint and updates the thread record', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockResolvedValue({
+        data: {
+          id: 7,
+          unread_count: 0,
+          messages: [],
+          channels: [{ conversation_id: 11, inbox_id: 101 }],
+          meta: { sender: { id: 42 } },
+        },
+      });
+
+      await actions.markCommunicationThreadRead(
+        { commit, dispatch },
+        { id: 7 }
+      );
+
+      expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledWith({
+        id: 7,
+      });
+      expect(commit).toHaveBeenCalledWith(
+        types.UPDATE_CONVERSATION,
+        expect.objectContaining({
+          id: 7,
+          is_communication_thread: true,
+          unread_count: 0,
+          conversation_ids: [11],
+        })
+      );
+      expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
+    });
+  });
+
   describe('#fetchAllAttachments', () => {
     it('uses the communication thread attachments endpoint for thread records', async () => {
       const commit = vi.fn();

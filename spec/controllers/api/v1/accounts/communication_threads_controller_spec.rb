@@ -217,6 +217,40 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
   end
 
+  describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/update_last_seen' do
+    it 'marks accessible linked conversations as read and refreshes the thread unread count' do
+      contact = create(:contact, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact, agent_last_seen_at: 1.day.ago)
+      second_inbox = create(:inbox, account: account)
+      second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
+      second_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: second_inbox,
+        contact_inbox: second_contact_inbox,
+        agent_last_seen_at: 1.day.ago
+      )
+      create(:message, account: account, conversation: first_conversation, inbox: first_conversation.inbox, created_at: 2.minutes.ago)
+      create(:message, account: account, conversation: second_conversation, inbox: second_inbox, created_at: 1.minute.ago)
+      create(:inbox_member, user: agent, inbox: first_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: second_inbox)
+      thread = first_conversation.reload.communication_thread
+
+      expect(thread.reload.unread_count).to eq(2)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/update_last_seen",
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(first_conversation.reload.unread_incoming_messages_count).to eq(0)
+      expect(second_conversation.reload.unread_incoming_messages_count).to eq(0)
+      expect(thread.reload.unread_count).to eq(0)
+      expect(response.parsed_body['unread_count']).to eq(0)
+    end
+  end
+
   describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/messages' do
     it 'sends through an existing linked child conversation', :aggregate_failures do
       conversation = create(:conversation, account: account)

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import MessagesView from './MessagesView.vue';
 
@@ -59,5 +59,38 @@ describe('MessagesView', () => {
         hasCommunicationThreadReplyableChannel: false,
       })
     ).toBe(true);
+  });
+
+  describe('#makeMessagesRead', () => {
+    it('marks the communication thread read through the thread action', () => {
+      const dispatch = vi.fn();
+
+      MessagesView.methods.makeMessagesRead.call({
+        currentChat: {
+          id: 7,
+          is_communication_thread: true,
+          conversation_ids: [11, 12],
+        },
+        $store: { dispatch },
+      });
+
+      expect(dispatch).toHaveBeenCalledWith('markCommunicationThreadRead', {
+        id: 7,
+      });
+      expect(dispatch).not.toHaveBeenCalledWith('markMessagesRead', {
+        id: 11,
+      });
+    });
+
+    it('marks a direct conversation read through the conversation action', () => {
+      const dispatch = vi.fn();
+
+      MessagesView.methods.makeMessagesRead.call({
+        currentChat: { id: 11 },
+        $store: { dispatch },
+      });
+
+      expect(dispatch).toHaveBeenCalledWith('markMessagesRead', { id: 11 });
+    });
   });
 });

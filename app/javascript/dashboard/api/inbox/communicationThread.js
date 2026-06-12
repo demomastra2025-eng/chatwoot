@@ -37,6 +37,10 @@ class CommunicationThreadApi extends ApiClient {
     return axios.post(`${this.url}/${id}/labels`, { labels });
   }
 
+  markMessageRead({ id }) {
+    return axios.post(`${this.url}/${id}/update_last_seen`);
+  }
+
   messages(threadId, params = {}) {
     const normalizedParams = Object.fromEntries(
       Object.entries(params).filter(
