@@ -1,11 +1,16 @@
 import types from '../mutation-types';
 import ConversationApi from '../../api/inbox/conversation';
+import CommunicationThreadApi from '../../api/inbox/communicationThread';
 import { debounce } from '@chatwoot/utils';
 
 const state = {
   mineCount: 0,
   unAssignedCount: 0,
   allCount: 0,
+  mineUnreadCount: 0,
+  unAssignedUnreadCount: 0,
+  assignedUnreadCount: 0,
+  allUnreadCount: 0,
 };
 
 export const getters = {
@@ -15,7 +20,10 @@ export const getters = {
 // Create a debounced version of the actual API call function
 const fetchMetaData = async (commit, params) => {
   try {
-    const response = await ConversationApi.meta(params);
+    const statsApi = params?.communicationThreadMode
+      ? CommunicationThreadApi
+      : ConversationApi;
+    const response = await statsApi.meta(params);
     const {
       data: { meta },
     } = response;
@@ -56,11 +64,19 @@ export const mutations = {
       mine_count: mineCount,
       unassigned_count: unAssignedCount,
       all_count: allCount,
+      mine_unread_count: mineUnreadCount,
+      unassigned_unread_count: unAssignedUnreadCount,
+      assigned_unread_count: assignedUnreadCount,
+      all_unread_count: allUnreadCount,
     } = {}
   ) {
-    $state.mineCount = mineCount;
-    $state.allCount = allCount;
-    $state.unAssignedCount = unAssignedCount;
+    $state.mineCount = Number(mineCount ?? 0);
+    $state.allCount = Number(allCount ?? 0);
+    $state.unAssignedCount = Number(unAssignedCount ?? 0);
+    $state.mineUnreadCount = Number(mineUnreadCount ?? 0);
+    $state.unAssignedUnreadCount = Number(unAssignedUnreadCount ?? 0);
+    $state.assignedUnreadCount = Number(assignedUnreadCount ?? 0);
+    $state.allUnreadCount = Number(allUnreadCount ?? 0);
     $state.updatedOn = new Date();
   },
 };

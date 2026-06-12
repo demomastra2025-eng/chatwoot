@@ -21,6 +21,19 @@ class CommunicationThreadApi extends ApiClient {
     });
   }
 
+  meta({ inboxId, status, assigneeType, labels, teamId, sortBy } = {}) {
+    return axios.get(`${this.url}/meta`, {
+      params: {
+        inbox_id: inboxId,
+        status,
+        assignee_type: assigneeType,
+        labels,
+        team_id: teamId,
+        sort_by: sortBy,
+      },
+    });
+  }
+
   channels(id) {
     return axios.get(`${this.url}/${id}/channels`);
   }

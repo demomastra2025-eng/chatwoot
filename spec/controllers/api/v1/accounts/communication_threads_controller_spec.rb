@@ -12,6 +12,25 @@ RSpec.describe 'Communication Threads API', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:account_id/communication_threads' do
+    def create_unread_thread_conversation(assignee: nil)
+      conversation = create(
+        :conversation,
+        account: account,
+        assignee: assignee,
+        agent_last_seen_at: 1.day.ago
+      )
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        created_at: 1.minute.ago
+      )
+      conversation.reload.refresh_communication_thread!
+      conversation
+    end
+
     it 'returns unauthorized without auth' do
       get "/api/v1/accounts/#{account.id}/communication_threads", as: :json
 
@@ -102,7 +121,7 @@ RSpec.describe 'Communication Threads API', type: :request do
         status: :pending
       )
       thread = pending_conversation.reload.communication_thread
-      thread.update_column(:status, CommunicationThread.statuses[:open])
+      thread.update!(status: :open)
       create(:inbox_member, user: agent, inbox: inbox)
 
       get "/api/v1/accounts/#{account.id}/communication_threads",
@@ -121,6 +140,45 @@ RSpec.describe 'Communication Threads API', type: :request do
         )
       )
       expect(payload.first[:channels].pluck(:conversation_id)).not_to include(open_conversation.display_id)
+    end
+
+    it 'returns unread tab counts from meta independent of the current assignee tab page' do
+      other_agent = create(:user, account: account, role: :agent)
+      create_unread_thread_conversation(assignee: agent)
+      create_unread_thread_conversation(assignee: other_agent)
+      create_unread_thread_conversation
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'open', assignee_type: 'me' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      meta = JSON.parse(response.body, symbolize_names: true).dig(:data, :meta)
+      expect(meta).to include(
+        mine_count: 1,
+        assigned_count: 2,
+        unassigned_count: 1,
+        all_count: 3,
+        mine_unread_count: 1,
+        assigned_unread_count: 2,
+        unassigned_unread_count: 1,
+        all_unread_count: 3
+      )
+      payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      expect(payload.size).to eq(1)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/meta",
+          params: { status: 'open' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['meta']).to include(
+        'mine_unread_count' => 1,
+        'unassigned_unread_count' => 1,
+        'all_unread_count' => 3
+      )
     end
 
     it 'sorts threads by supported sort options' do

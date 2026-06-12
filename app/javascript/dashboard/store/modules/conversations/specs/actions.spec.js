@@ -11,9 +11,10 @@ describe('conversation actions', () => {
   });
 
   describe('#markCommunicationThreadRead', () => {
-    it('marks the thread read through the communication thread endpoint and updates the thread record', async () => {
+    it('marks the thread read without committing a full thread update that would retrigger scroll/read loop', async () => {
       const commit = vi.fn();
       const dispatch = vi.fn();
+      vi.spyOn(Date, 'now').mockReturnValue(1712345678000);
       vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockResolvedValue({
         data: {
           id: 7,
@@ -32,14 +33,15 @@ describe('conversation actions', () => {
       expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledWith({
         id: 7,
       });
-      expect(commit).toHaveBeenCalledWith(
+      expect(commit).toHaveBeenCalledWith(types.UPDATE_MESSAGE_UNREAD_COUNT, {
+        id: 7,
+        lastSeen: 1712345678,
+        unreadCount: 0,
+        conversationType: 'communication_thread',
+      });
+      expect(commit).not.toHaveBeenCalledWith(
         types.UPDATE_CONVERSATION,
-        expect.objectContaining({
-          id: 7,
-          is_communication_thread: true,
-          unread_count: 0,
-          conversation_ids: [11],
-        })
+        expect.anything()
       );
       expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
     });

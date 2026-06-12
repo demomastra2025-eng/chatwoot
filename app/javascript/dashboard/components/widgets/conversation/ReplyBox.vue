@@ -1041,8 +1041,8 @@ export default {
       const payload = this.decorateMessagePayload(messagePayload);
       try {
         await this.$store.dispatch('createPendingMessageAndSend', payload);
-        emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
         emitter.emit(BUS_EVENTS.MESSAGE_SENT);
+        emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE, { force: true });
         this.removeFromDraft();
         this.sendMessageAnalyticsData(payload.private, {
           editorMessage,

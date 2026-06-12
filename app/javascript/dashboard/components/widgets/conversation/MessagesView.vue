@@ -367,18 +367,26 @@ export default {
     removeBusListeners() {
       emitter.off(BUS_EVENTS.SCROLL_TO_MESSAGE, this.onScrollToMessage);
     },
-    onScrollToMessage({ messageId = '' } = {}) {
+    onScrollToMessage({ messageId = '', force = false } = {}) {
       this.$nextTick(() => {
-        const messageElement = document.getElementById('message' + messageId);
+        const hasExplicitMessageTarget = Boolean(messageId);
+        const messageElement = hasExplicitMessageTarget
+          ? document.getElementById('message' + messageId)
+          : null;
         if (messageElement) {
           this.isProgrammaticScroll = true;
           messageElement.scrollIntoView({ behavior: 'smooth' });
           this.fetchPreviousMessages();
-        } else {
+          this.makeMessagesRead();
+        } else if (
+          force ||
+          (!hasExplicitMessageTarget &&
+            (!this.hasUserScrolled || this.isNearConversationBottom()))
+        ) {
           this.scrollToBottom();
+          this.makeMessagesRead();
         }
       });
-      this.makeMessagesRead();
     },
     addScrollListener() {
       this.conversationPanel = this.$el.querySelector('.conversation-panel');
@@ -422,6 +430,15 @@ export default {
         this.$el.scrollHeight,
         relevantMessages
       );
+    },
+    isNearConversationBottom(offset = 80) {
+      if (!this.conversationPanel) return true;
+
+      const distanceFromBottom =
+        this.conversationPanel.scrollHeight -
+        (this.conversationPanel.scrollTop +
+          this.conversationPanel.clientHeight);
+      return distanceFromBottom <= offset;
     },
     setScrollParams() {
       this.heightBeforeLoad = this.conversationPanel.scrollHeight;

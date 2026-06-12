@@ -453,7 +453,10 @@ export const mutations = {
       chat.timestamp = message.created_at;
       const { conversation: { unread_count: unreadCount = 0 } = {} } = message;
       chat.unread_count = unreadCount;
-      if (selectedChatId === conversationId) {
+      if (
+        String(selectedChatId) === String(conversationId) &&
+        _state.selectedChatType !== 'communication_thread'
+      ) {
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
       }
     }
@@ -533,7 +536,10 @@ export const mutations = {
     addAttachmentsForChat(_state, chatId, message);
     refreshCommunicationThreadReplyState(chat);
 
-    if (_state.selectedChatId === Number(chatId)) {
+    if (
+      String(_state.selectedChatId) === String(chatId) &&
+      _state.selectedChatType === 'communication_thread'
+    ) {
       emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
     }
   },
@@ -579,9 +585,6 @@ export const mutations = {
         ...normalizedUpdates,
       };
       refreshCommunicationThreadReplyState(allConversations[index]);
-      if (isSelectedConversation(_state, allConversations[index])) {
-        emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
-      }
     } else {
       const hasSameIdDifferentType = allConversations.some(
         existingConversation =>

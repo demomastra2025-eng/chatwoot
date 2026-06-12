@@ -74,10 +74,12 @@ export const CRM_TASK_MANAGE_PERMISSIONS = [
 export const ASSIGNEE_TYPE_TAB_PERMISSIONS = {
   me: {
     count: 'mineCount',
+    unreadCount: 'mineUnreadCount',
     permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
   },
   unassigned: {
     count: 'unAssignedCount',
+    unreadCount: 'unAssignedUnreadCount',
     permissions: [
       ...ROLES,
       MANAGE_ALL_CONVERSATION_PERMISSIONS,
@@ -86,6 +88,7 @@ export const ASSIGNEE_TYPE_TAB_PERMISSIONS = {
   },
   all: {
     count: 'allCount',
+    unreadCount: 'allUnreadCount',
     permissions: [
       ...ROLES,
       MANAGE_ALL_CONVERSATION_PERMISSIONS,

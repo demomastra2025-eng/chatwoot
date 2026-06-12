@@ -61,6 +61,47 @@ describe('MessagesView', () => {
     ).toBe(true);
   });
 
+  describe('#onScrollToMessage', () => {
+    const buildContext = overrides => ({
+      $nextTick: callback => callback(),
+      fetchPreviousMessages: vi.fn(),
+      isNearConversationBottom: vi.fn(() => false),
+      makeMessagesRead: vi.fn(),
+      scrollToBottom: vi.fn(),
+      hasUserScrolled: true,
+      ...overrides,
+    });
+
+    it('does not force-scroll or mark read when the agent is reading older history', () => {
+      const context = buildContext();
+
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(context.scrollToBottom).not.toHaveBeenCalled();
+      expect(context.makeMessagesRead).not.toHaveBeenCalled();
+    });
+
+    it('force-scrolls after an agent sends a message', () => {
+      const context = buildContext();
+
+      MessagesView.methods.onScrollToMessage.call(context, { force: true });
+
+      expect(context.scrollToBottom).toHaveBeenCalled();
+      expect(context.makeMessagesRead).toHaveBeenCalled();
+    });
+
+    it('keeps auto-scroll for agents already near the bottom', () => {
+      const context = buildContext({
+        isNearConversationBottom: vi.fn(() => true),
+      });
+
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(context.scrollToBottom).toHaveBeenCalled();
+      expect(context.makeMessagesRead).toHaveBeenCalled();
+    });
+  });
+
   describe('#makeMessagesRead', () => {
     it('marks the communication thread read through the thread action', () => {
       const dispatch = vi.fn();

@@ -21,6 +21,12 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     preload_accessible_links(@communication_threads)
   end
 
+  def meta
+    result = CommunicationThreadFinder.new(Current.user, params).perform_meta_only
+
+    render json: { meta: result[:count] }
+  end
+
   def show
     preload_accessible_links([@communication_thread], include_unlinked: true)
   end

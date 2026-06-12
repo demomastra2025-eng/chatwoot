@@ -1,7 +1,67 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
 import { mutations } from '../index';
 import types from '../../../mutation-types';
+import { BUS_EVENTS } from '../../../../../shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 describe('#mutations', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('#UPDATE_CONVERSATION', () => {
+    it('updates selected conversation metadata without forcing the message list to bottom', () => {
+      const emitSpy = vi.spyOn(emitter, 'emit');
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            updated_at: 1,
+            messages: [],
+            channels: [],
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 7,
+        is_communication_thread: true,
+        updated_at: 2,
+        unread_count: 0,
+      });
+
+      expect(state.allConversations[0].unread_count).toBe(0);
+      expect(emitSpy).not.toHaveBeenCalledWith(BUS_EVENTS.SCROLL_TO_MESSAGE);
+    });
+
+    it('does not scroll a selected communication thread for same-id child conversation messages', () => {
+      const emitSpy = vi.spyOn(emitter, 'emit');
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            messages: [],
+          },
+        ],
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 99,
+        conversation_id: 7,
+        created_at: 2,
+        conversation: { unread_count: 1 },
+      });
+
+      expect(emitSpy).not.toHaveBeenCalledWith(BUS_EVENTS.SCROLL_TO_MESSAGE);
+    });
+  });
+
   describe('#UPDATE_CONVERSATION_CALL_STATUS', () => {
     it('does nothing if conversation is not found', () => {
       const state = { allConversations: [] };

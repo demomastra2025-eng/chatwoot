@@ -109,17 +109,165 @@ describe Whatsapp::Providers::WhatsappCloudService do
             headers: response_headers
           )
 
-        expect do
-          expect(service.send_message('+123****6789', message)).to be_nil
-        end.to have_enqueued_job(SendReplyJob).with(message.id).on_queue('outbound_messages')
+        freeze_time do
+          expect do
+            expect(service.send_message('+123****6789', message)).to be_nil
+          end.to have_enqueued_job(SendReplyJob).with(message.id).on_queue('outbound_messages').at(15.seconds.from_now)
 
-        expect(message.reload.status).to eq('sent')
+          expect(Time.zone.parse(message.reload.content_attributes['whatsapp_cloud_send_retry_next_at'])).to eq(15.seconds.from_now)
+        end
+
+        expect(message.status).to eq('sent')
         expect(message.external_error).to be_nil
         expect(message.content_attributes).to include(
           'whatsapp_cloud_send_retry_count' => 1,
           'whatsapp_cloud_send_retry_error_code' => 1,
           'whatsapp_cloud_send_retry_error_message' => 'An unknown error has occurred'
         )
+      end
+
+      it 'uses the bounded transient backoff sequence for official WhatsApp Cloud temporary service errors' do
+        retry_cases = [
+          [1, 'An unknown error has occurred', 0, 15.seconds],
+          [2, 'Service temporarily unavailable', 0, 15.seconds],
+          [131_000, 'Message failed to send due to an unknown error.', 0, 15.seconds],
+          [131_016, 'A service is temporarily unavailable.', 1, 1.minute],
+          [133_004, 'Server is temporarily unavailable.', 2, 3.minutes]
+        ]
+
+        freeze_time do
+          retry_cases.each_with_index do |(code, error_message, retry_count, expected_delay), index|
+            retry_message = create(:message, conversation: conversation, message_type: :outgoing, content: "retry #{index}",
+                                             inbox: whatsapp_channel.inbox, source_id: nil,
+                                             content_attributes: { 'whatsapp_cloud_send_retry_count' => retry_count })
+            stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+              .to_return(
+                status: 500,
+                body: { error: { message: error_message, type: 'OAuthException', code: code, fbtrace_id: "trace-#{code}" } }.to_json,
+                headers: response_headers
+              )
+
+            expect do
+              expect(service.send_message('+123****6789', retry_message)).to be_nil
+            end.to have_enqueued_job(SendReplyJob).with(retry_message.id).on_queue('outbound_messages').at(expected_delay.from_now)
+
+            expect(Time.zone.parse(retry_message.reload.content_attributes['whatsapp_cloud_send_retry_next_at']))
+              .to eq(expected_delay.from_now)
+            expect(retry_message.content_attributes['whatsapp_cloud_send_retry_count']).to eq(retry_count + 1)
+            expect(retry_message.content_attributes['whatsapp_cloud_send_retry_error_code']).to eq(code)
+          end
+        end
+      end
+
+      it 'uses a slower bounded backoff sequence for official WhatsApp Cloud rate-limit errors' do
+        rate_limit_cases = [
+          [4, 0, 1.minute],
+          [17, 1, 3.minutes],
+          [341, 2, 10.minutes],
+          [80_007, 3, 30.minutes],
+          [130_429, 0, 1.minute],
+          [131_056, 1, 3.minutes]
+        ]
+
+        freeze_time do
+          rate_limit_cases.each_with_index do |(code, retry_count, expected_delay), index|
+            retry_message = create(:message, conversation: conversation, message_type: :outgoing, content: "throttle #{index}",
+                                             inbox: whatsapp_channel.inbox, source_id: nil,
+                                             content_attributes: { 'whatsapp_cloud_send_retry_count' => retry_count })
+            stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+              .to_return(
+                status: 429,
+                body: { error: { message: 'Rate limit reached', type: 'OAuthException', code: code, fbtrace_id: "trace-#{code}" } }.to_json,
+                headers: response_headers
+              )
+
+            expect do
+              expect(service.send_message('+123****6789', retry_message)).to be_nil
+            end.to have_enqueued_job(SendReplyJob).with(retry_message.id).on_queue('outbound_messages').at(expected_delay.from_now)
+
+            expect(Time.zone.parse(retry_message.reload.content_attributes['whatsapp_cloud_send_retry_next_at']))
+              .to eq(expected_delay.from_now)
+          end
+        end
+      end
+
+      it 'marks the message failed after WhatsApp Cloud throttled retries are exhausted' do
+        message.update!(
+          source_id: nil,
+          content_attributes: { 'whatsapp_cloud_send_retry_count' => 4 }
+        )
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(
+            status: 429,
+            body: {
+              error: {
+                message: 'Cloud API message throughput has been reached.',
+                type: 'OAuthException',
+                code: 130_429,
+                fbtrace_id: 'trace-130429'
+              }
+            }.to_json,
+            headers: response_headers
+          )
+
+        expect do
+          expect(service.send_message('+123****6789', message)).to be_nil
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to include('Cloud API message throughput has been reached')
+      end
+
+      it 'does not retry permanent recipient delivery errors' do
+        message.update!(source_id: nil)
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(
+            status: 400,
+            body: {
+              error: {
+                message: 'Unable to deliver message.',
+                type: 'OAuthException',
+                code: 131_026,
+                fbtrace_id: 'trace-131026'
+              }
+            }.to_json,
+            headers: response_headers
+          )
+
+        expect do
+          expect(service.send_message('+123****6789', message)).to be_nil
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to include('Unable to deliver message')
+        expect(message.content_attributes).not_to include('whatsapp_cloud_send_retry_count')
+      end
+
+      it 'does not retry a transient response when the provider message id is already present' do
+        message.update!(source_id: 'wamid.already-sent')
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(
+            status: 500,
+            body: {
+              error: {
+                message: 'Service temporarily unavailable',
+                type: 'OAuthException',
+                code: 2,
+                fbtrace_id: 'trace-2'
+              }
+            }.to_json,
+            headers: response_headers
+          )
+
+        expect do
+          expect(service.send_message('+123****6789', message)).to be_nil
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to include('Service temporarily unavailable')
       end
 
       it 'marks the message failed after WhatsApp Cloud transient retries are exhausted' do

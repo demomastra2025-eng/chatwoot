@@ -1,6 +1,8 @@
 class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseService # rubocop:disable Metrics/ClassLength
-  TRANSIENT_SEND_ERROR_CODES = [1, 131_000].freeze
-  TRANSIENT_SEND_RETRY_DELAYS = [30.seconds, 2.minutes, 5.minutes].freeze
+  TRANSIENT_SEND_ERROR_CODES = [1, 2, 131_000, 131_016, 133_004].freeze
+  THROTTLED_SEND_ERROR_CODES = [4, 17, 341, 80_007, 130_429, 131_056].freeze
+  TRANSIENT_SEND_RETRY_DELAYS = [15.seconds, 1.minute, 3.minutes].freeze
+  THROTTLED_SEND_RETRY_DELAYS = [1.minute, 3.minutes, 10.minutes, 30.minutes].freeze
   TRANSIENT_SEND_RETRY_COUNT_KEY = 'whatsapp_cloud_send_retry_count'.freeze
   TRANSIENT_SEND_RETRY_ERROR_CODE_KEY = 'whatsapp_cloud_send_retry_error_code'.freeze
   TRANSIENT_SEND_RETRY_ERROR_MESSAGE_KEY = 'whatsapp_cloud_send_retry_error_message'.freeze
@@ -175,9 +177,13 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   def transient_send_retry_delay(error, message)
     return if message.blank?
     return if message.source_id.present?
-    return unless TRANSIENT_SEND_ERROR_CODES.include?(error['code'].to_i)
 
-    TRANSIENT_SEND_RETRY_DELAYS[next_transient_send_retry_count(message) - 1]
+    error_code = error['code'].to_i
+    retry_count = next_transient_send_retry_count(message)
+
+    return TRANSIENT_SEND_RETRY_DELAYS[retry_count - 1] if TRANSIENT_SEND_ERROR_CODES.include?(error_code)
+
+    THROTTLED_SEND_RETRY_DELAYS[retry_count - 1] if THROTTLED_SEND_ERROR_CODES.include?(error_code)
   end
 
   def next_transient_send_retry_count(message)

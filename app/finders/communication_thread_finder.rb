@@ -30,19 +30,19 @@ class CommunicationThreadFinder
 
   def perform
     set_up
-    mine_count, unassigned_count, all_count = set_count_for_all_threads
-    assigned_count = all_count - unassigned_count
+    count = thread_counts
     filter_by_assignee_type
 
     {
       communication_threads: communication_threads,
-      count: {
-        mine_count: mine_count,
-        assigned_count: assigned_count,
-        unassigned_count: unassigned_count,
-        all_count: all_count
-      }
+      count: count
     }
+  end
+
+  def perform_meta_only
+    set_up
+
+    { count: thread_counts }
   end
 
   private
@@ -130,11 +130,40 @@ class CommunicationThreadFinder
   end
 
   def set_count_for_all_threads
+    mine_threads = @communication_threads.where(assignee_id: current_user.id)
+    unassigned_threads = @communication_threads.where(assignee_id: nil)
+
     [
-      @communication_threads.where(assignee_id: current_user.id).count,
-      @communication_threads.where(assignee_id: nil).count,
-      @communication_threads.count
+      mine_threads.count,
+      unassigned_threads.count,
+      @communication_threads.count,
+      unread_thread_count(mine_threads),
+      unread_thread_count(unassigned_threads),
+      unread_thread_count(@communication_threads)
     ]
+  end
+
+  def thread_counts
+    mine_count, unassigned_count, all_count, mine_unread_count, unassigned_unread_count, all_unread_count =
+      set_count_for_all_threads
+
+    {
+      mine_count: mine_count,
+      assigned_count: all_count - unassigned_count,
+      unassigned_count: unassigned_count,
+      all_count: all_count,
+      mine_unread_count: mine_unread_count,
+      assigned_unread_count: all_unread_count - unassigned_unread_count,
+      unassigned_unread_count: unassigned_unread_count,
+      all_unread_count: all_unread_count
+    }
+  end
+
+  def unread_thread_count(scope)
+    CommunicationThread
+      .where(id: scope.except(:order).select(:id))
+      .where('communication_threads.unread_count > 0')
+      .count
   end
 
   def communication_threads

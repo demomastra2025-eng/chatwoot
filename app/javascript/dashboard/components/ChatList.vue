@@ -228,6 +228,11 @@ const tabTotalCount = tabKey => {
   return Number(conversationStats.value[countKey] || 0);
 };
 
+const tabUnreadCount = tabKey => {
+  const countKey = ASSIGNEE_TYPE_TAB_PERMISSIONS[tabKey]?.unreadCount;
+  return Number(conversationStats.value[countKey] || 0);
+};
+
 const filterListByMode = list =>
   filterConversationsByCommunicationThreadMode(
     list,
@@ -249,6 +254,10 @@ const tabListFilters = tabKey => ({
 });
 
 const missedCountForAssigneeTab = tabKey => {
+  if (props.communicationThreadMode) {
+    return tabUnreadCount(tabKey);
+  }
+
   const filters = tabListFilters(tabKey);
 
   if (
@@ -431,6 +440,7 @@ const conversationFilters = computed(() => {
     labels: props.label ? [props.label] : undefined,
     teamId: props.teamId || undefined,
     conversationType: props.conversationType || undefined,
+    communicationThreadMode: props.communicationThreadMode,
   };
 });
 

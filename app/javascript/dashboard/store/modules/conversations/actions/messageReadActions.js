@@ -1,7 +1,6 @@
 import { throwErrorMessage } from 'dashboard/store/utils/api';
 import CommunicationThreadApi from '../../../../api/inbox/communicationThread';
 import ConversationApi from '../../../../api/inbox/conversation';
-import { buildCommunicationThreadConversation } from 'dashboard/helper/communicationThreadHelper';
 import mutationTypes from '../../../mutation-types';
 
 export default {
@@ -23,11 +22,20 @@ export default {
 
   markCommunicationThreadRead: async ({ commit, dispatch }, data) => {
     try {
-      const response = await CommunicationThreadApi.markMessageRead(data);
-      commit(
-        mutationTypes.UPDATE_CONVERSATION,
-        buildCommunicationThreadConversation(response.data)
-      );
+      const {
+        data: {
+          id,
+          agent_last_seen_at: agentLastSeenAt,
+          unread_count: unreadCount,
+        },
+      } = await CommunicationThreadApi.markMessageRead(data);
+      const lastSeen = agentLastSeenAt || Math.floor(Date.now() / 1000);
+      commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, {
+        id,
+        lastSeen,
+        unreadCount,
+        conversationType: 'communication_thread',
+      });
       dispatch('fetchSidebarUnreadCounts');
     } catch (error) {
       // Handle error

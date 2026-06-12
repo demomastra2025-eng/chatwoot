@@ -279,6 +279,10 @@ Rails.application.routes.draw do
             resource :twilio_channel, only: [:create]
           end
           resources :communication_threads, only: [:index, :show, :update] do
+            collection do
+              get :meta
+            end
+
             member do
               get :messages
               post :messages, action: :create_message
