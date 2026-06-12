@@ -212,16 +212,14 @@ class Channel::TelegramPersonal < ApplicationRecord
         )
       runtime['history_sync_checkpoint']['dialog_user_ids'] =
         Array.wrap(runtime.dig('history_sync_checkpoint', 'dialog_user_ids'))
-             .map { |item| item.to_s.presence }
-             .compact
+             .filter_map { |item| item.to_s.presence }
       runtime['history_sync_count'] = runtime['history_sync_count'].to_i
       runtime['history_dialog_count'] = runtime['history_dialog_count'].to_i
       runtime['contacts_sync_count'] = runtime['contacts_sync_count'].to_i
       runtime['ignored_chat_ids'] =
         Array.wrap(runtime['ignored_chat_ids'])
              .flat_map { |item| item.to_s.split(/[,\s;]+/) }
-             .map(&:presence)
-             .compact
+             .filter_map(&:presence)
              .uniq
       runtime.compact_blank!
     end
