@@ -1,4 +1,17 @@
 class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseService # rubocop:disable Metrics/ClassLength
+  TRANSIENT_SEND_ERROR_CODES = [1, 131_000].freeze
+  TRANSIENT_SEND_RETRY_DELAYS = [30.seconds, 2.minutes, 5.minutes].freeze
+  TRANSIENT_SEND_RETRY_COUNT_KEY = 'whatsapp_cloud_send_retry_count'.freeze
+  TRANSIENT_SEND_RETRY_ERROR_CODE_KEY = 'whatsapp_cloud_send_retry_error_code'.freeze
+  TRANSIENT_SEND_RETRY_ERROR_MESSAGE_KEY = 'whatsapp_cloud_send_retry_error_message'.freeze
+  TRANSIENT_SEND_RETRY_NEXT_AT_KEY = 'whatsapp_cloud_send_retry_next_at'.freeze
+  TRANSIENT_SEND_RETRY_KEYS = [
+    TRANSIENT_SEND_RETRY_COUNT_KEY,
+    TRANSIENT_SEND_RETRY_ERROR_CODE_KEY,
+    TRANSIENT_SEND_RETRY_ERROR_MESSAGE_KEY,
+    TRANSIENT_SEND_RETRY_NEXT_AT_KEY
+  ].freeze
+
   def send_message(phone_number, message)
     @message = message
 
@@ -30,6 +43,12 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     )
 
     process_response(response, message)
+  end
+
+  def process_response(response, message)
+    message_id = super
+    clear_transient_send_retry_metadata(message) if message_id.present?
+    message_id
   end
 
   def sync_templates
@@ -127,6 +146,62 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   private
 
   def request_timeout = ENV.fetch('WHATSAPP_CLOUD_API_TIMEOUT', 20).to_i
+
+  def handle_error(response, message)
+    error = provider_error(response)
+    retry_delay = transient_send_retry_delay(error, message)
+
+    return super if retry_delay.blank?
+
+    schedule_transient_send_retry!(message, error, retry_delay)
+  end
+
+  def provider_error(response)
+    Channel::Whatsapp.normalize_provider_error(response.parsed_response)
+  end
+
+  def transient_send_retry_delay(error, message)
+    return if message.blank?
+    return if message.source_id.present?
+    return unless TRANSIENT_SEND_ERROR_CODES.include?(error['code'].to_i)
+
+    TRANSIENT_SEND_RETRY_DELAYS[next_transient_send_retry_count(message) - 1]
+  end
+
+  def next_transient_send_retry_count(message)
+    message.content_attributes.to_h[TRANSIENT_SEND_RETRY_COUNT_KEY].to_i + 1
+  end
+
+  def schedule_transient_send_retry!(message, error, retry_delay)
+    retry_count = next_transient_send_retry_count(message)
+    retry_at = retry_delay.from_now
+    content_attributes = message.content_attributes.to_h.deep_stringify_keys
+    content_attributes.delete('external_error')
+    content_attributes.merge!(
+      TRANSIENT_SEND_RETRY_COUNT_KEY => retry_count,
+      TRANSIENT_SEND_RETRY_ERROR_CODE_KEY => error['code'].to_i,
+      TRANSIENT_SEND_RETRY_ERROR_MESSAGE_KEY => error['message'],
+      TRANSIENT_SEND_RETRY_NEXT_AT_KEY => retry_at.iso8601
+    )
+
+    message.update!(status: :sent, content_attributes: content_attributes)
+    SendReplyJob.set(wait: retry_delay).perform_later(message.id)
+
+    Rails.logger.warn(
+      '[WHATSAPP_CLOUD] transient send error; retry scheduled ' \
+      "message_id=#{message.id} code=#{error['code']} retry_count=#{retry_count} retry_at=#{retry_at.iso8601}"
+    )
+  end
+
+  def clear_transient_send_retry_metadata(message)
+    return if message.blank?
+
+    content_attributes = message.content_attributes.to_h.deep_stringify_keys
+    updated_attributes = content_attributes.except(*TRANSIENT_SEND_RETRY_KEYS, 'external_error')
+    return if updated_attributes == content_attributes
+
+    message.update!(content_attributes: updated_attributes)
+  end
 
   def graph_api_query(extra_params = {})
     extra_params.merge(

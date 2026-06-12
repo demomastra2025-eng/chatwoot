@@ -88,6 +88,90 @@ describe Whatsapp::Providers::WhatsappCloudService do
         )
       end
 
+      it 'schedules a retry and keeps the message pending when Meta returns API unknown' do
+        message.update!(source_id: nil)
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(
+            status: 500,
+            body: {
+              error: {
+                message: 'An unknown error has occurred',
+                type: 'OAuthException',
+                code: 1,
+                fbtrace_id: 'trace-1'
+              }
+            }.to_json,
+            headers: response_headers
+          )
+
+        expect do
+          expect(service.send_message('+123****6789', message)).to be_nil
+        end.to have_enqueued_job(SendReplyJob).with(message.id).on_queue('outbound_messages')
+
+        expect(message.reload.status).to eq('sent')
+        expect(message.external_error).to be_nil
+        expect(message.content_attributes).to include(
+          'whatsapp_cloud_send_retry_count' => 1,
+          'whatsapp_cloud_send_retry_error_code' => 1,
+          'whatsapp_cloud_send_retry_error_message' => 'An unknown error has occurred'
+        )
+      end
+
+      it 'marks the message failed after WhatsApp Cloud transient retries are exhausted' do
+        message.update!(
+          source_id: nil,
+          content_attributes: { 'whatsapp_cloud_send_retry_count' => 3 }
+        )
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(
+            status: 500,
+            body: {
+              error: {
+                message: 'Message failed to send due to an unknown error.',
+                type: 'OAuthException',
+                code: 131_000,
+                fbtrace_id: 'trace-131000'
+              }
+            }.to_json,
+            headers: response_headers
+          )
+
+        expect do
+          expect(service.send_message('+123****6789', message)).to be_nil
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to include('Message failed to send due to an unknown error')
+      end
+
+      it 'clears WhatsApp Cloud transient retry metadata after a successful retry' do
+        message.update!(
+          source_id: nil,
+          content_attributes: {
+            'whatsapp_cloud_send_retry_count' => 1,
+            'whatsapp_cloud_send_retry_error_code' => 1,
+            'whatsapp_cloud_send_retry_error_message' => 'An unknown error has occurred',
+            'whatsapp_cloud_send_retry_next_at' => 1.minute.from_now.iso8601,
+            'external_error' => 'An unknown error has occurred'
+          }
+        )
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_message('+123****6789', message)).to eq('message_id')
+
+        expect(message.reload.external_error).to be_nil
+        expect(message.content_attributes.keys).not_to include(
+          'whatsapp_cloud_send_retry_count',
+          'whatsapp_cloud_send_retry_error_code',
+          'whatsapp_cloud_send_retry_error_message',
+          'whatsapp_cloud_send_retry_next_at'
+        )
+      end
+
       it 'calls message endpoints for image attachment message messages' do
         attachment = message.attachments.new(account_id: message.account_id, file_type: :image)
         attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
