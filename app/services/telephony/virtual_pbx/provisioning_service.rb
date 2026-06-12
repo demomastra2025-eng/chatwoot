@@ -696,13 +696,12 @@ class Telephony::VirtualPbx::ProvisioningService
   def upsert_sip_profiles!(inbox, provider_connection, payload)
     desired_keys = []
     Array.wrap(payload[:profiles]).each_with_index do |profile, index|
-      profile_record = account.telephony_sip_profiles.find_or_initialize_by(
-        inbox: inbox,
-        user_id: profile[:user_id],
-        internal_extension: profile[:internal_extension]
-      )
+      profile_record = sip_profile_record_for(inbox, profile)
       sip_username = profile.key?(:sip_username) ? profile[:sip_username] : profile_record.sip_username
       profile_record.assign_attributes(
+        inbox: inbox,
+        user_id: profile[:user_id],
+        internal_extension: profile[:internal_extension],
         provider_connection: provider_connection,
         sip_username: sip_username,
         password_secret_ref: password_secret_ref_for(profile_record, profile, payload, index, sip_username: sip_username),
@@ -722,6 +721,26 @@ class Telephony::VirtualPbx::ProvisioningService
       desired_keys << profile_record.id
     end
     inbox.telephony_sip_profiles.where.not(id: desired_keys).destroy_all
+  end
+
+  def sip_profile_record_for(inbox, profile)
+    exact_profile = account.telephony_sip_profiles.find_by(
+      inbox: inbox,
+      user_id: profile[:user_id],
+      internal_extension: profile[:internal_extension]
+    )
+    return exact_profile if exact_profile.present?
+
+    if sip_credentials_omitted?(profile)
+      existing_profiles = account.telephony_sip_profiles.where(inbox: inbox, user_id: profile[:user_id])
+      return existing_profiles.first if existing_profiles.one?
+    end
+
+    account.telephony_sip_profiles.new(inbox: inbox, user_id: profile[:user_id], internal_extension: profile[:internal_extension])
+  end
+
+  def sip_credentials_omitted?(profile)
+    !profile.key?(:sip_username) && !profile.key?(:sip_password)
   end
 
   def provider_config_for(payload, provider_connection, base = {})
