@@ -47,7 +47,23 @@ RSpec.describe Channel::Instagram do
   end
 
   describe 'concerns' do
+    before do
+      allow(Meta::AuthorizationHealthCheckService).to receive(:new)
+        .and_return(instance_double(Meta::AuthorizationHealthCheckService, healthy?: false))
+    end
+
     it_behaves_like 'reauthorizable'
+
+    it 'does not prompt reauthorization when a live Meta health-check still passes' do
+      health_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: true)
+      allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(health_check)
+      expect(AdministratorNotifications::ChannelNotificationsMailer).not_to receive(:with)
+
+      channel.authorization_error!
+
+      expect(channel.reauthorization_required?).to be(false)
+      expect(channel.authorization_error_count).to eq(0)
+    end
 
     context 'when prompt_reauthorization!' do
       it 'calls channel notifier mail for instagram' do

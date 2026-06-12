@@ -33,23 +33,8 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
       return
     end
 
-    message_id = channel.send_template(recipient_source_id, {
-                                         name: name,
-                                         namespace: namespace,
-                                         lang_code: lang_code,
-                                         parameters: processed_parameters
-                                       }, message)
-
-    if message_id.present?
-      message.update!(source_id: message_id)
-      update_campaign_delivery(
-        status: :submitted,
-        provider_message_id: message_id,
-        metadata: { template_name: name, template_language: lang_code }
-      )
-    else
-      update_campaign_delivery(status: :failed, error_message: 'WhatsApp provider did not return a message id')
-    end
+    message_id = send_template_to_provider(name, namespace, lang_code, processed_parameters)
+    handle_template_send_result(message_id, name, lang_code)
   end
 
   def send_session_message
@@ -57,6 +42,33 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
 
     message_id = channel.send_message(recipient_source_id, message)
     message.update!(source_id: message_id) if message_id.present?
+  end
+
+  def send_template_to_provider(name, namespace, lang_code, processed_parameters)
+    channel.send_template(recipient_source_id, {
+                            name: name,
+                            namespace: namespace,
+                            lang_code: lang_code,
+                            parameters: processed_parameters
+                          }, message)
+  end
+
+  def handle_template_send_result(message_id, name, lang_code)
+    if message_id.present?
+      message.update!(source_id: message_id)
+      update_campaign_delivery(
+        status: :submitted,
+        provider_message_id: message_id,
+        metadata: { template_name: name, template_language: lang_code }
+      )
+    elsif transient_whatsapp_cloud_retry_scheduled?
+      update_campaign_delivery(
+        status: :pending,
+        metadata: Whatsapp::Providers::WhatsappCloudService.transient_send_retry_metadata(message)
+      )
+    else
+      update_campaign_delivery(status: :failed, error_message: 'WhatsApp provider did not return a message id')
+    end
   end
 
   def recipient_source_id
@@ -93,6 +105,10 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
       error_message: error_message,
       metadata: metadata
     )
+  end
+
+  def transient_whatsapp_cloud_retry_scheduled?
+    channel.provider == 'whatsapp_cloud' && Whatsapp::Providers::WhatsappCloudService.transient_send_retry_scheduled?(message.reload)
   end
 
   def fail_missing_recipient!

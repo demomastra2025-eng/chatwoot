@@ -85,7 +85,7 @@ describe Webhooks::InstagramEventsJob do
 
         instagram_webhook.perform_now(unsend_event[:entry])
 
-        expect(instagram_messenger_inbox.messages.last.content).to eq 'This message was deleted'
+        expect(instagram_messenger_inbox.messages.last.content).to eq I18n.t('conversations.messages.deleted')
         expect(instagram_messenger_inbox.messages.last.deleted).to be true
         expect(instagram_messenger_inbox.messages.last.attachments.count).to be 0
         expect(instagram_messenger_inbox.messages.last.reload.deleted).to be true
@@ -154,7 +154,7 @@ describe Webhooks::InstagramEventsJob do
 
         expect(attachment.file_type).to eq 'ig_story'
         expect(attachment.external_url).to include 'lookaside.fbsbx.com'
-        expect(message.content).to eq 'Shared story'
+        expect(message.content).to eq I18n.t('conversations.messages.instagram_shared_story_content')
         expect(message.content_attributes['image_type']).to eq 'ig_story'
       end
 
@@ -177,7 +177,7 @@ describe Webhooks::InstagramEventsJob do
 
         expect(attachment.file_type).to eq 'ig_post'
         expect(attachment.external_url).to include 'ig_messaging_cdn'
-        expect(message.content).to eq 'Shared post'
+        expect(message.content).to eq I18n.t('conversations.messages.instagram_shared_post_content')
         expect(message.content_attributes['image_type']).to eq 'ig_post'
       end
 
@@ -257,6 +257,19 @@ describe Webhooks::InstagramEventsJob do
         expect(instagram_inbox.messages.last.content_attributes['is_unsupported']).to be_nil
       end
 
+      it 'keeps incoming messages when the local reauthorization flag is stale' do
+        allow(instagram_channel).to receive(:send_channel_reauthorization_email)
+        instagram_channel.prompt_reauthorization!
+
+        dm_event = build(:instagram_message_create_event).with_indifferent_access
+        instagram_webhook.perform_now(dm_event[:entry])
+
+        expect(instagram_channel.reauthorization_required?).to be(true)
+        expect(instagram_inbox.contacts.count).to eq 1
+        expect(instagram_inbox.conversations.count).to eq 1
+        expect(instagram_inbox.messages.count).to eq 1
+      end
+
       it 'sets correct instagram attributes on contact' do
         dm_event = build(:instagram_message_create_event).with_indifferent_access
         instagram_webhook.perform_now(dm_event[:entry])
@@ -288,7 +301,7 @@ describe Webhooks::InstagramEventsJob do
 
         message.reload
 
-        expect(message.content).to eq 'This message was deleted'
+        expect(message.content).to eq I18n.t('conversations.messages.deleted')
         expect(message.deleted).to be true
         expect(message.attachments.count).to be 0
       end
@@ -324,7 +337,7 @@ describe Webhooks::InstagramEventsJob do
 
         expect(attachment.file_type).to eq 'ig_story'
         expect(attachment.external_url).to include 'lookaside.fbsbx.com'
-        expect(message.content).to eq 'Shared story'
+        expect(message.content).to eq I18n.t('conversations.messages.instagram_shared_story_content')
         expect(message.content_attributes['image_type']).to eq 'ig_story'
       end
 
@@ -340,7 +353,7 @@ describe Webhooks::InstagramEventsJob do
 
         expect(attachment.file_type).to eq 'ig_post'
         expect(attachment.external_url).to include 'ig_messaging_cdn'
-        expect(message.content).to eq 'Shared post'
+        expect(message.content).to eq I18n.t('conversations.messages.instagram_shared_post_content')
         expect(message.content_attributes['image_type']).to eq 'ig_post'
       end
 

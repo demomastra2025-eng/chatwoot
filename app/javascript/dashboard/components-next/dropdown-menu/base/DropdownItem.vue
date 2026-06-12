@@ -31,11 +31,22 @@ const componentIs = computed(() => {
   return 'div';
 });
 
+const closeAfterNavigationClick = () => {
+  window.setTimeout(closeMenu, 0);
+};
+
 const triggerClick = () => {
   if (props.click) {
     props.click();
   }
-  if (!props.preserveOpen) closeMenu();
+  if (props.preserveOpen) return;
+
+  if (componentIs.value === 'router-link') {
+    closeAfterNavigationClick();
+    return;
+  }
+
+  closeMenu();
 };
 </script>
 

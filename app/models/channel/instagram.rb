@@ -90,6 +90,10 @@ class Channel::Instagram < ApplicationRecord
     Instagram::RefreshOauthTokenService.new(channel: self).access_token
   end
 
+  def provider_authorization_healthy?
+    Meta::AuthorizationHealthCheckService.new(self).healthy?
+  end
+
   private
 
   def redacted_subscription_error(error, token)

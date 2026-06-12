@@ -405,6 +405,53 @@ RSpec.describe Channel::Whatsapp do
   end
 
   describe '#record_provider_authorization_error!' do
+    it 'does not mark a WhatsApp Cloud channel for reauthorization when a live Meta health-check still passes' do
+      channel = create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      health_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: true)
+      allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(health_check)
+      expect(channel).not_to receive(:prompt_reauthorization!)
+
+      result = channel.record_provider_authorization_error!(
+        error: {
+          'message' => 'Error validating access token: transient Meta validation failure',
+          'type' => 'OAuthException',
+          'code' => 190
+        }
+      )
+
+      expect(result).to be(false)
+      expect(channel.reload.reauthorization_required?).to be(false)
+      expect(channel.provider_authorization_error_recorded?).to be(false)
+    end
+
+    it 'clears stale WhatsApp Cloud provider authorization metadata when live Meta health-check passes' do
+      channel = create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      allow(channel).to receive(:send_channel_reauthorization_email)
+      channel.record_provider_configuration_error!('Error validating access token', code: 190, type: 'OAuthException')
+      health_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: true)
+      allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(health_check)
+
+      result = channel.record_provider_authorization_error!(error: { 'message' => 'Error validating access token', 'code' => 190 })
+
+      expect(result).to be(false)
+      expect(channel.reload.reauthorization_required?).to be(false)
+      expect(channel.provider_authorization_error_recorded?).to be(false)
+    end
+
+    it 'preserves a non-provider reauthorization flag when a live Meta health-check passes' do
+      channel = create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      allow(channel).to receive(:send_channel_reauthorization_email)
+      channel.prompt_reauthorization!
+      health_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: true)
+      allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(health_check)
+
+      result = channel.record_provider_authorization_error!(error: { 'message' => 'Error validating access token', 'code' => 190 })
+
+      expect(result).to be(false)
+      expect(channel.reload.reauthorization_required?).to be(true)
+      expect(channel.provider_authorization_error_recorded?).to be(false)
+    end
+
     it 'does not prompt reauthorization again when the channel is already flagged' do
       channel = create(:channel_whatsapp, validate_provider_config: false, sync_templates: false)
       channel.prompt_reauthorization!

@@ -89,6 +89,7 @@ class Channel::Whatsapp < ApplicationRecord
   def record_provider_authorization_error!(payload)
     error_payload = self.class.provider_authorization_error(payload)
     return false unless error_payload
+    return false if provider_authorization_healthy_after_error?
 
     record_reauthorization_error!(error_payload)
     true
@@ -136,6 +137,18 @@ class Channel::Whatsapp < ApplicationRecord
     end
 
     true
+  end
+
+  def provider_authorization_healthy?
+    Meta::AuthorizationHealthCheckService.new(self).healthy?
+  end
+
+  def provider_authorization_reauthorization_recorded?
+    provider_authorization_error_recorded?
+  end
+
+  def after_provider_authorization_healthy!
+    clear_provider_authorization_error!
   end
 
   def self.provider_authorization_error(payload)

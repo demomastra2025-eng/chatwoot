@@ -53,6 +53,50 @@ describe Whatsapp::SendOnWhatsappService do
       end
 
       let(:success_response) { { 'messages' => [{ 'id' => '123456789' }] }.to_json }
+      let(:named_template_params) do
+        {
+          name: 'ticket_status_updated',
+          language: 'en_US',
+          category: 'UTILITY',
+          processed_params: { 'body' => { 'last_name' => 'Dale', 'ticket_id' => '2332' } }
+        }
+      end
+      let(:whatsapp_cloud_channel) do
+        create(:channel_whatsapp, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+      end
+      let(:cloud_contact_inbox) { create(:contact_inbox, inbox: whatsapp_cloud_channel.inbox, source_id: '123456789') }
+      let(:cloud_conversation) { create(:conversation, contact_inbox: cloud_contact_inbox, inbox: whatsapp_cloud_channel.inbox) }
+
+      def create_template_campaign(channel:, params:)
+        create(:campaign, account: channel.account, inbox: channel.inbox, template_params: params.deep_stringify_keys)
+      end
+
+      def create_campaign_delivery(campaign:, channel:, contact:, campaign_run: nil, status: :pending)
+        create(:campaign_delivery, campaign: campaign, campaign_run: campaign_run, account: channel.account,
+                                   inbox: channel.inbox, contact: contact, provider: channel.provider, status: status)
+      end
+
+      def create_template_message(conversation:, campaign:, params:, campaign_run: nil, content: 'Your package will be delivered in 3 business days.')
+        create(:message,
+               additional_attributes: { campaign_id: campaign.id, campaign_run_id: campaign_run&.id, template_params: params }.compact,
+               content: content, conversation: conversation, message_type: :outgoing, account: conversation.account)
+      end
+
+      def stub_360dialog_template_success
+        stub_request(:post, 'https://waba.360dialog.io/v1/messages')
+          .with(headers: headers, body: template_body.to_json)
+          .to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+      end
+
+      def stub_whatsapp_cloud_template_transient_failure(channel)
+        stub_request(:post, "https://graph.facebook.com/v22.0/#{channel.provider_config['phone_number_id']}/messages")
+          .with(:body => named_template_body.to_json)
+          .to_return(status: 500, body: whatsapp_cloud_transient_error_body.to_json, headers: { 'content-type' => 'application/json' })
+      end
+
+      def whatsapp_cloud_transient_error_body
+        { error: { message: 'An unknown error has occurred', type: 'OAuthException', code: 1, fbtrace_id: 'trace-1' } }
+      end
 
       it 'calls channel.send_message when with in 24 hour limit' do
         # to handle the case of 24 hour window limit.
@@ -259,64 +303,42 @@ describe Whatsapp::SendOnWhatsappService do
         )
       end
 
-      it 'updates the delivery that belongs to the message campaign run' do
-        campaign = create(
-          :campaign,
-          account: whatsapp_channel.account,
-          inbox: whatsapp_channel.inbox,
-          template_params: {
-            'name' => 'sample_shipping_confirmation',
-            'namespace' => '23423423_2342423_324234234_2343224',
-            'language' => 'en_US',
-            'category' => 'Marketing',
-            'processed_params' => { 'body' => { '1' => '3' } }
-          }
+      it 'keeps WhatsApp Cloud campaign delivery pending when Meta transiently fails and retry is scheduled' do
+        campaign = create_template_campaign(channel: whatsapp_cloud_channel, params: named_template_params)
+        delivery = create_campaign_delivery(campaign: campaign, channel: whatsapp_cloud_channel, contact: cloud_conversation.contact)
+        message = create_template_message(conversation: cloud_conversation, campaign: campaign,
+                                          params: named_template_params, content: 'Your ticket 2332 was updated.')
+        stub_whatsapp_cloud_template_transient_failure(whatsapp_cloud_channel)
+
+        expect do
+          described_class.new(message: message).perform
+        end.to have_enqueued_job(SendReplyJob).with(message.id).on_queue('outbound_messages')
+
+        expect(message.reload).to have_attributes(status: 'sent', source_id: nil, external_error: nil)
+        expect(delivery.reload).to have_attributes(status: 'pending', error_message: nil)
+        expect(delivery.metadata).to include(
+          'whatsapp_cloud_send_retry_count' => 1,
+          'whatsapp_cloud_send_retry_error_code' => 1,
+          'whatsapp_cloud_send_retry_error_message' => 'An unknown error has occurred'
         )
+      end
+
+      it 'updates the delivery that belongs to the message campaign run' do
+        campaign = create_template_campaign(channel: whatsapp_channel, params: template_params)
         old_run = create(:campaign_run, campaign: campaign, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox)
         retry_run = create(:campaign_run, campaign: campaign, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox)
-        old_delivery = create(
-          :campaign_delivery,
-          campaign: campaign,
-          campaign_run: old_run,
-          account: whatsapp_channel.account,
-          inbox: whatsapp_channel.inbox,
-          contact: conversation.contact,
-          provider: whatsapp_channel.provider,
-          status: :failed,
-          provider_message_id: nil
-        )
-        retry_delivery = create(
-          :campaign_delivery,
-          campaign: campaign,
-          campaign_run: retry_run,
-          account: whatsapp_channel.account,
-          inbox: whatsapp_channel.inbox,
-          contact: conversation.contact,
-          provider: whatsapp_channel.provider,
-          status: :pending,
-          provider_message_id: nil
-        )
-        message = create(
-          :message,
-          additional_attributes: { campaign_id: campaign.id, campaign_run_id: retry_run.id, template_params: template_params },
-          content: 'Your package will be delivered in 3 business days.',
-          conversation: conversation,
-          message_type: :outgoing,
-          account: conversation.account
-        )
-
-        stub_request(:post, 'https://waba.360dialog.io/v1/messages')
-          .with(
-            headers: headers,
-            body: template_body.to_json
-          ).to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+        old_delivery = create_campaign_delivery(campaign: campaign, campaign_run: old_run, channel: whatsapp_channel,
+                                                contact: conversation.contact, status: :failed)
+        retry_delivery = create_campaign_delivery(campaign: campaign, campaign_run: retry_run, channel: whatsapp_channel,
+                                                  contact: conversation.contact)
+        message = create_template_message(conversation: conversation, campaign: campaign,
+                                          campaign_run: retry_run, params: template_params)
+        stub_360dialog_template_success
 
         described_class.new(message: message).perform
 
-        expect(retry_delivery.reload.status).to eq('submitted')
-        expect(retry_delivery.provider_message_id).to eq('123456789')
-        expect(old_delivery.reload.status).to eq('failed')
-        expect(old_delivery.provider_message_id).to be_nil
+        expect(retry_delivery.reload).to have_attributes(status: 'submitted', provider_message_id: '123456789')
+        expect(old_delivery.reload).to have_attributes(status: 'failed', provider_message_id: nil)
       end
 
       it 'calls channel.send_template with named params if template parameter type is NAMED' do

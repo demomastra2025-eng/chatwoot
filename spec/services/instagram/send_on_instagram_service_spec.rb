@@ -166,6 +166,9 @@ describe Instagram::SendOnInstagramService do
 
         it 'handles reauthorization errors if access token is expired' do
           message = create(:message, message_type: 'outgoing', inbox: instagram_inbox, account: account, conversation: conversation)
+          allow(Meta::AuthorizationHealthCheckService).to receive(:new)
+            .with(instagram_channel)
+            .and_return(instance_double(Meta::AuthorizationHealthCheckService, healthy?: false))
 
           error_response = instance_double(
             HTTParty::Response,

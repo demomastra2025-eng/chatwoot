@@ -31,7 +31,7 @@ module Reauthorizable
     ::Redis::Alfred.incr(authorization_error_count_key)
     # we are giving precendence to the authorization error threshhold defined in the class
     # so that channels can override the default value
-    prompt_reauthorization! if authorization_error_count >= self.class::AUTHORIZATION_ERROR_THRESHOLD
+    prompt_reauthorization_after_authorization_error! if authorization_error_count >= self.class::AUTHORIZATION_ERROR_THRESHOLD
   end
 
   # Performed automatically if error threshold is breached
@@ -102,6 +102,41 @@ module Reauthorizable
       inbox: inbox,
       changed_attributes: { 'reauthorization_required' => [previous_value, current_value] }
     )
+  end
+
+  def prompt_reauthorization_after_authorization_error!
+    return false if provider_authorization_healthy_after_error?
+
+    prompt_reauthorization!
+  end
+
+  def provider_authorization_healthy_after_error?
+    return false unless respond_to?(:provider_authorization_healthy?)
+
+    provider_auth_reauthorization = provider_authorization_reauthorization?
+    return false unless provider_authorization_healthy?
+
+    return preserve_unrelated_reauthorization_after_healthy_check! unless provider_auth_reauthorization
+
+    after_provider_authorization_healthy! if respond_to?(:after_provider_authorization_healthy!)
+    Rails.logger.info("[REAUTHORIZATION] Skipping reconnect prompt for #{self.class.name}##{id}: provider health-check passed")
+    reauthorized!
+    true
+  rescue StandardError => e
+    Rails.logger.warn("[REAUTHORIZATION] Provider health-check failed for #{self.class.name}##{id}: #{e.class}: #{e.message}")
+    false
+  end
+
+  def provider_authorization_reauthorization?
+    return true unless respond_to?(:provider_authorization_reauthorization_recorded?)
+
+    !reauthorization_required? || provider_authorization_reauthorization_recorded?
+  end
+
+  def preserve_unrelated_reauthorization_after_healthy_check!
+    ::Redis::Alfred.delete(authorization_error_count_key)
+    Rails.logger.info("[REAUTHORIZATION] #{self.class.name}##{id}: provider healthy; keeping existing non-provider reauth flag")
+    true
   end
 
   def authorization_error_count_key

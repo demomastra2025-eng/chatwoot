@@ -12,11 +12,6 @@ class Instagram::BaseMessageText < Instagram::WebhooksBaseService
 
     return if @inbox.blank?
 
-    if @inbox.channel.reauthorization_required?
-      Rails.logger.info("Skipping message processing as reauthorization is required for inbox #{@inbox.id}")
-      return
-    end
-
     return unsend_message if message_is_deleted?
 
     ensure_contact(contact_id) if contacts_first_message?(contact_id)

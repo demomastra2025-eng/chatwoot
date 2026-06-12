@@ -59,6 +59,10 @@ describe Whatsapp::Providers::WhatsappCloudService do
       end
 
       it 'marks the channel for reauthorization when Meta returns an invalid token error' do
+        allow(Meta::AuthorizationHealthCheckService).to receive(:new)
+          .with(whatsapp_channel)
+          .and_return(instance_double(Meta::AuthorizationHealthCheckService, healthy?: false))
+
         stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
           .to_return(
             status: 401,

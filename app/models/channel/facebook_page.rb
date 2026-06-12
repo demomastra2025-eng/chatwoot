@@ -75,6 +75,10 @@ class Channel::FacebookPage < ApplicationRecord
     true
   end
 
+  def provider_authorization_healthy?
+    Meta::AuthorizationHealthCheckService.new(self).healthy?
+  end
+
   private
 
   def redacted_subscription_error(error)

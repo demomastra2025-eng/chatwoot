@@ -12,6 +12,18 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     TRANSIENT_SEND_RETRY_NEXT_AT_KEY
   ].freeze
 
+  def self.transient_send_retry_scheduled?(message)
+    return false if message.blank?
+
+    content_attributes = message.content_attributes.to_h.deep_stringify_keys
+    message.sent? && message.source_id.blank? && content_attributes[TRANSIENT_SEND_RETRY_COUNT_KEY].to_i.positive? &&
+      content_attributes[TRANSIENT_SEND_RETRY_NEXT_AT_KEY].present?
+  end
+
+  def self.transient_send_retry_metadata(message)
+    message.content_attributes.to_h.deep_stringify_keys.slice(*TRANSIENT_SEND_RETRY_KEYS)
+  end
+
   def send_message(phone_number, message)
     @message = message
 
@@ -169,7 +181,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def next_transient_send_retry_count(message)
-    message.content_attributes.to_h[TRANSIENT_SEND_RETRY_COUNT_KEY].to_i + 1
+    message.content_attributes.to_h.deep_stringify_keys[TRANSIENT_SEND_RETRY_COUNT_KEY].to_i + 1
   end
 
   def schedule_transient_send_retry!(message, error, retry_delay)
