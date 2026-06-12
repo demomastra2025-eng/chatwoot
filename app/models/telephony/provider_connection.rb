@@ -14,6 +14,7 @@ class Telephony::ProviderConnection < ApplicationRecord
 
   has_many :sip_profiles, class_name: '::Telephony::SipProfile', dependent: :nullify, inverse_of: :provider_connection
   has_many :number_bindings, class_name: '::Telephony::NumberBinding', dependent: :nullify, inverse_of: :provider_connection
+  has_many :provisioning_runs, class_name: '::Telephony::ProvisioningRun', dependent: :nullify, inverse_of: :provider_connection
 
   validates :provider_kind, presence: true, inclusion: { in: PROVIDER_KINDS }
   validates :name, presence: true, uniqueness: { scope: %i[account_id provider_kind] }
@@ -49,11 +50,23 @@ class Telephony::ProviderConnection < ApplicationRecord
       managed_by: managed_by,
       ownership_status: ownership_status,
       fonoster_trunk_ref: fonoster_trunk_ref,
+      credentials_ref: credentials_ref,
+      password_configured: password_secret_ref.present?,
       fonoster_credentials_ref: fonoster_credentials_ref,
       fonoster_acl_ref: fonoster_acl_ref,
       last_synced_at: last_synced_at,
+      provisioning_status: telephony_attribute(:provisioning_status),
+      last_reconciled_at: telephony_attribute(:last_reconciled_at),
+      remote_drift_detected_at: telephony_attribute(:remote_drift_detected_at),
+      remote_drift_summary: telephony_attribute(:remote_drift_summary),
       metadata: metadata
     }.compact
+  end
+
+  def telephony_attribute(attr_name)
+    return unless has_attribute?(attr_name)
+
+    public_send(attr_name)
   end
 
   private

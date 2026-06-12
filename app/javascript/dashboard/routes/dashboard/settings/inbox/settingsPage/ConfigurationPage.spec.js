@@ -4,6 +4,10 @@ import ConfigurationPage from './ConfigurationPage.vue';
 
 const alertMock = vi.hoisted(() => vi.fn());
 const getVirtualPbxStatusMock = vi.hoisted(() => vi.fn());
+const getVirtualPbxProvisioningPlanMock = vi.hoisted(() => vi.fn());
+const provisionVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
+const reconcileVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
+const getVirtualPbxProvisioningRunsMock = vi.hoisted(() => vi.fn());
 const updateVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const deleteVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const routerPushMock = vi.hoisted(() => vi.fn());
@@ -15,6 +19,10 @@ vi.mock('dashboard/composables', () => ({
 vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
   default: {
     getVirtualPbxStatus: getVirtualPbxStatusMock,
+    getVirtualPbxProvisioningPlan: getVirtualPbxProvisioningPlanMock,
+    provisionVirtualPbxChannel: provisionVirtualPbxChannelMock,
+    reconcileVirtualPbxChannel: reconcileVirtualPbxChannelMock,
+    getVirtualPbxProvisioningRuns: getVirtualPbxProvisioningRunsMock,
     updateVirtualPbxChannel: updateVirtualPbxChannelMock,
     deleteVirtualPbxChannel: deleteVirtualPbxChannelMock,
   },
@@ -37,39 +45,47 @@ const baseInbox = {
 
 const statusPayload = {
   payload: {
-    config: {
-      name: 'Virtual PBX',
-      provider_kind: 'sipuni',
-      phone_numbers: {
-        display_phone_number: virtualPbxDisplayNumber,
-        provider_account_number: '3100000',
-        ingress_number: '3100000',
+    ui_config: {
+      inbox_id: 42,
+      status: {
+        ready: true,
+        read_only: false,
+        remote_mutations: 'blocked',
       },
-      resources: {
-        provider_connection: {
-          host: 'sip.provider.local',
-          port: 5060,
-          transport: 'udp',
-          username: 'trunk-user',
-        },
+      channel: {
+        name: 'Virtual PBX',
+        provider_kind: 'sipuni',
+        provider_label: 'Sipuni',
+        display_phone_number: virtualPbxDisplayNumber,
+      },
+      connection: {
+        provider_kind: 'sipuni',
+        provider_label: 'Sipuni',
+        display_name: 'Sipuni trunk',
+        provider_number: '3100000',
+        configured: true,
+        status: 'draft',
+        remote_mutations: 'blocked',
       },
       routing: {
         mode: 'operator',
-        operator_agent_aor: 'sip:100@sip.provider.local',
+        fallback_mode: 'reject',
+        operator_target_configured: true,
       },
-      profiles: [
+      employees: [
         {
           user_id: 7,
           user_name: 'Ada Agent',
           internal_extension: '100',
-          sip_username: 'agent-100',
-          sip_password_configured: true,
           enabled: true,
+          access_configured: true,
         },
       ],
-      ownership: {
-        read_only: false,
+      permissions: {
+        editable: true,
+        deletable: true,
       },
+      warnings: [],
     },
     warnings: [],
     errors: [],
@@ -119,11 +135,37 @@ describe('ConfigurationPage Virtual PBX management', () => {
   beforeEach(() => {
     alertMock.mockReset();
     getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningPlanMock.mockReset();
+    provisionVirtualPbxChannelMock.mockReset();
+    reconcileVirtualPbxChannelMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
     updateVirtualPbxChannelMock.mockReset();
     deleteVirtualPbxChannelMock.mockReset();
     routerPushMock.mockReset();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     getVirtualPbxStatusMock.mockResolvedValue(statusPayload);
+    getVirtualPbxProvisioningPlanMock.mockResolvedValue({
+      payload: {
+        provisioning_plan: {
+          status: 'dry_run_valid',
+          remote_mutations: 'blocked',
+          operations: [{ key: 'upsert_number', risk: 'requires_approval' }],
+        },
+      },
+    });
+    provisionVirtualPbxChannelMock.mockResolvedValue({
+      payload: {
+        status: 'blocked',
+        remote_commit: false,
+        errors: [{ code: 'REMOTE_MUTATION_REQUIRES_APPROVAL' }],
+      },
+    });
+    reconcileVirtualPbxChannelMock.mockResolvedValue({
+      payload: { status: 'requires_manual_reconcile', drift: [] },
+    });
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [{ id: 1, status: 'blocked' }] },
+    });
     updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
     deleteVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
   });
@@ -132,11 +174,10 @@ describe('ConfigurationPage Virtual PBX management', () => {
     vi.restoreAllMocks();
   });
 
-  it('updates an existing Virtual PBX channel through local commit only', async () => {
+  it('updates an existing Virtual PBX channel through local business fields only', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
 
-    wrapper.vm.virtualPbxForm.connectionPassword = 'rotated-secret';
     await wrapper.vm.updateVirtualPbxChannel();
     await flushPromises();
 
@@ -146,26 +187,14 @@ describe('ConfigurationPage Virtual PBX management', () => {
         provider_kind: 'sipuni',
         channel_name: 'Virtual PBX',
         display_phone_number: virtualPbxDisplayNumber,
-        provider_account_number: '3100000',
-        ingress_number: '3100000',
-        connection: {
-          host: 'sip.provider.local',
-          port: '5060',
-          transport: 'udp',
-          username: 'trunk-user',
-          password: 'rotated-secret',
-        },
         routing: {
           mode: 'operator',
           fallback_mode: 'reject',
-          operator_agent_aor: 'sip:100@sip.provider.local',
         },
         profiles: [
           {
             user_id: 7,
             internal_extension: '100',
-            sip_username: 'agent-100',
-            sip_password: undefined,
             enabled: true,
           },
         ],
@@ -175,6 +204,12 @@ describe('ConfigurationPage Virtual PBX management', () => {
       },
       { dryRun: false, remoteCommit: false }
     );
+    expect(
+      JSON.stringify(updateVirtualPbxChannelMock.mock.calls[0][1])
+    ).not.toContain('trunk');
+    expect(
+      JSON.stringify(updateVirtualPbxChannelMock.mock.calls[0][1])
+    ).not.toContain('sip_username');
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_SUCCESS'
     );
@@ -190,8 +225,6 @@ describe('ConfigurationPage Virtual PBX management', () => {
         clientId: 'manual-row',
         userId: 8,
         internalExtension: '208',
-        sipUsername: 'agent-208',
-        sipPassword: 'agent-secret',
         enabled: true,
       },
     ];
@@ -205,8 +238,6 @@ describe('ConfigurationPage Virtual PBX management', () => {
           {
             user_id: 8,
             internal_extension: '208',
-            sip_username: 'agent-208',
-            sip_password: 'agent-secret',
             enabled: true,
           },
         ],
@@ -215,7 +246,28 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('blocks partial employee SIP credentials before save', async () => {
+  it('renders product-level Virtual PBX settings without SIP/Fonoster internals', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR'
+    );
+  });
+
+  it('blocks incomplete employee extension rows before save', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     updateVirtualPbxChannelMock.mockClear();
@@ -225,10 +277,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
       {
         clientId: 'partial-row',
         userId: 8,
-        internalExtension: '208',
-        sipUsername: 'agent-208',
-        sipPassword: '',
-        sipPasswordConfigured: false,
+        internalExtension: '',
         enabled: true,
       },
     ];
@@ -236,22 +285,23 @@ describe('ConfigurationPage Virtual PBX management', () => {
 
     expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
     expect(alertMock).toHaveBeenCalledWith(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SIP_PAIR_REQUIRED'
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REQUIRED'
     );
   });
 
-  it('blocks update when SIP port is not numeric', async () => {
+  it('keeps provider connection internals out of the update payload', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     updateVirtualPbxChannelMock.mockClear();
-    alertMock.mockClear();
 
     wrapper.vm.virtualPbxForm.connectionPort = '5060abc';
+    wrapper.vm.virtualPbxForm.connectionHost = 'internal.example';
     await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
 
-    expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
-    expect(alertMock).toHaveBeenCalledWith(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID'
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalled();
+    expect(updateVirtualPbxChannelMock.mock.calls[0][1]).not.toHaveProperty(
+      'connection'
     );
   });
 
@@ -279,5 +329,59 @@ describe('ConfigurationPage Virtual PBX management', () => {
       name: 'settings_inbox_list',
       params: { accountId: 530 },
     });
+  });
+
+  it('loads a safe provisioning plan without diagnostics', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    alertMock.mockClear();
+
+    await wrapper.vm.loadVirtualPbxProvisioningPlan();
+    await flushPromises();
+
+    expect(getVirtualPbxProvisioningPlanMock).toHaveBeenCalledWith(42, {
+      operation: 'update',
+      includeDiagnostics: false,
+    });
+    expect(wrapper.vm.virtualPbxProvisioningPlan.remote_mutations).toBe(
+      'blocked'
+    );
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISIONING_PLAN_READY'
+    );
+  });
+
+  it('keeps remote provision behind backend approval gate', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    alertMock.mockClear();
+
+    await wrapper.vm.provisionVirtualPbxChannel();
+    await flushPromises();
+
+    expect(provisionVirtualPbxChannelMock).toHaveBeenCalledWith(42, {
+      remoteCommit: true,
+      includeDiagnostics: false,
+    });
+    expect(alertMock).toHaveBeenCalledWith('REMOTE_MUTATION_REQUIRES_APPROVAL');
+  });
+
+  it('reconciles sync state through the product API', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    alertMock.mockClear();
+
+    await wrapper.vm.reconcileVirtualPbxChannel();
+    await flushPromises();
+
+    expect(reconcileVirtualPbxChannelMock).toHaveBeenCalledWith(42, {
+      includeDiagnostics: false,
+    });
+    expect(wrapper.vm.virtualPbxReconcileResult.status).toBe(
+      'requires_manual_reconcile'
+    );
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_COMPLETE'
+    );
   });
 });

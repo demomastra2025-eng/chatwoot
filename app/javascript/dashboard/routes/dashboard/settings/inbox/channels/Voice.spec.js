@@ -107,7 +107,7 @@ describe('Voice channel setup', () => {
   it('creates a simple local Virtual PBX channel without employee profiles', async () => {
     routeMock.query = { provider: 'kazakhstan' };
     createVirtualPbxChannelMock.mockResolvedValue({
-      payload: { config: { inbox_id: 202 }, errors: [] },
+      payload: { ui_config: { inbox_id: 202 }, errors: [] },
     });
     const wrapper = buildWrapper();
     const inputs = wrapper.findAll('input');

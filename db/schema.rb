@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_10_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_12_122000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2504,8 +2504,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_10_120000) do
     t.bigint "updated_by_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "provisioning_status", default: "local_only", null: false
+    t.datetime "last_reconciled_at"
+    t.datetime "remote_drift_detected_at"
+    t.jsonb "remote_drift_summary", default: {}, null: false
     t.index ["account_id", "fonoster_trunk_ref"], name: "idx_tel_provider_connections_account_trunk_ref", unique: true, where: "(fonoster_trunk_ref IS NOT NULL)"
     t.index ["account_id", "provider_kind", "name"], name: "idx_tel_provider_connections_account_kind_name", unique: true
+    t.index ["account_id", "provisioning_status"], name: "idx_tel_provider_connections_account_provisioning_status"
     t.index ["account_id", "status"], name: "idx_tel_provider_connections_account_status"
     t.index ["account_id"], name: "index_telephony_provider_connections_on_account_id"
     t.index ["created_by_id"], name: "index_telephony_provider_connections_on_created_by_id"
@@ -2531,14 +2536,52 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_10_120000) do
     t.string "fonoster_tel_url"
     t.string "managed_by"
     t.string "ownership_status", default: "legacy_reference", null: false
+    t.string "provisioning_status", default: "local_only", null: false
+    t.datetime "last_reconciled_at"
+    t.datetime "remote_drift_detected_at"
+    t.jsonb "remote_drift_summary", default: {}, null: false
     t.index ["account_id", "ingress_number"], name: "idx_tel_number_bindings_account_ingress"
     t.index ["account_id", "number_ref"], name: "index_telephony_number_bindings_on_account_number_ref", unique: true
     t.index ["account_id", "ownership_status"], name: "idx_tel_number_bindings_account_ownership"
     t.index ["account_id", "phone_number"], name: "index_telephony_number_bindings_on_account_phone"
     t.index ["account_id", "provider_connection_id"], name: "idx_tel_number_bindings_account_provider_connection"
+    t.index ["account_id", "provisioning_status"], name: "idx_tel_number_bindings_account_provisioning_status"
     t.index ["account_id"], name: "index_telephony_number_bindings_on_account_id"
     t.index ["inbox_id"], name: "index_telephony_number_bindings_on_inbox_id", unique: true
     t.index ["provider_connection_id"], name: "index_telephony_number_bindings_on_provider_connection_id"
+  end
+
+  create_table "telephony_provisioning_runs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id"
+    t.bigint "channel_id"
+    t.bigint "number_binding_id"
+    t.bigint "provider_connection_id"
+    t.string "operation", null: false
+    t.string "status", default: "pending", null: false
+    t.boolean "remote_commit", default: false, null: false
+    t.string "idempotency_key", null: false
+    t.jsonb "desired_snapshot", default: {}, null: false
+    t.jsonb "remote_snapshot", default: {}, null: false
+    t.jsonb "planned_operations", default: [], null: false
+    t.jsonb "executed_operations", default: [], null: false
+    t.string "error_code"
+    t.text "error_message"
+    t.jsonb "error_details", default: {}, null: false
+    t.bigint "requested_by_id"
+    t.string "request_id"
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "idempotency_key"], name: "idx_tel_provisioning_runs_account_idempotency", unique: true
+    t.index ["account_id", "inbox_id", "created_at"], name: "idx_tel_provisioning_runs_account_inbox_created"
+    t.index ["account_id", "status", "created_at"], name: "idx_tel_provisioning_runs_account_status_created"
+    t.index ["account_id"], name: "index_telephony_provisioning_runs_on_account_id"
+    t.index ["inbox_id"], name: "index_telephony_provisioning_runs_on_inbox_id"
+    t.index ["number_binding_id"], name: "index_telephony_provisioning_runs_on_number_binding_id"
+    t.index ["provider_connection_id"], name: "index_telephony_provisioning_runs_on_provider_connection_id"
+    t.index ["requested_by_id"], name: "index_telephony_provisioning_runs_on_requested_by_id"
   end
 
   create_table "telephony_routing_policies", force: :cascade do |t|
@@ -2811,6 +2854,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_10_120000) do
   add_foreign_key "telephony_number_bindings", "accounts"
   add_foreign_key "telephony_number_bindings", "inboxes"
   add_foreign_key "telephony_number_bindings", "telephony_provider_connections", column: "provider_connection_id"
+  add_foreign_key "telephony_provisioning_runs", "accounts", on_delete: :cascade
+  add_foreign_key "telephony_provisioning_runs", "inboxes", on_delete: :nullify
+  add_foreign_key "telephony_provisioning_runs", "telephony_number_bindings", column: "number_binding_id", on_delete: :nullify
+  add_foreign_key "telephony_provisioning_runs", "telephony_provider_connections", column: "provider_connection_id", on_delete: :nullify
+  add_foreign_key "telephony_provisioning_runs", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "telephony_routing_policies", "accounts"
   add_foreign_key "telephony_routing_policies", "captain_assistants"
   add_foreign_key "telephony_routing_policies", "telephony_number_bindings", column: "number_binding_id"

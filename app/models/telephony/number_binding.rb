@@ -81,6 +81,7 @@ class Telephony::NumberBinding < ApplicationRecord
 
   has_one :routing_policy, class_name: '::Telephony::RoutingPolicy', dependent: :destroy
   has_many :call_sessions, class_name: '::Telephony::CallSession', dependent: :nullify
+  has_many :provisioning_runs, class_name: '::Telephony::ProvisioningRun', dependent: :nullify, inverse_of: :number_binding
   has_many :sip_profiles, through: :inbox, source: :telephony_sip_profiles
 
   validates :provider, presence: true

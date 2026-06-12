@@ -15,26 +15,36 @@ class Telephony::VirtualPbx::ProvisioningService
     @config_builder = Telephony::VirtualPbx::ConfigBuilder.new(account: account)
   end
 
-  def show(inbox_id:)
-    {
+  def show(inbox_id:, include_diagnostics: false)
+    config = config_builder.for_inbox(inbox_id)
+    product_payload(
       operation: 'show',
-      remote_commit: false,
-      mutation_allowed: false,
-      config: config_builder.for_inbox(inbox_id)
-    }
+      config: config,
+      include_diagnostics: include_diagnostics,
+      extra: {
+        remote_commit: false,
+        mutation_allowed: false
+      }
+    )
   end
 
-  def readiness_check(inbox_id:)
+  def readiness_check(inbox_id:, include_diagnostics: false)
     config = config_builder.for_inbox(inbox_id)
+    desired_state = desired_state_builder.for_inbox(inbox_id)
+    plan = remote_plan_builder.build(operation: 'reconcile', desired_state: desired_state)
 
-    {
+    product_payload(
       operation: 'readiness_check',
-      remote_commit: false,
-      mutation_allowed: false,
-      ready: config[:ready],
       config: config,
-      warnings: config[:warnings]
-    }
+      include_diagnostics: include_diagnostics,
+      extra: {
+        remote_commit: false,
+        mutation_allowed: false,
+        ready: config[:ready] && plan[:status] != 'requires_manual_reconcile',
+        provisioning_plan: product_plan(plan),
+        warnings: config[:warnings]
+      }
+    )
   end
 
   def templates
@@ -46,34 +56,104 @@ class Telephony::VirtualPbx::ProvisioningService
     }
   end
 
-  def status(inbox_id:)
+  def status(inbox_id:, include_diagnostics: false)
     config = config_builder.for_inbox(inbox_id)
 
-    {
+    product_payload(
       operation: 'status',
+      config: config,
+      include_diagnostics: include_diagnostics,
+      extra: {
+        remote_commit: false,
+        mutation_allowed: false,
+        ready: config[:ready],
+        status: config[:ready] ? 'ready' : 'action_required',
+        warnings: config[:warnings]
+      }
+    )
+  end
+
+  def provisioning_plan(inbox_id:, operation: 'update', include_diagnostics: false)
+    config = config_builder.for_inbox(inbox_id)
+    desired_state = desired_state_builder.for_inbox(inbox_id)
+    plan = remote_plan_builder.build(operation: operation, desired_state: desired_state)
+
+    product_payload(
+      operation: 'provisioning_plan',
+      config: config,
+      include_diagnostics: include_diagnostics,
+      extra: {
+        remote_commit: false,
+        mutation_allowed: false,
+        provisioning_plan: product_plan(plan),
+        warnings: config[:warnings]
+      }
+    )
+  end
+
+  def provision(inbox_id:, remote_commit: false, include_diagnostics: false)
+    config = config_builder.for_inbox(inbox_id)
+    desired_state = desired_state_builder.for_inbox(inbox_id)
+    plan = remote_plan_builder.build(operation: 'update', desired_state: desired_state)
+    provision_result = remote_provisioner.execute(
+      operation: 'update',
+      desired_state: desired_state,
+      plan: plan,
+      remote_commit: remote_commit
+    )
+
+    product_payload(
+      operation: 'provision',
+      config: config_builder.for_inbox(inbox_id),
+      include_diagnostics: include_diagnostics,
+      extra: provision_result.merge(provisioning_plan: product_plan(plan), warnings: config[:warnings])
+    )
+  end
+
+  def reconcile(inbox_id:, include_diagnostics: false)
+    config = config_builder.for_inbox(inbox_id)
+    desired_state = desired_state_builder.for_inbox(inbox_id)
+    reconciliation = reconciler.check(desired_state)
+
+    product_payload(
+      operation: 'reconcile',
+      config: config_builder.for_inbox(inbox_id),
+      include_diagnostics: include_diagnostics,
+      extra: reconciliation.merge(remote_commit: false, mutation_allowed: false, warnings: config[:warnings])
+    )
+  end
+
+  def provisioning_runs(inbox_id:)
+    runs = account.telephony_provisioning_runs.where(inbox_id: inbox_id).recent.limit(20)
+
+    {
+      operation: 'provisioning_runs',
       remote_commit: false,
       mutation_allowed: false,
-      ready: config[:ready],
-      status: config[:ready] ? 'ready' : 'action_required',
-      config: config,
-      warnings: config[:warnings]
+      provisioning_runs: runs.map(&:summary_payload)
     }
   end
 
-  def create_channel(payload, dry_run: true, remote_commit: false)
+  def create_channel(payload, dry_run: true, remote_commit: false, include_diagnostics: false)
     ensure_remote_mutation_not_requested!(remote_commit)
     normalized = normalize_payload(payload)
     errors = validation_errors(normalized, require_profiles: normalized[:profiles_supplied])
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'create', normalized_payload: normalized, errors: errors, existing_config: nil,
-                             steps: create_steps(normalized))
+                             steps: create_steps(normalized), include_diagnostics: include_diagnostics)
     end
 
-    mutation_payload('create', create_local_channel!(normalized), normalized, create_steps(normalized))
+    mutation_payload(
+      'create',
+      create_local_channel!(normalized),
+      normalized,
+      create_steps(normalized),
+      include_diagnostics: include_diagnostics
+    )
   end
 
-  def update_channel(inbox_id:, payload:, dry_run: true, remote_commit: false)
+  def update_channel(inbox_id:, payload:, dry_run: true, remote_commit: false, include_diagnostics: false)
     ensure_remote_mutation_not_requested!(remote_commit)
     existing_config = config_builder.for_inbox(inbox_id)
     normalized = normalize_payload(payload, fallback: existing_config)
@@ -93,13 +173,19 @@ class Telephony::VirtualPbx::ProvisioningService
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'update', normalized_payload: normalized, errors: errors, existing_config: existing_config,
-                             steps: update_steps(normalized, existing_config))
+                             steps: update_steps(normalized, existing_config), include_diagnostics: include_diagnostics)
     end
 
-    mutation_payload('update', update_local_channel!(inbox_id, normalized), normalized, update_steps(normalized, existing_config))
+    mutation_payload(
+      'update',
+      update_local_channel!(inbox_id, normalized),
+      normalized,
+      update_steps(normalized, existing_config),
+      include_diagnostics: include_diagnostics
+    )
   end
 
-  def delete_channel(inbox_id:, confirm: false, dry_run: true, remote_commit: false)
+  def delete_channel(inbox_id:, confirm: false, dry_run: true, remote_commit: false, include_diagnostics: false)
     ensure_remote_mutation_not_requested!(remote_commit)
     existing_config = config_builder.for_inbox(inbox_id)
     errors = []
@@ -114,7 +200,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'delete', normalized_payload: { inbox_id: inbox_id, confirm: confirm }, errors: errors,
-                             existing_config: existing_config, steps: delete_steps(existing_config))
+                             existing_config: existing_config, steps: delete_steps(existing_config), include_diagnostics: include_diagnostics)
     end
 
     mutation_payload(
@@ -122,7 +208,8 @@ class Telephony::VirtualPbx::ProvisioningService
       delete_local_channel!(inbox_id),
       { inbox_id: inbox_id, confirm: confirm },
       delete_steps(existing_config),
-      existing_config: existing_config
+      existing_config: existing_config,
+      include_diagnostics: include_diagnostics
     )
   end
 
@@ -130,10 +217,109 @@ class Telephony::VirtualPbx::ProvisioningService
 
   attr_reader :account, :current_user, :bridge_client, :config_builder
 
-  def dry_run_payload(operation:, normalized_payload:, errors:, existing_config:, steps:)
-    sanitized_payload = Telephony::VirtualPbx::ConfigBuilder.sanitize(normalized_payload)
+  def desired_state_builder
+    @desired_state_builder ||= Telephony::VirtualPbx::DesiredStateBuilder.new(account: account)
+  end
 
-    {
+  def remote_plan_builder
+    @remote_plan_builder ||= Telephony::VirtualPbx::RemotePlanBuilder.new(account: account)
+  end
+
+  def remote_provisioner
+    @remote_provisioner ||= Telephony::VirtualPbx::RemoteProvisioner.new(account: account, current_user: current_user)
+  end
+
+  def reconciler
+    @reconciler ||= Telephony::VirtualPbx::Reconciler.new(account: account)
+  end
+
+  def product_payload(operation:, config:, include_diagnostics:, extra: {})
+    payload = {
+      operation: operation,
+      ui_config: config_builder.ui_config_from(config)
+    }.merge(extra || {})
+    payload[:diagnostics] = { config: config } if include_diagnostics
+    payload
+  end
+
+  def product_plan(plan)
+    plan.deep_dup.tap do |copy|
+      operations = Array.wrap(copy[:operations] || copy['operations']).map do |operation|
+        attrs = operation.with_indifferent_access
+        attrs.slice(:key, :description, :risk, :owned, :shared, :conflict)
+      end
+      copy[:operations] = operations
+      copy[:items] = product_plan_items
+      copy.delete(:conflicts) if copy[:conflicts].blank?
+    end
+  end
+
+  def product_plan_items
+    [
+      { code: 'validate_settings', status: 'ready' },
+      { code: 'save_channel', status: 'local_only' },
+      { code: 'connect_number', status: 'blocked' },
+      { code: 'configure_routing', status: 'blocked' },
+      { code: 'remote_sync_blocked', status: 'blocked' }
+    ]
+  end
+
+  def desired_state_for_payload(normalized_payload, existing_config)
+    config = (existing_config || {}).with_indifferent_access
+    refs = generated_refs_for(normalized_payload, config)
+    resources = (config[:resources] || {}).with_indifferent_access
+    provider_connection = (resources[:provider_connection] || {}).with_indifferent_access
+    ownership = (config[:ownership] || {}).with_indifferent_access
+
+    Telephony::VirtualPbx::ConfigBuilder.sanitize(
+      account_id: account.id,
+      inbox_id: config[:inbox_id],
+      channel_id: config[:channel_id],
+      provider: 'fonoster',
+      provider_kind: normalized_payload[:provider_kind] || config[:provider_kind],
+      managed_by: MANAGED_BY_ONELINK,
+      name: normalized_payload[:channel_name] || config[:name],
+      phone_numbers: {
+        display_phone_number: normalized_payload[:display_phone_number] || config.dig(:phone_numbers, :display_phone_number),
+        provider_account_number: normalized_payload[:provider_account_number] || config.dig(:phone_numbers, :provider_account_number),
+        ingress_number: normalized_payload[:ingress_number] || config.dig(:phone_numbers, :ingress_number),
+        fonoster_tel_url: normalized_payload[:fonoster_tel_url] || config.dig(:phone_numbers, :fonoster_tel_url)
+      }.compact,
+      refs: {
+        number_ref: refs[:number_ref],
+        trunk_ref: refs[:trunk_ref],
+        credentials_ref: refs[:credentials_ref],
+        app_ref: resources[:app_ref],
+        runtime_app_ref: resources[:runtime_app_ref]
+      }.compact,
+      connection: (normalized_payload[:connection] || {}).merge(
+        credentials_ref: refs[:credentials_ref] || provider_connection[:credentials_ref] || provider_connection[:fonoster_credentials_ref],
+        password_configured: normalized_payload.dig(:connection, :password).present? || provider_connection[:password_configured]
+      ).compact,
+      routing: normalized_payload[:routing] || config[:routing] || {},
+      profiles: normalized_payload[:profiles] || config[:profiles] || [],
+      ownership: {
+        managed_by: ownership[:managed_by] || MANAGED_BY_ONELINK,
+        ownership_status: ownership[:ownership_status] || LOCAL_OWNERSHIP_STATUS,
+        read_only: ownership[:read_only] || false,
+        onelink_account_id: account.id,
+        onelink_inbox_id: config[:inbox_id],
+        onelink_channel_id: config[:channel_id],
+        onelink_number_binding_id: resources[:number_binding_id]
+      }.compact,
+      resources: {
+        number_binding_id: resources[:number_binding_id],
+        provider_connection_id: resources[:provider_connection_id]
+      }.compact
+    ).deep_symbolize_keys
+  end
+
+  def dry_run_payload(operation:, normalized_payload:, errors:, existing_config:, steps:, include_diagnostics: false)
+    sanitized_payload = Telephony::VirtualPbx::ConfigBuilder.sanitize(normalized_payload)
+    desired_state = desired_state_for_payload(normalized_payload, existing_config)
+    plan = remote_plan_builder.build(operation: operation, desired_state: desired_state)
+
+    payload = {
       operation: operation,
       dry_run: true,
       valid: errors.empty?,
@@ -145,19 +331,36 @@ class Telephony::VirtualPbx::ProvisioningService
       status: dry_run_status(errors),
       account_id: account.id,
       requested_by_id: current_user&.id,
-      payload: sanitized_payload,
-      provider_template: provider_template_for(normalized_payload, existing_config),
-      generated_refs: generated_refs_for(normalized_payload, existing_config),
-      bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
-      existing_config: existing_config,
+      ui_config: existing_config.present? ? config_builder.ui_config_from(existing_config) : nil,
+      provisioning_plan: product_plan(plan),
       steps: steps,
       errors: errors,
       warnings: dry_run_warnings(existing_config)
     }.compact
+
+    if include_diagnostics
+      payload[:diagnostics] = {
+        payload: sanitized_payload,
+        provider_template: provider_template_for(normalized_payload, existing_config),
+        generated_refs: generated_refs_for(normalized_payload, existing_config),
+        bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
+        existing_config: existing_config
+      }.compact
+    end
+
+    payload
   end
 
-  def mutation_payload(operation, mutation_result, normalized_payload, steps, existing_config: nil)
-    {
+  def mutation_payload(operation, mutation_result, normalized_payload, steps, existing_config: nil, include_diagnostics: false)
+    config = mutation_result[:inbox_id].present? ? config_builder.for_inbox(mutation_result[:inbox_id]) : nil
+    desired_state = if config.present?
+                      desired_state_builder.for_inbox(config[:inbox_id])
+                    else
+                      desired_state_for_payload(normalized_payload, existing_config)
+                    end
+    plan = remote_plan_builder.build(operation: operation, desired_state: desired_state)
+
+    payload = {
       operation: operation,
       dry_run: false,
       valid: true,
@@ -170,17 +373,27 @@ class Telephony::VirtualPbx::ProvisioningService
       mutation_reason: 'local_commit_remote_mutation_disabled',
       account_id: account.id,
       requested_by_id: current_user&.id,
-      payload: Telephony::VirtualPbx::ConfigBuilder.sanitize(normalized_payload),
-      provider_template: provider_template_for(normalized_payload, existing_config),
-      generated_refs: generated_refs_for(normalized_payload, existing_config),
-      bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
-      config: mutation_result[:inbox_id].present? ? config_builder.for_inbox(mutation_result[:inbox_id]) : nil,
+      ui_config: config.present? ? config_builder.ui_config_from(config) : nil,
+      provisioning_plan: product_plan(plan),
+      config: include_diagnostics ? config : nil,
       deleted: mutation_result[:deleted],
       deleted_inbox_id: mutation_result[:deleted_inbox_id],
       steps: steps,
       errors: [],
       warnings: [warning('remote_mutation_disabled', 'Fonoster/Routr/bridge writes were not executed')]
     }.compact
+
+    if include_diagnostics
+      payload[:diagnostics] = {
+        payload: Telephony::VirtualPbx::ConfigBuilder.sanitize(normalized_payload),
+        provider_template: provider_template_for(normalized_payload, existing_config),
+        generated_refs: generated_refs_for(normalized_payload, existing_config),
+        bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
+        config: config
+      }.compact
+    end
+
+    payload
   end
 
   def normalize_payload(payload, fallback: nil)
@@ -395,9 +608,11 @@ class Telephony::VirtualPbx::ProvisioningService
     result = nil
     ActiveRecord::Base.transaction do
       inbox = account.inboxes.find(inbox_id)
-      provider_connection = inbox.telephony_number_binding&.provider_connection
+      binding = inbox.telephony_number_binding
+      provider_connection = binding&.provider_connection
       deleted_inbox_id = inbox.id
 
+      nullify_provisioning_run_links!(inbox: inbox, binding: binding)
       inbox.telephony_sip_profiles.destroy_all
       inbox.destroy!
       destroy_provider_connection_if_orphaned!(provider_connection)
@@ -551,6 +766,12 @@ class Telephony::VirtualPbx::ProvisioningService
     return if provider_connection.number_bindings.exists? || provider_connection.sip_profiles.exists?
 
     provider_connection.destroy!
+  end
+
+  def nullify_provisioning_run_links!(inbox:, binding: nil)
+    account.telephony_provisioning_runs
+           .where('inbox_id = :inbox_id OR number_binding_id = :binding_id', inbox_id: inbox.id, binding_id: binding&.id)
+           .update_all(inbox_id: nil, number_binding_id: nil, provider_connection_id: nil, updated_at: Time.current)
   end
 
   def create_steps(payload)

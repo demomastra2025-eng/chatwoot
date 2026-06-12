@@ -4,7 +4,7 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
   before_action :check_admin_authorization?
 
   def show
-    render_payload(provisioning_service.show(inbox_id: params.require(:id)))
+    render_payload(provisioning_service.show(inbox_id: params.require(:id), include_diagnostics: include_diagnostics?))
   end
 
   def templates
@@ -12,11 +12,18 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
   end
 
   def status
-    render_payload(provisioning_service.status(inbox_id: params.require(:id)))
+    render_payload(provisioning_service.status(inbox_id: params.require(:id), include_diagnostics: include_diagnostics?))
   end
 
   def create
-    render_payload(provisioning_service.create_channel(virtual_pbx_payload, dry_run: dry_run?, remote_commit: remote_commit?))
+    render_payload(
+      provisioning_service.create_channel(
+        virtual_pbx_payload,
+        dry_run: dry_run?,
+        remote_commit: remote_commit?,
+        include_diagnostics: include_diagnostics?
+      )
+    )
   end
 
   def update
@@ -25,7 +32,8 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
         inbox_id: params.require(:id),
         payload: virtual_pbx_payload,
         dry_run: dry_run?,
-        remote_commit: remote_commit?
+        remote_commit: remote_commit?,
+        include_diagnostics: include_diagnostics?
       )
     )
   end
@@ -36,13 +44,42 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
         inbox_id: params.require(:id),
         confirm: parse_boolean(params[:confirm], default: false),
         dry_run: dry_run?,
-        remote_commit: remote_commit?
+        remote_commit: remote_commit?,
+        include_diagnostics: include_diagnostics?
       )
     )
   end
 
   def readiness_check
-    render_payload(provisioning_service.readiness_check(inbox_id: params.require(:id)))
+    render_payload(provisioning_service.readiness_check(inbox_id: params.require(:id), include_diagnostics: include_diagnostics?))
+  end
+
+  def provisioning_plan
+    render_payload(
+      provisioning_service.provisioning_plan(
+        inbox_id: params.require(:id),
+        operation: params[:operation].presence || 'update',
+        include_diagnostics: include_diagnostics?
+      )
+    )
+  end
+
+  def provision
+    render_payload(
+      provisioning_service.provision(
+        inbox_id: params.require(:id),
+        remote_commit: remote_commit?,
+        include_diagnostics: include_diagnostics?
+      )
+    )
+  end
+
+  def reconcile
+    render_payload(provisioning_service.reconcile(inbox_id: params.require(:id), include_diagnostics: include_diagnostics?))
+  end
+
+  def provisioning_runs
+    render_payload(provisioning_service.provisioning_runs(inbox_id: params.require(:id)))
   end
 
   private
@@ -83,5 +120,9 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
 
   def remote_commit?
     parse_boolean(params[:remote_commit], default: false)
+  end
+
+  def include_diagnostics?
+    parse_boolean(params[:include_diagnostics], default: false)
   end
 end

@@ -59,19 +59,19 @@ describe('FonosterReadiness', () => {
             severity: 'info',
           },
         ],
-        config: {
-          provider_template: { label: 'Sipuni' },
-          phone_numbers: {
-            display_phone_number: '+77123456789',
-            ingress_number: '056124100014',
+        ui_config: {
+          channel: {
+            provider_label: 'Sipuni',
+            provider_kind: 'sipuni',
+            display_phone_number: '+771****6789',
           },
-          ownership: { read_only: false },
-          resources: {
-            number_ref: 'sipuni-internal-asterisk-056124100014',
-            trunk_ref: 'trunk-sipuni-onelink-out',
-            provider_connection: { name: 'Sipuni external line' },
+          connection: {
+            display_name: 'Sipuni external line',
+            provider_number: '056124100014',
+            remote_mutations: 'blocked',
           },
-          profiles: [{ internal_extension: '207' }],
+          status: { read_only: false, ready: true },
+          employees: [{ internal_extension: '207' }],
           warnings: [
             {
               code: 'phone_split_configured',
@@ -99,9 +99,12 @@ describe('FonosterReadiness', () => {
       wrapper.find('[data-testid="virtual-pbx-diagnostics"]').exists()
     ).toBe(true);
     expect(wrapper.text()).toContain('Sipuni');
-    expect(wrapper.text()).toContain('+77123456789 → 056124100014');
-    expect(wrapper.text()).toContain('sipuni-internal-asterisk-056124100014');
-    expect(wrapper.text()).toContain('trunk-sipuni-onelink-out');
+    expect(wrapper.text()).toContain('+771****6789');
+    expect(wrapper.text()).toContain('Sipuni external line');
+    expect(wrapper.text()).not.toContain(
+      'sipuni-internal-asterisk-056124100014'
+    );
+    expect(wrapper.text()).not.toContain('trunk-sipuni-onelink-out');
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.CONFIGURATION.REMOTE_MUTATIONS_BLOCKED'
     );

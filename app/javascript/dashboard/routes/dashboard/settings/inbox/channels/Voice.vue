@@ -310,7 +310,9 @@ async function createKazakhstanChannel() {
       return;
     }
 
-    const inboxId = response?.payload?.config?.inbox_id;
+    const inboxId =
+      response?.payload?.ui_config?.inbox_id ||
+      response?.payload?.config?.inbox_id;
     if (!inboxId) {
       useAlert(t('INBOX_MGMT.ADD.VOICE.API.ERROR_MESSAGE'));
       return;

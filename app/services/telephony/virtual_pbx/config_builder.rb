@@ -68,6 +68,59 @@ class Telephony::VirtualPbx::ConfigBuilder
     PROVIDER_TEMPLATES.deep_dup
   end
 
+  def self.to_ui_config(config)
+    new(account: nil).ui_config_from(config)
+  end
+
+  def ui_config_for(inbox_or_id)
+    ui_config_from(for_inbox(inbox_or_id))
+  end
+
+  def ui_config_from(config)
+    config = (config || {}).with_indifferent_access
+    phone_numbers = (config[:phone_numbers] || {}).with_indifferent_access
+    resources = (config[:resources] || {}).with_indifferent_access
+    provider_connection = (resources[:provider_connection] || {}).with_indifferent_access
+    routing = (config[:routing] || {}).with_indifferent_access
+    ownership = (config[:ownership] || {}).with_indifferent_access
+    provider_template = template_for(config[:provider_kind])
+
+    {
+      id: config[:id],
+      inbox_id: config[:inbox_id],
+      status: ui_status_payload(config, ownership, resources),
+      channel: {
+        name: config[:name],
+        provider_kind: config[:provider_kind],
+        provider_label: provider_template[:label],
+        display_phone_number: phone_numbers[:display_phone_number]
+      }.compact,
+      connection: {
+        provider_kind: config[:provider_kind],
+        provider_label: provider_template[:label],
+        display_name: provider_connection[:name] || provider_template[:label],
+        provider_number: first_present(phone_numbers[:provider_account_number], phone_numbers[:display_phone_number]),
+        configured: provider_connection.present? || phone_numbers[:ingress_number].present?,
+        status: provider_connection[:status] || (config[:ready] ? 'ready' : 'action_required'),
+        remote_mutations: 'blocked',
+        last_synced_at: first_present(resources[:last_synced_at], provider_connection[:last_synced_at])
+      }.compact,
+      routing: {
+        mode: routing[:mode],
+        fallback_mode: routing[:fallback_mode],
+        ai_enabled: routing[:ai_enabled],
+        operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?
+      }.compact,
+      employees: ui_employees_payload(config[:profiles]),
+      permissions: {
+        editable: !ownership[:read_only],
+        remote_commit_allowed: remote_commit_enabled? && !ownership[:read_only],
+        diagnostics_available: true
+      },
+      warnings: config[:warnings] || []
+    }.compact
+  end
+
   def sanitize(value, parent_key = nil)
     case value
     when Hash
@@ -89,6 +142,57 @@ class Telephony::VirtualPbx::ConfigBuilder
     return inbox_or_id if inbox_or_id.is_a?(Inbox) && inbox_or_id.account_id == account.id
 
     account.inboxes.find(inbox_or_id)
+  end
+
+  def ui_status_payload(config, ownership, resources)
+    status = first_present(resources[:provisioning_status], config[:provisioning_status])
+    status ||= if ownership[:read_only]
+                 'requires_manual_reconcile'
+               else
+                 (config[:ready] ? 'local_only' : 'action_required')
+               end
+
+    {
+      ready: config[:ready],
+      status: status,
+      label: ui_status_label(status),
+      read_only: ownership[:read_only],
+      remote_mutations: remote_commit_enabled? ? 'requires_approval' : 'blocked',
+      last_synced_at: resources[:last_synced_at]
+    }.compact
+  end
+
+  def remote_commit_enabled?
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch('TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED', nil)) == true
+  end
+
+  def ui_status_label(status)
+    case status
+    when 'fonoster_synced'
+      'Синхронизировано с телефонией'
+    when 'dry_run_valid'
+      'Готов к синхронизации'
+    when 'remote_failed'
+      'Ошибка синхронизации'
+    when 'requires_manual_reconcile', 'action_required'
+      'Нужно действие'
+    else
+      'Локально'
+    end
+  end
+
+  def ui_employees_payload(profiles)
+    Array.wrap(profiles).map do |profile|
+      attrs = profile.with_indifferent_access
+      {
+        id: attrs[:id],
+        user_id: attrs[:user_id],
+        user_name: attrs[:user_name],
+        internal_extension: attrs[:internal_extension],
+        access_configured: attrs[:sip_password_configured] || attrs[:credentials_ref].present?,
+        enabled: attrs[:enabled]
+      }.compact
+    end
   end
 
   def build_config(inbox, channel)
@@ -188,7 +292,11 @@ class Telephony::VirtualPbx::ConfigBuilder
       runtime_app_ref: binding&.runtime_app_ref,
       trunk_ref: binding&.trunk_ref,
       provider_connection: binding&.provider_connection&.to_virtual_pbx_h,
-      last_synced_at: binding&.last_synced_at
+      last_synced_at: binding&.last_synced_at,
+      provisioning_status: telephony_attribute(binding, :provisioning_status),
+      last_reconciled_at: telephony_attribute(binding, :last_reconciled_at),
+      remote_drift_detected_at: telephony_attribute(binding, :remote_drift_detected_at),
+      remote_drift_summary: telephony_attribute(binding, :remote_drift_summary)
     }.compact
   end
 
@@ -274,6 +382,12 @@ class Telephony::VirtualPbx::ConfigBuilder
     { code: code, severity: severity, message: message }
   end
 
+  def telephony_attribute(record, attr_name)
+    return unless record&.has_attribute?(attr_name)
+
+    record.public_send(attr_name)
+  end
+
   def provider_config_hash(channel)
     (channel&.provider_config_hash || {}).with_indifferent_access
   rescue JSON::ParserError, TypeError
@@ -326,7 +440,11 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def secret_key?(key)
-    key.to_s.match?(SECRET_KEY_PATTERN)
+    normalized = key.to_s
+    return false if normalized.match?(/(_ref|ref)\z/i)
+    return false if normalized.match?(/configured\z/i)
+
+    normalized.match?(SECRET_KEY_PATTERN)
   end
 
   def redacted_value(value)

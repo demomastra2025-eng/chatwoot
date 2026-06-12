@@ -467,6 +467,10 @@ Rails.application.routes.draw do
               get :templates, on: :collection
               get :status, on: :member
               post :readiness_check, on: :member
+              post :provisioning_plan, on: :member
+              post :provision, on: :member
+              post :reconcile, on: :member
+              get :provisioning_runs, on: :member
             end
 
             post 'numbers/:number_ref/route', to: 'routing#update'

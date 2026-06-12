@@ -99,16 +99,12 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')
-    config = payload.fetch('config')
+    ui_config = payload.fetch('ui_config')
     expect(payload).to include('operation' => 'show', 'mutation_allowed' => false)
-    expect(config).to include('provider_kind' => 'sipuni', 'ready' => true)
-    expect(config.fetch('phone_numbers')).to include(
-      'display_phone_number' => '+17715550123',
-      'ingress_number' => '056124100014',
-      'fonoster_tel_url' => 'tel:056124100014',
-      'split_allowed' => true
-    )
-    expect(config.dig('ownership', 'read_only')).to be(true)
+    expect(ui_config.dig('channel', 'provider_kind')).to eq('sipuni')
+    expect(ui_config.dig('status', 'ready')).to be(true)
+    expect(ui_config.dig('channel', 'display_phone_number')).to be_present
+    expect(ui_config.dig('status', 'read_only')).to be(true)
   end
 
   it 'maps legacy Sipuni account and ingress keys into split phone parts' do
@@ -139,10 +135,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       }
     )
 
-    get "#{base_path}/#{voice_channel.inbox.id}", headers: headers
+    get "#{base_path}/#{voice_channel.inbox.id}", params: { include_diagnostics: true }, headers: headers
 
     expect(response).to have_http_status(:ok)
-    phone_numbers = response.parsed_body.dig('payload', 'config', 'phone_numbers')
+    phone_numbers = response.parsed_body.dig('payload', 'diagnostics', 'config', 'phone_numbers')
     expect(phone_numbers).to include(
       'display_phone_number' => '+17705550124',
       'provider_account_number' => '056124100014',
@@ -157,20 +153,20 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     payload[:sipuni_account_number] = payload.delete(:provider_account_number)
     payload[:sipuni_ingress_number] = payload.delete(:ingress_number)
 
-    post base_path, params: payload, headers: headers, as: :json
+    post base_path, params: payload.merge(include_diagnostics: true), headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
     expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
-    expect(body.dig('payload', 'provider_account_number')).to eq('056124100014')
-    expect(body.dig('payload', 'ingress_number')).to eq('056124100014')
-    expect(body.dig('generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
+    expect(body.dig('diagnostics', 'payload', 'provider_account_number')).to eq('056124100014')
+    expect(body.dig('diagnostics', 'payload', 'ingress_number')).to eq('056124100014')
+    expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
   end
 
   it 'builds a create dry-run without changing local records or calling the bridge' do
     counts_before = local_record_counts
 
-    post base_path, params: valid_create_payload, headers: headers, as: :json
+    post base_path, params: valid_create_payload.merge(include_diagnostics: true), headers: headers, as: :json
 
     expect(local_record_counts).to eq(counts_before)
 
@@ -187,23 +183,23 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       'remote_mutation_reason' => 'REMOTE_MUTATION_REQUIRES_APPROVAL',
       'status' => 'dry_run_ready'
     )
-    expect(payload.dig('provider_template', 'label')).to eq('Sipuni')
-    expect(payload.fetch('bridge_operations').map { |operation| operation['method'] }).to include('PUT', 'PATCH')
-    expect(payload.fetch('bridge_operations')).to all(include('blocked' => true))
-    expect(payload.dig('generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
+    expect(payload.dig('diagnostics', 'provider_template', 'label')).to eq('Sipuni')
+    expect(payload.dig('diagnostics', 'bridge_operations').map { |operation| operation['method'] }).to include('PUT', 'PATCH')
+    expect(payload.dig('diagnostics', 'bridge_operations')).to all(include('blocked' => true))
+    expect(payload.dig('diagnostics', 'generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
     expect(payload.to_json).not_to include('do-not-return-this-secret')
-    expect(payload.dig('payload', 'connection', 'password')).to eq('[REDACTED]')
+    expect(payload.dig('diagnostics', 'payload', 'connection', 'password')).to eq('[REDACTED]')
   end
 
   it 'accepts simple create dry-run without employee SIP profiles' do
-    post base_path, params: valid_create_payload, headers: headers, as: :json
+    post base_path, params: valid_create_payload.merge(include_diagnostics: true), headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
     expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
-    expect(body.dig('payload', 'connection', 'username')).to eq('056124100014')
-    expect(body.dig('payload', 'connection', 'password')).to eq('[REDACTED]')
-    expect(body.dig('payload', 'profiles')).to eq([])
+    expect(body.dig('diagnostics', 'payload', 'connection', 'username')).to eq('056124100014')
+    expect(body.dig('diagnostics', 'payload', 'connection', 'password')).to eq('[REDACTED]')
+    expect(body.dig('diagnostics', 'payload', 'profiles')).to eq([])
     expect(body.fetch('errors')).to eq([])
   end
 
@@ -212,14 +208,14 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     payload[:connection].delete(:username)
     payload[:connection].delete(:password)
 
-    post base_path, params: payload, headers: headers, as: :json
+    post base_path, params: payload.merge(include_diagnostics: true), headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
     expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
-    expect(body.dig('payload', 'connection')).not_to include('username')
-    expect(body.dig('payload', 'connection')).not_to include('password')
-    expect(body.dig('payload', 'profiles')).to eq([])
+    expect(body.dig('diagnostics', 'payload', 'connection')).not_to include('username')
+    expect(body.dig('diagnostics', 'payload', 'connection')).not_to include('password')
+    expect(body.dig('diagnostics', 'payload', 'profiles')).to eq([])
   end
 
   it 'rejects explicitly supplied invalid SIP profile rows during create dry-run' do
@@ -282,7 +278,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
   it 'rejects SIP profile users outside the current account during settings assignment' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     other_account = create(:account)
     outsider = create(:user, account: other_account, role: :agent)
 
@@ -309,7 +305,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
   it 'rejects SIP profile assignment before the user is an inbox collaborator' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
     put "#{base_path}/#{inbox_id}",
         params: {
@@ -339,7 +335,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')
-    inbox_id = payload.dig('config', 'inbox_id')
+    inbox_id = payload.dig('ui_config', 'inbox_id')
     expect(payload).to include(
       'operation' => 'create',
       'dry_run' => false,
@@ -356,8 +352,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       provider_connections: counts_before[:provider_connections] + 1,
       sip_profiles: counts_before[:sip_profiles]
     )
-    expect(payload.dig('config', 'ownership', 'read_only')).to be(false)
-    expect(payload.dig('config', 'resources', 'provider_connection')).to be_present
+    expect(payload.dig('ui_config', 'status', 'read_only')).to be(false)
+    expect(payload.dig('ui_config', 'connection', 'configured')).to be(true)
     inbox = Inbox.find(inbox_id)
     expect(inbox.inbox_members).to be_empty
     expect(inbox.telephony_sip_profiles).to be_empty
@@ -375,7 +371,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     inbox = Inbox.find(inbox_id)
     inbox.inbox_members.find_or_create_by!(user_id: agent.id)
     inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
@@ -452,9 +448,9 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
   end
 
-  it 'returns a status contract for a managed local bundle' do
+  it 'returns a product-level status contract for a managed local bundle without raw telephony internals' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
     get "#{base_path}/#{inbox_id}/status", headers: headers
 
@@ -467,13 +463,57 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       'ready' => true,
       'status' => 'ready'
     )
-    expect(payload.dig('config', 'inbox_id')).to eq(inbox_id)
+    expect(payload.dig('ui_config', 'inbox_id')).to eq(inbox_id)
+    expect(payload.dig('ui_config', 'channel')).to include('name' => 'Sipuni external line')
+    expect(payload.dig('ui_config', 'channel', 'display_phone_number')).to be_present
+    expect(payload.dig('ui_config', 'connection')).to include(
+      'provider_kind' => 'sipuni',
+      'remote_mutations' => 'blocked'
+    )
+    expect(payload).not_to have_key('config')
+    expect(payload).not_to have_key('bridge_operations')
+    expect(payload.to_json).not_to include('trunk_ref')
+    expect(payload.to_json).not_to include('credentials_ref')
+    expect(payload.to_json).not_to include('agent_aor')
+    expect(payload.to_json).not_to include('sip_username')
     expect(payload.fetch('warnings')).to be_an(Array)
+  end
+
+  it 'keeps raw Virtual PBX diagnostics behind an explicit diagnostics flag' do
+    post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+
+    get "#{base_path}/#{inbox_id}/status", params: { include_diagnostics: true }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    diagnostics = response.parsed_body.dig('payload', 'diagnostics')
+    expect(diagnostics.dig('config', 'resources', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
+    expect(diagnostics.dig('config', 'resources', 'provider_connection')).to be_present
+  end
+
+  it 'returns a product-level provisioning plan during dry-run without bridge operations by default' do
+    post base_path, params: valid_create_payload, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
+    expect(payload.dig('provisioning_plan', 'remote_mutations')).to eq('blocked')
+    expect(payload.dig('provisioning_plan', 'items').map { |item| item['code'] }).to include(
+      'validate_settings',
+      'save_channel',
+      'connect_number',
+      'configure_routing',
+      'remote_sync_blocked'
+    )
+    expect(payload).not_to have_key('bridge_operations')
+    expect(payload).not_to have_key('generated_refs')
+    expect(payload.to_json).not_to include('/telephony/trunks/')
+    expect(payload.to_json).not_to include('/telephony/credentials/')
   end
 
   it 'updates a managed local bundle without remote writes' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
     put "#{base_path}/#{inbox_id}",
         params: { dry_run: false, channel_name: 'Renamed Sipuni line', routing: { fallback_mode: 'operator' } },
@@ -483,13 +523,13 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')
     expect(payload).to include('operation' => 'update', 'local_commit' => true, 'remote_commit' => false)
-    expect(payload.dig('config', 'name')).to eq('Renamed Sipuni line')
+    expect(payload.dig('ui_config', 'channel', 'name')).to eq('Renamed Sipuni line')
     expect(Inbox.find(inbox_id).name).to eq('Renamed Sipuni line')
   end
 
   it 'blocks managed local updates while the channel has active calls' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     inbox = Inbox.find(inbox_id)
     number_binding = Telephony::NumberBinding.find_by!(inbox_id: inbox_id)
     conversation = create(:conversation, account: account, inbox: inbox)
@@ -516,7 +556,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
   it 'rejects managed local updates that would reuse another channel number ref' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    first_inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    first_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     first_binding = Telephony::NumberBinding.find_by!(inbox_id: first_inbox_id)
 
     second_payload = create_payload_variant(
@@ -526,7 +566,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       internal_extension: '208'
     )
     post base_path, params: second_payload.merge(dry_run: false), headers: headers, as: :json
-    second_inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    second_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     second_binding = Telephony::NumberBinding.find_by!(inbox_id: second_inbox_id)
 
     put "#{base_path}/#{first_inbox_id}",
@@ -549,7 +589,16 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
   it 'deletes only a managed local bundle when explicitly confirmed' do
     counts_before = local_record_counts
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    binding = Telephony::NumberBinding.find_by!(inbox_id: inbox_id)
+    run = create(
+      :telephony_provisioning_run,
+      account: account,
+      inbox_id: inbox_id,
+      number_binding: binding,
+      provider_connection: binding.provider_connection,
+      operation: 'update'
+    )
 
     delete "#{base_path}/#{inbox_id}", params: { confirm: true, dry_run: false }, headers: headers, as: :json
 
@@ -558,11 +607,12 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(payload).to include('operation' => 'delete', 'local_commit' => true, 'deleted' => true, 'remote_commit' => false)
     expect(payload.fetch('deleted_inbox_id')).to eq(inbox_id)
     expect(local_record_counts).to include(counts_before)
+    expect(run.reload).to have_attributes(inbox_id: nil, number_binding_id: nil, provider_connection_id: nil)
   end
 
   it 'blocks managed local delete when an aliased active call normalizes to a canonical active status' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
-    inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     inbox = Inbox.find(inbox_id)
     number_binding = Telephony::NumberBinding.find_by!(inbox_id: inbox_id)
     conversation = create(:conversation, account: account, inbox: inbox)
@@ -596,12 +646,12 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
 
     post base_path, params: first_payload.merge(dry_run: false), headers: headers, as: :json
-    first_inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    first_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     provider_connection = Telephony::NumberBinding.find_by!(inbox_id: first_inbox_id).provider_connection
 
     post base_path, params: second_payload.merge(dry_run: false), headers: headers, as: :json
     expect(response).to have_http_status(:ok), response.parsed_body.to_json
-    second_inbox_id = response.parsed_body.dig('payload', 'config', 'inbox_id')
+    second_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     expect(second_inbox_id).to be_present, response.parsed_body.to_json
     second_binding = Telephony::NumberBinding.find_by!(inbox_id: second_inbox_id)
 

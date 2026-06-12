@@ -24,6 +24,7 @@ module Enterprise::Concerns::Account
     has_many :telephony_agent_bindings, dependent: :destroy_async, class_name: '::Telephony::AgentBinding'
     has_many :telephony_call_sessions, dependent: :destroy_async, class_name: '::Telephony::CallSession'
     has_many :telephony_routing_policies, dependent: :destroy_async, class_name: '::Telephony::RoutingPolicy'
+    has_many :telephony_provisioning_runs, dependent: :destroy_async, class_name: '::Telephony::ProvisioningRun'
     has_many :telephony_events, dependent: :destroy_async, class_name: '::Telephony::Event'
     has_many :voice_channels, dependent: :destroy_async, class_name: '::Channel::Voice'
     has_many :calls, dependent: :destroy_async

@@ -79,17 +79,64 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data);
   }
 
-  getVirtualPbxReadiness(inboxId) {
+  getVirtualPbxReadiness(inboxId, { includeDiagnostics = false } = {}) {
     return axios
       .post(
-        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/readiness_check`
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/readiness_check`,
+        { include_diagnostics: includeDiagnostics }
       )
       .then(r => r.data);
   }
 
-  getVirtualPbxStatus(inboxId) {
+  getVirtualPbxStatus(inboxId, { includeDiagnostics = false } = {}) {
     return axios
-      .get(`${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/status`)
+      .get(
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/status`,
+        {
+          params: { include_diagnostics: includeDiagnostics },
+        }
+      )
+      .then(r => r.data);
+  }
+
+  getVirtualPbxProvisioningPlan(
+    inboxId,
+    { operation = 'update', includeDiagnostics = false } = {}
+  ) {
+    return axios
+      .post(
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/provisioning_plan`,
+        { operation, include_diagnostics: includeDiagnostics }
+      )
+      .then(r => r.data);
+  }
+
+  provisionVirtualPbxChannel(
+    inboxId,
+    { remoteCommit = false, includeDiagnostics = false } = {}
+  ) {
+    return axios
+      .post(
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/provision`,
+        { remote_commit: remoteCommit, include_diagnostics: includeDiagnostics }
+      )
+      .then(r => r.data);
+  }
+
+  reconcileVirtualPbxChannel(inboxId, { includeDiagnostics = false } = {}) {
+    return axios
+      .post(
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/reconcile`,
+        { include_diagnostics: includeDiagnostics }
+      )
+      .then(r => r.data);
+  }
+
+  getVirtualPbxProvisioningRuns(inboxId) {
+    return axios
+      .get(
+        `${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}/provisioning_runs`
+      )
       .then(r => r.data);
   }
 

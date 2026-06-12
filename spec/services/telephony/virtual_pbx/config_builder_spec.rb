@@ -89,4 +89,30 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     expect(payload.dig(:provider_config, 'sip_password')).to eq('[REDACTED]')
     expect(payload.dig(:metadata, 'webhook_secret')).to eq('[REDACTED]')
   end
+
+  it 'exposes remote commit permission only when approval flag is enabled for managed local channels' do
+    result = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator).create_channel(
+      {
+        provider_kind: 'sipuni',
+        channel_name: 'Sipuni managed line',
+        display_phone_number: '+17715554444',
+        provider_account_number: '056124100014',
+        ingress_number: '056124100014',
+        connection: { host: 'ats01.kz.sipuni.com', port: 5060, transport: 'udp', username: '056124100014' }
+      },
+      dry_run: false
+    )
+    builder = described_class.new(account: account)
+    inbox_id = result.dig(:ui_config, :inbox_id)
+
+    ui_config = builder.ui_config_for(inbox_id).with_indifferent_access
+    expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(false)
+
+    with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: 'true') do
+      ui_config = builder.ui_config_for(inbox_id).with_indifferent_access
+
+      expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(true)
+      expect(ui_config.dig(:status, :remote_mutations)).to eq('requires_approval')
+    end
+  end
 end

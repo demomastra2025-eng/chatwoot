@@ -11,31 +11,31 @@ class Telephony::BridgeClient
     @debug_log_path = debug_log_path.to_s
   end
 
-  def get(path, query: {})
-    perform_request(:get, path, query: query)
+  def get(path, query: {}, idempotency_key: nil)
+    perform_request(:get, path, query: query, idempotency_key: idempotency_key)
   end
 
-  def post(path, payload = {})
-    perform_request(:post, path, payload: payload)
+  def post(path, payload = {}, idempotency_key: nil)
+    perform_request(:post, path, payload: payload, idempotency_key: idempotency_key)
   end
 
-  def put(path, payload = {})
-    perform_request(:put, path, payload: payload)
+  def put(path, payload = {}, idempotency_key: nil)
+    perform_request(:put, path, payload: payload, idempotency_key: idempotency_key)
   end
 
-  def patch(path, payload = {})
-    perform_request(:patch, path, payload: payload)
+  def patch(path, payload = {}, idempotency_key: nil)
+    perform_request(:patch, path, payload: payload, idempotency_key: idempotency_key)
   end
 
-  def delete(path, payload = nil, query: {})
-    perform_request(:delete, path, query: query, payload: payload)
+  def delete(path, payload = nil, query: {}, idempotency_key: nil)
+    perform_request(:delete, path, query: query, payload: payload, idempotency_key: idempotency_key)
   end
 
   private
 
   attr_reader :account_id, :base_url, :debug_log_path, :request_id, :secret
 
-  def perform_request(method, path, query: nil, payload: nil)
+  def perform_request(method, path, query: nil, payload: nil, idempotency_key: nil)
     if base_url.blank?
       raise Telephony::Error.new(code: 'BRIDGE_NOT_CONFIGURED', message: 'Telephony bridge is not configured',
                                  status: :service_unavailable)
@@ -43,7 +43,7 @@ class Telephony::BridgeClient
 
     url = URI.join(normalized_base_url, normalized_path(path)).to_s
     options = {
-      headers: request_headers,
+      headers: request_headers(idempotency_key: idempotency_key),
       timeout: DEFAULT_TIMEOUT_SECONDS
     }
     options[:query] = query if query.present?
@@ -105,7 +105,7 @@ class Telephony::BridgeClient
     body
   end
 
-  def request_headers
+  def request_headers(idempotency_key: nil)
     headers = {
       'Accept' => 'application/json',
       'Content-Type' => 'application/json'
@@ -113,6 +113,7 @@ class Telephony::BridgeClient
     headers['X-Bridge-Secret'] = secret if secret.present?
     headers['X-Account-Id'] = account_id.to_s if account_id.present?
     headers['X-Request-Id'] = request_id if request_id.present?
+    headers['X-Idempotency-Key'] = idempotency_key if idempotency_key.present?
     headers
   end
 

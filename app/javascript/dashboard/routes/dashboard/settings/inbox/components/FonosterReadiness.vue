@@ -32,9 +32,13 @@ const inboxReadiness = computed(() => {
   const inboxes = readinessPayload.value?.inboxes || [];
   return inboxes.find(item => item.id === props.inbox?.id) || null;
 });
-const virtualPbxConfig = computed(
-  () => virtualPbxPayload.value?.config || null
-);
+const virtualPbxConfig = computed(() => {
+  return (
+    virtualPbxPayload.value?.ui_config ||
+    virtualPbxPayload.value?.config ||
+    null
+  );
+});
 const virtualPbxWarnings = computed(() => {
   const payloadWarnings = virtualPbxPayload.value?.warnings || [];
   return payloadWarnings.length
@@ -42,13 +46,18 @@ const virtualPbxWarnings = computed(() => {
     : virtualPbxConfig.value?.warnings || [];
 });
 const virtualPbxPhoneNumbers = computed(() => {
+  if (virtualPbxConfig.value?.channel) {
+    return {
+      display_phone_number: virtualPbxConfig.value.channel.display_phone_number,
+    };
+  }
+
   return virtualPbxConfig.value?.phone_numbers || {};
 });
-const virtualPbxResources = computed(() => {
-  return virtualPbxConfig.value?.resources || {};
-});
 const virtualPbxProfiles = computed(() => {
-  return virtualPbxConfig.value?.profiles || [];
+  return (
+    virtualPbxConfig.value?.employees || virtualPbxConfig.value?.profiles || []
+  );
 });
 
 const accountWarnings = computed(() => {
@@ -108,7 +117,10 @@ const lastSyncedAtLabel = computed(() => {
 
 const virtualPbxProviderLabel = computed(() => {
   return (
+    virtualPbxConfig.value?.channel?.provider_label ||
+    virtualPbxConfig.value?.connection?.provider_label ||
     virtualPbxConfig.value?.provider_template?.label ||
+    virtualPbxConfig.value?.channel?.provider_kind ||
     virtualPbxConfig.value?.provider_kind ||
     t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.NO_DATA')
   );
@@ -116,22 +128,20 @@ const virtualPbxProviderLabel = computed(() => {
 
 const virtualPbxPhoneSplitLabel = computed(() => {
   const display = virtualPbxPhoneNumbers.value?.display_phone_number;
-  const ingress = virtualPbxPhoneNumbers.value?.ingress_number;
 
-  if (display && ingress && display !== ingress) {
-    return `${display} → ${ingress}`;
-  }
-
-  return display || ingress || t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.NO_DATA');
+  return display || t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.NO_DATA');
 });
 
 const virtualPbxOwnershipLabel = computed(() => {
-  const ownership = virtualPbxConfig.value?.ownership;
-  if (!ownership) {
+  const readOnly =
+    virtualPbxConfig.value?.status?.read_only ??
+    virtualPbxConfig.value?.ownership?.read_only;
+
+  if (readOnly === undefined) {
     return t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.NO_DATA');
   }
 
-  return ownership.read_only
+  return readOnly
     ? t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LEGACY_READ_ONLY')
     : t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.MANAGED_LOCAL');
 });
@@ -142,23 +152,13 @@ const virtualPbxDetails = computed(() => [
     value: virtualPbxPhoneNumbers.value?.display_phone_number,
   },
   {
-    label: t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.INGRESS_NUMBER'),
-    value: virtualPbxPhoneNumbers.value?.ingress_number,
-  },
-  {
-    label: t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.NUMBER_REF'),
-    value: virtualPbxResources.value?.number_ref,
-  },
-  {
-    label: t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TRUNK_REF'),
-    value: virtualPbxResources.value?.trunk_ref,
-  },
-  {
     label: t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION'),
-    value: virtualPbxResources.value?.provider_connection?.name,
+    value:
+      virtualPbxConfig.value?.connection?.display_name ||
+      virtualPbxConfig.value?.connection?.provider_number,
   },
   {
-    label: t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIP_PROFILES'),
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'),
     value: virtualPbxProfiles.value.length,
   },
 ]);
