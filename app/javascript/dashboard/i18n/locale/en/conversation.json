@@ -169,6 +169,15 @@
       "DESCRIPTION": "Are you sure you want to delete this conversation?",
       "CONFIRM": "Delete"
     },
+    "DELETE_COMMUNICATION_THREAD_CHANNELS": {
+      "TITLE": "Delete thread channels #{threadId}",
+      "DESCRIPTION": "Select the exact channels/conversations to delete. Other channels in this thread will remain available.",
+      "CONFIRM": "Delete selected",
+      "SELECT_ALL": "Select all channels",
+      "CHANNEL_ID": "Conversation #{conversationId}",
+      "EMPTY": "This thread has no accessible channels to delete.",
+      "ALL_SELECTED_WARNING": "All channels are selected. The thread will disappear after deletion."
+    },
     "CARD_CONTEXT_MENU": {
       "PENDING": "Hand over to AI agent",
       "RESOLVED": "Mark as resolved",

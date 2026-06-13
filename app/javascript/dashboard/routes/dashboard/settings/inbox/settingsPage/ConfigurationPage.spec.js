@@ -77,6 +77,8 @@ const statusPayload = {
           user_id: 7,
           user_name: 'Ada Agent',
           internal_extension: '100',
+          sip_username: 'agent-100',
+          sip_password_configured: true,
           enabled: true,
           access_configured: true,
         },
@@ -195,6 +197,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
           {
             user_id: 7,
             internal_extension: '100',
+            sip_username: 'agent-100',
             enabled: true,
           },
         ],
@@ -209,7 +212,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     ).not.toContain('trunk');
     expect(
       JSON.stringify(updateVirtualPbxChannelMock.mock.calls[0][1])
-    ).not.toContain('sip_username');
+    ).not.toContain('sip_password');
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_SUCCESS'
     );
@@ -225,6 +228,9 @@ describe('ConfigurationPage Virtual PBX management', () => {
         clientId: 'manual-row',
         userId: 8,
         internalExtension: '208',
+        sipUsername: 'agent-208',
+        sipPassword: 'secret-208',
+        sipPasswordConfigured: false,
         enabled: true,
       },
     ];
@@ -238,6 +244,8 @@ describe('ConfigurationPage Virtual PBX management', () => {
           {
             user_id: 8,
             internal_extension: '208',
+            sip_username: 'agent-208',
+            sip_password: 'secret-208',
             enabled: true,
           },
         ],
@@ -246,21 +254,24 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('renders product-level Virtual PBX settings without SIP/Fonoster internals', async () => {
+  it('renders product-level Virtual PBX settings without provider internals', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
 
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
     );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+    );
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
     );
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL'
-    );
-    expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
     );
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR'
@@ -286,6 +297,46 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.REQUIRED'
+    );
+  });
+
+  it('blocks incomplete employee SIP credential pairs before save', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+    alertMock.mockClear();
+
+    wrapper.vm.virtualPbxForm.profiles = [
+      {
+        clientId: 'partial-sip-row',
+        userId: 8,
+        internalExtension: '208',
+        sipUsername: '',
+        sipPassword: 'secret-208',
+        sipPasswordConfigured: false,
+        enabled: true,
+      },
+    ];
+    await wrapper.vm.updateVirtualPbxChannel();
+
+    expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SIP_PAIR_REQUIRED'
+    );
+  });
+
+  it('requires a new SIP password when an existing employee SIP username changes', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+    alertMock.mockClear();
+
+    wrapper.vm.virtualPbxForm.profiles[0].sipUsername = 'agent-101';
+    await wrapper.vm.updateVirtualPbxChannel();
+
+    expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SIP_PAIR_REQUIRED'
     );
   });
 

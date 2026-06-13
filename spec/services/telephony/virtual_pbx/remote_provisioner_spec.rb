@@ -40,7 +40,6 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
       'route' => { 'mode' => 'operator' }
     )
     allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
-    allow(resource_client).to receive(:credential).with('cred-ref').and_return('ref' => 'cred-ref')
   end
 
   it 'blocks remote execution while the feature flag is disabled and records an audit row' do
@@ -74,6 +73,68 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
     end
   end
 
+  it 'persists Fonoster generated agent refs and reconciles agents by the remote ref' do
+    sip_profile = create(:telephony_sip_profile, account: account, agent_ref: 'local-agent-ref', fonoster_agent_ref: 'local-agent-ref')
+    agent_state = desired_state.merge(
+      refs: {},
+      resources: {},
+      profiles: [
+        {
+          id: sip_profile.id,
+          user_id: sip_profile.user_id,
+          internal_extension: sip_profile.internal_extension,
+          agent_ref: 'local-agent-ref',
+          fonoster_agent_ref: 'local-agent-ref',
+          enabled: true
+        }
+      ]
+    )
+    agent_plan = plan.merge(
+      operations: [
+        { key: 'upsert_agent', method: 'PUT', path: '/telephony/agents/local-agent-ref', risk: 'requires_approval', payload_preview: {} }
+      ]
+    )
+
+    allow(resource_client).to receive(:dispatch).and_return({ 'ref' => 'remote-agent-uuid' })
+    allow(resource_client).to receive(:agent).with('remote-agent-uuid').and_return(
+      'ref' => 'remote-agent-uuid',
+      'enabled' => true
+    )
+
+    with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: 'true') do
+      result = described_class.new(account: account, current_user: admin, resource_client: resource_client)
+                              .execute(operation: 'update', desired_state: agent_state, plan: agent_plan, remote_commit: true)
+
+      expect(result).to include(status: 'succeeded', remote_commit: true)
+      expect(resource_client).to have_received(:agent).with('remote-agent-uuid')
+      expect(sip_profile.reload.fonoster_agent_ref).to eq('remote-agent-uuid')
+      expect(sip_profile.agent_ref).to eq('local-agent-ref')
+    end
+  end
+
+  it 'treats approved delete operations as complete without read-back reconciliation' do
+    allow(resource_client).to receive(:dispatch).and_return({ 'ok' => true })
+    expect(resource_client).not_to receive(:number)
+    expect(resource_client).not_to receive(:trunk)
+
+    delete_plan = plan.merge(
+      operations: [
+        { key: 'delete_number', method: 'DELETE', path: '/telephony/numbers/number-ref', risk: 'requires_approval' },
+        { key: 'delete_trunk', method: 'DELETE', path: '/telephony/trunks/trunk-ref', risk: 'requires_approval' }
+      ]
+    )
+
+    with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: 'true') do
+      result = described_class.new(account: account, current_user: admin, resource_client: resource_client)
+                              .execute(operation: 'delete', desired_state: desired_state, plan: delete_plan, remote_commit: true)
+
+      expect(result).to include(status: 'succeeded', remote_commit: true)
+      expect(result).not_to have_key(:reconciliation)
+      expect(resource_client).to have_received(:dispatch).twice
+      expect(Telephony::ProvisioningRun.last).to have_attributes(status: 'succeeded', operation: 'delete')
+    end
+  end
+
   it 'records a failed run when post-commit read-back finds drift' do
     allow(resource_client).to receive(:dispatch).and_return({ 'ok' => true })
     allow(resource_client).to receive(:number).with('number-ref').and_return(
@@ -84,7 +145,6 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
       'route' => { 'mode' => 'operator' }
     )
     allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
-    allow(resource_client).to receive(:credential).with('cred-ref').and_return('ref' => 'cred-ref')
 
     with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: 'true') do
       result = described_class.new(account: account, current_user: admin, resource_client: resource_client)

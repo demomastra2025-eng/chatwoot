@@ -158,4 +158,18 @@ describe('ConversationCard', () => {
       '/app/accounts/530/communication_threads/5?status=open'
     );
   });
+
+  it('keeps the unread badge as the unread message count', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        unread_count: 7,
+      },
+    });
+
+    const unreadBadge = wrapper.find('.bg-n-brand-solid');
+    expect(unreadBadge.exists()).toBe(true);
+    expect(unreadBadge.text()).toBe('7');
+    expect(unreadBadge.classes()).toContain('rounded-full');
+  });
 });

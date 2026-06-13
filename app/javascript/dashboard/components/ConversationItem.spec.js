@@ -10,6 +10,10 @@ const ConversationCardStub = {
       type: Boolean,
       default: false,
     },
+    allowedContextMenuOptions: {
+      type: Array,
+      default: () => [],
+    },
   },
   template: '<div />',
 };
@@ -50,5 +54,15 @@ describe('ConversationItem', () => {
     expect(
       wrapper.findComponent(ConversationCardStub).props('selectable')
     ).toBe(true);
+  });
+
+  it('allows communication thread cards to expose the delete context-menu action', () => {
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper
+        .findComponent(ConversationCardStub)
+        .props('allowedContextMenuOptions')
+    ).toContain('delete');
   });
 });

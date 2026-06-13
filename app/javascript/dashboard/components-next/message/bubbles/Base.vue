@@ -30,7 +30,7 @@ const varaintBaseMap = {
   [MESSAGE_VARIANTS.ERROR]: 'bg-n-ruby-4 text-n-ruby-12',
   [MESSAGE_VARIANTS.EMAIL]: 'w-full',
   [MESSAGE_VARIANTS.UNSUPPORTED]:
-    'bg-n-solid-amber/70 border border-dashed border-n-amber-12 text-n-amber-12',
+    'bg-n-solid-amber/70 border border-dashed border-n-amber-10 text-n-amber-12',
 };
 
 const orientationMap = {

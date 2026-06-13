@@ -519,6 +519,9 @@ export default {
         userId: '',
         userName: '',
         internalExtension: '',
+        sipUsername: '',
+        originalSipUsername: '',
+        sipPassword: '',
         sipPasswordConfigured: false,
         enabled: true,
       };
@@ -529,6 +532,9 @@ export default {
         userId: Number(profile.user_id) || '',
         userName: profile.user_name || '',
         internalExtension: profile.internal_extension || '',
+        sipUsername: profile.sip_username || '',
+        originalSipUsername: profile.sip_username || '',
+        sipPassword: '',
         sipPasswordConfigured: !!(
           profile.sip_password_configured || profile.access_configured
         ),
@@ -588,7 +594,10 @@ export default {
         return false;
       }
 
-      return this.validateVirtualPbxProfiles();
+      return (
+        this.validateVirtualPbxProfiles() &&
+        this.validateVirtualPbxProfileCredentials()
+      );
     },
     validateVirtualPbxProfiles() {
       const invalidProfile = this.virtualPbxForm.profiles.find(profile => {
@@ -602,12 +611,42 @@ export default {
       );
       return false;
     },
+    validateVirtualPbxProfileCredentials() {
+      const invalidProfile = this.virtualPbxForm.profiles.find(profile => {
+        const hasUsername = !!profile.sipUsername?.trim();
+        const hasPassword = !!profile.sipPassword?.trim();
+        const usernameChanged =
+          (profile.sipUsername || '').trim() !==
+          (profile.originalSipUsername || '').trim();
+
+        if (!hasUsername) return hasPassword;
+        if (hasPassword) return false;
+
+        return !profile.sipPasswordConfigured || usernameChanged;
+      });
+
+      if (!invalidProfile) return true;
+
+      useAlert(
+        this.$t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SIP_PAIR_REQUIRED'
+        )
+      );
+      return false;
+    },
     virtualPbxProfilesPayload() {
-      return this.virtualPbxForm.profiles.map(profile => ({
-        user_id: profile.userId,
-        internal_extension: profile.internalExtension.trim(),
-        enabled: profile.enabled !== false,
-      }));
+      return this.virtualPbxForm.profiles.map(profile => {
+        const payload = {
+          user_id: profile.userId,
+          internal_extension: profile.internalExtension.trim(),
+          enabled: profile.enabled !== false,
+        };
+        const sipUsername = profile.sipUsername?.trim();
+        const sipPassword = profile.sipPassword?.trim();
+        if (sipUsername) payload.sip_username = sipUsername;
+        if (sipPassword) payload.sip_password = sipPassword;
+        return payload;
+      });
     },
     virtualPbxUpdatePayload() {
       const form = this.virtualPbxForm;
@@ -1130,6 +1169,45 @@ export default {
                     :placeholder="
                       $t(
                         'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="profile.sipUsername"
+                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.PLACEHOLDER'
+                      )
+                    "
+                  />
+                </label>
+
+                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                  {{
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+                    )
+                  }}
+                  <input
+                    v-model="profile.sipPassword"
+                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    :disabled="isVirtualPbxReadOnly"
+                    type="password"
+                    autocomplete="new-password"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.PLACEHOLDER'
                       )
                     "
                   />

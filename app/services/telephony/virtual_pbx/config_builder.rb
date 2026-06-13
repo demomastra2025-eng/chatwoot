@@ -102,7 +102,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         provider_number: first_present(phone_numbers[:provider_account_number], phone_numbers[:display_phone_number]),
         configured: provider_connection.present? || phone_numbers[:ingress_number].present?,
         status: provider_connection[:status] || (config[:ready] ? 'ready' : 'action_required'),
-        remote_mutations: 'blocked',
+        remote_mutations: remote_commit_enabled? ? 'requires_approval' : 'blocked',
         last_synced_at: first_present(resources[:last_synced_at], provider_connection[:last_synced_at])
       }.compact,
       routing: {
@@ -189,6 +189,8 @@ class Telephony::VirtualPbx::ConfigBuilder
         user_id: attrs[:user_id],
         user_name: attrs[:user_name],
         internal_extension: attrs[:internal_extension],
+        sip_username: attrs[:sip_username],
+        sip_password_configured: attrs[:sip_password_configured],
         access_configured: attrs[:sip_password_configured] || attrs[:credentials_ref].present?,
         enabled: attrs[:enabled]
       }.compact

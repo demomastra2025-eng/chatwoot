@@ -290,6 +290,7 @@ Rails.application.routes.draw do
               get :attachments
               get :labels
               post :labels, action: :update_labels
+              delete :conversations, action: :destroy_conversations
               post :update_last_seen
             end
           end

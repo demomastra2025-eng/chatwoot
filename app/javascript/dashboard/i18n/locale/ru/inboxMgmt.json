@@ -456,14 +456,14 @@
         },
         "VIRTUAL_PBX": {
           "CHANNEL_NAME": {
-            "LABEL": "Название inbox",
-            "PLACEHOLDER": "Введите название inbox для звонков",
-            "REQUIRED": "Название inbox обязательно"
+            "LABEL": "Название канала",
+            "PLACEHOLDER": "Введите название канала для звонков",
+            "REQUIRED": "Название канала обязательно"
           },
           "PROVIDER_KIND": {
-            "LABEL": "Провайдер виртуальной АТС",
-            "SIPUNI": "Sipuni / внутренний Asterisk",
-            "ASTERISK_ANALOG": "Asterisk analog"
+            "LABEL": "Провайдер SIP trunk",
+            "SIPUNI": "Sipuni",
+            "ASTERISK_ANALOG": "Asterisk аналоговый"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Номер/аккаунт у провайдера",
@@ -475,9 +475,9 @@
             "REQUIRED": "Технический номер обязателен"
           },
           "CONNECTION_HOST": {
-            "LABEL": "SIP host",
+            "LABEL": "SIP host URL",
             "PLACEHOLDER": "PBX host или endpoint транка",
-            "REQUIRED": "SIP host обязателен"
+            "REQUIRED": "SIP host URL обязателен"
           },
           "CONNECTION_PORT": {
             "LABEL": "SIP port",
@@ -1450,7 +1450,7 @@
     },
     "TABS": {
       "SETTINGS": "Настройки",
-      "COLLABORATORS": "Соавторы",
+      "COLLABORATORS": "Сотрудники",
       "CONFIGURATION": "Конфигурация",
       "CAMPAIGN": "Рассылки кампаний",
       "PRE_CHAT_FORM": "Форма",

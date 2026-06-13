@@ -675,6 +675,62 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
   end
 
+  describe 'DELETE /api/v1/accounts/:account_id/communication_threads/:id/conversations' do
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+    let(:admin_headers) { administrator.create_new_auth_token }
+
+    it 'queues deletion only for selected linked child conversations' do
+      contact = create(:contact, :with_email, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact)
+      second_inbox = create(:inbox, account: account)
+      second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
+      second_conversation = create(:conversation, account: account, contact: contact, inbox: second_inbox, contact_inbox: second_contact_inbox)
+      thread = first_conversation.reload.communication_thread
+      allow(DeleteObjectJob).to receive(:perform_later)
+
+      delete "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/conversations",
+             params: { conversation_ids: [second_conversation.display_id] },
+             headers: admin_headers,
+             as: :json
+
+      expect(response).to have_http_status(:accepted)
+      expect(response.parsed_body['deleted_conversation_ids']).to eq([second_conversation.display_id])
+      expect(DeleteObjectJob).to have_received(:perform_later).with(second_conversation, administrator, anything).once
+      expect(DeleteObjectJob).not_to have_received(:perform_later).with(first_conversation, anything, anything)
+    end
+
+    it 'rejects a selected conversation id outside the communication thread' do
+      thread_conversation = create(:conversation, account: account)
+      unrelated_conversation = create(:conversation, account: account)
+      thread = thread_conversation.reload.communication_thread
+      allow(DeleteObjectJob).to receive(:perform_later)
+
+      delete "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/conversations",
+             params: { conversation_ids: [unrelated_conversation.display_id] },
+             headers: admin_headers,
+             as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to include('Invalid communication thread conversation_ids')
+      expect(DeleteObjectJob).not_to have_received(:perform_later)
+    end
+
+    it 'requires conversation delete permission for accessible linked channels' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      allow(DeleteObjectJob).to receive(:perform_later)
+
+      delete "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/conversations",
+             params: { conversation_ids: [conversation.display_id] },
+             headers: headers,
+             as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(DeleteObjectJob).not_to have_received(:perform_later)
+    end
+  end
+
   describe 'PATCH /api/v1/accounts/:account_id/communication_threads/:id' do
     it 'updates status, priority, assignee and team on accessible child conversations' do
       team = create(:team, account: account)

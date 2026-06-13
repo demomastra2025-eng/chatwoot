@@ -7,8 +7,10 @@ import {
   provide,
   computed,
   watch,
+  nextTick,
   onMounted,
   defineEmits,
+  defineAsyncComponent,
 } from 'vue';
 import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
@@ -20,12 +22,8 @@ import {
 import { Virtualizer } from 'virtua/vue';
 import ChatListHeader from './ChatListHeader.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
-import ConversationFilter from 'next/filter/ConversationFilter.vue';
-import SaveCustomView from 'next/filter/SaveCustomView.vue';
 import ChatTypeTabs from './widgets/ChatTypeTabs.vue';
 import ConversationItem from './ConversationItem.vue';
-import DeleteCustomViews from 'dashboard/routes/dashboard/customviews/DeleteCustomViews.vue';
-import ConversationBulkActions from './widgets/conversation/conversationBulkActions/Index.vue';
 import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirection.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import IntersectionObserver from 'dashboard/components/IntersectionObserver.vue';
@@ -69,7 +67,7 @@ import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions.j
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
 import {
   filterConversationsByCommunicationThreadMode,
-  getCommunicationThreadChannelInboxes,
+  getCommunicationThreadChannelFilterInboxes,
 } from 'dashboard/helper/communicationThreadHelper';
 
 const props = defineProps({
@@ -84,6 +82,25 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['conversationLoad']);
+
+const ConversationFilter = defineAsyncComponent(
+  () => import('next/filter/ConversationFilter.vue')
+);
+const SaveCustomView = defineAsyncComponent(
+  () => import('next/filter/SaveCustomView.vue')
+);
+const DeleteCustomViews = defineAsyncComponent(
+  () => import('dashboard/routes/dashboard/customviews/DeleteCustomViews.vue')
+);
+const ConversationBulkActions = defineAsyncComponent(
+  () => import('./widgets/conversation/conversationBulkActions/Index.vue')
+);
+const loadCommunicationThreadDeleteDialog = () =>
+  import('./widgets/conversation/CommunicationThreadDeleteDialog.vue');
+const CommunicationThreadDeleteDialog = defineAsyncComponent(
+  loadCommunicationThreadDeleteDialog
+);
+
 const { uiSettings, updateUISettings } = useUISettings();
 const { t } = useI18n();
 const router = useRouter();
@@ -339,33 +356,14 @@ const conversationCustomAttributes = useFunctionGetter(
   'conversation_attribute'
 );
 
-const communicationThreadChannelInboxes = ref([]);
-const currentCommunicationThreadChannelInboxes = computed(() =>
-  getCommunicationThreadChannelInboxes(chatLists.value, activeStatus.value)
-);
-
-watch(
-  [
-    () => props.communicationThreadMode,
-    currentCommunicationThreadChannelInboxes,
-  ],
-  ([isThreadMode, channelInboxes]) => {
-    if (!isThreadMode) {
-      communicationThreadChannelInboxes.value = [];
-      return;
-    }
-
-    communicationThreadChannelInboxes.value = channelInboxes;
-  },
-  { immediate: true }
-);
-
 const sortedChannelInboxes = computed(() => {
   const sourceInboxes = props.communicationThreadMode
-    ? communicationThreadChannelInboxes.value
+    ? getCommunicationThreadChannelFilterInboxes(inboxesList.value)
     : inboxesList.value;
 
-  return sourceInboxes.slice().sort((a, b) => a.name.localeCompare(b.name));
+  return sourceInboxes
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 });
 
 const sidebarUnreadCount = (collection, key) => {
@@ -1209,7 +1207,22 @@ onMounted(() => {
 });
 
 const deleteConversationDialogRef = ref(null);
+const deleteCommunicationThreadDialogRef = ref(null);
 const selectedConversationId = ref(null);
+const selectedCommunicationThread = ref(null);
+const isDeletingCommunicationThreadChannels = ref(false);
+
+const selectedCommunicationThreadChannels = computed(() =>
+  (selectedCommunicationThread.value?.channels || [])
+    .map(channel => ({
+      ...(channel || {}),
+      conversation_id: Number(channel?.conversation_id),
+    }))
+    .filter(
+      channel =>
+        Number.isInteger(channel.conversation_id) && channel.conversation_id > 0
+    )
+);
 
 async function deleteConversation() {
   try {
@@ -1223,7 +1236,55 @@ async function deleteConversation() {
   }
 }
 
-const handleDelete = conversationId => {
+async function deleteCommunicationThreadConversations(conversationIds) {
+  if (!selectedCommunicationThread.value?.id || !conversationIds.length) return;
+
+  const selectedIdSet = new Set(
+    conversationIds.map(conversationId => String(conversationId))
+  );
+  const remainingChannelCount =
+    selectedCommunicationThreadChannels.value.filter(
+      channel => !selectedIdSet.has(String(channel.conversation_id))
+    ).length;
+
+  isDeletingCommunicationThreadChannels.value = true;
+  try {
+    await store.dispatch('deleteCommunicationThreadConversations', {
+      threadId: selectedCommunicationThread.value.id,
+      conversationIds,
+    });
+    if (!remainingChannelCount) {
+      redirectToConversationList();
+    }
+    selectedCommunicationThread.value = null;
+    deleteCommunicationThreadDialogRef.value?.close();
+    useAlert(t('CONVERSATION.SUCCESS_DELETE_CONVERSATION'));
+  } catch (error) {
+    useAlert(t('CONVERSATION.FAIL_DELETE_CONVERSATION'));
+  } finally {
+    isDeletingCommunicationThreadChannels.value = false;
+  }
+}
+
+const openCommunicationThreadDeleteDialog = async communicationThread => {
+  selectedCommunicationThread.value = communicationThread;
+  await loadCommunicationThreadDeleteDialog();
+  await nextTick();
+  deleteCommunicationThreadDialogRef.value?.open();
+};
+
+const handleDelete = async conversationId => {
+  if (props.communicationThreadMode) {
+    const communicationThread = getConversationById.value(
+      conversationId,
+      'communication_thread'
+    );
+    if (communicationThread?.is_communication_thread) {
+      await openCommunicationThreadDeleteDialog(communicationThread);
+      return;
+    }
+  }
+
   selectedConversationId.value = conversationId;
   deleteConversationDialogRef.value.open();
 };
@@ -1463,6 +1524,14 @@ watch(conversationFilters, (newVal, oldVal) => {
       :confirm-button-label="$t('CONVERSATION.DELETE_CONVERSATION.CONFIRM')"
       @confirm="deleteConversation"
       @close="selectedConversationId = null"
+    />
+    <CommunicationThreadDeleteDialog
+      ref="deleteCommunicationThreadDialogRef"
+      :thread-id="selectedCommunicationThread?.id"
+      :channels="selectedCommunicationThreadChannels"
+      :is-loading="isDeletingCommunicationThreadChannels"
+      @confirm="deleteCommunicationThreadConversations"
+      @close="selectedCommunicationThread = null"
     />
     <TeleportWithDirection
       v-if="showAdvancedFilters"

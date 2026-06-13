@@ -77,6 +77,7 @@ export default {
         router.replace({
           name: getInboxFlowRouteName(this.$route, 'finish'),
           params: {
+            accountId: this.$route.params.accountId,
             inbox_id: this.$route.params.inbox_id,
           },
           query: this.$route.query,

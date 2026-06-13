@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, defineAsyncComponent } from 'vue';
 import { useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
@@ -10,7 +10,6 @@ import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import MessagePreview from './MessagePreview.vue';
 import InboxName from '../InboxName.vue';
-import ConversationContextMenu from './contextMenu/Index.vue';
 import TimeAgo from 'dashboard/components/ui/TimeAgo.vue';
 import CardLabels from './conversationCardComponents/CardLabels.vue';
 import CardPriorityIcon from 'dashboard/components-next/Conversation/ConversationCard/CardPriorityIcon.vue';
@@ -51,6 +50,10 @@ const emit = defineEmits([
   'selectConversation',
   'deSelectConversation',
 ]);
+
+const ConversationContextMenu = defineAsyncComponent(
+  () => import('./contextMenu/Index.vue')
+);
 
 const router = useRouter();
 const store = useStore();
@@ -458,7 +461,7 @@ const togglePinnedConversation = async nextPinnedState => {
         </span>
         <span
           v-if="hasUnread"
-          class="shadow-lg inline-flex items-center justify-center rounded-md text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-n-brand-contrast bg-n-brand-solid"
+          class="shadow-lg inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-n-brand-contrast bg-n-brand-solid"
           :class="unreadBadgeClass"
         >
           {{ unreadBadgeLabel }}

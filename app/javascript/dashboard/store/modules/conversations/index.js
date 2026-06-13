@@ -563,6 +563,45 @@ export const mutations = {
     );
   },
 
+  [types.DELETE_COMMUNICATION_THREAD_CONVERSATIONS](
+    _state,
+    { threadId, conversationIds }
+  ) {
+    const deletedIdSet = new Set(
+      (conversationIds || []).map(conversationId => String(conversationId))
+    );
+    if (!deletedIdSet.size) return;
+
+    _state.allConversations = _state.allConversations
+      .map(conversation => {
+        if (
+          !conversationIdMatches(conversation, threadId) ||
+          !isCommunicationThread(conversation)
+        ) {
+          return conversation;
+        }
+
+        const channels = (conversation.channels || []).filter(
+          channel => !deletedIdSet.has(String(channel.conversation_id))
+        );
+        if (!channels.length) return null;
+
+        const updatedConversation = {
+          ...conversation,
+          channels,
+          conversation_ids: (conversation.conversation_ids || []).filter(
+            conversationId => !deletedIdSet.has(String(conversationId))
+          ),
+          messages: (conversation.messages || []).filter(
+            message => !deletedIdSet.has(String(message.conversation_id))
+          ),
+        };
+        refreshCommunicationThreadReplyState(updatedConversation);
+        return updatedConversation;
+      })
+      .filter(Boolean);
+  },
+
   [types.UPDATE_CONVERSATION](_state, conversation) {
     const { allConversations } = _state;
     const index = findConversationIndexByIdAndType(_state, conversation);

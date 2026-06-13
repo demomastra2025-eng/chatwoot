@@ -23,6 +23,7 @@ json.accounts do
     json.logo_url account_user.account.logo_url
     json.name account_user.account.name
     json.status account_user.account.status
+    json.features account_user.account.enabled_features
     json.active_at account_user.active_at
     json.role account_user.role
     json.permissions account_user.permissions

@@ -24,11 +24,6 @@ class Telephony::VirtualPbx::Reconciler
       remote_snapshot[:trunk] = trunk if trunk.present?
     end
 
-    if refs[:credentials_ref].present?
-      credential = fetch_resource(:credential, refs[:credentials_ref], drift, 'remote_credentials_missing')
-      remote_snapshot[:credential] = credential if credential.present?
-    end
-
     profile_resources = profile_remote_resources(state, drift)
     remote_snapshot[:agents] = profile_resources if profile_resources.present?
 
@@ -82,7 +77,7 @@ class Telephony::VirtualPbx::Reconciler
       if expected_tel.present? && actual_tel.to_s != expected_tel.to_s
         items << drift_item('remote_tel_url_mismatch', 'Remote telUrl does not match OneLink ingress')
       end
-      actual_trunk = actual[:trunkRef] || actual[:trunk_ref]
+      actual_trunk = actual[:trunkRef] || actual[:trunk_ref] || actual.dig(:trunk, :ref) || actual.dig('trunk', 'ref')
       if refs[:trunk_ref].present? && actual_trunk.to_s != refs[:trunk_ref].to_s
         items << drift_item('remote_trunk_ref_mismatch', 'Remote trunkRef does not match OneLink provider connection')
       end
@@ -116,7 +111,7 @@ class Telephony::VirtualPbx::Reconciler
     [].tap do |items|
       expected_aor = attrs[:agent_aor]
       actual_aor = actual[:agent_aor] || actual[:agentAor] || actual[:aor]
-      if expected_aor.present? && actual_aor.to_s != expected_aor.to_s
+      if expected_aor.present? && actual_aor.present? && actual_aor.to_s != expected_aor.to_s
         items << drift_item('remote_agent_aor_mismatch', 'Remote employee agent route does not match OneLink extension')
       end
       next unless attrs.key?(:enabled) && actual.key?(:enabled)

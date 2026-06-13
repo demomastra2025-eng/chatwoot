@@ -105,8 +105,12 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     builder = described_class.new(account: account)
     inbox_id = result.dig(:ui_config, :inbox_id)
 
-    ui_config = builder.ui_config_for(inbox_id).with_indifferent_access
-    expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(false)
+    with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: nil) do
+      ui_config = builder.ui_config_for(inbox_id).with_indifferent_access
+
+      expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(false)
+      expect(ui_config.dig(:status, :remote_mutations)).to eq('blocked')
+    end
 
     with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: 'true') do
       ui_config = builder.ui_config_for(inbox_id).with_indifferent_access

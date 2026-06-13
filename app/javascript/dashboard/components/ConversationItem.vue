@@ -77,6 +77,7 @@ export default {
             'agent',
             'team',
             'label',
+            'delete',
             'open-new-tab',
             'copy-link',
           ]

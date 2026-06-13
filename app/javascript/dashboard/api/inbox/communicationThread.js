@@ -50,6 +50,12 @@ class CommunicationThreadApi extends ApiClient {
     return axios.post(`${this.url}/${id}/labels`, { labels });
   }
 
+  deleteConversations(id, conversationIds) {
+    return axios.delete(`${this.url}/${id}/conversations`, {
+      data: { conversation_ids: conversationIds },
+    });
+  }
+
   markMessageRead({ id }) {
     return axios.post(`${this.url}/${id}/update_last_seen`);
   }

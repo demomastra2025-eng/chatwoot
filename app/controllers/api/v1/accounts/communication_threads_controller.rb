@@ -2,7 +2,18 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   FEATURE_NAME = 'communication_threads'.freeze
   JSON_MESSAGE_PARAMS = %i[content_attributes template_params delivery_policy].freeze
   ATTACHMENT_RESULTS_PER_PAGE = 100
-  MEMBER_THREAD_ACTIONS = [:show, :update, :messages, :channels, :attachments, :labels, :update_labels, :create_message, :update_last_seen].freeze
+  MEMBER_THREAD_ACTIONS = [
+    :show,
+    :update,
+    :messages,
+    :channels,
+    :attachments,
+    :labels,
+    :update_labels,
+    :destroy_conversations,
+    :create_message,
+    :update_last_seen
+  ].freeze
 
   rescue_from CommunicationThreadFinder::InvalidParameter, with: :render_communication_thread_parameter_error
   rescue_from CommunicationThreads::MessageCreateService::Error, with: :render_communication_thread_parameter_error
@@ -85,6 +96,17 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     render :labels
   end
 
+  def destroy_conversations
+    conversations = selected_delete_conversations
+    authorize_delete_conversations!(conversations)
+    enqueue_delete_conversations(conversations)
+
+    render json: {
+      thread_id: @communication_thread.display_id,
+      deleted_conversation_ids: conversations.map(&:display_id)
+    }, status: :accepted
+  end
+
   def create_message
     @message = CommunicationThreads::MessageCreateService.new(
       communication_thread: @communication_thread,
@@ -124,6 +146,34 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def permitted_label_params
     params.permit(:id, labels: [])
+  end
+
+  def permitted_delete_conversation_ids
+    raw_ids = Array(params[:conversation_ids])
+    raise ArgumentError, 'Select at least one communication thread conversation' if raw_ids.blank?
+
+    raw_ids.map { |conversation_id| Integer(conversation_id) }.uniq
+  rescue ArgumentError, TypeError
+    raise ArgumentError, 'Invalid communication thread conversation_ids'
+  end
+
+  def selected_delete_conversations
+    conversation_ids = permitted_delete_conversation_ids
+    selected_links = accessible_links_for(@communication_thread)
+                     .includes(:conversation)
+                     .select { |link| conversation_ids.include?(link.conversation.display_id) }
+
+    raise ArgumentError, 'Invalid communication thread conversation_ids' if selected_links.size != conversation_ids.size
+
+    selected_links.map(&:conversation)
+  end
+
+  def authorize_delete_conversations!(conversations)
+    conversations.each { |conversation| authorize conversation, :destroy? }
+  end
+
+  def enqueue_delete_conversations(conversations)
+    conversations.each { |conversation| DeleteObjectJob.perform_later(conversation, Current.user, request.ip) }
   end
 
   def thread_label_list

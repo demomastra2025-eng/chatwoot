@@ -155,6 +155,36 @@ const disambiguateDuplicateChannelInboxLabels = inboxes => {
   });
 };
 
+export const getCommunicationThreadChannelFilterInboxes = (inboxes = []) => {
+  const inboxesById = new Map();
+  const sourceInboxes = Array.isArray(inboxes) ? inboxes : [];
+
+  sourceInboxes
+    .filter(inbox => inbox?.id)
+    .forEach(inbox => {
+      const inboxId = Number(inbox.id);
+      if (inboxesById.has(inboxId)) return;
+
+      inboxesById.set(inboxId, {
+        ...inbox,
+        id: inboxId,
+      });
+    });
+
+  const sortedInboxes = Array.from(inboxesById.values()).sort(
+    (leftInbox, rightInbox) => {
+      const nameComparison = (leftInbox.name || '').localeCompare(
+        rightInbox.name || ''
+      );
+      if (nameComparison !== 0) return nameComparison;
+
+      return Number(leftInbox.id || 0) - Number(rightInbox.id || 0);
+    }
+  );
+
+  return disambiguateDuplicateChannelInboxLabels(sortedInboxes);
+};
+
 export const getCommunicationThreadChannelInboxes = (
   threads = [],
   activeStatus = null

@@ -1,25 +1,38 @@
 import Cookies from 'js-cookie';
 import { DEFAULT_REDIRECT_URL } from 'dashboard/constants/globals';
 import { frontendURL } from 'dashboard/helper/URLHelper';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
 export const hasAuthCookie = () => {
   return !!Cookies.get('cw_d_session_info');
 };
 
-const getSSOAccountPath = ({ ssoAccountId, user }) => {
-  const { accounts = [], account_id = null } = user || {};
+const getDefaultAccount = ({ ssoAccountId, user }) => {
+  const { accounts = [], account_id: accountId = null } = user || {};
   const ssoAccount = accounts.find(
-    account => account.id === Number(ssoAccountId)
+    account => String(account.id) === String(ssoAccountId)
   );
-  let accountPath = '';
-  if (ssoAccount) {
-    accountPath = `accounts/${ssoAccountId}`;
-  } else if (accounts.length) {
-    // If the account id is not found, redirect to the first account
-    const accountId = account_id || accounts[0].id;
-    accountPath = `accounts/${accountId}`;
-  }
-  return accountPath;
+
+  if (ssoAccount) return ssoAccount;
+
+  return (
+    accounts.find(account => String(account.id) === String(accountId)) ||
+    accounts[0]
+  );
+};
+
+const getAccountPath = account => (account ? `accounts/${account.id}` : '');
+
+const hasCommunicationThreads = account =>
+  Boolean(account?.features?.[FEATURE_FLAGS.COMMUNICATION_THREADS]);
+
+const getDefaultAccountPath = account => {
+  const accountPath = getAccountPath(account);
+  if (!accountPath) return '';
+
+  return hasCommunicationThreads(account)
+    ? `${accountPath}/communication_threads?status=open`
+    : `${accountPath}/dashboard`;
 };
 
 const capitalize = str =>
@@ -42,12 +55,13 @@ export const getLoginRedirectURL = ({
   ssoConversationId,
   user,
 }) => {
-  const accountPath = getSSOAccountPath({ ssoAccountId, user });
+  const account = getDefaultAccount({ ssoAccountId, user });
+  const accountPath = getAccountPath(account);
   if (accountPath) {
     if (ssoConversationId) {
       return frontendURL(`${accountPath}/conversations/${ssoConversationId}`);
     }
-    return frontendURL(`${accountPath}/dashboard`);
+    return frontendURL(getDefaultAccountPath(account));
   }
   return DEFAULT_REDIRECT_URL;
 };

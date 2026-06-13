@@ -26,8 +26,12 @@ RSpec.describe 'Telephony Virtual PBX remote orchestration API', type: :request 
     account.enable_features!('channel_voice')
   end
 
+  around do |example|
+    with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: nil) { example.run }
+  end
+
   def create_local_virtual_pbx!
-    post base_path, params: create_payload.merge(dry_run: false), headers: headers, as: :json
+    post base_path, params: create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     expect(response).to have_http_status(:ok), response.parsed_body.to_json
     response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
   end

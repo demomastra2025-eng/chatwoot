@@ -94,7 +94,9 @@ class Telephony::VirtualPbx::DesiredStateBuilder
         user_id: attrs[:user_id],
         user_name: attrs[:user_name],
         internal_extension: attrs[:internal_extension],
-        agent_ref: attrs[:agent_ref],
+        local_agent_ref: attrs[:agent_ref],
+        agent_ref: attrs[:fonoster_agent_ref].presence || attrs[:agent_ref],
+        fonoster_agent_ref: attrs[:fonoster_agent_ref],
         agent_aor: attrs[:agent_aor],
         access_configured: attrs[:sip_password_configured] || attrs[:credentials_ref].present?,
         enabled: attrs[:enabled]

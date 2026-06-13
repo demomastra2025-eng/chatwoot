@@ -7,6 +7,7 @@ class Telephony::VirtualPbx::BridgeResourceClient
   RESOURCE_PAYLOAD_KEYS = %i[
     name ref host port transport username send_register telUrl tel_url trunkRef trunk_ref
     credentialRef credential_ref metadata route mode app_ref appRef agent_aor agentAor enabled
+    city country countryIsoCode country_iso_code
   ].freeze
 
   ERROR_CODE_BY_STATUS = {
@@ -63,11 +64,11 @@ class Telephony::VirtualPbx::BridgeResourceClient
   end
 
   def upsert_trunk(ref, payload = {})
-    perform(:put, resource_path('trunks', ref), payload: allowlisted_payload(payload))
+    idempotent_upsert(resource_path('trunks', ref), allowlisted_payload(payload).merge(ref: ref))
   end
 
   def upsert_number(ref, payload = {})
-    perform(:put, resource_path('numbers', ref), payload: allowlisted_payload(payload))
+    idempotent_upsert(resource_path('numbers', ref), allowlisted_payload(payload).merge(ref: ref))
   end
 
   def upsert_domain(ref, payload = {})
@@ -75,33 +76,36 @@ class Telephony::VirtualPbx::BridgeResourceClient
   end
 
   def upsert_agent(ref, payload = {})
-    perform(:put, resource_path('agents', ref), payload: allowlisted_payload(payload))
+    idempotent_upsert(resource_path('agents', ref), allowlisted_payload(payload).merge(ref: ref))
   end
 
   def update_number_route(ref, payload = {})
-    perform(:patch, "#{resource_path('numbers', ref)}/route", payload: allowlisted_payload(payload))
+    perform(:post, "#{resource_path('numbers', ref)}/route", payload: allowlisted_payload(payload))
   end
 
   def delete_number(ref)
-    perform(:delete, resource_path('numbers', ref))
+    idempotent_delete(resource_path('numbers', ref))
   end
 
   def delete_trunk(ref)
-    perform(:delete, resource_path('trunks', ref))
+    idempotent_delete(resource_path('trunks', ref))
   end
 
   def delete_credentials(ref)
-    perform(:delete, resource_path('credentials', ref))
+    idempotent_delete(resource_path('credentials', ref))
   end
 
   def delete_agent(ref)
-    perform(:delete, resource_path('agents', ref))
+    idempotent_delete(resource_path('agents', ref))
   end
 
   def dispatch(operation)
     attrs = operation.with_indifferent_access
     method = attrs[:method].to_s.downcase.to_sym
     payload = attrs[:payload] || attrs[:payload_preview] || {}
+
+    return idempotent_delete(attrs.fetch(:path)) if method == :delete
+    return idempotent_upsert(attrs.fetch(:path), allowlisted_payload(payload)) if method == :put && attrs[:key].to_s.start_with?('upsert_')
 
     perform(method, attrs.fetch(:path), payload: payload)
   end
@@ -142,6 +146,30 @@ class Telephony::VirtualPbx::BridgeResourceClient
     raise mapped_error(e, path: path)
   end
 
+  def idempotent_delete(path)
+    perform(:delete, path)
+  rescue Telephony::Error => e
+    raise unless missing_remote_resource?(e)
+
+    { 'ok' => true, 'not_found' => true, 'path' => path }
+  end
+
+  def idempotent_upsert(path, payload)
+    perform(:put, path, payload: payload)
+  rescue Telephony::Error => e
+    raise unless missing_remote_resource?(e)
+
+    collection_path = collection_path_for(path)
+    begin
+      perform(:post, collection_path, payload: payload)
+    rescue Telephony::Error => create_error
+      existing = existing_resource_for_already_exists(collection_path, payload, create_error)
+      return existing if existing.present?
+
+      raise
+    end
+  end
+
   def mapped_error(error, path:)
     mapped_code = ERROR_CODE_BY_STATUS.fetch(error.status, nil)
     mapped_code ||= case error.code
@@ -156,6 +184,34 @@ class Telephony::VirtualPbx::BridgeResourceClient
       status: error.status,
       details: error.details
     )
+  end
+
+  def missing_remote_resource?(error)
+    return true if error.code == 'REMOTE_RESOURCE_NOT_FOUND'
+
+    message = error.message.to_s
+    message.include?('NOT_FOUND') && message.include?('requested resource was not found')
+  end
+
+  def already_exists?(error)
+    error.message.to_s.include?('ALREADY_EXISTS')
+  end
+
+  def existing_resource_for_already_exists(collection_path, payload, error)
+    return unless already_exists?(error)
+
+    response = perform(:get, collection_path)
+    items = Array.wrap(response['items'] || response[:items])
+    items.find do |item|
+      attrs = item.with_indifferent_access
+      attrs[:ref].to_s == payload[:ref].to_s ||
+        (payload[:telUrl].present? && attrs[:telUrl].to_s == payload[:telUrl].to_s) ||
+        (payload[:name].present? && attrs[:name].to_s == payload[:name].to_s)
+    end
+  end
+
+  def collection_path_for(path)
+    path.to_s.sub(%r{/[^/]+\z}, '')
   end
 
   def resource_path(resource, ref)

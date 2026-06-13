@@ -58,6 +58,22 @@ RSpec.describe 'Enterprise Audit API', type: :request do
         expect(user.audits.last.associated_type).to eq('Account')
       end
 
+      it 'returns account features so frontend can choose the correct default landing page' do
+        account.enable_features!(:communication_threads)
+        params = { email: user.email, password: 'Password1!' }
+
+        post new_user_session_url,
+             params: params,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        json_response = JSON.parse(response.body)
+        account_payload = json_response
+                          .dig('data', 'accounts')
+                          .find { |item| item['id'] == account.id }
+        expect(account_payload.dig('features', 'communication_threads')).to be(true)
+      end
+
       it 'will not create a sign_in audit event with invalid credentials' do
         params = { email: user.email, password: 'invalid' }
         expect do

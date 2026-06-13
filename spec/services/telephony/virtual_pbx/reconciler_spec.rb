@@ -18,14 +18,37 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
     allow(resource_client).to receive(:number).with('number-ref').and_return(
       'ref' => 'number-ref',
       'telUrl' => 'tel:056124100014',
-      'trunkRef' => 'trunk-ref',
+      'trunk' => { 'ref' => 'trunk-ref', 'name' => 'Provider trunk' },
       'metadata' => { 'managed_by' => 'onelink', 'onelink_account_id' => account.id, 'onelink_inbox_id' => 10 },
       'route' => { 'mode' => 'operator' }
     )
     allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
-    allow(resource_client).to receive(:credential).with('cred-ref').and_return('ref' => 'cred-ref')
 
     result = described_class.new(account: account, resource_client: resource_client).check(desired_state)
+
+    expect(result).to include(status: 'fonoster_synced', ready: true)
+    expect(result.fetch(:drift)).to eq([])
+  end
+
+  it 'does not report agent AOR drift when the bridge read-back omits AOR fields' do
+    state = desired_state.merge(
+      profiles: [{ agent_ref: 'agent-ref', agent_aor: 'sip:100@operator.example.test', enabled: true }]
+    )
+    allow(resource_client).to receive(:number).with('number-ref').and_return(
+      'ref' => 'number-ref',
+      'telUrl' => 'tel:056124100014',
+      'trunk' => { 'ref' => 'trunk-ref' },
+      'metadata' => { 'managed_by' => 'onelink', 'onelink_account_id' => account.id },
+      'route' => { 'mode' => 'operator' }
+    )
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
+    allow(resource_client).to receive(:agent).with('agent-ref').and_return(
+      'ref' => 'agent-ref',
+      'username' => '100',
+      'enabled' => true
+    )
+
+    result = described_class.new(account: account, resource_client: resource_client).check(state)
 
     expect(result).to include(status: 'fonoster_synced', ready: true)
     expect(result.fetch(:drift)).to eq([])
@@ -36,7 +59,6 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
       Telephony::Error.new(code: 'REMOTE_RESOURCE_NOT_FOUND', message: 'missing number', status: :not_found)
     )
     allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
-    allow(resource_client).to receive(:credential).with('cred-ref').and_return('ref' => 'cred-ref')
 
     result = described_class.new(account: account, resource_client: resource_client).check(desired_state)
 
@@ -59,7 +81,6 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
       'route' => { 'mode' => 'operator', 'appRef' => 'wrong-app' }
     )
     allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
-    allow(resource_client).to receive(:credential).with('cred-ref').and_return('ref' => 'cred-ref')
     allow(resource_client).to receive(:agent).with('agent-ref').and_return(
       'ref' => 'agent-ref',
       'agentAor' => 'sip:101@operator.example.test',

@@ -7,6 +7,7 @@ import {
   getCommunicationContactIdentityLabel,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
+  getCommunicationThreadChannelFilterInboxes,
   getCommunicationThreadChannelInboxes,
   getCommunicationThreadTypingTargetIds,
   getUniqueCommunicationChannels,
@@ -236,6 +237,86 @@ describe('communicationThreadHelper', () => {
           ],
           'open'
         )
+      ).toEqual([
+        {
+          id: 202,
+          name: 'Telegram',
+          display_name: 'Telegram #202',
+          channel_type: 'Channel::Telegram',
+          medium: 'telegram',
+        },
+        {
+          id: 203,
+          name: 'Telegram',
+          display_name: 'Telegram #203',
+          channel_type: 'Channel::Telegram',
+          medium: 'telegram',
+        },
+      ]);
+    });
+  });
+
+  describe('#getCommunicationThreadChannelFilterInboxes', () => {
+    it('builds the chat-list channel selector from all accessible inboxes, not current status threads', () => {
+      expect(
+        getCommunicationThreadChannelFilterInboxes([
+          {
+            id: 202,
+            name: 'Telegram',
+            channel_type: 'Channel::Telegram',
+            medium: 'telegram',
+          },
+          {
+            id: 101,
+            name: 'WhatsApp',
+            channel_type: 'Channel::WhatsappWeb',
+            medium: 'whatsapp_web',
+          },
+          {
+            id: 404,
+            name: 'Empty Voice',
+            channel_type: 'Channel::Voice',
+            medium: 'voice',
+          },
+        ])
+      ).toEqual([
+        {
+          id: 404,
+          name: 'Empty Voice',
+          channel_type: 'Channel::Voice',
+          medium: 'voice',
+        },
+        {
+          id: 202,
+          name: 'Telegram',
+          channel_type: 'Channel::Telegram',
+          medium: 'telegram',
+        },
+        {
+          id: 101,
+          name: 'WhatsApp',
+          channel_type: 'Channel::WhatsappWeb',
+          medium: 'whatsapp_web',
+        },
+      ]);
+    });
+
+    it('disambiguates duplicate account inbox labels without hiding empty channels', () => {
+      expect(
+        getCommunicationThreadChannelFilterInboxes([
+          {
+            id: 202,
+            name: 'Telegram',
+            channel_type: 'Channel::Telegram',
+            medium: 'telegram',
+          },
+          {
+            id: 203,
+            name: 'Telegram',
+            channel_type: 'Channel::Telegram',
+            medium: 'telegram',
+          },
+        ])
       ).toEqual([
         {
           id: 202,

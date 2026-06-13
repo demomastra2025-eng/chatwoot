@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'cgi'
+
 class Telephony::VirtualPbx::RemoteProvisioner
   FEATURE_FLAG = 'TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED'
 
@@ -38,14 +40,26 @@ class Telephony::VirtualPbx::RemoteProvisioner
     run.mark_running!
     executed_operations = []
     client = resource_client_for(run, desired_state)
+    effective_desired_state = desired_state.deep_dup.with_indifferent_access
 
     operations.each do |operation_payload|
-      operation_attrs = operation_payload.with_indifferent_access
+      operation_attrs = operation_for_state(operation_payload.with_indifferent_access, effective_desired_state)
       result = client.dispatch(operation_attrs)
+      apply_remote_result_to_state!(effective_desired_state, operation_attrs, result)
       executed_operations << operation_attrs.slice(:key, :method, :path).merge(status: 'succeeded', result: sanitize_result(result))
     end
 
-    reconciliation = reconciler_for(client).check(desired_state)
+    if operation.to_s == 'delete'
+      run.mark_succeeded!(executed_operations: executed_operations, remote_snapshot: {})
+      return result_payload(
+        run,
+        status: 'succeeded',
+        remote_commit: true,
+        executed_operations: executed_operations
+      )
+    end
+
+    reconciliation = reconciler_for(client).check(effective_desired_state)
     unless reconciliation[:ready]
       error = Telephony::Error.new(
         code: 'REMOTE_RECONCILE_FAILED',
@@ -65,7 +79,7 @@ class Telephony::VirtualPbx::RemoteProvisioner
     end
 
     run.mark_succeeded!(executed_operations: executed_operations, remote_snapshot: reconciliation[:remote_snapshot] || {})
-    mark_local_synced!(desired_state)
+    mark_local_synced!(effective_desired_state)
 
     result_payload(
       run,
@@ -118,8 +132,12 @@ class Telephony::VirtualPbx::RemoteProvisioner
   def mark_local_synced!(desired_state)
     state = desired_state.with_indifferent_access
     attrs = { provisioning_status: 'fonoster_synced', last_synced_at: Time.current, remote_drift_detected_at: nil, remote_drift_summary: {} }
-    update_if_columns_exist(Telephony::NumberBinding, state.dig(:resources, :number_binding_id), attrs)
-    update_if_columns_exist(Telephony::ProviderConnection, state.dig(:resources, :provider_connection_id), attrs.except(:last_synced_at))
+    update_if_columns_exist(Telephony::NumberBinding, state.dig(:resources, :number_binding_id),
+                            attrs.merge(number_ref: state.dig(:refs, :number_ref), trunk_ref: state.dig(:refs, :trunk_ref)).compact)
+    update_if_columns_exist(Telephony::ProviderConnection, state.dig(:resources, :provider_connection_id),
+                            attrs.except(:last_synced_at).merge(fonoster_trunk_ref: state.dig(:refs, :trunk_ref)).compact)
+    update_sip_profile_refs!(state)
+    update_channel_provider_config!(state)
   end
 
   def mark_local_failed!(desired_state, error)
@@ -145,6 +163,65 @@ class Telephony::VirtualPbx::RemoteProvisioner
 
   def sanitize_result(result)
     Telephony::VirtualPbx::BridgeResourceClient.sanitize_payload(result || {})
+  end
+
+  def operation_for_state(operation_attrs, desired_state)
+    return operation_attrs unless operation_attrs[:key].to_s == 'update_number_route'
+
+    number_ref = desired_state.dig(:refs, :number_ref)
+    return operation_attrs if number_ref.blank?
+
+    operation_attrs.merge(path: "/telephony/numbers/#{CGI.escape(number_ref.to_s)}/route")
+  end
+
+  def apply_remote_result_to_state!(desired_state, operation_attrs, result)
+    remote_ref = (result || {}).with_indifferent_access[:ref]
+    return if remote_ref.blank?
+
+    case operation_attrs[:key].to_s
+    when 'upsert_number'
+      desired_state[:refs] ||= {}
+      desired_state[:refs][:number_ref] = remote_ref
+    when 'upsert_agent'
+      apply_remote_agent_ref_to_state!(desired_state, operation_attrs, remote_ref)
+    end
+  end
+
+  def apply_remote_agent_ref_to_state!(desired_state, operation_attrs, remote_ref)
+    previous_ref = operation_resource_ref(operation_attrs)
+    Array.wrap(desired_state[:profiles]).each do |profile|
+      attrs = profile.with_indifferent_access
+      next unless attrs[:agent_ref].to_s == previous_ref.to_s
+
+      profile[:agent_ref] = remote_ref
+      profile[:fonoster_agent_ref] = remote_ref
+    end
+  end
+
+  def operation_resource_ref(operation_attrs)
+    CGI.unescape(operation_attrs[:path].to_s.split('/').last.to_s)
+  end
+
+  def update_sip_profile_refs!(state)
+    Array.wrap(state[:profiles]).each do |profile|
+      attrs = profile.with_indifferent_access
+      next if attrs[:id].blank? || attrs[:fonoster_agent_ref].blank?
+
+      update_if_columns_exist(Telephony::SipProfile, attrs[:id], fonoster_agent_ref: attrs[:fonoster_agent_ref])
+    end
+  end
+
+  def update_channel_provider_config!(state)
+    channel_id = state.dig(:ownership, :onelink_channel_id) || state[:channel_id]
+    return if channel_id.blank?
+
+    channel = Channel::Voice.find_by(id: channel_id)
+    return if channel.blank?
+
+    provider_config = channel.provider_config_hash.with_indifferent_access
+    provider_config[:number_ref] = state.dig(:refs, :number_ref) if state.dig(:refs, :number_ref).present?
+    provider_config[:trunk_ref] = state.dig(:refs, :trunk_ref) if state.dig(:refs, :trunk_ref).present?
+    channel.update_columns(provider_config: provider_config, updated_at: Time.current)
   end
 
   def error_payload(error)

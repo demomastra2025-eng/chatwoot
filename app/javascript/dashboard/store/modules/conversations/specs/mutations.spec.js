@@ -62,6 +62,58 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#DELETE_COMMUNICATION_THREAD_CONVERSATIONS', () => {
+    it('removes only the selected child channels from a communication thread', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11, 12],
+            channels: [
+              { conversation_id: 11, inbox_id: 101, primary: true },
+              { conversation_id: 12, inbox_id: 102 },
+            ],
+          },
+        ],
+      };
+
+      mutations[types.DELETE_COMMUNICATION_THREAD_CONVERSATIONS](state, {
+        threadId: 7,
+        conversationIds: [12],
+      });
+
+      expect(state.allConversations).toHaveLength(1);
+      expect(state.allConversations[0].conversation_ids).toEqual([11]);
+      expect(state.allConversations[0].channels).toEqual([
+        { conversation_id: 11, inbox_id: 101, primary: true },
+      ]);
+    });
+
+    it('removes the aggregate thread when its last selected channel is removed', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11],
+            channels: [{ conversation_id: 11, inbox_id: 101 }],
+          },
+          { id: 7, is_communication_thread: false },
+        ],
+      };
+
+      mutations[types.DELETE_COMMUNICATION_THREAD_CONVERSATIONS](state, {
+        threadId: 7,
+        conversationIds: [11],
+      });
+
+      expect(state.allConversations).toEqual([
+        { id: 7, is_communication_thread: false },
+      ]);
+    });
+  });
+
   describe('#UPDATE_CONVERSATION_CALL_STATUS', () => {
     it('does nothing if conversation is not found', () => {
       const state = { allConversations: [] };

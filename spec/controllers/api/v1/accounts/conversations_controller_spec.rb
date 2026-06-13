@@ -59,7 +59,7 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:unread_count]).to eq(12)
       end
 
-      it 'returns sidebar unread counts scoped by agent inbox access' do
+      it 'returns sidebar unread dialog counts scoped by agent inbox access' do
         team = create(:team, account: account, allow_auto_assign: false)
         conversation.update!(agent_last_seen_at: 1.hour.ago, status: :pending, team: team)
         conversation.update_labels('vip')
@@ -68,23 +68,25 @@ RSpec.describe 'Conversations API', type: :request do
           2,
           conversation: conversation,
           account: account,
-          message_type: :incoming,
-          private: false,
           created_at: 10.minutes.ago
         )
-        create(:message, conversation: conversation, account: account, message_type: :incoming, private: true, created_at: 10.minutes.ago)
+        create(:message, conversation: conversation, account: account, private: true, created_at: 10.minutes.ago)
         create(:message, conversation: conversation, account: account, message_type: :outgoing, created_at: 10.minutes.ago)
+
+        other_unread_conversation = create(
+          :conversation,
+          account: account,
+          inbox: conversation.inbox,
+          status: :pending,
+          team: team,
+          agent_last_seen_at: 1.hour.ago
+        )
+        other_unread_conversation.update_labels('vip')
+        create(:message, conversation: other_unread_conversation, account: account, created_at: 10.minutes.ago)
 
         inaccessible_conversation = create(:conversation, account: account, status: :open, agent_last_seen_at: 1.hour.ago)
         inaccessible_conversation.update_labels('vip')
-        create(
-          :message,
-          conversation: inaccessible_conversation,
-          account: account,
-          message_type: :incoming,
-          private: false,
-          created_at: 10.minutes.ago
-        )
+        create(:message, conversation: inaccessible_conversation, account: account, created_at: 10.minutes.ago)
 
         get "/api/v1/accounts/#{account.id}/conversations/sidebar_unread_counts",
             headers: agent.create_new_auth_token,

@@ -763,6 +763,33 @@ const actions = {
     }
   },
 
+  deleteCommunicationThreadConversations: async (
+    { commit, dispatch },
+    { threadId, conversationIds }
+  ) => {
+    try {
+      const { data } = await CommunicationThreadApi.deleteConversations(
+        threadId,
+        conversationIds
+      );
+      const deletedConversationIds =
+        data?.deleted_conversation_ids || conversationIds;
+      commit(types.DELETE_COMMUNICATION_THREAD_CONVERSATIONS, {
+        threadId,
+        conversationIds: deletedConversationIds,
+      });
+      dispatch(
+        'conversationStats/get',
+        { communicationThreadMode: true },
+        { root: true }
+      );
+      dispatch('fetchSidebarUnreadCounts');
+      return data;
+    } catch (error) {
+      throw new Error(error);
+    }
+  },
+
   addConversation({ commit, state, dispatch, rootState }, conversation) {
     const { currentInbox, appliedFilters } = state;
     const {

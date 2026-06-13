@@ -7,6 +7,7 @@ class Telephony::VirtualPbx::ProvisioningService
   MANAGED_BY_ONELINK = 'onelink'
   LOCAL_OWNERSHIP_STATUS = 'local'
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
+  DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
 
   def initialize(account:, current_user:, bridge_client: nil)
     @account = account
@@ -135,7 +136,6 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def create_channel(payload, dry_run: true, remote_commit: false, include_diagnostics: false)
-    ensure_remote_mutation_not_requested!(remote_commit)
     normalized = normalize_payload(payload)
     errors = validation_errors(normalized, require_profiles: normalized[:profiles_supplied])
 
@@ -149,12 +149,12 @@ class Telephony::VirtualPbx::ProvisioningService
       create_local_channel!(normalized),
       normalized,
       create_steps(normalized),
+      remote_commit: remote_commit,
       include_diagnostics: include_diagnostics
     )
   end
 
   def update_channel(inbox_id:, payload:, dry_run: true, remote_commit: false, include_diagnostics: false)
-    ensure_remote_mutation_not_requested!(remote_commit)
     existing_config = config_builder.for_inbox(inbox_id)
     normalized = normalize_payload(payload, fallback: existing_config)
     errors = validation_errors(
@@ -181,12 +181,13 @@ class Telephony::VirtualPbx::ProvisioningService
       update_local_channel!(inbox_id, normalized),
       normalized,
       update_steps(normalized, existing_config),
-      include_diagnostics: include_diagnostics
+      remote_commit: remote_commit,
+      include_diagnostics: include_diagnostics,
+      existing_config: existing_config
     )
   end
 
   def delete_channel(inbox_id:, confirm: false, dry_run: true, remote_commit: false, include_diagnostics: false)
-    ensure_remote_mutation_not_requested!(remote_commit)
     existing_config = config_builder.for_inbox(inbox_id)
     errors = []
     errors << error('confirmation_required', 'Deletion requires explicit confirmation') unless confirm
@@ -203,12 +204,31 @@ class Telephony::VirtualPbx::ProvisioningService
                              existing_config: existing_config, steps: delete_steps(existing_config), include_diagnostics: include_diagnostics)
     end
 
+    remote_result = nil
+    desired_state = desired_state_builder.for_inbox(inbox_id)
+    plan = remote_plan_builder.build(operation: 'delete', desired_state: desired_state)
+    if remote_commit_requested?(remote_commit)
+      remote_result = remote_provisioner.execute(
+        operation: 'delete',
+        desired_state: desired_state,
+        plan: plan,
+        remote_commit: true
+      )
+      unless remote_result_succeeded?(remote_result)
+        return delete_remote_failed_payload(inbox_id, confirm, existing_config, plan, remote_result,
+                                            include_diagnostics: include_diagnostics)
+      end
+    end
+
     mutation_payload(
       'delete',
       delete_local_channel!(inbox_id),
       { inbox_id: inbox_id, confirm: confirm },
       delete_steps(existing_config),
       existing_config: existing_config,
+      prebuilt_plan: plan,
+      remote_result: remote_result,
+      remote_commit: remote_commit,
       include_diagnostics: include_diagnostics
     )
   end
@@ -257,10 +277,10 @@ class Telephony::VirtualPbx::ProvisioningService
   def product_plan_items
     [
       { code: 'validate_settings', status: 'ready' },
-      { code: 'save_channel', status: 'local_only' },
-      { code: 'connect_number', status: 'blocked' },
-      { code: 'configure_routing', status: 'blocked' },
-      { code: 'remote_sync_blocked', status: 'blocked' }
+      { code: 'save_channel', status: 'ready' },
+      { code: 'connect_number', status: 'requires_remote_commit' },
+      { code: 'configure_routing', status: 'requires_remote_commit' },
+      { code: 'remote_sync', status: 'requires_remote_commit' }
     ]
   end
 
@@ -351,36 +371,52 @@ class Telephony::VirtualPbx::ProvisioningService
     payload
   end
 
-  def mutation_payload(operation, mutation_result, normalized_payload, steps, existing_config: nil, include_diagnostics: false)
+  def mutation_payload(operation, mutation_result, normalized_payload, steps, existing_config: nil, prebuilt_plan: nil, remote_result: nil,
+                       remote_commit: false, include_diagnostics: false)
     config = mutation_result[:inbox_id].present? ? config_builder.for_inbox(mutation_result[:inbox_id]) : nil
     desired_state = if config.present?
                       desired_state_builder.for_inbox(config[:inbox_id])
                     else
                       desired_state_for_payload(normalized_payload, existing_config)
                     end
-    plan = remote_plan_builder.build(operation: operation, desired_state: desired_state)
+    plan = prebuilt_plan || remote_plan_builder.build(operation: operation, desired_state: desired_state)
+    if remote_result.blank? && config.present? && remote_commit_requested?(remote_commit)
+      remote_result = remote_provisioner.execute(
+        operation: operation,
+        desired_state: desired_state,
+        plan: plan,
+        remote_commit: true
+      )
+      config = config_builder.for_inbox(config[:inbox_id])
+    end
+
+    remote_errors = Array.wrap(remote_result&.dig(:errors))
+    remote_committed = remote_result.present? ? ActiveModel::Type::Boolean.new.cast(remote_result[:remote_commit]) : false
 
     payload = {
       operation: operation,
       dry_run: false,
       valid: true,
-      status: 'local_committed',
+      status: remote_result&.dig(:status) || 'local_committed',
       local_commit: true,
-      remote_commit: false,
+      remote_commit: remote_committed,
       mutation_allowed: true,
-      remote_mutation_allowed: false,
-      remote_mutation_reason: REMOTE_MUTATION_REASON,
-      mutation_reason: 'local_commit_remote_mutation_disabled',
+      remote_mutation_allowed: remote_commit_requested?(remote_commit),
+      remote_mutation_reason: remote_result.present? ? nil : REMOTE_MUTATION_REASON,
+      mutation_reason: remote_result.present? ? 'local_commit_remote_sync_attempted' : 'local_commit_remote_mutation_disabled',
       account_id: account.id,
       requested_by_id: current_user&.id,
       ui_config: config.present? ? config_builder.ui_config_from(config) : nil,
       provisioning_plan: product_plan(plan),
+      provisioning_run: remote_result&.dig(:provisioning_run),
+      executed_operations: remote_result&.dig(:executed_operations),
+      reconciliation: remote_result&.dig(:reconciliation),
       config: include_diagnostics ? config : nil,
       deleted: mutation_result[:deleted],
       deleted_inbox_id: mutation_result[:deleted_inbox_id],
       steps: steps,
-      errors: [],
-      warnings: [warning('remote_mutation_disabled', 'Fonoster/Routr/bridge writes were not executed')]
+      errors: remote_errors,
+      warnings: mutation_warnings(remote_result)
     }.compact
 
     if include_diagnostics
@@ -390,6 +426,43 @@ class Telephony::VirtualPbx::ProvisioningService
         generated_refs: generated_refs_for(normalized_payload, existing_config),
         bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
         config: config
+      }.compact
+    end
+
+    payload
+  end
+
+  def delete_remote_failed_payload(inbox_id, confirm, existing_config, plan, remote_result, include_diagnostics: false)
+    payload = {
+      operation: 'delete',
+      dry_run: false,
+      valid: false,
+      status: remote_result[:status],
+      local_commit: false,
+      remote_commit: ActiveModel::Type::Boolean.new.cast(remote_result[:remote_commit]),
+      mutation_allowed: true,
+      remote_mutation_allowed: true,
+      mutation_reason: 'remote_delete_failed_local_delete_skipped',
+      account_id: account.id,
+      requested_by_id: current_user&.id,
+      ui_config: config_builder.ui_config_from(existing_config),
+      provisioning_plan: product_plan(plan),
+      provisioning_run: remote_result[:provisioning_run],
+      executed_operations: remote_result[:executed_operations],
+      reconciliation: remote_result[:reconciliation],
+      deleted: false,
+      deleted_inbox_id: nil,
+      steps: delete_steps(existing_config),
+      errors: Array.wrap(remote_result[:errors]),
+      warnings: [warning('local_delete_skipped', 'Local channel was not deleted because remote Fonoster cleanup failed')]
+    }.compact
+
+    if include_diagnostics
+      payload[:diagnostics] = {
+        payload: { inbox_id: inbox_id, confirm: confirm },
+        generated_refs: existing_config_refs(existing_config),
+        bridge_operations: delete_bridge_operations(existing_config),
+        existing_config: existing_config
       }.compact
     end
 
@@ -559,10 +632,14 @@ class Telephony::VirtualPbx::ProvisioningService
   def existing_sip_profile_password_configured?(profile, inbox_id: nil)
     return false if inbox_id.blank? || profile[:user_id].blank? || profile[:internal_extension].blank?
 
-    account.telephony_sip_profiles
-           .where(inbox_id: inbox_id, user_id: profile[:user_id], internal_extension: profile[:internal_extension])
-           .where.not(password_secret_ref: [nil, ''])
-           .exists?
+    existing_profile = account.telephony_sip_profiles.find_by(
+      inbox_id: inbox_id,
+      user_id: profile[:user_id],
+      internal_extension: profile[:internal_extension]
+    )
+    return false if existing_profile.blank? || existing_profile.password_secret_ref.blank?
+
+    existing_profile.sip_username.to_s == profile[:sip_username].to_s
   end
 
   def password_secret_ref_for(profile_record, profile, payload, index, sip_username:)
@@ -582,11 +659,12 @@ class Telephony::VirtualPbx::ProvisioningService
   def create_local_channel!(payload)
     result = nil
     ActiveRecord::Base.transaction do
-      provider_connection = upsert_provider_connection!(payload)
+      refs = generated_refs(payload)
+      provider_connection = upsert_provider_connection!(payload, refs: refs)
       channel = Channel::Voice.create!(account: account, phone_number: payload[:display_phone_number], provider: 'fonoster',
-                                       provider_config: provider_config_for(payload, provider_connection))
+                                       provider_config: provider_config_for(payload, provider_connection, refs: refs))
       inbox = Inbox.create!(account: account, channel: channel, name: payload[:channel_name])
-      binding = upsert_number_binding!(inbox, channel, payload, provider_connection)
+      binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)
       upsert_routing_policy!(binding, payload)
       result = { inbox_id: inbox.id }
     end
@@ -599,12 +677,14 @@ class Telephony::VirtualPbx::ProvisioningService
       inbox = account.inboxes.find(inbox_id)
       channel = inbox.channel
       binding = inbox.telephony_number_binding
-      provider_connection = upsert_provider_connection!(payload, existing: binding&.provider_connection)
+      existing_config = config_builder.for_inbox(inbox_id)
+      refs = generated_refs_for(payload, existing_config)
+      provider_connection = upsert_provider_connection!(payload, existing: binding&.provider_connection, refs: refs)
 
       inbox.update!(name: payload[:channel_name])
       channel.update!(phone_number: payload[:display_phone_number],
-                      provider_config: provider_config_for(payload, provider_connection, channel.provider_config_hash))
-      binding = upsert_number_binding!(inbox, channel, payload, provider_connection)
+                      provider_config: provider_config_for(payload, provider_connection, channel.provider_config_hash, refs: refs))
+      binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)
       upsert_routing_policy!(binding, payload)
       upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
       result = { inbox_id: inbox.id }
@@ -629,7 +709,7 @@ class Telephony::VirtualPbx::ProvisioningService
     result
   end
 
-  def upsert_provider_connection!(payload, existing: nil)
+  def upsert_provider_connection!(payload, existing: nil, refs: generated_refs(payload))
     connection = existing || account.telephony_provider_connections.find_or_initialize_by(
       provider_kind: payload[:provider_kind],
       name: provider_connection_name(payload)
@@ -641,9 +721,9 @@ class Telephony::VirtualPbx::ProvisioningService
       port: payload.dig(:connection, :port),
       transport: payload.dig(:connection, :transport),
       username: payload.dig(:connection, :username),
-      password_secret_ref: payload.dig(:connection, :password).present? ? generated_refs(payload)[:credentials_ref] : connection.password_secret_ref,
-      credentials_ref: generated_refs(payload)[:credentials_ref],
-      fonoster_trunk_ref: generated_refs(payload)[:trunk_ref],
+      password_secret_ref: payload.dig(:connection, :password).present? ? refs[:credentials_ref] : connection.password_secret_ref,
+      credentials_ref: refs[:credentials_ref],
+      fonoster_trunk_ref: refs[:trunk_ref],
       send_register: ActiveModel::Type::Boolean.new.cast(payload.dig(:connection, :send_register)) || false,
       status: 'draft',
       managed_by: MANAGED_BY_ONELINK,
@@ -656,19 +736,19 @@ class Telephony::VirtualPbx::ProvisioningService
     connection
   end
 
-  def upsert_number_binding!(inbox, channel, payload, provider_connection)
+  def upsert_number_binding!(inbox, channel, payload, provider_connection, refs: generated_refs(payload))
     binding = inbox.telephony_number_binding || inbox.build_telephony_number_binding(account: account)
     binding.assign_attributes(
       account: account,
       provider: 'fonoster',
-      number_ref: generated_refs(payload)[:number_ref],
+      number_ref: refs[:number_ref],
       phone_number: payload[:ingress_number],
       display_phone_number: payload[:display_phone_number],
       provider_account_number: payload[:provider_account_number],
       ingress_number: payload[:ingress_number],
       fonoster_tel_url: payload[:fonoster_tel_url],
       app_ref: channel.provider_config_hash.with_indifferent_access[:app_ref],
-      trunk_ref: generated_refs(payload)[:trunk_ref],
+      trunk_ref: refs[:trunk_ref],
       provider_connection: provider_connection,
       managed_by: MANAGED_BY_ONELINK,
       ownership_status: LOCAL_OWNERSHIP_STATUS,
@@ -708,7 +788,7 @@ class Telephony::VirtualPbx::ProvisioningService
         sip_host: payload.dig(:connection, :host),
         agent_ref: generated_refs(payload)[:profile_refs][index],
         agent_aor: generated_profile_aor(profile, payload),
-        fonoster_agent_ref: generated_refs(payload)[:profile_refs][index],
+        fonoster_agent_ref: profile_record.fonoster_agent_ref.presence || generated_refs(payload)[:profile_refs][index],
         credentials_ref: credentials_ref_for(profile_record, profile, payload, index, sip_username: sip_username),
         enabled: profile.fetch(:enabled, true),
         availability_mode: 'external_extension',
@@ -743,11 +823,11 @@ class Telephony::VirtualPbx::ProvisioningService
     !profile.key?(:sip_username) && !profile.key?(:sip_password)
   end
 
-  def provider_config_for(payload, provider_connection, base = {})
+  def provider_config_for(payload, provider_connection, base = {}, refs: generated_refs(payload))
     base.with_indifferent_access.merge(
       provider_kind: payload[:provider_kind],
-      number_ref: generated_refs(payload)[:number_ref],
-      trunk_ref: generated_refs(payload)[:trunk_ref],
+      number_ref: refs[:number_ref],
+      trunk_ref: refs[:trunk_ref],
       display_phone_number: payload[:display_phone_number],
       provider_account_number: payload[:provider_account_number],
       ingress_number: payload[:ingress_number],
@@ -813,7 +893,7 @@ class Telephony::VirtualPbx::ProvisioningService
            local_model: 'Telephony::NumberBinding', ref: refs[:number_ref]),
       step('create_routing_policy', 'Create routing policy as runtime source of truth', local_model: 'Telephony::RoutingPolicy'),
       step('defer_sip_profiles', 'Assign inbox collaborators and employee SIP profiles later in settings'),
-      step('skip_remote_bridge_mutation', 'Remote Fonoster/Routr/bridge writes are blocked', remote: true)
+      step('sync_remote_bridge', 'Create or update owned Fonoster/Routr resources when remote commit is requested', remote: true)
     ]
   end
 
@@ -823,7 +903,7 @@ class Telephony::VirtualPbx::ProvisioningService
       step('load_existing_config', 'Loaded current virtual PBX bundle', inbox_id: existing_config[:inbox_id]),
       step('validate_update_payload', 'Validate editable channel, connection, profile, and routing fields'),
       step('update_local_bundle', 'Update managed local records only after ownership checks', ref: refs[:number_ref]),
-      step('skip_remote_bridge_mutation', 'Remote Fonoster/Routr/bridge writes are blocked', remote: true)
+      step('sync_remote_bridge', 'Create or update owned Fonoster/Routr resources when remote commit is requested', remote: true)
     ]
   end
 
@@ -832,7 +912,8 @@ class Telephony::VirtualPbx::ProvisioningService
       step('load_existing_config', 'Loaded current virtual PBX bundle', inbox_id: existing_config[:inbox_id]),
       step('check_active_calls', 'Block deletion when active calls exist'),
       step('check_ownership', 'Delete only uniquely-owned managed resources'),
-      step('skip_remote_bridge_mutation', 'Remote Fonoster/Routr/bridge deletes are blocked', remote: true)
+      step('delete_remote_bridge_resources', 'Delete owned Fonoster/Routr resources before local deletion when remote commit is requested',
+           remote: true)
     ]
   end
 
@@ -849,7 +930,7 @@ class Telephony::VirtualPbx::ProvisioningService
     profiles = Array.wrap(payload[:profiles])
     {
       number_ref: number_ref,
-      trunk_ref: "trunk-#{provider_kind}-acct-#{account.id}-#{safe_ingress}",
+      trunk_ref: provider_kind == 'sipuni' ? sipuni_trunk_ref : "trunk-#{provider_kind}-acct-#{account.id}-#{safe_ingress}",
       credentials_ref: "cred-#{provider_kind}-acct-#{account.id}-#{safe_ingress}",
       profile_refs: profiles.map { |profile| "profile-#{account.id}-#{profile[:user_id]}-#{profile[:internal_extension]}" },
       profile_secret_refs: profiles.map { |profile| "cred-profile-#{account.id}-#{profile[:user_id]}-#{profile[:internal_extension]}" }
@@ -857,9 +938,26 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def generated_refs_for(payload, existing_config)
+    existing_refs = existing_config_refs(existing_config)
+    if existing_refs[:number_ref].present? && same_existing_number?(payload, existing_config)
+      return existing_refs.merge(
+        profile_refs: generated_refs(payload)[:profile_refs],
+        profile_secret_refs: generated_refs(payload)[:profile_secret_refs]
+      ).compact
+    end
+
     return generated_refs(payload) if payload[:provider_kind].present? && payload[:ingress_number].present?
 
-    existing_config_refs(existing_config)
+    existing_refs
+  end
+
+  def same_existing_number?(payload, existing_config)
+    config = (existing_config || {}).with_indifferent_access
+    phone_numbers = (config[:phone_numbers] || {}).with_indifferent_access
+
+    payload[:provider_kind].to_s == config[:provider_kind].to_s &&
+      payload[:provider_account_number].to_s == phone_numbers[:provider_account_number].to_s &&
+      payload[:ingress_number].to_s == phone_numbers[:ingress_number].to_s
   end
 
   def existing_config_refs(existing_config)
@@ -899,13 +997,10 @@ class Telephony::VirtualPbx::ProvisioningService
   def create_bridge_operations(payload)
     refs = generated_refs(payload)
     compact_bridge_operations([
-                                bridge_operation('upsert_credentials', 'PUT', bridge_path('/telephony/credentials/', refs[:credentials_ref]),
-                                                 'Upsert provider credentials'),
-                                bridge_operation('upsert_trunk', 'PUT', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
-                                                 'Upsert provider trunk'),
+                                trunk_bridge_operation(payload, refs, 'Upsert provider trunk'),
                                 bridge_operation('upsert_number', 'PUT', bridge_path('/telephony/numbers/', refs[:number_ref]),
                                                  'Upsert inbound number'),
-                                bridge_operation('update_number_route', 'PATCH', bridge_path('/telephony/numbers/', refs[:number_ref], '/route'),
+                                bridge_operation('update_number_route', 'POST', bridge_path('/telephony/numbers/', refs[:number_ref], '/route'),
                                                  'Point number route to OneLink runtime bridge'),
                                 *profile_bridge_operations(payload, refs, 'PUT')
                               ])
@@ -914,11 +1009,10 @@ class Telephony::VirtualPbx::ProvisioningService
   def update_bridge_operations(payload)
     refs = generated_refs(payload)
     compact_bridge_operations([
-                                bridge_operation('patch_trunk', 'PATCH', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
-                                                 'Patch provider trunk metadata'),
-                                bridge_operation('patch_number', 'PATCH', bridge_path('/telephony/numbers/', refs[:number_ref]),
-                                                 'Patch inbound number metadata'),
-                                bridge_operation('patch_number_route', 'PATCH', bridge_path('/telephony/numbers/', refs[:number_ref], '/route'),
+                                trunk_bridge_operation(payload, refs, 'Upsert provider trunk metadata'),
+                                bridge_operation('upsert_number', 'PUT', bridge_path('/telephony/numbers/', refs[:number_ref]),
+                                                 'Upsert inbound number metadata'),
+                                bridge_operation('update_number_route', 'POST', bridge_path('/telephony/numbers/', refs[:number_ref], '/route'),
                                                  'Patch number route headers'),
                                 *profile_bridge_operations(payload, refs, 'PUT')
                               ])
@@ -927,19 +1021,37 @@ class Telephony::VirtualPbx::ProvisioningService
   def delete_bridge_operations(existing_config)
     refs = existing_config_refs(existing_config)
     compact_bridge_operations([
+                                *profile_delete_bridge_operations(refs),
                                 bridge_operation('delete_number', 'DELETE', bridge_path('/telephony/numbers/', refs[:number_ref]),
                                                  'Delete owned inbound number'),
-                                bridge_operation('delete_trunk', 'DELETE', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
-                                                 'Delete channel-owned trunk when it is not shared'),
-                                bridge_operation('delete_credentials', 'DELETE', bridge_path('/telephony/credentials/', refs[:credentials_ref]),
-                                                 'Delete channel-owned credentials when they are not shared')
+                                delete_trunk_bridge_operation(refs)
                               ])
+  end
+
+  def trunk_bridge_operation(payload, refs, description)
+    return if shared_sipuni_trunk_ref?(payload, refs)
+
+    bridge_operation('upsert_trunk', 'PUT', bridge_path('/telephony/trunks/', refs[:trunk_ref]), description)
+  end
+
+  def delete_trunk_bridge_operation(refs)
+    return if refs[:trunk_ref].to_s == sipuni_trunk_ref
+
+    bridge_operation('delete_trunk', 'DELETE', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
+                     'Delete channel-owned trunk when it is not shared')
   end
 
   def profile_bridge_operations(payload, refs, method)
     Array.wrap(payload[:profiles]).each_with_index.map do |_profile, index|
       bridge_operation('upsert_agent', method, bridge_path('/telephony/agents/', refs[:profile_refs][index]),
                        'Upsert employee SIP agent profile')
+    end
+  end
+
+  def profile_delete_bridge_operations(refs)
+    Array.wrap(refs[:profile_refs]).map do |profile_ref|
+      bridge_operation('delete_agent', 'DELETE', bridge_path('/telephony/agents/', profile_ref),
+                       'Delete employee SIP agent profile')
     end
   end
 
@@ -965,13 +1077,21 @@ class Telephony::VirtualPbx::ProvisioningService
     operations.compact.select { |operation| operation[:path].present? }
   end
 
+  def sipuni_trunk_ref
+    ENV.fetch('TELEPHONY_VIRTUAL_PBX_SIPUNI_TRUNK_REF', DEFAULT_SIPUNI_TRUNK_REF)
+  end
+
+  def shared_sipuni_trunk_ref?(payload, refs)
+    payload[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
+  end
+
   def dry_run_status(errors)
     errors.empty? ? 'dry_run_ready' : 'validation_failed'
   end
 
   def dry_run_warnings(existing_config)
     [].tap do |warnings|
-      warnings << warning('remote_mutation_disabled', 'Fonoster/Routr/bridge writes are not executed in this safe slice')
+      warnings << warning('dry_run_only', 'Fonoster/Routr/bridge writes are not executed during dry-run')
       if existing_config&.dig(
         :ownership, :read_only
       )
@@ -981,14 +1101,18 @@ class Telephony::VirtualPbx::ProvisioningService
     end
   end
 
-  def ensure_remote_mutation_not_requested!(remote_commit)
-    return unless ActiveModel::Type::Boolean.new.cast(remote_commit)
+  def mutation_warnings(remote_result)
+    return [] if remote_result.present?
 
-    raise Telephony::Error.new(
-      code: 'REMOTE_MUTATION_REQUIRES_APPROVAL',
-      message: 'Remote Fonoster/Routr mutation requires separate explicit approval',
-      status: :unprocessable_content
-    )
+    [warning('remote_mutation_disabled', 'Fonoster/Routr/bridge writes were not executed')]
+  end
+
+  def remote_commit_requested?(remote_commit)
+    ActiveModel::Type::Boolean.new.cast(remote_commit)
+  end
+
+  def remote_result_succeeded?(remote_result)
+    remote_result.present? && remote_result[:status].to_s == 'succeeded' && Array.wrap(remote_result[:errors]).empty?
   end
 
   def step(code, description, **metadata)

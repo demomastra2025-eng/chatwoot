@@ -5,6 +5,7 @@ require 'cgi'
 class Telephony::VirtualPbx::RemotePlanBuilder
   REMOTE_MUTATIONS_BLOCKED = 'blocked'
   REMOTE_MUTATIONS_REQUIRES_APPROVAL = 'requires_approval'
+  DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
 
   def initialize(account:)
     @account = account
@@ -20,7 +21,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     {
       operation: operation,
       status: plan_status(operations, ownership),
-      remote_mutations: REMOTE_MUTATIONS_BLOCKED,
+      remote_mutations: remote_mutation_status(ownership),
       operations: operations,
       conflicts: operations.filter_map { |item| item[:conflict] },
       generated_at: Time.current
@@ -45,13 +46,10 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def create_operations(state, ownership)
     refs = state[:refs] || {}
     [
-      operation_payload('upsert_credentials', 'PUT', path('credentials', refs[:credentials_ref]), 'Prepare provider access for this call profile', ownership,
-                        payload: credentials_payload(state)),
-      operation_payload('upsert_trunk', 'PUT', path('trunks', refs[:trunk_ref]), 'Prepare provider connection for inbound calls', ownership,
-                        payload: trunk_payload(state)),
+      trunk_operation(state, ownership, 'Prepare provider connection for inbound calls'),
       operation_payload('upsert_number', 'PUT', path('numbers', refs[:number_ref]), 'Connect the business number to OneLink runtime', ownership,
                         payload: number_payload(state)),
-      operation_payload('update_number_route', 'PATCH', "#{path('numbers', refs[:number_ref])}/route", 'Apply selected routing mode', ownership,
+      operation_payload('update_number_route', 'POST', "#{path('numbers', refs[:number_ref])}/route", 'Apply selected routing mode', ownership,
                         payload: route_payload(state)),
       *agent_operations(state, ownership)
     ].compact
@@ -60,11 +58,10 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def update_operations(state, ownership)
     refs = state[:refs] || {}
     [
-      operation_payload('patch_trunk', 'PATCH', path('trunks', refs[:trunk_ref]), 'Sync provider connection metadata', ownership,
-                        payload: trunk_payload(state)),
-      operation_payload('patch_number', 'PATCH', path('numbers', refs[:number_ref]), 'Sync business number metadata', ownership,
+      trunk_operation(state, ownership, 'Sync provider connection metadata'),
+      operation_payload('upsert_number', 'PUT', path('numbers', refs[:number_ref]), 'Sync business number metadata', ownership,
                         payload: number_payload(state)),
-      operation_payload('patch_number_route', 'PATCH', "#{path('numbers', refs[:number_ref])}/route", 'Sync routing mode', ownership,
+      operation_payload('update_number_route', 'POST', "#{path('numbers', refs[:number_ref])}/route", 'Sync routing mode', ownership,
                         payload: route_payload(state)),
       *agent_operations(state, ownership)
     ].compact
@@ -73,11 +70,20 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def delete_operations(state, ownership)
     refs = state[:refs] || {}
     [
+      *delete_agent_operations(state, ownership),
       operation_payload('delete_number', 'DELETE', path('numbers', refs[:number_ref]), 'Delete owned inbound number', ownership),
-      operation_payload('delete_trunk', 'DELETE', path('trunks', refs[:trunk_ref]), 'Delete owned provider connection only if exclusive', ownership),
-      operation_payload('delete_credentials', 'DELETE', path('credentials', refs[:credentials_ref]),
-                        'Delete owned provider access only if exclusive', ownership)
+      (unless shared_trunk?(state)
+         operation_payload('delete_trunk', 'DELETE', path('trunks', refs[:trunk_ref]), 'Delete owned provider connection only if exclusive',
+                           ownership)
+       end)
     ].compact
+  end
+
+  def trunk_operation(state, ownership, description)
+    return if shared_trunk?(state)
+
+    refs = state[:refs] || {}
+    operation_payload('upsert_trunk', 'PUT', path('trunks', refs[:trunk_ref]), description, ownership, payload: trunk_payload(state))
   end
 
   def agent_operations(state, ownership)
@@ -93,12 +99,37 @@ class Telephony::VirtualPbx::RemotePlanBuilder
         ownership,
         payload: {
           ref: attrs[:agent_ref],
+          name: agent_name(attrs),
+          username: agent_username(attrs),
           agent_aor: attrs[:agent_aor],
           enabled: attrs[:enabled],
           metadata: ownership_metadata(state).merge(onelink_user_id: attrs[:user_id], internal_extension: attrs[:internal_extension])
         }
       )
     end
+  end
+
+  def delete_agent_operations(state, ownership)
+    Array.wrap(state[:profiles]).filter_map do |profile|
+      attrs = profile.with_indifferent_access
+      next if attrs[:agent_ref].blank?
+
+      operation_payload(
+        'delete_agent',
+        'DELETE',
+        path('agents', attrs[:agent_ref]),
+        'Delete employee extension assignment',
+        ownership
+      )
+    end
+  end
+
+  def agent_name(attrs)
+    attrs[:user_name].presence || attrs[:agent_ref]
+  end
+
+  def agent_username(attrs)
+    attrs[:internal_extension].presence || attrs[:agent_ref]
   end
 
   def operation_payload(key, method, path, description, ownership, payload: {})
@@ -119,16 +150,6 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     }.compact
   end
 
-  def credentials_payload(state)
-    refs = state[:refs] || {}
-    connection = state[:connection] || {}
-    {
-      ref: refs[:credentials_ref],
-      username: connection[:username],
-      metadata: ownership_metadata(state).merge(provider_kind: state[:provider_kind])
-    }.compact
-  end
-
   def trunk_payload(state)
     refs = state[:refs] || {}
     connection = state[:connection] || {}
@@ -139,7 +160,6 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       port: connection[:port],
       transport: connection[:transport],
       send_register: connection[:send_register],
-      credential_ref: refs[:credentials_ref],
       metadata: ownership_metadata(state).merge(provider_kind: state[:provider_kind])
     }.compact
   end
@@ -149,8 +169,12 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     phone_numbers = state[:phone_numbers] || {}
     {
       ref: refs[:number_ref],
-      tel_url: phone_numbers[:fonoster_tel_url],
-      trunk_ref: refs[:trunk_ref],
+      name: state[:name] || refs[:number_ref],
+      telUrl: phone_numbers[:fonoster_tel_url],
+      trunkRef: refs[:trunk_ref],
+      country: number_country(state),
+      countryIsoCode: number_country_iso_code(state),
+      city: number_city(state),
       metadata: ownership_metadata(state).merge(
         display_phone_number: phone_numbers[:display_phone_number],
         provider_account_number: phone_numbers[:provider_account_number],
@@ -216,6 +240,31 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     return 'requires_manual_reconcile' if operations.any? { |operation| operation[:risk] == 'blocked' }
 
     'dry_run_valid'
+  end
+
+  def remote_mutation_status(ownership)
+    ownership[:allowed] ? REMOTE_MUTATIONS_REQUIRES_APPROVAL : REMOTE_MUTATIONS_BLOCKED
+  end
+
+  def shared_trunk?(state)
+    refs = state[:refs] || {}
+    state[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
+  end
+
+  def sipuni_trunk_ref
+    ENV.fetch('TELEPHONY_VIRTUAL_PBX_SIPUNI_TRUNK_REF', DEFAULT_SIPUNI_TRUNK_REF)
+  end
+
+  def number_country(state)
+    state.dig(:phone_numbers, :country) || ENV.fetch('TELEPHONY_VIRTUAL_PBX_DEFAULT_COUNTRY', 'Kazakhstan')
+  end
+
+  def number_country_iso_code(state)
+    state.dig(:phone_numbers, :country_iso_code) || ENV.fetch('TELEPHONY_VIRTUAL_PBX_DEFAULT_COUNTRY_ISO_CODE', 'KZ')
+  end
+
+  def number_city(state)
+    state.dig(:phone_numbers, :city) || ENV.fetch('TELEPHONY_VIRTUAL_PBX_DEFAULT_CITY', 'Almaty')
   end
 
   def path(resource, ref)

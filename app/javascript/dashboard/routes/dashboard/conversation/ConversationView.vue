@@ -173,12 +173,11 @@ export default {
     },
     findConversation() {
       const conversationId = parseInt(this.conversationId, 10);
-      const [chat] = this.chatList.filter(
+      return this.chatList.find(
         c =>
           c.id === conversationId &&
           isCommunicationThread(c) === this.communicationThreadMode
       );
-      return chat;
     },
     normalizeConversationRoute() {
       if (

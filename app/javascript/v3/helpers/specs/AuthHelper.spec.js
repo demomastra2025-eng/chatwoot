@@ -1,4 +1,5 @@
 import { getLoginRedirectURL, getCredentialsFromEmail } from '../AuthHelper';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
 describe('#URL Helpers', () => {
   describe('getLoginRedirectURL', () => {
@@ -11,6 +12,23 @@ describe('#URL Helpers', () => {
           },
         })
       ).toBe('/app/accounts/7500/dashboard');
+    });
+
+    it('should return communication threads URL when account id has communication threads enabled', () => {
+      expect(
+        getLoginRedirectURL({
+          ssoAccountId: '7500',
+          user: {
+            accounts: [
+              {
+                id: 7500,
+                name: 'Test Account 7500',
+                features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
+              },
+            ],
+          },
+        })
+      ).toBe('/app/accounts/7500/communication_threads?status=open');
     });
 
     it('should return correct conversation URL if account id and conversationId is present', () => {
