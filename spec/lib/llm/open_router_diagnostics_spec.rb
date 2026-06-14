@@ -9,7 +9,7 @@ RSpec.describe Llm::OpenRouterDiagnostics do
         'provider' => 'openrouter',
         'display_name' => 'GPT-5.4',
         'type' => 'chat',
-        'capabilities' => %w[text_input text_output tool_calling structured_output reasoning image_input],
+        'capabilities' => %w[text_input text_output tool_calling tool_choice structured_output reasoning image_input],
         'context_length' => 128_000
       },
       'openai/gpt-audio-mini' => {
@@ -36,8 +36,18 @@ RSpec.describe Llm::OpenRouterDiagnostics do
         'model_id' => 'openai/gpt-5.4',
         'providers' => %w[OpenAI Acme],
         'endpoints' => [
-          { 'provider_name' => 'OpenAI', 'capabilities' => %w[tool_calling structured_output reasoning], 'zdr' => true, 'data_collection' => 'deny' },
-          { 'provider_name' => 'Acme', 'capabilities' => %w[tool_calling structured_output], 'zdr' => false, 'data_collection' => 'allow' }
+          {
+            'provider_name' => 'OpenAI',
+            'capabilities' => %w[tool_calling tool_choice structured_output reasoning],
+            'zdr' => true,
+            'data_collection' => 'deny'
+          },
+          {
+            'provider_name' => 'Acme',
+            'capabilities' => %w[tool_calling tool_choice structured_output],
+            'zdr' => false,
+            'data_collection' => 'allow'
+          }
         ]
       },
       'openai/gpt-audio-mini' => {

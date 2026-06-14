@@ -4,6 +4,12 @@ import { useOperators } from './operators';
 import { useMapGetter } from 'dashboard/composables/store.js';
 import { useChannelIcon } from 'next/icon/provider';
 import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
+import {
   buildAttributesFilterTypes,
   CONVERSATION_ATTRIBUTES,
 } from './helper/filterHelper';
@@ -191,15 +197,25 @@ export function useConversationFilterContext() {
       options: labels.value.map(label => {
         return {
           id: label.title,
-          name: label.title,
-          icon: h('span', {
-            class: `rounded-full`,
-            style: {
-              backgroundColor: label.color,
-              height: '6px',
-              width: '6px',
+          name: labelDisplayTitle(label),
+          icon: h(
+            'span',
+            {
+              class:
+                labelMarkerType(label) === 'emoji'
+                  ? 'text-xs leading-none'
+                  : 'rounded-full',
+              style:
+                labelMarkerType(label) === 'color'
+                  ? {
+                      backgroundColor: labelMarkerColor(label),
+                      height: '6px',
+                      width: '6px',
+                    }
+                  : {},
             },
-          }),
+            labelMarkerType(label) === 'emoji' ? labelMarkerEmoji(label) : ''
+          ),
         };
       }),
       dataType: 'text',

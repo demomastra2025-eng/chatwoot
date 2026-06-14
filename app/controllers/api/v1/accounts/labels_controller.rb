@@ -30,7 +30,7 @@ class Api::V1::Accounts::LabelsController < Api::V1::Accounts::BaseController
   end
 
   def permitted_params
-    params.require(:label).permit(:title, :description, :color, :show_on_sidebar)
+    params.require(:label).permit(:title, :display_title, :description, :color, :marker_type, :emoji, :show_on_sidebar)
   end
 
   def contact_counts_by_label

@@ -102,7 +102,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         provider_number: first_present(phone_numbers[:provider_account_number], phone_numbers[:display_phone_number]),
         configured: provider_connection.present? || phone_numbers[:ingress_number].present?,
         status: provider_connection[:status] || (config[:ready] ? 'ready' : 'action_required'),
-        remote_mutations: remote_commit_enabled? ? 'requires_approval' : 'blocked',
+        remote_mutations: remote_mutation_status(ownership),
         last_synced_at: first_present(resources[:last_synced_at], provider_connection[:last_synced_at])
       }.compact,
       routing: {
@@ -114,7 +114,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       employees: ui_employees_payload(config[:profiles]),
       permissions: {
         editable: !ownership[:read_only],
-        remote_commit_allowed: remote_commit_enabled? && !ownership[:read_only],
+        remote_commit_allowed: !ownership[:read_only],
         diagnostics_available: true
       },
       warnings: config[:warnings] || []
@@ -157,13 +157,13 @@ class Telephony::VirtualPbx::ConfigBuilder
       status: status,
       label: ui_status_label(status),
       read_only: ownership[:read_only],
-      remote_mutations: remote_commit_enabled? ? 'requires_approval' : 'blocked',
+      remote_mutations: remote_mutation_status(ownership),
       last_synced_at: resources[:last_synced_at]
     }.compact
   end
 
-  def remote_commit_enabled?
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED', nil)) == true
+  def remote_mutation_status(ownership)
+    ownership[:read_only] ? 'blocked' : 'requires_approval'
   end
 
   def ui_status_label(status)

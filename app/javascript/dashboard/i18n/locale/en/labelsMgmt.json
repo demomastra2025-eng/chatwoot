@@ -17,6 +17,7 @@
         "NAME": "Name",
         "DESCRIPTION": "Description",
         "COLOR": "Color",
+        "MARKER": "Marker",
         "ACTION": "Actions"
       }
     },
@@ -26,7 +27,8 @@
         "PLACEHOLDER": "Tag name",
         "REQUIRED_ERROR": "Tag name is required",
         "MINIMUM_LENGTH_ERROR": "Minimum length 2 is required",
-        "VALID_ERROR": "Only Alphabets, Numbers, Hyphen and Underscore are allowed"
+        "MAX_LENGTH_ERROR": "Maximum length is 120 characters",
+        "VALID_ERROR": "Tag name must not include control characters"
       },
       "DESCRIPTION": {
         "LABEL": "Description",
@@ -34,6 +36,15 @@
       },
       "COLOR": {
         "LABEL": "Color"
+      },
+      "MARKER": {
+        "LABEL": "Tag marker",
+        "COLOR": "Color",
+        "EMOJI": "Emoji"
+      },
+      "EMOJI": {
+        "LABEL": "Emoji",
+        "PLACEHOLDER": "Pick"
       },
       "SHOW_ON_SIDEBAR": {
         "LABEL": "Show tag on sidebar"

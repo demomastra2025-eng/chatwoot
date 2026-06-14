@@ -167,7 +167,7 @@ class FonosterVoiceClient extends EventTarget {
       onUnregistered: () => {
         this.registered = false;
         this.stopPresenceHeartbeat();
-        FonosterVoiceClient.reportPresence(false);
+        this.reportPresence(false);
         this.dispatchEvent(
           createCallUnregisteredEvent({ provider: 'fonoster' })
         );
@@ -182,7 +182,7 @@ class FonosterVoiceClient extends EventTarget {
         this.connected = false;
         this.registered = false;
         this.stopPresenceHeartbeat();
-        FonosterVoiceClient.reportPresence(false);
+        this.reportPresence(false);
         if (wasRegistered) {
           this.dispatchEvent(
             createCallUnregisteredEvent({ provider: 'fonoster' })
@@ -410,13 +410,15 @@ class FonosterVoiceClient extends EventTarget {
     await this.registrationPromise;
   }
 
-  static reportPresence(registered) {
-    VoiceAPI.updateWebphonePresence(registered).catch(() => {});
+  reportPresence(registered) {
+    VoiceAPI.updateWebphonePresence(registered, {
+      inboxId: this.inboxId,
+    }).catch(() => {});
   }
 
   markRegistered() {
     this.registered = true;
-    FonosterVoiceClient.reportPresence(true);
+    this.reportPresence(true);
     this.startPresenceHeartbeat();
   }
 
@@ -424,7 +426,7 @@ class FonosterVoiceClient extends EventTarget {
     this.stopPresenceHeartbeat();
     this.presenceHeartbeatTimer = window.setInterval(() => {
       if (this.registered) {
-        FonosterVoiceClient.reportPresence(true);
+        this.reportPresence(true);
       }
     }, WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS);
   }
@@ -543,7 +545,7 @@ class FonosterVoiceClient extends EventTarget {
     this.registered = false;
     this.stopPresenceHeartbeat();
     if (shouldReportOffline) {
-      FonosterVoiceClient.reportPresence(false);
+      this.reportPresence(false);
     }
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;

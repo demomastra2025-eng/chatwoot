@@ -15,17 +15,18 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
     inbox = create(:inbox, account: account, name: 'Support')
     captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
-    payload = JSON.parse(service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_NEVER))
+    payload = JSON.parse(service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS))
 
     expect(payload['action']).to eq('update_captain_inbox_auto_reply_mode')
     expect(payload['inbox']).to include('id' => inbox.id, 'name' => 'Support')
     expect(payload['captain']).to include(
       'assistant_id' => assistant.id,
       'assistant_name' => 'Support AI',
-      'auto_reply_mode' => CaptainInbox::AUTO_REPLY_NEVER,
-      'auto_reply_allowed_now' => false
+      'auto_reply_mode' => CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS,
+      'auto_reply_allowed_now' => false,
+      'reply_to_open_conversations' => false
     )
-    expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_NEVER)
+    expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS)
   end
 
   it 'allows account admins to update a same-account inbox connected to another Captain assistant' do
@@ -44,7 +45,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
     other_inbox = create(:inbox, account: create(:account))
     create(:captain_inbox, inbox: other_inbox, captain_assistant: create(:captain_assistant, account: other_inbox.account))
 
-    result = service.execute(inbox_id: other_inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_NEVER)
+    result = service.execute(inbox_id: other_inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
 
     expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
   end
@@ -53,9 +54,10 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
     inbox = create(:inbox, account: account)
     captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
-    result = service.execute(inbox_id: inbox.id, auto_reply_mode: 'invalid')
+    result = service.execute(inbox_id: inbox.id, auto_reply_mode: 'never')
 
     expect(result).to include('auto_reply_mode must be one of')
+    expect(result).not_to include('never')
     expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
   end
 
@@ -65,7 +67,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
     inbox = create(:inbox, account: account)
     captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
-    result = service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_NEVER)
+    result = service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
 
     expect(result).to include('Account administrator permission is required')
     expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
@@ -76,7 +78,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
     inbox = create(:inbox, account: account)
     captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
-    payload = JSON.parse(service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_NEVER))
+    payload = JSON.parse(service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS))
 
     expect(payload['message']).to include('Operator confirmation is required')
     expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)

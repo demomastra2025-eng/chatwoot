@@ -7,10 +7,14 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
   end
 
   def presence
+    inbox = Current.account.inboxes.find_by(id: params[:inbox_id]) if params[:inbox_id].present?
+    authorize inbox, :show? if inbox.present?
+
     render_payload(
       webphone_service.update_presence!(
         user: Current.user,
-        registered: ActiveModel::Type::Boolean.new.cast(params.require(:registered))
+        registered: ActiveModel::Type::Boolean.new.cast(params.require(:registered)),
+        inbox: inbox
       )
     )
   end

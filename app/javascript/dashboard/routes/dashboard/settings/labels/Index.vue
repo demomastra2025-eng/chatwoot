@@ -15,6 +15,12 @@ import {
   BaseTableRow,
   BaseTableCell,
 } from 'dashboard/components-next/table';
+import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
 
 const getters = useStoreGetters();
 const store = useStore();
@@ -33,13 +39,16 @@ const filteredRecords = computed(() => {
   const query = searchQuery.value.trim();
   if (!query) return records.value;
   return picoSearch(records.value, query, [
-    { name: 'title', weight: 4 },
+    { name: 'display_title', weight: 4 },
+    'title',
     'description',
   ]);
 });
 const uiFlags = computed(() => getters['labels/getUIFlags'].value);
 
-const deleteMessage = computed(() => ` ${selectedLabel.value.title}?`);
+const deleteMessage = computed(
+  () => ` ${labelDisplayTitle(selectedLabel.value)}?`
+);
 
 const openAddPopup = () => {
   showAddPopup.value = true;
@@ -87,7 +96,7 @@ const tableHeaders = computed(() => {
   return [
     t('LABEL_MGMT.LIST.TABLE_HEADER.NAME'),
     t('LABEL_MGMT.LIST.TABLE_HEADER.DESCRIPTION'),
-    t('LABEL_MGMT.LIST.TABLE_HEADER.COLOR'),
+    t('LABEL_MGMT.LIST.TABLE_HEADER.MARKER'),
     t('LABEL_MGMT.LIST.TABLE_HEADER.ACTION'),
   ];
 });
@@ -140,7 +149,7 @@ onBeforeMount(() => {
             <template #default>
               <BaseTableCell>
                 <span class="text-body-main text-n-slate-12">
-                  {{ label.title }}
+                  {{ labelDisplayTitle(label) }}
                 </span>
               </BaseTableCell>
 
@@ -153,11 +162,22 @@ onBeforeMount(() => {
               <BaseTableCell>
                 <div class="flex items-center">
                   <span
+                    v-if="labelMarkerType(label) === 'emoji'"
+                    class="ltr:mr-2 rtl:ml-2 text-lg leading-none"
+                  >
+                    {{ labelMarkerEmoji(label) }}
+                  </span>
+                  <span
+                    v-else
                     class="w-4 h-4 ltr:mr-2 rtl:ml-2 border border-solid rounded border-n-weak"
-                    :style="{ backgroundColor: label.color }"
+                    :style="{ backgroundColor: labelMarkerColor(label) }"
                   />
                   <span class="text-body-main text-n-slate-12">
-                    {{ label.color }}
+                    {{
+                      labelMarkerType(label) === 'emoji'
+                        ? label.emoji
+                        : label.color
+                    }}
                   </span>
                 </div>
               </BaseTableCell>

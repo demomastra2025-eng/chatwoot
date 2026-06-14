@@ -8,6 +8,12 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
 
 const emit = defineEmits(['close', 'assign']);
 
@@ -21,7 +27,7 @@ const selectedLabels = ref([]);
 const filteredLabels = computed(() => {
   if (!query.value) return labels.value;
   return labels.value.filter(label =>
-    label.title.toLowerCase().includes(query.value.toLowerCase())
+    labelDisplayTitle(label).toLowerCase().includes(query.value.toLowerCase())
   );
 });
 
@@ -105,16 +111,23 @@ const handleAssign = () => {
               v-model="selectedLabels"
               :value="label.title"
               class="my-0 ltr:mr-2.5 rtl:ml-2.5"
-              :aria-label="label.title"
+              :aria-label="labelDisplayTitle(label)"
             />
             <span
               class="overflow-hidden flex-grow w-full text-sm whitespace-nowrap text-ellipsis"
             >
-              {{ label.title }}
+              {{ labelDisplayTitle(label) }}
             </span>
             <span
+              v-if="labelMarkerType(label) === 'emoji'"
+              class="flex-shrink-0 text-sm leading-none"
+            >
+              {{ labelMarkerEmoji(label) }}
+            </span>
+            <span
+              v-else
               class="rounded-md h-3 w-3 flex-shrink-0 border border-solid border-n-weak"
-              :style="{ backgroundColor: label.color }"
+              :style="{ backgroundColor: labelMarkerColor(label) }"
             />
           </label>
         </li>

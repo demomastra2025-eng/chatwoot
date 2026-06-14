@@ -11,6 +11,12 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import DurationInput from 'next/input/DurationInput.vue';
 import SingleSelect from 'dashboard/components-next/filter/inputs/SingleSelect.vue';
 import { DURATION_UNITS } from 'dashboard/components-next/input/constants';
+import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
 
 const { t } = useI18n();
 const duration = ref(0);
@@ -29,11 +35,21 @@ const labelOptions = computed(() =>
   labels.value?.length
     ? labels.value.map(label => ({
         id: label.title,
-        name: label.title,
-        icon: h('span', {
-          class: `size-[12px] ring-1 ring-n-alpha-1 dark:ring-white/20 ring-inset rounded-sm`,
-          style: { backgroundColor: label.color },
-        }),
+        name: labelDisplayTitle(label),
+        icon: h(
+          'span',
+          {
+            class:
+              labelMarkerType(label) === 'emoji'
+                ? 'text-xs leading-none'
+                : 'size-[12px] ring-1 ring-n-alpha-1 dark:ring-white/20 ring-inset rounded-sm',
+            style:
+              labelMarkerType(label) === 'color'
+                ? { backgroundColor: labelMarkerColor(label) }
+                : {},
+          },
+          labelMarkerType(label) === 'emoji' ? labelMarkerEmoji(label) : ''
+        ),
       }))
     : []
 );
@@ -59,7 +75,7 @@ watch(
     // the single select component expects the full label object
     // in our case, the label id and name are both the same
     labelToApply.value =
-      labelOptions.value.find(option => option.name === auto_resolve_label) ||
+      labelOptions.value.find(option => option.id === auto_resolve_label) ||
       null;
 
     // Set unit based on duration and its divisibility

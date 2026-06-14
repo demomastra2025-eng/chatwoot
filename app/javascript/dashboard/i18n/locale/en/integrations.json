@@ -2932,12 +2932,19 @@
         "OPTIONS": {
           "ALWAYS": "Always",
           "WORKING_HOURS": "During working hours",
-          "OUTSIDE_WORKING_HOURS": "Outside working hours",
-          "NEVER": "Never"
+          "OUTSIDE_WORKING_HOURS": "Outside working hours"
         },
         "UPDATE": {
           "SUCCESS_MESSAGE": "Auto-reply mode was updated.",
           "ERROR_MESSAGE": "There was an error updating auto-reply mode. Please try again."
+        }
+      },
+      "REPLY_TO_OPEN_CONVERSATIONS": {
+        "LABEL": "Reply in open conversations",
+        "DESCRIPTION": "Captain replies in open conversations only when the selected response mode allows it.",
+        "UPDATE": {
+          "SUCCESS_MESSAGE": "Open conversation reply setting was updated.",
+          "ERROR_MESSAGE": "There was an error updating open conversation reply setting. Please try again."
         }
       },
       "CHANNEL_SETTINGS": {

@@ -3,6 +3,7 @@ import types from '../mutation-types';
 import LabelsAPI from '../../api/labels';
 import AnalyticsHelper from '../../helper/AnalyticsHelper';
 import { LABEL_EVENTS } from '../../helper/AnalyticsHelper/events';
+import { sortLabelsByDisplayTitle } from '../../helper/labels';
 
 export const state = {
   records: [],
@@ -22,9 +23,7 @@ export const getters = {
     return _state.uiFlags;
   },
   getLabelsOnSidebar(_state) {
-    return _state.records
-      .slice()
-      .sort((a, b) => a.title.localeCompare(b.title));
+    return sortLabelsByDisplayTitle(_state.records);
   },
   getLabelById: _state => id => {
     return _state.records.find(record => record.id === Number(id)) || {};
@@ -48,9 +47,7 @@ export const actions = {
     commit(types.SET_LABEL_UI_FLAG, { isFetching: true });
     try {
       const response = await LabelsAPI.get(true);
-      const sortedLabels = response.data.payload.sort((a, b) =>
-        a.title.localeCompare(b.title)
-      );
+      const sortedLabels = sortLabelsByDisplayTitle(response.data.payload);
       commit(types.SET_LABELS, sortedLabels);
     } catch (error) {
       // Ignore error

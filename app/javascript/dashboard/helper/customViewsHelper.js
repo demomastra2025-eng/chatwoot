@@ -1,3 +1,5 @@
+import { labelDisplayTitle } from './labels';
+
 export const getInputType = (key, operator, filterTypes) => {
   if (key === 'created_at' || key === 'last_activity_at')
     if (operator === 'days_before') return 'plain_text';
@@ -45,9 +47,9 @@ export const getValuesForStatus = values => {
 
 const getValuesForLabels = (values, labels) => {
   const selectedLabels = labels.filter(label => values.includes(label.title));
-  return selectedLabels.map(({ title }) => ({
-    id: title,
-    name: title,
+  return selectedLabels.map(label => ({
+    id: label.title,
+    name: labelDisplayTitle(label),
   }));
 };
 

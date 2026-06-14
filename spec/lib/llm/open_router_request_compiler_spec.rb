@@ -5,6 +5,7 @@ require 'rails_helper'
 OpenRouterRequestCompilerSpecRequest = Struct.new(
   :feature_key,
   :tools_required,
+  :tool_objects,
   :schema_required,
   :reasoning_required,
   :server_tools,
@@ -13,18 +14,21 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
   :privacy_profile,
   :options,
   :temperature,
+  :parallel_tool_calls,
   keyword_init: true
 ) do
-  def requires_tools? = tools_required == true
+  def requires_tools? = tools_required == true || Array(tool_objects).present?
   def requires_schema? = schema_required == true
   def reasoning? = reasoning_required == true
+  def tools = Array(tool_objects)
 end
 
 RSpec.describe Llm::OpenRouterRequestCompiler do
   def compile(feature:, model: 'moonshotai/kimi-k2.6', base_params: {}, stream: false, **options)
     request = OpenRouterRequestCompilerSpecRequest.new(
       feature_key: feature.to_s,
-      tools_required: options.fetch(:tools, false),
+      tools_required: options[:tools] == true,
+      tool_objects: options[:tools].is_a?(Array) ? options[:tools] : [],
       schema_required: options.fetch(:schema, false),
       reasoning_required: options.fetch(:reasoning, false),
       server_tools: options[:server_tools],
@@ -32,7 +36,8 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       runtime_preferences: options[:runtime_preferences],
       privacy_profile: options[:privacy_profile],
       options: options[:request_options] || {},
-      temperature: options[:temperature]
+      temperature: options[:temperature],
+      parallel_tool_calls: options[:parallel_tool_calls]
     )
 
     described_class.call(
@@ -42,6 +47,13 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       stream: stream,
       account: options[:account]
     )
+  end
+
+  def tool_with(name:, metadata:)
+    Class.new do
+      define_method(:name) { name }
+      define_method(:metadata) { metadata }
+    end.new
   end
 
   it 'deep merges Captain agent provider params and de-duplicates response healing plugins' do
@@ -330,19 +342,20 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     )
   end
 
-  it 'drops parallel tool call routing params under require_parameters' do
+  it 'keeps explicit sequential fallback when caller disables parallel tool calls' do
     compiled = compile(
       feature: :captain_agent,
-      tools: true,
+      tools: [tool_with(name: 'lookup_inventory', metadata: { read_only: true })],
       schema: true,
       base_params: { parallel_tool_calls: false }
     )
 
     expect(compiled.params).not_to include(:parallel_tool_calls)
-    expect(compiled.metadata).not_to include(:openrouter_suppressed_params)
+    expect(compiled.metadata).not_to include(:openrouter_parallel_tool_calls)
+    expect(compiled.metadata).not_to include(:openrouter_omitted_params)
   end
 
-  it 'drops parallel tool call routing params even when caller requested them' do
+  it 'enables parallel tool calls only for read-only tool flows with explicit endpoint support' do
     allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
       [
         {
@@ -353,13 +366,56 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
 
     compiled = compile(
       feature: :captain_agent,
-      tools: true,
+      model: 'moonshotai/kimi-k2.6',
+      tools: [tool_with(name: 'search_apartments', metadata: { read_only: true, risk_level: 'read_only' })],
       schema: true,
-      base_params: { parallel_tool_calls: true }
+      parallel_tool_calls: true
+    )
+
+    expect(compiled.params).to include(parallel_tool_calls: true)
+    expect(compiled.metadata).to include(openrouter_parallel_tool_calls: true)
+  end
+
+  it 'omits parallel tool calls for read-only tools when the selected route does not advertise support' do
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+      [
+        {
+          'supported_parameters' => %w[tools tool_choice response_format structured_outputs]
+        }
+      ]
+    )
+
+    compiled = compile(
+      feature: :captain_agent,
+      model: 'deepseek/deepseek-v4-pro',
+      tools: [tool_with(name: 'search_apartments', metadata: { read_only: true, risk_level: 'read_only' })],
+      schema: true,
+      parallel_tool_calls: true
     )
 
     expect(compiled.params).not_to include(:parallel_tool_calls)
-    expect(compiled.metadata).not_to include(:openrouter_suppressed_params)
+    expect(compiled.metadata).to include(openrouter_omitted_params: ['parallel_tool_calls'])
+  end
+
+  it 'does not enable parallel tool calls for mutating tool flows even when the endpoint supports the parameter' do
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+      [
+        {
+          'supported_parameters' => %w[tools tool_choice response_format structured_outputs parallel_tool_calls]
+        }
+      ]
+    )
+
+    compiled = compile(
+      feature: :captain_agent,
+      model: 'moonshotai/kimi-k2.6',
+      tools: [tool_with(name: 'create_deal', metadata: { risk_level: 'high', idempotent: false })],
+      schema: true,
+      parallel_tool_calls: true
+    )
+
+    expect(compiled.params).not_to include(:parallel_tool_calls)
+    expect(compiled.metadata).to include(openrouter_omitted_params: ['parallel_tool_calls'])
   end
 
   it 'omits temperature for strict routes when the primary OpenRouter endpoint does not support it' do

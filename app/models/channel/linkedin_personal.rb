@@ -20,6 +20,12 @@
 #  updated_at         :datetime         not null
 #  account_id         :integer          not null
 #
+# Indexes
+#
+#  index_channel_linkedin_personal_on_account_id                  (account_id)
+#  index_channel_linkedin_personal_on_account_id_and_profile_urn  (account_id,profile_urn) UNIQUE
+#  index_channel_linkedin_personal_on_webhook_identifier          (webhook_identifier) UNIQUE
+#
 
 class Channel::LinkedinPersonal < ApplicationRecord
   include Channelable

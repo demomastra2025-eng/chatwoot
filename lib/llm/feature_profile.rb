@@ -10,7 +10,7 @@ class Llm::FeatureProfile
   FEATURE_DEFINITIONS = {
     'captain_agent' => {
       config_feature_key: 'assistant',
-      required_capabilities: %w[text_input text_output tool_calling structured_output],
+      required_capabilities: %w[text_input text_output tool_calling tool_choice structured_output],
       timeout_seconds: 60,
       max_retries: 2,
       streaming: false,
@@ -24,7 +24,7 @@ class Llm::FeatureProfile
     },
     'copilot' => {
       config_feature_key: 'copilot',
-      required_capabilities: %w[text_input text_output tool_calling structured_output],
+      required_capabilities: %w[text_input text_output tool_calling tool_choice structured_output],
       timeout_seconds: 45,
       max_retries: 2,
       streaming: false,

@@ -188,7 +188,7 @@ RSpec.describe Llm::Config do
         'openai/gpt-5.4' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling image_input streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
         }
       )
 
@@ -202,7 +202,7 @@ RSpec.describe Llm::Config do
         'openai/gpt-5.4' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
         }
       )
 
@@ -216,7 +216,7 @@ RSpec.describe Llm::Config do
         'openai/gpt-5.4' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
         }
       )
       account.update!(captain_models: { 'assistant' => 'gpt-5.4' })
@@ -234,7 +234,7 @@ RSpec.describe Llm::Config do
         'openai/gpt-4o' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling image_input streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
         }
       )
       account.update!(captain_models: { 'assistant' => 'openai/gpt-4o' })
@@ -250,7 +250,7 @@ RSpec.describe Llm::Config do
         'openai/gpt-4o' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling image_input streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
         }
       )
       account.update!(captain_models: { 'assistant' => 'openai/gpt-4o' })
@@ -285,7 +285,7 @@ RSpec.describe Llm::Config do
         'openai/text-embedding-3-small' => {
           'provider' => 'openrouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
         }
       )
 

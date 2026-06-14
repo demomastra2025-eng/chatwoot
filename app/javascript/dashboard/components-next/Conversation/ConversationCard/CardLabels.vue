@@ -1,5 +1,11 @@
 <script setup>
 import { ref, computed } from 'vue';
+import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
 
 const props = defineProps({
   conversationLabels: {
@@ -30,7 +36,8 @@ const activeLabels = computed(() => {
   return props.accountLabels?.filter(({ title }) => labelSet.has(title));
 });
 
-const calculateLabelWidth = ({ title = '' }) => {
+const calculateLabelWidth = label => {
+  const title = labelDisplayTitle(label);
   const charWidth =
     title.length > WIDTH_CONFIG.THRESHOLD
       ? WIDTH_CONFIG.CHAR_WIDTH.LONG
@@ -80,14 +87,18 @@ const updateVisibleLabels = () => {
         ]"
       >
         <div
-          :style="{ backgroundColor: label.color }"
+          v-if="labelMarkerType(label) === 'color'"
+          :style="{ backgroundColor: labelMarkerColor(label) }"
           class="size-1.5 rounded-full flex-shrink-0"
         />
+        <span v-else class="flex-shrink-0 text-xs leading-none">
+          {{ labelMarkerEmoji(label) }}
+        </span>
         <span
           class="text-sm text-n-slate-10 whitespace-nowrap"
           :class="{ truncate: index === visibleLabels.length - 1 }"
         >
-          {{ label.title }}
+          {{ labelDisplayTitle(label) }}
         </span>
       </div>
     </template>

@@ -72,6 +72,7 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
       inbox_id: inbox.id,
       call_sid: result[:call_sid],
       conference_sid: result[:conversation].additional_attributes['conference_sid'],
+      browser_join_supported: result[:browser_join_supported],
       call_session: result[:call_session]&.to_telephony_h
     }, status: :created
   end

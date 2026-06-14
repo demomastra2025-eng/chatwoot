@@ -467,7 +467,8 @@
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Provider account number",
-            "PLACEHOLDER": "Optional provider-side number or account"
+            "PLACEHOLDER": "Optional provider-side number or account",
+            "REQUIRED": "Provider account number is required for Sipuni"
           },
           "INGRESS_NUMBER": {
             "LABEL": "Ingress number",
@@ -494,12 +495,13 @@
           },
           "CONNECTION_PASSWORD": {
             "LABEL": "Shared SIP password",
-            "PLACEHOLDER": "Optional shared SIP password"
+            "PLACEHOLDER": "Optional shared SIP password",
+            "REQUIRED": "SIP password is required for Sipuni"
           },
           "EMPLOYEE_CREDENTIALS_HINT": "The SIP username/password in an employee row are that employee's own SIP credentials. Leave them blank to use the shared provider settings.",
           "EMPLOYEE_PROFILES": {
             "TITLE": "Employees, extensions, and SIP access",
-            "CREATE_HINT": "Create the Virtual PBX channel first. Add employees in inbox collaborators, then assign personal extensions/SIP credentials from settings when needed.",
+            "CREATE_HINT": "After selecting employees, you can fill personal SIP username/password immediately. Empty fields keep the employee as an inbox member without SIP access; access can be added later in settings.",
             "HINT": "Bind each OneLink employee to an internal PBX extension. Provider credentials stay in diagnostics and are not shown here.",
             "EMPLOYEE_LABEL": "OneLink employee",
             "SELECT_PLACEHOLDER": "Use current user or select employee",
@@ -522,19 +524,19 @@
             "PLACEHOLDER": "1001",
             "REQUIRED": "Employee internal extension is required"
           },
-          "MANAGEMENT_TITLE": "Virtual PBX local configuration",
-          "MANAGEMENT_SUBTITLE": "Edit the local OneLink PBX bundle or delete it after dry-run checks. Remote Fonoster/Routr writes stay blocked.",
+          "MANAGEMENT_TITLE": "Virtual PBX",
+          "MANAGEMENT_SUBTITLE": "OneLink manages the channel settings, employees, and SIP access. Fonoster/Routr are synchronized automatically.",
           "CURRENT_USER_REQUIRED": "Current user is required to create an employee SIP profile",
           "REQUIRED_FIELDS": "Fill in inbox name and display phone",
-          "READ_ONLY": "This channel uses legacy/read-only ownership and cannot be changed by local PBX provisioning.",
+          "READ_ONLY": "This channel uses legacy/read-only ownership and cannot be changed from OneLink.",
           "LOAD_ERROR": "We were not able to load Virtual PBX configuration.",
-          "CREATE_SUCCESS": "Virtual PBX channel has been created locally",
-          "UPDATE_SUCCESS": "Virtual PBX channel has been updated locally",
+          "CREATE_SUCCESS": "Virtual PBX channel has been created",
+          "UPDATE_SUCCESS": "Virtual PBX channel has been saved",
           "UPDATE_ERROR": "We were not able to update Virtual PBX configuration",
-          "DELETE_CONFIRM": "Delete this local Virtual PBX channel after dry-run checks? Remote Fonoster/Routr resources will not be changed.",
-          "DELETE_SUCCESS": "Virtual PBX channel has been deleted locally",
-          "UPDATE_BUTTON": "Update local PBX",
-          "DELETE_BUTTON": "Delete local PBX",
+          "DELETE_CONFIRM": "Delete this Virtual PBX channel and related telephony resources?",
+          "DELETE_SUCCESS": "Virtual PBX channel has been deleted",
+          "UPDATE_BUTTON": "Save",
+          "DELETE_BUTTON": "Delete channel",
           "SYNC_STATE_TITLE": "Provisioning state",
           "SYNC_STATUS": "Sync status",
           "PLAN_OPERATIONS": "Planned operations",
@@ -544,7 +546,7 @@
           "RECONCILE_BUTTON": "Check remote state",
           "PROVISION_BUTTON": "Sync with telephony",
           "PROVISIONING_PLAN_READY": "Provisioning plan is ready",
-          "PROVISION_BLOCKED": "Remote provisioning is blocked until approval is enabled",
+          "PROVISION_BLOCKED": "Remote provisioning could not be completed",
           "PROVISION_SUCCESS": "Remote provisioning has completed",
           "RECONCILE_COMPLETE": "Remote state check has completed",
           "ADVANCED_FIELDS": {
@@ -635,14 +637,15 @@
           "NO_WARNINGS": "No blocking warnings detected.",
           "NO_DATA": "No readiness data available for this inbox yet.",
           "VIRTUAL_PBX_DIAGNOSTICS": "Virtual PBX diagnostics",
-          "VIRTUAL_PBX_SAFE_MODE": "Local configuration and dry-run diagnostics only. Remote Fonoster/Routr mutations are blocked.",
+          "VIRTUAL_PBX_SAFE_MODE": "OneLink saves the configuration and synchronizes Fonoster/Routr automatically.",
           "PROVIDER_KIND": "Provider kind",
           "PHONE_SPLIT": "Display → ingress",
           "OWNERSHIP": "Ownership",
           "MANAGED_LOCAL": "Managed locally",
           "LEGACY_READ_ONLY": "Legacy read-only",
           "REMOTE_MUTATIONS": "Remote mutations",
-          "REMOTE_MUTATIONS_BLOCKED": "Blocked until explicit approval",
+          "REMOTE_MUTATIONS_BLOCKED": "Enabled by OneLink sync",
+          "REMOTE_MUTATIONS_ALLOWED": "Automatic via OneLink",
           "DISPLAY_PHONE": "Display phone",
           "INGRESS_NUMBER": "Ingress number",
           "NUMBER_REF": "Number ref",
@@ -976,6 +979,8 @@
     },
     "AGENTS": {
       "BUTTON_TEXT": "Add agents",
+      "SAVE_BUTTON_TEXT": "Save agents",
+      "SAVE_SUCCESS": "Agents and SIP settings saved",
       "ADD_AGENTS": "Adding Agents to your Inbox..."
     },
     "FINISH": {

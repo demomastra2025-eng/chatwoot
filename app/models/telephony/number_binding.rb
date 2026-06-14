@@ -2,36 +2,41 @@
 #
 # Table name: telephony_number_bindings
 #
-#  id                      :bigint           not null, primary key
-#  app_ref                 :string
-#  display_phone_number    :string
-#  fonoster_tel_url        :string
-#  ingress_number          :string
-#  last_synced_at          :datetime
-#  managed_by              :string
-#  metadata                :jsonb            not null
-#  number_ref              :string           not null
-#  ownership_status        :string           default("legacy_reference"), not null
-#  phone_number            :string
-#  provider                :string           default("fonoster"), not null
-#  provider_account_number :string
-#  trunk_ref               :string
-#  created_at              :datetime         not null
-#  updated_at              :datetime         not null
-#  account_id              :bigint           not null
-#  inbox_id                :bigint           not null
-#  provider_connection_id  :bigint
+#  id                       :bigint           not null, primary key
+#  app_ref                  :string
+#  display_phone_number     :string
+#  fonoster_tel_url         :string
+#  ingress_number           :string
+#  last_reconciled_at       :datetime
+#  last_synced_at           :datetime
+#  managed_by               :string
+#  metadata                 :jsonb            not null
+#  number_ref               :string           not null
+#  ownership_status         :string           default("legacy_reference"), not null
+#  phone_number             :string
+#  provider                 :string           default("fonoster"), not null
+#  provider_account_number  :string
+#  provisioning_status      :string           default("local_only"), not null
+#  remote_drift_detected_at :datetime
+#  remote_drift_summary     :jsonb            not null
+#  trunk_ref                :string
+#  created_at               :datetime         not null
+#  updated_at               :datetime         not null
+#  account_id               :bigint           not null
+#  inbox_id                 :bigint           not null
+#  provider_connection_id   :bigint
 #
 # Indexes
 #
-#  index_telephony_number_bindings_on_account_id                   (account_id)
-#  index_telephony_number_bindings_on_account_ingress              (account_id,ingress_number)
-#  index_telephony_number_bindings_on_account_number_ref           (account_id,number_ref) UNIQUE
-#  index_telephony_number_bindings_on_account_ownership            (account_id,ownership_status)
-#  index_telephony_number_bindings_on_account_phone                (account_id,phone_number)
-#  idx_tel_number_bindings_account_provider_connection             (account_id,provider_connection_id)
-#  index_telephony_number_bindings_on_inbox_id                     (inbox_id) UNIQUE
-#  index_telephony_number_bindings_on_provider_connection_id       (provider_connection_id)
+#  idx_tel_number_bindings_account_ingress                    (account_id,ingress_number)
+#  idx_tel_number_bindings_account_ownership                  (account_id,ownership_status)
+#  idx_tel_number_bindings_account_provider_connection        (account_id,provider_connection_id)
+#  idx_tel_number_bindings_account_provisioning_status        (account_id,provisioning_status)
+#  index_telephony_number_bindings_on_account_id              (account_id)
+#  index_telephony_number_bindings_on_account_number_ref      (account_id,number_ref) UNIQUE
+#  index_telephony_number_bindings_on_account_phone           (account_id,phone_number)
+#  index_telephony_number_bindings_on_inbox_id                (inbox_id) UNIQUE
+#  index_telephony_number_bindings_on_provider_connection_id  (provider_connection_id)
 #
 # Foreign Keys
 #

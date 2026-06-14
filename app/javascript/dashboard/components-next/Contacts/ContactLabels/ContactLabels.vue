@@ -8,6 +8,7 @@ import LabelItem from 'dashboard/components-next/label/LabelItem.vue';
 import AddLabel from 'dashboard/components-next/label/AddLabel.vue';
 import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
 import EditLabelForm from 'dashboard/routes/dashboard/settings/labels/EditLabel.vue';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 const props = defineProps({
   contactId: {
@@ -42,9 +43,13 @@ const savedLabels = computed(() => {
 const labelMenuItems = computed(() => {
   return allLabels.value
     ?.map(label => ({
-      label: label.title,
+      label: labelDisplayTitle(label),
       value: label.id,
-      thumbnail: { name: label.title, color: label.color },
+      thumbnail: {
+        name: labelDisplayTitle(label),
+        color: label.color,
+        emoji: label.marker_type === 'emoji' ? label.emoji : '',
+      },
       isSelected: savedLabels.value.some(
         savedLabel => savedLabel.id === label.id
       ),

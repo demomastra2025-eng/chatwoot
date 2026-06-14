@@ -31,7 +31,8 @@ class Llm::OpenRouterModelMigration
       return canonical_model unless openrouter_required_for?(feature, account: account)
 
       candidates_for(canonical_model).find do |candidate|
-        Llm::Models.valid_model_for?(feature, candidate, account: account)
+        openrouter_candidate?(candidate, account: account) &&
+          Llm::Models.valid_model_for?(feature, candidate, account: account)
       end
     end
 
@@ -328,6 +329,10 @@ class Llm::OpenRouterModelMigration
 
     def openrouter_required_for?(feature, account: nil)
       Llm::Models.openrouter_no_fallback_active_for?(feature, account: account)
+    end
+
+    def openrouter_candidate?(model_name, account: nil)
+      Llm::Models.provider_for(model_name, account: account) == Llm::OpenRouterModelCatalog::PROVIDER
     end
 
     def direct_openai_model_id?(model_name)

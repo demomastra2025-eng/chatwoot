@@ -1,10 +1,20 @@
 module LabelConcern
   def create
-    model.update_labels(permitted_params[:labels])
-    @labels = model.label_list
+    update_label_list(permitted_params[:labels])
+    @labels = current_label_list
   end
 
   def index
-    @labels = model.label_list
+    @labels = current_label_list
+  end
+
+  private
+
+  def update_label_list(labels)
+    model.update_labels(labels)
+  end
+
+  def current_label_list
+    model.label_list
   end
 end

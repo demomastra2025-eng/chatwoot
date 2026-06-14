@@ -81,7 +81,14 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def should_process_captain_response?
-    conversation.pending? && message.incoming? && !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
+    conversation_accepts_captain_response? && message.incoming? && !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
+  end
+
+  def conversation_accepts_captain_response?
+    return true if conversation.pending?
+    return false unless conversation.open?
+
+    inbox.captain_inbox&.reply_to_open_conversations? || false
   end
 
   def open_conversation_for_human_response
@@ -121,7 +128,7 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def captain_handling_conversation?
-    conversation.pending? &&
+    conversation_accepts_captain_response? &&
       inbox.respond_to?(:captain_assistant) &&
       inbox.captain_assistant.present? &&
       inbox.captain_auto_reply_allowed?

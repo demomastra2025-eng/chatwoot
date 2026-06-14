@@ -89,7 +89,7 @@ class Captain::Runtime::ChatFactory
         account: account,
         feature: :captain_agent,
         model: model_id_for(chat),
-        tools: true,
+        tools: agent_tools,
         schema: schema.present?
       )
     end

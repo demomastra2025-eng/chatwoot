@@ -7,6 +7,7 @@ import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 import Spinner from 'shared/components/Spinner.vue';
 import LabelDropdown from 'shared/components/ui/label/LabelDropdown.vue';
 import AddLabel from 'shared/components/ui/dropdown/AddLabel.vue';
+import { labelDisplayTitle, labelMarkerEmoji } from 'dashboard/helper/labels';
 
 export default {
   components: {
@@ -59,6 +60,8 @@ export default {
       accountLabels,
       addLabelToConversation,
       removeLabelFromConversation,
+      labelDisplayTitle,
+      labelMarkerEmoji,
       showSearchDropdownLabel,
       closeDropdownLabel,
       toggleLabels,
@@ -93,13 +96,14 @@ export default {
         <woot-label
           v-for="label in activeLabels"
           :key="label.id"
-          :title="label.title"
+          :title="labelDisplayTitle(label)"
           :description="label.description"
           show-close
           :color="label.color"
+          :emoji="labelMarkerEmoji(label)"
           variant="smooth"
           class="max-w-[calc(100%-0.5rem)]"
-          @remove="removeLabelFromConversation"
+          @remove="removeLabelFromConversation(label.title)"
         />
 
         <div

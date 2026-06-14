@@ -3,8 +3,8 @@ import LabelDropdownItem from './LabelDropdownItem.vue';
 import Hotkey from 'dashboard/components/base/Hotkey.vue';
 import AddLabelModal from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
 import { picoSearch } from '@scmmishra/pico-search';
-import { sanitizeLabel } from 'shared/helpers/sanitizeData';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 export default {
   components: {
@@ -46,7 +46,10 @@ export default {
     filteredActiveLabels() {
       if (!this.search) return this.accountLabels;
 
-      return picoSearch(this.accountLabels, this.search, ['title']);
+      return picoSearch(this.accountLabels, this.search, [
+        { name: 'display_title', weight: 4 },
+        'title',
+      ]);
     },
 
     noResult() {
@@ -55,7 +58,7 @@ export default {
 
     hasExactMatchInResults() {
       return this.filteredActiveLabels.some(
-        label => label.title === this.search
+        label => labelDisplayTitle(label) === this.search
       );
     },
 
@@ -64,7 +67,11 @@ export default {
     },
 
     parsedSearch() {
-      return sanitizeLabel(this.search);
+      return this.search.trim();
+    },
+
+    labelDisplayTitle() {
+      return labelDisplayTitle;
     },
   },
 
@@ -140,8 +147,9 @@ export default {
           <LabelDropdownItem
             v-for="label in filteredActiveLabels"
             :key="label.title"
-            :title="label.title"
+            :title="labelDisplayTitle(label)"
             :color="label.color"
+            :emoji="label.marker_type === 'emoji' ? label.emoji : ''"
             :selected="selectedLabels.includes(label.title)"
             @select-label="onAddRemove(label)"
           />

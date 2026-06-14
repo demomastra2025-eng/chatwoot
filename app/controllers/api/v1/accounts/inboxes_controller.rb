@@ -102,6 +102,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def destroy
+    if managed_virtual_pbx_inbox?
+      destroy_managed_virtual_pbx_inbox
+      return
+    end
+
     if @inbox.deleting?
       render status: :accepted, json: pending_deletion_payload(@inbox)
       return
@@ -302,6 +307,51 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def render_whatsapp_web_inbox(include_qr_code: true, status: :ok)
     @inbox.reload
     render :show, status: status, locals: { include_whatsapp_web_qr_code: include_qr_code }
+  end
+
+  def managed_virtual_pbx_inbox?
+    return false unless @inbox.channel_type == 'Channel::Voice'
+    return false unless @inbox.respond_to?(:telephony_number_binding)
+
+    @inbox.telephony_number_binding&.managed?
+  end
+
+  def destroy_managed_virtual_pbx_inbox
+    inbox_id = @inbox.id
+    payload = Telephony::VirtualPbx::ProvisioningService.new(
+      account: Current.account,
+      current_user: Current.user
+    ).delete_channel(
+      inbox_id: inbox_id,
+      confirm: true,
+      dry_run: false,
+      remote_commit: managed_virtual_pbx_remote_commit?,
+      include_diagnostics: false
+    )
+
+    unless payload[:deleted]
+      render json: { code: 'TELEPHONY_DELETE_FAILED', error: 'Managed voice inbox deletion failed', payload: payload },
+             status: :unprocessable_content
+      return
+    end
+
+    render status: :accepted, json: managed_virtual_pbx_deletion_payload(inbox_id, payload)
+  end
+
+  def managed_virtual_pbx_remote_commit?
+    ActiveModel::Type::Boolean.new.cast(params.fetch(:remote_commit, false))
+  end
+
+  def managed_virtual_pbx_deletion_payload(inbox_id, payload)
+    {
+      message: I18n.t('messages.inbox_deletetion_response'),
+      id: inbox_id,
+      deleting: false,
+      deleted: true,
+      deleted_inbox_id: payload[:deleted_inbox_id],
+      remote_commit: payload[:remote_commit],
+      payload: payload
+    }.compact
   end
 
   def pending_deletion_payload(inbox)

@@ -1,5 +1,53 @@
 # frozen_string_literal: true
 
+# == Schema Information
+#
+# Table name: telephony_provider_connections
+#
+#  id                       :bigint           not null, primary key
+#  credentials_ref          :string
+#  fonoster_acl_ref         :string
+#  fonoster_credentials_ref :string
+#  fonoster_trunk_ref       :string
+#  host                     :string
+#  last_reconciled_at       :datetime
+#  last_synced_at           :datetime
+#  managed_by               :string           default("onelink"), not null
+#  metadata                 :jsonb            not null
+#  name                     :string           not null
+#  ownership_status         :string           default("local"), not null
+#  password_secret_ref      :string
+#  port                     :integer
+#  provider_kind            :string           not null
+#  provisioning_status      :string           default("local_only"), not null
+#  remote_drift_detected_at :datetime
+#  remote_drift_summary     :jsonb            not null
+#  send_register            :boolean          default(FALSE), not null
+#  status                   :string           default("draft"), not null
+#  transport                :string           default("udp"), not null
+#  username                 :string
+#  created_at               :datetime         not null
+#  updated_at               :datetime         not null
+#  account_id               :bigint           not null
+#  created_by_id            :bigint
+#  updated_by_id            :bigint
+#
+# Indexes
+#
+#  idx_tel_provider_connections_account_kind_name            (account_id,provider_kind,name) UNIQUE
+#  idx_tel_provider_connections_account_provisioning_status  (account_id,provisioning_status)
+#  idx_tel_provider_connections_account_status               (account_id,status)
+#  idx_tel_provider_connections_account_trunk_ref            (account_id,fonoster_trunk_ref) UNIQUE WHERE (fonoster_trunk_ref IS NOT NULL)
+#  index_telephony_provider_connections_on_account_id        (account_id)
+#  index_telephony_provider_connections_on_created_by_id     (created_by_id)
+#  index_telephony_provider_connections_on_updated_by_id     (updated_by_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (created_by_id => users.id)
+#  fk_rails_...  (updated_by_id => users.id)
+#
 class Telephony::ProviderConnection < ApplicationRecord
   self.table_name = 'telephony_provider_connections'
 

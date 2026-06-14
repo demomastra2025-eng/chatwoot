@@ -3,7 +3,7 @@
 class Llm::ToolRiskPolicy
   READ_ONLY_RISK_LEVELS = %w[low read_only readonly lookup].freeze
   MUTATING_RISK_LEVELS = %w[medium high critical destructive custom].freeze
-  TOOL_DEFINITION_METHODS = %i[tool_definition definition metadata].freeze
+  TOOL_DEFINITION_METHODS = %i[tool_definition definition metadata to_tool_metadata].freeze
   TOOL_READ_ONLY_KEYS = %i[read_only read_only_hint readonly lookup].freeze
   TOOL_MUTATING_KEYS = %i[mutating mutation destructive destructive_hint side_effect side_effects].freeze
   TOOL_NON_IDEMPOTENT_KEYS = %i[non_idempotent non_retryable].freeze

@@ -646,14 +646,6 @@ RSpec.describe Captain::CustomTool, type: :model do
 
     describe '#build_metadata_headers' do
       let(:tool) { create(:captain_custom_tool, account: account, slug: 'custom_test_tool') }
-      let(:conversation) { create(:conversation, account: account) }
-      let(:communication_thread) { conversation.reload.communication_thread }
-      let(:contact) { conversation.contact }
-
-      before do
-        account.enable_features!('communication_threads')
-      end
-
       let(:deal) do
         create(
           :crm_deal,
@@ -680,7 +672,6 @@ RSpec.describe Captain::CustomTool, type: :model do
           starts_at: Time.zone.parse('2026-03-29 10:00:00 UTC')
         )
       end
-
       let(:state) do
         {
           account_id: account.id,
@@ -720,6 +711,13 @@ RSpec.describe Captain::CustomTool, type: :model do
             starts_at: appointment.starts_at.iso8601
           }
         }
+      end
+      let(:conversation) { create(:conversation, account: account) }
+      let(:communication_thread) { conversation.reload.communication_thread }
+      let(:contact) { conversation.contact }
+
+      before do
+        account.enable_features!('communication_threads')
       end
 
       it 'includes account and assistant metadata' do
@@ -929,8 +927,35 @@ RSpec.describe Captain::CustomTool, type: :model do
                                  risk_level: 'custom',
                                  source_type: 'custom',
                                  requires_confirmation: false,
-                                 idempotent: false
+                                 idempotent: false,
+                                 read_only: false
                                })
+      end
+
+      it 'marks safe lookup GET custom tools as read-only' do
+        tool = create(:captain_custom_tool, account: account,
+                                            http_method: 'GET',
+                                            slug: 'custom_lookup_order',
+                                            title: 'Lookup order')
+
+        expect(tool.to_tool_metadata).to include(
+          risk_level: 'read_only',
+          read_only: true,
+          idempotent: true
+        )
+      end
+
+      it 'keeps mutating HTTP custom tools mutating even with lookup naming' do
+        tool = create(:captain_custom_tool, account: account,
+                                            http_method: 'POST',
+                                            slug: 'custom_lookup_order',
+                                            title: 'Lookup order')
+
+        expect(tool.to_tool_metadata).to include(
+          risk_level: 'custom',
+          read_only: false,
+          idempotent: false
+        )
       end
     end
 

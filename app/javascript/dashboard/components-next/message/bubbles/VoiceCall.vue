@@ -526,7 +526,7 @@ const handleJoinCall = async () => {
           <AudioChip
             :attachment="recordingAttachment"
             show-transcribed-text
-            class="!w-full rounded-xl bg-n-alpha-1 px-2 py-2 text-n-slate-12 skip-context-menu"
+            class="!w-full rounded-xl px-2 py-2 text-n-slate-12 skip-context-menu"
           />
         </div>
       </details>

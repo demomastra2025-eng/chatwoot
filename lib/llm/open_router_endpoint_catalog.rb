@@ -18,15 +18,6 @@ class Llm::OpenRouterEndpointCatalog
   REFRESH_LOCK_ID = 5_310_102
   DEFAULT_REFRESH_BATCH_SIZE = 50
   DEFAULT_REFRESH_THROTTLE_SECONDS = 0.25
-  PARAMETER_CAPABILITIES = {
-    'tools' => 'tool_calling',
-    'tool_choice' => 'tool_calling',
-    'response_format' => 'structured_output',
-    'structured_outputs' => 'structured_output',
-    'reasoning' => 'reasoning',
-    'reasoning_effort' => 'reasoning',
-    'include_reasoning' => 'reasoning'
-  }.freeze
 
   class MissingApiKeyError < StandardError; end
   class FetchError < StandardError; end
@@ -331,8 +322,10 @@ class Llm::OpenRouterEndpointCatalog
       capabilities << 'image_input' if input_modalities.include?('image')
       capabilities << 'audio_input' if input_modalities.include?('audio')
       capabilities << 'file_input' if input_modalities.include?('file')
-      capabilities.concat(supported_parameters.filter_map { |parameter| PARAMETER_CAPABILITIES[parameter] })
-      capabilities.uniq
+      Llm::OpenRouterParameterCapabilities.derive(
+        capabilities: capabilities,
+        supported_parameters: supported_parameters
+      )
     end
 
     def endpoint_modalities(endpoint, key)
@@ -628,7 +621,10 @@ class Llm::OpenRouterEndpointCatalog
         endpoint_provider_name: provider_name,
         endpoint_provider_key: endpoint['provider_key'].to_s.presence || provider_name.to_s.parameterize,
         supported_parameters: Array(endpoint['supported_parameters']).map(&:to_s).uniq,
-        capabilities: Array(endpoint['capabilities']).map(&:to_s).uniq,
+        capabilities: Llm::OpenRouterParameterCapabilities.derive(
+          capabilities: endpoint['capabilities'],
+          supported_parameters: endpoint['supported_parameters']
+        ),
         context_length: integer_value(endpoint['context_length'] || max_prompt_tokens),
         max_prompt_tokens: max_prompt_tokens,
         max_completion_tokens: max_completion_tokens,
@@ -718,7 +714,16 @@ class Llm::OpenRouterEndpointCatalog
       cached.each_with_object({}) do |(model_id, config), result|
         next unless config.is_a?(Hash)
 
-        result[model_id.to_s] = config.deep_stringify_keys
+        normalized_config = config.deep_stringify_keys
+        normalized_config['endpoints'] = Array(normalized_config['endpoints']).map do |endpoint|
+          endpoint = endpoint.to_h.deep_stringify_keys
+          endpoint['capabilities'] = Llm::OpenRouterParameterCapabilities.derive(
+            capabilities: endpoint['capabilities'],
+            supported_parameters: endpoint['supported_parameters']
+          )
+          endpoint
+        end
+        result[model_id.to_s] = normalized_config
       end
     end
 

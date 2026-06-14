@@ -63,16 +63,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(conversation.reload.status).to eq('open')
       end
 
-      it 'opens the conversation within business hours when auto-reply mode is never' do
-        captain_inbox.update!(auto_reply_mode: 'never')
-
-        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
-
-        create(:message, conversation: conversation, message_type: :incoming, account: account)
-
-        expect(conversation.reload.status).to eq('open')
-      end
-
       it 'does not schedule captain response for voice_call bubble updates' do
         expect(Captain::Conversation::TypingIndicatorService).not_to receive(:turn_on)
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
@@ -131,20 +121,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
       end
 
-      it 'does not schedule captain response when auto-reply mode is never' do
-        captain_inbox.update!(auto_reply_mode: 'never')
-        out_of_office_service = instance_double(MessageTemplates::Template::OutOfOffice)
-        allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)
-        allow(out_of_office_service).to receive(:perform).and_return(true)
-
-        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
-
-        create(:message, conversation: conversation, message_type: :incoming, account: account)
-
-        expect(MessageTemplates::Template::OutOfOffice).to have_received(:new)
-        expect(conversation.reload.status).to eq('open')
-      end
-
       it 'performs captain handoff when quota is exceeded (OOO template will kick in after handoff)' do
         account.update!(
           limits: { 'captain_responses' => 100 },
@@ -184,16 +160,6 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
       it 'opens the conversation when outside-hours auto-reply has no active outside-hours window' do
         captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
-
-        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
-
-        create(:message, conversation: conversation, message_type: :incoming, account: account)
-
-        expect(conversation.reload.status).to eq('open')
-      end
-
-      it 'opens the conversation when auto-reply mode is never' do
-        captain_inbox.update!(auto_reply_mode: 'never')
 
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
 
@@ -324,6 +290,18 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
       create(:message, conversation: conversation, message_type: :incoming, account: account)
     end
+
+    it 'schedules captain response for open conversations when enabled on the Captain inbox' do
+      captain_inbox.update!(reply_to_open_conversations: true)
+
+      expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
+        conversation,
+        assistant,
+        hash_including(expected_last_message_id: kind_of(Integer))
+      )
+
+      create(:message, conversation: conversation, message_type: :incoming, account: account)
+    end
   end
 
   context 'when message is outgoing' do
@@ -398,6 +376,29 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         out_of_office_message = conversation.reload.messages.template.last
         expect(out_of_office_message.content).to eq('We are currently closed')
+      end
+
+      it 'schedules Captain and skips out-of-office template when open replies are enabled outside business hours' do
+        captain_inbox.update!(auto_reply_mode: 'outside_working_hours', reply_to_open_conversations: true)
+        inbox.update!(
+          working_hours_enabled: true,
+          out_of_office_message: 'We are currently closed',
+          enable_email_collect: false
+        )
+        inbox.working_hours.find_by(day_of_week: Time.current.in_time_zone(inbox.timezone).wday).update!(
+          closed_all_day: true,
+          open_all_day: false
+        )
+
+        expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
+          conversation,
+          assistant,
+          hash_including(expected_last_message_id: kind_of(Integer))
+        )
+
+        expect do
+          create(:message, conversation: conversation, message_type: :incoming, account: account)
+        end.not_to(change { conversation.reload.messages.template.count })
       end
     end
   end

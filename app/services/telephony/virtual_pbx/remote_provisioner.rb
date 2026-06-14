@@ -3,8 +3,6 @@
 require 'cgi'
 
 class Telephony::VirtualPbx::RemoteProvisioner
-  FEATURE_FLAG = 'TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED'
-
   def initialize(account:, current_user:, resource_client: nil, reconciler: nil)
     @account = account
     @current_user = current_user
@@ -26,10 +24,6 @@ class Telephony::VirtualPbx::RemoteProvisioner
 
     unless ActiveModel::Type::Boolean.new.cast(remote_commit)
       return block_run!(run, code: 'REMOTE_COMMIT_NOT_REQUESTED', message: 'Remote commit was not requested')
-    end
-
-    unless remote_commit_enabled?
-      return block_run!(run, code: 'REMOTE_MUTATION_REQUIRES_APPROVAL', message: 'Remote provisioning is disabled by configuration')
     end
 
     operations = Array.wrap(plan[:operations] || plan['operations'])
@@ -125,17 +119,13 @@ class Telephony::VirtualPbx::RemoteProvisioner
     reconciler || Telephony::VirtualPbx::Reconciler.new(account: account, resource_client: client)
   end
 
-  def remote_commit_enabled?
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch(FEATURE_FLAG, nil))
-  end
-
   def mark_local_synced!(desired_state)
     state = desired_state.with_indifferent_access
     attrs = { provisioning_status: 'fonoster_synced', last_synced_at: Time.current, remote_drift_detected_at: nil, remote_drift_summary: {} }
     update_if_columns_exist(Telephony::NumberBinding, state.dig(:resources, :number_binding_id),
                             attrs.merge(number_ref: state.dig(:refs, :number_ref), trunk_ref: state.dig(:refs, :trunk_ref)).compact)
     update_if_columns_exist(Telephony::ProviderConnection, state.dig(:resources, :provider_connection_id),
-                            attrs.except(:last_synced_at).merge(fonoster_trunk_ref: state.dig(:refs, :trunk_ref)).compact)
+                            attrs.merge(status: 'active', fonoster_trunk_ref: state.dig(:refs, :trunk_ref)).compact)
     update_sip_profile_refs!(state)
     update_channel_provider_config!(state)
   end
@@ -166,12 +156,115 @@ class Telephony::VirtualPbx::RemoteProvisioner
   end
 
   def operation_for_state(operation_attrs, desired_state)
-    return operation_attrs unless operation_attrs[:key].to_s == 'update_number_route'
+    case operation_attrs[:key].to_s
+    when 'update_number_route'
+      return update_number_route_operation_for_state(operation_attrs, desired_state)
+    when 'upsert_number'
+      return number_operation_for_state(operation_attrs, desired_state)
+    when 'upsert_connection_credentials'
+      return operation_attrs.merge(payload: connection_credentials_payload(desired_state))
+    when 'upsert_agent_credentials'
+      return operation_attrs.merge(payload: profile_credentials_payload(operation_attrs, desired_state))
+    when 'upsert_agent'
+      return agent_operation_for_state(operation_attrs, desired_state)
+    when 'upsert_sipuni_gateway'
+      return sipuni_gateway_operation_for_state(operation_attrs, desired_state)
+    end
 
+    operation_attrs
+  end
+
+  def update_number_route_operation_for_state(operation_attrs, desired_state)
     number_ref = desired_state.dig(:refs, :number_ref)
     return operation_attrs if number_ref.blank?
 
     operation_attrs.merge(path: "/telephony/numbers/#{CGI.escape(number_ref.to_s)}/route")
+  end
+
+  def number_operation_for_state(operation_attrs, desired_state)
+    refs = (desired_state[:refs] || {}).with_indifferent_access
+    payload = (operation_attrs[:payload] || {}).with_indifferent_access
+    payload[:ref] = refs[:number_ref] if refs[:number_ref].present?
+    payload[:trunkRef] = refs[:trunk_ref] if refs[:trunk_ref].present?
+
+    attrs = operation_attrs.merge(payload: payload)
+    return attrs if refs[:number_ref].blank?
+
+    attrs.merge(path: "/telephony/numbers/#{CGI.escape(refs[:number_ref].to_s)}")
+  end
+
+  def connection_credentials_payload(desired_state)
+    state = desired_state.with_indifferent_access
+    connection = (state[:connection] || {}).with_indifferent_access
+    credentials_ref = connection[:credentials_ref].presence || state.dig(:refs, :credentials_ref)
+
+    {
+      ref: credentials_ref,
+      name: connection[:name].presence || state[:name].presence || credentials_ref,
+      username: connection[:username],
+      password: connection[:password]
+    }.compact
+  end
+
+  def profile_credentials_payload(operation_attrs, desired_state)
+    credential_ref = operation_resource_ref(operation_attrs)
+    profile = Array.wrap(desired_state[:profiles]).find do |candidate|
+      candidate.with_indifferent_access[:credentials_ref].to_s == credential_ref.to_s
+    end
+    attrs = (profile || {}).with_indifferent_access
+
+    {
+      ref: credential_ref,
+      name: profile_credentials_name(attrs, credential_ref),
+      username: attrs[:sip_username],
+      password: attrs[:sip_password],
+      metadata: {
+        managed_by: 'onelink',
+        onelink_account_id: desired_state[:account_id],
+        onelink_inbox_id: desired_state[:inbox_id],
+        onelink_user_id: attrs[:user_id],
+        internal_extension: attrs[:internal_extension]
+      }.compact
+    }.compact
+  end
+
+  def profile_credentials_name(attrs, credential_ref)
+    [
+      attrs[:user_name].presence,
+      attrs[:internal_extension].presence
+    ].compact.join(' ').presence || credential_ref
+  end
+
+  def agent_operation_for_state(operation_attrs, desired_state)
+    agent_ref = operation_resource_ref(operation_attrs)
+    profile = Array.wrap(desired_state[:profiles]).find do |candidate|
+      attrs = candidate.with_indifferent_access
+      attrs[:agent_ref].to_s == agent_ref.to_s || attrs[:fonoster_agent_ref].to_s == agent_ref.to_s
+    end
+    return operation_attrs if profile.blank?
+
+    attrs = profile.with_indifferent_access
+    credentials_ref = attrs[:fonoster_credentials_ref].presence || attrs[:credentials_ref].presence
+    return operation_attrs if credentials_ref.blank?
+
+    payload = (operation_attrs[:payload] || {}).with_indifferent_access
+    operation_attrs.merge(payload: payload.merge(credentialsRef: credentials_ref))
+  end
+
+  def sipuni_gateway_operation_for_state(operation_attrs, desired_state)
+    payload = (operation_attrs[:payload] || {}).with_indifferent_access
+    provider_account_number = payload[:providerAccountNumber] || payload[:provider_account_number] || payload[:username]
+    profile = Array.wrap(desired_state[:profiles]).find do |candidate|
+      attrs = candidate.with_indifferent_access
+      attrs[:sip_username].to_s == provider_account_number.to_s
+    end
+    return operation_attrs if profile.blank?
+
+    attrs = profile.with_indifferent_access
+    credentials_ref = attrs[:fonoster_credentials_ref].presence || attrs[:credentials_ref].presence
+    return operation_attrs if credentials_ref.blank?
+
+    operation_attrs.merge(payload: payload.merge(credentialsRef: credentials_ref))
   end
 
   def apply_remote_result_to_state!(desired_state, operation_attrs, result)
@@ -179,11 +272,29 @@ class Telephony::VirtualPbx::RemoteProvisioner
     return if remote_ref.blank?
 
     case operation_attrs[:key].to_s
+    when 'upsert_agent_credentials'
+      apply_remote_profile_credentials_ref_to_state!(desired_state, operation_attrs, remote_ref)
+    when 'upsert_trunk'
+      desired_state[:refs] ||= {}
+      desired_state[:refs][:trunk_ref] = remote_ref
+      desired_state[:connection] ||= {}
+      desired_state[:connection][:fonoster_trunk_ref] = remote_ref
     when 'upsert_number'
       desired_state[:refs] ||= {}
       desired_state[:refs][:number_ref] = remote_ref
     when 'upsert_agent'
       apply_remote_agent_ref_to_state!(desired_state, operation_attrs, remote_ref)
+    end
+  end
+
+  def apply_remote_profile_credentials_ref_to_state!(desired_state, operation_attrs, remote_ref)
+    previous_ref = operation_resource_ref(operation_attrs)
+    Array.wrap(desired_state[:profiles]).each do |profile|
+      attrs = profile.with_indifferent_access
+      next unless attrs[:credentials_ref].to_s == previous_ref.to_s || attrs[:fonoster_credentials_ref].to_s == previous_ref.to_s
+
+      profile[:credentials_ref] = remote_ref
+      profile[:fonoster_credentials_ref] = remote_ref
     end
   end
 
@@ -205,9 +316,19 @@ class Telephony::VirtualPbx::RemoteProvisioner
   def update_sip_profile_refs!(state)
     Array.wrap(state[:profiles]).each do |profile|
       attrs = profile.with_indifferent_access
-      next if attrs[:id].blank? || attrs[:fonoster_agent_ref].blank?
+      next if attrs[:id].blank?
 
-      update_if_columns_exist(Telephony::SipProfile, attrs[:id], fonoster_agent_ref: attrs[:fonoster_agent_ref])
+      profile_attrs = { status: 'active', last_synced_at: Time.current }
+      profile_attrs[:fonoster_agent_ref] = attrs[:fonoster_agent_ref] if attrs[:fonoster_agent_ref].present?
+
+      credentials_ref = attrs[:fonoster_credentials_ref].presence || attrs[:credentials_ref].presence
+      if credentials_ref.present?
+        profile_attrs[:credentials_ref] = credentials_ref
+        profile_attrs[:fonoster_credentials_ref] = credentials_ref
+        profile_attrs[:password_secret_ref] = credentials_ref if attrs[:sip_password].present?
+      end
+
+      update_if_columns_exist(Telephony::SipProfile, attrs[:id], profile_attrs) if profile_attrs.present?
     end
   end
 

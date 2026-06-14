@@ -37,24 +37,28 @@ const mountComponent = props =>
           template: '<div data-test-id="tabs"><slot /></div>',
         },
         WootTabsItem: {
-          props: ['index', 'name', 'count'],
+          props: ['index', 'name', 'count', 'showBadge'],
           template:
-            '<div data-test-id="tab-item" :data-name="name" :data-count="count">{{ name }}:{{ count }}</div>',
+            '<div data-test-id="tab-item" :data-name="name" :data-count="count" :data-show-badge="showBadge">{{ name }}</div>',
         },
       },
     },
   });
 
 describe('ChatTypeTabs', () => {
-  it('shows the blue tab counter from unread dialog/thread totals, not message totals', () => {
+  it('shows assignee tab totals inline and disables badge styling', () => {
     const wrapper = mountComponent();
 
     const tabItems = wrapper.findAll('[data-test-id="tab-item"]');
 
-    expect(tabItems[0].attributes('data-name')).toBe('Мои');
-    expect(tabItems[0].attributes('data-count')).toBe('7');
-    expect(tabItems[0].text()).not.toContain(':42');
-    expect(tabItems[0].text()).not.toContain(':128');
-    expect(tabItems[1].attributes('data-count')).toBe('12');
+    expect(tabItems[0].attributes('data-name')).toBe('Мои (42)');
+    expect(tabItems[0].attributes('data-count')).toBe('42');
+    expect(tabItems[0].attributes('data-show-badge')).toBe('false');
+    expect(tabItems[0].text()).toBe('Мои (42)');
+    expect(tabItems[0].text()).not.toContain('7');
+
+    expect(tabItems[1].attributes('data-name')).toBe('Все (99)');
+    expect(tabItems[1].attributes('data-count')).toBe('99');
+    expect(tabItems[1].attributes('data-show-badge')).toBe('false');
   });
 });

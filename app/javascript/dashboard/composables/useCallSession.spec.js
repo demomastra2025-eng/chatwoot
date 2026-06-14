@@ -11,6 +11,8 @@ const {
   removeEventListenerMock,
   rejectBackendCallMock,
   rejectClientCallMock,
+  routeMock,
+  inboxGetterMock,
   supportsBrowserCallingMock,
 } = vi.hoisted(() => ({
   addEventListenerMock: vi.fn(),
@@ -21,7 +23,21 @@ const {
   removeEventListenerMock: vi.fn(),
   rejectBackendCallMock: vi.fn(),
   rejectClientCallMock: vi.fn(),
+  routeMock: { params: {} },
+  inboxGetterMock: vi.fn(),
   supportsBrowserCallingMock: vi.fn(),
+}));
+
+vi.mock('vue-router', () => ({
+  useRoute: () => routeMock,
+}));
+
+vi.mock('vuex', () => ({
+  useStore: () => ({
+    getters: {
+      'inboxes/getInbox': inboxGetterMock,
+    },
+  }),
 }));
 
 vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
@@ -71,6 +87,8 @@ describe('useCallSession', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    routeMock.params = {};
+    inboxGetterMock.mockReturnValue(null);
     bootstrapIncomingSupportMock.mockResolvedValue({ provider: 'fonoster' });
     initializeDeviceMock.mockResolvedValue({
       provider: 'fonoster',
@@ -95,6 +113,64 @@ describe('useCallSession', () => {
       element.remove();
     });
     mountedApps = [];
+    vi.useRealTimers();
+  });
+
+  it('retries browser calling bootstrap after a transient failure', async () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    bootstrapIncomingSupportMock
+      .mockRejectedValueOnce(new Error('bridge unavailable'))
+      .mockResolvedValueOnce({ provider: 'fonoster' });
+
+    mountUseCallSession();
+    await Promise.resolve();
+
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(2);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('bootstraps browser calling for the active voice inbox route', async () => {
+    routeMock.params = { inbox_id: '4696' };
+    inboxGetterMock.mockReturnValue({ id: 4696, provider: 'fonoster' });
+
+    mountUseCallSession();
+    await Promise.resolve();
+
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4696);
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+  });
+
+  it('does not request an unscoped webphone token while route inbox metadata is loading', async () => {
+    routeMock.params = { inbox_id: '4698' };
+    inboxGetterMock.mockReturnValue(null);
+
+    mountUseCallSession();
+    await Promise.resolve();
+
+    expect(initializeDeviceMock).not.toHaveBeenCalled();
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+  });
+
+  it('bootstraps browser calling for an incoming Fonoster call inbox before answer', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-cold-incoming-bootstrap',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      inboxId: 4698,
+    });
+
+    mountUseCallSession();
+    await Promise.resolve();
+
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4698);
   });
 
   it('always asks the backend to reject Fonoster calls after the local SIP decline attempt', async () => {
@@ -423,7 +499,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('releases the backend call when claim succeeds but no SIP incoming call is available to answer', async () => {
+  it('keeps an inbound Fonoster call alive when no SIP incoming call is available to answer yet', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-no-sip-answer',
@@ -439,15 +515,21 @@ describe('useCallSession', () => {
       callDirection: 'inbound',
     });
 
-    expect(result).toEqual({ provider: 'fonoster', joinSupported: false });
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+    });
     expect(VoiceAPI.claimIncomingCall).toHaveBeenCalledWith(
       'call-no-sip-answer'
     );
-    expect(rejectBackendCallMock).toHaveBeenCalledWith('call-no-sip-answer', {
-      reason: 'browser_webphone_not_ready',
-      status: 'no_answer',
-    });
-    expect(callsStore.calls).toEqual([]);
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toMatchObject([
+      {
+        callSid: 'call-no-sip-answer',
+        browserJoinSupported: null,
+      },
+    ]);
   });
 
   it('releases the backend call when the browser SIP answer fails after claim', async () => {

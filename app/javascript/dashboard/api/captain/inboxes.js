@@ -11,9 +11,14 @@ class CaptainInboxes extends ApiClient {
   }
 
   create(params = {}) {
-    const { assistantId, inboxId, autoReplyMode } = params;
+    const { assistantId, inboxId, autoReplyMode, replyToOpenConversations } =
+      params;
     return axios.post(`${this.url}/${assistantId}/inboxes`, {
-      inbox: { inbox_id: inboxId, auto_reply_mode: autoReplyMode },
+      inbox: {
+        inbox_id: inboxId,
+        auto_reply_mode: autoReplyMode,
+        reply_to_open_conversations: replyToOpenConversations,
+      },
     });
   }
 

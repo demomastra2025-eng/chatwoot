@@ -20,8 +20,8 @@ module Llm::Models
   OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS = {
     'editor' => [],
     'label_suggestion' => [],
-    'assistant' => %w[structured_output tool_calling],
-    'copilot' => %w[structured_output tool_calling],
+    'assistant' => %w[structured_output tool_calling tool_choice],
+    'copilot' => %w[structured_output tool_calling tool_choice],
     'audio_transcription' => %w[audio_input transcription],
     'image_recognition' => %w[image_input],
     'help_center_search' => %w[embedding],
@@ -38,6 +38,7 @@ module Llm::Models
     ]
   }.freeze
   OPENROUTER_NO_FALLBACK_FEATURES = OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.keys.freeze
+  OPENROUTER_REASONING_RUNTIME_FEATURES = %w[assistant copilot].freeze
   OPENROUTER_PREFERRED_FEATURE_MODELS = {
     'audio_transcription' => %w[
       openai/gpt-4o-mini-transcribe
@@ -95,13 +96,16 @@ module Llm::Models
       configured_default
     end
 
-    def required_capabilities_for(feature)
-      OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.fetch(feature.to_s, [])
+    def required_capabilities_for(feature, runtime_preferences: nil)
+      feature_key = feature.to_s
+      required_capabilities = Array(OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.fetch(feature_key, [])).dup
+      required_capabilities << 'reasoning' if reasoning_required_for_feature?(feature_key, runtime_preferences)
+      required_capabilities.uniq
     end
 
-    def required_capability_sets_for(feature)
+    def required_capability_sets_for(feature, runtime_preferences: nil)
       feature_key = feature.to_s
-      required_capabilities = required_capabilities_for(feature_key)
+      required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
       return [{ type: 'chat', capabilities: [] }] if required_capabilities.blank? && OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.key?(feature_key)
       return [] if required_capabilities.blank?
 
@@ -165,12 +169,13 @@ module Llm::Models
       return false unless openrouter_catalog_enabled?(account: account)
       return false unless provider_for(canonical_name, account: account) == OPENROUTER_PROVIDER
 
+      runtime_preferences = runtime_preferences_for(account)
       dynamic_model_allowed_for_feature?(
         feature_key,
         model_config,
-        required_capabilities_for(feature_key),
+        required_capabilities_for(feature_key, runtime_preferences: runtime_preferences),
         account: account,
-        runtime_preferences: runtime_preferences_for(account),
+        runtime_preferences: runtime_preferences,
         runtime_filtered: runtime_filtered,
         model_id: canonical_name
       )
@@ -205,7 +210,10 @@ module Llm::Models
       canonical_name = canonical_model_name(model_name)
       resolved_config = model_config(canonical_name, account: account)
       normalize_capabilities(
-        Array(resolved_config&.fetch('capabilities', nil)) +
+        Llm::OpenRouterParameterCapabilities.derive(
+          capabilities: resolved_config&.fetch('capabilities', nil),
+          supported_parameters: resolved_config&.fetch('supported_parameters', nil)
+        ) +
         registry_capabilities_for(canonical_name, resolved_config, account: account) +
         TYPE_CAPABILITIES.fetch(type_for(canonical_name, account: account).to_s, [])
       )
@@ -356,7 +364,7 @@ module Llm::Models
         ),
         default: default_model_for(feature_key, account: account),
         configured_default: configured_default_model_for(feature_key),
-        required_capabilities: required_capabilities_for(feature_key)
+        required_capabilities: required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
       }
     end
 
@@ -425,7 +433,8 @@ module Llm::Models
       return unless openrouter_only_feature?(feature_key)
       return unless openrouter_catalog_enabled?(account: account)
 
-      required_capabilities = required_capabilities_for(feature_key)
+      runtime_preferences = runtime_preferences_for(account)
+      required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
       openrouter_default_candidates(feature_key, configured_default, account: account).find do |candidate|
         candidate_config = model_config(candidate, account: account)
         dynamic_model_allowed_for_feature?(
@@ -433,7 +442,7 @@ module Llm::Models
           candidate_config,
           required_capabilities,
           account: account,
-          runtime_preferences: runtime_preferences_for(account),
+          runtime_preferences: runtime_preferences,
           model_id: candidate
         )
       end
@@ -478,8 +487,9 @@ module Llm::Models
     end
 
     def dynamic_models_for_feature(feature_key, account: nil, runtime_filtered: true)
-      required_capabilities = OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS[feature_key]
-      return [] if required_capabilities.nil?
+      runtime_preferences = runtime_preferences_for(account)
+      required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
+      return [] unless OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.key?(feature_key.to_s)
 
       dynamic_model_configs(account: account).filter_map do |model_name, model_config|
         if dynamic_model_allowed_for_feature?(
@@ -487,7 +497,7 @@ module Llm::Models
           model_config,
           required_capabilities,
           account: account,
-          runtime_preferences: runtime_preferences_for(account),
+          runtime_preferences: runtime_preferences,
           runtime_filtered: runtime_filtered,
           model_id: model_name
         )
@@ -576,7 +586,7 @@ module Llm::Models
 
       return false unless model_config_allowed_for_feature?(feature_key, model_config, account: account, runtime_filtered: runtime_filtered)
 
-      required_capability_sets_for(feature_key).any? do |requirement|
+      required_capability_sets_for(feature_key, runtime_preferences: runtime_preferences).any? do |requirement|
         requirement_type = requirement[:type]
         required = requirement[:capabilities]
 
@@ -660,6 +670,13 @@ module Llm::Models
       {}
     rescue StandardError
       {}
+    end
+
+    def reasoning_required_for_feature?(feature_key, runtime_preferences)
+      return false unless OPENROUTER_REASONING_RUNTIME_FEATURES.include?(feature_key.to_s)
+
+      effort = runtime_preferences.to_h.with_indifferent_access["#{feature_key}_thinking_effort"].to_s
+      effort.present? && effort != 'none'
     end
 
     def provider_status_by_name(account)

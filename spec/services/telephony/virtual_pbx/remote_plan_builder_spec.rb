@@ -15,7 +15,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     }
   end
 
-  it 'builds a sanitized local-only create plan with no execution' do
+  it 'builds a sanitized local-only create plan through the shared Sipuni gateway' do
     result = service.create_channel(base_payload, dry_run: false)
     state = Telephony::VirtualPbx::DesiredStateBuilder.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
 
@@ -23,11 +23,33 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
 
     expect(plan).to include(status: 'dry_run_valid', remote_mutations: 'requires_approval')
     expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
-      'upsert_number', 'update_number_route'
+      'upsert_sipuni_gateway', 'upsert_number', 'update_number_route'
     )
-    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('upsert_credentials', 'upsert_trunk')
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('upsert_trunk')
+    gateway_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+    expect(gateway_operation).to include(method: 'PUT', path: '/telephony/sipuni-gateways/sipuni-internal-asterisk-056124100014')
+    expect(gateway_operation.dig(:payload, :providerAccountNumber)).to eq('056124100014')
+    expect(gateway_operation.dig(:payload, :credentialsRef)).to eq("cred-sipuni-acct-#{account.id}-056124100014")
     expect(plan.fetch(:operations)).to all(include(risk: 'requires_approval'))
     expect(plan.to_json).not_to include('do-not-return')
+  end
+
+  it 'does not plan the Sipuni Asterisk gateway before any shared or employee credentials exist' do
+    payload = base_payload.deep_dup
+    payload[:connection].delete(:username)
+    payload[:connection].delete(:password)
+    result = service.create_channel(payload, dry_run: false)
+    state = Telephony::VirtualPbx::DesiredStateBuilder.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
+
+    plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
+
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
+      'upsert_number', 'update_number_route'
+    )
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include(
+      'upsert_connection_credentials',
+      'upsert_sipuni_gateway'
+    )
   end
 
   it 'uses idempotent upserts for updates so missing remote resources can be repaired' do
@@ -37,6 +59,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     plan = described_class.new(account: account).build(operation: 'update', desired_state: state)
 
     expect(plan.fetch(:operations).map { |operation| [operation[:key], operation[:method]] }).to include(
+      %w[upsert_sipuni_gateway PUT],
       %w[upsert_number PUT],
       %w[update_number_route POST]
     )
@@ -46,6 +69,199 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
       'patch_number',
       'patch_number_route'
     )
+  end
+
+  it 'plans browser webphone employee SIP credentials without exposing raw passwords' do
+    desired_state = {
+      account_id: account.id,
+      provider_kind: 'sipuni',
+      name: 'Sipuni external line',
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
+      phone_numbers: { fonoster_tel_url: 'tel:+17705550999' },
+      routing: { mode: 'operator' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id
+      },
+      profiles: [
+        {
+          user_id: admin.id,
+          user_name: 'Admin',
+          internal_extension: '504',
+          agent_ref: 'profile-1-504',
+          agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+          availability_mode: 'browser_webphone',
+          credentials_ref: 'cred-profile-1-504',
+          sip_username: '015856100014',
+          sip_password: 'do-not-store-this-password',
+          enabled: true
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    operations = plan.fetch(:operations)
+    operation_keys = operations.map { |operation| operation[:key] }
+    credential_operation = operations.find { |operation| operation[:key] == 'upsert_agent_credentials' }
+    gateway_operation = operations.find { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+    agent_operation = operations.find { |operation| operation[:key] == 'upsert_agent' }
+
+    expect(operation_keys.index('upsert_agent_credentials')).to be < operation_keys.index('upsert_sipuni_gateway')
+    expect(gateway_operation.dig(:payload, :providerAccountNumber)).to eq('015856100014')
+    expect(gateway_operation.dig(:payload, :credentialsRef)).to eq('cred-profile-1-504')
+    expect(credential_operation).to include(
+      method: 'PUT',
+      path: '/telephony/credentials/cred-profile-1-504',
+      risk: 'requires_approval'
+    )
+    expect(credential_operation.dig(:payload, :name)).to eq('Admin 504')
+    expect(credential_operation.dig(:payload, :username)).to eq('015856100014')
+    expect(credential_operation.dig(:payload, :password)).to eq('[REDACTED]')
+    expect(agent_operation.dig(:payload, :credentialsRef)).to eq('cred-profile-1-504')
+    expect(agent_operation.dig(:payload, :domain)).to eq('operator.cloud.vconsult.kz')
+    expect(agent_operation.dig(:payload, :domainUri)).to eq('operator.cloud.vconsult.kz')
+    expect(plan.to_json).not_to include('do-not-store-this-password')
+  end
+
+  it 'does not plan Routr agent CRUD for provider-managed Sipuni extensions' do
+    desired_state = {
+      account_id: account.id,
+      provider_kind: 'sipuni',
+      name: 'Sipuni external line',
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
+      phone_numbers: { fonoster_tel_url: 'tel:+17705550999' },
+      routing: { mode: 'operator' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id
+      },
+      profiles: [
+        {
+          user_id: admin.id,
+          user_name: 'Admin',
+          internal_extension: '504',
+          agent_ref: 'profile-1-504',
+          agent_aor: 'sip:504@ats01.kz.sipuni.com',
+          availability_mode: 'external_extension',
+          credentials_ref: 'cred-profile-1-504',
+          sip_username: '015856100014',
+          sip_password: 'do-not-store-this-password',
+          enabled: true
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
+      'upsert_number', 'update_number_route'
+    )
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include(
+      'upsert_sipuni_gateway',
+      'upsert_agent_credentials',
+      'upsert_agent'
+    )
+    expect(plan.to_json).not_to include('do-not-store-this-password')
+  end
+
+  it 'plans employee SIP credential cleanup when deleting a managed inbox' do
+    desired_state = {
+      account_id: account.id,
+      inbox_id: 1001,
+      provider_kind: 'sipuni',
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id
+      },
+      profiles: [
+        {
+          user_id: admin.id,
+          internal_extension: '504',
+          agent_ref: 'agent-ref',
+          availability_mode: 'browser_webphone',
+          credentials_ref: 'cred-profile-delete'
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'delete', desired_state: desired_state)
+
+    expect(plan.fetch(:operations).map { |operation| [operation[:key], operation[:method], operation[:path]] }).to include(
+      ['delete_agent', 'DELETE', '/telephony/agents/agent-ref'],
+      ['delete_agent_credentials', 'DELETE', '/telephony/credentials/cred-profile-delete'],
+      ['delete_sipuni_gateway', 'DELETE', '/telephony/sipuni-gateways/number-ref'],
+      ['delete_number', 'DELETE', '/telephony/numbers/number-ref']
+    )
+  end
+
+  it 'does not delete Routr agents for provider-managed Sipuni extensions' do
+    desired_state = {
+      account_id: account.id,
+      inbox_id: 1001,
+      provider_kind: 'sipuni',
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id
+      },
+      profiles: [
+        {
+          user_id: admin.id,
+          internal_extension: '504',
+          agent_ref: 'agent-ref',
+          availability_mode: 'external_extension',
+          credentials_ref: 'cred-profile-delete'
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'delete', desired_state: desired_state)
+
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
+      'delete_sipuni_gateway',
+      'delete_number'
+    )
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('delete_agent')
+  end
+
+  it 'keeps employee SIP credentials that are still referenced by another inbox' do
+    other_inbox = create(:inbox, account: account)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: other_inbox,
+      credentials_ref: 'shared-credential-ref',
+      fonoster_credentials_ref: 'shared-credential-ref'
+    )
+    desired_state = {
+      account_id: account.id,
+      inbox_id: 1001,
+      provider_kind: 'sipuni',
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id
+      },
+      profiles: [
+        {
+          user_id: admin.id,
+          internal_extension: '504',
+          agent_ref: 'agent-ref',
+          credentials_ref: 'shared-credential-ref'
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'delete', desired_state: desired_state)
+
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include('delete_agent', 'delete_sipuni_gateway', 'delete_number')
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('delete_agent_credentials')
   end
 
   it 'blocks normal remote operations for legacy/unowned resources' do

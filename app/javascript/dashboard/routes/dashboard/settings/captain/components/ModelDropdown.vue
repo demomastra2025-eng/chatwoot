@@ -69,6 +69,16 @@ const featureConfig = computed(
 const diagnosticModels = computed(
   () => featureConfig.value.diagnostic_models || []
 );
+const diagnosticOnlyModels = computed(() => {
+  const availableModelIds = availableModels.value.map(model => model.id);
+  return diagnosticModels.value
+    .filter(model => !availableModelIds.includes(model.id))
+    .map(model => ({ ...model, diagnostic_only: true }));
+});
+const searchableModels = computed(() => [
+  ...availableModels.value,
+  ...diagnosticOnlyModels.value,
+]);
 
 const recommendedModelId = computed(() =>
   captainConfigStore.getDefaultModelForFeature(props.featureKey)
@@ -94,6 +104,9 @@ const selectedModelDetails = computed(() => {
   if (!selectedModelId.value) return null;
   return (
     availableModels.value.find(model => model.id === selectedModelId.value) ||
+    diagnosticOnlyModels.value.find(
+      model => model.id === selectedModelId.value
+    ) ||
     null
   );
 });
@@ -244,16 +257,10 @@ const filteredModels = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
   if (!query) return availableModels.value;
 
-  const matchingAvailableModels = availableModels.value.filter(model =>
+  const matchingAvailableModels = searchableModels.value.filter(model =>
     searchableModelText(model).includes(query)
   );
-  const availableModelIds = availableModels.value.map(model => model.id);
-  const matchingDiagnosticModels = diagnosticModels.value
-    .filter(model => !availableModelIds.includes(model.id))
-    .filter(model => searchableModelText(model).includes(query))
-    .map(model => ({ ...model, diagnostic_only: true }));
-
-  return [...matchingAvailableModels, ...matchingDiagnosticModels];
+  return matchingAvailableModels;
 });
 
 const groupedFilteredModels = computed(() => {
@@ -397,6 +404,12 @@ const metricItems = model =>
       label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.TOOLS'),
       value: supportLabel(hasCapability(model, 'tool_calling')),
       muted: !hasCapability(model, 'tool_calling'),
+    },
+    {
+      icon: 'i-lucide-route',
+      label: t('CAPTAIN_SETTINGS.MODEL_CONFIG.TOOL_CHOICE'),
+      value: supportLabel(hasCapability(model, 'tool_choice')),
+      muted: !hasCapability(model, 'tool_choice'),
     },
     {
       icon: 'i-lucide-braces',

@@ -28,9 +28,13 @@ class Telephony::CallsService
     raise Telephony::Error.new(code: 'MISSING_PHONE_NUMBER', message: 'Contact phone number is required') if contact.phone_number.blank?
 
     number_binding = ensure_number_binding!(inbox)
-    agent_binding = account.telephony_agent_bindings.find_by(user_id: user.id)
+    operator_identity = operator_identity_for(inbox, user)
+    agent_binding = operator_identity&.agent_binding
 
-    response = bridge_client.post('/telephony/calls/outbound', outbound_payload(number_binding, inbox, contact, user, conversation, agent_binding))
+    response = bridge_client.post(
+      '/telephony/calls/outbound',
+      outbound_payload(number_binding, inbox, contact, user, conversation, operator_identity)
+    )
     call_ref = extract_call_ref(response)
     if call_ref.blank?
       raise Telephony::Error.new(code: 'INVALID_BRIDGE_RESPONSE', message: 'Telephony bridge did not return call_ref',
@@ -52,7 +56,9 @@ class Telephony::CallsService
       last_event_at: Time.current,
       metadata: (call_session.metadata || {}).merge(
         'bridge_response' => response,
-        'fonoster_call_ref' => call_ref
+        'fonoster_call_ref' => call_ref,
+        'browser_join_supported' => browser_join_supported?(operator_identity),
+        'operator_identity' => operator_identity_metadata(operator_identity)
       )
     )
     call_session.save!
@@ -60,6 +66,7 @@ class Telephony::CallsService
     {
       call_ref: call_ref,
       status: call_session.status,
+      browser_join_supported: browser_join_supported?(operator_identity),
       response: response,
       call_session: call_session
     }
@@ -89,15 +96,20 @@ class Telephony::CallsService
     )
   end
 
-  def outbound_payload(number_binding, inbox, contact, user, conversation, agent_binding)
-    app_ref = number_binding.effective_app_ref
+  def outbound_payload(number_binding, inbox, contact, user, conversation, operator_identity)
+    app_ref = outbound_app_ref(number_binding)
     recording_enabled = recording_enabled?(number_binding.routing_policy)
+    operator_metadata = operator_identity_metadata(operator_identity)
 
     {
       from_number_ref: number_binding.number_ref,
       to: contact.phone_number,
       app_ref: app_ref,
       appRef: app_ref,
+      operator_agent_ref: operator_identity&.agent_ref,
+      operatorAgentRef: operator_identity&.agent_ref,
+      operator_agent_aor: operator_identity&.agent_aor,
+      operatorAgentAor: operator_identity&.agent_aor,
       recording_enabled: recording_enabled,
       recordingEnabled: recording_enabled,
       conversation_id: conversation.id,
@@ -109,10 +121,23 @@ class Telephony::CallsService
         chatwoot_conversation_id: conversation.id,
         chatwoot_conversation_display_id: conversation.display_id,
         chatwoot_user_id: user.id,
-        fonoster_agent_ref: agent_binding&.agent_ref,
         recording_enabled: recording_enabled
-      }.compact
+      }.merge(operator_metadata).merge(
+        browser_join_supported: browser_join_supported?(operator_identity)
+      ).compact
     }.compact
+  end
+
+  def operator_identity_for(inbox, user)
+    Telephony::OperatorIdentityResolver.new(account: account, inbox: inbox, user: user).resolve
+  end
+
+  def operator_identity_metadata(operator_identity)
+    operator_identity&.metadata || {}
+  end
+
+  def browser_join_supported?(operator_identity)
+    operator_identity.present? && operator_identity.browser_join_supported?
   end
 
   def recording_enabled?(routing_policy)
@@ -120,6 +145,12 @@ class Telephony::CallsService
     return ActiveModel::Type::Boolean.new.cast(settings['recording_enabled']) if settings.key?('recording_enabled')
 
     true
+  end
+
+  def outbound_app_ref(number_binding)
+    number_binding.effective_app_ref.presence ||
+      ENV.fetch('TELEPHONY_BRIDGE_RUNTIME_APP_REF', nil).presence ||
+      ENV.fetch('TELEPHONY_BRIDGE_DEFAULT_APP_REF', nil).presence
   end
 
   def extract_call_ref(response)

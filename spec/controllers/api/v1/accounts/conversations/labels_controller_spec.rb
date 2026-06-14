@@ -8,6 +8,7 @@ RSpec.describe 'Conversation Label API', type: :request do
 
     before do
       conversation.update_labels('label1, label2')
+      conversation.contact.update_labels('contact_label')
     end
 
     context 'when it is an unauthenticated user' do
@@ -32,6 +33,7 @@ RSpec.describe 'Conversation Label API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.body).to include('label1')
         expect(response.body).to include('label2')
+        expect(response.body).to include('contact_label')
       end
     end
   end
@@ -70,6 +72,8 @@ RSpec.describe 'Conversation Label API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.body).to include('label3')
         expect(response.body).to include('label4')
+        expect(conversation.reload.label_list).to contain_exactly('label3', 'label4')
+        expect(conversation.contact.reload.label_list).to contain_exactly('label3', 'label4')
       end
     end
   end

@@ -1,5 +1,52 @@
 # frozen_string_literal: true
 
+# == Schema Information
+#
+# Table name: telephony_provisioning_runs
+#
+#  id                     :bigint           not null, primary key
+#  desired_snapshot       :jsonb            not null
+#  error_code             :string
+#  error_details          :jsonb            not null
+#  error_message          :text
+#  executed_operations    :jsonb            not null
+#  finished_at            :datetime
+#  idempotency_key        :string           not null
+#  operation              :string           not null
+#  planned_operations     :jsonb            not null
+#  remote_commit          :boolean          default(FALSE), not null
+#  remote_snapshot        :jsonb            not null
+#  started_at             :datetime
+#  status                 :string           default("pending"), not null
+#  created_at             :datetime         not null
+#  updated_at             :datetime         not null
+#  account_id             :bigint           not null
+#  channel_id             :bigint
+#  inbox_id               :bigint
+#  number_binding_id      :bigint
+#  provider_connection_id :bigint
+#  request_id             :string
+#  requested_by_id        :bigint
+#
+# Indexes
+#
+#  idx_tel_provisioning_runs_account_idempotency                (account_id,idempotency_key) UNIQUE
+#  idx_tel_provisioning_runs_account_inbox_created              (account_id,inbox_id,created_at)
+#  idx_tel_provisioning_runs_account_status_created             (account_id,status,created_at)
+#  index_telephony_provisioning_runs_on_account_id              (account_id)
+#  index_telephony_provisioning_runs_on_inbox_id                (inbox_id)
+#  index_telephony_provisioning_runs_on_number_binding_id       (number_binding_id)
+#  index_telephony_provisioning_runs_on_provider_connection_id  (provider_connection_id)
+#  index_telephony_provisioning_runs_on_requested_by_id         (requested_by_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (inbox_id => inboxes.id)
+#  fk_rails_...  (number_binding_id => telephony_number_bindings.id)
+#  fk_rails_...  (provider_connection_id => telephony_provider_connections.id)
+#  fk_rails_...  (requested_by_id => users.id)
+#
 require 'digest'
 require 'securerandom'
 

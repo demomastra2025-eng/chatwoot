@@ -50,6 +50,14 @@ class Captain::CustomTool < ApplicationRecord
   ].freeze
   HTTP_METHODS = %w[GET POST PUT PATCH DELETE HEAD OPTIONS].freeze
   REQUEST_BODY_HTTP_METHODS = %w[POST PUT PATCH DELETE OPTIONS].freeze
+  SAFE_READ_ONLY_HTTP_METHODS = %w[GET HEAD OPTIONS].freeze
+  READ_ONLY_ACTION_TOKENS = %w[
+    get list search find lookup fetch query retrieve read show check calculate estimate recommend suggest preview
+  ].freeze
+  MUTATING_ACTION_TOKENS = %w[
+    create update delete remove send submit cancel reserve book assign unassign approve reject close reopen resolve change
+    add set apply attach detach upload import sync notify charge pay purchase schedule reschedule publish
+  ].freeze
   PARAM_TYPES = %w[string number boolean array object].freeze
   PARAM_NAME_FORMAT = /\A[a-zA-Z_][a-zA-Z0-9_]*\z/
   RESERVED_TEMPLATE_PARAM_NAMES = %w[
@@ -182,11 +190,8 @@ class Captain::CustomTool < ApplicationRecord
       source_type: Captain::ToolCatalog::SOURCE_TYPE_CUSTOM,
       allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
       required_features: [],
-      required_permissions: [],
-      risk_level: 'custom',
-      requires_confirmation: false,
-      idempotent: false
-    }
+      required_permissions: []
+    }.merge(custom_tool_risk_metadata)
   end
 
   def runtime_parameter_definitions(scope_name = Captain::ToolAccess::SCOPE_AGENT)
@@ -211,6 +216,44 @@ class Captain::CustomTool < ApplicationRecord
 
   def parameter_definitions
     Array(param_schema).map { |param_definition| normalize_param_definition(param_definition) }
+  end
+
+  def custom_tool_risk_metadata
+    if read_only_custom_tool?
+      {
+        risk_level: 'read_only',
+        read_only: true,
+        requires_confirmation: false,
+        idempotent: true
+      }
+    else
+      {
+        risk_level: 'custom',
+        read_only: false,
+        requires_confirmation: false,
+        idempotent: false
+      }
+    end
+  end
+
+  def read_only_custom_tool?
+    return false unless SAFE_READ_ONLY_HTTP_METHODS.include?(http_method.to_s.upcase)
+    return false if custom_tool_action_tokens_match?(MUTATING_ACTION_TOKENS)
+
+    custom_tool_action_tokens_match?(READ_ONLY_ACTION_TOKENS)
+  end
+
+  def custom_tool_action_tokens_match?(tokens)
+    words = custom_tool_action_words
+    tokens.any? do |token|
+      words.any? { |word| word == token || word.start_with?(token) }
+    end
+  end
+
+  def custom_tool_action_words
+    [slug, title].compact_blank.flat_map do |value|
+      value.to_s.downcase.scan(/[a-z0-9]+/)
+    end.uniq
   end
 
   def agent_parameter_definitions

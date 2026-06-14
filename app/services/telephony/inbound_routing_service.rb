@@ -2,6 +2,46 @@ class Telephony::InboundRoutingService
   DEFAULT_REJECT_MESSAGE = 'We are unable to connect your call right now.'.freeze
   OPERATOR_CANDIDATE_LIMIT = 20
 
+  OperatorCandidate = Struct.new(:source, :agent_binding, :sip_profile, keyword_init: true) do
+    def agent_binding_id
+      agent_binding&.id
+    end
+
+    def sip_profile_id
+      sip_profile&.id
+    end
+
+    def agent_ref
+      agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
+    end
+
+    def agent_aor
+      agent_binding&.agent_aor || sip_profile&.agent_aor
+    end
+
+    def user_id
+      agent_binding&.user_id || sip_profile&.user_id
+    end
+
+    def user
+      agent_binding&.user || sip_profile&.user
+    end
+
+    def enabled?
+      agent_binding ? agent_binding.enabled? : sip_profile&.enabled?
+    end
+
+    def registered_for_routing?
+      return agent_binding.registered_for_routing? if agent_binding
+
+      sip_profile&.registered_for_routing?
+    end
+
+    def source_name
+      source.to_s
+    end
+  end
+
   def initialize(payload:)
     @payload = payload.deep_stringify_keys
   end
@@ -258,10 +298,12 @@ class Telephony::InboundRoutingService
       operator_pool: true,
       operator_pool_size: candidate_hashes.size,
       operator_candidates: candidate_hashes,
-      operator_candidate_binding_ids: candidate_hashes.filter_map { |candidate| candidate['id'] },
+      operator_candidate_binding_ids: candidate_hashes.filter_map { |candidate| candidate['agent_binding_id'] || candidate['id'] },
+      operator_candidate_sip_profile_ids: candidate_hashes.filter_map { |candidate| candidate['sip_profile_id'] },
       operator_candidate_user_ids: candidate_hashes.filter_map { |candidate| candidate['user_id'] },
       operator_candidate_agent_refs: candidate_hashes.filter_map { |candidate| candidate['agent_ref'] },
-      operator_candidate_agent_aors: candidate_hashes.filter_map { |candidate| candidate['agent_aor'] }
+      operator_candidate_agent_aors: candidate_hashes.filter_map { |candidate| candidate['agent_aor'] },
+      operator_candidate_sources: candidate_hashes.filter_map { |candidate| candidate['source'] }
     }.compact
   end
 
@@ -357,13 +399,42 @@ class Telephony::InboundRoutingService
 
   def operator_candidates
     @operator_candidates ||= begin
-      candidates = operator_candidate_scope.select do |binding|
-        binding.enabled? && binding.registered_for_routing? && sip_operator_aor?(binding.agent_aor)
+      scoped_candidates = operator_candidate_scope.select do |candidate|
+        candidate.enabled? && sip_operator_aor?(candidate.agent_aor)
       end
-      busy_ids = busy_operator_binding_ids(candidates.map(&:id))
-      candidates = candidates.reject { |binding| busy_ids.include?(binding.id) }
+      candidates = available_operator_candidates(scoped_candidates)
+      candidates = configured_legacy_operator_candidates(scoped_candidates) if candidates.blank?
 
-      candidates.sort_by { |binding| operator_candidate_sort_key(binding) }.first(OPERATOR_CANDIDATE_LIMIT)
+      candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }.first(OPERATOR_CANDIDATE_LIMIT)
+    end
+  end
+
+  def available_operator_candidates(candidates)
+    without_busy_operator_candidates(candidates.select(&:registered_for_routing?))
+  end
+
+  def configured_legacy_operator_candidates(candidates)
+    return [] unless legacy_sipuni_asterisk_gateway?
+
+    fallback_candidates = candidates.select do |candidate|
+      candidate.agent_binding_id.present? && operator_candidate_configured?(candidate)
+    end
+    without_busy_operator_candidates(fallback_candidates)
+  end
+
+  def legacy_sipuni_asterisk_gateway?
+    metadata = (number_binding&.metadata || {}).with_indifferent_access
+    metadata[:source].to_s == 'sipuni_internal_asterisk_gateway' ||
+      number_binding&.number_ref.to_s.start_with?('sipuni-internal-asterisk-')
+  end
+
+  def without_busy_operator_candidates(candidates)
+    busy_binding_ids = busy_operator_binding_ids(candidates.filter_map(&:agent_binding_id))
+    busy_sip_profile_ids = busy_operator_sip_profile_ids(candidates.filter_map(&:sip_profile_id))
+
+    candidates.reject do |candidate|
+      busy_binding_ids.include?(candidate.agent_binding_id) ||
+        busy_sip_profile_ids.include?(candidate.sip_profile_id)
     end
   end
 
@@ -372,9 +443,22 @@ class Telephony::InboundRoutingService
   end
 
   def operator_candidate_scope
+    profile_candidates = inbox_sip_profile_candidates
+    return profile_candidates if profile_candidates.any?
+
     scope = number_binding.account.telephony_agent_bindings.includes(:user)
     scope = scope.where(user_id: inbox.members.select(:id)) if inbox.present? && inbox.inbox_members.exists?
-    scope
+    scope.map { |binding| OperatorCandidate.new(source: :agent_binding, agent_binding: binding) }
+  end
+
+  def inbox_sip_profile_candidates
+    return [] if inbox.blank? || !inbox.respond_to?(:telephony_sip_profiles)
+
+    scope = inbox.telephony_sip_profiles.includes(:user)
+    scope = scope.where(user_id: inbox.members.select(:id)) if inbox.inbox_members.exists?
+    return [] unless scope.exists?
+
+    scope.map { |profile| OperatorCandidate.new(source: :sip_profile, sip_profile: profile) }
   end
 
   def busy_operator_binding_ids(candidate_ids)
@@ -387,9 +471,34 @@ class Telephony::InboundRoutingService
                           .pluck(:agent_binding_id)
   end
 
-  def operator_candidate_sort_key(binding)
-    preferred = binding.id == configured_operator_binding&.id ? 0 : 1
-    [preferred, binding.user_id || 0, binding.id]
+  def busy_operator_sip_profile_ids(candidate_ids)
+    candidate_ids = candidate_ids.filter_map { |value| value.presence&.to_i }.uniq
+    return [] if candidate_ids.blank?
+
+    Telephony::CallSession.active
+                          .where(account_id: number_binding.account_id)
+                          .where.not(external_call_ref: call_ref)
+                          .pluck(:metadata)
+                          .filter_map { |metadata| metadata.to_h.dig('operator_claim', 'sip_profile_id').presence&.to_i }
+                          .select { |sip_profile_id| candidate_ids.include?(sip_profile_id) }
+                          .uniq
+  end
+
+  def operator_candidate_sort_key(candidate)
+    preferred = operator_candidate_configured?(candidate) ? 0 : 1
+    [
+      preferred,
+      candidate.user_id || 0,
+      candidate.agent_ref.to_s,
+      candidate.sip_profile_id || candidate.agent_binding_id || 0
+    ]
+  end
+
+  def operator_candidate_configured?(candidate)
+    return candidate.agent_ref.to_s == routing_policy.operator_agent_ref.to_s if routing_policy.operator_agent_ref.present?
+    return candidate.agent_aor.to_s == routing_policy.operator_agent_aor.to_s if routing_policy.operator_agent_aor.present?
+
+    candidate.agent_binding_id == configured_operator_binding&.id
   end
 
   def configured_operator_binding
@@ -403,13 +512,18 @@ class Telephony::InboundRoutingService
     end
   end
 
-  def operator_candidate_payload(binding)
+  def operator_candidate_payload(candidate)
     {
-      id: binding.id,
-      agent_ref: binding.agent_ref,
-      agent_aor: binding.agent_aor,
-      user_id: binding.user_id,
-      name: binding.user&.name
+      id: candidate.agent_binding_id,
+      source: candidate.source_name,
+      agent_binding_id: candidate.agent_binding_id,
+      sip_profile_id: candidate.sip_profile_id,
+      agent_ref: candidate.agent_ref,
+      agent_aor: candidate.agent_aor,
+      user_id: candidate.user_id,
+      name: candidate.user&.name,
+      internal_extension: candidate.sip_profile&.internal_extension,
+      availability_mode: candidate.sip_profile&.availability_mode
     }.compact
   end
 
@@ -627,18 +741,71 @@ class Telephony::InboundRoutingService
   end
 
   def number_binding
-    @number_binding ||= begin
-      scope = Telephony::NumberBinding.includes(:routing_policy, inbox: :working_hours)
-      if (number_ref = payload_value('number_ref', 'numberRef')).present?
-        scope.find_by(number_ref: number_ref)
-      elsif inbound_number.present?
-        scope.find_by(phone_number: inbound_number)
-      end
+    @number_binding ||= resolve_number_binding
+  end
+
+  def resolve_number_binding
+    scope = ordered_number_binding_scope
+    scoped = constrain_number_binding_scope(scope)
+    binding = find_number_binding(scoped)
+
+    return binding if binding.present? || route_scope_constrained?
+
+    find_number_binding(scope)
+  end
+
+  def ordered_number_binding_scope
+    Telephony::NumberBinding
+      .includes(:routing_policy, inbox: :working_hours)
+      .order(:id)
+  end
+
+  def constrain_number_binding_scope(scope)
+    scope = scope.where(account_id: route_account_id) if route_account_id.present?
+    scope = scope.where(inbox_id: route_inbox_id) if route_inbox_id.present?
+    scope
+  end
+
+  def route_scope_constrained?
+    route_account_id.present? || route_inbox_id.present?
+  end
+
+  def find_number_binding(scope)
+    if (number_ref = payload_value('number_ref', 'numberRef')).present?
+      scope.find_by(number_ref: number_ref)
+    elsif inbound_number.present?
+      scope.find_by(phone_number: inbound_number) || scope.find_by(ingress_number: inbound_number)
     end
+  end
+
+  def route_account_id
+    @route_account_id ||= payload_value('account_id', 'accountId', 'chatwoot_account_id', 'chatwootAccountId') ||
+                          metadata_value('onelink_account_id', 'account_id', 'accountId', 'chatwoot_account_id', 'chatwootAccountId')
+  end
+
+  def route_inbox_id
+    @route_inbox_id ||= payload_value('inbox_id', 'inboxId', 'chatwoot_inbox_id', 'chatwootInboxId') ||
+                        metadata_value('onelink_inbox_id', 'inbox_id', 'inboxId', 'chatwoot_inbox_id', 'chatwootInboxId')
   end
 
   def inbound_number
     payload_value('ingress_number', 'ingressNumber', 'to_number', 'toNumber', 'to')
+  end
+
+  def metadata_value(*keys)
+    keys.each do |key|
+      value = metadata_payload[key.to_s] || metadata_payload[key.to_sym]
+      return value if value.present?
+    end
+
+    nil
+  end
+
+  def metadata_payload
+    @metadata_payload ||= begin
+      metadata = payload['metadata']
+      metadata.is_a?(Hash) ? metadata : {}
+    end
   end
 
   def payload_value(*keys)

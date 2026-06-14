@@ -176,6 +176,9 @@ const kazakhstanFormErrors = computed(() => ({
   phoneNumber: kazakhstanV$.value.phoneNumber?.$error
     ? t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.ERROR')
     : '',
+  providerAccountNumber: kazakhstanV$.value.providerAccountNumber?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.REQUIRED')
+    : '',
   ingressNumber: kazakhstanV$.value.ingressNumber?.$error
     ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.REQUIRED')
     : '',
@@ -184,6 +187,9 @@ const kazakhstanFormErrors = computed(() => ({
     : '',
   connectionPort: kazakhstanV$.value.connectionPort?.$error
     ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID')
+    : '',
+  connectionPassword: kazakhstanV$.value.connectionPassword?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.REQUIRED')
     : '',
   operatorAgentAor: kazakhstanV$.value.operatorAgentAor?.$error
     ? t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.REQUIRED')
@@ -245,6 +251,11 @@ function getVirtualPbxPayload() {
     kazakhstanState.ingressNumber.trim() || displayPhoneNumber;
   const providerAccountNumber =
     kazakhstanState.providerAccountNumber.trim() || ingressNumber;
+  const connectionUsername = kazakhstanState.connectionUsername.trim();
+  const connectionPassword =
+    kazakhstanState.providerKind === 'sipuni'
+      ? ''
+      : kazakhstanState.connectionPassword;
 
   return {
     provider_kind: kazakhstanState.providerKind,
@@ -256,8 +267,8 @@ function getVirtualPbxPayload() {
       host: kazakhstanState.connectionHost.trim(),
       port: kazakhstanState.connectionPort.trim(),
       transport: kazakhstanState.connectionTransport,
-      username: kazakhstanState.connectionUsername.trim() || undefined,
-      password: kazakhstanState.connectionPassword || undefined,
+      username: connectionUsername || undefined,
+      password: connectionPassword || undefined,
     },
     routing: {
       mode: kazakhstanState.routingMode,
@@ -302,7 +313,7 @@ async function createKazakhstanChannel() {
   try {
     const response = await VoiceAPI.createVirtualPbxChannel(
       getVirtualPbxPayload(),
-      { dryRun: false, remoteCommit: false }
+      { dryRun: false, remoteCommit: true }
     );
     const provisioningError = provisioningErrorMessage(response);
     if (provisioningError) {
@@ -502,9 +513,15 @@ async function createSipuniChannel() {
                 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.PLACEHOLDER'
               )
             "
+            :message="kazakhstanFormErrors.providerAccountNumber"
+            :message-type="
+              kazakhstanFormErrors.providerAccountNumber ? 'error' : 'info'
+            "
+            @blur="kazakhstanV$.providerAccountNumber?.$touch"
           />
 
           <Input
+            v-if="isVirtualPbxAdvancedVisible"
             v-model="kazakhstanState.ingressNumber"
             :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL')"
             :placeholder="
@@ -567,7 +584,13 @@ async function createSipuniChannel() {
           </div>
         </div>
 
-        <div v-if="isVirtualPbxAdvancedVisible" class="flex flex-col gap-4">
+        <div
+          v-if="
+            isVirtualPbxAdvancedVisible &&
+            kazakhstanState.providerKind !== 'sipuni'
+          "
+          class="flex flex-col gap-4"
+        >
           <Input
             v-model="kazakhstanState.connectionUsername"
             :label="
@@ -579,7 +602,15 @@ async function createSipuniChannel() {
               )
             "
           />
+        </div>
 
+        <div
+          v-if="
+            isVirtualPbxAdvancedVisible &&
+            kazakhstanState.providerKind !== 'sipuni'
+          "
+          class="flex flex-col gap-4"
+        >
           <Input
             v-model="kazakhstanState.connectionPassword"
             type="password"
@@ -591,6 +622,11 @@ async function createSipuniChannel() {
                 'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.PLACEHOLDER'
               )
             "
+            :message="kazakhstanFormErrors.connectionPassword"
+            :message-type="
+              kazakhstanFormErrors.connectionPassword ? 'error' : 'info'
+            "
+            @blur="kazakhstanV$.connectionPassword?.$touch"
           />
         </div>
 

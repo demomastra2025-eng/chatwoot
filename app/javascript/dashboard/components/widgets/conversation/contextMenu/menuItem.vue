@@ -24,6 +24,14 @@ defineProps({
     />
     <span
       v-if="
+        (variant === 'label' || variant === 'label-assigned') && option.emoji
+      "
+      class="flex-shrink-0 text-xs leading-none"
+    >
+      {{ option.emoji }}
+    </span>
+    <span
+      v-else-if="
         (variant === 'label' || variant === 'label-assigned') && option.color
       "
       class="label-pill flex-shrink-0"

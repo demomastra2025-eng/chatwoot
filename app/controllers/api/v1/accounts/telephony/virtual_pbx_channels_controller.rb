@@ -106,7 +106,7 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
       connection: %i[host port transport username password send_register],
       routing: %i[mode fallback_mode ai_enabled operator_agent_aor],
       metadata: %i[environment source notes],
-      profiles: %i[user_id internal_extension sip_username sip_password enabled]
+      profiles: %i[user_id internal_extension sip_username sip_password enabled availability_mode]
     ).to_h
   end
 

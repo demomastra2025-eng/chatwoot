@@ -50,7 +50,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @buffer_token = buffer_token
     @expected_last_message_id = expected_last_message_id
 
-    return unless current_buffer_state_valid? && conversation_pending?
+    return unless current_buffer_state_valid? && conversation_allows_captain_response?
 
     Current.executed_by = @assistant
 
@@ -100,7 +100,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         process_action(handoff_action_name)
         account.increment_token_usage(@response.dig('usage', 'total_tokens'))
         true
-      elsif conversation_pending?
+      elsif conversation_allows_captain_response?
         process_pending_response
       else
         false
@@ -636,7 +636,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     log_error(error)
     return true unless current_buffer_state_valid?
 
-    if conversation_pending?
+    if conversation_allows_captain_response?
       @response ||= {}
       @response['error_class'] = error.class.name
       @response['error_message'] = error.message
@@ -781,8 +781,22 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_pending?
-    status = Conversation.uncached { Conversation.where(id: @conversation.id).pick(:status) }
-    status == 'pending' || status == Conversation.statuses[:pending]
+    conversation_status == 'pending' || conversation_status == Conversation.statuses[:pending]
+  end
+
+  def conversation_open?
+    conversation_status == 'open' || conversation_status == Conversation.statuses[:open]
+  end
+
+  def conversation_allows_captain_response?
+    return true if conversation_pending?
+    return false unless conversation_open?
+
+    @conversation.inbox.captain_inbox&.reply_to_open_conversations? || false
+  end
+
+  def conversation_status
+    Conversation.uncached { Conversation.where(id: @conversation.id).pick(:status) }
   end
 
   def current_buffer_state_valid?
@@ -832,7 +846,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_eligible_for_response?
-    (conversation_pending? || v2_handoff_tool_fired?) && @conversation.inbox.captain_assistant&.id == @assistant.id
+    (conversation_allows_captain_response? || v2_handoff_tool_fired?) && @conversation.inbox.captain_assistant&.id == @assistant.id
   end
 end
 # rubocop:enable Metrics/ClassLength

@@ -7,32 +7,35 @@ class Telephony::WebphoneService
   end
 
   def token_for(user:, inbox: nil)
-    agent_binding = account.telephony_agent_bindings.find_by(user_id: user.id)
-    return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if agent_binding.blank?
+    operator_identity = operator_identity_for(user: user, inbox: inbox)
+    return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
 
-    response = bridge_client.post('/telephony/webphone/token', token_request_payload(user, inbox, agent_binding))
+    response = bridge_client.post('/telephony/webphone/token', token_request_payload(user, inbox, operator_identity))
 
     response = response.deep_dup
-    response['provider'] ||= fallback_provider(inbox, agent_binding)
-    response['agent_ref'] ||= agent_binding&.agent_ref
-    apply_agent_binding_identity(response, agent_binding)
+    response['provider'] ||= fallback_provider(inbox, operator_identity)
+    response['agent_ref'] = operator_identity.agent_ref
+    response['browser_join_supported'] = operator_identity.browser_join_supported?
+    apply_operator_identity(response, operator_identity)
     apply_signaling_server_override(response)
     diagnostics = token_identity_diagnostics(response)
     response['diagnostics'] = response_diagnostics(response, diagnostics)
-    response['calling_supported'] = agent_binding_usable?(agent_binding) &&
+    response['calling_supported'] = operator_identity_usable?(operator_identity) &&
+                                    operator_identity.browser_join_supported? &&
                                     bridge_calling_supported?(response) &&
                                     !diagnostics['token_identity_mismatch']
     response
   end
 
-  def update_presence!(user:, registered:)
-    agent_binding = account.telephony_agent_bindings.find_by(user_id: user.id)
-    return unsupported_webphone_payload(reason: 'agent_binding_missing') if agent_binding.blank?
+  def update_presence!(user:, registered:, inbox: nil)
+    operator_identity = operator_identity_for(user: user, inbox: inbox)
+    return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
 
-    agent_binding.update_browser_registration!(registered: registered)
-    agent_binding.to_telephony_h.merge(
-      calling_supported: agent_binding.enabled?,
-      registered_for_routing: agent_binding.registered_for_routing?
+    operator_identity.record.update_browser_registration!(registered: registered)
+    operator_identity.record.to_telephony_h.merge(
+      provider: fallback_provider(inbox, operator_identity),
+      calling_supported: operator_identity.enabled? && operator_identity.browser_join_supported?,
+      registered_for_routing: operator_identity.record.registered_for_routing?
     )
   end
 
@@ -40,18 +43,18 @@ class Telephony::WebphoneService
 
   attr_reader :account, :bridge_client
 
-  def token_request_payload(user, inbox, agent_binding)
+  def token_request_payload(user, inbox, operator_identity)
     {
       chatwoot_user_id: user.id,
-      agent_ref: agent_binding&.agent_ref,
-      agent_aor: agent_binding&.agent_aor,
+      agent_ref: operator_identity&.agent_ref,
+      agent_aor: operator_identity&.agent_aor,
       inbox_id: inbox&.id,
       number_ref: inbox&.telephony_number_binding&.number_ref
     }.compact
   end
 
-  def fallback_provider(inbox, agent_binding)
-    inbox&.channel&.provider || agent_binding&.provider || 'fonoster'
+  def fallback_provider(inbox, operator_identity)
+    inbox&.channel&.provider || operator_identity&.provider || 'fonoster'
   end
 
   def unsupported_webphone_payload(reason:, inbox: nil)
@@ -64,8 +67,8 @@ class Telephony::WebphoneService
     }
   end
 
-  def agent_binding_usable?(agent_binding)
-    agent_binding.present? && agent_binding.enabled?
+  def operator_identity_usable?(operator_identity)
+    operator_identity.present? && operator_identity.enabled?
   end
 
   def apply_signaling_server_override(response)
@@ -80,24 +83,28 @@ class Telephony::WebphoneService
     response.delete(:signaling_server)
   end
 
-  def apply_agent_binding_identity(response, agent_binding)
-    return unless apply_agent_binding_identity?(response, agent_binding)
+  def apply_operator_identity(response, operator_identity)
+    return unless apply_operator_identity?(response, operator_identity)
 
-    username, domain = sip_aor_parts(agent_binding.agent_aor)
+    username, domain = sip_aor_parts(operator_identity.agent_aor)
     response['username'] = username if username.present?
     response['domain'] = domain if domain.present?
-    response['targetAor'] = agent_binding.agent_aor
+    response['targetAor'] = operator_identity.agent_aor
     response.delete('target_aor')
     response.delete(:target_aor)
     response.delete('aor')
     response.delete(:aor)
   end
 
-  def apply_agent_binding_identity?(response, agent_binding)
-    return false if agent_binding&.agent_aor.blank?
+  def apply_operator_identity?(response, operator_identity)
+    return false if operator_identity&.agent_aor.blank?
 
-    provider = response_value(response, 'provider').presence || agent_binding.provider
-    provider == 'fonoster' && bridge_identity_needs_binding_fallback?(response)
+    provider = response_value(response, 'provider').presence || operator_identity.provider
+    provider == 'fonoster' && (operator_identity.sip_profile.present? || bridge_identity_needs_binding_fallback?(response))
+  end
+
+  def operator_identity_for(user:, inbox:)
+    Telephony::OperatorIdentityResolver.new(account: account, inbox: inbox, user: user).resolve
   end
 
   def bridge_identity_needs_binding_fallback?(response)

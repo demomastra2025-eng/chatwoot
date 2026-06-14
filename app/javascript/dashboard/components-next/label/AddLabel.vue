@@ -94,6 +94,13 @@ const handleCreateLabel = () => {
             @click="handleLabelSelect(item)"
           >
             <span
+              v-if="item.thumbnail.emoji"
+              class="flex-shrink-0 text-sm leading-none"
+            >
+              {{ item.thumbnail.emoji }}
+            </span>
+            <span
+              v-else
               class="rounded-sm size-2 flex-shrink-0"
               :style="{ backgroundColor: item.thumbnail.color }"
             />

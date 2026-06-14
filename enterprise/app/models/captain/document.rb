@@ -18,11 +18,11 @@
 #
 # Indexes
 #
-#  idx_captain_documents_account_visibility                   (account_id,visibility)
-#  index_captain_documents_on_account_id                      (account_id)
-#  index_captain_documents_on_assistant_id                    (assistant_id)
-#  index_captain_documents_on_account_id_and_external_link    (account_id,external_link) UNIQUE
-#  index_captain_documents_on_status                          (status)
+#  idx_captain_documents_account_visibility                 (account_id,visibility)
+#  index_captain_documents_on_account_id                    (account_id)
+#  index_captain_documents_on_account_id_and_external_link  (account_id,external_link) UNIQUE
+#  index_captain_documents_on_assistant_id                  (assistant_id)
+#  index_captain_documents_on_status                        (status)
 #
 class Captain::Document < ApplicationRecord
   class LimitExceededError < StandardError; end

@@ -29,7 +29,7 @@
 # Foreign Keys
 #
 #  fk_rails_...  (account_id => accounts.id)
-#  fk_rails_...  (assistant_id => captain_assistants.id)
+#  fk_rails_...  (assistant_id => captain_assistants.id) ON DELETE => nullify
 #  fk_rails_...  (document_id => captain_documents.id)
 #
 class Captain::DocumentChunk < ApplicationRecord

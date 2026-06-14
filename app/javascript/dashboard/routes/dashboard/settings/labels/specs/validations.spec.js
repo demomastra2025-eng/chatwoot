@@ -4,11 +4,12 @@ import {
 } from '../validations';
 
 describe('#validLabelCharacters', () => {
-  it('validates the label', () => {
+  it('validates visible label text', () => {
     expect(validLabelCharacters('')).toEqual(false);
-    expect(validLabelCharacters('str str')).toEqual(false);
+    expect(validLabelCharacters('str str')).toEqual(true);
+    expect(validLabelCharacters('VIP клиент 💎')).toEqual(true);
     expect(validLabelCharacters('str_str')).toEqual(true);
-    expect(validLabelCharacters('str-str')).toEqual(true);
+    expect(validLabelCharacters('bad\nlabel')).toEqual(false);
   });
 });
 
@@ -17,7 +18,7 @@ describe('#getLabelTitleErrorMessage', () => {
     title: {
       $error: titleValidation.$error,
       required: titleValidation.required,
-      minLength: titleValidation.minLength,
+      maxLength: titleValidation.maxLength,
       validLabelCharacters: titleValidation.validLabelCharacters,
     },
   });
@@ -26,7 +27,7 @@ describe('#getLabelTitleErrorMessage', () => {
     const validation = createValidation({
       $error: false,
       required: true,
-      minLength: true,
+      maxLength: true,
       validLabelCharacters: true,
     });
 
@@ -37,7 +38,7 @@ describe('#getLabelTitleErrorMessage', () => {
     const validation = createValidation({
       $error: true,
       required: false,
-      minLength: true,
+      maxLength: true,
       validLabelCharacters: true,
     });
 
@@ -46,24 +47,24 @@ describe('#getLabelTitleErrorMessage', () => {
     );
   });
 
-  it('returns a minimum length error message when the title is too short', () => {
+  it('returns a maximum length error message when the title is too long', () => {
     const validation = createValidation({
       $error: true,
       required: true,
-      minLength: false,
+      maxLength: false,
       validLabelCharacters: true,
     });
 
     expect(getLabelTitleErrorMessage(validation)).toEqual(
-      'LABEL_MGMT.FORM.NAME.MINIMUM_LENGTH_ERROR'
+      'LABEL_MGMT.FORM.NAME.MAX_LENGTH_ERROR'
     );
   });
 
-  it('returns a valid label characters error message when the title has invalid characters', () => {
+  it('returns a valid label characters error message when the title has control characters', () => {
     const validation = createValidation({
       $error: true,
       required: true,
-      minLength: true,
+      maxLength: true,
       validLabelCharacters: false,
     });
 

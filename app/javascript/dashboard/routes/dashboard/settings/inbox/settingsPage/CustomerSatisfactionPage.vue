@@ -18,6 +18,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages.js';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 import ConfirmTemplateUpdateDialog from './components/ConfirmTemplateUpdateDialog.vue';
 
 const props = defineProps({
@@ -77,7 +78,7 @@ const filterTypes = [
 const labelOptions = computed(() =>
   labels.value?.length
     ? labels.value
-        .map(label => ({ label: label.title, value: label.title }))
+        .map(label => ({ label: labelDisplayTitle(label), value: label.title }))
         .filter(label => !selectedLabelValues.value.includes(label.value))
     : []
 );

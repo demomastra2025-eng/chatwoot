@@ -2,12 +2,13 @@
 #
 # Table name: captain_inboxes
 #
-#  id                   :bigint           not null, primary key
-#  auto_reply_mode      :string           default("always"), not null
-#  created_at           :datetime         not null
-#  updated_at           :datetime         not null
-#  captain_assistant_id :bigint           not null
-#  inbox_id             :bigint           not null
+#  id                          :bigint           not null, primary key
+#  auto_reply_mode             :string           default("always"), not null
+#  reply_to_open_conversations :boolean          default(FALSE), not null
+#  created_at                  :datetime         not null
+#  updated_at                  :datetime         not null
+#  captain_assistant_id        :bigint           not null
+#  inbox_id                    :bigint           not null
 #
 # Indexes
 #
@@ -19,12 +20,10 @@ class CaptainInbox < ApplicationRecord
   AUTO_REPLY_ALWAYS = 'always'.freeze
   AUTO_REPLY_WORKING_HOURS = 'working_hours'.freeze
   AUTO_REPLY_OUTSIDE_WORKING_HOURS = 'outside_working_hours'.freeze
-  AUTO_REPLY_NEVER = 'never'.freeze
   AUTO_REPLY_MODES = [
     AUTO_REPLY_ALWAYS,
     AUTO_REPLY_WORKING_HOURS,
-    AUTO_REPLY_OUTSIDE_WORKING_HOURS,
-    AUTO_REPLY_NEVER
+    AUTO_REPLY_OUTSIDE_WORKING_HOURS
   ].freeze
   DEFAULT_AUTO_REPLY_MODE = AUTO_REPLY_ALWAYS
 

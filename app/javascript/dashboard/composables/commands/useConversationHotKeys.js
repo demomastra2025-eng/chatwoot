@@ -4,6 +4,7 @@ import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
 import { emitter } from 'shared/helpers/mitt';
 import { useConversationLabels } from 'dashboard/composables/useConversationLabels';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCaptain } from 'dashboard/composables/useCaptain';
 import { useAgentsList } from 'dashboard/composables/useAgentsList';
 import { CMD_AI_ASSIST } from 'dashboard/helper/commandbar/events';
@@ -281,7 +282,7 @@ export function useConversationHotKeys() {
   const addLabelActions = computed(() => {
     const availableLabels = inactiveLabels.value.map(label => ({
       id: label.title,
-      title: `#${label.title}`,
+      title: `#${labelDisplayTitle(label)}`,
       parent: 'add_a_label_to_the_conversation',
       section: t('COMMAND_BAR.SECTIONS.ADD_LABEL'),
       icon: ICON_ADD_LABEL,
@@ -302,7 +303,7 @@ export function useConversationHotKeys() {
   const removeLabelActions = computed(() => {
     const activeLabelsComputed = activeLabels.value.map(label => ({
       id: label.title,
-      title: `#${label.title}`,
+      title: `#${labelDisplayTitle(label)}`,
       parent: 'remove_a_label_to_the_conversation',
       section: t('COMMAND_BAR.SECTIONS.REMOVE_LABEL'),
       icon: ICON_REMOVE_LABEL,

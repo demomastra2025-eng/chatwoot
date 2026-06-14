@@ -153,7 +153,12 @@ RSpec.describe Llm::OpenRouterModelCatalog do
     it 'uses a thread-local snapshot to avoid repeated cache reads while building one payload' do
       Rails.cache.write(
         described_class::CACHE_KEY,
-        'openai/gpt-4' => { provider: 'openrouter', type: 'chat', capabilities: %w[streaming] }
+        'openai/gpt-4' => {
+          provider: 'openrouter',
+          type: 'chat',
+          capabilities: %w[streaming],
+          supported_parameters: %w[tools tool_choice response_format reasoning]
+        }
       )
       Rails.cache.write(described_class::LAST_REFRESH_AT_CACHE_KEY, '2026-05-20T09:41:29Z')
 
@@ -163,6 +168,9 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       described_class.with_model_configs_snapshot do
         2.times do
           expect(described_class.model_config('openai/gpt-4')).to include('provider' => 'openrouter')
+          expect(described_class.model_config('openai/gpt-4')['capabilities']).to include(
+            'tool_calling', 'tool_choice', 'structured_output', 'reasoning'
+          )
           expect(described_class.model_ids).to include('openai/gpt-4')
         end
       end
@@ -177,8 +185,8 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         model_type: 'chat',
         input_modalities: ['text'],
         output_modalities: ['text'],
-        supported_parameters: ['response_format'],
-        capabilities: %w[streaming structured_output text_input text_output],
+        supported_parameters: %w[tools tool_choice response_format reasoning],
+        capabilities: %w[streaming text_input text_output],
         context_length: 1234,
         max_output_tokens: 321,
         pricing: { 'prompt' => '0.000001', 'completion' => '0.000002' },
@@ -205,7 +213,8 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         'db/model' => include(
           'display_name' => 'DB Model',
           'source' => 'openrouter_api',
-          'supported_parameters' => ['response_format'],
+          'supported_parameters' => %w[tools tool_choice response_format reasoning],
+          'capabilities' => include('tool_calling', 'tool_choice', 'structured_output', 'reasoning'),
           'latency_ms' => 42.0,
           'throughput_tokens_per_second' => 99.5
         )
@@ -324,7 +333,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         )
       )
       expect(described_class.model_config('openai/gpt-4')['capabilities']).to include(
-        'tool_calling', 'structured_output', 'reasoning', 'multimodal_input', 'image_input', 'text_output', 'streaming'
+        'tool_calling', 'tool_choice', 'structured_output', 'reasoning', 'multimodal_input', 'image_input', 'text_output', 'streaming'
       )
       expect(described_class.model_config('openai/text-embedding-3-small')).to include(
         'provider' => 'openrouter',

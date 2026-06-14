@@ -372,6 +372,131 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(inbox.reload.deleting?).to be(true)
       end
 
+      it 'deletes managed Virtual PBX voice inboxes synchronously and releases the phone number' do
+        display_phone_number = '+17715550666'
+        ingress_number = '056124100666'
+        voice_channel = create(
+          :channel_voice,
+          :fonoster,
+          account: account,
+          phone_number: display_phone_number,
+          provider_config: {
+            number_ref: 'managed-delete-number-ref',
+            app_ref: SecureRandom.uuid,
+            trunk_ref: 'trunk-sipuni-onelink-out',
+            routing_mode: 'operator',
+            operator_agent_aor: 'sip:666@ats01.kz.sipuni.com',
+            provider_kind: 'sipuni',
+            display_phone_number: display_phone_number,
+            provider_account_number: ingress_number,
+            ingress_number: ingress_number,
+            managed_by: 'onelink',
+            ownership_status: 'local'
+          }
+        )
+        voice_inbox = voice_channel.inbox
+        number_binding = voice_inbox.telephony_number_binding
+        number_binding.update!(
+          managed_by: 'onelink',
+          ownership_status: 'local',
+          phone_number: ingress_number,
+          display_phone_number: display_phone_number,
+          provider_account_number: ingress_number,
+          ingress_number: ingress_number,
+          trunk_ref: 'trunk-sipuni-onelink-out'
+        )
+
+        expect(DeleteObjectJob).not_to receive(:perform_later)
+
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}",
+               params: { remote_commit: false },
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        json_response = response.parsed_body
+
+        expect(response).to have_http_status(:accepted)
+        expect(json_response).to include(
+          'id' => voice_inbox.id,
+          'deleting' => false,
+          'deleted' => true,
+          'deleted_inbox_id' => voice_inbox.id,
+          'remote_commit' => false
+        )
+        expect(Inbox.exists?(voice_inbox.id)).to be(false)
+        expect(Channel::Voice.exists?(voice_channel.id)).to be(false)
+        expect(Telephony::NumberBinding.exists?(number_binding.id)).to be(false)
+
+        replacement_channel = create(
+          :channel_voice,
+          :fonoster,
+          account: account,
+          phone_number: display_phone_number,
+          provider_config: {
+            number_ref: 'managed-delete-replacement-number-ref',
+            routing_mode: 'operator',
+            operator_agent_aor: 'sip:667@ats01.kz.sipuni.com'
+          }
+        )
+        expect(replacement_channel.phone_number).to eq(display_phone_number)
+      end
+
+      it 'keeps remote cleanup disabled by default for managed Virtual PBX voice inboxes' do
+        display_phone_number = '+17715550667'
+        ingress_number = '056124100667'
+        voice_channel = create(
+          :channel_voice,
+          :fonoster,
+          account: account,
+          phone_number: display_phone_number,
+          provider_config: {
+            number_ref: 'managed-remote-delete-number-ref',
+            app_ref: SecureRandom.uuid,
+            trunk_ref: 'trunk-sipuni-onelink-out',
+            routing_mode: 'operator',
+            operator_agent_aor: 'sip:667@ats01.kz.sipuni.com',
+            provider_kind: 'sipuni',
+            display_phone_number: display_phone_number,
+            provider_account_number: ingress_number,
+            ingress_number: ingress_number,
+            managed_by: 'onelink',
+            ownership_status: 'local'
+          }
+        )
+        voice_inbox = voice_channel.inbox
+        voice_inbox.telephony_number_binding.update!(
+          managed_by: 'onelink',
+          ownership_status: 'local',
+          phone_number: ingress_number,
+          display_phone_number: display_phone_number,
+          provider_account_number: ingress_number,
+          ingress_number: ingress_number,
+          trunk_ref: 'trunk-sipuni-onelink-out'
+        )
+        provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
+        allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
+        allow(provisioner).to receive(:execute).and_return(
+          status: 'succeeded',
+          remote_commit: false,
+          provisioning_run: { status: 'succeeded' },
+          executed_operations: []
+        )
+
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}",
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:accepted)
+        expect(response.parsed_body).to include(
+          'id' => voice_inbox.id,
+          'deleted' => true,
+          'remote_commit' => false
+        )
+        expect(provisioner).not_to have_received(:execute)
+        expect(Inbox.exists?(voice_inbox.id)).to be(false)
+        expect(Channel::Voice.exists?(voice_channel.id)).to be(false)
+      end
+
       it 'includes channel deletion state for WhatsApp Web inboxes' do
         with_modified_env(
           'EVOLUTION_API_URL' => 'https://evolution.example.com',

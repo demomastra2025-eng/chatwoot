@@ -1,5 +1,11 @@
 <script setup>
 import Button from 'dashboard/components-next/button/Button.vue';
+import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
 
 const props = defineProps({
   label: {
@@ -32,11 +38,15 @@ const handleMouseEnter = () => {
     @mouseenter="handleMouseEnter"
   >
     <div
+      v-if="labelMarkerType(label) === 'color'"
       class="w-2 h-2 m-1 rounded-sm"
-      :style="{ backgroundColor: label.color }"
+      :style="{ backgroundColor: labelMarkerColor(label) }"
     />
+    <span v-else class="m-0.5 text-sm leading-none">
+      {{ labelMarkerEmoji(label) }}
+    </span>
     <span class="text-sm text-n-slate-12 ltr:mr-px rtl:ml-px">
-      {{ label.title }}
+      {{ labelDisplayTitle(label) }}
     </span>
     <div
       class="w-0 flex relative ltr:left-1 rtl:right-1 flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-out"

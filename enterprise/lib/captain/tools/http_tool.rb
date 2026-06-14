@@ -9,6 +9,12 @@ class Captain::Tools::HttpTool < Captain::Runtime::Tool
     @custom_tool.enabled?
   end
 
+  def metadata
+    @custom_tool.to_tool_metadata
+  end
+
+  alias tool_definition metadata
+
   def perform(tool_context, **params)
     ensure_tool_execution_allowed!
     Captain::Tools::HttpRequestExecutor.new(

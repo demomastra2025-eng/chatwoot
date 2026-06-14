@@ -19,7 +19,9 @@ class Api::V1::Accounts::Contacts::CallsController < Api::V1::Accounts::BaseCont
       conversation_id: conversation.display_id,
       inbox_id: voice_inbox.id,
       call_sid: result[:call_sid],
-      conference_sid: conversation.additional_attributes['conference_sid']
+      conference_sid: conversation.additional_attributes['conference_sid'],
+      browser_join_supported: result[:browser_join_supported],
+      call_session: result[:call_session]&.to_telephony_h
     }
   rescue Telephony::Error, ArgumentError => e
     render json: {

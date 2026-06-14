@@ -24,6 +24,12 @@ import SidebarChangelogButton from './SidebarChangelogButton.vue';
 import SidebarAccountSwitcher from './SidebarAccountSwitcher.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
+import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
 import { filterSidebarMenuItems } from './sidebarVisibility';
 import {
   getInboxFlowRouteNames,
@@ -991,11 +997,21 @@ const menuItems = computed(() => {
                   children: [
                     ...labels.value.map(label => ({
                       name: `${label.title}-${label.id}`,
-                      label: label.title,
+                      label: labelDisplayTitle(label),
                       badge: labelUnreadCount(label.title),
                       icon: h('span', {
-                        class: `size-[8px] rounded-sm`,
-                        style: { backgroundColor: label.color },
+                        class:
+                          labelMarkerType(label) === 'emoji'
+                            ? 'text-xs leading-none'
+                            : 'size-[8px] rounded-sm',
+                        style:
+                          labelMarkerType(label) === 'emoji'
+                            ? undefined
+                            : { backgroundColor: labelMarkerColor(label) },
+                        innerText:
+                          labelMarkerType(label) === 'emoji'
+                            ? labelMarkerEmoji(label)
+                            : '',
                       }),
                       to: withConversationStatus('label_conversations', {
                         label: label.title,
@@ -1200,11 +1216,21 @@ const menuItems = computed(() => {
                   ],
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
-                    label: label.title,
+                    label: labelDisplayTitle(label),
                     badge: label.contacts_count,
                     icon: h('span', {
-                      class: `size-[8px] rounded-sm`,
-                      style: { backgroundColor: label.color },
+                      class:
+                        labelMarkerType(label) === 'emoji'
+                          ? 'text-xs leading-none'
+                          : 'size-[8px] rounded-sm',
+                      style:
+                        labelMarkerType(label) === 'emoji'
+                          ? undefined
+                          : { backgroundColor: labelMarkerColor(label) },
+                      innerText:
+                        labelMarkerType(label) === 'emoji'
+                          ? labelMarkerEmoji(label)
+                          : '',
                     }),
                     to: accountScopedRoute(
                       'contacts_dashboard_labels_index',

@@ -58,6 +58,7 @@ describe('Captain model dropdown diagnostics', () => {
                 'text_output',
                 'structured_output',
                 'tool_calling',
+                'tool_choice',
               ],
             },
           ],
@@ -68,13 +69,19 @@ describe('Captain model dropdown diagnostics', () => {
               provider: 'openrouter',
               provider_configured: true,
               type: 'chat',
-              capabilities: ['text_input', 'text_output', 'structured_output'],
+              capabilities: [
+                'text_input',
+                'text_output',
+                'structured_output',
+                'tool_calling',
+              ],
               diagnostics: {
                 allowed: false,
                 reasons: [
                   {
-                    code: 'tool_calling_unsupported',
-                    message: 'Model does not support tool calling.',
+                    code: 'tool_choice_unsupported',
+                    message:
+                      'Model does not support explicit tool choice control.',
                   },
                 ],
               },
@@ -103,7 +110,7 @@ describe('Captain model dropdown diagnostics', () => {
     expect(
       wrapper.find('[data-test="diagnostic-model-reasons"]').text()
     ).toContain(
-      'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.TOOL_CALLING_UNSUPPORTED'
+      'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.TOOL_CHOICE_UNSUPPORTED'
     );
 
     await diagnosticCard.trigger('click');

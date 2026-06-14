@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_12_122000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_14_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -506,6 +506,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_12_122000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "auto_reply_mode", default: "always", null: false
+    t.boolean "reply_to_open_conversations", default: false, null: false
     t.index ["captain_assistant_id", "inbox_id"], name: "index_captain_inboxes_on_captain_assistant_id_and_inbox_id", unique: true
     t.index ["captain_assistant_id"], name: "index_captain_inboxes_on_captain_assistant_id"
     t.index ["inbox_id"], name: "index_captain_inboxes_on_inbox_id"
@@ -1562,6 +1563,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_12_122000) do
     t.bigint "account_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "display_title"
+    t.string "marker_type", default: "color", null: false
+    t.string "emoji"
     t.index ["account_id"], name: "index_labels_on_account_id"
     t.index ["title", "account_id"], name: "index_labels_on_title_and_account_id", unique: true
   end

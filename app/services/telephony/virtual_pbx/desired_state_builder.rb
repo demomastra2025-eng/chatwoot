@@ -69,6 +69,7 @@ class Telephony::VirtualPbx::DesiredStateBuilder
       username: provider_connection.username,
       send_register: provider_connection.send_register,
       credentials_ref: provider_connection.credentials_ref || provider_connection.fonoster_credentials_ref,
+      fonoster_credentials_ref: provider_connection.fonoster_credentials_ref,
       password_configured: provider_connection.password_secret_ref.present?
     }.compact
   end
@@ -93,11 +94,18 @@ class Telephony::VirtualPbx::DesiredStateBuilder
         id: attrs[:id],
         user_id: attrs[:user_id],
         user_name: attrs[:user_name],
+        provider_connection_id: attrs[:provider_connection_id],
         internal_extension: attrs[:internal_extension],
+        sip_username: attrs[:sip_username],
+        sip_host: attrs[:sip_host],
+        credentials_ref: attrs[:credentials_ref],
+        fonoster_credentials_ref: attrs[:fonoster_credentials_ref],
         local_agent_ref: attrs[:agent_ref],
         agent_ref: attrs[:fonoster_agent_ref].presence || attrs[:agent_ref],
         fonoster_agent_ref: attrs[:fonoster_agent_ref],
         agent_aor: attrs[:agent_aor],
+        availability_mode: attrs[:availability_mode],
+        status: attrs[:status],
         access_configured: attrs[:sip_password_configured] || attrs[:credentials_ref].present?,
         enabled: attrs[:enabled]
       }.compact

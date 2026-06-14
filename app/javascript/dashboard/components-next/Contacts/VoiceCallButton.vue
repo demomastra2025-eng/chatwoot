@@ -103,6 +103,13 @@ const prepareFonosterWebphone = async inbox => {
   try {
     const session = await WebphoneClient.initializeDevice(inbox.id);
     const microphone = await microphonePrewarm;
+    const browserJoinSupported =
+      session?.browserJoinSupported ?? session?.browser_join_supported;
+    if (browserJoinSupported === false) {
+      WebphoneClient.stopMicrophonePrewarm('fonoster');
+      return true;
+    }
+
     const ready =
       session?.provider === 'fonoster' &&
       session?.callingSupported !== false &&
@@ -134,6 +141,8 @@ const startCall = async inbox => {
       inboxId: inbox.id,
     });
     const { call_sid: callSid, conversation_id: conversationId } = response;
+    const browserJoinSupported =
+      response?.browser_join_supported ?? response?.browserJoinSupported;
 
     // Add call to store immediately so widget shows
     const callsStore = useCallsStore();
@@ -143,6 +152,7 @@ const startCall = async inbox => {
       inboxId: inbox.id,
       provider: inbox.provider,
       callDirection: 'outbound',
+      browserJoinSupported,
     });
 
     useAlert(t('CONTACT_PANEL.CALL_INITIATED'));

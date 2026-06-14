@@ -55,8 +55,39 @@ class Telephony::OperatorCallRejectService
     @agent_binding ||= account.telephony_agent_bindings.find_by(user_id: user.id)
   end
 
+  def sip_profile
+    @sip_profile ||= begin
+      scope = sip_profile_scope
+      scope = scope.where(id: operator_candidate_sip_profile_ids) if operator_candidate_sip_profile_ids.present?
+      scope.find_by(user_id: user.id)
+    end
+  end
+
+  def sip_profile_scope
+    current_inbox = call_session.inbox
+    return current_inbox.telephony_sip_profiles if current_inbox.respond_to?(:telephony_sip_profiles)
+
+    account.telephony_sip_profiles.where(inbox_id: call_session.inbox_id)
+  end
+
+  def operator_identity
+    @operator_identity ||= sip_profile || agent_binding
+  end
+
+  def operator_agent_binding
+    operator_identity if operator_identity.is_a?(Telephony::AgentBinding)
+  end
+
+  def operator_agent_ref
+    operator_agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
+  end
+
+  def operator_agent_aor
+    operator_agent_binding&.agent_aor || sip_profile&.agent_aor
+  end
+
   def rejectable_by_user?
-    operator_route? && inbox_member? && candidate_binding? && candidate_agent_ref? && candidate_user?
+    operator_route? && inbox_member? && candidate_binding? && candidate_sip_profile? && candidate_agent_ref? && candidate_user?
   end
 
   def validate_release!
@@ -114,6 +145,7 @@ class Telephony::OperatorCallRejectService
       route_metadata['operator_pool'].present? ||
       route_metadata['operator_candidates'].present? ||
       route_metadata['operator_candidate_binding_ids'].present? ||
+      route_metadata['operator_candidate_sip_profile_ids'].present? ||
       route_metadata['operator_candidate_user_ids'].present? ||
       route_metadata['operator_candidate_agent_refs'].present? ||
       call_session.metadata.to_h['operator_claim'].present?
@@ -129,21 +161,30 @@ class Telephony::OperatorCallRejectService
   def candidate_agent?
     return claimed_by_current_user? if call_session.agent_binding_id.present?
 
-    agent_binding&.enabled? && agent_binding.registered_for_routing?
+    return agent_binding.enabled? && agent_binding.registered_for_routing? if operator_identity.is_a?(Telephony::AgentBinding)
+
+    sip_profile.present? && sip_profile.registered_for_routing?
   end
 
   def candidate_binding?
     candidate_binding_ids = operator_candidate_binding_ids
     return true if candidate_binding_ids.blank?
 
-    candidate_binding_ids.include?(agent_binding&.id)
+    candidate_binding_ids.include?(operator_agent_binding&.id)
+  end
+
+  def candidate_sip_profile?
+    candidate_sip_profile_ids = operator_candidate_sip_profile_ids
+    return true if candidate_sip_profile_ids.blank?
+
+    candidate_sip_profile_ids.include?(sip_profile&.id)
   end
 
   def candidate_agent_ref?
     candidate_agent_refs = operator_candidate_agent_refs
     return true if candidate_agent_refs.blank?
 
-    candidate_agent_refs.include?(agent_binding&.agent_ref)
+    candidate_agent_refs.include?(operator_agent_ref)
   end
 
   def candidate_user?
@@ -154,11 +195,13 @@ class Telephony::OperatorCallRejectService
   end
 
   def claimed_by_other?
-    call_session.agent_binding_id.present? && !claimed_by_current_user?
+    return !claimed_by_current_user? if call_session.agent_binding_id.present?
+
+    operator_claim_user_id.present? && operator_claim_user_id != user.id
   end
 
   def claimed_by_current_user?
-    return call_session.agent_binding_id == agent_binding&.id if call_session.agent_binding_id.present?
+    return call_session.agent_binding_id == operator_agent_binding&.id if call_session.agent_binding_id.present?
 
     operator_claim_user_id == user.id
   end
@@ -169,6 +212,10 @@ class Telephony::OperatorCallRejectService
 
   def operator_candidate_binding_ids
     Array.wrap(route_metadata['operator_candidate_binding_ids']).filter_map { |value| value.presence&.to_i }
+  end
+
+  def operator_candidate_sip_profile_ids
+    Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).filter_map { |value| value.presence&.to_i }
   end
 
   def operator_candidate_agent_refs
@@ -202,7 +249,7 @@ class Telephony::OperatorCallRejectService
       "/telephony/webphone/calls/#{ERB::Util.url_encode(call_ref)}/reject",
       {
         reason: bridge_reason,
-        agent_aor: agent_binding&.agent_aor,
+        agent_aor: operator_agent_aor,
         actor: 'operator',
         call_direction: call_session.direction,
         routing_mode: bridge_routing_mode
@@ -300,7 +347,8 @@ class Telephony::OperatorCallRejectService
       status: :conflict,
       details: {
         agent_binding_id: call_session.agent_binding_id,
-        user_id: call_session.agent_binding&.user_id
+        sip_profile_id: call_session.metadata.to_h.dig('operator_claim', 'sip_profile_id'),
+        user_id: call_session.agent_binding&.user_id || operator_claim_user_id
       }.compact
     )
   end

@@ -8,7 +8,8 @@ class Llm::OpenRouterRequestCompiler
   ].freeze
   CALLER_PROVIDER_CONTROL_KEYS = %w[require_parameters allow_fallbacks data_collection zdr sort].freeze
   ENDPOINT_SCOPED_REQUEST_PARAMS = {
-    temperature: 'temperature'
+    temperature: 'temperature',
+    parallel_tool_calls: 'parallel_tool_calls'
   }.freeze
 
   Compiled = Struct.new(:model, :models, :params, :headers, :native_endpoint, :metadata, keyword_init: true)
@@ -67,6 +68,7 @@ class Llm::OpenRouterRequestCompiler
       trace_capture_allowed: feature_policy.workspace_policy&.trace_capture_allowed?
     )
     apply_request_params!(params, provider_params: provider_params, models: models)
+    apply_parallel_tool_call_params!(params, provider_params: provider_params, models: models)
     apply_feature_policy_params!(params, feature_policy)
     params[:models] = models if models.present?
     params[:provider] = provider_params if provider_params.present?
@@ -77,6 +79,7 @@ class Llm::OpenRouterRequestCompiler
       feature_policy: feature_policy,
       models: models,
       provider_params: provider_params,
+      params: params,
       extensions: { plugins: plugins, server_tools: server_tools, transform_plan: transform_plan },
       header_metadata: header_result.metadata
     )
@@ -160,6 +163,72 @@ class Llm::OpenRouterRequestCompiler
 
   def apply_feature_policy_params!(params, feature_policy)
     set_param_if_present(params, :service_tier, feature_policy.compiled_service_tier)
+  end
+
+  def apply_parallel_tool_call_params!(params, provider_params:, models:)
+    requested = desired_parallel_tool_calls
+    return if requested.nil?
+
+    if requested != true
+      params.delete(:parallel_tool_calls)
+      params.delete('parallel_tool_calls')
+      return
+    end
+
+    supports_parallel_tools = route_explicitly_supports_endpoint_param?(
+      models,
+      :parallel_tool_calls,
+      provider_params: provider_params
+    )
+    unless read_only_tool_flow? && supports_parallel_tools
+      omit_request_param!(params, :parallel_tool_calls)
+      return
+    end
+
+    params[:parallel_tool_calls] = true
+  end
+
+  def desired_parallel_tool_calls
+    explicit = explicit_parallel_tool_calls_value
+    return explicit unless explicit.nil?
+    return true if read_only_tool_flow?
+  end
+
+  def explicit_parallel_tool_calls_value
+    raw = request_value(:parallel_tool_calls)
+    return ActiveModel::Type::Boolean.new.cast(raw) unless raw.nil?
+
+    raw = @base_params[:parallel_tool_calls] if @base_params.key?(:parallel_tool_calls)
+    raw = @base_params['parallel_tool_calls'] if raw.nil? && @base_params.key?('parallel_tool_calls')
+    return if raw.nil?
+
+    ActiveModel::Type::Boolean.new.cast(raw)
+  end
+
+  def read_only_tool_flow?
+    tool_objects.present? && tool_objects.all? { |tool| Llm::ToolRiskPolicy.read_only?(tool) }
+  end
+
+  def tool_objects
+    return Array(@tools) unless @tools.nil? || @tools == true || @tools == false
+
+    Array(request_value(:tools))
+  end
+
+  def route_explicitly_supports_endpoint_param?(models, key, provider_params:)
+    endpoint_param = ENDPOINT_SCOPED_REQUEST_PARAMS.fetch(key.to_sym)
+    supported_parameters = primary_route_supported_parameters(models, provider_params: provider_params)
+    return false if supported_parameters.blank?
+
+    supported_parameters.include?(endpoint_param)
+  rescue StandardError
+    false
+  end
+
+  def omit_request_param!(params, key)
+    params.delete(key)
+    params.delete(key.to_s)
+    @omitted_params << key.to_s
   end
 
   def set_param_if_present(params, key, value)
@@ -263,7 +332,7 @@ class Llm::OpenRouterRequestCompiler
     Rails.logger.warn("[Llm::OpenRouterRequestCompiler] Failed to publish context transform event: #{e.class}: #{e.message}")
   end
 
-  def compiled_metadata(profile:, feature_policy:, models:, provider_params:, extensions:, header_metadata: {})
+  def compiled_metadata(profile:, feature_policy:, models:, provider_params:, params:, extensions:, header_metadata: {})
     {
       requested_model: @model,
       models: models,
@@ -287,6 +356,7 @@ class Llm::OpenRouterRequestCompiler
       openrouter_plugin_policy: feature_policy.plugin_policy,
       openrouter_transform_policy: feature_policy.transform_policy,
       openrouter_budget_policy: feature_policy.budget_policy,
+      openrouter_parallel_tool_calls: parallel_tool_calls_metadata(params),
       openrouter_omitted_params: @omitted_params.uniq.presence
     }.merge(extensions[:transform_plan]&.to_metadata || {}).merge(header_metadata || {}).compact
   end
@@ -295,6 +365,11 @@ class Llm::OpenRouterRequestCompiler
     return [] if models.blank?
 
     models.drop(@model.present? ? 1 : 0)
+  end
+
+  def parallel_tool_calls_metadata(params)
+    return params[:parallel_tool_calls] if params.key?(:parallel_tool_calls)
+    return params['parallel_tool_calls'] if params.key?('parallel_tool_calls')
   end
 
   def routing_profile_name(profile, provider_params)

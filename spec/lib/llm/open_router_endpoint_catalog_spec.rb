@@ -83,7 +83,7 @@ RSpec.describe Llm::OpenRouterEndpointCatalog do
           'context_length' => 8192,
           'max_output_tokens' => 4096,
           'supported_parameters' => include('tools', 'response_format'),
-          'capabilities' => include('tool_calling', 'structured_output', 'reasoning'),
+          'capabilities' => include('tool_calling', 'tool_choice', 'structured_output', 'reasoning'),
           'pricing' => include('prompt' => '0.000001', 'completion' => '0.000002'),
           'latency_ms' => 420.0,
           'throughput_tokens_per_second' => 88.5,
@@ -240,8 +240,8 @@ RSpec.describe Llm::OpenRouterEndpointCatalog do
         endpoint_slug: 'db-provider/db-model',
         endpoint_provider_name: 'DB Provider',
         endpoint_provider_key: 'db-provider',
-        supported_parameters: ['tools'],
-        capabilities: %w[streaming tool_calling],
+        supported_parameters: %w[tools tool_choice response_format reasoning],
+        capabilities: %w[streaming],
         context_length: 1000,
         max_prompt_tokens: 1000,
         max_completion_tokens: 200,
@@ -278,11 +278,36 @@ RSpec.describe Llm::OpenRouterEndpointCatalog do
       expect(described_class.endpoints_for('db/model')).to include(
         include(
           'provider_name' => 'DB Provider',
-          'supported_parameters' => ['tools'],
+          'supported_parameters' => %w[tools tool_choice response_format reasoning],
+          'capabilities' => include('tool_calling', 'tool_choice', 'structured_output', 'reasoning'),
           'max_prompt_tokens' => 1000,
           'max_completion_tokens' => 200,
           'uptime_last_30m' => 99.9
         )
+      )
+    end
+
+    it 'derives parameter capabilities from cached endpoint metadata with stale capabilities' do
+      Rails.cache.write(
+        described_class::CACHE_KEY,
+        'cached/model' => {
+          'model_id' => 'cached/model',
+          'endpoint_count' => 1,
+          'providers' => ['Cached Provider'],
+          'source' => 'openrouter_api',
+          'endpoints' => [
+            {
+              'provider_name' => 'Cached Provider',
+              'supported_parameters' => %w[tools tool_choice response_format reasoning],
+              'capabilities' => %w[streaming]
+            }
+          ]
+        }
+      )
+      Rails.cache.write(described_class::LAST_REFRESH_AT_CACHE_KEY, '2026-05-20T09:41:29Z')
+
+      expect(described_class.endpoints_for('cached/model')).to include(
+        include('capabilities' => include('tool_calling', 'tool_choice', 'structured_output', 'reasoning'))
       )
     end
 

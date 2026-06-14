@@ -74,9 +74,7 @@ class Llm::OpenRouterModelCatalog
         last_refresh_error: nil,
         last_refresh_diff: diff
       )
-    rescue MissingApiKeyError
-      raise
-    rescue RefreshAlreadyRunningError
+    rescue MissingApiKeyError, RefreshAlreadyRunningError
       raise
     rescue StandardError => e
       @last_refresh_error = refresh_error_message(e)
@@ -469,7 +467,10 @@ class Llm::OpenRouterModelCatalog
         input_modalities: Array(config['input_modalities']).map(&:to_s),
         output_modalities: Array(config['output_modalities']).map(&:to_s),
         supported_parameters: Array(config['supported_parameters'] || raw_payload['supported_parameters']).map(&:to_s),
-        capabilities: Array(config['capabilities']).map(&:to_s),
+        capabilities: Llm::OpenRouterParameterCapabilities.derive(
+          capabilities: config['capabilities'],
+          supported_parameters: config['supported_parameters'] || raw_payload['supported_parameters']
+        ),
         context_length: integer_value(config['context_length']),
         max_output_tokens: integer_value(config['max_output_tokens']),
         pricing: hash_value(config['pricing']),
@@ -645,7 +646,12 @@ class Llm::OpenRouterModelCatalog
       cached.each_with_object({}) do |(model_id, config), result|
         next unless config.is_a?(Hash)
 
-        result[model_id.to_s] = config.deep_stringify_keys
+        normalized_config = config.deep_stringify_keys
+        normalized_config['capabilities'] = Llm::OpenRouterParameterCapabilities.derive(
+          capabilities: normalized_config['capabilities'],
+          supported_parameters: normalized_config['supported_parameters']
+        )
+        result[model_id.to_s] = normalized_config
       end
     end
 
@@ -887,6 +893,7 @@ class Llm::OpenRouterModelCatalog
       capabilities << 'audio_output' if output_modalities.include?('audio')
       capabilities << 'file_input' if input_modalities.include?('file')
       capabilities << 'tool_calling' if supported_parameters.intersect?(%w[tools tool_choice])
+      capabilities << 'tool_choice' if supported_parameters.include?('tool_choice')
       capabilities << 'structured_output' if supported_parameters.intersect?(%w[response_format structured_outputs])
       capabilities << 'reasoning' if supported_parameters.intersect?(%w[reasoning reasoning_effort include_reasoning])
       capabilities << 'multimodal_input' if (input_modalities - ['text']).any?
@@ -961,6 +968,7 @@ class Llm::OpenRouterModelCatalog
       capabilities << 'audio_output' if output_modalities.include?('audio')
       capabilities << 'file_input' if input_modalities.include?('file')
       capabilities << 'tool_calling' if configured_capabilities.include?('function_calling') || configured_capabilities.include?('tool_calling')
+      capabilities << 'tool_choice' if configured_capabilities.include?('tool_choice')
       capabilities << 'structured_output' if configured_capabilities.intersect?(%w[structured_output response_format json_schema structured_outputs])
       capabilities << 'reasoning' if configured_capabilities.include?('reasoning')
       capabilities << 'multimodal_input' if configured_capabilities.include?('vision') || (input_modalities - ['text']).any?

@@ -102,6 +102,26 @@ RSpec.describe 'Label API', type: :request do
 
         expect(response).to have_http_status(:success)
       end
+
+      it 'creates a label with arbitrary display title and a generated hidden key' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/labels",
+               headers: admin.create_new_auth_token,
+               params: { label: { display_title: 'VIP клиент 💎', marker_type: 'emoji', emoji: '💎' } },
+               as: :json
+        end.to change(Label, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        created_label = Label.last
+        expect(created_label.title).to match(/\Alabel_[a-f0-9]{12}\z/)
+        expect(created_label.display_title).to eq('VIP клиент 💎')
+        expect(response.parsed_body).to include(
+          'title' => created_label.title,
+          'display_title' => 'VIP клиент 💎',
+          'marker_type' => 'emoji',
+          'emoji' => '💎'
+        )
+      end
     end
   end
 
@@ -128,6 +148,20 @@ RSpec.describe 'Label API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(label.reload.title).to eq('test_2')
+      end
+
+      it 'updates the visible label name without changing the technical key' do
+        old_title = label.title
+
+        patch "/api/v1/accounts/#{account.id}/labels/#{label.id}",
+              headers: admin.create_new_auth_token,
+              params: { display_title: 'Новый тег клиента' },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(label.reload.title).to eq(old_title)
+        expect(label.display_title).to eq('Новый тег клиента')
+        expect(response.parsed_body['display_title']).to eq('Новый тег клиента')
       end
     end
   end

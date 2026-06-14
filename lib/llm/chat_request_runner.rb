@@ -129,7 +129,7 @@ class Llm::ChatRequestRunner
       account: account,
       feature: feature,
       model: effective_model_name(chat),
-      tools: true,
+      tools: tools,
       schema: schema.present?
     )
   end

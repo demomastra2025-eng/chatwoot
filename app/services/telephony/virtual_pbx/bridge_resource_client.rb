@@ -7,7 +7,13 @@ class Telephony::VirtualPbx::BridgeResourceClient
   RESOURCE_PAYLOAD_KEYS = %i[
     name ref host port transport username send_register telUrl tel_url trunkRef trunk_ref
     credentialRef credential_ref metadata route mode app_ref appRef agent_aor agentAor enabled
+    password credentialsRef credentials_ref outboundCredentialsRef outbound_credentials_ref
+    sendRegister inboundUri inbound_uri inboundCredentialsRef inbound_credentials_ref
+    accessControlListRef access_control_list_ref uris
     city country countryIsoCode country_iso_code
+    numberRef number_ref providerAccountNumber provider_account_number ingressNumber ingress_number
+    displayPhoneNumber display_phone_number accountId account_id inboxId inbox_id channelId channel_id
+    gatewayRef gateway_ref callerId caller_id sourceId source_id
   ].freeze
 
   ERROR_CODE_BY_STATUS = {
@@ -91,6 +97,14 @@ class Telephony::VirtualPbx::BridgeResourceClient
     idempotent_delete(resource_path('trunks', ref))
   end
 
+  def upsert_sipuni_gateway(ref, payload = {})
+    idempotent_upsert(resource_path('sipuni-gateways', ref), allowlisted_payload(payload).merge(ref: ref))
+  end
+
+  def delete_sipuni_gateway(ref)
+    idempotent_delete(resource_path('sipuni-gateways', ref))
+  end
+
   def delete_credentials(ref)
     idempotent_delete(resource_path('credentials', ref))
   end
@@ -102,10 +116,13 @@ class Telephony::VirtualPbx::BridgeResourceClient
   def dispatch(operation)
     attrs = operation.with_indifferent_access
     method = attrs[:method].to_s.downcase.to_sym
-    payload = attrs[:payload] || attrs[:payload_preview] || {}
+    payload = allowlisted_payload(attrs[:payload] || attrs[:payload_preview] || {})
 
     return idempotent_delete(attrs.fetch(:path)) if method == :delete
-    return idempotent_upsert(attrs.fetch(:path), allowlisted_payload(payload)) if method == :put && attrs[:key].to_s.start_with?('upsert_')
+
+    if method == :put && attrs[:key].to_s.start_with?('upsert_')
+      return idempotent_upsert(attrs.fetch(:path), payload_with_path_ref(attrs.fetch(:path), payload))
+    end
 
     perform(method, attrs.fetch(:path), payload: payload)
   end
@@ -222,6 +239,13 @@ class Telephony::VirtualPbx::BridgeResourceClient
     attrs = (payload || {}).to_h.deep_symbolize_keys.slice(*RESOURCE_PAYLOAD_KEYS)
     attrs[:metadata] = sanitize(attrs[:metadata].to_h.deep_symbolize_keys) if attrs[:metadata].present?
     attrs.compact
+  end
+
+  def payload_with_path_ref(path, payload)
+    ref = CGI.unescape(path.to_s.split('/').last.to_s)
+    return payload if ref.blank?
+
+    payload.merge(ref: payload[:ref].presence || ref)
   end
 
   def secret_key?(key)

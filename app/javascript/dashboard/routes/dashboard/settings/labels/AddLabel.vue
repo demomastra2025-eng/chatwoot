@@ -5,10 +5,12 @@ import validations, { getLabelTitleErrorMessage } from './validations';
 import { getRandomColor } from 'dashboard/helper/labelColor';
 import { useVuelidate } from '@vuelidate/core';
 
+import EmojiInput from 'shared/components/emoji/EmojiInput.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
 export default {
   components: {
+    EmojiInput,
     NextButton,
   },
   props: {
@@ -26,6 +28,9 @@ export default {
       color: '#000',
       description: '',
       title: '',
+      markerType: 'color',
+      emoji: '',
+      showEmojiPicker: false,
       showOnSidebar: true,
     };
   },
@@ -38,21 +43,34 @@ export default {
       const errorMessage = getLabelTitleErrorMessage(this.v$);
       return this.$t(errorMessage);
     },
+    markerEmojiInvalid() {
+      return this.markerType === 'emoji' && !this.emoji;
+    },
   },
   mounted() {
     this.color = getRandomColor();
-    this.title = this.prefillTitle.toLowerCase();
+    this.title = this.prefillTitle;
   },
   methods: {
     onClose() {
       this.$emit('close');
+    },
+    selectMarkerType(type) {
+      this.markerType = type;
+      this.showEmojiPicker = false;
+    },
+    selectEmoji(emoji) {
+      this.emoji = emoji;
+      this.showEmojiPicker = false;
     },
     async addLabel() {
       try {
         await this.$store.dispatch('labels/create', {
           color: this.color,
           description: this.description,
-          title: this.title.toLowerCase(),
+          display_title: this.title.trim(),
+          marker_type: this.markerType,
+          emoji: this.markerType === 'emoji' ? this.emoji : null,
           show_on_sidebar: this.showOnSidebar,
         });
         useAlert(this.$t('LABEL_MGMT.ADD.API.SUCCESS_MESSAGE'));
@@ -77,7 +95,7 @@ export default {
       <woot-input
         v-model="title"
         :class="{ error: v$.title.$error }"
-        class="w-full label-name--input"
+        class="w-full"
         :label="$t('LABEL_MGMT.FORM.NAME.LABEL')"
         :placeholder="$t('LABEL_MGMT.FORM.NAME.PLACEHOLDER')"
         :error="labelTitleErrorMessage"
@@ -97,12 +115,57 @@ export default {
         @blur="v$.description.$touch"
       />
 
-      <div class="w-full">
+      <div class="w-full mb-4">
+        <span class="block mb-2 text-sm font-medium text-n-slate-12">
+          {{ $t('LABEL_MGMT.FORM.MARKER.LABEL') }}
+        </span>
+        <div class="flex gap-2">
+          <NextButton
+            type="button"
+            sm
+            faded
+            :slate="markerType !== 'color'"
+            :blue="markerType === 'color'"
+            :label="$t('LABEL_MGMT.FORM.MARKER.COLOR')"
+            @click.prevent="selectMarkerType('color')"
+          />
+          <NextButton
+            type="button"
+            sm
+            faded
+            :slate="markerType !== 'emoji'"
+            :blue="markerType === 'emoji'"
+            :label="$t('LABEL_MGMT.FORM.MARKER.EMOJI')"
+            @click.prevent="selectMarkerType('emoji')"
+          />
+        </div>
+      </div>
+
+      <div v-if="markerType === 'color'" class="w-full">
         <label>
           {{ $t('LABEL_MGMT.FORM.COLOR.LABEL') }}
           <woot-color-picker v-model="color" />
         </label>
       </div>
+
+      <div v-else class="relative w-full mb-4">
+        <label class="block mb-2 text-sm font-medium text-n-slate-12">
+          {{ $t('LABEL_MGMT.FORM.EMOJI.LABEL') }}
+        </label>
+        <button
+          type="button"
+          class="flex h-10 min-w-24 items-center justify-center rounded-lg border border-n-strong px-3 text-xl text-n-slate-12 hover:bg-n-alpha-2"
+          @click.prevent="showEmojiPicker = !showEmojiPicker"
+        >
+          {{ emoji || $t('LABEL_MGMT.FORM.EMOJI.PLACEHOLDER') }}
+        </button>
+        <EmojiInput
+          v-if="showEmojiPicker"
+          :on-click="selectEmoji"
+          show-remove-button
+        />
+      </div>
+
       <div class="flex items-center justify-end w-full gap-2 px-0 py-2">
         <NextButton
           faded
@@ -115,21 +178,12 @@ export default {
           type="submit"
           data-testid="label-submit"
           :label="$t('LABEL_MGMT.FORM.CREATE')"
-          :disabled="v$.title.$invalid || uiFlags.isCreating"
+          :disabled="
+            v$.title.$invalid || markerEmojiInvalid || uiFlags.isCreating
+          "
           :is-loading="uiFlags.isCreating"
         />
       </div>
     </form>
   </div>
 </template>
-
-<style lang="scss" scoped>
-// Label API supports only lowercase letters
-.label-name--input {
-  ::v-deep {
-    input {
-      @apply lowercase;
-    }
-  }
-}
-</style>

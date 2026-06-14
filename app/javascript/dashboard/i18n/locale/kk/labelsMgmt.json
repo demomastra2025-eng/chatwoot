@@ -11,33 +11,45 @@
       "TITLE": "Manage tags",
       "DESC": "Tags let you group conversations together.",
       "TABLE_HEADER": {
-        "NAME": "Name",
-        "DESCRIPTION": "Description",
-        "COLOR": "Color"
+        "NAME": "Атауы",
+        "DESCRIPTION": "Сипаттама",
+        "COLOR": "Түс",
+        "MARKER": "Белгі",
+        "ACTION": "Әрекеттер"
       }
     },
     "FORM": {
       "NAME": {
-        "LABEL": "Tag name",
-        "PLACEHOLDER": "Tag name",
-        "REQUIRED_ERROR": "Tag name is required",
-        "MINIMUM_LENGTH_ERROR": "Minimum length 2 is required",
-        "VALID_ERROR": "Only Alphabets, Numbers, Hyphen and Underscore are allowed"
+        "LABEL": "Тег атауы",
+        "PLACEHOLDER": "Тег атауы",
+        "REQUIRED_ERROR": "Тег атауы міндетті",
+        "MINIMUM_LENGTH_ERROR": "Ең аз ұзындығы 2 таңба болуы керек",
+        "MAX_LENGTH_ERROR": "Ең көп ұзындығы 120 таңба",
+        "VALID_ERROR": "Тег атауында басқару таңбалары болмауы керек"
       },
       "DESCRIPTION": {
-        "LABEL": "Description",
-        "PLACEHOLDER": "Tag description"
+        "LABEL": "Сипаттама",
+        "PLACEHOLDER": "Тег сипаттамасы"
       },
       "COLOR": {
-        "LABEL": "Color"
+        "LABEL": "Түс"
+      },
+      "MARKER": {
+        "LABEL": "Тег белгісі",
+        "COLOR": "Түс",
+        "EMOJI": "Эмодзи"
+      },
+      "EMOJI": {
+        "LABEL": "Эмодзи",
+        "PLACEHOLDER": "Таңдау"
       },
       "SHOW_ON_SIDEBAR": {
-        "LABEL": "Show tag on sidebar"
+        "LABEL": "Тегті бүйір панельде көрсету"
       },
-      "EDIT": "Edit",
-      "CREATE": "Create",
-      "DELETE": "Delete",
-      "CANCEL": "Cancel"
+      "EDIT": "Өңдеу",
+      "CREATE": "Жасау",
+      "DELETE": "Жою",
+      "CANCEL": "Бас тарту"
     },
     "SUGGESTIONS": {
       "TOOLTIP": {

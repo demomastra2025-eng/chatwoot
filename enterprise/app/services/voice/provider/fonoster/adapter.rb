@@ -6,7 +6,8 @@ class Voice::Provider::Fonoster::Adapter
   def initiate_call(to:, conference_sid: nil, agent_id: nil)
     number_binding = Telephony::NumberBinding.sync_from_voice_channel!(@channel)
     raise Telephony::Error.new(code: 'VOICE_INBOX_NOT_BOUND', message: 'Voice inbox is not bound to a Fonoster number') if number_binding.blank?
-    app_ref = number_binding.effective_app_ref
+
+    app_ref = outbound_app_ref(number_binding)
 
     response = Telephony::BridgeClient.new(account_id: @channel.account_id).post(
       '/telephony/calls/outbound',
@@ -34,5 +35,13 @@ class Voice::Provider::Fonoster::Adapter
       conference_sid: conference_sid,
       bridge_response: response
     }
+  end
+
+  private
+
+  def outbound_app_ref(number_binding)
+    number_binding.effective_app_ref.presence ||
+      ENV.fetch('TELEPHONY_BRIDGE_RUNTIME_APP_REF', nil).presence ||
+      ENV.fetch('TELEPHONY_BRIDGE_DEFAULT_APP_REF', nil).presence
   end
 end

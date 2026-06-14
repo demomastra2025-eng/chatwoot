@@ -467,7 +467,8 @@
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Номер/аккаунт у провайдера",
-            "PLACEHOLDER": "Необязательный номер или аккаунт на стороне провайдера"
+            "PLACEHOLDER": "Необязательный номер или аккаунт на стороне провайдера",
+            "REQUIRED": "Номер/аккаунт у провайдера обязателен для Sipuni"
           },
           "INGRESS_NUMBER": {
             "LABEL": "Технический номер",
@@ -494,12 +495,13 @@
           },
           "CONNECTION_PASSWORD": {
             "LABEL": "Общий SIP password",
-            "PLACEHOLDER": "Необязательный общий SIP password"
+            "PLACEHOLDER": "Необязательный общий SIP password",
+            "REQUIRED": "SIP password обязателен для Sipuni"
           },
           "EMPLOYEE_CREDENTIALS_HINT": "SIP username/password в строке сотрудника — это его личные SIP credentials. Если оставить пустыми, будут использованы общие настройки провайдера.",
           "EMPLOYEE_PROFILES": {
             "TITLE": "Сотрудники, внутренние номера и SIP-доступы",
-            "CREATE_HINT": "Сначала создайте канал Виртуальной АТС. Сотрудников добавляйте через участников inbox, а личные внутренние номера/SIP-доступы назначайте в настройках при необходимости.",
+            "CREATE_HINT": "После выбора сотрудников можно сразу заполнить личные SIP username/password. Если оставить поля пустыми, сотрудник останется участником inbox без SIP-доступа; доступ можно добавить позже в настройках.",
             "HINT": "Привяжите каждого сотрудника OneLink к внутреннему номеру АТС. Провайдерские доступы остаются в диагностике и здесь не показываются.",
             "EMPLOYEE_LABEL": "Сотрудник OneLink",
             "SELECT_PLACEHOLDER": "Текущий пользователь или выберите сотрудника",
@@ -522,19 +524,19 @@
             "PLACEHOLDER": "1001",
             "REQUIRED": "Внутренний номер сотрудника обязателен"
           },
-          "MANAGEMENT_TITLE": "Локальная конфигурация Виртуальной АТС",
-          "MANAGEMENT_SUBTITLE": "Редактируйте локальный PBX-срез OneLink или удаляйте его после dry-run проверок. Remote-записи в Fonoster/Routr остаются заблокированы.",
+          "MANAGEMENT_TITLE": "Виртуальная АТС",
+          "MANAGEMENT_SUBTITLE": "OneLink управляет настройками канала, сотрудниками и SIP-доступами. Fonoster/Routr синхронизируются автоматически.",
           "CURRENT_USER_REQUIRED": "Текущий пользователь нужен для создания SIP-профиля сотрудника",
           "REQUIRED_FIELDS": "Заполните название inbox и витринный номер",
-          "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять через локальный PBX provisioning.",
+          "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять из OneLink.",
           "LOAD_ERROR": "Не удалось загрузить конфигурацию Виртуальной АТС.",
-          "CREATE_SUCCESS": "Канал Виртуальной АТС создан локально",
-          "UPDATE_SUCCESS": "Канал Виртуальной АТС обновлён локально",
+          "CREATE_SUCCESS": "Канал Виртуальной АТС создан",
+          "UPDATE_SUCCESS": "Канал Виртуальной АТС сохранён",
           "UPDATE_ERROR": "Не удалось обновить конфигурацию Виртуальной АТС",
-          "DELETE_CONFIRM": "Удалить локальный канал Виртуальной АТС после dry-run проверок? Remote-ресурсы Fonoster/Routr не будут изменены.",
-          "DELETE_SUCCESS": "Канал Виртуальной АТС удалён локально",
-          "UPDATE_BUTTON": "Обновить локальную АТС",
-          "DELETE_BUTTON": "Удалить локальную АТС",
+          "DELETE_CONFIRM": "Удалить канал Виртуальной АТС и связанные ресурсы телефонии?",
+          "DELETE_SUCCESS": "Канал Виртуальной АТС удалён",
+          "UPDATE_BUTTON": "Сохранить",
+          "DELETE_BUTTON": "Удалить канал",
           "SYNC_STATE_TITLE": "Состояние provisioning",
           "SYNC_STATUS": "Статус синхронизации",
           "PLAN_OPERATIONS": "Операций в плане",
@@ -544,7 +546,7 @@
           "RECONCILE_BUTTON": "Проверить remote-состояние",
           "PROVISION_BUTTON": "Синхронизировать с телефонией",
           "PROVISIONING_PLAN_READY": "План provisioning готов",
-          "PROVISION_BLOCKED": "Remote provisioning заблокирован до включения согласования",
+          "PROVISION_BLOCKED": "Remote provisioning не удалось выполнить",
           "PROVISION_SUCCESS": "Remote provisioning завершён",
           "RECONCILE_COMPLETE": "Проверка remote-состояния завершена",
           "ADVANCED_FIELDS": {
@@ -635,14 +637,15 @@
           "NO_WARNINGS": "Блокирующих предупреждений нет.",
           "NO_DATA": "Для этого inbox пока нет данных готовности.",
           "VIRTUAL_PBX_DIAGNOSTICS": "Диагностика Виртуальной АТС",
-          "VIRTUAL_PBX_SAFE_MODE": "Только локальная конфигурация и dry-run диагностика. Remote-записи в Fonoster/Routr заблокированы.",
+          "VIRTUAL_PBX_SAFE_MODE": "OneLink сохраняет конфигурацию и синхронизирует Fonoster/Routr автоматически.",
           "PROVIDER_KIND": "Тип провайдера",
           "PHONE_SPLIT": "Витринный → технический",
           "OWNERSHIP": "Владение",
           "MANAGED_LOCAL": "Локально управляется",
           "LEGACY_READ_ONLY": "Legacy read-only",
           "REMOTE_MUTATIONS": "Remote-записи",
-          "REMOTE_MUTATIONS_BLOCKED": "Заблокированы до явного согласования",
+          "REMOTE_MUTATIONS_BLOCKED": "Включены через синхронизацию OneLink",
+          "REMOTE_MUTATIONS_ALLOWED": "Автоматически через OneLink",
           "DISPLAY_PHONE": "Витринный номер",
           "INGRESS_NUMBER": "Технический номер",
           "NUMBER_REF": "Идентификатор номера",
@@ -976,6 +979,8 @@
     },
     "AGENTS": {
       "BUTTON_TEXT": "Добавить сотрудников",
+      "SAVE_BUTTON_TEXT": "Сохранить сотрудников",
+      "SAVE_SUCCESS": "Сотрудники и SIP-настройки сохранены",
       "ADD_AGENTS": "Добавление сотрудников в ваш канал..."
     },
     "FINISH": {

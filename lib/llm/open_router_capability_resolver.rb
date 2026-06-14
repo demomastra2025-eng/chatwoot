@@ -2,7 +2,7 @@
 
 class Llm::OpenRouterCapabilityResolver
   OPENROUTER_PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
-  PARAMETER_CAPABILITIES = %w[tool_calling structured_output reasoning].freeze
+  PARAMETER_CAPABILITIES = %w[tool_calling tool_choice structured_output reasoning].freeze
   EMBEDDING_DIMENSION_FEATURES = %w[help_center_search embedding].freeze
 
   Result = Struct.new(:model_id, :feature, :allowed, :reasons, :missing, :model_config, :endpoint_metadata, keyword_init: true) do
@@ -57,7 +57,7 @@ class Llm::OpenRouterCapabilityResolver
         reasons << reason('provider_not_configured', 'OpenRouter provider key is not configured.', provider: OPENROUTER_PROVIDER)
       end
 
-      requirement_sets = Llm::Models.required_capability_sets_for(feature_key)
+      requirement_sets = Llm::Models.required_capability_sets_for(feature_key, runtime_preferences: runtime_preferences)
       return result(canonical_model, feature_key, reasons.empty?, reasons, missing, model_config, endpoint_metadata) if requirement_sets.blank?
 
       allowed_by_requirements = requirement_sets.any? do |requirement|
@@ -116,7 +116,10 @@ class Llm::OpenRouterCapabilityResolver
       required_type = requirement[:type].presence
       missing << "type:#{required_type}" if required_type.present? && model_config['type'] != required_type
 
-      capabilities = Array(model_config['capabilities']).map(&:to_s)
+      capabilities = Llm::OpenRouterParameterCapabilities.derive(
+        capabilities: model_config['capabilities'],
+        supported_parameters: model_config['supported_parameters']
+      )
       missing.concat(Array(requirement[:capabilities]).map(&:to_s) - capabilities)
       missing.concat(endpoint_missing_parameter_capabilities(endpoint_metadata, requirement))
       missing.uniq
@@ -130,7 +133,10 @@ class Llm::OpenRouterCapabilityResolver
       return [] if endpoints.blank?
 
       return [] if endpoints.any? do |endpoint|
-        endpoint_capabilities = Array(endpoint['capabilities']).map(&:to_s)
+        endpoint_capabilities = Llm::OpenRouterParameterCapabilities.derive(
+          capabilities: endpoint['capabilities'],
+          supported_parameters: endpoint['supported_parameters']
+        )
         (required_parameter_capabilities - endpoint_capabilities).empty?
       end
 
@@ -151,6 +157,10 @@ class Llm::OpenRouterCapabilityResolver
           reason('structured_output_unsupported', 'Model does not support structured output.', capability: capability)
         when 'tool_calling'
           reason('tool_calling_unsupported', 'Model does not support tool calling.', capability: capability)
+        when 'tool_choice'
+          reason('tool_choice_unsupported', 'Model does not support explicit tool choice control.', capability: capability)
+        when 'reasoning'
+          reason('reasoning_unsupported', 'Model does not support reasoning for the selected Captain thinking effort.', capability: capability)
         else
           reason('missing_capability', "Model does not support #{capability.tr('_', ' ')}.", capability: capability)
         end

@@ -38,6 +38,36 @@ RSpec.describe Label do
       duplicate_label = FactoryBot.build(:label, title: label.title, account: account)
       expect(duplicate_label.valid?).to be false
     end
+
+    it 'generates a stable hidden key when only a display title is provided' do
+      label = FactoryBot.create(:label, title: nil, display_title: 'VIP клиент 💎')
+
+      expect(label.display_title).to eq('VIP клиент 💎')
+      expect(label.title).to match(/\Alabel_[a-f0-9]{12}\z/)
+    end
+  end
+
+  describe 'display fields' do
+    it 'allows arbitrary display text while preserving the technical title key' do
+      label = FactoryBot.build(:label, title: 'vip_key', display_title: 'VIP клиент 💎')
+
+      expect(label.valid?).to be true
+      expect(label.title).to eq('vip_key')
+      expect(label.display_title).to eq('VIP клиент 💎')
+    end
+
+    it 'supports emoji markers' do
+      label = FactoryBot.build(:label, marker_type: 'emoji', emoji: '🔥')
+
+      expect(label.valid?).to be true
+      expect(label.emoji).to eq('🔥')
+    end
+
+    it 'requires an emoji for emoji markers' do
+      label = FactoryBot.build(:label, marker_type: 'emoji', emoji: nil)
+
+      expect(label.valid?).to be false
+    end
   end
 
   describe '.after_update_commit' do

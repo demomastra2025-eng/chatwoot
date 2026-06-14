@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick, useSlots } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
+import { labelDisplayTitle, labelMarkerEmoji } from 'dashboard/helper/labels';
 
 const props = defineProps({
   conversationLabels: {
@@ -69,9 +70,10 @@ const onShowLabels = e => {
       <woot-label
         v-for="(label, index) in activeLabels"
         :key="label ? label.id : index"
-        :title="label.title"
+        :title="labelDisplayTitle(label)"
         :description="label.description"
         :color="label.color"
+        :emoji="labelMarkerEmoji(label)"
         variant="smooth"
         class="!mb-0 max-w-[calc(100%-0.5rem)]"
         small

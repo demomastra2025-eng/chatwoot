@@ -60,7 +60,7 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
     described_class.perform_now(conversation_id: conversation.id, assistant_id: assistant.id, token: latest_token)
   end
 
-  it 'clears the current buffer state without answering when the conversation is no longer pending' do
+  it 'clears the current buffer state without answering when the conversation is open and open replies are disabled' do
     latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
     latest_token = SecureRandom.uuid
     conversation.open!
@@ -81,10 +81,40 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
     expect(Redis::Alfred.get(state_key)).to be_nil
   end
 
+  it 'calls ResponseBuilderJob for open conversations when open replies are enabled' do
+    latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
+    latest_token = SecureRandom.uuid
+    inbox.captain_inbox.update!(reply_to_open_conversations: true)
+    conversation.open!
+    Redis::Alfred.set(
+      state_key,
+      {
+        token: latest_token,
+        assistant_id: assistant.id,
+        last_message_id: latest_message.id
+      }.to_json,
+      ex: 10.minutes.to_i
+    )
+
+    expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_now).with(
+      conversation,
+      assistant,
+      buffer_token: latest_token,
+      expected_last_message_id: latest_message.id
+    )
+
+    described_class.perform_now(conversation_id: conversation.id, assistant_id: assistant.id, token: latest_token)
+  end
+
   it 'clears the current buffer state without answering when captain auto-reply is no longer allowed' do
     latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
     latest_token = SecureRandom.uuid
-    inbox.captain_inbox.update!(auto_reply_mode: 'never')
+    inbox.update!(working_hours_enabled: true)
+    inbox.working_hours.find_by(day_of_week: Time.current.in_time_zone(inbox.timezone).wday).update!(
+      closed_all_day: true,
+      open_all_day: false
+    )
+    inbox.captain_inbox.update!(auto_reply_mode: 'working_hours')
     Redis::Alfred.set(
       state_key,
       {

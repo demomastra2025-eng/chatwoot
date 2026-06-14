@@ -124,7 +124,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             'provider' => 'openrouter',
             'display_name' => 'GPT 5.4',
             'type' => 'chat',
-            'capabilities' => %w[text_input text_output structured_output tool_calling]
+            'capabilities' => %w[text_input text_output structured_output tool_calling tool_choice]
           },
           'openai/gpt-text-only' => {
             'provider' => 'openrouter',

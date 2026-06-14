@@ -15,6 +15,7 @@ import { mapGetters } from 'vuex';
 import { LocalStorage } from 'shared/helpers/localStorage';
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { CAPTAIN_EVENTS } from '../../../../helper/AnalyticsHelper/events';
+import { labelDisplayTitle, labelMarkerEmoji } from 'dashboard/helper/labels';
 
 export default {
   name: 'LabelSuggestion',
@@ -37,7 +38,12 @@ export default {
     const { captainTasksEnabled } = useCaptain();
     const { replaceInstallationName } = useBranding();
 
-    return { captainTasksEnabled, replaceInstallationName };
+    return {
+      captainTasksEnabled,
+      replaceInstallationName,
+      labelDisplayTitle,
+      labelMarkerEmoji,
+    };
   },
   data() {
     return {
@@ -181,7 +187,10 @@ export default {
           >
             <woot-label
               variant="dashed"
-              v-bind="label"
+              :title="labelDisplayTitle(label)"
+              :description="label.description"
+              :color="label.color"
+              :emoji="labelMarkerEmoji(label)"
               :bg-color="selectedLabels.includes(label.title) ? '#2781F6' : ''"
             />
           </button>

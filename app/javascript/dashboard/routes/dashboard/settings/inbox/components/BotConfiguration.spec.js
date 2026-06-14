@@ -13,6 +13,7 @@ const mockState = vi.hoisted(() => ({
     name: '+771****5175',
     captain_assistant: null,
     captain_auto_reply_mode: null,
+    captain_reply_to_open_conversations: false,
   },
   assistants: [
     {
@@ -193,6 +194,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
       name: '+771****5175',
       captain_assistant: null,
       captain_auto_reply_mode: null,
+      captain_reply_to_open_conversations: false,
     };
     mockState.assistants = [
       {
@@ -221,6 +223,18 @@ describe('Inbox BotConfiguration Captain settings', () => {
     expect(
       wrapper.find('[data-testid="captain-inbox-auto-reply-mode"]').exists()
     ).toBe(true);
+    expect(
+      wrapper
+        .find('[data-testid="captain-inbox-reply-to-open-conversations"]')
+        .exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .find(
+          '[data-testid="captain-inbox-auto-reply-mode"] option[value="never"]'
+        )
+        .exists()
+    ).toBe(false);
 
     await wrapper
       .get('[data-testid="captain-inbox-assistant"]')
@@ -249,6 +263,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
       assistantId: 101,
       inboxId: 4593,
       autoReplyMode: 'always',
+      replyToOpenConversations: false,
     });
     expect(mockState.dispatch).toHaveBeenCalledWith('inboxes/get');
     expect(mockState.useAlert).toHaveBeenCalledWith(
@@ -275,9 +290,37 @@ describe('Inbox BotConfiguration Captain settings', () => {
       assistantId: 101,
       inboxId: 4593,
       autoReplyMode: 'outside_working_hours',
+      replyToOpenConversations: false,
     });
     expect(mockState.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.SUCCESS_MESSAGE'
+    );
+  });
+
+  it('updates reply-to-open-conversations for the connected assistant', async () => {
+    mockState.inbox = {
+      ...mockState.inbox,
+      captain_assistant: { id: 101, name: 'Sales assistant' },
+      captain_auto_reply_mode: 'outside_working_hours',
+      captain_reply_to_open_conversations: false,
+    };
+
+    const wrapper = buildWrapper({ inbox: mockState.inbox });
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="captain-inbox-reply-to-open-conversations"]')
+      .setValue(true);
+    await flushPromises();
+
+    expect(mockState.dispatch).toHaveBeenCalledWith('captainInboxes/create', {
+      assistantId: 101,
+      inboxId: 4593,
+      autoReplyMode: 'outside_working_hours',
+      replyToOpenConversations: true,
+    });
+    expect(mockState.useAlert).toHaveBeenCalledWith(
+      'CAPTAIN.INBOXES.REPLY_TO_OPEN_CONVERSATIONS.UPDATE.SUCCESS_MESSAGE'
     );
   });
 });

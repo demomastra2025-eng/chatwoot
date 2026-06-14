@@ -90,7 +90,7 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     expect(payload.dig(:metadata, 'webhook_secret')).to eq('[REDACTED]')
   end
 
-  it 'exposes remote commit permission only when approval flag is enabled for managed local channels' do
+  it 'exposes remote commit permission for managed local channels without an env approval flag' do
     result = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator).create_channel(
       {
         provider_kind: 'sipuni',
@@ -106,13 +106,6 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     inbox_id = result.dig(:ui_config, :inbox_id)
 
     with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: nil) do
-      ui_config = builder.ui_config_for(inbox_id).with_indifferent_access
-
-      expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(false)
-      expect(ui_config.dig(:status, :remote_mutations)).to eq('blocked')
-    end
-
-    with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: 'true') do
       ui_config = builder.ui_config_for(inbox_id).with_indifferent_access
 
       expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(true)

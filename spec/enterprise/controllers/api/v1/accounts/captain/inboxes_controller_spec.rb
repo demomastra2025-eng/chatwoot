@@ -62,6 +62,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response[:id]).to eq(inbox2.id)
         expect(json_response[:captain_auto_reply_mode]).to eq('always')
+        expect(json_response[:captain_reply_to_open_conversations]).to be(false)
       end
 
       it 'creates a captain inbox with the requested auto-reply mode' do
@@ -76,12 +77,32 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
 
       it 'updates the auto-reply mode when the same assistant is already connected to the inbox' do
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
-             params: { inbox: { inbox_id: inbox.id, auto_reply_mode: 'never' } },
+             params: { inbox: { inbox_id: inbox.id, auto_reply_mode: 'working_hours' } },
              headers: admin.create_new_auth_token
 
         expect(response).to have_http_status(:success)
-        expect(captain_inbox.reload.auto_reply_mode).to eq('never')
-        expect(json_response[:captain_auto_reply_mode]).to eq('never')
+        expect(captain_inbox.reload.auto_reply_mode).to eq('working_hours')
+        expect(json_response[:captain_auto_reply_mode]).to eq('working_hours')
+      end
+
+      it 'updates reply-to-open-conversations when the same assistant is already connected to the inbox' do
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
+             params: { inbox: { inbox_id: inbox.id, reply_to_open_conversations: true } },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(captain_inbox.reload.reply_to_open_conversations).to be(true)
+        expect(json_response[:captain_reply_to_open_conversations]).to be(true)
+      end
+
+      it 'rejects removed never auto-reply mode' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
+               params: { inbox: { inbox_id: inbox2.id, auto_reply_mode: 'never' } },
+               headers: admin.create_new_auth_token
+        end.not_to change(CaptainInbox, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'rejects an invalid auto-reply mode' do

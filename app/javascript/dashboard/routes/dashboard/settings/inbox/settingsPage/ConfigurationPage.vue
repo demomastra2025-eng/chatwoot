@@ -58,7 +58,6 @@ export default {
       virtualPbxInboxMembers: [],
       virtualPbxProfileCounter: 0,
       isUpdatingVirtualPbx: false,
-      isDeletingVirtualPbx: false,
       isLoadingVirtualPbxPlan: false,
       isProvisioningVirtualPbx: false,
       isReconcilingVirtualPbx: false,
@@ -634,6 +633,13 @@ export default {
       );
       return false;
     },
+    virtualPbxSipPasswordPlaceholder(profile) {
+      if (profile.sipPasswordConfigured) return '********';
+
+      return this.$t(
+        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.PLACEHOLDER'
+      );
+    },
     virtualPbxProfilesPayload() {
       return this.virtualPbxForm.profiles.map(profile => {
         const payload = {
@@ -677,7 +683,7 @@ export default {
         const response = await VoiceAPI.updateVirtualPbxChannel(
           this.inbox.id,
           this.virtualPbxUpdatePayload(),
-          { dryRun: false, remoteCommit: false }
+          { dryRun: false, remoteCommit: true }
         );
         const errors = response?.payload?.errors || [];
         if (errors.length) {
@@ -692,53 +698,6 @@ export default {
         this.handleVirtualPbxError(error);
       } finally {
         this.isUpdatingVirtualPbx = false;
-      }
-    },
-    async deleteVirtualPbxChannel() {
-      if (this.isVirtualPbxReadOnly) {
-        useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.READ_ONLY'));
-        return;
-      }
-
-      this.isDeletingVirtualPbx = true;
-      try {
-        const dryRun = await VoiceAPI.deleteVirtualPbxChannel(this.inbox.id, {
-          confirm: true,
-          dryRun: true,
-          remoteCommit: false,
-        });
-        const errors = dryRun?.payload?.errors || [];
-        if (errors.length) {
-          useAlert(this.formatVirtualPbxMessages(errors));
-          return;
-        }
-
-        // eslint-disable-next-line no-alert
-        const confirmed = window.confirm(
-          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_CONFIRM')
-        );
-        if (!confirmed) return;
-
-        const response = await VoiceAPI.deleteVirtualPbxChannel(this.inbox.id, {
-          confirm: true,
-          dryRun: false,
-          remoteCommit: false,
-        });
-        const deleteErrors = response?.payload?.errors || [];
-        if (deleteErrors.length) {
-          useAlert(this.formatVirtualPbxMessages(deleteErrors));
-          return;
-        }
-
-        useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_SUCCESS'));
-        this.$router.push({
-          name: 'settings_inbox_list',
-          params: { accountId: this.$route.params.accountId },
-        });
-      } catch (error) {
-        this.handleVirtualPbxError(error);
-      } finally {
-        this.isDeletingVirtualPbx = false;
       }
     },
     async handleReconfigure() {
@@ -1076,37 +1035,6 @@ export default {
             </label>
           </div>
 
-          <div
-            v-if="virtualPbxConfig?.connection"
-            class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11"
-          >
-            <div class="mb-1 font-medium text-n-slate-12">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION') }}
-            </div>
-            <div>
-              {{
-                virtualPbxConfig.connection.display_name ||
-                virtualPbxConfig.connection.provider_label
-              }}
-            </div>
-            <div v-if="virtualPbxConfig.connection.provider_number">
-              <span class="after:content-[':']">
-                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.DISPLAY_PHONE') }}
-              </span>
-              {{ virtualPbxConfig.connection.provider_number }}
-            </div>
-            <div>
-              <span class="after:content-[':']">
-                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.REMOTE_MUTATIONS') }}
-              </span>
-              {{
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.REMOTE_MUTATIONS_BLOCKED'
-                )
-              }}
-            </div>
-          </div>
-
           <div class="rounded-xl border border-n-weak p-4">
             <div class="mb-3 space-y-1">
               <h3 class="text-sm font-medium text-n-slate-12">
@@ -1205,11 +1133,7 @@ export default {
                     :disabled="isVirtualPbxReadOnly"
                     type="password"
                     autocomplete="new-password"
-                    :placeholder="
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.PLACEHOLDER'
-                      )
-                    "
+                    :placeholder="virtualPbxSipPasswordPlaceholder(profile)"
                   />
                 </label>
 
@@ -1260,65 +1184,6 @@ export default {
             </label>
           </div>
 
-          <p class="text-sm text-n-slate-11">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.VIRTUAL_PBX_SAFE_MODE') }}
-          </p>
-          <div
-            class="rounded-xl border border-n-weak bg-n-alpha-1 p-4 text-sm text-n-slate-11"
-            data-testid="virtual-pbx-sync-state"
-          >
-            <div class="font-medium text-n-slate-12">
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SYNC_STATE_TITLE') }}
-            </div>
-            <div v-if="virtualPbxSyncStatus" class="mt-1">
-              <span class="after:content-[':']">
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SYNC_STATUS') }}
-              </span>
-              {{ virtualPbxSyncStatus }}
-            </div>
-            <div v-if="virtualPbxPlanOperations.length" class="mt-2">
-              <span class="after:content-[':']">
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_OPERATIONS') }}
-              </span>
-              {{ virtualPbxPlanOperations.length }}
-            </div>
-            <div v-if="virtualPbxLastProvisioningRun" class="mt-2">
-              <span class="after:content-[':']">
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.LAST_RUN') }}
-              </span>
-              {{ virtualPbxLastProvisioningRun.status }}
-            </div>
-            <div v-if="virtualPbxReconcileResult?.status" class="mt-2">
-              <span class="after:content-[':']">
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_STATUS') }}
-              </span>
-              {{ virtualPbxReconcileResult.status }}
-            </div>
-            <div class="mt-3 flex flex-wrap gap-3">
-              <NextButton
-                type="button"
-                :is-loading="isLoadingVirtualPbxPlan"
-                @click="loadVirtualPbxProvisioningPlan"
-              >
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_BUTTON') }}
-              </NextButton>
-              <NextButton
-                type="button"
-                :is-loading="isReconcilingVirtualPbx"
-                @click="reconcileVirtualPbxChannel"
-              >
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_BUTTON') }}
-              </NextButton>
-              <NextButton
-                type="button"
-                :disabled="!isVirtualPbxRemoteCommitAllowed"
-                :is-loading="isProvisioningVirtualPbx"
-                @click="provisionVirtualPbxChannel"
-              >
-                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON') }}
-              </NextButton>
-            </div>
-          </div>
           <div class="flex flex-wrap gap-3">
             <NextButton
               :disabled="isVirtualPbxReadOnly"
@@ -1326,15 +1191,6 @@ export default {
               type="submit"
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_BUTTON') }}
-            </NextButton>
-            <NextButton
-              color="ruby"
-              type="button"
-              :disabled="isVirtualPbxReadOnly"
-              :is-loading="isDeletingVirtualPbx"
-              @click="deleteVirtualPbxChannel"
-            >
-              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_BUTTON') }}
             </NextButton>
           </div>
         </form>

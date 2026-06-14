@@ -16,6 +16,7 @@ import {
 } from 'dashboard/constants/automation';
 import filterQueryGenerator from './filterQueryGenerator';
 import actionQueryGenerator from './actionQueryGenerator';
+import { labelDisplayTitle } from './labels';
 
 const getAttributeKey = attribute =>
   attribute?.attribute_key || attribute?.key || '';
@@ -227,7 +228,7 @@ export const generateConditionOptions = (options, key = 'id') => {
   return options.map(i => {
     return {
       id: i[key],
-      name: i.title,
+      name: labelDisplayTitle(i) || i.title,
     };
   });
 };

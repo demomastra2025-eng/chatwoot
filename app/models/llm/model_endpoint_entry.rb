@@ -60,7 +60,7 @@ class Llm::ModelEndpointEntry < ApplicationRecord
       'max_completion_tokens' => max_completion_tokens,
       'max_output_tokens' => max_completion_tokens,
       'supported_parameters' => string_array(supported_parameters),
-      'capabilities' => string_array(capabilities),
+      'capabilities' => derived_capabilities,
       'pricing' => hash_value(pricing),
       'latency_ms' => latency_ms&.to_f,
       'throughput_tokens_per_second' => throughput_tokens_per_second&.to_f,
@@ -87,6 +87,13 @@ class Llm::ModelEndpointEntry < ApplicationRecord
 
   def string_array(value)
     Array(value).map(&:to_s)
+  end
+
+  def derived_capabilities
+    Llm::OpenRouterParameterCapabilities.derive(
+      capabilities: capabilities,
+      supported_parameters: supported_parameters
+    )
   end
 
   def hash_value(value)

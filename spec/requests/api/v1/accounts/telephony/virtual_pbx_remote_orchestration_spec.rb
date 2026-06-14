@@ -26,10 +26,6 @@ RSpec.describe 'Telephony Virtual PBX remote orchestration API', type: :request 
     account.enable_features!('channel_voice')
   end
 
-  around do |example|
-    with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: nil) { example.run }
-  end
-
   def create_local_virtual_pbx!
     post base_path, params: create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     expect(response).to have_http_status(:ok), response.parsed_body.to_json
@@ -51,22 +47,28 @@ RSpec.describe 'Telephony Virtual PBX remote orchestration API', type: :request 
     expect(payload.to_json).not_to include('ats01.kz.sipuni.com')
   end
 
-  it 'keeps approved remote provision blocked until the feature flag is enabled and records repeated attempts' do
+  it 'runs approved remote provision without an env feature flag' do
     inbox_id = create_local_virtual_pbx!
+    provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
+    allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
+    allow(provisioner).to receive(:execute).and_return(
+      status: 'succeeded',
+      remote_commit: true,
+      provisioning_run: { status: 'succeeded' },
+      executed_operations: []
+    )
 
     2.times do
       post "#{base_path}/#{inbox_id}/provision", params: { remote_commit: true }, headers: headers, as: :json
 
       expect(response).to have_http_status(:ok)
       payload = response.parsed_body.fetch('payload')
-      expect(payload).to include('operation' => 'provision', 'status' => 'blocked', 'remote_commit' => false)
-      expect(payload.dig('provisioning_run', 'status')).to eq('blocked')
+      expect(payload).to include('operation' => 'provision', 'status' => 'succeeded', 'remote_commit' => true)
+      expect(payload.dig('provisioning_run', 'status')).to eq('succeeded')
       expect(payload.to_json).not_to include('do-not-return-this-secret')
     end
 
-    runs = Telephony::ProvisioningRun.where(account: account, inbox_id: inbox_id, operation: 'update')
-    expect(runs.count).to eq(2)
-    expect(runs.pluck(:idempotency_key).uniq.size).to eq(2)
+    expect(provisioner).to have_received(:execute).twice
   end
 
   it 'returns sanitized provisioning run history' do

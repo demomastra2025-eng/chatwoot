@@ -65,6 +65,16 @@ class Captain::Runtime::ToolWrapper
     @tool.respond_to?(:provider_params) ? @tool.provider_params : {}
   end
 
+  def metadata
+    return @tool.send(:metadata) if @tool.respond_to?(:metadata, true)
+    return @tool.send(:tool_definition) if @tool.respond_to?(:tool_definition, true)
+    return @tool.send(:to_tool_metadata) if @tool.respond_to?(:to_tool_metadata, true)
+
+    {}
+  end
+
+  alias tool_definition metadata
+
   def to_s
     name
   end

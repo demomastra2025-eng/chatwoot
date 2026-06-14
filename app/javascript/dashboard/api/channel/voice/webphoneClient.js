@@ -255,6 +255,8 @@ class WebphoneClient extends EventTarget {
       const resolvedSession = {
         provider,
         callingSupported: false,
+        browserJoinSupported:
+          response?.browserJoinSupported ?? response?.browser_join_supported,
         registered: false,
         reason: response?.reason,
       };

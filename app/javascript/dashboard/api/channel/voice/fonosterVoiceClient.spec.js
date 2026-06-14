@@ -108,8 +108,13 @@ describe('fonosterVoiceClient', () => {
     expect(response).toEqual(
       expect.objectContaining({ provider: 'fonoster', registered: true })
     );
-    expect(updateWebphonePresenceMock).not.toHaveBeenCalledWith(false);
-    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true);
+    expect(updateWebphonePresenceMock).not.toHaveBeenCalledWith(
+      false,
+      expect.anything()
+    );
+    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true, {
+      inboxId: null,
+    });
   });
 
   it('reports browser presence when SIP register resolves even if delegate callback is missed', async () => {
@@ -128,7 +133,9 @@ describe('fonosterVoiceClient', () => {
     expect(response).toEqual(
       expect.objectContaining({ provider: 'fonoster', registered: true })
     );
-    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true);
+    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true, {
+      inboxId: null,
+    });
   });
 
   it('refreshes browser presence while the SIP registration stays active', async () => {
@@ -152,7 +159,9 @@ describe('fonosterVoiceClient', () => {
 
       vi.advanceTimersByTime(60_000);
 
-      expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true);
+      expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true, {
+        inboxId: null,
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -230,8 +239,28 @@ describe('fonosterVoiceClient', () => {
 
     simpleUserConstructorMock.mock.calls[0][1].delegate.onServerDisconnect();
 
-    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(false);
+    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(false, {
+      inboxId: null,
+    });
     expect(client.sessionState().registered).toBe(false);
+  });
+
+  it('reports browser presence for the initialized inbox when provided', async () => {
+    registerMock.mockResolvedValue(undefined);
+    simpleUserConstructorMock.mockImplementation(() => ({
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    const client = await importClient();
+    await client.initializeDevice(completeSessionConfig, { inboxId: 4698 });
+
+    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true, {
+      inboxId: 4698,
+    });
   });
 
   it('waits briefly for delayed SIP INVITE before giving up on answer', async () => {

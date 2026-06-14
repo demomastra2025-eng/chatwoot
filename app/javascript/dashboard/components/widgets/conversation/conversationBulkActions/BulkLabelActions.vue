@@ -8,6 +8,7 @@ import { vOnClickOutside } from '@vueuse/components';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 const props = defineProps({
   type: {
@@ -48,8 +49,9 @@ const labelMenuItems = computed(() => {
   return labels.value.map(label => ({
     action: 'select',
     value: label.title,
-    label: label.title,
+    label: labelDisplayTitle(label),
     color: label.color,
+    emoji: label.marker_type === 'emoji' ? label.emoji : '',
     id: label.id,
     isSelected: isLabelSelected(label.title),
   }));

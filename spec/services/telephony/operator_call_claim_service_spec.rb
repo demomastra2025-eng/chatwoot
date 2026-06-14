@@ -69,6 +69,51 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(call_session.metadata.dig('metadata', 'operator_pool')).to be(true)
   end
 
+  it 'claims a per-inbox SIP profile candidate without using the account-level binding' do
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: inbox,
+      user: winner_user,
+      internal_extension: '504',
+      agent_ref: 'profile-local-504',
+      fonoster_agent_ref: 'fonoster-profile-504',
+      agent_aor: 'sip:504@ats01.kz.sipuni.com'
+    )
+    call_session.update!(
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_pool' => true,
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [winner_user.id],
+          'operator_candidate_agent_refs' => [profile.fonoster_agent_ref],
+          'operator_candidate_agent_aors' => [profile.agent_aor],
+          'operator_candidate_sources' => ['sip_profile']
+        }
+      }
+    )
+
+    payload = described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+
+    expect(payload).to include(
+      call_ref: call_session.external_call_ref,
+      status: 'connecting',
+      claimed: true,
+      agent_ref: profile.fonoster_agent_ref,
+      agent_aor: profile.agent_aor,
+      sip_profile_id: profile.id,
+      user_id: winner_user.id
+    )
+    expect(payload).not_to have_key(:agent_binding_id)
+
+    call_session.reload
+    expect(call_session.agent_binding_id).to be_nil
+    expect(call_session.metadata.dig('operator_claim', 'sip_profile_id')).to eq(profile.id)
+    expect(call_session.metadata.dig('operator_claim', 'agent_binding_id')).to be_nil
+    expect(call_session.metadata.dig('operator_claim', 'agent_aor')).to eq('sip:504@ats01.kz.sipuni.com')
+  end
+
   it 'rejects a later claim after first-answer-wins selected another operator' do
     described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
 

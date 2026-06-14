@@ -1,5 +1,11 @@
 <script setup>
 import { computed } from 'vue';
+import {
+  labelDisplayTitle,
+  labelMarkerColor,
+  labelMarkerEmoji,
+  labelMarkerType,
+} from 'dashboard/helper/labels';
 
 const props = defineProps({
   label: {
@@ -30,7 +36,7 @@ const COLOR_CLASSES = {
 const isStringLabel = computed(() => typeof props.label === 'string');
 
 const labelTitle = computed(() => {
-  return isStringLabel.value ? props.label : props.label?.title;
+  return isStringLabel.value ? props.label : labelDisplayTitle(props.label);
 });
 
 const labelDescription = computed(() => {
@@ -38,7 +44,13 @@ const labelDescription = computed(() => {
 });
 
 const labelColor = computed(() => {
-  return isStringLabel.value ? null : props.label.color;
+  return isStringLabel.value || labelMarkerType(props.label) !== 'color'
+    ? null
+    : labelMarkerColor(props.label);
+});
+
+const labelEmoji = computed(() => {
+  return isStringLabel.value ? '' : labelMarkerEmoji(props.label);
 });
 
 const colorClasses = computed(() => COLOR_CLASSES[props.color]);
@@ -59,6 +71,9 @@ const colorClasses = computed(() => COLOR_CLASSES[props.color]);
       :class="compact ? 'size-1.5' : 'size-2'"
       :style="{ background: labelColor }"
     />
+    <span v-else-if="labelEmoji" class="flex-shrink-0 leading-none">
+      {{ labelEmoji }}
+    </span>
     <slot v-else name="icon" />
     <span
       class="whitespace-nowrap"

@@ -492,6 +492,7 @@ class Telephony::EventsIngestionService
     return call_session.ended_at if stale_event?(call_session)
     return call_session.ended_at if post_finalize_recording_event? && call_session.ended_at.present?
     return event_time if terminal_supersedes_existing_terminal?(call_session)
+    return resolved_ended_at || event_time if terminal_duration_repair_needed?(call_session, status, resolved_occurred_at)
 
     resolved_ended_at || call_session.ended_at || (event_time if terminal_status?(status))
   end
@@ -691,6 +692,9 @@ class Telephony::EventsIngestionService
 
     if call_session.duration_seconds.present?
       current_duration = call_session.duration_seconds.to_i
+      repaired_duration = repaired_completed_duration(call_session, status, answered_at, ended_at, current_duration)
+      return repaired_duration if repaired_duration.present?
+
       return current_duration unless recomputable_completed_duration?(status, current_duration, answered_at, ended_at)
     end
 
@@ -704,6 +708,12 @@ class Telephony::EventsIngestionService
 
   def recomputable_completed_duration?(status, duration, answered_at, ended_at)
     status == 'completed' && duration.zero? && answered_at.present? && ended_at.present? && ended_at > answered_at
+  end
+
+  def repaired_completed_duration(call_session, status, answered_at, ended_at, current_duration = call_session.duration_seconds)
+    return unless longer_completed_terminal_duration_repair_needed?(call_session, status, answered_at, ended_at, current_duration)
+
+    completed_duration_seconds(answered_at, ended_at)
   end
 
   def unanswered_terminal_status?(status)
@@ -795,8 +805,29 @@ class Telephony::EventsIngestionService
     return false unless status == 'completed'
 
     answered_at = resolved_answered_at || call_session.answered_at
-    ended_at = resolved_ended_at || call_session.ended_at || occurred_at
-    recomputable_completed_duration?(status, call_session.duration_seconds.to_i, answered_at, ended_at)
+    ended_at = resolved_ended_at || occurred_at || call_session.ended_at || event_time
+    recomputable_completed_duration?(status, call_session.duration_seconds.to_i, answered_at, ended_at) ||
+      longer_completed_terminal_duration_repair_needed?(call_session, status, answered_at, ended_at)
+  end
+
+  def longer_completed_terminal_duration_repair_needed?(call_session, status, answered_at, ended_at, current_duration = call_session.duration_seconds)
+    return false unless status == 'completed'
+    return false unless call_session.terminal?
+    return false unless resolved_event_type.to_s == 'session_completed'
+    return false if ended_at.blank? || answered_at.blank?
+    return false if call_session.ended_at.present? && ended_at <= call_session.ended_at
+    return false if incoming_terminal_priority < existing_terminal_priority(call_session)
+
+    repaired_duration = completed_duration_seconds(answered_at, ended_at)
+    return false if repaired_duration.blank? || repaired_duration <= 0
+
+    current_duration.blank? || repaired_duration > current_duration.to_i
+  end
+
+  def completed_duration_seconds(answered_at, ended_at)
+    return if answered_at.blank? || ended_at.blank? || ended_at <= answered_at
+
+    [ended_at.to_i - answered_at.to_i, 0].max
   end
 
   def answered_terminal_evidence?(call_session)

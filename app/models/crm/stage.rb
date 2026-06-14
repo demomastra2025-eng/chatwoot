@@ -23,10 +23,6 @@
 #  index_crm_stages_on_pipeline_id                (pipeline_id)
 #  index_crm_stages_on_pipeline_id_and_code       (pipeline_id,code) UNIQUE
 #
-# Check Constraints
-#
-#  crm_stages_default_active_open  ((NOT "default") OR (active AND ((outcome)::text = 'open'::text)))
-#
 # Foreign Keys
 #
 #  fk_rails_...  (account_id => accounts.id)

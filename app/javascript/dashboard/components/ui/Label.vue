@@ -35,6 +35,10 @@ export default {
       type: String,
       default: '',
     },
+    emoji: {
+      type: String,
+      default: '',
+    },
     colorScheme: {
       type: String,
       default: '',
@@ -91,8 +95,11 @@ export default {
     <span v-if="icon" class="label-action--button">
       <fluent-icon :icon="icon" size="12" class="label--icon cursor-pointer" />
     </span>
+    <span v-if="emoji && !icon" class="label-emoji flex-shrink-0">
+      {{ emoji }}
+    </span>
     <span
-      v-if="['smooth', 'dashed'].includes(variant) && title && !icon"
+      v-else-if="['smooth', 'dashed'].includes(variant) && title && !icon"
       :style="{ background: color }"
       class="label-color-dot flex-shrink-0"
     />
@@ -209,5 +216,9 @@ export default {
 }
 .label.small .label-color-dot {
   @apply w-2 h-2 rounded-sm shadow-sm;
+}
+
+.label-emoji {
+  @apply text-xs leading-none;
 }
 </style>

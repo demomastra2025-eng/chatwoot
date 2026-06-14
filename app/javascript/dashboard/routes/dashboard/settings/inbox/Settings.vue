@@ -5042,20 +5042,35 @@ export default {
               />
             </div>
 
-            <SettingsFieldSection
-              class="mt-6 rounded-2xl border border-n-ruby-6 bg-n-ruby-3/20 p-4"
-              :label="$t('INBOX_MGMT.DELETE.SETTINGS_TITLE')"
-              :help-text="$t('INBOX_MGMT.DELETE.SETTINGS_HELP_TEXT')"
+            <div
+              class="mt-6 rounded-2xl border border-n-ruby-6 bg-n-ruby-3/20 p-4 sm:p-5"
             >
-              <NextButton
-                outline
-                ruby
-                icon="i-lucide-trash-2"
-                :label="$t('INBOX_MGMT.DELETE.BUTTON_TEXT')"
-                :is-loading="isDeletingInbox || uiFlags.isDeleting"
-                @click="openDeleteInboxPopup"
-              />
-            </SettingsFieldSection>
+              <div
+                class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
+              >
+                <div class="min-w-0 space-y-1">
+                  <h3 class="text-heading-3 text-n-slate-12">
+                    {{ $t('INBOX_MGMT.DELETE.SETTINGS_TITLE') }}
+                  </h3>
+                  <p class="mb-0 max-w-2xl text-sm text-n-slate-11">
+                    {{ $t('INBOX_MGMT.DELETE.SETTINGS_HELP_TEXT') }}
+                  </p>
+                </div>
+                <div
+                  class="flex w-full justify-start lg:w-auto lg:shrink-0 lg:justify-end"
+                >
+                  <NextButton
+                    outline
+                    ruby
+                    icon="i-lucide-trash-2"
+                    class="w-full sm:w-auto"
+                    :label="$t('INBOX_MGMT.DELETE.BUTTON_TEXT')"
+                    :is-loading="isDeletingInbox || uiFlags.isDeleting"
+                    @click="openDeleteInboxPopup"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div

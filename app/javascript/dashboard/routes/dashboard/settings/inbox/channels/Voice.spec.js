@@ -104,7 +104,7 @@ describe('Voice channel setup', () => {
     });
   });
 
-  it('creates a simple local Virtual PBX channel without employee profiles', async () => {
+  it('creates a Virtual PBX Sipuni channel without employee profiles', async () => {
     routeMock.query = { provider: 'kazakhstan' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { ui_config: { inbox_id: 202 }, errors: [] },
@@ -120,13 +120,13 @@ describe('Voice channel setup', () => {
 
     expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
       expect.not.objectContaining({ profiles: expect.any(Array) }),
-      { dryRun: false, remoteCommit: false }
+      { dryRun: false, remoteCommit: true }
     );
     expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
       expect.objectContaining({
         provider_kind: 'sipuni',
         channel_name: 'Virtual PBX',
-        provider_account_number: expect.any(String),
+        provider_account_number: '+15551234567',
         ingress_number: expect.any(String),
         connection: expect.objectContaining({
           host: 'sip.provider.local',
@@ -144,7 +144,7 @@ describe('Voice channel setup', () => {
           source: 'virtual_pbx_ui',
         },
       }),
-      { dryRun: false, remoteCommit: false }
+      { dryRun: false, remoteCommit: true }
     );
     expect(routerReplaceMock).toHaveBeenCalledWith({
       name: 'settings_inboxes_add_agents',
@@ -153,6 +153,31 @@ describe('Voice channel setup', () => {
         inbox_id: 202,
       },
     });
+  });
+
+  it('does not require shared Sipuni credentials before creating a Virtual PBX channel', async () => {
+    routeMock.query = { provider: 'kazakhstan' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 202 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+    const inputs = wrapper.findAll('input');
+
+    await inputs[0].setValue('Virtual PBX');
+    await inputs[1].setValue('+1 555 123 4567');
+    await inputs[2].setValue('sip.provider.local');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connection: expect.objectContaining({
+          host: 'sip.provider.local',
+          password: undefined,
+        }),
+      }),
+      { dryRun: false, remoteCommit: true }
+    );
   });
 
   it('points employee SIP assignment to settings instead of create', () => {

@@ -35,6 +35,16 @@ const localizedDiagnosticReason = (reason, t) => {
         'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.TOOL_CALLING_UNSUPPORTED',
         reasonDetails(reason)
       );
+    case 'tool_choice_unsupported':
+      return t(
+        'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.TOOL_CHOICE_UNSUPPORTED',
+        reasonDetails(reason)
+      );
+    case 'reasoning_unsupported':
+      return t(
+        'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.REASONING_UNSUPPORTED',
+        reasonDetails(reason)
+      );
     case 'missing_capability':
       return t(
         'CAPTAIN_SETTINGS.MODEL_CONFIG.DIAGNOSTICS.REASONS.MISSING_CAPABILITY',

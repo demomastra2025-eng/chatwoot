@@ -55,7 +55,7 @@ class Llm::ModelCatalogEntry < ApplicationRecord
       'display_name' => display_name,
       'credit_multiplier' => 1,
       'type' => model_type,
-      'capabilities' => string_array(capabilities),
+      'capabilities' => derived_capabilities,
       'input_modalities' => string_array(input_modalities),
       'output_modalities' => string_array(output_modalities),
       'supported_parameters' => string_array(supported_parameters),
@@ -119,6 +119,13 @@ class Llm::ModelCatalogEntry < ApplicationRecord
 
   def string_array(value)
     Array(value).map(&:to_s)
+  end
+
+  def derived_capabilities
+    Llm::OpenRouterParameterCapabilities.derive(
+      capabilities: capabilities,
+      supported_parameters: supported_parameters
+    )
   end
 
   def hash_value(value)

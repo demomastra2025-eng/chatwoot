@@ -54,7 +54,8 @@ class Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService < Captain:
         assistant_id: captain_inbox.captain_assistant_id,
         assistant_name: captain_inbox.captain_assistant&.name,
         auto_reply_mode: captain_inbox.auto_reply_mode,
-        auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?
+        auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?,
+        reply_to_open_conversations: captain_inbox.reply_to_open_conversations?
       }
     }
   end

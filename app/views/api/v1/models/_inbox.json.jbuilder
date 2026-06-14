@@ -30,6 +30,7 @@ if resource.respond_to?(:captain_assistant) && resource.captain_assistant.presen
     json.name resource.captain_assistant.name
   end
   json.captain_auto_reply_mode resource.captain_inbox.auto_reply_mode
+  json.captain_reply_to_open_conversations resource.captain_inbox.reply_to_open_conversations?
 end
 
 if resource.portal.present?

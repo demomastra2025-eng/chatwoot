@@ -41,14 +41,15 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
   end
 
   def assistant_params
-    params.require(:inbox).permit(:inbox_id, :auto_reply_mode)
+    params.require(:inbox).permit(:inbox_id, :auto_reply_mode, :reply_to_open_conversations)
   end
 
   def captain_inbox_attributes(inbox)
     {
       inbox: inbox,
-      auto_reply_mode: assistant_params[:auto_reply_mode].presence
-    }
+      auto_reply_mode: assistant_params[:auto_reply_mode].presence,
+      reply_to_open_conversations: reply_to_open_conversations_param
+    }.compact
   end
 
   def connected_to_current_assistant?
@@ -56,15 +57,24 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
   end
 
   def render_existing_captain_inbox(inbox)
-    update_requested_auto_reply_mode!
+    update_requested_captain_inbox_settings!
     revalidate_inbox_cache(inbox)
     render :create
   end
 
-  def update_requested_auto_reply_mode!
-    return if assistant_params[:auto_reply_mode].blank?
+  def update_requested_captain_inbox_settings!
+    updates = {}
+    updates[:auto_reply_mode] = assistant_params[:auto_reply_mode] if assistant_params[:auto_reply_mode].present?
+    updates[:reply_to_open_conversations] = reply_to_open_conversations_param if assistant_params.key?(:reply_to_open_conversations)
+    return if updates.blank?
 
-    @captain_inbox.update!(auto_reply_mode: assistant_params[:auto_reply_mode])
+    @captain_inbox.update!(updates)
+  end
+
+  def reply_to_open_conversations_param
+    return unless assistant_params.key?(:reply_to_open_conversations)
+
+    ActiveModel::Type::Boolean.new.cast(assistant_params[:reply_to_open_conversations])
   end
 
   def handle_captain_inbox_create_failure(error, inbox)

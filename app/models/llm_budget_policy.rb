@@ -1,5 +1,29 @@
 # frozen_string_literal: true
 
+# == Schema Information
+#
+# Table name: llm_budget_policies
+#
+#  id                :bigint           not null, primary key
+#  active            :boolean          default(TRUE), not null
+#  daily_budget      :decimal(14, 8)
+#  fallback_profile  :string
+#  feature           :string
+#  hard_stop         :boolean          default(FALSE), not null
+#  metadata          :jsonb            not null
+#  monthly_budget    :decimal(14, 8)
+#  per_feature_caps  :jsonb            not null
+#  scope_type        :string           default("account"), not null
+#  warning_threshold :decimal(5, 4)    default(0.8)
+#  created_at        :datetime         not null
+#  updated_at        :datetime         not null
+#  account_id        :integer
+#
+# Indexes
+#
+#  idx_llm_budget_policies_account_feature_active  (account_id,feature,active)
+#  idx_llm_budget_policies_scope_active            (scope_type,active)
+#
 class LlmBudgetPolicy < ApplicationRecord
   SCOPE_TYPES = %w[account global].freeze
 

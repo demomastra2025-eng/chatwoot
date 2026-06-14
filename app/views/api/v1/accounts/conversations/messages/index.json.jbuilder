@@ -1,5 +1,5 @@
 json.meta do
-  json.labels @conversation.cached_label_list_array
+  json.labels Labels::UnifiedAssignmentService.union_for(contact: @conversation.contact, conversations: [@conversation])
   json.additional_attributes @conversation.additional_attributes
   json.contact @conversation.contact.push_event_data
   json.assignee @conversation.assignee.push_event_data if @conversation.assignee.present?

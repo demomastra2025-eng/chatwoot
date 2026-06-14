@@ -99,6 +99,7 @@ describe('webphoneClient', () => {
     getWebphoneTokenMock.mockResolvedValue({
       provider: 'fonoster',
       calling_supported: false,
+      browser_join_supported: false,
       reason: 'agent_binding_missing',
     });
     WebphoneClient.activeProvider = 'fonoster';
@@ -109,6 +110,7 @@ describe('webphoneClient', () => {
       expect.objectContaining({
         provider: 'fonoster',
         callingSupported: false,
+        browserJoinSupported: false,
         registered: false,
         reason: 'agent_binding_missing',
       })

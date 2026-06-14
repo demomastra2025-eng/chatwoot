@@ -4,6 +4,8 @@ class Conversations::CommunicationThreadResolver
   end
 
   def perform
+    return unless linkable_conversation?
+
     CommunicationThread.transaction do
       previous_thread = conversation.communication_thread
       thread = existing_thread || build_thread
@@ -19,6 +21,16 @@ class Conversations::CommunicationThreadResolver
   private
 
   attr_reader :conversation
+
+  def linkable_conversation?
+    return false if conversation.blank? || conversation.destroyed? || conversation.marked_for_destruction?
+    return false if conversation.account_id.blank? || conversation.contact_id.blank?
+    return false if conversation.inbox_id.blank? || conversation.contact_inbox_id.blank?
+    return false unless Inbox.exists?(id: conversation.inbox_id, account_id: conversation.account_id)
+    return false unless ContactInbox.exists?(id: conversation.contact_inbox_id, inbox_id: conversation.inbox_id, contact_id: conversation.contact_id)
+
+    true
+  end
 
   def existing_thread
     linked_thread = conversation.communication_thread

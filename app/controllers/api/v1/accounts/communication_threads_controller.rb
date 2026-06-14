@@ -89,10 +89,12 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def update_labels
     label_values = permitted_label_params[:labels] || []
-    accessible_links_for(@communication_thread).includes(:conversation).find_each do |link|
-      link.conversation.update_labels(label_values)
-    end
-    @labels = label_values
+    conversations = accessible_links_for(@communication_thread).includes(:conversation).map(&:conversation)
+    @labels = Labels::UnifiedAssignmentService.new(
+      contact: @communication_thread.contact,
+      conversations: conversations,
+      labels: label_values
+    ).perform
     render :labels
   end
 
@@ -177,10 +179,13 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def thread_label_list
-    accessible_links_for(@communication_thread)
-      .includes(:conversation)
-      .flat_map { |link| link.conversation.label_list }
-      .uniq
+    conversations = accessible_links_for(@communication_thread)
+                    .includes(:conversation)
+                    .map(&:conversation)
+    Labels::UnifiedAssignmentService.union_for(
+      contact: @communication_thread.contact,
+      conversations: conversations
+    )
   end
 
   def permitted_message_params

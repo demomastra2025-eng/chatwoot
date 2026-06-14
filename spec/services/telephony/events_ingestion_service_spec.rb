@@ -552,6 +552,66 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(message.reload.content_attributes.dig('data', 'duration')).to eq(expected_duration)
     end
 
+    it 'repairs a shorter early terminal duration when the final session_completed arrives later' do
+      answered_at = Time.zone.parse(45.seconds.ago.iso8601)
+      early_ended_at = answered_at + 5.seconds
+      final_ended_at = answered_at + 28.seconds
+      expected_duration = final_ended_at.to_i - answered_at.to_i
+      existing_call_session.update!(
+        provider: 'fonoster',
+        status: 'completed',
+        started_at: answered_at - 8.seconds,
+        answered_at: answered_at,
+        ended_at: early_ended_at,
+        ended_by: 'caller',
+        end_reason: 'remote_hangup',
+        duration_seconds: 5,
+        last_event_at: early_ended_at
+      )
+      existing_call_session.conversation.update!(
+        additional_attributes: {
+          'call_status' => 'completed',
+          'call_started_at' => answered_at.to_i,
+          'call_ended_at' => early_ended_at.to_i,
+          'call_duration' => 5
+        }
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed', 'duration' => 5, 'call_sid' => 'call-retry-1' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-session-completed-duration-repair-1',
+          event: 'session_completed',
+          status: 'completed',
+          occurred_at: final_ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'caller_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_at: final_ended_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup',
+        duration_seconds: expected_duration,
+        last_event_at: final_ended_at
+      )
+      expect(result.conversation.reload.additional_attributes).to include(
+        'call_ended_at' => final_ended_at.to_i,
+        'call_duration' => expected_duration
+      )
+      expect(message.reload.content_attributes.dig('data', 'duration')).to eq(expected_duration)
+    end
+
     it 'preserves distinct native terminal reasons instead of collapsing them to failed or no-answer' do
       answered_at = Time.zone.parse(2.minutes.ago.iso8601)
       ended_at = Time.zone.parse(30.seconds.ago.iso8601)

@@ -9,8 +9,6 @@ const provisionVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const reconcileVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const getVirtualPbxProvisioningRunsMock = vi.hoisted(() => vi.fn());
 const updateVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
-const deleteVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
-const routerPushMock = vi.hoisted(() => vi.fn());
 
 vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
@@ -24,7 +22,6 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
     reconcileVirtualPbxChannel: reconcileVirtualPbxChannelMock,
     getVirtualPbxProvisioningRuns: getVirtualPbxProvisioningRunsMock,
     updateVirtualPbxChannel: updateVirtualPbxChannelMock,
-    deleteVirtualPbxChannel: deleteVirtualPbxChannelMock,
   },
 }));
 
@@ -50,7 +47,7 @@ const statusPayload = {
       status: {
         ready: true,
         read_only: false,
-        remote_mutations: 'blocked',
+        remote_mutations: 'requires_approval',
       },
       channel: {
         name: 'Virtual PBX',
@@ -65,7 +62,7 @@ const statusPayload = {
         provider_number: '3100000',
         configured: true,
         status: 'draft',
-        remote_mutations: 'blocked',
+        remote_mutations: 'requires_approval',
       },
       routing: {
         mode: 'operator',
@@ -86,6 +83,7 @@ const statusPayload = {
       permissions: {
         editable: true,
         deletable: true,
+        remote_commit_allowed: true,
       },
       warnings: [],
     },
@@ -107,9 +105,6 @@ const buildWrapper = () =>
         },
         $route: {
           params: { accountId: 530 },
-        },
-        $router: {
-          push: routerPushMock,
         },
       },
       stubs: {
@@ -142,24 +137,21 @@ describe('ConfigurationPage Virtual PBX management', () => {
     reconcileVirtualPbxChannelMock.mockReset();
     getVirtualPbxProvisioningRunsMock.mockReset();
     updateVirtualPbxChannelMock.mockReset();
-    deleteVirtualPbxChannelMock.mockReset();
-    routerPushMock.mockReset();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     getVirtualPbxStatusMock.mockResolvedValue(statusPayload);
     getVirtualPbxProvisioningPlanMock.mockResolvedValue({
       payload: {
         provisioning_plan: {
           status: 'dry_run_valid',
-          remote_mutations: 'blocked',
+          remote_mutations: 'requires_approval',
           operations: [{ key: 'upsert_number', risk: 'requires_approval' }],
         },
       },
     });
     provisionVirtualPbxChannelMock.mockResolvedValue({
       payload: {
-        status: 'blocked',
-        remote_commit: false,
-        errors: [{ code: 'REMOTE_MUTATION_REQUIRES_APPROVAL' }],
+        status: 'succeeded',
+        remote_commit: true,
+        errors: [],
       },
     });
     reconcileVirtualPbxChannelMock.mockResolvedValue({
@@ -169,7 +161,6 @@ describe('ConfigurationPage Virtual PBX management', () => {
       payload: { provisioning_runs: [{ id: 1, status: 'blocked' }] },
     });
     updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
-    deleteVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
   });
 
   afterEach(() => {
@@ -205,7 +196,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
           source: 'virtual_pbx_ui',
         },
       },
-      { dryRun: false, remoteCommit: false }
+      { dryRun: false, remoteCommit: true }
     );
     expect(
       JSON.stringify(updateVirtualPbxChannelMock.mock.calls[0][1])
@@ -250,7 +241,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
           },
         ],
       }),
-      { dryRun: false, remoteCommit: false }
+      { dryRun: false, remoteCommit: true }
     );
   });
 
@@ -275,6 +266,27 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION'
+    );
+    expect(wrapper.text()).not.toContain('Sipuni trunk');
+    expect(wrapper.text()).not.toContain('3100000');
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_BUTTON'
+    );
+  });
+
+  it('shows a masked placeholder for already configured employee SIP passwords', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+
+    const passwordInput = wrapper.find('input[type="password"]');
+
+    expect(passwordInput.attributes('placeholder')).toBe('********');
+    expect(wrapper.vm.virtualPbxForm.profiles[0].sipPassword).toBe('');
+    expect(wrapper.vm.virtualPbxForm.profiles[0].sipPasswordConfigured).toBe(
+      true
     );
   });
 
@@ -356,32 +368,6 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('dry-runs delete before local delete and returns to inbox list', async () => {
-    const wrapper = buildWrapper();
-    await flushPromises();
-
-    await wrapper.vm.deleteVirtualPbxChannel();
-    await flushPromises();
-
-    expect(deleteVirtualPbxChannelMock).toHaveBeenNthCalledWith(1, 42, {
-      confirm: true,
-      dryRun: true,
-      remoteCommit: false,
-    });
-    expect(window.confirm).toHaveBeenCalledWith(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_CONFIRM'
-    );
-    expect(deleteVirtualPbxChannelMock).toHaveBeenNthCalledWith(2, 42, {
-      confirm: true,
-      dryRun: false,
-      remoteCommit: false,
-    });
-    expect(routerPushMock).toHaveBeenCalledWith({
-      name: 'settings_inbox_list',
-      params: { accountId: 530 },
-    });
-  });
-
   it('loads a safe provisioning plan without diagnostics', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
@@ -395,14 +381,14 @@ describe('ConfigurationPage Virtual PBX management', () => {
       includeDiagnostics: false,
     });
     expect(wrapper.vm.virtualPbxProvisioningPlan.remote_mutations).toBe(
-      'blocked'
+      'requires_approval'
     );
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISIONING_PLAN_READY'
     );
   });
 
-  it('keeps remote provision behind backend approval gate', async () => {
+  it('provisions the remote Fonoster/Routr resources through the product API', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     alertMock.mockClear();
@@ -414,7 +400,9 @@ describe('ConfigurationPage Virtual PBX management', () => {
       remoteCommit: true,
       includeDiagnostics: false,
     });
-    expect(alertMock).toHaveBeenCalledWith('REMOTE_MUTATION_REQUIRES_APPROVAL');
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_SUCCESS'
+    );
   });
 
   it('reconciles sync state through the product API', async () => {

@@ -622,6 +622,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       first_conversation = create(:conversation, account: account, contact: contact)
       second_conversation = create(:conversation, account: account, contact: contact)
       hidden_conversation = create(:conversation, account: account, contact: contact)
+      contact.update_labels(%w[contact_vip])
       first_conversation.update_labels(%w[vip billing])
       second_conversation.update_labels(%w[vip follow_up])
       hidden_conversation.update_labels(%w[hidden])
@@ -632,7 +633,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels", headers: headers, as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body['payload']).to contain_exactly('vip', 'billing', 'follow_up')
+      expect(response.parsed_body['payload']).to contain_exactly('contact_vip', 'vip', 'billing', 'follow_up')
     end
   end
 
@@ -654,6 +655,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response.parsed_body['payload']).to eq(%w[vip paid])
       expect(first_conversation.reload.label_list).to contain_exactly('vip', 'paid')
       expect(second_conversation.reload.label_list).to contain_exactly('vip', 'paid')
+      expect(contact.reload.label_list).to contain_exactly('vip', 'paid')
     end
 
     it 'updates labels only on accessible linked child conversations when the thread has hidden channels' do

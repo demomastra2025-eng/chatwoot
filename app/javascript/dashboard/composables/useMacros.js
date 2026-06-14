@@ -2,6 +2,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStoreGetters } from 'dashboard/composables/store';
 import { PRIORITY_CONDITION_VALUES } from 'dashboard/constants/automation';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 /**
  * Composable for handling macro-related functionality
@@ -41,7 +42,7 @@ export const useMacros = () => {
       case 'remove_label':
         return labels.value.map(i => ({
           id: i.title,
-          name: i.title,
+          name: labelDisplayTitle(i),
         }));
       case 'change_priority':
         return PRIORITY_CONDITION_VALUES.map(item => ({

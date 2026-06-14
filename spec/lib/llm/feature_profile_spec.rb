@@ -8,7 +8,7 @@ RSpec.describe Llm::FeatureProfile do
 
     expect(profile.feature_key).to eq('captain_agent')
     expect(profile.config_feature_key).to eq('assistant')
-    expect(profile.required_capabilities).to include('text_input', 'text_output', 'tool_calling', 'structured_output')
+    expect(profile.required_capabilities).to include('text_input', 'text_output', 'tool_calling', 'tool_choice', 'structured_output')
     expect(profile.timeout_seconds).to eq(60)
     expect(profile.max_retries).to eq(2)
     expect(profile.streaming?).to be(false)
@@ -46,7 +46,7 @@ RSpec.describe Llm::FeatureProfile do
     editor = described_class.for(:editor)
 
     expect(copilot.cost_policy).to eq('latency_first')
-    expect(copilot.required_capabilities).to include('tool_calling')
+    expect(copilot.required_capabilities).to include('tool_calling', 'tool_choice')
     expect(editor.cost_policy).to eq('speed_cost')
     expect(editor.required_capabilities).to include('text_input', 'text_output')
   end

@@ -31,7 +31,7 @@ json.channels do
     json.partial! 'api/v1/accounts/communication_threads/partials/channel', formats: [:json], channel: channel
   end
 end
-json.labels links.flat_map { |link| link.conversation.label_list }.uniq
+json.labels Labels::UnifiedAssignmentService.union_for(contact: communication_thread.contact, conversations: links.map(&:conversation))
 json.status communication_thread.status
 json.created_at communication_thread.created_at.to_i
 json.updated_at communication_thread.updated_at.to_f

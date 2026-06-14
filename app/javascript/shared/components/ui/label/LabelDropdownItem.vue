@@ -14,6 +14,10 @@ export default {
       type: String,
       default: '',
     },
+    emoji: {
+      type: String,
+      default: '',
+    },
     selected: {
       type: Boolean,
       default: false,
@@ -42,8 +46,11 @@ export default {
       @click="onClick"
     >
       <div class="flex items-center min-w-0 gap-2">
+        <span v-if="emoji" class="flex-shrink-0 text-sm leading-none">
+          {{ emoji }}
+        </span>
         <div
-          v-if="color"
+          v-else-if="color"
           class="size-3 flex-shrink-0 rounded-full outline outline-1 outline-n-weak"
           :style="{ backgroundColor: color }"
         />

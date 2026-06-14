@@ -1,14 +1,21 @@
 import { computed, ref, watch, onUnmounted, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
+import { useStore } from 'vuex';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
 import Timer from 'dashboard/helper/Timer';
 
+const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
+
 export function useCallSession() {
   const callsStore = useCallsStore();
+  const route = useRoute();
+  const store = useStore();
   const isJoining = ref(false);
   const endingCallSids = ref(new Set());
   const releasingCallSids = ref(new Set());
+  let bootstrapRetryTimer = null;
   const callDuration = ref(0);
   const durationTimer = new Timer(elapsed => {
     callDuration.value = elapsed;
@@ -19,6 +26,32 @@ export function useCallSession() {
   const hasActiveCall = computed(() => callsStore.hasActiveCall);
   const resolveCallProvider = call => call?.provider || null;
   const isOutboundCallDirection = callDirection => callDirection === 'outbound';
+  const routeInboxId = computed(() => {
+    const value = route.params?.inbox_id || route.params?.inboxId;
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) && numericValue > 0
+      ? numericValue
+      : null;
+  });
+  const routeVoiceInboxId = computed(() => {
+    const inboxId = routeInboxId.value;
+    if (!inboxId) return null;
+
+    const inbox = store.getters?.['inboxes/getInbox']?.(inboxId);
+    const provider = inbox?.provider || inbox?.channel?.provider;
+    return ['fonoster', 'twilio'].includes(provider) ? inboxId : null;
+  });
+  const incomingVoiceInboxId = computed(() => {
+    const call = incomingCalls.value.find(item => {
+      return (
+        ['fonoster', 'twilio'].includes(item?.provider) &&
+        Number.isFinite(Number(item?.inboxId)) &&
+        Number(item.inboxId) > 0
+      );
+    });
+
+    return call ? Number(call.inboxId) : null;
+  });
 
   watch(
     hasActiveCall,
@@ -181,20 +214,64 @@ export function useCallSession() {
     await callsStore.clearActiveCall();
   };
 
+  function clearBootstrapRetry() {
+    if (!bootstrapRetryTimer) return;
+
+    window.clearTimeout(bootstrapRetryTimer);
+    bootstrapRetryTimer = null;
+  }
+
+  const bootstrapIncomingSupport = async (
+    inboxId = routeVoiceInboxId.value || incomingVoiceInboxId.value
+  ) => {
+    try {
+      if (inboxId) {
+        await WebphoneClient.initializeDevice(inboxId);
+      } else if (routeInboxId.value) {
+        return;
+      } else {
+        await WebphoneClient.bootstrapIncomingSupport();
+      }
+      clearBootstrapRetry();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to bootstrap browser calling:', error);
+      clearBootstrapRetry();
+      bootstrapRetryTimer = window.setTimeout(
+        bootstrapIncomingSupport,
+        INCOMING_BOOTSTRAP_RETRY_MS
+      );
+    }
+  };
+
+  watch(routeVoiceInboxId, (inboxId, previousInboxId) => {
+    if (!inboxId || String(inboxId) === String(previousInboxId)) return;
+
+    bootstrapIncomingSupport(inboxId);
+  });
+
+  watch(
+    incomingVoiceInboxId,
+    (inboxId, previousInboxId) => {
+      if (!inboxId || String(inboxId) === String(previousInboxId)) return;
+
+      bootstrapIncomingSupport(inboxId);
+    },
+    { immediate: true }
+  );
+
   onMounted(() => {
     WebphoneClient.addEventListener(
       'call:disconnected',
       handleClientDisconnect
     );
 
-    WebphoneClient.bootstrapIncomingSupport().catch(error => {
-      // eslint-disable-next-line no-console
-      console.error('Failed to bootstrap browser calling:', error);
-    });
+    bootstrapIncomingSupport();
   });
 
   onUnmounted(() => {
     durationTimer.stop();
+    clearBootstrapRetry();
     WebphoneClient.removeEventListener(
       'call:disconnected',
       handleClientDisconnect
@@ -328,15 +405,11 @@ export function useCallSession() {
             return failFonosterOutboundWithoutInvite(callSid);
           }
 
-          if (webphoneSession.registered === true) {
-            return {
-              provider: 'fonoster',
-              joinSupported: false,
-              reason: 'sip_invite_not_received',
-            };
-          }
-
-          return releaseUnsupportedFonosterJoin(callSid);
+          return {
+            provider: 'fonoster',
+            joinSupported: false,
+            reason: 'sip_invite_not_received',
+          };
         }
 
         if (isOutbound) {

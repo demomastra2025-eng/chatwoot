@@ -213,6 +213,42 @@ describe('VoiceCallButton', () => {
     );
   });
 
+  it('initiates a Fonoster outbound call when the selected inbox uses an external SIP profile', async () => {
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'fonoster',
+      callingSupported: false,
+      browserJoinSupported: false,
+      registered: false,
+    });
+    prewarmMicrophoneMock.mockResolvedValue({
+      provider: 'fonoster',
+      prewarmed: false,
+      reason: 'NotAllowedError',
+    });
+    const dispatch = vi.fn().mockResolvedValue({
+      call_sid: 'call-ref-external',
+      conversation_id: 628,
+      browser_join_supported: false,
+    });
+    const { wrapper } = mountComponent({ dispatch });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 2179,
+      inboxId: 4593,
+    });
+    expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith('fonoster');
+    expect(useCallsStore().calls).toEqual([
+      expect.objectContaining({
+        callSid: 'call-ref-external',
+        browserJoinSupported: false,
+      }),
+    ]);
+    expect(alertMock).toHaveBeenCalledWith('CONTACT_PANEL.CALL_INITIATED');
+  });
+
   it('does not prewarm webphone for non-Fonoster voice inboxes', async () => {
     const { dispatchMock, wrapper } = mountComponent({
       inboxes: [voiceInbox({ id: 4674, provider: 'sipuni' })],

@@ -51,10 +51,6 @@ const autoReplyModeOptions = computed(() => [
     value: 'outside_working_hours',
     label: t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.OPTIONS.OUTSIDE_WORKING_HOURS'),
   },
-  {
-    value: 'never',
-    label: t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.OPTIONS.NEVER'),
-  },
 ]);
 
 const inboxName = inbox => {

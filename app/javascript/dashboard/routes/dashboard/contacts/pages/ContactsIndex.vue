@@ -7,6 +7,7 @@ import { useAlert } from 'dashboard/composables';
 import { debounce } from '@chatwoot/utils';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import filterQueryGenerator from 'dashboard/helper/filterQueryGenerator';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 import ContactsListLayout from 'dashboard/components-next/Contacts/ContactsListLayout.vue';
 import ContactEmptyState from 'dashboard/components-next/Contacts/EmptyState/ContactEmptyState.vue';
@@ -32,6 +33,7 @@ const customViewsUiFlags = useMapGetter('customViews/getUIFlags');
 const segments = useMapGetter('customViews/getContactCustomViews');
 const appliedFilters = useMapGetter('contacts/getAppliedContactFilters');
 const meta = useMapGetter('contacts/getMeta');
+const labels = useMapGetter('labels/getLabels');
 
 const searchQuery = computed(() => route.query?.search);
 const companyQuery = computed(() => route.query?.company || '');
@@ -63,6 +65,11 @@ const sortState = reactive({
 });
 
 const activeLabel = computed(() => route.params.label);
+const activeLabelDisplayTitle = computed(() => {
+  if (!activeLabel.value) return '';
+  const label = labels.value.find(record => record.title === activeLabel.value);
+  return labelDisplayTitle(label || activeLabel.value);
+});
 const activeSegmentId = computed(() => route.params.segmentId);
 const isFetchingList = computed(
   () => uiFlags.value.isFetching || customViewsUiFlags.value.isFetching
@@ -152,7 +159,7 @@ const headerTitle = computed(() => {
   if (searchQuery.value) return t('CONTACTS_LAYOUT.HEADER.SEARCH_TITLE');
   if (isActiveView.value) return t('CONTACTS_LAYOUT.HEADER.ACTIVE_TITLE');
   if (activeSegmentId.value) return activeSegment.value?.name;
-  if (activeLabel.value) return `#${activeLabel.value}`;
+  if (activeLabel.value) return `#${activeLabelDisplayTitle.value}`;
   return t('CONTACTS_LAYOUT.HEADER.TITLE');
 });
 
@@ -366,8 +373,8 @@ const updateCompanyFilter = value => {
 const onPageChange = page =>
   fetchContactsBasedOnContext(page, { clearSelection: false });
 
-const assignLabels = async labels => {
-  if (!labels.length || !selectedContactIds.value.length) {
+const assignLabels = async labelTitles => {
+  if (!labelTitles.length || !selectedContactIds.value.length) {
     return;
   }
 
@@ -376,7 +383,7 @@ const assignLabels = async labels => {
     await BulkActionsAPI.create({
       type: 'Contact',
       ids: selectedContactIds.value,
-      labels: { add: labels },
+      labels: { add: labelTitles },
     });
     useAlert(t('CONTACTS_BULK_ACTIONS.ASSIGN_LABELS_SUCCESS'));
     clearSelection();

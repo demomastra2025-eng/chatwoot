@@ -1,4 +1,6 @@
 import { MACRO_ACTION_TYPES as macroActionTypes } from 'dashboard/routes/dashboard/settings/macros/constants.js';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
+
 export const emptyMacro = {
   name: '',
   actions: [
@@ -28,7 +30,7 @@ export const resolveLabels = (labels, ids) => {
   return ids
     .map(id => {
       const label = labels.find(i => i.title === id);
-      return label ? label.title : '';
+      return label ? labelDisplayTitle(label) : '';
     })
     .join(', ');
 };

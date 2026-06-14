@@ -68,7 +68,7 @@ describe('FonosterReadiness', () => {
           connection: {
             display_name: 'Sipuni external line',
             provider_number: '056124100014',
-            remote_mutations: 'blocked',
+            remote_mutations: 'requires_approval',
           },
           status: { read_only: false, ready: true },
           employees: [{ internal_extension: '207' }],

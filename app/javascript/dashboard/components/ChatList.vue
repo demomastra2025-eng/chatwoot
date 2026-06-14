@@ -69,6 +69,7 @@ import {
   filterConversationsByCommunicationThreadMode,
   getCommunicationThreadChannelFilterInboxes,
 } from 'dashboard/helper/communicationThreadHelper';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 const props = defineProps({
   conversationInbox: { type: [String, Number], default: 0 },
@@ -442,6 +443,12 @@ const conversationFilters = computed(() => {
   };
 });
 
+const activeLabelDisplayTitle = computed(() => {
+  if (!props.label) return '';
+  const label = labels.value.find(record => record.title === props.label);
+  return labelDisplayTitle(label || props.label);
+});
+
 const activeTeam = computed(() => {
   if (props.teamId) {
     return getTeamFn.value(props.teamId);
@@ -460,7 +467,7 @@ const pageTitle = computed(() => {
     return activeTeam.value.name;
   }
   if (props.label) {
-    return `#${props.label}`;
+    return `#${activeLabelDisplayTitle.value}`;
   }
   if (props.conversationType === wootConstants.CONVERSATION_TYPE.MENTION) {
     return t('CHAT_LIST.MENTION_HEADING');

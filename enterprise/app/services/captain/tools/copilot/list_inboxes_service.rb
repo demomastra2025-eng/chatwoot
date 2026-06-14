@@ -115,6 +115,7 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
       assistant_name: captain_inbox.captain_assistant&.name,
       auto_reply_mode: captain_inbox.auto_reply_mode,
       auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?,
+      reply_to_open_conversations: captain_inbox.reply_to_open_conversations?,
       available_auto_reply_modes: CaptainInbox::AUTO_REPLY_MODES
     }.compact
   end

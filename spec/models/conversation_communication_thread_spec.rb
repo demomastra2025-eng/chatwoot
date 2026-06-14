@@ -72,6 +72,16 @@ RSpec.describe Conversation do
       expect(thread.reload.unread_count).to eq(0)
     end
 
+    it 'skips thread relinking when inbox was already deleted during async cleanup' do
+      conversation = create(:conversation, account: account)
+      message = create(:message, account: account, conversation: conversation, inbox: conversation.inbox)
+      CommunicationThreadConversation.where(conversation_id: conversation.id).delete_all
+      Inbox.where(id: conversation.inbox_id).delete_all
+
+      expect { message.destroy! }.not_to raise_error
+      expect(CommunicationThreadConversation.where(conversation_id: conversation.id)).to be_none
+    end
+
     it 'creates a missing communication thread before realtime message dispatch', :aggregate_failures do
       conversation = create(:conversation, account: account)
       conversation.reload.communication_thread.destroy!

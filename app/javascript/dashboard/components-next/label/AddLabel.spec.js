@@ -18,6 +18,15 @@ const labelMenuItems = [
   },
 ];
 
+const emojiLabelMenuItems = [
+  {
+    label: 'VIP клиент 💎',
+    value: 2,
+    thumbnail: { name: 'VIP клиент 💎', color: '#F59E0B', emoji: '💎' },
+    isSelected: false,
+  },
+];
+
 const mountComponent = props =>
   mount(AddLabel, {
     props: {
@@ -61,5 +70,14 @@ describe('AddLabel', () => {
       .trigger('click');
 
     expect(wrapper.emitted('editLabel')?.[0]).toEqual([labelMenuItems[0]]);
+  });
+
+  it('renders emoji marker when label item uses emoji thumbnail', async () => {
+    const wrapper = mountComponent({ labelMenuItems: emojiLabelMenuItems });
+
+    await wrapper.find('button').trigger('click');
+
+    expect(wrapper.text()).toContain('VIP клиент 💎');
+    expect(wrapper.text()).toContain('💎');
   });
 });

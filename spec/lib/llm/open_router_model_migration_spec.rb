@@ -267,7 +267,7 @@ RSpec.describe Llm::OpenRouterModelMigration do
     stub_openrouter_catalog(
       'openai/gpt-5.4' => chat_model_config,
       'anthropic/claude-sonnet-4-6' => chat_model_config,
-      'google/gemini-2.5-pro' => chat_model_config.merge('capabilities' => %w[structured_output tool_calling image_input]),
+      'google/gemini-2.5-pro' => chat_model_config.merge('capabilities' => %w[structured_output tool_calling tool_choice image_input]),
       **native_openrouter_model_configs
     )
   end
@@ -295,7 +295,7 @@ RSpec.describe Llm::OpenRouterModelMigration do
     {
       'provider' => 'openrouter',
       'type' => 'chat',
-      'capabilities' => %w[structured_output tool_calling streaming]
+      'capabilities' => %w[structured_output tool_calling tool_choice streaming]
     }
   end
 

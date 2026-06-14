@@ -2,6 +2,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useOperators } from './operators';
 import { useMapGetter } from 'dashboard/composables/store.js';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 import {
   buildAttributesFilterTypes,
   CONTACT_ATTRIBUTES,
@@ -193,7 +194,7 @@ export function useContactFilterContext() {
       inputType: 'multiSelect',
       options: labels.value?.map(label => ({
         id: label.title,
-        name: label.title,
+        name: labelDisplayTitle(label),
       })),
       dataType: 'text',
       filterOperators: equalityOperators.value,

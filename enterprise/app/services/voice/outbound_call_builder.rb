@@ -29,7 +29,7 @@ class Voice::OutboundCallBuilder
       status = call[:status] || 'ringing'
       update_conversation!(conversation, call_sid, conference_sid, timestamp, status)
       build_voice_message!(conversation, call_sid, conference_sid, timestamp, status)
-      { conversation: conversation, call_sid: call_sid, call_session: call[:call_session] }
+      { conversation: conversation, call_sid: call_sid, call_session: call[:call_session], browser_join_supported: call[:browser_join_supported] }
     end
   end
 
@@ -247,7 +247,8 @@ class Voice::OutboundCallBuilder
       {
         call_sid: result[:call_ref],
         status: result[:status],
-        call_session: result[:call_session]
+        call_session: result[:call_session],
+        browser_join_supported: result[:browser_join_supported]
       }
     else
       result = inbox.channel.initiate_call(to: contact.phone_number)
@@ -281,7 +282,7 @@ class Voice::OutboundCallBuilder
       additional_attributes: attrs,
       last_activity_at: current_time
     }
-    update_attrs[:identifier] = call_sid unless fonoster_provider?
+    update_attrs[:identifier] = call_sid unless fonoster_provider? && conversation.identifier.present?
     update_attrs[:status] = :open if fonoster_provider?
 
     conversation.update!(update_attrs)

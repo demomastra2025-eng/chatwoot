@@ -183,6 +183,17 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end.not_to(change { conversation.messages.outgoing.count })
     end
 
+    it 'sends a response for open conversations when enabled on the Captain inbox' do
+      inbox.captain_inbox.update!(reply_to_open_conversations: true)
+      conversation.open!
+
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.to change { conversation.messages.outgoing.count }.by(1)
+
+      expect(conversation.messages.outgoing.last.content).to eq('Hey, welcome to Captain V2')
+    end
+
     it 'skips a bufferless stale job when a newer incoming message exists' do
       stale_last_message_id = conversation.messages.incoming.last.id
       create(:message, conversation: conversation, content: 'Newer incoming', message_type: :incoming)

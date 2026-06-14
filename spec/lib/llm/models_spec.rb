@@ -123,7 +123,7 @@ RSpec.describe Llm::Models do
           'provider' => 'openrouter',
           'display_name' => 'Claude Sonnet 4.6 via OpenRouter',
           'type' => 'chat',
-          'capabilities' => %w[reasoning structured_output tool_calling streaming]
+          'capabilities' => %w[reasoning structured_output tool_calling tool_choice streaming]
         }
       )
 
@@ -152,13 +152,13 @@ RSpec.describe Llm::Models do
           'pricing' => { 'prompt' => '0.000001', 'completion' => '0.000002' },
           'latency_ms' => 420.0,
           'throughput_tokens_per_second' => 87.5,
-          'capabilities' => %w[structured_output tool_calling image_input streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
         },
         'tool/without-image-input' => {
           'provider' => 'openrouter',
           'display_name' => 'Tool Calls Text Only',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
         },
         'tool/without-structured-output' => {
           'provider' => 'openrouter',
@@ -193,13 +193,44 @@ RSpec.describe Llm::Models do
           pricing: { 'prompt' => '0.000001', 'completion' => '0.000002' },
           latency_ms: 420.0,
           throughput_tokens_per_second: 87.5,
-          capabilities: include('structured_output', 'tool_calling', 'image_input'),
+          capabilities: include('structured_output', 'tool_calling', 'tool_choice', 'image_input'),
           diagnostics: include(allowed: true, reasons: [])
         )
       )
       expect(config[:models]).to include(hash_including(id: 'tool/without-image-input'))
       expect(config[:models]).not_to include(hash_including(id: 'tool/without-structured-output'))
       expect(config[:models]).not_to include(hash_including(id: 'text/only'))
+    end
+
+    it 'adds reasoning to assistant requirements only when Captain thinking is enabled' do
+      account = create(:account, captain_runtime: { 'assistant_thinking_effort' => 'low' })
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-reasoning' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT Reasoning',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling tool_choice reasoning streaming]
+        },
+        'openai/gpt-no-reasoning' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT No Reasoning',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
+        }
+      )
+
+      config = described_class.feature_config(:assistant, account: account)
+
+      expect(config[:required_capabilities]).to include('reasoning')
+      expect(config[:models]).to include(hash_including(id: 'openai/gpt-reasoning'))
+      expect(config[:models]).not_to include(hash_including(id: 'openai/gpt-no-reasoning'))
+      expect(config[:diagnostic_models]).to include(
+        hash_including(
+          id: 'openai/gpt-no-reasoning',
+          diagnostics: include(reasons: include(hash_including(code: 'reasoning_unsupported')))
+        )
+      )
     end
 
     it 'keeps empty-requirement text features limited to OpenRouter chat models' do
@@ -298,7 +329,7 @@ RSpec.describe Llm::Models do
           'provider' => 'openrouter',
           'display_name' => 'GPT-4o via OpenRouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
         }
       )
 
@@ -319,7 +350,7 @@ RSpec.describe Llm::Models do
           'provider' => 'openrouter',
           'display_name' => 'GPT-5.4 via OpenRouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling image_input streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
         }
       )
 
@@ -353,7 +384,7 @@ RSpec.describe Llm::Models do
           'provider' => 'openrouter',
           'display_name' => 'GPT-5.4 via OpenRouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
         }
       )
 
@@ -379,7 +410,7 @@ RSpec.describe Llm::Models do
           'provider' => 'openrouter',
           'display_name' => 'GPT-5.4 via OpenRouter',
           'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling image_input streaming]
+          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
         },
         'openai/gpt-4o-mini-transcribe' => {
           'provider' => 'openrouter',
@@ -730,13 +761,13 @@ RSpec.describe Llm::Models do
           'provider' => 'openrouter',
           'display_name' => 'DeepSeek V4 Pro',
           'type' => 'chat',
-          'capabilities' => %w[text_input text_output structured_output tool_calling],
+          'capabilities' => %w[text_input text_output structured_output tool_calling tool_choice],
           'context_length' => 128_000
         }
       )
       allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).with(model_id).and_return(
         'endpoints' => [
-          { 'provider_name' => 'deepseek', 'capabilities' => %w[structured_output tool_calling] }
+          { 'provider_name' => 'deepseek', 'capabilities' => %w[structured_output tool_calling tool_choice] }
         ]
       )
       expect(described_class).not_to receive(:models_for)

@@ -11,6 +11,7 @@ import MenuItem from './menuItem.vue';
 import MenuItemWithSubmenu from './menuItemWithSubmenu.vue';
 import wootConstants from 'dashboard/constants/globals';
 import AgentLoadingPlaceholder from './agentLoadingPlaceholder.vue';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 const MENU = {
   MARK_AS_READ: 'mark-as-read',
@@ -286,10 +287,12 @@ export default {
         key: option.id,
         ...(type === 'icon' && { icon: option.icon }),
         ...(type === 'label' && { color: option.color }),
+        ...(type === 'label' &&
+          option.marker_type === 'emoji' && { emoji: option.emoji }),
         ...(type === 'agent' && { thumbnail: option.thumbnail }),
         ...(type === 'agent' && { status: option.availability_status }),
         ...(type === 'text' && { label: option.label }),
-        ...(type === 'label' && { label: option.title }),
+        ...(type === 'label' && { label: labelDisplayTitle(option) }),
         ...(type === 'agent' && { label: option.name }),
         ...(type === 'team' && { label: option.name }),
       };

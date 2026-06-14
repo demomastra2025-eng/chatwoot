@@ -27,7 +27,7 @@
 # Foreign Keys
 #
 #  fk_rails_...  (account_id => accounts.id) ON DELETE => cascade
-#  fk_rails_...  (assistant_id => captain_assistants.id)
+#  fk_rails_...  (assistant_id => captain_assistants.id) ON DELETE => nullify
 #
 class Captain::KnowledgeAnswerCacheEntry < ApplicationRecord
   self.table_name = 'captain_knowledge_answer_cache_entries'
