@@ -170,7 +170,7 @@ onBeforeMount(() => {
                   </span>
                   <span
                     v-else
-                    class="w-2 h-2 ltr:mr-2 rtl:ml-2 border border-solid rounded border-n-weak"
+                    class="size-2 ltr:mr-2 rtl:ml-2 rounded-sm"
                     :style="{ backgroundColor: labelMarkerColor(label) }"
                   />
                   <span
