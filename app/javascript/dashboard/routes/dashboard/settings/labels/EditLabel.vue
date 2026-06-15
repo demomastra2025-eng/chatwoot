@@ -61,7 +61,7 @@ export default {
     },
     selectMarkerType(type) {
       this.markerType = type;
-      this.showEmojiPicker = false;
+      this.showEmojiPicker = type === 'emoji';
     },
     selectEmoji(emoji) {
       this.emoji = emoji;

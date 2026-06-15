@@ -172,12 +172,11 @@ onBeforeMount(() => {
                     class="w-4 h-4 ltr:mr-2 rtl:ml-2 border border-solid rounded border-n-weak"
                     :style="{ backgroundColor: labelMarkerColor(label) }"
                   />
-                  <span class="text-body-main text-n-slate-12">
-                    {{
-                      labelMarkerType(label) === 'emoji'
-                        ? label.emoji
-                        : label.color
-                    }}
+                  <span
+                    v-if="labelMarkerType(label) === 'color'"
+                    class="text-body-main text-n-slate-12"
+                  >
+                    {{ label.color }}
                   </span>
                 </div>
               </BaseTableCell>

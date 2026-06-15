@@ -1002,8 +1002,8 @@ const menuItems = computed(() => {
                       icon: h('span', {
                         class:
                           labelMarkerType(label) === 'emoji'
-                            ? 'text-xs leading-none'
-                            : 'size-[8px] rounded-sm',
+                            ? 'text-xl leading-none'
+                            : 'size-[16px] rounded-sm',
                         style:
                           labelMarkerType(label) === 'emoji'
                             ? undefined
@@ -1221,8 +1221,8 @@ const menuItems = computed(() => {
                     icon: h('span', {
                       class:
                         labelMarkerType(label) === 'emoji'
-                          ? 'text-xs leading-none'
-                          : 'size-[8px] rounded-sm',
+                          ? 'text-xl leading-none'
+                          : 'size-[16px] rounded-sm',
                       style:
                         labelMarkerType(label) === 'emoji'
                           ? undefined
