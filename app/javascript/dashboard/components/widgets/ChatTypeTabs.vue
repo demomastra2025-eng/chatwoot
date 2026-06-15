@@ -29,9 +29,9 @@ const onTabChange = selectedTabIndex => {
   }
 };
 
-const tabNameWithTotal = item => {
+const tabTotalCount = item => {
   const count = item.totalCount ?? item.count ?? 0;
-  return `${item.name} (${count})`;
+  return count;
 };
 
 const keyboardEvents = {
@@ -61,10 +61,23 @@ useKeyboardEvents(keyboardEvents);
       :key="item.key"
       class="text-sm [&_a]:font-medium"
       :index="index"
-      :name="tabNameWithTotal(item)"
-      :count="item.totalCount"
+      :name="item.name"
+      :count="tabTotalCount(item)"
       :show-badge="false"
       is-compact
-    />
+    >
+      <template #default="{ tabName, count, active }">
+        <span>
+          {{ tabName }}
+          <span
+            data-test-id="tab-counter"
+            class="ltr:ml-0.5 rtl:mr-0.5"
+            :class="active ? 'text-n-blue-11' : 'text-n-slate-9'"
+          >
+            {{ count }}
+          </span>
+        </span>
+      </template>
+    </woot-tabs-item>
   </woot-tabs>
 </template>

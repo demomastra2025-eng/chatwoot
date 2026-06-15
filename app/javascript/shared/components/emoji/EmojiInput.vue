@@ -15,6 +15,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    inline: {
+      type: Boolean,
+      default: false,
+    },
   },
   data() {
     return {
@@ -88,6 +92,7 @@ export default {
   <div
     role="dialog"
     class="emoji-dialog bg-n-background shadow-lg rounded-md outline outline-1 outline-n-weak box-content h-[18.75rem] absolute right-0 -top-[95px] w-80 z-20"
+    :class="{ 'emoji-dialog--inline': inline }"
   >
     <div class="flex flex-col">
       <div class="flex gap-2 m-2 sticky top-2">
@@ -214,6 +219,18 @@ export default {
   &::before {
     @apply absolute -bottom-3 h-3 w-6 bg-n-slate-3 content-[""];
     clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+  }
+
+  &.emoji-dialog--inline {
+    @apply static right-auto top-auto z-auto box-border h-auto w-full rounded-xl shadow-none;
+
+    &::before {
+      @apply hidden;
+    }
+
+    .emoji-item {
+      @apply h-48;
+    }
   }
 }
 

@@ -17,6 +17,7 @@ import {
 } from 'dashboard/components-next/table';
 import {
   labelDisplayTitle,
+  labelDisplayTitleWithoutMarker,
   labelMarkerColor,
   labelMarkerEmoji,
   labelMarkerType,
@@ -149,7 +150,7 @@ onBeforeMount(() => {
             <template #default>
               <BaseTableCell>
                 <span class="text-body-main text-n-slate-12">
-                  {{ labelDisplayTitle(label) }}
+                  {{ labelDisplayTitleWithoutMarker(label) }}
                 </span>
               </BaseTableCell>
 
@@ -163,13 +164,13 @@ onBeforeMount(() => {
                 <div class="flex items-center">
                   <span
                     v-if="labelMarkerType(label) === 'emoji'"
-                    class="ltr:mr-2 rtl:ml-2 text-lg leading-none"
+                    class="ltr:mr-2 rtl:ml-2 text-4xl leading-none"
                   >
                     {{ labelMarkerEmoji(label) }}
                   </span>
                   <span
                     v-else
-                    class="w-4 h-4 ltr:mr-2 rtl:ml-2 border border-solid rounded border-n-weak"
+                    class="w-8 h-8 ltr:mr-2 rtl:ml-2 border border-solid rounded border-n-weak"
                     :style="{ backgroundColor: labelMarkerColor(label) }"
                   />
                   <span

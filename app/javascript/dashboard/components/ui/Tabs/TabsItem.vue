@@ -56,7 +56,9 @@ const onTabClick = event => {
       ]"
       @click="onTabClick"
     >
-      {{ name }}
+      <slot :tab-name="name" :count="getItemCount" :active="active">
+        {{ name }}
+      </slot>
       <div
         v-if="showBadge"
         class="rounded-md h-5 flex items-center justify-center text-xs font-medium my-0 ltr:ml-1 rtl:mr-1 px-1.5 py-0 min-w-[20px]"

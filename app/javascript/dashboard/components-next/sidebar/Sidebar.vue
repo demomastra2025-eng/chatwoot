@@ -771,6 +771,24 @@ const contactTagSettingsRouteNames = [
   'labels_list',
 ];
 
+const labelSidebarActionItems = computed(() => [
+  ...(hasContactSettingsAccess.value
+    ? [
+        {
+          title: t('SIDEBAR.SETTINGS'),
+          icon: 'i-lucide-settings-2',
+          to: accountScopedRoute('labels_list'),
+          activeOn: contactTagSettingsRouteNames,
+        },
+      ]
+    : []),
+  {
+    title: t('LABEL_MGMT.HEADER_BTN_TXT'),
+    icon: 'i-lucide-plus',
+    handler: openCreateLabelPopup,
+  },
+]);
+
 const activeOnForEmployeeTab = routeName =>
   employeeSettingsTabs.find(tab => tab.routeName === routeName)?.activeOn || [
     routeName,
@@ -983,13 +1001,7 @@ const menuItems = computed(() => {
                   visibilityKey: 'Conversation:Labels',
                   label: t('SIDEBAR.LABELS'),
                   icon: 'i-lucide-tag',
-                  actionItems: [
-                    {
-                      title: t('LABEL_MGMT.HEADER_BTN_TXT'),
-                      icon: 'i-lucide-plus',
-                      handler: openCreateLabelPopup,
-                    },
-                  ],
+                  actionItems: labelSidebarActionItems.value,
                   to: withConversationStatus('home'),
                   suppressExactPathActive: true,
                   activeOn: allLabelsActiveOn,
@@ -999,11 +1011,15 @@ const menuItems = computed(() => {
                       name: `${label.title}-${label.id}`,
                       label: labelDisplayTitle(label),
                       badge: labelUnreadCount(label.title),
+                      iconClass:
+                        labelMarkerType(label) === 'emoji'
+                          ? '!size-8 ltr:mr-1 rtl:ml-1'
+                          : '',
                       icon: h('span', {
                         class:
                           labelMarkerType(label) === 'emoji'
-                            ? 'text-xl leading-none'
-                            : 'size-[16px] rounded-sm',
+                            ? 'text-4xl leading-none'
+                            : 'size-[32px] rounded-sm',
                         style:
                           labelMarkerType(label) === 'emoji'
                             ? undefined
@@ -1207,22 +1223,20 @@ const menuItems = computed(() => {
                   visibilityKey: 'Contacts:Tagged',
                   icon: 'i-lucide-tag',
                   label: t('SIDEBAR.TAGGED_WITH'),
-                  actionItems: [
-                    {
-                      title: t('LABEL_MGMT.HEADER_BTN_TXT'),
-                      icon: 'i-lucide-plus',
-                      handler: openCreateLabelPopup,
-                    },
-                  ],
+                  actionItems: labelSidebarActionItems.value,
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: labelDisplayTitle(label),
                     badge: label.contacts_count,
+                    iconClass:
+                      labelMarkerType(label) === 'emoji'
+                        ? '!size-8 ltr:mr-1 rtl:ml-1'
+                        : '',
                     icon: h('span', {
                       class:
                         labelMarkerType(label) === 'emoji'
-                          ? 'text-xl leading-none'
-                          : 'size-[16px] rounded-sm',
+                          ? 'text-4xl leading-none'
+                          : 'size-[32px] rounded-sm',
                       style:
                         labelMarkerType(label) === 'emoji'
                           ? undefined
@@ -1692,12 +1706,14 @@ const menuItems = computed(() => {
         />
       </div>
     </section>
-    <woot-modal
-      v-model:show="showCreateLabelPopup"
-      @close="hideCreateLabelPopup"
-    >
-      <AddLabelForm @close="hideCreateLabelPopup" />
-    </woot-modal>
+    <Teleport to="body">
+      <woot-modal
+        v-model:show="showCreateLabelPopup"
+        @close="hideCreateLabelPopup"
+      >
+        <AddLabelForm @close="hideCreateLabelPopup" />
+      </woot-modal>
+    </Teleport>
     <!-- Resize Handle (desktop only) -->
     <div
       class="hidden md:block absolute top-0 h-full w-1 cursor-col-resize z-40 ltr:right-0 rtl:left-0 group"

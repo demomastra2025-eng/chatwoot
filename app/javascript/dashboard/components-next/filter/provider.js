@@ -203,14 +203,14 @@ export function useConversationFilterContext() {
             {
               class:
                 labelMarkerType(label) === 'emoji'
-                  ? 'text-xs leading-none'
+                  ? 'text-2xl leading-none'
                   : 'rounded-full',
               style:
                 labelMarkerType(label) === 'color'
                   ? {
                       backgroundColor: labelMarkerColor(label),
-                      height: '6px',
-                      width: '6px',
+                      height: '12px',
+                      width: '12px',
                     }
                   : {},
             },

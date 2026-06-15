@@ -30,7 +30,6 @@ export default {
       title: '',
       markerType: 'color',
       emoji: '',
-      showEmojiPicker: false,
       showOnSidebar: true,
     };
   },
@@ -57,11 +56,9 @@ export default {
     },
     selectMarkerType(type) {
       this.markerType = type;
-      this.showEmojiPicker = type === 'emoji';
     },
     selectEmoji(emoji) {
       this.emoji = emoji;
-      this.showEmojiPicker = false;
     },
     async addLabel() {
       try {
@@ -148,21 +145,23 @@ export default {
         </label>
       </div>
 
-      <div v-else class="relative w-full mb-4">
-        <label class="block mb-2 text-sm font-medium text-n-slate-12">
-          {{ $t('LABEL_MGMT.FORM.EMOJI.LABEL') }}
-        </label>
-        <button
-          type="button"
-          class="flex h-10 min-w-24 items-center justify-center rounded-lg border border-n-strong px-3 text-xl text-n-slate-12 hover:bg-n-alpha-2"
-          @click.prevent="showEmojiPicker = !showEmojiPicker"
-        >
-          {{ emoji || $t('LABEL_MGMT.FORM.EMOJI.PLACEHOLDER') }}
-        </button>
+      <div v-else class="w-full mb-4">
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <label class="block text-sm font-medium text-n-slate-12">
+            {{ $t('LABEL_MGMT.FORM.EMOJI.LABEL') }}
+          </label>
+          <div
+            class="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-n-weak bg-n-alpha-1 px-2.5 text-xl leading-none text-n-slate-12"
+            aria-live="polite"
+          >
+            <span v-if="emoji">{{ emoji }}</span>
+            <span v-else class="i-lucide-smile size-4 text-n-slate-10" />
+          </div>
+        </div>
         <EmojiInput
-          v-if="showEmojiPicker"
+          inline
           :on-click="selectEmoji"
-          show-remove-button
+          :show-remove-button="!!emoji"
         />
       </div>
 

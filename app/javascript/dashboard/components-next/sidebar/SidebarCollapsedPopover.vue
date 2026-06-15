@@ -232,6 +232,7 @@ onMounted(async () => {
                         v-if="subChild.icon"
                         v-bind="renderIcon(subChild.icon).props"
                         class="size-4 flex-shrink-0"
+                        :class="subChild.iconClass"
                       />
                       <span class="flex-1 truncate">{{ subChild.label }}</span>
                       <SidebarUnreadBadge :value="badgeCount(subChild)" />
@@ -255,6 +256,7 @@ onMounted(async () => {
                   v-if="child.icon"
                   v-bind="renderIcon(child.icon).props"
                   class="size-4 flex-shrink-0"
+                  :class="child.iconClass"
                 />
                 <span class="flex-1 truncate">{{ child.label }}</span>
                 <SidebarUnreadBadge :value="badgeCount(child)" />

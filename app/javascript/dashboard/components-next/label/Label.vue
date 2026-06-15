@@ -68,10 +68,14 @@ const colorClasses = computed(() => COLOR_CLASSES[props.color]);
     <span
       v-if="labelColor"
       class="rounded-sm flex-shrink-0"
-      :class="compact ? 'size-1.5' : 'size-2'"
+      :class="compact ? 'size-3' : 'size-4'"
       :style="{ background: labelColor }"
     />
-    <span v-else-if="labelEmoji" class="flex-shrink-0 leading-none">
+    <span
+      v-else-if="labelEmoji"
+      class="flex-shrink-0 leading-none"
+      :class="compact ? 'text-base' : 'text-2xl'"
+    >
       {{ labelEmoji }}
     </span>
     <slot v-else name="icon" />

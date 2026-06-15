@@ -120,13 +120,13 @@ const handleAssign = () => {
             </span>
             <span
               v-if="labelMarkerType(label) === 'emoji'"
-              class="flex-shrink-0 text-sm leading-none"
+              class="flex-shrink-0 text-3xl leading-none"
             >
               {{ labelMarkerEmoji(label) }}
             </span>
             <span
               v-else
-              class="rounded-md h-3 w-3 flex-shrink-0 border border-solid border-n-weak"
+              class="rounded-md h-6 w-6 flex-shrink-0 border border-solid border-n-weak"
               :style="{ backgroundColor: labelMarkerColor(label) }"
             />
           </label>

@@ -41,8 +41,8 @@ const labelOptions = computed(() =>
           {
             class:
               labelMarkerType(label) === 'emoji'
-                ? 'text-xs leading-none'
-                : 'size-[12px] ring-1 ring-n-alpha-1 dark:ring-white/20 ring-inset rounded-sm',
+                ? 'text-2xl leading-none'
+                : 'size-[24px] ring-1 ring-n-alpha-1 dark:ring-white/20 ring-inset rounded-sm',
             style:
               labelMarkerType(label) === 'color'
                 ? { backgroundColor: labelMarkerColor(label) }

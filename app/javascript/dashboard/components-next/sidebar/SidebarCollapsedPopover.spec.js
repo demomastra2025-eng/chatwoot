@@ -4,7 +4,8 @@ import { nextTick } from 'vue';
 
 import SidebarCollapsedPopover from './SidebarCollapsedPopover.vue';
 
-const { routerPush } = vi.hoisted(() => ({
+const { createLabelHandler, routerPush } = vi.hoisted(() => ({
+  createLabelHandler: vi.fn(),
   routerPush: vi.fn(),
 }));
 
@@ -44,6 +45,11 @@ const defaultChildren = [
         icon: 'i-lucide-settings-2',
         to: labelsSettingsRoute,
       },
+      {
+        title: 'Create tag',
+        icon: 'i-lucide-plus',
+        handler: createLabelHandler,
+      },
     ],
     children: [
       {
@@ -78,6 +84,7 @@ const mountComponent = (props = {}) =>
 
 describe('SidebarCollapsedPopover', () => {
   beforeEach(() => {
+    createLabelHandler.mockClear();
     routerPush.mockClear();
   });
 
@@ -90,6 +97,19 @@ describe('SidebarCollapsedPopover', () => {
     await settingsButton.trigger('click');
 
     expect(routerPush).toHaveBeenCalledWith(labelsSettingsRoute);
+    expect(wrapper.emitted('close')).toBeTruthy();
+  });
+
+  it('runs subgroup action item handlers from the collapsed sidebar popover', async () => {
+    const wrapper = mountComponent();
+    const createButton = wrapper.find('button[title="Create tag"]');
+
+    expect(createButton.exists()).toBe(true);
+
+    await createButton.trigger('click');
+
+    expect(createLabelHandler).toHaveBeenCalledTimes(1);
+    expect(routerPush).not.toHaveBeenCalled();
     expect(wrapper.emitted('close')).toBeTruthy();
   });
 

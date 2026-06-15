@@ -13,6 +13,14 @@ export const labelMarkerType = label => {
 export const labelMarkerEmoji = label =>
   labelMarkerType(label) === 'emoji' ? label.emoji : '';
 
+export const labelDisplayTitleWithoutMarker = label => {
+  const title = labelDisplayTitle(label).trim();
+  const emoji = labelMarkerEmoji(label);
+  if (!emoji || !title.startsWith(emoji)) return title;
+
+  return title.slice(emoji.length).trimStart();
+};
+
 export const labelMarkerColor = label => label?.color || '#1f93ff';
 
 export const sortLabelsByDisplayTitle = labels =>

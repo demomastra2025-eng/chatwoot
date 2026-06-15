@@ -10,6 +10,7 @@ const props = defineProps({
   label: { type: String, required: true },
   to: { type: [String, Object], required: true },
   icon: { type: [String, Object], default: null },
+  iconClass: { type: String, default: '' },
   active: { type: Boolean, default: false },
   badge: { type: [Number, String], default: 0 },
   component: { type: Function, default: null },
@@ -98,7 +99,11 @@ const handleLeafClick = async event => {
         :badge="badgeCount"
       />
       <template v-else>
-        <span v-if="icon" class="size-4 grid place-content-center rounded-full">
+        <span
+          v-if="icon"
+          class="size-4 grid place-content-center rounded-full"
+          :class="iconClass"
+        >
           <Icon :icon="icon" class="size-4 inline-block" />
         </span>
         <div class="flex-1 truncate min-w-0 text-sm">{{ label }}</div>

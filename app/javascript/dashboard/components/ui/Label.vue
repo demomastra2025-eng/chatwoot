@@ -212,13 +212,16 @@ export default {
 }
 
 .label-color-dot {
-  @apply inline-block w-3 h-3 rounded-sm shadow-sm;
+  @apply inline-block w-6 h-6 rounded-sm shadow-sm;
 }
 .label.small .label-color-dot {
-  @apply w-2 h-2 rounded-sm shadow-sm;
+  @apply w-4 h-4 rounded-sm shadow-sm;
 }
 
 .label-emoji {
-  @apply text-xs leading-none;
+  @apply text-2xl leading-none;
+}
+.label.small .label-emoji {
+  @apply text-base;
 }
 </style>
