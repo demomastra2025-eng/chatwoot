@@ -106,6 +106,116 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
     expect(sip_profile.agent_ref).to eq('local-agent-ref')
   end
 
+  it 'uses a Fonoster generated provider credential ref for subsequent trunk sync and local persistence' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      credentials_ref: 'local-connection-cred',
+      fonoster_credentials_ref: nil,
+      fonoster_trunk_ref: 'trunk-ref'
+    )
+    connection_state = desired_state.merge(
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-ref', credentials_ref: 'local-connection-cred' },
+      resources: { provider_connection_id: provider_connection.id },
+      connection: {
+        name: 'Sipuni trunk',
+        username: provider_connection.username,
+        password: 'raw-connection-password',
+        credentials_ref: 'local-connection-cred'
+      }
+    )
+    connection_plan = plan.merge(
+      operations: [
+        {
+          key: 'upsert_connection_credentials',
+          method: 'PUT',
+          path: '/telephony/credentials/local-connection-cred',
+          risk: 'requires_approval',
+          payload: { ref: 'local-connection-cred', password: '[REDACTED]' }
+        },
+        {
+          key: 'upsert_trunk',
+          method: 'PUT',
+          path: '/telephony/trunks/trunk-ref',
+          risk: 'requires_approval',
+          payload: { ref: 'trunk-ref', outboundCredentialsRef: 'local-connection-cred' }
+        }
+      ]
+    )
+
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(
+        key: 'upsert_connection_credentials',
+        payload: hash_including(ref: 'local-connection-cred', password: 'raw-connection-password')
+      )
+    ).ordered.and_return({ 'ref' => 'remote-connection-cred' })
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(
+        key: 'upsert_trunk',
+        path: '/telephony/trunks/trunk-ref',
+        payload: hash_including(outboundCredentialsRef: 'remote-connection-cred')
+      )
+    ).ordered.and_return({ 'ref' => 'trunk-ref' })
+    allow(resource_client).to receive(:number).with('number-ref').and_return(
+      'ref' => 'number-ref',
+      'telUrl' => 'tel:056124100014',
+      'trunkRef' => 'trunk-ref',
+      'metadata' => { 'managed_by' => 'onelink', 'onelink_account_id' => account.id },
+      'route' => { 'mode' => 'operator' }
+    )
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
+
+    result = described_class.new(account: account, current_user: admin, resource_client: resource_client)
+                            .execute(operation: 'create', desired_state: connection_state, plan: connection_plan, remote_commit: true)
+
+    expect(result).to include(status: 'succeeded', remote_commit: true)
+    expect(provider_connection.reload).to have_attributes(
+      credentials_ref: 'remote-connection-cred',
+      fonoster_credentials_ref: 'remote-connection-cred'
+    )
+  end
+
+  it 'prefers the persisted Fonoster provider credential ref when syncing trunks' do
+    trunk_state = desired_state.merge(
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-ref', credentials_ref: 'local-connection-cred' },
+      connection: { credentials_ref: 'local-connection-cred', fonoster_credentials_ref: 'remote-connection-cred' }
+    )
+    trunk_plan = plan.merge(
+      operations: [
+        {
+          key: 'upsert_trunk',
+          method: 'PUT',
+          path: '/telephony/trunks/trunk-ref',
+          risk: 'requires_approval',
+          payload: { ref: 'trunk-ref', outboundCredentialsRef: 'local-connection-cred' }
+        }
+      ]
+    )
+
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(
+        key: 'upsert_trunk',
+        payload: hash_including(
+          credentialsRef: 'remote-connection-cred',
+          outboundCredentialsRef: 'remote-connection-cred'
+        )
+      )
+    ).and_return({ 'ref' => 'trunk-ref' })
+    allow(resource_client).to receive(:number).with('number-ref').and_return(
+      'ref' => 'number-ref',
+      'telUrl' => 'tel:056124100014',
+      'trunkRef' => 'trunk-ref',
+      'metadata' => { 'managed_by' => 'onelink', 'onelink_account_id' => account.id },
+      'route' => { 'mode' => 'operator' }
+    )
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
+
+    result = described_class.new(account: account, current_user: admin, resource_client: resource_client)
+                            .execute(operation: 'update', desired_state: trunk_state, plan: trunk_plan, remote_commit: true)
+
+    expect(result).to include(status: 'succeeded', remote_commit: true)
+  end
+
   it 'uses a Fonoster generated trunk ref for subsequent number sync and reconciliation' do
     trunk_uuid = 'remote-trunk-uuid'
     trunk_plan = plan.merge(
@@ -248,6 +358,7 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
     ).and_return({ 'ok' => true })
     allow(resource_client).to receive(:agent).with('local-agent-ref').and_return(
       'ref' => 'local-agent-ref',
+      'credentials' => { 'ref' => 'remote-credential-uuid' },
       'enabled' => true
     )
 

@@ -143,7 +143,8 @@ class Telephony::VirtualPbx::RemotePlanBuilder
         ref: credentials_ref,
         name: connection_credentials_name(state, connection, credentials_ref),
         username: connection[:username],
-        password: connection[:password]
+        password: connection[:password],
+        metadata: ownership_metadata(state).merge(provider_kind: state[:provider_kind], resource_kind: 'provider_connection_credentials')
       }.compact
     )
   end
@@ -572,7 +573,11 @@ class Telephony::VirtualPbx::RemotePlanBuilder
 
   def shared_trunk?(state)
     refs = state[:refs] || {}
-    state[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
+    return true if state[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
+
+    provider_connection_id = state.dig(:resources, :provider_connection_id)
+    provider_connection_used_by_other_bindings?(state, provider_connection_id) ||
+      provider_connection_used_by_other_sip_profiles?(state, provider_connection_id)
   end
 
   def sipuni_gateway?(state)

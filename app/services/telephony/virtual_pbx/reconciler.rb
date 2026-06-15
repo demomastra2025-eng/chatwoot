@@ -114,6 +114,14 @@ class Telephony::VirtualPbx::Reconciler
       if expected_aor.present? && actual_aor.present? && actual_aor.to_s != expected_aor.to_s
         items << drift_item('remote_agent_aor_mismatch', 'Remote employee agent route does not match OneLink extension')
       end
+      expected_credentials_ref = attrs[:fonoster_credentials_ref].presence || attrs[:credentials_ref].presence
+      actual_credentials_ref = actual[:credentialsRef] ||
+                               actual[:credentials_ref] ||
+                               actual.dig(:credentials, :ref) ||
+                               actual.dig('credentials', 'ref')
+      if expected_credentials_ref.present? && actual_credentials_ref.to_s != expected_credentials_ref.to_s
+        items << drift_item('remote_agent_credentials_mismatch', 'Remote employee agent credentials do not match OneLink SIP profile')
+      end
       next unless attrs.key?(:enabled) && actual.key?(:enabled)
 
       expected_enabled = ActiveModel::Type::Boolean.new.cast(attrs[:enabled])

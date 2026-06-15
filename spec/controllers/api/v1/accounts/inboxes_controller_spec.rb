@@ -441,7 +441,7 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(replacement_channel.phone_number).to eq(display_phone_number)
       end
 
-      it 'keeps remote cleanup disabled by default for managed Virtual PBX voice inboxes' do
+      it 'runs remote cleanup by default for managed Virtual PBX voice inboxes' do
         display_phone_number = '+17715550667'
         ingress_number = '056124100667'
         voice_channel = create(
@@ -475,12 +475,15 @@ RSpec.describe 'Inboxes API', type: :request do
         )
         provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
         allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
-        allow(provisioner).to receive(:execute).and_return(
+        expect(provisioner).to receive(:execute).with(
+          hash_including(operation: 'delete', remote_commit: true)
+        ).and_return(
           status: 'succeeded',
-          remote_commit: false,
+          remote_commit: true,
           provisioning_run: { status: 'succeeded' },
           executed_operations: []
         )
+        expect(DeleteObjectJob).not_to receive(:perform_later)
 
         delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}",
                headers: admin.create_new_auth_token,
@@ -490,9 +493,8 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body).to include(
           'id' => voice_inbox.id,
           'deleted' => true,
-          'remote_commit' => false
+          'remote_commit' => true
         )
-        expect(provisioner).not_to have_received(:execute)
         expect(Inbox.exists?(voice_inbox.id)).to be(false)
         expect(Channel::Voice.exists?(voice_channel.id)).to be(false)
       end

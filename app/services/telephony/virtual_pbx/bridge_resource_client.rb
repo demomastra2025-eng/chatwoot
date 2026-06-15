@@ -7,6 +7,7 @@ class Telephony::VirtualPbx::BridgeResourceClient
   RESOURCE_PAYLOAD_KEYS = %i[
     name ref host port transport username send_register telUrl tel_url trunkRef trunk_ref
     credentialRef credential_ref metadata route mode app_ref appRef agent_aor agentAor enabled
+    domain domainRef domain_ref domainUri domain_uri maxContacts max_contacts privacy
     password credentialsRef credentials_ref outboundCredentialsRef outbound_credentials_ref
     sendRegister inboundUri inbound_uri inboundCredentialsRef inbound_credentials_ref
     accessControlListRef access_control_list_ref uris
@@ -14,6 +15,11 @@ class Telephony::VirtualPbx::BridgeResourceClient
     numberRef number_ref providerAccountNumber provider_account_number ingressNumber ingress_number
     displayPhoneNumber display_phone_number accountId account_id inboxId inbox_id channelId channel_id
     gatewayRef gateway_ref callerId caller_id sourceId source_id
+  ].freeze
+
+  ADOPTABLE_COLLECTION_PATHS = %w[
+    /telephony/agents
+    /telephony/credentials
   ].freeze
 
   ERROR_CODE_BY_STATUS = {
@@ -177,10 +183,16 @@ class Telephony::VirtualPbx::BridgeResourceClient
     raise unless missing_remote_resource?(e)
 
     collection_path = collection_path_for(path)
+    if adoptable_collection?(collection_path)
+      existing = existing_resource_for_payload(collection_path, payload)
+      return update_existing_resource(collection_path, existing, payload) if existing.present?
+    end
+
     begin
       perform(:post, collection_path, payload: payload)
     rescue Telephony::Error => create_error
       existing = existing_resource_for_already_exists(collection_path, payload, create_error)
+      return update_existing_resource(collection_path, existing, payload) if adoptable_collection?(collection_path) && existing.present?
       return existing if existing.present?
 
       raise
@@ -217,14 +229,116 @@ class Telephony::VirtualPbx::BridgeResourceClient
   def existing_resource_for_already_exists(collection_path, payload, error)
     return unless already_exists?(error)
 
+    existing_resource_for_payload(collection_path, payload)
+  end
+
+  def existing_resource_for_payload(collection_path, payload)
     response = perform(:get, collection_path)
     items = Array.wrap(response['items'] || response[:items])
+    find_existing_resource(collection_path, items, payload.with_indifferent_access)
+  end
+
+  def find_existing_resource(collection_path, items, payload)
+    case collection_path.to_s
+    when '/telephony/agents'
+      find_existing_agent(items, payload)
+    when '/telephony/credentials'
+      find_existing_credentials(items, payload)
+    else
+      find_existing_by_ref_or_public_key(items, payload)
+    end
+  end
+
+  def find_existing_agent(items, payload)
+    return if payload[:username].blank?
+
+    candidates = owned_adoption_candidates(items, payload).select do |attrs|
+      attrs[:username].to_s == payload[:username].to_s
+    end
+    return if candidates.blank?
+
+    return unique_candidate(candidates.select { |attrs| matching_agent_domain?(attrs, payload) }) if expected_agent_domain?(payload)
+
+    unique_candidate(candidates)
+  end
+
+  def find_existing_credentials(items, payload)
+    return if payload[:username].blank?
+
+    username_matches = owned_adoption_candidates(items, payload).select do |attrs|
+      attrs[:username].to_s == payload[:username].to_s
+    end
+    return if username_matches.blank?
+
+    exact_name_matches = username_matches.select { |attrs| attrs[:name].to_s == payload[:name].to_s }
+    unique_candidate(exact_name_matches.presence || username_matches)
+  end
+
+  def find_existing_by_ref_or_public_key(items, payload)
     items.find do |item|
       attrs = item.with_indifferent_access
       attrs[:ref].to_s == payload[:ref].to_s ||
         (payload[:telUrl].present? && attrs[:telUrl].to_s == payload[:telUrl].to_s) ||
         (payload[:name].present? && attrs[:name].to_s == payload[:name].to_s)
     end
+  end
+
+  def matching_agent_domain?(attrs, payload)
+    expected_ref = payload[:domainRef] || payload[:domain_ref]
+    expected_uri = payload[:domainUri] || payload[:domain_uri] || payload[:domain]
+    raw_domain = attrs[:domain]
+    actual_domain = raw_domain.respond_to?(:with_indifferent_access) ? raw_domain.with_indifferent_access : {}
+    actual_ref = attrs[:domainRef] || attrs[:domain_ref] || actual_domain[:ref]
+    actual_uri = attrs[:domainUri] ||
+                 attrs[:domain_uri] ||
+                 actual_domain[:domainUri] ||
+                 actual_domain[:domain_uri] ||
+                 (raw_domain if raw_domain.is_a?(String))
+
+    return actual_ref.to_s == expected_ref.to_s if expected_ref.present?
+
+    actual_uri.to_s.casecmp(expected_uri.to_s).zero?
+  end
+
+  def expected_agent_domain?(payload)
+    (payload[:domainRef] || payload[:domain_ref] || payload[:domainUri] || payload[:domain_uri] || payload[:domain]).present?
+  end
+
+  def update_existing_resource(collection_path, existing, payload)
+    attrs = existing.with_indifferent_access
+    ref = attrs[:ref].presence
+    return existing if ref.blank?
+
+    perform(:put, "#{collection_path}/#{CGI.escape(ref.to_s)}", payload: payload.merge(ref: ref))
+  end
+
+  def owned_adoption_candidates(items, payload)
+    items.filter_map do |item|
+      attrs = item.with_indifferent_access
+      attrs if adoptable_resource_owner?(attrs, payload)
+    end
+  end
+
+  def adoptable_resource_owner?(attrs, payload)
+    expected_metadata = (payload[:metadata] || {}).with_indifferent_access
+    actual_metadata = (attrs[:metadata] || attrs.dig(:data, :metadata) || attrs.dig('data', 'metadata') || {}).with_indifferent_access
+    return true if actual_metadata.blank?
+
+    return false if actual_metadata[:managed_by].present? && actual_metadata[:managed_by].to_s != 'onelink'
+
+    expected_account_id = expected_metadata[:onelink_account_id]
+    actual_account_id = actual_metadata[:onelink_account_id]
+    return actual_account_id.to_s == expected_account_id.to_s if expected_account_id.present? && actual_account_id.present?
+
+    true
+  end
+
+  def unique_candidate(candidates)
+    Array.wrap(candidates).one? ? candidates.first : nil
+  end
+
+  def adoptable_collection?(collection_path)
+    ADOPTABLE_COLLECTION_PATHS.include?(collection_path.to_s)
   end
 
   def collection_path_for(path)

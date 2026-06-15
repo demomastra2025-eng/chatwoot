@@ -198,6 +198,45 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     )
   end
 
+  it 'keeps shared non-Sipuni trunks when another inbox uses the same provider connection' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'asterisk_analog',
+      credentials_ref: 'shared-provider-cred',
+      fonoster_credentials_ref: 'shared-provider-cred',
+      fonoster_trunk_ref: 'shared-trunk-ref'
+    )
+    other_inbox = create(:inbox, account: account)
+    create(
+      :telephony_number_binding,
+      account: account,
+      inbox: other_inbox,
+      provider_connection: provider_connection,
+      number_ref: 'other-number-ref',
+      trunk_ref: 'shared-trunk-ref',
+      managed_by: 'onelink',
+      ownership_status: 'local'
+    )
+    desired_state = {
+      account_id: account.id,
+      inbox_id: 1001,
+      provider_kind: 'asterisk_analog',
+      refs: { number_ref: 'number-ref', trunk_ref: 'shared-trunk-ref', credentials_ref: 'shared-provider-cred' },
+      resources: { provider_connection_id: provider_connection.id },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id
+      }
+    }
+
+    plan = described_class.new(account: account).build(operation: 'delete', desired_state: desired_state)
+
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include('delete_number')
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('delete_trunk', 'delete_connection_credentials')
+  end
+
   it 'does not delete Routr agents for provider-managed Sipuni extensions' do
     desired_state = {
       account_id: account.id,

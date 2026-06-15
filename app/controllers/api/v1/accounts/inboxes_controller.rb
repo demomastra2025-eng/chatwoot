@@ -339,7 +339,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def managed_virtual_pbx_remote_commit?
-    ActiveModel::Type::Boolean.new.cast(params.fetch(:remote_commit, false))
+    ActiveModel::Type::Boolean.new.cast(params.fetch(:remote_commit, true))
   end
 
   def managed_virtual_pbx_deletion_payload(inbox_id, payload)

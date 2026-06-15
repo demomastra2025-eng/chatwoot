@@ -54,6 +54,30 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
     expect(result.fetch(:drift)).to eq([])
   end
 
+  it 'reports credentials drift when the remote agent omits credentials read-back' do
+    state = desired_state.merge(
+      profiles: [{ agent_ref: 'agent-ref', credentials_ref: 'expected-credential-ref', enabled: true }]
+    )
+    allow(resource_client).to receive(:number).with('number-ref').and_return(
+      'ref' => 'number-ref',
+      'telUrl' => 'tel:056124100014',
+      'trunk' => { 'ref' => 'trunk-ref' },
+      'metadata' => { 'managed_by' => 'onelink', 'onelink_account_id' => account.id },
+      'route' => { 'mode' => 'operator' }
+    )
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
+    allow(resource_client).to receive(:agent).with('agent-ref').and_return(
+      'ref' => 'agent-ref',
+      'username' => '100',
+      'enabled' => true
+    )
+
+    result = described_class.new(account: account, resource_client: resource_client).check(state)
+
+    expect(result).to include(status: 'requires_manual_reconcile', ready: false)
+    expect(result.fetch(:drift).map { |item| item[:code] }).to include('remote_agent_credentials_mismatch')
+  end
+
   it 'fails closed with requires_manual_reconcile when bridge resources are missing' do
     allow(resource_client).to receive(:number).and_raise(
       Telephony::Error.new(code: 'REMOTE_RESOURCE_NOT_FOUND', message: 'missing number', status: :not_found)
@@ -71,7 +95,7 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
     state = desired_state.deep_merge(
       refs: { runtime_app_ref: 'app-ref' },
       routing: { mode: 'operator', app_ref: 'app-ref' },
-      profiles: [{ agent_ref: 'agent-ref', agent_aor: 'sip:100@operator.example.test', enabled: true }]
+      profiles: [{ agent_ref: 'agent-ref', agent_aor: 'sip:100@operator.example.test', credentials_ref: 'expected-credential-ref', enabled: true }]
     )
     allow(resource_client).to receive(:number).with('number-ref').and_return(
       'ref' => 'number-ref',
@@ -84,6 +108,7 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
     allow(resource_client).to receive(:agent).with('agent-ref').and_return(
       'ref' => 'agent-ref',
       'agentAor' => 'sip:101@operator.example.test',
+      'credentials' => { 'ref' => 'wrong-credential-ref' },
       'enabled' => false
     )
 
@@ -93,6 +118,7 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
     expect(result.fetch(:drift).map { |item| item[:code] }).to include(
       'remote_runtime_app_mismatch',
       'remote_agent_aor_mismatch',
+      'remote_agent_credentials_mismatch',
       'remote_agent_enabled_mismatch'
     )
   end

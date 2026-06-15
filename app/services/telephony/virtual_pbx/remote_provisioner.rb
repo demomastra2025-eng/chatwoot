@@ -125,7 +125,12 @@ class Telephony::VirtualPbx::RemoteProvisioner
     update_if_columns_exist(Telephony::NumberBinding, state.dig(:resources, :number_binding_id),
                             attrs.merge(number_ref: state.dig(:refs, :number_ref), trunk_ref: state.dig(:refs, :trunk_ref)).compact)
     update_if_columns_exist(Telephony::ProviderConnection, state.dig(:resources, :provider_connection_id),
-                            attrs.merge(status: 'active', fonoster_trunk_ref: state.dig(:refs, :trunk_ref)).compact)
+                            attrs.merge(
+                              status: 'active',
+                              fonoster_trunk_ref: state.dig(:refs, :trunk_ref),
+                              credentials_ref: state.dig(:connection, :credentials_ref) || state.dig(:refs, :credentials_ref),
+                              fonoster_credentials_ref: state.dig(:connection, :fonoster_credentials_ref) || state.dig(:refs, :credentials_ref)
+                            ).compact)
     update_sip_profile_refs!(state)
     update_channel_provider_config!(state)
   end
@@ -161,6 +166,8 @@ class Telephony::VirtualPbx::RemoteProvisioner
       return update_number_route_operation_for_state(operation_attrs, desired_state)
     when 'upsert_number'
       return number_operation_for_state(operation_attrs, desired_state)
+    when 'upsert_trunk'
+      return trunk_operation_for_state(operation_attrs, desired_state)
     when 'upsert_connection_credentials'
       return operation_attrs.merge(payload: connection_credentials_payload(desired_state))
     when 'upsert_agent_credentials'
@@ -193,6 +200,22 @@ class Telephony::VirtualPbx::RemoteProvisioner
     attrs.merge(path: "/telephony/numbers/#{CGI.escape(refs[:number_ref].to_s)}")
   end
 
+  def trunk_operation_for_state(operation_attrs, desired_state)
+    refs = (desired_state[:refs] || {}).with_indifferent_access
+    connection = (desired_state[:connection] || {}).with_indifferent_access
+    credentials_ref = connection[:fonoster_credentials_ref].presence ||
+                      connection[:credentials_ref].presence ||
+                      refs[:credentials_ref].presence
+    payload = (operation_attrs[:payload] || {}).with_indifferent_access
+    payload[:credentialsRef] = credentials_ref if credentials_ref.present?
+    payload[:outboundCredentialsRef] = credentials_ref if credentials_ref.present?
+
+    attrs = operation_attrs.merge(payload: payload)
+    return attrs if refs[:trunk_ref].blank?
+
+    attrs.merge(path: "/telephony/trunks/#{CGI.escape(refs[:trunk_ref].to_s)}")
+  end
+
   def connection_credentials_payload(desired_state)
     state = desired_state.with_indifferent_access
     connection = (state[:connection] || {}).with_indifferent_access
@@ -202,7 +225,14 @@ class Telephony::VirtualPbx::RemoteProvisioner
       ref: credentials_ref,
       name: connection[:name].presence || state[:name].presence || credentials_ref,
       username: connection[:username],
-      password: connection[:password]
+      password: connection[:password],
+      metadata: {
+        managed_by: 'onelink',
+        onelink_account_id: state[:account_id],
+        onelink_inbox_id: state[:inbox_id],
+        provider_kind: state[:provider_kind],
+        resource_kind: 'provider_connection_credentials'
+      }.compact
     }.compact
   end
 
@@ -272,6 +302,8 @@ class Telephony::VirtualPbx::RemoteProvisioner
     return if remote_ref.blank?
 
     case operation_attrs[:key].to_s
+    when 'upsert_connection_credentials'
+      apply_remote_connection_credentials_ref_to_state!(desired_state, remote_ref)
     when 'upsert_agent_credentials'
       apply_remote_profile_credentials_ref_to_state!(desired_state, operation_attrs, remote_ref)
     when 'upsert_trunk'
@@ -285,6 +317,14 @@ class Telephony::VirtualPbx::RemoteProvisioner
     when 'upsert_agent'
       apply_remote_agent_ref_to_state!(desired_state, operation_attrs, remote_ref)
     end
+  end
+
+  def apply_remote_connection_credentials_ref_to_state!(desired_state, remote_ref)
+    desired_state[:refs] ||= {}
+    desired_state[:refs][:credentials_ref] = remote_ref
+    desired_state[:connection] ||= {}
+    desired_state[:connection][:credentials_ref] = remote_ref
+    desired_state[:connection][:fonoster_credentials_ref] = remote_ref
   end
 
   def apply_remote_profile_credentials_ref_to_state!(desired_state, operation_attrs, remote_ref)
