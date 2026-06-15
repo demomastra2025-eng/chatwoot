@@ -24,7 +24,7 @@ const WIDTH_CONFIG = Object.freeze({
     SHORT: 8, // For labels <= 5 chars
     LONG: 6, // For labels > 5 chars
   },
-  BASE_WIDTH: 24, // marker + gap
+  BASE_WIDTH: 18, // 8px marker + gap
   THRESHOLD: 5, // character length threshold
 });
 
@@ -89,9 +89,9 @@ const updateVisibleLabels = () => {
         <div
           v-if="labelMarkerType(label) === 'color'"
           :style="{ backgroundColor: labelMarkerColor(label) }"
-          class="size-3 rounded-full flex-shrink-0"
+          class="size-2 rounded-full flex-shrink-0"
         />
-        <span v-else class="flex-shrink-0 text-base leading-none">
+        <span v-else class="flex-shrink-0 text-xl leading-none">
           {{ labelMarkerEmoji(label) }}
         </span>
         <span

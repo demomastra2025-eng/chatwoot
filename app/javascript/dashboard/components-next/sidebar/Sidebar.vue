@@ -1013,13 +1013,13 @@ const menuItems = computed(() => {
                       badge: labelUnreadCount(label.title),
                       iconClass:
                         labelMarkerType(label) === 'emoji'
-                          ? '!size-8 ltr:mr-1 rtl:ml-1'
+                          ? '!size-5 ltr:mr-1 rtl:ml-1'
                           : '',
                       icon: h('span', {
                         class:
                           labelMarkerType(label) === 'emoji'
-                            ? 'text-4xl leading-none'
-                            : 'size-[32px] rounded-sm',
+                            ? 'text-xl leading-none'
+                            : 'size-2 rounded-sm',
                         style:
                           labelMarkerType(label) === 'emoji'
                             ? undefined
@@ -1230,13 +1230,13 @@ const menuItems = computed(() => {
                     badge: label.contacts_count,
                     iconClass:
                       labelMarkerType(label) === 'emoji'
-                        ? '!size-8 ltr:mr-1 rtl:ml-1'
+                        ? '!size-5 ltr:mr-1 rtl:ml-1'
                         : '',
                     icon: h('span', {
                       class:
                         labelMarkerType(label) === 'emoji'
-                          ? 'text-4xl leading-none'
-                          : 'size-[32px] rounded-sm',
+                          ? 'text-xl leading-none'
+                          : 'size-2 rounded-sm',
                       style:
                         labelMarkerType(label) === 'emoji'
                           ? undefined

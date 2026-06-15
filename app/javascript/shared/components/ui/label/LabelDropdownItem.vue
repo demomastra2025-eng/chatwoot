@@ -46,12 +46,12 @@ export default {
       @click="onClick"
     >
       <div class="flex items-center min-w-0 gap-2">
-        <span v-if="emoji" class="flex-shrink-0 text-3xl leading-none">
+        <span v-if="emoji" class="flex-shrink-0 text-xl leading-none">
           {{ emoji }}
         </span>
         <div
           v-else-if="color"
-          class="size-6 flex-shrink-0 rounded-full outline outline-1 outline-n-weak"
+          class="size-2 flex-shrink-0 rounded-full outline outline-1 outline-n-weak"
           :style="{ backgroundColor: color }"
         />
         <span

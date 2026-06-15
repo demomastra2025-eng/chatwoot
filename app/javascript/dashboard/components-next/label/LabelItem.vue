@@ -39,10 +39,10 @@ const handleMouseEnter = () => {
   >
     <div
       v-if="labelMarkerType(label) === 'color'"
-      class="w-4 h-4 m-1 rounded-sm"
+      class="w-2 h-2 m-1 rounded-sm"
       :style="{ backgroundColor: labelMarkerColor(label) }"
     />
-    <span v-else class="m-0.5 text-3xl leading-none">
+    <span v-else class="m-0.5 text-xl leading-none">
       {{ labelMarkerEmoji(label) }}
     </span>
     <span class="text-sm text-n-slate-12 ltr:mr-px rtl:ml-px">

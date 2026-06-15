@@ -164,13 +164,13 @@ onBeforeMount(() => {
                 <div class="flex items-center">
                   <span
                     v-if="labelMarkerType(label) === 'emoji'"
-                    class="ltr:mr-2 rtl:ml-2 text-4xl leading-none"
+                    class="ltr:mr-2 rtl:ml-2 text-xl leading-none"
                   >
                     {{ labelMarkerEmoji(label) }}
                   </span>
                   <span
                     v-else
-                    class="w-8 h-8 ltr:mr-2 rtl:ml-2 border border-solid rounded border-n-weak"
+                    class="w-2 h-2 ltr:mr-2 rtl:ml-2 border border-solid rounded border-n-weak"
                     :style="{ backgroundColor: labelMarkerColor(label) }"
                   />
                   <span

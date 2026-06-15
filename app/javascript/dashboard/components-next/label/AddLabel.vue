@@ -95,13 +95,13 @@ const handleCreateLabel = () => {
           >
             <span
               v-if="item.thumbnail.emoji"
-              class="flex-shrink-0 text-3xl leading-none"
+              class="flex-shrink-0 text-xl leading-none"
             >
               {{ item.thumbnail.emoji }}
             </span>
             <span
               v-else
-              class="rounded-sm size-4 flex-shrink-0"
+              class="rounded-sm size-2 flex-shrink-0"
               :style="{ backgroundColor: item.thumbnail.color }"
             />
             <span class="min-w-0 flex-1 truncate text-sm">
