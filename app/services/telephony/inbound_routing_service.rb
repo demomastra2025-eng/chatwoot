@@ -735,6 +735,17 @@ class Telephony::InboundRoutingService
     normalize_phone_number(value) || value
   end
 
+  def normalize_target_number(value)
+    raw_value = value.to_s.strip
+    return if raw_value.blank?
+
+    dialable_value = raw_value.sub(/\Atel:/i, '')
+    dialable_value = dialable_value[/\A<?sip:([^@;>]+)/i, 1] || dialable_value
+    dialable_value = dialable_value.split(/[;?]/).first.to_s.strip
+
+    normalize_phone_number(dialable_value) || dialable_value
+  end
+
   def normalize_phone_number(value)
     Contacts::PhoneNumberNormalizer.normalize(value) ||
       Contacts::PhoneNumberNormalizer.normalize(value, default_country: 'KZ')
@@ -789,7 +800,8 @@ class Telephony::InboundRoutingService
   end
 
   def inbound_number
-    payload_value('ingress_number', 'ingressNumber', 'to_number', 'toNumber', 'to')
+    value = payload_value('ingress_number', 'ingressNumber', 'to_number', 'toNumber', 'to')
+    normalize_target_number(value) || value
   end
 
   def metadata_value(*keys)

@@ -60,6 +60,87 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('fallback_app_ref')
   end
 
+  it 'does not route stale browser webphone SIP profiles before browser registration' do
+    agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: agent)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: agent,
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      internal_extension: '504',
+      agent_ref: 'profile-stale-browser-504',
+      fonoster_agent_ref: 'fonoster-profile-stale-browser-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz'
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-stale-browser-webphone',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****9988'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'operator_unavailable'
+    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
+  end
+
+  it 'resolves tel URL target numbers before routing inbound calls' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      agent_aor: 'sip:1001@example.test',
+      enabled: true
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-tel-url-target',
+             to: "tel:#{voice_channel.phone_number}",
+             caller_number: '+15559999997',
+             diagnostic: true
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'agent_aor' => 'sip:1001@example.test',
+      'reason' => 'operator_route',
+      'number_ref' => number_binding.number_ref,
+      'inbox_id' => voice_inbox.id,
+      'account_id' => account.id
+    )
+  end
+
   it 'routes to the configured legacy operator when local browser presence is stale' do
     agent_binding = create(
       :telephony_agent_binding,

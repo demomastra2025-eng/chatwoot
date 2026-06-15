@@ -132,6 +132,7 @@ class Telephony::SipProfile < ApplicationRecord
   def registered_for_routing?
     return false unless enabled?
     return false if status.in?(%w[disabled deleting failed])
+    return browser_registered? if availability_mode == 'browser_webphone'
 
     true
   end
