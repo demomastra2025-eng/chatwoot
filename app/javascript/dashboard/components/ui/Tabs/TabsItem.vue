@@ -52,7 +52,7 @@ const onTabClick = event => {
         active
           ? 'text-n-blue-11 after:bg-n-blue-11 after:opacity-100'
           : 'text-n-slate-11 after:bg-transparent after:opacity-0',
-        isCompact ? 'py-2.5' : '!text-base py-3',
+        isCompact ? 'py-1.5' : '!text-base py-3',
       ]"
       @click="onTabClick"
     >

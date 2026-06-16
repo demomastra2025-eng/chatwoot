@@ -1001,7 +1001,7 @@ export default {
             {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL') }}
             <input
               v-model="virtualPbxForm.channelName"
-              class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+              class="rounded-lg border border-n-weak py-2 text-sm"
               :disabled="isVirtualPbxReadOnly"
               type="text"
             />
@@ -1012,7 +1012,7 @@ export default {
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
               <select
                 v-model="virtualPbxForm.providerKind"
-                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                class="rounded-lg border border-n-weak py-2 text-sm"
                 :disabled="isVirtualPbxReadOnly"
               >
                 <option
@@ -1028,7 +1028,7 @@ export default {
               {{ $t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL') }}
               <input
                 v-model="virtualPbxForm.displayPhoneNumber"
-                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                class="rounded-lg border border-n-weak py-2 text-sm"
                 :disabled="isVirtualPbxReadOnly"
                 type="text"
               />
@@ -1063,7 +1063,7 @@ export default {
                   }}
                   <select
                     v-model.number="profile.userId"
-                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
                   >
                     <option disabled value="">
@@ -1091,7 +1091,7 @@ export default {
                   }}
                   <input
                     v-model="profile.internalExtension"
-                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
                     type="text"
                     :placeholder="
@@ -1110,7 +1110,7 @@ export default {
                   }}
                   <input
                     v-model="profile.sipUsername"
-                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
                     type="text"
                     :placeholder="
@@ -1129,7 +1129,7 @@ export default {
                   }}
                   <input
                     v-model="profile.sipPassword"
-                    class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                    class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
                     type="password"
                     autocomplete="new-password"
@@ -1157,7 +1157,7 @@ export default {
 
             <button
               type="button"
-              class="mt-3 rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12"
+              class="mt-3 rounded-lg border border-n-weak py-2 text-sm text-n-slate-12"
               :disabled="isVirtualPbxReadOnly"
               @click="addVirtualPbxProfile"
             >
@@ -1170,7 +1170,7 @@ export default {
               {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
               <select
                 v-model="virtualPbxForm.routingMode"
-                class="rounded-lg border border-n-weak px-3 py-2 text-sm"
+                class="rounded-lg border border-n-weak py-2 text-sm"
                 :disabled="isVirtualPbxReadOnly"
               >
                 <option

@@ -374,7 +374,7 @@ const togglePinnedConversation = async nextPinnedState => {
       </Avatar>
     </div>
     <div
-      class="px-0 py-3 border-b group-hover:border-transparent flex-1 border-n-slate-3 min-w-0"
+      class="px-0 py-2 border-b group-hover:border-transparent flex-1 border-n-slate-3 min-w-0"
     >
       <div
         v-if="showMetaSection"
