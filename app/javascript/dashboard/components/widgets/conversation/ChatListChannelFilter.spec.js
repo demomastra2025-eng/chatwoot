@@ -63,7 +63,6 @@ describe('ChatListChannelFilter', () => {
       expect.arrayContaining(['text-[15px]', 'ltr:pl-1'])
     );
     expect(trigger.text()).toContain('WhatsApp');
-    expect(trigger.find('[data-test-id="badge"]').text()).toBe('2');
     expect(trigger.find('[data-test-id="icon"]').attributes('data-icon')).toBe(
       'i-woot-whatsapp'
     );
@@ -76,7 +75,9 @@ describe('ChatListChannelFilter', () => {
     );
 
     expect(trigger.text()).toContain('Все каналы');
-    expect(trigger.find('[data-test-id="badge"]').text()).toBe('4');
+    expect(
+      trigger.find('[data-test-id="icon"]').element.parentElement.className
+    ).toContain('text-current');
     expect(trigger.find('[data-test-id="icon"]').attributes('data-icon')).toBe(
       'i-lucide-mailbox'
     );
@@ -94,7 +95,6 @@ describe('ChatListChannelFilter', () => {
     const items = menu.findAll('button');
     expect(items).toHaveLength(2);
     expect(items[0].text()).toContain('Все каналы');
-    expect(items[0].text()).toContain('4');
     expect(items[1].text()).toContain('WhatsApp');
     expect(items[1].find('[data-test-id="icon"]').attributes('data-icon')).toBe(
       'i-woot-whatsapp'

@@ -45,6 +45,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  compactLabel: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const router = useRouter();
@@ -111,7 +115,7 @@ const handleRootClick = async () => {
     :is="componentType"
     :to="componentType === 'router-link' ? to : undefined"
     :title="label"
-    class="group flex items-center gap-2 px-2 py-1.5 rounded-lg h-8 select-none min-w-0"
+    class="sidebar-group-separator group flex items-center gap-2 px-2 py-1.5 rounded-lg h-8 select-none min-w-0"
     :class="{
       'text-n-slate-10 pointer-events-none': !to && !active,
       'text-n-slate-11 hover:bg-n-alpha-2 cursor-pointer': to && !active,
@@ -122,9 +126,10 @@ const handleRootClick = async () => {
   >
     <Icon v-if="icon" :icon="icon" class="size-4" />
     <span
-      class="text-sm leading-5 flex-grow min-w-0 truncate"
+      class="sidebar-group-separator-label text-sm leading-5 flex-grow min-w-0 truncate"
       :class="{
         'font-medium text-n-slate-12': active && !actionLabel,
+        '!text-xs': compactLabel,
       }"
     >
       {{ label }}
@@ -145,7 +150,7 @@ const handleRootClick = async () => {
         v-for="(action, index) in actionItemsToRender"
         :key="action.title || action.icon || index"
         type="button"
-        class="inline-flex flex-shrink-0 items-center justify-center rounded-md p-1 transition-all duration-150 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto hover:bg-n-alpha-2 hover:text-n-slate-12"
+        class="inline-flex h-7 w-8 flex-shrink-0 items-center justify-center rounded-md transition-all duration-150 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto hover:bg-n-alpha-2 hover:text-n-slate-12"
         :class="{
           'bg-n-alpha-2 text-n-slate-12': isActionActive(action),
           'text-n-slate-11': !isActionActive(action),
@@ -153,7 +158,7 @@ const handleRootClick = async () => {
         :title="action.title"
         @click.prevent.stop="handleActionClick(action)"
       >
-        <Icon :icon="action.icon" class="size-3.5" />
+        <Icon :icon="action.icon" class="size-4" />
       </button>
     </div>
   </component>

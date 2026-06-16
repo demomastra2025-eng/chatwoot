@@ -1,7 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
 import SidebarGroupSeparator from './SidebarGroupSeparator.vue';
+import Icon from 'next/icon/Icon.vue';
 import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
 
 import { useSidebarContext } from './provider';
@@ -21,9 +23,12 @@ const props = defineProps({
   actionTitle: { type: String, default: '' },
   actionIcon: { type: [Object, String], default: '' },
   actionItems: { type: Array, default: () => [] },
+  footerActionItems: { type: Array, default: () => [] },
+  compactHeader: { type: Boolean, default: false },
 });
 
 const { isAllowed } = useSidebarContext();
+const router = useRouter();
 const scrollableContainer = ref(null);
 
 const accessibleItems = computed(() =>
@@ -44,6 +49,17 @@ const scrollEnd = ref(false);
 
 const getChildDisplayLabel = child =>
   getSidebarChildDisplayLabel(child, props.isExpanded);
+
+const handleFooterActionClick = async action => {
+  if (action.handler) {
+    action.handler();
+    return;
+  }
+
+  if (action.to) {
+    await router.push(action.to);
+  }
+};
 
 // set scrollEnd to true when the scroll reaches the end
 useEventListener(scrollableContainer, 'scroll', () => {
@@ -66,6 +82,7 @@ useEventListener(scrollableContainer, 'scroll', () => {
     :action-title="actionTitle"
     :action-icon="actionIcon"
     :action-items="actionItems"
+    :compact-label="compactHeader"
     class="my-1"
   />
   <ul
@@ -89,6 +106,18 @@ useEventListener(scrollableContainer, 'scroll', () => {
         :label="getChildDisplayLabel(child)"
         :active="activeChildNames.includes(child.name)"
       />
+      <button
+        v-for="(action, index) in footerActionItems"
+        v-show="isExpanded"
+        :key="action.title || action.icon || index"
+        type="button"
+        class="mt-1 flex h-7 w-full items-center gap-1.5 rounded-lg border border-dashed border-n-weak px-1.5 text-xs text-n-slate-10 hover:border-n-slate-7 hover:bg-n-alpha-1 hover:text-n-slate-12"
+        :title="action.title"
+        @click.prevent.stop="handleFooterActionClick(action)"
+      >
+        <Icon v-if="action.icon" :icon="action.icon" class="size-3.5" />
+        <span class="min-w-0 truncate">{{ action.title }}</span>
+      </button>
     </div>
     <div
       v-if="isScrollable && isExpanded"

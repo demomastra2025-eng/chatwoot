@@ -197,6 +197,18 @@ export default {
       }
       return isCommunicationChannelReplyable(this.activeReplyChannel);
     },
+    selectedChannelCanSendText() {
+      if (!this.isCommunicationThreadConversation) {
+        return this.selectedChannelCanReply;
+      }
+
+      const channel = this.activeReplyChannel;
+      if (!channel) return false;
+      if (Object.prototype.hasOwnProperty.call(channel, 'can_send_text')) {
+        return Boolean(channel.can_send_text);
+      }
+      return this.selectedChannelCanReply;
+    },
     shouldShowReplyToMessage() {
       return (
         this.inReplyTo?.id &&
@@ -361,9 +373,10 @@ export default {
     },
     isCommunicationVoiceReplyAction() {
       return (
-        this.isCommunicationThreadConversation &&
         !this.isOnPrivateNote &&
-        isCommunicationVoiceChannel(this.activeReplyChannel)
+        (this.isCommunicationThreadConversation
+          ? isCommunicationVoiceChannel(this.activeReplyChannel)
+          : this.isAVoiceChannel)
       );
     },
     replyButtonLabel() {
@@ -527,7 +540,7 @@ export default {
       return (
         (this.isAWhatsAppChannel || this.isAPIInbox) &&
         !this.isOnPrivateNote &&
-        !this.selectedChannelCanReply
+        !this.selectedChannelCanSendText
       );
     },
   },

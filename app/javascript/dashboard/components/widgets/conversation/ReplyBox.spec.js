@@ -81,16 +81,27 @@ describe('ReplyBox', () => {
     ).toBe(false);
   });
 
-  it('does not disable regular voice-channel conversations outside communication threads', () => {
+  it('keeps the text editor enabled for direct voice-channel conversations', () => {
     expect(
       ReplyBox.computed.isEditorDisabled.call({
-        isCommunicationVoiceReplyAction: false,
+        isCommunicationVoiceReplyAction: true,
         isAWhatsAppChannel: false,
         isAPIInbox: false,
         isOnPrivateNote: false,
         selectedChannelCanReply: true,
       })
     ).toBe(false);
+  });
+
+  it('treats direct voice-channel conversations as call actions', () => {
+    expect(
+      ReplyBox.computed.isCommunicationVoiceReplyAction.call({
+        isCommunicationThreadConversation: false,
+        isOnPrivateNote: false,
+        isAVoiceChannel: true,
+        activeReplyChannel: null,
+      })
+    ).toBe(true);
   });
 
   it('does not force direct voice-channel conversations into private note mode', () => {
@@ -124,6 +135,66 @@ describe('ReplyBox', () => {
         },
       })
     ).toBe(true);
+  });
+
+  it('keeps template-required WhatsApp channels actionable without allowing free-text input', () => {
+    const context = {
+      isCommunicationThreadConversation: true,
+      activeReplyChannel: {
+        channel: 'Channel::Whatsapp',
+        can_reply: false,
+        can_send_text: false,
+        requires_template: true,
+      },
+      isAWhatsAppChannel: true,
+      isAPIInbox: false,
+      isOnPrivateNote: false,
+    };
+
+    context.selectedChannelCanReply =
+      ReplyBox.computed.selectedChannelCanReply.call(context);
+    context.selectedChannelCanSendText =
+      ReplyBox.computed.selectedChannelCanSendText.call(context);
+
+    expect(context.selectedChannelCanReply).toBe(true);
+    expect(context.selectedChannelCanSendText).toBe(false);
+    expect(ReplyBox.computed.isEditorDisabled.call(context)).toBe(true);
+    expect(
+      ReplyBox.computed.showWhatsappTemplates.call({
+        inboxId: 143,
+        isPrivate: false,
+        $store: {
+          getters: {
+            'inboxes/getFilteredWhatsAppTemplates': inboxId =>
+              inboxId === 143 ? [{ name: 'approved_template' }] : [],
+          },
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('keeps WhatsApp text input enabled when the selected thread channel can send text', () => {
+    const context = {
+      isCommunicationThreadConversation: true,
+      activeReplyChannel: {
+        channel: 'Channel::Whatsapp',
+        can_reply: true,
+        can_send_text: true,
+        requires_template: false,
+      },
+      isAWhatsAppChannel: true,
+      isAPIInbox: false,
+      isOnPrivateNote: false,
+    };
+
+    context.selectedChannelCanReply =
+      ReplyBox.computed.selectedChannelCanReply.call(context);
+    context.selectedChannelCanSendText =
+      ReplyBox.computed.selectedChannelCanSendText.call(context);
+
+    expect(context.selectedChannelCanReply).toBe(true);
+    expect(context.selectedChannelCanSendText).toBe(true);
+    expect(ReplyBox.computed.isEditorDisabled.call(context)).toBe(false);
   });
 
   it('keeps reply mode when a selected communication-thread voice channel changes', () => {
@@ -183,6 +254,16 @@ describe('ReplyBox', () => {
         isCommunicationVoiceReplyAction: true,
         isCommunicationThreadConversation: true,
         activeReplyChannel: { channel: 'Channel::Voice' },
+      })
+    ).toBe('Позвонить');
+  });
+
+  it('uses call text without keyboard shortcut for direct voice-channel conversations', () => {
+    expect(
+      replyButtonLabel({
+        isCommunicationVoiceReplyAction: true,
+        isCommunicationThreadConversation: false,
+        isAVoiceChannel: true,
       })
     ).toBe('Позвонить');
   });

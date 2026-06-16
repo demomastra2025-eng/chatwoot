@@ -1,7 +1,7 @@
 <script setup>
 import { h, ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useRoute } from 'vue-router';
-import { provideSidebarContext, useSidebarResize } from './provider';
+import { useRoute, useRouter } from 'vue-router';
+import { provideSidebarContext } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { useUISettings } from 'dashboard/composables/useUISettings';
@@ -18,6 +18,7 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import SidebarGroup from './SidebarGroup.vue';
+import SidebarSecondaryColumn from './SidebarSecondaryColumn.vue';
 import SidebarProfileMenu from './SidebarProfileMenu.vue';
 import SidebarChangelogCard from './SidebarChangelogCard.vue';
 import SidebarChangelogButton from './SidebarChangelogButton.vue';
@@ -70,6 +71,7 @@ const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 
 const { accountScopedRoute, isOnChatwootCloud } = useAccount();
 const route = useRoute();
+const router = useRouter();
 const { checkPermissions } = usePolicy();
 const store = useStore();
 const searchShortcut = useKbd([`$mod`, 'k']);
@@ -79,29 +81,16 @@ const { uiSettings } = useUISettings();
 const isACustomBrandedInstance = useMapGetter(
   'globalConfig/isACustomBrandedInstance'
 );
-const isRTL = useMapGetter('accounts/isRTL');
 
 const { width: windowWidth } = useWindowSize();
 const isMobile = computed(() => windowWidth.value < 768);
+const DESKTOP_RAIL_WIDTH = 56;
+const DESKTOP_SECONDARY_COLUMN_WIDTH = 158;
 
 const accountId = useMapGetter('getCurrentAccountId');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
-
-const hasCrmDealSettings = computed(() => {
-  return isFeatureEnabledonAccount.value(
-    accountId.value,
-    FEATURE_FLAGS.CRM_DEALS
-  );
-});
-
-const hasCrmTaskSettings = computed(() => {
-  return isFeatureEnabledonAccount.value(
-    accountId.value,
-    FEATURE_FLAGS.CRM_TASKS
-  );
-});
 
 const hasSchedulingSettings = computed(() => {
   return isFeatureEnabledonAccount.value(
@@ -129,14 +118,6 @@ const hasCommunicationThreads = computed(() => {
     accountId.value,
     FEATURE_FLAGS.COMMUNICATION_THREADS
   );
-});
-
-const hasCrmSettingsAccess = computed(() => {
-  return checkPermissions([
-    'administrator',
-    'crm_settings_view',
-    'crm_settings_manage',
-  ]);
 });
 
 const hasAutomationRules = computed(() => {
@@ -209,25 +190,11 @@ const setExpandedItem = name => {
   expandedItem.value = expandedItem.value === name ? null : name;
 };
 
-const {
-  sidebarWidth,
-  isCollapsed,
-  setSidebarWidth,
-  saveWidth,
-  snapToCollapsed,
-  snapToExpanded,
-  COLLAPSED_THRESHOLD,
-} = useSidebarResize();
-
-// On mobile, sidebar is always expanded (flyout mode)
-const isEffectivelyCollapsed = computed(
-  () => !isMobile.value && isCollapsed.value
+const sidebarWidth = computed(() =>
+  isMobile.value ? 200 : DESKTOP_RAIL_WIDTH
 );
-
-// Resize handle logic
+const isEffectivelyCollapsed = computed(() => !isMobile.value);
 const isResizing = ref(false);
-const startX = ref(0);
-const startWidth = ref(0);
 
 provideSidebarContext({
   expandedItem,
@@ -236,56 +203,6 @@ provideSidebarContext({
   sidebarWidth,
   isResizing,
 });
-
-// Get clientX from mouse or touch event
-const getClientX = event =>
-  event.touches ? event.touches[0].clientX : event.clientX;
-
-const onResizeStart = event => {
-  isResizing.value = true;
-  startX.value = getClientX(event);
-  startWidth.value = sidebarWidth.value;
-  Object.assign(document.body.style, {
-    cursor: 'col-resize',
-    userSelect: 'none',
-  });
-  // Prevent default to avoid scrolling on touch
-  event.preventDefault();
-};
-
-const onResizeMove = event => {
-  if (!isResizing.value) return;
-
-  const delta = isRTL.value
-    ? startX.value - getClientX(event)
-    : getClientX(event) - startX.value;
-  setSidebarWidth(startWidth.value + delta);
-};
-
-const onResizeEnd = () => {
-  if (!isResizing.value) return;
-
-  isResizing.value = false;
-  Object.assign(document.body.style, { cursor: '', userSelect: '' });
-
-  // Snap to collapsed state if below threshold
-  if (sidebarWidth.value < COLLAPSED_THRESHOLD) {
-    snapToCollapsed();
-  } else {
-    saveWidth();
-  }
-};
-
-const onResizeHandleDoubleClick = () => {
-  if (isCollapsed.value) snapToExpanded();
-  else snapToCollapsed();
-};
-
-// Support both mouse and touch events
-useEventListener(document, 'mousemove', onResizeMove);
-useEventListener(document, 'mouseup', onResizeEnd);
-useEventListener(document, 'touchmove', onResizeMove, { passive: false });
-useEventListener(document, 'touchend', onResizeEnd);
 
 const inboxes = useMapGetter('inboxes/getInboxes');
 const labels = useMapGetter('labels/getLabelsOnSidebar');
@@ -789,6 +706,14 @@ const labelSidebarActionItems = computed(() => [
   },
 ]);
 
+const labelSidebarSettingsActionItems = computed(() =>
+  labelSidebarActionItems.value.filter(action => action.to)
+);
+
+const labelSidebarFooterActionItems = computed(() =>
+  labelSidebarActionItems.value.filter(action => action.handler)
+);
+
 const activeOnForEmployeeTab = routeName =>
   employeeSettingsTabs.find(tab => tab.routeName === routeName)?.activeOn || [
     routeName,
@@ -798,6 +723,7 @@ const buildMyCompanyMenuItem = () => ({
   name: 'MyCompany',
   label: t('SIDEBAR.MY_COMPANY'),
   icon: 'i-lucide-briefcase-business',
+  defaultChildName: 'Workspace',
   activeOn: [
     ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
     ...settingsInboxRouteNames,
@@ -910,6 +836,7 @@ const menuItems = computed(() => {
         name: 'Conversation',
         label: t('SIDEBAR.CONVERSATIONS'),
         icon: 'i-lucide-message-circle',
+        defaultChildName: 'Open',
         to: accountScopedRoute(
           hasCommunicationThreads.value
             ? 'communication_threads_dashboard'
@@ -1001,7 +928,8 @@ const menuItems = computed(() => {
                   visibilityKey: 'Conversation:Labels',
                   label: t('SIDEBAR.LABELS'),
                   icon: 'i-lucide-tag',
-                  actionItems: labelSidebarActionItems.value,
+                  actionItems: labelSidebarSettingsActionItems.value,
+                  footerActionItems: labelSidebarFooterActionItems.value,
                   to: withConversationStatus('home'),
                   suppressExactPathActive: true,
                   activeOn: allLabelsActiveOn,
@@ -1011,15 +939,14 @@ const menuItems = computed(() => {
                       name: `${label.title}-${label.id}`,
                       label: labelDisplayTitle(label),
                       badge: labelUnreadCount(label.title),
+                      compactIconGap: labelMarkerType(label) === 'emoji',
                       iconClass:
-                        labelMarkerType(label) === 'emoji'
-                          ? '!size-5 ltr:mr-1 rtl:ml-1'
-                          : '',
+                        labelMarkerType(label) === 'emoji' ? '!size-5' : '',
                       icon: h('span', {
                         class:
                           labelMarkerType(label) === 'emoji'
                             ? 'text-xl leading-none'
-                            : 'size-2 rounded-sm',
+                            : 'size-3 rounded-sm',
                         style:
                           labelMarkerType(label) === 'emoji'
                             ? undefined
@@ -1043,23 +970,26 @@ const menuItems = computed(() => {
         name: 'Campaigns',
         label: t('SIDEBAR.OUTBOUND'),
         icon: 'i-lucide-send',
+        defaultChildName: 'Touches',
         children: [
-          {
-            name: 'Templates',
-            visibilityKey: 'Campaigns:Templates',
-            label: t('SIDEBAR.TEMPLATES'),
-            activeOn: ['outbound_templates_index'],
-            to: accountScopedRoute('outbound_templates_index'),
-          },
           {
             name: 'Touches',
             visibilityKey: 'Campaigns:Touches',
             label: t('SIDEBAR.TOUCHES'),
+            icon: 'i-lucide-send',
             activeOn: [
               'outbound_touches_index',
               'outbound_broadcasts_personal_index',
             ],
             to: accountScopedRoute('outbound_touches_index'),
+          },
+          {
+            name: 'Templates',
+            visibilityKey: 'Campaigns:Templates',
+            label: t('SIDEBAR.TEMPLATES'),
+            icon: 'i-lucide-file-text',
+            activeOn: ['outbound_templates_index'],
+            to: accountScopedRoute('outbound_templates_index'),
           },
           ...(checkPermissions(['administrator'])
             ? [
@@ -1067,6 +997,7 @@ const menuItems = computed(() => {
                   name: 'Mass broadcasts',
                   visibilityKey: 'Campaigns:MassBroadcasts',
                   label: t('SIDEBAR.MASS_BROADCASTS'),
+                  icon: 'i-lucide-radio-tower',
                   activeOn: ['outbound_broadcasts_index'],
                   to: accountScopedRoute('outbound_broadcasts_index'),
                 },
@@ -1076,6 +1007,7 @@ const menuItems = computed(() => {
             name: 'Touch plans',
             visibilityKey: 'Campaigns:TouchPlans',
             label: t('SIDEBAR.TOUCH_PLANS'),
+            icon: 'i-lucide-route',
             activeOn: ['outbound_touch_plans_index'],
             to: accountScopedRoute('outbound_touch_plans_index'),
           },
@@ -1084,7 +1016,8 @@ const menuItems = computed(() => {
       {
         name: 'Captain',
         icon: 'i-woot-captain',
-        label: t('SIDEBAR.CAPTAIN'),
+        label: 'AI',
+        defaultChildName: 'Profile',
         activeOn: ['captain_assistants_create_index'],
         ...(checkPermissions(['administrator'])
           ? {
@@ -1099,6 +1032,7 @@ const menuItems = computed(() => {
             name: 'Profile',
             visibilityKey: 'Captain:Settings',
             label: t('PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
+            icon: 'i-lucide-id-card',
             activeOn: ['captain_assistants_settings_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_settings_index',
@@ -1108,6 +1042,7 @@ const menuItems = computed(() => {
             name: 'Prompts',
             visibilityKey: 'Captain:Prompts',
             label: t('SIDEBAR.CAPTAIN_PROMPTS'),
+            icon: 'i-lucide-message-square-text',
             activeOn: [
               'captain_assistants_prompts_index',
               'captain_assistants_scenarios_index',
@@ -1123,6 +1058,7 @@ const menuItems = computed(() => {
             name: 'Tools',
             visibilityKey: 'Captain:Tools',
             label: t('SIDEBAR.CAPTAIN_TOOLS'),
+            icon: 'i-lucide-wrench',
             activeOn: ['captain_tools_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_tools_index',
@@ -1132,6 +1068,7 @@ const menuItems = computed(() => {
             name: 'Observability',
             visibilityKey: 'Captain:Observability',
             label: t('SIDEBAR.CAPTAIN_OBSERVABILITY'),
+            icon: 'i-lucide-activity',
             activeOn: ['captain_observability_index'],
             to: accountScopedRoute('captain_observability_index'),
           },
@@ -1141,6 +1078,7 @@ const menuItems = computed(() => {
                   name: 'Evaluations',
                   visibilityKey: 'Captain:Evaluations',
                   label: t('SIDEBAR.CAPTAIN_EVALUATIONS'),
+                  icon: 'i-lucide-clipboard-check',
                   activeOn: ['captain_evaluations_index'],
                   to: accountScopedRoute('captain_evaluations_index'),
                 },
@@ -1150,6 +1088,7 @@ const menuItems = computed(() => {
             name: 'Knowledge Base',
             visibilityKey: 'Captain:FAQs',
             label: t('SIDEBAR.CAPTAIN_RESPONSES'),
+            icon: 'i-lucide-book-open',
             activeOn: [
               'captain_assistants_responses_index',
               'captain_assistants_responses_pending',
@@ -1165,6 +1104,7 @@ const menuItems = computed(() => {
         name: 'Contacts',
         label: t('SIDEBAR.CONTACTS'),
         icon: 'i-lucide-square-user-round',
+        defaultChildName: 'All Contacts',
         actionTitle: t('SIDEBAR.SETTINGS'),
         actionIcon: hasContactSettingsAccess.value ? 'i-lucide-settings-2' : '',
         actionActiveOn: [
@@ -1223,20 +1163,20 @@ const menuItems = computed(() => {
                   visibilityKey: 'Contacts:Tagged',
                   icon: 'i-lucide-tag',
                   label: t('SIDEBAR.TAGGED_WITH'),
-                  actionItems: labelSidebarActionItems.value,
+                  actionItems: labelSidebarSettingsActionItems.value,
+                  footerActionItems: labelSidebarFooterActionItems.value,
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: labelDisplayTitle(label),
                     badge: label.contacts_count,
+                    compactIconGap: labelMarkerType(label) === 'emoji',
                     iconClass:
-                      labelMarkerType(label) === 'emoji'
-                        ? '!size-5 ltr:mr-1 rtl:ml-1'
-                        : '',
+                      labelMarkerType(label) === 'emoji' ? '!size-5' : '',
                     icon: h('span', {
                       class:
                         labelMarkerType(label) === 'emoji'
                           ? 'text-xl leading-none'
-                          : 'size-2 rounded-sm',
+                          : 'size-3 rounded-sm',
                       style:
                         labelMarkerType(label) === 'emoji'
                           ? undefined
@@ -1267,14 +1207,6 @@ const menuItems = computed(() => {
               name: 'Companies',
               label: t('SIDEBAR.COMPANIES'),
               icon: 'i-lucide-building-2',
-              actionTitle: t('SIDEBAR.SETTINGS'),
-              actionIcon: hasLegacyCustomAttributes.value
-                ? 'i-lucide-settings-2'
-                : '',
-              actionActiveOn: ['company_fields_settings_index'],
-              actionTo: hasLegacyCustomAttributes.value
-                ? accountScopedRoute('company_fields_settings_index')
-                : '',
               to: accountScopedRoute(
                 'companies_dashboard_index',
                 {},
@@ -1283,6 +1215,7 @@ const menuItems = computed(() => {
               activeOn: [
                 'companies_dashboard_index',
                 'companies_dashboard_show',
+                'company_fields_settings_index',
               ],
             },
           ]
@@ -1292,43 +1225,28 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.PIPELINES'),
         icon: 'i-lucide-filter',
         to: accountScopedRoute('crm_deals_index'),
-        actionTitle: t('SIDEBAR.SETTINGS'),
-        actionIcon:
-          hasCrmDealSettings.value && hasCrmSettingsAccess.value
-            ? 'i-lucide-settings-2'
-            : '',
-        actionActiveOn: [
+        activeOn: [
+          'crm_deals_index',
           'crm_settings_index',
           'crm_deal_fields_settings_index',
         ],
-        actionTo:
-          hasCrmDealSettings.value && hasCrmSettingsAccess.value
-            ? accountScopedRoute('crm_settings_index')
-            : '',
       },
       {
         name: 'CRM Tasks',
         label: t('SIDEBAR.CRM_TASKS'),
         icon: 'i-lucide-list-todo',
         to: accountScopedRoute('crm_tasks_index'),
-        actionTitle: t('SIDEBAR.SETTINGS'),
-        actionIcon:
-          hasCrmTaskSettings.value && hasCrmSettingsAccess.value
-            ? 'i-lucide-settings-2'
-            : '',
-        actionActiveOn: [
+        activeOn: [
+          'crm_tasks_index',
           'crm_task_settings_index',
           'crm_task_fields_settings_index',
         ],
-        actionTo:
-          hasCrmTaskSettings.value && hasCrmSettingsAccess.value
-            ? accountScopedRoute('crm_task_settings_index')
-            : '',
       },
       {
         name: 'Scheduling',
         label: t('SIDEBAR.SCHEDULING'),
         icon: 'i-lucide-calendar-clock',
+        defaultChildName: 'Scheduling Calendar',
         actionTitle: t('SIDEBAR.SETTINGS'),
         actionIcon:
           hasSchedulingSettings.value && checkPermissions(['administrator'])
@@ -1381,6 +1299,7 @@ const menuItems = computed(() => {
               name: 'SMM',
               label: t('SIDEBAR.SMM'),
               icon: 'i-lucide-megaphone',
+              defaultChildName: 'SMM Calendar',
               children: [
                 {
                   name: 'SMM Calendar',
@@ -1426,6 +1345,7 @@ const menuItems = computed(() => {
         name: 'Reports',
         label: t('SIDEBAR.REPORTS'),
         icon: 'i-lucide-chart-spline',
+        defaultChildName: 'Report Overview',
         children: [
           {
             name: 'Report Overview',
@@ -1472,6 +1392,7 @@ const menuItems = computed(() => {
         name: 'Portals',
         label: t('SIDEBAR.HELP_CENTER.TITLE'),
         icon: 'i-lucide-library-big',
+        defaultChildName: 'Articles',
         children: [
           {
             name: 'Articles',
@@ -1519,10 +1440,12 @@ const menuItems = computed(() => {
           },
         ],
       },
+      ...(myCompanyMenuItem.value ? [myCompanyMenuItem.value] : []),
       {
         name: 'Settings',
         label: t('SIDEBAR.ADDITIONAL'),
         icon: 'i-lucide-ellipsis-vertical',
+        defaultChildName: 'Settings Automation',
         children: [
           ...(hasAutomationRules.value
             ? [
@@ -1570,6 +1493,126 @@ const menuItems = computed(() => {
     uiSettings.value
   );
 });
+
+const resolvePath = to => {
+  if (to) return router.resolve(to)?.path || '/';
+  return '/';
+};
+
+const navigableChildrenFor = item => {
+  return (
+    item.children?.flatMap(child => {
+      if (!child.children) return child;
+      return child.to ? [child, ...child.children] : child.children;
+    }) || []
+  );
+};
+
+const queryMatches = child => {
+  const childQuery = child?.to?.query || {};
+
+  return Object.entries(childQuery).every(([key, value]) => {
+    const routeValue =
+      key === 'status'
+        ? (route.query[key] ?? 'open')
+        : (route.query[key] ?? '');
+
+    return String(routeValue) === String(value);
+  });
+};
+
+const paramsMatch = child => {
+  const childParams = child?.to?.params || {};
+  const routeParams = route.params || {};
+  const inboxIdAliases = {
+    inbox_id: 'inboxId',
+    inboxId: 'inbox_id',
+  };
+
+  return Object.keys(childParams).every(key => {
+    const childParam = String(childParams[key]);
+    const routeParam = String(routeParams[key] || '');
+    const routeParamAlias = routeParams[inboxIdAliases[key]] || '';
+
+    if (key === 'navigationPath') {
+      return (
+        childParam === String(route.name || '') || childParam === routeParam
+      );
+    }
+
+    return (
+      childParam === routeParam ||
+      (routeParamAlias && childParam === String(routeParamAlias))
+    );
+  });
+};
+
+const matchesChildRoute = child => {
+  if (!child?.to) {
+    return false;
+  }
+
+  if (route.path === resolvePath(child.to) && queryMatches(child)) {
+    return !child.suppressExactPathActive;
+  }
+
+  if (child.activeOn?.includes(route.name)) {
+    return paramsMatch(child) && queryMatches(child);
+  }
+
+  if (Array.isArray(child.activeOn) && child.activeOn.length > 0) {
+    return false;
+  }
+
+  return route.path.startsWith(resolvePath(child.to)) && queryMatches(child);
+};
+
+const activeChildNamesFor = item =>
+  navigableChildrenFor(item)
+    .filter(matchesChildRoute)
+    .map(child => child.name);
+
+const hasSecondaryColumn = item => !!item?.children?.length;
+
+const matchesMenuItemRoute = item => {
+  if (!item?.to) return false;
+  if (route.path === resolvePath(item.to)) return true;
+  return item.activeOn?.includes(route.name);
+};
+
+const selectedDesktopSidebarItem = computed(() => {
+  const selectedItem = menuItems.value.find(
+    item => item.name === expandedItem.value && hasSecondaryColumn(item)
+  );
+
+  if (selectedItem) return selectedItem;
+
+  return (
+    menuItems.value.find(
+      item =>
+        hasSecondaryColumn(item) &&
+        (activeChildNamesFor(item).length > 0 || matchesMenuItemRoute(item))
+    ) || null
+  );
+});
+
+const selectedDesktopSidebarActiveChildNames = computed(() => {
+  if (!selectedDesktopSidebarItem.value) return [];
+  return activeChildNamesFor(selectedDesktopSidebarItem.value);
+});
+
+const showDesktopSecondaryColumn = computed(
+  () => !isMobile.value && !!selectedDesktopSidebarItem.value
+);
+
+const desktopSidebarWidth = computed(() => {
+  if (isMobile.value) return undefined;
+
+  return (
+    DESKTOP_RAIL_WIDTH +
+    (showDesktopSecondaryColumn.value ? DESKTOP_SECONDARY_COLUMN_WIDTH : 0)
+  );
+});
 </script>
 
 <template>
@@ -1578,7 +1621,7 @@ const menuItems = computed(() => {
       closeMobileSidebar,
       { ignore: ['#mobile-sidebar-launcher'] },
     ]"
-    class="bg-n-background flex flex-col text-sm pb-px fixed top-0 ltr:left-0 rtl:right-0 h-full z-40 w-[200px] md:w-auto md:relative md:flex-shrink-0 md:ltr:translate-x-0 md:rtl:translate-x-0 ltr:border-r rtl:border-l border-n-weak"
+    class="bg-n-background flex text-sm fixed top-0 ltr:left-0 rtl:right-0 h-full z-40 w-[200px] md:w-auto md:relative md:flex-shrink-0 md:ltr:translate-x-0 md:rtl:translate-x-0 ltr:border-r rtl:border-l border-n-weak"
     :class="[
       {
         'shadow-lg md:shadow-none': isMobileSidebarOpen,
@@ -1587,125 +1630,145 @@ const menuItems = computed(() => {
           !isResizing,
       },
     ]"
-    :style="isMobile ? undefined : { width: `${sidebarWidth}px` }"
+    :style="isMobile ? undefined : { width: `${desktopSidebarWidth}px` }"
   >
-    <section
-      class="grid"
-      :class="isEffectivelyCollapsed ? 'mt-3 mb-6 gap-4' : 'mt-1 mb-4 gap-2'"
+    <div
+      class="flex h-full min-w-0 flex-col bg-n-background pb-px"
+      :class="[
+        isEffectivelyCollapsed
+          ? 'w-14 flex-shrink-0 ltr:border-r rtl:border-l border-n-weak'
+          : 'w-full',
+      ]"
     >
-      <div
-        class="flex gap-2 items-center min-w-0"
-        :class="{
-          'justify-center px-1': isEffectivelyCollapsed,
-          'px-2': !isEffectivelyCollapsed,
-        }"
+      <section
+        class="grid"
+        :class="isEffectivelyCollapsed ? 'mt-3 mb-6 gap-4' : 'mt-1 mb-4 gap-2'"
       >
-        <template v-if="isEffectivelyCollapsed">
-          <SidebarAccountSwitcher
-            is-collapsed
-            :company-menu-item="myCompanyMenuItem"
-            @show-create-account-modal="emit('showCreateAccountModal')"
-          />
-        </template>
-        <template v-else>
-          <SidebarAccountSwitcher
-            class="flex-grow min-w-0"
-            :company-menu-item="myCompanyMenuItem"
-            @show-create-account-modal="emit('showCreateAccountModal')"
-          />
-        </template>
-      </div>
-      <div
-        class="flex gap-2"
-        :class="isEffectivelyCollapsed ? 'flex-col items-center' : 'px-2'"
-      >
-        <RouterLink
-          v-if="!isEffectivelyCollapsed"
-          :to="{ name: 'search' }"
-          class="flex gap-2 items-center px-2 py-1 w-full h-7 rounded-lg outline outline-1 outline-n-weak bg-n-button-color transition-all duration-100 ease-out"
+        <div
+          class="flex gap-2 items-center min-w-0"
+          :class="{
+            'justify-center px-1': isEffectivelyCollapsed,
+            'px-2': !isEffectivelyCollapsed,
+          }"
         >
-          <span class="flex-shrink-0 i-lucide-search size-4 text-n-slate-10" />
-          <span class="flex-grow text-start text-n-slate-10">
-            {{ t('COMBOBOX.SEARCH_PLACEHOLDER') }}
-          </span>
-          <span
-            class="hidden tracking-wide pointer-events-none select-none text-n-slate-10"
-          >
-            {{ searchShortcut }}
-          </span>
-        </RouterLink>
-        <RouterLink
-          v-else
-          :to="{ name: 'search' }"
-          class="flex items-center justify-center size-8 rounded-lg outline outline-1 outline-n-weak bg-n-button-color transition-all duration-100 ease-out hover:bg-n-alpha-2 dark:hover:bg-n-slate-9/30"
-          :title="t('COMBOBOX.SEARCH_PLACEHOLDER')"
-        >
-          <span class="i-lucide-search size-4 text-n-slate-11" />
-        </RouterLink>
-        <ComposeConversation align-position="right" @close="onComposeClose">
-          <template #trigger="{ toggle, isOpen }">
-            <Button
-              icon="i-lucide-pen-line"
-              color="slate"
-              size="sm"
-              class="dark:hover:!bg-n-slate-9/30"
-              :class="[
-                isEffectivelyCollapsed
-                  ? '!size-8 !outline-n-weak !text-n-slate-11'
-                  : '!h-7 !outline-n-weak !text-n-slate-11',
-                { '!bg-n-alpha-2 dark:!bg-n-slate-9/30': isOpen },
-              ]"
-              @click="onComposeOpen(toggle)"
+          <template v-if="isEffectivelyCollapsed">
+            <SidebarAccountSwitcher
+              is-collapsed
+              @show-create-account-modal="emit('showCreateAccountModal')"
             />
           </template>
-        </ComposeConversation>
-      </div>
-    </section>
-    <nav
-      class="grid overflow-y-scroll flex-grow gap-2 pb-5 no-scrollbar min-w-0"
-      :class="isEffectivelyCollapsed ? 'px-1' : 'px-2'"
-    >
-      <ul
-        class="flex flex-col gap-1 m-0 list-none min-w-0"
-        :class="{ 'items-center': isEffectivelyCollapsed }"
+          <template v-else>
+            <SidebarAccountSwitcher
+              class="flex-grow min-w-0"
+              @show-create-account-modal="emit('showCreateAccountModal')"
+            />
+          </template>
+        </div>
+        <div
+          class="flex gap-2"
+          :class="isEffectivelyCollapsed ? 'flex-col items-center' : 'px-2'"
+        >
+          <RouterLink
+            v-if="!isEffectivelyCollapsed"
+            :to="{ name: 'search' }"
+            class="flex gap-2 items-center px-2 py-1 w-full h-7 rounded-lg outline outline-1 outline-n-weak bg-n-button-color transition-all duration-100 ease-out"
+          >
+            <span
+              class="flex-shrink-0 i-lucide-search size-4 text-n-slate-10"
+            />
+            <span class="flex-grow text-start text-n-slate-10">
+              {{ t('COMBOBOX.SEARCH_PLACEHOLDER') }}
+            </span>
+            <span
+              class="hidden tracking-wide pointer-events-none select-none text-n-slate-10"
+            >
+              {{ searchShortcut }}
+            </span>
+          </RouterLink>
+          <RouterLink
+            v-else
+            :to="{ name: 'search' }"
+            class="inline-flex size-8 items-center justify-center rounded-lg text-n-slate-11 outline outline-1 outline-n-weak bg-n-button-color hover:bg-n-alpha-2 hover:text-n-slate-12"
+            :aria-label="t('COMBOBOX.SEARCH_PLACEHOLDER')"
+            :title="t('COMBOBOX.SEARCH_PLACEHOLDER')"
+          >
+            <span class="i-lucide-search size-4.5" />
+          </RouterLink>
+          <ComposeConversation
+            align-position="right"
+            :is-modal="isEffectivelyCollapsed"
+            @close="onComposeClose"
+          >
+            <template #trigger="{ toggle, isOpen }">
+              <Button
+                icon="i-lucide-pen-line"
+                color="slate"
+                size="sm"
+                class="dark:hover:!bg-n-slate-9/30"
+                :class="[
+                  isEffectivelyCollapsed
+                    ? '!size-8 !outline-n-weak !text-n-slate-11'
+                    : '!h-7 !outline-n-weak !text-n-slate-11',
+                  { '!bg-n-alpha-2 dark:!bg-n-slate-9/30': isOpen },
+                ]"
+                @click="onComposeOpen(toggle)"
+              />
+            </template>
+          </ComposeConversation>
+        </div>
+      </section>
+      <nav
+        class="grid overflow-y-scroll flex-grow gap-2 pb-5 no-scrollbar min-w-0"
+        :class="isEffectivelyCollapsed ? 'px-1' : 'px-2'"
       >
-        <SidebarGroup
-          v-for="item in menuItems"
-          :key="item.name"
-          v-bind="item"
-        />
-      </ul>
-    </nav>
-    <section
-      class="flex relative flex-col flex-shrink-0 gap-1 justify-between items-center"
-    >
-      <div
-        class="pointer-events-none absolute inset-x-0 -top-[1.938rem] h-8 bg-gradient-to-t from-n-background to-transparent"
-      />
-      <SidebarChangelogCard
-        v-if="
-          isOnChatwootCloud &&
-          !isACustomBrandedInstance &&
-          !isEffectivelyCollapsed
-        "
-      />
-      <SidebarChangelogButton
-        v-if="
-          isOnChatwootCloud &&
-          !isACustomBrandedInstance &&
-          isEffectivelyCollapsed
-        "
-      />
-      <div
-        class="px-1 py-1.5 flex-shrink-0 flex w-full z-50 gap-2 items-center border-t border-n-weak shadow-[0px_-2px_4px_0px_rgba(27,28,29,0.02)]"
-        :class="isEffectivelyCollapsed ? 'justify-center' : 'justify-between'"
+        <ul
+          class="flex flex-col gap-1 m-0 list-none min-w-0"
+          :class="{ 'items-center': isEffectivelyCollapsed }"
+        >
+          <SidebarGroup
+            v-for="item in menuItems"
+            :key="item.name"
+            v-bind="item"
+            :show-collapsed-popover="false"
+          />
+        </ul>
+      </nav>
+      <section
+        class="flex relative flex-col flex-shrink-0 gap-1 justify-between items-center"
       >
-        <SidebarProfileMenu
-          :is-collapsed="isEffectivelyCollapsed"
-          @open-key-shortcut-modal="emit('openKeyShortcutModal')"
+        <div
+          class="pointer-events-none absolute inset-x-0 -top-[1.938rem] h-8 bg-gradient-to-t from-n-background to-transparent"
         />
-      </div>
-    </section>
+        <SidebarChangelogCard
+          v-if="
+            isOnChatwootCloud &&
+            !isACustomBrandedInstance &&
+            !isEffectivelyCollapsed
+          "
+        />
+        <SidebarChangelogButton
+          v-if="
+            isOnChatwootCloud &&
+            !isACustomBrandedInstance &&
+            isEffectivelyCollapsed
+          "
+        />
+        <div
+          class="px-1 py-1.5 flex-shrink-0 flex w-full z-50 gap-2 items-center border-t border-n-weak shadow-[0px_-2px_4px_0px_rgba(27,28,29,0.02)]"
+          :class="isEffectivelyCollapsed ? 'justify-center' : 'justify-between'"
+        >
+          <SidebarProfileMenu
+            :is-collapsed="isEffectivelyCollapsed"
+            @open-key-shortcut-modal="emit('openKeyShortcutModal')"
+          />
+        </div>
+      </section>
+    </div>
+    <SidebarSecondaryColumn
+      v-if="showDesktopSecondaryColumn"
+      v-bind="selectedDesktopSidebarItem"
+      :active-child-names="selectedDesktopSidebarActiveChildNames"
+    />
     <Teleport to="body">
       <woot-modal
         v-model:show="showCreateLabelPopup"
@@ -1714,17 +1777,5 @@ const menuItems = computed(() => {
         <AddLabelForm @close="hideCreateLabelPopup" />
       </woot-modal>
     </Teleport>
-    <!-- Resize Handle (desktop only) -->
-    <div
-      class="hidden md:block absolute top-0 h-full w-1 cursor-col-resize z-40 ltr:right-0 rtl:left-0 group"
-      @mousedown="onResizeStart"
-      @touchstart="onResizeStart"
-      @dblclick="onResizeHandleDoubleClick"
-    >
-      <div
-        class="absolute top-0 h-full w-px ltr:right-0 rtl:left-0 bg-transparent group-hover:bg-n-brand transition-colors"
-        :class="{ 'bg-n-brand': isResizing }"
-      />
-    </div>
   </aside>
 </template>

@@ -255,16 +255,29 @@ describe('ReplyBottomPanel', () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the voice call action when the non-thread conversation contact has a phone number', () => {
+  it('uses the primary call action and hides the extra call icon for direct voice inboxes', () => {
     const wrapper = mountComponent({
+      isCommunicationThread: false,
+      sendButtonText: 'Позвонить',
       contactId: 42,
       contactPhone: '+77066318623',
-      inbox: { channel_type: 'Channel::Voice' },
+      inbox: { id: 4593, channel_type: 'Channel::Voice' },
+      activeReplyChannel: null,
+      showCommunicationChannelSelector: false,
     });
 
-    const voiceCallButton = wrapper.findComponent({ name: 'VoiceCallButton' });
-    expect(voiceCallButton.exists()).toBe(true);
-    expect(voiceCallButton.props('contactId')).toBe(42);
-    expect(voiceCallButton.props('phone')).toBe('+77066318623');
+    const voiceCallButtons = wrapper.findAllComponents({
+      name: 'VoiceCallButton',
+    });
+    expect(voiceCallButtons).toHaveLength(1);
+    expect(voiceCallButtons[0].props()).toMatchObject({
+      label: 'Позвонить',
+      contactId: 42,
+      phone: '+77066318623',
+      inboxId: 4593,
+      disabled: false,
+    });
+    expect(voiceCallButtons[0].props('icon')).toBe('');
+    expect(wrapper.find('button[type="submit"]').exists()).toBe(false);
   });
 });

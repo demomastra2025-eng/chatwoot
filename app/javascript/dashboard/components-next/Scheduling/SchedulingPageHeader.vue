@@ -18,9 +18,13 @@ defineProps({
     >
       <div class="flex min-w-0 flex-col gap-1">
         <div class="flex min-w-0 flex-wrap items-center gap-3 md:gap-4">
-          <h1 class="mb-0 text-lg font-semibold text-n-slate-12">
-            {{ title }}
-          </h1>
+          <div class="flex min-w-0 items-center gap-0.5">
+            <h1 class="mb-0 text-lg font-semibold text-n-slate-12">
+              {{ title }}
+            </h1>
+
+            <slot name="title-actions" />
+          </div>
 
           <div
             v-if="$slots.left"

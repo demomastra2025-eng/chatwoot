@@ -23,6 +23,9 @@ const props = defineProps({
   actionActiveOn: { type: Array, default: () => [] },
   children: { type: Array, default: undefined },
   getterKeys: { type: Object, default: () => ({}) },
+  defaultChildName: { type: String, default: '' },
+  showCollapsedPopover: { type: Boolean, default: true },
+  navigateOnCollapsedClick: { type: Boolean, default: true },
 });
 
 const {
@@ -86,13 +89,15 @@ const closePopover = () => {
 };
 
 const handleMouseEnter = () => {
-  if (!hasChildren.value || isResizing.value) return;
+  if (!props.showCollapsedPopover || !hasChildren.value || isResizing.value) {
+    return;
+  }
   cancelClose();
   openPopover();
 };
 
 const handleMouseLeave = () => {
-  if (!hasChildren.value) return;
+  if (!props.showCollapsedPopover || !hasChildren.value) return;
   scheduleClose(200);
 };
 
@@ -121,6 +126,18 @@ const accessibleItems = computed(() => {
 
 const hasAccessibleChildren = computed(() => {
   return accessibleItems.value.length > 0;
+});
+
+const defaultCollapsedRouteItem = computed(() => {
+  if (props.defaultChildName) {
+    const defaultItem = accessibleItems.value.find(
+      child => child.name === props.defaultChildName
+    );
+
+    if (defaultItem) return defaultItem;
+  }
+
+  return accessibleItems.value[0];
 });
 
 const headerActionItem = computed(() => {
@@ -261,14 +278,26 @@ const getChildDisplayLabel = child =>
   getSidebarChildDisplayLabel(child, isExpanded.value);
 
 const handleCollapsedClick = () => {
+  if (!hasChildren.value) {
+    setExpandedItem(null);
+    return;
+  }
+
   if (hasChildren.value && hasAccessibleChildren.value) {
+    if (expandedItem.value !== props.name) {
+      setExpandedItem(props.name);
+    }
+
+    if (!props.navigateOnCollapsedClick) {
+      return;
+    }
+
     if (props.to) {
       router.push(props.to);
       return;
     }
 
-    const firstItem = accessibleItems.value[0];
-    router.push(firstItem.to);
+    router.push(defaultCollapsedRouteItem.value.to);
   }
 };
 
@@ -337,16 +366,18 @@ watch(
           type="button"
           class="flex items-center justify-center size-10 rounded-lg"
           :class="{
-            'text-n-slate-12 bg-n-alpha-2': isActive || hasActiveChild,
-            'text-n-slate-11 hover:bg-n-alpha-2': !isActive && !hasActiveChild,
+            'text-n-slate-12 bg-n-alpha-2':
+              isActive || hasActiveChild || isExpanded,
+            'text-n-slate-11 hover:bg-n-alpha-2':
+              !isActive && !hasActiveChild && !isExpanded,
           }"
           :title="label"
-          @click="hasChildren ? handleCollapsedClick() : undefined"
+          @click="handleCollapsedClick"
         >
           <Icon v-if="icon" :icon="icon" class="size-4" />
         </component>
         <SidebarCollapsedPopover
-          v-if="hasChildren && isPopoverOpen"
+          v-if="showCollapsedPopover && hasChildren && isPopoverOpen"
           :label="label"
           :children="children"
           :active-child-names="activeChildNames"

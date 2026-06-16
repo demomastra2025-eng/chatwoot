@@ -11,6 +11,7 @@ const props = defineProps({
   to: { type: [String, Object], required: true },
   icon: { type: [String, Object], default: null },
   iconClass: { type: String, default: '' },
+  compactIconGap: { type: Boolean, default: false },
   active: { type: Boolean, default: false },
   badge: { type: [Number, String], default: 0 },
   component: { type: Function, default: null },
@@ -24,6 +25,9 @@ const shouldRenderComponent = computed(() => {
 });
 
 const badgeCount = computed(() => Number(props.badge) || 0);
+const iconComponentClass = computed(() =>
+  typeof props.icon === 'string' ? 'size-4 inline-block' : ''
+);
 
 const INTERACTIVE_TARGET_SELECTOR = [
   'button',
@@ -84,9 +88,11 @@ const handleLeafClick = async event => {
       :to="componentType === 'router-link' ? to : undefined"
       :title="label"
       :role="componentType === 'div' ? 'link' : undefined"
-      class="flex h-8 items-center gap-2 px-2 py-1 rounded-lg hover:bg-gradient-to-r from-transparent via-n-slate-3/70 to-n-slate-3/70 group min-w-0"
+      class="flex h-8 items-center px-2 py-1 rounded-lg hover:bg-gradient-to-r from-transparent via-n-slate-3/70 to-n-slate-3/70 group min-w-0"
       :class="{
         'text-n-slate-12 bg-n-alpha-2 active': active,
+        'gap-0': compactIconGap,
+        'gap-2': !compactIconGap,
       }"
       @click="handleLeafClick"
     >
@@ -104,7 +110,7 @@ const handleLeafClick = async event => {
           class="size-4 grid place-content-center rounded-full"
           :class="iconClass"
         >
-          <Icon :icon="icon" class="size-4 inline-block" />
+          <Icon :icon="icon" :class="iconComponentClass" />
         </span>
         <div class="flex-1 truncate min-w-0 text-sm">{{ label }}</div>
         <SidebarUnreadBadge :value="badgeCount" />

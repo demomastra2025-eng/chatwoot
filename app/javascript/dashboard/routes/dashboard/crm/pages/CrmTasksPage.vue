@@ -171,6 +171,13 @@ const teams = useMapGetter('teams/getTeams');
 const canManageTasks = computed(() =>
   checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
 );
+const canAccessTaskSettings = computed(() =>
+  checkPermissions([
+    'administrator',
+    'crm_settings_view',
+    'crm_settings_manage',
+  ])
+);
 const canViewTasks = computed(() =>
   checkPermissions(CRM_TASK_VIEW_PERMISSIONS)
 );
@@ -1284,6 +1291,15 @@ const openCreateTaskStatusSetup = () => {
   });
 };
 
+const openTaskSettings = () => {
+  if (!canAccessTaskSettings.value) return;
+
+  router.push({
+    name: 'crm_task_settings_index',
+    params: { accountId: accountId.value },
+  });
+};
+
 const handleBoardCreateTask = async ({ statusId }) => {
   await openCreateDrawer({
     statusId,
@@ -1687,6 +1703,19 @@ watch(
 <template>
   <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
     <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.TASKS.TITLE')">
+      <template #title-actions>
+        <Button
+          v-if="canAccessTaskSettings"
+          size="sm"
+          color="slate"
+          variant="ghost"
+          icon="i-lucide-settings-2"
+          class="!size-7"
+          :aria-label="$t('SIDEBAR.SETTINGS')"
+          :title="$t('SIDEBAR.SETTINGS')"
+          @click="openTaskSettings"
+        />
+      </template>
       <template #left>
         <label
           v-for="scope in taskScopeOptions"

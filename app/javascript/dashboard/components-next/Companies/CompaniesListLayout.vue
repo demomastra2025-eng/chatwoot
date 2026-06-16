@@ -8,6 +8,7 @@ defineProps({
   currentPage: { type: Number, default: 1 },
   totalItems: { type: Number, default: 100 },
   showCreateButton: { type: Boolean, default: true },
+  showSettingsButton: { type: Boolean, default: false },
   createButtonLabel: { type: String, default: '' },
   activeSort: { type: String, default: 'name' },
   activeOrdering: { type: String, default: '' },
@@ -19,6 +20,7 @@ const emit = defineEmits([
   'update:sort',
   'search',
   'create',
+  'openSettings',
 ]);
 
 const updateCurrentPage = page => {
@@ -35,12 +37,14 @@ const updateCurrentPage = page => {
         :search-value="searchValue"
         :header-title="headerTitle"
         :show-create-button="showCreateButton"
+        :show-settings-button="showSettingsButton"
         :create-button-label="createButtonLabel"
         :active-sort="activeSort"
         :active-ordering="activeOrdering"
         @search="emit('search', $event)"
         @update:sort="emit('update:sort', $event)"
         @create="emit('create')"
+        @open-settings="emit('openSettings')"
       />
       <main class="flex-1 px-6 overflow-y-auto">
         <div class="w-full mx-auto max-w-5xl py-4">

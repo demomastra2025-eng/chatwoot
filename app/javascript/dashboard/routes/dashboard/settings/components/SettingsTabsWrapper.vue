@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
+import NextButton from 'dashboard/components-next/button/Button.vue';
 
 const props = defineProps({
   keepAlive: {
@@ -24,6 +25,14 @@ const accountId = useMapGetter('getCurrentAccountId');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
+
+const settingsBackRoutes = {
+  company_fields_settings_index: 'companies_dashboard_index',
+  crm_settings_index: 'crm_deals_index',
+  crm_deal_fields_settings_index: 'crm_deals_index',
+  crm_task_settings_index: 'crm_tasks_index',
+  crm_task_fields_settings_index: 'crm_tasks_index',
+};
 
 const canShowTab = tab => {
   if (tab.visible === false) {
@@ -58,6 +67,21 @@ const activeTabIndex = computed(() => {
   return index >= 0 ? index : 0;
 });
 
+const settingsBackRouteName = computed(() => settingsBackRoutes[route.name]);
+
+const settingsBackRoute = computed(() => {
+  if (!settingsBackRouteName.value) {
+    return null;
+  }
+
+  return {
+    name: settingsBackRouteName.value,
+    params: {
+      accountId: route.params.accountId,
+    },
+  };
+});
+
 const switchTab = tab => {
   if (!tab?.routeName || tab.routeName === route.name) {
     return;
@@ -70,6 +94,15 @@ const switchTab = tab => {
     },
   });
 };
+
+const onBack = () => {
+  if (window.history.length > 2) {
+    router.go(-1);
+    return;
+  }
+
+  router.push(settingsBackRoute.value);
+};
 </script>
 
 <template>
@@ -77,6 +110,17 @@ const switchTab = tab => {
     class="flex flex-col w-full h-full m-0 pb-8 pt-4 px-6 overflow-auto bg-n-surface-1"
   >
     <div class="flex flex-col w-full max-w-5xl mx-auto gap-6">
+      <NextButton
+        v-if="settingsBackRoute"
+        :label="t('GENERAL_SETTINGS.BACK')"
+        icon="i-lucide-chevron-left"
+        faded
+        primary
+        sm
+        class="w-fit"
+        @click="onBack"
+      />
+
       <TabBar
         v-if="translatedTabs.length > 1"
         :tabs="translatedTabs"

@@ -4,25 +4,30 @@ import { nextTick } from 'vue';
 
 import SidebarGroup from './SidebarGroup.vue';
 
-const { expandedItem, routeState, routerPush, setExpandedItem } = vi.hoisted(
-  () => {
-    const expandedItemState = { value: null };
+const {
+  expandedItem,
+  routeState,
+  routerPush,
+  setExpandedItem,
+  sidebarCollapsed,
+} = vi.hoisted(() => {
+  const expandedItemState = { value: null };
 
-    return {
-      expandedItem: expandedItemState,
-      routeState: {
-        name: 'home',
-        path: '/home',
-        query: { status: 'open' },
-        params: {},
-      },
-      routerPush: vi.fn(),
-      setExpandedItem: vi.fn(name => {
-        expandedItemState.value = name;
-      }),
-    };
-  }
-);
+  return {
+    expandedItem: expandedItemState,
+    sidebarCollapsed: { value: false },
+    routeState: {
+      name: 'home',
+      path: '/home',
+      query: { status: 'open' },
+      params: {},
+    },
+    routerPush: vi.fn(),
+    setExpandedItem: vi.fn(name => {
+      expandedItemState.value = name;
+    }),
+  };
+});
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
@@ -44,7 +49,7 @@ vi.mock('./provider', () => ({
     resolvePermissions: () => [],
     resolveFeatureFlag: () => '',
     isAllowed: () => true,
-    isCollapsed: false,
+    isCollapsed: sidebarCollapsed.value,
     isResizing: { value: false },
   }),
 }));
@@ -55,7 +60,7 @@ const homeRoute = {
   query: { status: 'open' },
 };
 
-const mountComponent = () =>
+const mountComponent = (props = {}) =>
   mount(SidebarGroup, {
     props: {
       name: 'Conversation',
@@ -125,6 +130,7 @@ const mountComponent = () =>
           ],
         },
       ],
+      ...props,
     },
     global: {
       stubs: {
@@ -162,6 +168,7 @@ const mountComponent = () =>
 describe('SidebarGroup', () => {
   beforeEach(() => {
     expandedItem.value = null;
+    sidebarCollapsed.value = false;
     routerPush.mockClear();
     setExpandedItem.mockClear();
     Object.assign(routeState, {
@@ -254,5 +261,51 @@ describe('SidebarGroup', () => {
 
     expect(teamsSubGroup.attributes('data-header-active')).toBe('false');
     expect(teamsSubGroup.attributes('data-active-child-names')).toBe('Sales-1');
+  });
+
+  it('opens the configured default child when clicking a collapsed group', async () => {
+    sidebarCollapsed.value = true;
+    const touchesRoute = { name: 'outbound_touches_index' };
+    const wrapper = mountComponent({
+      name: 'Campaigns',
+      label: 'Outbound',
+      icon: 'i-lucide-send',
+      to: null,
+      defaultChildName: 'Touches',
+      children: [
+        {
+          name: 'Templates',
+          label: 'Templates',
+          to: { name: 'outbound_templates_index' },
+        },
+        {
+          name: 'Touches',
+          label: 'Touches',
+          to: touchesRoute,
+        },
+      ],
+    });
+
+    await wrapper.find('button[title="Outbound"]').trigger('click');
+
+    expect(setExpandedItem).toHaveBeenCalledWith('Campaigns');
+    expect(routerPush).toHaveBeenCalledWith(touchesRoute);
+  });
+
+  it('does not select an action-only collapsed group for a secondary column', async () => {
+    sidebarCollapsed.value = true;
+    const wrapper = mountComponent({
+      name: 'CRM',
+      label: 'Pipelines',
+      icon: 'i-lucide-filter',
+      to: { name: 'crm_deals_index' },
+      actionTo: { name: 'crm_settings_index' },
+      actionIcon: 'i-lucide-settings-2',
+      children: undefined,
+    });
+
+    await wrapper.find('[title="Pipelines"]').trigger('click');
+
+    expect(setExpandedItem).toHaveBeenCalledWith(null);
   });
 });

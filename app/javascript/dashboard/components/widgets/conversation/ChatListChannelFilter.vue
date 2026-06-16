@@ -73,7 +73,7 @@ const selectItem = item => {
       @click="toggleDropdown"
       @keydown.escape.stop.prevent="closeDropdown"
     >
-      <span class="grid size-4 shrink-0 place-content-center text-n-slate-11">
+      <span class="grid size-4 shrink-0 place-content-center text-current">
         <Icon :icon="itemIcon(triggerItem)" class="size-5" />
       </span>
       <span class="min-w-0 max-w-[9rem] truncate text-left rtl:text-right">

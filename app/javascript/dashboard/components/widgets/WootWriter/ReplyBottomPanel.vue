@@ -267,12 +267,21 @@ export default {
         channel: this.activeReplyChannelLabel,
       });
     },
+    isVoiceInbox() {
+      return this.inbox?.channel_type === INBOX_TYPES.VOICE;
+    },
+    voiceReplyInboxId() {
+      return this.isCommunicationThread
+        ? this.activeReplyChannel?.inbox_id
+        : this.inbox?.id;
+    },
     isCommunicationVoiceReplyAction() {
       return (
-        this.isCommunicationThread &&
         !this.isNote &&
         !this.isOnPrivateNote &&
-        isCommunicationVoiceChannel(this.activeReplyChannel)
+        ((this.isCommunicationThread &&
+          isCommunicationVoiceChannel(this.activeReplyChannel)) ||
+          (!this.isCommunicationThread && this.isVoiceInbox))
       );
     },
     wrapClass() {
@@ -680,7 +689,7 @@ export default {
           :label="sendButtonText"
           :contact-id="contactId"
           :phone="contactPhone"
-          :inbox-id="activeReplyChannel?.inbox_id"
+          :inbox-id="voiceReplyInboxId"
           :disabled="false"
           size="sm"
           color="blue"

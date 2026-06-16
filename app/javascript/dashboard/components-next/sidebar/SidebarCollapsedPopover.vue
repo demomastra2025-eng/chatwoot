@@ -70,6 +70,9 @@ const renderIcon = icon => ({
   props: typeof icon === 'string' ? { icon } : null,
 });
 
+const iconBaseClass = icon =>
+  typeof icon === 'string' ? 'size-4 flex-shrink-0' : 'flex-shrink-0';
+
 const badgeCount = item => Number(item?.badge) || 0;
 
 const transition = computed(() =>
@@ -177,7 +180,7 @@ onMounted(async () => {
                   <Icon
                     v-if="child.icon"
                     :icon="child.icon"
-                    class="size-4 flex-shrink-0"
+                    :class="iconBaseClass(child.icon)"
                   />
                   <span class="flex-1 truncate text-sm">{{ child.label }}</span>
                   <SidebarUnreadBadge :value="badgeCount(child)" />
@@ -219,20 +222,25 @@ onMounted(async () => {
                     class="py-0.5"
                   >
                     <button
-                      class="flex items-center gap-2 px-2 py-1.5 w-full rounded-lg text-sm text-left rtl:text-right transition-colors duration-150 ease-out"
-                      :class="{
-                        'text-n-slate-12 bg-n-alpha-2': isActive(subChild),
-                        'text-n-slate-11 hover:bg-n-alpha-2':
-                          !isActive(subChild),
-                      }"
+                      class="flex items-center px-2 py-1.5 w-full rounded-lg text-sm text-left rtl:text-right transition-colors duration-150 ease-out"
+                      :class="[
+                        {
+                          'text-n-slate-12 bg-n-alpha-2': isActive(subChild),
+                          'text-n-slate-11 hover:bg-n-alpha-2':
+                            !isActive(subChild),
+                        },
+                        subChild.compactIconGap ? 'gap-0' : 'gap-2',
+                      ]"
                       @click="navigateAndClose(subChild.to)"
                     >
                       <component
                         :is="renderIcon(subChild.icon).component"
                         v-if="subChild.icon"
                         v-bind="renderIcon(subChild.icon).props"
-                        class="size-4 flex-shrink-0"
-                        :class="subChild.iconClass"
+                        :class="[
+                          iconBaseClass(subChild.icon),
+                          subChild.iconClass,
+                        ]"
                       />
                       <span class="flex-1 truncate">{{ subChild.label }}</span>
                       <SidebarUnreadBadge :value="badgeCount(subChild)" />
@@ -244,19 +252,21 @@ onMounted(async () => {
             <!-- Direct child item -->
             <li v-else class="py-0.5">
               <button
-                class="flex items-center gap-2 px-2 py-1.5 w-full rounded-lg text-sm text-left rtl:text-right transition-colors duration-150 ease-out"
-                :class="{
-                  'text-n-slate-12 bg-n-alpha-2': isActive(child),
-                  'text-n-slate-11 hover:bg-n-alpha-2': !isActive(child),
-                }"
+                class="flex items-center px-2 py-1.5 w-full rounded-lg text-sm text-left rtl:text-right transition-colors duration-150 ease-out"
+                :class="[
+                  {
+                    'text-n-slate-12 bg-n-alpha-2': isActive(child),
+                    'text-n-slate-11 hover:bg-n-alpha-2': !isActive(child),
+                  },
+                  child.compactIconGap ? 'gap-0' : 'gap-2',
+                ]"
                 @click="navigateAndClose(child.to)"
               >
                 <component
                   :is="renderIcon(child.icon).component"
                   v-if="child.icon"
                   v-bind="renderIcon(child.icon).props"
-                  class="size-4 flex-shrink-0"
-                  :class="child.iconClass"
+                  :class="[iconBaseClass(child.icon), child.iconClass]"
                 />
                 <span class="flex-1 truncate">{{ child.label }}</span>
                 <SidebarUnreadBadge :value="badgeCount(child)" />

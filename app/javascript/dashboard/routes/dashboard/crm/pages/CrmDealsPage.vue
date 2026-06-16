@@ -209,6 +209,15 @@ const isFeatureEnabledonAccount = useMapGetter(
 const canManageDeals = computed(() =>
   checkPermissions(CRM_DEAL_MANAGE_PERMISSIONS)
 );
+const canAccessDealSettings = computed(
+  () =>
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
+    checkPermissions([
+      'administrator',
+      'crm_settings_view',
+      'crm_settings_manage',
+    ])
+);
 const canViewDeals = computed(() =>
   checkPermissions(CRM_DEAL_VIEW_PERMISSIONS)
 );
@@ -1531,6 +1540,15 @@ const openCreateStageSetup = () => {
   });
 };
 
+const openDealSettings = () => {
+  if (!canAccessDealSettings.value) return;
+
+  router.push({
+    name: 'crm_settings_index',
+    params: { accountId: accountId.value },
+  });
+};
+
 const handleBoardCreateDeal = async ({ pipelineId, stageId }) => {
   await openCreateDrawer({
     pipelineId,
@@ -2047,6 +2065,19 @@ watch(
         class="!bg-n-slate-2"
         :title="$t('CRM.DEALS.TITLE')"
       >
+        <template #title-actions>
+          <Button
+            v-if="canAccessDealSettings"
+            size="sm"
+            color="slate"
+            variant="ghost"
+            icon="i-lucide-settings-2"
+            class="!size-7"
+            :aria-label="$t('SIDEBAR.SETTINGS')"
+            :title="$t('SIDEBAR.SETTINGS')"
+            @click="openDealSettings"
+          />
+        </template>
         <template #left>
           <label
             v-for="pipeline in pipelineToggleItems"
