@@ -25,7 +25,6 @@ const LABEL_MAP = {
 
 const SUBTEXT_MAP = {
   [VOICE_CALL_STATUS.RINGING]: 'CONVERSATION.VOICE_CALL.NOT_ANSWERED_YET',
-  [VOICE_CALL_STATUS.COMPLETED]: 'CONVERSATION.VOICE_CALL.CALL_ENDED',
 };
 
 const ICON_MAP = {
@@ -204,6 +203,39 @@ const durationInSeconds = computed(() => {
   return null;
 });
 
+const hasPresentValue = value =>
+  value !== undefined && value !== null && value !== '';
+
+const wasAnswered = computed(() => {
+  if (status.value === VOICE_CALL_STATUS.IN_PROGRESS) return true;
+  if (isUnanswered.value || isFailed.value) return false;
+  if (data.value?.answered === true || aiVoice.value?.answered === true) {
+    return true;
+  }
+  if (
+    hasPresentValue(data.value?.answeredAt) ||
+    hasPresentValue(data.value?.answered_at) ||
+    hasPresentValue(data.value?.answeredBy) ||
+    hasPresentValue(data.value?.answered_by) ||
+    hasPresentValue(meta.value?.answeredAt) ||
+    hasPresentValue(meta.value?.answered_at) ||
+    hasPresentValue(meta.value?.startedAt) ||
+    hasPresentValue(meta.value?.started_at)
+  ) {
+    return true;
+  }
+
+  return (
+    Number.isFinite(durationInSeconds.value) && durationInSeconds.value > 0
+  );
+});
+
+const answeredSubtextKey = computed(() =>
+  isOutbound.value
+    ? 'CONVERSATION.VOICE_CALL.THEY_ANSWERED'
+    : 'CONVERSATION.VOICE_CALL.YOU_ANSWERED'
+);
+
 const formattedDuration = computed(() => {
   const seconds = durationInSeconds.value;
   if (!Number.isFinite(seconds)) return '';
@@ -294,6 +326,11 @@ const joinButtonLabel = computed(() => {
 });
 
 const labelKey = computed(() => {
+  if (status.value === VOICE_CALL_STATUS.COMPLETED && !wasAnswered.value) {
+    return isOutbound.value
+      ? 'CONVERSATION.VOICE_CALL.OUTGOING_CALL'
+      : 'CONVERSATION.VOICE_CALL.MISSED_CALL';
+  }
   if (LABEL_MAP[status.value]) return LABEL_MAP[status.value];
   if (status.value === VOICE_CALL_STATUS.RINGING) {
     return isOutbound.value
@@ -337,10 +374,14 @@ const subtextKey = computed(() => {
   }
 
   if (SUBTEXT_MAP[status.value]) return SUBTEXT_MAP[status.value];
-  if (status.value === VOICE_CALL_STATUS.IN_PROGRESS) {
-    return isOutbound.value
-      ? 'CONVERSATION.VOICE_CALL.THEY_ANSWERED'
-      : 'CONVERSATION.VOICE_CALL.YOU_ANSWERED';
+  if (
+    [VOICE_CALL_STATUS.IN_PROGRESS, VOICE_CALL_STATUS.COMPLETED].includes(
+      status.value
+    )
+  ) {
+    return wasAnswered.value
+      ? answeredSubtextKey.value
+      : 'CONVERSATION.VOICE_CALL.NO_ANSWER';
   }
   return isUnanswered.value || isFailed.value
     ? 'CONVERSATION.VOICE_CALL.NO_ANSWER'

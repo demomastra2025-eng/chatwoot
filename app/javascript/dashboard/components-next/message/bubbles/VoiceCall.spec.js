@@ -210,6 +210,82 @@ describe('VoiceCall bubble', () => {
     );
   });
 
+  it('renders completed inbound answered calls with answered subtext', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          callDirection: 'inbound',
+          meta: {
+            started_at: 1776346364,
+            duration: 20,
+          },
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.CALL_ENDED');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.YOU_ANSWERED');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+  });
+
+  it('renders completed outbound answered calls with answered subtext', () => {
+    const wrapper = buildWrapper({
+      messageType: ref(MESSAGE_TYPES.OUTGOING),
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          callDirection: 'outbound',
+          duration: 42,
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.CALL_ENDED');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.THEY_ANSWERED');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+  });
+
+  it('renders completed unanswered calls with no-answer subtext', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          meta: {
+            duration: 0,
+          },
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.CALL_ENDED');
+    expect(wrapper.text()).not.toContain(
+      'CONVERSATION.VOICE_CALL.YOU_ANSWERED'
+    );
+  });
+
+  it('renders completed unanswered outbound calls as outgoing no-answer calls', () => {
+    const wrapper = buildWrapper({
+      messageType: ref(MESSAGE_TYPES.OUTGOING),
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          callDirection: 'outbound',
+          meta: {
+            duration: 0,
+          },
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.OUTGOING_CALL');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.CALL_ENDED');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
+  });
+
   it('renders newly created outbound call bubbles as outgoing ringing calls', () => {
     const wrapper = buildWrapper({
       messageType: ref(MESSAGE_TYPES.INCOMING),
