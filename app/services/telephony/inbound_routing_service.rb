@@ -85,6 +85,7 @@ class Telephony::InboundRoutingService
   def primary_decision
     case routing_policy.mode
     when 'operator'
+      return target_operator_decision(reason: 'operator_route') if target_operator_requested?
       return operator_decision(reason: 'operator_route') if operator_routable?
 
       reject_decision(reason: 'operator_unavailable')
@@ -279,6 +280,7 @@ class Telephony::InboundRoutingService
       route_reason: decision[:reason] || decision['reason']
     }
 
+    metadata.merge!(target_route_metadata) if target_operator_requested?
     metadata.merge!(operator_route_metadata(decision)) if operator_decision?(decision)
 
     if existing_voice_conversation.present?
@@ -287,6 +289,15 @@ class Telephony::InboundRoutingService
     end
 
     metadata.compact
+  end
+
+  def target_route_metadata
+    {
+      target_extension: target_operator_extension,
+      target_operator_agent_aor: target_operator_aor,
+      target_sip_profile_id: target_operator_candidate&.sip_profile_id,
+      target_user_id: target_operator_candidate&.user_id
+    }.compact
   end
 
   def operator_route_metadata(decision)
@@ -330,6 +341,7 @@ class Telephony::InboundRoutingService
     fallback_order(prefer_ai: prefer_ai).each do |mode|
       case mode
       when 'operator'
+        return target_operator_decision(reason: reason) if target_operator_requested?
         return operator_decision(reason: reason) if operator_routable?
       when 'ai'
         return ai_decision(reason: reason) if resolved_ai_app_ref.present?
@@ -360,6 +372,30 @@ class Telephony::InboundRoutingService
 
   def operator_routable?
     operator_candidates.any?
+  end
+
+  def target_operator_decision(reason:)
+    block_reason = target_operator_block_reason
+    return reject_decision(reason: block_reason) if block_reason.present?
+
+    operator_decision(reason: reason)
+  end
+
+  def target_operator_requested?
+    target_operator_extension.present? || target_operator_aor.present?
+  end
+
+  def target_operator_block_reason
+    return unless target_operator_requested?
+    return 'target_operator_not_found' if target_operator_candidate.blank?
+    return 'target_operator_unavailable' unless target_operator_candidate.enabled? &&
+                                                sip_operator_aor?(target_operator_candidate.agent_aor) &&
+                                                target_operator_candidate.registered_for_routing?
+    return 'target_operator_busy' if target_operator_busy?(target_operator_candidate)
+  end
+
+  def target_operator_busy?(candidate)
+    without_busy_operator_candidates([candidate]).blank?
   end
 
   def resolved_operator_aor
@@ -397,16 +433,53 @@ class Telephony::InboundRoutingService
     }.compact
   end
 
-  def operator_candidates
-    @operator_candidates ||= begin
-      scoped_candidates = operator_candidate_scope.select do |candidate|
-        candidate.enabled? && sip_operator_aor?(candidate.agent_aor)
-      end
-      candidates = available_operator_candidates(scoped_candidates)
-      candidates = configured_legacy_operator_candidates(scoped_candidates) if candidates.blank?
-
-      candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }.first(OPERATOR_CANDIDATE_LIMIT)
+  def target_operator_candidate
+    @target_operator_candidate ||= inbox_sip_profile_candidates.find do |candidate|
+      target_operator_candidate_matches?(candidate)
     end
+  end
+
+  def target_operator_candidate_matches?(candidate)
+    profile = candidate.sip_profile
+    return false if profile.blank?
+
+    extension_matches = target_operator_extension.blank? || profile.internal_extension.to_s == target_operator_extension
+    aor_matches = target_operator_aor.blank? || normalized_sip_aor(profile.agent_aor) == normalized_sip_aor(target_operator_aor)
+    extension_matches && aor_matches
+  end
+
+  def target_operator_extension
+    @target_operator_extension ||= begin
+      value = payload_value('target_extension', 'targetExtension') ||
+              metadata_value('target_extension', 'targetExtension')
+      value.to_s.strip.presence
+    end
+  end
+
+  def target_operator_aor
+    @target_operator_aor ||= begin
+      value = payload_value('target_operator_agent_aor', 'targetOperatorAgentAor', 'operator_agent_aor', 'operatorAgentAor') ||
+              metadata_value('target_operator_agent_aor', 'targetOperatorAgentAor', 'operator_agent_aor', 'operatorAgentAor')
+      value.to_s.strip.presence
+    end
+  end
+
+  def normalized_sip_aor(value)
+    value.to_s.strip.downcase.presence
+  end
+
+  def operator_candidates
+    @operator_candidates ||= if target_operator_requested?
+                               target_operator_block_reason.present? ? [] : [target_operator_candidate]
+                             else
+                               scoped_candidates = operator_candidate_scope.select do |candidate|
+                                 candidate.enabled? && sip_operator_aor?(candidate.agent_aor)
+                               end
+                               candidates = available_operator_candidates(scoped_candidates)
+                               candidates = configured_legacy_operator_candidates(scoped_candidates) if candidates.blank?
+
+                               candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }.first(OPERATOR_CANDIDATE_LIMIT)
+                             end
   end
 
   def available_operator_candidates(candidates)

@@ -51,7 +51,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       connection_credentials_operation(state, ownership),
       *profile_credentials_operations(state, ownership),
       trunk_operation(state, ownership, 'Prepare provider connection for inbound calls'),
-      sipuni_gateway_operation(state, ownership, 'Prepare Sipuni Asterisk gateway for inbound and outbound calls'),
+      *sipuni_gateway_operations(state, ownership, 'Prepare Sipuni Asterisk gateway for inbound and outbound calls'),
       operation_payload('upsert_number', 'PUT', path('numbers', refs[:number_ref]), 'Connect the business number to OneLink runtime', ownership,
                         payload: number_payload(state)),
       operation_payload('update_number_route', 'POST', "#{path('numbers', refs[:number_ref])}/route", 'Apply selected routing mode', ownership,
@@ -66,7 +66,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       connection_credentials_operation(state, ownership),
       *profile_credentials_operations(state, ownership),
       trunk_operation(state, ownership, 'Sync provider connection metadata'),
-      sipuni_gateway_operation(state, ownership, 'Sync Sipuni Asterisk gateway metadata'),
+      *sipuni_gateway_operations(state, ownership, 'Sync Sipuni Asterisk gateway metadata'),
       operation_payload('upsert_number', 'PUT', path('numbers', refs[:number_ref]), 'Sync business number metadata', ownership,
                         payload: number_payload(state)),
       operation_payload('update_number_route', 'POST', "#{path('numbers', refs[:number_ref])}/route", 'Sync routing mode', ownership,
@@ -80,7 +80,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     [
       *delete_agent_operations(state, ownership),
       *delete_profile_credentials_operations(state, ownership),
-      delete_sipuni_gateway_operation(state, ownership),
+      *delete_sipuni_gateway_operations(state, ownership),
       operation_payload('delete_number', 'DELETE', path('numbers', refs[:number_ref]), 'Delete owned inbound number', ownership),
       (unless shared_trunk?(state)
          operation_payload('delete_trunk', 'DELETE', path('trunks', refs[:trunk_ref]), 'Delete owned provider connection only if exclusive',
@@ -97,34 +97,36 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     operation_payload('upsert_trunk', 'PUT', path('trunks', refs[:trunk_ref]), description, ownership, payload: trunk_payload(state))
   end
 
-  def sipuni_gateway_operation(state, ownership, description)
-    return unless sipuni_gateway?(state)
+  def sipuni_gateway_operations(state, ownership, description)
+    return [] unless sipuni_gateway?(state)
 
-    refs = state[:refs] || {}
-    payload = sipuni_gateway_payload(state)
-    return if payload[:providerAccountNumber].blank? || payload[:credentialsRef].blank?
+    sipuni_gateway_payloads(state).filter_map do |payload|
+      next if payload[:providerAccountNumber].blank? || payload[:credentialsRef].blank?
 
-    operation_payload(
-      'upsert_sipuni_gateway',
-      'PUT',
-      path('sipuni-gateways', refs[:number_ref]),
-      description,
-      ownership,
-      payload: payload
-    )
+      gateway_ref = payload[:gatewayRef] || payload[:ref]
+      operation_payload(
+        'upsert_sipuni_gateway',
+        'PUT',
+        path('sipuni-gateways', gateway_ref),
+        description,
+        ownership,
+        payload: payload
+      )
+    end
   end
 
-  def delete_sipuni_gateway_operation(state, ownership)
-    return unless sipuni_gateway?(state)
+  def delete_sipuni_gateway_operations(state, ownership)
+    return [] unless sipuni_gateway?(state)
 
-    refs = state[:refs] || {}
-    operation_payload(
-      'delete_sipuni_gateway',
-      'DELETE',
-      path('sipuni-gateways', refs[:number_ref]),
-      'Delete owned Sipuni Asterisk gateway',
-      ownership
-    )
+    sipuni_gateway_refs(state).filter_map do |gateway_ref|
+      operation_payload(
+        'delete_sipuni_gateway',
+        'DELETE',
+        path('sipuni-gateways', gateway_ref),
+        'Delete owned Sipuni Asterisk gateway',
+        ownership
+      )
+    end
   end
 
   def connection_credentials_operation(state, ownership)
@@ -327,18 +329,26 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     }.compact
   end
 
-  def sipuni_gateway_payload(state)
+  def sipuni_gateway_payloads(state)
+    profiles = sipuni_gateway_profiles(state)
+    return profiles.map.with_index { |profile, index| sipuni_gateway_payload(state, profile: profile, profile_index: index) } if profiles.present?
+
+    [sipuni_gateway_payload(state)]
+  end
+
+  def sipuni_gateway_payload(state, profile: nil, profile_index: nil)
     refs = (state[:refs] || {}).with_indifferent_access
     connection = (state[:connection] || {}).with_indifferent_access
     phone_numbers = (state[:phone_numbers] || {}).with_indifferent_access
     routing = (state[:routing] || {}).with_indifferent_access
     ownership = ownership_metadata(state).with_indifferent_access
-    credentials_ref = sipuni_gateway_credentials_ref(state)
-    provider_account_number = sipuni_gateway_provider_account_number(state)
+    credentials_ref = sipuni_gateway_credentials_ref(state, profile: profile)
+    provider_account_number = sipuni_gateway_provider_account_number(state, profile: profile)
+    gateway_ref = sipuni_gateway_ref_for(state, profile: profile, profile_index: profile_index)
 
     {
-      ref: refs[:number_ref],
-      gatewayRef: refs[:number_ref],
+      ref: gateway_ref,
+      gatewayRef: gateway_ref,
       numberRef: refs[:number_ref],
       providerAccountNumber: provider_account_number,
       username: provider_account_number,
@@ -353,16 +363,45 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       inboxId: ownership[:onelink_inbox_id],
       channelId: ownership[:onelink_channel_id],
       callerId: connection[:caller_id] || connection[:callerId],
-      metadata: ownership_metadata(state).merge(
-        provider_kind: 'sipuni',
-        source: 'sipuni_internal_asterisk_gateway',
-        routeMode: 'internal_asterisk_gateway'
-      )
+      metadata: sipuni_gateway_metadata(state, profile: profile)
     }.compact
   end
 
-  def sipuni_gateway_credentials_ref(state)
-    profile = sipuni_gateway_profile(state)
+  def sipuni_gateway_refs(state)
+    profiles = sipuni_gateway_profiles(state)
+    return profiles.map.with_index { |profile, index| sipuni_gateway_ref_for(state, profile: profile, profile_index: index) } if profiles.present?
+
+    [(state[:refs] || {}).with_indifferent_access[:number_ref]]
+  end
+
+  def sipuni_gateway_ref_for(state, profile:, profile_index: nil)
+    refs = (state[:refs] || {}).with_indifferent_access
+    number_ref = refs[:number_ref]
+    return number_ref if profile.blank? || profile_index.to_i.zero?
+
+    extension = profile[:internal_extension].presence || profile[:user_id].presence || profile[:sip_username]
+    [number_ref, extension].compact.join('-')
+  end
+
+  def sipuni_gateway_metadata(state, profile: nil)
+    metadata = ownership_metadata(state).merge(
+      provider_kind: 'sipuni',
+      source: 'sipuni_internal_asterisk_gateway',
+      routeMode: 'internal_asterisk_gateway'
+    )
+    return metadata if profile.blank?
+
+    metadata.merge(
+      onelink_user_id: profile[:user_id],
+      telephony_sip_profile_id: profile[:id],
+      target_extension: profile[:internal_extension],
+      operator_agent_aor: profile[:agent_aor],
+      target_operator_agent_aor: profile[:agent_aor]
+    ).compact
+  end
+
+  def sipuni_gateway_credentials_ref(state, profile: nil)
+    profile = profile.presence
     return profile[:fonoster_credentials_ref].presence || profile[:credentials_ref].presence if profile.present?
 
     connection = (state[:connection] || {}).with_indifferent_access
@@ -374,8 +413,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       refs[:credentials_ref].presence
   end
 
-  def sipuni_gateway_provider_account_number(state)
-    profile = sipuni_gateway_profile(state)
+  def sipuni_gateway_provider_account_number(state, profile: nil)
     return profile[:sip_username].presence if profile.present?
 
     connection = (state[:connection] || {}).with_indifferent_access
@@ -383,14 +421,16 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     connection[:username].presence || phone_numbers[:provider_account_number].presence
   end
 
-  def sipuni_gateway_profile(state)
-    Array.wrap(state[:profiles]).map(&:with_indifferent_access).find do |attrs|
+  def sipuni_gateway_profiles(state)
+    profiles = Array.wrap(state[:profiles]).map(&:with_indifferent_access).select do |attrs|
       next false if provider_managed_extension_profile?(state, attrs)
 
       attrs[:sip_username].present? &&
         attrs[:credentials_ref].present? &&
         (attrs[:sip_password].present? || attrs[:access_configured] || attrs[:fonoster_credentials_ref].present?)
     end
+
+    profiles.sort_by { |attrs| [attrs[:internal_extension].to_s, attrs[:user_id].to_s, attrs[:sip_username].to_s] }
   end
 
   def trunk_uri_payload(state, connection)

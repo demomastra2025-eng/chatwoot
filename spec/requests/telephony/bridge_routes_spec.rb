@@ -721,6 +721,255 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(call_session.metadata.dig('metadata', 'operator_candidate_binding_ids')).to be_empty
   end
 
+  it 'routes Sipuni target metadata to the matching managed SIP profile before the configured operator' do
+    primary_user = create(:user, account: account, role: :agent)
+    secondary_user = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: primary_user)
+    create(:inbox_member, inbox: voice_inbox, user: secondary_user)
+
+    provider_connection = create(:telephony_provider_connection, account: account, host: 'ats01.kz.sipuni.com')
+    primary_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: primary_user,
+      provider_connection: provider_connection,
+      internal_extension: '504',
+      agent_ref: 'profile-target-primary-504',
+      fonoster_agent_ref: 'fonoster-target-primary-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz'
+    )
+    secondary_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: secondary_user,
+      provider_connection: provider_connection,
+      internal_extension: '505',
+      agent_ref: 'profile-target-secondary-505',
+      fonoster_agent_ref: 'fonoster-target-secondary-505',
+      agent_aor: 'sip:505@operator.cloud.vconsult.kz'
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: primary_profile.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-target-extension-505',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155500005051',
+             metadata: {
+               target_extension: '505',
+               operator_agent_aor: secondary_profile.agent_aor
+             }
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'reason' => 'operator_route',
+      'agent_aor' => secondary_profile.agent_aor,
+      'agent_ref' => secondary_profile.fonoster_agent_ref,
+      'agent_aors' => [secondary_profile.agent_aor],
+      'operator_pool' => false,
+      'operator_pool_size' => 1
+    )
+    expect(response.parsed_body['operator_candidates']).to contain_exactly(
+      include(
+        'source' => 'sip_profile',
+        'sip_profile_id' => secondary_profile.id,
+        'internal_extension' => '505',
+        'agent_aor' => secondary_profile.agent_aor,
+        'user_id' => secondary_user.id
+      )
+    )
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'inbound-route-target-extension-505')
+    expect(call_session.metadata.dig('metadata', 'target_extension')).to eq('505')
+    expect(call_session.metadata.dig('metadata', 'target_operator_agent_aor')).to eq(secondary_profile.agent_aor)
+    expect(call_session.metadata.dig('metadata', 'operator_candidate_sip_profile_ids')).to contain_exactly(secondary_profile.id)
+  end
+
+  it 'rejects a Sipuni target extension that is not assigned in the inbox instead of falling back to another operator' do
+    primary_user = create(:user, account: account, role: :agent)
+    other_user = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: primary_user)
+
+    provider_connection = create(:telephony_provider_connection, account: account, host: 'ats01.kz.sipuni.com')
+    primary_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: primary_user,
+      provider_connection: provider_connection,
+      internal_extension: '504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz'
+    )
+    other_inbox = create(:inbox, account: account)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: other_inbox,
+      user: other_user,
+      provider_connection: provider_connection,
+      internal_extension: '505',
+      agent_aor: 'sip:505@operator.cloud.vconsult.kz'
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: primary_profile.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-target-extension-missing',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155500005052',
+             diagnostic: true,
+             metadata: { target_extension: '505' }
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'target_operator_not_found'
+    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
+  end
+
+  it 'rejects an unavailable Sipuni target profile instead of falling back to another operator' do
+    primary_user = create(:user, account: account, role: :agent)
+    secondary_user = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: primary_user)
+    create(:inbox_member, inbox: voice_inbox, user: secondary_user)
+
+    primary_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: primary_user,
+      internal_extension: '504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz'
+    )
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: secondary_user,
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      internal_extension: '505',
+      agent_aor: 'sip:505@operator.cloud.vconsult.kz'
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: primary_profile.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-target-extension-unavailable',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155500005053',
+             diagnostic: true,
+             metadata: { target_extension: '505' }
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'target_operator_unavailable'
+    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
+  end
+
+  it 'rejects a busy Sipuni target profile instead of falling back to another operator' do
+    primary_user = create(:user, account: account, role: :agent)
+    secondary_user = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: primary_user)
+    create(:inbox_member, inbox: voice_inbox, user: secondary_user)
+
+    primary_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: primary_user,
+      internal_extension: '504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz'
+    )
+    busy_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: secondary_user,
+      internal_extension: '505',
+      agent_aor: 'sip:505@operator.cloud.vconsult.kz'
+    )
+    create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      number_binding: number_binding,
+      external_call_ref: 'already-claimed-target-505-call',
+      direction: 'inbound',
+      status: 'connecting',
+      from_number: '+155500000001',
+      to_number: voice_channel.phone_number,
+      metadata: {
+        'operator_claim' => {
+          'sip_profile_id' => busy_profile.id,
+          'user_id' => secondary_user.id
+        }
+      }
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: primary_profile.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-target-extension-busy',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155500005054',
+             diagnostic: true,
+             metadata: { target_extension: '505' }
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'target_operator_busy'
+    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
+  end
+
   it 'excludes already claimed SIP profiles from the managed Virtual PBX operator pool' do
     primary_user = create(:user, account: account, role: :agent)
     secondary_user = create(:user, account: account, role: :agent)

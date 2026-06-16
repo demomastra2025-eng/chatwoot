@@ -110,6 +110,9 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     expect(operation_keys.index('upsert_agent_credentials')).to be < operation_keys.index('upsert_sipuni_gateway')
     expect(gateway_operation.dig(:payload, :providerAccountNumber)).to eq('015856100014')
     expect(gateway_operation.dig(:payload, :credentialsRef)).to eq('cred-profile-1-504')
+    expect(gateway_operation.dig(:payload, :metadata, :target_extension)).to eq('504')
+    expect(gateway_operation.dig(:payload, :metadata, :operator_agent_aor)).to eq('sip:504@operator.cloud.vconsult.kz')
+    expect(gateway_operation.dig(:payload, :metadata, :onelink_user_id)).to eq(admin.id)
     expect(credential_operation).to include(
       method: 'PUT',
       path: '/telephony/credentials/cred-profile-1-504',
@@ -121,6 +124,72 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     expect(agent_operation.dig(:payload, :credentialsRef)).to eq('cred-profile-1-504')
     expect(agent_operation.dig(:payload, :domain)).to eq('operator.cloud.vconsult.kz')
     expect(agent_operation.dig(:payload, :domainUri)).to eq('operator.cloud.vconsult.kz')
+    expect(plan.to_json).not_to include('do-not-store-this-password')
+  end
+
+  it 'plans one Sipuni Asterisk gateway per browser webphone employee profile with target metadata' do
+    desired_state = {
+      account_id: account.id,
+      provider_kind: 'sipuni',
+      name: 'Sipuni external line',
+      refs: { number_ref: 'sipuni-internal-asterisk-015856100014', trunk_ref: 'trunk-sipuni-onelink-out' },
+      phone_numbers: { fonoster_tel_url: 'tel:+177****0999', ingress_number: '015856100014' },
+      routing: { mode: 'operator', app_ref: 'onelink-runtime-app' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id,
+        onelink_inbox_id: 158,
+        onelink_channel_id: 777
+      },
+      profiles: [
+        {
+          id: 2,
+          user_id: admin.id + 1,
+          user_name: 'Second',
+          internal_extension: '505',
+          agent_ref: 'profile-1-505',
+          agent_aor: 'sip:505@operator.cloud.vconsult.kz',
+          availability_mode: 'browser_webphone',
+          credentials_ref: 'cred-profile-1-505',
+          sip_username: '015856100015',
+          sip_password: 'do-not-store-this-password-505',
+          enabled: true
+        },
+        {
+          id: 1,
+          user_id: admin.id,
+          user_name: 'Admin',
+          internal_extension: '504',
+          agent_ref: 'profile-1-504',
+          agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+          availability_mode: 'browser_webphone',
+          credentials_ref: 'cred-profile-1-504',
+          sip_username: '015856100014',
+          sip_password: 'do-not-store-this-password-504',
+          enabled: true
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    gateway_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+
+    expect(gateway_operations.map { |operation| operation[:path] }).to eq(
+      [
+        '/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014',
+        '/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014-505'
+      ]
+    )
+    expect(gateway_operations.map { |operation| operation.dig(:payload, :numberRef) }).to eq(
+      %w[sipuni-internal-asterisk-015856100014 sipuni-internal-asterisk-015856100014]
+    )
+    expect(gateway_operations.map { |operation| operation.dig(:payload, :providerAccountNumber) }).to eq(%w[015856100014 015856100015])
+    expect(gateway_operations.map { |operation| operation.dig(:payload, :credentialsRef) }).to eq(%w[cred-profile-1-504 cred-profile-1-505])
+    expect(gateway_operations.map { |operation| operation.dig(:payload, :metadata, :target_extension) }).to eq(%w[504 505])
+    expect(gateway_operations.map { |operation| operation.dig(:payload, :metadata, :operator_agent_aor) }).to eq(
+      ['sip:504@operator.cloud.vconsult.kz', 'sip:505@operator.cloud.vconsult.kz']
+    )
     expect(plan.to_json).not_to include('do-not-store-this-password')
   end
 
