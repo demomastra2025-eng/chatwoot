@@ -32,6 +32,12 @@ import {
   labelMarkerType,
 } from 'dashboard/helper/labels';
 import { filterSidebarMenuItems } from './sidebarVisibility';
+import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions';
+import wootConstants from 'dashboard/constants/globals';
+import {
+  filterItemsByPermission,
+  getUserPermissions,
+} from 'dashboard/helper/permissionsHelper';
 import {
   getInboxFlowRouteNames,
   INBOX_FLOW_ROUTE_NAMES,
@@ -88,6 +94,7 @@ const DESKTOP_RAIL_WIDTH = 56;
 const DESKTOP_SECONDARY_COLUMN_WIDTH = 158;
 
 const accountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
@@ -214,6 +221,7 @@ const conversationCustomViews = useMapGetter(
 const conversationSidebarUnreadCounts = useMapGetter(
   'getConversationSidebarUnreadCounts'
 );
+const conversationStats = useMapGetter('conversationStats/getStats');
 
 const sortedInboxes = computed(() =>
   inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
@@ -232,6 +240,7 @@ const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
 const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
+const conversationAssigneeTypes = Object.values(wootConstants.ASSIGNEE_TYPE);
 const isDialogConversationRoute = routeName =>
   typeof routeName === 'string' &&
   (routeName === 'home' ||
@@ -260,6 +269,14 @@ const currentConversationStatus = computed(() => {
   const routeStatus = route.query.status;
 
   return conversationStatuses.includes(routeStatus) ? routeStatus : 'open';
+});
+
+const currentConversationAssigneeType = computed(() => {
+  const assigneeType = route.query.assignee_type || route.query.assigneeType;
+
+  return conversationAssigneeTypes.includes(assigneeType)
+    ? assigneeType
+    : wootConstants.ASSIGNEE_TYPE.ME;
 });
 
 const resolveConversationRouteName = name => {
@@ -393,8 +410,50 @@ const withCurrentConversationScopeStatus = status =>
     {
       ...route.query,
       status,
+      assignee_type:
+        currentConversationAssigneeType.value ===
+        wootConstants.ASSIGNEE_TYPE.UNASSIGNED
+          ? wootConstants.ASSIGNEE_TYPE.ME
+          : currentConversationAssigneeType.value,
     }
   );
+
+const withCurrentConversationScopeAssigneeType = assigneeType =>
+  accountScopedRoute(
+    resolveConversationRouteName(currentConversationScope.value.name),
+    currentConversationScope.value.params,
+    {
+      ...route.query,
+      status: currentConversationStatus.value,
+      assignee_type: assigneeType,
+    }
+  );
+
+const userPermissions = computed(() =>
+  getUserPermissions(currentUser.value, accountId.value)
+);
+
+const conversationAssigneeItemLabel = key =>
+  key === wootConstants.ASSIGNEE_TYPE.ME
+    ? t('CHAT_LIST.ASSIGNEE_TYPE_TABS.me')
+    : t('CHAT_LIST.ASSIGNEE_TYPE_TABS.all');
+
+const conversationAssigneeTabItems = computed(() =>
+  filterItemsByPermission(
+    ASSIGNEE_TYPE_TAB_PERMISSIONS,
+    userPermissions.value,
+    item => item.permissions
+  )
+    .filter(({ key }) => key !== wootConstants.ASSIGNEE_TYPE.UNASSIGNED)
+    .map(({ key, count }) => ({
+      name: `Assignee:${key}`,
+      visibilityKey: `Conversation:Assignee:${key}`,
+      label: conversationAssigneeItemLabel(key),
+      count: Number(conversationStats.value?.[count] || 0),
+      activeOn: conversationStatusActiveOn,
+      to: withCurrentConversationScopeAssigneeType(key),
+    }))
+);
 
 const whatsappWebInboxes = computed(() => {
   return sortedInboxes.value.filter(
@@ -854,40 +913,64 @@ const menuItems = computed(() => {
           : {}),
         children: [
           {
-            name: 'Pending',
-            visibilityKey: 'Conversation:Pending',
-            label: t('SIDEBAR.PENDING_CONVERSATIONS'),
-            icon: 'i-woot-captain',
-            badge: statusUnreadCount('pending'),
-            activeOn: conversationStatusActiveOn,
-            to: withCurrentConversationScopeStatus('pending'),
+            name: 'AssigneeTabs',
+            type: 'tabs',
+            items: conversationAssigneeTabItems.value,
           },
           {
-            name: 'Open',
-            visibilityKey: 'Conversation:Open',
-            label: t('SIDEBAR.OPEN_CONVERSATIONS'),
-            icon: 'i-lucide-inbox',
-            badge: statusUnreadCount('open'),
-            activeOn: conversationStatusActiveOn,
-            to: withCurrentConversationScopeStatus('open'),
-          },
-          {
-            name: 'Snoozed',
-            visibilityKey: 'Conversation:Snoozed',
-            icon: 'i-lucide-timer-reset',
-            badge: statusUnreadCount('snoozed'),
-            activeOn: conversationStatusActiveOn,
-            label: t('SIDEBAR.SNOOZED_CONVERSATIONS'),
-            to: withCurrentConversationScopeStatus('snoozed'),
-          },
-          {
-            name: 'Resolved',
-            visibilityKey: 'Conversation:Resolved',
-            icon: 'i-lucide-check-check',
-            badge: statusUnreadCount('resolved'),
-            activeOn: conversationStatusActiveOn,
-            label: t('SIDEBAR.RESOLVED_CONVERSATIONS'),
-            to: withCurrentConversationScopeStatus('resolved'),
+            name: 'Statuses',
+            visibilityKey: 'Conversation:Statuses',
+            label: t('CHAT_LIST.CHAT_SORT.STATUS'),
+            icon: 'i-lucide-list-filter',
+            children: [
+              {
+                name: 'Pending',
+                visibilityKey: 'Conversation:Pending',
+                label: t('SIDEBAR.PENDING_CONVERSATIONS'),
+                icon: 'i-woot-captain',
+                badge: statusUnreadCount('pending'),
+                activeOn: conversationStatusActiveOn,
+                to: withCurrentConversationScopeStatus('pending'),
+              },
+              {
+                name: 'Open',
+                visibilityKey: 'Conversation:Open',
+                label: t('SIDEBAR.OPEN_CONVERSATIONS'),
+                icon: 'i-lucide-inbox',
+                badge: statusUnreadCount('open'),
+                activeOn: conversationStatusActiveOn,
+                to: withCurrentConversationScopeStatus('open'),
+              },
+              {
+                name: 'Unassigned',
+                visibilityKey: 'Conversation:Unassigned',
+                label: 'Неназ-ные',
+                icon: 'i-lucide-user-round-x',
+                badge: Number(conversationStats.value?.unAssignedCount || 0),
+                activeOn: conversationStatusActiveOn,
+                to: withCurrentConversationScopeAssigneeType(
+                  wootConstants.ASSIGNEE_TYPE.UNASSIGNED
+                ),
+              },
+              {
+                name: 'Snoozed',
+                visibilityKey: 'Conversation:Snoozed',
+                icon: 'i-lucide-timer-reset',
+                badge: statusUnreadCount('snoozed'),
+                activeOn: conversationStatusActiveOn,
+                label: t('SIDEBAR.SNOOZED_CONVERSATIONS'),
+                to: withCurrentConversationScopeStatus('snoozed'),
+              },
+              {
+                name: 'Resolved',
+                visibilityKey: 'Conversation:Resolved',
+                icon: 'i-lucide-check-check',
+                badge: statusUnreadCount('resolved'),
+                activeOn: conversationStatusActiveOn,
+                label: t('SIDEBAR.RESOLVED_CONVERSATIONS'),
+                to: withCurrentConversationScopeStatus('resolved'),
+              },
+            ],
           },
           {
             name: 'Folders',
@@ -1502,6 +1585,7 @@ const resolvePath = to => {
 const navigableChildrenFor = item => {
   return (
     item.children?.flatMap(child => {
+      if (child.type === 'tabs') return child.items || [];
       if (!child.children) return child;
       return child.to ? [child, ...child.children] : child.children;
     }) || []
@@ -1512,10 +1596,15 @@ const queryMatches = child => {
   const childQuery = child?.to?.query || {};
 
   return Object.entries(childQuery).every(([key, value]) => {
-    const routeValue =
-      key === 'status'
-        ? (route.query[key] ?? 'open')
-        : (route.query[key] ?? '');
+    let routeValue = route.query[key] ?? '';
+
+    if (key === 'status') {
+      routeValue = route.query[key] ?? 'open';
+    }
+
+    if (key === 'assignee_type') {
+      routeValue = route.query[key] ?? 'me';
+    }
 
     return String(routeValue) === String(value);
   });

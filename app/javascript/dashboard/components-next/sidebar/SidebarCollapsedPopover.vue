@@ -6,6 +6,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import Icon from 'next/icon/Icon.vue';
 import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirection.vue';
 import SidebarUnreadBadge from './SidebarUnreadBadge.vue';
+import SidebarAssigneeTabs from './SidebarAssigneeTabs.vue';
 
 const props = defineProps({
   label: { type: String, required: true },
@@ -94,6 +95,10 @@ const accessibleChildren = computed(() => {
       return false;
     }
 
+    if (child.type === 'tabs') {
+      return child.items?.some(item => item.to && isAllowed(item.to));
+    }
+
     if (child.children) {
       return (
         (child.to && isAllowed(child.to)) ||
@@ -164,8 +169,14 @@ onMounted(async () => {
           class="m-0 p-0 list-none max-h-[400px] overflow-y-auto no-scrollbar"
         >
           <template v-for="child in accessibleChildren" :key="child.name">
+            <SidebarAssigneeTabs
+              v-if="child.type === 'tabs'"
+              :items="child.items"
+              :active-child-names="activeChildNames"
+              @select="emit('close')"
+            />
             <!-- SubGroup with children -->
-            <li v-if="child.children" class="py-0.5">
+            <li v-else-if="child.children" class="py-0.5">
               <div
                 class="flex items-center gap-1 rounded-lg transition-colors duration-150 ease-out"
                 :class="{
@@ -229,7 +240,7 @@ onMounted(async () => {
                           'text-n-slate-11 hover:bg-n-alpha-2':
                             !isActive(subChild),
                         },
-                        subChild.compactIconGap ? 'gap-0' : 'gap-2',
+                        subChild.compactIconGap ? 'gap-1' : 'gap-2',
                       ]"
                       @click="navigateAndClose(subChild.to)"
                     >
@@ -258,7 +269,7 @@ onMounted(async () => {
                     'text-n-slate-12 bg-n-alpha-2': isActive(child),
                     'text-n-slate-11 hover:bg-n-alpha-2': !isActive(child),
                   },
-                  child.compactIconGap ? 'gap-0' : 'gap-2',
+                  child.compactIconGap ? 'gap-1' : 'gap-2',
                 ]"
                 @click="navigateAndClose(child.to)"
               >

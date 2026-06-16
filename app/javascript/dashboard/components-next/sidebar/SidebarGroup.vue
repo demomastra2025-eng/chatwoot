@@ -9,6 +9,7 @@ import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
 import SidebarSubGroup from './SidebarSubGroup.vue';
 import SidebarGroupEmptyLeaf from './SidebarGroupEmptyLeaf.vue';
 import SidebarCollapsedPopover from './SidebarCollapsedPopover.vue';
+import SidebarAssigneeTabs from './SidebarAssigneeTabs.vue';
 import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
 
 const props = defineProps({
@@ -50,6 +51,7 @@ const {
 const navigableChildren = computed(() => {
   return (
     props.children?.flatMap(child => {
+      if (child.type === 'tabs') return child.items || [];
       if (!child.children) return child;
       return child.to ? [child, ...child.children] : child.children;
     }) || []
@@ -175,10 +177,15 @@ const queryMatches = child => {
   const childQuery = child?.to?.query || {};
 
   return Object.entries(childQuery).every(([key, value]) => {
-    const routeValue =
-      key === 'status'
-        ? (route.query[key] ?? 'open')
-        : (route.query[key] ?? '');
+    let routeValue = route.query[key] ?? '';
+
+    if (key === 'status') {
+      routeValue = route.query[key] ?? 'open';
+    }
+
+    if (key === 'assignee_type') {
+      routeValue = route.query[key] ?? 'me';
+    }
 
     return String(routeValue) === String(value);
   });
@@ -412,8 +419,17 @@ watch(
         class="grid m-0 list-none sidebar-group-children min-w-0"
       >
         <template v-for="child in children" :key="child.name">
+          <SidebarAssigneeTabs
+            v-if="child.type === 'tabs'"
+            v-show="
+              isExpanded ||
+              child.items?.some(item => activeChildNames.includes(item.name))
+            "
+            :items="child.items"
+            :active-child-names="activeChildNames"
+          />
           <SidebarSubGroup
-            v-if="child.children"
+            v-else-if="child.children"
             :label="child.label"
             :icon="child.icon"
             :children="child.children"

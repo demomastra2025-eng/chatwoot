@@ -117,7 +117,7 @@ const handleRootClick = async () => {
     :title="label"
     class="sidebar-group-separator group flex items-center gap-2 px-2 py-1.5 rounded-lg h-8 select-none min-w-0"
     :class="{
-      'text-n-slate-10 pointer-events-none': !to && !active,
+      'text-n-slate-11 pointer-events-none': !to && !active,
       'text-n-slate-11 hover:bg-n-alpha-2 cursor-pointer': to && !active,
       'text-n-slate-11 cursor-pointer': active,
       'bg-n-alpha-2': active && !actionLabel,

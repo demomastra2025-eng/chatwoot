@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import Icon from 'next/icon/Icon.vue';
 import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
 import SidebarSubGroup from './SidebarSubGroup.vue';
+import SidebarAssigneeTabs from './SidebarAssigneeTabs.vue';
 import { useSidebarContext } from './provider';
 import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
 
@@ -109,8 +110,13 @@ const openHeaderAction = async () => {
       <ul class="grid m-0 list-none min-w-0">
         <template v-for="(child, index) in children" :key="child.name">
           <li v-if="child.children && index > 0" class="my-1 h-px bg-n-weak" />
+          <SidebarAssigneeTabs
+            v-if="child.type === 'tabs'"
+            :items="child.items"
+            :active-child-names="activeChildNames"
+          />
           <SidebarSubGroup
-            v-if="child.children"
+            v-else-if="child.children"
             :label="child.label"
             :icon="child.icon"
             :children="child.children"

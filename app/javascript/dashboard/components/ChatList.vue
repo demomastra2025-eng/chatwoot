@@ -22,7 +22,6 @@ import {
 import { Virtualizer } from 'virtua/vue';
 import ChatListHeader from './ChatListHeader.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
-import ChatTypeTabs from './widgets/ChatTypeTabs.vue';
 import ConversationItem from './ConversationItem.vue';
 import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirection.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
@@ -57,13 +56,8 @@ import {
   isOnParticipatingView,
   isOnUnattendedView,
 } from '../store/modules/conversations/helpers/actionHelpers';
-import {
-  getUserPermissions,
-  filterItemsByPermission,
-} from 'dashboard/helper/permissionsHelper.js';
 import { matchesFilters } from '../store/modules/conversations/helpers/filterHelpers';
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
-import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions.js';
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
 import {
   filterConversationsByCommunicationThreadMode,
@@ -232,98 +226,27 @@ const routeConversationStatus = computed(() => {
     : wootConstants.STATUS_TYPE.OPEN;
 });
 
+const routeConversationAssigneeType = computed(() => {
+  const assigneeType = route.query.assignee_type || route.query.assigneeType;
+  return Object.values(wootConstants.ASSIGNEE_TYPE).includes(assigneeType)
+    ? assigneeType
+    : wootConstants.ASSIGNEE_TYPE.ME;
+});
+
 const currentUserDetails = computed(() => {
   const { id, name } = currentUser.value;
   return { id, name };
 });
 
-const userPermissions = computed(() => {
-  return getUserPermissions(currentUser.value, currentAccountId.value);
-});
-
 const tabTotalCount = tabKey => {
-  const countKey = ASSIGNEE_TYPE_TAB_PERMISSIONS[tabKey]?.count;
+  const countByTab = {
+    [wootConstants.ASSIGNEE_TYPE.ME]: 'mineCount',
+    [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]: 'unAssignedCount',
+    [wootConstants.ASSIGNEE_TYPE.ALL]: 'allCount',
+  };
+  const countKey = countByTab[tabKey];
   return Number(conversationStats.value[countKey] || 0);
 };
-
-const tabUnreadCount = tabKey => {
-  const countKey = ASSIGNEE_TYPE_TAB_PERMISSIONS[tabKey]?.unreadCount;
-  return Number(conversationStats.value[countKey] || 0);
-};
-
-const filterListByMode = list =>
-  filterConversationsByCommunicationThreadMode(
-    list,
-    props.communicationThreadMode
-  );
-
-const unreadChatCount = list =>
-  filterListByMode(list).filter(conversation => conversation.unread_count > 0)
-    .length;
-
-const tabListFilters = tabKey => ({
-  inboxId: props.conversationInbox ? props.conversationInbox : undefined,
-  assigneeType: tabKey,
-  status: activeStatus.value,
-  sortBy: activeSortBy.value,
-  labels: props.label ? [props.label] : undefined,
-  teamId: props.teamId || undefined,
-  conversationType: props.conversationType || undefined,
-});
-
-const missedCountForAssigneeTab = tabKey => {
-  if (props.communicationThreadMode) {
-    return tabUnreadCount(tabKey);
-  }
-
-  const filters = tabListFilters(tabKey);
-
-  if (
-    props.conversationType === wootConstants.CONVERSATION_TYPE.PARTICIPATING
-  ) {
-    const conversations = participatingChatsList.value(filters);
-
-    if (tabKey === wootConstants.ASSIGNEE_TYPE.ME) {
-      return unreadChatCount(
-        conversations.filter(
-          conversation =>
-            conversation.meta?.assignee?.id === currentUser.value?.id
-        )
-      );
-    }
-
-    if (tabKey === wootConstants.ASSIGNEE_TYPE.UNASSIGNED) {
-      return unreadChatCount(
-        conversations.filter(conversation => !conversation.meta?.assignee)
-      );
-    }
-
-    return unreadChatCount(conversations);
-  }
-
-  if (tabKey === wootConstants.ASSIGNEE_TYPE.ME) {
-    return unreadChatCount(mineChatsList.value(filters));
-  }
-
-  if (tabKey === wootConstants.ASSIGNEE_TYPE.UNASSIGNED) {
-    return unreadChatCount(unAssignedChatsList.value(filters));
-  }
-
-  return unreadChatCount(allChatList.value(filters));
-};
-
-const assigneeTabItems = computed(() => {
-  return filterItemsByPermission(
-    ASSIGNEE_TYPE_TAB_PERMISSIONS,
-    userPermissions.value,
-    item => item.permissions
-  ).map(({ key, count: countKey }) => ({
-    key,
-    name: t(`CHAT_LIST.ASSIGNEE_TYPE_TABS.${key}`),
-    totalCount: conversationStats.value[countKey] || 0,
-    count: missedCountForAssigneeTab(key),
-  }));
-});
 
 const showAssigneeInConversationCard = computed(() => {
   return (
@@ -604,6 +527,7 @@ function setFiltersFromUISettings() {
   const { conversations_filter_by: filterBy = {} } = uiSettings.value;
   const { order_by: orderBy } = filterBy;
   activeStatus.value = routeConversationStatus.value;
+  activeAssigneeTab.value = routeConversationAssigneeType.value;
   activeSortBy.value = Object.values(wootConstants.SORT_BY_TYPE).includes(
     orderBy
   )
@@ -861,17 +785,6 @@ const intersectionObserverOptions = computed(() => ({
   root: conversationListRef.value,
   rootMargin: '100px 0px 100px 0px',
 }));
-
-function updateAssigneeTab(selectedTab) {
-  if (activeAssigneeTab.value !== selectedTab) {
-    resetBulkActions();
-    clearLocalSearch();
-    activeAssigneeTab.value = selectedTab;
-    if (!currentPage.value) {
-      fetchConversations();
-    }
-  }
-}
 
 function onBasicFilterChange(value, type) {
   if (type === 'status') {
@@ -1333,6 +1246,16 @@ watch(routeConversationStatus, (newStatus, oldStatus) => {
   resetAndFetchData();
 });
 
+watch(routeConversationAssigneeType, (newAssigneeType, oldAssigneeType) => {
+  if (newAssigneeType === oldAssigneeType) {
+    return;
+  }
+
+  activeAssigneeTab.value = newAssigneeType;
+  clearLocalSearch();
+  resetAndFetchData();
+});
+
 watch(
   computed(() => props.conversationInbox),
   () => {
@@ -1428,14 +1351,6 @@ watch(conversationFilters, (newVal, oldVal) => {
       :custom-views-id="foldersId"
       :open-last-item-after-delete="openLastItemAfterDeleteInFolder"
       @close="onCloseDeleteFoldersModal"
-    />
-
-    <ChatTypeTabs
-      v-if="!hasAppliedFiltersOrActiveFolders"
-      :items="assigneeTabItems"
-      :active-tab="activeAssigneeTab"
-      is-compact
-      @chat-tab-change="updateAssigneeTab"
     />
 
     <p

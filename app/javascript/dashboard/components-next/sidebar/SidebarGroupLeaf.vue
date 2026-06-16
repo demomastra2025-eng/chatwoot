@@ -91,7 +91,7 @@ const handleLeafClick = async event => {
       class="flex h-8 items-center px-2 py-1 rounded-lg hover:bg-gradient-to-r from-transparent via-n-slate-3/70 to-n-slate-3/70 group min-w-0"
       :class="{
         'text-n-slate-12 bg-n-alpha-2 active': active,
-        'gap-0': compactIconGap,
+        'gap-1.5': compactIconGap,
         'gap-2': !compactIconGap,
       }"
       @click="handleLeafClick"
