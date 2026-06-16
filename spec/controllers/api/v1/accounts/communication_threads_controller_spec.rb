@@ -391,6 +391,57 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(delivery_policy).not_to include('delivery_mode' => 'bypass')
     end
 
+    it 'rejects official WhatsApp free text outside the reply window without creating a failed message' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'Plain text outside window', conversation_id: conversation.display_id },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to include('requires a template')
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'allows official WhatsApp templates outside the reply window when template params are present' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: {
+             content: 'Shipping update: 2',
+             conversation_id: conversation.display_id,
+             template_params: {
+               name: 'sample_shipping_confirmation',
+               language: 'en_US',
+               namespace: '23423423_2342423_324234234_2343224',
+               processed_params: { body: { '1' => '2' } }
+             }
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      message = conversation.messages.outgoing.last
+      expect(message.content).to eq('Shipping update: 2')
+      expect(message.additional_attributes.dig('template_params', 'name')).to eq('sample_shipping_confirmation')
+      expect(message.additional_attributes.dig('delivery_policy', 'delivery_mode')).to eq('channel_template')
+    end
+
     it 'rejects public text delivery through voice call channels' do
       contact = create(:contact, phone_number: '+15550001234', account: account)
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox

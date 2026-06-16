@@ -1,9 +1,9 @@
 class Outbound::DeliveryPolicy
   VALID_CONTENT_KINDS = %w[free_text channel_template].freeze
   WHATSAPP_TEMPLATE_REQUIRED_REASON = 'Official WhatsApp Business API requires an approved channel_template ' \
-                                      'when the 24-hour customer service window is closed'
+                                      'when the 24-hour customer service window is closed'.freeze
   TEMPLATE_ATTACHMENTS_UNSUPPORTED_REASON = 'Native attachments cannot be combined with channel_template messages; ' \
-                                            'use template header/media parameters instead'
+                                            'use template header/media parameters instead'.freeze
 
   Result = Struct.new(
     :allowed,
@@ -199,16 +199,25 @@ class Outbound::DeliveryPolicy
   def normalize_content_kind(value, template_params)
     normalized = value.to_s.strip
     return normalized if normalized.present?
-    return 'channel_template' if normalize_template_params(template_params).present?
+    return 'channel_template' if channel_template_supported? && normalize_template_params(template_params).present?
 
     'free_text'
   end
 
   def normalize_template_params(value)
     return {} if value.blank?
+
+    if value.is_a?(String)
+      parsed_value = JSON.parse(value)
+      return parsed_value.with_indifferent_access if parsed_value.is_a?(Hash)
+
+      return {}
+    end
     return value.to_unsafe_h.with_indifferent_access if value.respond_to?(:to_unsafe_h)
     return value.to_h.with_indifferent_access if value.respond_to?(:to_h)
 
+    {}
+  rescue JSON::ParserError
     {}
   end
 

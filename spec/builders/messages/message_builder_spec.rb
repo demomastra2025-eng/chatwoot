@@ -42,6 +42,78 @@ describe Messages::MessageBuilder do
         expect(message.additional_attributes.dig('template_params', 'name')).to eq('ticket_status_updated')
       end
     end
+
+    context 'when official WhatsApp free text is outside the 24-hour reply window' do
+      let(:whatsapp_channel) { create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false) }
+      let(:inbox) { whatsapp_channel.inbox }
+      let(:conversation) { create(:conversation, inbox: inbox, account: account) }
+
+      before do
+        create(:message, account: account, inbox: inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      end
+
+      it 'raises a delivery policy error before creating a failed outgoing message' do
+        expect { message_builder }.to raise_error(ArgumentError, /approved channel_template/)
+        expect(conversation.messages.where(message_type: :outgoing, content: params[:content])).not_to exist
+      end
+
+      context 'when approved template params are provided' do
+        let(:params) do
+          ActionController::Parameters.new({
+                                             content: 'Shipping update: 2',
+                                             template_params: {
+                                               name: 'sample_shipping_confirmation',
+                                               language: 'en_US',
+                                               namespace: '23423423_2342423_324234234_2343224',
+                                               processed_params: { body: { '1' => '2' } }
+                                             }
+                                           })
+        end
+
+        it 'allows the outgoing template message' do
+          message = message_builder
+
+          expect(message.content).to eq('Shipping update: 2')
+          expect(message.additional_attributes.dig('template_params', 'name')).to eq('sample_shipping_confirmation')
+        end
+      end
+
+      context 'when approved template params are provided as a JSON string' do
+        let(:params) do
+          ActionController::Parameters.new({
+                                             content: 'Shipping update: 2',
+                                             template_params: {
+                                               name: 'sample_shipping_confirmation',
+                                               language: 'en_US',
+                                               namespace: '23423423_2342423_324234234_2343224',
+                                               processed_params: { body: { '1' => '2' } }
+                                             }.to_json
+                                           })
+        end
+
+        it 'parses and allows the outgoing template message' do
+          message = message_builder
+
+          expect(message.additional_attributes.dig('template_params', 'name')).to eq('sample_shipping_confirmation')
+        end
+      end
+
+      context 'when the message is a private note' do
+        let(:params) do
+          ActionController::Parameters.new({
+                                             content: 'internal note',
+                                             private: true
+                                           })
+        end
+
+        it 'allows the note because it is not sent to WhatsApp' do
+          message = message_builder
+
+          expect(message).to be_private
+          expect(message.content).to eq('internal note')
+        end
+      end
+    end
   end
 
   describe '#content_attributes' do

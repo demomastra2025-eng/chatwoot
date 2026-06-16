@@ -181,8 +181,13 @@ class CommunicationThreads::MessageCreateService
   def normalized_content_kind
     normalized = params[:content_kind].to_s.strip
     return normalized if normalized.present?
+    return 'channel_template' if channel_templates_supported? && params[:template_params].present?
 
     'free_text'
+  end
+
+  def channel_templates_supported?
+    Outbound::ChannelTemplateCatalog.new(inbox: conversation.inbox).supports_channel_templates?
   end
 
   def private_message?

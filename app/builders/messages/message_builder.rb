@@ -21,6 +21,7 @@ class Messages::MessageBuilder
   end
 
   def perform
+    validate_delivery_policy!
     @message = @conversation.messages.build(message_params)
     @message.preserve_waiting_since = preserve_waiting_since?
     process_attachments
@@ -104,6 +105,19 @@ class Messages::MessageBuilder
     @message_type
   end
 
+  def validate_delivery_policy!
+    return unless message_type == 'outgoing'
+
+    Outbound::DeliveryPolicy.ensure!(
+      conversation: @conversation,
+      inbox: @conversation.inbox,
+      content_kind: @params[:content_kind],
+      template_params: template_params,
+      attachments: @attachments,
+      private_note: @private
+    )
+  end
+
   def sender
     message_type == 'outgoing' ? (message_sender || @user) : @conversation.contact
   end
@@ -125,9 +139,11 @@ class Messages::MessageBuilder
   end
 
   def template_params
-    return if @params[:template_params].blank?
+    raw_template_params = @params[:template_params]
+    return if raw_template_params.blank?
+    return safe_parse_json(raw_template_params) if raw_template_params.is_a?(String)
 
-    JSON.parse(@params[:template_params].to_json)
+    JSON.parse(raw_template_params.to_json)
   end
 
   def delivery_policy

@@ -21,6 +21,20 @@ RSpec.describe Outbound::DeliveryPolicy do
       expect(result.allowed_content_kinds).to eq(['free_text'])
     end
 
+    it 'treats template_params as metadata on ordinary channels unless channel templates are supported' do
+      inbox = create(:inbox, account: account)
+      conversation = conversation_for(inbox)
+
+      result = described_class.evaluate(
+        conversation: conversation,
+        template_params: { name: 'campaign_metadata' }
+      )
+
+      expect(result).to be_allowed
+      expect(result.delivery_mode).to eq('free_text')
+      expect(result.content_kind).to eq('free_text')
+    end
+
     it 'allows WhatsApp Business free text while the 24-hour reply window is open' do
       whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
       conversation = conversation_for(whatsapp_inbox)
@@ -75,6 +89,24 @@ RSpec.describe Outbound::DeliveryPolicy do
       expect(result).to be_allowed
       expect(result.delivery_mode).to eq('channel_template')
       expect(result.template[:name]).to eq('sample_shipping_confirmation')
+    end
+
+    it 'infers WhatsApp channel_template mode from JSON string template params' do
+      whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+      conversation = conversation_for(whatsapp_inbox)
+
+      result = described_class.evaluate(
+        conversation: conversation,
+        template_params: {
+          name: 'sample_shipping_confirmation',
+          language: 'en_US',
+          namespace: '23423423_2342423_324234234_2343224'
+        }.to_json
+      )
+
+      expect(result).to be_allowed
+      expect(result.delivery_mode).to eq('channel_template')
+      expect(result.content_kind).to eq('channel_template')
     end
 
     it 'does not apply WhatsApp Business template rules to WhatsApp Web' do

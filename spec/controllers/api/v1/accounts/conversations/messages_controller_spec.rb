@@ -53,6 +53,30 @@ RSpec.describe 'Conversation Messages API', type: :request do
         )
       end
 
+      it 'rejects official WhatsApp free text outside the reply window without creating a failed message' do
+        whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+        whatsapp_inbox = whatsapp_channel.inbox
+        whatsapp_conversation = create(:conversation, inbox: whatsapp_inbox, account: account)
+        create(
+          :message,
+          account: account,
+          inbox: whatsapp_inbox,
+          conversation: whatsapp_conversation,
+          message_type: 'incoming',
+          created_at: 25.hours.ago
+        )
+        create(:inbox_member, inbox: whatsapp_inbox, user: agent)
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: whatsapp_conversation.display_id),
+             params: { content: 'plain text outside window' },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to include('approved channel_template')
+        expect(whatsapp_conversation.messages.outgoing).to be_empty
+      end
+
       it 'creates an outgoing text message with a specific bot sender' do
         agent_bot = create(:agent_bot)
         time_stamp = Time.now.utc.to_s
