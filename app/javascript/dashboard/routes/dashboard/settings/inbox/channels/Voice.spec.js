@@ -68,40 +68,15 @@ describe('Voice channel setup', () => {
     routerPushMock.mockReset();
     createVirtualPbxChannelMock.mockReset();
     dispatchMock.mockResolvedValue({ id: 101 });
-    routeMock.query = { provider: 'sipuni' };
+    routeMock.query = { provider: 'kazakhstan' };
   });
 
-  it('normalizes Sipuni phone input before creating the voice inbox', async () => {
+  it('does not expose the legacy direct Sipuni API setup form', () => {
+    routeMock.query = { provider: 'sipuni' };
     const wrapper = buildWrapper();
-    const inputs = wrapper.findAll('input');
 
-    await inputs[0].setValue('+7 727 123-45-67');
-    await inputs[1].setValue('  123456  ');
-    await inputs[2].setValue('  integration-key  ');
-    await inputs[3].setValue('  100  ');
-    await wrapper.find('form').trigger('submit');
-    await flushPromises();
-
-    expect(dispatchMock).toHaveBeenCalledWith('inboxes/createVoiceChannel', {
-      name: '+77271234567',
-      voice: {
-        phone_number: '+77271234567',
-        provider: 'sipuni',
-        provider_config: {
-          account_number: '123456',
-          default_internal_number: '100',
-          integration_secret: 'integration-key',
-          audio_mode: 'external_softphone',
-        },
-      },
-    });
-    expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inboxes_add_agents',
-      params: {
-        accountId: 530,
-        inbox_id: 101,
-      },
-    });
+    expect(wrapper.find('form').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('INBOX_MGMT.ADD.VOICE.SIPUNI');
   });
 
   it('creates a Virtual PBX Sipuni channel without employee profiles', async () => {

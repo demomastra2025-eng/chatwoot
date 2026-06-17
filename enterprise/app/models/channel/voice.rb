@@ -24,7 +24,7 @@ class Channel::Voice < ApplicationRecord
   CURRENT_FONOSTER_OPERATOR_AGENT_AOR = 'sip:1001@operator.cloud.vconsult.kz'.freeze
   STALE_FONOSTER_OPERATOR_AGENT_AORS = ['sip:1001@company.example'].freeze
 
-  PROVIDERS = %w[twilio fonoster sipuni].freeze
+  PROVIDERS = %w[twilio fonoster].freeze
 
   validates :phone_number, presence: true, uniqueness: true
   validates :provider, presence: true, inclusion: { in: PROVIDERS }
@@ -36,7 +36,6 @@ class Channel::Voice < ApplicationRecord
   # Provider-specific configs stored in JSON
   validate :validate_provider_config
   before_validation :provision_twilio_on_create, on: :create, if: :twilio?
-  before_validation :normalize_sipuni_config, if: :sipuni?
   after_commit :sync_fonoster_binding, on: %i[create update], if: :fonoster?
 
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
@@ -68,15 +67,6 @@ class Channel::Voice < ApplicationRecord
     Rails.application.routes.url_helpers.twilio_voice_status_url(phone: digits)
   end
 
-  def sipuni_events_webhook_url
-    return if inbox.blank? || sipuni_webhook_token.blank?
-
-    Rails.application.routes.url_helpers.sipuni_voice_events_url(
-      inbox_id: inbox&.id,
-      token: sipuni_webhook_token
-    )
-  end
-
   def provider_config_hash
     if provider_config.is_a?(Hash)
       provider_config
@@ -95,10 +85,6 @@ class Channel::Voice < ApplicationRecord
     provider == 'fonoster'
   end
 
-  def sipuni?
-    provider == 'sipuni'
-  end
-
   def validate_provider_config
     return if provider_config.blank?
 
@@ -107,8 +93,6 @@ class Channel::Voice < ApplicationRecord
       validate_twilio_config
     when 'fonoster'
       validate_fonoster_config
-    when 'sipuni'
-      validate_sipuni_config
     end
   end
 
@@ -142,22 +126,6 @@ class Channel::Voice < ApplicationRecord
     errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when routing_mode is operator')
   end
 
-  def validate_sipuni_config
-    config = provider_config.with_indifferent_access
-
-    sipuni_user_id = config[:sipuni_user_id].presence || config[:account_number]
-    errors.add(:provider_config, 'account_number is required for Sipuni provider') if sipuni_user_id.blank?
-    if sipuni_user_id.present? && !sipuni_user_id.to_s.match?(/\A\d+\z/)
-      errors.add(:provider_config, 'account_number must be Sipuni numeric system user id')
-    end
-    errors.add(:provider_config, 'webhook_token is required for Sipuni provider') if config[:webhook_token].blank?
-
-    audio_mode = config[:audio_mode].to_s
-    return if audio_mode.in?(%w[external_softphone sip_bridge])
-
-    errors.add(:provider_config, 'audio_mode must be one of external_softphone, sip_bridge')
-  end
-
   def normalized_fonoster_operator_agent_aor(value)
     candidate = value.to_s.strip.presence
     return if candidate.blank?
@@ -172,88 +140,9 @@ class Channel::Voice < ApplicationRecord
       Voice::Provider::Twilio::Adapter.new(self)
     when 'fonoster'
       Voice::Provider::Fonoster::Adapter.new(self)
-    when 'sipuni'
-      Voice::Provider::Sipuni::Adapter.new(self)
     else
       raise "Unsupported voice provider: #{provider}"
     end
-  end
-
-  def normalize_sipuni_config
-    config = sipuni_config_for_validation
-
-    normalize_sipuni_user_id!(config)
-    normalize_sipuni_callback_config!(config)
-    normalize_sipuni_runtime_config!(config)
-    normalize_sipuni_internal_numbers!(config)
-    self.provider_config = config
-  end
-
-  def normalize_sipuni_user_id!(config)
-    sipuni_user_id = sipuni_config_value(config, :sipuni_user_id, :system_user, :account_number, :user) ||
-                     persisted_sipuni_config_value(:sipuni_user_id, :system_user, :account_number, :user)
-    config[:sipuni_user_id] = sipuni_user_id
-    config[:account_number] = sipuni_user_id
-  end
-
-  def normalize_sipuni_callback_config!(config)
-    config[:default_internal_number] = sipuni_config_value(config, :default_internal_number, :sipnumber, :sip_number) ||
-                                       persisted_sipuni_config_value(:default_internal_number, :sipnumber, :sip_number)
-    config[:integration_secret] = sipuni_config_value(config, :integration_secret, :secret, :integration_key, :api_key) ||
-                                  persisted_sipuni_config_value(:integration_secret, :secret, :integration_key, :api_key)
-  end
-
-  def normalize_sipuni_runtime_config!(config)
-    config[:audio_mode] = config[:audio_mode].presence || 'external_softphone'
-    config[:webhook_token] = config[:webhook_token].presence || persisted_sipuni_webhook_token || SecureRandom.hex(24)
-    config[:reverse] = normalized_sipuni_binary_value(config[:reverse].presence || persisted_sipuni_config_value(:reverse), default: '0')
-    config[:antiaon] = normalized_sipuni_binary_value(config[:antiaon].presence || persisted_sipuni_config_value(:antiaon), default: '0')
-  end
-
-  def sipuni_config_for_validation
-    provider_config_hash.with_indifferent_access
-  rescue JSON::ParserError, TypeError
-    {}.with_indifferent_access
-  end
-
-  def normalize_sipuni_internal_numbers!(config)
-    return unless config.key?(:internal_numbers)
-
-    config[:internal_numbers] = Array.wrap(config[:internal_numbers]).compact_blank.map(&:to_s)
-  end
-
-  def sipuni_config_value(config, *keys)
-    keys.each do |key|
-      value = config[key].to_s.strip
-      return value if value.present?
-    end
-
-    nil
-  end
-
-  def normalized_sipuni_binary_value(value, default:)
-    candidate = value.to_s.strip
-    return candidate if candidate.in?(%w[0 1])
-
-    default
-  end
-
-  def persisted_sipuni_webhook_token
-    persisted_sipuni_config_value(:webhook_token)
-  end
-
-  def persisted_sipuni_config_value(*keys)
-    config = provider_config_in_database
-    config = JSON.parse(config.to_s) unless config.is_a?(Hash)
-    sipuni_config_value(config.with_indifferent_access, *keys)
-  rescue JSON::ParserError, TypeError
-    nil
-  end
-
-  def sipuni_webhook_token
-    provider_config_hash.with_indifferent_access[:webhook_token]
-  rescue JSON::ParserError, TypeError
-    nil
   end
 
   def provision_twilio_on_create

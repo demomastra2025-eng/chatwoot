@@ -79,8 +79,6 @@ export default {
         operatorAgentAor: '',
         profiles: [],
       },
-      sipuniIntegrationSecret: '',
-      isUpdatingSipuniIntegrationSecret: false,
     };
   },
   validations: {
@@ -748,30 +746,6 @@ export default {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
       }
     },
-    async updateSipuniIntegrationSecret() {
-      const integrationSecret = this.sipuniIntegrationSecret.trim();
-      if (!integrationSecret) return;
-
-      this.isUpdatingSipuniIntegrationSecret = true;
-      try {
-        await this.$store.dispatch('inboxes/updateInbox', {
-          id: this.inbox.id,
-          formData: false,
-          channel: {
-            provider_config: {
-              ...this.inbox.provider_config,
-              integration_secret: integrationSecret,
-            },
-          },
-        });
-        this.sipuniIntegrationSecret = '';
-        useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
-      } catch (error) {
-        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
-      } finally {
-        this.isUpdatingSipuniIntegrationSecret = false;
-      }
-    },
     async syncTemplates() {
       this.isSyncingTemplates = true;
       try {
@@ -828,74 +802,6 @@ export default {
         "
       >
         <woot-code :script="inbox.voice_status_webhook_url" lang="html" />
-      </SettingsFieldSection>
-    </template>
-    <template v-else-if="inbox.provider === 'sipuni'">
-      <SettingsFieldSection
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SUBTITLE')
-        "
-      >
-        <woot-code
-          :script="inbox.sipuni_events_webhook_url || ''"
-          lang="html"
-        />
-      </SettingsFieldSection>
-      <SettingsFieldSection
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_MODE_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_MODE_SUBTITLE')
-        "
-      >
-        <div class="flex flex-col gap-2 text-sm text-n-slate-11">
-          <div>
-            <span class="after:content-[':']">
-              {{ $t('INBOX_MGMT.ADD.VOICE.SIPUNI.ACCOUNT_NUMBER.LABEL') }}
-            </span>
-            {{ inbox.provider_config?.account_number || '-' }}
-          </div>
-          <div v-if="inbox.provider_config?.default_internal_number">
-            <span class="after:content-[':']">
-              {{
-                $t('INBOX_MGMT.ADD.VOICE.SIPUNI.DEFAULT_INTERNAL_NUMBER.LABEL')
-              }}
-            </span>
-            {{ inbox.provider_config.default_internal_number }}
-          </div>
-          <div>
-            <span class="after:content-[':']">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.CALL_SURFACE') }}
-            </span>
-            {{
-              $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_EXTERNAL_SOFTPHONE')
-            }}
-          </div>
-        </div>
-      </SettingsFieldSection>
-      <SettingsFieldSection
-        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_OUTBOUND_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_OUTBOUND_SUBTITLE')
-        "
-      >
-        <div class="flex flex-col gap-3 md:flex-row md:items-end">
-          <woot-input
-            v-model="sipuniIntegrationSecret"
-            type="password"
-            class="flex-1 [&>input]:!mb-0"
-            :placeholder="
-              $t('INBOX_MGMT.ADD.VOICE.SIPUNI.INTEGRATION_SECRET.PLACEHOLDER')
-            "
-          />
-          <NextButton
-            :disabled="!sipuniIntegrationSecret.trim()"
-            :is-loading="isUpdatingSipuniIntegrationSecret"
-            @click="updateSipuniIntegrationSecret"
-          >
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_UPDATE_KEY') }}
-          </NextButton>
-        </div>
       </SettingsFieldSection>
     </template>
     <template v-else>

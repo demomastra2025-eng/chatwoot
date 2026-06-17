@@ -23,7 +23,6 @@ const router = useRouter();
 
 const PROVIDER_TYPES = {
   KAZAKHSTAN: 'kazakhstan',
-  SIPUNI: 'sipuni',
   TWILIO: 'twilio',
 };
 
@@ -50,17 +49,8 @@ const twilioState = reactive({
   apiKeySecret: '',
 });
 
-const sipuniState = reactive({
-  phoneNumber: '',
-  accountNumber: '',
-  defaultInternalNumber: '',
-  integrationSecret: '',
-});
-
 const normalizeE164Input = value =>
   String(value || '').replace(/[\s().-]/g, '');
-
-const isNormalizablePhoneE164 = value => isPhoneE164(normalizeE164Input(value));
 
 const isValidSipPort = value => {
   const port = String(value || '').trim();
@@ -97,12 +87,6 @@ const availableProviders = computed(() => [
     description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.TWILIO_DESC'),
     icon: 'i-woot-twilio',
   },
-  {
-    key: PROVIDER_TYPES.SIPUNI,
-    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.SIPUNI'),
-    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.SIPUNI_DESC'),
-    icon: 'i-ri-phone-fill channel-icon-voice',
-  },
 ]);
 
 const selectedProviderCard = computed(() => {
@@ -130,20 +114,11 @@ const twilioValidationRules = computed(() => ({
   apiKeySecret: { required },
 }));
 
-const sipuniValidationRules = computed(() => ({
-  phoneNumber: { required, isPhoneE164: isNormalizablePhoneE164 },
-  accountNumber: { required },
-  defaultInternalNumber: { required },
-  integrationSecret: { required },
-}));
-
 const kazakhstanV$ = useVuelidate(kazakhstanValidationRules, kazakhstanState);
 const twilioV$ = useVuelidate(twilioValidationRules, twilioState);
-const sipuniV$ = useVuelidate(sipuniValidationRules, sipuniState);
 
 const isKazakhstanSubmitDisabled = computed(() => kazakhstanV$.value.$invalid);
 const isTwilioSubmitDisabled = computed(() => twilioV$.value.$invalid);
-const isSipuniSubmitDisabled = computed(() => sipuniV$.value.$invalid);
 
 const routingOptions = computed(() => [
   {
@@ -211,21 +186,6 @@ const twilioFormErrors = computed(() => ({
     : '',
   apiKeySecret: twilioV$.value.apiKeySecret?.$error
     ? t('INBOX_MGMT.ADD.VOICE.TWILIO.API_KEY_SECRET.REQUIRED')
-    : '',
-}));
-
-const sipuniFormErrors = computed(() => ({
-  phoneNumber: sipuniV$.value.phoneNumber?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.ERROR')
-    : '',
-  accountNumber: sipuniV$.value.accountNumber?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.SIPUNI.ACCOUNT_NUMBER.REQUIRED')
-    : '',
-  defaultInternalNumber: sipuniV$.value.defaultInternalNumber?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.SIPUNI.DEFAULT_INTERNAL_NUMBER.REQUIRED')
-    : '',
-  integrationSecret: sipuniV$.value.integrationSecret?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.SIPUNI.INTEGRATION_SECRET.REQUIRED')
     : '',
 }));
 
@@ -356,39 +316,6 @@ async function createTwilioChannel() {
           auth_token: twilioState.authToken,
           api_key_sid: twilioState.apiKeySid,
           api_key_secret: twilioState.apiKeySecret,
-        },
-      },
-    });
-
-    router.replace({
-      name: getInboxFlowRouteName(route, 'agents'),
-      params: agentsRouteParams(channel.id),
-    });
-  } catch (error) {
-    handleCreateError(error);
-  }
-}
-
-async function createSipuniChannel() {
-  sipuniState.phoneNumber = normalizeE164Input(sipuniState.phoneNumber);
-  sipuniState.accountNumber = sipuniState.accountNumber.trim();
-  sipuniState.defaultInternalNumber = sipuniState.defaultInternalNumber.trim();
-  sipuniState.integrationSecret = sipuniState.integrationSecret.trim();
-
-  const isFormValid = await sipuniV$.value.$validate();
-  if (!isFormValid) return;
-
-  try {
-    const channel = await store.dispatch('inboxes/createVoiceChannel', {
-      name: sipuniState.phoneNumber,
-      voice: {
-        phone_number: sipuniState.phoneNumber,
-        provider: 'sipuni',
-        provider_config: {
-          account_number: sipuniState.accountNumber,
-          default_internal_number: sipuniState.defaultInternalNumber,
-          integration_secret: sipuniState.integrationSecret,
-          audio_mode: 'external_softphone',
         },
       },
     });
@@ -676,68 +603,6 @@ async function createSipuniChannel() {
           <NextButton
             :is-loading="isCreatingVirtualPbx || uiFlags.isCreating"
             :disabled="isKazakhstanSubmitDisabled"
-            :label="t('INBOX_MGMT.ADD.VOICE.SUBMIT_BUTTON')"
-            type="submit"
-          />
-        </div>
-      </form>
-
-      <form
-        v-else-if="selectedProvider === PROVIDER_TYPES.SIPUNI"
-        class="flex flex-col gap-4 flex-wrap mx-0"
-        @submit.prevent="createSipuniChannel"
-      >
-        <Input
-          v-model="sipuniState.phoneNumber"
-          :label="t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.LABEL')"
-          :placeholder="t('INBOX_MGMT.ADD.VOICE.PHONE_NUMBER.PLACEHOLDER')"
-          :message="sipuniFormErrors.phoneNumber"
-          :message-type="sipuniFormErrors.phoneNumber ? 'error' : 'info'"
-          @blur="sipuniV$.phoneNumber?.$touch"
-        />
-
-        <Input
-          v-model="sipuniState.accountNumber"
-          :label="t('INBOX_MGMT.ADD.VOICE.SIPUNI.ACCOUNT_NUMBER.LABEL')"
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.SIPUNI.ACCOUNT_NUMBER.PLACEHOLDER')
-          "
-          :message="sipuniFormErrors.accountNumber"
-          :message-type="sipuniFormErrors.accountNumber ? 'error' : 'info'"
-          @blur="sipuniV$.accountNumber?.$touch"
-        />
-
-        <Input
-          v-model="sipuniState.integrationSecret"
-          type="password"
-          :label="t('INBOX_MGMT.ADD.VOICE.SIPUNI.INTEGRATION_SECRET.LABEL')"
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.SIPUNI.INTEGRATION_SECRET.PLACEHOLDER')
-          "
-          :message="sipuniFormErrors.integrationSecret"
-          :message-type="sipuniFormErrors.integrationSecret ? 'error' : 'info'"
-          @blur="sipuniV$.integrationSecret?.$touch"
-        />
-
-        <Input
-          v-model="sipuniState.defaultInternalNumber"
-          :label="
-            t('INBOX_MGMT.ADD.VOICE.SIPUNI.DEFAULT_INTERNAL_NUMBER.LABEL')
-          "
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.SIPUNI.DEFAULT_INTERNAL_NUMBER.PLACEHOLDER')
-          "
-          :message="sipuniFormErrors.defaultInternalNumber"
-          :message-type="
-            sipuniFormErrors.defaultInternalNumber ? 'error' : 'info'
-          "
-          @blur="sipuniV$.defaultInternalNumber?.$touch"
-        />
-
-        <div>
-          <NextButton
-            :is-loading="uiFlags.isCreating"
-            :disabled="isSipuniSubmitDisabled"
             :label="t('INBOX_MGMT.ADD.VOICE.SUBMIT_BUTTON')"
             type="submit"
           />

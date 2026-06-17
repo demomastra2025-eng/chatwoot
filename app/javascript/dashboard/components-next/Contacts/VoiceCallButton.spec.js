@@ -251,7 +251,7 @@ describe('VoiceCallButton', () => {
 
   it('does not prewarm webphone for non-Fonoster voice inboxes', async () => {
     const { dispatchMock, wrapper } = mountComponent({
-      inboxes: [voiceInbox({ id: 4674, provider: 'sipuni' })],
+      inboxes: [voiceInbox({ id: 4674, provider: 'twilio' })],
     });
 
     await wrapper.find('button').trigger('click');

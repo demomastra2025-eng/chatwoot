@@ -843,10 +843,7 @@ class Telephony::EventsIngestionService
   end
 
   def ensure_conversation!(call_session, account)
-    if call_session.conversation.present?
-      update_outbound_conversation!(call_session.conversation, call_session) if sipuni_outbound_call_session?(call_session)
-      return
-    end
+    return if call_session.conversation.present?
 
     inbox = call_session.inbox || resolve_inbox(account)
     if inbox.blank?
@@ -917,10 +914,6 @@ class Telephony::EventsIngestionService
     ContactInbox.find_or_create_by!(contact_id: contact.id, inbox_id: inbox.id) do |record|
       record.source_id = source_id
     end
-  end
-
-  def sipuni_outbound_call_session?(call_session)
-    call_session.provider == 'sipuni' && call_session.direction == 'outbound'
   end
 
   def update_outbound_conversation!(conversation, call_session)
@@ -1382,10 +1375,7 @@ class Telephony::EventsIngestionService
     conversation = account.conversations.find_by(identifier: call_ref)
     return conversation if conversation.present?
 
-    conversation = resolve_reusable_fonoster_conversation(account, call_session)
-    return conversation if conversation.present?
-
-    resolve_pending_sipuni_outbound_conversation(account)
+    resolve_reusable_fonoster_conversation(account, call_session)
   end
 
   def resolve_reusable_fonoster_conversation(account, call_session)
@@ -1410,39 +1400,6 @@ class Telephony::EventsIngestionService
   def fonoster_call_session?(call_session)
     provider = payload_value('provider') || call_session&.provider || 'fonoster'
     provider.to_s == 'fonoster'
-  end
-
-  def resolve_pending_sipuni_outbound_conversation(account)
-    return unless payload_value('provider') == 'sipuni' && resolved_direction == 'outbound'
-
-    inbox = resolve_inbox(account)
-    contact = resolve_contact(account, nil)
-    return if inbox.blank? || contact.blank?
-
-    event_anchor = resolved_started_at || resolved_occurred_at || Time.current
-    candidates = account.conversations
-                        .where(inbox_id: inbox.id, contact_id: contact.id)
-                        .where(created_at: (event_anchor - 15.minutes)..(event_anchor + 5.minutes))
-                        .order(created_at: :desc, id: :desc)
-                        .select { |conversation| pending_sipuni_outbound_conversation?(conversation) }
-    return candidates.first if candidates.one?
-
-    nil
-  end
-
-  def pending_sipuni_outbound_conversation?(conversation)
-    attrs = (conversation.additional_attributes || {}).deep_stringify_keys
-    return false unless attrs['telephony_provider'] == 'sipuni'
-    return false unless attrs['call_direction'] == 'outbound'
-    return false unless pending_sipuni_outbound_status?(attrs['call_status'])
-
-    pending_to_number = attrs['to_number'].presence || conversation.contact&.phone_number
-    normalized_phone(pending_to_number) == normalized_phone(resolved_to_number)
-  end
-
-  def pending_sipuni_outbound_status?(status)
-    normalized_status = Telephony::CallSession.normalize_status(status)
-    normalized_status.blank? || normalized_status.in?(%w[created ringing connecting])
   end
 
   def normalized_phone(value)
@@ -1575,31 +1532,11 @@ class Telephony::EventsIngestionService
       existing_metadata = base['metadata'].is_a?(Hash) ? base['metadata'].deep_dup : {}
       base['metadata'] = existing_metadata.deep_merge(metadata)
     end
-    if (initiation_metadata = sipuni_outbound_initiation_metadata(conversation || call_session.conversation)).present?
-      existing_initiation_metadata = base['sipuni_outbound_initiation'].is_a?(Hash) ? base['sipuni_outbound_initiation'].deep_dup : {}
-      base['sipuni_outbound_initiation'] = existing_initiation_metadata.deep_merge(initiation_metadata)
-    end
     if recording_event_metadata.present?
       existing_recording_metadata = base['recording'].is_a?(Hash) ? base['recording'].deep_dup : {}
       base['recording'] = existing_recording_metadata.deep_merge(recording_event_metadata)
     end
     base.compact
-  end
-
-  def sipuni_outbound_initiation_metadata(conversation)
-    return {} unless payload_value('provider') == 'sipuni' && resolved_direction == 'outbound'
-    return {} if conversation.blank?
-
-    attrs = (conversation.additional_attributes || {}).deep_stringify_keys
-    meta = attrs['meta'].is_a?(Hash) ? attrs['meta'].deep_stringify_keys : {}
-    provider_request_ref = meta['provider_request_ref'].presence
-    return {} if provider_request_ref.blank?
-
-    {
-      'provider_request_ref' => provider_request_ref,
-      'provider_request_status' => meta['provider_request_status'],
-      'sipuni_callback_response' => meta['sipuni_callback_response']
-    }.compact
   end
 
   def call_recording_metadata(call_session)
@@ -1613,21 +1550,13 @@ class Telephony::EventsIngestionService
   end
 
   def presentation_recording_metadata(call_session)
-    return {} if unsafe_sipuni_external_recording?(call_session)
     return {} if outbound_without_customer_answer?(call_session)
 
-    metadata = call_recording_metadata(call_session).deep_dup
-    return metadata unless proxy_external_recording?(call_session)
-
-    metadata['recording_ref'] = call_session.external_call_ref
-    metadata['recording_url'] = recording_url(call_session)
-    metadata
+    call_recording_metadata(call_session).deep_dup
   end
 
   def recording_url(call_session)
-    return if unsafe_sipuni_external_recording?(call_session)
     return if outbound_without_customer_answer?(call_session)
-    return internal_recording_url(call_session) if proxy_external_recording?(call_session)
 
     external_recording_url(call_session) || internal_recording_url(call_session)
   end
@@ -1646,18 +1575,8 @@ class Telephony::EventsIngestionService
   def external_recording_url(call_session)
     candidate = call_recording_metadata(call_session)['recording_url'].presence || call_session.recording_ref.presence
     return if candidate.blank?
-    return if unsafe_sipuni_external_recording?(call_session, candidate)
 
     candidate.to_s if http_url?(candidate)
-  end
-
-  def proxy_external_recording?(call_session)
-    call_session.provider == 'sipuni' && Sipuni::RecordingUrl.allowed?(external_recording_url(call_session))
-  end
-
-  def unsafe_sipuni_external_recording?(call_session, candidate = nil)
-    candidate ||= call_recording_metadata(call_session)['recording_url'].presence || call_session.recording_ref.presence
-    call_session.provider == 'sipuni' && http_url?(candidate) && !Sipuni::RecordingUrl.allowed?(candidate)
   end
 
   def http_url?(value)

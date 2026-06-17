@@ -401,9 +401,7 @@
           "KAZAKHSTAN": "Fonoster",
           "KAZAKHSTAN_DESC": "Қазақстан нөмірлері мен telephony bridge маршрутизациясы үшін Fonoster қолданыңыз.",
           "TWILIO": "Twilio",
-          "TWILIO_DESC": "Twilio нөмірлерін және браузер арқылы қоңырауларды қосыңыз.",
-          "SIPUNI": "Sipuni",
-          "SIPUNI_DESC": "Sipuni қоңырау оқиғаларын, жазбаларын және оператор softphone қоңырауларын қосыңыз."
+          "TWILIO_DESC": "Twilio нөмірлерін және браузер арқылы қоңырауларды қосыңыз."
         },
         "PHONE_NUMBER": {
           "LABEL": "Телефон нөмірі",
@@ -604,14 +602,6 @@
           "FONOSTER_ROUTING_SUBTITLE": "Нөмір үшін белсенді маршрутты және негізгі бағыт қолжетімсіз болса қолданылатын fallback таңдаңыз.",
           "FONOSTER_READINESS_TITLE": "Fonoster дайындығы",
           "FONOSTER_READINESS_SUBTITLE": "Осы voice inbox үшін telephony bridge, нөмір binding-і және тиімді маршрут тексеріледі.",
-          "SIPUNI_WEBHOOK_TITLE": "Sipuni оқиғаларының webhook URL",
-          "SIPUNI_WEBHOOK_SUBTITLE": "Осы URL-ді Sipuni қоңырау оқиғалары интеграциясында баптаңыз.",
-          "SIPUNI_MODE_TITLE": "Sipuni қосылу режимі",
-          "SIPUNI_MODE_SUBTITLE": "Бұл inbox Sipuni қоңырау оқиғалары мен жазбаларын сақтайды, ал нақты аудио Sipuni softphone немесе SIP құрылғыларында қалады.",
-          "SIPUNI_EXTERNAL_SOFTPHONE": "Сыртқы Sipuni softphone",
-          "SIPUNI_OUTBOUND_TITLE": "Sipuni шығыс қоңыраулары",
-          "SIPUNI_OUTBOUND_SUBTITLE": "OneLink click-to-call callback сұраулары үшін қолданатын интеграция кілтін жаңартыңыз.",
-          "SIPUNI_UPDATE_KEY": "Кілтті жаңарту",
           "ROUTING_MODE": "Маршрутизация режимі",
           "FALLBACK_MODE": "Fallback режимі",
           "PRIMARY_APP_REF": "Негізгі қосымша сілтемесі",

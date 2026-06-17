@@ -401,9 +401,7 @@
           "KAZAKHSTAN": "Fonoster",
           "KAZAKHSTAN_DESC": "Use Fonoster for Kazakhstan numbers and telephony bridge routing.",
           "TWILIO": "Twilio",
-          "TWILIO_DESC": "Connect Twilio phone numbers and browser calling.",
-          "SIPUNI": "Sipuni",
-          "SIPUNI_DESC": "Connect Sipuni call events, recordings, and operator softphone calls."
+          "TWILIO_DESC": "Connect Twilio phone numbers and browser calling."
         },
         "PHONE_NUMBER": {
           "LABEL": "Phone Number",
@@ -604,14 +602,6 @@
           "FONOSTER_ROUTING_SUBTITLE": "Choose the active route for this number and the fallback used when the primary target is unavailable.",
           "FONOSTER_READINESS_TITLE": "Fonoster readiness",
           "FONOSTER_READINESS_SUBTITLE": "Checks the telephony bridge, inbox binding, and effective route for this voice inbox.",
-          "SIPUNI_WEBHOOK_TITLE": "Sipuni events webhook",
-          "SIPUNI_WEBHOOK_SUBTITLE": "Configure this URL in Sipuni call event integration.",
-          "SIPUNI_MODE_TITLE": "Sipuni connection mode",
-          "SIPUNI_MODE_SUBTITLE": "This inbox stores Sipuni call events and recordings while live audio remains on Sipuni softphone or SIP endpoints.",
-          "SIPUNI_EXTERNAL_SOFTPHONE": "External Sipuni softphone",
-          "SIPUNI_OUTBOUND_TITLE": "Sipuni outbound calls",
-          "SIPUNI_OUTBOUND_SUBTITLE": "Update the integration key used by OneLink click-to-call callback requests.",
-          "SIPUNI_UPDATE_KEY": "Update key",
           "ROUTING_MODE": "Routing mode",
           "FALLBACK_MODE": "Fallback mode",
           "PRIMARY_APP_REF": "Primary app ref",
