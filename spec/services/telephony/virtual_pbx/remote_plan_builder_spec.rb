@@ -19,7 +19,10 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     result = service.create_channel(base_payload, dry_run: false)
     state = Telephony::VirtualPbx::DesiredStateBuilder.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
 
-    plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
+    plan = nil
+    with_modified_env(TELEPHONY_BRIDGE_ONELINK_BASE_URL: 'https://dev.one-link.kz') do
+      plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
+    end
 
     expect(plan).to include(status: 'dry_run_valid', remote_mutations: 'requires_approval')
     expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
@@ -27,9 +30,14 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     )
     expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('upsert_trunk')
     gateway_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+    number_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_number' }
+    route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
     expect(gateway_operation).to include(method: 'PUT', path: '/telephony/sipuni-gateways/sipuni-internal-asterisk-056124100014')
     expect(gateway_operation.dig(:payload, :providerAccountNumber)).to eq('056124100014')
     expect(gateway_operation.dig(:payload, :credentialsRef)).to eq("cred-sipuni-acct-#{account.id}-056124100014")
+    expect(gateway_operation.dig(:payload, :metadata, :onelink_base_url)).to eq('https://dev.one-link.kz')
+    expect(number_operation.dig(:payload, :metadata, :onelink_base_url)).to eq('https://dev.one-link.kz')
+    expect(route_operation.dig(:payload, :metadata, :onelink_base_url)).to eq('https://dev.one-link.kz')
     expect(plan.fetch(:operations)).to all(include(risk: 'requires_approval'))
     expect(plan.to_json).not_to include('do-not-return')
   end

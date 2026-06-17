@@ -510,8 +510,13 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       onelink_account_id: ownership[:onelink_account_id] || state[:account_id],
       onelink_inbox_id: ownership[:onelink_inbox_id] || state[:inbox_id],
       onelink_channel_id: ownership[:onelink_channel_id] || state[:channel_id],
-      onelink_number_binding_id: ownership[:onelink_number_binding_id]
+      onelink_number_binding_id: ownership[:onelink_number_binding_id],
+      onelink_base_url: onelink_base_url
     }.compact
+  end
+
+  def onelink_base_url
+    ENV['TELEPHONY_BRIDGE_ONELINK_BASE_URL'].presence || ENV['FRONTEND_URL'].presence
   end
 
   def connection_credentials_ref(state)
