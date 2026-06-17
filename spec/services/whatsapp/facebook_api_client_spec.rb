@@ -93,8 +93,8 @@ describe Whatsapp::FacebookApiClient do
   end
 
   describe '#webhook_subscribed_fields' do
-    it 'includes the Meta WhatsApp Calling webhook field from the reference flow' do
-      expect(api_client.webhook_subscribed_fields).to eq(%w[messages smb_message_echoes calls])
+    it 'keeps the default WhatsApp webhook fields message-only' do
+      expect(api_client.webhook_subscribed_fields).to eq(%w[messages smb_message_echoes])
     end
   end
 

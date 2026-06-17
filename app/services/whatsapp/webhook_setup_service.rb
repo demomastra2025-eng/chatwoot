@@ -61,11 +61,25 @@ class Whatsapp::WebhookSetupService
     callback_url = build_callback_url
     verify_token = @channel.provider_config['webhook_verify_token']
 
-    @api_client.subscribe_waba_webhook(@waba_id, callback_url, verify_token)
+    if subscribe_to_calls?
+      @api_client.subscribe_waba_webhook(@waba_id, callback_url, verify_token, subscribed_fields: subscribed_fields)
+    else
+      @api_client.subscribe_waba_webhook(@waba_id, callback_url, verify_token)
+    end
 
   rescue StandardError => e
     Rails.logger.error("[WHATSAPP] Webhook setup failed: #{e.message}")
     raise "Webhook setup failed: #{e.message}"
+  end
+
+  def subscribed_fields
+    fields = Whatsapp::FacebookApiClient::WEBHOOK_DEFAULT_FIELDS.dup
+    fields << 'calls' if subscribe_to_calls?
+    fields
+  end
+
+  def subscribe_to_calls?
+    @channel.respond_to?(:voice_enabled?) && @channel.voice_enabled?
   end
 
   def build_callback_url

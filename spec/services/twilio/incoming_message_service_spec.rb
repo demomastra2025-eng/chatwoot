@@ -261,6 +261,41 @@ describe Twilio::IncomingMessageService do
       end
     end
 
+    context 'when a WhatsApp referral payload is received through Twilio' do
+      let!(:whatsapp_twilio_channel) do
+        create(:channel_twilio_sms, :whatsapp, account: account, account_sid: 'ACxxx',
+                                               inbox: create(:inbox, account: account, greeting_enabled: false))
+      end
+
+      it 'stores referral attributes on the incoming message' do
+        params = {
+          SmsSid: 'SMxx-referral',
+          From: 'whatsapp:+14155550100',
+          AccountSid: 'ACxxx',
+          MessagingServiceSid: whatsapp_twilio_channel.messaging_service_sid,
+          Body: 'Referral hello',
+          ReferralSourceId: 'ad-123',
+          ReferralSourceType: 'ad',
+          ReferralSourceUrl: 'https://example.com/ad',
+          ReferralHeadline: 'Promo',
+          ReferralBody: 'Promo body',
+          ReferralCtwaClid: 'clid-123'
+        }
+
+        described_class.new(params: params).perform
+
+        message = whatsapp_twilio_channel.inbox.messages.last
+        expect(message.content_attributes['referral']).to include(
+          'source_id' => 'ad-123',
+          'source_type' => 'ad',
+          'source_url' => 'https://example.com/ad',
+          'headline' => 'Promo',
+          'body' => 'Promo body',
+          'ctwa_clid' => 'clid-123'
+        )
+      end
+    end
+
     context 'when a location message is received' do
       let(:params_with_location) do
         {

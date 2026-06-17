@@ -267,7 +267,7 @@ class Telephony::EventsIngestionService
 
   def resolve_account!
     account_id = payload_value('account_id', 'accountId') || metadata_value('chatwoot_account_id', 'account_id', 'accountId')
-    return Account.find(account_id) if account_id.present?
+    return resolve_account_by_id!(account_id) if account_id.present?
 
     conversation = resolve_metadata_conversation
     return conversation.account if conversation.present?
@@ -289,6 +289,13 @@ class Telephony::EventsIngestionService
 
     channel = Channel::Voice.find_by(phone_number: inbound_number)
     return channel.account if channel.present?
+
+    raise Telephony::Error.new(code: 'ACCOUNT_NOT_FOUND', message: 'Unable to resolve account for telephony event', status: :not_found)
+  end
+
+  def resolve_account_by_id!(account_id)
+    account = Account.find_by(id: account_id)
+    return account if account.present?
 
     raise Telephony::Error.new(code: 'ACCOUNT_NOT_FOUND', message: 'Unable to resolve account for telephony event', status: :not_found)
   end
@@ -1128,8 +1135,7 @@ class Telephony::EventsIngestionService
   def enqueue_call_recording_transcription(call_session)
     return unless call_session.account.feature_enabled?('captain_integration')
     return unless call_session.account.captain_audio_transcription_enabled?
-    return if call_recording_metadata(call_session)['storage_key'].blank?
-    return if outbound_without_customer_answer?(call_session)
+    return unless transcribable_call_recording?(call_session)
 
     enqueue_job = false
     call_session.with_lock do
@@ -1147,6 +1153,24 @@ class Telephony::EventsIngestionService
     return unless enqueue_job
 
     Telephony::CallRecordingTranscriptionJob.perform_later(call_session.id)
+  end
+
+  def transcribable_call_recording?(call_session)
+    recording_metadata = call_recording_metadata(call_session)
+    return false if recording_metadata['storage_key'].blank?
+    return false if recording_metadata['recording_status'].to_s == 'incomplete'
+    return false if recording_metadata['byte_size'].present? && recording_metadata['byte_size'].to_i <= 0
+    return false if outbound_without_customer_answer?(call_session)
+    return false if unanswered_terminal_call?(call_session)
+
+    true
+  end
+
+  def unanswered_terminal_call?(call_session)
+    return false unless call_session.terminal?
+    return false if call_session.answered_at.present?
+
+    call_session.status.in?(%w[missed no_answer rejected busy failed cancelled])
   end
 
   def voice_message_for(call_session)

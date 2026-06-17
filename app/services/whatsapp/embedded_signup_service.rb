@@ -13,7 +13,7 @@ class Whatsapp::EmbeddedSignupService
 
     access_token = exchange_code_for_token
     phone_info = fetch_phone_info(access_token)
-    token_health = validate_token_access(access_token)
+    token_health = inspect_token_access(access_token)
 
     channel = create_or_reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
     # Skip health check during reauthorization — phone numbers in pending provisioning state
@@ -37,8 +37,23 @@ class Whatsapp::EmbeddedSignupService
     Whatsapp::PhoneInfoService.new(@waba_id, @phone_number_id, access_token).perform
   end
 
-  def validate_token_access(access_token)
-    Whatsapp::TokenValidationService.new(access_token, @waba_id, phone_number_id: @phone_number_id).perform
+  def inspect_token_access(access_token)
+    Whatsapp::TokenInspectionService.new(
+      access_token: access_token,
+      waba_id: @waba_id,
+      phone_number_id: @phone_number_id
+    ).perform
+  rescue StandardError => e
+    Rails.logger.warn("[WHATSAPP] Token inspection failed during embedded signup: #{safe_token_inspection_error(e, access_token)}")
+    {
+      'status' => 'inspection_failed',
+      'error' => { 'message' => safe_token_inspection_error(e, access_token) },
+      'checked_at' => Time.current.iso8601
+    }
+  end
+
+  def safe_token_inspection_error(error, access_token)
+    error.message.to_s.gsub(access_token.to_s, '[FILTERED]')
   end
 
   def store_token_health(channel, token_health)

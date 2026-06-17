@@ -41,6 +41,23 @@ describe ContactInboxWithContactBuilder do
       expect(contact_inbox.channel_profile.phone_number).to eq('+1234567890')
     end
 
+    it 'truncates long imported contact names to the string column limit' do
+      long_name = 'Imported Contact ' * 30
+
+      contact_inbox = described_class.new(
+        source_id: '123456-long-name',
+        inbox: inbox,
+        contact_attributes: {
+          name: long_name,
+          email: 'long-name@example.com'
+        }
+      ).perform
+
+      truncated_name = long_name.first(ApplicationRecord::MAX_STRING_COLUMN_LENGTH)
+      expect(contact_inbox.contact.name).to eq(truncated_name)
+      expect(contact_inbox.channel_profile.display_name).to eq(truncated_name)
+    end
+
     it 'updates the channel profile when the contact inbox already exists' do
       contact_inbox = described_class.new(
         source_id: existing_contact_inbox.source_id,

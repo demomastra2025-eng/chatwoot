@@ -1,5 +1,4 @@
 module Enterprise::Whatsapp::FacebookApiClient
-  def webhook_subscribed_fields
-    (super + %w[calls]).uniq
-  end
+  # Channel-level Whatsapp::WebhookSetupService appends the calls webhook field
+  # only for voice-enabled WhatsApp Cloud channels.
 end

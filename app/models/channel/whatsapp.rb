@@ -58,6 +58,10 @@ class Channel::Whatsapp < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(provider_config['calling_capable'])
   end
 
+  def provider_config_hash
+    (provider_config || {}).deep_dup
+  end
+
   def provider_service
     if provider == 'whatsapp_cloud'
       Whatsapp::Providers::WhatsappCloudService.new(whatsapp_channel: self)

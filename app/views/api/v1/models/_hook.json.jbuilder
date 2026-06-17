@@ -7,6 +7,7 @@ json.account_id resource.account_id
 json.hook_type resource.hook_type
 
 if Current.account_user&.administrator?
+  visible_properties = resource.app&.visible_properties || []
   settings_payload = resource.settings
 
   if resource.medelement?
@@ -17,6 +18,7 @@ if Current.account_user&.administrator?
     )
   end
 
+  settings_payload = (settings_payload || {}).select { |key, _value| visible_properties.include?(key.to_s) }
   json.settings settings_payload
 end
 json.reference_id resource.reference_id if Current.account_user&.administrator?

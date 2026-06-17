@@ -78,6 +78,31 @@ describe Whatsapp::WebhookSetupService do
       end
     end
 
+    context 'when WhatsApp calls are enabled for the channel' do
+      before do
+        channel.account.enable_features!('whatsapp_call')
+        channel.provider_config['calling_enabled'] = true
+        allow(api_client).to receive(:phone_number_verified?).with('123456789').and_return(true)
+        allow(health_service).to receive(:fetch_health_status).and_return({
+                                                                            platform_type: 'APPLICABLE',
+                                                                            throughput: { level: 'APPLICABLE' }
+                                                                          })
+      end
+
+      it 'subscribes to the calls webhook field' do
+        with_modified_env FRONTEND_URL: 'https://one-link.kz' do
+          expect(api_client).to receive(:subscribe_waba_webhook)
+            .with(
+              waba_id,
+              a_string_matching(%r{\Ahttps://one-link\.kz/webhooks/whatsapp/}),
+              'test_verify_token',
+              subscribed_fields: %w[messages smb_message_echoes calls]
+            )
+          service.perform
+        end
+      end
+    end
+
     context 'when phone number IS verified BUT needs registration (pending provisioning)' do
       before do
         allow(api_client).to receive(:phone_number_verified?).with('123456789').and_return(true)

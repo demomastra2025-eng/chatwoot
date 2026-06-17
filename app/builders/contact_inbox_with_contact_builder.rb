@@ -61,7 +61,7 @@ class ContactInboxWithContactBuilder
 
   def create_contact
     contact = account.contacts.new(
-      name: contact_attributes[:name] || ::Haikunator.haikunate(1000),
+      name: contact_name,
       phone_number: contact_attributes[:phone_number],
       email: contact_attributes[:email],
       identifier: contact_attributes[:identifier],
@@ -71,6 +71,11 @@ class ContactInboxWithContactBuilder
     contact.skip_runtime_events = skip_runtime_events
     contact.save!
     contact
+  end
+
+  def contact_name
+    name = contact_attributes[:name].presence || ::Haikunator.haikunate(1000)
+    name.to_s.truncate(ApplicationRecord::MAX_STRING_COLUMN_LENGTH, omission: '')
   end
 
   def find_contact

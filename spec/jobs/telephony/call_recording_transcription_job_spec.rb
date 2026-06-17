@@ -25,4 +25,15 @@ RSpec.describe Telephony::CallRecordingTranscriptionJob do
 
     described_class.perform_now(999_999)
   end
+
+  it 'marks exhausted missing-recording jobs as skipped instead of leaving them retryable' do
+    call_session.update!(metadata: { 'recording' => { 'transcription' => { 'status' => 'queued' } } })
+
+    described_class.mark_transcription_skipped!(call_session, 'Recording file could not be found')
+
+    expect(call_session.reload.metadata.dig('recording', 'transcription')).to include(
+      'status' => 'skipped',
+      'reason' => 'Recording file could not be found'
+    )
+  end
 end

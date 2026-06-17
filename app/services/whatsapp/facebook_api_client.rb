@@ -2,7 +2,7 @@ require 'openssl'
 
 class Whatsapp::FacebookApiClient
   BASE_URI = 'https://graph.facebook.com'.freeze
-  WEBHOOK_DEFAULT_FIELDS = %w[messages smb_message_echoes calls].freeze
+  WEBHOOK_DEFAULT_FIELDS = %w[messages smb_message_echoes].freeze
 
   class << self
     def appsecret_proof_query(access_token)

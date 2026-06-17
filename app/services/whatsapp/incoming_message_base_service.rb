@@ -91,7 +91,7 @@ class Whatsapp::IncomingMessageBaseService
   def create_contact_messages(message)
     contacts = Array(message['contacts'])
     contacts.each_with_index do |contact, index|
-      create_message(contact, source_id: contact_message_source_id(message, index, contacts.size))
+      create_message(contact, source_id: contact_message_source_id(message, index, contacts.size), content_attributes_source: message)
       attach_contact(contact)
       @message.save!
       after_message_persisted(@message)
@@ -175,7 +175,7 @@ class Whatsapp::IncomingMessageBaseService
 
   def attach_location
     location = messages_data.first['location']
-    location_name = location['name'] ? "#{location['name']}, #{location['address']}" : ''
+    location_name = (location['name'] ? "#{location['name']}, #{location['address']}" : '').first(ApplicationRecord::MAX_STRING_COLUMN_LENGTH)
     @message.attachments.new(
       account_id: @message.account_id,
       file_type: file_content_type(message_type),
@@ -186,10 +186,10 @@ class Whatsapp::IncomingMessageBaseService
     ).skip_storage_limit_validation!
   end
 
-  def create_message(message, source_id: nil)
+  def create_message(message, source_id: nil, content_attributes_source: message)
     content_attrs = outgoing_echo ? { external_echo: true } : {}
     content_attrs[:in_reply_to_external_id] = @in_reply_to_external_id if @in_reply_to_external_id.present?
-    content_attrs.merge!(message_content_attributes(message))
+    content_attrs.merge!(message_content_attributes(content_attributes_source))
 
     @message = @conversation.messages.build(
       content: message_content(message),

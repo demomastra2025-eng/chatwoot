@@ -13,6 +13,7 @@ class ContactMergeAction
       merge_messages
       merge_contact_inboxes
       merge_contact_channel_profiles
+      merge_communication_threads
       merge_crm_deal_contacts
       merge_contact_notes
       merge_and_remove_mergee_contact
@@ -64,6 +65,15 @@ class ContactMergeAction
   def merge_contact_channel_profiles
     bulk_reassign(
       ContactChannelProfile.where(contact_id: @mergee_contact.id),
+      contact_id: @base_contact.id
+    )
+  end
+
+  def merge_communication_threads
+    return unless defined?(CommunicationThread)
+
+    bulk_reassign(
+      CommunicationThread.where(contact_id: @mergee_contact.id, account_id: @account.id),
       contact_id: @base_contact.id
     )
   end

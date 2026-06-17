@@ -70,6 +70,18 @@ describe ContactMergeAction do
       end
     end
 
+    context 'when mergee contact has communication threads' do
+      it 'moves the threads before removing the mergee contact' do
+        account.enable_features!('communication_threads')
+        thread = create(:communication_thread, account: account, contact: mergee_contact)
+
+        contact_merge
+
+        expect(thread.reload.contact_id).to eq(base_contact.id)
+        expect { mergee_contact.reload }.to raise_error(ActiveRecord::RecordNotFound)
+      end
+    end
+
     context 'when mergee contact has messages' do
       it 'moves the messages to base contact' do
         contact_merge

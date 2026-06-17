@@ -1737,7 +1737,7 @@ RSpec.describe Telephony::EventsIngestionService do
       ).perform
 
       attrs = conversation.reload.additional_attributes
-      old_message_data = old_message.reload.content_attributes.dig('data')
+      old_message_data = old_message.reload.content_attributes['data']
       aggregate_failures do
         expect(result.reload).to have_attributes(
           status: 'no_answer',
@@ -1943,6 +1943,30 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.latest_voice_message.content_attributes.dig('data', 'recording_url')).to eq(
         'https://cloud.vconsult.kz/api/recordings/call-retry-1.wav'
       )
+    end
+
+    it 'does not enqueue recording transcription for unanswered terminal calls' do
+      account.enable_features!('captain_integration')
+      account.update!(captain_features: { 'audio_transcription' => true })
+      existing_call_session.update!(
+        status: 'no_answer',
+        answered_at: nil,
+        ended_at: Time.current,
+        metadata: { 'recording' => { 'storage_key' => 'voice-recordings/1/unanswered.wav', 'byte_size' => 1024 } }
+      )
+
+      expect do
+        described_class.new(
+          payload: payload.merge(
+            event_key: 'evt-unanswered-recording-ready',
+            event: 'recording_ready',
+            storage_key: 'voice-recordings/1/unanswered.wav',
+            byte_size: 1024
+          )
+        ).perform
+      end.not_to have_enqueued_job(Telephony::CallRecordingTranscriptionJob)
+
+      expect(existing_call_session.reload.metadata.dig('recording', 'transcription')).to be_blank
     end
 
     it 'does not resolve ambiguous bridge event ownership from call_ref alone' do

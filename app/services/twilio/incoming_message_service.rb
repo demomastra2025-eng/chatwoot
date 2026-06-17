@@ -1,5 +1,6 @@
 class Twilio::IncomingMessageService
   include ::FileTypeHelper
+  include Twilio::ReferralParamsHelper
 
   pattr_initialize [:params!]
 
@@ -14,7 +15,8 @@ class Twilio::IncomingMessageService
       inbox_id: @inbox.id,
       message_type: :incoming,
       sender: @contact,
-      source_id: params[:SmsSid]
+      source_id: params[:SmsSid],
+      content_attributes: message_content_attributes
     )
     attach_files
     attach_location if location_message?

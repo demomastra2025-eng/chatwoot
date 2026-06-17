@@ -2,6 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Integration Apps API', type: :request do
   let(:account) { create(:account) }
+  let(:inbox) { create(:inbox, account: account) }
 
   describe 'GET /api/v1/integrations/apps' do
     context 'when it is an unauthenticated user' do
@@ -28,19 +29,19 @@ RSpec.describe 'Integration Apps API', type: :request do
         expect(apps['action']).to be_nil
       end
 
-      it 'will not return sensitive information for openai app for agents' do
-        openai = create(:integrations_hook, :openai, account: account)
+      it 'will not return hook settings for agents' do
+        google_translate = create(:integrations_hook, :google_translate, account: account, inbox: inbox)
         get api_v1_account_integrations_apps_url(account),
             headers: agent.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
 
-        app = response.parsed_body['payload'].find { |int_app| int_app['id'] == openai.app.id }
+        app = response.parsed_body['payload'].find { |int_app| int_app['id'] == google_translate.app.id }
         expect(app['hooks'].first['settings']).to be_nil
       end
 
-      it 'returns all active apps with sensitive information if user is an admin' do
+      it 'returns all active apps with admin-only actions if user is an admin' do
         first_app = Integrations::App.all.find { |app| app.active?(account) }
         get api_v1_account_integrations_apps_url(account),
             headers: admin.create_new_auth_token,
@@ -77,16 +78,17 @@ RSpec.describe 'Integration Apps API', type: :request do
         end
       end
 
-      it 'will return sensitive information for openai app for admins' do
-        openai = create(:integrations_hook, :openai, account: account)
+      it 'redacts sensitive integration settings for admins' do
+        google_translate = create(:integrations_hook, :google_translate, account: account, inbox: inbox)
         get api_v1_account_integrations_apps_url(account),
             headers: admin.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
 
-        app = response.parsed_body['payload'].find { |int_app| int_app['id'] == openai.app.id }
-        expect(app['hooks'].first['settings']).not_to be_nil
+        app = response.parsed_body['payload'].find { |int_app| int_app['id'] == google_translate.app.id }
+        expect(app['hooks'].first['settings']).to eq('project_id' => 'test')
+        expect(app['hooks'].first['settings']).not_to have_key('credentials')
       end
     end
   end
@@ -126,7 +128,7 @@ RSpec.describe 'Integration Apps API', type: :request do
         expect(app['hooks'].first['settings']).to be_nil
       end
 
-      it 'will return sensitive information for openai app for admins' do
+      it 'redacts sensitive openai settings for admins' do
         openai = create(:integrations_hook, :openai, account: account)
         get api_v1_account_integrations_app_url(account_id: account.id, id: openai.app.id),
             headers: admin.create_new_auth_token,
@@ -135,7 +137,7 @@ RSpec.describe 'Integration Apps API', type: :request do
         expect(response).to have_http_status(:success)
 
         app = response.parsed_body
-        expect(app['hooks'].first['settings']).not_to be_nil
+        expect(app['hooks'].first['settings']).to eq({})
       end
     end
   end

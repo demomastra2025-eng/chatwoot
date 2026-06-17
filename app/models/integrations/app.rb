@@ -30,6 +30,10 @@ class Integrations::App
     params[:fields]
   end
 
+  def visible_properties
+    Array(params[:visible_properties]).map(&:to_s)
+  end
+
   def hidden_in_ui?
     params[:hidden_in_ui] == true
   end

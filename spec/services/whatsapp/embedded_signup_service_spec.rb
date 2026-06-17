@@ -43,10 +43,10 @@ describe Whatsapp::EmbeddedSignupService do
         .with(params[:waba_id], params[:phone_number_id], access_token).and_return(phone_service)
       allow(phone_service).to receive(:perform).and_return(phone_info)
 
-      validation_service = instance_double(Whatsapp::TokenValidationService)
-      allow(Whatsapp::TokenValidationService).to receive(:new)
-        .with(access_token, params[:waba_id], phone_number_id: params[:phone_number_id]).and_return(validation_service)
-      allow(validation_service).to receive(:perform).and_return(token_health)
+      inspection_service = instance_double(Whatsapp::TokenInspectionService)
+      allow(Whatsapp::TokenInspectionService).to receive(:new)
+        .with(access_token: access_token, waba_id: params[:waba_id], phone_number_id: params[:phone_number_id]).and_return(inspection_service)
+      allow(inspection_service).to receive(:perform).and_return(token_health)
 
       channel_creation = instance_double(Whatsapp::ChannelCreationService)
       allow(Whatsapp::ChannelCreationService).to receive(:new)

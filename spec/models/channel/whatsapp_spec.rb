@@ -289,6 +289,20 @@ RSpec.describe Channel::Whatsapp do
     end
   end
 
+  describe '#provider_config_hash' do
+    it 'exposes a defensive hash copy for telephony/calling integrations' do
+      channel = build(
+        :channel_whatsapp,
+        provider_config: { 'calling_enabled' => true, 'phone_number_id' => '123456789' }
+      )
+
+      config = channel.provider_config_hash
+      config['calling_enabled'] = false
+
+      expect(channel.provider_config_hash).to include('calling_enabled' => true, 'phone_number_id' => '123456789')
+    end
+  end
+
   describe '#voice_enabled?' do
     let(:account) { create(:account) }
 

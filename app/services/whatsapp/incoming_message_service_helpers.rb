@@ -51,8 +51,15 @@ module Whatsapp::IncomingMessageServiceHelpers
       whatsapp_unavailable_message: (true if unsupported_message),
       is_unsupported: (true if unsupported_message),
       whatsapp_error_code: unavailable_error&.[](:code),
-      whatsapp_error_title: unavailable_error&.[](:title)
+      whatsapp_error_title: unavailable_error&.[](:title),
+      referral: referral_attributes(message).presence
     }.compact
+  end
+
+  def referral_attributes(message)
+    return {} if outgoing_echo
+
+    message[:referral]&.to_h&.deep_stringify_keys || {}
   end
 
   def file_content_type(file_type)

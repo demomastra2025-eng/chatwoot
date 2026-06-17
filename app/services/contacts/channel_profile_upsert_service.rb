@@ -51,8 +51,14 @@ class Contacts::ChannelProfileUpsertService
   end
 
   def preferred_display_name(profile)
-    attributes[:display_name].presence || attributes[:name].presence || profile_data[:display_name].presence || profile_data[:name].presence ||
+    display_name = [
+      attributes[:display_name].presence,
+      attributes[:name].presence,
+      profile_data[:display_name].presence,
+      profile_data[:name].presence,
       profile.display_name
+    ].compact.first
+    display_name.to_s.truncate(ApplicationRecord::MAX_STRING_COLUMN_LENGTH, omission: '') if display_name.present?
   end
 
   def preferred_avatar_url(profile)
