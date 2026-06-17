@@ -16,7 +16,7 @@ import { useWindowSize, useEventListener } from '@vueuse/core';
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 
-import Button from 'dashboard/components-next/button/Button.vue';
+import Icon from 'next/icon/Icon.vue';
 import SidebarGroup from './SidebarGroup.vue';
 import SidebarSecondaryColumn from './SidebarSecondaryColumn.vue';
 import SidebarProfileMenu from './SidebarProfileMenu.vue';
@@ -83,6 +83,7 @@ const store = useStore();
 const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
 const { uiSettings } = useUISettings();
+const composeConversationRef = ref(null);
 
 const isACustomBrandedInstance = useMapGetter(
   'globalConfig/isACustomBrandedInstance'
@@ -92,6 +93,11 @@ const { width: windowWidth } = useWindowSize();
 const isMobile = computed(() => windowWidth.value < 768);
 const DESKTOP_RAIL_WIDTH = 56;
 const DESKTOP_SECONDARY_COLUMN_WIDTH = 178;
+const COMPANY_ACTIVE_ROUTE_NAMES = [
+  'companies_dashboard_index',
+  'companies_dashboard_show',
+  'company_fields_settings_index',
+];
 
 const accountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
@@ -729,9 +735,29 @@ const onComposeOpen = toggleFn => {
   emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, true);
 };
 
+const openComposeConversation = () => {
+  onComposeOpen(() => composeConversationRef.value?.toggle?.());
+};
+
 const onComposeClose = () => {
   emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, false);
 };
+
+const companiesRoute = computed(() =>
+  accountScopedRoute(
+    'companies_dashboard_index',
+    {},
+    { page: 1, search: undefined }
+  )
+);
+
+const buildCompaniesMenuItem = () => ({
+  name: 'Companies',
+  label: t('SIDEBAR.COMPANIES'),
+  icon: 'i-lucide-building-2',
+  to: companiesRoute.value,
+  activeOn: COMPANY_ACTIVE_ROUTE_NAMES,
+});
 
 const newReportRoutes = () => [
   {
@@ -791,6 +817,26 @@ const labelSidebarActionItems = computed(() => [
     title: t('LABEL_MGMT.HEADER_BTN_TXT'),
     icon: 'i-lucide-plus',
     handler: openCreateLabelPopup,
+  },
+]);
+
+const conversationSidebarActionItems = computed(() => [
+  ...(checkPermissions(['administrator'])
+    ? [
+        {
+          key: 'conversation-settings',
+          label: t('SIDEBAR.CONVERSATION_WORKFLOW'),
+          icon: 'i-lucide-settings-2',
+          activeOn: CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES,
+          to: accountScopedRoute('conversation_workflow_index'),
+        },
+      ]
+    : []),
+  {
+    key: 'compose-conversation',
+    label: t('CONTACT_PANEL.NEW_MESSAGE'),
+    icon: 'i-lucide-plus',
+    handler: openComposeConversation,
   },
 ]);
 
@@ -899,6 +945,35 @@ const myCompanyMenuItem = computed(() => {
   );
 });
 
+const hasMyCompanyShortcut = computed(() => !!myCompanyMenuItem.value);
+
+const isMyCompanyRouteActive = computed(() =>
+  myCompanyMenuItem.value?.activeOn?.includes(route.name)
+);
+
+const isMyCompanyShortcutActive = computed(
+  () => expandedItem.value === 'MyCompany' || isMyCompanyRouteActive.value
+);
+
+const myCompanyDefaultRoute = computed(() => {
+  const item = myCompanyMenuItem.value;
+  if (!item) return null;
+
+  return (
+    item.children?.find(child => child.name === item.defaultChildName)?.to ||
+    item.children?.find(child => child.to)?.to ||
+    null
+  );
+});
+
+const openMyCompanySidebar = async () => {
+  expandedItem.value = 'MyCompany';
+
+  if (myCompanyDefaultRoute.value) {
+    await router.push(myCompanyDefaultRoute.value);
+  }
+};
+
 const menuItems = computed(() => {
   return filterSidebarMenuItems(
     [
@@ -924,14 +999,7 @@ const menuItems = computed(() => {
           {},
           conversationNavigationQuery({ status: 'open' })
         ),
-        ...(checkPermissions(['administrator'])
-          ? {
-              actionTitle: t('SIDEBAR.CONVERSATION_WORKFLOW'),
-              actionIcon: 'i-lucide-settings-2',
-              actionActiveOn: CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES,
-              actionTo: accountScopedRoute('conversation_workflow_index'),
-            }
-          : {}),
+        actionItems: conversationSidebarActionItems.value,
         children: [
           ...conversationAssigneeStatusItems.value,
           {
@@ -1288,25 +1356,7 @@ const menuItems = computed(() => {
             : []),
         ],
       },
-      ...(hasCompanies.value
-        ? [
-            {
-              name: 'Companies',
-              label: t('SIDEBAR.COMPANIES'),
-              icon: 'i-lucide-building-2',
-              to: accountScopedRoute(
-                'companies_dashboard_index',
-                {},
-                { page: 1, search: undefined }
-              ),
-              activeOn: [
-                'companies_dashboard_index',
-                'companies_dashboard_show',
-                'company_fields_settings_index',
-              ],
-            },
-          ]
-        : []),
+      ...(hasCompanies.value ? [buildCompaniesMenuItem()] : []),
       {
         name: 'CRM',
         label: t('SIDEBAR.PIPELINES'),
@@ -1581,6 +1631,12 @@ const menuItems = computed(() => {
   );
 });
 
+const visibleMenuItems = computed(() =>
+  menuItems.value.filter(
+    item => !(isEffectivelyCollapsed.value && item.name === 'MyCompany')
+  )
+);
+
 const resolvePath = to => {
   if (to) return router.resolve(to)?.path || '/';
   return '/';
@@ -1775,6 +1831,20 @@ const desktopSidebarWidth = computed(() => {
           class="flex gap-2"
           :class="isEffectivelyCollapsed ? 'flex-col items-center' : 'px-2'"
         >
+          <button
+            v-if="isEffectivelyCollapsed && hasMyCompanyShortcut"
+            type="button"
+            class="inline-flex size-8 items-center justify-center rounded-lg outline outline-1 outline-n-weak hover:bg-n-alpha-2 hover:text-n-slate-12"
+            :class="{
+              'bg-n-alpha-2 text-n-slate-12': isMyCompanyShortcutActive,
+              'bg-n-button-color text-n-slate-11': !isMyCompanyShortcutActive,
+            }"
+            :aria-label="myCompanyMenuItem.label"
+            :title="myCompanyMenuItem.label"
+            @click="openMyCompanySidebar"
+          >
+            <Icon :icon="myCompanyMenuItem.icon" class="size-4" />
+          </button>
           <RouterLink
             v-if="!isEffectivelyCollapsed"
             :to="{ name: 'search' }"
@@ -1801,27 +1871,6 @@ const desktopSidebarWidth = computed(() => {
           >
             <span class="i-lucide-search size-4.5" />
           </RouterLink>
-          <ComposeConversation
-            align-position="right"
-            :is-modal="isEffectivelyCollapsed"
-            @close="onComposeClose"
-          >
-            <template #trigger="{ toggle, isOpen }">
-              <Button
-                icon="i-lucide-pen-line"
-                color="slate"
-                size="sm"
-                class="dark:hover:!bg-n-slate-9/30"
-                :class="[
-                  isEffectivelyCollapsed
-                    ? '!size-8 !outline-n-weak !text-n-slate-11'
-                    : '!h-7 !outline-n-weak !text-n-slate-11',
-                  { '!bg-n-alpha-2 dark:!bg-n-slate-9/30': isOpen },
-                ]"
-                @click="onComposeOpen(toggle)"
-              />
-            </template>
-          </ComposeConversation>
         </div>
       </section>
       <nav
@@ -1833,7 +1882,7 @@ const desktopSidebarWidth = computed(() => {
           :class="{ 'items-center': isEffectivelyCollapsed }"
         >
           <SidebarGroup
-            v-for="item in menuItems"
+            v-for="item in visibleMenuItems"
             :key="item.name"
             v-bind="item"
             :show-collapsed-popover="false"
@@ -1877,6 +1926,11 @@ const desktopSidebarWidth = computed(() => {
       :active-child-names="selectedDesktopSidebarActiveChildNames"
     />
     <Teleport to="body">
+      <ComposeConversation
+        ref="composeConversationRef"
+        is-modal
+        @close="onComposeClose"
+      />
       <woot-modal
         v-model:show="showCreateLabelPopup"
         @close="hideCreateLabelPopup"

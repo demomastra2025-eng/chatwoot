@@ -140,8 +140,6 @@ const unreadBadgeClass = computed(() => {
   return unreadBadgeLabel.value.length > 2 ? 'h-5 min-w-5 px-1.5' : 'size-5';
 });
 
-const isInboxNameVisible = computed(() => !activeInbox.value);
-
 const lastMessageInChat = computed(() => getLastMessage(props.chat));
 
 const lastMessageType = computed(
@@ -235,11 +233,7 @@ const selectionInboxIds = computed(() => {
 });
 
 const showInboxName = computed(() => {
-  return (
-    !props.hideInboxName &&
-    isInboxNameVisible.value &&
-    inboxesList.value.length > 1
-  );
+  return !props.hideInboxName && inboxesList.value.length > 1;
 });
 
 const lastEventIconClass = computed(() => {

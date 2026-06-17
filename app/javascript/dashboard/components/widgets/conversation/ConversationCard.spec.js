@@ -254,6 +254,16 @@ describe('ConversationCard', () => {
     expect(inboxName.props('compact')).toBe(true);
   });
 
+  it('keeps the inbox name visible inside a specific inbox route', () => {
+    mocks.mapGetters.getSelectedInbox = getter(4593);
+
+    const wrapper = mountComponent();
+    const inboxName = wrapper.findComponent({ name: 'InboxName' });
+
+    expect(inboxName.exists()).toBe(true);
+    expect(inboxName.props('inbox')).toEqual({ id: 4593, name: 'Inbox 4593' });
+  });
+
   it('renders outgoing events from inbox to contact in the contact row', () => {
     const wrapper = mountComponent({
       showAssignee: true,

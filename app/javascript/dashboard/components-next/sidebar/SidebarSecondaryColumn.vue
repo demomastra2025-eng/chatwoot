@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import Icon from 'next/icon/Icon.vue';
 import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
 import SidebarSubGroup from './SidebarSubGroup.vue';
@@ -10,18 +10,19 @@ import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
 
 const props = defineProps({
   label: { type: String, required: true },
-  icon: { type: [String, Object, Function], default: '' },
   children: { type: Array, default: () => [] },
   activeChildNames: { type: Array, default: () => [] },
   actionTo: { type: [Object, String], default: '' },
   actionTitle: { type: String, default: '' },
   actionIcon: { type: [String, Object], default: '' },
+  actionItems: { type: Array, default: () => [] },
 });
 
 defineOptions({ inheritAttrs: false });
 
 const router = useRouter();
-const { isAllowed, resolveFeatureFlag, resolvePermissions } =
+const route = useRoute();
+const { isAllowed, resolveFeatureFlag, resolvePath, resolvePermissions } =
   useSidebarContext();
 
 const isSidebarActionAllowed = to => {
@@ -51,7 +52,38 @@ const headerAction = computed(() => {
   );
 });
 
-const hasHeaderAction = computed(() => !!headerAction.value?.to);
+const isHeaderActionActive = action => {
+  if (action.active !== undefined) return action.active;
+  if (!action.to) return false;
+  if (route.path === resolvePath(action.to)) return true;
+
+  return action.activeOn?.includes(route.name) || false;
+};
+
+const headerActions = computed(() => {
+  const explicitActionItems = props.actionItems.filter(
+    action =>
+      action.icon && (action.handler || isSidebarActionAllowed(action.to))
+  );
+
+  if (explicitActionItems.length) {
+    return explicitActionItems.map(action => ({
+      ...action,
+      active: isHeaderActionActive(action),
+    }));
+  }
+
+  return headerAction.value?.to
+    ? [
+        {
+          ...headerAction.value,
+          active: isHeaderActionActive(headerAction.value),
+        },
+      ]
+    : [];
+});
+
+const hasHeaderActions = computed(() => headerActions.value.length > 0);
 
 const getChildDisplayLabel = child => getSidebarChildDisplayLabel(child, true);
 
@@ -98,9 +130,14 @@ const isSubGroupHeaderActive = child => {
   return props.activeChildNames.includes(child.name);
 };
 
-const openHeaderAction = async () => {
-  if (!headerAction.value?.to) return;
-  await router.push(headerAction.value.to);
+const openHeaderAction = async action => {
+  if (action.handler) {
+    action.handler();
+    return;
+  }
+
+  if (!action.to) return;
+  await router.push(action.to);
 };
 </script>
 
@@ -112,20 +149,27 @@ const openHeaderAction = async () => {
       class="flex h-14 flex-shrink-0 items-center justify-between gap-2 border-b border-n-weak px-3"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <Icon v-if="icon" :icon="icon" class="size-5 flex-shrink-0" />
         <h2 class="m-0 min-w-0 truncate text-sm font-medium text-n-slate-12">
           {{ label }}
         </h2>
       </div>
-      <button
-        v-if="hasHeaderAction"
-        type="button"
-        class="inline-flex h-7 w-8 flex-shrink-0 items-center justify-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12"
-        :title="headerAction.label"
-        @click="openHeaderAction"
+      <div
+        v-if="hasHeaderActions"
+        class="flex flex-shrink-0 items-center gap-1"
       >
-        <Icon :icon="headerAction.icon" class="size-5" />
-      </button>
+        <button
+          v-for="action in headerActions"
+          :key="action.key || action.label"
+          type="button"
+          class="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12"
+          :class="{ 'bg-n-alpha-2 text-n-slate-12': action.active }"
+          :title="action.label"
+          :aria-label="action.label"
+          @click="openHeaderAction(action)"
+        >
+          <Icon :icon="action.icon" class="size-5" />
+        </button>
+      </div>
     </header>
     <nav class="min-h-0 flex-1 overflow-y-auto px-2 py-2 no-scrollbar">
       <ul class="grid m-0 list-none min-w-0">

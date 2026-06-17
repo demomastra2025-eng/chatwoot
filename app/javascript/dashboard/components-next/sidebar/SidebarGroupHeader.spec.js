@@ -31,7 +31,7 @@ vi.mock('next/icon/Icon.vue', () => ({
   },
 }));
 
-const mountComponent = () =>
+const mountComponent = (props = {}) =>
   mount(SidebarGroupHeader, {
     props: {
       label: 'Tags',
@@ -40,6 +40,7 @@ const mountComponent = () =>
         count: 'unreadCount',
         badge: 'hasUnread',
       },
+      ...props,
     },
     global: {
       stubs: {
@@ -80,5 +81,35 @@ describe('SidebarGroupHeader', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.text()).toContain('999+');
+  });
+
+  it('renders multiple header actions and calls action handlers', async () => {
+    const openCompose = vi.fn();
+    const wrapper = mountComponent({
+      actions: [
+        {
+          key: 'settings',
+          label: 'Settings',
+          icon: 'i-lucide-settings-2',
+          to: { name: 'settings' },
+        },
+        {
+          key: 'compose',
+          label: 'New message',
+          icon: 'i-lucide-plus',
+          handler: openCompose,
+        },
+      ],
+    });
+
+    const actionButtons = wrapper.findAll('button');
+
+    expect(actionButtons).toHaveLength(2);
+    expect(actionButtons[0].attributes('title')).toBe('Settings');
+    expect(actionButtons[1].attributes('title')).toBe('New message');
+
+    await actionButtons[1].trigger('click');
+
+    expect(openCompose).toHaveBeenCalledTimes(1);
   });
 });

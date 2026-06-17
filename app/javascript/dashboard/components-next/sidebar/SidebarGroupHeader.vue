@@ -17,6 +17,7 @@ const props = defineProps({
   actionIcon: { type: [String, Object], default: '' },
   actionActive: { type: Boolean, default: false },
   actionHandler: { type: Function, default: null },
+  actions: { type: Array, default: () => [] },
   getterKeys: { type: Object, default: () => ({}) },
 });
 
@@ -29,9 +30,25 @@ const count = computed(() =>
   dynamicCount.value > 999 ? '999+' : dynamicCount.value
 );
 
-const hasAction = computed(
-  () => (!!props.actionTo || !!props.actionHandler) && !!props.actionIcon
-);
+const normalizedActions = computed(() => {
+  if (props.actions.length) return props.actions;
+
+  if ((props.actionTo || props.actionHandler) && props.actionIcon) {
+    return [
+      {
+        to: props.actionTo,
+        label: props.actionTitle,
+        icon: props.actionIcon,
+        active: props.actionActive,
+        handler: props.actionHandler,
+      },
+    ];
+  }
+
+  return [];
+});
+
+const hasAction = computed(() => normalizedActions.value.length > 0);
 
 const componentType = computed(() =>
   props.to && !hasAction.value ? 'router-link' : 'div'
@@ -45,17 +62,17 @@ const handleRootClick = async () => {
   emit('toggle');
 };
 
-const handleActionClick = async () => {
-  if (props.actionHandler) {
-    props.actionHandler();
+const handleActionClick = async action => {
+  if (action.handler) {
+    action.handler();
     return;
   }
 
-  if (!props.actionTo) {
+  if (!action.to) {
     return;
   }
 
-  await router.push(props.actionTo);
+  await router.push(action.to);
 };
 </script>
 
@@ -104,19 +121,21 @@ const handleActionClick = async () => {
       </span>
     </div>
     <button
-      v-if="hasAction"
+      v-for="action in normalizedActions"
+      :key="action.key || action.label"
       type="button"
-      class="inline-flex flex-shrink-0 items-center justify-center rounded-md p-1 transition-all duration-150"
+      class="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-all duration-150"
       :class="{
         'bg-n-alpha-2 text-n-slate-12 opacity-100 pointer-events-auto':
-          actionActive,
+          action.active,
         'text-n-slate-11 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto hover:bg-n-alpha-2 hover:text-n-slate-12':
-          !actionActive,
+          !action.active,
       }"
-      :title="actionTitle"
-      @click.prevent.stop="handleActionClick"
+      :title="action.label"
+      :aria-label="action.label"
+      @click.prevent.stop="handleActionClick(action)"
     >
-      <Icon :icon="actionIcon" class="size-3.5" />
+      <Icon :icon="action.icon" class="size-5" />
     </button>
     <span
       v-if="expandable"

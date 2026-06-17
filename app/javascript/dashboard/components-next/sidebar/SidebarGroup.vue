@@ -22,6 +22,7 @@ const props = defineProps({
   actionTitle: { type: String, default: '' },
   actionIcon: { type: [String, Object], default: '' },
   actionActiveOn: { type: Array, default: () => [] },
+  actionItems: { type: Array, default: () => [] },
   children: { type: Array, default: undefined },
   getterKeys: { type: Object, default: () => ({}) },
   defaultChildName: { type: String, default: '' },
@@ -252,10 +253,27 @@ const matchesChildRoute = child => {
 };
 
 const isMenuItemActive = item => matchesChildRoute(item);
-const isHeaderActionActive = computed(() => {
+const headerActionItems = computed(() => {
+  const explicitActionItems = props.actionItems.filter(
+    action =>
+      action.icon && (action.handler || (action.to && isAllowed(action.to)))
+  );
+
+  if (explicitActionItems.length) {
+    return explicitActionItems.map(action => ({
+      ...action,
+      active: action.active ?? (action.to ? isMenuItemActive(action) : false),
+    }));
+  }
+
   return headerActionItem.value
-    ? isMenuItemActive(headerActionItem.value)
-    : false;
+    ? [
+        {
+          ...headerActionItem.value,
+          active: isMenuItemActive(headerActionItem.value),
+        },
+      ]
+    : [];
 });
 
 // We could use the RouterLink isActive too, but our routes are not always
@@ -422,7 +440,7 @@ watch(
         :action-to="headerActionItem?.to"
         :action-title="headerActionItem?.label"
         :action-icon="headerActionItem?.icon"
-        :action-active="isHeaderActionActive"
+        :actions="headerActionItems"
         :expandable="hasChildren"
         :is-expanded="isExpanded"
         @toggle="toggleTrigger"
