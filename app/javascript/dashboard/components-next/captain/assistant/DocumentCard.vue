@@ -27,6 +27,10 @@ const props = defineProps({
     type: String,
     default: 'general',
   },
+  assistant: {
+    type: Object,
+    default: null,
+  },
   externalLink: {
     type: String,
     required: true,
@@ -194,6 +198,13 @@ const visibilityLabel = computed(() =>
     ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL')
     : t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL')
 );
+const assistantLabel = computed(() => {
+  if (props.visibility !== 'personal' || !props.assistant?.name) return '';
+
+  return t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_BADGE', {
+    name: props.assistant.name,
+  });
+});
 
 const progressLabel = computed(() => {
   if (!props.pagesTotal) return '';
@@ -285,6 +296,12 @@ const handleAction = ({ action, value }) => {
             class="rounded-full bg-n-alpha-2 px-2 py-1 text-xs font-medium text-n-slate-11"
           >
             {{ visibilityLabel }}
+          </span>
+          <span
+            v-if="assistantLabel"
+            class="rounded-full bg-n-blue-9/10 px-2 py-1 text-xs font-medium text-n-blue-11"
+          >
+            {{ assistantLabel }}
           </span>
         </div>
         <div

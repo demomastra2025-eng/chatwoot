@@ -30,7 +30,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def create
-    if document_creation_params[:assistant_id].present? && @assistant.nil?
+    if personal_visibility_without_assistant? || (document_creation_params[:assistant_id].present? && @assistant.nil?)
       return render_could_not_create_error(I18n.t('captain.documents.missing_assistant'))
     end
 
@@ -108,10 +108,19 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   private
 
   def set_documents
-    @documents = Current.account.captain_documents
-                        .visible_to_assistant(permitted_params[:assistant_id])
-                        .includes(:assistant)
-                        .ordered
+    @documents = knowledge_index_scope(
+      Current.account.captain_documents
+             .includes(:assistant)
+             .ordered
+    )
+  end
+
+  def knowledge_index_scope(base_scope)
+    return base_scope.visible_to_assistant(permitted_params[:assistant_id]) if permitted_params[:assistant_id].present?
+
+    return base_scope if Current.account_user&.administrator?
+
+    base_scope.where(visibility: Captain::Document.visibilities[:general])
   end
 
   def set_document
@@ -151,6 +160,10 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
                        { include_paths: [], exclude_paths: [] }],
       selected_urls: []
     )
+  end
+
+  def personal_visibility_without_assistant?
+    document_creation_params[:visibility] == 'personal' && document_creation_params[:assistant_id].blank?
   end
 
   def document_metadata

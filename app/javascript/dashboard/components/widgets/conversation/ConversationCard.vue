@@ -69,6 +69,7 @@ const showContextMenu = ref(false);
 const contextMenu = ref({ x: null, y: null });
 const isUpdatingPin = ref(false);
 const INLINE_META_MAX_LENGTH = 12;
+const INBOX_NAME_MAX_LENGTH = 15;
 
 // Reset UI state when conversation changes at same index (no :key, instance reused on reorder)
 // This prevents context menu/hover state from leaking to a different conversation
@@ -476,8 +477,8 @@ const togglePinnedConversation = async nextPinnedState => {
           v-if="showInboxName"
           :inbox="inbox"
           compact
-          :max-length="INLINE_META_MAX_LENGTH"
-          class="max-w-20 flex-shrink min-w-0"
+          :max-length="INBOX_NAME_MAX_LENGTH"
+          class="max-w-24 flex-shrink min-w-0"
         />
         <span
           v-if="showAssignee && assignee.name"

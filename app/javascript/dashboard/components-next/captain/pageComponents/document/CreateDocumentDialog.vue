@@ -10,7 +10,7 @@ import DocumentForm from './DocumentForm.vue';
 
 defineProps({
   assistantId: {
-    type: Number,
+    type: [Number, String],
     default: null,
   },
 });

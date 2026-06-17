@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, computed, ref, nextTick, watch } from 'vue';
+import { reactive, computed, ref, nextTick, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { requiredIf } from '@vuelidate/validators';
@@ -13,7 +13,7 @@ import Switch from 'dashboard/components-next/switch/Switch.vue';
 
 const props = defineProps({
   assistantId: {
-    type: Number,
+    type: [Number, String],
     default: null,
   },
 });
@@ -57,6 +57,8 @@ const store = useStore();
 
 const formState = {
   uiFlags: useMapGetter('captainDocuments/getUIFlags'),
+  assistants: useMapGetter('captainAssistants/getRecords'),
+  assistantUiFlags: useMapGetter('captainAssistants/getUIFlags'),
 };
 
 const initialState = {
@@ -68,6 +70,7 @@ const initialState = {
   previewLinks: [],
   selectedUrls: [],
   visibility: 'general',
+  selectedAssistantId: '',
   faqGenerationEnabled: true,
 };
 
@@ -81,6 +84,20 @@ const requiresPreviewSelection = computed(
 const supportsAdvancedSettings = computed(() =>
   ['site_import', 'selected_pages'].includes(state.documentType)
 );
+const showAssistantSelector = computed(
+  () => state.visibility === 'personal' && !props.assistantId
+);
+const assistantOptions = computed(() =>
+  formState.assistants.value.map(assistant => ({
+    value: assistant.id,
+    label: assistant.name,
+  }))
+);
+const effectiveAssistantId = computed(() =>
+  state.visibility === 'personal'
+    ? props.assistantId || state.selectedAssistantId
+    : null
+);
 
 const validationRules = {
   url: {
@@ -88,6 +105,9 @@ const validationRules = {
   },
   uploadedFile: {
     required: requiredIf(() => state.documentType === 'file_upload'),
+  },
+  selectedAssistantId: {
+    required: requiredIf(() => showAssistantSelector.value),
   },
 };
 
@@ -189,6 +209,10 @@ const formErrors = computed(() => ({
       ? t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.ERROR')
       : '',
   selectedPages: selectedPagesError.value,
+  assistant:
+    v$.value.selectedAssistantId.$error && showAssistantSelector.value
+      ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_REQUIRED')
+      : '',
 }));
 
 const urlPlaceholder = computed(() => {
@@ -233,6 +257,32 @@ watch(
     }
   }
 );
+
+const ensureAssistantsLoaded = () => {
+  if (props.assistantId) return;
+  if (formState.assistantUiFlags.value.fetchingList) return;
+  if (formState.assistants.value.length) return;
+
+  store.dispatch('captainAssistants/get');
+};
+
+watch(
+  () => state.visibility,
+  visibility => {
+    if (visibility !== 'personal') {
+      state.selectedAssistantId = '';
+      return;
+    }
+
+    ensureAssistantsLoaded();
+  }
+);
+
+onMounted(() => {
+  if (showAssistantSelector.value) {
+    ensureAssistantsLoaded();
+  }
+});
 
 const handleCancel = () => emit('cancel');
 
@@ -301,7 +351,9 @@ const handlePreviewSelectedPages = async () => {
   try {
     const response = await store.dispatch('captainDocuments/preview', {
       document: {
-        ...(props.assistantId ? { assistant_id: props.assistantId } : {}),
+        ...(effectiveAssistantId.value
+          ? { assistant_id: effectiveAssistantId.value }
+          : {}),
         external_link: state.url,
         source_mode: state.documentType,
         import_profile: buildImportProfile(),
@@ -323,8 +375,8 @@ const prepareDocumentDetails = () => {
     const formData = new FormData();
     const extension =
       state.uploadedFile?.name.split('.').pop()?.toLowerCase() || '';
-    if (props.assistantId) {
-      formData.append('document[assistant_id]', props.assistantId);
+    if (effectiveAssistantId.value) {
+      formData.append('document[assistant_id]', effectiveAssistantId.value);
     }
     if (extension === 'pdf') {
       formData.append('document[pdf_file]', state.uploadedFile);
@@ -346,7 +398,9 @@ const prepareDocumentDetails = () => {
 
   return {
     document: {
-      ...(props.assistantId ? { assistant_id: props.assistantId } : {}),
+      ...(effectiveAssistantId.value
+        ? { assistant_id: effectiveAssistantId.value }
+        : {}),
       name: state.name || state.url,
       external_link: state.url,
       source_mode: state.documentType,
@@ -656,6 +710,31 @@ const handleSubmit = async () => {
       />
       <p class="m-0 text-xs text-n-slate-11">
         {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.HELP_TEXT') }}
+      </p>
+    </div>
+
+    <div v-if="showAssistantSelector" class="flex flex-col gap-1">
+      <label
+        for="documentAssistant"
+        class="mb-0.5 text-sm font-medium text-n-slate-12"
+      >
+        {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_LABEL') }}
+      </label>
+      <ComboBox
+        id="documentAssistant"
+        v-model="state.selectedAssistantId"
+        :options="assistantOptions"
+        :placeholder="t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_PLACEHOLDER')"
+        class="[&>div>button]:bg-n-alpha-black2"
+      />
+      <p
+        class="m-0 text-xs"
+        :class="formErrors.assistant ? 'text-n-ruby-9' : 'text-n-slate-11'"
+      >
+        {{
+          formErrors.assistant ||
+          t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_HELP_TEXT')
+        }}
       </p>
     </div>
 

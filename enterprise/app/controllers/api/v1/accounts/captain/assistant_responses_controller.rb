@@ -20,10 +20,18 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
     @response = Current.account.captain_assistant_responses.new(response_params_with_valid_assistant)
     @response.documentable = Current.user
     @response.save!
+  rescue ActiveRecord::RecordInvalid => e
+    render_could_not_create_error(e.record.errors.full_messages.join(', '))
+  rescue ActiveRecord::RecordNotFound => e
+    render_could_not_create_error(e.message)
   end
 
   def update
     @response.update!(response_params_with_valid_assistant)
+  rescue ActiveRecord::RecordInvalid => e
+    render_could_not_create_error(e.record.errors.full_messages.join(', '))
+  rescue ActiveRecord::RecordNotFound => e
+    render_could_not_create_error(e.message)
   end
 
   def destroy
@@ -55,10 +63,19 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   end
 
   def set_responses
-    @responses = Current.account.captain_assistant_responses
-                        .visible_to_assistant(permitted_params[:assistant_id])
-                        .includes(:assistant, :documentable)
-                        .ordered
+    @responses = knowledge_index_scope(
+      Current.account.captain_assistant_responses
+             .includes(:assistant, :documentable)
+             .ordered
+    )
+  end
+
+  def knowledge_index_scope(base_scope)
+    return base_scope.visible_to_assistant(permitted_params[:assistant_id]) if permitted_params[:assistant_id].present?
+
+    return base_scope if Current.account_user&.administrator?
+
+    base_scope.where(visibility: Captain::AssistantResponse.visibilities[:general])
   end
 
   def set_response
@@ -85,12 +102,17 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
 
   def response_params_with_valid_assistant
     attributes = response_params
+    raise ActiveRecord::RecordNotFound, I18n.t('captain.documents.missing_assistant') if personal_visibility_without_assistant?(attributes)
     return attributes if attributes[:assistant_id].blank?
 
     assistant = Current.account.captain_assistants.find_by(id: attributes[:assistant_id])
-    raise ActiveRecord::RecordNotFound, 'Captain assistant not found' if assistant.blank?
+    raise ActiveRecord::RecordNotFound, I18n.t('captain.documents.missing_assistant') if assistant.blank?
 
     attributes[:assistant_id] = assistant.id
     attributes
+  end
+
+  def personal_visibility_without_assistant?(attributes)
+    attributes[:visibility] == 'personal' && attributes[:assistant_id].blank?
   end
 end

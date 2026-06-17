@@ -299,6 +299,7 @@ watch(
           :documentable="response.documentable"
           :status="response.status"
           :visibility="response.visibility"
+          :assistant="response.assistant"
           :created-at="response.created_at"
           :updated-at="response.updated_at"
           :is-selected="bulkSelectedIds.has(response.id)"
