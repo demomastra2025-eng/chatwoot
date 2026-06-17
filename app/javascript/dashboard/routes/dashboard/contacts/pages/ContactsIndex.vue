@@ -107,13 +107,12 @@ const activeSegment = computed(() => {
 });
 
 const hasContacts = computed(() => contacts.value.length > 0);
+const contactCompanyName = contact =>
+  contact.company?.name || contact.additionalAttributes?.companyName || '';
+
 const companyFilterOptions = computed(() => {
   const companyNames = [
-    ...new Set(
-      contacts.value
-        .map(contact => contact.additionalAttributes?.companyName)
-        .filter(Boolean)
-    ),
+    ...new Set(contacts.value.map(contactCompanyName).filter(Boolean)),
   ].sort((a, b) => a.localeCompare(b));
 
   return companyNames.map(company => ({
@@ -125,8 +124,7 @@ const filteredContacts = computed(() => {
   if (!companyFilterValue.value) return contacts.value;
 
   return contacts.value.filter(
-    contact =>
-      contact.additionalAttributes?.companyName === companyFilterValue.value
+    contact => contactCompanyName(contact) === companyFilterValue.value
   );
 });
 const isContactIndexView = computed(

@@ -4,6 +4,14 @@ json.email resource.email
 json.id resource.id
 json.name resource.name
 json.phone_number resource.phone_number
+json.company_id resource.company_id
+if resource.respond_to?(:company) && resource.company.present?
+  json.company do
+    json.id resource.company.id
+    json.name resource.company.name
+    json.domain resource.company.domain
+  end
+end
 json.blocked resource.blocked
 json.identifier resource.identifier
 json.thumbnail resource.resolved_avatar_url

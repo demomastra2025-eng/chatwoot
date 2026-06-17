@@ -3,12 +3,13 @@ import { computed, reactive, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { required, email } from '@vuelidate/validators';
 import { useVuelidate } from '@vuelidate/core';
-import { splitName } from '@chatwoot/utils';
+import { debounce, splitName } from '@chatwoot/utils';
 import countries from 'shared/constants/countries.js';
 import Input from 'dashboard/components-next/input/Input.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import PhoneNumberInput from 'dashboard/components-next/phonenumberinput/PhoneNumberInput.vue';
+import { useCompaniesStore } from 'dashboard/stores/companies';
 
 const props = defineProps({
   contactData: {
@@ -28,6 +29,7 @@ const props = defineProps({
 const emit = defineEmits(['update']);
 
 const { t } = useI18n();
+const companiesStore = useCompaniesStore();
 
 const FORM_CONFIG = {
   FIRST_NAME: { field: 'firstName' },
@@ -37,7 +39,7 @@ const FORM_CONFIG = {
   CITY: { field: 'additionalAttributes.city' },
   COUNTRY: { field: 'additionalAttributes.countryCode' },
   BIO: { field: 'additionalAttributes.description' },
-  COMPANY_NAME: { field: 'additionalAttributes.companyName' },
+  COMPANY: { field: 'companyId' },
 };
 
 const SOCIAL_CONFIG = {
@@ -54,6 +56,8 @@ const defaultState = {
   id: 0,
   name: '',
   email: '',
+  companyId: null,
+  company: null,
   firstName: '',
   lastName: '',
   phoneNumber: '',
@@ -92,8 +96,10 @@ const syncStateFromContact = contactData => {
     name = '',
     email: emailAddress = '',
     phoneNumber = '',
+    company = null,
     additionalAttributes = {},
   } = contactData || {};
+  const companyId = contactData?.companyId ?? contactData?.company_id ?? null;
   const { firstName, lastName } = splitName(name || '');
   const {
     description = '',
@@ -115,6 +121,8 @@ const syncStateFromContact = contactData => {
     lastName,
     email: emailAddress,
     phoneNumber,
+    companyId,
+    company,
     additionalAttributes: {
       description,
       companyName,
@@ -142,6 +150,22 @@ const countryOptions = computed(() =>
   countries.map(({ name, id }) => ({ label: name, value: id }))
 );
 
+const companyOptions = computed(() => {
+  const options = (companiesStore.getCompaniesList || []).map(companyItem => ({
+    label: companyItem.name,
+    value: companyItem.id,
+  }));
+
+  if (
+    state.company?.id &&
+    !options.some(option => Number(option.value) === Number(state.company.id))
+  ) {
+    options.unshift({ label: state.company.name, value: state.company.id });
+  }
+
+  return options;
+});
+
 const editDetailsForm = computed(() =>
   Object.keys(FORM_CONFIG).map(key => ({
     key,
@@ -166,6 +190,16 @@ const isValidationField = key => {
 
 const getValidationKey = key => {
   return FORM_CONFIG[key]?.field;
+};
+
+const emitContactUpdate = async ({ validate = true } = {}) => {
+  if (validate) {
+    const isFormValid = await v$.value.$validate();
+    if (!isFormValid) return;
+  }
+
+  const { firstName, lastName, company, ...contactUpdate } = state;
+  emit('update', contactUpdate);
 };
 
 // Creates a computed property for two-way form field binding
@@ -205,13 +239,35 @@ const getFormBinding = key => {
         }
       }
 
-      const isFormValid = await v$.value.$validate();
-      if (isFormValid) {
-        const { firstName, lastName, ...stateWithoutNames } = state;
-        emit('update', stateWithoutNames);
-      }
+      await emitContactUpdate();
     },
   });
+};
+
+const fetchCompanyOptions = async query => {
+  const search = query?.trim() || '';
+  if (search) {
+    await companiesStore.search({ search, page: 1, sort: 'name' });
+    return;
+  }
+
+  await companiesStore.get({ page: 1, sort: 'name' });
+};
+
+const searchCompanyOptions = debounce(query => fetchCompanyOptions(query), 300);
+
+const handleCompanySelection = async value => {
+  const selectedCompany = companyOptions.value.find(
+    option => Number(option.value) === Number(value)
+  );
+
+  state.companyId = selectedCompany ? Number(selectedCompany.value) : null;
+  state.company = selectedCompany
+    ? { id: selectedCompany.value, name: selectedCompany.label }
+    : null;
+  state.additionalAttributes.companyName = selectedCompany?.label || '';
+
+  await emitContactUpdate();
 };
 
 const getMessageType = key => {
@@ -220,10 +276,10 @@ const getMessageType = key => {
     : 'info';
 };
 
-const handleCountrySelection = value => {
+const handleCountrySelection = async value => {
   const selectedCountry = countries.find(option => option.id === value);
   state.additionalAttributes.country = selectedCountry?.name || '';
-  emit('update', state);
+  await emitContactUpdate({ validate: false });
 };
 
 const resetValidation = () => {
@@ -240,6 +296,8 @@ watch(
     props.contactData?.name,
     props.contactData?.email,
     props.contactData?.phoneNumber,
+    props.contactData?.companyId,
+    props.contactData?.company?.name,
     props.contactData?.additionalAttributes?.companyName,
   ],
   () => {
@@ -284,6 +342,32 @@ defineExpose({
             default-country="KZ"
             :placeholder="item.placeholder"
             :show-border="isDetailsView"
+          />
+          <ComboBox
+            v-else-if="item.key === 'COMPANY'"
+            v-model="state.companyId"
+            :options="companyOptions"
+            :placeholder="item.placeholder"
+            :search-placeholder="
+              t(
+                'CONTACTS_LAYOUT.CARD.EDIT_DETAILS_FORM.FORM.COMPANY.SEARCH_PLACEHOLDER'
+              )
+            "
+            :empty-state="
+              t(
+                'CONTACTS_LAYOUT.CARD.EDIT_DETAILS_FORM.FORM.COMPANY.EMPTY_STATE'
+              )
+            "
+            use-api-results
+            class="[&>div>button]:h-8"
+            :class="{
+              '[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:!outline-transparent':
+                !isDetailsView,
+              '[&>div>button]:!bg-n-alpha-black2': isDetailsView,
+            }"
+            @open="fetchCompanyOptions"
+            @search="searchCompanyOptions"
+            @update:model-value="handleCompanySelection"
           />
           <Input
             v-else

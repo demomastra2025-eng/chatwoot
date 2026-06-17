@@ -690,6 +690,20 @@ RSpec.describe 'Contacts API', type: :request do
 
         expect(response).to have_http_status(:success)
       end
+
+      it 'creates a contact with an account company' do
+        company = create(:company, account: account, name: 'Acme Clinic')
+
+        post "/api/v1/accounts/#{account.id}/contacts", headers: admin.create_new_auth_token,
+                                                        params: valid_params.merge(company_id: company.id),
+                                                        as: :json
+
+        expect(response).to have_http_status(:success)
+        contact = Contact.last
+        expect(contact.company_id).to eq(company.id)
+        expect(response.parsed_body.dig('payload', 'contact', 'company_id')).to eq(company.id)
+        expect(response.parsed_body.dig('payload', 'contact', 'company', 'name')).to eq('Acme Clinic')
+      end
     end
   end
 
@@ -751,6 +765,32 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response.parsed_body.dig('payload', 'primary_name_source')).to eq(
           'kind' => 'manual'
         )
+      end
+
+      it 'updates the contact native company' do
+        company = create(:company, account: account, name: 'Acme Clinic')
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { company_id: company.id },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.company_id).to eq(company.id)
+        expect(response.parsed_body.dig('payload', 'company_id')).to eq(company.id)
+        expect(response.parsed_body.dig('payload', 'company', 'name')).to eq('Acme Clinic')
+      end
+
+      it 'prevents assigning a company from another account' do
+        other_company = create(:company, account: create(:account))
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { company_id: other_company.id },
+              as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect(contact.reload.company_id).to be_nil
       end
 
       it 'prevents the update of contact of another account' do

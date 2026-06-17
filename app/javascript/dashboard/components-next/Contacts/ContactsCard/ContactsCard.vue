@@ -16,6 +16,8 @@ const props = defineProps({
   name: { type: String, default: '' },
   email: { type: String, default: '' },
   additionalAttributes: { type: Object, default: () => ({}) },
+  companyId: { type: Number, default: null },
+  company: { type: Object, default: null },
   phoneNumber: { type: String, default: '' },
   thumbnail: { type: String, default: '' },
   availabilityStatus: { type: String, default: null },
@@ -42,6 +44,8 @@ const getInitialContactData = () => ({
   name: props.name,
   email: props.email,
   phoneNumber: props.phoneNumber,
+  companyId: props.companyId,
+  company: props.company,
   additionalAttributes: props.additionalAttributes,
 });
 
@@ -82,6 +86,10 @@ const formattedLocation = computed(() => {
     .filter(Boolean)
     .join(' ');
 });
+
+const companyDisplayName = computed(
+  () => props.company?.name || props.additionalAttributes?.companyName || ''
+);
 
 const handleFormUpdate = updatedData => {
   Object.assign(contactData.value, updatedData);
@@ -154,14 +162,14 @@ const handleAvatarHover = isHovered => {
             </span>
             <span class="inline-flex items-center gap-1">
               <span
-                v-if="additionalAttributes?.companyName"
+                v-if="companyDisplayName"
                 class="i-ph-building-light size-4 text-n-slate-10 mb-0.5"
               />
               <span
-                v-if="additionalAttributes?.companyName"
+                v-if="companyDisplayName"
                 class="text-sm truncate text-n-slate-11"
               >
-                {{ additionalAttributes.companyName }}
+                {{ companyDisplayName }}
               </span>
             </span>
           </div>

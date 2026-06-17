@@ -98,7 +98,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def create
     ActiveRecord::Base.transaction do
-      @contact = Current.account.contacts.new(permitted_params.except(:avatar_url))
+      @contact = Current.account.contacts.new(contact_create_params)
       @contact.save!
       @contact_inbox = build_contact_inbox
       process_avatar_from_url
@@ -178,7 +178,24 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def permitted_params
-    params.permit(:name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url, additional_attributes: {}, custom_attributes: {})
+    params.permit(
+      :name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url, :company_id,
+      additional_attributes: {}, custom_attributes: {}
+    )
+  end
+
+  def contact_company_id_param
+    return {} unless permitted_params.key?(:company_id)
+
+    company_id = permitted_params[:company_id]
+    return { company_id: nil } if company_id.blank?
+    return { company_id: company_id } unless Current.account.respond_to?(:companies)
+
+    { company_id: Current.account.companies.find(company_id).id }
+  end
+
+  def contact_create_params
+    permitted_params.except(:avatar_url).merge(contact_company_id_param)
   end
 
   def contact_custom_attributes
@@ -219,6 +236,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
     permitted_params.except(:custom_attributes, :avatar_url)
                     .merge({ custom_attributes: contact_custom_attributes })
                     .merge({ additional_attributes: contact_additional_attributes })
+                    .merge(contact_company_id_param)
   end
 
   def storage_limit_available?(extra_bytes)
@@ -241,6 +259,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def contact_includes
     includes = [{ avatar_attachment: [:blob] }]
+    includes << :company if Contact.reflect_on_association(:company)
     return includes unless @include_contact_inboxes
 
     includes << :contact_channel_profiles

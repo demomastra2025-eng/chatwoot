@@ -461,8 +461,10 @@
           "BIO": {
             "PLACEHOLDER": "Введите биографию"
           },
-          "COMPANY_NAME": {
-            "PLACEHOLDER": "Введите название организации"
+          "COMPANY": {
+            "PLACEHOLDER": "Выберите организацию",
+            "SEARCH_PLACEHOLDER": "Поиск организаций",
+            "EMPTY_STATE": "Организации не найдены"
           }
         },
         "UPDATE_BUTTON": "Обновить контакт",

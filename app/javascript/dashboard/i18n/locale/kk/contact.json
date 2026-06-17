@@ -461,8 +461,10 @@
           "BIO": {
             "PLACEHOLDER": "Enter the bio"
           },
-          "COMPANY_NAME": {
-            "PLACEHOLDER": "Enter the organization name"
+          "COMPANY": {
+            "PLACEHOLDER": "Select organization",
+            "SEARCH_PLACEHOLDER": "Search organizations",
+            "EMPTY_STATE": "No organizations found"
           }
         },
         "UPDATE_BUTTON": "Update contact",
