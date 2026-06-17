@@ -52,7 +52,7 @@ export default {
     },
     rootClass() {
       return this.isCompactElapsed
-        ? 'leading-3 text-[10px] tabular-nums text-center text-n-slate-10 hover:text-n-slate-11'
+        ? 'leading-[10px] text-[9px] tabular-nums text-center text-n-slate-10 hover:text-n-slate-11'
         : 'ml-auto leading-4 text-xxs text-n-slate-10 hover:text-n-slate-11';
     },
     lastActivityTime() {
@@ -146,14 +146,15 @@ export default {
       const days = Math.floor(elapsedSeconds / 86400);
       const hours = Math.floor((elapsedSeconds % 86400) / 3600);
       const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+      const seconds = elapsedSeconds % 60;
 
       if (days > 0) {
-        return hours > 0 ? `${days}д-${hours}ч` : `${days}д`;
+        return `${days}д-${hours}ч`;
       }
       if (hours > 0) {
-        return minutes > 0 ? `${hours}ч-${minutes}м` : `${hours}ч`;
+        return `${hours}ч-${minutes}м`;
       }
-      return `${minutes}м`;
+      return `${minutes}м-${seconds}с`;
     },
   },
 };

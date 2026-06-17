@@ -48,4 +48,15 @@ describe('TimeAgo', () => {
 
     expect(wrapper.text()).toBe('3ч-1м');
   });
+
+  it('formats compact elapsed time with minutes and seconds', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 1, 0, 40, 5)));
+
+    const wrapper = mountComponent({
+      displayMode: 'compact_elapsed',
+      lastActivityTimestamp: Date.UTC(2026, 0, 1, 0, 0, 0) / 1000,
+    });
+
+    expect(wrapper.text()).toBe('40м-5с');
+  });
 });
