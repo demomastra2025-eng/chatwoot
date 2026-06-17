@@ -226,7 +226,7 @@ describe('ConversationCard', () => {
     expect(unreadBadge.classes()).toContain('rounded-full');
   });
 
-  it('renders compact time under the avatar and compact inbox name in the top-right slot', () => {
+  it('renders compact time under the avatar and compact inbox name inline with the contact', () => {
     const wrapper = mountComponent();
     const timeAgo = wrapper.findComponent({ name: 'TimeAgo' });
     const inboxName = wrapper.findComponent({ name: 'InboxName' });
@@ -235,6 +235,30 @@ describe('ConversationCard', () => {
     expect(timeAgo.props('displayMode')).toBe('compact_elapsed');
     expect(inboxName.exists()).toBe(true);
     expect(inboxName.props('compact')).toBe(true);
+  });
+
+  it('renders the last event direction and assignee in the contact row', () => {
+    const wrapper = mountComponent({
+      showAssignee: true,
+      chat: {
+        ...baseChat,
+        meta: {
+          sender: { id: 1 },
+          assignee: { id: 23, name: 'Manager' },
+        },
+        messages: [
+          {
+            id: 99,
+            content: 'Reply',
+            message_type: 1,
+            created_at: 1710000100,
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.find('.i-lucide-arrow-up-right').exists()).toBe(true);
+    expect(wrapper.find('h4').text()).toContain('Manager');
   });
 
   it('uses the existing voice call status row for communication-thread voice previews', () => {

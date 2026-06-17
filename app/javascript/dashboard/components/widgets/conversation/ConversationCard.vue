@@ -220,8 +220,20 @@ const showInboxName = computed(() => {
   );
 });
 
-const showMetaSection = computed(() => {
-  return (props.showAssignee && assignee.value.name) || props.chat.priority;
+const lastEventIconClass = computed(() => {
+  const messageType =
+    lastMessageInChat.value?.message_type ??
+    lastMessageInChat.value?.messageType;
+  if (Number(messageType) === MESSAGE_TYPES.OUTGOING) {
+    return 'i-lucide-arrow-up-right';
+  }
+  if (Number(messageType) === MESSAGE_TYPES.INCOMING) {
+    return 'i-lucide-arrow-down-left';
+  }
+  if (Number(messageType) === MESSAGE_TYPES.ACTIVITY) {
+    return 'i-lucide-info';
+  }
+  return '';
 });
 
 const hasSlaPolicyId = computed(() => props.chat?.sla_policy_id);
@@ -397,7 +409,7 @@ const togglePinnedConversation = async nextPinnedState => {
         :src="currentContact.thumbnail"
         :size="32"
         :status="currentContact.availability_status"
-        :class="showMetaSection ? 'mt-6' : 'mt-4'"
+        class="mt-3"
         hide-offline-status
         rounded-full
       >
@@ -428,40 +440,38 @@ const togglePinnedConversation = async nextPinnedState => {
     <div
       class="px-0 py-2 border-b group-hover:border-transparent flex-1 border-n-slate-3 min-w-0"
     >
-      <div
-        v-if="showMetaSection"
-        class="flex items-center min-w-0 gap-1"
-        :class="{
-          'ltr:ml-2 rtl:mr-2': !compact,
-          'mx-2': compact,
-        }"
-      >
-        <div
-          class="flex items-baseline gap-1.5 flex-shrink-0 text-xxs"
-          :class="{
-            'flex-1 justify-between': !showInboxName,
-          }"
-        >
-          <span
-            v-if="showAssignee && assignee.name"
-            class="text-n-slate-11 font-medium leading-3 py-0.5 px-0 inline-flex items-center truncate"
-          >
-            <fluent-icon icon="person" size="10" class="text-n-slate-11" />
-            {{ assignee.name }}
-          </span>
-          <CardPriorityIcon
-            :priority="chat.priority"
-            class="flex-shrink-0 !size-3"
-          />
-        </div>
-      </div>
       <h4
-        class="conversation--user text-xs my-0 mx-2 capitalize pt-0.5 text-ellipsis overflow-hidden whitespace-nowrap flex items-center gap-1 flex-1 min-w-0 ltr:pr-16 rtl:pl-16 text-n-slate-12"
-        :class="hasUnread ? 'font-semibold' : 'font-medium'"
+        class="conversation--user text-xs my-0 mx-2 pt-0.5 overflow-hidden whitespace-nowrap flex items-center gap-1 flex-1 min-w-0 text-n-slate-12"
+        :class="{ 'ltr:pr-8 rtl:pl-8': hasUnread }"
       >
-        <span class="truncate">
+        <span
+          class="min-w-0 truncate capitalize"
+          :class="hasUnread ? 'font-semibold' : 'font-medium'"
+        >
           {{ currentContact.name }}
         </span>
+        <i
+          v-if="lastEventIconClass"
+          class="size-3 flex-shrink-0 text-n-slate-10"
+          :class="lastEventIconClass"
+        />
+        <InboxName
+          v-if="showInboxName"
+          :inbox="inbox"
+          compact
+          class="max-w-20 flex-shrink min-w-0"
+        />
+        <span
+          v-if="showAssignee && assignee.name"
+          class="ml-1.5 min-w-0 max-w-20 flex-shrink truncate text-xxs font-medium normal-case leading-3 text-n-slate-11"
+        >
+          {{ assignee.name }}
+        </span>
+        <CardPriorityIcon
+          v-if="chat.priority"
+          :priority="chat.priority"
+          class="ml-0.5 flex-shrink-0 !size-3"
+        />
         <span
           v-if="isPinned"
           class="inline-flex items-center gap-1 rounded-md border border-n-slate-4 bg-n-slate-3 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 dark:border-n-slate-6 dark:bg-n-slate-2"
@@ -500,17 +510,10 @@ const togglePinnedConversation = async nextPinnedState => {
         </span>
       </p>
       <div
-        v-if="showInboxName || hasUnread"
-        class="absolute top-2 flex max-w-24 flex-col items-end ltr:right-3 rtl:left-3"
+        v-if="hasUnread"
+        class="absolute top-2 flex flex-col items-end ltr:right-3 rtl:left-3"
       >
-        <InboxName
-          v-if="showInboxName"
-          :inbox="inbox"
-          compact
-          class="max-w-full justify-end"
-        />
         <span
-          v-if="hasUnread"
           class="shadow-lg inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-n-brand-contrast bg-n-brand-solid"
           :class="unreadBadgeClass"
         >
