@@ -160,7 +160,7 @@ watch(
         >
           <div class="flex h-full flex-col gap-6">
             <div
-              class="instructions-card rounded-2xl bg-n-solid-1 px-3 md:px-6 flex h-full flex-col gap-6"
+              class="instructions-card rounded-2xl bg-n-solid-1 flex h-full flex-col gap-6"
             >
               <AssistantBasicSettingsForm
                 ref="promptDescriptionFormRef"

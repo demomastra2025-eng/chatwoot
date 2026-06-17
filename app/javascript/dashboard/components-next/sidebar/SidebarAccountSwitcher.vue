@@ -213,7 +213,7 @@ const emitNewAccount = () => {
           :aria-label="t('SIDEBAR.MY_COMPANY')"
           @click="toggle"
         >
-          <Icon icon="i-lucide-briefcase-business" class="size-4" />
+          <Icon icon="i-lucide-briefcase" class="size-4" />
         </button>
       </template>
       <DropdownBody class="min-w-64 z-50">

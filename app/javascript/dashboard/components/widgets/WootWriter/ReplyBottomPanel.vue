@@ -18,8 +18,11 @@ import {
   getInboxIconByType,
 } from 'dashboard/helper/inbox';
 import {
+  COMMUNICATION_CHANNEL_ACTIONS,
   getCommunicationChannelLabel,
   getCommunicationReplyChannels,
+  isCommunicationCallChannel,
+  isCommunicationWhatsappCallChannel,
   isCommunicationVoiceChannel,
 } from 'dashboard/helper/communicationThreadHelper';
 import { mapGetters } from 'vuex';
@@ -65,6 +68,10 @@ export default {
     activeReplyChannel: {
       type: Object,
       default: null,
+    },
+    directReplyAction: {
+      type: String,
+      default: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
     },
     recordingAudioDurationText: {
       type: String,
@@ -180,6 +187,7 @@ export default {
     'selectWhatsappTemplate',
     'selectContentTemplate',
     'selectReplyChannel',
+    'selectDirectReplyAction',
     'toggleQuotedReply',
     'replaceText',
     'attachFile',
@@ -187,13 +195,29 @@ export default {
   setup(props) {
     const { setSignatureFlagForInbox, fetchSignatureFlagFromUISettings } =
       useUISettings();
+    const activeWhatsappCallChannel = computed(() =>
+      isCommunicationWhatsappCallChannel(props.activeReplyChannel)
+        ? props.activeReplyChannel
+        : null
+    );
     const {
       canInitiateWhatsappCall,
       initiateWhatsappCall,
       isInitiatingWhatsappCall,
     } = useWhatsappCallInitiation({
-      conversationId: computed(() => props.conversationId),
-      inboxId: computed(() => props.inbox?.id),
+      conversationId: computed(
+        () =>
+          activeWhatsappCallChannel.value?.conversation_id ||
+          props.conversationId
+      ),
+      inboxId: computed(
+        () => activeWhatsappCallChannel.value?.inbox_id || props.inbox?.id
+      ),
+      channel: activeWhatsappCallChannel,
+      callingEnabled: computed(() => activeWhatsappCallChannel.value?.can_call),
+      mediaServerEnabled: computed(
+        () => activeWhatsappCallChannel.value?.media_server_enabled
+      ),
     });
 
     const uploadRef = ref(false);
@@ -247,17 +271,71 @@ export default {
     replyableCommunicationChannels() {
       return getCommunicationReplyChannels(this.communicationChannels);
     },
-    showReplyChannelMenu() {
+    showDirectWhatsappActionMenu() {
       return (
-        this.showCommunicationChannelSelector &&
-        this.replyableCommunicationChannels.length > 1
+        !this.isCommunicationThread &&
+        !this.isNote &&
+        !this.isOnPrivateNote &&
+        this.isAWhatsAppCloudChannel &&
+        Boolean(this.inbox?.calling_enabled)
       );
     },
+    directWhatsappReplyChannels() {
+      if (!this.showDirectWhatsappActionMenu) return [];
+
+      const baseChannel = {
+        channel: INBOX_TYPES.WHATSAPP,
+        inbox_id: this.inbox?.id,
+        inbox_name: this.inbox?.name || 'WhatsApp',
+        medium: this.inbox?.medium,
+        can_call: true,
+        can_reply: true,
+      };
+
+      return [
+        {
+          ...baseChannel,
+          direct_reply_action: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
+          communication_action: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
+          channel_key: `direct-whatsapp:${COMMUNICATION_CHANNEL_ACTIONS.MESSAGE}`,
+        },
+        {
+          ...baseChannel,
+          direct_reply_action: COMMUNICATION_CHANNEL_ACTIONS.CALL,
+          communication_action: COMMUNICATION_CHANNEL_ACTIONS.CALL,
+          channel_key: `direct-whatsapp:${COMMUNICATION_CHANNEL_ACTIONS.CALL}`,
+          can_send_text: false,
+          can_send_attachments: false,
+          requires_template: false,
+        },
+      ];
+    },
+    replyActionMenuItems() {
+      return this.showDirectWhatsappActionMenu
+        ? this.directWhatsappReplyChannels
+        : this.replyableCommunicationChannels;
+    },
+    activeReplyActionItem() {
+      if (!this.showDirectWhatsappActionMenu) return this.activeReplyChannel;
+
+      return (
+        this.directWhatsappReplyChannels.find(
+          channel => channel.direct_reply_action === this.directReplyAction
+        ) || this.directWhatsappReplyChannels[0]
+      );
+    },
+    showReplyChannelMenu() {
+      const hasCommunicationChannelMenu =
+        this.showCommunicationChannelSelector &&
+        this.replyableCommunicationChannels.length > 1;
+
+      return this.showDirectWhatsappActionMenu || hasCommunicationChannelMenu;
+    },
     activeReplyChannelIcon() {
-      return this.replyChannelIcon(this.activeReplyChannel);
+      return this.replyChannelIcon(this.activeReplyActionItem);
     },
     activeReplyChannelLabel() {
-      return this.replyChannelLabel(this.activeReplyChannel);
+      return this.replyChannelLabel(this.activeReplyActionItem);
     },
     activeReplyChannelTooltip() {
       if (!this.showReplyChannelMenu || !this.activeReplyChannelLabel)
@@ -284,16 +362,46 @@ export default {
           (!this.isCommunicationThread && this.isVoiceInbox))
       );
     },
+    isCommunicationWhatsappCallReplyAction() {
+      return (
+        !this.isNote &&
+        !this.isOnPrivateNote &&
+        this.isCommunicationThread &&
+        isCommunicationWhatsappCallChannel(this.activeReplyChannel)
+      );
+    },
+    isDirectWhatsappCallReplyAction() {
+      return (
+        this.showDirectWhatsappActionMenu &&
+        this.directReplyAction === COMMUNICATION_CHANNEL_ACTIONS.CALL
+      );
+    },
+    isWhatsappCallReplyAction() {
+      return (
+        this.isCommunicationWhatsappCallReplyAction ||
+        this.isDirectWhatsappCallReplyAction
+      );
+    },
+    isCallReplyAction() {
+      return (
+        this.isCommunicationVoiceReplyAction || this.isWhatsappCallReplyAction
+      );
+    },
     wrapClass() {
       return {
         'is-note-mode': this.isNote,
       };
     },
+    showEmojiButton() {
+      return !this.isEditorDisabled && !this.isCallReplyAction;
+    },
     showAttachButton() {
+      if (this.isCallReplyAction) return false;
       if (this.isEditorDisabled) return false;
       return this.showFileUpload || this.isNote;
     },
     showAudioRecorderButton() {
+      if (this.isCallReplyAction) return false;
       if (this.isEditorDisabled) return false;
       if (this.isALineChannel || this.isATiktokChannel) {
         return false;
@@ -312,10 +420,12 @@ export default {
       );
     },
     showAudioPlayStopButton() {
+      if (this.isCallReplyAction) return false;
       if (this.isEditorDisabled) return false;
       return this.showAudioRecorder && this.isRecordingAudio;
     },
     showAudioClearButton() {
+      if (this.isCallReplyAction) return false;
       if (this.isEditorDisabled) return false;
       return this.showAudioRecorder && this.isRecordingAudio;
     },
@@ -358,6 +468,7 @@ export default {
       }
     },
     showMessageSignatureButton() {
+      if (this.isCallReplyAction) return false;
       if (this.isEditorDisabled) return false;
       return !this.isOnPrivateNote && this.isAnEmailChannel;
     },
@@ -375,6 +486,9 @@ export default {
     enableInsertArticleInReply() {
       return this.portalSlug;
     },
+    showInsertArticleButton() {
+      return this.enableInsertArticleInReply && !this.isCallReplyAction;
+    },
     isFetchingAppIntegrations() {
       return this.uiFlags.isFetching;
     },
@@ -384,6 +498,7 @@ export default {
         : this.$t('CONVERSATION.REPLYBOX.QUOTED_REPLY.ENABLE_TOOLTIP');
     },
     showCaptainToggleButton() {
+      if (this.isCallReplyAction) return false;
       if (this.isEditorDisabled) return false;
       if (this.isNote || this.isOnPrivateNote) return false;
 
@@ -396,11 +511,26 @@ export default {
       return !!this.inbox?.captain_assistant?.id;
     },
     showVoiceCallButton() {
+      if (this.isCallReplyAction) return false;
       if (this.isEditorDisabled) return false;
       if (this.isNote || this.isOnPrivateNote) return false;
-      if (this.isCommunicationVoiceReplyAction) return false;
 
       return Boolean(this.contactId && this.contactPhone);
+    },
+    showPaymentActionButton() {
+      return (
+        !this.isOnPrivateNote &&
+        !this.isEditorDisabled &&
+        !this.isCallReplyAction
+      );
+    },
+    showVideoCallButton() {
+      return (
+        (this.isAWebWidgetInbox || this.isAPIInbox) &&
+        !this.isOnPrivateNote &&
+        !this.isEditorDisabled &&
+        !this.isCallReplyAction
+      );
     },
     isCaptainEnabledForConversation() {
       return (
@@ -426,12 +556,34 @@ export default {
     },
     replyChannelIcon(channel) {
       if (!channel?.channel) return '';
+      if (isCommunicationWhatsappCallChannel(channel)) {
+        return 'i-ph-phone channel-icon-neutral';
+      }
       return this.neutralChannelIcon(channel.channel, channel.medium);
     },
     replyChannelLabel(channel) {
-      return getCommunicationChannelLabel(channel);
+      const label = getCommunicationChannelLabel(channel);
+      if (channel?.can_call && channel.channel === 'Channel::Whatsapp') {
+        const actionLabel = isCommunicationWhatsappCallChannel(channel)
+          ? this.$t('CONVERSATION.COMMUNICATION_THREAD.CALL_ACTION')
+          : this.$t('CONVERSATION.COMMUNICATION_THREAD.WRITE_ACTION');
+        return `${label} - ${actionLabel}`;
+      }
+
+      return label;
     },
     isSelectedReplyChannel(channel) {
+      if (channel?.direct_reply_action) {
+        return channel.direct_reply_action === this.directReplyAction;
+      }
+
+      if (
+        isCommunicationCallChannel(channel) ||
+        isCommunicationCallChannel(this.activeReplyChannel)
+      ) {
+        return channel?.channel_key === this.activeReplyChannel?.channel_key;
+      }
+
       const selectedKey =
         this.activeReplyChannel?.channel_key ||
         this.activeReplyChannel?.conversation_id;
@@ -451,6 +603,12 @@ export default {
       this.showReplyChannelDropdown = !this.showReplyChannelDropdown;
     },
     selectReplyChannel(channel) {
+      if (channel?.direct_reply_action) {
+        this.$emit('selectDirectReplyAction', channel.direct_reply_action);
+        this.closeReplyChannelDropdown();
+        return;
+      }
+
       this.$emit(
         'selectReplyChannel',
         channel.channel_key || channel.conversation_id
@@ -513,7 +671,7 @@ export default {
   <div class="flex justify-between px-3 py-2.5" :class="wrapClass">
     <div class="left-wrap">
       <NextButton
-        v-if="!isEditorDisabled"
+        v-if="showEmojiButton"
         v-tooltip.top-end="$t('CONVERSATION.REPLYBOX.TIP_EMOJI_ICON')"
         icon="i-ph-smiley-sticker"
         slate
@@ -619,21 +777,10 @@ export default {
         @click="$emit('toggleQuotedReply')"
       />
       <PaymentActionButton
-        v-if="!isOnPrivateNote && !isEditorDisabled"
+        v-if="showPaymentActionButton"
         :conversation-id="conversationId"
         @replace-text="replaceText"
         @attach-file="$emit('attachFile', $event)"
-      />
-      <NextButton
-        v-if="canInitiateWhatsappCall && !isOnPrivateNote && !isEditorDisabled"
-        v-tooltip.top-end="$t('WHATSAPP_CALL.INITIATE_CALL')"
-        icon="i-ph-phone"
-        slate
-        faded
-        sm
-        :is-loading="isInitiatingWhatsappCall"
-        :disabled="isInitiatingWhatsappCall"
-        @click="initiateWhatsappCall"
       />
       <NextButton
         v-if="enableWhatsAppTemplates"
@@ -654,11 +801,7 @@ export default {
         @click="$emit('selectContentTemplate')"
       />
       <VideoCallButton
-        v-if="
-          (isAWebWidgetInbox || isAPIInbox) &&
-          !isOnPrivateNote &&
-          !isEditorDisabled
-        "
+        v-if="showVideoCallButton"
         :conversation-id="conversationId"
       />
       <transition name="modal-fade">
@@ -673,7 +816,7 @@ export default {
         </div>
       </transition>
       <NextButton
-        v-if="enableInsertArticleInReply"
+        v-if="showInsertArticleButton"
         v-tooltip.top-end="$t('HELP_CENTER.ARTICLE_SEARCH.OPEN_ARTICLE_SEARCH')"
         icon="i-ph-article-ny-times"
         slate
@@ -697,6 +840,20 @@ export default {
           :class="
             showReplyChannelMenu ? 'ltr:rounded-r-none rtl:rounded-l-none' : ''
           "
+        />
+        <NextButton
+          v-else-if="isWhatsappCallReplyAction"
+          :label="sendButtonText"
+          type="button"
+          sm
+          color="blue"
+          :is-loading="isInitiatingWhatsappCall"
+          :disabled="!canInitiateWhatsappCall || isInitiatingWhatsappCall"
+          class="reply-send-button flex-shrink-0"
+          :class="
+            showReplyChannelMenu ? 'ltr:rounded-r-none rtl:rounded-l-none' : ''
+          "
+          @click="initiateWhatsappCall"
         />
         <NextButton
           v-else
@@ -728,7 +885,7 @@ export default {
           class="reply-channel-menu"
         >
           <button
-            v-for="channel in replyableCommunicationChannels"
+            v-for="channel in replyActionMenuItems"
             :key="
               channel.channel_key ||
               `${channel.inbox_id}-${channel.conversation_id}`

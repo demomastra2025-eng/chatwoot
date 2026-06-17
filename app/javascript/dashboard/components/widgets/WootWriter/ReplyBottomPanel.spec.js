@@ -53,6 +53,30 @@ const voiceChannel = {
   can_reply: true,
 };
 
+const whatsappOfficialCallChannel = {
+  conversation_id: 44,
+  inbox_id: 404,
+  inbox_name: 'WhatsApp Official',
+  channel: 'Channel::Whatsapp',
+  can_reply: true,
+  can_send_text: true,
+  can_call: true,
+  media_server_enabled: true,
+  channel_key: 'conversation:44',
+};
+
+const whatsappOfficialCallAction = {
+  ...whatsappOfficialCallChannel,
+  communication_action: 'call',
+  message_channel_key: 'conversation:44',
+  channel_key: 'conversation:44:action:call',
+  can_send_text: false,
+  can_send_attachments: false,
+  requires_template: false,
+  disabled: false,
+  disabled_reason: null,
+};
+
 const NextButtonStub = {
   name: 'NextButton',
   props: ['label', 'icon', 'disabled', 'type'],
@@ -115,6 +139,8 @@ const mountComponent = props =>
             'CONVERSATION.COMMUNICATION_THREAD.ACTIVE_CHANNEL': `Active channel: ${params.channel}`,
             'CONVERSATION.COMMUNICATION_THREAD.REPLY_RESTRICTED_SUFFIX':
               '(reply restricted)',
+            'CONVERSATION.COMMUNICATION_THREAD.CALL_ACTION': 'Call',
+            'CONVERSATION.COMMUNICATION_THREAD.WRITE_ACTION': 'Write',
           })[key] || key,
       },
       directives: {
@@ -226,6 +252,134 @@ describe('ReplyBottomPanel', () => {
     });
     expect(voiceCallButtons[0].props('icon')).toBe('');
     expect(wrapper.find('button[type="submit"]').exists()).toBe(false);
+  });
+
+  it('uses the primary call action for selected WhatsApp Official call replies', async () => {
+    const initiateWhatsappCall = vi.fn();
+    useWhatsappCallInitiationMock.mockReturnValueOnce({
+      canInitiateWhatsappCall: true,
+      initiateWhatsappCall,
+      isInitiatingWhatsappCall: false,
+    });
+
+    const wrapper = mountComponent({
+      isCommunicationThread: true,
+      sendButtonText: 'Call',
+      conversationId: 44,
+      contactId: 42,
+      contactPhone: '+770****8623',
+      communicationChannels: [whatsappOfficialCallChannel],
+      activeReplyChannel: whatsappOfficialCallAction,
+      inbox: {
+        id: 404,
+        channel_type: 'Channel::Whatsapp',
+        provider: 'whatsapp_cloud',
+      },
+    });
+
+    const [options] = useWhatsappCallInitiationMock.mock.calls.at(-1);
+    expect(options.conversationId.value).toBe(44);
+    expect(options.inboxId.value).toBe(404);
+    expect(options.callingEnabled.value).toBe(true);
+    expect(options.mediaServerEnabled.value).toBe(true);
+
+    const primaryButton = wrapper.find('.reply-send-button');
+    expect(primaryButton.text()).toContain('Call');
+    expect(wrapper.findComponent({ name: 'VoiceCallButton' }).exists()).toBe(
+      false
+    );
+
+    await primaryButton.trigger('click');
+    expect(initiateWhatsappCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows write and call variants for WhatsApp Official in the reply dropdown', async () => {
+    const wrapper = mountComponent({
+      isCommunicationThread: true,
+      communicationChannels: [whatsappOfficialCallChannel],
+      activeReplyChannel: whatsappOfficialCallChannel,
+    });
+
+    await wrapper.find('.reply-channel-menu__toggle').trigger('click');
+
+    const channelItems = wrapper.findAll('.reply-channel-menu__item');
+    expect(channelItems).toHaveLength(2);
+    expect(channelItems[0].text()).toContain('WhatsApp Official - Write');
+    expect(channelItems[1].text()).toContain('WhatsApp Official - Call');
+
+    await channelItems[1].trigger('click');
+
+    expect(wrapper.emitted('selectReplyChannel')).toEqual([
+      ['conversation:44:action:call'],
+    ]);
+  });
+
+  it('shows direct WhatsApp Official write and call variants in the send dropdown', async () => {
+    const wrapper = mountComponent({
+      showCommunicationChannelSelector: false,
+      isCommunicationThread: false,
+      communicationChannels: [],
+      activeReplyChannel: null,
+      inbox: {
+        id: 404,
+        name: 'WhatsApp Official',
+        channel_type: 'Channel::Whatsapp',
+        provider: 'whatsapp_cloud',
+        calling_enabled: true,
+      },
+    });
+
+    expect(wrapper.find('.reply-channel-menu__toggle').exists()).toBe(true);
+    expect(wrapper.find('[data-icon="i-ph-phone"]').exists()).toBe(false);
+
+    await wrapper.find('.reply-channel-menu__toggle').trigger('click');
+
+    const channelItems = wrapper.findAll('.reply-channel-menu__item');
+    expect(channelItems).toHaveLength(2);
+    expect(channelItems[0].text()).toContain('WhatsApp Official - Write');
+    expect(channelItems[1].text()).toContain('WhatsApp Official - Call');
+
+    await channelItems[1].trigger('click');
+
+    expect(wrapper.emitted('selectDirectReplyAction')).toEqual([['call']]);
+    expect(wrapper.emitted('selectReplyChannel')).toBeUndefined();
+  });
+
+  it('uses the primary call action for selected direct WhatsApp Official call replies', async () => {
+    const initiateWhatsappCall = vi.fn();
+    useWhatsappCallInitiationMock.mockReturnValueOnce({
+      canInitiateWhatsappCall: true,
+      initiateWhatsappCall,
+      isInitiatingWhatsappCall: false,
+    });
+
+    const wrapper = mountComponent({
+      showCommunicationChannelSelector: false,
+      isCommunicationThread: false,
+      communicationChannels: [],
+      activeReplyChannel: null,
+      directReplyAction: 'call',
+      sendButtonText: 'Call',
+      contactId: 42,
+      contactPhone: '+770****8623',
+      inbox: {
+        id: 404,
+        name: 'WhatsApp Official',
+        channel_type: 'Channel::Whatsapp',
+        provider: 'whatsapp_cloud',
+        calling_enabled: true,
+      },
+    });
+
+    const primaryButton = wrapper.find('.reply-send-button');
+    expect(primaryButton.text()).toContain('Call');
+    expect(primaryButton.attributes('type')).toBe('button');
+    expect(wrapper.findComponent({ name: 'VoiceCallButton' }).exists()).toBe(
+      false
+    );
+
+    await primaryButton.trigger('click');
+    expect(initiateWhatsappCall).toHaveBeenCalledTimes(1);
   });
 
   it('uses normal private-note send action when a voice channel is selected', async () => {

@@ -65,6 +65,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
   const selectedInboxId = computed(
     () => unref(options.inboxId) || currentChat.value?.inbox_id
   );
+  const selectedChannel = computed(() => unref(options.channel) || {});
   const inbox = computed(() => {
     const inboxId = selectedInboxId.value;
     return inboxId ? store.getters['inboxes/getInbox'](inboxId) : null;
@@ -78,21 +79,35 @@ export const useWhatsappCallInitiation = (options = {}) => {
   });
   const isAWhatsAppCloudChannel = computed(() => {
     return (
-      inbox.value?.channel_type === INBOX_TYPES.WHATSAPP &&
-      inbox.value?.provider === 'whatsapp_cloud'
+      (inbox.value?.channel_type === INBOX_TYPES.WHATSAPP &&
+        inbox.value?.provider === 'whatsapp_cloud') ||
+      selectedChannel.value?.can_call === true
     );
+  });
+  const callingEnabled = computed(() => {
+    const optionCallingEnabled = unref(options.callingEnabled);
+    if (optionCallingEnabled !== undefined) {
+      return Boolean(optionCallingEnabled);
+    }
+
+    return Boolean(inbox.value?.calling_enabled);
   });
 
   const canInitiateWhatsappCall = computed(() => {
     if (!isAWhatsAppCloudChannel.value) return false;
-    if (!inbox.value?.calling_enabled) return false;
+    if (!callingEnabled.value) return false;
     if (whatsappCallsStore.hasWhatsappCall) return false;
     return true;
   });
 
-  const isMediaServerEnabled = computed(
-    () => !!inbox.value?.media_server_enabled
-  );
+  const isMediaServerEnabled = computed(() => {
+    const optionMediaServerEnabled = unref(options.mediaServerEnabled);
+    if (optionMediaServerEnabled !== undefined) {
+      return Boolean(optionMediaServerEnabled);
+    }
+
+    return Boolean(inbox.value?.media_server_enabled);
+  });
 
   const showPermissionStatusAlert = callStatus => {
     const message =

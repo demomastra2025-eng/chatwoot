@@ -46,9 +46,83 @@ const sortByNewestChannelActivity = (firstChannel, secondChannel) => {
 export const isCommunicationVoiceChannel = channel =>
   channel?.channel === 'Channel::Voice';
 
+export const COMMUNICATION_CHANNEL_ACTIONS = {
+  MESSAGE: 'message',
+  CALL: 'call',
+};
+
+const ACTION_KEY_SEPARATOR = ':action:';
+
+const splitCommunicationChannelActionKey = identifier => {
+  const value = String(identifier || '');
+  const [baseKey, action] = value.split(ACTION_KEY_SEPARATOR);
+
+  return {
+    baseKey,
+    action: action || null,
+  };
+};
+
+const communicationChannelBaseKey = channel => {
+  if (channel?.message_channel_key) return channel.message_channel_key;
+  if (channel?.channel_key) {
+    return splitCommunicationChannelActionKey(channel.channel_key).baseKey;
+  }
+  if (channel?.conversation_id) {
+    return `conversation:${channel.conversation_id}`;
+  }
+  if (channel?.inbox_id) return `inbox:${channel.inbox_id}`;
+  return null;
+};
+
+const communicationChannelAction = channel => {
+  if (channel?.communication_action) return channel.communication_action;
+  if (channel?.channel_key) {
+    const { action } = splitCommunicationChannelActionKey(channel.channel_key);
+    if (action) return action;
+  }
+  return COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
+};
+
+const communicationChannelActionKey = (
+  channel,
+  action = COMMUNICATION_CHANNEL_ACTIONS.MESSAGE
+) => {
+  const baseKey = communicationChannelBaseKey(channel);
+  if (!baseKey) return null;
+
+  if (action === COMMUNICATION_CHANNEL_ACTIONS.CALL) {
+    return `${baseKey}${ACTION_KEY_SEPARATOR}${action}`;
+  }
+
+  return baseKey;
+};
+
+export const isCommunicationWhatsappCallChannel = channel =>
+  channel?.channel === 'Channel::Whatsapp' &&
+  communicationChannelAction(channel) === COMMUNICATION_CHANNEL_ACTIONS.CALL;
+
+export const isCommunicationCallChannel = channel =>
+  isCommunicationVoiceChannel(channel) ||
+  isCommunicationWhatsappCallChannel(channel);
+
+const isCommunicationWhatsappCallAvailable = channel =>
+  channel?.channel === 'Channel::Whatsapp' &&
+  channel?.can_call === true &&
+  channel?.conversation_id &&
+  channel?.disabled !== true;
+
+const isCommunicationMessageActionable = channel =>
+  Boolean(
+    channel?.can_reply || channel?.can_send_text || channel?.requires_template
+  );
+
 export const isCommunicationChannelReplyable = channel => {
   const canCall =
-    isCommunicationVoiceChannel(channel) && channel?.disabled !== true;
+    (isCommunicationVoiceChannel(channel) ||
+      isCommunicationWhatsappCallAvailable(channel) ||
+      isCommunicationCallChannel(channel)) &&
+    channel?.disabled !== true;
 
   return Boolean(
     channel?.can_reply ||
@@ -59,12 +133,7 @@ export const isCommunicationChannelReplyable = channel => {
 };
 
 const communicationChannelIdentity = channel => {
-  if (channel?.channel_key) return channel.channel_key;
-  if (channel?.conversation_id) {
-    return `conversation:${channel.conversation_id}`;
-  }
-  if (channel?.inbox_id) return `inbox:${channel.inbox_id}`;
-  return null;
+  return communicationChannelBaseKey(channel);
 };
 
 const isBetterCommunicationChannel = (candidate, current) => {
@@ -114,9 +183,49 @@ export const getUniqueCommunicationChannels = (channels = []) => {
 };
 
 export const getCommunicationReplyChannels = (channels = []) => {
-  return getUniqueCommunicationChannels(channels).filter(
-    isCommunicationChannelReplyable
-  );
+  const sourceChannels = Array.isArray(channels) ? channels : [];
+  if (sourceChannels.some(channel => channel?.communication_action)) {
+    return sourceChannels.filter(isCommunicationChannelReplyable);
+  }
+
+  return getUniqueCommunicationChannels(sourceChannels)
+    .filter(isCommunicationChannelReplyable)
+    .flatMap(channel => {
+      if (isCommunicationVoiceChannel(channel)) return [channel];
+      if (!isCommunicationWhatsappCallAvailable(channel)) return [channel];
+
+      const actionChannels = [];
+      const baseKey = communicationChannelActionKey(channel);
+
+      if (isCommunicationMessageActionable(channel)) {
+        actionChannels.push({
+          ...channel,
+          communication_action: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
+          message_channel_key: baseKey,
+          channel_key: baseKey,
+        });
+      }
+
+      if (isCommunicationWhatsappCallAvailable(channel)) {
+        actionChannels.push({
+          ...channel,
+          communication_action: COMMUNICATION_CHANNEL_ACTIONS.CALL,
+          message_channel_key: baseKey,
+          channel_key: communicationChannelActionKey(
+            channel,
+            COMMUNICATION_CHANNEL_ACTIONS.CALL
+          ),
+          can_reply: true,
+          can_send_text: false,
+          can_send_attachments: false,
+          requires_template: false,
+          disabled: false,
+          disabled_reason: null,
+        });
+      }
+
+      return actionChannels;
+    });
 };
 
 const normalizeChannelStatus = status => String(status || '').trim();
@@ -286,8 +395,26 @@ export const getDefaultReplyChannel = (channels, messages = []) => {
 };
 
 const sameCommunicationChannel = (channel, identifier) => {
+  const { baseKey: identifierBaseKey, action: identifierAction } =
+    splitCommunicationChannelActionKey(identifier);
+  const channelBaseKey = communicationChannelBaseKey(channel);
+  const channelAction = communicationChannelAction(channel);
+  const hasExplicitAction = Boolean(channel?.communication_action);
+
+  if (identifierAction) {
+    if (!channelBaseKey || channelBaseKey !== identifierBaseKey) return false;
+    return hasExplicitAction ? channelAction === identifierAction : true;
+  }
+
+  if (
+    hasExplicitAction &&
+    channelAction !== COMMUNICATION_CHANNEL_ACTIONS.MESSAGE
+  ) {
+    return false;
+  }
+
   return (
-    String(channel?.channel_key) === String(identifier) ||
+    String(channelBaseKey) === String(identifierBaseKey) ||
     String(channel?.conversation_id) === String(identifier) ||
     String(channel?.inbox_id) === String(identifier)
   );
@@ -303,16 +430,26 @@ export const getCommunicationReplyChannel = (chat, conversationId = null) => {
   const channels = getUniqueCommunicationChannels(rawChannels);
   if (!channels.length) return null;
 
+  const replyChannels = getCommunicationReplyChannels(channels);
+  const selectableChannels = replyChannels.length ? replyChannels : channels;
+
   if (conversationId) {
     const selectedRawChannel = rawChannels.find(channel =>
       sameCommunicationChannel(channel, conversationId)
     );
-    const selectedChannel = channels.find(
-      channel =>
-        sameCommunicationChannel(channel, conversationId) ||
-        sameCommunicationInbox(channel, selectedRawChannel)
+    const selectedChannel = selectableChannels.find(channel =>
+      sameCommunicationChannel(channel, conversationId)
     );
     if (selectedChannel) return selectedChannel;
+
+    const { action: selectedAction } =
+      splitCommunicationChannelActionKey(conversationId);
+    if (!selectedAction) {
+      const selectedInboxChannel = selectableChannels.find(channel =>
+        sameCommunicationInbox(channel, selectedRawChannel)
+      );
+      if (selectedInboxChannel) return selectedInboxChannel;
+    }
   }
 
   return getDefaultReplyChannel(channels, chat?.messages || []);
@@ -401,6 +538,7 @@ export const buildCommunicationChannelFromRealtimePayload = payload => {
     can_reply: payload.can_reply,
     can_send_text: payload.can_send_text ?? payload.can_reply,
     can_send_attachments: payload.can_send_attachments ?? payload.can_reply,
+    can_call: payload.can_call ?? false,
     requires_template: payload.requires_template || false,
     reply_window_open: payload.reply_window_open ?? payload.can_reply,
     reauthorization_required: payload.reauthorization_required || false,
@@ -408,6 +546,7 @@ export const buildCommunicationChannelFromRealtimePayload = payload => {
     disabled_reason: payload.disabled_reason || null,
     primary: payload.primary || false,
     last_activity_at: payload.last_activity_at || payload.timestamp || 0,
+    media_server_enabled: payload.media_server_enabled ?? false,
     channel_key: `conversation:${payload.conversation_id}`,
   };
 };
@@ -421,9 +560,11 @@ export const buildCommunicationChannelFromMessage = message => {
     inbox_name: message.inbox_name,
     contact_inbox_id: message.contact_inbox_id,
     channel: message.channel,
+    medium: message.medium,
     can_reply: isIncomingMessage(message),
     can_send_text: isIncomingMessage(message),
     can_send_attachments: isIncomingMessage(message),
+    can_call: message.can_call ?? false,
     requires_template: false,
     reply_window_open: isIncomingMessage(message),
     reauthorization_required: false,
@@ -431,6 +572,7 @@ export const buildCommunicationChannelFromMessage = message => {
     disabled_reason: isIncomingMessage(message) ? null : 'not_replyable',
     primary: false,
     last_activity_at: message.created_at || 0,
+    media_server_enabled: message.media_server_enabled ?? false,
     channel_key: `conversation:${message.conversation_id}`,
   };
 };
@@ -461,7 +603,7 @@ export const decoratePayloadWithCommunicationThread = (
     ...compactPayload({
       conversationId: replyChannel.conversation_id,
       communicationThreadId: chat.id,
-      channelKey: replyChannel.channel_key,
+      channelKey: replyChannel.message_channel_key || replyChannel.channel_key,
       targetInboxId: replyChannel.inbox_id,
       targetContactInboxId: replyChannel.contact_inbox_id,
       inbox_id: replyChannel.inbox_id,

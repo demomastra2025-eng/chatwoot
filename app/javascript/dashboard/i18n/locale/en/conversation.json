@@ -342,7 +342,8 @@
       "REPLY_VIA": "Reply via",
       "ACTIVE_CHANNEL": "Active channel: {channel}",
       "REPLY_RESTRICTED_SUFFIX": "(reply restricted)",
-      "CALL_ACTION": "Call"
+      "CALL_ACTION": "Call",
+      "WRITE_ACTION": "Write"
     },
     "SENT_BY": "Sent by:",
     "BOT": "Bot",

@@ -54,9 +54,11 @@ import { useCopilotReply } from 'dashboard/composables/useCopilotReply';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
 import { isFileTypeAllowedForChannel } from 'shared/helpers/FileHelper';
 import {
+  COMMUNICATION_CHANNEL_ACTIONS,
   decoratePayloadWithCommunicationThread,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
+  isCommunicationCallChannel,
   isCommunicationChannelReplyable,
   isCommunicationThread,
   isCommunicationVoiceChannel,
@@ -145,6 +147,7 @@ export default {
       hasRecordedAudio: false,
       copilotAcceptedMessages: {},
       selectedReplyConversationId: null,
+      selectedDirectReplyAction: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
     };
   },
   computed: {
@@ -219,6 +222,7 @@ export default {
       );
     },
     showWhatsappTemplates() {
+      if (this.isCommunicationCallReplyAction) return false;
       // We support templates for API channels if someone updates templates manually via API
       // That's why we don't explicitly check for channel type here
       const templates = this.$store.getters[
@@ -227,6 +231,7 @@ export default {
       return !!(templates && templates.length) && !this.isPrivate;
     },
     showContentTemplates() {
+      if (this.isCommunicationCallReplyAction) return false;
       return this.isATwilioWhatsAppChannel && !this.isPrivate;
     },
     isPrivate() {
@@ -275,7 +280,7 @@ export default {
       return this.maxLength - this.message.length;
     },
     isReplyButtonDisabled() {
-      if (this.isCommunicationVoiceReplyAction) return true;
+      if (this.isCommunicationCallReplyAction) return true;
       if (this.isEditorDisabled) return true;
       if (this.isATwitterInbox) return true;
       if (this.hasAttachments || this.hasRecordedAudio) return false;
@@ -354,6 +359,7 @@ export default {
       );
     },
     showFileUpload() {
+      if (this.isCommunicationCallReplyAction) return false;
       if (this.isEditingMessage) return false;
 
       return (
@@ -379,8 +385,25 @@ export default {
           : this.isAVoiceChannel)
       );
     },
+    isDirectWhatsappCallReplyAction() {
+      return (
+        !this.isCommunicationThreadConversation &&
+        !this.isOnPrivateNote &&
+        this.selectedDirectReplyAction === COMMUNICATION_CHANNEL_ACTIONS.CALL &&
+        this.isAWhatsAppCloudChannel &&
+        Boolean(this.inbox?.calling_enabled)
+      );
+    },
+    isCommunicationCallReplyAction() {
+      return (
+        !this.isOnPrivateNote &&
+        (this.isCommunicationThreadConversation
+          ? isCommunicationCallChannel(this.activeReplyChannel)
+          : this.isAVoiceChannel || this.isDirectWhatsappCallReplyAction)
+      );
+    },
     replyButtonLabel() {
-      if (this.isCommunicationVoiceReplyAction) {
+      if (this.isCommunicationCallReplyAction) {
         return this.$t('CONVERSATION.COMMUNICATION_THREAD.CALL_ACTION');
       }
 
@@ -537,6 +560,8 @@ export default {
       return !this.showAudioRecorderEditor && !this.copilot.isActive.value;
     },
     isEditorDisabled() {
+      if (this.isCommunicationCallReplyAction) return false;
+
       return (
         (this.isAWhatsAppChannel || this.isAPIInbox) &&
         !this.isOnPrivateNote &&
@@ -549,6 +574,7 @@ export default {
       this.syncSelectedReplyChannel(conversation);
       const canReply = this.selectedChannelCanReply;
       if (oldConversation && oldConversation.id !== conversation.id) {
+        this.selectedDirectReplyAction = COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
         // Only update email fields when switching to a completely different conversation (by ID)
         // This prevents overwriting user input (e.g., CC/BCC fields) when performing actions
         // like self-assign or other updates that do not actually change the conversation context
@@ -588,6 +614,7 @@ export default {
     },
     conversationIdByRoute(conversationId, oldConversationId) {
       if (conversationId !== oldConversationId) {
+        this.selectedDirectReplyAction = COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
         this.setToDraft(oldConversationId, this.replyType);
         this.getFromDraft();
         this.resetRecorderAndClearAttachments();
@@ -661,6 +688,7 @@ export default {
         return;
       }
 
+      this.selectedDirectReplyAction = COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
       const currentChannel = getCommunicationReplyChannel(
         conversation,
         this.selectedReplyConversationId
@@ -688,6 +716,10 @@ export default {
     },
     selectReplyChannel(channelKey) {
       this.selectedReplyConversationId = channelKey;
+    },
+    selectDirectReplyAction(action) {
+      this.selectedDirectReplyAction =
+        action || COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
     },
     decorateMessagePayload(messagePayload) {
       return decoratePayloadWithCommunicationThread(
@@ -859,7 +891,7 @@ export default {
     },
     isAValidEvent(selectedKey) {
       return (
-        !this.isCommunicationVoiceReplyAction &&
+        !this.isCommunicationCallReplyAction &&
         !this.showUserMentions &&
         !this.showMentions &&
         !this.showCannedMenu &&
@@ -1677,6 +1709,7 @@ export default {
         :is-communication-thread="isCommunicationThreadConversation"
         :communication-channels="communicationChannels"
         :active-reply-channel="activeReplyChannel"
+        :direct-reply-action="selectedDirectReplyAction"
         :show-audio-recorder="showAudioRecorder"
         :show-emoji-picker="showEmojiPicker"
         :show-file-upload="showFileUpload"
@@ -1694,6 +1727,7 @@ export default {
         @toggle-insert-article="toggleInsertArticle"
         @toggle-quoted-reply="toggleQuotedReply"
         @select-reply-channel="selectReplyChannel"
+        @select-direct-reply-action="selectDirectReplyAction"
         @replace-text="addIntoEditor"
         @attach-file="onFileUpload"
       />

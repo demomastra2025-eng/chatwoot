@@ -8,6 +8,7 @@ const replyButtonLabel = context =>
     isEditorHotKeyEnabled: () => false,
     shortcutKey: '⌘+Enter',
     isCommunicationVoiceReplyAction: false,
+    isCommunicationCallReplyAction: false,
     isCommunicationThreadConversation: false,
     activeReplyChannel: null,
     isEditingMessage: false,
@@ -31,6 +32,7 @@ describe('ReplyBox', () => {
     expect(
       ReplyBox.computed.isEditorDisabled.call({
         isCommunicationVoiceReplyAction: true,
+        isCommunicationCallReplyAction: true,
         isAWhatsAppChannel: false,
         isAPIInbox: false,
         isOnPrivateNote: false,
@@ -43,6 +45,7 @@ describe('ReplyBox', () => {
     expect(
       ReplyBox.computed.isReplyButtonDisabled.call({
         isCommunicationVoiceReplyAction: true,
+        isCommunicationCallReplyAction: true,
         isEditorDisabled: false,
         isATwitterInbox: false,
         hasAttachments: false,
@@ -69,6 +72,7 @@ describe('ReplyBox', () => {
     expect(
       ReplyBox.computed.isReplyButtonDisabled.call({
         isCommunicationVoiceReplyAction: false,
+        isCommunicationCallReplyAction: false,
         isEditorDisabled: false,
         isATwitterInbox: false,
         hasAttachments: false,
@@ -102,6 +106,102 @@ describe('ReplyBox', () => {
         activeReplyChannel: null,
       })
     ).toBe(true);
+  });
+
+  it('treats the selected WhatsApp Official call action as a communication-thread call action', () => {
+    const activeReplyChannel = {
+      channel: 'Channel::Whatsapp',
+      communication_action: 'call',
+      channel_key: 'conversation:44:action:call',
+    };
+
+    expect(
+      ReplyBox.computed.isCommunicationCallReplyAction.call({
+        isCommunicationThreadConversation: true,
+        isOnPrivateNote: false,
+        activeReplyChannel,
+      })
+    ).toBe(true);
+    expect(
+      replyButtonLabel({
+        isCommunicationCallReplyAction: true,
+        isCommunicationThreadConversation: true,
+        activeReplyChannel,
+      })
+    ).toBe('Позвонить');
+    expect(
+      ReplyBox.computed.showFileUpload.call({
+        isCommunicationCallReplyAction: true,
+      })
+    ).toBe(false);
+    expect(
+      ReplyBox.computed.showWhatsappTemplates.call({
+        isCommunicationCallReplyAction: true,
+      })
+    ).toBe(false);
+  });
+
+  it('treats the selected direct WhatsApp Official call action as a call action', () => {
+    const directContext = {
+      isCommunicationThreadConversation: false,
+      isOnPrivateNote: false,
+      selectedDirectReplyAction: 'call',
+      isAWhatsAppCloudChannel: true,
+      inbox: { calling_enabled: true },
+    };
+
+    expect(
+      ReplyBox.computed.isDirectWhatsappCallReplyAction.call(directContext)
+    ).toBe(true);
+    expect(
+      ReplyBox.computed.isCommunicationCallReplyAction.call({
+        ...directContext,
+        isDirectWhatsappCallReplyAction: true,
+        isAVoiceChannel: false,
+      })
+    ).toBe(true);
+    expect(
+      ReplyBox.computed.isEditorDisabled.call({
+        isCommunicationCallReplyAction: true,
+        isAWhatsAppChannel: true,
+        isAPIInbox: false,
+        isOnPrivateNote: false,
+        selectedChannelCanSendText: false,
+      })
+    ).toBe(false);
+    expect(
+      replyButtonLabel({
+        isCommunicationCallReplyAction: true,
+        isCommunicationThreadConversation: false,
+        isAWhatsAppCloudChannel: true,
+      })
+    ).toBe('Позвонить');
+    expect(
+      ReplyBox.computed.showFileUpload.call({
+        isCommunicationCallReplyAction: true,
+      })
+    ).toBe(false);
+    expect(
+      ReplyBox.methods.isAValidEvent.call({
+        isCommunicationCallReplyAction: true,
+        showUserMentions: false,
+        showMentions: false,
+        showCannedMenu: false,
+        showVariablesMenu: false,
+        isFocused: true,
+        isEditorHotKeyEnabled: () => true,
+      })
+    ).toBe(false);
+  });
+
+  it('stores the selected direct reply action', () => {
+    const context = { selectedDirectReplyAction: 'message' };
+
+    ReplyBox.methods.selectDirectReplyAction.call(context, 'call');
+    expect(context.selectedDirectReplyAction).toBe('call');
+
+    ReplyBox.methods.selectDirectReplyAction.call(context);
+    expect(context.selectedDirectReplyAction).toBe('message');
   });
 
   it('does not force direct voice-channel conversations into private note mode', () => {
@@ -252,6 +352,7 @@ describe('ReplyBox', () => {
     expect(
       replyButtonLabel({
         isCommunicationVoiceReplyAction: true,
+        isCommunicationCallReplyAction: true,
         isCommunicationThreadConversation: true,
         activeReplyChannel: { channel: 'Channel::Voice' },
       })
@@ -262,6 +363,7 @@ describe('ReplyBox', () => {
     expect(
       replyButtonLabel({
         isCommunicationVoiceReplyAction: true,
+        isCommunicationCallReplyAction: true,
         isCommunicationThreadConversation: false,
         isAVoiceChannel: true,
       })
@@ -292,6 +394,7 @@ describe('ReplyBox', () => {
     expect(
       ReplyBox.methods.isAValidEvent.call({
         isCommunicationVoiceReplyAction: true,
+        isCommunicationCallReplyAction: true,
         showUserMentions: false,
         showMentions: false,
         showCannedMenu: false,

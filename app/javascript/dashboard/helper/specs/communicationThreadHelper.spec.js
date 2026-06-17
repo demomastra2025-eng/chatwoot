@@ -10,6 +10,8 @@ import {
   getCommunicationThreadChannelFilterInboxes,
   getCommunicationThreadChannelInboxes,
   getCommunicationThreadTypingTargetIds,
+  isCommunicationCallChannel,
+  isCommunicationWhatsappCallChannel,
   getUniqueCommunicationChannels,
   isCommunicationVoiceChannel,
   isMessageInCommunicationThread,
@@ -39,6 +41,22 @@ const telegramChannel = {
   last_activity_at: 200,
   primary: false,
   channel_key: 'conversation:22',
+};
+
+const whatsappOfficialCallChannel = {
+  conversation_id: 33,
+  inbox_id: 303,
+  inbox_name: 'WhatsApp Official',
+  contact_inbox_id: 3003,
+  channel: 'Channel::Whatsapp',
+  medium: null,
+  can_reply: true,
+  can_send_text: true,
+  can_call: true,
+  media_server_enabled: true,
+  last_activity_at: 300,
+  primary: false,
+  channel_key: 'conversation:33',
 };
 
 const emailUnlinkedChannel = {
@@ -131,6 +149,41 @@ describe('communicationThreadHelper', () => {
           whatsappChannel,
         ])
       ).toEqual([whatsappChannel]);
+    });
+
+    it('expands WhatsApp Official calling into separate write and call actions', () => {
+      expect(
+        getCommunicationReplyChannels([whatsappOfficialCallChannel])
+      ).toEqual([
+        {
+          ...whatsappOfficialCallChannel,
+          communication_action: 'message',
+          message_channel_key: 'conversation:33',
+          channel_key: 'conversation:33',
+        },
+        {
+          ...whatsappOfficialCallChannel,
+          communication_action: 'call',
+          message_channel_key: 'conversation:33',
+          channel_key: 'conversation:33:action:call',
+          can_reply: true,
+          can_send_text: false,
+          can_send_attachments: false,
+          requires_template: false,
+          disabled: false,
+          disabled_reason: null,
+        },
+      ]);
+    });
+
+    it('keeps already expanded WhatsApp Official actions idempotent', () => {
+      const expandedChannels = getCommunicationReplyChannels([
+        whatsappOfficialCallChannel,
+      ]);
+
+      expect(getCommunicationReplyChannels(expandedChannels)).toEqual(
+        expandedChannels
+      );
     });
   });
 
@@ -367,6 +420,23 @@ describe('communicationThreadHelper', () => {
     });
   });
 
+  describe('#isCommunicationCallChannel', () => {
+    it('detects voice channels and the virtual WhatsApp call action', () => {
+      const [, callAction] = getCommunicationReplyChannels([
+        whatsappOfficialCallChannel,
+      ]);
+
+      expect(isCommunicationCallChannel({ channel: 'Channel::Voice' })).toBe(
+        true
+      );
+      expect(isCommunicationWhatsappCallChannel(callAction)).toBe(true);
+      expect(isCommunicationCallChannel(callAction)).toBe(true);
+      expect(isCommunicationCallChannel(whatsappOfficialCallChannel)).toBe(
+        false
+      );
+    });
+  });
+
   describe('#getCommunicationReplyChannel', () => {
     it('uses the channel of the latest incoming replyable message by default', () => {
       const chat = {
@@ -398,6 +468,22 @@ describe('communicationThreadHelper', () => {
       };
 
       expect(getCommunicationReplyChannel(chat, 44)).toEqual(whatsappChannel);
+    });
+
+    it('respects an explicitly selected WhatsApp call action', () => {
+      const chat = {
+        channels: [whatsappOfficialCallChannel, telegramChannel],
+        messages: [],
+      };
+
+      expect(
+        getCommunicationReplyChannel(chat, 'conversation:33:action:call')
+      ).toMatchObject({
+        conversation_id: 33,
+        inbox_id: 303,
+        communication_action: 'call',
+        channel_key: 'conversation:33:action:call',
+      });
     });
   });
 
@@ -449,6 +535,28 @@ describe('communicationThreadHelper', () => {
         contact_inbox_id: 3003,
         channel: 'Channel::Email',
         medium: 'email',
+      });
+    });
+
+    it('keeps virtual WhatsApp call action keys out of message payloads', () => {
+      const chat = {
+        id: 7,
+        is_communication_thread: true,
+        channels: [whatsappOfficialCallChannel],
+      };
+
+      expect(
+        decoratePayloadWithCommunicationThread(
+          { conversationId: 33 },
+          chat,
+          'conversation:33:action:call'
+        )
+      ).toMatchObject({
+        conversationId: 33,
+        communicationThreadId: 7,
+        channelKey: 'conversation:33',
+        targetInboxId: 303,
+        channel: 'Channel::Whatsapp',
       });
     });
   });
@@ -507,6 +615,8 @@ describe('communicationThreadHelper', () => {
           channel: 'Channel::Email',
           contact_inbox_id: 404,
           can_reply: true,
+          can_call: true,
+          media_server_enabled: true,
           timestamp: 300,
         })
       ).toMatchObject({
@@ -517,6 +627,8 @@ describe('communicationThreadHelper', () => {
         contact_inbox_id: 404,
         can_reply: true,
         can_send_text: true,
+        can_call: true,
+        media_server_enabled: true,
         channel_key: 'conversation:99',
         last_activity_at: 300,
       });
@@ -532,6 +644,8 @@ describe('communicationThreadHelper', () => {
         channel: 'Channel::Email',
         contact_inbox_id: 404,
         message_type: 0,
+        can_call: true,
+        media_server_enabled: true,
         created_at: 300,
       };
 
@@ -542,6 +656,8 @@ describe('communicationThreadHelper', () => {
         channel: 'Channel::Email',
         contact_inbox_id: 404,
         can_reply: true,
+        can_call: true,
+        media_server_enabled: true,
         last_activity_at: 300,
       });
     });

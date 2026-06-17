@@ -848,7 +848,7 @@ const activeOnForEmployeeTab = routeName =>
 const buildMyCompanyMenuItem = () => ({
   name: 'MyCompany',
   label: t('SIDEBAR.MY_COMPANY'),
-  icon: 'i-lucide-briefcase-business',
+  icon: 'i-lucide-briefcase',
   defaultChildName: 'Workspace',
   activeOn: [
     ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,

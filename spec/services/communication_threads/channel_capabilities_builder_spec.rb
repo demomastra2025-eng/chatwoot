@@ -28,6 +28,7 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         can_reply: conversation.can_reply?,
         can_send_text: conversation.can_reply?,
         can_send_attachments: conversation.can_reply?,
+        can_call: false,
         requires_template: false,
         reply_window_open: conversation.can_reply?,
         reply_window_closes_at: nil,
@@ -67,7 +68,13 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
       contact = create(:contact, account: account)
       whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
       contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
-      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: whatsapp_inbox,
+        contact_inbox: contact_inbox
+      )
       create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
       link = conversation.communication_thread_conversation
 
@@ -103,6 +110,50 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         can_reply: true,
         can_send_text: false,
         can_send_attachments: false,
+        can_call: true,
+        disabled: false,
+        disabled_reason: nil
+      )
+    end
+
+    it 'marks linked WhatsApp Cloud channels callable when WhatsApp calling is enabled' do
+      account.enable_features!('whatsapp_call')
+      contact = create(:contact, :with_phone_number, account: account)
+      whatsapp_channel = create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'calling_enabled' => true },
+        sync_templates: false,
+        validate_provider_config: false
+      )
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: whatsapp_inbox,
+        contact_inbox: contact_inbox
+      )
+      create(
+        :message,
+        account: account,
+        inbox: whatsapp_inbox,
+        conversation: conversation,
+        message_type: 'incoming'
+      )
+      link = conversation.communication_thread_conversation
+
+      payload = described_class.new(links: [link]).perform.first
+
+      expect(payload).to include(
+        channel: 'Channel::Whatsapp',
+        provider: 'whatsapp_cloud',
+        can_reply: true,
+        can_send_text: true,
+        can_send_attachments: true,
+        can_call: true,
         disabled: false,
         disabled_reason: nil
       )
@@ -206,6 +257,7 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         can_reply: true,
         can_send_text: false,
         can_send_attachments: false,
+        can_call: true,
         disabled: false,
         disabled_reason: nil,
         channel_key: "inbox:#{voice_inbox.id}"
