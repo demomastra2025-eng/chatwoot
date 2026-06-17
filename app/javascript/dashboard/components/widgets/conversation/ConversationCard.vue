@@ -434,21 +434,21 @@ const togglePinnedConversation = async nextPinnedState => {
       >
         <InboxName v-if="showInboxName" :inbox="inbox" class="flex-1 min-w-0" />
         <div
-          class="flex items-baseline gap-2 flex-shrink-0"
+          class="flex items-baseline gap-1.5 flex-shrink-0 text-xxs"
           :class="{
             'flex-1 justify-between': !showInboxName,
           }"
         >
           <span
             v-if="showAssignee && assignee.name"
-            class="text-n-slate-11 text-xs font-medium leading-3 py-0.5 px-0 inline-flex items-center truncate"
+            class="text-n-slate-11 font-medium leading-3 py-0.5 px-0 inline-flex items-center truncate"
           >
-            <fluent-icon icon="person" size="12" class="text-n-slate-11" />
+            <fluent-icon icon="person" size="10" class="text-n-slate-11" />
             {{ assignee.name }}
           </span>
           <CardPriorityIcon
             :priority="chat.priority"
-            class="flex-shrink-0 !size-3.5"
+            class="flex-shrink-0 !size-3"
           />
         </div>
       </div>
@@ -488,7 +488,7 @@ const togglePinnedConversation = async nextPinnedState => {
         :class="messagePreviewClass"
       >
         <fluent-icon
-          size="16"
+          size="14"
           class="-mt-0.5 align-middle inline-block text-n-slate-10"
           icon="info"
         />

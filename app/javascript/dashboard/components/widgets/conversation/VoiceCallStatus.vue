@@ -113,11 +113,11 @@ const statusColor = computed(
 
 <template>
   <div
-    class="my-0 mx-2 leading-6 h-6 flex-1 min-w-0 text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+    class="my-0 mx-2 leading-6 h-6 flex-1 min-w-0 text-xs overflow-hidden text-ellipsis whitespace-nowrap"
     :class="messagePreviewClass"
   >
     <Icon
-      class="inline-block -mt-0.5 align-middle size-4"
+      class="inline-block -mt-0.5 align-middle size-3.5"
       :icon="iconName"
       :class="statusColor"
     />
