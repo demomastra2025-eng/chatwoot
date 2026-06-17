@@ -148,6 +148,8 @@ const startCall = async inbox => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid,
+      status: 'created',
+      callEvent: 'created',
       conversationId,
       inboxId: inbox.id,
       provider: inbox.provider,

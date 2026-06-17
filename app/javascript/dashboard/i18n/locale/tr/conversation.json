@@ -291,6 +291,9 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Gelen arama",
       "OUTGOING_CALL": "Giden arama",
+      "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
+      "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
+      "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "CALL_IN_PROGRESS": "Arama devam ediyor",
       "NOT_ANSWERED_YET": "Henüz yanıtlanmadı",
       "HANDLED_IN_ANOTHER_TAB": "Being handled in another tab",

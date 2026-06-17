@@ -69,7 +69,8 @@ class Telephony::VirtualPbx::Reconciler
     routing = (state[:routing] || {}).with_indifferent_access
     actual = number.with_indifferent_access
     actual_metadata = (actual[:metadata] || {}).with_indifferent_access
-    actual_route = (actual[:route] || {}).with_indifferent_access
+    actual_route = (actual[:route] || actual[:routeState] || actual[:route_state] || {}).with_indifferent_access
+    actual_route_headers = Array.wrap(actual_route[:extra_headers] || actual_route[:extraHeaders])
 
     [].tap do |items|
       expected_tel = phone_numbers[:fonoster_tel_url]
@@ -82,12 +83,15 @@ class Telephony::VirtualPbx::Reconciler
         items << drift_item('remote_trunk_ref_mismatch', 'Remote trunkRef does not match OneLink provider connection')
       end
       expected_mode = routing[:bridge_mode] || routing[:mode]
-      actual_mode = actual_route[:mode] || actual_metadata[:routing_mode]
+      actual_mode = actual_route[:mode] || actual_metadata[:routing_mode] || header_value(actual_route_headers, 'x-onelink-mode')
       if expected_mode.present? && actual_mode.present? && actual_mode.to_s != expected_mode.to_s
         items << drift_item('remote_route_mode_mismatch', 'Remote route mode does not match OneLink routing')
       end
       expected_app = routing[:app_ref] || refs[:runtime_app_ref] || refs[:app_ref]
-      actual_app = actual_route[:app_ref] || actual_route[:appRef] || actual_metadata[:app_ref] || actual_metadata[:appRef]
+      actual_app = actual_route[:app_ref] || actual_route[:appRef] ||
+                   actual_metadata[:app_ref] || actual_metadata[:appRef] ||
+                   actual[:app_ref] || actual[:appRef] ||
+                   header_value(actual_route_headers, 'x-app-ref')
       if expected_app.present? && actual_app.to_s != expected_app.to_s
         items << drift_item('remote_runtime_app_mismatch', 'Remote runtime app does not match OneLink routing')
       end
@@ -163,5 +167,11 @@ class Telephony::VirtualPbx::Reconciler
 
   def drift_item(code, message)
     { code: code, message: message, severity: 'blocking' }
+  end
+
+  def header_value(headers, name)
+    headers.find { |header| header.with_indifferent_access[:name].to_s.casecmp?(name) }
+           &.with_indifferent_access
+           &.dig(:value)
   end
 end

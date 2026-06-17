@@ -376,6 +376,9 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Входящий звонок",
       "OUTGOING_CALL": "Исходящий звонок",
+      "OUTGOING_CONNECTING_OPERATOR": "Подключаем оператора",
+      "OUTGOING_CALLING_CUSTOMER": "Звоним клиенту",
+      "OUTGOING_CLIENT_RINGING": "Клиенту идёт вызов",
       "HANDLED_OUTSIDE_BROWSER": "Обрабатывается вне браузера",
       "CALL_IN_PROGRESS": "Идёт звонок",
       "NOT_ANSWERED_YET": "Пока нет ответа",

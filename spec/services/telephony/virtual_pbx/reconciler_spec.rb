@@ -122,4 +122,30 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
       'remote_agent_enabled_mismatch'
     )
   end
+
+  it 'accepts bridge number read-back app refs from routeState headers and top-level appRef' do
+    state = desired_state.deep_merge(
+      refs: { runtime_app_ref: 'app-ref' },
+      routing: { mode: 'operator', app_ref: 'app-ref' }
+    )
+    allow(resource_client).to receive(:number).with('number-ref').and_return(
+      'ref' => 'number-ref',
+      'telUrl' => 'tel:056124100014',
+      'trunkRef' => 'trunk-ref',
+      'appRef' => 'app-ref',
+      'metadata' => { 'managed_by' => 'onelink', 'onelink_account_id' => account.id },
+      'routeState' => {
+        'extra_headers' => [
+          { 'name' => 'x-app-ref', 'value' => 'app-ref' },
+          { 'name' => 'x-onelink-mode', 'value' => 'operator' }
+        ]
+      }
+    )
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
+
+    result = described_class.new(account: account, resource_client: resource_client).check(state)
+
+    expect(result).to include(status: 'fonoster_synced', ready: true)
+    expect(result.fetch(:drift)).to eq([])
+  end
 end

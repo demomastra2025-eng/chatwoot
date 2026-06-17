@@ -33,12 +33,26 @@ const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData?.callSid) ||
   sameFonosterConversation(call, callData, { allowCallSidMismatch: true });
 
+const hasOwn = (object, key) =>
+  Object.prototype.hasOwnProperty.call(object || {}, key);
+
 const buildCallState = (callData, existingCall = null) => {
   const isSameProviderCall = sameCallSid(existingCall, callData?.callSid);
+  const hasStatusUpdate = hasOwn(callData, 'status');
+  const stageValue = key => {
+    if (hasOwn(callData, key)) return callData[key] ?? null;
+    return hasStatusUpdate ? null : (existingCall?.[key] ?? null);
+  };
 
   return {
     ...(existingCall || {}),
     ...(callData || {}),
+    status: hasStatusUpdate
+      ? (callData?.status ?? null)
+      : (existingCall?.status ?? null),
+    callEvent: stageValue('callEvent'),
+    callLeg: stageValue('callLeg'),
+    rawStatus: stageValue('rawStatus'),
     isActive: isSameProviderCall ? existingCall?.isActive || false : false,
     browserJoined: isSameProviderCall
       ? existingCall?.browserJoined || false
@@ -87,20 +101,39 @@ export const useCallsStore = defineStore('calls', {
       provider,
       callDirection,
       senderId,
+      callEvent,
+      callLeg,
+      rawStatus,
     }) {
       if (TERMINAL_STATUSES.includes(status)) {
         this.removeCall(callSid, { conversationId, provider });
         return;
       }
 
+      const call = this.calls.find(
+        item =>
+          sameCallSid(item, callSid) ||
+          sameFonosterConversation(item, { conversationId, provider })
+      );
+      const resolvedProvider = call?.provider || provider;
+      const resolvedCallDirection = call?.callDirection || callDirection;
+
+      if (call) {
+        this.addCall({
+          callSid: call?.callSid || callSid,
+          status,
+          conversationId,
+          inboxId,
+          provider: resolvedProvider,
+          callDirection: resolvedCallDirection,
+          senderId,
+          callEvent,
+          callLeg,
+          rawStatus,
+        });
+      }
+
       if (status === 'in_progress') {
-        const call = this.calls.find(
-          item =>
-            sameCallSid(item, callSid) ||
-            sameFonosterConversation(item, { conversationId, provider })
-        );
-        const resolvedProvider = call?.provider || provider;
-        const resolvedCallDirection = call?.callDirection || callDirection;
         if (
           resolvedProvider === 'fonoster' &&
           resolvedCallDirection === 'outbound'
@@ -108,11 +141,15 @@ export const useCallsStore = defineStore('calls', {
           if (!call) {
             this.addCall({
               callSid,
+              status,
               conversationId,
               inboxId,
               provider: resolvedProvider,
               callDirection: resolvedCallDirection,
               senderId,
+              callEvent,
+              callLeg,
+              rawStatus,
             });
           }
           this.setCallActive(call?.callSid || callSid);

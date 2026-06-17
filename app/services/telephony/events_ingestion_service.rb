@@ -1224,7 +1224,28 @@ class Telephony::EventsIngestionService
       'operator_candidate_agent_aors'
     )
     meta['operator_claim'] = metadata['operator_claim'] if metadata['operator_claim'].present?
+    latest_leg = latest_call_leg(call_session)
+    meta['latest_event_type'] = latest_leg['event_type'] if latest_leg['event_type'].present?
+    meta['latest_leg'] = latest_leg['leg'] if latest_leg['leg'].present?
+    meta['latest_leg_status'] = latest_leg['status'] if latest_leg['status'].present?
+    meta['latest_raw_status'] = latest_leg['raw_status'] if latest_leg['raw_status'].present?
     meta.compact
+  end
+
+  def latest_call_leg(call_session)
+    normalized_call_legs(call_session).each_with_index.max_by do |leg, index|
+      [call_leg_occurred_at_timestamp(leg), index]
+    end&.first || {}
+  end
+
+  def normalized_call_legs(call_session)
+    call_session.legs.to_a.filter_map do |leg|
+      leg.deep_stringify_keys if leg.is_a?(Hash)
+    end
+  end
+
+  def call_leg_occurred_at_timestamp(leg)
+    parse_time(leg['occurred_at'])&.to_f || 0
   end
 
   def voice_ai_message_state(call_session)
@@ -1494,6 +1515,7 @@ class Telephony::EventsIngestionService
       runtime_call_ref: runtime_call_ref,
       media_session_ref: payload_value('media_session_ref', 'mediaSessionRef'),
       stream_ref: payload_value('stream_ref', 'streamRef') || nested_payload_value('stream_ref', 'streamRef'),
+      raw_status: payload_value('raw_status', 'rawStatus'),
       answered_by: resolved_answered_by || resolved_agent_actor(status),
       ended_by: resolved_ended_by,
       end_reason: resolved_end_reason
@@ -1514,6 +1536,9 @@ class Telephony::EventsIngestionService
   end
 
   def leg_name
+    explicit_leg = payload_value('leg', 'leg_type', 'legType') || nested_payload_value('leg', 'leg_type', 'legType')
+    return explicit_leg.to_s if explicit_leg.present?
+
     event_name = resolved_event_type.to_s
     ai_event_names = %w[
       caller_interrupted realtime_audio_out first_audio_out_write media_stream_started provider_stream_closed provider_error
@@ -1521,11 +1546,12 @@ class Telephony::EventsIngestionService
     ]
     return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name.in?(ai_event_names)
     return 'operator' if event_name.start_with?('transfer_', 'operator_')
+    return 'callee' if event_name.start_with?('callee_', 'customer_', 'client_')
 
     nil
   end
 
-  def merged_metadata(call_session, conversation = nil)
+  def merged_metadata(call_session, _conversation = nil)
     base = (call_session.metadata || {}).deep_dup
     base['last_payload'] = payload
     if metadata.present?

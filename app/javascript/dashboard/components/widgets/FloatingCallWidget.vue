@@ -6,6 +6,11 @@ import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useCallSession } from 'dashboard/composables/useCallSession';
 import WindowVisibilityHelper from 'dashboard/helper/AudioAlerts/WindowVisibilityHelper';
+import {
+  getOutboundCallStageLabelKey,
+  outboundCallStageShowsDuration,
+  OUTBOUND_CALL_STAGE_LABEL_KEYS,
+} from 'dashboard/helper/voiceCallStage';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
 const router = useRouter();
@@ -31,6 +36,23 @@ const formatInboxLine = ({ inboxName, providerLabel }) =>
   providerLabel ? `${inboxName} · ${providerLabel}` : inboxName;
 
 const isOutboundCall = call => call?.callDirection === 'outbound';
+
+const getOutboundStageText = call => {
+  switch (getOutboundCallStageLabelKey(call)) {
+    case OUTBOUND_CALL_STAGE_LABEL_KEYS.CONNECTING_OPERATOR:
+      return t('CONVERSATION.VOICE_WIDGET.OUTGOING_CONNECTING_OPERATOR');
+    case OUTBOUND_CALL_STAGE_LABEL_KEYS.CALLING_CUSTOMER:
+      return t('CONVERSATION.VOICE_WIDGET.OUTGOING_CALLING_CUSTOMER');
+    case OUTBOUND_CALL_STAGE_LABEL_KEYS.CUSTOMER_RINGING:
+      return t('CONVERSATION.VOICE_WIDGET.OUTGOING_CLIENT_RINGING');
+    case OUTBOUND_CALL_STAGE_LABEL_KEYS.IN_PROGRESS:
+      return t('CONVERSATION.VOICE_WIDGET.CALL_IN_PROGRESS');
+    default:
+      return '';
+  }
+};
+
+const outboundStageShowsDuration = call => outboundCallStageShowsDuration(call);
 
 const getCallInfo = call => {
   const conversation = store.getters.getConversationById(call?.conversationId);
@@ -250,14 +272,28 @@ watch(
             <p class="text-sm font-medium text-n-slate-12 truncate mb-0">
               {{ getCallInfo(activeCall || incomingCalls[0]).contactName }}
             </p>
-            <p v-if="hasActiveCall" class="font-mono text-sm text-n-teal-9">
+            <p
+              v-if="hasActiveCall && !isOutboundCall(activeCall)"
+              class="font-mono text-sm text-n-teal-9"
+            >
               {{ formattedCallDuration }}
             </p>
+            <div v-else-if="hasActiveCall" class="min-w-0">
+              <p class="text-sm font-medium text-n-teal-9 truncate mb-0">
+                {{ getOutboundStageText(activeCall) }}
+              </p>
+              <p
+                v-if="outboundStageShowsDuration(activeCall)"
+                class="font-mono text-xs text-n-slate-11 mb-0"
+              >
+                {{ formattedCallDuration }}
+              </p>
+            </div>
             <p v-else class="text-xs text-n-slate-11">
               {{
                 browserJoinSupportedForCall(incomingCalls[0])
                   ? incomingCalls[0]?.callDirection === 'outbound'
-                    ? $t('CONVERSATION.VOICE_WIDGET.OUTGOING_CALL')
+                    ? getOutboundStageText(incomingCalls[0])
                     : $t('CONVERSATION.VOICE_WIDGET.INCOMING_CALL')
                   : $t('CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER')
               }}

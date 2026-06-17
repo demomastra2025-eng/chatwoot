@@ -343,6 +343,9 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Кіріс қоңырау",
       "OUTGOING_CALL": "Шығыс қоңырау",
+      "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
+      "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
+      "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "HANDLED_OUTSIDE_BROWSER": "Браузерден тыс өңделеді",
       "CALL_IN_PROGRESS": "Қоңырау жүріп жатыр",
       "NOT_ANSWERED_YET": "Әлі жауап берілген жоқ",

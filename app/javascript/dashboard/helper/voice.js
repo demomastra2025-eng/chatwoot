@@ -56,6 +56,23 @@ function extractCallData(message) {
       contentMeta?.provider ||
       contentMeta?.chatwoot_provider,
     senderId: message?.sender?.id,
+    callEvent:
+      contentData.event_type ||
+      contentData.eventType ||
+      contentData.call_event ||
+      contentData.callEvent ||
+      contentMeta?.latest_event_type ||
+      contentMeta?.event_type,
+    callLeg:
+      contentData.leg ||
+      contentData.leg_type ||
+      contentData.legType ||
+      contentMeta?.latest_leg,
+    rawStatus:
+      contentData.raw_status ||
+      contentData.rawStatus ||
+      contentMeta?.latest_raw_status ||
+      contentMeta?.latest_leg_status,
   };
 }
 
@@ -74,6 +91,9 @@ export function handleVoiceCallCreated(message, currentUserId) {
     inboxId,
     provider,
     senderId,
+    callEvent,
+    callLeg,
+    rawStatus,
   } = extractCallData(message);
 
   if (shouldSkipCall(callDirection, senderId, currentUserId)) return;
@@ -87,6 +107,9 @@ export function handleVoiceCallCreated(message, currentUserId) {
       provider,
       callDirection,
       senderId,
+      callEvent,
+      callLeg,
+      rawStatus,
     });
     return;
   }
@@ -94,11 +117,15 @@ export function handleVoiceCallCreated(message, currentUserId) {
   const callsStore = useCallsStore();
   callsStore.addCall({
     callSid,
+    status,
     conversationId,
     inboxId,
     provider,
     callDirection,
     senderId,
+    callEvent,
+    callLeg,
+    rawStatus,
   });
 }
 
@@ -113,6 +140,9 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     inboxId,
     provider,
     senderId,
+    callEvent,
+    callLeg,
+    rawStatus,
   } = extractCallData(message);
 
   // Vuex message/conversation status updates apply to all call sources.
@@ -133,6 +163,9 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     provider,
     callDirection,
     senderId,
+    callEvent,
+    callLeg,
+    rawStatus,
   });
 
   const isNewCall =
@@ -142,11 +175,15 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
   if (isNewCall) {
     callsStore.addCall({
       callSid,
+      status,
       conversationId,
       inboxId,
       provider,
       callDirection,
       senderId,
+      callEvent,
+      callLeg,
+      rawStatus,
     });
   }
 }

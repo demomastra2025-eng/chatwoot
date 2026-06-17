@@ -123,6 +123,9 @@ describe('voice helper', () => {
             meta: {
               chatwoot_inbox_id: 77,
               provider: 'fonoster',
+              latest_event_type: 'dial_status',
+              latest_leg: 'callee',
+              latest_raw_status: 'RINGING',
             },
           },
         },
@@ -144,9 +147,13 @@ describe('voice helper', () => {
     });
     expect(callsStore.calls[0]).toEqual(
       expect.objectContaining({
+        callEvent: 'dial_status',
+        callLeg: 'callee',
         callSid: 'call-456',
         inboxId: 77,
         provider: 'fonoster',
+        rawStatus: 'RINGING',
+        status: 'ringing',
       })
     );
   });
@@ -185,5 +192,40 @@ describe('voice helper', () => {
         provider: 'fonoster',
       }),
     ]);
+  });
+
+  it('uses latest leg status metadata when raw provider status is absent', () => {
+    handleVoiceCallCreated(
+      {
+        content_type: 'voice_call',
+        conversation_id: 55,
+        inbox_id: 91,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'outbound-fonoster-answered',
+            call_direction: 'outbound',
+            provider: 'fonoster',
+            status: 'in_progress',
+            meta: {
+              latest_event_type: 'dial_status',
+              latest_leg: 'callee',
+              latest_leg_status: 'in_progress',
+            },
+          },
+        },
+      },
+      7
+    );
+
+    const callsStore = useCallsStore();
+
+    expect(callsStore.calls[0]).toEqual(
+      expect.objectContaining({
+        callEvent: 'dial_status',
+        callLeg: 'callee',
+        rawStatus: 'in_progress',
+      })
+    );
   });
 });

@@ -291,6 +291,9 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "आउँदै गरेको कल",
       "OUTGOING_CALL": "जाने कल",
+      "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
+      "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
+      "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "CALL_IN_PROGRESS": "कल प्रगतिको अवस्थामा छ",
       "NOT_ANSWERED_YET": "अझै जवाफ दिइएको छैन",
       "HANDLED_IN_ANOTHER_TAB": "अर्को ट्याबमा ह्यान्डल भइरहेको छ",

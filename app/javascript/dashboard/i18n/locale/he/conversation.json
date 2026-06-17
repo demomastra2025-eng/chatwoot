@@ -291,6 +291,9 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "שיחה נכנסת",
       "OUTGOING_CALL": "שיחה יוצאת",
+      "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
+      "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
+      "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "CALL_IN_PROGRESS": "שיחה מתבצעת",
       "NOT_ANSWERED_YET": "עדיין לא נענה",
       "HANDLED_IN_ANOTHER_TAB": "Being handled in another tab",

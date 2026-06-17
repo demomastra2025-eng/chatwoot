@@ -78,6 +78,13 @@ describe('conversationHelper', () => {
       expect(getLastMessage(testConversation)).toEqual(lastMessageData);
     });
 
+    it('should return message from API if list payload does not include messages', () => {
+      const testConversation = {
+        last_non_activity_message: lastMessageData,
+      };
+      expect(getLastMessage(testConversation)).toEqual(lastMessageData);
+    });
+
     it('should return last non activity message from store if api value is empty', () => {
       const testConversation = {
         messages: [conversationData.messages[0], conversationData.messages[1]],

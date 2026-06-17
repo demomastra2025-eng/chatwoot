@@ -291,6 +291,9 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "مكالمة واردة",
       "OUTGOING_CALL": "مكالمة صادرة",
+      "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
+      "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
+      "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "CALL_IN_PROGRESS": "مكالمة قيد الاتصال",
       "NOT_ANSWERED_YET": "لم يتم الرد بعد",
       "HANDLED_IN_ANOTHER_TAB": "يتم التعامل معها في علامة تبويب أخرى",

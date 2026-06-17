@@ -291,6 +291,9 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Chiamata in arrivo",
       "OUTGOING_CALL": "Chiamata in uscita",
+      "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
+      "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
+      "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "CALL_IN_PROGRESS": "Chiamata in corso",
       "NOT_ANSWERED_YET": "Non ancora risposta",
       "HANDLED_IN_ANOTHER_TAB": "Gestita in un'altra scheda",

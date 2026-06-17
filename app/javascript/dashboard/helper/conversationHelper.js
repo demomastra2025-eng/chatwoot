@@ -50,15 +50,16 @@ export const filterDuplicateSourceMessages = (messages = []) => {
  * @returns {Object} The last message of the conversation.
  */
 export const getLastMessage = m => {
-  const lastMessageIncludingActivity = m.messages[m.messages.length - 1];
+  const messages = Array.isArray(m?.messages) ? m.messages : [];
+  const lastMessageIncludingActivity = messages[messages.length - 1];
 
-  const nonActivityMessages = m.messages.filter(
+  const nonActivityMessages = messages.filter(
     message => message.message_type !== 2
   );
   const lastNonActivityMessageInStore =
     nonActivityMessages[nonActivityMessages.length - 1];
 
-  const lastNonActivityMessageFromAPI = m.last_non_activity_message;
+  const lastNonActivityMessageFromAPI = m?.last_non_activity_message;
   const lastNonActivityMessage = getLastNonActivityMessage(
     lastNonActivityMessageInStore,
     lastNonActivityMessageFromAPI

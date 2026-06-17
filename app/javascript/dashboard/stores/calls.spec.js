@@ -252,4 +252,66 @@ describe('useCallsStore', () => {
       }),
     ]);
   });
+
+  it('updates stage metadata for an existing outbound Fonoster call', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'outbound-stage-1',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+      status: 'created',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'outbound-stage-1',
+      status: 'ringing',
+      provider: 'fonoster',
+      callEvent: 'dial_status',
+      callLeg: 'callee',
+      rawStatus: 'RINGING',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'outbound-stage-1',
+        callDirection: 'outbound',
+        callEvent: 'dial_status',
+        callLeg: 'callee',
+        rawStatus: 'RINGING',
+        status: 'ringing',
+      }),
+    ]);
+  });
+
+  it('clears stale stage metadata when a status-only update arrives', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'outbound-stage-stale',
+      provider: 'fonoster',
+      callDirection: 'outbound',
+      status: 'ringing',
+      callEvent: 'dial_status',
+      callLeg: 'callee',
+      rawStatus: 'RINGING',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'outbound-stage-stale',
+      status: 'in_progress',
+      provider: 'fonoster',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callEvent: null,
+        callLeg: null,
+        callSid: 'outbound-stage-stale',
+        isActive: true,
+        rawStatus: null,
+        status: 'in_progress',
+      }),
+    ]);
+  });
 });

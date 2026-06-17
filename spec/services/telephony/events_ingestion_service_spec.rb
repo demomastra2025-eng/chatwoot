@@ -184,6 +184,93 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'exposes latest native leg metadata in the voice call message for outbound UI stages' do
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'ringing'
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-callee-ringing-stage-1',
+          provider: 'fonoster',
+          event: 'dial_status',
+          status: 'ringing',
+          raw_status: 'RINGING',
+          leg: 'callee',
+          callDirection: 'outbound',
+          call_direction: 'outbound'
+        )
+      ).perform
+
+      message_data = result.conversation.messages.voice_calls.last.content_attributes['data']
+
+      expect(result.legs.last).to include(
+        'event_type' => 'dial_status',
+        'leg' => 'callee',
+        'raw_status' => 'RINGING',
+        'status' => 'ringing'
+      )
+      expect(message_data['meta']).to include(
+        'latest_event_type' => 'dial_status',
+        'latest_leg' => 'callee',
+        'latest_leg_status' => 'ringing',
+        'latest_raw_status' => 'RINGING'
+      )
+    end
+
+    it 'keeps newer answered leg metadata when a stale customer ringing event arrives later' do
+      answered_at = 30.seconds.ago
+      stale_ringing_at = 45.seconds.ago
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'ringing',
+        last_event_at: stale_ringing_at - 5.seconds
+      )
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-callee-answered-stage-1',
+          provider: 'fonoster',
+          event: 'callee_answered',
+          status: 'answered',
+          raw_status: 'UP',
+          leg: 'callee',
+          occurred_at: answered_at.iso8601,
+          answered_at: answered_at.iso8601,
+          callDirection: 'outbound',
+          call_direction: 'outbound'
+        )
+      ).perform
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-stale-ringing-stage-1',
+          provider: 'fonoster',
+          event: 'dial_status',
+          status: 'ringing',
+          raw_status: 'RINGING',
+          leg: 'callee',
+          occurred_at: stale_ringing_at.iso8601,
+          callDirection: 'outbound',
+          call_direction: 'outbound'
+        )
+      ).perform
+
+      message_data = result.conversation.messages.voice_calls.last.content_attributes['data']
+
+      expect(result.reload).to have_attributes(status: 'in_progress')
+      expect(result.answered_at).to eq(Time.zone.parse(answered_at.iso8601))
+      expect(message_data['meta']).to include(
+        'latest_event_type' => 'callee_answered',
+        'latest_leg' => 'callee',
+        'latest_leg_status' => 'in_progress',
+        'latest_raw_status' => 'UP'
+      )
+    end
+
     it 'keeps outbound direction for OneLink initiated Fonoster calls without nested route metadata' do
       existing_call_session.update!(
         provider: 'fonoster',
