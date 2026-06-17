@@ -3,7 +3,7 @@ import { shallowMount } from '@vue/test-utils';
 import { ref } from 'vue';
 
 import Message from './Message.vue';
-import { MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
+import { ATTACHMENT_TYPES, MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
 vi.mock('@vueuse/core', () => ({
   useTimeoutFn: vi.fn(),
@@ -97,6 +97,10 @@ const createWrapper = customProps =>
         AudioBubble: { template: '<div />' },
         VideoBubble: { template: '<div />' },
         EmbedBubble: { template: '<div />' },
+        FallbackBubble: {
+          name: 'FallbackBubble',
+          template: '<div data-test-id="fallback-bubble" />',
+        },
         InstagramStoryBubble: { template: '<div />' },
         EmailBubble: { template: '<div />' },
         UnsupportedBubble: {
@@ -220,5 +224,23 @@ describe('Message', () => {
       src: '',
       iconName: 'i-woot-voice',
     });
+  });
+
+  it('renders fallback attachments with the fallback bubble even when the message has text', () => {
+    const wrapper = createWrapper({
+      content: 'Shared link text',
+      attachments: [
+        {
+          id: 1,
+          fileType: ATTACHMENT_TYPES.FALLBACK,
+          fallbackTitle: 'Shared link',
+          dataUrl: 'https://www.example.com/shared-link',
+        },
+      ],
+    });
+
+    expect(wrapper.find('[data-test-id="fallback-bubble"]').exists()).toBe(
+      true
+    );
   });
 });
