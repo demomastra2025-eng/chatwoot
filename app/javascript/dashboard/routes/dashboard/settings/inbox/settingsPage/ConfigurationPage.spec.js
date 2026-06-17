@@ -388,6 +388,25 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
+  it('does not reload Virtual PBX data when the same inbox object is refreshed', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    getVirtualPbxStatusMock.mockClear();
+    getVirtualPbxProvisioningRunsMock.mockClear();
+
+    await wrapper.setProps({
+      inbox: {
+        ...baseInbox,
+        name: 'Virtual PBX refreshed',
+        members: [...baseInbox.members],
+      },
+    });
+    await flushPromises();
+
+    expect(getVirtualPbxStatusMock).not.toHaveBeenCalled();
+    expect(getVirtualPbxProvisioningRunsMock).not.toHaveBeenCalled();
+  });
+
   it('provisions the remote Fonoster/Routr resources through the product API', async () => {
     const wrapper = buildWrapper();
     await flushPromises();

@@ -331,7 +331,13 @@ class Telephony::VirtualPbx::RemotePlanBuilder
 
   def sipuni_gateway_payloads(state)
     profiles = sipuni_gateway_profiles(state)
-    return profiles.map.with_index { |profile, index| sipuni_gateway_payload(state, profile: profile, profile_index: index) } if profiles.present?
+    if profiles.present?
+      return profiles.map.with_index.filter_map do |profile, index|
+        next unless sipuni_gateway_profile_upsertable?(profile)
+
+        sipuni_gateway_payload(state, profile: profile, profile_index: index)
+      end
+    end
 
     [sipuni_gateway_payload(state)]
   end
@@ -431,6 +437,11 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     end
 
     profiles.sort_by { |attrs| [attrs[:internal_extension].to_s, attrs[:user_id].to_s, attrs[:sip_username].to_s] }
+  end
+
+  def sipuni_gateway_profile_upsertable?(profile)
+    attrs = profile.with_indifferent_access
+    attrs[:sip_password].present? || attrs[:fonoster_credentials_ref].present?
   end
 
   def trunk_uri_payload(state, connection)

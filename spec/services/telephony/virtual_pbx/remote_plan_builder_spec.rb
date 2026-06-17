@@ -201,6 +201,76 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     expect(plan.to_json).not_to include('do-not-store-this-password')
   end
 
+  it 'skips Sipuni gateway upserts for existing employee profiles without usable remote credentials' do
+    desired_state = {
+      account_id: account.id,
+      provider_kind: 'sipuni',
+      name: 'Sipuni external line',
+      refs: { number_ref: 'sipuni-internal-asterisk-015856100014', trunk_ref: 'trunk-sipuni-onelink-out' },
+      phone_numbers: { fonoster_tel_url: 'tel:+177****0999', ingress_number: '015856100014' },
+      routing: { mode: 'operator', app_ref: 'onelink-runtime-app' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id,
+        onelink_inbox_id: 158,
+        onelink_channel_id: 777
+      },
+      profiles: [
+        {
+          id: 2,
+          user_id: admin.id + 1,
+          user_name: 'Existing',
+          internal_extension: '502',
+          agent_ref: 'profile-1-502',
+          agent_aor: 'sip:502@operator.cloud.vconsult.kz',
+          availability_mode: 'browser_webphone',
+          credentials_ref: 'cred-profile-1-502',
+          sip_username: '015856100006',
+          access_configured: true,
+          enabled: true
+        },
+        {
+          id: 3,
+          user_id: admin.id + 2,
+          user_name: 'New',
+          internal_extension: '503',
+          agent_ref: 'profile-1-503',
+          agent_aor: 'sip:503@operator.cloud.vconsult.kz',
+          availability_mode: 'browser_webphone',
+          credentials_ref: 'cred-profile-1-503',
+          sip_username: '015856100010',
+          sip_password: 'do-not-store-this-password-503',
+          enabled: true
+        },
+        {
+          id: 1,
+          user_id: admin.id,
+          user_name: 'Existing Secondary',
+          internal_extension: '504',
+          agent_ref: 'profile-1-504',
+          agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+          availability_mode: 'browser_webphone',
+          credentials_ref: 'cred-profile-1-504',
+          sip_username: '015856100014',
+          access_configured: true,
+          enabled: true
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    gateway_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+
+    expect(gateway_operations.map { |operation| operation[:path] }).to eq(
+      ['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014-503']
+    )
+    expect(gateway_operations.first.dig(:payload, :providerAccountNumber)).to eq('015856100010')
+    expect(gateway_operations.first.dig(:payload, :credentialsRef)).to eq('cred-profile-1-503')
+    expect(gateway_operations.first.dig(:payload, :metadata, :target_extension)).to eq('503')
+    expect(plan.to_json).not_to include('do-not-store-this-password')
+  end
+
   it 'does not plan Routr agent CRUD for provider-managed Sipuni extensions' do
     desired_state = {
       account_id: account.id,

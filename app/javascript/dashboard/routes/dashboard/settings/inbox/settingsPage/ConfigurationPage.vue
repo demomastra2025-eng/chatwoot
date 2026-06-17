@@ -105,6 +105,13 @@ export default {
         this.inbox.provider === 'fonoster'
       );
     },
+    virtualPbxLoadKey() {
+      return [
+        this.inbox.id || '',
+        this.inbox.channel_type || '',
+        this.inbox.provider || '',
+      ].join(':');
+    },
     virtualPbxConfig() {
       return (
         this.virtualPbxStatusPayload?.ui_config ||
@@ -212,6 +219,8 @@ export default {
   watch: {
     inbox() {
       this.setDefaults();
+    },
+    virtualPbxLoadKey() {
       this.loadVirtualPbxStatus();
       this.loadVirtualPbxMembers();
     },
