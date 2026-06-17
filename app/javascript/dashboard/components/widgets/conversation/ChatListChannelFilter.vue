@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import Icon from 'next/icon/Icon.vue';
+import SidebarUnreadBadge from 'dashboard/components-next/sidebar/SidebarUnreadBadge.vue';
 import {
   CHANNEL_ICON_NEUTRAL_CLASS,
   getInboxIconByType,
@@ -41,6 +42,8 @@ const itemIcon = item => {
   return withoutNeutralChannelColor(icon);
 };
 
+const itemBadge = item => Number(item?.badge ?? 0);
+
 const toggleDropdown = () => {
   isOpen.value = !isOpen.value;
 };
@@ -79,6 +82,10 @@ const selectItem = item => {
       <span class="min-w-0 max-w-[9rem] truncate text-left rtl:text-right">
         {{ triggerItem?.label }}
       </span>
+      <SidebarUnreadBadge
+        :value="itemBadge(triggerItem)"
+        data-test-id="chat-list-channel-filter-trigger-count"
+      />
       <Icon
         icon="i-lucide-chevron-down"
         class="size-3.5 shrink-0 text-n-slate-10 transition-transform duration-150"
@@ -108,6 +115,10 @@ const selectItem = item => {
           <Icon :icon="itemIcon(item)" class="size-4" />
         </span>
         <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+        <SidebarUnreadBadge
+          :value="itemBadge(item)"
+          data-test-id="chat-list-channel-filter-item-count"
+        />
       </button>
     </div>
   </div>

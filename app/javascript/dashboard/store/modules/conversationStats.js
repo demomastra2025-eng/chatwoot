@@ -7,6 +7,12 @@ const state = {
   mineCount: 0,
   unAssignedCount: 0,
   allCount: 0,
+  assigneeCounts: {
+    mine: 0,
+    assigned: 0,
+    unassigned: 0,
+    all: 0,
+  },
   mineUnreadCount: 0,
   unAssignedUnreadCount: 0,
   assignedUnreadCount: 0,
@@ -18,8 +24,9 @@ export const getters = {
 };
 
 // Create a debounced version of the actual API call function
-const fetchMetaData = async (commit, params) => {
+const fetchMetaData = async (context, params) => {
   try {
+    const { commit } = context;
     const statsApi = params?.communicationThreadMode
       ? CommunicationThreadApi
       : ConversationApi;
@@ -28,6 +35,11 @@ const fetchMetaData = async (commit, params) => {
       data: { meta },
     } = response;
     commit(types.SET_CONV_TAB_META, meta);
+    if (meta?.unread_counts) {
+      commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, meta.unread_counts, {
+        root: true,
+      });
+    }
   } catch (error) {
     // ignore
   }
@@ -43,18 +55,34 @@ const superLongDebouncedFetchMetaData = debounce(
 );
 
 export const actions = {
-  get: async ({ commit, state: $state }, params) => {
+  get: async (context, params) => {
+    const { state: $state } = context;
     if ($state.allCount > 2000) {
-      superLongDebouncedFetchMetaData(commit, params);
+      superLongDebouncedFetchMetaData(context, params);
     } else if ($state.allCount > 100) {
-      longDebouncedFetchMetaData(commit, params);
+      longDebouncedFetchMetaData(context, params);
     } else {
-      debouncedFetchMetaData(commit, params);
+      debouncedFetchMetaData(context, params);
     }
   },
   set({ commit }, meta) {
     commit(types.SET_CONV_TAB_META, meta);
   },
+};
+
+const toNumber = value => Number(value ?? 0);
+
+const normalizeAssigneeCounts = (counts, fallback = {}) => {
+  return {
+    mine: toNumber(counts?.mine_count ?? counts?.mine ?? fallback.mine),
+    assigned: toNumber(
+      counts?.assigned_count ?? counts?.assigned ?? fallback.assigned
+    ),
+    unassigned: toNumber(
+      counts?.unassigned_count ?? counts?.unassigned ?? fallback.unassigned
+    ),
+    all: toNumber(counts?.all_count ?? counts?.all ?? fallback.all),
+  };
 };
 
 export const mutations = {
@@ -64,19 +92,27 @@ export const mutations = {
       mine_count: mineCount,
       unassigned_count: unAssignedCount,
       all_count: allCount,
+      assigned_count: assignedCount,
       mine_unread_count: mineUnreadCount,
       unassigned_unread_count: unAssignedUnreadCount,
       assigned_unread_count: assignedUnreadCount,
       all_unread_count: allUnreadCount,
+      assignee_counts: assigneeCounts,
     } = {}
   ) {
-    $state.mineCount = Number(mineCount ?? 0);
-    $state.allCount = Number(allCount ?? 0);
-    $state.unAssignedCount = Number(unAssignedCount ?? 0);
-    $state.mineUnreadCount = Number(mineUnreadCount ?? 0);
-    $state.unAssignedUnreadCount = Number(unAssignedUnreadCount ?? 0);
-    $state.assignedUnreadCount = Number(assignedUnreadCount ?? 0);
-    $state.allUnreadCount = Number(allUnreadCount ?? 0);
+    $state.mineCount = toNumber(mineCount);
+    $state.allCount = toNumber(allCount);
+    $state.unAssignedCount = toNumber(unAssignedCount);
+    $state.assigneeCounts = normalizeAssigneeCounts(assigneeCounts, {
+      mine: mineCount,
+      assigned: assignedCount,
+      unassigned: unAssignedCount,
+      all: allCount,
+    });
+    $state.mineUnreadCount = toNumber(mineUnreadCount);
+    $state.unAssignedUnreadCount = toNumber(unAssignedUnreadCount);
+    $state.assignedUnreadCount = toNumber(assignedUnreadCount);
+    $state.allUnreadCount = toNumber(allUnreadCount);
     $state.updatedOn = new Date();
   },
 };

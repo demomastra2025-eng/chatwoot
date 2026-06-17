@@ -26,6 +26,26 @@ import {
 
 let sidebarUnreadCountsRequestId = 0;
 
+const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
+  'inboxId',
+  'status',
+  'assigneeType',
+  'labels',
+  'teamId',
+  'conversationType',
+  'communicationThreadMode',
+];
+
+const hasFilterValue = value => {
+  if (Array.isArray(value)) return value.length > 0;
+  return (
+    value !== undefined && value !== null && value !== '' && value !== false
+  );
+};
+
+const hasSidebarUnreadCountFilters = params =>
+  SIDEBAR_UNREAD_COUNT_FILTER_KEYS.some(key => hasFilterValue(params?.[key]));
+
 const communicationThreadIdsForMessage = (state, message) => {
   return (state?.allConversations || [])
     .filter(chat => isMessageInCommunicationThread(chat, message))
@@ -253,13 +273,28 @@ const actions = {
     }
   },
 
-  fetchSidebarUnreadCounts: async ({ commit }) => {
+  fetchSidebarUnreadCounts: async ({ commit, state = {} }, params = null) => {
     sidebarUnreadCountsRequestId += 1;
     const requestId = sidebarUnreadCountsRequestId;
     try {
-      const {
-        data: { counts },
-      } = await ConversationApi.sidebarUnreadCounts();
+      const requestParams = params || state.conversationFilters || {};
+      let counts = {};
+
+      if (hasSidebarUnreadCountFilters(requestParams)) {
+        const statsApi = requestParams.communicationThreadMode
+          ? CommunicationThreadApi
+          : ConversationApi;
+        const {
+          data: { meta },
+        } = await statsApi.meta(requestParams);
+        counts = meta?.unread_counts || {};
+      } else {
+        const {
+          data: { counts: globalCounts },
+        } = await ConversationApi.sidebarUnreadCounts();
+        counts = globalCounts;
+      }
+
       if (requestId !== sidebarUnreadCountsRequestId) return;
 
       commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});

@@ -8,7 +8,12 @@ const mountComponent = props =>
     props: {
       activeKey: 'all',
       items: [
-        { key: 'all', label: 'Все каналы', icon: 'i-lucide-mailbox', badge: 4 },
+        {
+          key: 'all',
+          label: 'Все каналы',
+          icon: 'i-lucide-mailbox',
+          badge: 4,
+        },
         {
           key: 'inbox:1',
           label: 'WhatsApp',
@@ -34,7 +39,7 @@ const mountComponent = props =>
         SidebarUnreadBadge: {
           props: ['value'],
           template:
-            '<span v-if="Number(value)" data-test-id="badge">{{ value }}</span>',
+            '<span v-if="Number(value)" v-bind="$attrs">{{ value }}</span>',
         },
       },
     },
@@ -63,6 +68,7 @@ describe('ChatListChannelFilter', () => {
       expect.arrayContaining(['text-[15px]', 'ltr:pl-1'])
     );
     expect(trigger.text()).toContain('WhatsApp');
+    expect(trigger.text()).toContain('2');
     expect(trigger.find('[data-test-id="icon"]').attributes('data-icon')).toBe(
       'i-woot-whatsapp'
     );
@@ -75,12 +81,26 @@ describe('ChatListChannelFilter', () => {
     );
 
     expect(trigger.text()).toContain('Все каналы');
+    expect(trigger.text()).toContain('4');
     expect(
       trigger.find('[data-test-id="icon"]').element.parentElement.className
     ).toContain('text-current');
     expect(trigger.find('[data-test-id="icon"]').attributes('data-icon')).toBe(
       'i-lucide-mailbox'
     );
+  });
+
+  it('hides empty channel unread badges', () => {
+    const wrapper = mountComponent({
+      items: [{ key: 'all', label: 'Все каналы', badge: 0 }],
+      activeKey: 'all',
+    });
+
+    expect(
+      wrapper
+        .find('[data-test-id="chat-list-channel-filter-trigger-count"]')
+        .exists()
+    ).toBe(false);
   });
 
   it('opens channel menu with sidebar-like rows and emits selected channel', async () => {
@@ -95,7 +115,9 @@ describe('ChatListChannelFilter', () => {
     const items = menu.findAll('button');
     expect(items).toHaveLength(2);
     expect(items[0].text()).toContain('Все каналы');
+    expect(items[0].text()).toContain('4');
     expect(items[1].text()).toContain('WhatsApp');
+    expect(items[1].text()).toContain('2');
     expect(items[1].find('[data-test-id="icon"]').attributes('data-icon')).toBe(
       'i-woot-whatsapp'
     );

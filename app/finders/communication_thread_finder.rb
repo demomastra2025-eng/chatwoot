@@ -1,4 +1,4 @@
-class CommunicationThreadFinder
+class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   class InvalidParameter < StandardError; end
 
   attr_reader :current_user, :current_account, :params
@@ -21,6 +21,7 @@ class CommunicationThreadFinder
       'communication_threads.id DESC'
     ].join(', ')
   }.with_indifferent_access
+  STATUS_COUNT_KEYS = %w[open pending snoozed resolved].freeze
 
   def initialize(current_user, params)
     @current_user = current_user
@@ -130,15 +131,14 @@ class CommunicationThreadFinder
   end
 
   def set_count_for_all_threads
-    mine_threads = @communication_threads.where(assignee_id: current_user.id)
-    unassigned_threads = @communication_threads.where(assignee_id: nil)
+    counts = assignee_counts_for(@communication_threads)
 
     [
-      mine_threads.count,
-      unassigned_threads.count,
-      @communication_threads.count,
-      unread_thread_count(mine_threads),
-      unread_thread_count(unassigned_threads),
+      counts[:mine_count],
+      counts[:unassigned_count],
+      counts[:all_count],
+      unread_thread_count(@communication_threads.where(assignee_id: current_user.id)),
+      unread_thread_count(@communication_threads.where(assignee_id: nil)),
       unread_thread_count(@communication_threads)
     ]
   end
@@ -155,15 +155,174 @@ class CommunicationThreadFinder
       mine_unread_count: mine_unread_count,
       assigned_unread_count: all_unread_count - unassigned_unread_count,
       unassigned_unread_count: unassigned_unread_count,
-      all_unread_count: all_unread_count
+      all_unread_count: all_unread_count,
+      assignee_counts: assignee_counts_for(base_thread_scope),
+      unread_counts: unread_counts
     }
   end
 
-  def unread_thread_count(scope)
+  def assignee_counts_for(scope)
+    mine_count = scope.where(assignee_id: current_user.id).count
+    unassigned_count = scope.where(assignee_id: nil).count
+    all_count = scope.count
+
+    {
+      mine_count: mine_count,
+      assigned_count: all_count - unassigned_count,
+      unassigned_count: unassigned_count,
+      all_count: all_count
+    }
+  end
+
+  def unread_counts
+    channel_counts = channel_unread_counts
+
+    {
+      all: channel_counts[:all],
+      statuses: status_unread_counts,
+      inboxes: channel_counts[:inboxes],
+      teams: team_unread_counts,
+      labels: label_unread_counts
+    }
+  end
+
+  def status_unread_counts
+    scope = scoped_thread_relation(include_status: false, include_assignee: true)
+
+    STATUS_COUNT_KEYS.index_with do |status|
+      unread_thread_count(apply_status_filter(scope, status))
+    end
+  end
+
+  def channel_unread_counts
+    scope = scoped_thread_relation(include_inbox: false, include_assignee: true)
+    unread_scope = unread_thread_scope(scope)
+    thread_ids = unread_scope.select(:id)
+
+    {
+      all: unread_scope.count,
+      inboxes: CommunicationThreadConversation
+        .where(
+          account_id: current_account.id,
+          communication_thread_id: thread_ids,
+          conversation_id: accessible_conversations.select(:id)
+        )
+        .group(:inbox_id)
+        .distinct
+        .count(:communication_thread_id)
+        .transform_keys(&:to_s)
+    }
+  end
+
+  def team_unread_counts
+    scope = scoped_thread_relation(include_team: false, include_assignee: true)
+
+    normalize_counts(unread_thread_scope(scope).where.not(team_id: nil).group(:team_id).count)
+  end
+
+  def label_unread_counts
+    scope = scoped_thread_relation(include_labels: false, include_assignee: true)
+    thread_ids = unread_thread_scope(scope).select(:id)
+
+    normalize_counts(
+      CommunicationThreadConversation
+        .where(
+          account_id: current_account.id,
+          communication_thread_id: thread_ids,
+          conversation_id: accessible_conversations.select(:id)
+        )
+        .joins(
+          'INNER JOIN taggings ON taggings.taggable_id = communication_thread_conversations.conversation_id ' \
+          "AND taggings.taggable_type = 'Conversation' " \
+          "AND taggings.context = 'labels'"
+        )
+        .joins('INNER JOIN tags ON tags.id = taggings.tag_id')
+        .group('tags.name')
+        .distinct
+        .count(:communication_thread_id)
+    )
+  end
+
+  def unread_thread_scope(scope)
     CommunicationThread
       .where(id: scope.except(:order).select(:id))
       .where('communication_threads.unread_count > 0')
-      .count
+  end
+
+  def normalize_counts(counts)
+    counts.each_with_object({}) do |(key, value), result|
+      next if key.blank?
+
+      result[key.to_s] = value
+    end
+  end
+
+  def scoped_thread_relation(include_status: true, include_inbox: true, include_assignee: false, include_team: true, include_labels: true)
+    scope = base_thread_scope
+    scope = apply_status_filter(scope) if include_status
+    scope = apply_inbox_filter(scope) if include_inbox
+    scope = apply_team_filter(scope) if include_team
+    scope = apply_labels_filter(scope) if include_labels
+    scope = apply_assignee_filter(scope) if include_assignee
+    scope
+  end
+
+  def base_thread_scope
+    CommunicationThread
+      .where(account_id: current_account.id)
+      .joins(:communication_thread_conversations)
+      .where(communication_thread_conversations: { conversation_id: accessible_conversations.select(:id) })
+      .distinct
+  end
+
+  def apply_status_filter(scope, status = nil)
+    selected_status = status || params[:status]
+    return scope if selected_status == 'all'
+
+    status_value = selected_status.presence || DEFAULT_STATUS
+    scope.where(
+      'communication_threads.status = :thread_status OR communication_thread_conversations.conversation_id IN (:matching_conversation_ids)',
+      thread_status: CommunicationThread.statuses.fetch(status_value),
+      matching_conversation_ids: accessible_conversations
+        .where(status: Conversation.statuses.fetch(status_value))
+        .select(:id)
+    )
+  end
+
+  def apply_inbox_filter(scope)
+    return scope if params[:inbox_id].blank?
+
+    scope.where(communication_thread_conversations: { inbox_id: params[:inbox_id] })
+  end
+
+  def apply_team_filter(scope)
+    return scope if params[:team_id].blank?
+
+    scope.where(team_id: params[:team_id])
+  end
+
+  def apply_labels_filter(scope)
+    return scope if params[:labels].blank?
+
+    labeled_conversation_ids = accessible_conversations.tagged_with(params[:labels], any: true).reselect(:id)
+    scope.where(communication_thread_conversations: { conversation_id: labeled_conversation_ids })
+  end
+
+  def apply_assignee_filter(scope)
+    case params[:assignee_type]
+    when 'me'
+      scope.where(assignee_id: current_user.id)
+    when 'unassigned'
+      scope.where(assignee_id: nil)
+    when 'assigned'
+      scope.where.not(assignee_id: nil)
+    else
+      scope
+    end
+  end
+
+  def unread_thread_count(scope)
+    unread_thread_scope(scope).count
   end
 
   def communication_threads

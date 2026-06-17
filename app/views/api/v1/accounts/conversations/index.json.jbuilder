@@ -4,6 +4,8 @@ json.data do
     json.assigned_count @conversations_count[:assigned_count]
     json.unassigned_count @conversations_count[:unassigned_count]
     json.all_count @conversations_count[:all_count]
+    json.assignee_counts @conversations_count[:assignee_counts]
+    json.unread_counts @conversations_count[:unread_counts]
   end
   json.payload do
     json.array! @conversations do |conversation|

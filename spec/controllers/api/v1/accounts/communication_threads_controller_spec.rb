@@ -181,6 +181,44 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
+    it 'returns ownership, status, and channel facet counts with the expected filter scope' do
+      first_inbox = create(:inbox, account: account)
+      second_inbox = create(:inbox, account: account)
+      create(:inbox_member, user: agent, inbox: first_inbox)
+      create(:inbox_member, user: agent, inbox: second_inbox)
+
+      first_open = create(:conversation, account: account, inbox: first_inbox, assignee: agent, status: :open)
+      second_open = create(:conversation, account: account, inbox: second_inbox, assignee: agent, status: :open)
+      second_pending = create(:conversation, account: account, inbox: second_inbox, assignee: agent, status: :pending)
+      create(:conversation, account: account, inbox: second_inbox, status: :open)
+
+      [first_open, second_open, second_pending].each do |conversation|
+        conversation.reload.communication_thread.update!(assignee: agent)
+      end
+      [first_open, second_open].each do |conversation|
+        conversation.reload.communication_thread.update!(unread_count: 1)
+      end
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'open', assignee_type: 'me', inbox_id: first_inbox.id },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      meta = response.parsed_body.dig('data', 'meta')
+      expect(meta['assignee_counts']).to include(
+        'mine_count' => 3,
+        'unassigned_count' => 1,
+        'all_count' => 4
+      )
+      expect(meta.dig('unread_counts', 'statuses')).to include('open' => 1)
+      expect(meta['unread_counts']).to include('all' => 2)
+      expect(meta.dig('unread_counts', 'inboxes')).to include(
+        first_inbox.id.to_s => 1,
+        second_inbox.id.to_s => 1
+      )
+    end
+
     it 'sorts threads by supported sort options' do
       low_priority = create(:conversation, account: account, priority: :low)
       urgent_priority = create(:conversation, account: account, priority: :urgent)
