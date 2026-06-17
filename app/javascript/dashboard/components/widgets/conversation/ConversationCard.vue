@@ -407,7 +407,7 @@ const togglePinnedConversation = async nextPinnedState => {
         v-if="!hideThumbnail"
         :name="currentContact.name"
         :src="currentContact.thumbnail"
-        :size="32"
+        :size="28"
         :status="currentContact.availability_status"
         class="mt-3"
         hide-offline-status
@@ -442,7 +442,6 @@ const togglePinnedConversation = async nextPinnedState => {
     >
       <h4
         class="conversation--user text-xs my-0 mx-2 pt-0.5 overflow-hidden whitespace-nowrap flex items-center gap-1 flex-1 min-w-0 text-n-slate-12"
-        :class="{ 'ltr:pr-8 rtl:pl-8': hasUnread }"
       >
         <span
           class="min-w-0 truncate capitalize"
@@ -463,8 +462,9 @@ const togglePinnedConversation = async nextPinnedState => {
         />
         <span
           v-if="showAssignee && assignee.name"
-          class="ml-1.5 min-w-0 max-w-20 flex-shrink truncate text-xxs font-medium normal-case leading-3 text-n-slate-11"
+          class="ml-auto inline-flex min-w-0 max-w-20 flex-shrink-0 items-center gap-0.5 truncate text-xxs font-medium normal-case leading-3 text-n-slate-11"
         >
+          <fluent-icon icon="person" size="10" class="text-n-slate-11" />
           {{ assignee.name }}
         </span>
         <CardPriorityIcon
@@ -480,41 +480,50 @@ const togglePinnedConversation = async nextPinnedState => {
           {{ t('CONVERSATION.CARD_CONTEXT_MENU.PINNED_BADGE') }}
         </span>
       </h4>
-      <VoiceCallStatus
+      <div
         v-if="voiceCallData.status"
         key="voice-status-row"
-        :status="voiceCallData.status"
-        :direction="voiceCallData.direction"
-        :message-preview-class="messagePreviewClass"
-      />
-      <MessagePreview
-        v-else-if="lastMessageInChat"
-        key="message-preview"
-        :message="lastMessageInChat"
-        class="my-0 mx-2 leading-6 h-6 flex-1 min-w-0 text-xs"
-        :class="messagePreviewClass"
-      />
-      <p
-        v-else
-        key="no-messages"
-        class="text-n-slate-11 text-xs my-0 mx-2 leading-6 h-6 flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
-        :class="messagePreviewClass"
+        class="flex min-w-0 flex-1 items-center gap-1"
       >
-        <fluent-icon
-          size="14"
-          class="-mt-0.5 align-middle inline-block text-n-slate-10"
-          icon="info"
+        <VoiceCallStatus
+          :status="voiceCallData.status"
+          :direction="voiceCallData.direction"
+          :message-preview-class="messagePreviewClass"
         />
-        <span class="mx-0.5">
-          {{ $t(`CHAT_LIST.NO_MESSAGES`) }}
-        </span>
-      </p>
-      <div
-        v-if="hasUnread"
-        class="absolute top-2 flex flex-col items-end ltr:right-3 rtl:left-3"
-      >
         <span
-          class="shadow-lg inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-n-brand-contrast bg-n-brand-solid"
+          v-if="hasUnread"
+          class="inline-flex flex-shrink-0 items-center justify-center rounded-full bg-n-brand-solid text-center text-[11px] font-semibold leading-none text-n-brand-contrast shadow-lg ltr:mr-2 rtl:ml-2"
+          :class="unreadBadgeClass"
+        >
+          {{ unreadBadgeLabel }}
+        </span>
+      </div>
+      <div v-else class="mx-2 flex h-6 min-w-0 flex-1 items-center gap-1">
+        <MessagePreview
+          v-if="lastMessageInChat"
+          key="message-preview"
+          :message="lastMessageInChat"
+          class="my-0 leading-6 min-w-0 flex-1 text-xs"
+          :class="messagePreviewClass"
+        />
+        <p
+          v-else
+          key="no-messages"
+          class="text-n-slate-11 text-xs my-0 leading-6 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+          :class="messagePreviewClass"
+        >
+          <fluent-icon
+            size="14"
+            class="-mt-0.5 align-middle inline-block text-n-slate-10"
+            icon="info"
+          />
+          <span class="mx-0.5">
+            {{ $t(`CHAT_LIST.NO_MESSAGES`) }}
+          </span>
+        </p>
+        <span
+          v-if="hasUnread"
+          class="inline-flex flex-shrink-0 items-center justify-center rounded-full bg-n-brand-solid text-center text-[11px] font-semibold leading-none text-n-brand-contrast shadow-lg"
           :class="unreadBadgeClass"
         >
           {{ unreadBadgeLabel }}

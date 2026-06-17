@@ -307,6 +307,62 @@ describe('SidebarGroup', () => {
     );
   });
 
+  it('does not mark the clean me assignee link active while all is selected', async () => {
+    Object.assign(routeState, {
+      name: 'communication_threads_dashboard',
+      path: '/communication_threads',
+      query: { status: 'open', assignee_type: 'all' },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Assignees',
+          label: 'Assignees',
+          icon: 'i-lucide-users',
+          to: {
+            name: 'communication_threads_dashboard',
+            path: '/communication_threads',
+            query: { status: 'open' },
+          },
+          children: [
+            {
+              name: 'Assignee:me',
+              label: 'Mine',
+              to: {
+                name: 'communication_threads_dashboard',
+                path: '/communication_threads',
+                query: { status: 'open' },
+              },
+              activeOn: ['communication_threads_dashboard'],
+            },
+            {
+              name: 'Assignee:all',
+              label: 'All',
+              to: {
+                name: 'communication_threads_dashboard',
+                path: '/communication_threads',
+                query: { status: 'open', assignee_type: 'all' },
+              },
+              activeOn: ['communication_threads_dashboard'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const activeNames = wrapper
+      .find('[data-test-id="sidebar-subgroup"]')
+      .attributes('data-active-child-names');
+
+    expect(activeNames).toContain('Assignee:all');
+    expect(activeNames).not.toContain('Assignee:me');
+  });
+
   it('opens the configured default child when clicking a collapsed group', async () => {
     sidebarCollapsed.value = true;
     const touchesRoute = { name: 'outbound_touches_index' };

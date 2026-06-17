@@ -217,6 +217,14 @@ describe('ConversationCard', () => {
       chat: {
         ...baseChat,
         unread_count: 7,
+        messages: [
+          {
+            id: 10,
+            content: 'Unread',
+            message_type: 0,
+            created_at: 1710000100,
+          },
+        ],
       },
     });
 
@@ -224,6 +232,15 @@ describe('ConversationCard', () => {
     expect(unreadBadge.exists()).toBe(true);
     expect(unreadBadge.text()).toBe('7');
     expect(unreadBadge.classes()).toContain('rounded-full');
+    expect(unreadBadge.element.parentElement).toBe(
+      wrapper.findComponent({ name: 'MessagePreview' }).element.parentElement
+    );
+  });
+
+  it('renders a smaller avatar in the conversation list', () => {
+    const wrapper = mountComponent();
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props('size')).toBe(28);
   });
 
   it('renders compact time under the avatar and compact inbox name inline with the contact', () => {

@@ -175,6 +175,19 @@ const isActive = computed(() => {
 
 const queryMatches = child => {
   const childQuery = child?.to?.query || {};
+  const assigneeItemType = child?.name?.startsWith('Assignee:')
+    ? child.name.split(':')[1]
+    : null;
+  const routeAssigneeType =
+    route.query.assignee_type ?? route.query.assigneeType ?? 'me';
+
+  if (
+    assigneeItemType &&
+    !Object.prototype.hasOwnProperty.call(childQuery, 'assignee_type') &&
+    String(routeAssigneeType) !== String(assigneeItemType)
+  ) {
+    return false;
+  }
 
   return Object.entries(childQuery).every(([key, value]) => {
     let routeValue = route.query[key] ?? '';
