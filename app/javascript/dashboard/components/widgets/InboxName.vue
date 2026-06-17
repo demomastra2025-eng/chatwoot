@@ -1,7 +1,8 @@
 <script setup>
+import { computed } from 'vue';
 import ChannelIcon from 'dashboard/components-next/icon/ChannelIcon.vue';
 
-defineProps({
+const props = defineProps({
   inbox: {
     type: Object,
     default: () => {},
@@ -10,6 +11,17 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  maxLength: {
+    type: Number,
+    default: 0,
+  },
+});
+
+const displayName = computed(() => {
+  const name = props.inbox?.name || '';
+  return props.maxLength > 0 && name.length > props.maxLength
+    ? `${name.slice(0, props.maxLength)}…`
+    : name;
 });
 </script>
 
@@ -24,7 +36,7 @@ defineProps({
       class="truncate text-n-slate-11"
       :class="compact ? 'text-xxs leading-3' : 'text-label-small'"
     >
-      {{ inbox.name }}
+      {{ displayName }}
     </span>
   </div>
 </template>

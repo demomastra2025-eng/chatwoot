@@ -254,7 +254,7 @@ describe('ConversationCard', () => {
     expect(inboxName.props('compact')).toBe(true);
   });
 
-  it('renders the last event direction and assignee in the contact row', () => {
+  it('renders outgoing events from inbox to contact in the contact row', () => {
     const wrapper = mountComponent({
       showAssignee: true,
       chat: {
@@ -274,8 +274,104 @@ describe('ConversationCard', () => {
       },
     });
 
-    expect(wrapper.find('.i-lucide-arrow-up-right').exists()).toBe(true);
+    expect(wrapper.find('.i-lucide-arrow-left').exists()).toBe(true);
     expect(wrapper.find('h4').text()).toContain('Manager');
+  });
+
+  it('renders incoming events from contact to inbox in the contact row', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        messages: [
+          {
+            id: 99,
+            content: 'Incoming',
+            message_type: 0,
+            created_at: 1710000100,
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.find('.i-lucide-arrow-right').exists()).toBe(true);
+  });
+
+  it('keeps the activity icon only in the event direction row', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        messages: [
+          {
+            id: 99,
+            content: 'conversation_status_changed',
+            message_type: 2,
+            created_at: 1710000100,
+          },
+        ],
+      },
+    });
+
+    const messagePreview = wrapper.findComponent({ name: 'MessagePreview' });
+
+    expect(wrapper.find('h4 .i-lucide-info').exists()).toBe(true);
+    expect(messagePreview.props('showMessageType')).toBe(false);
+    expect(messagePreview.classes()).toContain('text-n-slate-11');
+  });
+
+  it('renders regular message previews with the primary text color', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        messages: [
+          {
+            id: 99,
+            content: 'Incoming',
+            message_type: 0,
+            created_at: 1710000100,
+          },
+        ],
+      },
+    });
+
+    const messagePreview = wrapper.findComponent({ name: 'MessagePreview' });
+
+    expect(messagePreview.props('showMessageType')).toBe(true);
+    expect(messagePreview.classes()).toContain('text-n-slate-12');
+    expect(messagePreview.classes()).not.toContain('text-n-slate-11');
+  });
+
+  it('caps contact and inbox names at 12 characters while leaving room for assignee', () => {
+    mocks.storeGetters['contacts/getContact'] = vi.fn(() => ({
+      id: 1,
+      name: 'Very Long Contact Name',
+      thumbnail: '',
+      availability_status: 'offline',
+    }));
+    mocks.storeGetters['inboxes/getInbox'] = vi.fn(id => ({
+      id,
+      name: 'Very Long Inbox Name',
+    }));
+
+    const wrapper = mountComponent({
+      showAssignee: true,
+      chat: {
+        ...baseChat,
+        meta: {
+          sender: { id: 1 },
+          assignee: { id: 23, name: 'Very Long Manager Name' },
+        },
+      },
+    });
+
+    const contactRow = wrapper.find('h4');
+    const assigneeIcon = wrapper.find('fluent-icon-stub[icon="person"]');
+
+    expect(contactRow.text()).toContain('Very Long Co…');
+    expect(
+      wrapper.findComponent({ name: 'InboxName' }).props('maxLength')
+    ).toBe(12);
+    expect(contactRow.text()).toContain('Very Long Manager Name');
+    expect(assigneeIcon.classes()).toContain('flex-shrink-0');
   });
 
   it('uses the existing voice call status row for communication-thread voice previews', () => {

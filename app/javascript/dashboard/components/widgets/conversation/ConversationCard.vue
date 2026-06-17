@@ -68,6 +68,7 @@ const hovered = ref(false);
 const showContextMenu = ref(false);
 const contextMenu = ref({ x: null, y: null });
 const isUpdatingPin = ref(false);
+const INLINE_META_MAX_LENGTH = 12;
 
 // Reset UI state when conversation changes at same index (no :key, instance reused on reorder)
 // This prevents context menu/hover state from leaking to a different conversation
@@ -103,6 +104,17 @@ const currentContact = computed(() => {
     : {};
 });
 
+const truncateInlineMetaText = value => {
+  const text = String(value || '').trim();
+  return text.length > INLINE_META_MAX_LENGTH
+    ? `${text.slice(0, INLINE_META_MAX_LENGTH)}…`
+    : text;
+};
+
+const contactDisplayName = computed(() =>
+  truncateInlineMetaText(currentContact.value.name)
+);
+
 const cardMatchesListMode = computed(
   () =>
     Boolean(props.communicationThreadMode) === isCommunicationThreadChat.value
@@ -131,6 +143,16 @@ const unreadBadgeClass = computed(() => {
 const isInboxNameVisible = computed(() => !activeInbox.value);
 
 const lastMessageInChat = computed(() => getLastMessage(props.chat));
+
+const lastMessageType = computed(
+  () =>
+    lastMessageInChat.value?.message_type ??
+    lastMessageInChat.value?.messageType
+);
+
+const isLastMessageActivity = computed(
+  () => Number(lastMessageType.value) === MESSAGE_TYPES.ACTIVITY
+);
 
 const isVoiceCallMessage = message => {
   return (
@@ -221,16 +243,13 @@ const showInboxName = computed(() => {
 });
 
 const lastEventIconClass = computed(() => {
-  const messageType =
-    lastMessageInChat.value?.message_type ??
-    lastMessageInChat.value?.messageType;
-  if (Number(messageType) === MESSAGE_TYPES.OUTGOING) {
-    return 'i-lucide-arrow-up-right';
+  if (Number(lastMessageType.value) === MESSAGE_TYPES.OUTGOING) {
+    return 'i-lucide-arrow-left';
   }
-  if (Number(messageType) === MESSAGE_TYPES.INCOMING) {
-    return 'i-lucide-arrow-down-left';
+  if (Number(lastMessageType.value) === MESSAGE_TYPES.INCOMING) {
+    return 'i-lucide-arrow-right';
   }
-  if (Number(messageType) === MESSAGE_TYPES.ACTIVITY) {
+  if (isLastMessageActivity.value) {
     return 'i-lucide-info';
   }
   return '';
@@ -244,11 +263,16 @@ const showLabelsSection = computed(() => {
 
 const messagePreviewClass = computed(() => {
   return [
-    hasUnread.value ? 'font-medium text-n-slate-12' : 'text-n-slate-11',
+    isLastMessageActivity.value || !lastMessageInChat.value
+      ? 'text-n-slate-11'
+      : 'text-n-slate-12',
+    hasUnread.value ? 'font-medium' : '',
     !props.compact && hasUnread.value ? 'ltr:pr-4 rtl:pl-4' : '',
     props.compact && hasUnread.value ? 'ltr:pr-6 rtl:pl-6' : '',
   ];
 });
+
+const showPreviewMessageType = computed(() => !isLastMessageActivity.value);
 
 const isPinned = computed(() => Boolean(props.chat?.custom_attributes?.pinned));
 
@@ -393,7 +417,7 @@ const togglePinnedConversation = async nextPinnedState => {
       'active animate-card-select bg-n-background border-n-weak': isActiveChat,
       'bg-n-slate-2': selected,
       'px-0': compact,
-      'px-3': !compact,
+      'px-2': !compact,
     }"
     @click="onCardClick"
     @contextmenu="openContextMenu($event)"
@@ -447,7 +471,7 @@ const togglePinnedConversation = async nextPinnedState => {
           class="min-w-0 truncate capitalize"
           :class="hasUnread ? 'font-semibold' : 'font-medium'"
         >
-          {{ currentContact.name }}
+          {{ contactDisplayName }}
         </span>
         <i
           v-if="lastEventIconClass"
@@ -458,14 +482,21 @@ const togglePinnedConversation = async nextPinnedState => {
           v-if="showInboxName"
           :inbox="inbox"
           compact
+          :max-length="INLINE_META_MAX_LENGTH"
           class="max-w-20 flex-shrink min-w-0"
         />
         <span
           v-if="showAssignee && assignee.name"
-          class="ml-auto inline-flex min-w-0 max-w-20 flex-shrink-0 items-center gap-0.5 truncate text-xxs font-medium normal-case leading-3 text-n-slate-11"
+          class="ml-auto inline-flex min-w-0 flex-1 items-center justify-end gap-0.5 text-xxs font-medium normal-case leading-3 text-n-slate-11"
         >
-          <fluent-icon icon="person" size="10" class="text-n-slate-11" />
-          {{ assignee.name }}
+          <fluent-icon
+            icon="person"
+            size="10"
+            class="flex-shrink-0 text-n-slate-11"
+          />
+          <span class="min-w-0 truncate">
+            {{ assignee.name }}
+          </span>
         </span>
         <CardPriorityIcon
           v-if="chat.priority"
@@ -503,6 +534,7 @@ const togglePinnedConversation = async nextPinnedState => {
           v-if="lastMessageInChat"
           key="message-preview"
           :message="lastMessageInChat"
+          :show-message-type="showPreviewMessageType"
           class="my-0 leading-6 min-w-0 flex-1 text-xs"
           :class="messagePreviewClass"
         />
