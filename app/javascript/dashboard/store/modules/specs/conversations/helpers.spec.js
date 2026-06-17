@@ -122,6 +122,37 @@ describe('#applyPageFilters', () => {
       };
       expect(applyPageFilters(conversationList[1], filters)).toEqual(true);
     });
+
+    it('keeps communication threads returned by the API even if the aggregate status differs from the active status filter', () => {
+      const communicationThread = {
+        id: 15,
+        status: 'pending',
+        is_communication_thread: true,
+        meta: {},
+        labels: [],
+      };
+      const filters = {
+        status: 'open',
+        communicationThreadMode: true,
+      };
+
+      expect(applyPageFilters(communicationThread, filters)).toEqual(true);
+    });
+
+    it('continues to filter regular conversations by status in communication thread mode', () => {
+      const conversation = {
+        id: 4724,
+        status: 'pending',
+        meta: {},
+        labels: [],
+      };
+      const filters = {
+        status: 'open',
+        communicationThreadMode: true,
+      };
+
+      expect(applyPageFilters(conversation, filters)).toEqual(false);
+    });
   });
 });
 
