@@ -24,6 +24,33 @@ describe Webhooks::InstagramEventsJob do
   end
 
   describe '#perform' do
+    it 'uses a short explicit lock TTL around normal processing' do
+      dm_event = build(:instagram_message_create_event).with_indifferent_access
+      entries = dm_event[:entry]
+      expected_key = format(
+        Redis::Alfred::IG_MESSAGE_MUTEX,
+        sender_id: entries[0][:messaging][0][:sender][:id],
+        ig_account_id: entries[0][:id]
+      )
+      job = described_class.new
+
+      expect(job).to receive(:with_lock).with(expected_key, 3.seconds).and_yield
+      expect(job).to receive(:process_entries).with(entries)
+
+      job.perform(entries)
+    end
+
+    it 'processes the original entries without the lock after lock retry exhaustion' do
+      dm_event = build(:instagram_message_create_event).with_indifferent_access
+      entries = dm_event[:entry]
+      job = described_class.new
+
+      expect(Rails.logger).to receive(:warn).with(include('Processing without lock after lock retry exhaustion'))
+      expect(job).to receive(:process_entries).with(entries)
+
+      job.process_without_lock(entries)
+    end
+
     context 'when handling messaging events for Instagram via Facebook page' do
       let!(:instagram_messenger_channel) { create(:channel_instagram_fb_page, account: account, instagram_id: 'chatwoot-app-user-id-1') }
       let!(:instagram_messenger_inbox) { create(:inbox, channel: instagram_messenger_channel, account: account, greeting_enabled: false) }
