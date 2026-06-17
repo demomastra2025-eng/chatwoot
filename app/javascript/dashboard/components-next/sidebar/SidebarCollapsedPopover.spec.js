@@ -191,4 +191,28 @@ describe('SidebarCollapsedPopover', () => {
       '999+'
     );
   });
+
+  it('renders conversation tab totals as plain text in the collapsed popover', () => {
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Assignee:all',
+          label: 'All',
+          icon: 'i-lucide-users-round',
+          count: 7,
+          badge: 7,
+          to: allChannelsRoute,
+        },
+      ],
+    });
+    const count = wrapper.find('[data-test-id="sidebar-plain-count"]');
+
+    expect(count.text()).toBe('7');
+    expect(count.classes()).toContain('text-xs');
+    expect(count.classes()).toContain('font-medium');
+    expect(count.classes()).not.toContain('bg-n-brand/10');
+    expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').exists()).toBe(
+      false
+    );
+  });
 });

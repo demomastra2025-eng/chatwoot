@@ -91,7 +91,7 @@ const isACustomBrandedInstance = useMapGetter(
 const { width: windowWidth } = useWindowSize();
 const isMobile = computed(() => windowWidth.value < 768);
 const DESKTOP_RAIL_WIDTH = 56;
-const DESKTOP_SECONDARY_COLUMN_WIDTH = 158;
+const DESKTOP_SECONDARY_COLUMN_WIDTH = 178;
 
 const accountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
@@ -279,6 +279,38 @@ const currentConversationAssigneeType = computed(() => {
     : wootConstants.ASSIGNEE_TYPE.ME;
 });
 
+const conversationNavigationQuery = (overrides = {}) => {
+  const baseQuery = { ...route.query };
+  const camelAssigneeType = baseQuery.assigneeType;
+  delete baseQuery.messageId;
+  delete baseQuery.assigneeType;
+
+  const { assigneeType: overrideCamelAssigneeType, ...safeOverrides } =
+    overrides;
+  const nextAssigneeType =
+    safeOverrides.assignee_type ||
+    overrideCamelAssigneeType ||
+    baseQuery.assignee_type ||
+    camelAssigneeType ||
+    currentConversationAssigneeType.value;
+  const nextQuery = {
+    ...baseQuery,
+    ...safeOverrides,
+    status: safeOverrides.status || currentConversationStatus.value,
+  };
+
+  if (
+    conversationAssigneeTypes.includes(nextAssigneeType) &&
+    nextAssigneeType !== wootConstants.ASSIGNEE_TYPE.ME
+  ) {
+    nextQuery.assignee_type = nextAssigneeType;
+  } else {
+    delete nextQuery.assignee_type;
+  }
+
+  return nextQuery;
+};
+
 const resolveConversationRouteName = name => {
   if (name === 'home' && hasCommunicationThreads.value) {
     return 'communication_threads_dashboard';
@@ -398,61 +430,58 @@ const dedicatedRuntimePollingInboxId = computed(() => {
 });
 
 const withConversationStatus = (name, params = {}) =>
-  accountScopedRoute(resolveConversationRouteName(name), params, {
-    ...route.query,
-    status: currentConversationStatus.value,
-  });
+  accountScopedRoute(
+    resolveConversationRouteName(name),
+    params,
+    conversationNavigationQuery()
+  );
 
 const withCurrentConversationScopeStatus = status =>
   accountScopedRoute(
     resolveConversationRouteName(currentConversationScope.value.name),
     currentConversationScope.value.params,
-    {
-      ...route.query,
-      status,
-      assignee_type:
-        currentConversationAssigneeType.value ===
-        wootConstants.ASSIGNEE_TYPE.UNASSIGNED
-          ? wootConstants.ASSIGNEE_TYPE.ME
-          : currentConversationAssigneeType.value,
-    }
+    conversationNavigationQuery({ status })
   );
 
 const withCurrentConversationScopeAssigneeType = assigneeType =>
   accountScopedRoute(
     resolveConversationRouteName(currentConversationScope.value.name),
     currentConversationScope.value.params,
-    {
-      ...route.query,
-      status: currentConversationStatus.value,
-      assignee_type: assigneeType,
-    }
+    conversationNavigationQuery({ assignee_type: assigneeType })
   );
 
 const userPermissions = computed(() =>
   getUserPermissions(currentUser.value, accountId.value)
 );
 
-const conversationAssigneeItemLabel = key =>
-  key === wootConstants.ASSIGNEE_TYPE.ME
-    ? t('CHAT_LIST.ASSIGNEE_TYPE_TABS.me')
-    : t('CHAT_LIST.ASSIGNEE_TYPE_TABS.all');
+const conversationAssigneeStatusIcons = {
+  [wootConstants.ASSIGNEE_TYPE.ME]: 'i-lucide-user-round-check',
+  [wootConstants.ASSIGNEE_TYPE.ALL]: 'i-lucide-users-round',
+  [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]: 'i-lucide-user-round-x',
+};
 
-const conversationAssigneeTabItems = computed(() =>
+const conversationAssigneeStatusLabels = computed(() => ({
+  [wootConstants.ASSIGNEE_TYPE.ME]: t('CHAT_LIST.ASSIGNEE_TYPE_TABS.me'),
+  [wootConstants.ASSIGNEE_TYPE.ALL]: t('CHAT_LIST.ASSIGNEE_TYPE_TABS.all'),
+  [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]: t(
+    'CHAT_LIST.ASSIGNEE_TYPE_TABS.unassigned'
+  ),
+}));
+
+const conversationAssigneeStatusItems = computed(() =>
   filterItemsByPermission(
     ASSIGNEE_TYPE_TAB_PERMISSIONS,
     userPermissions.value,
     item => item.permissions
-  )
-    .filter(({ key }) => key !== wootConstants.ASSIGNEE_TYPE.UNASSIGNED)
-    .map(({ key, count }) => ({
-      name: `Assignee:${key}`,
-      visibilityKey: `Conversation:Assignee:${key}`,
-      label: conversationAssigneeItemLabel(key),
-      count: Number(conversationStats.value?.[count] || 0),
-      activeOn: conversationStatusActiveOn,
-      to: withCurrentConversationScopeAssigneeType(key),
-    }))
+  ).map(({ key, count }) => ({
+    name: `Assignee:${key}`,
+    visibilityKey: `Conversation:Assignee:${key}`,
+    label: conversationAssigneeStatusLabels.value[key],
+    icon: conversationAssigneeStatusIcons[key],
+    count: Number(conversationStats.value?.[count] || 0),
+    activeOn: conversationStatusActiveOn,
+    to: withCurrentConversationScopeAssigneeType(key),
+  }))
 );
 
 const whatsappWebInboxes = computed(() => {
@@ -765,14 +794,6 @@ const labelSidebarActionItems = computed(() => [
   },
 ]);
 
-const labelSidebarSettingsActionItems = computed(() =>
-  labelSidebarActionItems.value.filter(action => action.to)
-);
-
-const labelSidebarFooterActionItems = computed(() =>
-  labelSidebarActionItems.value.filter(action => action.handler)
-);
-
 const activeOnForEmployeeTab = routeName =>
   employeeSettingsTabs.find(tab => tab.routeName === routeName)?.activeOn || [
     routeName,
@@ -901,7 +922,7 @@ const menuItems = computed(() => {
             ? 'communication_threads_dashboard'
             : 'home',
           {},
-          { status: 'open' }
+          conversationNavigationQuery({ status: 'open' })
         ),
         ...(checkPermissions(['administrator'])
           ? {
@@ -912,11 +933,7 @@ const menuItems = computed(() => {
             }
           : {}),
         children: [
-          {
-            name: 'AssigneeTabs',
-            type: 'tabs',
-            items: conversationAssigneeTabItems.value,
-          },
+          ...conversationAssigneeStatusItems.value,
           {
             name: 'Statuses',
             visibilityKey: 'Conversation:Statuses',
@@ -940,17 +957,6 @@ const menuItems = computed(() => {
                 badge: statusUnreadCount('open'),
                 activeOn: conversationStatusActiveOn,
                 to: withCurrentConversationScopeStatus('open'),
-              },
-              {
-                name: 'Unassigned',
-                visibilityKey: 'Conversation:Unassigned',
-                label: 'Неназ-ные',
-                icon: 'i-lucide-user-round-x',
-                badge: Number(conversationStats.value?.unAssignedCount || 0),
-                activeOn: conversationStatusActiveOn,
-                to: withCurrentConversationScopeAssigneeType(
-                  wootConstants.ASSIGNEE_TYPE.UNASSIGNED
-                ),
               },
               {
                 name: 'Snoozed',
@@ -1011,8 +1017,7 @@ const menuItems = computed(() => {
                   visibilityKey: 'Conversation:Labels',
                   label: t('SIDEBAR.LABELS'),
                   icon: 'i-lucide-tag',
-                  actionItems: labelSidebarSettingsActionItems.value,
-                  footerActionItems: labelSidebarFooterActionItems.value,
+                  actionItems: labelSidebarActionItems.value,
                   to: withConversationStatus('home'),
                   suppressExactPathActive: true,
                   activeOn: allLabelsActiveOn,
@@ -1246,8 +1251,7 @@ const menuItems = computed(() => {
                   visibilityKey: 'Contacts:Tagged',
                   icon: 'i-lucide-tag',
                   label: t('SIDEBAR.TAGGED_WITH'),
-                  actionItems: labelSidebarSettingsActionItems.value,
-                  footerActionItems: labelSidebarFooterActionItems.value,
+                  actionItems: labelSidebarActionItems.value,
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: labelDisplayTitle(label),
@@ -1603,7 +1607,8 @@ const queryMatches = child => {
     }
 
     if (key === 'assignee_type') {
-      routeValue = route.query[key] ?? 'me';
+      routeValue =
+        route.query.assignee_type ?? route.query.assigneeType ?? 'me';
     }
 
     return String(routeValue) === String(value);

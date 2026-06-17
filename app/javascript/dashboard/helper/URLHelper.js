@@ -9,9 +9,17 @@ export const frontendURL = (path, params) => {
 };
 
 const CONVERSATION_STATUSES = ['open', 'pending', 'snoozed', 'resolved'];
+const CONVERSATION_ASSIGNEE_TYPES = ['me', 'unassigned', 'all'];
+const DEFAULT_CONVERSATION_ASSIGNEE_TYPE = 'me';
 
 const normalizeConversationStatus = status => {
   return CONVERSATION_STATUSES.includes(status) ? status : undefined;
+};
+
+const normalizeConversationAssigneeType = assigneeType => {
+  return CONVERSATION_ASSIGNEE_TYPES.includes(assigneeType)
+    ? assigneeType
+    : undefined;
 };
 
 const currentConversationStatusFromLocation = () => {
@@ -21,6 +29,34 @@ const currentConversationStatusFromLocation = () => {
 
   const params = new URLSearchParams(window.location.search);
   return normalizeConversationStatus(params.get('status'));
+};
+
+const currentConversationAssigneeTypeFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return undefined;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return normalizeConversationAssigneeType(
+    params.get('assignee_type') || params.get('assigneeType')
+  );
+};
+
+const conversationQuery = ({ status, assigneeType } = {}) => {
+  const normalizedAssigneeType =
+    normalizeConversationAssigneeType(assigneeType) ??
+    currentConversationAssigneeTypeFromLocation();
+
+  return {
+    status:
+      normalizeConversationStatus(status) ??
+      currentConversationStatusFromLocation(),
+    assignee_type:
+      normalizedAssigneeType &&
+      normalizedAssigneeType !== DEFAULT_CONVERSATION_ASSIGNEE_TYPE
+        ? normalizedAssigneeType
+        : undefined,
+  };
 };
 
 const appendQueryToPath = (path, query = {}) => {
@@ -44,17 +80,14 @@ export const conversationUrl = ({
   conversationType = '',
   foldersId,
   status,
+  assigneeType,
   communicationThread = false,
 }) => {
   let url = communicationThread
     ? `accounts/${accountId}/communication_threads/${id}`
     : `accounts/${accountId}/conversations/${id}`;
   if (communicationThread) {
-    return appendQueryToPath(url, {
-      status:
-        normalizeConversationStatus(status) ??
-        currentConversationStatusFromLocation(),
-    });
+    return appendQueryToPath(url, conversationQuery({ status, assigneeType }));
   }
   if (activeInbox) {
     url = `accounts/${accountId}/inbox/${activeInbox}/conversations/${id}`;
@@ -71,11 +104,7 @@ export const conversationUrl = ({
   } else if (conversationType === 'unattended') {
     url = `accounts/${accountId}/unattended/conversations/${id}`;
   }
-  return appendQueryToPath(url, {
-    status:
-      normalizeConversationStatus(status) ??
-      currentConversationStatusFromLocation(),
-  });
+  return appendQueryToPath(url, conversationQuery({ status, assigneeType }));
 };
 
 export const conversationListPageURL = ({
@@ -86,13 +115,16 @@ export const conversationListPageURL = ({
   teamId,
   customViewId,
   status,
+  assigneeType,
   communicationThread = false,
 }) => {
   let url = communicationThread
     ? `accounts/${accountId}/communication_threads`
     : `accounts/${accountId}/dashboard`;
   if (communicationThread) {
-    return frontendURL(appendQueryToPath(url, { status }));
+    return frontendURL(
+      appendQueryToPath(url, conversationQuery({ status, assigneeType }))
+    );
   }
   if (label) {
     url = `accounts/${accountId}/label/${label}`;
@@ -110,7 +142,9 @@ export const conversationListPageURL = ({
     };
     url = `accounts/${accountId}/${urlMap[conversationType]}`;
   }
-  return frontendURL(appendQueryToPath(url, { status }));
+  return frontendURL(
+    appendQueryToPath(url, conversationQuery({ status, assigneeType }))
+  );
 };
 
 export const isValidURL = value => {

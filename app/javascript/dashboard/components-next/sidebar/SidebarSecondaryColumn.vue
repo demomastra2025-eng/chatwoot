@@ -55,6 +55,27 @@ const hasHeaderAction = computed(() => !!headerAction.value?.to);
 
 const getChildDisplayLabel = child => getSidebarChildDisplayLabel(child, true);
 
+const hasRenderableTabs = child =>
+  child.type === 'tabs' &&
+  Array.isArray(child.items) &&
+  child.items.some(item => item.to);
+
+const hasRenderableGroup = child =>
+  Array.isArray(child.children) &&
+  child.children.some(subChild => subChild.to && isAllowed(subChild.to));
+
+const hasRenderableLeaf = child =>
+  !child.headerAction && child.to && isAllowed(child.to);
+
+const visibleChildren = computed(() =>
+  props.children.filter(
+    child =>
+      hasRenderableTabs(child) ||
+      hasRenderableGroup(child) ||
+      hasRenderableLeaf(child)
+  )
+);
+
 const isSubGroupHeaderActive = child => {
   if (
     child?.suppressHeaderActiveWhenChildActive &&
@@ -85,7 +106,7 @@ const openHeaderAction = async () => {
 
 <template>
   <section
-    class="sidebar-secondary-column hidden md:flex h-full w-[158px] flex-shrink-0 flex-col border-n-weak bg-n-background ltr:border-l rtl:border-r"
+    class="sidebar-secondary-column hidden md:flex h-full w-[178px] flex-shrink-0 flex-col border-n-weak bg-n-background ltr:border-l rtl:border-r"
   >
     <header
       class="flex h-14 flex-shrink-0 items-center justify-between gap-2 border-b border-n-weak px-3"
@@ -108,7 +129,7 @@ const openHeaderAction = async () => {
     </header>
     <nav class="min-h-0 flex-1 overflow-y-auto px-2 py-2 no-scrollbar">
       <ul class="grid m-0 list-none min-w-0">
-        <template v-for="(child, index) in children" :key="child.name">
+        <template v-for="(child, index) in visibleChildren" :key="child.name">
           <li v-if="child.children && index > 0" class="my-1 h-px bg-n-weak" />
           <SidebarAssigneeTabs
             v-if="child.type === 'tabs'"

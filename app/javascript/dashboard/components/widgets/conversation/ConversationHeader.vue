@@ -77,6 +77,7 @@ const backButtonUrl = computed(() => {
     conversationType: conversationTypeMap[name],
     customViewId,
     status: route.query.status,
+    assigneeType: route.query.assignee_type || route.query.assigneeType,
     communicationThread: name === 'communication_thread_conversation',
   });
 });

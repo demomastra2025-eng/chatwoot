@@ -27,7 +27,7 @@ RSpec.describe Message do
   describe '#mark_pending_conversation_as_open_for_human_response' do
     let(:conversation) { create(:conversation, status: :pending) }
     let(:captain_assistant) { create(:captain_assistant, account: conversation.account) }
-    let(:auto_open_activity_content) { I18n.t('conversations.activity.captain.auto_opened_after_agent_reply', locale: conversation.account.locale) }
+    let(:auto_open_activity_content) { I18n.t('conversations.activity.captain.auto_opened_after_agent_reply') }
 
     before do
       create(:captain_inbox, inbox: conversation.inbox, captain_assistant: captain_assistant)
@@ -52,6 +52,21 @@ RSpec.describe Message do
           content: auto_open_activity_content
         }
       )
+    end
+
+    it 'creates the activity message in the current request locale' do
+      conversation.account.update!(locale: 'en')
+
+      I18n.with_locale(:ru) do
+        expect do
+          create(:message, message_type: :outgoing, conversation: conversation)
+        end.to have_enqueued_job(Conversations::ActivityMessageJob).with(
+          conversation,
+          hash_including(
+            content: I18n.t('conversations.activity.captain.auto_opened_after_agent_reply')
+          )
+        )
+      end
     end
 
     it 'turns off the captain typing indicator when a human takes over' do

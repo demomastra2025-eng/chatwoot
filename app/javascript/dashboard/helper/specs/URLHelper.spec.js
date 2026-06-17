@@ -61,6 +61,19 @@ describe('#URL Helpers', () => {
       ).toBe('/app/accounts/1/communication_threads?status=open');
     });
 
+    it('should preserve assignee scope in communication thread list URLs', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          status: 'open',
+          assigneeType: 'all',
+          communicationThread: true,
+        })
+      ).toBe(
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all'
+      );
+    });
+
     it('should return url to participating conversations', () => {
       expect(
         conversationListPageURL({
@@ -111,6 +124,57 @@ describe('#URL Helpers', () => {
           communicationThread: true,
         })
       ).toBe('accounts/1/communication_threads/42?status=pending');
+    });
+
+    it('should preserve assignee scope in communication thread detail URLs', () => {
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'open',
+          assigneeType: 'all',
+          communicationThread: true,
+        })
+      ).toBe(
+        'accounts/1/communication_threads/42?status=open&assignee_type=all'
+      );
+    });
+
+    it('should preserve the current route assignee scope when explicit assignee is absent', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all'
+      );
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'open',
+          communicationThread: true,
+        })
+      ).toBe(
+        'accounts/1/communication_threads/42?status=open&assignee_type=all'
+      );
+    });
+
+    it('should let an explicit me assignee override a previous all route scope', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all'
+      );
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'open',
+          assigneeType: 'me',
+          communicationThread: true,
+        })
+      ).toBe('accounts/1/communication_threads/42?status=open');
     });
 
     it('should preserve the current route status when explicit status is absent', () => {

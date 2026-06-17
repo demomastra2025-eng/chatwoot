@@ -75,6 +75,12 @@ const iconBaseClass = icon =>
   typeof icon === 'string' ? 'size-4 flex-shrink-0' : 'flex-shrink-0';
 
 const badgeCount = item => Number(item?.badge) || 0;
+const hasPlainCount = item =>
+  item?.count !== null && typeof item?.count !== 'undefined';
+const plainCountLabel = item => {
+  const count = Number(item?.count) || 0;
+  return count > 999 ? '999+' : String(count);
+};
 
 const transition = computed(() =>
   skipTransition.value
@@ -194,7 +200,14 @@ onMounted(async () => {
                     :class="iconBaseClass(child.icon)"
                   />
                   <span class="flex-1 truncate text-sm">{{ child.label }}</span>
-                  <SidebarUnreadBadge :value="badgeCount(child)" />
+                  <span
+                    v-if="hasPlainCount(child)"
+                    data-test-id="sidebar-plain-count"
+                    class="shrink-0 text-xs font-medium leading-5 tabular-nums text-current"
+                  >
+                    {{ plainCountLabel(child) }}
+                  </span>
+                  <SidebarUnreadBadge v-else :value="badgeCount(child)" />
                 </button>
                 <button
                   type="button"
@@ -254,7 +267,17 @@ onMounted(async () => {
                         ]"
                       />
                       <span class="flex-1 truncate">{{ subChild.label }}</span>
-                      <SidebarUnreadBadge :value="badgeCount(subChild)" />
+                      <span
+                        v-if="hasPlainCount(subChild)"
+                        data-test-id="sidebar-plain-count"
+                        class="shrink-0 text-xs font-medium leading-5 tabular-nums text-current"
+                      >
+                        {{ plainCountLabel(subChild) }}
+                      </span>
+                      <SidebarUnreadBadge
+                        v-else
+                        :value="badgeCount(subChild)"
+                      />
                     </button>
                   </li>
                 </ul>
@@ -280,7 +303,14 @@ onMounted(async () => {
                   :class="[iconBaseClass(child.icon), child.iconClass]"
                 />
                 <span class="flex-1 truncate">{{ child.label }}</span>
-                <SidebarUnreadBadge :value="badgeCount(child)" />
+                <span
+                  v-if="hasPlainCount(child)"
+                  data-test-id="sidebar-plain-count"
+                  class="shrink-0 text-xs font-medium leading-5 tabular-nums text-current"
+                >
+                  {{ plainCountLabel(child) }}
+                </span>
+                <SidebarUnreadBadge v-else :value="badgeCount(child)" />
               </button>
             </li>
           </template>

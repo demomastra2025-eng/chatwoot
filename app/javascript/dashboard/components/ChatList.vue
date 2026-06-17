@@ -233,6 +233,39 @@ const routeConversationAssigneeType = computed(() => {
     : wootConstants.ASSIGNEE_TYPE.ME;
 });
 
+function conversationNavigationQuery(overrides = {}) {
+  const baseQuery = { ...route.query };
+  const camelAssigneeType = baseQuery.assigneeType;
+  delete baseQuery.messageId;
+  delete baseQuery.assigneeType;
+
+  const { assigneeType: overrideCamelAssigneeType, ...safeOverrides } =
+    overrides;
+  const nextAssigneeType =
+    safeOverrides.assignee_type ||
+    overrideCamelAssigneeType ||
+    baseQuery.assignee_type ||
+    camelAssigneeType ||
+    activeAssigneeTab.value;
+  const nextQuery = {
+    ...baseQuery,
+    ...safeOverrides,
+    status: safeOverrides.status || activeStatus.value,
+  };
+
+  delete nextQuery.assigneeType;
+  if (
+    Object.values(wootConstants.ASSIGNEE_TYPE).includes(nextAssigneeType) &&
+    nextAssigneeType !== wootConstants.ASSIGNEE_TYPE.ME
+  ) {
+    nextQuery.assignee_type = nextAssigneeType;
+  } else {
+    delete nextQuery.assignee_type;
+  }
+
+  return nextQuery;
+}
+
 const currentUserDetails = computed(() => {
   const { id, name } = currentUser.value;
   return { id, name };
@@ -547,10 +580,7 @@ function updateConversationStatusQuery(status) {
   router.push({
     name: route.name,
     params: route.params,
-    query: {
-      ...route.query,
-      status: nextStatus,
-    },
+    query: conversationNavigationQuery({ status: nextStatus }),
   });
 }
 
@@ -797,13 +827,7 @@ function onBasicFilterChange(value, type) {
 }
 
 function channelFilterQuery() {
-  const query = { ...route.query };
-  delete query.messageId;
-
-  return {
-    ...query,
-    status: activeStatus.value,
-  };
+  return conversationNavigationQuery({ status: activeStatus.value });
 }
 
 function onChannelFilterSelect(item) {
@@ -870,6 +894,7 @@ function redirectToConversationList() {
       label,
       teamId,
       status: activeStatus.value,
+      assigneeType: activeAssigneeTab.value,
       communicationThread: props.communicationThreadMode,
     })
   );
@@ -1309,7 +1334,7 @@ watch(conversationFilters, (newVal, oldVal) => {
     class="flex flex-col flex-shrink-0 conversations-list-wrap bg-n-surface-1"
     :class="[
       { hidden: !showConversationList },
-      isOnExpandedLayout ? 'basis-full' : 'w-[340px] 2xl:w-[412px]',
+      isOnExpandedLayout ? 'basis-full' : 'w-[320px] 2xl:w-[392px]',
     ]"
   >
     <slot />
@@ -1396,6 +1421,7 @@ watch(conversationFilters, (newVal, oldVal) => {
           :folders-id="foldersId"
           :conversation-type="conversationType"
           :active-status="activeStatus"
+          :active-assignee-type="activeAssigneeTab"
           :communication-thread-mode="communicationThreadMode"
           :show-assignee="showAssigneeInConversationCard"
           :data-index="index"

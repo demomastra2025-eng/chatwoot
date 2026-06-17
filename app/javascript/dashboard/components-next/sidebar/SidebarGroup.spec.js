@@ -263,6 +263,50 @@ describe('SidebarGroup', () => {
     expect(teamsSubGroup.attributes('data-active-child-names')).toBe('Sales-1');
   });
 
+  it('matches assignee_type sidebar links when the route uses the legacy assigneeType alias', async () => {
+    Object.assign(routeState, {
+      name: 'communication_threads_dashboard',
+      path: '/communication_threads',
+      query: { status: 'open', assigneeType: 'all' },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Assignees',
+          label: 'Assignees',
+          icon: 'i-lucide-users',
+          to: {
+            name: 'communication_threads_dashboard',
+            path: '/communication_threads',
+            query: { status: 'open', assignee_type: 'all' },
+          },
+          children: [
+            {
+              name: 'Assignee:all',
+              label: 'All',
+              to: {
+                name: 'communication_threads_dashboard',
+                path: '/communication_threads',
+                query: { status: 'open', assignee_type: 'all' },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const assigneesSubGroup = wrapper.find('[data-test-id="sidebar-subgroup"]');
+
+    expect(assigneesSubGroup.attributes('data-active-child-names')).toContain(
+      'Assignee:all'
+    );
+  });
+
   it('opens the configured default child when clicking a collapsed group', async () => {
     sidebarCollapsed.value = true;
     const touchesRoute = { name: 'outbound_touches_index' };

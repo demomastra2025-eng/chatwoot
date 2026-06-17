@@ -20,7 +20,7 @@ const store = useStore();
 const promptDescriptionFormRef = ref(null);
 const promptRulesManagerRef = ref(null);
 const PROMPT_INSTRUCTION_MAX_LENGTH = 20_000;
-const PROMPT_INSTRUCTION_INITIAL_HEIGHT = 304;
+const PROMPT_INSTRUCTION_INITIAL_HEIGHT = 420;
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetching = computed(() => uiFlags.value.fetchingItem);
 const assistantId = computed(() => Number(route.params.assistantId));
@@ -160,7 +160,7 @@ watch(
         >
           <div class="flex h-full flex-col gap-6">
             <div
-              class="instructions-card rounded-2xl bg-n-solid-1 p-5 md:p-6 flex h-full flex-col gap-6"
+              class="instructions-card rounded-2xl bg-n-solid-1 px-3 md:px-6 flex h-full flex-col gap-6"
             >
               <AssistantBasicSettingsForm
                 ref="promptDescriptionFormRef"
@@ -172,7 +172,7 @@ watch(
                 :show-submit-button="false"
                 :description-max-length="PROMPT_INSTRUCTION_MAX_LENGTH"
                 :description-initial-height="PROMPT_INSTRUCTION_INITIAL_HEIGHT"
-                description-min-height="19rem"
+                description-min-height="26rem"
               />
             </div>
           </div>
@@ -227,7 +227,7 @@ watch(
   }
 
   :deep(.editor-wrapper .ProseMirror.ProseMirror-woot-style) {
-    min-height: 19rem;
+    min-height: 26rem;
   }
 }
 </style>

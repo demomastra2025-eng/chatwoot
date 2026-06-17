@@ -192,7 +192,9 @@ const handleBlur = () => {
 };
 
 const openCaptainReferenceMenu = menuType => {
-  wootEditorRef.value?.openCaptainReferenceMenu?.(menuType);
+  wootEditorRef.value?.openCaptainReferenceMenu?.(menuType, {
+    insert: isFocused.value,
+  });
 };
 
 defineExpose({ openCaptainReferenceMenu });

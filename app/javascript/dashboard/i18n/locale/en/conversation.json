@@ -314,6 +314,14 @@
     "VISIBLE_TO_AGENTS": "Private Note: Only visible to you and your team",
     "CHANGE_STATUS": "Conversation status changed",
     "CHANGE_STATUS_FAILED": "Conversation status change failed",
+    "ACTIVITY": {
+      "CAPTAIN": {
+        "AUTO_OPENED_AFTER_AGENT_REPLY": "Conversation was marked open automatically after an agent reply"
+      },
+      "ASSIGNEE": {
+        "DEFAULT_POLICY_ASSIGNED": "Default policy assigned {assigneeName} as responsible"
+      }
+    },
     "CHANGE_AGENT": "Conversation Assignee changed",
     "CHANGE_AGENT_FAILED": "Assignee change failed",
     "ASSIGN_LABEL_SUCCESFUL": "Tag assigned successfully",

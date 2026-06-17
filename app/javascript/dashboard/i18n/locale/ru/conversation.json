@@ -314,6 +314,14 @@
     "VISIBLE_TO_AGENTS": "Приватная заметка: видна только вам и вашей команде",
     "CHANGE_STATUS": "Статус разговора изменен",
     "CHANGE_STATUS_FAILED": "Не удалось изменить статус диалога",
+    "ACTIVITY": {
+      "CAPTAIN": {
+        "AUTO_OPENED_AFTER_AGENT_REPLY": "Разговор был открыт автоматически после ответа сотрудника"
+      },
+      "ASSIGNEE": {
+        "DEFAULT_POLICY_ASSIGNED": "Назначен ответственный: {assigneeName}. Инициатор: Политика по умолчанию"
+      }
+    },
     "CHANGE_AGENT": "Назначенный сотрудник изменен",
     "CHANGE_AGENT_FAILED": "Не удалось изменить назначение",
     "ASSIGN_LABEL_SUCCESFUL": "Тег успешно назначен",

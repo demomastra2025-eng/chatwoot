@@ -4,6 +4,10 @@ import { useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { getLastMessage } from 'dashboard/helper/conversationHelper';
+import {
+  CONTENT_TYPES,
+  MESSAGE_TYPES,
+} from 'dashboard/components-next/message/constants';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import { useI18n } from 'vue-i18n';
@@ -28,6 +32,7 @@ const props = defineProps({
   showAssignee: { type: Boolean, default: false },
   conversationType: { type: String, default: '' },
   activeStatus: { type: String, default: '' },
+  activeAssigneeType: { type: String, default: '' },
   selected: { type: Boolean, default: false },
   selectable: { type: Boolean, default: true },
   compact: { type: Boolean, default: false },
@@ -127,10 +132,52 @@ const isInboxNameVisible = computed(() => !activeInbox.value);
 
 const lastMessageInChat = computed(() => getLastMessage(props.chat));
 
-const voiceCallData = computed(() => ({
-  status: props.chat.additional_attributes?.call_status,
-  direction: props.chat.additional_attributes?.call_direction,
-}));
+const isVoiceCallMessage = message => {
+  return (
+    message?.content_type === CONTENT_TYPES.VOICE_CALL ||
+    message?.contentType === CONTENT_TYPES.VOICE_CALL
+  );
+};
+
+const callDirectionFromMessageType = messageType => {
+  if (Number(messageType) === MESSAGE_TYPES.OUTGOING) {
+    return 'outbound';
+  }
+  if (Number(messageType) === MESSAGE_TYPES.INCOMING) {
+    return 'inbound';
+  }
+  return '';
+};
+
+const voiceCallDataFromLastMessage = computed(() => {
+  const lastMessage = lastMessageInChat.value;
+  if (!isVoiceCallMessage(lastMessage)) return { status: '', direction: '' };
+
+  const contentAttributes =
+    lastMessage.content_attributes || lastMessage.contentAttributes || {};
+  const data = contentAttributes.data || {};
+  const messageType = lastMessage.message_type ?? lastMessage.messageType;
+
+  return {
+    status: data.status,
+    direction:
+      data.call_direction ||
+      data.callDirection ||
+      callDirectionFromMessageType(messageType),
+  };
+});
+
+const voiceCallData = computed(() => {
+  const additionalAttributes = props.chat.additional_attributes || {};
+  if (additionalAttributes.call_status) {
+    return {
+      status: additionalAttributes.call_status,
+      direction: additionalAttributes.call_direction,
+    };
+  }
+
+  return voiceCallDataFromLastMessage.value;
+});
 
 const inboxId = computed(() => props.chat.inbox_id);
 
@@ -208,6 +255,7 @@ const conversationPath = computed(() => {
       conversationType: props.conversationType,
       foldersId: props.foldersId,
       status: props.activeStatus,
+      assigneeType: props.activeAssigneeType,
       communicationThread: isCommunicationThreadChat.value,
     })
   );
@@ -405,7 +453,7 @@ const togglePinnedConversation = async nextPinnedState => {
         </div>
       </div>
       <h4
-        class="conversation--user text-sm my-0 mx-2 capitalize pt-0.5 text-ellipsis overflow-hidden whitespace-nowrap flex items-center gap-1 flex-1 min-w-0 ltr:pr-16 rtl:pl-16 text-n-slate-12"
+        class="conversation--user text-xs my-0 mx-2 capitalize pt-0.5 text-ellipsis overflow-hidden whitespace-nowrap flex items-center gap-1 flex-1 min-w-0 ltr:pr-16 rtl:pl-16 text-n-slate-12"
         :class="hasUnread ? 'font-semibold' : 'font-medium'"
       >
         <span class="truncate">
@@ -430,13 +478,13 @@ const togglePinnedConversation = async nextPinnedState => {
         v-else-if="lastMessageInChat"
         key="message-preview"
         :message="lastMessageInChat"
-        class="my-0 mx-2 leading-6 h-6 flex-1 min-w-0 text-sm"
+        class="my-0 mx-2 leading-6 h-6 flex-1 min-w-0 text-xs"
         :class="messagePreviewClass"
       />
       <p
         v-else
         key="no-messages"
-        class="text-n-slate-11 text-sm my-0 mx-2 leading-6 h-6 flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+        class="text-n-slate-11 text-xs my-0 mx-2 leading-6 h-6 flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
         :class="messagePreviewClass"
       >
         <fluent-icon

@@ -110,18 +110,18 @@ const validationRules = {
 
 const instructionReferenceActions = computed(() => [
   {
-    id: 'fields',
-    icon: 'i-lucide-braces',
-    label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.FIELDS'),
-  },
-  {
     id: 'tools',
-    icon: 'i-lucide-wrench',
+    marker: '@',
     label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.TOOLS'),
   },
   {
+    id: 'fields',
+    marker: '$',
+    label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.FIELDS'),
+  },
+  {
     id: 'skills',
-    icon: 'i-lucide-sparkles',
+    marker: '!',
     label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.SKILLS'),
   },
 ]);
@@ -390,21 +390,24 @@ defineExpose({
       />
 
       <div v-if="showDescriptionField" class="flex flex-col gap-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-medium uppercase text-n-slate-10">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.TITLE') }}
-          </span>
+        <div class="flex w-full flex-wrap items-center justify-center gap-2">
           <Button
             v-for="action in instructionReferenceActions"
             :key="action.id"
             size="sm"
             color="slate"
             variant="faded"
-            :icon="action.icon"
-            :label="action.label"
             class="!px-3"
+            @mousedown.prevent
             @click="openInstructionReferenceMenu(action.id)"
-          />
+          >
+            <span class="flex min-w-0 truncate">
+              <span class="font-semibold text-n-brand">
+                {{ action.marker }}
+              </span>
+              <span class="min-w-0 truncate">{{ action.label }}</span>
+            </span>
+          </Button>
         </div>
         <Editor
           ref="instructionEditorRef"

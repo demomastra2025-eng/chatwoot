@@ -184,7 +184,8 @@ const queryMatches = child => {
     }
 
     if (key === 'assignee_type') {
-      routeValue = route.query[key] ?? 'me';
+      routeValue =
+        route.query.assignee_type ?? route.query.assigneeType ?? 'me';
     }
 
     return String(routeValue) === String(value);

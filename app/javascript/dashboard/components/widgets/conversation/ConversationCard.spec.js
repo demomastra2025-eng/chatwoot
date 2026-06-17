@@ -68,6 +68,7 @@ const mountComponent = props =>
 
 describe('ConversationCard', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/');
     mocks.routerPush.mockClear();
     mocks.mapGetters = {
       getSelectedChat: getter({ id: 630, is_communication_thread: true }),
@@ -114,6 +115,56 @@ describe('ConversationCard', () => {
         is_communication_thread: true,
       },
       communicationThreadMode: false,
+    });
+
+    await wrapper.trigger('click');
+
+    expect(mocks.routerPush).toHaveBeenCalledWith(
+      '/app/accounts/530/communication_threads/5?status=open'
+    );
+  });
+
+  it('preserves the assignee tab query when opening a communication thread', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/app/accounts/530/communication_threads?status=open&assignee_type=all'
+    );
+    mocks.mapGetters.getSelectedChat = getter({ id: 999 });
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        id: 5,
+        communication_thread_id: 5,
+        is_communication_thread: true,
+      },
+      activeAssigneeType: 'all',
+      communicationThreadMode: true,
+    });
+
+    await wrapper.trigger('click');
+
+    expect(mocks.routerPush).toHaveBeenCalledWith(
+      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
+    );
+  });
+
+  it('uses the explicit active assignee tab instead of a stale location fallback', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/app/accounts/530/communication_threads?status=open&assignee_type=all'
+    );
+    mocks.mapGetters.getSelectedChat = getter({ id: 999 });
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        id: 5,
+        communication_thread_id: 5,
+        is_communication_thread: true,
+      },
+      activeAssigneeType: 'me',
+      communicationThreadMode: true,
     });
 
     await wrapper.trigger('click');
@@ -171,5 +222,40 @@ describe('ConversationCard', () => {
     expect(unreadBadge.exists()).toBe(true);
     expect(unreadBadge.text()).toBe('7');
     expect(unreadBadge.classes()).toContain('rounded-full');
+  });
+
+  it('uses the existing voice call status row for communication-thread voice previews', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        id: 5,
+        communication_thread_id: 5,
+        is_communication_thread: true,
+        messages: [
+          {
+            id: 4238,
+            content: 'Voice Call',
+            content_type: 'voice_call',
+            message_type: 1,
+            content_attributes: {
+              data: {
+                status: 'completed',
+                call_direction: 'outbound',
+              },
+            },
+          },
+        ],
+      },
+      communicationThreadMode: true,
+    });
+
+    const voiceCallStatus = wrapper.findComponent({ name: 'VoiceCallStatus' });
+
+    expect(voiceCallStatus.exists()).toBe(true);
+    expect(voiceCallStatus.props('status')).toBe('completed');
+    expect(voiceCallStatus.props('direction')).toBe('outbound');
+    expect(wrapper.findComponent({ name: 'MessagePreview' }).exists()).toBe(
+      false
+    );
   });
 });

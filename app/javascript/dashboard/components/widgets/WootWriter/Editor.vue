@@ -208,6 +208,7 @@ const showEmojiMenu = ref(false);
 const showToolsMenu = ref(false);
 const showFieldsMenu = ref(false);
 const showSkillsMenu = ref(false);
+const canInsertCaptainReference = ref(true);
 const mentionSearchKey = ref('');
 const toolSearchKey = ref('');
 const fieldSearchKey = ref('');
@@ -337,6 +338,7 @@ function createSuggestionPlugin({
     suggestionClass: '',
     onEnter: args => {
       if (!isAllowed()) return false;
+      canInsertCaptainReference.value = true;
       showMenu.value = true;
       range.value = args.range;
       editorView = args.view;
@@ -806,19 +808,30 @@ function insertSpecialContent(type, content) {
   }
 }
 
+function insertCaptainReferenceContent(type, content) {
+  if (!canInsertCaptainReference.value) {
+    return;
+  }
+
+  insertSpecialContent(type, content);
+}
+
 const closeFieldsMenu = () => {
   showFieldsMenu.value = false;
   fieldSearchKey.value = '';
+  canInsertCaptainReference.value = true;
 };
 
 const closeToolsMenu = () => {
   showToolsMenu.value = false;
   toolSearchKey.value = '';
+  canInsertCaptainReference.value = true;
 };
 
 const closeSkillsMenu = () => {
   showSkillsMenu.value = false;
   skillSearchKey.value = '';
+  canInsertCaptainReference.value = true;
 };
 
 const closeCaptainReferenceMenus = () => {
@@ -827,13 +840,17 @@ const closeCaptainReferenceMenus = () => {
   closeSkillsMenu();
 };
 
-function openCaptainReferenceMenu(menuType) {
+function openCaptainReferenceMenu(menuType, options = {}) {
   if (!editorView) return;
 
   closeCaptainReferenceMenus();
-  const { from, to } = editorView.state.selection;
-  range.value = { from, to };
-  editorView.focus();
+  canInsertCaptainReference.value = Boolean(options.insert);
+
+  if (canInsertCaptainReference.value) {
+    const { from, to } = editorView.state.selection;
+    range.value = { from, to };
+    editorView.focus();
+  }
 
   if (menuType === 'tools' && props.enableCaptainTools) {
     showToolsMenu.value = true;
@@ -1031,7 +1048,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :tool-scope="captainToolScope"
       :used-item-ids="usedCaptainToolIds"
       @close="closeToolsMenu"
-      @select-tool="content => insertSpecialContent('tool', content)"
+      @select-tool="content => insertCaptainReferenceContent('tool', content)"
     />
     <TagFields
       v-if="showFieldsMenu"
@@ -1040,7 +1057,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :context-access="captainContextAccess"
       :used-item-ids="usedCaptainFieldIds"
       @close="closeFieldsMenu"
-      @select-field="content => insertSpecialContent('field', content)"
+      @select-field="content => insertCaptainReferenceContent('field', content)"
     />
     <TagSkills
       v-if="showSkillsMenu"
@@ -1048,7 +1065,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :assistant-id="captainContextAssistantId"
       :used-item-ids="usedCaptainSkillIds"
       @close="closeSkillsMenu"
-      @select-skill="content => insertSpecialContent('skill', content)"
+      @select-skill="content => insertCaptainReferenceContent('skill', content)"
     />
     <CopilotMenuBar
       v-if="showSelectionMenu && shouldShowCopilotMenu"

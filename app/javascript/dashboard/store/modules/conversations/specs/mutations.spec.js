@@ -60,6 +60,46 @@ describe('#mutations', () => {
 
       expect(emitSpy).not.toHaveBeenCalledWith(BUS_EVENTS.SCROLL_TO_MESSAGE);
     });
+
+    it('preserves communication thread assignee when realtime meta omits assignee', () => {
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            updated_at: 1,
+            meta: {
+              sender: { id: 42, name: 'Old customer' },
+              assignee: { id: 179, name: 'John' },
+              team: { id: 5, name: 'Sales' },
+            },
+            messages: [],
+            channels: [{ conversation_id: 11, inbox_id: 101 }],
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        updated_at: 2,
+        source_event: 'message.created',
+        meta: {
+          sender: { id: 42, name: 'New customer' },
+          channel: 'CommunicationThread',
+        },
+        channels: [{ conversation_id: 11, inbox_id: 101 }],
+      });
+
+      expect(state.allConversations[0].meta).toMatchObject({
+        sender: { id: 42, name: 'New customer' },
+        assignee: { id: 179, name: 'John' },
+        team: { id: 5, name: 'Sales' },
+      });
+    });
   });
 
   describe('#DELETE_COMMUNICATION_THREAD_CONVERSATIONS', () => {

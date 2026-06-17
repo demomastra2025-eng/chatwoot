@@ -1,0 +1,74 @@
+import { mount } from '@vue/test-utils';
+import { describe, expect, it, vi } from 'vitest';
+
+import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
+vi.mock('./provider', () => ({
+  useSidebarContext: () => ({
+    resolvePermissions: () => [],
+    resolveFeatureFlag: () => '',
+  }),
+}));
+
+const mountComponent = (props = {}) =>
+  mount(SidebarGroupLeaf, {
+    props: {
+      label: 'All',
+      to: { name: 'communication_threads_dashboard' },
+      icon: 'i-lucide-users-round',
+      ...props,
+    },
+    global: {
+      stubs: {
+        Policy: {
+          template: '<li><slot /></li>',
+        },
+        Icon: {
+          props: ['icon'],
+          template: '<span data-test-id="icon" :data-icon="icon" />',
+        },
+        RouterLink: {
+          props: ['to'],
+          template: '<a><slot /></a>',
+        },
+      },
+    },
+  });
+
+describe('SidebarGroupLeaf', () => {
+  it('renders conversation tab totals as plain text instead of unread badge styling', () => {
+    const wrapper = mountComponent({ count: 42, badge: 42 });
+    const count = wrapper.find('[data-test-id="sidebar-plain-count"]');
+
+    expect(count.text()).toBe('42');
+    expect(count.classes()).toContain('text-xs');
+    expect(count.classes()).toContain('font-medium');
+    expect(count.classes()).not.toContain('bg-n-brand/10');
+    expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').exists()).toBe(
+      false
+    );
+  });
+
+  it('keeps zero conversation totals visible as plain text', () => {
+    const wrapper = mountComponent({ count: 0 });
+
+    expect(wrapper.find('[data-test-id="sidebar-plain-count"]').text()).toBe(
+      '0'
+    );
+  });
+
+  it('keeps the unread badge visual for unread badge counts', () => {
+    const wrapper = mountComponent({ badge: 12 });
+    const badge = wrapper.find('[data-test-id="sidebar-unread-badge"]');
+
+    expect(wrapper.find('[data-test-id="sidebar-plain-count"]').exists()).toBe(
+      false
+    );
+    expect(badge.text()).toBe('12');
+    expect(badge.classes()).toContain('bg-n-brand/10');
+  });
+});

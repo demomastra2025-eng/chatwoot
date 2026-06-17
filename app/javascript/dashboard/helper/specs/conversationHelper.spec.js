@@ -97,5 +97,19 @@ describe('conversationHelper', () => {
         testConversation.messages[1]
       );
     });
+
+    it('should return the latest activity message when it is newer than the last chat message', () => {
+      const activityMessage = {
+        id: 438214,
+        content: 'John reopened the conversation',
+        message_type: 2,
+        created_at: lastMessageData.created_at + 60,
+      };
+      const testConversation = {
+        messages: [activityMessage],
+        last_non_activity_message: lastMessageData,
+      };
+      expect(getLastMessage(testConversation)).toEqual(activityMessage);
+    });
   });
 });

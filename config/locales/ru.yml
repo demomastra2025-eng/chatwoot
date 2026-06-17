@@ -230,9 +230,9 @@ ru:
       captain:
         resolved: Диалог был решен с %{user_name} из-за бездействия
         open: Диалог был открыт с %{user_name}
-        resolved_with_reason: Conversation was marked resolved by %{user_name} (%{reason})
+        resolved_with_reason: Диалог был завершен %{user_name} (%{reason})
         resolved_by_tool: 'Диалог был завершен %{user_name} с причиной: %{reason}'
-        open_with_reason: Conversation was marked open by %{user_name} (%{reason})
+        open_with_reason: Диалог был открыт %{user_name} (%{reason})
         auto_opened_after_agent_reply: Разговор был открыт автоматически после ответа сотрудника
       agent_bot:
         error_moved_to_open: Диалог был открыт системой из-за ошибки робота сотрудника.
@@ -252,7 +252,7 @@ ru:
         removed: "%{user_name} удалил приоритет"
       assignee:
         self_assigned: "%{user_name} назначил(а) разговор себе"
-        assigned: "%{user_name} назначил %{assignee_name} ответственным"
+        assigned: "Назначен ответственный: %{assignee_name}. Инициатор: %{user_name}"
         removed: Ответственный снят %{user_name}
       team:
         assigned: "%{user_name} назначил %{team_name} ответственным"

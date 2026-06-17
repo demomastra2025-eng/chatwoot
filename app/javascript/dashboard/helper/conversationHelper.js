@@ -42,7 +42,10 @@ export const filterDuplicateSourceMessages = (messages = []) => {
 };
 
 /**
- * Retrieves the last message from a conversation, prioritizing non-activity messages.
+ * Retrieves the latest previewable message from a conversation.
+ * Lists receive the latest public message in `messages`, which can be an activity
+ * message. Keep that activity message when it is newer than the last chat message
+ * so the preview matches the last row visible in the conversation timeline.
  * @param {Object} m - The conversation object containing messages.
  * @returns {Object} The last message of the conversation.
  */
@@ -56,17 +59,23 @@ export const getLastMessage = m => {
     nonActivityMessages[nonActivityMessages.length - 1];
 
   const lastNonActivityMessageFromAPI = m.last_non_activity_message;
-
-  // If API value and store value for last non activity message
-  // is empty, then return the last activity message
-  if (!lastNonActivityMessageInStore && !lastNonActivityMessageFromAPI) {
-    return lastMessageIncludingActivity;
-  }
-
-  return getLastNonActivityMessage(
+  const lastNonActivityMessage = getLastNonActivityMessage(
     lastNonActivityMessageInStore,
     lastNonActivityMessageFromAPI
   );
+
+  if (!lastNonActivityMessage) {
+    return lastMessageIncludingActivity;
+  }
+
+  if (!lastMessageIncludingActivity) {
+    return lastNonActivityMessage;
+  }
+
+  return lastMessageIncludingActivity.created_at >=
+    lastNonActivityMessage.created_at
+    ? lastMessageIncludingActivity
+    : lastNonActivityMessage;
 };
 
 /**

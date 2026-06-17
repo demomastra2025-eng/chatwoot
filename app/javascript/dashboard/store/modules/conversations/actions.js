@@ -142,14 +142,19 @@ const buildCommunicationThreadRealtimePatch = payload => {
   };
 };
 
-const commitCommunicationThreadUpdate = (commit, payload) => {
+const commitCommunicationThreadUpdate = (
+  commit,
+  payload,
+  { realtime = false } = {}
+) => {
   const threadId = payload.communication_thread_id || payload.id;
-  const communicationThread = hasFullCommunicationThreadPayload(payload)
-    ? buildCommunicationThreadConversation({
-        ...payload,
-        id: threadId,
-      })
-    : buildCommunicationThreadRealtimePatch(payload);
+  const communicationThread =
+    !realtime && hasFullCommunicationThreadPayload(payload)
+      ? buildCommunicationThreadConversation({
+          ...payload,
+          id: threadId,
+        })
+      : buildCommunicationThreadRealtimePatch(payload);
   commit(types.UPDATE_CONVERSATION, communicationThread);
   return communicationThread;
 };
@@ -842,7 +847,8 @@ const actions = {
   updateCommunicationThreadRealtime({ commit, dispatch }, payload) {
     const communicationThread = commitCommunicationThreadUpdate(
       commit,
-      payload
+      payload,
+      { realtime: true }
     );
     const sender = payload?.meta?.sender;
     if (sender?.id) {

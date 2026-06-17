@@ -14,6 +14,7 @@ const props = defineProps({
   compactIconGap: { type: Boolean, default: false },
   active: { type: Boolean, default: false },
   badge: { type: [Number, String], default: 0 },
+  count: { type: [Number, String], default: null },
   component: { type: Function, default: null },
 });
 
@@ -25,6 +26,13 @@ const shouldRenderComponent = computed(() => {
 });
 
 const badgeCount = computed(() => Number(props.badge) || 0);
+const hasPlainCount = computed(
+  () => props.count !== null && typeof props.count !== 'undefined'
+);
+const plainCountLabel = computed(() => {
+  const count = Number(props.count) || 0;
+  return count > 999 ? '999+' : String(count);
+});
 const iconComponentClass = computed(() =>
   typeof props.icon === 'string' ? 'size-4 inline-block' : ''
 );
@@ -103,6 +111,7 @@ const handleLeafClick = async event => {
         :icon
         :active
         :badge="badgeCount"
+        :count="count"
       />
       <template v-else>
         <span
@@ -113,7 +122,14 @@ const handleLeafClick = async event => {
           <Icon :icon="icon" :class="iconComponentClass" />
         </span>
         <div class="flex-1 truncate min-w-0 text-sm">{{ label }}</div>
-        <SidebarUnreadBadge :value="badgeCount" />
+        <span
+          v-if="hasPlainCount"
+          data-test-id="sidebar-plain-count"
+          class="shrink-0 text-xs font-medium leading-5 tabular-nums text-current"
+        >
+          {{ plainCountLabel }}
+        </span>
+        <SidebarUnreadBadge v-else :value="badgeCount" />
       </template>
     </component>
   </Policy>

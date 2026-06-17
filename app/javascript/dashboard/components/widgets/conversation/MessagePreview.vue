@@ -2,6 +2,7 @@
 import { MESSAGE_TYPE } from 'widget/helpers/constants';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import { ATTACHMENT_ICONS } from 'shared/constants/messages';
+import { getLocalizedActivityMessage } from 'dashboard/helper/activityMessageHelper';
 
 export default {
   name: 'MessagePreview',
@@ -41,7 +42,12 @@ export default {
     parsedLastMessage() {
       const { content_attributes: contentAttributes } = this.message;
       const { email: { subject } = {} } = contentAttributes || {};
-      return this.getPlainText(subject || this.message.content);
+      const content = subject || this.message.content;
+      return this.getPlainText(
+        this.isMessageAnActivity
+          ? getLocalizedActivityMessage(content, this.$t.bind(this))
+          : content
+      );
     },
     isVoiceNote() {
       const { content_attributes: contentAttributes = {} } = this.message;

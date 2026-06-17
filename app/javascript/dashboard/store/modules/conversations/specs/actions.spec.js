@@ -10,6 +10,46 @@ describe('conversation actions', () => {
     vi.restoreAllMocks();
   });
 
+  describe('#updateCommunicationThreadRealtime', () => {
+    it('commits realtime thread events as partial patches so assignee tab membership is preserved', () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      const payload = {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        source_event: 'message.created',
+        meta: {
+          sender: { id: 42, name: 'Customer' },
+          channel: 'CommunicationThread',
+        },
+        channels: [{ conversation_id: 11, inbox_id: 101 }],
+        messages: [{ id: 99, conversation_id: 11, content: 'new' }],
+        updated_at: 1710000000.25,
+      };
+
+      actions.updateCommunicationThreadRealtime({ commit, dispatch }, payload);
+
+      expect(commit).toHaveBeenCalledWith(
+        types.UPDATE_CONVERSATION,
+        expect.objectContaining({
+          id: 7,
+          communication_thread_id: 7,
+          is_communication_thread: true,
+          meta: {
+            sender: { id: 42, name: 'Customer' },
+            channel: 'CommunicationThread',
+          },
+        })
+      );
+      expect(commit.mock.calls[0][1].meta).not.toHaveProperty('assignee');
+      expect(dispatch).toHaveBeenCalledWith('contacts/setContact', {
+        id: 42,
+        name: 'Customer',
+      });
+    });
+  });
+
   describe('#markCommunicationThreadRead', () => {
     it('marks the thread read without committing a full thread update that would retrigger scroll/read loop', async () => {
       const commit = vi.fn();
