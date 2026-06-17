@@ -471,7 +471,8 @@
       "VIEW_ALL": "Показать все",
       "SHOW_LESS": "Свернуть",
       "MORE_COUNT": "+{count}",
-      "UNTITLED_FILE": "Файл без названия"
+      "UNTITLED_FILE": "Файл без названия",
+      "JUMP_TO_MESSAGE": "Перейти к сообщению"
     },
     "CRM_ACTIONS": {
       "CREATE_DEAL": "Создать сделку",
