@@ -493,6 +493,46 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(Channel::Voice.exists?(voice_channel.id)).to be(false)
       end
 
+      it 'blocks reference Virtual PBX voice inbox deletion instead of queueing generic deletion' do
+        voice_channel = create(
+          :channel_voice,
+          :fonoster,
+          account: account,
+          phone_number: '+17775550668',
+          provider_config: {
+            number_ref: 'sipuni-internal-asterisk-056124100668',
+            app_ref: SecureRandom.uuid,
+            trunk_ref: 'trunk-sipuni-onelink-out',
+            routing_mode: 'operator',
+            operator_agent_aor: 'sip:668@ats01.kz.sipuni.com',
+            provider_kind: 'sipuni',
+            display_phone_number: '+17775550668',
+            ingress_number: '056124100668'
+          }
+        )
+        voice_inbox = voice_channel.inbox
+        voice_inbox.telephony_number_binding.update!(
+          managed_by: nil,
+          ownership_status: 'legacy_reference',
+          phone_number: '056124100668',
+          display_phone_number: '+17775550668',
+          ingress_number: '056124100668',
+          metadata: { provider_kind: 'sipuni', source: 'sipuni_internal_asterisk_gateway' }
+        )
+
+        expect(DeleteObjectJob).not_to receive(:perform_later)
+
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}",
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body).to include('code' => 'TELEPHONY_DELETE_FAILED')
+        expect(response.parsed_body.dig('payload', 'errors').map { |error| error['code'] }).to include('managed_ownership_required')
+        expect(Inbox.exists?(voice_inbox.id)).to be(true)
+        expect(Channel::Voice.exists?(voice_channel.id)).to be(true)
+      end
+
       it 'includes channel deletion state for WhatsApp Web inboxes' do
         with_modified_env(
           'EVOLUTION_API_URL' => 'https://evolution.example.com',

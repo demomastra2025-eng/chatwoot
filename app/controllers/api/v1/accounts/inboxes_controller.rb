@@ -102,8 +102,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def destroy
-    if managed_virtual_pbx_inbox?
-      destroy_managed_virtual_pbx_inbox
+    if virtual_pbx_voice_inbox?
+      destroy_virtual_pbx_voice_inbox
       return
     end
 
@@ -309,14 +309,14 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render :show, status: status, locals: { include_whatsapp_web_qr_code: include_qr_code }
   end
 
-  def managed_virtual_pbx_inbox?
+  def virtual_pbx_voice_inbox?
     return false unless @inbox.channel_type == 'Channel::Voice'
     return false unless @inbox.respond_to?(:telephony_number_binding)
 
-    @inbox.telephony_number_binding&.managed?
+    @inbox.telephony_number_binding.present?
   end
 
-  def destroy_managed_virtual_pbx_inbox
+  def destroy_virtual_pbx_voice_inbox
     inbox_id = @inbox.id
     payload = Telephony::VirtualPbx::ProvisioningService.new(
       account: Current.account,

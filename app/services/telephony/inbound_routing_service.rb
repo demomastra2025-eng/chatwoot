@@ -476,29 +476,12 @@ class Telephony::InboundRoutingService
                                  candidate.enabled? && sip_operator_aor?(candidate.agent_aor)
                                end
                                candidates = available_operator_candidates(scoped_candidates)
-                               candidates = configured_legacy_operator_candidates(scoped_candidates) if candidates.blank?
-
                                candidates.sort_by { |candidate| operator_candidate_sort_key(candidate) }.first(OPERATOR_CANDIDATE_LIMIT)
                              end
   end
 
   def available_operator_candidates(candidates)
     without_busy_operator_candidates(candidates.select(&:registered_for_routing?))
-  end
-
-  def configured_legacy_operator_candidates(candidates)
-    return [] unless legacy_sipuni_asterisk_gateway?
-
-    fallback_candidates = candidates.select do |candidate|
-      candidate.agent_binding_id.present? && operator_candidate_configured?(candidate)
-    end
-    without_busy_operator_candidates(fallback_candidates)
-  end
-
-  def legacy_sipuni_asterisk_gateway?
-    metadata = (number_binding&.metadata || {}).with_indifferent_access
-    metadata[:source].to_s == 'sipuni_internal_asterisk_gateway' ||
-      number_binding&.number_ref.to_s.start_with?('sipuni-internal-asterisk-')
   end
 
   def without_busy_operator_candidates(candidates)

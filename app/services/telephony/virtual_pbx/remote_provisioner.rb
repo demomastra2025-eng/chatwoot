@@ -44,12 +44,14 @@ class Telephony::VirtualPbx::RemoteProvisioner
     end
 
     if operation.to_s == 'delete'
-      run.mark_succeeded!(executed_operations: executed_operations, remote_snapshot: {})
+      delete_verification = verify_deleted_remote_resources!(client, operations)
+      run.mark_succeeded!(executed_operations: executed_operations, remote_snapshot: { delete_verification: delete_verification })
       return result_payload(
         run,
         status: 'succeeded',
         remote_commit: true,
-        executed_operations: executed_operations
+        executed_operations: executed_operations,
+        delete_verification: delete_verification
       )
     end
 
@@ -97,14 +99,15 @@ class Telephony::VirtualPbx::RemoteProvisioner
     result_payload(run, status: 'blocked', remote_commit: false, errors: [{ code: code, message: message }])
   end
 
-  def result_payload(run, status:, remote_commit:, executed_operations: [], errors: [], reconciliation: nil)
+  def result_payload(run, **payload)
     {
-      status: status,
-      remote_commit: remote_commit,
+      status: payload[:status],
+      remote_commit: payload[:remote_commit],
       provisioning_run: run.summary_payload,
-      executed_operations: executed_operations,
-      reconciliation: reconciliation,
-      errors: errors
+      executed_operations: payload[:executed_operations] || [],
+      reconciliation: payload[:reconciliation],
+      delete_verification: payload[:delete_verification],
+      errors: payload[:errors] || []
     }.compact
   end
 
@@ -113,6 +116,73 @@ class Telephony::VirtualPbx::RemoteProvisioner
       bridge_client: Telephony::BridgeClient.new(account_id: account.id),
       idempotency_key: Telephony::ProvisioningRun.remote_idempotency_key_for(operation: run.operation, desired_state: desired_state)
     )
+  end
+
+  def verify_deleted_remote_resources!(client, operations)
+    verifications = Array.wrap(operations).filter_map do |operation_payload|
+      operation_attrs = operation_payload.with_indifferent_access
+      next unless operation_attrs[:method].to_s.casecmp('DELETE').zero?
+
+      verify_deleted_remote_resource(client, operation_attrs)
+    end
+
+    remaining = verifications.select { |verification| verification[:status] == 'present' }
+    return verifications if remaining.blank?
+
+    raise Telephony::Error.new(
+      code: 'REMOTE_DELETE_VERIFY_FAILED',
+      message: 'Remote resources remained after delete',
+      status: :bad_gateway,
+      details: { remaining: remaining, verifications: verifications }
+    )
+  end
+
+  def verify_deleted_remote_resource(client, operation_attrs)
+    result = read_remote_resource_for_delete(client, operation_attrs)
+    result_attrs = (result || {}).with_indifferent_access
+    return delete_verification_payload(operation_attrs, status: 'deleted') if result_attrs[:not_found]
+
+    delete_verification_payload(operation_attrs, status: 'present', resource: sanitize_result(result_attrs))
+  rescue Telephony::Error => e
+    return delete_verification_payload(operation_attrs, status: 'deleted') if remote_resource_not_found?(e)
+
+    raise Telephony::Error.new(
+      code: 'REMOTE_DELETE_VERIFY_FAILED',
+      message: "Remote delete verification failed for #{operation_attrs[:path]}",
+      status: :bad_gateway,
+      details: {
+        operation: operation_attrs.slice(:key, :method, :path),
+        error: error_payload(e)
+      }
+    )
+  end
+
+  def read_remote_resource_for_delete(client, operation_attrs)
+    path = operation_attrs[:path].to_s
+    case path
+    when %r{\A/telephony/numbers/([^/]+)\z}
+      client.number(CGI.unescape(Regexp.last_match(1)))
+    when %r{\A/telephony/trunks/([^/]+)\z}
+      client.trunk(CGI.unescape(Regexp.last_match(1)))
+    when %r{\A/telephony/credentials/([^/]+)\z}
+      client.credential(CGI.unescape(Regexp.last_match(1)))
+    when %r{\A/telephony/agents/([^/]+)\z}
+      client.agent(CGI.unescape(Regexp.last_match(1)))
+    else
+      client.dispatch(operation_attrs.merge(method: 'GET', payload: {}))
+    end
+  end
+
+  def delete_verification_payload(operation_attrs, status:, resource: nil)
+    operation_attrs.slice(:key, :path).merge(
+      status: status,
+      ref: operation_resource_ref(operation_attrs),
+      resource: resource
+    ).compact
+  end
+
+  def remote_resource_not_found?(error)
+    error.code.to_s == 'REMOTE_RESOURCE_NOT_FOUND' || error.status.to_s == 'not_found'
   end
 
   def reconciler_for(client)
@@ -386,6 +456,8 @@ class Telephony::VirtualPbx::RemoteProvisioner
   end
 
   def error_payload(error)
-    { code: error.code, message: error.message }
+    payload = { code: error.code, message: error.message }
+    payload[:details] = error.details if error.code.to_s == 'REMOTE_DELETE_VERIFY_FAILED'
+    payload
   end
 end

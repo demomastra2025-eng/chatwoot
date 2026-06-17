@@ -141,7 +141,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'routes to the configured legacy operator when local browser presence is stale' do
+  it 'rejects a stale legacy operator instead of routing through the removed legacy fallback' do
     agent_binding = create(
       :telephony_agent_binding,
       account: account,
@@ -181,17 +181,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'operator',
-      'agent_aor' => 'sip:1001@example.test',
-      'reason' => 'operator_route'
+      'action' => 'reject',
+      'reason' => 'operator_unavailable'
     )
-    expect(response.parsed_body['operator_candidates']).to contain_exactly(
-      include(
-        'source' => 'agent_binding',
-        'agent_binding_id' => agent_binding.id,
-        'agent_aor' => 'sip:1001@example.test'
-      )
-    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
   end
 
   it 'uses bridge account and inbox metadata when number_ref exists in multiple accounts' do

@@ -376,10 +376,18 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
     )
   end
 
-  it 'treats approved delete operations as complete without read-back reconciliation' do
+  def remote_not_found(ref)
+    Telephony::Error.new(
+      code: 'REMOTE_RESOURCE_NOT_FOUND',
+      message: "#{ref} not found",
+      status: :not_found
+    )
+  end
+
+  it 'verifies approved delete operations by read-back before marking the run complete' do
     allow(resource_client).to receive(:dispatch).and_return({ 'ok' => true })
-    expect(resource_client).not_to receive(:number)
-    expect(resource_client).not_to receive(:trunk)
+    allow(resource_client).to receive(:number).with('number-ref').and_raise(remote_not_found('number-ref'))
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_raise(remote_not_found('trunk-ref'))
 
     delete_plan = plan.merge(
       operations: [
@@ -393,8 +401,32 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
 
     expect(result).to include(status: 'succeeded', remote_commit: true)
     expect(result).not_to have_key(:reconciliation)
-    expect(resource_client).to have_received(:dispatch).twice
+    expect(result.fetch(:delete_verification).map { |item| item[:status] }).to eq(%w[deleted deleted])
+    expect(resource_client).to have_received(:number).with('number-ref')
+    expect(resource_client).to have_received(:trunk).with('trunk-ref')
     expect(Telephony::ProvisioningRun.last).to have_attributes(status: 'succeeded', operation: 'delete')
+    expect(Telephony::ProvisioningRun.last.remote_snapshot).to include('delete_verification')
+  end
+
+  it 'fails approved delete when remote read-back still finds a deleted resource' do
+    allow(resource_client).to receive(:dispatch).and_return({ 'ok' => true })
+    allow(resource_client).to receive(:number).with('number-ref').and_return('ref' => 'number-ref')
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_raise(remote_not_found('trunk-ref'))
+
+    delete_plan = plan.merge(
+      operations: [
+        { key: 'delete_number', method: 'DELETE', path: '/telephony/numbers/number-ref', risk: 'requires_approval' },
+        { key: 'delete_trunk', method: 'DELETE', path: '/telephony/trunks/trunk-ref', risk: 'requires_approval' }
+      ]
+    )
+
+    result = described_class.new(account: account, current_user: admin, resource_client: resource_client)
+                            .execute(operation: 'delete', desired_state: desired_state, plan: delete_plan, remote_commit: true)
+
+    expect(result).to include(status: 'failed', remote_commit: true)
+    expect(result.dig(:errors, 0, :code)).to eq('REMOTE_DELETE_VERIFY_FAILED')
+    expect(result.dig(:errors, 0, :details, :remaining, 0)).to include(key: 'delete_number', status: 'present')
+    expect(Telephony::ProvisioningRun.last).to have_attributes(status: 'failed', operation: 'delete', error_code: 'REMOTE_DELETE_VERIFY_FAILED')
   end
 
   it 'records a failed run when post-commit read-back finds drift' do
