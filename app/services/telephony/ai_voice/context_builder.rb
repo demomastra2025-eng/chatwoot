@@ -198,7 +198,7 @@ class Telephony::AiVoice::ContextBuilder
         account_id: account.id,
         assistant_id: captain_assistant.id,
         assistant_config: captain_assistant.config,
-        captain_runtime: account.captain_preferences[:runtime],
+        captain_runtime: account.captain_runtime_preferences,
         source: 'voice_ai',
         runtime_clock: runtime_clock_state,
         call_session: { id: session_for_prompt&.id, external_call_ref: session_for_prompt&.external_call_ref }

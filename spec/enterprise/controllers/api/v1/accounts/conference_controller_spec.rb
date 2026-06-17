@@ -55,6 +55,78 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
         expect(body['inbox_id']).to eq(voice_inbox.id)
       end
     end
+
+    context 'when authenticated agent requests a WhatsApp calling inbox token' do
+      let(:whatsapp_channel) do
+        create(
+          :channel_whatsapp,
+          account: account,
+          provider: 'whatsapp_cloud',
+          provider_config: {
+            'api_key' => 'test_key',
+            'phone_number_id' => '123456789',
+            'business_account_id' => '123456789',
+            'source' => 'embedded_signup',
+            'calling_enabled' => true
+          },
+          sync_templates: false,
+          validate_provider_config: false
+        )
+      end
+      let(:whatsapp_inbox) { whatsapp_channel.inbox }
+
+      before do
+        account.enable_features!('whatsapp_call')
+        create(:inbox_member, inbox: whatsapp_inbox, user: agent)
+        create(
+          :telephony_agent_binding,
+          account: account,
+          user: agent,
+          provider: 'fonoster',
+          agent_ref: 'agent-1001',
+          agent_aor: 'sip:1001@operator.test'
+        )
+      end
+
+      it 'uses the Fonoster webphone token path instead of the Twilio conference token path' do
+        expect(Voice::Provider::Twilio::TokenService).not_to receive(:new)
+
+        with_modified_env(
+          TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+          TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+        ) do
+          stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+            .with(
+              body: hash_including(
+                agent_ref: 'agent-1001',
+                agent_aor: 'sip:1001@operator.test',
+                inbox_id: whatsapp_inbox.id
+              ),
+              headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+            )
+            .to_return(
+              status: 200,
+              body: {
+                token: 'test-token',
+                username: '1001',
+                domain: 'operator.test',
+                signalingServer: 'wss://bridge.test/ws',
+                targetAor: 'sip:1001@operator.test'
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          get "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/conference/token",
+              headers: agent.create_new_auth_token
+        end
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body['provider']).to eq('fonoster')
+        expect(body['calling_supported']).to be(true)
+        expect(body['agent_ref']).to eq('agent-1001')
+      end
+    end
   end
 
   describe 'POST /conference' do

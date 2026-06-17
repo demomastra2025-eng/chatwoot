@@ -2,16 +2,16 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
   before_action :set_voice_inbox_for_conference
 
   def token
-    if @voice_inbox.channel.provider == 'fonoster'
-      render json: Telephony::WebphoneService.new(
-        account: Current.account
-      ).token_for(user: Current.user, inbox: @voice_inbox)
-    else
+    if twilio_conference_inbox?
       render json: Voice::Provider::Twilio::TokenService.new(
         inbox: @voice_inbox,
         user: Current.user,
         account: Current.account
       ).generate
+    else
+      render json: Telephony::WebphoneService.new(
+        account: Current.account
+      ).token_for(user: Current.user, inbox: @voice_inbox)
     end
   end
 
@@ -19,7 +19,7 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     conversation = fetch_conversation_by_display_id
     ensure_call_sid!(conversation)
 
-    return render_fonoster_join_response(conversation) if @voice_inbox.channel.provider == 'fonoster'
+    return render_fonoster_join_response(conversation) unless twilio_conference_inbox?
 
     conference_service = Voice::Provider::Twilio::ConferenceService.new(conversation: conversation)
     conference_sid = conference_service.ensure_conference_sid
@@ -34,7 +34,7 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
   end
 
   def destroy
-    return render json: { status: 'success', id: params[:conversation_id], provider: 'fonoster' } if @voice_inbox.channel.provider == 'fonoster'
+    return render json: { status: 'success', id: params[:conversation_id], provider: 'fonoster' } unless twilio_conference_inbox?
 
     conversation = fetch_conversation_by_display_id
     Voice::Provider::Twilio::ConferenceService.new(conversation: conversation).end_conference
@@ -55,6 +55,10 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
   def set_voice_inbox_for_conference
     @voice_inbox = Current.account.inboxes.find(params[:inbox_id])
     authorize @voice_inbox, :show?
+  end
+
+  def twilio_conference_inbox?
+    @voice_inbox.channel.is_a?(Channel::Voice) && @voice_inbox.channel.provider != 'fonoster'
   end
 
   def fetch_conversation_by_display_id

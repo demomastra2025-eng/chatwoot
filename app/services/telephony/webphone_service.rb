@@ -54,7 +54,14 @@ class Telephony::WebphoneService
   end
 
   def fallback_provider(inbox, operator_identity)
+    return 'fonoster' if whatsapp_calling_inbox?(inbox)
+
     inbox&.channel&.provider || operator_identity&.provider || 'fonoster'
+  end
+
+  def whatsapp_calling_inbox?(inbox)
+    channel = inbox&.channel
+    channel.is_a?(Channel::Whatsapp) && channel.voice_enabled?
   end
 
   def unsupported_webphone_payload(reason:, inbox: nil)
