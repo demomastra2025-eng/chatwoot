@@ -331,7 +331,7 @@ class Telephony::AiVoice::ToolDispatchService
         account_id: account.id,
         assistant_id: captain_assistant.id,
         assistant_config: captain_assistant.config,
-        captain_runtime: account.captain_preferences[:runtime],
+        captain_runtime: account.captain_runtime_preferences,
         runtime_clock: runtime_clock_state,
         source: 'voice_ai',
         call_session: { id: call_session.id, external_call_ref: call_session.external_call_ref }

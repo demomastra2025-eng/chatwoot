@@ -1,6 +1,55 @@
 require 'rails_helper'
 
 RSpec.describe Telephony::AiVoice::ToolDispatchService do
+  describe '#captain_runtime_state' do
+    let(:account) { create(:account, captain_runtime: { 'assistant_thinking_effort' => 'low' }) }
+    let(:whatsapp_channel) do
+      create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        sync_templates: false,
+        validate_provider_config: false
+      )
+    end
+    let(:inbox) { whatsapp_channel.inbox }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:call_session) do
+      create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        inbox: inbox,
+        number_binding: nil,
+        external_call_ref: 'whatsapp:wacid-test-call'
+      )
+    end
+
+    before do
+      create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    end
+
+    it 'uses lightweight runtime preferences instead of full captain preferences for Captain tools' do
+      service = described_class.new(
+        tool_name: 'faq_lookup',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: {}
+        }
+      )
+      resolved_account = service.send(:account)
+
+      expect(resolved_account).not_to receive(:captain_preferences)
+      expect(resolved_account).to receive(:captain_runtime_preferences).and_call_original
+
+      state = service.send(:captain_runtime_state)
+
+      expect(state[:captain_runtime]['assistant_thinking_effort']).to eq('low')
+    end
+  end
+
   describe '#perform end_call' do
     let(:account) { create(:account) }
     let(:provider) { double('provider', terminate_call: true) }
