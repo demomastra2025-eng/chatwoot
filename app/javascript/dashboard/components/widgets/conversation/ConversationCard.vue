@@ -221,11 +221,7 @@ const showInboxName = computed(() => {
 });
 
 const showMetaSection = computed(() => {
-  return (
-    showInboxName.value ||
-    (props.showAssignee && assignee.value.name) ||
-    props.chat.priority
-  );
+  return (props.showAssignee && assignee.value.name) || props.chat.priority;
 });
 
 const hasSlaPolicyId = computed(() => props.chat?.sla_policy_id);
@@ -391,7 +387,7 @@ const togglePinnedConversation = async nextPinnedState => {
     @contextmenu="openContextMenu($event)"
   >
     <div
-      class="relative"
+      class="relative flex w-10 flex-shrink-0 flex-col items-center"
       @mouseenter="onThumbnailHover"
       @mouseleave="onThumbnailLeave"
     >
@@ -401,7 +397,7 @@ const togglePinnedConversation = async nextPinnedState => {
         :src="currentContact.thumbnail"
         :size="32"
         :status="currentContact.availability_status"
-        :class="!showInboxName ? 'mt-4' : 'mt-8'"
+        :class="showMetaSection ? 'mt-6' : 'mt-4'"
         hide-offline-status
         rounded-full
       >
@@ -420,6 +416,14 @@ const togglePinnedConversation = async nextPinnedState => {
           </label>
         </template>
       </Avatar>
+      <TimeAgo
+        v-if="!hideThumbnail"
+        display-mode="compact_elapsed"
+        class="mt-1 max-w-10"
+        :last-activity-timestamp="chat.timestamp"
+        :created-at-timestamp="chat.created_at"
+        :conversation-id="chat.id"
+      />
     </div>
     <div
       class="px-0 py-2 border-b group-hover:border-transparent flex-1 border-n-slate-3 min-w-0"
@@ -432,7 +436,6 @@ const togglePinnedConversation = async nextPinnedState => {
           'mx-2': compact,
         }"
       >
-        <InboxName v-if="showInboxName" :inbox="inbox" class="flex-1 min-w-0" />
         <div
           class="flex items-baseline gap-1.5 flex-shrink-0 text-xxs"
           :class="{
@@ -497,16 +500,15 @@ const togglePinnedConversation = async nextPinnedState => {
         </span>
       </p>
       <div
-        class="absolute flex flex-col ltr:right-3 rtl:left-3"
-        :class="showMetaSection ? 'top-8' : 'top-4'"
+        v-if="showInboxName || hasUnread"
+        class="absolute top-2 flex max-w-24 flex-col items-end ltr:right-3 rtl:left-3"
       >
-        <span class="ml-auto font-normal leading-4 text-xxs">
-          <TimeAgo
-            :last-activity-timestamp="chat.timestamp"
-            :created-at-timestamp="chat.created_at"
-            :conversation-id="chat.id"
-          />
-        </span>
+        <InboxName
+          v-if="showInboxName"
+          :inbox="inbox"
+          compact
+          class="max-w-full justify-end"
+        />
         <span
           v-if="hasUnread"
           class="shadow-lg inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-n-brand-contrast bg-n-brand-solid"

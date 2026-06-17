@@ -6,13 +6,24 @@ defineProps({
     type: Object,
     default: () => {},
   },
+  compact: {
+    type: Boolean,
+    default: false,
+  },
 });
 </script>
 
 <template>
   <div :title="inbox.name" class="flex items-center gap-0.5 min-w-0">
-    <ChannelIcon :inbox="inbox" class="size-4 flex-shrink-0 text-n-slate-11" />
-    <span class="truncate text-label-small text-n-slate-11">
+    <ChannelIcon
+      :inbox="inbox"
+      class="flex-shrink-0 text-n-slate-11"
+      :class="compact ? 'size-3' : 'size-4'"
+    />
+    <span
+      class="truncate text-n-slate-11"
+      :class="compact ? 'text-xxs leading-3' : 'text-label-small'"
+    >
       {{ inbox.name }}
     </span>
   </div>

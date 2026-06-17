@@ -31,6 +31,8 @@ const getter = value => ({ value });
 const baseChat = {
   id: 630,
   inbox_id: 4593,
+  timestamp: 1710000000,
+  created_at: 1709990000,
   unread_count: 0,
   labels: [],
   custom_attributes: {},
@@ -222,6 +224,17 @@ describe('ConversationCard', () => {
     expect(unreadBadge.exists()).toBe(true);
     expect(unreadBadge.text()).toBe('7');
     expect(unreadBadge.classes()).toContain('rounded-full');
+  });
+
+  it('renders compact time under the avatar and compact inbox name in the top-right slot', () => {
+    const wrapper = mountComponent();
+    const timeAgo = wrapper.findComponent({ name: 'TimeAgo' });
+    const inboxName = wrapper.findComponent({ name: 'InboxName' });
+
+    expect(timeAgo.exists()).toBe(true);
+    expect(timeAgo.props('displayMode')).toBe('compact_elapsed');
+    expect(inboxName.exists()).toBe(true);
+    expect(inboxName.props('compact')).toBe(true);
   });
 
   it('uses the existing voice call status row for communication-thread voice previews', () => {
