@@ -797,6 +797,59 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
   end
 
+  it 'recomputes the pinned operator AOR when profile settings replace the prior extension' do
+    post base_path,
+         params: valid_create_payload.merge(
+           dry_run: false,
+           remote_commit: false,
+           profiles: [
+             {
+               user_id: agent.id,
+               internal_extension: '504',
+               sip_username: '056124100014',
+               sip_password: 'do-not-return-this-profile-secret',
+               enabled: true
+             }
+           ]
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    inbox = Inbox.find(inbox_id)
+    expect(inbox.telephony_number_binding.routing_policy.operator_agent_aor).to eq('sip:504@operator.cloud.vconsult.kz')
+
+    second_agent = create(:user, account: account, role: :agent)
+    inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          remote_commit: false,
+          profiles: [
+            {
+              user_id: second_agent.id,
+              internal_extension: '505',
+              sip_username: '056124100015',
+              sip_password: 'do-not-return-second-profile-secret',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    policy = inbox.reload.telephony_number_binding.routing_policy
+    expect(policy.operator_agent_aor).to eq('sip:505@operator.cloud.vconsult.kz')
+    expect(inbox.channel.provider_config_hash['operator_agent_aor']).to eq('sip:505@operator.cloud.vconsult.kz')
+    expect(inbox.telephony_sip_profiles.pluck(:user_id, :internal_extension)).to contain_exactly(
+      [second_agent.id, '505']
+    )
+  end
+
   it 'returns a product-level status contract for a managed local bundle without raw telephony internals' do
     post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')

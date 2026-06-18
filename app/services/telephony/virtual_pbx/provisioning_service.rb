@@ -539,7 +539,7 @@ class Telephony::VirtualPbx::ProvisioningService
       ),
       profiles: profiles_supplied ? normalize_profiles(source['profiles']) : normalize_existing_profiles(fallback&.dig(:profiles)),
       profiles_supplied: profiles_supplied,
-      routing: normalize_routing(source['routing'] || {}, fallback_routing),
+      routing: normalize_routing(source['routing'] || {}, fallback_routing, profiles_supplied: profiles_supplied),
       metadata: normalize_metadata(source['metadata'] || {})
     }.compact
   end
@@ -616,18 +616,28 @@ class Telephony::VirtualPbx::ProvisioningService
     end
   end
 
-  def normalize_routing(source, fallback)
+  def normalize_routing(source, fallback, profiles_supplied: false)
     source = source.to_h.deep_stringify_keys
+
     {
       mode: source['mode'].presence || fallback[:mode] || DEFAULT_ROUTE_MODE,
       fallback_mode: source['fallback_mode'].presence || fallback[:fallback_mode] || DEFAULT_FALLBACK_MODE,
-      ai_enabled: if source.key?('ai_enabled')
-                    ActiveModel::Type::Boolean.new.cast(source['ai_enabled'])
-                  else
-                    ActiveModel::Type::Boolean.new.cast(fallback[:ai_enabled])
-                  end,
-      operator_agent_aor: source['operator_agent_aor'].presence || fallback[:operator_agent_aor]
+      ai_enabled: normalized_routing_ai_enabled(source, fallback),
+      operator_agent_aor: normalized_operator_agent_aor(source, fallback, profiles_supplied: profiles_supplied)
     }.compact
+  end
+
+  def normalized_routing_ai_enabled(source, fallback)
+    value = source.key?('ai_enabled') ? source['ai_enabled'] : fallback[:ai_enabled]
+
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def normalized_operator_agent_aor(source, fallback, profiles_supplied: false)
+    return source['operator_agent_aor'].presence if source.key?('operator_agent_aor')
+    return nil if profiles_supplied
+
+    fallback[:operator_agent_aor]
   end
 
   def normalize_metadata(source)
