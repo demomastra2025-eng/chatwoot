@@ -1,0 +1,110 @@
+{
+  "WHATSAPP_FLOWS": {
+    "FOOTER_ACTION": "WhatsApp Flow",
+    "MODAL": {
+      "TITLE": "WhatsApp Flows",
+      "SUBTITLE": "Select a Flow and send it in this WhatsApp chat.",
+      "SEARCH_PLACEHOLDER": "Search flows",
+      "REFRESH": "Refresh",
+      "LOADING": "Loading flows...",
+      "EMPTY_TITLE": "No WhatsApp Flows configured",
+      "EMPTY_DESCRIPTION": "Add Flow records in this channel settings before sending them in conversations.",
+      "NO_RESULTS": "No flows match this search.",
+      "SELECT_PROMPT": "Select a Flow to configure the message preview.",
+      "CONFIGURE_HINT": "This text is sent with the Flow button inside the 24-hour WhatsApp reply window.",
+      "DEFAULT_CTA": "Open form",
+      "DEFAULT_BODY": "Please fill out {flow}.",
+      "VALIDATION_ERROR": "Body text and button label are required.",
+      "LOAD_ERROR": "Failed to load WhatsApp Flows.",
+      "SEND_ERROR": "Failed to send WhatsApp Flow.",
+      "CANCEL": "Cancel",
+      "SEND": "Send Flow",
+      "FIELDS": {
+        "HEADER": "Header text",
+        "BODY": "Body text",
+        "CTA": "Button label",
+        "FOOTER": "Footer text"
+      }
+    },
+    "BUBBLE": {
+      "OUTGOING_BADGE": "WhatsApp Flow",
+      "REPLY_BADGE": "Flow submitted",
+      "OUTGOING_TITLE": "Flow message",
+      "REPLY_TITLE": "Flow response",
+      "RESPONSE": "Submitted fields"
+    },
+    "SETTINGS": {
+      "PAGE_TITLE": "WhatsApp Flows",
+      "PAGE_DESCRIPTION": "Register WhatsApp Cloud Flow IDs and schema metadata used by agents inside conversations.",
+      "SUPPORTED_TITLE": "Channel Flow registry",
+      "SUPPORTED_DESCRIPTION": "These records stay scoped to this inbox. Published records with a provider Flow ID become available in the conversation Flow picker.",
+      "REFRESH": "Refresh",
+      "CREATE_ACTION": "Add Flow",
+      "EDIT_ACTION": "Edit",
+      "DELETE_ACTION": "Delete",
+      "SAVE_ACTION": "Save Flow",
+      "LOADING": "Loading WhatsApp Flows...",
+      "LOAD_ERROR": "Failed to load WhatsApp Flows.",
+      "SAVE_ERROR": "Failed to save WhatsApp Flow.",
+      "DELETE_ERROR": "Failed to delete WhatsApp Flow.",
+      "CREATE_SUCCESS": "WhatsApp Flow created.",
+      "UPDATE_SUCCESS": "WhatsApp Flow updated.",
+      "DELETE_SUCCESS": "WhatsApp Flow deleted.",
+      "SEARCH_PLACEHOLDER": "Search flows by name, title, ID, status, or category",
+      "EMPTY_TITLE": "No WhatsApp Flows configured",
+      "EMPTY_DESCRIPTION": "Add a Flow ID from Meta Flow Manager before agents can send it from conversations.",
+      "NO_RESULTS_TITLE": "No matching Flows",
+      "NO_RESULTS_DESCRIPTION": "Try another search term.",
+      "NO_PROVIDER_ID": "No provider Flow ID — not sendable yet",
+      "NEVER_SYNCED": "Not synced yet",
+      "CREATE_TITLE": "Add WhatsApp Flow",
+      "CREATE_DESCRIPTION": "Store the Meta Flow ID and optional local schema used by the conversation picker.",
+      "EDIT_TITLE": "Edit WhatsApp Flow",
+      "EDIT_DESCRIPTION": "Update the local registry record for this inbox.",
+      "STATUS_OPTIONS": {
+        "DRAFT": "Draft",
+        "PUBLISHED": "Published",
+        "DEPRECATED": "Deprecated",
+        "BLOCKED": "Blocked",
+        "UNKNOWN": "Unknown"
+      },
+      "MODE_OPTIONS": {
+        "BLANK": "Default",
+        "DRAFT": "Draft",
+        "PUBLISHED": "Published"
+      },
+      "FIELDS": {
+        "PROVIDER_FLOW_ID": "Meta Flow ID",
+        "PROVIDER_FLOW_ID_PLACEHOLDER": "123456789012345",
+        "NAME": "Internal name",
+        "NAME_PLACEHOLDER": "lead_qualification",
+        "TITLE": "Display title",
+        "TITLE_PLACEHOLDER": "Lead qualification form",
+        "CATEGORY": "Category",
+        "CATEGORY_PLACEHOLDER": "sales",
+        "STATUS": "Status",
+        "MODE": "Mode",
+        "CTA": "Default button label",
+        "CTA_PLACEHOLDER": "Open form",
+        "FLOW_JSON": "Flow JSON / local schema",
+        "FLOW_JSON_PLACEHOLDER": "{\n  \"screens\": [{ \"id\": \"WELCOME\" }]\n}"
+      },
+      "ERRORS": {
+        "NAME_REQUIRED": "Internal name is required.",
+        "STATUS_REQUIRED": "Status is required.",
+        "FLOW_JSON_OBJECT": "Flow JSON must be a JSON object."
+      },
+      "CARD": {
+        "NAME": "Name",
+        "CATEGORY": "Category",
+        "CTA": "Button",
+        "UPDATED": "Updated"
+      },
+      "DELETE_DIALOG": {
+        "TITLE": "Delete WhatsApp Flow?",
+        "DESCRIPTION": "This removes {flow} from this inbox registry. Already sent messages and submitted replies stay in the conversation history.",
+        "CONFIRM": "Delete Flow"
+      }
+    }
+  }
+}

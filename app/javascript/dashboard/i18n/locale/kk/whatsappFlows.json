@@ -1,0 +1,110 @@
+{
+  "WHATSAPP_FLOWS": {
+    "FOOTER_ACTION": "WhatsApp Flow",
+    "MODAL": {
+      "TITLE": "WhatsApp Flows",
+      "SUBTITLE": "Flow таңдаңыз және оны осы WhatsApp чатына жіберіңіз.",
+      "SEARCH_PLACEHOLDER": "Flow іздеу",
+      "REFRESH": "Жаңарту",
+      "LOADING": "Flow жүктелуде...",
+      "EMPTY_TITLE": "WhatsApp Flows бапталмаған",
+      "EMPTY_DESCRIPTION": "Диалогтарда жібермес бұрын осы арна баптауларында Flow жазбаларын қосыңыз.",
+      "NO_RESULTS": "Бұл іздеу бойынша Flow табылмады.",
+      "SELECT_PROMPT": "Хабарламаны баптау үшін Flow таңдаңыз.",
+      "CONFIGURE_HINT": "Бұл мәтін WhatsApp-тың 24 сағаттық жауап терезесінде Flow батырмасымен бірге жіберіледі.",
+      "DEFAULT_CTA": "Форманы ашу",
+      "DEFAULT_BODY": "{flow} толтырыңыз.",
+      "VALIDATION_ERROR": "Хабарлама мәтіні және батырма атауы міндетті.",
+      "LOAD_ERROR": "WhatsApp Flows жүктелмеді.",
+      "SEND_ERROR": "WhatsApp Flow жіберілмеді.",
+      "CANCEL": "Болдырмау",
+      "SEND": "Flow жіберу",
+      "FIELDS": {
+        "HEADER": "Тақырып мәтіні",
+        "BODY": "Хабарлама мәтіні",
+        "CTA": "Батырма атауы",
+        "FOOTER": "Төменгі мәтін"
+      }
+    },
+    "BUBBLE": {
+      "OUTGOING_BADGE": "WhatsApp Flow",
+      "REPLY_BADGE": "Flow толтырылды",
+      "OUTGOING_TITLE": "Flow хабарламасы",
+      "REPLY_TITLE": "Flow жауабы",
+      "RESPONSE": "Толтырылған өрістер"
+    },
+    "SETTINGS": {
+      "PAGE_TITLE": "WhatsApp Flows",
+      "PAGE_DESCRIPTION": "Диалогтарда агенттер қолданатын WhatsApp Cloud Flow ID және schema metadata тіркеңіз.",
+      "SUPPORTED_TITLE": "Арна Flow реестрі",
+      "SUPPORTED_DESCRIPTION": "Жазбалар осы inbox ішінде сақталады. Meta Flow ID бар жарияланған жазбалар диалог picker ішінде қолжетімді болады.",
+      "REFRESH": "Жаңарту",
+      "CREATE_ACTION": "Flow қосу",
+      "EDIT_ACTION": "Өзгерту",
+      "DELETE_ACTION": "Жою",
+      "SAVE_ACTION": "Flow сақтау",
+      "LOADING": "WhatsApp Flows жүктелуде...",
+      "LOAD_ERROR": "WhatsApp Flows жүктелмеді.",
+      "SAVE_ERROR": "WhatsApp Flow сақталмады.",
+      "DELETE_ERROR": "WhatsApp Flow жойылмады.",
+      "CREATE_SUCCESS": "WhatsApp Flow жасалды.",
+      "UPDATE_SUCCESS": "WhatsApp Flow жаңартылды.",
+      "DELETE_SUCCESS": "WhatsApp Flow жойылды.",
+      "SEARCH_PLACEHOLDER": "Атауы, ID, статус немесе категория бойынша іздеу",
+      "EMPTY_TITLE": "WhatsApp Flows бапталмаған",
+      "EMPTY_DESCRIPTION": "Агенттер диалогтардан жібере алуы үшін Meta Flow Manager ішіндегі Flow ID қосыңыз.",
+      "NO_RESULTS_TITLE": "Сәйкес Flow жоқ",
+      "NO_RESULTS_DESCRIPTION": "Басқа іздеу сөзін қолданып көріңіз.",
+      "NO_PROVIDER_ID": "Meta Flow ID жоқ — әзірге жіберілмейді",
+      "NEVER_SYNCED": "Әлі синхрондалмаған",
+      "CREATE_TITLE": "WhatsApp Flow қосу",
+      "CREATE_DESCRIPTION": "Conversation picker үшін Meta Flow ID және қосымша жергілікті schema сақтаңыз.",
+      "EDIT_TITLE": "WhatsApp Flow өзгерту",
+      "EDIT_DESCRIPTION": "Осы inbox үшін жергілікті реестр жазбасын жаңартыңыз.",
+      "STATUS_OPTIONS": {
+        "DRAFT": "Черновик",
+        "PUBLISHED": "Жарияланған",
+        "DEPRECATED": "Ескірген",
+        "BLOCKED": "Бұғатталған",
+        "UNKNOWN": "Белгісіз"
+      },
+      "MODE_OPTIONS": {
+        "BLANK": "Әдепкі",
+        "DRAFT": "Черновик",
+        "PUBLISHED": "Жарияланған"
+      },
+      "FIELDS": {
+        "PROVIDER_FLOW_ID": "Meta Flow ID",
+        "PROVIDER_FLOW_ID_PLACEHOLDER": "123456789012345",
+        "NAME": "Ішкі атау",
+        "NAME_PLACEHOLDER": "lead_qualification",
+        "TITLE": "Көрсетілетін атау",
+        "TITLE_PLACEHOLDER": "Лидті біліктендіру формасы",
+        "CATEGORY": "Категория",
+        "CATEGORY_PLACEHOLDER": "sales",
+        "STATUS": "Статус",
+        "MODE": "Режим",
+        "CTA": "Әдепкі батырма атауы",
+        "CTA_PLACEHOLDER": "Форманы ашу",
+        "FLOW_JSON": "Flow JSON / жергілікті schema",
+        "FLOW_JSON_PLACEHOLDER": "{\n  \"screens\": [{ \"id\": \"WELCOME\" }]\n}"
+      },
+      "ERRORS": {
+        "NAME_REQUIRED": "Ішкі атау міндетті.",
+        "STATUS_REQUIRED": "Статус міндетті.",
+        "FLOW_JSON_OBJECT": "Flow JSON JSON объект болуы керек."
+      },
+      "CARD": {
+        "NAME": "Атауы",
+        "CATEGORY": "Категория",
+        "CTA": "Батырма",
+        "UPDATED": "Жаңартылды"
+      },
+      "DELETE_DIALOG": {
+        "TITLE": "WhatsApp Flow жою керек пе?",
+        "DESCRIPTION": "Бұл {flow} жазбасын осы inbox реестрінен жояды. Жіберілген хабарламалар мен қабылданған жауаптар диалог тарихында қалады.",
+        "CONFIRM": "Flow жою"
+      }
+    }
+  }
+}
