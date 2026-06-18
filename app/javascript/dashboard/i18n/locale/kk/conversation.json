@@ -347,7 +347,13 @@
       "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
       "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
       "OUTGOING_CLIENT_RINGING": "Customer is ringing",
+      "INBOUND_DIRECTION": "Кіріс",
+      "OUTBOUND_DIRECTION": "Шығыс",
+      "CALL_ROUTE": "{from} → {to}",
+      "CALL_DIRECTION_ROUTE": "{direction} · {route}",
       "HANDLED_OUTSIDE_BROWSER": "Браузерден тыс өңделеді",
+      "HANDLED_BY": "Сөйлесіп жатыр: {name}",
+      "HANDLED_BY_UNKNOWN": "Басқа оператор сөйлесіп жатыр",
       "CALL_IN_PROGRESS": "Қоңырау жүріп жатыр",
       "NOT_ANSWERED_YET": "Әлі жауап берілген жоқ",
       "HANDLED_IN_ANOTHER_TAB": "Басқа қойындыда өңделіп жатыр",
@@ -355,6 +361,7 @@
       "REJECT_CALL": "Қабылдамау",
       "JOIN_CALL": "Қоңырауға қосылу",
       "END_CALL": "Қоңырауды аяқтау",
+      "CLOSE": "Жабу",
       "UNKNOWN_CALLER": "Белгісіз қоңырау шалушы",
       "DEFAULT_INBOX_NAME": "Клиенттерді қолдау"
     }

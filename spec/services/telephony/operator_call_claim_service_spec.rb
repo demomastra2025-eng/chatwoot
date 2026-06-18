@@ -59,13 +59,15 @@ RSpec.describe Telephony::OperatorCallClaimService do
       agent_ref: winner_binding.agent_ref,
       agent_aor: winner_binding.agent_aor,
       agent_binding_id: winner_binding.id,
-      user_id: winner_user.id
+      user_id: winner_user.id,
+      user_name: winner_user.name
     )
 
     call_session.reload
     expect(call_session.agent_binding_id).to eq(winner_binding.id)
     expect(call_session.answered_by).to eq("user:#{winner_user.id}")
     expect(call_session.metadata.dig('operator_claim', 'agent_binding_id')).to eq(winner_binding.id)
+    expect(call_session.metadata.dig('operator_claim', 'user_name')).to eq(winner_user.name)
     expect(call_session.metadata.dig('metadata', 'operator_pool')).to be(true)
   end
 
@@ -124,6 +126,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
       expect(error.status).to eq(:conflict)
       expect(error.details[:agent_binding_id]).to eq(winner_binding.id)
       expect(error.details[:user_id]).to eq(winner_user.id)
+      expect(error.details[:user_name]).to eq(winner_user.name)
     }
 
     expect(call_session.reload.agent_binding_id).to eq(winner_binding.id)

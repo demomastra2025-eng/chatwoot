@@ -333,6 +333,9 @@ class ActionCableConnector extends BaseActionCableConnector {
       provider: data.provider || 'fonoster',
       senderId: data.sender_id,
       caller: data.caller,
+      fromNumber: data.from_number || data.fromNumber,
+      toNumber: data.to_number || data.toNumber,
+      operatorClaim: data.operator_claim || data.operatorClaim || null,
     });
   };
 

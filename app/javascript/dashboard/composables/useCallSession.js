@@ -68,6 +68,21 @@ export function useCallSession() {
 
   const claimErrorPayload = error => error?.response?.data || {};
 
+  const operatorClaimFromDetails = details => {
+    if (!details || typeof details !== 'object') return null;
+
+    const operatorClaim = {
+      agent_binding_id: details.agent_binding_id,
+      sip_profile_id: details.sip_profile_id,
+      agent_ref: details.agent_ref,
+      agent_aor: details.agent_aor,
+      user_id: details.user_id,
+      user_name: details.user_name || details.name,
+    };
+
+    return Object.values(operatorClaim).some(Boolean) ? operatorClaim : null;
+  };
+
   const claimFonosterIncomingCall = async callSid => {
     try {
       await VoiceAPI.claimIncomingCall(callSid);
@@ -366,11 +381,15 @@ export function useCallSession() {
         if (!isOutbound) {
           const claimResult = await claimFonosterIncomingCall(callSid);
           if (!claimResult.claimed) {
-            callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
+            const reason = claimResult.reason || claimResult.code;
+            callsStore.markBrowserJoinUnsupported(callSid, 'fonoster', {
+              reason,
+              operatorClaim: operatorClaimFromDetails(claimResult.details),
+            });
             return {
               provider: 'fonoster',
               joinSupported: false,
-              reason: claimResult.reason || claimResult.code,
+              reason,
             };
           }
         }

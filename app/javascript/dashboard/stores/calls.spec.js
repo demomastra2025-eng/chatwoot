@@ -72,6 +72,28 @@ describe('useCallsStore', () => {
     );
   });
 
+  it('stores the outside-browser operator claim details for display', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'claimed-call-1',
+      callDirection: 'inbound',
+      provider: 'fonoster',
+    });
+    store.markBrowserJoinUnsupported('claimed-call-1', 'fonoster', {
+      reason: 'CALL_ALREADY_CLAIMED',
+      operatorClaim: { user_id: 7, user_name: 'Ayan' },
+    });
+
+    expect(store.calls[0]).toEqual(
+      expect.objectContaining({
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        operatorClaim: { user_id: 7, user_name: 'Ayan' },
+      })
+    );
+  });
+
   it('marks a browser-joined outbound call without making it active', () => {
     const store = useCallsStore();
 

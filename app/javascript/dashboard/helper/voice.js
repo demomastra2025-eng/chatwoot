@@ -34,6 +34,11 @@ const getContentData = message => message?.content_attributes?.data || {};
 const getContentMeta = contentData =>
   contentData?.metadata || contentData?.meta || {};
 
+const normalizeOperatorClaim = claim => {
+  if (!claim || typeof claim !== 'object') return null;
+  return claim;
+};
+
 function extractCallData(message) {
   const contentData = getContentData(message);
   const contentMeta = getContentMeta(contentData);
@@ -73,6 +78,23 @@ function extractCallData(message) {
       contentData.rawStatus ||
       contentMeta?.latest_raw_status ||
       contentMeta?.latest_leg_status,
+    fromNumber:
+      contentData.from_number ||
+      contentData.fromNumber ||
+      contentMeta?.from_number ||
+      contentMeta?.fromNumber,
+    toNumber:
+      contentData.to_number ||
+      contentData.toNumber ||
+      contentMeta?.to_number ||
+      contentMeta?.toNumber,
+    caller: contentData.caller || contentMeta?.caller,
+    operatorClaim: normalizeOperatorClaim(
+      contentData.operator_claim ||
+        contentData.operatorClaim ||
+        contentMeta?.operator_claim ||
+        contentMeta?.operatorClaim
+    ),
   };
 }
 
@@ -94,6 +116,10 @@ export function handleVoiceCallCreated(message, currentUserId) {
     callEvent,
     callLeg,
     rawStatus,
+    fromNumber,
+    toNumber,
+    caller,
+    operatorClaim,
   } = extractCallData(message);
 
   if (shouldSkipCall(callDirection, senderId, currentUserId)) return;
@@ -110,6 +136,10 @@ export function handleVoiceCallCreated(message, currentUserId) {
       callEvent,
       callLeg,
       rawStatus,
+      fromNumber,
+      toNumber,
+      caller,
+      operatorClaim,
     });
     return;
   }
@@ -126,6 +156,10 @@ export function handleVoiceCallCreated(message, currentUserId) {
     callEvent,
     callLeg,
     rawStatus,
+    fromNumber,
+    toNumber,
+    caller,
+    operatorClaim,
   });
 }
 
@@ -143,6 +177,10 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     callEvent,
     callLeg,
     rawStatus,
+    fromNumber,
+    toNumber,
+    caller,
+    operatorClaim,
   } = extractCallData(message);
 
   // Vuex message/conversation status updates apply to all call sources.
@@ -166,6 +204,10 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     callEvent,
     callLeg,
     rawStatus,
+    fromNumber,
+    toNumber,
+    caller,
+    operatorClaim,
   });
 
   const isNewCall =
@@ -184,6 +226,10 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       callEvent,
       callLeg,
       rawStatus,
+      fromNumber,
+      toNumber,
+      caller,
+      operatorClaim,
     });
   }
 }

@@ -222,6 +222,7 @@ class Telephony::OperatorCallClaimService
           'agent_ref' => operator_agent_ref,
           'agent_aor' => operator_agent_aor,
           'user_id' => user.id,
+          'user_name' => user.name,
           'claimed_at' => Time.current.iso8601
         }.compact
       )
@@ -240,7 +241,8 @@ class Telephony::OperatorCallClaimService
     {
       agent_binding_id: call_session.agent_binding_id,
       sip_profile_id: call_session.metadata.to_h.dig('operator_claim', 'sip_profile_id'),
-      user_id: call_session.agent_binding&.user_id || operator_claim_user_id
+      user_id: call_session.agent_binding&.user_id || operator_claim_user_id,
+      user_name: claimed_user_name
     }.compact
   end
 
@@ -253,7 +255,8 @@ class Telephony::OperatorCallClaimService
       agent_aor: operator_agent_aor,
       agent_binding_id: operator_agent_binding&.id,
       sip_profile_id: sip_profile&.id,
-      user_id: user.id
+      user_id: user.id,
+      user_name: user.name
     }.compact
   end
 
@@ -263,6 +266,12 @@ class Telephony::OperatorCallClaimService
 
   def operator_agent_aor
     operator_agent_binding&.agent_aor || sip_profile&.agent_aor
+  end
+
+  def claimed_user_name
+    call_session.metadata.to_h.dig('operator_claim', 'user_name').presence ||
+      call_session.agent_binding&.user&.name ||
+      account.users.find_by(id: operator_claim_user_id)&.name
   end
 
   def operator_claim_user_id

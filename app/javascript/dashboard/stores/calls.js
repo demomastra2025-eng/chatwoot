@@ -43,6 +43,10 @@ const buildCallState = (callData, existingCall = null) => {
     if (hasOwn(callData, key)) return callData[key] ?? null;
     return hasStatusUpdate ? null : (existingCall?.[key] ?? null);
   };
+  const displayValue = key => {
+    if (isPresent(callData?.[key])) return callData[key];
+    return existingCall?.[key] ?? null;
+  };
 
   return {
     ...(existingCall || {}),
@@ -53,6 +57,11 @@ const buildCallState = (callData, existingCall = null) => {
     callEvent: stageValue('callEvent'),
     callLeg: stageValue('callLeg'),
     rawStatus: stageValue('rawStatus'),
+    fromNumber: displayValue('fromNumber'),
+    toNumber: displayValue('toNumber'),
+    caller: displayValue('caller'),
+    operatorClaim: displayValue('operatorClaim'),
+    browserJoinUnsupportedReason: displayValue('browserJoinUnsupportedReason'),
     isActive: isSameProviderCall ? existingCall?.isActive || false : false,
     browserJoined: isSameProviderCall
       ? existingCall?.browserJoined || false
@@ -104,6 +113,10 @@ export const useCallsStore = defineStore('calls', {
       callEvent,
       callLeg,
       rawStatus,
+      fromNumber,
+      toNumber,
+      caller,
+      operatorClaim,
     }) {
       if (TERMINAL_STATUSES.includes(status)) {
         this.removeCall(callSid, { conversationId, provider });
@@ -130,6 +143,10 @@ export const useCallsStore = defineStore('calls', {
           callEvent,
           callLeg,
           rawStatus,
+          fromNumber,
+          toNumber,
+          caller,
+          operatorClaim,
         });
       }
 
@@ -150,6 +167,10 @@ export const useCallsStore = defineStore('calls', {
               callEvent,
               callLeg,
               rawStatus,
+              fromNumber,
+              toNumber,
+              caller,
+              operatorClaim,
             });
           }
           this.setCallActive(call?.callSid || callSid);
@@ -188,12 +209,16 @@ export const useCallsStore = defineStore('calls', {
       this.calls.push(buildCallState(callData));
     },
 
-    markBrowserJoinUnsupported(callSid, provider) {
+    markBrowserJoinUnsupported(callSid, provider, details = {}) {
       this.calls = this.calls.map(call =>
         call.callSid === callSid
           ? {
               ...call,
               browserJoinSupported: false,
+              browserJoinUnsupportedReason:
+                details.reason || call.browserJoinUnsupportedReason,
+              operatorClaim:
+                details.operatorClaim || call.operatorClaim || null,
               provider: provider || call.provider,
             }
           : call

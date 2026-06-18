@@ -237,7 +237,10 @@ describe('ActionCableConnector - Copilot Tests', () => {
           inbox_id: 4593,
           conversation_id: 627,
           conversation_display_id: 627,
-          caller: { phone_number: '+77066318623' },
+          caller: { phone_number: '+770****8623' },
+          from_number: 'client-party',
+          to_number: 'support-line',
+          operator_claim: { user_id: 9, user_name: 'Ayan' },
         },
       });
 
@@ -248,7 +251,10 @@ describe('ActionCableConnector - Copilot Tests', () => {
         provider: 'fonoster',
         inboxId: 4593,
         conversationId: 627,
-        caller: { phone_number: '+77066318623' },
+        caller: { phone_number: '+770****8623' },
+        fromNumber: 'client-party',
+        toNumber: 'support-line',
+        operatorClaim: { user_id: 9, user_name: 'Ayan' },
       });
     });
 

@@ -32,6 +32,11 @@ describe('voice helper', () => {
             call_sid: 'call-123',
             call_direction: 'inbound',
             provider: 'fonoster',
+            from_number: 'client-party',
+            to_number: '+770****4321',
+            meta: {
+              operator_claim: { user_id: 12, user_name: 'Ayan' },
+            },
           },
         },
       },
@@ -46,10 +51,13 @@ describe('voice helper', () => {
         callDirection: 'inbound',
         callSid: 'call-123',
         conversationId: 19,
+        fromNumber: 'client-party',
         inboxId: 42,
         isActive: false,
+        operatorClaim: { user_id: 12, user_name: 'Ayan' },
         provider: 'fonoster',
         senderId: 7,
+        toNumber: '+770****4321',
       }),
     ]);
   });
