@@ -2,8 +2,8 @@ module MailboxInlineAttachmentHelper
   private
 
   def load_email_content
-    @html_content = processed_mail.serialized_data[:html_content][:full]
-    @text_content = processed_mail.serialized_data[:text_content][:reply]
+    @html_content = sanitize_mailbox_value(processed_mail.serialized_data[:html_content][:full])
+    @text_content = sanitize_mailbox_value(processed_mail.serialized_data[:text_content][:reply])
   end
 
   def inline_attachment?(attachment)

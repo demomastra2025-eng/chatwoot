@@ -81,6 +81,21 @@ RSpec.describe Mailbox::ConversationFinderStrategies::NewConversationStrategy do
         end
       end
 
+      context 'when mailbox metadata contains null bytes' do
+        before do
+          mail.subject = "Test\u0000 Subject"
+          mail['In-Reply-To'] = "<previous\u0000-message@example.com>"
+        end
+
+        it 'strips null bytes before building conversation attributes' do
+          strategy = described_class.new(mail)
+          conversation = strategy.find
+
+          expect(conversation.additional_attributes['mail_subject']).to eq('Test Subject')
+          expect(conversation.additional_attributes['in_reply_to']).to eq('<previous-message@example.com>')
+        end
+      end
+
       context 'when mail is auto reply' do
         before do
           mail['X-Autoreply'] = 'yes'

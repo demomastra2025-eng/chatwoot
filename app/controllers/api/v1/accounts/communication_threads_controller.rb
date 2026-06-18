@@ -175,7 +175,9 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def enqueue_delete_conversations(conversations)
-    conversations.each { |conversation| DeleteObjectJob.perform_later(conversation, Current.user, request.ip) }
+    conversations.each do |conversation|
+      Conversations::DeleteService.new(conversation: conversation, user: Current.user, ip: request.ip).perform
+    end
   end
 
   def thread_label_list

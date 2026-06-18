@@ -491,6 +491,24 @@ RSpec.describe ConversationReplyMailer do
         expect(mail.delivery_method.settings[:port]).to eq 587
       end
 
+      it 'applies inbox SMTP timeout settings from env' do
+        with_modified_env 'SMTP_OPEN_TIMEOUT' => '7', 'SMTP_READ_TIMEOUT' => '11' do
+          mail = described_class.email_reply(message)
+
+          expect(mail.delivery_method.settings[:open_timeout]).to eq 7
+          expect(mail.delivery_method.settings[:read_timeout]).to eq 11
+        end
+      end
+
+      it 'falls back to default SMTP timeouts when env values are invalid' do
+        with_modified_env 'SMTP_OPEN_TIMEOUT' => 'bad', 'SMTP_READ_TIMEOUT' => '0' do
+          mail = described_class.email_reply(message)
+
+          expect(mail.delivery_method.settings[:open_timeout]).to eq 15
+          expect(mail.delivery_method.settings[:read_timeout]).to eq 30
+        end
+      end
+
       it 'overrides global SSL defaults with inbox SMTP transport settings' do
         original_smtp_settings = ActionMailer::Base.smtp_settings.dup
         ActionMailer::Base.smtp_settings = original_smtp_settings.merge(
@@ -831,7 +849,12 @@ RSpec.describe ConversationReplyMailer do
     end
 
     context 'when support_email is malformed' do
-      let(:account) { create(:account, support_email: 'Smith Smith') }
+      let(:account) do
+        create(:account).tap do |record|
+          record.support_email = 'Smith Smith'
+          record.save!(validate: false)
+        end
+      end
       let(:conversation) { create(:conversation, assignee: agent, account: account).reload }
       let(:message) { create(:message, message_type: :outgoing, conversation: conversation, account: account, inbox: conversation.inbox) }
       let(:mail) { described_class.reply_with_summary(message.conversation, message.id).deliver_now }

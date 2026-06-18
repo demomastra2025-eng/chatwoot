@@ -84,11 +84,11 @@ RSpec.describe Imap::FetchEmailService do
         travel_to '26.10.2020 10:00'.to_datetime do
           email_object = create_inbound_email_from_fixture('only_text.eml')
           email_header = Net::IMAP::FetchData.new(1, 'BODY[HEADER]' => eml_content_with_message_id)
-          imap_fetch_mail = Net::IMAP::FetchData.new(1, 'RFC822' => eml_content_with_message_id)
+          imap_fetch_mail = Net::IMAP::FetchData.new(1, 'BODY[]' => eml_content_with_message_id)
 
           allow(imap).to receive(:search).with(%w[SINCE 25-Oct-2020]).and_return([1])
           allow(imap).to receive(:fetch).with([1], 'BODY.PEEK[HEADER]').and_return([email_header])
-          allow(imap).to receive(:fetch).with(1, 'RFC822').and_return([imap_fetch_mail])
+          allow(imap).to receive(:fetch).with(1, 'BODY.PEEK[]').and_return([imap_fetch_mail])
           allow(imap).to receive(:logout)
 
           result = described_class.new(channel: imap_email_channel).perform
@@ -97,7 +97,7 @@ RSpec.describe Imap::FetchEmailService do
           expect(result[0].message_id).to eq email_object.message_id
           expect(imap).to have_received(:search).with(%w[SINCE 25-Oct-2020])
           expect(imap).to have_received(:fetch).with([1], 'BODY.PEEK[HEADER]')
-          expect(imap).to have_received(:fetch).with(1, 'RFC822')
+          expect(imap).to have_received(:fetch).with(1, 'BODY.PEEK[]')
           expect(logger).to have_received(:info).with("[IMAP::FETCH_EMAIL_SERVICE] Fetching mails from #{imap_email_channel.email}, found 1.")
           expect(imap).to have_received(:logout)
         end
@@ -119,7 +119,34 @@ RSpec.describe Imap::FetchEmailService do
           expect(result.length).to eq 0
           expect(imap).to have_received(:search).with(%w[SINCE 25-Oct-2020])
           expect(imap).to have_received(:fetch).with([1], 'BODY.PEEK[HEADER]')
-          expect(imap).not_to have_received(:fetch).with(1, 'RFC822')
+          expect(imap).not_to have_received(:fetch).with(1, 'BODY.PEEK[]')
+        end
+      end
+
+      it 'normalizes null bytes in message ids before duplicate lookup' do
+        create(:message, source_id: 'messageid@example.com', account: account, inbox: imap_email_channel.inbox)
+
+        service = described_class.new(channel: imap_email_channel)
+
+        expect(service.send(:email_already_present?, imap_email_channel, "message\u0000id@example.com")).to be true
+      end
+
+      it 'skips recently deleted IMAP emails before fetching mail bodies' do
+        travel_to '26.10.2020 10:00'.to_datetime do
+          email_object = create_inbound_email_from_fixture('only_text.eml')
+          email_header = Net::IMAP::FetchData.new(1, 'BODY[HEADER]' => eml_content_with_message_id)
+          deleted_message_tracker = instance_double(Imap::DeletedMessageTracker)
+
+          allow(Imap::DeletedMessageTracker).to receive(:new).with(inbox: imap_email_channel.inbox).and_return(deleted_message_tracker)
+          allow(deleted_message_tracker).to receive(:deleted?).with(email_object.message_id).and_return(true)
+          allow(imap).to receive(:search).with(%w[SINCE 25-Oct-2020]).and_return([1])
+          allow(imap).to receive(:fetch).with([1], 'BODY.PEEK[HEADER]').and_return([email_header])
+          allow(imap).to receive(:logout)
+
+          result = described_class.new(channel: imap_email_channel).perform
+
+          expect(result).to be_empty
+          expect(imap).not_to have_received(:fetch).with(1, 'BODY.PEEK[]')
         end
       end
 
@@ -134,7 +161,7 @@ RSpec.describe Imap::FetchEmailService do
           result = described_class.new(channel: imap_email_channel).perform
 
           expect(result).to be_empty
-          expect(imap).not_to have_received(:fetch).with(1, 'RFC822')
+          expect(imap).not_to have_received(:fetch).with(1, 'BODY.PEEK[]')
         end
       end
 
@@ -148,7 +175,7 @@ RSpec.describe Imap::FetchEmailService do
             Net::IMAP::FetchData.new(seq_num, 'BODY[HEADER]' => eml_content_without_message_id)
           end
           valid_email_header = Net::IMAP::FetchData.new(valid_message_seq_num, 'BODY[HEADER]' => eml_content_with_message_id)
-          imap_fetch_mail = Net::IMAP::FetchData.new(valid_message_seq_num, 'RFC822' => eml_content_with_message_id)
+          imap_fetch_mail = Net::IMAP::FetchData.new(valid_message_seq_num, 'BODY[]' => eml_content_with_message_id)
 
           allow(imap).to receive(:search).with(%w[SINCE 25-Oct-2020]).and_return(empty_message_id_seq_nums + [valid_message_seq_num])
           empty_message_id_seq_nums.each_slice(Imap::BaseFetchEmailService::HEADER_FETCH_BATCH_SIZE) do |batch|
@@ -156,7 +183,7 @@ RSpec.describe Imap::FetchEmailService do
             allow(imap).to receive(:fetch).with(batch, 'BODY.PEEK[HEADER]').and_return(headers)
           end
           allow(imap).to receive(:fetch).with([valid_message_seq_num], 'BODY.PEEK[HEADER]').and_return([valid_email_header])
-          allow(imap).to receive(:fetch).with(valid_message_seq_num, 'RFC822').and_return([imap_fetch_mail])
+          allow(imap).to receive(:fetch).with(valid_message_seq_num, 'BODY.PEEK[]').and_return([imap_fetch_mail])
           allow(imap).to receive(:logout)
 
           result = described_class.new(channel: imap_email_channel).perform
@@ -164,7 +191,7 @@ RSpec.describe Imap::FetchEmailService do
           expect(result.length).to eq 1
           expect(result[0].message_id).to eq email_object.message_id
           expect(imap).to have_received(:fetch).with([valid_message_seq_num], 'BODY.PEEK[HEADER]')
-          expect(imap).to have_received(:fetch).with(valid_message_seq_num, 'RFC822')
+          expect(imap).to have_received(:fetch).with(valid_message_seq_num, 'BODY.PEEK[]')
         end
       end
 
@@ -183,7 +210,7 @@ RSpec.describe Imap::FetchEmailService do
 
           (1..max_messages_per_sync).each do |seq_num|
             raw_mail = eml_content_with_message_id.sub(/^Message-ID:.*\n/, "Message-ID: <message-#{seq_num}@example.com>\n")
-            allow(imap).to receive(:fetch).with(seq_num, 'RFC822').and_return([Net::IMAP::FetchData.new(seq_num, 'RFC822' => raw_mail)])
+            allow(imap).to receive(:fetch).with(seq_num, 'BODY.PEEK[]').and_return([Net::IMAP::FetchData.new(seq_num, 'BODY[]' => raw_mail)])
           end
           allow(imap).to receive(:search).with(%w[SINCE 25-Oct-2020]).and_return(seq_nums)
           allow(imap).to receive(:logout)
@@ -191,7 +218,7 @@ RSpec.describe Imap::FetchEmailService do
           result = described_class.new(channel: imap_email_channel).perform
 
           expect(result.length).to eq max_messages_per_sync
-          expect(imap).not_to have_received(:fetch).with(max_messages_per_sync + 1, 'RFC822')
+          expect(imap).not_to have_received(:fetch).with(max_messages_per_sync + 1, 'BODY.PEEK[]')
         end
       end
     end

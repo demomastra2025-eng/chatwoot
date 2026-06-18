@@ -47,15 +47,14 @@ module ConversationReplyMailerHelper
   def base_smtp_settings(domain)
     Email::SmtpConfiguration.build_delivery_settings(
       base_settings: {
-      address: domain,
-      port: 587,
-      user_name: @channel.imap_login,
-      password: @channel.provider_config['access_token'],
-      domain: domain,
-      openssl_verify_mode: 'none',
-      open_timeout: 15,
-      read_timeout: 15,
-      authentication: 'xoauth2'
+        address: domain,
+        port: 587,
+        user_name: @channel.imap_login,
+        password: @channel.provider_config['access_token'],
+        domain: domain,
+        openssl_verify_mode: 'none',
+        **smtp_timeout_settings,
+        authentication: 'xoauth2'
       },
       ssl_enabled: false,
       starttls_enabled: true,
@@ -68,13 +67,14 @@ module ConversationReplyMailerHelper
 
     smtp_settings = Email::SmtpConfiguration.build_delivery_settings(
       base_settings: {
-      address: @channel.smtp_address,
-      port: @channel.smtp_port,
-      user_name: @channel.smtp_login,
-      password: @channel.smtp_password,
-      domain: @channel.smtp_domain,
-      openssl_verify_mode: @channel.smtp_openssl_verify_mode,
-      authentication: @channel.smtp_authentication
+        address: @channel.smtp_address,
+        port: @channel.smtp_port,
+        user_name: @channel.smtp_login,
+        password: @channel.smtp_password,
+        domain: @channel.smtp_domain,
+        openssl_verify_mode: @channel.smtp_openssl_verify_mode,
+        **smtp_timeout_settings,
+        authentication: @channel.smtp_authentication
       },
       ssl_enabled: @channel.smtp_enable_ssl_tls,
       starttls_enabled: @channel.smtp_enable_ssl_tls ? false : @channel.smtp_enable_starttls_auto,
@@ -83,6 +83,18 @@ module ConversationReplyMailerHelper
 
     @options[:delivery_method] = :smtp
     @options[:delivery_method_options] = smtp_settings
+  end
+
+  def smtp_timeout_settings
+    {
+      open_timeout: smtp_timeout_value('SMTP_OPEN_TIMEOUT', 15),
+      read_timeout: smtp_timeout_value('SMTP_READ_TIMEOUT', 30)
+    }
+  end
+
+  def smtp_timeout_value(env_key, fallback)
+    value = ENV[env_key].presence.to_i
+    value.positive? ? value : fallback
   end
 
   def email_smtp_enabled?

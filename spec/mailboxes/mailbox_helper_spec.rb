@@ -47,6 +47,38 @@ RSpec.describe MailboxHelper do
         helper_instance.send(:create_message)
       end
     end
+
+    context 'when mailbox values contain null bytes' do
+      let(:processed_mail_class) do
+        Struct.new(:message_id, :text_content, :html_content, :serialized_data, :cc, :bcc, keyword_init: true)
+      end
+      let(:processed_mail) do
+        processed_mail_class.new(
+          message_id: "message\u0000id",
+          text_content: { reply: "hello\u0000world" },
+          html_content: {},
+          serialized_data: {
+            message_id: "message\u0000id",
+            text_content: { reply: "hello\u0000world" },
+            html_content: {},
+            headers: { "x-null\u0000-byte" => "a\u0000b" }
+          },
+          cc: ["cc\u0000@example.com"],
+          bcc: nil
+        )
+      end
+
+      it 'strips null bytes before persisting message fields' do
+        helper_instance = mailbox_helper_obj.new(conversation, processed_mail)
+
+        helper_instance.send(:create_message)
+
+        message = conversation.messages.last
+        expect(message.source_id).to eq('messageid')
+        expect(message.content).to eq('helloworld')
+        expect(message.content_attributes.to_json).not_to include(MailboxSanitizer::NULL_BYTE)
+      end
+    end
   end
 
   describe '#embed_plain_text_email_with_inline_image' do
