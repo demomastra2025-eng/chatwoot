@@ -9,6 +9,39 @@ const sameValue = (left, right) =>
 
 const sameCallSid = (call, callSid) => sameValue(call?.callSid, callSid);
 
+const callLogicalKey = call =>
+  call?.logicalCallKey ||
+  call?.logical_call_key ||
+  call?.callGroupKey ||
+  call?.call_group_key;
+
+const hasLogicalCallKey = call => isPresent(callLogicalKey(call));
+
+const callConversationKeys = call =>
+  [
+    call?.conversationId,
+    call?.conversationDisplayId,
+    call?.conversationDbId,
+    call?.conversation_id,
+    call?.conversation_display_id,
+    call?.conversation_db_id,
+  ]
+    .filter(isPresent)
+    .map(value => String(value));
+
+const hasSharedConversationKey = (call, callData) => {
+  const callKeys = callConversationKeys(call);
+  const callDataKeys = callConversationKeys(callData);
+  return callKeys.some(key => callDataKeys.includes(key));
+};
+
+const isFonosterCall = call => call?.provider === 'fonoster';
+
+const isInboundCall = call => {
+  const direction = call?.callDirection || call?.direction;
+  return direction === 'inbound';
+};
+
 const sameFonosterConversation = (
   call,
   callData,
@@ -26,11 +59,26 @@ const sameFonosterConversation = (
     return false;
   }
 
-  return sameValue(call?.conversationId, callData?.conversationId);
+  if (
+    (isInboundCall(call) || isInboundCall(callData)) &&
+    (hasLogicalCallKey(call) || hasLogicalCallKey(callData))
+  ) {
+    return false;
+  }
+
+  return hasSharedConversationKey(call, callData);
+};
+
+const sameFonosterInboundBranch = (call, callData) => {
+  if (!isFonosterCall(call) || !isFonosterCall(callData)) return false;
+  if (!isInboundCall(call) || !isInboundCall(callData)) return false;
+
+  return sameValue(callLogicalKey(call), callLogicalKey(callData));
 };
 
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData?.callSid) ||
+  sameFonosterInboundBranch(call, callData) ||
   sameFonosterConversation(call, callData, { allowCallSidMismatch: true });
 
 const hasOwn = (object, key) =>
@@ -38,6 +86,10 @@ const hasOwn = (object, key) =>
 
 const buildCallState = (callData, existingCall = null) => {
   const isSameProviderCall = sameCallSid(existingCall, callData?.callSid);
+  const preserveExistingCallSid =
+    existingCall &&
+    !isSameProviderCall &&
+    sameFonosterInboundBranch(existingCall, callData);
   const hasStatusUpdate = hasOwn(callData, 'status');
   const stageValue = key => {
     if (hasOwn(callData, key)) return callData[key] ?? null;
@@ -54,9 +106,18 @@ const buildCallState = (callData, existingCall = null) => {
     status: hasStatusUpdate
       ? (callData?.status ?? null)
       : (existingCall?.status ?? null),
+    callSid: preserveExistingCallSid
+      ? existingCall.callSid
+      : (callData?.callSid ?? existingCall?.callSid),
     callEvent: stageValue('callEvent'),
     callLeg: stageValue('callLeg'),
     rawStatus: stageValue('rawStatus'),
+    accountId: displayValue('accountId'),
+    conversationDbId: displayValue('conversationDbId'),
+    conversationDisplayId: displayValue('conversationDisplayId'),
+    contactId: displayValue('contactId'),
+    logicalCallKey: displayValue('logicalCallKey'),
+    numberRef: displayValue('numberRef'),
     fromNumber: displayValue('fromNumber'),
     toNumber: displayValue('toNumber'),
     caller: displayValue('caller'),
@@ -117,16 +178,41 @@ export const useCallsStore = defineStore('calls', {
       toNumber,
       caller,
       operatorClaim,
+      accountId,
+      conversationDbId,
+      conversationDisplayId,
+      contactId,
+      logicalCallKey,
+      numberRef,
     }) {
       if (TERMINAL_STATUSES.includes(status)) {
-        this.removeCall(callSid, { conversationId, provider });
+        this.removeCall(callSid, {
+          conversationId,
+          provider,
+          callDirection,
+          logicalCallKey,
+        });
         return;
       }
 
+      const callData = {
+        callSid,
+        accountId,
+        conversationId,
+        conversationDbId,
+        conversationDisplayId,
+        inboxId,
+        provider,
+        callDirection,
+        senderId,
+        contactId,
+        logicalCallKey,
+        numberRef,
+        fromNumber,
+        toNumber,
+      };
       const call = this.calls.find(
-        item =>
-          sameCallSid(item, callSid) ||
-          sameFonosterConversation(item, { conversationId, provider })
+        item => sameCallSid(item, callSid) || sameLiveCall(item, callData)
       );
       const resolvedProvider = call?.provider || provider;
       const resolvedCallDirection = call?.callDirection || callDirection;
@@ -135,11 +221,17 @@ export const useCallsStore = defineStore('calls', {
         this.addCall({
           callSid: call?.callSid || callSid,
           status,
+          accountId,
           conversationId,
+          conversationDbId,
+          conversationDisplayId,
           inboxId,
           provider: resolvedProvider,
           callDirection: resolvedCallDirection,
           senderId,
+          contactId,
+          logicalCallKey,
+          numberRef,
           callEvent,
           callLeg,
           rawStatus,
@@ -159,11 +251,17 @@ export const useCallsStore = defineStore('calls', {
             this.addCall({
               callSid,
               status,
+              accountId,
               conversationId,
+              conversationDbId,
+              conversationDisplayId,
               inboxId,
               provider: resolvedProvider,
               callDirection: resolvedCallDirection,
               senderId,
+              contactId,
+              logicalCallKey,
+              numberRef,
               callEvent,
               callLeg,
               rawStatus,
@@ -175,6 +273,13 @@ export const useCallsStore = defineStore('calls', {
           }
           this.setCallActive(call?.callSid || callSid);
           return;
+        }
+        if (resolvedProvider === 'fonoster') {
+          this.dismissRelatedFonosterIncomingCalls({
+            ...callData,
+            provider: resolvedProvider,
+            callDirection: resolvedCallDirection || 'inbound',
+          });
         }
         if (call && !call.isActive) this.dismissCall(call.callSid);
       }
@@ -189,6 +294,14 @@ export const useCallsStore = defineStore('calls', {
 
       if (existingCallIndex >= 0) {
         const existingCall = this.calls[existingCallIndex];
+        if (
+          existingCall?.isActive &&
+          !sameCallSid(existingCall, callData.callSid) &&
+          sameFonosterInboundBranch(existingCall, callData)
+        ) {
+          this.dismissRelatedFonosterIncomingCalls(existingCall);
+          return;
+        }
         const replacedActiveCall =
           existingCall?.isActive &&
           !sameCallSid(existingCall, callData.callSid);
@@ -237,10 +350,23 @@ export const useCallsStore = defineStore('calls', {
       );
     },
 
-    async removeCall(callSid, { conversationId, provider } = {}) {
-      const target = { callSid, conversationId, provider };
+    async removeCall(
+      callSid,
+      { conversationId, provider, callDirection, logicalCallKey } = {}
+    ) {
+      const target = {
+        callSid,
+        conversationId,
+        provider,
+        callDirection,
+        logicalCallKey,
+      };
+      const matchesLogicalBranch = call =>
+        sameFonosterInboundBranch(call, target) &&
+        (!call.isActive || !isPresent(target.callSid));
       const matchesTarget = call =>
         sameCallSid(call, target.callSid) ||
+        matchesLogicalBranch(call) ||
         sameFonosterConversation(call, target);
       const callToRemove = this.calls.find(matchesTarget);
       this.calls = this.calls.filter(c => !matchesTarget(c));
@@ -251,10 +377,14 @@ export const useCallsStore = defineStore('calls', {
     },
 
     setCallActive(callSid) {
+      const activeCall = this.calls.find(call => call.callSid === callSid);
       this.calls = this.calls.map(call => ({
         ...call,
         isActive: call.callSid === callSid,
       }));
+      if (activeCall && sameFonosterInboundBranch(activeCall, activeCall)) {
+        this.dismissRelatedFonosterIncomingCalls(activeCall);
+      }
     },
 
     async clearActiveCall() {
@@ -268,6 +398,14 @@ export const useCallsStore = defineStore('calls', {
 
     dismissCall(callSid) {
       this.calls = this.calls.filter(call => call.callSid !== callSid);
+    },
+
+    dismissRelatedFonosterIncomingCalls(targetCall) {
+      this.calls = this.calls.filter(call => {
+        if (call.isActive) return true;
+        if (sameCallSid(call, targetCall?.callSid)) return true;
+        return !sameFonosterInboundBranch(call, targetCall);
+      });
     },
   },
 });

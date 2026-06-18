@@ -1062,6 +1062,12 @@ class Telephony::EventsIngestionService
       data['data']['meta'] = existing_meta.merge(voice_meta)
     end
     data['data']['status'] = call_session.status
+    if (logical_key = logical_call_key(call_session)).present?
+      data['data']['logical_call_key'] = logical_key
+      data['data']['logicalCallKey'] = logical_key
+      data['data']['call_group_key'] = logical_key
+      data['data']['callGroupKey'] = logical_key
+    end
     if message.source_id.blank? || message.source_id == call_session.voice_call_source_id
       data['data']['call_sid'] = call_session.external_call_ref
       data['data']['call_direction'] ||= call_session.direction
@@ -1221,8 +1227,14 @@ class Telephony::EventsIngestionService
       'operator_candidate_binding_ids',
       'operator_candidate_user_ids',
       'operator_candidate_agent_refs',
-      'operator_candidate_agent_aors'
+      'operator_candidate_agent_aors',
+      'logical_call_key',
+      'call_group_key'
     )
+    if (logical_key = logical_call_key(call_session)).present?
+      meta['logical_call_key'] = logical_key
+      meta['call_group_key'] = logical_key
+    end
     meta['operator_claim'] = metadata['operator_claim'] if metadata['operator_claim'].present?
     latest_leg = latest_call_leg(call_session)
     meta['latest_event_type'] = latest_leg['event_type'] if latest_leg['event_type'].present?
@@ -1563,6 +1575,13 @@ class Telephony::EventsIngestionService
       base['recording'] = existing_recording_metadata.deep_merge(recording_event_metadata)
     end
     base.compact
+  end
+
+  def logical_call_key(call_session = nil)
+    payload_value('logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
+      metadata_value('logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
+      call_session&.metadata.to_h.dig('metadata', 'logical_call_key') ||
+      call_session&.metadata.to_h.dig('metadata', 'call_group_key')
   end
 
   def call_recording_metadata(call_session)

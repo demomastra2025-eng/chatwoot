@@ -58,7 +58,9 @@ describe('#URL Helpers', () => {
           status: 'open',
           communicationThread: true,
         })
-      ).toBe('/app/accounts/1/communication_threads?status=open');
+      ).toBe(
+        '/app/accounts/1/communication_threads?status=open&assignee_type=me'
+      );
     });
 
     it('should preserve assignee scope in communication thread list URLs', () => {
@@ -123,7 +125,9 @@ describe('#URL Helpers', () => {
           status: 'pending',
           communicationThread: true,
         })
-      ).toBe('accounts/1/communication_threads/42?status=pending');
+      ).toBe(
+        'accounts/1/communication_threads/42?status=pending&assignee_type=me'
+      );
     });
 
     it('should preserve assignee scope in communication thread detail URLs', () => {
@@ -174,7 +178,9 @@ describe('#URL Helpers', () => {
           assigneeType: 'me',
           communicationThread: true,
         })
-      ).toBe('accounts/1/communication_threads/42?status=open');
+      ).toBe(
+        'accounts/1/communication_threads/42?status=open&assignee_type=me'
+      );
     });
 
     it('should preserve the current route status when explicit status is absent', () => {

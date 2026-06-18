@@ -105,6 +105,41 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'projects the logical call key into voice call message data and meta' do
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        status: 'ringing',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => 'fonoster-inbound:shared-key',
+            'call_group_key' => 'fonoster-inbound:shared-key'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-logical-call-key-1',
+          provider: 'fonoster',
+          event: 'operator_ringing',
+          status: 'ringing'
+        )
+      ).perform
+
+      message_data = result.voice_message_for_current_call.content_attributes['data']
+      expect(message_data).to include(
+        'logical_call_key' => 'fonoster-inbound:shared-key',
+        'logicalCallKey' => 'fonoster-inbound:shared-key',
+        'call_group_key' => 'fonoster-inbound:shared-key',
+        'callGroupKey' => 'fonoster-inbound:shared-key'
+      )
+      expect(message_data['meta']).to include(
+        'logical_call_key' => 'fonoster-inbound:shared-key',
+        'call_group_key' => 'fonoster-inbound:shared-key'
+      )
+    end
+
     it 'uses the answered timestamp for active Fonoster conversation state' do
       started_at = Time.zone.parse(30.seconds.ago.iso8601)
       answered_at = Time.zone.parse(10.seconds.ago.iso8601)

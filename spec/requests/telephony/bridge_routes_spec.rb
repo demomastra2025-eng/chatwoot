@@ -308,6 +308,9 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(call_session.metadata.dig('metadata', 'route_action')).to eq(
       'operator'
     )
+    expect(call_session.metadata.dig('metadata', 'logical_call_key')).to match(
+      /\Afonoster-inbound:[a-f0-9]{32}\z/
+    )
     expect(
       call_session.metadata.dig('metadata', 'operator_candidate_user_ids')
     ).to include(agent.id)
@@ -323,6 +326,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
         inbox_id: voice_inbox.id,
         provider: 'fonoster',
         call_sid: 'fast-inbound-route',
+        logical_call_key: call_session.metadata.dig('metadata', 'logical_call_key'),
+        logicalCallKey: call_session.metadata.dig('metadata', 'logical_call_key'),
         call_direction: 'inbound',
         conversation_id: conversation.display_id,
         from_number: '+15559999999',
@@ -337,6 +342,58 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       call_ref: 'fast-inbound-route'
     ).perform
     expect(claim).to include(claimed: true, call_ref: 'fast-inbound-route')
+  end
+
+  it 'uses collision-resistant logical keys and shared bridge refs for inbound route branches' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      agent_aor: 'sip:1001@example.test',
+      enabled: true
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    keys = {}
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      travel_to Time.zone.parse('2026-06-18 10:00:30 UTC') do
+        [
+          ['fallback-inbound-one', {}],
+          ['fallback-inbound-two', {}],
+          ['branch-inbound-one', { bridge_call_ref: 'bridge-parent-inbound' }],
+          ['branch-inbound-two', { bridge_call_ref: 'bridge-parent-inbound' }]
+        ].each do |call_ref, extra_params|
+          post path,
+               params: {
+                 call_ref: call_ref,
+                 ingress_number: voice_channel.phone_number,
+                 caller_number: '+15556667777'
+               }.merge(extra_params),
+               headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+               as: :json
+
+          expect(response).to have_http_status(:ok)
+          keys[call_ref] = account.telephony_call_sessions.find_by!(
+            external_call_ref: call_ref
+          ).metadata.dig('metadata', 'logical_call_key')
+        end
+      end
+    end
+
+    expect(keys['fallback-inbound-one']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
+    expect(keys['fallback-inbound-two']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
+    expect(keys['fallback-inbound-one']).not_to eq(keys['fallback-inbound-two'])
+    expect(keys['branch-inbound-one']).to eq(keys['branch-inbound-two'])
+    expect(
+      account.telephony_call_sessions.find_by!(
+        external_call_ref: 'branch-inbound-one'
+      ).metadata.dig('metadata', 'logical_call_group_ref')
+    ).to eq('bridge-parent-inbound')
   end
 
   it 'does not persist route lifecycle or voice-call bubble for diagnostic audit probes' do

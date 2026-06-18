@@ -1,3 +1,5 @@
+require 'digest'
+
 class Telephony::InboundRoutingService
   DEFAULT_REJECT_MESSAGE = 'We are unable to connect your call right now.'.freeze
   OPERATOR_CANDIDATE_LIMIT = 20
@@ -233,6 +235,10 @@ class Telephony::InboundRoutingService
       call_sid: call_ref,
       callSid: call_ref,
       call_ref: call_ref,
+      logical_call_key: logical_call_key,
+      logicalCallKey: logical_call_key,
+      call_group_key: logical_call_key,
+      callGroupKey: logical_call_key,
       status: 'ringing',
       call_direction: 'inbound',
       direction: 'inbound',
@@ -277,7 +283,13 @@ class Telephony::InboundRoutingService
   def route_lifecycle_metadata(decision)
     metadata = {
       route_action: decision[:action] || decision['action'],
-      route_reason: decision[:reason] || decision['reason']
+      route_reason: decision[:reason] || decision['reason'],
+      chatwoot_account_id: number_binding.account_id,
+      chatwoot_inbox_id: number_binding.inbox_id,
+      number_ref: number_binding.number_ref,
+      logical_call_key: logical_call_key,
+      call_group_key: logical_call_key,
+      logical_call_group_ref: logical_call_group_ref
     }
 
     metadata.merge!(target_route_metadata) if target_operator_requested?
@@ -335,6 +347,60 @@ class Telephony::InboundRoutingService
 
   def route_lifecycle_event_key
     "route_lookup:#{call_ref}:session_started"
+  end
+
+  def logical_call_key
+    @logical_call_key ||= begin
+      explicit_key = explicit_logical_call_key
+      if explicit_key.present?
+        explicit_key
+      else
+        digest = Digest::SHA256.hexdigest(logical_call_key_parts.join('|'))[0, 32]
+        "fonoster-inbound:#{digest}"
+      end
+    end
+  end
+
+  def explicit_logical_call_key
+    value = payload_value('logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
+            metadata_value('logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey')
+    value.to_s.strip.presence
+  end
+
+  def logical_call_key_parts
+    [
+      'v2',
+      number_binding.account_id,
+      number_binding.inbox_id,
+      number_binding.id,
+      number_binding.number_ref,
+      normalize_logical_call_value(logical_call_group_ref || call_ref),
+      normalize_logical_call_value(caller_number),
+      normalize_logical_call_value(inbound_number || number_binding.phone_number)
+    ]
+  end
+
+  def logical_call_group_ref
+    @logical_call_group_ref ||= begin
+      value = payload_value(
+        'bridge_call_ref', 'bridgeCallRef',
+        'parent_call_ref', 'parentCallRef',
+        'root_call_ref', 'rootCallRef',
+        'original_call_ref', 'originalCallRef',
+        'linked_id', 'linkedId', 'linkedid'
+      ) || metadata_value(
+        'bridge_call_ref', 'bridgeCallRef',
+        'parent_call_ref', 'parentCallRef',
+        'root_call_ref', 'rootCallRef',
+        'original_call_ref', 'originalCallRef',
+        'linked_id', 'linkedId', 'linkedid'
+      )
+      value.to_s.strip.presence
+    end
+  end
+
+  def normalize_logical_call_value(value)
+    value.to_s.strip.downcase
   end
 
   def fallback_decision(reason:, prefer_out_of_office_message: false, prefer_ai: false)

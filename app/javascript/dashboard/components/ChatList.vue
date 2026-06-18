@@ -254,10 +254,7 @@ function conversationNavigationQuery(overrides = {}) {
   };
 
   delete nextQuery.assigneeType;
-  if (
-    Object.values(wootConstants.ASSIGNEE_TYPE).includes(nextAssigneeType) &&
-    nextAssigneeType !== wootConstants.ASSIGNEE_TYPE.ME
-  ) {
+  if (Object.values(wootConstants.ASSIGNEE_TYPE).includes(nextAssigneeType)) {
     nextQuery.assignee_type = nextAssigneeType;
   } else {
     delete nextQuery.assignee_type;

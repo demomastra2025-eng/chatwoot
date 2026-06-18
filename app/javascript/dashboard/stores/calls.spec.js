@@ -146,6 +146,163 @@ describe('useCallsStore', () => {
     });
   });
 
+  it('deduplicates Fonoster inbound branches by logical call key without replacing the actionable call ref', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'operator-505-ref',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      conversationId: 612,
+      inboxId: 158,
+      logicalCallKey: 'fonoster-inbound:shared-key',
+      fromNumber: '+77066318623',
+      toNumber: '+77072890808',
+    });
+
+    store.addCall({
+      callSid: 'operator-501-ref',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      conversationId: 612,
+      inboxId: 158,
+      logicalCallKey: 'fonoster-inbound:shared-key',
+      fromNumber: '+77066318623',
+      toNumber: '+77072890808',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'operator-505-ref',
+        logicalCallKey: 'fonoster-inbound:shared-key',
+        provider: 'fonoster',
+      }),
+    ]);
+  });
+
+  it('removes a deduped Fonoster inbound card when a sibling branch terminates', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'operator-505-ref',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      conversationId: 612,
+      logicalCallKey: 'fonoster-inbound:shared-key',
+    });
+    store.addCall({
+      callSid: 'operator-501-ref',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      conversationId: 612,
+      logicalCallKey: 'fonoster-inbound:shared-key',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'operator-501-ref',
+      status: 'completed',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      logicalCallKey: 'fonoster-inbound:shared-key',
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
+  it('keeps an active Fonoster inbound card when a sibling branch terminates', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'operator-505-ref',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      conversationId: 612,
+      logicalCallKey: 'fonoster-inbound:shared-key',
+    });
+    store.setCallActive('operator-505-ref');
+
+    store.handleCallStatusChanged({
+      callSid: 'operator-501-ref',
+      status: 'completed',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      logicalCallKey: 'fonoster-inbound:shared-key',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'operator-505-ref',
+        isActive: true,
+        logicalCallKey: 'fonoster-inbound:shared-key',
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps separate Fonoster inbound calls when logical call keys differ', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'first-real-call',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      conversationId: 612,
+      inboxId: 158,
+      logicalCallKey: 'fonoster-inbound:first',
+    });
+    store.addCall({
+      callSid: 'second-real-call',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      conversationId: 612,
+      inboxId: 158,
+      logicalCallKey: 'fonoster-inbound:second',
+    });
+
+    expect(store.calls).toHaveLength(2);
+    expect(store.calls.map(call => call.callSid)).toEqual([
+      'first-real-call',
+      'second-real-call',
+    ]);
+  });
+
+  it('clears sibling Fonoster inbound branches when one branch becomes active', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'operator-505-ref',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      logicalCallKey: 'fonoster-inbound:shared-key',
+    });
+    store.addCall({
+      callSid: 'other-call',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      logicalCallKey: 'fonoster-inbound:other-key',
+    });
+    store.calls.push({
+      callSid: 'late-sibling-ref',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+      logicalCallKey: 'fonoster-inbound:shared-key',
+      isActive: false,
+    });
+
+    store.setCallActive('operator-505-ref');
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'operator-505-ref',
+        isActive: true,
+      }),
+      expect.objectContaining({
+        callSid: 'other-call',
+        isActive: false,
+      }),
+    ]);
+  });
+
   it('removes calls for all canonical native terminal statuses', () => {
     const store = useCallsStore();
 

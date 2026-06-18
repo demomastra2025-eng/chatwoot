@@ -10,7 +10,6 @@ export const frontendURL = (path, params) => {
 
 const CONVERSATION_STATUSES = ['open', 'pending', 'snoozed', 'resolved'];
 const CONVERSATION_ASSIGNEE_TYPES = ['me', 'unassigned', 'all'];
-const DEFAULT_CONVERSATION_ASSIGNEE_TYPE = 'me';
 
 const normalizeConversationStatus = status => {
   return CONVERSATION_STATUSES.includes(status) ? status : undefined;
@@ -42,20 +41,21 @@ const currentConversationAssigneeTypeFromLocation = () => {
   );
 };
 
-const conversationQuery = ({ status, assigneeType } = {}) => {
+const conversationQuery = ({
+  status,
+  assigneeType,
+  defaultAssigneeType,
+} = {}) => {
   const normalizedAssigneeType =
     normalizeConversationAssigneeType(assigneeType) ??
-    currentConversationAssigneeTypeFromLocation();
+    currentConversationAssigneeTypeFromLocation() ??
+    normalizeConversationAssigneeType(defaultAssigneeType);
 
   return {
     status:
       normalizeConversationStatus(status) ??
       currentConversationStatusFromLocation(),
-    assignee_type:
-      normalizedAssigneeType &&
-      normalizedAssigneeType !== DEFAULT_CONVERSATION_ASSIGNEE_TYPE
-        ? normalizedAssigneeType
-        : undefined,
+    assignee_type: normalizedAssigneeType,
   };
 };
 
@@ -87,7 +87,14 @@ export const conversationUrl = ({
     ? `accounts/${accountId}/communication_threads/${id}`
     : `accounts/${accountId}/conversations/${id}`;
   if (communicationThread) {
-    return appendQueryToPath(url, conversationQuery({ status, assigneeType }));
+    return appendQueryToPath(
+      url,
+      conversationQuery({
+        status,
+        assigneeType,
+        defaultAssigneeType: 'me',
+      })
+    );
   }
   if (activeInbox) {
     url = `accounts/${accountId}/inbox/${activeInbox}/conversations/${id}`;
@@ -123,7 +130,14 @@ export const conversationListPageURL = ({
     : `accounts/${accountId}/dashboard`;
   if (communicationThread) {
     return frontendURL(
-      appendQueryToPath(url, conversationQuery({ status, assigneeType }))
+      appendQueryToPath(
+        url,
+        conversationQuery({
+          status,
+          assigneeType,
+          defaultAssigneeType: 'me',
+        })
+      )
     );
   }
   if (label) {

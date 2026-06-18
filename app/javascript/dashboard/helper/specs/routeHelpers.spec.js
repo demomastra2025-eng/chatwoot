@@ -62,7 +62,7 @@ describe('#defaultRedirectPage', () => {
     };
 
     expect(defaultRedirectPage(to, permissions, user)).toBe(
-      'accounts/2/communication_threads?status=open'
+      'accounts/2/communication_threads?status=open&assignee_type=me'
     );
   });
 
@@ -224,7 +224,9 @@ describe('#validateLoggedInRoutes', () => {
                 features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
               }
             )
-          ).toEqual(`accounts/1/communication_threads?status=open`);
+          ).toEqual(
+            `accounts/1/communication_threads?status=open&assignee_type=me`
+          );
         });
       });
       describe('when route is suspended route', () => {
@@ -256,7 +258,9 @@ describe('#validateLoggedInRoutes', () => {
                 features: { [FEATURE_FLAGS.COMMUNICATION_THREADS]: true },
               }
             )
-          ).toEqual(`accounts/1/communication_threads?status=open`);
+          ).toEqual(
+            `accounts/1/communication_threads?status=open&assignee_type=me`
+          );
         });
       });
     });

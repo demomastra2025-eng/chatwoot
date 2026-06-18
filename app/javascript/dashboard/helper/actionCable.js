@@ -324,13 +324,22 @@ class ActionCableConnector extends BaseActionCableConnector {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: data.call_sid || data.callSid || data.call_ref,
+      accountId: data.account_id || data.accountId,
       status: data.status || 'ringing',
       callDirection: data.call_direction || data.direction || 'inbound',
       conversationId: data.conversation_id || data.conversation_display_id,
       conversationDisplayId:
         data.conversation_display_id || data.conversation_id,
+      conversationDbId: data.conversation_db_id || data.conversationDbId,
       inboxId: data.inbox_id,
+      numberRef: data.number_ref || data.numberRef,
+      logicalCallKey:
+        data.logical_call_key ||
+        data.logicalCallKey ||
+        data.call_group_key ||
+        data.callGroupKey,
       provider: data.provider || 'fonoster',
+      contactId: data.contact_id || data.contactId,
       senderId: data.sender_id,
       caller: data.caller,
       fromNumber: data.from_number || data.fromNumber,

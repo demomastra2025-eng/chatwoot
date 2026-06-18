@@ -45,9 +45,24 @@ function extractCallData(message) {
 
   return {
     callSid: contentData.call_sid || contentData.callSid,
+    accountId:
+      contentData.account_id ||
+      contentData.accountId ||
+      contentMeta?.account_id ||
+      contentMeta?.accountId,
     status: contentData.status,
     callDirection: contentData.call_direction || contentData.callDirection,
     conversationId: message?.conversation_id,
+    conversationDisplayId:
+      contentData.conversation_display_id ||
+      contentData.conversationDisplayId ||
+      contentMeta?.conversation_display_id ||
+      contentMeta?.conversationDisplayId,
+    conversationDbId:
+      contentData.conversation_db_id ||
+      contentData.conversationDbId ||
+      contentMeta?.conversation_db_id ||
+      contentMeta?.conversationDbId,
     inboxId:
       message?.inbox_id ||
       contentData.inbox_id ||
@@ -55,6 +70,20 @@ function extractCallData(message) {
       contentMeta?.chatwoot_inbox_id ||
       contentMeta?.inbox_id ||
       contentMeta?.inboxId,
+    numberRef:
+      contentData.number_ref ||
+      contentData.numberRef ||
+      contentMeta?.number_ref ||
+      contentMeta?.numberRef,
+    logicalCallKey:
+      contentData.logical_call_key ||
+      contentData.logicalCallKey ||
+      contentData.call_group_key ||
+      contentData.callGroupKey ||
+      contentMeta?.logical_call_key ||
+      contentMeta?.logicalCallKey ||
+      contentMeta?.call_group_key ||
+      contentMeta?.callGroupKey,
     provider:
       contentData.provider ||
       message?.provider ||
@@ -89,6 +118,11 @@ function extractCallData(message) {
       contentMeta?.to_number ||
       contentMeta?.toNumber,
     caller: contentData.caller || contentMeta?.caller,
+    contactId:
+      contentData.contact_id ||
+      contentData.contactId ||
+      contentMeta?.contact_id ||
+      contentMeta?.contactId,
     operatorClaim: normalizeOperatorClaim(
       contentData.operator_claim ||
         contentData.operatorClaim ||
@@ -120,6 +154,12 @@ export function handleVoiceCallCreated(message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    accountId,
+    conversationDbId,
+    conversationDisplayId,
+    contactId,
+    logicalCallKey,
+    numberRef,
   } = extractCallData(message);
 
   if (shouldSkipCall(callDirection, senderId, currentUserId)) return;
@@ -140,6 +180,12 @@ export function handleVoiceCallCreated(message, currentUserId) {
       toNumber,
       caller,
       operatorClaim,
+      accountId,
+      conversationDbId,
+      conversationDisplayId,
+      contactId,
+      logicalCallKey,
+      numberRef,
     });
     return;
   }
@@ -160,6 +206,12 @@ export function handleVoiceCallCreated(message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    accountId,
+    conversationDbId,
+    conversationDisplayId,
+    contactId,
+    logicalCallKey,
+    numberRef,
   });
 }
 
@@ -181,6 +233,12 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    accountId,
+    conversationDbId,
+    conversationDisplayId,
+    contactId,
+    logicalCallKey,
+    numberRef,
   } = extractCallData(message);
 
   // Vuex message/conversation status updates apply to all call sources.
@@ -208,6 +266,12 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    accountId,
+    conversationDbId,
+    conversationDisplayId,
+    contactId,
+    logicalCallKey,
+    numberRef,
   });
 
   const isNewCall =
@@ -230,6 +294,12 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       toNumber,
       caller,
       operatorClaim,
+      accountId,
+      conversationDbId,
+      conversationDisplayId,
+      contactId,
+      logicalCallKey,
+      numberRef,
     });
   }
 }

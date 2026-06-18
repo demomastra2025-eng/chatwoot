@@ -61,6 +61,14 @@ describe('SidebarGroupLeaf', () => {
     );
   });
 
+  it('shows large conversation totals without capping', () => {
+    const wrapper = mountComponent({ count: 1234 });
+
+    expect(wrapper.find('[data-test-id="sidebar-plain-count"]').text()).toBe(
+      '1234'
+    );
+  });
+
   it('keeps the unread badge visual for unread badge counts', () => {
     const wrapper = mountComponent({ badge: 12 });
     const badge = wrapper.find('[data-test-id="sidebar-unread-badge"]');

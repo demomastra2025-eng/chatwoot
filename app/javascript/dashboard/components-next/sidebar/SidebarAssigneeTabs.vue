@@ -13,7 +13,7 @@ const router = useRouter();
 const isActive = item => props.activeChildNames.includes(item.name);
 const counterLabel = item => {
   const count = Number(item.count) || 0;
-  return count > 999 ? '999+' : String(count);
+  return String(count);
 };
 
 const visibleItems = computed(() => props.items.filter(item => item.to));

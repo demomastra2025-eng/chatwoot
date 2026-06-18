@@ -122,6 +122,86 @@ describe('#applyPageFilters', () => {
       };
       expect(applyPageFilters(conversationList[1], filters)).toEqual(true);
     });
+
+    it('returns true if communication thread has a matching channel status', () => {
+      const communicationThread = {
+        id: 2148,
+        is_communication_thread: true,
+        status: 'open',
+        inbox_id: 158,
+        channels: [
+          { conversation_id: 20688, status: 'pending', inbox_id: 24 },
+          { conversation_id: 20871, status: 'open', inbox_id: 158 },
+        ],
+        meta: {},
+      };
+
+      expect(
+        applyPageFilters(communicationThread, {
+          status: 'pending',
+        })
+      ).toEqual(true);
+    });
+    it('keeps ordinary child conversations on their own status even when communication_thread_id is present', () => {
+      const childConversation = {
+        id: 20688,
+        communication_thread_id: 2148,
+        status: 'open',
+        inbox_id: 158,
+        channels: [{ conversation_id: 20688, status: 'pending', inbox_id: 24 }],
+        meta: {},
+      };
+
+      expect(
+        applyPageFilters(childConversation, {
+          status: 'pending',
+          inboxId: 24,
+        })
+      ).toEqual(false);
+    });
+    it('returns false when status and inbox match different communication-thread channels', () => {
+      const communicationThread = {
+        id: 2148,
+        is_communication_thread: true,
+        status: 'open',
+        inbox_id: 158,
+        channels: [
+          { conversation_id: 20688, status: 'pending', inbox_id: 24 },
+          { conversation_id: 20871, status: 'open', inbox_id: 158 },
+        ],
+        meta: {},
+      };
+
+      expect(
+        applyPageFilters(communicationThread, {
+          status: 'pending',
+          inboxId: 158,
+        })
+      ).toEqual(false);
+    });
+  });
+
+  describe('#filter-communication-thread-inbox', () => {
+    it('returns true if communication thread has a matching channel inbox', () => {
+      const communicationThread = {
+        id: 2148,
+        is_communication_thread: true,
+        status: 'open',
+        inbox_id: 158,
+        channels: [
+          { conversation_id: 20688, status: 'pending', inbox_id: 24 },
+          { conversation_id: 20871, status: 'open', inbox_id: 158 },
+        ],
+        meta: {},
+      };
+
+      expect(
+        applyPageFilters(communicationThread, {
+          status: 'pending',
+          inboxId: 24,
+        })
+      ).toEqual(true);
+    });
   });
 });
 

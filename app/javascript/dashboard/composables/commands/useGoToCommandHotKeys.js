@@ -31,7 +31,7 @@ const GO_TO_COMMANDS = [
     icon: ICON_CONVERSATION_DASHBOARD,
     path: (accountId, { communicationThreadsEnabled = false } = {}) =>
       communicationThreadsEnabled
-        ? `accounts/${accountId}/communication_threads?status=open`
+        ? `accounts/${accountId}/communication_threads?status=open&assignee_type=me`
         : `accounts/${accountId}/dashboard`,
     role: ['administrator', 'agent'],
   },

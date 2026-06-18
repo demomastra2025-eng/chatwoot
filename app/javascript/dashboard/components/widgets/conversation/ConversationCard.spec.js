@@ -122,7 +122,7 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open'
+      '/app/accounts/530/communication_threads/5?status=open&assignee_type=me'
     );
   });
 
@@ -172,7 +172,7 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open'
+      '/app/accounts/530/communication_threads/5?status=open&assignee_type=me'
     );
   });
 
@@ -208,7 +208,7 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open'
+      '/app/accounts/530/communication_threads/5?status=open&assignee_type=me'
     );
   });
 
@@ -350,7 +350,7 @@ describe('ConversationCard', () => {
     expect(messagePreview.classes()).not.toContain('text-n-slate-11');
   });
 
-  it('caps contact and inbox names at 12 characters while leaving room for assignee', () => {
+  it('caps contact names while giving channel names extra room before assignee', () => {
     mocks.storeGetters['contacts/getContact'] = vi.fn(() => ({
       id: 1,
       name: 'Very Long Contact Name',
@@ -379,7 +379,7 @@ describe('ConversationCard', () => {
     expect(contactRow.text()).toContain('Very Long Co…');
     expect(
       wrapper.findComponent({ name: 'InboxName' }).props('maxLength')
-    ).toBe(12);
+    ).toBe(15);
     expect(contactRow.text()).toContain('Very Long Manager Name');
     expect(assigneeIcon.classes()).toContain('flex-shrink-0');
   });

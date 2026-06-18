@@ -305,10 +305,7 @@ const conversationNavigationQuery = (overrides = {}) => {
     status: safeOverrides.status || currentConversationStatus.value,
   };
 
-  if (
-    conversationAssigneeTypes.includes(nextAssigneeType) &&
-    nextAssigneeType !== wootConstants.ASSIGNEE_TYPE.ME
-  ) {
+  if (conversationAssigneeTypes.includes(nextAssigneeType)) {
     nextQuery.assignee_type = nextAssigneeType;
   } else {
     delete nextQuery.assignee_type;
@@ -479,15 +476,24 @@ const conversationAssigneeStatusItems = computed(() =>
     ASSIGNEE_TYPE_TAB_PERMISSIONS,
     userPermissions.value,
     item => item.permissions
-  ).map(({ key }) => ({
-    name: `Assignee:${key}`,
-    visibilityKey: `Conversation:Assignee:${key}`,
-    label: conversationAssigneeStatusLabels.value[key],
-    icon: conversationAssigneeStatusIcons[key],
-    count: Number(conversationStats.value?.assigneeCounts?.[key] || 0),
-    activeOn: conversationStatusActiveOn,
-    to: withCurrentConversationScopeAssigneeType(key),
-  }))
+  ).map(({ key }) => {
+    const countByTab = {
+      [wootConstants.ASSIGNEE_TYPE.ME]: conversationStats.value?.mineCount,
+      [wootConstants.ASSIGNEE_TYPE.ALL]: conversationStats.value?.allCount,
+      [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]:
+        conversationStats.value?.unAssignedCount,
+    };
+
+    return {
+      name: `Assignee:${key}`,
+      visibilityKey: `Conversation:Assignee:${key}`,
+      label: conversationAssigneeStatusLabels.value[key],
+      icon: conversationAssigneeStatusIcons[key],
+      count: Number(countByTab[key] || 0),
+      activeOn: conversationStatusActiveOn,
+      to: withCurrentConversationScopeAssigneeType(key),
+    };
+  })
 );
 
 const whatsappWebInboxes = computed(() => {

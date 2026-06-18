@@ -10,6 +10,26 @@ export const findPendingMessageIndex = (chat, message) => {
 export const filterByStatus = (chatStatus, filterStatus) =>
   filterStatus === 'all' ? true : chatStatus === filterStatus;
 
+const communicationThreadScopes = conversation => {
+  const channels = Array.isArray(conversation.channels)
+    ? conversation.channels
+    : [];
+  return [conversation, ...channels];
+};
+
+const communicationThreadMatchesPageScope = (
+  conversation,
+  { status, inboxId }
+) => {
+  const statusMatches = scope => status === 'all' || scope.status === status;
+  const inboxMatches = scope =>
+    !inboxId || Number(scope.inbox_id) === Number(inboxId);
+
+  return communicationThreadScopes(conversation).some(
+    scope => statusMatches(scope) && inboxMatches(scope)
+  );
+};
+
 export const filterByInbox = (shouldFilter, inboxId, chatInboxId) => {
   const isOnInbox = Number(inboxId) === chatInboxId;
   return inboxId ? isOnInbox && shouldFilter : shouldFilter;
@@ -48,8 +68,13 @@ export const applyPageFilters = (conversation, filters) => {
   const team = meta.team || {};
   const { id: chatTeamId } = team;
 
-  let shouldFilter = filterByStatus(chatStatus, status);
-  shouldFilter = filterByInbox(shouldFilter, inboxId, chatInboxId);
+  const isThread = Boolean(conversation?.is_communication_thread);
+  let shouldFilter = isThread
+    ? communicationThreadMatchesPageScope(conversation, { status, inboxId })
+    : filterByStatus(chatStatus, status);
+  shouldFilter = isThread
+    ? shouldFilter
+    : filterByInbox(shouldFilter, inboxId, chatInboxId);
   shouldFilter = filterByTeam(shouldFilter, teamId, chatTeamId);
   shouldFilter = filterByLabel(shouldFilter, labels, chatLabels);
   shouldFilter = filterByUnattended(

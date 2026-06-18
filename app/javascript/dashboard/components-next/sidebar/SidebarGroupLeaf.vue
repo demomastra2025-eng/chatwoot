@@ -31,7 +31,7 @@ const hasPlainCount = computed(
 );
 const plainCountLabel = computed(() => {
   const count = Number(props.count) || 0;
-  return count > 999 ? '999+' : String(count);
+  return String(count);
 });
 const iconComponentClass = computed(() =>
   typeof props.icon === 'string' ? 'size-4 inline-block' : ''
