@@ -43,19 +43,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       end
     end
 
-    it 'shows workspace-owned responses without exposing assistant-personal visibility' do
-      general_response = create(
+    it 'shows shared responses without exposing assistant-personal visibility' do
+      workspace_general_response = create(
         :captain_assistant_response,
         account: account,
         assistant: nil,
         visibility: :general,
         documentable: document
       )
-      workspace_personal_response = create(
+      assistant_general_response = create(
         :captain_assistant_response,
         account: account,
-        assistant: nil,
-        visibility: :personal,
+        assistant: assistant,
+        visibility: :general,
         documentable: document
       )
       personal_response = create(
@@ -71,8 +71,21 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
           as: :json
 
       response_ids = json_response[:payload].pluck(:id)
-      expect(response_ids).to include(general_response.id, workspace_personal_response.id)
+      expect(response_ids).to include(workspace_general_response.id, assistant_general_response.id)
       expect(response_ids).not_to include(personal_response.id)
+    end
+
+    it 'shows all account responses to administrators for knowledge-base management' do
+      workspace_general_response = create(:captain_assistant_response, account: account, assistant: nil, visibility: :general)
+      assistant_general_response = create(:captain_assistant_response, account: account, assistant: assistant, visibility: :general)
+      personal_response = create(:captain_assistant_response, account: account, assistant: assistant, visibility: :personal)
+
+      get "/api/v1/accounts/#{account.id}/captain/assistant_responses",
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      response_ids = json_response[:payload].pluck(:id)
+      expect(response_ids).to include(workspace_general_response.id, assistant_general_response.id, personal_response.id)
     end
 
     context 'when filtering by assistant_id' do
@@ -236,7 +249,27 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       expect(Captain::AssistantResponse.last.assistant_id).to be_nil
     end
 
-    it 'creates a workspace-personal response without assistant ownership' do
+    it 'creates an assistant-personal response when an assistant is selected' do
+      expect do
+        post "/api/v1/accounts/#{account.id}/captain/assistant_responses",
+             params: {
+               assistant_response: {
+                 question: 'Personal question?',
+                 answer: 'Personal answer',
+                 visibility: 'personal',
+                 assistant_id: assistant.id
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+      end.to change(Captain::AssistantResponse, :count).by(1)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:visibility]).to eq('personal')
+      expect(Captain::AssistantResponse.last.assistant_id).to eq(assistant.id)
+    end
+
+    it 'rejects a personal response without assistant ownership' do
       expect do
         post "/api/v1/accounts/#{account.id}/captain/assistant_responses",
              params: {
@@ -248,11 +281,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
              },
              headers: admin.create_new_auth_token,
              as: :json
-      end.to change(Captain::AssistantResponse, :count).by(1)
+      end.not_to change(Captain::AssistantResponse, :count)
 
-      expect(response).to have_http_status(:success)
-      expect(json_response[:visibility]).to eq('personal')
-      expect(Captain::AssistantResponse.last.assistant_id).to be_nil
+      expect(response).to have_http_status(:unprocessable_content)
     end
 
     context 'with invalid params' do

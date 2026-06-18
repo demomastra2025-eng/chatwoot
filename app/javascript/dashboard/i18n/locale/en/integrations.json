@@ -1901,7 +1901,12 @@
     },
     "KNOWLEDGE_VISIBILITY": {
       "LABEL": "Visibility",
-      "HELP_TEXT": "Shared knowledge is available across the workspace. Personal knowledge stays in the workspace personal layer.",
+      "HELP_TEXT": "Shared knowledge is available to all AI agents. Personal knowledge is available only to the selected AI agent.",
+      "ASSISTANT_LABEL": "AI Agent",
+      "ASSISTANT_PLACEHOLDER": "Select an AI agent",
+      "ASSISTANT_HELP_TEXT": "For personal knowledge, choose which AI agent can see it.",
+      "ASSISTANT_REQUIRED": "Select an AI agent for personal knowledge",
+      "ASSISTANT_BADGE": "AI Agent: {name}",
       "OPTIONS": {
         "GENERAL": "Shared",
         "PERSONAL": "Personal"

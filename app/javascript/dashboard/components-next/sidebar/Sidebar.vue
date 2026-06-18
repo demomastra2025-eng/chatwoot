@@ -479,12 +479,12 @@ const conversationAssigneeStatusItems = computed(() =>
     ASSIGNEE_TYPE_TAB_PERMISSIONS,
     userPermissions.value,
     item => item.permissions
-  ).map(({ key, count }) => ({
+  ).map(({ key }) => ({
     name: `Assignee:${key}`,
     visibilityKey: `Conversation:Assignee:${key}`,
     label: conversationAssigneeStatusLabels.value[key],
     icon: conversationAssigneeStatusIcons[key],
-    count: Number(conversationStats.value?.[count] || 0),
+    count: Number(conversationStats.value?.assigneeCounts?.[key] || 0),
     activeOn: conversationStatusActiveOn,
     to: withCurrentConversationScopeAssigneeType(key),
   }))

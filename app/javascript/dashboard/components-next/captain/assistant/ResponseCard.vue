@@ -40,6 +40,10 @@ const props = defineProps({
     type: String,
     default: 'general',
   },
+  assistant: {
+    type: Object,
+    default: null,
+  },
   updatedAt: {
     type: Number,
     required: true,
@@ -116,6 +120,13 @@ const visibilityLabel = computed(() =>
     ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL')
     : t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL')
 );
+const assistantLabel = computed(() => {
+  if (props.visibility !== 'personal' || !props.assistant?.name) return '';
+
+  return t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_BADGE', {
+    name: props.assistant.name,
+  });
+});
 
 const handleAssistantAction = ({ action, value }) => {
   toggleDropdown(false);
@@ -159,6 +170,12 @@ const handleDocumentableClick = () => {
               class="inline-flex shrink-0 items-center rounded-full bg-n-alpha-2 px-2 py-1 text-xs font-medium text-n-slate-11"
             >
               {{ visibilityLabel }}
+            </span>
+            <span
+              v-if="assistantLabel"
+              class="inline-flex shrink-0 items-center rounded-full bg-n-blue-9/10 px-2 py-1 text-xs font-medium text-n-blue-11"
+            >
+              {{ assistantLabel }}
             </span>
             <div
               v-if="documentable"

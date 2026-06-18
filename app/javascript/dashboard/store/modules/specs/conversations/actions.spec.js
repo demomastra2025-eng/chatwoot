@@ -426,6 +426,65 @@ describe('#actions', () => {
       );
     });
 
+    it('commits filtered sidebar unread counts from conversation meta', async () => {
+      const localCommit = vi.fn();
+      const counts = {
+        all: 3,
+        statuses: { open: 2, pending: 1 },
+        inboxes: { 1: 2 },
+      };
+      axios.get.mockResolvedValue({
+        data: { meta: { unread_counts: counts } },
+      });
+
+      await actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+        state: {
+          conversationFilters: {
+            status: 'open',
+            assigneeType: 'me',
+            inboxId: 1,
+          },
+        },
+      });
+
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        counts
+      );
+    });
+
+    it('uses communication thread meta for filtered thread unread counts', async () => {
+      const localCommit = vi.fn();
+      const counts = { all: 2, inboxes: { 1: 2 } };
+      const metaSpy = vi
+        .spyOn(CommunicationThreadApi, 'meta')
+        .mockResolvedValue({ data: { meta: { unread_counts: counts } } });
+
+      await actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+        state: {
+          conversationFilters: {
+            status: 'open',
+            assigneeType: 'me',
+            communicationThreadMode: true,
+          },
+        },
+      });
+
+      expect(metaSpy).toHaveBeenCalledWith({
+        status: 'open',
+        assigneeType: 'me',
+        communicationThreadMode: true,
+      });
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        counts
+      );
+
+      metaSpy.mockRestore();
+    });
+
     it('ignores stale sidebar unread count responses', async () => {
       const localCommit = vi.fn();
       let resolveFirst;

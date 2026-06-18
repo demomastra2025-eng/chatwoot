@@ -1,4 +1,4 @@
-class ConversationFinder
+class ConversationFinder # rubocop:disable Metrics/ClassLength
   attr_reader :current_user, :current_account, :params
 
   DEFAULT_STATUS = 'open'.freeze
@@ -40,36 +40,20 @@ class ConversationFinder
   def perform
     set_up
 
-    mine_count, unassigned_count, all_count, = set_count_for_all_conversations
-    assigned_count = all_count - unassigned_count
+    count = conversation_counts
 
     filter_by_assignee_type
 
     {
       conversations: conversations,
-      count: {
-        mine_count: mine_count,
-        assigned_count: assigned_count,
-        unassigned_count: unassigned_count,
-        all_count: all_count
-      }
+      count: count
     }
   end
 
   def perform_meta_only
     set_up
 
-    mine_count, unassigned_count, all_count, = set_count_for_all_conversations
-    assigned_count = all_count - unassigned_count
-
-    {
-      count: {
-        mine_count: mine_count,
-        assigned_count: assigned_count,
-        unassigned_count: unassigned_count,
-        all_count: all_count
-      }
-    }
+    { count: conversation_counts }
   end
 
   private
@@ -184,11 +168,194 @@ class ConversationFinder
   end
 
   def set_count_for_all_conversations
-    [
-      @conversations.assigned_to(current_user).count,
-      @conversations.unassigned.count,
-      @conversations.count
-    ]
+    assignee_counts_for(@conversations).values_at(:mine_count, :unassigned_count, :all_count)
+  end
+
+  def conversation_counts
+    filtered_counts = assignee_counts_for(@conversations)
+
+    filtered_counts.merge(
+      assignee_counts: assignee_counts_for(base_count_scope),
+      unread_counts: unread_counts
+    )
+  end
+
+  def assignee_counts_for(scope)
+    mine_count = scope.assigned_to(current_user).count
+    unassigned_count = scope.unassigned.count
+    all_count = scope.count
+
+    {
+      mine_count: mine_count,
+      assigned_count: all_count - unassigned_count,
+      unassigned_count: unassigned_count,
+      all_count: all_count
+    }
+  end
+
+  def unread_counts
+    {
+      all: unread_dialog_count(scoped_count_relation(include_inbox: false, include_assignee: true)),
+      statuses: status_unread_counts,
+      inboxes: inbox_unread_counts,
+      teams: team_unread_counts,
+      labels: label_unread_counts
+    }
+  end
+
+  def status_unread_counts
+    scope = scoped_count_relation(include_status: false, include_assignee: true)
+    unread_scope = unread_conversation_scope(scope)
+
+    normalize_enum_counts(unread_scope.group(:status).distinct.count('conversations.id'), Conversation.statuses)
+  end
+
+  def inbox_unread_counts
+    scope = scoped_count_relation(include_inbox: false, include_assignee: true)
+    unread_scope = unread_conversation_scope(scope)
+
+    normalize_counts(unread_scope.group(:inbox_id).distinct.count('conversations.id'))
+  end
+
+  def team_unread_counts
+    scope = scoped_count_relation(include_team: false, include_assignee: true)
+    unread_scope = unread_conversation_scope(scope)
+
+    normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).distinct.count('conversations.id'))
+  end
+
+  def label_unread_counts
+    scope = scoped_count_relation(include_labels: false, include_assignee: true)
+    unread_scope = unread_conversation_scope(scope)
+
+    normalize_counts(label_counts(unread_scope))
+  end
+
+  def unread_conversation_scope(scope)
+    scope.joins(:messages)
+         .where(messages: unread_message_filters)
+         .where(
+           'messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)',
+           Time.zone.at(0)
+         )
+  end
+
+  def unread_dialog_count(scope)
+    unread_conversation_scope(scope).distinct.count('conversations.id')
+  end
+
+  def unread_message_filters
+    {
+      account_id: current_account.id,
+      message_type: Message.message_types[:incoming],
+      private: false
+    }
+  end
+
+  def label_counts(scope)
+    scope.joins(
+      'INNER JOIN taggings ON taggings.taggable_id = conversations.id ' \
+      "AND taggings.taggable_type = 'Conversation' " \
+      "AND taggings.context = 'labels'"
+    ).joins('INNER JOIN tags ON tags.id = taggings.tag_id')
+         .group('tags.name')
+         .distinct
+         .count('conversations.id')
+  end
+
+  def normalize_counts(counts)
+    counts.each_with_object({}) do |(key, value), result|
+      next if key.blank?
+
+      result[key.to_s] = value
+    end
+  end
+
+  def normalize_enum_counts(counts, enum_mapping)
+    counts.each_with_object({}) do |(key, value), result|
+      enum_key = enum_mapping.key(key) || key.to_s
+      next if enum_key.blank?
+
+      result[enum_key] = value
+    end
+  end
+
+  def scoped_count_relation(include_status: true, include_inbox: true, include_assignee: false, include_team: true, include_labels: true)
+    scope = base_count_scope
+    scope = apply_inbox_filter(scope) if include_inbox
+    scope = apply_status_filter(scope) if include_status && !params[:q]
+    scope = apply_team_filter(scope) if include_team
+    scope = apply_labels_filter(scope) if include_labels
+    scope = apply_source_id_filter(scope)
+    scope = apply_assignee_filter(scope) if include_assignee
+    scope
+  end
+
+  def base_count_scope
+    scope = Conversations::PermissionFilterService.new(
+      current_account.conversations,
+      current_user,
+      current_account
+    ).perform
+    apply_conversation_type_filter(scope)
+  end
+
+  def apply_conversation_type_filter(scope)
+    case @params[:conversation_type]
+    when 'mention'
+      conversation_ids = current_account.mentions.where(user: current_user).pluck(:conversation_id)
+      scope.where(id: conversation_ids)
+    when 'participating'
+      current_user.participating_conversations.where(account_id: current_account.id)
+    when 'unattended'
+      scope.unattended
+    else
+      scope
+    end
+  end
+
+  def apply_inbox_filter(scope)
+    return scope unless params[:inbox_id]
+
+    scope.where(inbox_id: @inbox_ids)
+  end
+
+  def apply_status_filter(scope, status = nil)
+    selected_status = status || params[:status]
+    return scope if selected_status == 'all'
+
+    scope.where(status: selected_status.presence || DEFAULT_STATUS)
+  end
+
+  def apply_team_filter(scope)
+    return scope unless @team
+
+    scope.where(team: @team)
+  end
+
+  def apply_labels_filter(scope)
+    return scope unless params[:labels]
+
+    scope.tagged_with(params[:labels], any: true)
+  end
+
+  def apply_source_id_filter(scope)
+    return scope unless params[:source_id]
+
+    scope.joins(:contact_inbox).where(contact_inboxes: { source_id: params[:source_id] })
+  end
+
+  def apply_assignee_filter(scope)
+    case @assignee_type
+    when 'me'
+      scope.assigned_to(current_user)
+    when 'unassigned'
+      scope.unassigned
+    when 'assigned'
+      scope.assigned
+    else
+      scope
+    end
   end
 
   def current_page
