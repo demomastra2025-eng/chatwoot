@@ -8,6 +8,8 @@ json.data do
     json.assigned_unread_count @communication_threads_count[:assigned_unread_count]
     json.unassigned_unread_count @communication_threads_count[:unassigned_unread_count]
     json.all_unread_count @communication_threads_count[:all_unread_count]
+    json.assignee_counts @communication_threads_count[:assignee_counts]
+    json.unread_counts @communication_threads_count[:unread_counts]
   end
   json.payload do
     json.array! @communication_threads do |communication_thread|

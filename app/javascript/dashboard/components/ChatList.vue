@@ -271,7 +271,7 @@ const currentUserDetails = computed(() => {
   return { id, name };
 });
 
-const tabTotalCount = tabKey => {
+const filteredTabTotalCount = tabKey => {
   const countByTab = {
     [wootConstants.ASSIGNEE_TYPE.ME]: 'mineCount',
     [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]: 'unAssignedCount',
@@ -362,7 +362,7 @@ const shouldShowChannelFilter = computed(() => {
 });
 
 const activeAssigneeTabCount = computed(() => {
-  return tabTotalCount(activeAssigneeTab.value);
+  return filteredTabTotalCount(activeAssigneeTab.value);
 });
 
 const conversationListPagination = computed(() => {

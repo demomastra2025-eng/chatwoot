@@ -1180,7 +1180,12 @@
     },
     "KNOWLEDGE_VISIBILITY": {
       "LABEL": "Көрінуі",
-      "HELP_TEXT": "Жалпы білім workspace AI-агенттеріне қолжетімді. Жеке білім workspace-тің жеке қабатында қалады.",
+      "HELP_TEXT": "Жалпы білім барлық AI-агенттерге қолжетімді. Жеке білім тек таңдалған AI-агентке қолжетімді.",
+      "ASSISTANT_LABEL": "AI Agent",
+      "ASSISTANT_PLACEHOLDER": "AI Agent таңдаңыз",
+      "ASSISTANT_HELP_TEXT": "Жеке білім үшін оны қай AI-агент көретінін таңдаңыз.",
+      "ASSISTANT_REQUIRED": "Жеке білім үшін AI-агент таңдаңыз",
+      "ASSISTANT_BADGE": "AI Agent: {name}",
       "OPTIONS": {
         "GENERAL": "Жалпы",
         "PERSONAL": "Жеке"

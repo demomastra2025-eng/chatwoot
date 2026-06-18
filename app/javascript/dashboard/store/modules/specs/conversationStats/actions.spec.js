@@ -37,6 +37,37 @@ describe('#actions', () => {
         [types.default.SET_CONV_TAB_META, { mine_count: 1 }],
       ]);
     });
+
+    it('commits filtered unread counts from meta when present', async () => {
+      const unreadCounts = {
+        all: 3,
+        statuses: { open: 2 },
+        inboxes: { 1: 1 },
+      };
+      axios.get.mockResolvedValue({
+        data: { meta: { mine_count: 1, unread_counts: unreadCounts } },
+      });
+
+      actions.get(
+        { commit, state: { allCount: 0 } },
+        { inboxId: 1, assigneeType: 'me', status: 'open' }
+      );
+
+      await vi.runAllTimersAsync();
+      await vi.waitFor(() => expect(commit).toHaveBeenCalled());
+
+      expect(commit.mock.calls).toEqual([
+        [
+          types.default.SET_CONV_TAB_META,
+          { mine_count: 1, unread_counts: unreadCounts },
+        ],
+        [
+          types.default.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+          unreadCounts,
+          { root: true },
+        ],
+      ]);
+    });
     it('sends correct actions if API is error', async () => {
       axios.get.mockRejectedValue({ message: 'Incorrect header' });
       actions.get(

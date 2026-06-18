@@ -106,12 +106,45 @@ describe ConversationFinder do
 
       it 'returns the correct meta' do
         result = conversation_finder.perform
-        expect(result[:count]).to eq({
-                                       mine_count: 2,
-                                       assigned_count: 3,
-                                       unassigned_count: 1,
-                                       all_count: 4
-                                     })
+        expect(result[:count]).to include(
+          mine_count: 2,
+          assigned_count: 3,
+          unassigned_count: 1,
+          all_count: 4
+        )
+      end
+    end
+
+    context 'with facet counts' do
+      let(:params) { { status: 'open', assignee_type: 'me', inbox_id: inbox.id } }
+
+      it 'keeps ownership counts independent from secondary filters and scopes facets by active filters' do
+        second_inbox = create(:inbox, account: account, enable_auto_assignment: false)
+        create(:inbox_member, user: user_1, inbox: second_inbox)
+        create(:conversation, account: account, inbox: second_inbox, assignee: user_1, status: 'open')
+        create(:conversation, account: account, inbox: second_inbox, assignee: user_1, status: 'pending')
+        Conversation.where(account: account, assignee: user_1).find_each do |conversation|
+          status = conversation.status
+          conversation.update!(agent_last_seen_at: 1.hour.ago)
+          create(:message, account: account, conversation: conversation, created_at: 10.minutes.ago)
+          conversation.update!(status: status)
+        end
+
+        result = conversation_finder.perform
+
+        expect(result[:count][:assignee_counts]).to include(
+          mine_count: 5,
+          unassigned_count: 1,
+          all_count: 7
+        )
+        expect(result[:count].dig(:unread_counts, :statuses)).to include(
+          'open' => 2,
+          'resolved' => 1
+        )
+        expect(result[:count][:unread_counts]).to include(
+          all: 3,
+          inboxes: include(inbox.id.to_s => 2, second_inbox.id.to_s => 1)
+        )
       end
     end
 
@@ -201,12 +234,12 @@ describe ConversationFinder do
 
       it 'returns the correct counts' do
         result = conversation_finder.perform_meta_only
-        expect(result[:count]).to eq({
-                                       mine_count: 2,
-                                       assigned_count: 3,
-                                       unassigned_count: 1,
-                                       all_count: 4
-                                     })
+        expect(result[:count]).to include(
+          mine_count: 2,
+          assigned_count: 3,
+          unassigned_count: 1,
+          all_count: 4
+        )
       end
 
       it 'returns same counts as perform' do

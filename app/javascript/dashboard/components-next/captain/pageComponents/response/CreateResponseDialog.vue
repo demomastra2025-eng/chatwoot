@@ -38,11 +38,13 @@ const i18nKey = computed(() => `CAPTAIN.RESPONSES.${props.type.toUpperCase()}`);
 const createResponse = responseDetails =>
   store.dispatch('captainResponses/create', responseDetails);
 
+const routeAssistantId = computed(() =>
+  route.params.assistantId ? Number(route.params.assistantId) : null
+);
+
 const withOptionalAssistantId = responseDetails => ({
   ...responseDetails,
-  ...(route.params.assistantId
-    ? { assistant_id: route.params.assistantId }
-    : {}),
+  ...(routeAssistantId.value ? { assistant_id: routeAssistantId.value } : {}),
 });
 
 const handleSubmit = async updatedResponse => {
@@ -87,6 +89,7 @@ defineExpose({ dialogRef });
       ref="responseForm"
       :mode="type"
       :response="selectedResponse"
+      :assistant-id="routeAssistantId"
       @submit="handleSubmit"
       @cancel="handleCancel"
     />

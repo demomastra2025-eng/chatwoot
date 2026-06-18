@@ -312,6 +312,7 @@ watch(
           :external-link="doc.external_link"
           :display-url="doc.display_url"
           :visibility="doc.visibility"
+          :assistant="doc.assistant"
           :source-mode="doc.source_mode"
           :sync-status="doc.sync_status"
           :refresh-mode="doc.refresh_mode"
