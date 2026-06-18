@@ -139,6 +139,41 @@ describe('ReplyBox', () => {
         isCommunicationCallReplyAction: true,
       })
     ).toBe(false);
+    expect(
+      ReplyBox.computed.showWhatsappFlows.call({
+        isCommunicationCallReplyAction: true,
+      })
+    ).toBe(false);
+  });
+
+  it('shows session WhatsApp Flows only for replyable public WhatsApp Cloud conversations', () => {
+    const baseContext = {
+      isCommunicationCallReplyAction: false,
+      isAWhatsAppCloudChannel: true,
+      selectedChannelCanReply: true,
+      isPrivate: false,
+      isEditingMessage: false,
+    };
+
+    expect(ReplyBox.computed.showWhatsappFlows.call(baseContext)).toBe(true);
+    expect(
+      ReplyBox.computed.showWhatsappFlows.call({
+        ...baseContext,
+        selectedChannelCanReply: false,
+      })
+    ).toBe(false);
+    expect(
+      ReplyBox.computed.showWhatsappFlows.call({
+        ...baseContext,
+        isEditingMessage: true,
+      })
+    ).toBe(false);
+    expect(
+      ReplyBox.computed.showWhatsappFlows.call({
+        ...baseContext,
+        isPrivate: true,
+      })
+    ).toBe(false);
   });
 
   it('treats the selected direct WhatsApp Official call action as a call action', () => {
@@ -271,6 +306,25 @@ describe('ReplyBox', () => {
         },
       })
     ).toBe(true);
+  });
+
+  it('shows WhatsApp Flow action for public WhatsApp Cloud replies', () => {
+    expect(
+      ReplyBox.computed.showWhatsappFlows.call({
+        isCommunicationCallReplyAction: false,
+        isAWhatsAppCloudChannel: true,
+        selectedChannelCanReply: true,
+        isPrivate: false,
+        isEditingMessage: false,
+      })
+    ).toBe(true);
+    expect(
+      ReplyBox.computed.showWhatsappFlows.call({
+        isCommunicationCallReplyAction: false,
+        isAWhatsAppCloudChannel: true,
+        isPrivate: true,
+      })
+    ).toBe(false);
   });
 
   it('keeps WhatsApp text input enabled when the selected thread channel can send text', () => {

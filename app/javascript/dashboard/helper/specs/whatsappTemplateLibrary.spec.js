@@ -60,6 +60,9 @@ describe('whatsappTemplateLibrary', () => {
             url: 'https://example.com',
             example: '',
             phone_number: '',
+            flow_id: '',
+            flow_name: '',
+            flow_json: {},
           },
         ],
       });
@@ -91,6 +94,9 @@ describe('whatsappTemplateLibrary', () => {
           url: '',
           example: 'SAVE20',
           phone_number: '',
+          flow_id: '',
+          flow_name: '',
+          flow_json: {},
         },
         {
           type: 'PHONE_NUMBER',
@@ -98,8 +104,65 @@ describe('whatsappTemplateLibrary', () => {
           url: '',
           example: '',
           phone_number: '+16505551234',
+          flow_id: '',
+          flow_name: '',
+          flow_json: {},
         },
       ]);
+    });
+
+    it('includes WhatsApp Flow button identifiers in the payload without tokens', () => {
+      const form = createEmptyWhatsAppTemplateForm();
+      form.buttons = [
+        {
+          type: 'FLOW',
+          text: ' Open form ',
+          url: '',
+          example: '',
+          phoneNumber: '',
+          flowId: ' 1234567890 ',
+          flowName: '',
+          flowJson: '',
+        },
+      ];
+
+      expect(buildWhatsAppTemplatePayload(form).buttons).toEqual([
+        {
+          type: 'FLOW',
+          text: 'Open form',
+          url: '',
+          example: '',
+          phone_number: '',
+          flow_id: '1234567890',
+          flow_name: '',
+          flow_json: {},
+        },
+      ]);
+      expect(JSON.stringify(buildWhatsAppTemplatePayload(form))).not.toContain(
+        'flow_token'
+      );
+    });
+
+    it('parses WhatsApp Flow JSON button payloads as objects', () => {
+      const form = createEmptyWhatsAppTemplateForm();
+      form.buttons = [
+        {
+          type: 'FLOW',
+          text: ' Open form ',
+          url: '',
+          example: '',
+          phoneNumber: '',
+          flowId: '',
+          flowName: '',
+          flowJson: '{"version":"7.3","screens":[]}',
+        },
+      ];
+
+      expect(buildWhatsAppTemplatePayload(form).buttons[0]).toMatchObject({
+        type: 'FLOW',
+        text: 'Open form',
+        flow_json: { version: '7.3', screens: [] },
+      });
     });
   });
 

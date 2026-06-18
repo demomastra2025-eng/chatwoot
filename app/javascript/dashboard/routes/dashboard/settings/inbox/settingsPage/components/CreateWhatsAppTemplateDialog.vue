@@ -114,12 +114,35 @@ const buttonTypeOptions = computed(() => [
     ...TEMPLATE_BUTTON_TYPE_OPTIONS[3],
     label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.PHONE_NUMBER'),
   },
+  {
+    ...TEMPLATE_BUTTON_TYPE_OPTIONS[4],
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.FLOW'),
+  },
 ]);
 
 const buttonUsesText = buttonType => buttonType !== 'COPY_CODE';
 const buttonUsesUrl = buttonType => buttonType === 'URL';
 const buttonUsesCopyCode = buttonType => buttonType === 'COPY_CODE';
 const buttonUsesPhoneNumber = buttonType => buttonType === 'PHONE_NUMBER';
+const buttonUsesFlow = buttonType => buttonType === 'FLOW';
+
+const flowJsonStatus = value => {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue) return { present: false, valid: true };
+
+  try {
+    const parsedValue = JSON.parse(normalizedValue);
+    return {
+      present: true,
+      valid:
+        Boolean(parsedValue) &&
+        !Array.isArray(parsedValue) &&
+        typeof parsedValue === 'object',
+    };
+  } catch {
+    return { present: true, valid: false };
+  }
+};
 
 const bodyVariableInfo = computed(() =>
   extractSequentialTemplateVariables(form.bodyText)
@@ -301,6 +324,37 @@ const validationErrors = computed(() => {
         );
       }
     }
+
+    if (buttonUsesFlow(button.type)) {
+      const flowJson = flowJsonStatus(button.flowJson);
+      const identifierCount = [
+        button.flowId.trim(),
+        button.flowName.trim(),
+        flowJson.present,
+      ].filter(Boolean).length;
+
+      if (identifierCount === 0) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_FLOW_REQUIRED', {
+            index: buttonIndex,
+          })
+        );
+      } else if (identifierCount > 1) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_FLOW_EXACTLY_ONE', {
+            index: buttonIndex,
+          })
+        );
+      }
+
+      if (!flowJson.valid) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_FLOW_JSON_INVALID', {
+            index: buttonIndex,
+          })
+        );
+      }
+    }
   });
 
   return [...new Set(errors)];
@@ -357,6 +411,9 @@ const updateButtonType = (index, type) => {
         ? currentButton.example
         : '',
     phoneNumber: buttonUsesPhoneNumber(type) ? currentButton.phoneNumber : '',
+    flowId: buttonUsesFlow(type) ? currentButton.flowId : '',
+    flowName: buttonUsesFlow(type) ? currentButton.flowName : '',
+    flowJson: buttonUsesFlow(type) ? currentButton.flowJson : '',
   };
 };
 
@@ -450,10 +507,7 @@ defineExpose({
           </p>
           <p class="text-sm text-n-slate-11">
             {{
-              t(
-                'WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT',
-                exampleVariables
-              )
+              t('WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT', exampleVariables)
             }}
           </p>
         </div>
@@ -703,6 +757,46 @@ defineExpose({
               )
             "
           />
+
+          <div
+            v-if="buttonUsesFlow(button.type)"
+            class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          >
+            <Input
+              v-model="button.flowId"
+              :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_FLOW_ID')"
+              :placeholder="
+                t(
+                  'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_FLOW_ID_PLACEHOLDER'
+                )
+              "
+            />
+            <Input
+              v-model="button.flowName"
+              :label="
+                t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_FLOW_NAME')
+              "
+              :placeholder="
+                t(
+                  'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_FLOW_NAME_PLACEHOLDER'
+                )
+              "
+            />
+            <TextArea
+              v-model="button.flowJson"
+              class="md:col-span-2"
+              :label="
+                t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_FLOW_JSON')
+              "
+              :placeholder="
+                t(
+                  'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_FLOW_JSON_PLACEHOLDER'
+                )
+              "
+              auto-height
+              max-height="16rem"
+            />
+          </div>
         </div>
       </div>
 

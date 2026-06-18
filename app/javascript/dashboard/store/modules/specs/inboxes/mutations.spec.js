@@ -80,6 +80,30 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#SET_INBOX_WHATSAPP_FLOWS', () => {
+    it('updates only the target inbox with fetched flows', () => {
+      const flows = [{ id: 7, provider_flow_id: 'flow-123' }];
+      const state = {
+        records: [
+          { ...inboxList[0], id: 1, name: 'Existing inbox' },
+          { ...inboxList[1], id: 2, whatsapp_flows: [] },
+        ],
+      };
+
+      mutations[types.default.SET_INBOX_WHATSAPP_FLOWS](state, {
+        inboxId: 2,
+        flows,
+      });
+
+      expect(state.records[0].whatsapp_flows).toBeUndefined();
+      expect(state.records[1]).toMatchObject({
+        id: 2,
+        whatsapp_flows: flows,
+      });
+      expect(state.records[1].name).toBe(inboxList[1].name);
+    });
+  });
+
   describe('#DELETE_INBOXES', () => {
     it('delete inbox from store', () => {
       const state = {

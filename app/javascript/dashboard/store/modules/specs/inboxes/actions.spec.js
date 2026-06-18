@@ -298,6 +298,44 @@ describe('#actions', () => {
     });
   });
 
+  describe('#fetchWhatsAppFlows', () => {
+    it('stores flows on the inbox record without replacing the inbox', async () => {
+      const flows = [
+        { id: 7, provider_flow_id: 'flow-123', name: 'lead_flow' },
+      ];
+      axios.get.mockResolvedValue({ data: { payload: flows } });
+
+      const response = await actions.fetchWhatsAppFlows({ commit }, 123);
+
+      expect(response).toEqual(flows);
+      expect(axios.get).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/whatsapp_flows'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.SET_INBOX_WHATSAPP_FLOWS,
+        { inboxId: 123, flows }
+      );
+    });
+  });
+
+  describe('#createWhatsAppFlowSession', () => {
+    it('creates a send session and returns it without exposing the token in store', async () => {
+      const session = { id: 11, whatsapp_flow_id: 7, status: 'pending' };
+      axios.post.mockResolvedValue({ data: session });
+
+      const response = await actions.createWhatsAppFlowSession(
+        {},
+        { inboxId: 123, flowId: 7, session: { conversation_id: 99 } }
+      );
+
+      expect(response).toEqual(session);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/whatsapp_flows/7/sessions',
+        { session: { conversation_id: 99 } }
+      );
+    });
+  });
+
   describe('#createWhatsAppTemplate', () => {
     it('updates the inbox when create succeeds', async () => {
       axios.post.mockResolvedValue({ data: inboxList[0] });

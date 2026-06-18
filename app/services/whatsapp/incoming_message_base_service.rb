@@ -276,5 +276,19 @@ class Whatsapp::IncomingMessageBaseService
     )
   end
 
-  def after_message_persisted(_message); end
+  def after_message_persisted(message)
+    record_flow_session_submission(message)
+  end
+
+  def record_flow_session_submission(message)
+    flow_session_id = message&.content_attributes&.dig('flow_session_id') || message&.content_attributes&.dig(:flow_session_id)
+    return if flow_session_id.blank?
+
+    flow_session = Whatsapp::FlowSession.find_by(id: flow_session_id, account_id: inbox.account_id, inbox_id: inbox.id)
+    return if flow_session.blank?
+
+    flow_session.mark_submitted!(message: message, response_payload: message.content_attributes['flow_response'] || {})
+  rescue StandardError => e
+    Rails.logger.warn("[WhatsApp] Flow session submission update failed: #{e.class}: #{e.message}")
+  end
 end

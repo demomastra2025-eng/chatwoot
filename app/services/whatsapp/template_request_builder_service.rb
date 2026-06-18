@@ -2,7 +2,7 @@
 class Whatsapp::TemplateRequestBuilderService
   SUPPORTED_CATEGORIES = %w[UTILITY MARKETING].freeze
   SUPPORTED_HEADER_TYPES = %w[none text image video document].freeze
-  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL COPY_CODE PHONE_NUMBER].freeze
+  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL COPY_CODE PHONE_NUMBER FLOW].freeze
   TEMPLATE_NAME_FORMAT = /\A[a-z0-9_]+\z/
   PHONE_NUMBER_FORMAT = /\A\+[1-9]\d{1,14}\z/
   VARIABLE_PATTERN = /{{\s*(\d+)\s*}}/
@@ -128,6 +128,8 @@ class Whatsapp::TemplateRequestBuilderService
       build_copy_code_button(button)
     when 'PHONE_NUMBER'
       build_phone_number_button(button)
+    when 'FLOW'
+      build_flow_button(button)
     end
   end
 
@@ -182,6 +184,49 @@ class Whatsapp::TemplateRequestBuilderService
       text: required_value(button[:text], 'Phone number button text is required'),
       phone_number: phone_number
     }
+  end
+
+  def build_flow_button(button)
+    button_payload = {
+      type: 'FLOW',
+      text: required_value(button[:text], 'Flow button text is required')
+    }
+    flow_identifier = flow_button_identifier(button)
+    raise ArgumentError, 'Flow button requires exactly one of flow_id, flow_name, or flow_json' if flow_identifier.blank?
+
+    button_payload.merge(flow_identifier)
+  end
+
+  def flow_button_identifier(button)
+    identifiers = {
+      flow_id: button[:flow_id],
+      flow_name: button[:flow_name],
+      flow_json: button[:flow_json]
+    }.compact_blank
+    raise ArgumentError, 'Flow button requires exactly one of flow_id, flow_name, or flow_json' unless identifiers.one?
+
+    return { flow_id: required_value(button[:flow_id], 'Flow id is required') } if button[:flow_id].present?
+    return { flow_name: required_value(button[:flow_name], 'Flow name is required') } if button[:flow_name].present?
+    return { flow_json: flow_json_string(button[:flow_json]) } if button[:flow_json].present?
+
+    {}
+  end
+
+  def flow_json_string(value)
+    flow_json = parse_flow_json(value)
+    raise ArgumentError, 'Flow JSON is required' if flow_json.blank?
+    raise ArgumentError, 'Flow JSON must be a JSON object' unless flow_json.is_a?(Hash)
+
+    flow_json.to_json
+  end
+
+  def parse_flow_json(value)
+    return JSON.parse(value) if value.is_a?(String)
+    return value.to_h if value.respond_to?(:to_h)
+
+    value
+  rescue JSON::ParserError => e
+    raise ArgumentError, "Flow JSON must be a JSON object: #{e.message}"
   end
 
   def example_values_for(key, variables, label)

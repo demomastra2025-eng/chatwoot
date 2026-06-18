@@ -59,6 +59,17 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     process_response(response, message)
   end
 
+  def send_flow(phone_number, flow_info, message)
+    response = HTTParty.post(
+      "#{phone_id_path}/messages",
+      headers: api_headers,
+      query: graph_api_query,
+      body: flow_message_request_body(phone_number, flow_info).to_json
+    )
+
+    process_response(response, message)
+  end
+
   def process_response(response, message)
     message_id = super
     clear_transient_send_retry_metadata(message) if message_id.present?
@@ -160,6 +171,62 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   private
 
   def request_timeout = ENV.fetch('WHATSAPP_CLOUD_API_TIMEOUT', 20).to_i
+
+  def flow_message_request_body(phone_number, flow_info)
+    flow_info = flow_info.to_h.deep_stringify_keys
+    interactive = {
+      type: 'flow',
+      header: flow_header(flow_info),
+      body: { text: flow_info['body_text'] },
+      footer: flow_footer(flow_info),
+      action: {
+        name: 'flow',
+        parameters: flow_action_parameters(flow_info)
+      }
+    }.compact_blank
+
+    {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone_number,
+      type: 'interactive',
+      interactive: interactive
+    }
+  end
+
+  def flow_header(flow_info)
+    return if flow_info['header_text'].blank?
+
+    { type: 'text', text: flow_info['header_text'] }
+  end
+
+  def flow_footer(flow_info)
+    return if flow_info['footer_text'].blank?
+
+    { text: flow_info['footer_text'] }
+  end
+
+  def flow_action_parameters(flow_info)
+    flow_action = flow_info['flow_action'].presence || 'navigate'
+    parameters = {
+      flow_message_version: flow_info['flow_message_version'].presence || '3',
+      flow_token: flow_info['flow_token'],
+      flow_cta: flow_info['flow_cta'],
+      flow_action: flow_action,
+      mode: flow_info['mode']
+    }.merge(flow_identifier_parameters(flow_info))
+
+    parameters[:flow_action_payload] = flow_info['flow_action_payload'] if flow_action == 'navigate'
+    parameters.compact_blank
+  end
+
+  def flow_identifier_parameters(flow_info)
+    return { flow_id: flow_info['flow_id'] } if flow_info['flow_id'].present?
+    return { flow_name: flow_info['flow_name'] } if flow_info['flow_name'].present?
+    return { flow_json: flow_info['flow_json'] } if flow_info['flow_json'].present?
+
+    {}
+  end
 
   def handle_error(response, message)
     error = provider_error(response)

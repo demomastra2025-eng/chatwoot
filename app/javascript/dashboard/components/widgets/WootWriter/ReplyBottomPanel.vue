@@ -136,6 +136,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    enableWhatsAppFlows: {
+      type: Boolean,
+      default: false,
+    },
     enableContentTemplates: {
       type: Boolean,
       default: false,
@@ -185,6 +189,7 @@ export default {
   emits: [
     'toggleInsertArticle',
     'selectWhatsappTemplate',
+    'selectWhatsappFlow',
     'selectContentTemplate',
     'selectReplyChannel',
     'selectDirectReplyAction',
@@ -790,6 +795,15 @@ export default {
         faded
         sm
         @click="$emit('selectWhatsappTemplate')"
+      />
+      <NextButton
+        v-if="enableWhatsAppFlows"
+        v-tooltip.top-end="$t('WHATSAPP_FLOWS.FOOTER_ACTION')"
+        icon="i-lucide-workflow"
+        slate
+        faded
+        sm
+        @click="$emit('selectWhatsappFlow')"
       />
       <NextButton
         v-if="enableContentTemplates"

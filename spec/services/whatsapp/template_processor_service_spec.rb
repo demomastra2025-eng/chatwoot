@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::TemplateProcessorService do
-  let(:channel) { create(:channel_whatsapp, sync_templates: false, validate_provider_config: false) }
+  let(:channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false) }
 
   describe '#call' do
     it 'does not raise when the channel template cache is empty' do
@@ -57,6 +57,76 @@ RSpec.describe Whatsapp::TemplateProcessorService do
           parameters: [{ type: 'text', parameter_name: 'ticket_id', text: '123' }]
         }
       ])
+    end
+
+    it 'builds safe runtime parameters for WhatsApp Flow template buttons' do
+      flow = create(:whatsapp_flow, account: channel.account, inbox: channel.inbox,
+                                    provider_flow_id: 'flow-123', name: 'lead_qualification')
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, source_id: '123456789')
+      conversation = create(:conversation, contact_inbox: contact_inbox, inbox: channel.inbox)
+      message = create(:message, :bot_message, account: channel.account, conversation: conversation, message_type: :outgoing,
+                                 content: 'Please complete the lead form',
+                                 additional_attributes: {
+                                   'template_params' => {
+                                     'name' => 'lead_flow_template',
+                                     'language' => 'en_US',
+                                     'category' => 'MARKETING',
+                                     'processed_params' => {
+                                       'buttons' => [
+                                         {
+                                           'type' => 'flow',
+                                           'whatsapp_flow_id' => flow.id,
+                                           'flow_action_data' => { 'lead_id' => 'deal-1' }
+                                         }
+                                       ]
+                                     }
+                                   }
+                                 })
+
+      channel.update!(
+        message_templates: [
+          {
+            'name' => 'lead_flow_template',
+            'language' => 'en_US',
+            'status' => 'APPROVED',
+            'category' => 'MARKETING',
+            'components' => [
+              { 'type' => 'BODY', 'text' => 'Please fill the lead form' },
+              { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'FLOW', 'text' => 'Open form' }] }
+            ]
+          }
+        ]
+      )
+
+      template_params = {
+        'name' => 'lead_flow_template',
+        'language' => 'en_US',
+        'processed_params' => message.additional_attributes.dig('template_params', 'processed_params')
+      }
+
+      _, _, _, processed_params = described_class.new(channel: channel, template_params: template_params, message: message).call
+      flow_session = Whatsapp::FlowSession.find_by!(flow: flow, message: message)
+
+      expect(processed_params).to eq([
+        {
+          type: 'button',
+          sub_type: 'flow',
+          index: '0',
+          parameters: [
+            {
+              type: 'action',
+              action: {
+                flow_token: flow_session.token,
+                flow_action_data: { 'lead_id' => 'deal-1' }
+              }
+            }
+          ]
+        }
+      ])
+      expect(message.reload.additional_attributes.dig('template_params', 'processed_params', 'buttons', 0)).to include(
+        'flow_session_id' => flow_session.id
+      )
+      expect(message.additional_attributes.to_json).not_to include(flow_session.token)
     end
 
     it 'rejects authentication templates even if they exist in the local cache' do

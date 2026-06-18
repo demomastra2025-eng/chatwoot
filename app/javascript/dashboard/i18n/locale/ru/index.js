@@ -40,6 +40,7 @@ import signup from './signup.json';
 import sla from './sla.json';
 import teamsSettings from './teamsSettings.json';
 import whatsappTemplates from './whatsappTemplates.json';
+import whatsappFlows from './whatsappFlows.json';
 import yearInReview from './yearInReview.json';
 
 export default {
@@ -85,5 +86,6 @@ export default {
   ...sla,
   ...teamsSettings,
   ...whatsappTemplates,
+  ...whatsappFlows,
   ...yearInReview,
 };

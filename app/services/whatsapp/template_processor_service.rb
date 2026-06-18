@@ -126,7 +126,9 @@ class Whatsapp::TemplateProcessorService
     button_params = processed_params['buttons'].filter_map.with_index do |button, index|
       next if button.blank?
 
-      if button['type'] == 'url' || button['parameter'].present?
+      if flow_button?(button)
+        build_flow_button_component(button, index)
+      elsif button['type'] == 'url' || button['parameter'].present?
         {
           type: 'button',
           sub_type: button['type'] || 'url',
@@ -137,6 +139,26 @@ class Whatsapp::TemplateProcessorService
     end
 
     button_params.compact
+  end
+
+  def flow_button?(button)
+    button['type'].to_s.casecmp('flow').zero?
+  end
+
+  def build_flow_button_component(button, index)
+    {
+      type: 'button',
+      sub_type: 'flow',
+      index: index.to_s,
+      parameters: [
+        Whatsapp::TemplateFlowButtonParameterService.new(
+          channel: channel,
+          button: button,
+          message: message,
+          index: index
+        ).call
+      ]
+    }
   end
 
   def parameter_builder

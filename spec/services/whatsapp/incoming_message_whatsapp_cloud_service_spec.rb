@@ -424,6 +424,54 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         expect(confirmation_request.resolved_message).to eq(reply_message)
       end
 
+      it 'parses WhatsApp Flow nfm_reply completion payloads' do
+        flow = create(:whatsapp_flow, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox,
+                                      provider_flow_id: 'flow-456', name: 'lead_qualification')
+        flow_session = create(:whatsapp_flow_session, flow: flow, conversation: confirmation_request.conversation)
+        response_json = {
+          flow_token: flow_session.token,
+          customer_name: 'Aruzhan',
+          budget: '1000000'
+        }.to_json
+        flow_params = confirmation_reply_params(
+          source_id: confirmation_source_id,
+          message_id: 'wamid.FLOW_NFM_REPLY',
+          message: {
+            type: 'interactive',
+            interactive: {
+              type: 'nfm_reply',
+              nfm_reply: {
+                name: 'lead_qualification',
+                body: 'Lead form submitted',
+                response_json: response_json
+              }
+            }
+          }
+        )
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: flow_params).perform
+
+        reply_message = whatsapp_channel.inbox.messages.last
+        expect(reply_message.content).to eq('Lead form submitted')
+        expect(reply_message.content_attributes).to include(
+          'whatsapp_message_type' => 'interactive',
+          'interactive_reply_type' => 'nfm_reply',
+          'flow_reply_name' => 'lead_qualification',
+          'flow_token_prefix' => flow_session.token.first(8),
+          'flow_session_id' => flow_session.id
+        )
+        expect(JSON.parse(reply_message.content_attributes['flow_response_json'])).to include(
+          'customer_name' => 'Aruzhan',
+          'flow_token' => '[REDACTED]'
+        )
+        expect(reply_message.content_attributes['flow_response']).to include(
+          'customer_name' => 'Aruzhan',
+          'budget' => '1000000',
+          'flow_token' => '[REDACTED]'
+        )
+        expect(flow_session.reload).to have_attributes(status: 'submitted', response_message_id: reply_message.id)
+      end
+
       it 'does not fall back to another pending request when a button token is unknown' do
         button_params = confirmation_reply_params(
           source_id: confirmation_source_id,
