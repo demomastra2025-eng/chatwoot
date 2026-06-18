@@ -70,6 +70,7 @@ export default {
       />
       <WhatsAppTemplateReply
         v-else
+        :inbox-id="inboxId"
         :template="selectedWaTemplate"
         @reset-template="onResetTemplate"
         @send-message="onSendMessage"

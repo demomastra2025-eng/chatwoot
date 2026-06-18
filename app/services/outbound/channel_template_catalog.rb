@@ -184,7 +184,7 @@ class Outbound::ChannelTemplateCatalog
 
   def button_param_required?(button)
     button_type = button['type'].to_s.upcase
-    button_type == 'COPY_CODE' || (button_type == 'URL' && button['url'].to_s.include?('{{'))
+    button_type == 'COPY_CODE' || button_type == 'FLOW' || (button_type == 'URL' && button['url'].to_s.include?('{{'))
   end
 
   def media_header_params(component)

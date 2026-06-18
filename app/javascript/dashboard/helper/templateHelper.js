@@ -123,6 +123,18 @@ export const buildTemplateParameters = (template, hasMediaHeaderValue) => {
             parameter: '',
           };
         }
+
+        // Handle WhatsApp Flow template buttons. The UI passes only a local
+        // flow reference; Rails creates/resolves the FlowSession and injects
+        // the private flow_token server-side.
+        if (button.type === 'FLOW') {
+          if (!allVariables.buttons) allVariables.buttons = [];
+          allVariables.buttons[index] = {
+            type: 'flow',
+            whatsapp_flow_id: '',
+            flow_action_data: {},
+          };
+        }
       });
     }
   });

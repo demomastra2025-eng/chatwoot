@@ -1453,6 +1453,7 @@
       "WIDGET_BUILDER": "Widget Builder",
       "BOT_CONFIGURATION": "Bot Configuration",
       "WHATSAPP_TEMPLATES": "Templates",
+      "WHATSAPP_FLOWS": "Flows",
       "ACCOUNT_HEALTH": "Account Health",
       "CSAT": "CSAT"
     },

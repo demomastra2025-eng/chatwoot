@@ -50,13 +50,16 @@
       "FIELD_PICKER_SEARCH_PLACEHOLDER": "Search attributes",
       "FIELD_PICKER_EMPTY": "No matching attributes found",
       "FIELD_PICKER_LOADING": "Loading attributes...",
-      "FIELD_PICKER_DEFAULT": "Attributes"
+      "FIELD_PICKER_DEFAULT": "Attributes",
+      "FLOW_SELECTOR_LABEL": "WhatsApp Flow",
+      "FLOW_SELECTOR_PLACEHOLDER": "Select a Flow",
+      "FLOW_SELECTOR_EMPTY": "No sendable WhatsApp Flows configured for this inbox."
     },
     "MANAGEMENT": {
       "PAGE_TITLE": "WhatsApp template library",
       "PAGE_DESCRIPTION": "Create and manage WhatsApp Cloud templates for this channel. New templates are submitted to Meta for review and appear here as soon as the local cache updates.",
       "SUPPORTED_TITLE": "Supported template builder",
-      "SUPPORTED_DESCRIPTION": "This builder supports body text, text or media headers, footer text, quick reply buttons, URL buttons, copy code buttons, and phone number buttons.",
+      "SUPPORTED_DESCRIPTION": "This builder supports body text, text or media headers, footer text, quick reply buttons, URL buttons, copy code buttons, phone number buttons, and WhatsApp Flow buttons.",
       "PARAMETERS_TITLE": "Parameters",
       "LAST_SYNC": "Last sync: {timestamp}",
       "NOT_SYNCED_YET": "Not synced yet",
@@ -98,7 +101,8 @@
         "QUICK_REPLY": "Quick reply",
         "URL": "URL button",
         "COPY_CODE": "Copy code",
-        "PHONE_NUMBER": "Phone number"
+        "PHONE_NUMBER": "Phone number",
+        "FLOW": "WhatsApp Flow"
       },
       "FIELDS": {
         "LANGUAGE": "Language",
@@ -130,7 +134,13 @@
         "BUTTON_COPY_CODE": "Sample coupon code",
         "BUTTON_COPY_CODE_PLACEHOLDER": "SAVE20",
         "BUTTON_PHONE_NUMBER": "Phone number",
-        "BUTTON_PHONE_NUMBER_PLACEHOLDER": "+16505551234"
+        "BUTTON_PHONE_NUMBER_PLACEHOLDER": "+16505551234",
+        "BUTTON_FLOW_ID": "Flow ID",
+        "BUTTON_FLOW_ID_PLACEHOLDER": "1234567890",
+        "BUTTON_FLOW_NAME": "Flow name",
+        "BUTTON_FLOW_NAME_PLACEHOLDER": "lead_qualification",
+        "BUTTON_FLOW_JSON": "Flow JSON",
+        "BUTTON_FLOW_JSON_PLACEHOLDER": "{\"version\":\"7.3\",\"screens\":[]}"
       },
       "ERRORS": {
         "NAME_REQUIRED": "Template name is required.",
@@ -152,7 +162,10 @@
         "BUTTON_COPY_CODE_REQUIRED": "Button {index} needs a sample coupon code.",
         "BUTTON_COPY_CODE_LENGTH": "Button {index} coupon code can be up to 15 characters.",
         "BUTTON_PHONE_NUMBER_REQUIRED": "Button {index} phone number is required.",
-        "BUTTON_PHONE_NUMBER_INVALID": "Button {index} phone number must use E.164 format."
+        "BUTTON_PHONE_NUMBER_INVALID": "Button {index} phone number must use E.164 format.",
+        "BUTTON_FLOW_REQUIRED": "Button {index} needs a Flow ID, Flow name, or Flow JSON.",
+        "BUTTON_FLOW_EXACTLY_ONE": "Button {index} can use only one of Flow ID, Flow name, or Flow JSON.",
+        "BUTTON_FLOW_JSON_INVALID": "Button {index} Flow JSON must be a JSON object."
       }
     }
   }

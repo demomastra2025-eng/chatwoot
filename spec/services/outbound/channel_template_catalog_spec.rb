@@ -47,6 +47,30 @@ RSpec.describe Outbound::ChannelTemplateCatalog do
       expect(catalog.find_template(name: 'auth_code', language: 'en')).to be_nil
     end
 
+    it 'requires runtime params for WhatsApp Flow template buttons' do
+      inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+      inbox.channel.update!(
+        message_templates: [
+          {
+            'name' => 'lead_flow',
+            'status' => 'approved',
+            'category' => 'MARKETING',
+            'language' => 'en',
+            'components' => [
+              { 'type' => 'BODY', 'text' => 'Lead form available' },
+              { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'FLOW', 'text' => 'Open form' }] }
+            ]
+          }
+        ]
+      )
+
+      payload = described_class.for(inbox: inbox, name: 'lead_flow', language: 'en')
+
+      expect(payload[:templates].first[:required_params]).to include(
+        { component: 'buttons', name: '0', type: 'flow' }
+      )
+    end
+
     it 'lists approved Twilio WhatsApp templates' do
       channel = create(:channel_twilio_sms, medium: :whatsapp, account: account)
       inbox = create(:inbox, channel: channel, account: account)

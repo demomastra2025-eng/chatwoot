@@ -447,6 +447,11 @@ Rails.application.routes.draw do
                       only: [:create, :destroy],
                       controller: 'inbox_whatsapp_templates',
                       param: :template_name
+            resources :whatsapp_flows,
+                      only: %i[index create update destroy],
+                      controller: 'inbox_whatsapp_flows' do
+              post :sessions, on: :member
+            end
           end
 
           namespace :telephony do

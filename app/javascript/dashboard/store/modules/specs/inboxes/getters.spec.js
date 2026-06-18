@@ -128,6 +128,56 @@ describe('#getters', () => {
     });
   });
 
+  describe('getWhatsAppFlows', () => {
+    it('returns flows from inbox record and filters sendable flows', () => {
+      const state = {
+        records: [
+          {
+            id: 1,
+            whatsapp_flows: [
+              {
+                id: 7,
+                provider_flow_id: 'flow-123',
+                name: 'lead_flow',
+                status: 'published',
+              },
+              {
+                id: 8,
+                provider_flow_id: 'flow-456',
+                name: 'old_flow',
+                status: 'deprecated',
+              },
+              { id: 9, name: 'draft_without_provider_id', status: 'draft' },
+            ],
+          },
+        ],
+      };
+
+      const localGetters = {
+        getWhatsAppFlows: getters.getWhatsAppFlows(state),
+      };
+
+      expect(getters.getWhatsAppFlows(state)(1)).toHaveLength(3);
+      expect(getters.getSendableWhatsAppFlows(state, localGetters)(1)).toEqual([
+        state.records[0].whatsapp_flows[0],
+      ]);
+    });
+
+    it('falls back to additional attributes and returns empty arrays safely', () => {
+      const flow = { id: 7, providerFlowId: 'flow-123', status: 'published' };
+      const state = {
+        records: [
+          { id: 1, additional_attributes: { whatsapp_flows: [flow] } },
+          { id: 2, whatsapp_flows: 'invalid' },
+        ],
+      };
+
+      expect(getters.getWhatsAppFlows(state)(1)).toEqual([flow]);
+      expect(getters.getWhatsAppFlows(state)(2)).toEqual([]);
+      expect(getters.getWhatsAppFlows(state)(999)).toEqual([]);
+    });
+  });
+
   it('getFacebookInboxByInstagramId', () => {
     const state = { records: inboxList };
     expect(getters.getFacebookInboxByInstagramId(state)(123456789)).toEqual({

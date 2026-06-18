@@ -222,6 +222,29 @@ describe('templateHelper', () => {
       ]);
     });
 
+    it('should handle WhatsApp Flow buttons without exposing flow tokens', () => {
+      const flowTemplate = {
+        components: [
+          { type: 'BODY', text: 'Please complete the form.' },
+          {
+            type: 'BUTTONS',
+            buttons: [{ type: 'FLOW', text: 'Open form' }],
+          },
+        ],
+      };
+
+      const result = buildTemplateParameters(flowTemplate, false);
+
+      expect(result.buttons).toEqual([
+        {
+          type: 'flow',
+          whatsapp_flow_id: '',
+          flow_action_data: {},
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toContain('flow_token');
+    });
+
     it('should handle templates with document headers', () => {
       const documentTemplate = templates.find(
         t => t.name === 'purchase_receipt'

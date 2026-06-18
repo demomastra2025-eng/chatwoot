@@ -3,6 +3,10 @@ import WhatsAppTemplateParser from 'dashboard/components-next/whatsapp/WhatsAppT
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
 defineProps({
+  inboxId: {
+    type: Number,
+    default: undefined,
+  },
   template: {
     type: Object,
     default: () => ({}),
@@ -23,6 +27,7 @@ const handleResetTemplate = () => {
 <template>
   <div class="w-full">
     <WhatsAppTemplateParser
+      :inbox-id="inboxId"
       :template="template"
       @send-message="handleSendMessage"
       @reset-template="handleResetTemplate"
