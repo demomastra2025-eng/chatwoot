@@ -7,6 +7,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   REMOTE_MUTATIONS_BLOCKED = 'blocked'
   REMOTE_MUTATIONS_REQUIRES_APPROVAL = 'requires_approval'
   DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
+  DEFAULT_INTERNAL_ASTERISK_TRUNK_REF = DEFAULT_SIPUNI_TRUNK_REF
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
 
   def initialize(account:)
@@ -587,6 +588,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       countryIsoCode: number_country_iso_code(state),
       city: number_city(state),
       metadata: ownership_metadata(state).merge(
+        provider_kind: state[:provider_kind],
         display_phone_number: phone_numbers[:display_phone_number],
         provider_account_number: phone_numbers[:provider_account_number],
         ingress_number: phone_numbers[:ingress_number]
@@ -600,7 +602,13 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     {
       mode: routing[:bridge_mode] || routing[:mode] || 'operator',
       app_ref: routing[:app_ref] || refs[:runtime_app_ref] || refs[:app_ref],
-      metadata: ownership_metadata(state).merge(number_ref: refs[:number_ref])
+      metadata: ownership_metadata(state).merge(
+        number_ref: refs[:number_ref],
+        provider_kind: state[:provider_kind],
+        display_phone_number: state.dig(:phone_numbers, :display_phone_number),
+        provider_account_number: state.dig(:phone_numbers, :provider_account_number),
+        ingress_number: state.dig(:phone_numbers, :ingress_number)
+      ).compact
     }.compact
   end
 
@@ -720,6 +728,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def shared_trunk?(state)
     refs = state[:refs] || {}
     return true if state[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
+    return true if state[:provider_kind].to_s == 'asterisk_analog' && refs[:trunk_ref].to_s == asterisk_analog_trunk_ref
 
     provider_connection_id = state.dig(:resources, :provider_connection_id)
     provider_connection_used_by_other_bindings?(state, provider_connection_id) ||
@@ -732,6 +741,14 @@ class Telephony::VirtualPbx::RemotePlanBuilder
 
   def sipuni_trunk_ref
     ENV.fetch('TELEPHONY_VIRTUAL_PBX_SIPUNI_TRUNK_REF', DEFAULT_SIPUNI_TRUNK_REF)
+  end
+
+  def asterisk_analog_trunk_ref
+    [
+      ENV.fetch('TELEPHONY_VIRTUAL_PBX_ASTERISK_ANALOG_TRUNK_REF', nil),
+      ENV.fetch('TELEPHONY_VIRTUAL_PBX_INTERNAL_ASTERISK_TRUNK_REF', nil),
+      DEFAULT_INTERNAL_ASTERISK_TRUNK_REF
+    ].find(&:present?)
   end
 
   def number_country(state)

@@ -60,6 +60,35 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     )
   end
 
+  it 'builds Asterisk analog over the same shared internal trunk without creating per-line trunks' do
+    payload = base_payload.deep_dup.merge(
+      provider_kind: 'asterisk_analog',
+      channel_name: 'Analog 9098',
+      display_phone_number: '+77171235175',
+      provider_account_number: 'tel:9098',
+      ingress_number: 'tel:9098'
+    )
+    payload[:connection].delete(:username)
+    payload[:connection].delete(:password)
+    result = service.create_channel(payload, dry_run: false)
+    state = Telephony::VirtualPbx::DesiredStateBuilder.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
+
+    plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
+    operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
+    number_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_number' }
+    route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
+
+    expect(state.dig(:refs, :number_ref)).to eq("asterisk-analog-#{account.id}-9098")
+    expect(state.dig(:refs, :trunk_ref)).to eq('trunk-sipuni-onelink-out')
+    expect(operation_keys).to include('upsert_number', 'update_number_route')
+    expect(operation_keys).not_to include('upsert_trunk', 'upsert_sipuni_gateway')
+    expect(number_operation.dig(:payload, :telUrl)).to eq('tel:9098')
+    expect(number_operation.dig(:payload, :trunkRef)).to eq('trunk-sipuni-onelink-out')
+    expect(number_operation.dig(:payload, :metadata, :provider_kind)).to eq('asterisk_analog')
+    expect(route_operation.dig(:payload, :metadata, :provider_kind)).to eq('asterisk_analog')
+    expect(route_operation.dig(:payload, :metadata, :ingress_number)).to eq('9098')
+  end
+
   it 'uses idempotent upserts for updates so missing remote resources can be repaired' do
     result = service.create_channel(base_payload, dry_run: false)
     state = Telephony::VirtualPbx::DesiredStateBuilder.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))

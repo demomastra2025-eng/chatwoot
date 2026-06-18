@@ -242,32 +242,38 @@ class Telephony::VirtualPbx::ConfigBuilder
       metadata[:display_phone_number],
       channel.phone_number
     )
-    provider_account_number = first_present(
-      binding&.provider_account_number,
-      provider_config[:provider_account_number],
-      metadata[:provider_account_number],
-      provider_config[:sipuni_account_number],
-      metadata[:sipuni_account_number],
-      provider_config[:account_number],
-      metadata[:account_number]
+    provider_account_number = normalize_technical_number(
+      first_present(
+        binding&.provider_account_number,
+        provider_config[:provider_account_number],
+        metadata[:provider_account_number],
+        provider_config[:sipuni_account_number],
+        metadata[:sipuni_account_number],
+        provider_config[:account_number],
+        metadata[:account_number]
+      )
     )
-    fonoster_tel_url = first_present(
-      binding&.fonoster_tel_url,
-      provider_config[:fonoster_tel_url],
-      metadata[:fonoster_tel_url],
-      metadata[:tel_url],
-      provider_config[:tel_url]
+    fonoster_tel_url = normalize_tel_url(
+      first_present(
+        binding&.fonoster_tel_url,
+        provider_config[:fonoster_tel_url],
+        metadata[:fonoster_tel_url],
+        metadata[:tel_url],
+        provider_config[:tel_url]
+      )
     )
-    ingress_number = first_present(
-      binding&.ingress_number,
-      provider_config[:ingress_number],
-      metadata[:ingress_number],
-      provider_config[:sipuni_ingress_number],
-      metadata[:sipuni_ingress_number],
-      tel_url_number(fonoster_tel_url),
-      binding&.phone_number,
-      provider_account_number,
-      display_phone_number
+    ingress_number = normalize_technical_number(
+      first_present(
+        binding&.ingress_number,
+        provider_config[:ingress_number],
+        metadata[:ingress_number],
+        provider_config[:sipuni_ingress_number],
+        metadata[:sipuni_ingress_number],
+        tel_url_number(fonoster_tel_url),
+        binding&.phone_number,
+        provider_account_number,
+        display_phone_number
+      )
     )
 
     {
@@ -278,7 +284,8 @@ class Telephony::VirtualPbx::ConfigBuilder
       fonoster_tel_url: fonoster_tel_url.presence || tel_url_for(ingress_number),
       display_matches_ingress: display_phone_number.present? && ingress_number.present? && display_phone_number == ingress_number,
       binding_represents_ingress: binding&.phone_number.present? && ingress_number.present? && binding.phone_number == ingress_number,
-      legacy_channel_phone_differs_from_binding: channel.phone_number.present? && binding&.phone_number.present? && channel.phone_number != binding.phone_number,
+      legacy_channel_phone_differs_from_binding: channel.phone_number.present? && binding&.phone_number.present? &&
+        channel.phone_number != binding.phone_number,
       split_allowed: template_for(provider_kind)[:allows_display_ingress_split]
     }.compact
   end
@@ -430,11 +437,20 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def tel_url_number(value)
-    value.to_s.sub(/\Atel:/i, '').presence
+    normalize_technical_number(value)
   end
 
   def tel_url_for(value)
-    value.present? ? "tel:#{value}" : nil
+    normalized = normalize_technical_number(value)
+    normalized.present? ? "tel:#{normalized}" : nil
+  end
+
+  def normalize_technical_number(value)
+    value.to_s.strip.sub(/\A(?:tel:)+/i, '').presence
+  end
+
+  def normalize_tel_url(value)
+    tel_url_for(value)
   end
 
   def first_present(*values)

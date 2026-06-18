@@ -8,6 +8,7 @@ class Telephony::VirtualPbx::ProvisioningService
   LOCAL_OWNERSHIP_STATUS = 'local'
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
   DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
+  DEFAULT_INTERNAL_ASTERISK_TRUNK_REF = DEFAULT_SIPUNI_TRUNK_REF
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
 
   def initialize(account:, current_user:, bridge_client: nil)
@@ -571,18 +572,22 @@ class Telephony::VirtualPbx::ProvisioningService
     fallback_routing = fallback&.fetch(:routing, {}) || {}
 
     provider_kind = normalize_provider_kind(source['provider_kind'].presence || fallback&.dig(:provider_kind))
-    ingress_number = first_present(
-      source['ingress_number'],
-      source['sipuni_ingress_number'],
-      source['provider_number'],
-      fallback_phone_numbers[:ingress_number]
+    ingress_number = normalize_technical_number(
+      first_present(
+        source['ingress_number'],
+        source['sipuni_ingress_number'],
+        source['provider_number'],
+        fallback_phone_numbers[:ingress_number]
+      )
     )
-    provider_account_number = first_present(
-      source['provider_account_number'],
-      source['sipuni_account_number'],
-      source['account_number'],
-      fallback_phone_numbers[:provider_account_number],
-      ingress_number
+    provider_account_number = normalize_technical_number(
+      first_present(
+        source['provider_account_number'],
+        source['sipuni_account_number'],
+        source['account_number'],
+        fallback_phone_numbers[:provider_account_number],
+        ingress_number
+      )
     )
     profiles_supplied = source.key?('profiles')
 
@@ -592,8 +597,9 @@ class Telephony::VirtualPbx::ProvisioningService
       display_phone_number: first_present(source['display_phone_number'], source['phone_number'], fallback_phone_numbers[:display_phone_number]),
       provider_account_number: provider_account_number,
       ingress_number: ingress_number,
-      fonoster_tel_url: first_present(source['fonoster_tel_url'], source['tel_url'], fallback_phone_numbers[:fonoster_tel_url],
-                                      tel_url_for(ingress_number)),
+      fonoster_tel_url: normalize_tel_url(
+        first_present(source['fonoster_tel_url'], source['tel_url'], fallback_phone_numbers[:fonoster_tel_url], tel_url_for(ingress_number))
+      ),
       connection: normalize_connection(
         source['connection'] || {},
         provider_kind,
@@ -1166,6 +1172,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def trunk_ref_for(_payload, provider_kind, safe_ingress)
     return sipuni_trunk_ref if provider_kind == 'sipuni'
+    return asterisk_analog_trunk_ref if provider_kind == 'asterisk_analog'
 
     "trunk-#{provider_kind}-acct-#{account.id}-#{safe_ingress}"
   end
@@ -1267,7 +1274,7 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def trunk_bridge_operation(payload, refs, description)
-    return if shared_sipuni_trunk_ref?(payload, refs)
+    return if shared_internal_trunk_ref?(payload, refs)
 
     bridge_operation('upsert_trunk', 'PUT', bridge_path('/telephony/trunks/', refs[:trunk_ref]), description)
   end
@@ -1279,7 +1286,7 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def delete_trunk_bridge_operation(refs)
-    return if refs[:trunk_ref].to_s == sipuni_trunk_ref
+    return if refs[:trunk_ref].to_s.in?([sipuni_trunk_ref, asterisk_analog_trunk_ref])
 
     bridge_operation('delete_trunk', 'DELETE', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
                      'Delete channel-owned trunk when it is not shared')
@@ -1332,8 +1339,23 @@ class Telephony::VirtualPbx::ProvisioningService
     ENV.fetch('TELEPHONY_VIRTUAL_PBX_SIPUNI_TRUNK_REF', DEFAULT_SIPUNI_TRUNK_REF)
   end
 
-  def shared_sipuni_trunk_ref?(payload, refs)
-    payload[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
+  def asterisk_analog_trunk_ref
+    first_present(
+      ENV.fetch('TELEPHONY_VIRTUAL_PBX_ASTERISK_ANALOG_TRUNK_REF', nil),
+      ENV.fetch('TELEPHONY_VIRTUAL_PBX_INTERNAL_ASTERISK_TRUNK_REF', nil),
+      DEFAULT_INTERNAL_ASTERISK_TRUNK_REF
+    )
+  end
+
+  def shared_internal_trunk_ref?(payload, refs)
+    case payload[:provider_kind].to_s
+    when 'sipuni'
+      refs[:trunk_ref].to_s == sipuni_trunk_ref
+    when 'asterisk_analog'
+      refs[:trunk_ref].to_s == asterisk_analog_trunk_ref
+    else
+      false
+    end
   end
 
   def dry_run_status(errors)
@@ -1384,6 +1406,15 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def first_present(*values)
     values.find(&:present?)
+  end
+
+  def normalize_technical_number(value)
+    value.to_s.strip.sub(/\A(?:tel:)+/i, '').presence
+  end
+
+  def normalize_tel_url(value)
+    normalized = normalize_technical_number(value)
+    tel_url_for(normalized)
   end
 
   def runtime_app_ref_for(base = {}, refs = {})

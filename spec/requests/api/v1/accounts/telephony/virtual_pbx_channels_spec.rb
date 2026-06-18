@@ -163,6 +163,28 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
   end
 
+  it 'normalizes Asterisk analog tel-prefixed ingress values like the existing 9098 line' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'asterisk_analog',
+      channel_name: 'Analog 9098',
+      display_phone_number: '+77172545175',
+      provider_account_number: 'tel:9098',
+      ingress_number: 'tel:tel:9098',
+      connection: valid_create_payload[:connection].merge(username: nil, password: nil)
+    )
+
+    post base_path, params: payload.merge(include_diagnostics: true), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
+    expect(body.dig('diagnostics', 'payload', 'provider_account_number')).to eq('9098')
+    expect(body.dig('diagnostics', 'payload', 'ingress_number')).to eq('9098')
+    expect(body.dig('diagnostics', 'payload', 'fonoster_tel_url')).to eq('tel:9098')
+    expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq("asterisk-analog-#{account.id}-9098")
+    expect(body.dig('diagnostics', 'generated_refs', 'trunk_ref')).to eq('trunk-sipuni-onelink-out')
+  end
+
   it 'builds a create dry-run without changing local records or calling the bridge' do
     counts_before = local_record_counts
 
@@ -258,9 +280,9 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(Telephony::ProvisioningRun.count).to eq(0)
   end
 
-  it 'does not reuse UI provider connections for distinct non-shared trunks with the same source' do
+  it 'reuses the internal Asterisk trunk for distinct analog lines like Sipuni' do
     first_payload = create_payload_variant(
-      display_phone_number: '+17770001001',
+      display_phone_number: '+177****1001',
       provider_account_number: 'analog-1001',
       ingress_number: 'analog-1001',
       source: 'virtual_pbx_ui'
@@ -279,10 +301,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
 
     connection_names = account.telephony_provider_connections.order(:name).pluck(:name)
-    expect(connection_names).to contain_exactly(
-      "trunk-asterisk_analog-acct-#{account.id}-analog-1001",
-      "trunk-asterisk_analog-acct-#{account.id}-analog-1002"
-    )
+    expect(connection_names).to contain_exactly('trunk-sipuni-onelink-out')
+    expect(account.telephony_number_bindings.pluck(:trunk_ref).uniq).to eq(['trunk-sipuni-onelink-out'])
   end
 
   it 'stores the OneLink runtime app ref in local Sipuni channel configuration' do
