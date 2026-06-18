@@ -140,6 +140,420 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'does not create a second voice bubble for an unanswered linked Fonoster inbound branch' do
+      conversation = existing_call_session.conversation
+      parent_session = existing_call_session
+      parent_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'parent-operator-ref',
+        status: 'completed'
+      )
+      parent_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: parent_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:parent-operator-ref',
+        content_attributes: {
+          'data' => {
+            'status' => 'completed',
+            'call_sid' => 'parent-operator-ref',
+            'call_direction' => 'inbound'
+          }
+        }
+      )
+      child_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: parent_session.contact,
+        inbox: parent_session.inbox,
+        number_binding: parent_session.number_binding,
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'missed-operator-ref',
+        status: 'ringing',
+        metadata: {
+          'metadata' => {
+            'logical_call_group_ref' => 'parent-operator-ref'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-linked-missed-1',
+          provider: 'fonoster',
+          call_ref: child_session.external_call_ref,
+          event: 'operator_no_answer',
+          status: 'no_answer',
+          direction: 'FROM_PSTN'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'no_answer')
+      expect(conversation.messages.voice_calls.reload).to contain_exactly(parent_message)
+      expect(parent_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+    end
+
+    it 'does not create a second voice bubble for an unanswered Fonoster fan-out branch with the same logical key' do
+      conversation = existing_call_session.conversation
+      parent_session = existing_call_session
+      parent_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'answered-fanout-ref',
+        status: 'completed',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
+            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+          }
+        }
+      )
+      parent_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: parent_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:answered-fanout-ref',
+        content_attributes: {
+          'data' => {
+            'status' => 'completed',
+            'call_sid' => 'answered-fanout-ref',
+            'call_direction' => 'inbound',
+            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
+            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+          }
+        }
+      )
+      child_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: parent_session.contact,
+        inbox: parent_session.inbox,
+        number_binding: parent_session.number_binding,
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'missed-fanout-ref',
+        status: 'ringing',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
+            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-fanout-missed-1',
+          provider: 'fonoster',
+          call_ref: child_session.external_call_ref,
+          event: 'operator_no_answer',
+          status: 'no_answer',
+          direction: 'FROM_PSTN'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'no_answer')
+      expect(conversation.messages.voice_calls.reload).to contain_exactly(parent_message)
+    end
+
+    it 'collapses missed Fonoster fan-out branches with the same logical key into one voice bubble' do
+      conversation = existing_call_session.conversation
+      logical_key = 'fonoster-inbound:fanout-all-missed-key'
+      started_at = Time.current
+      first_session = existing_call_session
+      first_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'missed-fanout-505',
+        status: 'missed',
+        from_number: '+77066318623',
+        to_number: '+77072890808',
+        started_at: started_at,
+        ended_at: started_at + 30.seconds,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'target_extension' => '505'
+          }
+        }
+      )
+      first_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: first_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:missed-fanout-505',
+        content_attributes: {
+          'data' => {
+            'provider' => 'fonoster',
+            'status' => 'missed',
+            'call_sid' => 'missed-fanout-505',
+            'call_direction' => 'inbound',
+            'from_number' => '+77066318623',
+            'to_number' => '+77072890808',
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key
+          }
+        }
+      )
+      second_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: first_session.contact,
+        inbox: first_session.inbox,
+        number_binding: first_session.number_binding,
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'missed-fanout-504',
+        status: 'ringing',
+        from_number: '+77066318623',
+        to_number: '+77072890808',
+        started_at: started_at + 1.second,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'target_extension' => '504'
+          }
+        }
+      )
+      conversation.update!(
+        additional_attributes: {
+          'fonoster_call_ref' => first_session.external_call_ref,
+          'call_status' => 'missed',
+          'call_direction' => 'inbound'
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-fanout-all-missed-504',
+          provider: 'fonoster',
+          call_ref: second_session.external_call_ref,
+          event: 'session_completed',
+          status: 'missed',
+          end_reason: 'voice_stream_ended_before_operator_answer',
+          direction: 'FROM_PSTN'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'missed')
+      expect(conversation.messages.voice_calls.reload).to contain_exactly(first_message)
+      expect(conversation.reload.additional_attributes).to include(
+        'fonoster_call_ref' => first_session.external_call_ref,
+        'call_status' => 'missed'
+      )
+    end
+
+    it 'does not create a second voice bubble for an unanswered Fonoster fan-out branch when logical keys differ at a bucket boundary' do
+      conversation = existing_call_session.conversation
+      parent_session = existing_call_session
+      parent_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'answered-context-ref',
+        status: 'completed',
+        from_number: '+77066318623',
+        to_number: '+77072890808',
+        started_at: Time.current
+      )
+      parent_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: parent_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:answered-context-ref',
+        created_at: parent_session.started_at,
+        content_attributes: {
+          'data' => {
+            'provider' => 'fonoster',
+            'status' => 'completed',
+            'call_sid' => 'answered-context-ref',
+            'call_direction' => 'inbound',
+            'from_number' => '+77066318623',
+            'to_number' => '+77072890808',
+            'logical_call_key' => 'fonoster-inbound:bucket-before'
+          }
+        }
+      )
+      child_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: parent_session.contact,
+        inbox: parent_session.inbox,
+        number_binding: parent_session.number_binding,
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'missed-context-ref',
+        status: 'ringing',
+        from_number: '+77066318623',
+        to_number: '+77072890808',
+        started_at: parent_session.started_at + 3.seconds,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => 'fonoster-inbound:bucket-after',
+            'call_group_key' => 'fonoster-inbound:bucket-after'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-fanout-context-missed-1',
+          provider: 'fonoster',
+          call_ref: child_session.external_call_ref,
+          event: 'operator_no_answer',
+          status: 'no_answer',
+          direction: 'FROM_PSTN'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'no_answer')
+      expect(conversation.messages.voice_calls.reload).to contain_exactly(parent_message)
+    end
+
+    it 'does not let an unanswered Fonoster fan-out branch overwrite the answered conversation state' do
+      conversation = existing_call_session.conversation
+      logical_key = 'fonoster-inbound:fanout-answered-key'
+      answered_session = existing_call_session
+      answered_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'answered-state-ref',
+        status: 'completed',
+        from_number: '+77066318623',
+        to_number: '+77072890808',
+        started_at: Time.current,
+        answered_at: 3.seconds.from_now,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'target_extension' => '505'
+          },
+          'operator_claim' => {
+            'user_id' => 4,
+            'user_name' => 'Answered Operator'
+          }
+        }
+      )
+      child_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: answered_session.contact,
+        inbox: answered_session.inbox,
+        number_binding: answered_session.number_binding,
+        provider: 'fonoster',
+        direction: 'inbound',
+        external_call_ref: 'missed-state-ref',
+        status: 'no_answer',
+        from_number: '+77066318623',
+        to_number: '+77072890808',
+        started_at: answered_session.started_at + 1.second,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'target_extension' => '504'
+          }
+        }
+      )
+      conversation.update!(
+        additional_attributes: {
+          'fonoster_call_ref' => answered_session.external_call_ref,
+          'call_status' => 'completed',
+          'call_direction' => 'inbound',
+          'from_number' => '+77066318623',
+          'to_number' => '+77072890808'
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-fanout-no-answer-recording-ready',
+          provider: 'fonoster',
+          call_ref: child_session.external_call_ref,
+          event: 'recording_ready',
+          recording_ref: 'voice-recordings/fonoster/1/missed-state-ref.wav',
+          storage_key: 'voice-recordings/fonoster/1/missed-state-ref.wav',
+          duration_seconds: 0
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'no_answer',
+        recording_ref: 'voice-recordings/fonoster/1/missed-state-ref.wav'
+      )
+      expect(conversation.reload.additional_attributes).to include(
+        'fonoster_call_ref' => answered_session.external_call_ref,
+        'call_status' => 'completed'
+      )
+      expect(
+        conversation.messages.voice_calls.where(source_id: "voice_call:#{child_session.external_call_ref}")
+      ).to be_empty
+    end
+
+    it 'removes an earlier unanswered Fonoster fan-out bubble when the answered branch completes' do
+      conversation = existing_call_session.conversation
+      missed_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:missed-fanout-before-answer',
+        content_attributes: {
+          'data' => {
+            'status' => 'missed',
+            'call_sid' => 'missed-fanout-before-answer',
+            'call_direction' => 'inbound',
+            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
+            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+          }
+        }
+      )
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        status: 'in_progress',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
+            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-fanout-completed-1',
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'FROM_PSTN'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'completed')
+      expect(conversation.messages.voice_calls.reload.pluck(:id)).not_to include(missed_message.id)
+      expect(conversation.messages.voice_calls.count).to eq(1)
+      expect(conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('completed')
+    end
+
     it 'uses the answered timestamp for active Fonoster conversation state' do
       started_at = Time.zone.parse(30.seconds.ago.iso8601)
       answered_at = Time.zone.parse(10.seconds.ago.iso8601)
@@ -920,6 +1334,9 @@ RSpec.describe Telephony::EventsIngestionService do
 
       expect(result.reload).to have_attributes(status: 'in_progress', agent_binding_id: claimed_binding.id)
       expect(result.latest_voice_message.content_attributes.dig('data', 'meta', 'operator_claim', 'user_id')).to eq(claimed_binding.user_id)
+      expect(result.latest_voice_message.content_attributes.dig('data', 'accepted_by', 'name')).to eq(
+        claimed_binding.user.display_name.presence || claimed_binding.user.name.presence || claimed_binding.user.email
+      )
       expect(result.latest_voice_message.content_attributes.dig('data', 'meta', 'operator_candidate_agent_refs')).to contain_exactly(
         claimed_binding.agent_ref,
         provider_binding.agent_ref
@@ -1650,6 +2067,68 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(legacy_message.content_attributes.dig('data', 'recording_ref')).to be_blank
     end
 
+    it 'attaches an outbound recording to the existing call session when a technical ingress belongs to another channel' do
+      other_account = create(:account)
+      create(:telephony_number_binding, account: other_account, phone_number: '9098', ingress_number: '9098')
+      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77072890808')
+      voice_inbox = voice_channel.inbox
+      number_binding = Telephony::NumberBinding.find_by!(account: account, inbox: voice_inbox)
+      answered_at = Time.zone.parse(45.seconds.ago.iso8601)
+      ended_at = answered_at + 12.seconds
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'completed',
+        inbox: voice_inbox,
+        number_binding: number_binding,
+        from_number: '+77072890808',
+        to_number: '+77066318623',
+        answered_at: answered_at,
+        ended_at: ended_at,
+        duration_seconds: 12
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: voice_inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: {
+          'data' => {
+            'status' => 'completed',
+            'call_sid' => 'call-retry-1',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-recording-technical-ingress-1',
+          provider: 'fonoster',
+          event: 'recording_ready',
+          status: 'completed',
+          direction: 'outbound',
+          ingress_number: '9098',
+          caller_number: '',
+          occurred_at: ended_at.iso8601,
+          recording_ref: 'voice-recordings/fonoster/8/call-retry-1/audio.wav',
+          storage_key: 'voice-recordings/fonoster/8/call-retry-1/audio.wav',
+          byte_size: 195_884,
+          duration_seconds: 12
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        inbox_id: voice_inbox.id,
+        number_binding_id: number_binding.id,
+        recording_ref: 'voice-recordings/fonoster/8/call-retry-1/audio.wav',
+        status: 'completed'
+      )
+      expect(message.reload.content_attributes.dig('data', 'recording_url')).to be_present
+    end
+
     it 'does not expose or transcribe outbound recordings when the customer never answered' do
       existing_call_session.update!(
         provider: 'fonoster',
@@ -1772,7 +2251,7 @@ RSpec.describe Telephony::EventsIngestionService do
       ).perform
 
       attrs = conversation.reload.additional_attributes
-      old_message_data = old_message.reload.content_attributes.dig('data')
+      old_message_data = old_message.reload.content_attributes['data']
       aggregate_failures do
         expect(result.reload).to have_attributes(
           status: 'no_answer',

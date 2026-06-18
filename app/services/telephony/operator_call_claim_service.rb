@@ -24,6 +24,7 @@ class Telephony::OperatorCallClaimService
       claim_call!
     end
 
+    broadcast_claimed_call!
     claim_payload
   end
 
@@ -276,5 +277,131 @@ class Telephony::OperatorCallClaimService
 
   def operator_claim_user_id
     call_session.metadata.to_h.dig('operator_claim', 'user_id').presence&.to_i
+  end
+
+  def broadcast_claimed_call!
+    tokens = claimed_call_pubsub_tokens
+    return if tokens.blank?
+
+    event = {
+      event: 'voice_call.claimed',
+      data: claimed_call_realtime_payload
+    }
+
+    tokens.each { |token| ActionCable.server.broadcast(token, event) }
+  rescue StandardError => e
+    Rails.logger.warn(
+      'TELEPHONY_OPERATOR_CLAIM_BROADCAST_FAILED ' \
+      "call_ref=#{call_ref} account_id=#{account.id} user_id=#{user.id} error=#{e.class.name}: #{e.message}"
+    )
+  end
+
+  def claimed_call_pubsub_tokens
+    account.users.where(id: claimed_call_candidate_user_ids).filter_map(&:pubsub_token).uniq
+  end
+
+  def claimed_call_candidate_user_ids
+    (
+      [user.id] +
+      related_claimed_call_sessions.flat_map { |session| candidate_user_ids_for_session(session) }
+    ).compact.uniq
+  end
+
+  def candidate_user_ids_for_session(session)
+    metadata = route_metadata_for_session(session)
+    binding_ids = Array.wrap(metadata['operator_candidate_binding_ids']).filter_map { |value| value.presence&.to_i }
+    sip_profile_ids = Array.wrap(metadata['operator_candidate_sip_profile_ids']).filter_map { |value| value.presence&.to_i }
+
+    ids = Array.wrap(metadata['operator_candidate_user_ids']).filter_map { |value| value.presence&.to_i }
+    ids << session.agent_binding&.user_id
+    ids += account.telephony_agent_bindings.where(id: binding_ids).pluck(:user_id) if binding_ids.present?
+    ids += account.telephony_sip_profiles.where(id: sip_profile_ids).pluck(:user_id) if sip_profile_ids.present?
+    ids.compact.uniq
+  end
+
+  def related_claimed_call_sessions
+    @related_claimed_call_sessions ||= begin
+      target_started_at = call_session.started_at || call_session.created_at || Time.current
+      candidates = account.telephony_call_sessions
+                          .where(provider: call_session.provider.presence || 'fonoster', direction: call_session.direction)
+                          .where(created_at: (target_started_at - 2.minutes)..(target_started_at + 2.minutes))
+                          .to_a
+
+      candidates.select { |session| session.id == call_session.id || related_claimed_call_session?(session) }
+    end
+  end
+
+  def related_claimed_call_session?(session)
+    return false unless session.direction == call_session.direction
+    return false unless session.provider == call_session.provider
+
+    current_key = logical_call_key_for_session(call_session)
+    session_key = logical_call_key_for_session(session)
+    return true if current_key.present? && current_key == session_key
+    return false if current_key.present? && session_key.present?
+
+    same_claimed_call_context?(session)
+  end
+
+  def same_claimed_call_context?(session)
+    return false if call_session.inbox_id.present? && session.inbox_id.present? && session.inbox_id != call_session.inbox_id
+    if call_session.conversation_id.present? && session.conversation_id.present? && session.conversation_id != call_session.conversation_id
+      return false
+    end
+
+    same_phone_value?(session.from_number, call_session.from_number) &&
+      same_phone_value?(session.to_number, call_session.to_number)
+  end
+
+  def same_phone_value?(left, right)
+    normalized_left = normalized_phone(left)
+    normalized_right = normalized_phone(right)
+    normalized_left.present? && normalized_left == normalized_right
+  end
+
+  def normalized_phone(value)
+    digits = value.to_s.gsub(/\D/, '')
+    digits = digits.delete_prefix('00')
+    digits = "7#{digits[1..]}" if digits.length == 11 && digits.start_with?('8')
+    digits.presence
+  end
+
+  def logical_call_key_for_session(session)
+    metadata = route_metadata_for_session(session)
+    metadata['logical_call_key'].presence ||
+      metadata['call_group_key'].presence ||
+      metadata['logical_call_group_ref'].presence
+  end
+
+  def route_metadata_for_session(session)
+    metadata = session.metadata || {}
+    nested = metadata['metadata'] || metadata[:metadata] || {}
+    nested.is_a?(Hash) ? nested.deep_stringify_keys : {}
+  end
+
+  def claimed_call_realtime_payload
+    {
+      account_id: account.id,
+      call_sid: call_session.external_call_ref,
+      callSid: call_session.external_call_ref,
+      call_ref: call_session.external_call_ref,
+      status: call_session.status,
+      provider: call_session.provider,
+      call_direction: call_session.direction,
+      direction: call_session.direction,
+      conversation_id: call_session.conversation&.display_id,
+      conversation_display_id: call_session.conversation&.display_id,
+      conversation_db_id: call_session.conversation_id,
+      inbox_id: call_session.inbox_id,
+      from_number: call_session.from_number,
+      to_number: call_session.to_number,
+      logical_call_key: logical_call_key_for_session(call_session),
+      logicalCallKey: logical_call_key_for_session(call_session),
+      related_call_sids: related_claimed_call_sessions.map(&:external_call_ref).uniq,
+      relatedCallSids: related_claimed_call_sessions.map(&:external_call_ref).uniq,
+      claimed_by_user_id: user.id,
+      claimedByUserId: user.id,
+      operator_claim: claim_payload
+    }.compact
   end
 end

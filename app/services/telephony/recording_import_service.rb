@@ -148,6 +148,8 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
       'provider_call_id' => payload_value('provider_call_id', 'providerCallId'),
       'media_session_ref' => payload_value('media_session_ref', 'mediaSessionRef'),
       'app_ref' => payload_value('app_ref', 'appRef'),
+      'number_ref' => payload_value('number_ref', 'numberRef'),
+      'inbox_id' => payload_value('inbox_id', 'inboxId'),
       'ingress_number' => payload_value('ingress_number', 'ingressNumber'),
       'caller_number' => payload_value('caller_number', 'callerNumber'),
       'started_at' => payload_value('started_at', 'startedAt'),

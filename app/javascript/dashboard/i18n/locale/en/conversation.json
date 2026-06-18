@@ -385,6 +385,7 @@
       "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "INBOUND_DIRECTION": "Inbound",
       "OUTBOUND_DIRECTION": "Outbound",
+      "ROUTE_SEPARATOR": "→",
       "CALL_ROUTE": "{from} → {to}",
       "CALL_DIRECTION_ROUTE": "{direction} · {route}",
       "HANDLED_OUTSIDE_BROWSER": "Handled outside the browser",
@@ -395,8 +396,10 @@
       "HANDLED_IN_ANOTHER_TAB": "Being handled in another tab",
       "BROWSER_CALLING_UNAVAILABLE": "Browser calling isn't available for this line. Opening the conversation instead.",
       "REJECT_CALL": "Reject",
+      "CALL": "Call",
       "JOIN_CALL": "Join call",
       "END_CALL": "End call",
+      "OPEN_CHAT": "Chat",
       "CLOSE": "Close",
       "UNKNOWN_CALLER": "Unknown caller",
       "DEFAULT_INBOX_NAME": "Customer support"

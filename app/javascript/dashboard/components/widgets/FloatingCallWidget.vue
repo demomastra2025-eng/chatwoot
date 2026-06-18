@@ -8,7 +8,6 @@ import { useCallSession } from 'dashboard/composables/useCallSession';
 import WindowVisibilityHelper from 'dashboard/helper/AudioAlerts/WindowVisibilityHelper';
 import {
   getOutboundCallStageLabelKey,
-  outboundCallStageShowsDuration,
   OUTBOUND_CALL_STAGE_LABEL_KEYS,
 } from 'dashboard/helper/voiceCallStage';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
@@ -30,14 +29,12 @@ const {
   formattedCallDuration,
 } = useCallSession();
 
-const formatProviderLabel = provider =>
-  provider ? provider.replaceAll('_', ' ').toUpperCase() : '';
-
-const formatInboxLine = ({ inboxName, providerLabel }) =>
-  providerLabel ? `${inboxName} · ${providerLabel}` : inboxName;
-
 const isOutboundCall = call => call?.callDirection === 'outbound';
-const primaryCall = computed(() => activeCall.value || incomingCalls.value[0]);
+const visibleCalls = computed(() =>
+  hasActiveCall.value
+    ? [activeCall.value, ...incomingCalls.value].filter(Boolean)
+    : incomingCalls.value.slice(0, 1)
+);
 
 const firstPresent = values => values.find(value => Boolean(value));
 
@@ -58,7 +55,6 @@ const getCallInfo = call => {
     conversation,
     inbox,
     provider,
-    providerLabel: formatProviderLabel(provider),
     contactName:
       sender?.name ||
       sender?.phone_number ||
@@ -71,42 +67,29 @@ const getCallInfo = call => {
   };
 };
 
+const isWhatsappCall = call => {
+  const info = getCallInfo(call);
+  const channelType = info.inbox?.channel_type || info.inbox?.channelType || '';
+  const provider = info.provider || '';
+
+  return [channelType, provider].some(value =>
+    value.toString().toLowerCase().includes('whatsapp')
+  );
+};
+
+const channelIconClass = call =>
+  isWhatsappCall(call) ? 'i-ri-whatsapp-fill' : 'i-ri-phone-fill';
+
+const callIsActive = call =>
+  Boolean(
+    activeCall.value?.callSid && activeCall.value.callSid === call?.callSid
+  );
+
 const browserJoinSupportedForCall = call => {
   return canHandleCallInBrowser({
     ...call,
     provider: call?.provider || getCallInfo(call)?.provider,
   });
-};
-
-const getAgentNameById = userId => {
-  if (!userId) return '';
-
-  return store.getters['agents/getAgentById']?.(userId)?.name || '';
-};
-
-const getOperatorName = call => {
-  const claim = call?.operatorClaim || {};
-  const userId = claim.user_id || claim.userId;
-
-  return firstPresent([
-    claim.user_name,
-    claim.userName,
-    claim.name,
-    getAgentNameById(userId),
-    claim.agent_ref,
-    claim.agentRef,
-    claim.agent_aor,
-    claim.agentAor,
-  ]);
-};
-
-const getHandledByText = call => {
-  if (browserJoinSupportedForCall(call)) return '';
-
-  const operatorName = getOperatorName(call);
-  return operatorName
-    ? t('CONVERSATION.VOICE_WIDGET.HANDLED_BY', { name: operatorName })
-    : t('CONVERSATION.VOICE_WIDGET.HANDLED_BY_UNKNOWN');
 };
 
 const getDirectionLabel = call => {
@@ -117,7 +100,7 @@ const getDirectionLabel = call => {
   return t('CONVERSATION.VOICE_WIDGET.INBOUND_DIRECTION');
 };
 
-const getCallRouteText = call => {
+const getCallParties = call => {
   const info = getCallInfo(call);
   const conversationAttributes = getConversationAttributes(info.conversation);
   const fromNumber = firstPresent([
@@ -144,19 +127,36 @@ const getCallRouteText = call => {
     ? firstPresent([toNumber, info.contactName])
     : firstPresent([fromNumber, callerNumber, info.contactName]);
 
-  return t('CONVERSATION.VOICE_WIDGET.CALL_ROUTE', {
+  return {
+    lineParty,
+    customerParty,
     from: isOutboundCall(call) ? lineParty : customerParty,
     to: isOutboundCall(call) ? customerParty : lineParty,
-  });
+  };
 };
 
-const getCallDirectionRouteText = call =>
-  t('CONVERSATION.VOICE_WIDGET.CALL_DIRECTION_ROUTE', {
-    direction: getDirectionLabel(call),
-    route: getCallRouteText(call),
-  });
+const getCallRouteParts = call => {
+  const parties = getCallParties(call);
 
-const getOutboundStageText = call => {
+  return {
+    from: parties.from,
+    to: parties.to,
+  };
+};
+
+const getCallTypeText = call => {
+  if (!browserJoinSupportedForCall(call)) {
+    return t('CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER');
+  }
+
+  return getDirectionLabel(call);
+};
+
+const getCallStageText = call => {
+  if (!browserJoinSupportedForCall(call) || !isOutboundCall(call)) {
+    return '';
+  }
+
   switch (getOutboundCallStageLabelKey(call)) {
     case OUTBOUND_CALL_STAGE_LABEL_KEYS.CONNECTING_OPERATOR:
       return t('CONVERSATION.VOICE_WIDGET.OUTGOING_CONNECTING_OPERATOR');
@@ -171,16 +171,14 @@ const getOutboundStageText = call => {
   }
 };
 
-const getCallStatusText = call => {
-  if (!call) return '';
-  if (!browserJoinSupportedForCall(call)) {
-    return t('CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER');
-  }
-  if (isOutboundCall(call)) return getOutboundStageText(call);
-  return t('CONVERSATION.VOICE_WIDGET.INCOMING_CALL');
+const getCallSecondaryText = call => {
+  const typeText = getCallTypeText(call);
+  const stageText = getCallStageText(call);
+
+  return stageText ? `${typeText} · ${stageText}` : typeText;
 };
 
-const outboundStageShowsDuration = call => outboundCallStageShowsDuration(call);
+const idleCallDuration = '00:00';
 
 const openConversation = call => {
   if (!call?.conversationId) return;
@@ -299,161 +297,115 @@ watch(
   <div class="contents">
     <template v-if="incomingCalls.length || hasActiveCall">
       <div
-        class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]"
+        class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[340px] max-w-[calc(100vw-2rem)]"
       >
-        <!-- Incoming Calls (shown above active call) -->
         <div
-          v-for="call in hasActiveCall ? incomingCalls : []"
+          v-for="call in visibleCalls"
           :key="call.callSid"
-          class="flex items-center gap-3 p-4 bg-n-solid-2 rounded-xl shadow-xl outline outline-1 outline-n-strong"
+          class="flex gap-3 p-3 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
         >
-          <div
-            class="animate-pulse ring-2 ring-n-teal-9 rounded-full inline-flex"
-          >
-            <Avatar
-              :src="getCallInfo(call).avatar"
-              :name="getCallInfo(call).contactName"
-              :size="40"
-              rounded-full
-            />
-          </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-n-slate-12 truncate mb-0">
-              {{ getCallInfo(call).contactName }}
-            </p>
-            <p class="text-xs text-n-slate-11 truncate mb-0">
-              {{ formatInboxLine(getCallInfo(call)) }}
-            </p>
-            <p class="text-[11px] text-n-slate-10 truncate mb-0">
-              {{ getCallDirectionRouteText(call) }}
-            </p>
-            <p
-              v-if="getHandledByText(call)"
-              class="text-[11px] font-medium text-n-amber-11 truncate mb-0"
+          <div class="flex flex-col items-center w-14 shrink-0 gap-1.5">
+            <span
+              class="inline-flex rounded-full"
+              :class="{
+                'ring-2 ring-n-teal-9': callIsActive(call),
+                'animate-pulse ring-2 ring-n-teal-9': !callIsActive(call),
+              }"
             >
-              {{ getHandledByText(call) }}
-            </p>
-          </div>
-          <div class="flex shrink-0 gap-2">
-            <button
-              type="button"
-              class="flex justify-center items-center w-8 h-8 text-n-slate-11 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-full transition-colors"
-              :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
-              :aria-label="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
-              @click="dismissCall(call.callSid)"
-            >
-              <i class="text-base i-lucide-x" />
-            </button>
-            <button
-              class="flex justify-center items-center w-10 h-10 bg-n-ruby-9 hover:bg-n-ruby-10 rounded-full transition-colors"
-              @click="rejectIncomingCall(call)"
-            >
-              <i class="text-lg text-white i-ph-phone-x-bold" />
-            </button>
-            <button
-              class="flex justify-center items-center w-10 h-10 bg-n-teal-9 hover:bg-n-teal-10 rounded-full transition-colors"
-              @click="handleJoinCall(call)"
-            >
-              <i
-                class="text-lg text-white"
-                :class="
-                  browserJoinSupportedForCall(call)
-                    ? 'i-ph-phone-bold'
-                    : 'i-ph-chat-circle-bold'
-                "
+              <Avatar
+                :src="getCallInfo(call).avatar"
+                :name="getCallInfo(call).contactName"
+                :size="40"
+                rounded-full
               />
-            </button>
-          </div>
-        </div>
-
-        <!-- Main Call Widget -->
-        <div
-          v-if="hasActiveCall || incomingCalls.length"
-          class="flex items-center gap-3 p-4 bg-n-solid-2 rounded-xl shadow-xl outline outline-1 outline-n-strong"
-        >
-          <div
-            class="ring-2 ring-n-teal-9 rounded-full inline-flex"
-            :class="{ 'animate-pulse': !hasActiveCall }"
-          >
-            <Avatar
-              :src="getCallInfo(primaryCall).avatar"
-              :name="getCallInfo(primaryCall).contactName"
-              :size="40"
-              rounded-full
-            />
+            </span>
+            <span
+              class="font-mono leading-4 tabular-nums text-[13px] font-medium text-n-teal-9"
+            >
+              {{
+                callIsActive(call) ? formattedCallDuration : idleCallDuration
+              }}
+            </span>
           </div>
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-n-slate-12 truncate mb-0">
-              {{ getCallInfo(primaryCall).contactName }}
-            </p>
-            <p class="text-xs text-n-slate-11 truncate mb-0">
-              {{ formatInboxLine(getCallInfo(primaryCall)) }}
-            </p>
-            <p class="text-[11px] text-n-slate-10 truncate mb-0">
-              {{ getCallDirectionRouteText(primaryCall) }}
-            </p>
-            <p
-              v-if="getHandledByText(primaryCall)"
-              class="text-[11px] font-medium text-n-amber-11 truncate mb-0"
-            >
-              {{ getHandledByText(primaryCall) }}
-            </p>
-            <p
-              v-if="hasActiveCall && !isOutboundCall(primaryCall)"
-              class="font-mono text-sm text-n-teal-9 mb-0"
-            >
-              {{ formattedCallDuration }}
-            </p>
-            <div v-else-if="hasActiveCall" class="min-w-0">
-              <p class="text-sm font-medium text-n-teal-9 truncate mb-0">
-                {{ getOutboundStageText(primaryCall) }}
-              </p>
+            <div class="flex items-start gap-2 min-w-0">
+              <i
+                class="mt-0.5 text-[11px] shrink-0"
+                :class="[
+                  channelIconClass(call),
+                  isWhatsappCall(call) ? 'text-n-teal-9' : 'channel-icon-voice',
+                ]"
+              />
               <p
-                v-if="outboundStageShowsDuration(primaryCall)"
-                class="font-mono text-xs text-n-slate-11 mb-0"
+                class="min-w-0 flex-1 inline-flex items-center text-sm font-medium text-n-slate-10 mb-0"
               >
-                {{ formattedCallDuration }}
+                <span class="truncate">{{ getCallRouteParts(call).from }}</span>
+                <span class="mx-1 text-[10px] font-normal text-n-slate-8">
+                  {{ $t('CONVERSATION.VOICE_WIDGET.ROUTE_SEPARATOR') }}
+                </span>
+                <span class="truncate">{{ getCallRouteParts(call).to }}</span>
               </p>
+              <button
+                v-if="!callIsActive(call)"
+                type="button"
+                class="flex justify-center items-center w-6 h-6 -mt-1 -mr-1 text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors shrink-0"
+                :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
+                :aria-label="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
+                @click="dismissCall(call.callSid)"
+              >
+                <i class="text-sm i-lucide-x" />
+              </button>
             </div>
-            <p v-else class="text-xs text-n-slate-11 mb-0">
-              {{ getCallStatusText(primaryCall) }}
+
+            <p class="mt-0.5 text-xs text-n-slate-11 truncate mb-0">
+              {{ getCallSecondaryText(call) }}
             </p>
-          </div>
-          <div class="flex shrink-0 gap-2">
-            <button
-              v-if="!hasActiveCall"
-              type="button"
-              class="flex justify-center items-center w-8 h-8 text-n-slate-11 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-full transition-colors"
-              :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
-              :aria-label="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
-              @click="dismissCall(primaryCall?.callSid)"
-            >
-              <i class="text-base i-lucide-x" />
-            </button>
-            <button
-              class="flex justify-center items-center w-10 h-10 bg-n-ruby-9 hover:bg-n-ruby-10 rounded-full transition-colors"
-              @click="
-                hasActiveCall
-                  ? handleEndCall()
-                  : rejectIncomingCall(incomingCalls[0])
-              "
-            >
-              <i class="text-lg text-white i-ph-phone-x-bold" />
-            </button>
-            <button
-              v-if="!hasActiveCall && !isOutboundCall(incomingCalls[0])"
-              class="flex justify-center items-center w-10 h-10 bg-n-teal-9 hover:bg-n-teal-10 rounded-full transition-colors"
-              @click="handleJoinCall(incomingCalls[0])"
-            >
-              <i
-                class="text-lg text-white"
-                :class="
-                  browserJoinSupportedForCall(incomingCalls[0])
-                    ? 'i-ph-phone-bold'
-                    : 'i-ph-chat-circle-bold'
+
+            <div class="flex items-center gap-3 mt-2.5">
+              <button
+                v-if="callIsActive(call)"
+                type="button"
+                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
+                :title="$t('CONVERSATION.VOICE_WIDGET.END_CALL')"
+                :aria-label="$t('CONVERSATION.VOICE_WIDGET.END_CALL')"
+                @click="handleEndCall"
+              >
+                <i class="text-lg i-ph-phone-x-bold" />
+              </button>
+              <button
+                v-if="
+                  !callIsActive(call) &&
+                  !isOutboundCall(call) &&
+                  browserJoinSupportedForCall(call)
                 "
-              />
-            </button>
+                type="button"
+                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-teal-9 text-white hover:bg-n-teal-10 shadow-sm"
+                :title="$t('CONVERSATION.VOICE_WIDGET.CALL')"
+                :aria-label="$t('CONVERSATION.VOICE_WIDGET.CALL')"
+                @click="handleJoinCall(call)"
+              >
+                <i class="text-lg i-ph-phone-bold" />
+              </button>
+              <button
+                v-if="!callIsActive(call)"
+                type="button"
+                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
+                :title="$t('CONVERSATION.VOICE_WIDGET.REJECT_CALL')"
+                :aria-label="$t('CONVERSATION.VOICE_WIDGET.REJECT_CALL')"
+                @click="rejectIncomingCall(call)"
+              >
+                <i class="text-lg i-ph-phone-x-bold" />
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-3"
+                :title="$t('CONVERSATION.VOICE_WIDGET.OPEN_CHAT')"
+                :aria-label="$t('CONVERSATION.VOICE_WIDGET.OPEN_CHAT')"
+                @click="openConversation(call)"
+              >
+                <i class="text-lg i-ph-chat-circle-bold" />
+              </button>
+            </div>
           </div>
         </div>
       </div>

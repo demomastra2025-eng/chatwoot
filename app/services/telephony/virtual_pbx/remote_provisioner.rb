@@ -182,7 +182,10 @@ class Telephony::VirtualPbx::RemoteProvisioner
   end
 
   def remote_resource_not_found?(error)
-    error.code.to_s == 'REMOTE_RESOURCE_NOT_FOUND' || error.status.to_s == 'not_found'
+    return true if error.code.to_s == 'REMOTE_RESOURCE_NOT_FOUND' || error.status.to_s == 'not_found'
+
+    message = error.message.to_s
+    message.include?('NOT_FOUND') && message.match?(/requested resource was not found/i)
   end
 
   def reconciler_for(client)

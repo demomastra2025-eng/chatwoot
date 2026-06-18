@@ -408,6 +408,34 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
     expect(Telephony::ProvisioningRun.last.remote_snapshot).to include('delete_verification')
   end
 
+  it 'treats bridge 500 NOT_FOUND read-back responses as deleted resources' do
+    allow(resource_client).to receive(:dispatch).and_return({ 'ok' => true })
+    allow(resource_client).to receive(:agent).with('agent-ref').and_raise(
+      Telephony::Error.new(
+        code: 'BRIDGE_UNAVAILABLE',
+        message: [
+          'BRIDGE_UNAVAILABLE: /telephony/agents/agent-ref Telephony bridge GET',
+          '/telephony/agents/agent-ref failed: HTTP 500 5 NOT_FOUND:',
+          'The requested resource was not found'
+        ].join(' '),
+        status: :bad_gateway
+      )
+    )
+
+    delete_plan = plan.merge(
+      operations: [
+        { key: 'delete_agent', method: 'DELETE', path: '/telephony/agents/agent-ref', risk: 'requires_approval' }
+      ]
+    )
+
+    result = described_class.new(account: account, current_user: admin, resource_client: resource_client)
+                            .execute(operation: 'delete', desired_state: desired_state, plan: delete_plan, remote_commit: true)
+
+    expect(result).to include(status: 'succeeded', remote_commit: true)
+    expect(result.fetch(:delete_verification)).to contain_exactly(include(key: 'delete_agent', status: 'deleted'))
+    expect(Telephony::ProvisioningRun.last).to have_attributes(status: 'succeeded', operation: 'delete')
+  end
+
   it 'fails approved delete when remote read-back still finds a deleted resource' do
     allow(resource_client).to receive(:dispatch).and_return({ 'ok' => true })
     allow(resource_client).to receive(:number).with('number-ref').and_return('ref' => 'number-ref')

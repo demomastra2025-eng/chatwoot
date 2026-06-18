@@ -381,6 +381,8 @@ class Telephony::VirtualPbx::ProvisioningService
                       desired_state_for_payload(normalized_payload, existing_config)
                     end
     desired_state = merge_transient_credentials(desired_state, normalized_payload)
+    desired_state = merge_stale_sip_profile_cleanup(desired_state, mutation_result)
+    desired_state = merge_replaced_sip_profile_cleanup(desired_state, existing_config)
     plan = prebuilt_plan || remote_plan_builder.build(operation: operation, desired_state: desired_state)
     if remote_result.blank? && config.present? && remote_commit_requested?(remote_commit)
       remote_result = remote_provisioner.execute(
@@ -476,6 +478,66 @@ class Telephony::VirtualPbx::ProvisioningService
     merge_transient_connection_credentials!(state, normalized_payload)
     merge_transient_profile_credentials!(state, normalized_payload)
     state
+  end
+
+  def merge_stale_sip_profile_cleanup(desired_state, mutation_result)
+    stale_profiles = Array.wrap(mutation_result[:stale_sip_profiles] || mutation_result['stale_sip_profiles']).compact
+    return desired_state if stale_profiles.blank?
+
+    desired_state.deep_dup.tap do |state|
+      state[:stale_profiles] = merge_stale_profile_snapshots(state[:stale_profiles], stale_profiles)
+    end
+  end
+
+  def merge_replaced_sip_profile_cleanup(desired_state, existing_config)
+    existing_profiles = Array.wrap(existing_config&.dig(:profiles))
+    return desired_state if existing_profiles.blank?
+
+    current_profiles = Array.wrap(desired_state[:profiles]).map(&:with_indifferent_access)
+    stale_profiles = existing_profiles.filter_map do |profile|
+      attrs = profile.with_indifferent_access
+      current = current_profiles.find { |candidate| candidate[:id].present? && candidate[:id].to_s == attrs[:id].to_s }
+      current ||= current_profiles.find { |candidate| candidate[:user_id].to_s == attrs[:user_id].to_s }
+      next if current.present? && !sip_profile_remote_identity_changed?(attrs, current)
+
+      sip_profile_cleanup_snapshot_from_hash(attrs)
+    end
+    return desired_state if stale_profiles.blank?
+
+    desired_state.deep_dup.tap do |state|
+      state[:stale_profiles] = merge_stale_profile_snapshots(state[:stale_profiles], stale_profiles)
+    end
+  end
+
+  def sip_profile_remote_identity_changed?(previous_profile, current_profile)
+    previous_profile[:internal_extension].to_s != current_profile[:internal_extension].to_s ||
+      previous_profile[:sip_username].to_s != current_profile[:sip_username].to_s ||
+      (previous_profile[:fonoster_agent_ref].presence || previous_profile[:agent_ref]).to_s !=
+        (current_profile[:fonoster_agent_ref].presence || current_profile[:agent_ref]).to_s ||
+      (previous_profile[:fonoster_credentials_ref].presence || previous_profile[:credentials_ref]).to_s !=
+        (current_profile[:fonoster_credentials_ref].presence || current_profile[:credentials_ref]).to_s
+  end
+
+  def sip_profile_cleanup_snapshot_from_hash(attrs)
+    {
+      id: attrs[:id],
+      user_id: attrs[:user_id],
+      internal_extension: attrs[:internal_extension],
+      sip_username: attrs[:sip_username],
+      agent_ref: attrs[:fonoster_agent_ref].presence || attrs[:agent_ref],
+      local_agent_ref: attrs[:agent_ref],
+      credentials_ref: attrs[:fonoster_credentials_ref].presence || attrs[:credentials_ref],
+      local_credentials_ref: attrs[:credentials_ref],
+      fonoster_agent_ref: attrs[:fonoster_agent_ref],
+      fonoster_credentials_ref: attrs[:fonoster_credentials_ref],
+      availability_mode: attrs[:availability_mode],
+      status: attrs[:status],
+      enabled: attrs[:enabled]
+    }.compact
+  end
+
+  def merge_stale_profile_snapshots(*groups)
+    groups.flatten.compact.uniq { |profile| [profile[:agent_ref], profile[:credentials_ref], profile[:sip_username], profile[:internal_extension]] }
   end
 
   def merge_transient_connection_credentials!(state, normalized_payload)
@@ -742,8 +804,8 @@ class Telephony::VirtualPbx::ProvisioningService
       ensure_inbox_members_for_profiles!(inbox, payload)
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)
       upsert_routing_policy!(binding, payload)
-      upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
-      result = { inbox_id: inbox.id }
+      stale_sip_profiles = upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
+      result = { inbox_id: inbox.id, stale_sip_profiles: stale_sip_profiles }
     end
     result
   end
@@ -854,10 +916,14 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def upsert_sip_profiles!(inbox, provider_connection, payload)
     desired_keys = []
+    stale_profiles = []
     Array.wrap(payload[:profiles]).each_with_index do |profile, index|
       profile_record = sip_profile_record_for(inbox, profile)
+      previous_profile = sip_profile_cleanup_snapshot(profile_record) if profile_record.persisted?
       sip_username = profile.key?(:sip_username) ? profile[:sip_username] : profile_record.sip_username
       availability_mode = profile_availability_mode(profile, payload)
+      agent_ref = generated_refs(payload)[:profile_refs][index]
+      credentials_ref = credentials_ref_for(profile_record, profile, payload, index, sip_username: sip_username)
       profile_record.assign_attributes(
         inbox: inbox,
         user_id: profile[:user_id],
@@ -866,10 +932,10 @@ class Telephony::VirtualPbx::ProvisioningService
         sip_username: sip_username,
         password_secret_ref: password_secret_ref_for(profile_record, profile, payload, index, sip_username: sip_username),
         sip_host: profile_sip_host(profile, payload),
-        agent_ref: generated_refs(payload)[:profile_refs][index],
+        agent_ref: agent_ref,
         agent_aor: generated_profile_aor(profile, payload),
-        fonoster_agent_ref: profile_record.fonoster_agent_ref.presence || generated_refs(payload)[:profile_refs][index],
-        credentials_ref: credentials_ref_for(profile_record, profile, payload, index, sip_username: sip_username),
+        fonoster_agent_ref: profile_record.fonoster_agent_ref.presence || agent_ref,
+        credentials_ref: credentials_ref,
         enabled: profile.fetch(:enabled, true),
         availability_mode: availability_mode,
         status: 'active',
@@ -877,10 +943,43 @@ class Telephony::VirtualPbx::ProvisioningService
         ownership_status: LOCAL_OWNERSHIP_STATUS,
         metadata: { provider_kind: payload[:provider_kind] }
       )
+      stale_profiles << previous_profile if stale_sip_profile_cleanup_required?(previous_profile, profile_record)
       profile_record.save!
       desired_keys << profile_record.id
     end
-    inbox.telephony_sip_profiles.where.not(id: desired_keys).destroy_all
+    removed_profiles = inbox.telephony_sip_profiles.where.not(id: desired_keys).to_a
+    stale_profiles.concat(removed_profiles.filter_map { |profile| sip_profile_cleanup_snapshot(profile) })
+    removed_profiles.each(&:destroy!)
+    stale_profiles.compact.uniq { |profile| [profile[:agent_ref], profile[:credentials_ref], profile[:sip_username], profile[:internal_extension]] }
+  end
+
+  def sip_profile_cleanup_snapshot(profile_record)
+    return if profile_record.blank?
+
+    {
+      id: profile_record.id,
+      user_id: profile_record.user_id,
+      internal_extension: profile_record.internal_extension,
+      sip_username: profile_record.sip_username,
+      agent_ref: profile_record.fonoster_agent_ref.presence || profile_record.agent_ref,
+      local_agent_ref: profile_record.agent_ref,
+      credentials_ref: profile_record.fonoster_credentials_ref.presence || profile_record.credentials_ref,
+      local_credentials_ref: profile_record.credentials_ref,
+      fonoster_agent_ref: profile_record.fonoster_agent_ref,
+      fonoster_credentials_ref: profile_record.fonoster_credentials_ref,
+      availability_mode: profile_record.availability_mode,
+      status: profile_record.status,
+      enabled: profile_record.enabled
+    }.compact
+  end
+
+  def stale_sip_profile_cleanup_required?(previous_profile, profile_record)
+    return false if previous_profile.blank?
+
+    previous_profile[:agent_ref].to_s != (profile_record.fonoster_agent_ref.presence || profile_record.agent_ref).to_s ||
+      previous_profile[:credentials_ref].to_s != (profile_record.fonoster_credentials_ref.presence || profile_record.credentials_ref).to_s ||
+      previous_profile[:sip_username].to_s != profile_record.sip_username.to_s ||
+      previous_profile[:internal_extension].to_s != profile_record.internal_extension.to_s
   end
 
   def sip_profile_record_for(inbox, profile)

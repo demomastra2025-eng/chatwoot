@@ -119,7 +119,17 @@ const isFailed = computed(() =>
 // Call source and metadata — all camelCase due to deep transform
 const isWhatsappCall = computed(() => data.value?.callSource === 'whatsapp');
 const callId = computed(() => data.value?.callId);
-const acceptedBy = computed(() => data.value?.acceptedBy);
+const acceptedBy = computed(
+  () => data.value?.acceptedBy || data.value?.accepted_by || {}
+);
+const operatorClaim = computed(
+  () =>
+    data.value?.operatorClaim ||
+    data.value?.operator_claim ||
+    meta.value?.operatorClaim ||
+    meta.value?.operator_claim ||
+    {}
+);
 const recordingUrl = computed(
   () =>
     data.value?.recordingUrl ||
@@ -351,6 +361,53 @@ const labelKey = computed(() => {
   return 'CONVERSATION.VOICE_CALL.INCOMING_CALL';
 });
 
+const ignoredAnswerActorValues = new Set([
+  'operator_device',
+  'provider',
+  'agent',
+  'user',
+]);
+
+const displayNameFrom = value => {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return ignoredAnswerActorValues.has(trimmed) ? '' : trimmed;
+  }
+
+  return (
+    value.name ||
+    value.displayName ||
+    value.display_name ||
+    value.userName ||
+    value.user_name ||
+    value.userDisplayName ||
+    value.user_display_name ||
+    value.user?.name ||
+    value.user?.displayName ||
+    value.user?.display_name ||
+    ''
+  );
+};
+
+const answeredByText = computed(() => {
+  const acceptedByName = displayNameFrom(acceptedBy.value);
+  if (acceptedByName) return acceptedByName;
+  if (isOutbound.value) return '';
+
+  return (
+    [
+      operatorClaim.value,
+      data.value?.answeredBy,
+      data.value?.answered_by,
+      meta.value?.answeredBy,
+      meta.value?.answered_by,
+    ]
+      .map(displayNameFrom)
+      .find(Boolean) || ''
+  );
+});
+
 const subtextKey = computed(() => {
   if (isAiVoice.value) {
     if (aiVoiceState.value === 'speaking') {
@@ -365,7 +422,7 @@ const subtextKey = computed(() => {
   }
 
   if (
-    acceptedBy.value?.name &&
+    answeredByText.value &&
     [VOICE_CALL_STATUS.IN_PROGRESS, VOICE_CALL_STATUS.COMPLETED].includes(
       status.value
     )
@@ -386,11 +443,6 @@ const subtextKey = computed(() => {
   return isUnanswered.value || isFailed.value
     ? 'CONVERSATION.VOICE_CALL.NO_ANSWER'
     : 'CONVERSATION.VOICE_CALL.NOT_ANSWERED_YET';
-});
-
-const answeredByText = computed(() => {
-  if (!acceptedBy.value?.name) return '';
-  return acceptedBy.value.name;
 });
 
 const iconName = computed(() => {

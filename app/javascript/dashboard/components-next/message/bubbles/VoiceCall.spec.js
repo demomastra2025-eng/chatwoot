@@ -88,7 +88,7 @@ const buildWrapper = contextOverrides => {
   return mount(Host, {
     global: {
       mocks: {
-        $t: key => key,
+        $t: (key, params = {}) => (params.name ? `${key} ${params.name}` : key),
       },
       stubs: {
         BaseBubble: {
@@ -226,6 +226,31 @@ describe('VoiceCall bubble', () => {
 
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.CALL_ENDED');
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.YOU_ANSWERED');
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+  });
+
+  it('renders the answering operator name for native inbound calls', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          callDirection: 'inbound',
+          meta: {
+            duration: 20,
+            operator_claim: {
+              user_name: 'Ахан',
+            },
+          },
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.CALL_ENDED');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.ANSWERED_BY');
+    expect(wrapper.text()).toContain('Ахан');
+    expect(wrapper.text()).not.toContain(
+      'CONVERSATION.VOICE_CALL.YOU_ANSWERED'
+    );
     expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
   });
 

@@ -345,6 +345,60 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     )
   end
 
+  it 'plans cleanup for employee SIP profiles replaced through the OneLink UI' do
+    desired_state = {
+      account_id: account.id,
+      inbox_id: 1001,
+      provider_kind: 'sipuni',
+      refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id
+      },
+      profiles: [
+        {
+          user_id: admin.id,
+          internal_extension: '5555',
+          agent_ref: 'new-agent-ref',
+          credentials_ref: 'new-credentials-ref',
+          availability_mode: 'browser_webphone',
+          sip_username: '015856100099',
+          sip_password: 'new-password',
+          enabled: true
+        }
+      ],
+      stale_profiles: [
+        {
+          user_id: admin.id,
+          internal_extension: '504',
+          agent_ref: 'old-agent-ref',
+          credentials_ref: 'old-credentials-ref',
+          availability_mode: 'browser_webphone',
+          sip_username: '015856100020',
+          enabled: true
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    operation_paths = plan.fetch(:operations).map { |operation| [operation[:key], operation[:method], operation[:path]] }
+
+    expect(operation_paths).to include(
+      ['delete_stale_agent', 'DELETE', '/telephony/agents/old-agent-ref'],
+      ['delete_stale_agent_credentials', 'DELETE', '/telephony/credentials/old-credentials-ref'],
+      ['delete_stale_sipuni_gateway', 'DELETE', '/telephony/sipuni-gateways/015856100020'],
+      ['delete_stale_sipuni_gateway', 'DELETE', '/telephony/sipuni-gateways/number-ref-504'],
+      ['upsert_agent_credentials', 'PUT', '/telephony/credentials/new-credentials-ref'],
+      ['upsert_sipuni_gateway', 'PUT', '/telephony/sipuni-gateways/number-ref'],
+      ['upsert_agent', 'PUT', '/telephony/agents/new-agent-ref']
+    )
+    stale_gateway_index = operation_paths.index(['delete_stale_sipuni_gateway', 'DELETE', '/telephony/sipuni-gateways/number-ref-504'])
+    upsert_gateway_index = operation_paths.index(['upsert_sipuni_gateway', 'PUT', '/telephony/sipuni-gateways/number-ref'])
+    expect(stale_gateway_index).to be < upsert_gateway_index
+    expect(plan.to_json).not_to include('new-password')
+  end
+
   it 'keeps shared non-Sipuni trunks when another inbox uses the same provider connection' do
     provider_connection = create(
       :telephony_provider_connection,

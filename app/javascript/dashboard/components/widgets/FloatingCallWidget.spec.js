@@ -30,6 +30,7 @@ const t = (key, params = {}) => {
     'CONVERSATION.VOICE_WIDGET.OUTGOING_CLIENT_RINGING': 'Customer is ringing',
     'CONVERSATION.VOICE_WIDGET.INBOUND_DIRECTION': 'Inbound',
     'CONVERSATION.VOICE_WIDGET.OUTBOUND_DIRECTION': 'Outbound',
+    'CONVERSATION.VOICE_WIDGET.ROUTE_SEPARATOR': '→',
     'CONVERSATION.VOICE_WIDGET.CALL_ROUTE': `${params.from} → ${params.to}`,
     'CONVERSATION.VOICE_WIDGET.CALL_DIRECTION_ROUTE': `${params.direction} · ${params.route}`,
     'CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER':
@@ -42,6 +43,9 @@ const t = (key, params = {}) => {
       'Browser calling unavailable',
     'CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER': 'Unknown caller',
     'CONVERSATION.VOICE_WIDGET.DEFAULT_INBOX_NAME': 'Customer support',
+    'CONVERSATION.VOICE_WIDGET.REJECT_CALL': 'Reject',
+    'CONVERSATION.VOICE_WIDGET.CALL': 'Call',
+    'CONVERSATION.VOICE_WIDGET.OPEN_CHAT': 'Chat',
     'CONVERSATION.VOICE_WIDGET.CLOSE': 'Close',
   };
 
@@ -165,11 +169,10 @@ describe('FloatingCallWidget', () => {
 
     const wrapper = mountComponent();
 
-    expect(wrapper.text()).toContain('Client');
-    expect(wrapper.text()).toContain('Sales · FONOSTER');
-    expect(wrapper.text()).toContain('Inbound · client-party → support-line');
     expect(wrapper.text()).toContain('Handled outside the browser');
-    expect(wrapper.text()).toContain('Handled by: Ayan');
+    expect(wrapper.text()).toContain('client-party→support-line');
+    expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Chat"]').exists()).toBe(true);
 
     await wrapper.get('[aria-label="Close"]').trigger('click');
 

@@ -78,6 +78,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
         dispatch: mockDispatch,
         getters: {
           getCurrentAccountId: 1,
+          getCurrentUserID: 7,
         },
       },
     };
@@ -263,6 +264,37 @@ describe('ActionCableConnector - Copilot Tests', () => {
         fromNumber: 'client-party',
         toNumber: 'support-line',
         operatorClaim: { user_id: 9, user_name: 'Ayan' },
+      });
+    });
+
+    it('removes native voice calls claimed by another operator', async () => {
+      const callsStore = useCallsStore();
+
+      callsStore.addCall({
+        callSid: 'fonoster-inbound-1',
+        status: 'ringing',
+        callDirection: 'inbound',
+        provider: 'fonoster',
+        conversationId: 627,
+        logicalCallKey: 'fonoster-inbound:shared-key',
+      });
+
+      actionCable.onReceived({
+        event: 'voice_call.claimed',
+        data: {
+          account_id: 1,
+          call_sid: 'fonoster-inbound-2',
+          provider: 'fonoster',
+          call_direction: 'inbound',
+          conversation_id: 627,
+          logical_call_key: 'fonoster-inbound:shared-key',
+          related_call_sids: ['fonoster-inbound-1', 'fonoster-inbound-2'],
+          claimed_by_user_id: 9,
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(callsStore.calls).toEqual([]);
       });
     });
 

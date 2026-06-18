@@ -45,7 +45,7 @@ const fetchMetaData = async (context, params) => {
   }
 };
 
-const debouncedFetchMetaData = debounce(fetchMetaData, 500, false, 2000);
+const debouncedFetchMetaData = debounce(fetchMetaData, 1500, false, 5000);
 const longDebouncedFetchMetaData = debounce(fetchMetaData, 5000, false, 10000);
 const superLongDebouncedFetchMetaData = debounce(
   fetchMetaData,

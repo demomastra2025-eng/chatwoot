@@ -63,6 +63,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def update_operations(state, ownership)
     refs = state[:refs] || {}
     [
+      *stale_profile_cleanup_operations(state, ownership),
       connection_credentials_operation(state, ownership),
       *profile_credentials_operations(state, ownership),
       trunk_operation(state, ownership, 'Sync provider connection metadata'),
@@ -248,6 +249,95 @@ class Telephony::VirtualPbx::RemotePlanBuilder
         ownership
       )
     end
+  end
+
+  def stale_profile_cleanup_operations(state, ownership)
+    Array.wrap(state[:stale_profiles]).flat_map do |profile|
+      attrs = profile.with_indifferent_access
+      [
+        stale_agent_cleanup_operation(state, ownership, attrs),
+        stale_profile_credentials_cleanup_operation(state, ownership, attrs),
+        *stale_sipuni_gateway_cleanup_operations(state, ownership, attrs)
+      ].compact
+    end
+  end
+
+  def stale_agent_cleanup_operation(state, ownership, attrs)
+    agent_ref = attrs[:agent_ref].presence || attrs[:fonoster_agent_ref].presence || attrs[:local_agent_ref].presence
+    return if agent_ref.blank? || current_profile_agent_refs(state).include?(agent_ref)
+
+    operation_payload(
+      'delete_stale_agent',
+      'DELETE',
+      path('agents', agent_ref),
+      'Delete replaced employee extension assignment',
+      ownership
+    )
+  end
+
+  def stale_profile_credentials_cleanup_operation(state, ownership, attrs)
+    credentials_ref = attrs[:credentials_ref].presence || attrs[:fonoster_credentials_ref].presence || attrs[:local_credentials_ref].presence
+    return if credentials_ref.blank? || current_profile_credentials_refs(state).include?(credentials_ref)
+    return if credential_ref_used_by_other_sip_profile?(state, credentials_ref)
+
+    operation_payload(
+      'delete_stale_agent_credentials',
+      'DELETE',
+      path('credentials', credentials_ref),
+      'Delete replaced employee SIP credentials',
+      ownership
+    )
+  end
+
+  def stale_sipuni_gateway_cleanup_operations(state, ownership, attrs)
+    return unless sipuni_gateway?(state)
+
+    stale_sipuni_gateway_refs(state, attrs).filter_map do |gateway_ref|
+      operation_payload(
+        'delete_stale_sipuni_gateway',
+        'DELETE',
+        path('sipuni-gateways', gateway_ref),
+        'Delete replaced Sipuni Asterisk gateway marker',
+        ownership
+      )
+    end
+  end
+
+  def stale_sipuni_gateway_refs(state, attrs)
+    refs = (state[:refs] || {}).with_indifferent_access
+    number_ref = refs[:number_ref].presence
+    extension_ref = attrs[:internal_extension].presence || attrs[:user_id].presence || attrs[:sip_username].presence
+    current_refs = sipuni_gateway_refs(state) + current_profile_sip_usernames(state)
+
+    [
+      attrs[:sipuni_gateway_ref],
+      attrs[:gateway_ref],
+      attrs[:gatewayRef],
+      attrs[:remote_gateway_ref],
+      attrs[:sip_username],
+      (number_ref.present? && extension_ref.present? ? [number_ref, extension_ref].join('-') : nil),
+      number_ref
+    ].compact_blank.uniq.reject { |gateway_ref| current_refs.include?(gateway_ref) }
+  end
+
+  def current_profile_agent_refs(state)
+    Array.wrap(state[:profiles]).filter_map do |profile|
+      attrs = profile.with_indifferent_access
+      attrs[:agent_ref].presence || attrs[:fonoster_agent_ref].presence || attrs[:local_agent_ref].presence
+    end.uniq
+  end
+
+  def current_profile_credentials_refs(state)
+    Array.wrap(state[:profiles]).filter_map do |profile|
+      attrs = profile.with_indifferent_access
+      attrs[:credentials_ref].presence || attrs[:fonoster_credentials_ref].presence || attrs[:local_credentials_ref].presence
+    end.uniq
+  end
+
+  def current_profile_sip_usernames(state)
+    Array.wrap(state[:profiles]).filter_map do |profile|
+      profile.with_indifferent_access[:sip_username].presence
+    end.uniq
   end
 
   def delete_connection_credentials_operation(state, ownership)

@@ -382,6 +382,7 @@
       "OUTGOING_CLIENT_RINGING": "Клиенту идёт вызов",
       "INBOUND_DIRECTION": "Входящий",
       "OUTBOUND_DIRECTION": "Исходящий",
+      "ROUTE_SEPARATOR": "→",
       "CALL_ROUTE": "{from} → {to}",
       "CALL_DIRECTION_ROUTE": "{direction} · {route}",
       "HANDLED_OUTSIDE_BROWSER": "Обрабатывается вне браузера",
@@ -392,8 +393,10 @@
       "HANDLED_IN_ANOTHER_TAB": "Обрабатывается в другой вкладке",
       "BROWSER_CALLING_UNAVAILABLE": "Для этой линии звонок в браузере недоступен. Открываем диалог.",
       "REJECT_CALL": "Отклонить",
+      "CALL": "Позвонить",
       "JOIN_CALL": "Присоединиться к звонку",
       "END_CALL": "Завершить звонок",
+      "OPEN_CHAT": "Чат",
       "CLOSE": "Закрыть",
       "UNKNOWN_CALLER": "Неизвестный абонент",
       "DEFAULT_INBOX_NAME": "Поддержка клиентов"

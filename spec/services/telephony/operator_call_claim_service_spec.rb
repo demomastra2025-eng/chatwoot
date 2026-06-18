@@ -71,6 +71,71 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(call_session.metadata.dig('metadata', 'operator_pool')).to be(true)
   end
 
+  it 'broadcasts a claimed realtime event to every routed operator candidate' do
+    broadcasts = []
+    allow(ActionCable.server).to receive(:broadcast) do |token, event|
+      broadcasts << [token, event]
+    end
+
+    described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+
+    expect(broadcasts.map(&:first)).to contain_exactly(winner_user.pubsub_token, other_user.pubsub_token)
+    expect(broadcasts.map(&:last)).to all(
+      include(
+        event: 'voice_call.claimed',
+        data: include(
+          account_id: account.id,
+          call_sid: call_session.external_call_ref,
+          related_call_sids: include(call_session.external_call_ref),
+          claimed_by_user_id: winner_user.id
+        )
+      )
+    )
+  end
+
+  it 'does not mark another Fonoster call with a different logical key as related by conversation fallback' do
+    call_session.update!(
+      from_number: '+77011110101',
+      to_number: '+77022220202',
+      metadata: {
+        'metadata' => route_metadata.merge(
+          'logical_call_key' => 'fonoster-inbound:first-real-call',
+          'call_group_key' => 'fonoster-inbound:first-real-call'
+        )
+      }
+    )
+    unrelated_call = create(
+      :telephony_call_session,
+      account: account,
+      conversation: call_session.conversation,
+      contact: call_session.contact,
+      inbox: call_session.inbox,
+      number_binding: call_session.number_binding,
+      provider: call_session.provider,
+      direction: call_session.direction,
+      status: 'ringing',
+      from_number: call_session.from_number,
+      to_number: call_session.to_number,
+      metadata: {
+        'metadata' => route_metadata.merge(
+          'logical_call_key' => 'fonoster-inbound:second-real-call',
+          'call_group_key' => 'fonoster-inbound:second-real-call'
+        )
+      }
+    )
+
+    broadcasts = []
+    allow(ActionCable.server).to receive(:broadcast) do |_token, event|
+      broadcasts << event
+    end
+
+    described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+
+    related_call_sids = broadcasts.filter_map { |event| event.dig(:data, :related_call_sids) }.flatten.uniq
+    expect(related_call_sids).to include(call_session.external_call_ref)
+    expect(related_call_sids).not_to include(unrelated_call.external_call_ref)
+  end
+
   it 'claims a per-inbox SIP profile candidate without using the account-level binding' do
     profile = create(
       :telephony_sip_profile,

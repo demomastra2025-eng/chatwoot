@@ -365,9 +365,12 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
         [
           ['fallback-inbound-one', {}],
           ['fallback-inbound-two', {}],
+          ['fallback-inbound-later', { travel: 25.seconds }],
           ['branch-inbound-one', { bridge_call_ref: 'bridge-parent-inbound' }],
           ['branch-inbound-two', { bridge_call_ref: 'bridge-parent-inbound' }]
         ].each do |call_ref, extra_params|
+          travel extra_params.delete(:travel) if extra_params[:travel]
+
           post path,
                params: {
                  call_ref: call_ref,
@@ -387,8 +390,38 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(keys['fallback-inbound-one']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
     expect(keys['fallback-inbound-two']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
-    expect(keys['fallback-inbound-one']).not_to eq(keys['fallback-inbound-two'])
+    expect(keys['fallback-inbound-two']).to eq(keys['fallback-inbound-one'])
+    expect(keys['fallback-inbound-later']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
+    expect(keys['fallback-inbound-later']).not_to eq(keys['fallback-inbound-one'])
     expect(keys['branch-inbound-one']).to eq(keys['branch-inbound-two'])
+    expect(
+      account.telephony_call_sessions.find_by!(
+        external_call_ref: 'fallback-inbound-one'
+      ).metadata.dig('metadata', 'logical_call_group_ref')
+    ).to eq('fallback-inbound-one')
+    expect(
+      account.telephony_call_sessions.find_by!(
+        external_call_ref: 'fallback-inbound-two'
+      ).metadata.dig('metadata', 'logical_call_group_ref')
+    ).to eq('fallback-inbound-one')
+    expect(
+      account.telephony_call_sessions.find_by!(
+        external_call_ref: 'fallback-inbound-two'
+      ).metadata.dig('metadata', 'logical_call_group_ref')
+    ).to eq(
+      account.telephony_call_sessions.find_by!(
+        external_call_ref: 'fallback-inbound-one'
+      ).metadata.dig('metadata', 'logical_call_group_ref')
+    )
+    expect(
+      account.telephony_call_sessions.find_by!(
+        external_call_ref: 'fallback-inbound-later'
+      ).metadata.dig('metadata', 'logical_call_group_ref')
+    ).not_to eq(
+      account.telephony_call_sessions.find_by!(
+        external_call_ref: 'fallback-inbound-one'
+      ).metadata.dig('metadata', 'logical_call_group_ref')
+    )
     expect(
       account.telephony_call_sessions.find_by!(
         external_call_ref: 'branch-inbound-one'

@@ -349,6 +349,7 @@
       "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "INBOUND_DIRECTION": "Кіріс",
       "OUTBOUND_DIRECTION": "Шығыс",
+      "ROUTE_SEPARATOR": "→",
       "CALL_ROUTE": "{from} → {to}",
       "CALL_DIRECTION_ROUTE": "{direction} · {route}",
       "HANDLED_OUTSIDE_BROWSER": "Браузерден тыс өңделеді",
@@ -359,8 +360,10 @@
       "HANDLED_IN_ANOTHER_TAB": "Басқа қойындыда өңделіп жатыр",
       "BROWSER_CALLING_UNAVAILABLE": "Бұл желі үшін браузердегі қоңырау қолжетімсіз. Диалог ашылады.",
       "REJECT_CALL": "Қабылдамау",
+      "CALL": "Қоңырау шалу",
       "JOIN_CALL": "Қоңырауға қосылу",
       "END_CALL": "Қоңырауды аяқтау",
+      "OPEN_CHAT": "Чат",
       "CLOSE": "Жабу",
       "UNKNOWN_CALLER": "Белгісіз қоңырау шалушы",
       "DEFAULT_INBOX_NAME": "Клиенттерді қолдау"

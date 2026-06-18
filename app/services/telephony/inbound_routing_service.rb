@@ -374,7 +374,7 @@ class Telephony::InboundRoutingService
       number_binding.inbox_id,
       number_binding.id,
       number_binding.number_ref,
-      normalize_logical_call_value(logical_call_group_ref || call_ref),
+      normalize_logical_call_value(logical_call_group_ref),
       normalize_logical_call_value(caller_number),
       normalize_logical_call_value(inbound_number || number_binding.phone_number)
     ]
@@ -382,7 +382,7 @@ class Telephony::InboundRoutingService
 
   def logical_call_group_ref
     @logical_call_group_ref ||= begin
-      value = payload_value(
+      explicit_ref = payload_value(
         'bridge_call_ref', 'bridgeCallRef',
         'parent_call_ref', 'parentCallRef',
         'root_call_ref', 'rootCallRef',
@@ -395,8 +395,17 @@ class Telephony::InboundRoutingService
         'original_call_ref', 'originalCallRef',
         'linked_id', 'linkedId', 'linkedid'
       )
-      value.to_s.strip.presence
+      explicit_ref = explicit_ref.to_s.strip.presence
+      if useful_explicit_logical_group_ref?(explicit_ref)
+        explicit_ref
+      else
+        logical_bridge_call_ref_for_context.presence || call_ref
+      end
     end
+  end
+
+  def useful_explicit_logical_group_ref?(value)
+    value.present? && value != call_ref
   end
 
   def normalize_logical_call_value(value)
@@ -809,6 +818,53 @@ class Telephony::InboundRoutingService
     Telephony::CallSession.where(account_id: number_binding.account_id, conversation_id: existing_voice_conversation.id)
                           .where.not(external_call_ref: call_ref)
                           .where('created_at >= ?', 2.minutes.ago)
+  end
+
+  def logical_bridge_call_ref_for_context
+    @logical_bridge_call_ref_for_context ||= begin
+      session = recent_logical_bridge_call_session_scope
+                .where.not(status: Telephony::CallSession::TERMINAL_STATUSES)
+                .order(created_at: :desc, id: :desc)
+                .detect { |candidate| logical_group_ref_for_session(candidate).present? || candidate.external_call_ref.present? }
+      logical_group_ref_for_session(session).presence || session&.external_call_ref
+    end
+  end
+
+  def logical_group_ref_for_session(session)
+    return if session.blank?
+
+    metadata = session.metadata.to_h.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+    last_payload = metadata['last_payload'].is_a?(Hash) ? metadata['last_payload'] : {}
+    nested_payload = last_payload['payload'].is_a?(Hash) ? last_payload['payload'] : {}
+
+    route_metadata['logical_call_group_ref'].presence ||
+      route_metadata['bridge_call_ref'].presence || route_metadata['bridgeCallRef'].presence ||
+      last_payload['bridge_call_ref'].presence || last_payload['bridgeCallRef'].presence ||
+      nested_payload['bridge_call_ref'].presence || nested_payload['bridgeCallRef'].presence
+  end
+
+  def recent_logical_bridge_call_session_scope
+    scope = Telephony::CallSession.where(
+      account_id: number_binding.account_id,
+      inbox_id: number_binding.inbox_id,
+      number_binding_id: number_binding.id,
+      direction: 'inbound'
+    )
+                                  .where.not(external_call_ref: call_ref)
+                                  .where('created_at >= ?', 20.seconds.ago)
+    scope = scope.where(conversation_id: existing_voice_conversation.id) if existing_voice_conversation.present?
+    scope = scope.where(from_number: recent_context_from_numbers) if recent_context_from_numbers.present?
+    scope = scope.where(to_number: recent_context_to_numbers) if recent_context_to_numbers.present?
+    scope
+  end
+
+  def recent_context_from_numbers
+    [caller_number, normalized_caller_number].compact_blank.uniq
+  end
+
+  def recent_context_to_numbers
+    [inbound_number, number_binding.phone_number].compact_blank.uniq
   end
 
   def conversation_from_call_ref

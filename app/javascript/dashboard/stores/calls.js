@@ -35,6 +35,17 @@ const hasSharedConversationKey = (call, callData) => {
   return callKeys.some(key => callDataKeys.includes(key));
 };
 
+const relatedCallSids = callData =>
+  [
+    callData?.callSid,
+    callData?.call_sid,
+    callData?.call_ref,
+    ...(callData?.relatedCallSids || []),
+    ...(callData?.related_call_sids || []),
+  ]
+    .filter(isPresent)
+    .map(value => String(value));
+
 const isFonosterCall = call => call?.provider === 'fonoster';
 
 const isInboundCall = call => {
@@ -76,10 +87,32 @@ const sameFonosterInboundBranch = (call, callData) => {
   return sameValue(callLogicalKey(call), callLogicalKey(callData));
 };
 
+const sameFonosterInboundConversation = (call, callData) => {
+  if (!isFonosterCall(call) || !isFonosterCall(callData)) return false;
+  if (!isInboundCall(call) || !isInboundCall(callData)) return false;
+  if (hasLogicalCallKey(call) || hasLogicalCallKey(callData)) return false;
+
+  return hasSharedConversationKey(call, callData);
+};
+
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData?.callSid) ||
   sameFonosterInboundBranch(call, callData) ||
   sameFonosterConversation(call, callData, { allowCallSidMismatch: true });
+
+const isRelatedFonosterInbound = (call, targetCall) =>
+  sameFonosterInboundBranch(call, targetCall) ||
+  sameFonosterInboundConversation(call, targetCall);
+
+const visibleIncomingCalls = calls => {
+  const activeCall = calls.find(call => call.isActive);
+  return calls.filter(call => {
+    if (call.isActive) return false;
+    if (!activeCall) return true;
+
+    return !sameFonosterInboundConversation(call, activeCall);
+  });
+};
 
 const hasOwn = (object, key) =>
   Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -158,8 +191,8 @@ export const useCallsStore = defineStore('calls', {
   getters: {
     activeCall: state => state.calls.find(call => call.isActive) || null,
     hasActiveCall: state => state.calls.some(call => call.isActive),
-    incomingCalls: state => state.calls.filter(call => !call.isActive),
-    hasIncomingCall: state => state.calls.some(call => !call.isActive),
+    incomingCalls: state => visibleIncomingCalls(state.calls),
+    hasIncomingCall: state => visibleIncomingCalls(state.calls).length > 0,
   },
 
   actions: {
@@ -297,7 +330,7 @@ export const useCallsStore = defineStore('calls', {
         if (
           existingCall?.isActive &&
           !sameCallSid(existingCall, callData.callSid) &&
-          sameFonosterInboundBranch(existingCall, callData)
+          isRelatedFonosterInbound(existingCall, callData)
         ) {
           this.dismissRelatedFonosterIncomingCalls(existingCall);
           return;
@@ -316,6 +349,12 @@ export const useCallsStore = defineStore('calls', {
           return calls;
         }, []);
         if (replacedActiveCall) endClientCall(existingCall.provider);
+        return;
+      }
+
+      const activeCall = this.calls.find(call => call.isActive);
+      if (activeCall && isRelatedFonosterInbound(activeCall, callData)) {
+        this.dismissRelatedFonosterIncomingCalls(activeCall);
         return;
       }
 
@@ -400,11 +439,59 @@ export const useCallsStore = defineStore('calls', {
       this.calls = this.calls.filter(call => call.callSid !== callSid);
     },
 
+    async handleCallClaimed(data, currentUserId) {
+      const claimedByUserId =
+        data?.claimed_by_user_id ||
+        data?.claimedByUserId ||
+        data?.user_id ||
+        data?.userId;
+      const callData = {
+        callSid: data?.call_sid || data?.callSid || data?.call_ref,
+        provider: data?.provider || 'fonoster',
+        callDirection: data?.call_direction || data?.direction || 'inbound',
+        conversationId: data?.conversation_id || data?.conversation_display_id,
+        conversationDisplayId:
+          data?.conversation_display_id || data?.conversation_id,
+        conversationDbId: data?.conversation_db_id || data?.conversationDbId,
+        logicalCallKey:
+          data?.logical_call_key ||
+          data?.logicalCallKey ||
+          data?.call_group_key ||
+          data?.callGroupKey,
+      };
+
+      if (
+        isPresent(claimedByUserId) &&
+        isPresent(currentUserId) &&
+        String(claimedByUserId) === String(currentUserId)
+      ) {
+        this.dismissRelatedFonosterIncomingCalls(callData);
+        return;
+      }
+
+      const callSids = relatedCallSids(data);
+      const matchesClaimedCall = call =>
+        callSids.includes(String(call?.callSid)) ||
+        isRelatedFonosterInbound(call, callData);
+      const removedCalls = this.calls.filter(matchesClaimedCall);
+      if (!removedCalls.length) return;
+
+      this.calls = this.calls.filter(call => !matchesClaimedCall(call));
+
+      const removedBrowserCalls = removedCalls.filter(
+        call =>
+          call.provider === 'fonoster' && (call.isActive || call.browserJoined)
+      );
+      if (removedBrowserCalls.length) {
+        await endClientCall('fonoster');
+      }
+    },
+
     dismissRelatedFonosterIncomingCalls(targetCall) {
       this.calls = this.calls.filter(call => {
         if (call.isActive) return true;
         if (sameCallSid(call, targetCall?.callSid)) return true;
-        return !sameFonosterInboundBranch(call, targetCall);
+        return !isRelatedFonosterInbound(call, targetCall);
       });
     },
   },

@@ -75,6 +75,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'copilot.message.created': this.onCopilotMessageCreated,
       'auth.session_replaced': this.onSessionReplaced,
       'voice_call.incoming': this.onVoiceCallIncoming,
+      'voice_call.claimed': this.onVoiceCallClaimed,
       'whatsapp_call.incoming': this.onWhatsappCallIncoming,
       'whatsapp_call.accepted': this.onWhatsappCallAccepted,
       'whatsapp_call.ended': this.onWhatsappCallEnded,
@@ -346,6 +347,13 @@ class ActionCableConnector extends BaseActionCableConnector {
       toNumber: data.to_number || data.toNumber,
       operatorClaim: data.operator_claim || data.operatorClaim || null,
     });
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onVoiceCallClaimed = data => {
+    const callsStore = useCallsStore();
+    const currentUserId = this.app.$store.getters.getCurrentUserID;
+    callsStore.handleCallClaimed(data, currentUserId);
   };
 
   // eslint-disable-next-line class-methods-use-this

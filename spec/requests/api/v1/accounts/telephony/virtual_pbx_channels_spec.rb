@@ -819,6 +819,12 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     inbox = Inbox.find(inbox_id)
     expect(inbox.telephony_number_binding.routing_policy.operator_agent_aor).to eq('sip:504@operator.cloud.vconsult.kz')
+    old_profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
+    old_profile.update!(
+      fonoster_agent_ref: 'old-remote-agent-ref',
+      fonoster_credentials_ref: 'old-remote-credentials-ref',
+      credentials_ref: 'old-remote-credentials-ref'
+    )
 
     second_agent = create(:user, account: account, role: :agent)
     inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
@@ -842,6 +848,11 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    expect(response.parsed_body.dig('payload', 'provisioning_plan', 'operations').map { |operation| operation['key'] }).to include(
+      'delete_stale_agent',
+      'delete_stale_agent_credentials',
+      'delete_stale_sipuni_gateway'
+    )
     policy = inbox.reload.telephony_number_binding.routing_policy
     expect(policy.operator_agent_aor).to eq('sip:505@operator.cloud.vconsult.kz')
     expect(inbox.channel.provider_config_hash['operator_agent_aor']).to eq('sip:505@operator.cloud.vconsult.kz')

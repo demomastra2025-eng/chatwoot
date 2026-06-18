@@ -199,14 +199,21 @@ class Telephony::CallSession < ApplicationRecord
   end
 
   def linked_parent_call_ref
-    ai_voice = metadata.to_h['ai_voice'].is_a?(Hash) ? metadata.to_h['ai_voice'] : {}
+    metadata_hash = metadata.to_h
+    ai_voice = metadata_hash['ai_voice'].is_a?(Hash) ? metadata_hash['ai_voice'] : {}
     linked_terminal = ai_voice['linked_parent_terminal'].is_a?(Hash) ? ai_voice['linked_parent_terminal'] : {}
-    last_payload = metadata.to_h['last_payload'].is_a?(Hash) ? metadata.to_h['last_payload'] : {}
+    route_metadata = metadata_hash['metadata'].is_a?(Hash) ? metadata_hash['metadata'] : {}
+    last_payload = metadata_hash['last_payload'].is_a?(Hash) ? metadata_hash['last_payload'] : {}
     nested_payload = last_payload['payload'].is_a?(Hash) ? last_payload['payload'] : {}
 
-    linked_terminal['bridge_call_ref'].presence ||
-      last_payload['bridge_call_ref'].presence || last_payload['bridgeCallRef'].presence ||
-      nested_payload['bridge_call_ref'].presence || nested_payload['bridgeCallRef'].presence
+    parent_ref = linked_terminal['bridge_call_ref'].presence ||
+                 route_metadata['logical_call_group_ref'].presence ||
+                 route_metadata['bridge_call_ref'].presence || route_metadata['bridgeCallRef'].presence ||
+                 last_payload['bridge_call_ref'].presence || last_payload['bridgeCallRef'].presence ||
+                 nested_payload['bridge_call_ref'].presence || nested_payload['bridgeCallRef'].presence
+    return if parent_ref == external_call_ref
+
+    parent_ref
   end
 
   def voice_message_with_call_ref

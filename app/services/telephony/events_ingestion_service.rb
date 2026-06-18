@@ -241,7 +241,7 @@ class Telephony::EventsIngestionService
     call_session.reload
     ensure_conversation!(call_session, account)
     call_session.reload
-    apply_call_status!(call_session) unless superseded_fonoster_conversation_call?(call_session)
+    apply_call_status!(call_session) unless suppress_fonoster_conversation_update?(call_session)
     sync_voice_message!(call_session)
     linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
     enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
@@ -407,8 +407,8 @@ class Telephony::EventsIngestionService
 
   def call_session_attributes(account, call_session)
     conversation = resolve_existing_conversation(account, call_session)
-    inbox = resolve_inbox(account)
-    number_binding = resolve_number_binding(account) || inbox&.telephony_number_binding
+    inbox = resolve_inbox(account, call_session)
+    number_binding = resolve_number_binding(account, call_session) || inbox&.telephony_number_binding
     contact = resolve_contact(account, conversation, call_session)
     resolved_agent_binding = resolve_agent_binding(account)
     status = next_status_for(call_session)
@@ -1007,6 +1007,11 @@ class Telephony::EventsIngestionService
     current_call_started_at > call_session_started_at
   end
 
+  def suppress_fonoster_conversation_update?(call_session)
+    superseded_fonoster_conversation_call?(call_session) ||
+      unanswered_linked_fonoster_branch?(call_session)
+  end
+
   def fonoster_conversation_call_started_at(conversation, call_ref, attrs)
     current_session = conversation.account.telephony_call_sessions.find_by(external_call_ref: call_ref)
     current_session&.started_at || current_session&.created_at || fonoster_conversation_attrs_started_at(attrs)
@@ -1049,7 +1054,10 @@ class Telephony::EventsIngestionService
 
   def sync_voice_message!(call_session)
     message = voice_message_for(call_session)
-    return if message.blank? && superseded_fonoster_conversation_call?(call_session)
+    return if message.blank? && (
+      superseded_fonoster_conversation_call?(call_session) ||
+      suppress_linked_unanswered_fonoster_branch!(call_session)
+    )
 
     message ||= build_voice_message!(call_session)
     return unless message
@@ -1060,6 +1068,9 @@ class Telephony::EventsIngestionService
     if voice_meta.present?
       existing_meta = data['data']['meta'].is_a?(Hash) ? data['data']['meta'] : {}
       data['data']['meta'] = existing_meta.merge(voice_meta)
+    end
+    if (accepted_by = accepted_by_from_operator_claim(call_session, voice_meta['operator_claim'])).present?
+      data['data']['accepted_by'] = accepted_by
     end
     data['data']['status'] = call_session.status
     if (logical_key = logical_call_key(call_session)).present?
@@ -1093,6 +1104,7 @@ class Telephony::EventsIngestionService
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
     message.source_id ||= call_session.voice_call_source_id
     message.update!(content_attributes: data)
+    remove_fonoster_group_duplicate_messages!(call_session, message)
     mark_linked_runtime_duplicate_message!(call_session, message)
   end
 
@@ -1158,8 +1170,178 @@ class Telephony::EventsIngestionService
   def voice_message_for(call_session)
     return if call_session.conversation.blank?
     return exact_voice_message_for(call_session) if superseded_fonoster_conversation_call?(call_session)
+    return if unanswered_linked_fonoster_branch?(call_session)
 
     call_session.voice_message_for_current_call
+  end
+
+  def unanswered_linked_fonoster_branch?(call_session)
+    return false unless fonoster_call_session?(call_session)
+    return false unless call_session.direction == 'inbound'
+    return false unless unanswered_terminal_status?(call_session.status)
+
+    linked_parent_voice_message_for(call_session).present? ||
+      linked_answered_fonoster_call_session_for(call_session).present? ||
+      linked_logical_group_voice_message_for(call_session).present? ||
+      linked_unanswered_fonoster_voice_message_for(call_session).present? ||
+      linked_recent_context_voice_message_for(call_session).present?
+  end
+
+  def suppress_linked_unanswered_fonoster_branch!(call_session)
+    return false unless unanswered_linked_fonoster_branch?(call_session)
+
+    exact_voice_message_for(call_session)&.destroy!
+    true
+  end
+
+  def linked_answered_fonoster_call_session_for(call_session)
+    return if call_session.conversation.blank?
+
+    event_start = call_session.started_at || call_session.created_at
+    scope = call_session.conversation.account.telephony_call_sessions
+                        .where(conversation_id: call_session.conversation_id, provider: 'fonoster', direction: 'inbound')
+                        .where.not(id: call_session.id)
+    scope = scope.where(created_at: event_start - 2.minutes..event_start + 2.minutes) if event_start.present?
+
+    current_key = session_logical_call_key(call_session).presence || logical_call_key(call_session)
+    scope.order(created_at: :desc, id: :desc).detect do |candidate|
+      next false if unanswered_terminal_status?(candidate.status)
+      next false unless candidate.answered_at.present? || %w[in_progress completed].include?(candidate.status)
+
+      linked_fonoster_call_session_matches?(candidate, call_session, current_key, event_start)
+    end
+  end
+
+  def linked_fonoster_call_session_matches?(candidate, call_session, current_key, event_start)
+    candidate_key = session_logical_call_key(candidate)
+    return true if current_key.present? && candidate_key.to_s == current_key.to_s
+
+    candidate_start = candidate.started_at || candidate.created_at
+    return false if event_start.present? && candidate_start.present? &&
+                    !candidate_start.between?(event_start - 90.seconds, event_start + 90.seconds)
+
+    same_phone_value?(candidate.from_number, call_session.from_number) &&
+      same_phone_value?(candidate.to_number, call_session.to_number)
+  end
+
+  def linked_parent_voice_message_for(call_session)
+    parent_ref = linked_parent_call_ref_for(call_session)
+    return if parent_ref.blank? || parent_ref == call_session.external_call_ref
+
+    call_session.conversation.messages.voice_calls.find_by(source_id: "voice_call:#{parent_ref}") ||
+      call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
+        normalized_content_attributes(message).dig('data', 'call_sid') == parent_ref
+      end
+  end
+
+  def linked_parent_call_ref_for(call_session)
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    ai_voice = metadata['ai_voice'].is_a?(Hash) ? metadata['ai_voice'] : {}
+    linked_terminal = ai_voice['linked_parent_terminal'].is_a?(Hash) ? ai_voice['linked_parent_terminal'] : {}
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+    last_payload = metadata['last_payload'].is_a?(Hash) ? metadata['last_payload'] : {}
+    nested_payload = last_payload['payload'].is_a?(Hash) ? last_payload['payload'] : {}
+
+    linked_terminal['bridge_call_ref'].presence ||
+      route_metadata['logical_call_group_ref'].presence ||
+      route_metadata['bridge_call_ref'].presence || route_metadata['bridgeCallRef'].presence ||
+      last_payload['bridge_call_ref'].presence || last_payload['bridgeCallRef'].presence ||
+      nested_payload['bridge_call_ref'].presence || nested_payload['bridgeCallRef'].presence
+  end
+
+  def linked_logical_group_voice_message_for(call_session)
+    logical_key = logical_call_key(call_session)
+    return if logical_key.blank? || call_session.conversation.blank?
+
+    call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
+      data = normalized_content_attributes(message).fetch('data', {})
+      next false if data['call_sid'].to_s == call_session.external_call_ref
+      next false unless logical_group_key_matches?(data, logical_key)
+
+      !unanswered_terminal_status?(data['status'].to_s)
+    end
+  end
+
+  def linked_unanswered_fonoster_voice_message_for(call_session)
+    logical_key = logical_call_key(call_session)
+    return if logical_key.blank? || call_session.conversation.blank?
+
+    call_session.conversation.messages.voice_calls.order(:created_at, :id).detect do |message|
+      data = normalized_content_attributes(message).fetch('data', {})
+      next false if data['call_sid'].to_s == call_session.external_call_ref
+      next false unless data['provider'].to_s == 'fonoster'
+      next false unless data['call_direction'].to_s == 'inbound'
+      next false unless unanswered_terminal_status?(data['status'].to_s)
+
+      logical_group_key_matches?(data, logical_key)
+    end
+  end
+
+  def remove_fonoster_group_duplicate_messages!(call_session, canonical_message)
+    return unless fonoster_call_session?(call_session)
+    return unless call_session.direction == 'inbound'
+    return if call_session.conversation.blank? || canonical_message.blank?
+
+    logical_key = logical_call_key(call_session)
+
+    call_session.conversation.messages.voice_calls.where.not(id: canonical_message.id).find_each do |message|
+      data = normalized_content_attributes(message).fetch('data', {})
+      next unless duplicate_fonoster_group_message?(data, call_session, logical_key)
+      next unless data['call_sid'].present? && data['call_sid'] != call_session.external_call_ref
+      next unless unanswered_terminal_status?(data['status'].to_s)
+
+      message.destroy!
+    end
+  end
+
+  def linked_recent_context_voice_message_for(call_session)
+    return if call_session.conversation.blank?
+
+    call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
+      data = normalized_content_attributes(message).fetch('data', {})
+      next false if data['call_sid'].to_s == call_session.external_call_ref
+      next false if unanswered_terminal_status?(data['status'].to_s)
+
+      duplicate_fonoster_context_message?(data, call_session, message)
+    end
+  end
+
+  def duplicate_fonoster_group_message?(data, call_session, logical_key)
+    return true if logical_key.present? && logical_group_key_matches?(data, logical_key)
+
+    duplicate_fonoster_context_message?(data, call_session)
+  end
+
+  def duplicate_fonoster_context_message?(data, call_session, message = nil)
+    return false unless data['provider'].to_s == 'fonoster'
+    return false unless data['call_direction'].to_s == 'inbound'
+    return false unless same_phone_value?(data['from_number'], call_session.from_number)
+    return false unless same_phone_value?(data['to_number'], call_session.to_number)
+    return true if message.blank?
+
+    event_start = call_session.started_at || call_session.created_at
+    return true if event_start.blank?
+
+    message.created_at.between?(event_start - 90.seconds, event_start + 90.seconds)
+  end
+
+  def same_phone_value?(left, right)
+    normalized_left = normalized_phone(left)
+    normalized_right = normalized_phone(right)
+    return false if normalized_left.blank? || normalized_right.blank?
+
+    normalized_left == normalized_right
+  end
+
+  def logical_group_key_matches?(data, logical_key)
+    [
+      data['logical_call_key'],
+      data['logicalCallKey'],
+      data['call_group_key'],
+      data['callGroupKey'],
+      data.dig('meta', 'logical_call_key'),
+      data.dig('meta', 'call_group_key')
+    ].compact.map(&:to_s).include?(logical_key.to_s)
   end
 
   def exact_voice_message_for(call_session)
@@ -1242,6 +1424,28 @@ class Telephony::EventsIngestionService
     meta['latest_leg_status'] = latest_leg['status'] if latest_leg['status'].present?
     meta['latest_raw_status'] = latest_leg['raw_status'] if latest_leg['raw_status'].present?
     meta.compact
+  end
+
+  def accepted_by_from_operator_claim(call_session, operator_claim)
+    claim = operator_claim.is_a?(Hash) ? operator_claim.deep_stringify_keys : {}
+    user_id = claim['user_id'].presence || claim['chatwoot_user_id'].presence
+    user_name = claim['user_name'].presence ||
+                claim['userName'].presence ||
+                claim['name'].presence ||
+                operator_claim_user_name(call_session, user_id)
+    return if user_name.blank?
+
+    {
+      'id' => user_id,
+      'name' => user_name
+    }.compact
+  end
+
+  def operator_claim_user_name(call_session, user_id)
+    return if user_id.blank?
+
+    user = call_session.account.users.find_by(id: user_id)
+    user&.display_name.presence || user&.name.presence || user&.email
   end
 
   def latest_call_leg(call_session)
@@ -1456,11 +1660,13 @@ class Telephony::EventsIngestionService
     account.contacts.find_by(phone_number: normalize_phone_number(phone_number) || phone_number)
   end
 
-  def resolve_inbox(account)
+  def resolve_inbox(account, call_session = nil)
+    return call_session.inbox if post_finalize_recording_event? && call_session&.inbox.present?
+
     inbox_id = payload_value('inbox_id', 'inboxId') || metadata_value('chatwoot_inbox_id', 'inbox_id', 'inboxId')
     return account.inboxes.find_by(id: inbox_id) if inbox_id.present?
 
-    binding = resolve_number_binding(account)
+    binding = resolve_number_binding(account, call_session)
     return binding.inbox if binding&.inbox.present?
 
     channel = Channel::Voice.find_by(phone_number: inbound_number, account_id: account.id)
@@ -1468,7 +1674,11 @@ class Telephony::EventsIngestionService
     channel&.inbox
   end
 
-  def resolve_number_binding(account = nil)
+  def resolve_number_binding(account = nil, call_session = nil)
+    if post_finalize_recording_event? && call_session&.number_binding.present? && (account.blank? || call_session.number_binding.account_id == account.id)
+      return call_session.number_binding
+    end
+
     @resolve_number_binding_by_account ||= {}
     cache_key = account&.id || :global
     return @resolve_number_binding_by_account[cache_key] if @resolve_number_binding_by_account.key?(cache_key)
@@ -1582,6 +1792,21 @@ class Telephony::EventsIngestionService
       metadata_value('logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
       call_session&.metadata.to_h.dig('metadata', 'logical_call_key') ||
       call_session&.metadata.to_h.dig('metadata', 'call_group_key')
+  end
+
+  def session_logical_call_key(call_session)
+    metadata = call_session&.metadata.to_h.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+    last_payload = metadata['last_payload'].is_a?(Hash) ? metadata['last_payload'] : {}
+
+    route_metadata['logical_call_key'].presence ||
+      route_metadata['logicalCallKey'].presence ||
+      route_metadata['call_group_key'].presence ||
+      route_metadata['callGroupKey'].presence ||
+      last_payload['logical_call_key'].presence ||
+      last_payload['logicalCallKey'].presence ||
+      last_payload['call_group_key'].presence ||
+      last_payload['callGroupKey'].presence
   end
 
   def call_recording_metadata(call_session)
