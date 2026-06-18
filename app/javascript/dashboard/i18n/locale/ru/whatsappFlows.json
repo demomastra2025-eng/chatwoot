@@ -1,0 +1,110 @@
+{
+  "WHATSAPP_FLOWS": {
+    "FOOTER_ACTION": "WhatsApp Flow",
+    "MODAL": {
+      "TITLE": "WhatsApp Flows",
+      "SUBTITLE": "Выберите Flow и отправьте его в этот WhatsApp-чат.",
+      "SEARCH_PLACEHOLDER": "Поиск Flow",
+      "REFRESH": "Обновить",
+      "LOADING": "Загружаем Flow...",
+      "EMPTY_TITLE": "WhatsApp Flows не настроены",
+      "EMPTY_DESCRIPTION": "Добавьте записи Flow в настройках этого канала перед отправкой в диалогах.",
+      "NO_RESULTS": "Нет Flow под этот поиск.",
+      "SELECT_PROMPT": "Выберите Flow, чтобы настроить сообщение.",
+      "CONFIGURE_HINT": "Этот текст отправится вместе с кнопкой Flow в 24-часовом окне ответа WhatsApp.",
+      "DEFAULT_CTA": "Открыть форму",
+      "DEFAULT_BODY": "Пожалуйста, заполните {flow}.",
+      "VALIDATION_ERROR": "Текст сообщения и подпись кнопки обязательны.",
+      "LOAD_ERROR": "Не удалось загрузить WhatsApp Flows.",
+      "SEND_ERROR": "Не удалось отправить WhatsApp Flow.",
+      "CANCEL": "Отмена",
+      "SEND": "Отправить Flow",
+      "FIELDS": {
+        "HEADER": "Заголовок",
+        "BODY": "Текст сообщения",
+        "CTA": "Подпись кнопки",
+        "FOOTER": "Нижний текст"
+      }
+    },
+    "BUBBLE": {
+      "OUTGOING_BADGE": "WhatsApp Flow",
+      "REPLY_BADGE": "Flow заполнен",
+      "OUTGOING_TITLE": "Сообщение Flow",
+      "REPLY_TITLE": "Ответ Flow",
+      "RESPONSE": "Заполненные поля"
+    },
+    "SETTINGS": {
+      "PAGE_TITLE": "WhatsApp Flows",
+      "PAGE_DESCRIPTION": "Регистрируйте WhatsApp Cloud Flow ID и schema metadata, которые агенты используют в диалогах.",
+      "SUPPORTED_TITLE": "Реестр Flow канала",
+      "SUPPORTED_DESCRIPTION": "Записи привязаны к этому inbox. Опубликованные записи с Meta Flow ID доступны в диалоговом picker.",
+      "REFRESH": "Обновить",
+      "CREATE_ACTION": "Добавить Flow",
+      "EDIT_ACTION": "Изменить",
+      "DELETE_ACTION": "Удалить",
+      "SAVE_ACTION": "Сохранить Flow",
+      "LOADING": "Загружаем WhatsApp Flows...",
+      "LOAD_ERROR": "Не удалось загрузить WhatsApp Flows.",
+      "SAVE_ERROR": "Не удалось сохранить WhatsApp Flow.",
+      "DELETE_ERROR": "Не удалось удалить WhatsApp Flow.",
+      "CREATE_SUCCESS": "WhatsApp Flow создан.",
+      "UPDATE_SUCCESS": "WhatsApp Flow обновлён.",
+      "DELETE_SUCCESS": "WhatsApp Flow удалён.",
+      "SEARCH_PLACEHOLDER": "Поиск по названию, ID, статусу или категории",
+      "EMPTY_TITLE": "WhatsApp Flows не настроены",
+      "EMPTY_DESCRIPTION": "Добавьте Flow ID из Meta Flow Manager, чтобы агенты могли отправлять его из диалогов.",
+      "NO_RESULTS_TITLE": "Подходящих Flow нет",
+      "NO_RESULTS_DESCRIPTION": "Попробуйте другой поисковый запрос.",
+      "NO_PROVIDER_ID": "Нет Meta Flow ID — пока нельзя отправить",
+      "NEVER_SYNCED": "Ещё не синхронизирован",
+      "CREATE_TITLE": "Добавить WhatsApp Flow",
+      "CREATE_DESCRIPTION": "Сохраните Meta Flow ID и опциональную локальную schema для conversation picker.",
+      "EDIT_TITLE": "Изменить WhatsApp Flow",
+      "EDIT_DESCRIPTION": "Обновите локальную запись реестра для этого inbox.",
+      "STATUS_OPTIONS": {
+        "DRAFT": "Черновик",
+        "PUBLISHED": "Опубликован",
+        "DEPRECATED": "Устарел",
+        "BLOCKED": "Заблокирован",
+        "UNKNOWN": "Неизвестно"
+      },
+      "MODE_OPTIONS": {
+        "BLANK": "По умолчанию",
+        "DRAFT": "Черновик",
+        "PUBLISHED": "Опубликован"
+      },
+      "FIELDS": {
+        "PROVIDER_FLOW_ID": "Meta Flow ID",
+        "PROVIDER_FLOW_ID_PLACEHOLDER": "123456789012345",
+        "NAME": "Внутреннее имя",
+        "NAME_PLACEHOLDER": "lead_qualification",
+        "TITLE": "Название для отображения",
+        "TITLE_PLACEHOLDER": "Форма квалификации лида",
+        "CATEGORY": "Категория",
+        "CATEGORY_PLACEHOLDER": "sales",
+        "STATUS": "Статус",
+        "MODE": "Режим",
+        "CTA": "Подпись кнопки по умолчанию",
+        "CTA_PLACEHOLDER": "Открыть форму",
+        "FLOW_JSON": "Flow JSON / локальная schema",
+        "FLOW_JSON_PLACEHOLDER": "{\n  \"screens\": [{ \"id\": \"WELCOME\" }]\n}"
+      },
+      "ERRORS": {
+        "NAME_REQUIRED": "Внутреннее имя обязательно.",
+        "STATUS_REQUIRED": "Статус обязателен.",
+        "FLOW_JSON_OBJECT": "Flow JSON должен быть JSON-объектом."
+      },
+      "CARD": {
+        "NAME": "Имя",
+        "CATEGORY": "Категория",
+        "CTA": "Кнопка",
+        "UPDATED": "Обновлено"
+      },
+      "DELETE_DIALOG": {
+        "TITLE": "Удалить WhatsApp Flow?",
+        "DESCRIPTION": "Это удалит {flow} из реестра этого inbox. Уже отправленные сообщения и полученные ответы останутся в истории диалога.",
+        "CONFIRM": "Удалить Flow"
+      }
+    }
+  }
+}
