@@ -167,6 +167,31 @@ class Inboxes extends CacheEnabledApiClient {
     );
   }
 
+  getWhatsAppFlows(inboxId) {
+    return axios.get(`${this.url}/${inboxId}/whatsapp_flows`);
+  }
+
+  createWhatsAppFlow(inboxId, flow) {
+    return axios.post(`${this.url}/${inboxId}/whatsapp_flows`, { flow });
+  }
+
+  updateWhatsAppFlow(inboxId, flowId, flow) {
+    return axios.patch(`${this.url}/${inboxId}/whatsapp_flows/${flowId}`, {
+      flow,
+    });
+  }
+
+  deleteWhatsAppFlow(inboxId, flowId) {
+    return axios.delete(`${this.url}/${inboxId}/whatsapp_flows/${flowId}`);
+  }
+
+  createWhatsAppFlowSession(inboxId, flowId, session = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/whatsapp_flows/${flowId}/sessions`,
+      { session }
+    );
+  }
+
   getCSATTemplateStatus(inboxId) {
     return axios.get(`${this.url}/${inboxId}/csat_template`);
   }

@@ -109,6 +109,10 @@ const createWrapper = customProps =>
         CSATBubble: { template: '<div />' },
         FormBubble: { template: '<div />' },
         VoiceCallBubble: { template: '<div />' },
+        WhatsappFlowBubble: {
+          name: 'WhatsappFlowBubble',
+          template: '<div data-test-id="whatsapp-flow-bubble" />',
+        },
         MessageError: true,
         ContextMenu: contextMenuStub,
       },
@@ -179,6 +183,32 @@ describe('Message', () => {
     });
 
     expect(wrapper.find('[data-test-id="unsupported-bubble"]').exists()).toBe(
+      true
+    );
+  });
+
+  it('renders outgoing WhatsApp Flow messages with the flow bubble', () => {
+    const wrapper = createWrapper({
+      contentAttributes: {
+        data: { kind: 'whatsapp_flow', flow_id: 'flow-123' },
+      },
+    });
+
+    expect(wrapper.find('[data-test-id="whatsapp-flow-bubble"]').exists()).toBe(
+      true
+    );
+  });
+
+  it('renders incoming WhatsApp Flow replies with the flow bubble', () => {
+    const wrapper = createWrapper({
+      messageType: MESSAGE_TYPES.INCOMING,
+      contentAttributes: {
+        interactiveReplyType: 'nfm_reply',
+        flowResponse: { customer_name: 'Aruzhan', flow_token: '[REDACTED]' },
+      },
+    });
+
+    expect(wrapper.find('[data-test-id="whatsapp-flow-bubble"]').exists()).toBe(
       true
     );
   });

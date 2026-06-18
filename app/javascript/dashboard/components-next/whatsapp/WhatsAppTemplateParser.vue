@@ -8,7 +8,7 @@
  * 4. Replaces placeholders with user-provided values.
  * 5. Emits events to send the processed message or reset the template.
  */
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, toRef } from 'vue';
 import { useVuelidate } from '@vuelidate/core';
 import { requiredIf } from '@vuelidate/validators';
 import { useI18n } from 'vue-i18n';
@@ -16,6 +16,7 @@ import { useI18n } from 'vue-i18n';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TemplateParamInput from './TemplateParamInput.vue';
 import TemplatePreview from 'dashboard/components-next/template-preview/TemplatePreview.vue';
+import { useFunctionGetter } from 'dashboard/composables/store';
 import { PLATFORMS } from 'dashboard/services/TemplateConstants';
 import {
   buildTemplateParameters,
@@ -30,6 +31,10 @@ import {
 } from 'dashboard/helper/templateHelper';
 
 const props = defineProps({
+  inboxId: {
+    type: Number,
+    default: undefined,
+  },
   initialProcessedParams: {
     type: Object,
     default: () => ({}),
@@ -48,6 +53,10 @@ const props = defineProps({
 const emit = defineEmits(['sendMessage', 'resetTemplate', 'back']);
 
 const { t } = useI18n();
+const sendableWhatsAppFlows = useFunctionGetter(
+  'inboxes/getSendableWhatsAppFlows',
+  toRef(props, 'inboxId')
+);
 
 const processedParams = ref({});
 
@@ -149,6 +158,10 @@ const bodyParamEntries = computed(() =>
   }))
 );
 
+const hasButtonParameters = computed(() =>
+  Boolean(processedParams.value.buttons?.length)
+);
+
 const renderedTemplate = computed(() => {
   return replaceTemplateVariables(bodyText.value, processedParams.value);
 });
@@ -164,8 +177,35 @@ const rawRenderedTemplate = computed(() => {
   });
 });
 
+const flowReferencePresent = button =>
+  Boolean(
+    button?.flow_session_id ||
+      button?.whatsapp_flow_id ||
+      button?.flow_record_id ||
+      button?.provider_flow_id ||
+      button?.flow_id ||
+      button?.flow_name ||
+      button?.parameter
+  );
+
+const isFlowButton = button =>
+  String(button?.type || '').toLowerCase() === 'flow';
+
+const isButtonParameterMissing = button =>
+  isFlowButton(button) ? !flowReferencePresent(button) : !button?.parameter;
+
+const flowOptionLabel = flow =>
+  [flow.name || flow.title, flow.provider_flow_id || flow.providerFlowId]
+    .filter(Boolean)
+    .join(' · ');
+
 const isFormInvalid = computed(() => {
-  if (!hasVariables.value && !hasMediaHeader.value) return false;
+  if (
+    !hasVariables.value &&
+    !hasMediaHeader.value &&
+    !hasButtonParameters.value
+  )
+    return false;
 
   if (hasMediaHeader.value && !processedParams.value.header?.media_url) {
     return true;
@@ -187,7 +227,7 @@ const isFormInvalid = computed(() => {
 
   if (processedParams.value.buttons) {
     const hasEmptyButtonParameter = processedParams.value.buttons.some(
-      button => !button.parameter
+      isButtonParameterMissing
     );
     if (hasEmptyButtonParameter) return true;
   }
@@ -228,7 +268,7 @@ const updateMediaName = value => {
 
 const sendMessage = () => {
   v$.value.$touch();
-  if (v$.value.$invalid) return;
+  if (v$.value.$invalid || isFormInvalid.value) return;
 
   const { name, category, language, namespace } = props.template;
 
@@ -268,6 +308,7 @@ defineExpose({
   processedParams,
   hasVariables,
   hasMediaHeader,
+  hasButtonParameters,
   isDocumentTemplate,
   headerComponent,
   renderedTemplate,
@@ -305,7 +346,7 @@ defineExpose({
       </div>
     </div>
 
-    <div v-if="hasVariables || hasMediaHeader">
+    <div v-if="hasVariables || hasMediaHeader || hasButtonParameters">
       <div v-if="headerParamEntries.length" class="mb-4">
         <p class="mb-2.5 text-sm font-semibold">
           {{ t('WHATSAPP_TEMPLATES.PARSER.HEADER_VARIABLES_LABEL') }}
@@ -393,9 +434,36 @@ defineExpose({
         <div
           v-for="(button, index) in processedParams.buttons"
           :key="`button-${index}`"
-          class="flex items-center mb-2.5"
+          class="mb-2.5"
         >
+          <div v-if="isFlowButton(button)" class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-n-slate-11">
+              {{ t('WHATSAPP_TEMPLATES.PARSER.FLOW_SELECTOR_LABEL') }}
+            </label>
+            <select
+              v-model="processedParams.buttons[index].whatsapp_flow_id"
+              class="reset-base w-full rounded-lg border border-n-weak bg-n-alpha-black2 px-3 py-2 text-sm text-n-slate-12 outline-none focus:border-n-brand"
+            >
+              <option value="">
+                {{ t('WHATSAPP_TEMPLATES.PARSER.FLOW_SELECTOR_PLACEHOLDER') }}
+              </option>
+              <option
+                v-for="flow in sendableWhatsAppFlows"
+                :key="flow.id"
+                :value="flow.id"
+              >
+                {{ flowOptionLabel(flow) }}
+              </option>
+            </select>
+            <p
+              v-if="!sendableWhatsAppFlows.length"
+              class="text-xs text-n-ruby-9"
+            >
+              {{ t('WHATSAPP_TEMPLATES.PARSER.FLOW_SELECTOR_EMPTY') }}
+            </p>
+          </div>
           <TemplateParamInput
+            v-else
             v-model="processedParams.buttons[index].parameter"
             type="text"
             class="flex-1"

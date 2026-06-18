@@ -30,6 +30,21 @@ RSpec.describe Campaigns::TemplateParamsValidator do
               ]
             }
           ]
+        },
+        {
+          'name' => 'ticket_flow_button',
+          'status' => 'approved',
+          'category' => 'MARKETING',
+          'language' => 'en',
+          'components' => [
+            { 'type' => 'BODY', 'text' => 'Lead form available' },
+            {
+              'type' => 'BUTTONS',
+              'buttons' => [
+                { 'type' => 'FLOW', 'text' => 'Open form' }
+              ]
+            }
+          ]
         }
       ]
     )
@@ -95,6 +110,32 @@ RSpec.describe Campaigns::TemplateParamsValidator do
           name: 'ticket_action_buttons',
           language: 'en',
           processed_params: { buttons: [nil, { parameter: 'TRACK-123' }, { parameter: 'SAVE20' }] }
+        }
+      )
+    end.not_to raise_error
+  end
+
+  it 'requires Flow template buttons to reference a local or provider Flow' do
+    expect do
+      described_class.validate!(
+        inbox: whatsapp_inbox,
+        template_params: {
+          name: 'ticket_flow_button',
+          language: 'en',
+          processed_params: { buttons: [{ type: 'flow' }] }
+        }
+      )
+    end.to raise_error(ArgumentError, /buttons.0/)
+  end
+
+  it 'accepts Flow template buttons with a local Flow reference' do
+    expect do
+      described_class.validate!(
+        inbox: whatsapp_inbox,
+        template_params: {
+          name: 'ticket_flow_button',
+          language: 'en',
+          processed_params: { buttons: [{ type: 'flow', whatsapp_flow_id: 123 }] }
         }
       )
     end.not_to raise_error

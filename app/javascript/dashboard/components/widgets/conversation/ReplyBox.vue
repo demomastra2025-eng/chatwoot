@@ -29,6 +29,7 @@ import {
   getUndefinedVariablesInMessage,
 } from '@chatwoot/utils';
 import WhatsappTemplates from './WhatsappTemplates/Modal.vue';
+import WhatsappFlows from './WhatsappFlows/Modal.vue';
 import ContentTemplates from './ContentTemplates/ContentTemplatesModal.vue';
 import { MESSAGE_MAX_LENGTH } from 'shared/helpers/MessageTypeHelper';
 import inboxMixin, { INBOX_FEATURES } from 'shared/mixins/inboxMixin';
@@ -85,6 +86,7 @@ export default {
     ReplyTopPanel,
     ContentTemplates,
     WhatsappTemplates,
+    WhatsappFlows,
     WootMessageEditor,
     QuotedEmailPreview,
     CopilotEditorSection,
@@ -135,6 +137,7 @@ export default {
       toEmails: '',
       doAutoSaveDraft: () => {},
       showWhatsAppTemplatesModal: false,
+      showWhatsAppFlowsModal: false,
       showContentTemplatesModal: false,
       updateEditorSelectionWith: '',
       undefinedVariableMessage: '',
@@ -229,6 +232,15 @@ export default {
         'inboxes/getFilteredWhatsAppTemplates'
       ](this.inboxId);
       return !!(templates && templates.length) && !this.isPrivate;
+    },
+    showWhatsappFlows() {
+      if (this.isCommunicationCallReplyAction) return false;
+      return Boolean(
+        this.isAWhatsAppCloudChannel &&
+          this.selectedChannelCanReply &&
+          !this.isPrivate &&
+          !this.isEditingMessage
+      );
     },
     showContentTemplates() {
       if (this.isCommunicationCallReplyAction) return false;
@@ -949,6 +961,12 @@ export default {
     hideWhatsappTemplatesModal() {
       this.showWhatsAppTemplatesModal = false;
     },
+    openWhatsappFlowModal() {
+      this.showWhatsAppFlowsModal = true;
+    },
+    hideWhatsappFlowsModal() {
+      this.showWhatsAppFlowsModal = false;
+    },
     openContentTemplateModal() {
       this.showContentTemplatesModal = true;
     },
@@ -1121,6 +1139,13 @@ export default {
         ...messagePayload,
       });
       this.hideWhatsappTemplatesModal();
+    },
+    async onSendWhatsAppFlowReply(messagePayload) {
+      this.sendMessage({
+        conversationId: this.conversationId,
+        ...messagePayload,
+      });
+      this.hideWhatsappFlowsModal();
     },
     async onSendContentTemplateReply(messagePayload) {
       this.sendMessage({
@@ -1690,6 +1715,7 @@ export default {
         :conversation-id="conversationId"
         :enable-multiple-file-upload="enableMultipleFileUpload"
         :enable-whats-app-templates="showWhatsappTemplates && !isEditingMessage"
+        :enable-whats-app-flows="showWhatsappFlows && !isEditingMessage"
         :enable-content-templates="showContentTemplates && !isEditingMessage"
         :inbox="inbox"
         :is-on-private-note="isOnPrivateNote"
@@ -1723,6 +1749,7 @@ export default {
         :portal-slug="connectedPortalSlug"
         :new-conversation-modal-active="newConversationModalActive"
         @select-whatsapp-template="openWhatsappTemplateModal"
+        @select-whatsapp-flow="openWhatsappFlowModal"
         @select-content-template="openContentTemplateModal"
         @toggle-insert-article="toggleInsertArticle"
         @toggle-quoted-reply="toggleQuotedReply"
@@ -1738,6 +1765,14 @@ export default {
       :show="showWhatsAppTemplatesModal"
       @on-send="onSendWhatsAppReply"
       @cancel="hideWhatsappTemplatesModal"
+    />
+
+    <WhatsappFlows
+      :inbox-id="inbox.id"
+      :conversation-id="conversationId"
+      :show="showWhatsAppFlowsModal"
+      @on-send="onSendWhatsAppFlowReply"
+      @cancel="hideWhatsappFlowsModal"
     />
 
     <ContentTemplates

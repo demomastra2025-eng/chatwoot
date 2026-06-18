@@ -27,6 +27,7 @@ export const TEMPLATE_BUTTON_TYPE_OPTIONS = [
   { label: 'URL button', value: 'URL' },
   { label: 'Copy code', value: 'COPY_CODE' },
   { label: 'Phone number', value: 'PHONE_NUMBER' },
+  { label: 'WhatsApp Flow', value: 'FLOW' },
 ];
 
 export const createEmptyTemplateButton = () => ({
@@ -35,6 +36,9 @@ export const createEmptyTemplateButton = () => ({
   url: '',
   example: '',
   phoneNumber: '',
+  flowId: '',
+  flowName: '',
+  flowJson: '',
 });
 
 export const createEmptyWhatsAppTemplateForm = () => ({
@@ -78,6 +82,21 @@ function compactObject(value) {
 
 function compactString(value) {
   return String(value || '').trim();
+}
+
+function parseJsonObject(value) {
+  const normalizedValue = compactString(value);
+  if (!normalizedValue) return {};
+
+  const parsedValue = JSON.parse(normalizedValue);
+  if (
+    !parsedValue ||
+    Array.isArray(parsedValue) ||
+    typeof parsedValue !== 'object'
+  ) {
+    throw new Error('Flow JSON must be a JSON object');
+  }
+  return parsedValue;
 }
 
 export const hasDanglingTemplateVariable = text => {
@@ -151,6 +170,9 @@ export const buildWhatsAppTemplatePayload = form => {
       url: compactString(button.url),
       example: compactString(button.example),
       phone_number: compactString(button.phoneNumber),
+      flow_id: compactString(button.flowId),
+      flow_name: compactString(button.flowName),
+      flow_json: parseJsonObject(button.flowJson),
     })),
   };
 };

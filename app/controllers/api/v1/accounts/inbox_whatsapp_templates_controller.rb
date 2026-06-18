@@ -63,7 +63,16 @@ class Api::V1::Accounts::InboxWhatsappTemplatesController < Api::V1::Accounts::B
       :sample_media_url,
       body_examples: {},
       header_examples: {},
-      buttons: %i[type text url example phone_number]
+      buttons: [
+        :type,
+        :text,
+        :url,
+        :example,
+        :phone_number,
+        :flow_id,
+        :flow_name,
+        { flow_json: {} }
+      ]
     )
   end
 end

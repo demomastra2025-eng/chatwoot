@@ -367,6 +367,82 @@ describe Whatsapp::IncomingMessageService do
         expect(Contact.all.first.name).to eq('Sojan Jose')
         expect(whatsapp_channel.inbox.messages.first.content).to eq('First Button')
       end
+
+      it 'creates a readable structured message for WhatsApp Flow completion replies' do
+        cloud_channel = create(:channel_whatsapp, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+        flow = create(:whatsapp_flow, account: cloud_channel.account, inbox: cloud_channel.inbox)
+        flow_session = create(:whatsapp_flow_session, flow: flow)
+        flow_token = flow_session.token
+        flow_session.update!(token: nil)
+        response_json = {
+          flow_token: flow_token,
+          customer_name: 'Aruzhan',
+          phone: '+77001112233'
+        }.to_json
+        params = {
+          'contacts' => [{ 'profile' => { 'name' => 'Sojan Jose' }, 'wa_id' => '2423423243' }],
+          'messages' => [{ 'from' => '2423423243', 'id' => 'wamid.FLOW_REPLY',
+                           :interactive => {
+                             'nfm_reply': {
+                               'name': 'lead_qualification',
+                               'body': 'Lead form submitted',
+                               'response_json': response_json
+                             },
+                             'type': 'nfm_reply'
+                           },
+                           'timestamp' => '1633034394', 'type' => 'interactive' }]
+        }.with_indifferent_access
+
+        described_class.new(inbox: cloud_channel.inbox, params: params).perform
+
+        message = cloud_channel.inbox.messages.first
+        expect(message.content).to eq('Lead form submitted')
+        expect(message.content_attributes).to include(
+          'whatsapp_message_type' => 'interactive',
+          'interactive_reply_type' => 'nfm_reply',
+          'flow_reply_name' => 'lead_qualification',
+          'flow_reply_body' => 'Lead form submitted',
+          'flow_token_prefix' => Whatsapp::FlowSession.prefix_token(flow_token),
+          'flow_session_id' => flow_session.id
+        )
+        expect(JSON.parse(message.content_attributes['flow_response_json'])).to include(
+          'customer_name' => 'Aruzhan',
+          'flow_token' => '[REDACTED]'
+        )
+        expect(message.content_attributes['flow_response']).to include(
+          'customer_name' => 'Aruzhan',
+          'phone' => '+77001112233',
+          'flow_token' => '[REDACTED]'
+        )
+        expect(flow_session.reload).to have_attributes(
+          status: 'submitted',
+          response_message_id: message.id
+        )
+      end
+
+      it 'does not crash when a WhatsApp Flow completion contains malformed response_json' do
+        params = {
+          'contacts' => [{ 'profile' => { 'name' => 'Sojan Jose' }, 'wa_id' => '2423423243' }],
+          'messages' => [{ 'from' => '2423423243', 'id' => 'wamid.FLOW_REPLY_BAD_JSON',
+                           :interactive => {
+                             'nfm_reply': {
+                               'name': 'lead_qualification',
+                               'body': 'Lead form submitted',
+                               'response_json': '{bad json'
+                             },
+                             'type': 'nfm_reply'
+                           },
+                           'timestamp' => '1633034394', 'type' => 'interactive' }]
+        }.with_indifferent_access
+
+        expect { described_class.new(inbox: whatsapp_channel.inbox, params: params).perform }.not_to raise_error
+
+        message = whatsapp_channel.inbox.messages.first
+        expect(message.content).to eq('Lead form submitted')
+        expect(message.content_attributes['interactive_reply_type']).to eq('nfm_reply')
+        expect(message.content_attributes['flow_parse_error']).to be_present
+        expect(message.content_attributes).not_to have_key('flow_response')
+      end
     end
 
     # ref: https://github.com/chatwoot/chatwoot/issues/3795#issuecomment-1018057318

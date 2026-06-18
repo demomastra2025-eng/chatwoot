@@ -58,6 +58,49 @@ describe Whatsapp::Providers::WhatsappCloudService do
         expect(service.send_message('+123****6789', message_with_reply)).to eq 'message_id'
       end
 
+      it 'calls message endpoints for WhatsApp Flow interactive messages' do
+        flow_info = {
+          flow_id: 'flow-123',
+          flow_cta: 'Open',
+          flow_token: 'flow-token-123',
+          flow_action: 'navigate',
+          flow_action_payload: { screen: 'WELCOME' },
+          header_text: 'Lead form',
+          body_text: 'Please fill this form',
+          footer_text: 'OneLink'
+        }
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: '+123****6789',
+              type: 'interactive',
+              interactive: {
+                type: 'flow',
+                header: { type: 'text', text: 'Lead form' },
+                body: { text: 'Please fill this form' },
+                footer: { text: 'OneLink' },
+                action: {
+                  name: 'flow',
+                  parameters: {
+                    flow_message_version: '3',
+                    flow_token: 'flow-token-123',
+                    flow_cta: 'Open',
+                    flow_action: 'navigate',
+                    flow_id: 'flow-123',
+                    flow_action_payload: { screen: 'WELCOME' }
+                  }
+                }
+              }
+            }.to_json
+          )
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_flow('+123****6789', flow_info, message)).to eq 'message_id'
+      end
+
       it 'marks the channel for reauthorization when Meta returns an invalid token error' do
         allow(Meta::AuthorizationHealthCheckService).to receive(:new)
           .with(whatsapp_channel)

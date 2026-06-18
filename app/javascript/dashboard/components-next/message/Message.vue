@@ -46,6 +46,7 @@ import LocationBubble from './bubbles/Location.vue';
 import CSATBubble from './bubbles/CSAT.vue';
 import FormBubble from './bubbles/Form.vue';
 import VoiceCallBubble from './bubbles/VoiceCall.vue';
+import WhatsappFlowBubble from './bubbles/WhatsappFlow.vue';
 
 import MessageError from './MessageError.vue';
 import ContextMenu from 'dashboard/modules/conversations/components/MessageContextMenu.vue';
@@ -342,6 +343,15 @@ const isVoiceNote = computed(() => {
   );
 });
 
+const isWhatsappFlowMessage = computed(() => {
+  const flowData = props.contentAttributes?.data || {};
+  const replyType =
+    props.contentAttributes?.interactiveReplyType ||
+    props.contentAttributes?.interactive_reply_type;
+
+  return flowData.kind === 'whatsapp_flow' || replyType === 'nfm_reply';
+});
+
 const componentToRender = computed(() => {
   if (props.isEmailInbox && !props.private) {
     const emailInboxTypes = [MESSAGE_TYPES.INCOMING, MESSAGE_TYPES.OUTGOING];
@@ -360,6 +370,10 @@ const componentToRender = computed(() => {
 
   if (props.contentType === CONTENT_TYPES.VOICE_CALL) {
     return VoiceCallBubble;
+  }
+
+  if (isWhatsappFlowMessage.value) {
+    return WhatsappFlowBubble;
   }
 
   if (props.contentType === CONTENT_TYPES.INCOMING_EMAIL) {

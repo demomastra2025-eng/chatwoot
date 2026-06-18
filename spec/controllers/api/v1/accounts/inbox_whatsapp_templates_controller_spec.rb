@@ -71,6 +71,25 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
         ]
       }
     end
+    let(:flow_button) do
+      {
+        type: 'FLOW',
+        text: 'Open form',
+        flow_id: '1234567890'
+      }
+    end
+    let(:flow_template_params) do
+      {
+        template: {
+          name: 'lead_flow',
+          language: 'en',
+          category: 'MARKETING',
+          header_type: 'none',
+          body_text: 'Please complete the form.',
+          buttons: [flow_button]
+        }
+      }
+    end
 
     it 'returns unauthorized for unauthenticated users' do
       post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
@@ -148,6 +167,27 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
            headers: admin.create_new_auth_token,
            params: phone_number_template_params,
+           as: :json
+
+      expect(response).to have_http_status(:created)
+    end
+
+    it 'passes Flow button identifiers through to template management' do
+      expect(management_service).to receive(:create_template).with(
+        hash_including(
+          'buttons' => [
+            hash_including(
+              'type' => flow_button[:type],
+              'text' => flow_button[:text],
+              'flow_id' => flow_button[:flow_id]
+            )
+          ]
+        )
+      ).and_return({ success: true, template: {} })
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
+           headers: admin.create_new_auth_token,
+           params: flow_template_params,
            as: :json
 
       expect(response).to have_http_status(:created)

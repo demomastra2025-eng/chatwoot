@@ -65,7 +65,19 @@ class Campaigns::TemplateParamsValidator
 
   def button_parameter_present?(item)
     values = normalized_hash(item)
+    return flow_reference_present?(values) if values['type'].to_s.casecmp('flow').zero?
+
     values['parameter'].present? || values[:parameter].present?
+  end
+
+  def flow_reference_present?(values)
+    values['flow_session_id'].present? || values[:flow_session_id].present? ||
+      values['whatsapp_flow_id'].present? || values[:whatsapp_flow_id].present? ||
+      values['flow_record_id'].present? || values[:flow_record_id].present? ||
+      values['provider_flow_id'].present? || values[:provider_flow_id].present? ||
+      values['flow_id'].present? || values[:flow_id].present? ||
+      values['flow_name'].present? || values[:flow_name].present? ||
+      values['parameter'].present? || values[:parameter].present?
   end
 
   def normalized_hash(value)

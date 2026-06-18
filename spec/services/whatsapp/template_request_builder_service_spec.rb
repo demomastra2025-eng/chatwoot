@@ -248,6 +248,95 @@ RSpec.describe Whatsapp::TemplateRequestBuilderService do
                                                        ])
     end
 
+    it 'builds WhatsApp Flow template buttons' do
+      template_config = {
+        name: 'lead_flow',
+        language: 'en',
+        category: 'marketing',
+        body_text: 'Please complete the lead form.',
+        buttons: [
+          {
+            type: 'FLOW',
+            text: 'Open form',
+            flow_id: '1234567890'
+          }
+        ]
+      }
+
+      result = described_class.new(
+        template_config: template_config,
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(result[:components].last[:buttons]).to eq([
+                                                         {
+                                                           type: 'FLOW',
+                                                           text: 'Open form',
+                                                           flow_id: '1234567890'
+                                                         }
+                                                       ])
+    end
+
+    it 'serializes WhatsApp Flow JSON as a string for Meta template creation' do
+      flow_json = {
+        version: '7.3',
+        screens: [
+          {
+            id: 'LEAD_CAPTURE',
+            title: 'Lead capture',
+            terminal: true,
+            layout: { type: 'SingleColumnLayout', children: [] }
+          }
+        ]
+      }
+      template_config = {
+        name: 'lead_flow_json',
+        language: 'en',
+        category: 'marketing',
+        body_text: 'Please complete the lead form.',
+        buttons: [
+          {
+            type: 'FLOW',
+            text: 'Open form',
+            flow_json: flow_json
+          }
+        ]
+      }
+
+      result = described_class.new(
+        template_config: template_config,
+        asset_upload_service: asset_upload_service
+      ).call
+
+      button = result[:components].last[:buttons].first
+      expect(button[:flow_json]).to be_a(String)
+      expect(JSON.parse(button[:flow_json])).to include('version' => '7.3')
+    end
+
+    it 'rejects ambiguous WhatsApp Flow template button identifiers' do
+      template_config = {
+        name: 'lead_flow_ambiguous',
+        language: 'en',
+        category: 'marketing',
+        body_text: 'Please complete the lead form.',
+        buttons: [
+          {
+            type: 'FLOW',
+            text: 'Open form',
+            flow_id: '1234567890',
+            flow_name: 'lead_flow'
+          }
+        ]
+      }
+
+      expect do
+        described_class.new(
+          template_config: template_config,
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'Flow button requires exactly one of flow_id, flow_name, or flow_json')
+    end
+
     it 'raises when a copy code example exceeds the supported length' do
       template_config = {
         name: 'broken_copy_code',

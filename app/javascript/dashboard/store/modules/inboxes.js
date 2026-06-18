@@ -585,6 +585,27 @@ export const getters = {
       return true;
     });
   },
+  getWhatsAppFlows: $state => inboxId => {
+    const [inbox] = $state.records.filter(
+      record => record.id === Number(inboxId)
+    );
+
+    const flows =
+      inbox?.whatsapp_flows || inbox?.additional_attributes?.whatsapp_flows;
+    return Array.isArray(flows) ? flows : [];
+  },
+  getSendableWhatsAppFlows: ($state, $getters) => inboxId => {
+    return $getters.getWhatsAppFlows(inboxId).filter(flow => {
+      if (!flow?.id) return false;
+      const hasProviderFlowId = !!(
+        flow.provider_flow_id || flow.providerFlowId
+      );
+      const status = String(flow.status || '').toLowerCase();
+      return (
+        hasProviderFlowId && status !== 'deprecated' && status !== 'blocked'
+      );
+    });
+  },
   getNewConversationInboxes($state) {
     return visibleInboxRecords($state.records).filter(inbox => {
       const { channel_type: channelType, phone_number: phoneNumber = '' } =
@@ -899,6 +920,59 @@ export const actions = {
       return response.data;
     } catch (error) {
       throw new Error(error);
+    }
+  },
+  fetchWhatsAppFlows: async ({ commit }, inboxId) => {
+    try {
+      const response = await InboxesAPI.getWhatsAppFlows(inboxId);
+      const flows = response.data?.payload || [];
+      commit(types.default.SET_INBOX_WHATSAPP_FLOWS, { inboxId, flows });
+      return flows;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  createWhatsAppFlow: async ({ dispatch }, { inboxId, flow }) => {
+    try {
+      const response = await InboxesAPI.createWhatsAppFlow(inboxId, flow);
+      await dispatch('fetchWhatsAppFlows', inboxId);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  updateWhatsAppFlow: async ({ dispatch }, { inboxId, flowId, flow }) => {
+    try {
+      const response = await InboxesAPI.updateWhatsAppFlow(
+        inboxId,
+        flowId,
+        flow
+      );
+      await dispatch('fetchWhatsAppFlows', inboxId);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  deleteWhatsAppFlow: async ({ dispatch }, { inboxId, flowId }) => {
+    try {
+      await InboxesAPI.deleteWhatsAppFlow(inboxId, flowId);
+      await dispatch('fetchWhatsAppFlows', inboxId);
+      return null;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  createWhatsAppFlowSession: async (_, { inboxId, flowId, session = {} }) => {
+    try {
+      const response = await InboxesAPI.createWhatsAppFlowSession(
+        inboxId,
+        flowId,
+        session
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
     }
   },
   refreshWhatsappWebQr: async ({ commit, getters: inboxGetters }, payload) => {
@@ -1400,14 +1474,26 @@ export const actions = {
 };
 
 export const mutations = {
-  [types.default.SET_INBOXES_UI_FLAG]($state, uiFlag) {
-    $state.uiFlags = { ...$state.uiFlags, ...uiFlag };
+  [types.default.SET_INBOXES_UI_FLAG]($state, data) {
+    $state.uiFlags = { ...$state.uiFlags, ...data };
   },
   [types.default.SET_INBOXES]: MutationHelpers.set,
+  [types.default.SET_INBOX_ITEM]: MutationHelpers.setSingleRecord,
   [types.default.SET_INBOXES_ITEM]: MutationHelpers.setSingleRecord,
   [types.default.ADD_INBOXES]: MutationHelpers.create,
   [types.default.EDIT_INBOXES]: MutationHelpers.update,
   [types.default.DELETE_INBOXES]: MutationHelpers.destroy,
+  [types.default.SET_INBOX_WHATSAPP_FLOWS]($state, { inboxId, flows }) {
+    const index = $state.records.findIndex(
+      record => record.id === Number(inboxId)
+    );
+    if (index === -1) return;
+
+    $state.records[index] = {
+      ...$state.records[index],
+      whatsapp_flows: flows,
+    };
+  },
 };
 
 export default {

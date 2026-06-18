@@ -156,6 +156,263 @@ describe Whatsapp::SendOnWhatsappService do
         expect(WebMock).not_to have_requested(:post, 'https://waba.360dialog.io/v1/messages')
       end
 
+      it 'sends WhatsApp Cloud Flow messages inside an open reply window' do
+        create(:message, message_type: :incoming, content: 'start',
+                         conversation: cloud_conversation, account: cloud_conversation.account)
+        flow = create(:whatsapp_flow, account: whatsapp_cloud_channel.account, inbox: whatsapp_cloud_channel.inbox,
+                                      provider_flow_id: 'flow-123', name: 'lead_qualification')
+        flow_session = create(:whatsapp_flow_session, flow: flow, conversation: cloud_conversation)
+        message = create(
+          :message,
+          message_type: :outgoing,
+          content: 'Please fill this form',
+          conversation: cloud_conversation,
+          account: cloud_conversation.account,
+          content_attributes: {
+            data: {
+              kind: 'whatsapp_flow',
+              flow_session_id: flow_session.id,
+              flow_cta: 'Open',
+              flow_action: 'navigate',
+              flow_action_payload: { screen: 'WELCOME' },
+              header_text: 'Lead form',
+              body_text: 'Please fill this form',
+              footer_text: 'OneLink'
+            }
+          }
+        )
+
+        stub_request(:post, "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: '123456789',
+              type: 'interactive',
+              interactive: {
+                type: 'flow',
+                header: { type: 'text', text: 'Lead form' },
+                body: { text: 'Please fill this form' },
+                footer: { text: 'OneLink' },
+                action: {
+                  name: 'flow',
+                  parameters: {
+                    flow_message_version: '3',
+                    flow_token: flow_session.token,
+                    flow_cta: 'Open',
+                    flow_action: 'navigate',
+                    mode: 'published',
+                    flow_id: 'flow-123',
+                    flow_action_payload: { screen: 'WELCOME' }
+                  }
+                }
+              }
+            }.to_json
+          )
+          .to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.source_id).to eq('123456789')
+        expect(flow_session.reload).to have_attributes(status: 'sent', message_id: message.id)
+        expect(flow_session.token).to be_nil
+        expect(flow_session.token_digest).to be_present
+        expect(flow_session.token_prefix).to be_present
+        expect(flow_session.request_payload).not_to have_key('flow_token')
+      end
+
+      it 'rejects client-supplied Flow tokens when no server-side session is present' do
+        create(:message, message_type: :incoming, content: 'start',
+                         conversation: cloud_conversation, account: cloud_conversation.account)
+        message = create(
+          :message,
+          message_type: :outgoing,
+          content: 'Please fill this form',
+          conversation: cloud_conversation,
+          account: cloud_conversation.account,
+          content_attributes: {
+            data: {
+              kind: 'whatsapp_flow',
+              flow_id: 'flow-123',
+              flow_cta: 'Open',
+              flow_token: 'client-supplied-token',
+              body_text: 'Please fill this form'
+            }
+          }
+        )
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to eq(described_class::INVALID_FLOW_MESSAGE_ERROR)
+        expect(WebMock).not_to have_requested(
+          :post,
+          "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages"
+        )
+      end
+
+      it 'omits Flow action payload for data_exchange messages' do
+        create(:message, message_type: :incoming, content: 'start',
+                         conversation: cloud_conversation, account: cloud_conversation.account)
+        flow = create(:whatsapp_flow, account: whatsapp_cloud_channel.account, inbox: whatsapp_cloud_channel.inbox,
+                                      provider_flow_id: 'flow-123', name: 'lead_qualification')
+        flow_session = create(:whatsapp_flow_session, flow: flow, conversation: cloud_conversation)
+        message = create(
+          :message,
+          message_type: :outgoing,
+          content: 'Please fill this form',
+          conversation: cloud_conversation,
+          account: cloud_conversation.account,
+          content_attributes: {
+            data: {
+              kind: 'whatsapp_flow',
+              flow_session_id: flow_session.id,
+              flow_cta: 'Open',
+              flow_action: 'data_exchange',
+              flow_action_payload: { screen: 'WELCOME' },
+              body_text: 'Please fill this form'
+            }
+          }
+        )
+
+        stub_request(:post, "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: '123456789',
+              type: 'interactive',
+              interactive: {
+                type: 'flow',
+                body: { text: 'Please fill this form' },
+                action: {
+                  name: 'flow',
+                  parameters: {
+                    flow_message_version: '3',
+                    flow_token: flow_session.token,
+                    flow_cta: 'Open',
+                    flow_action: 'data_exchange',
+                    mode: 'published',
+                    flow_id: 'flow-123'
+                  }
+                }
+              }
+            }.to_json
+          )
+          .to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.source_id).to eq('123456789')
+      end
+
+      it 'marks WhatsApp Cloud Flow messages as failed outside an open reply window' do
+        message = create(
+          :message,
+          message_type: :outgoing,
+          content: 'Please fill this form',
+          conversation: cloud_conversation,
+          account: cloud_conversation.account,
+          content_attributes: {
+            data: {
+              kind: 'whatsapp_flow',
+              flow_id: 'flow-123',
+              flow_cta: 'Open',
+              flow_token: 'flow-token-123'
+            }
+          }
+        )
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to eq(described_class::FLOW_REPLY_WINDOW_ERROR)
+        expect(WebMock).not_to have_requested(
+          :post,
+          "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages"
+        )
+      end
+
+      it 'sends WhatsApp Cloud template Flow buttons without exposing the token in message attributes' do
+        whatsapp_cloud_channel.update!(
+          message_templates: [
+            {
+              'name' => 'lead_flow_template',
+              'language' => 'en_US',
+              'status' => 'APPROVED',
+              'category' => 'MARKETING',
+              'components' => [
+                { 'type' => 'BODY', 'text' => 'Please complete the lead form.' },
+                { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'FLOW', 'text' => 'Open form' }] }
+              ]
+            }
+          ]
+        )
+        flow = create(:whatsapp_flow, account: whatsapp_cloud_channel.account, inbox: whatsapp_cloud_channel.inbox,
+                                      provider_flow_id: 'flow-123', name: 'lead_qualification')
+        flow_session = create(:whatsapp_flow_session, flow: flow, conversation: cloud_conversation)
+        message = create(
+          :message,
+          message_type: :outgoing,
+          content: 'Please complete the lead form.',
+          conversation: cloud_conversation,
+          account: cloud_conversation.account,
+          additional_attributes: {
+            template_params: {
+              name: 'lead_flow_template',
+              language: 'en_US',
+              category: 'MARKETING',
+              processed_params: {
+                buttons: [
+                  {
+                    type: 'flow',
+                    flow_session_id: flow_session.id,
+                    flow_action_data: { lead_id: 'deal-1' }
+                  }
+                ]
+              }
+            }
+          }
+        )
+
+        stub_request(:post, "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: '123456789',
+              type: 'template',
+              template: {
+                name: 'lead_flow_template',
+                language: { policy: 'deterministic', code: 'en_US' },
+                components: [
+                  {
+                    type: 'button',
+                    sub_type: 'flow',
+                    index: '0',
+                    parameters: [
+                      {
+                        type: 'action',
+                        action: {
+                          flow_token: flow_session.token,
+                          flow_action_data: { lead_id: 'deal-1' }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }.to_json
+          )
+          .to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.source_id).to eq('123456789')
+        expect(message.additional_attributes.to_json).not_to include(flow_session.token)
+        expect(flow_session.reload).to have_attributes(status: 'sent', message_id: message.id)
+      end
+
       it 'marks message as failed when template name is blank' do
         processor = instance_double(Whatsapp::TemplateProcessorService)
         allow(Whatsapp::TemplateProcessorService).to receive(:new).and_return(processor)
