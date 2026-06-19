@@ -76,7 +76,6 @@ export default {
         connectionUsername: '',
         connectionPassword: '',
         routingMode: 'operator',
-        operatorAgentAor: '',
         profiles: [],
       },
     };
@@ -144,6 +143,19 @@ export default {
         this.virtualPbxConfig?.status?.read_only ||
         this.virtualPbxConfig?.ownership?.read_only
       );
+    },
+    virtualPbxProviderKind() {
+      return (
+        this.virtualPbxForm.providerKind ||
+        this.virtualPbxConfig?.provider_kind ||
+        ''
+      );
+    },
+    isVirtualPbxSipCredentialsVisible() {
+      return this.virtualPbxProviderKind === 'sipuni';
+    },
+    isVirtualPbxAsteriskAnalog() {
+      return this.virtualPbxProviderKind === 'asterisk_analog';
     },
     virtualPbxTransportOptions() {
       return ['udp', 'tcp', 'tls'];
@@ -560,7 +572,10 @@ export default {
       const phoneNumbers = config.phone_numbers || {};
       const channel = config.channel || {};
       const connection = config.connection || {};
-      const providerConnection = config.resources?.provider_connection || {};
+      const providerConnection = {
+        ...connection,
+        ...(config.resources?.provider_connection || {}),
+      };
       const routing = config.routing || {};
 
       this.virtualPbxForm = {
@@ -587,7 +602,6 @@ export default {
         connectionUsername: providerConnection.username || '',
         connectionPassword: '',
         routingMode: routing.mode || 'operator',
-        operatorAgentAor: routing.operator_agent_aor || '',
         profiles: this.normalizeVirtualPbxProfiles(
           config.employees || config.profiles || []
         ),
@@ -601,9 +615,30 @@ export default {
       }
 
       return (
+        this.validateVirtualPbxConnection() &&
         this.validateVirtualPbxProfiles() &&
         this.validateVirtualPbxProfileCredentials()
       );
+    },
+    validateVirtualPbxConnection() {
+      const form = this.virtualPbxForm;
+      if (!form.connectionHost.trim()) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.REQUIRED')
+        );
+        return false;
+      }
+      if (
+        this.isVirtualPbxAsteriskAnalog &&
+        !this.isValidVirtualPbxPort(form.connectionPort)
+      ) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID')
+        );
+        return false;
+      }
+
+      return true;
     },
     validateVirtualPbxProfiles() {
       const invalidProfile = this.virtualPbxForm.profiles.find(profile => {
@@ -618,6 +653,8 @@ export default {
       return false;
     },
     validateVirtualPbxProfileCredentials() {
+      if (!this.isVirtualPbxSipCredentialsVisible) return true;
+
       const invalidProfile = this.virtualPbxForm.profiles.find(profile => {
         const hasUsername = !!profile.sipUsername?.trim();
         const hasPassword = !!profile.sipPassword?.trim();
@@ -656,14 +693,18 @@ export default {
         };
         const sipUsername = profile.sipUsername?.trim();
         const sipPassword = profile.sipPassword?.trim();
-        if (sipUsername) payload.sip_username = sipUsername;
-        if (sipPassword) payload.sip_password = sipPassword;
+        if (this.isVirtualPbxSipCredentialsVisible && sipUsername) {
+          payload.sip_username = sipUsername;
+        }
+        if (this.isVirtualPbxSipCredentialsVisible && sipPassword) {
+          payload.sip_password = sipPassword;
+        }
         return payload;
       });
     },
     virtualPbxUpdatePayload() {
       const form = this.virtualPbxForm;
-      return {
+      const payload = {
         provider_kind: form.providerKind,
         channel_name: form.channelName.trim(),
         display_phone_number: form.displayPhoneNumber.trim(),
@@ -676,6 +717,17 @@ export default {
           source: 'virtual_pbx_ui',
         },
       };
+
+      payload.connection = {
+        host: form.connectionHost.trim(),
+      };
+
+      if (this.isVirtualPbxAsteriskAnalog) {
+        payload.connection.port = form.connectionPort.trim();
+        payload.connection.transport = form.connectionTransport;
+      }
+
+      return payload;
     },
     async updateVirtualPbxChannel() {
       if (this.isVirtualPbxReadOnly) {
@@ -833,15 +885,6 @@ export default {
             </span>
             {{ inbox.telephony.routing_policy.ai_app_ref }}
           </div>
-          <div
-            v-if="inbox.telephony?.routing_policy?.operator_agent_aor"
-            class="text-sm text-n-slate-11"
-          >
-            <span class="after:content-[':']">
-              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR') }}
-            </span>
-            {{ inbox.telephony.routing_policy.operator_agent_aor }}
-          </div>
         </div>
       </SettingsFieldSection>
       <SettingsFieldSection
@@ -954,6 +997,77 @@ export default {
             <div class="mb-3 space-y-1">
               <h3 class="text-sm font-medium text-n-slate-12">
                 {{
+                  $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION')
+                }}
+              </h3>
+              <p class="text-sm text-n-slate-11">
+                {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_SUBTITLE') }}
+              </p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL')
+                }}
+                <input
+                  v-model="virtualPbxForm.connectionHost"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="text"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.PLACEHOLDER'
+                    )
+                  "
+                />
+              </label>
+              <label
+                v-if="isVirtualPbxAsteriskAnalog"
+                class="flex flex-col gap-1 text-sm text-n-slate-12"
+              >
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL')
+                }}
+                <input
+                  v-model="virtualPbxForm.connectionPort"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.PLACEHOLDER'
+                    )
+                  "
+                />
+              </label>
+              <label
+                v-if="isVirtualPbxAsteriskAnalog"
+                class="flex flex-col gap-1 text-sm text-n-slate-12"
+              >
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL') }}
+                <select
+                  v-model="virtualPbxForm.connectionTransport"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                >
+                  <option
+                    v-for="option in virtualPbxTransportOptions"
+                    :key="option"
+                    :value="option"
+                  >
+                    {{ option.toUpperCase() }}
+                  </option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-n-weak p-4">
+            <div class="mb-3 space-y-1">
+              <h3 class="text-sm font-medium text-n-slate-12">
+                {{
                   $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE')
                 }}
               </h3>
@@ -1017,7 +1131,10 @@ export default {
                   />
                 </label>
 
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  v-if="isVirtualPbxSipCredentialsVisible"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
@@ -1036,7 +1153,10 @@ export default {
                   />
                 </label>
 
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <label
+                  v-if="isVirtualPbxSipCredentialsVisible"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
+                >
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
@@ -1080,7 +1200,10 @@ export default {
             </button>
           </div>
 
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div
+            v-if="isVirtualPbxAsteriskAnalog"
+            class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          >
             <label class="flex flex-col gap-1 text-sm text-n-slate-12">
               {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
               <select

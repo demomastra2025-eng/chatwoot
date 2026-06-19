@@ -153,4 +153,51 @@ describe('AddAgents', () => {
       query: {},
     });
   });
+
+  it('saves Asterisk analog employee internal extensions without SIP credentials', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          channel: { provider_kind: 'asterisk_analog' },
+          employees: [],
+        },
+      },
+    });
+    const wrapper = buildWrapper({
+      agents: [{ id: 7, name: 'Agent One' }],
+    });
+    await flushPromises();
+
+    wrapper.vm.selectedAgentIds = [7];
+    await wrapper.vm.$nextTick();
+    wrapper.vm.virtualPbxProfiles[7].internalExtension = '9098';
+    wrapper.vm.virtualPbxProfiles[7].sipUsername = 'must-not-send';
+    wrapper.vm.virtualPbxProfiles[7].sipPassword = 'must-not-send';
+
+    await wrapper.vm.addAgents();
+    await flushPromises();
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
+      '4690',
+      {
+        profiles: [
+          {
+            user_id: 7,
+            internal_extension: '9098',
+            enabled: true,
+          },
+        ],
+        metadata: {
+          source: 'virtual_pbx_agents_step',
+        },
+      },
+      { dryRun: false, remoteCommit: true }
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+    );
+  });
 });

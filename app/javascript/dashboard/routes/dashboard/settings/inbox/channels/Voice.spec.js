@@ -97,30 +97,27 @@ describe('Voice channel setup', () => {
       expect.not.objectContaining({ profiles: expect.any(Array) }),
       { dryRun: false, remoteCommit: true }
     );
-    expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider_kind: 'sipuni',
-        channel_name: 'Virtual PBX',
-        provider_account_number: '+15551234567',
-        ingress_number: expect.any(String),
-        connection: expect.objectContaining({
-          host: 'sip.provider.local',
-          port: '5060',
-          transport: 'udp',
-          username: undefined,
-          password: undefined,
-        }),
-        routing: expect.objectContaining({
-          mode: 'operator',
-          fallback_mode: 'reject',
-          operator_agent_aor: undefined,
-        }),
-        metadata: {
-          source: 'virtual_pbx_ui',
-        },
-      }),
-      { dryRun: false, remoteCommit: true }
-    );
+    const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(options).toEqual({ dryRun: false, remoteCommit: true });
+    expect(payload).toMatchObject({
+      provider_kind: 'sipuni',
+      channel_name: 'Virtual PBX',
+      connection: {
+        host: 'sip.provider.local',
+      },
+      routing: {
+        mode: 'operator',
+        fallback_mode: 'reject',
+      },
+      metadata: {
+        source: 'virtual_pbx_ui',
+      },
+    });
+    expect(payload.provider_account_number).toBe(payload.display_phone_number);
+    expect(payload.ingress_number).toBe(payload.display_phone_number);
+    expect(payload.connection).not.toHaveProperty('username');
+    expect(payload.connection).not.toHaveProperty('password');
+    expect(payload.routing).not.toHaveProperty('operator_agent_aor');
     expect(routerReplaceMock).toHaveBeenCalledWith({
       name: 'settings_inboxes_add_agents',
       params: {
@@ -144,15 +141,99 @@ describe('Voice channel setup', () => {
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
-    expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        connection: expect.objectContaining({
-          host: 'sip.provider.local',
-          password: undefined,
-        }),
-      }),
-      { dryRun: false, remoteCommit: true }
+    const [payload] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(payload.connection).toMatchObject({ host: 'sip.provider.local' });
+    expect(payload.connection).not.toHaveProperty('password');
+  });
+
+  it('keeps Sipuni create form free of provider technical numbers and operator SIP AOR', async () => {
+    routeMock.query = { provider: 'kazakhstan' };
+    const wrapper = buildWrapper();
+
+    wrapper.vm.isVirtualPbxAdvancedVisible = true;
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.LABEL'
     );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.LABEL'
+    );
+  });
+
+  it('creates an Asterisk analog channel with configurable provider connection', async () => {
+    routeMock.query = { provider: 'kazakhstan' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 202 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+
+    Object.assign(wrapper.vm.kazakhstanState, {
+      providerKind: 'asterisk_analog',
+      channelName: 'Asterisk analog',
+      phoneNumber: '+1 555 123 4567',
+      connectionHost: '10.77.0.5',
+      connectionPort: '5070',
+      connectionTransport: 'udp',
+    });
+    wrapper.vm.isVirtualPbxAdvancedVisible = true;
+    await wrapper.vm.$nextTick();
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL'
+    );
+    const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(options).toEqual({ dryRun: false, remoteCommit: true });
+    expect(payload).toMatchObject({
+      provider_kind: 'asterisk_analog',
+      channel_name: 'Asterisk analog',
+      connection: {
+        host: '10.77.0.5',
+        port: '5070',
+        transport: 'udp',
+      },
+      routing: {
+        mode: 'operator',
+        fallback_mode: 'reject',
+      },
+      metadata: {
+        source: 'virtual_pbx_ui',
+      },
+    });
+    expect(payload.provider_account_number).toBe(payload.display_phone_number);
+    expect(payload.ingress_number).toBe(payload.display_phone_number);
+    expect(payload).not.toHaveProperty('profiles');
+    expect(payload.connection).not.toHaveProperty('username');
+    expect(payload.connection).not.toHaveProperty('password');
   });
 
   it('points employee SIP assignment to settings instead of create', () => {

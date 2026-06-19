@@ -60,7 +60,6 @@ class Crm::TaskStatus < ApplicationRecord
   validates :category, inclusion: { in: CATEGORIES }
   validates :color, presence: true, format: { with: HEX_COLOR_FORMAT }
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
-  validate :standard_color_available_within_account
 
   scope :ordered, -> { order(:position, :id) }
   scope :active, -> { where(active: true) }
@@ -120,18 +119,6 @@ class Crm::TaskStatus < ApplicationRecord
     return if color.present?
 
     self.color = next_available_standard_color
-  end
-
-  def standard_color_available_within_account
-    return if color.blank? || account.blank?
-    return unless STANDARD_COLORS.include?(color.to_s.upcase)
-
-    sibling_task_statuses = self.class.where(account_id: account_id)
-    sibling_task_statuses = sibling_task_statuses.where.not(id: id) if id.present?
-
-    return unless sibling_task_statuses.where('UPPER(color) = ?', color.to_s.upcase).exists?
-
-    errors.add(:color, 'has already been taken for this account')
   end
 
   def next_available_standard_color

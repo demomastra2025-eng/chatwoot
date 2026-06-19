@@ -510,15 +510,15 @@
             "SIP_PAIR_REQUIRED": "SIP username/password сотрудника нужно заполнять вместе"
           },
           "EMPLOYEE_SIP_USERNAME": {
-            "LABEL": "SIP username сотрудника",
+            "LABEL": "SIP username",
             "PLACEHOLDER": "Необязательный SIP username сотрудника"
           },
           "EMPLOYEE_SIP_PASSWORD": {
-            "LABEL": "SIP password сотрудника",
+            "LABEL": "SIP password",
             "PLACEHOLDER": "Необязательный SIP password сотрудника"
           },
           "INTERNAL_EXTENSION": {
-            "LABEL": "Внутренний номер сотрудника",
+            "LABEL": "Внутренний номер",
             "PLACEHOLDER": "1001",
             "REQUIRED": "Внутренний номер сотрудника обязателен"
           },

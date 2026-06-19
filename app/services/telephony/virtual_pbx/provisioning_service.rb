@@ -8,8 +8,8 @@ class Telephony::VirtualPbx::ProvisioningService
   LOCAL_OWNERSHIP_STATUS = 'local'
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
   DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
-  DEFAULT_INTERNAL_ASTERISK_TRUNK_REF = DEFAULT_SIPUNI_TRUNK_REF
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
+  PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
 
   def initialize(account:, current_user:, bridge_client: nil)
     @account = account
@@ -591,7 +591,7 @@ class Telephony::VirtualPbx::ProvisioningService
     )
     profiles_supplied = source.key?('profiles')
 
-    {
+    normalized = {
       provider_kind: provider_kind,
       channel_name: first_present(source['channel_name'], source['name'], fallback&.dig(:name)),
       display_phone_number: first_present(source['display_phone_number'], source['phone_number'], fallback_phone_numbers[:display_phone_number]),
@@ -610,6 +610,11 @@ class Telephony::VirtualPbx::ProvisioningService
       routing: normalize_routing(source['routing'] || {}, fallback_routing, profiles_supplied: profiles_supplied),
       metadata: normalize_metadata(source['metadata'] || {})
     }.compact
+
+    normalized[:profiles] = normalized[:profiles].map do |profile|
+      profile_with_default_availability_mode(profile, normalized)
+    end
+    normalized
   end
 
   def normalize_connection(source, provider_kind, fallback)
@@ -641,6 +646,7 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def default_send_register_for(provider_kind, username:, password:)
+    return username.present? || password.present? if provider_kind.to_s == 'asterisk_analog'
     return false unless provider_kind.to_s == 'sipuni'
 
     username.present? || password.present?
@@ -682,6 +688,19 @@ class Telephony::VirtualPbx::ProvisioningService
         enabled: attrs.key?(:enabled) ? attrs[:enabled] : true
       }.compact
     end
+  end
+
+  def profile_with_default_availability_mode(profile, payload)
+    return profile if profile[:availability_mode].present?
+
+    profile.merge(availability_mode: default_profile_availability_mode(payload[:provider_kind]))
+  end
+
+  def default_profile_availability_mode(provider_kind)
+    return 'browser_webphone' if provider_kind.to_s == 'sipuni'
+    return 'external_extension' if provider_kind.to_s == 'asterisk_analog'
+
+    'external_extension'
   end
 
   def normalize_routing(source, fallback, profiles_supplied: false)
@@ -1059,9 +1078,7 @@ class Telephony::VirtualPbx::ProvisioningService
     explicit_mode = profile[:availability_mode].to_s.strip.presence
     return explicit_mode if Telephony::SipProfile::AVAILABILITY_MODES.include?(explicit_mode)
 
-    return 'browser_webphone' if payload[:provider_kind].to_s == 'sipuni'
-
-    'external_extension'
+    default_profile_availability_mode(payload[:provider_kind])
   end
 
   def operator_sip_domain
@@ -1150,7 +1167,7 @@ class Telephony::VirtualPbx::ProvisioningService
   def generated_refs(payload)
     provider_kind = payload[:provider_kind]
     ingress_number = payload[:ingress_number]
-    safe_ingress = ingress_number.to_s.gsub(/[^0-9A-Za-z_-]/, '-')
+    safe_ingress = remote_ref_suffix(ingress_number)
     runtime_app_ref = default_runtime_app_ref
     number_ref = if provider_kind == 'sipuni'
                    "sipuni-internal-asterisk-#{payload[:provider_account_number].presence || safe_ingress}"
@@ -1162,7 +1179,7 @@ class Telephony::VirtualPbx::ProvisioningService
     {
       number_ref: number_ref,
       trunk_ref: trunk_ref_for(payload, provider_kind, safe_ingress),
-      credentials_ref: "cred-#{provider_kind}-acct-#{account.id}-#{safe_ingress}",
+      credentials_ref: generated_credentials_ref(provider_kind, safe_ingress),
       app_ref: runtime_app_ref,
       runtime_app_ref: runtime_app_ref,
       profile_refs: profiles.map { |profile| "profile-#{account.id}-#{profile[:user_id]}-#{profile[:internal_extension]}" },
@@ -1172,9 +1189,21 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def trunk_ref_for(_payload, provider_kind, safe_ingress)
     return sipuni_trunk_ref if provider_kind == 'sipuni'
-    return asterisk_analog_trunk_ref if provider_kind == 'asterisk_analog'
 
-    "trunk-#{provider_kind}-acct-#{account.id}-#{safe_ingress}"
+    "trunk-#{provider_ref_key(provider_kind)}-acct-#{account.id}-#{safe_ingress}"
+  end
+
+  def generated_credentials_ref(provider_kind, safe_ingress)
+    "cred-#{provider_ref_key(provider_kind)}-acct-#{account.id}-#{safe_ingress}"
+  end
+
+  def provider_ref_key(provider_kind)
+    provider_kind.to_s.tr('_', '-')
+  end
+
+  def remote_ref_suffix(value)
+    normalized = value.to_s.gsub(/[^0-9A-Za-z_-]+/, '-').squeeze('-').gsub(/\A[-_]+|[-_]+\z/, '')
+    normalized.presence || 'number'
   end
 
   def generated_refs_for(payload, existing_config)
@@ -1286,7 +1315,7 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def delete_trunk_bridge_operation(refs)
-    return if refs[:trunk_ref].to_s.in?([sipuni_trunk_ref, asterisk_analog_trunk_ref])
+    return if refs[:trunk_ref].to_s == sipuni_trunk_ref
 
     bridge_operation('delete_trunk', 'DELETE', bridge_path('/telephony/trunks/', refs[:trunk_ref]),
                      'Delete channel-owned trunk when it is not shared')
@@ -1300,10 +1329,19 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def profile_bridge_operations(payload, refs, method)
-    Array.wrap(payload[:profiles]).each_with_index.map do |_profile, index|
+    Array.wrap(payload[:profiles]).each_with_index.filter_map do |profile, index|
+      next if provider_managed_extension_profile?(payload, profile)
+
       bridge_operation('upsert_agent', method, bridge_path('/telephony/agents/', refs[:profile_refs][index]),
                        'Upsert employee SIP agent profile')
     end
+  end
+
+  def provider_managed_extension_profile?(payload, profile)
+    provider_kind = payload[:provider_kind].to_s
+    availability_mode = profile_availability_mode(profile.with_indifferent_access, payload.with_indifferent_access)
+
+    provider_kind.in?(%w[sipuni asterisk_analog]) && PROVIDER_EXTENSION_MODES.include?(availability_mode)
   end
 
   def profile_delete_bridge_operations(refs)
@@ -1339,23 +1377,8 @@ class Telephony::VirtualPbx::ProvisioningService
     ENV.fetch('TELEPHONY_VIRTUAL_PBX_SIPUNI_TRUNK_REF', DEFAULT_SIPUNI_TRUNK_REF)
   end
 
-  def asterisk_analog_trunk_ref
-    first_present(
-      ENV.fetch('TELEPHONY_VIRTUAL_PBX_ASTERISK_ANALOG_TRUNK_REF', nil),
-      ENV.fetch('TELEPHONY_VIRTUAL_PBX_INTERNAL_ASTERISK_TRUNK_REF', nil),
-      DEFAULT_INTERNAL_ASTERISK_TRUNK_REF
-    )
-  end
-
   def shared_internal_trunk_ref?(payload, refs)
-    case payload[:provider_kind].to_s
-    when 'sipuni'
-      refs[:trunk_ref].to_s == sipuni_trunk_ref
-    when 'asterisk_analog'
-      refs[:trunk_ref].to_s == asterisk_analog_trunk_ref
-    else
-      false
-    end
+    payload[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
   end
 
   def dry_run_status(errors)

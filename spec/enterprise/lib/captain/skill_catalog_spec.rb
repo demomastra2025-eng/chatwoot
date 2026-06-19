@@ -120,6 +120,40 @@ RSpec.describe Captain::SkillCatalog do
       end
     end
 
+    it 'falls back to direct file discovery when Rails cache write fails' do
+      Dir.mktmpdir do |dir|
+        skill_dir = File.join(dir, 'support')
+        FileUtils.mkdir_p(File.join(skill_dir, 'scripts'))
+        File.write(
+          File.join(skill_dir, 'SKILL.md'),
+          <<~MARKDOWN
+            ---
+            name: Support Flow
+            description: Handles support escalation behavior.
+            ---
+            Escalate with context.
+          MARKDOWN
+        )
+        File.write(File.join(skill_dir, 'scripts', 'summarize.rb'), 'puts STDIN.read')
+        File.write(
+          File.join(skill_dir, 'skill.json'),
+          JSON.generate(scripts: [{ id: 'summarize', command: 'scripts/summarize.rb', runtime: 'ruby', risk: 'low' }])
+        )
+
+        with_modified_env('CAPTAIN_SKILL_DIRS' => dir) do
+          allow(Rails.cache).to receive(:fetch).and_raise(Errno::ENOENT, 'rb_file_s_rename')
+          allow(Rails.logger).to receive(:warn)
+
+          tools = described_class.script_tools_for(skill_ids: ['support-flow'])
+
+          expect(tools).to contain_exactly(hash_including(provider: 'skill_script', skill_id: 'support-flow'))
+          expect(Rails.logger).to have_received(:warn).with(
+            a_string_including('Captain::SkillCatalog cache unavailable; rebuilding without cache')
+          )
+        end
+      end
+    end
+
     it 'does not build preview trees while compiling runtime tool metadata' do
       Dir.mktmpdir do |dir|
         skill_dir = File.join(dir, 'support')

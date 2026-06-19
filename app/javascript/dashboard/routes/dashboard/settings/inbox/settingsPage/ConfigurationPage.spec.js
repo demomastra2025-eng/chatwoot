@@ -60,6 +60,9 @@ const statusPayload = {
         provider_label: 'Sipuni',
         display_name: 'Sipuni trunk',
         provider_number: '3100000',
+        host: 'ats01.kz.sipuni.com',
+        port: 5060,
+        transport: 'udp',
         configured: true,
         status: 'draft',
         remote_mutations: 'requires_approval',
@@ -184,6 +187,9 @@ describe('ConfigurationPage Virtual PBX management', () => {
           mode: 'operator',
           fallback_mode: 'reject',
         },
+        connection: {
+          host: 'ats01.kz.sipuni.com',
+        },
         profiles: [
           {
             user_id: 7,
@@ -245,7 +251,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('renders product-level Virtual PBX settings without provider internals', async () => {
+  it('renders Sipuni settings with host only and without default SIP internals', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
 
@@ -258,8 +264,20 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
     );
-    expect(wrapper.text()).not.toContain(
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION'
+    );
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE'
     );
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL'
@@ -267,13 +285,80 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR'
     );
-    expect(wrapper.text()).not.toContain(
-      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION'
-    );
     expect(wrapper.text()).not.toContain('Sipuni trunk');
     expect(wrapper.text()).not.toContain('3100000');
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_BUTTON'
+    );
+  });
+
+  it('renders Asterisk analog employee extensions without SIP credential fields', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'asterisk_analog',
+            provider_label: 'Asterisk analog',
+          },
+          connection: {
+            provider_kind: 'asterisk_analog',
+            provider_label: 'Asterisk analog',
+            host: '10.77.0.5',
+            port: 5070,
+            transport: 'tcp',
+          },
+          employees: [
+            {
+              user_id: 7,
+              user_name: 'Ada Agent',
+              internal_extension: '9098',
+              sip_username: 'must-not-render',
+              sip_password_configured: true,
+              enabled: true,
+            },
+          ],
+        },
+      },
+    });
+    const wrapper = buildWrapper();
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+    );
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        provider_kind: 'asterisk_analog',
+        connection: {
+          host: '10.77.0.5',
+          port: '5070',
+          transport: 'tcp',
+        },
+        profiles: [
+          {
+            user_id: 7,
+            internal_extension: '9098',
+            enabled: true,
+          },
+        ],
+      }),
+      { dryRun: false, remoteCommit: true }
     );
   });
 
@@ -352,7 +437,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('keeps provider connection internals out of the update payload', async () => {
+  it('keeps Sipuni default port and transport out of the update payload', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     updateVirtualPbxChannelMock.mockClear();
@@ -363,8 +448,42 @@ describe('ConfigurationPage Virtual PBX management', () => {
     await flushPromises();
 
     expect(updateVirtualPbxChannelMock).toHaveBeenCalled();
-    expect(updateVirtualPbxChannelMock.mock.calls[0][1]).not.toHaveProperty(
-      'connection'
+    expect(updateVirtualPbxChannelMock.mock.calls[0][1].connection).toEqual({
+      host: 'internal.example',
+    });
+  });
+
+  it('blocks invalid Asterisk analog connection port before save', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'asterisk_analog',
+            provider_label: 'Asterisk analog',
+          },
+          connection: {
+            provider_kind: 'asterisk_analog',
+            provider_label: 'Asterisk analog',
+            host: '10.77.0.5',
+            port: 5070,
+            transport: 'tcp',
+          },
+        },
+      },
+    });
+    const wrapper = buildWrapper();
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+    alertMock.mockClear();
+
+    wrapper.vm.virtualPbxForm.connectionPort = '99999';
+    await wrapper.vm.updateVirtualPbxChannel();
+
+    expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID'
     );
   });
 

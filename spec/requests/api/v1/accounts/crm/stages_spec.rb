@@ -94,7 +94,7 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(stage.reload.color).to eq('#A855F7')
   end
 
-  it 'rejects duplicate standard colors within the same pipeline' do
+  it 'allows duplicate standard colors within the same pipeline' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     existing_stage = pipeline.stages.find_by!(code: 'new')
 
@@ -107,11 +107,9 @@ RSpec.describe 'CRM Stages API', type: :request do
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
-    expect(response.parsed_body.dig('details', 'color')).to include(
-      'Color has already been taken for this pipeline'
-    )
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'color')).to eq(existing_stage.color)
+    expect(pipeline.stages.where(color: existing_stage.color).count).to be >= 2
   end
 
   it 'deletes a stage without deals' do

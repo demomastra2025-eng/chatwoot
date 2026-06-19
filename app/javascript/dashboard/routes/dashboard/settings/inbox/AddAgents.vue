@@ -86,16 +86,24 @@ export default {
         null
       );
     },
-    isVirtualPbxSipuniInbox() {
-      const providerKind =
+    virtualPbxProviderKind() {
+      return (
         this.virtualPbxConfig?.channel?.provider_kind ||
         this.virtualPbxConfig?.connection?.provider_kind ||
-        this.virtualPbxStatusPayload?.provider_kind;
-
-      return providerKind === 'sipuni';
+        this.virtualPbxStatusPayload?.provider_kind ||
+        ''
+      );
+    },
+    isVirtualPbxProfileAssignmentInbox() {
+      return ['sipuni', 'asterisk_analog'].includes(
+        this.virtualPbxProviderKind
+      );
+    },
+    isVirtualPbxSipCredentialsVisible() {
+      return this.virtualPbxProviderKind === 'sipuni';
     },
     submitButtonLabel() {
-      if (this.isVirtualPbxSipuniInbox) {
+      if (this.isVirtualPbxProfileAssignmentInbox) {
         return this.$t('INBOX_MGMT.AGENTS.SAVE_BUTTON_TEXT');
       }
 
@@ -208,15 +216,13 @@ export default {
       );
     },
     validateVirtualPbxProfiles() {
-      if (!this.isVirtualPbxSipuniInbox) return true;
+      if (!this.isVirtualPbxProfileAssignmentInbox) return true;
 
-      const profiles = this.selectedAgentIds.map(
-        id => this.virtualPbxProfiles[Number(id)]
+      const profiles = this.selectedVirtualPbxAgents.map(
+        agent => this.virtualPbxProfiles[Number(agent.id)]
       );
       const invalidExtension = profiles.find(profile => {
-        if (!profile || !this.profileHasAnySipAssignment(profile)) return false;
-
-        return !profile.internalExtension?.trim();
+        return !profile || !profile.internalExtension?.trim();
       });
       if (invalidExtension) {
         useAlert(
@@ -226,6 +232,8 @@ export default {
         );
         return false;
       }
+
+      if (!this.isVirtualPbxSipCredentialsVisible) return true;
 
       const invalidCredentials = profiles.find(profile => {
         if (!profile || !this.profileHasAnySipAssignment(profile)) return false;
@@ -264,8 +272,12 @@ export default {
           };
           const sipUsername = profile.sipUsername?.trim();
           const sipPassword = profile.sipPassword?.trim();
-          if (sipUsername) payload.sip_username = sipUsername;
-          if (sipPassword) payload.sip_password = sipPassword;
+          if (this.isVirtualPbxSipCredentialsVisible && sipUsername) {
+            payload.sip_username = sipUsername;
+          }
+          if (this.isVirtualPbxSipCredentialsVisible && sipPassword) {
+            payload.sip_password = sipPassword;
+          }
           return payload;
         });
     },
@@ -310,7 +322,7 @@ export default {
           inboxId,
           agentList: this.selectedAgentIds,
         });
-        if (this.isVirtualPbxSipuniInbox) {
+        if (this.isVirtualPbxProfileAssignmentInbox) {
           await this.updateVirtualPbxProfiles(inboxId);
           useAlert(this.$t('INBOX_MGMT.AGENTS.SAVE_SUCCESS'));
         }
@@ -369,7 +381,10 @@ export default {
         </div>
 
         <div
-          v-if="isVirtualPbxSipuniInbox && selectedVirtualPbxAgents.length"
+          v-if="
+            isVirtualPbxProfileAssignmentInbox &&
+            selectedVirtualPbxAgents.length
+          "
           class="w-full mb-4 rounded-xl border border-n-weak p-4"
         >
           <div class="mb-3 space-y-1">
@@ -425,7 +440,10 @@ export default {
                 />
               </label>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                v-if="isVirtualPbxSipCredentialsVisible"
+                class="flex flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
@@ -444,7 +462,10 @@ export default {
                 />
               </label>
 
-              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              <label
+                v-if="isVirtualPbxSipCredentialsVisible"
+                class="flex flex-col gap-1 text-sm text-n-slate-12"
+              >
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'

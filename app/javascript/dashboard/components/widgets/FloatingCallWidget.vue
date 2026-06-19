@@ -330,17 +330,17 @@ watch(
           <div class="flex-1 min-w-0">
             <div class="flex items-start gap-2 min-w-0">
               <i
-                class="mt-0.5 text-[11px] shrink-0"
+                class="mt-0.5 text-[14px] shrink-0"
                 :class="[
                   channelIconClass(call),
                   isWhatsappCall(call) ? 'text-n-teal-9' : 'channel-icon-voice',
                 ]"
               />
               <p
-                class="min-w-0 flex-1 inline-flex items-center text-sm font-medium text-n-slate-10 mb-0"
+                class="min-w-0 flex-1 inline-flex items-center text-sm font-medium mb-0"
               >
                 <span class="truncate">{{ getCallRouteParts(call).from }}</span>
-                <span class="mx-1 text-[10px] font-normal text-n-slate-8">
+                <span class="mx-1 text-[10px] font-normal text-n-slate-11">
                   {{ $t('CONVERSATION.VOICE_WIDGET.ROUTE_SEPARATOR') }}
                 </span>
                 <span class="truncate">{{ getCallRouteParts(call).to }}</span>
@@ -348,7 +348,7 @@ watch(
               <button
                 v-if="!callIsActive(call)"
                 type="button"
-                class="flex justify-center items-center w-6 h-6 -mt-1 -mr-1 text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors shrink-0"
+                class="flex justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors shrink-0"
                 :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
                 @click="dismissCall(call.callSid)"
@@ -398,7 +398,7 @@ watch(
               </button>
               <button
                 type="button"
-                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-3"
+                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1"
                 :title="$t('CONVERSATION.VOICE_WIDGET.OPEN_CHAT')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.OPEN_CHAT')"
                 @click="openConversation(call)"

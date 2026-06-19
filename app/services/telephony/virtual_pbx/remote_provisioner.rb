@@ -276,9 +276,7 @@ class Telephony::VirtualPbx::RemoteProvisioner
   def trunk_operation_for_state(operation_attrs, desired_state)
     refs = (desired_state[:refs] || {}).with_indifferent_access
     connection = (desired_state[:connection] || {}).with_indifferent_access
-    credentials_ref = connection[:fonoster_credentials_ref].presence ||
-                      connection[:credentials_ref].presence ||
-                      refs[:credentials_ref].presence
+    credentials_ref = trunk_credentials_ref(connection, refs)
     payload = (operation_attrs[:payload] || {}).with_indifferent_access
     payload[:credentialsRef] = credentials_ref if credentials_ref.present?
     payload[:outboundCredentialsRef] = credentials_ref if credentials_ref.present?
@@ -287,6 +285,13 @@ class Telephony::VirtualPbx::RemoteProvisioner
     return attrs if refs[:trunk_ref].blank?
 
     attrs.merge(path: "/telephony/trunks/#{CGI.escape(refs[:trunk_ref].to_s)}")
+  end
+
+  def trunk_credentials_ref(connection, refs)
+    return connection[:fonoster_credentials_ref].presence if connection[:fonoster_credentials_ref].present?
+    return unless connection[:password].present? || ActiveModel::Type::Boolean.new.cast(connection[:password_configured])
+
+    connection[:credentials_ref].presence || refs[:credentials_ref].presence
   end
 
   def connection_credentials_payload(desired_state)

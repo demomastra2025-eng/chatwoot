@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Telephony::VirtualPbx::Reconciler
+  PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
+
   def initialize(account:, resource_client: nil)
     @account = account
     @resource_client = resource_client
@@ -101,12 +103,23 @@ class Telephony::VirtualPbx::Reconciler
   def profile_remote_resources(state, drift)
     Array.wrap(state[:profiles]).filter_map do |profile|
       attrs = profile.with_indifferent_access
+      next if provider_managed_extension_profile?(state, attrs)
       next if attrs[:agent_ref].blank?
 
       agent = fetch_resource(:agent, attrs[:agent_ref], drift, 'remote_agent_missing')
       drift.concat(agent_drift(attrs, agent)) if agent.present?
       agent
     end
+  end
+
+  def provider_managed_extension_profile?(state, attrs)
+    provider_kind = state[:provider_kind].to_s
+    availability_mode = attrs[:availability_mode].to_s
+
+    return true if provider_kind == 'sipuni' && PROVIDER_EXTENSION_MODES.include?(availability_mode)
+    return true if provider_kind == 'asterisk_analog' && PROVIDER_EXTENSION_MODES.include?(availability_mode)
+
+    false
   end
 
   def agent_drift(profile, agent)

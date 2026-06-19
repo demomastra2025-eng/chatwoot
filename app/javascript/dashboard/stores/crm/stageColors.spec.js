@@ -21,7 +21,7 @@ describe('stageColors', () => {
     ).toBe('#E8E8EC');
   });
 
-  it('returns unavailable standard colors excluding the edited stage', () => {
+  it('does not block repeated standard colors', () => {
     expect(
       getUnavailableStageColors(
         [
@@ -31,6 +31,6 @@ describe('stageColors', () => {
         STAGE_STANDARD_COLORS,
         2
       )
-    ).toEqual([DEFAULT_STAGE_COLOR]);
+    ).toEqual([]);
   });
 });

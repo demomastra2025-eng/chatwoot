@@ -127,6 +127,60 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
         expect(body['agent_ref']).to eq('agent-1001')
       end
     end
+
+    context 'when authenticated agent requests an Asterisk analog external extension token' do
+      let(:voice_channel) do
+        create(
+          :channel_voice,
+          :fonoster,
+          account: account,
+          provider_config: {
+            'provider_kind' => 'asterisk_analog',
+            'number_ref' => SecureRandom.uuid,
+            'app_ref' => SecureRandom.uuid,
+            'trunk_ref' => SecureRandom.uuid,
+            'routing_mode' => 'operator',
+            'operator_agent_aor' => 'sip:9098@10.66.66.2'
+          }
+        )
+      end
+
+      before do
+        create(:inbox_member, inbox: voice_inbox, user: agent)
+        create(
+          :telephony_sip_profile,
+          account: account,
+          inbox: voice_inbox,
+          user: agent,
+          internal_extension: '9098',
+          agent_ref: 'profile-530-9098',
+          fonoster_agent_ref: 'profile-530-9098',
+          agent_aor: 'sip:9098@10.66.66.2',
+          availability_mode: 'external_extension'
+        )
+      end
+
+      it 'does not ask the bridge for a browser webphone token' do
+        token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+
+        with_modified_env(
+          TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+          TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+        ) do
+          get "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference/token",
+              headers: agent.create_new_auth_token
+        end
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body['provider']).to eq('fonoster')
+        expect(body['calling_supported']).to be(false)
+        expect(body['browser_join_supported']).to be(false)
+        expect(body['reason']).to eq('provider_managed_external_extension')
+        expect(body['agent_ref']).to eq('profile-530-9098')
+        expect(token_request).not_to have_been_requested
+      end
+    end
   end
 
   describe 'POST /conference' do

@@ -163,14 +163,25 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
   end
 
-  it 'normalizes Asterisk analog tel-prefixed ingress values like the existing 9098 line' do
+  it 'keeps Asterisk analog employee extensions out of channel provider numbers' do
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
-      channel_name: 'Analog 9098',
-      display_phone_number: '+77172545175',
-      provider_account_number: 'tel:9098',
-      ingress_number: 'tel:tel:9098',
-      connection: valid_create_payload[:connection].merge(username: nil, password: nil)
+      channel_name: 'Analog external line',
+      display_phone_number: '+17770005175',
+      provider_account_number: '+17770005175',
+      ingress_number: '+17770005175',
+      connection: {
+        host: '10.77.0.5',
+        port: 5060,
+        transport: 'udp'
+      },
+      profiles: [
+        {
+          user_id: agent.id,
+          internal_extension: '9098',
+          enabled: true
+        }
+      ]
     )
 
     post base_path, params: payload.merge(include_diagnostics: true), headers: headers, as: :json
@@ -178,11 +189,20 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
     expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
-    expect(body.dig('diagnostics', 'payload', 'provider_account_number')).to eq('9098')
-    expect(body.dig('diagnostics', 'payload', 'ingress_number')).to eq('9098')
-    expect(body.dig('diagnostics', 'payload', 'fonoster_tel_url')).to eq('tel:9098')
-    expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq("asterisk-analog-#{account.id}-9098")
-    expect(body.dig('diagnostics', 'generated_refs', 'trunk_ref')).to eq('trunk-sipuni-onelink-out')
+    expect(body.dig('diagnostics', 'payload', 'provider_account_number')).to eq('+17770005175')
+    expect(body.dig('diagnostics', 'payload', 'ingress_number')).to eq('+17770005175')
+    expect(body.dig('diagnostics', 'payload', 'fonoster_tel_url')).to eq('tel:+17770005175')
+    expect(body.dig('diagnostics', 'payload', 'profiles').first).to include(
+      'internal_extension' => '9098',
+      'user_id' => agent.id,
+      'availability_mode' => 'external_extension'
+    )
+    expect(body.dig('diagnostics', 'payload', 'connection', 'host')).to eq('10.77.0.5')
+    expect(body.dig('diagnostics', 'payload', 'connection', 'send_register')).to be(false)
+    expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq("asterisk-analog-#{account.id}-17770005175")
+    expect(body.dig('diagnostics', 'generated_refs', 'trunk_ref')).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
+    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).not_to include('upsert_agent')
+    expect(body.to_json).not_to include('tel:9098')
   end
 
   it 'builds a create dry-run without changing local records or calling the bridge' do
@@ -280,19 +300,21 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(Telephony::ProvisioningRun.count).to eq(0)
   end
 
-  it 'reuses the internal Asterisk trunk for distinct analog lines like Sipuni' do
+  it 'keeps distinct Asterisk analog lines on separate provider connections for different hosts' do
     first_payload = create_payload_variant(
-      display_phone_number: '+177****1001',
+      display_phone_number: '+17770001001',
       provider_account_number: 'analog-1001',
       ingress_number: 'analog-1001',
       source: 'virtual_pbx_ui'
     ).merge(provider_kind: 'asterisk_analog', channel_name: 'Analog line 1001')
+    first_payload[:connection].merge!(host: '10.77.0.5', port: 5070, transport: 'tcp')
     second_payload = create_payload_variant(
       display_phone_number: '+177' + '7000' + '1002',
       provider_account_number: 'analog-1002',
       ingress_number: 'analog-1002',
       source: 'virtual_pbx_ui'
     ).merge(provider_kind: 'asterisk_analog', channel_name: 'Analog line 1002')
+    second_payload[:connection].merge!(host: '10.88.0.5', port: 5060, transport: 'udp')
 
     post base_path, params: first_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     expect(response).to have_http_status(:ok)
@@ -301,8 +323,18 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
 
     connection_names = account.telephony_provider_connections.order(:name).pluck(:name)
-    expect(connection_names).to contain_exactly('trunk-sipuni-onelink-out')
-    expect(account.telephony_number_bindings.pluck(:trunk_ref).uniq).to eq(['trunk-sipuni-onelink-out'])
+    expect(connection_names).to contain_exactly(
+      "trunk-asterisk-analog-acct-#{account.id}-analog-1001",
+      "trunk-asterisk-analog-acct-#{account.id}-analog-1002"
+    )
+    expect(account.telephony_provider_connections.order(:name).pluck(:host, :port, :transport)).to eq([
+                                                                                                        ['10.77.0.5', 5070, 'tcp'],
+                                                                                                        ['10.88.0.5', 5060, 'udp']
+                                                                                                      ])
+    expect(account.telephony_number_bindings.order(:ingress_number).pluck(:trunk_ref)).to eq([
+                                                                                               "trunk-asterisk-analog-acct-#{account.id}-analog-1001",
+                                                                                               "trunk-asterisk-analog-acct-#{account.id}-analog-1002"
+                                                                                             ])
   end
 
   it 'stores the OneLink runtime app ref in local Sipuni channel configuration' do
@@ -451,6 +483,76 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
     expect(captured_args.fetch(:plan).to_json).not_to include('raw-profile-password')
     expect(response.parsed_body.to_json).not_to include('raw-profile-password')
+  end
+
+  it 'defaults Asterisk analog employee profiles to external extensions without SIP credentials' do
+    create_payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'asterisk_analog',
+      channel_name: 'Analog line 9098',
+      provider_account_number: '9098',
+      ingress_number: '9098',
+      connection: {
+        host: '10.77.0.5',
+        port: 5060,
+        transport: 'udp'
+      }
+    )
+    post base_path, params: create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    Inbox.find(inbox_id).inbox_members.find_or_create_by!(user_id: agent.id)
+
+    provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
+    captured_args = nil
+    allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
+    allow(provisioner).to receive(:execute) do |args|
+      captured_args = args
+      {
+        status: 'succeeded',
+        remote_commit: true,
+        provisioning_run: { status: 'succeeded' },
+        executed_operations: []
+      }
+    end
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          remote_commit: true,
+          connection: {
+            host: '10.77.0.5',
+            port: 5070,
+            transport: 'tcp'
+          },
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '9098',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    desired_profile = captured_args.dig(:desired_state, :profiles).first
+    expect(desired_profile).to include(
+      internal_extension: '9098',
+      agent_aor: 'sip:9098@10.77.0.5',
+      availability_mode: 'external_extension'
+    )
+    expect(captured_args.dig(:desired_state, :connection)).to include(
+      host: '10.77.0.5',
+      port: 5070,
+      transport: 'tcp'
+    )
+    expect(desired_profile).not_to include(:sip_username, :sip_password, :credentials_ref)
+    expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).to include(
+      'upsert_trunk', 'upsert_number', 'update_number_route'
+    )
+    expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).not_to include(
+      'upsert_agent', 'upsert_agent_credentials'
+    )
   end
 
   it 'rejects unsupported provider kinds during dry-run without changing local records' do

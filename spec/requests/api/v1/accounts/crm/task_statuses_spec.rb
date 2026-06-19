@@ -40,6 +40,25 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     expect(response.parsed_body.dig('payload', 'color')).to eq('#3B82F6')
   end
 
+  it 'allows duplicate standard colors for task statuses' do
+    get path, headers: headers, as: :json
+    existing_status = account.crm_task_statuses.find_by!(code: 'todo')
+
+    post path,
+         params: {
+           name: 'Waiting for client',
+           code: 'waiting_for_client',
+           category: 'in_progress',
+           color: existing_status.color
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'color')).to eq(existing_status.color)
+    expect(account.crm_task_statuses.where(color: existing_status.color).count).to be >= 2
+  end
+
   it 'switches the default status when creating another open default status' do
     get path, headers: headers, as: :json
     original_default = account.crm_task_statuses.find_by!(code: 'todo')

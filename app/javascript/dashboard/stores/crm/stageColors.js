@@ -24,7 +24,7 @@ export const DEFAULT_STAGE_COLOR =
   STAGE_STANDARD_COLORS[0] ||
   '';
 
-export const getUnavailableStageColors = (
+const getUsedStandardColors = (
   stages = [],
   palette = [],
   currentStageId = null
@@ -33,7 +33,7 @@ export const getUnavailableStageColors = (
   if (!availableColors.length) return [];
 
   const paletteColors = new Set(availableColors.map(normalizeColor));
-  const unavailableColors = new Set();
+  const usedColors = new Set();
 
   stages.forEach(stage => {
     if (currentStageId && Number(stage?.id) === Number(currentStageId)) {
@@ -45,11 +45,13 @@ export const getUnavailableStageColors = (
       return;
     }
 
-    unavailableColors.add(normalizedColor);
+    usedColors.add(normalizedColor);
   });
 
-  return [...unavailableColors];
+  return [...usedColors];
 };
+
+export const getUnavailableStageColors = () => [];
 
 export const pickStageColor = (
   stages = [],
@@ -59,13 +61,12 @@ export const pickStageColor = (
   const availableColors = palette.filter(Boolean);
   if (!availableColors.length) return '';
 
-  const unavailableColors = new Set(
-    getUnavailableStageColors(stages, palette, currentStageId)
+  const usedColors = new Set(
+    getUsedStandardColors(stages, palette, currentStageId)
   );
 
   return (
-    availableColors.find(
-      color => !unavailableColors.has(normalizeColor(color))
-    ) || DEFAULT_STAGE_COLOR
+    availableColors.find(color => !usedColors.has(normalizeColor(color))) ||
+    DEFAULT_STAGE_COLOR
   );
 };

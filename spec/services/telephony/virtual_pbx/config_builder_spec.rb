@@ -112,4 +112,28 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
       expect(ui_config.dig(:status, :remote_mutations)).to eq('requires_approval')
     end
   end
+
+  it 'exposes non-secret Asterisk analog connection details for settings edits' do
+    service = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator)
+    result = service.create_channel(
+      {
+        provider_kind: 'asterisk_analog',
+        channel_name: 'Analog managed line',
+        display_phone_number: '+17770004545',
+        provider_account_number: 'analog-4545',
+        ingress_number: 'analog-4545',
+        connection: { host: '10.77.0.5', port: 5070, transport: 'tcp' }
+      },
+      dry_run: false
+    )
+    ui_config = described_class
+                .new(account: account)
+                .ui_config_for(result.dig(:ui_config, :inbox_id))
+                .with_indifferent_access
+
+    expect(ui_config.dig(:connection, :host)).to eq('10.77.0.5')
+    expect(ui_config.dig(:connection, :port)).to eq(5070)
+    expect(ui_config.dig(:connection, :transport)).to eq('tcp')
+    expect(ui_config.to_json).not_to include('password')
+  end
 end

@@ -7,7 +7,6 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   REMOTE_MUTATIONS_BLOCKED = 'blocked'
   REMOTE_MUTATIONS_REQUIRES_APPROVAL = 'requires_approval'
   DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
-  DEFAULT_INTERNAL_ASTERISK_TRUNK_REF = DEFAULT_SIPUNI_TRUNK_REF
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
 
   def initialize(account:)
@@ -93,7 +92,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   end
 
   def trunk_operation(state, ownership, description)
-    return if shared_trunk?(state)
+    return if skip_trunk_upsert?(state)
 
     refs = state[:refs] || {}
     operation_payload('upsert_trunk', 'PUT', path('trunks', refs[:trunk_ref]), description, ownership, payload: trunk_payload(state))
@@ -368,9 +367,13 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   end
 
   def provider_managed_extension_profile?(state, attrs)
-    return false unless sipuni_gateway?(state)
+    provider_kind = state[:provider_kind].to_s
+    availability_mode = attrs[:availability_mode].to_s
 
-    PROVIDER_EXTENSION_MODES.include?(attrs[:availability_mode].to_s)
+    return true if provider_kind == 'sipuni' && PROVIDER_EXTENSION_MODES.include?(availability_mode)
+    return true if provider_kind == 'asterisk_analog' && PROVIDER_EXTENSION_MODES.include?(availability_mode)
+
+    false
   end
 
   def connection_credentials_name(state, connection, credentials_ref)
@@ -405,9 +408,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def trunk_payload(state)
     refs = state[:refs] || {}
     connection = state[:connection] || {}
-    credential_ref = connection[:fonoster_credentials_ref].presence ||
-                     connection[:credentials_ref].presence ||
-                     refs[:credentials_ref].presence
+    credential_ref = trunk_credentials_ref(state, connection, refs)
     uri = trunk_uri_payload(state, connection)
     {
       ref: refs[:trunk_ref],
@@ -535,6 +536,13 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     attrs[:sip_password].present? || attrs[:fonoster_credentials_ref].present?
   end
 
+  def trunk_credentials_ref(_state, connection, refs)
+    return connection[:fonoster_credentials_ref].presence if connection[:fonoster_credentials_ref].present?
+    return unless connection[:password].present? || ActiveModel::Type::Boolean.new.cast(connection[:password_configured])
+
+    connection[:credentials_ref].presence || refs[:credentials_ref].presence
+  end
+
   def trunk_uri_payload(state, connection)
     host = connection[:host].presence
     return if host.blank?
@@ -543,11 +551,17 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       host: host,
       port: connection[:port],
       transport: connection[:transport].to_s.upcase.presence,
-      user: connection[:username].presence || state.dig(:phone_numbers, :provider_account_number),
+      user: trunk_uri_user(state, connection),
       weight: 1,
       priority: 1,
       enabled: true
     }.compact
+  end
+
+  def trunk_uri_user(state, connection)
+    return if state[:provider_kind].to_s == 'asterisk_analog'
+
+    connection[:username].presence || state.dig(:phone_numbers, :provider_account_number)
   end
 
   def inbound_uri_for(state, refs)
@@ -728,11 +742,16 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def shared_trunk?(state)
     refs = state[:refs] || {}
     return true if state[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
-    return true if state[:provider_kind].to_s == 'asterisk_analog' && refs[:trunk_ref].to_s == asterisk_analog_trunk_ref
 
     provider_connection_id = state.dig(:resources, :provider_connection_id)
     provider_connection_used_by_other_bindings?(state, provider_connection_id) ||
       provider_connection_used_by_other_sip_profiles?(state, provider_connection_id)
+  end
+
+  def skip_trunk_upsert?(state)
+    refs = state[:refs] || {}
+
+    state[:provider_kind].to_s == 'sipuni' && refs[:trunk_ref].to_s == sipuni_trunk_ref
   end
 
   def sipuni_gateway?(state)
@@ -741,14 +760,6 @@ class Telephony::VirtualPbx::RemotePlanBuilder
 
   def sipuni_trunk_ref
     ENV.fetch('TELEPHONY_VIRTUAL_PBX_SIPUNI_TRUNK_REF', DEFAULT_SIPUNI_TRUNK_REF)
-  end
-
-  def asterisk_analog_trunk_ref
-    [
-      ENV.fetch('TELEPHONY_VIRTUAL_PBX_ASTERISK_ANALOG_TRUNK_REF', nil),
-      ENV.fetch('TELEPHONY_VIRTUAL_PBX_INTERNAL_ASTERISK_TRUNK_REF', nil),
-      DEFAULT_INTERNAL_ASTERISK_TRUNK_REF
-    ].find(&:present?)
   end
 
   def number_country(state)

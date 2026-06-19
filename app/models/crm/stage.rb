@@ -68,7 +68,6 @@ class Crm::Stage < ApplicationRecord
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :pipeline_belongs_to_account
   validate :default_stage_must_be_active_open
-  validate :standard_color_available_within_pipeline
 
   scope :ordered, -> { order(:position, :id) }
   scope :active, -> { where(active: true) }
@@ -134,18 +133,6 @@ class Crm::Stage < ApplicationRecord
     return if pipeline.stages.active.exists?(default: true)
 
     self.default = true
-  end
-
-  def standard_color_available_within_pipeline
-    return if color.blank? || pipeline.blank?
-    return unless STANDARD_COLORS.include?(color.to_s.upcase)
-
-    sibling_stages = self.class.where(pipeline_id: pipeline_id)
-    sibling_stages = sibling_stages.where.not(id: id) if id.present?
-
-    return unless sibling_stages.exists?(['UPPER(color) = ?', color.to_s.upcase])
-
-    errors.add(:color, 'has already been taken for this pipeline')
   end
 
   def next_available_standard_color

@@ -60,14 +60,24 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     )
   end
 
-  it 'builds Asterisk analog over the same shared internal trunk without creating per-line trunks' do
+  it 'builds Asterisk analog over a channel-owned configurable Asterisk trunk and keeps employee extension in profiles' do
     payload = base_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
-      channel_name: 'Analog 9098',
-      display_phone_number: '+77171235175',
-      provider_account_number: 'tel:9098',
-      ingress_number: 'tel:9098'
+      channel_name: 'Analog external line',
+      display_phone_number: '+17770005175',
+      provider_account_number: '+17770005175',
+      ingress_number: '+17770005175',
+      profiles: [
+        {
+          user_id: admin.id,
+          internal_extension: '9098',
+          enabled: true
+        }
+      ]
     )
+    payload[:connection][:host] = '10.77.0.5'
+    payload[:connection][:port] = 5070
+    payload[:connection][:transport] = 'tcp'
     payload[:connection].delete(:username)
     payload[:connection].delete(:password)
     result = service.create_channel(payload, dry_run: false)
@@ -75,18 +85,32 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
 
     plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
     operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
+    trunk_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_trunk' }
     number_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_number' }
     route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
 
-    expect(state.dig(:refs, :number_ref)).to eq("asterisk-analog-#{account.id}-9098")
-    expect(state.dig(:refs, :trunk_ref)).to eq('trunk-sipuni-onelink-out')
-    expect(operation_keys).to include('upsert_number', 'update_number_route')
-    expect(operation_keys).not_to include('upsert_trunk', 'upsert_sipuni_gateway')
-    expect(number_operation.dig(:payload, :telUrl)).to eq('tel:9098')
-    expect(number_operation.dig(:payload, :trunkRef)).to eq('trunk-sipuni-onelink-out')
+    expect(state.dig(:phone_numbers, :provider_account_number)).to eq('+17770005175')
+    expect(state.dig(:phone_numbers, :ingress_number)).to eq('+17770005175')
+    expect(state.dig(:profiles).first[:internal_extension]).to eq('9098')
+    expect(state.dig(:profiles).first[:agent_aor]).to eq('sip:9098@10.77.0.5')
+    expect(state.dig(:profiles).first[:availability_mode]).to eq('external_extension')
+    expect(state.dig(:refs, :number_ref)).to eq("asterisk-analog-#{account.id}-17770005175")
+    expect(state.dig(:refs, :trunk_ref)).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
+    expect(state.dig(:connection, :host)).to eq('10.77.0.5')
+    expect(state.dig(:connection, :send_register)).to be(false)
+    expect(operation_keys).to include('upsert_trunk', 'upsert_number', 'update_number_route')
+    expect(operation_keys).not_to include('upsert_sipuni_gateway', 'upsert_agent', 'upsert_agent_credentials')
+    expect(trunk_operation.dig(:payload, :sendRegister)).to be(false)
+    expect(trunk_operation.dig(:payload)).not_to have_key(:outboundCredentialsRef)
+    expect(trunk_operation.dig(:payload, :uris)).to contain_exactly(
+      include(host: '10.77.0.5', port: 5070, transport: 'TCP')
+    )
+    expect(trunk_operation.dig(:payload, :uris).first).not_to have_key(:user)
+    expect(number_operation.dig(:payload, :telUrl)).to eq('tel:+17770005175')
+    expect(number_operation.dig(:payload, :trunkRef)).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
     expect(number_operation.dig(:payload, :metadata, :provider_kind)).to eq('asterisk_analog')
     expect(route_operation.dig(:payload, :metadata, :provider_kind)).to eq('asterisk_analog')
-    expect(route_operation.dig(:payload, :metadata, :ingress_number)).to eq('9098')
+    expect(route_operation.dig(:payload, :metadata, :ingress_number)).to eq('+17770005175')
   end
 
   it 'uses idempotent upserts for updates so missing remote resources can be repaired' do

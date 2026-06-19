@@ -18,6 +18,8 @@ class Captain::SkillCatalog
   MAX_TREE_ENTRIES = 200
   MAX_TOOL_ID_LENGTH = 64
   SUPPORTED_SCRIPT_RUNTIMES = %w[ruby node python].freeze
+  CACHE_EXPIRES_IN = 5.minutes
+  CACHE_RACE_CONDITION_TTL = 30.seconds
 
   class << self
     def all(account: nil, include_tree: true)
@@ -106,10 +108,23 @@ class Captain::SkillCatalog
     private
 
     def file_skills(include_tree:)
-      Rails.cache.fetch(cache_key(include_tree: include_tree), expires_in: 5.minutes) do
-        skill_dirs.filter_map { |dir| parse_skill_dir(dir, include_tree: include_tree) }
-                  .uniq { |skill| skill[:id] }
+      Rails.cache.fetch(
+        cache_key(include_tree: include_tree),
+        expires_in: CACHE_EXPIRES_IN,
+        race_condition_ttl: CACHE_RACE_CONDITION_TTL
+      ) do
+        build_file_skills(include_tree: include_tree)
       end
+    rescue StandardError => e
+      Rails.logger.warn(
+        "Captain::SkillCatalog cache unavailable; rebuilding without cache: #{e.class} #{e.message}"
+      )
+      build_file_skills(include_tree: include_tree)
+    end
+
+    def build_file_skills(include_tree:)
+      skill_dirs.filter_map { |dir| parse_skill_dir(dir, include_tree: include_tree) }
+                .uniq { |skill| skill[:id] }
     end
 
     def account_skills(account)

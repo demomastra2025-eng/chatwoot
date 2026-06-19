@@ -54,6 +54,34 @@ RSpec.describe Telephony::VirtualPbx::Reconciler do
     expect(result.fetch(:drift)).to eq([])
   end
 
+  it 'does not require remote Fonoster agents for Asterisk analog external extensions' do
+    state = desired_state.merge(
+      provider_kind: 'asterisk_analog',
+      profiles: [
+        {
+          agent_ref: 'profile-530-1851-1001',
+          agent_aor: 'sip:1001@10.66.66.2',
+          availability_mode: 'external_extension',
+          enabled: true
+        }
+      ]
+    )
+    allow(resource_client).to receive(:number).with('number-ref').and_return(
+      'ref' => 'number-ref',
+      'telUrl' => 'tel:056124100014',
+      'trunk' => { 'ref' => 'trunk-ref' },
+      'metadata' => { 'managed_by' => 'onelink', 'onelink_account_id' => account.id },
+      'route' => { 'mode' => 'operator' }
+    )
+    allow(resource_client).to receive(:trunk).with('trunk-ref').and_return('ref' => 'trunk-ref')
+    expect(resource_client).not_to receive(:agent)
+
+    result = described_class.new(account: account, resource_client: resource_client).check(state)
+
+    expect(result).to include(status: 'fonoster_synced', ready: true)
+    expect(result.fetch(:drift)).to eq([])
+  end
+
   it 'reports credentials drift when the remote agent omits credentials read-back' do
     state = desired_state.merge(
       profiles: [{ agent_ref: 'agent-ref', credentials_ref: 'expected-credential-ref', enabled: true }]

@@ -35,10 +35,6 @@ const kazakhstanState = reactive({
   connectionHost: '',
   connectionPort: '5060',
   connectionTransport: 'udp',
-  connectionUsername: '',
-  connectionPassword: '',
-  routingMode: 'operator',
-  operatorAgentAor: '',
 });
 
 const twilioState = reactive({
@@ -65,6 +61,10 @@ const isValidSipPort = value => {
 const uiFlags = useMapGetter('inboxes/getUIFlags');
 const isCreatingVirtualPbx = ref(false);
 const isVirtualPbxAdvancedVisible = ref(false);
+
+const isAsteriskAnalogProvider = computed(
+  () => kazakhstanState.providerKind === 'asterisk_analog'
+);
 
 const selectedProvider = computed(() => {
   return Object.values(PROVIDER_TYPES).includes(route.query.provider)
@@ -103,7 +103,6 @@ const kazakhstanValidationRules = computed(() => ({
   providerKind: { required },
   connectionHost: { required },
   connectionPort: { required, isValidSipPort },
-  routingMode: { required },
 }));
 
 const twilioValidationRules = computed(() => ({
@@ -119,17 +118,6 @@ const twilioV$ = useVuelidate(twilioValidationRules, twilioState);
 
 const isKazakhstanSubmitDisabled = computed(() => kazakhstanV$.value.$invalid);
 const isTwilioSubmitDisabled = computed(() => twilioV$.value.$invalid);
-
-const routingOptions = computed(() => [
-  {
-    value: 'operator',
-    label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.OPERATOR'),
-  },
-  {
-    value: 'reject',
-    label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.REJECT'),
-  },
-]);
 
 const virtualPbxProviderOptions = computed(() => [
   {
@@ -162,12 +150,6 @@ const kazakhstanFormErrors = computed(() => ({
     : '',
   connectionPort: kazakhstanV$.value.connectionPort?.$error
     ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID')
-    : '',
-  connectionPassword: kazakhstanV$.value.connectionPassword?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.REQUIRED')
-    : '',
-  operatorAgentAor: kazakhstanV$.value.operatorAgentAor?.$error
-    ? t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.REQUIRED')
     : '',
 }));
 
@@ -206,39 +188,39 @@ function resetProviderSelection() {
 }
 
 function getVirtualPbxPayload() {
+  const providerKind = kazakhstanState.providerKind;
   const displayPhoneNumber = kazakhstanState.phoneNumber.trim();
   const ingressNumber =
     kazakhstanState.ingressNumber.trim() || displayPhoneNumber;
   const providerAccountNumber =
     kazakhstanState.providerAccountNumber.trim() || ingressNumber;
-  const connectionUsername = kazakhstanState.connectionUsername.trim();
-  const connectionPassword =
-    kazakhstanState.providerKind === 'sipuni'
-      ? ''
-      : kazakhstanState.connectionPassword;
+  const connection = {
+    host: kazakhstanState.connectionHost.trim(),
+  };
+  const routing = {
+    mode: 'operator',
+    fallback_mode: 'reject',
+  };
 
-  return {
-    provider_kind: kazakhstanState.providerKind,
+  if (isAsteriskAnalogProvider.value) {
+    connection.port = kazakhstanState.connectionPort.trim();
+    connection.transport = kazakhstanState.connectionTransport;
+  }
+
+  const payload = {
+    provider_kind: providerKind,
     channel_name: kazakhstanState.channelName.trim(),
     display_phone_number: displayPhoneNumber,
     provider_account_number: providerAccountNumber,
     ingress_number: ingressNumber,
-    connection: {
-      host: kazakhstanState.connectionHost.trim(),
-      port: kazakhstanState.connectionPort.trim(),
-      transport: kazakhstanState.connectionTransport,
-      username: connectionUsername || undefined,
-      password: connectionPassword || undefined,
-    },
-    routing: {
-      mode: kazakhstanState.routingMode,
-      fallback_mode: 'reject',
-      operator_agent_aor: kazakhstanState.operatorAgentAor.trim() || undefined,
-    },
+    connection,
+    routing,
     metadata: {
       source: 'virtual_pbx_ui',
     },
   };
+
+  return payload;
 }
 
 function provisioningErrorMessage(response) {
@@ -416,6 +398,7 @@ async function createTwilioChannel() {
         </div>
 
         <button
+          v-if="isAsteriskAnalogProvider"
           type="button"
           class="text-sm font-medium text-n-brand hover:opacity-80 text-left"
           @click="isVirtualPbxAdvancedVisible = !isVirtualPbxAdvancedVisible"
@@ -426,41 +409,6 @@ async function createTwilioChannel() {
               : t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ADVANCED_FIELDS.SHOW')
           }}
         </button>
-
-        <div v-if="isVirtualPbxAdvancedVisible" class="flex flex-col gap-4">
-          <Input
-            v-model="kazakhstanState.providerAccountNumber"
-            :label="
-              t(
-                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.LABEL'
-              )
-            "
-            :placeholder="
-              t(
-                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_ACCOUNT_NUMBER.PLACEHOLDER'
-              )
-            "
-            :message="kazakhstanFormErrors.providerAccountNumber"
-            :message-type="
-              kazakhstanFormErrors.providerAccountNumber ? 'error' : 'info'
-            "
-            @blur="kazakhstanV$.providerAccountNumber?.$touch"
-          />
-
-          <Input
-            v-if="isVirtualPbxAdvancedVisible"
-            v-model="kazakhstanState.ingressNumber"
-            :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.LABEL')"
-            :placeholder="
-              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INGRESS_NUMBER.PLACEHOLDER')
-            "
-            :message="kazakhstanFormErrors.ingressNumber"
-            :message-type="
-              kazakhstanFormErrors.ingressNumber ? 'error' : 'info'
-            "
-            @blur="kazakhstanV$.ingressNumber?.$touch"
-          />
-        </div>
 
         <Input
           v-model="kazakhstanState.connectionHost"
@@ -474,7 +422,7 @@ async function createTwilioChannel() {
         />
 
         <div
-          v-if="isVirtualPbxAdvancedVisible"
+          v-if="isVirtualPbxAdvancedVisible && isAsteriskAnalogProvider"
           class="grid grid-cols-1 gap-4 md:grid-cols-2"
         >
           <Input
@@ -511,93 +459,11 @@ async function createTwilioChannel() {
           </div>
         </div>
 
-        <div
-          v-if="
-            isVirtualPbxAdvancedVisible &&
-            kazakhstanState.providerKind !== 'sipuni'
-          "
-          class="flex flex-col gap-4"
-        >
-          <Input
-            v-model="kazakhstanState.connectionUsername"
-            :label="
-              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.LABEL')
-            "
-            :placeholder="
-              t(
-                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_USERNAME.PLACEHOLDER'
-              )
-            "
-          />
-        </div>
-
-        <div
-          v-if="
-            isVirtualPbxAdvancedVisible &&
-            kazakhstanState.providerKind !== 'sipuni'
-          "
-          class="flex flex-col gap-4"
-        >
-          <Input
-            v-model="kazakhstanState.connectionPassword"
-            type="password"
-            :label="
-              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL')
-            "
-            :placeholder="
-              t(
-                'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.PLACEHOLDER'
-              )
-            "
-            :message="kazakhstanFormErrors.connectionPassword"
-            :message-type="
-              kazakhstanFormErrors.connectionPassword ? 'error' : 'info'
-            "
-            @blur="kazakhstanV$.connectionPassword?.$touch"
-          />
-        </div>
-
         <p class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11">
           {{
             t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT')
           }}
         </p>
-
-        <div v-if="isVirtualPbxAdvancedVisible" class="flex flex-col gap-2">
-          <label class="text-sm font-medium text-n-slate-12">
-            {{ t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.LABEL') }}
-          </label>
-          <Select
-            v-model="kazakhstanState.routingMode"
-            class="w-full px-3 py-2"
-            @blur="kazakhstanV$.routingMode?.$touch"
-          >
-            <option
-              v-for="option in routingOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </Select>
-        </div>
-
-        <Input
-          v-if="
-            isVirtualPbxAdvancedVisible &&
-            kazakhstanState.routingMode === 'operator'
-          "
-          v-model="kazakhstanState.operatorAgentAor"
-          :label="t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.LABEL')"
-          :placeholder="
-            t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.PLACEHOLDER')
-          "
-          :message="kazakhstanFormErrors.operatorAgentAor"
-          :message-type="
-            kazakhstanFormErrors.operatorAgentAor ? 'error' : 'info'
-          "
-          @blur="kazakhstanV$.operatorAgentAor?.$touch"
-        />
 
         <div>
           <NextButton

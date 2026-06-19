@@ -1,6 +1,9 @@
 require 'base64'
 
 class Telephony::WebphoneService
+  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog].freeze
+  PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
+
   def initialize(account:, bridge_client: nil)
     @account = account
     @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
@@ -9,6 +12,7 @@ class Telephony::WebphoneService
   def token_for(user:, inbox: nil)
     operator_identity = operator_identity_for(user: user, inbox: inbox)
     return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
+    return unsupported_provider_extension_payload(inbox, operator_identity) if provider_managed_external_extension?(inbox, operator_identity)
 
     response = bridge_client.post('/telephony/webphone/token', token_request_payload(user, inbox, operator_identity))
 
@@ -74,8 +78,35 @@ class Telephony::WebphoneService
     }
   end
 
+  def unsupported_provider_extension_payload(inbox, operator_identity)
+    unsupported_webphone_payload(inbox: inbox, reason: 'provider_managed_external_extension').merge(
+      agent_ref: operator_identity.agent_ref,
+      browser_join_supported: false,
+      registered_for_routing: operator_identity.record.respond_to?(:registered_for_routing?) && operator_identity.record.registered_for_routing?
+    )
+  end
+
   def operator_identity_usable?(operator_identity)
     operator_identity.present? && operator_identity.enabled?
+  end
+
+  def provider_managed_external_extension?(inbox, operator_identity)
+    profile = operator_identity&.sip_profile
+    return false if profile.blank?
+    return false unless PROVIDER_EXTENSION_MODES.include?(profile.availability_mode.to_s)
+
+    PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS.include?(provider_kind_for(inbox))
+  end
+
+  def provider_kind_for(inbox)
+    channel = inbox&.channel
+    config = if channel.respond_to?(:provider_config_hash)
+               channel.provider_config_hash
+             else
+               channel&.provider_config
+             end
+
+    config.to_h.with_indifferent_access[:provider_kind].to_s
   end
 
   def apply_signaling_server_override(response)
