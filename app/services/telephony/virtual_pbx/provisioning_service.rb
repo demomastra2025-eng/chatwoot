@@ -698,7 +698,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def default_profile_availability_mode(provider_kind)
     return 'browser_webphone' if provider_kind.to_s == 'sipuni'
-    return 'external_extension' if provider_kind.to_s == 'asterisk_analog'
+    return 'browser_webphone' if provider_kind.to_s == 'asterisk_analog'
 
     'external_extension'
   end

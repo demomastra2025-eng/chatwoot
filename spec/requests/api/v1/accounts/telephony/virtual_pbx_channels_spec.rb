@@ -195,13 +195,14 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('diagnostics', 'payload', 'profiles').first).to include(
       'internal_extension' => '9098',
       'user_id' => agent.id,
-      'availability_mode' => 'external_extension'
+      'availability_mode' => 'browser_webphone'
     )
     expect(body.dig('diagnostics', 'payload', 'connection', 'host')).to eq('10.77.0.5')
     expect(body.dig('diagnostics', 'payload', 'connection', 'send_register')).to be(false)
     expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq("asterisk-analog-#{account.id}-17770005175")
     expect(body.dig('diagnostics', 'generated_refs', 'trunk_ref')).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
-    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).not_to include('upsert_agent')
+    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).to include('upsert_agent')
+    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).not_to include('upsert_agent_credentials')
     expect(body.to_json).not_to include('tel:9098')
   end
 
@@ -485,7 +486,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response.parsed_body.to_json).not_to include('raw-profile-password')
   end
 
-  it 'defaults Asterisk analog employee profiles to external extensions without SIP credentials' do
+  it 'defaults Asterisk analog employee profiles to browser webphone without SIP credentials' do
     create_payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
       channel_name: 'Analog line 9098',
@@ -538,8 +539,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     desired_profile = captured_args.dig(:desired_state, :profiles).first
     expect(desired_profile).to include(
       internal_extension: '9098',
-      agent_aor: 'sip:9098@10.77.0.5',
-      availability_mode: 'external_extension'
+      agent_aor: 'sip:9098@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone'
     )
     expect(captured_args.dig(:desired_state, :connection)).to include(
       host: '10.77.0.5',
@@ -548,10 +549,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
     expect(desired_profile).not_to include(:sip_username, :sip_password, :credentials_ref)
     expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).to include(
-      'upsert_trunk', 'upsert_number', 'update_number_route'
+      'upsert_trunk', 'upsert_number', 'update_number_route', 'upsert_agent'
     )
     expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).not_to include(
-      'upsert_agent', 'upsert_agent_credentials'
+      'upsert_agent_credentials'
     )
   end
 
