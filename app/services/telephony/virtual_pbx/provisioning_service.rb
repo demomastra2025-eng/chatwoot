@@ -839,6 +839,7 @@ class Telephony::VirtualPbx::ProvisioningService
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)
       upsert_routing_policy!(binding, payload)
       stale_sip_profiles = upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
+      reconcile_legacy_agent_bindings!(inbox) if payload[:profiles_supplied]
       result = { inbox_id: inbox.id, stale_sip_profiles: stale_sip_profiles }
     end
     result
@@ -859,7 +860,10 @@ class Telephony::VirtualPbx::ProvisioningService
                       provider_config: provider_config_for(payload, provider_connection, channel.provider_config_hash, refs: refs))
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)
       upsert_routing_policy!(binding, payload)
-      upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
+      if payload[:profiles_supplied]
+        upsert_sip_profiles!(inbox, provider_connection, payload)
+        reconcile_legacy_agent_bindings!(inbox)
+      end
       result = { inbox_id: inbox.id }
     end
     result
@@ -988,6 +992,10 @@ class Telephony::VirtualPbx::ProvisioningService
     stale_profiles.concat(removed_profiles.filter_map { |profile| sip_profile_cleanup_snapshot(profile) })
     removed_profiles.each(&:destroy!)
     stale_profiles.compact.uniq { |profile| [profile[:agent_ref], profile[:credentials_ref], profile[:sip_username], profile[:internal_extension]] }
+  end
+
+  def reconcile_legacy_agent_bindings!(inbox)
+    Telephony::LegacyAgentBindingReconciliationService.new(account: account, inbox: inbox).perform
   end
 
   def sip_profile_cleanup_snapshot(profile_record)

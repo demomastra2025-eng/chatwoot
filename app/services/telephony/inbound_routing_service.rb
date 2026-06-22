@@ -603,10 +603,15 @@ class Telephony::InboundRoutingService
 
   def operator_candidate_scope
     profile_candidates = inbox_sip_profile_candidates
-    return profile_candidates if profile_candidates.any?
+    profiled_user_ids = profile_candidates.filter_map(&:user_id).uniq
 
+    profile_candidates + account_agent_binding_candidates(excluding_user_ids: profiled_user_ids)
+  end
+
+  def account_agent_binding_candidates(excluding_user_ids: [])
     scope = number_binding.account.telephony_agent_bindings.includes(:user)
     scope = scope.where(user_id: inbox.members.select(:id)) if inbox.present? && inbox.inbox_members.exists?
+    scope = scope.where.not(user_id: excluding_user_ids) if excluding_user_ids.present?
     scope.map { |binding| OperatorCandidate.new(source: :agent_binding, agent_binding: binding) }
   end
 

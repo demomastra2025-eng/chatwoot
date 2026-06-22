@@ -7,6 +7,19 @@ import { useCallsStore } from 'dashboard/stores/calls';
 import Timer from 'dashboard/helper/Timer';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
+const TERMINAL_CLAIM_FAILURE_CODES = new Set(['CALL_NOT_CLAIMABLE']);
+const TERMINAL_CLAIM_FAILURE_STATUSES = new Set([
+  'completed',
+  'busy',
+  'failed',
+  'no_answer',
+  'no-answer',
+  'cancelled',
+  'canceled',
+  'rejected',
+  'missed',
+  'ended',
+]);
 
 export function useCallSession() {
   const callsStore = useCallsStore();
@@ -81,6 +94,14 @@ export function useCallSession() {
     };
 
     return Object.values(operatorClaim).some(Boolean) ? operatorClaim : null;
+  };
+
+  const shouldDismissClaimFailure = claimResult => {
+    if (TERMINAL_CLAIM_FAILURE_CODES.has(claimResult?.code)) return true;
+
+    const status = claimResult?.details?.status;
+    const normalizedStatus = status?.toString().trim().toLowerCase();
+    return TERMINAL_CLAIM_FAILURE_STATUSES.has(normalizedStatus);
   };
 
   const claimFonosterIncomingCall = async callSid => {
@@ -386,6 +407,9 @@ export function useCallSession() {
               reason,
               operatorClaim: operatorClaimFromDetails(claimResult.details),
             });
+            if (shouldDismissClaimFailure(claimResult)) {
+              callsStore.dismissCall(callSid);
+            }
             return {
               provider: 'fonoster',
               joinSupported: false,

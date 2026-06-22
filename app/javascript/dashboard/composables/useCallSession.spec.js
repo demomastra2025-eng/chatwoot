@@ -773,4 +773,38 @@ describe('useCallSession', () => {
       },
     ]);
   });
+
+  it('dismisses an inbound Fonoster call when backend claim says it is already terminal', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-terminal-before-claim',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+    VoiceAPI.claimIncomingCall.mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          code: 'CALL_NOT_CLAIMABLE',
+          details: { status: 'rejected' },
+        },
+      },
+    });
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      callSid: 'call-terminal-before-claim',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'CALL_NOT_CLAIMABLE',
+    });
+    expect(rejectClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([]);
+  });
 });

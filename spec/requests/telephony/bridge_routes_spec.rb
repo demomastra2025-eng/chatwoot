@@ -804,6 +804,86 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(call_session.metadata.dig('metadata', 'operator_candidate_binding_ids')).to be_empty
   end
 
+  it 'uses registered account bindings for inbox members without SIP profiles in broadcast mode' do
+    profiled_user = create(:user, account: account, role: :agent)
+    binding_user = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: profiled_user)
+    create(:inbox_member, inbox: voice_inbox, user: binding_user)
+
+    stale_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: profiled_user,
+      internal_extension: '504',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'profile-stale-504',
+      fonoster_agent_ref: 'fonoster-profile-stale-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_source: 'browser_webphone',
+        last_presence_event_at: 15.minutes.ago.iso8601
+      }
+    )
+    create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: profiled_user,
+      agent_ref: 'legacy-profiled-user-1001',
+      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+    )
+    binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: binding_user,
+      agent_ref: 'legacy-binding-user-1002',
+      agent_aor: 'sip:1002@operator.cloud.vconsult.kz'
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: stale_profile.agent_aor,
+      settings: { 'operator_distribution_mode' => 'broadcast' },
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-broadcast-binding-fallback',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15551230100',
+             diagnostic: true
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'agent_aor' => binding.agent_aor,
+      'agent_aors' => [binding.agent_aor],
+      'operator_distribution_mode' => 'broadcast',
+      'operator_pool' => false,
+      'operator_pool_size' => 1
+    )
+    expect(response.parsed_body['operator_candidates']).to contain_exactly(
+      include(
+        'source' => 'agent_binding',
+        'agent_binding_id' => binding.id,
+        'agent_ref' => binding.agent_ref,
+        'agent_aor' => binding.agent_aor,
+        'user_id' => binding_user.id
+      )
+    )
+  end
+
   it 'routes Sipuni target metadata to the matching managed SIP profile before the configured operator' do
     primary_user = create(:user, account: account, role: :agent)
     secondary_user = create(:user, account: account, role: :agent)

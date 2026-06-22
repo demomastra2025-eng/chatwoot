@@ -38,6 +38,12 @@ telephony_call_reconciliation_job:
   class: 'Telephony::ReconcileCallSessionsJob'
   queue: low
 
+# disable obsolete account-level Fonoster bindings only after native SIP profiles cover all user voice inboxes
+telephony_legacy_agent_binding_reconciliation_job:
+  cron: '37 * * * *'
+  class: 'Telephony::ReconcileLegacyAgentBindingsJob'
+  queue: scheduled_jobs
+
 # executed daily at 2230 UTC
 # which is our lowest traffic time
 remove_stale_contact_inboxes_job.rb:
