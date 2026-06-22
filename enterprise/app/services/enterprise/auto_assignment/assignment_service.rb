@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Enterprise::AutoAssignment::AssignmentService
   private
 
@@ -13,25 +15,40 @@ module Enterprise::AutoAssignment::AssignmentService
     }.compact
   end
 
-  # Extend agent finding to add capacity checks
+  # Extend agent finding to add capacity checks and keep core policy gates.
   def find_available_agent(conversation = nil)
+    reset_candidate_summaries
+
     agents = filter_agents_by_team(inbox.available_agents, conversation)
     return nil if agents.nil?
 
     agents = filter_agents_by_rate_limit(agents)
     agents = filter_agents_by_capacity(agents) if capacity_filtering_enabled?
+    agents = filter_agents_by_policy_limits(agents, conversation)
     return nil if agents.empty?
 
-    # Use balanced selector only if advanced_assignment feature is enabled
-    selector = policy&.balanced? && account.feature_enabled?('advanced_assignment') ? balanced_selector : round_robin_selector
-    selector.select_agent(agents)
+    sticky_owner = sticky_owner_service.available_owner_for(conversation, agents)
+    return sticky_owner if sticky_owner
+
+    assignment_selector.select_agent(agents)
+  end
+
+  def assignment_selector
+    return round_robin_selector unless policy&.balanced?
+    return round_robin_selector unless account.feature_enabled?('advanced_assignment')
+
+    balanced_selector
   end
 
   def filter_agents_by_capacity(agents)
     return agents unless capacity_filtering_enabled?
 
     capacity_service = Enterprise::AutoAssignment::CapacityService.new
-    agents.select { |agent_member| capacity_service.agent_has_capacity?(agent_member.user, inbox) }
+    agents.select do |agent_member|
+      has_capacity = capacity_service.agent_has_capacity?(agent_member.user, inbox)
+      add_candidate_summary(agent_member.user, ['agent_capacity_policy_limit_reached']) unless has_capacity
+      has_capacity
+    end
   end
 
   def capacity_filtering_enabled?
@@ -61,13 +78,8 @@ module Enterprise::AutoAssignment::AssignmentService
 
     # Apply exclusion rules from capacity policy or assignment policy
     scope = apply_exclusion_rules(scope)
-
-    # Apply conversation priority using enum methods if policy exists
-    scope = if policy&.longest_waiting?
-              scope.reorder(last_activity_at: :asc, created_at: :asc)
-            else
-              scope.reorder(created_at: :asc)
-            end
+    scope = apply_assignment_delay(scope)
+    scope = apply_conversation_priority(scope)
 
     scope.limit(limit)
   end

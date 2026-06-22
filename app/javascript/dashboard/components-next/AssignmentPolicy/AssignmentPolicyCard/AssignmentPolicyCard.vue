@@ -15,6 +15,11 @@ const props = defineProps({
   assignmentOrder: { type: String, default: '' },
   conversationPriority: { type: String, default: '' },
   assignedInboxCount: { type: Number, default: 0 },
+  assignmentDelayMinutes: { type: Number, default: 0 },
+  maxOpenConversations: { type: Number, default: null },
+  monthlyNewClientQuota: { type: Number, default: null },
+  stickyOwnerEnabled: { type: Boolean, default: false },
+  stickyOwnerDurationDays: { type: Number, default: 30 },
   inboxes: { type: Array, default: () => [] },
   isFetchingInboxes: { type: Boolean, default: false },
 });
@@ -39,6 +44,44 @@ const order = computed(() => {
 
 const priority = computed(() => {
   return formatToTitleCase(props.conversationPriority);
+});
+
+const loadSummary = computed(() => {
+  const items = [];
+
+  if (props.assignmentDelayMinutes > 0) {
+    items.push(
+      t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.DELAY', {
+        minutes: props.assignmentDelayMinutes,
+      })
+    );
+  }
+
+  if (props.maxOpenConversations) {
+    items.push(
+      t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.MAX_OPEN', {
+        count: props.maxOpenConversations,
+      })
+    );
+  }
+
+  if (props.monthlyNewClientQuota) {
+    items.push(
+      t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.MONTHLY_QUOTA', {
+        count: props.monthlyNewClientQuota,
+      })
+    );
+  }
+
+  if (props.stickyOwnerEnabled) {
+    items.push(
+      t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.STICKY_OWNER', {
+        days: props.stickyOwnerDurationDays,
+      })
+    );
+  }
+
+  return items;
 });
 
 const handleEdit = () => {
@@ -105,6 +148,15 @@ const handleFetchInboxes = () => {
             `${t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.PRIORITY')}:`
           }}
           <span class="text-n-slate-12">{{ priority }}</span>
+        </span>
+      </div>
+      <div v-if="loadSummary.length" class="flex flex-wrap gap-2 py-1">
+        <span
+          v-for="item in loadSummary"
+          :key="item"
+          class="rounded-full bg-n-alpha-2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
+        >
+          {{ item }}
         </span>
       </div>
     </div>

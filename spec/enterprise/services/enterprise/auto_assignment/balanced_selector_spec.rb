@@ -70,6 +70,11 @@ RSpec.describe Enterprise::AutoAssignment::BalancedSelector do
         selected_agent = selector.select_agent([member1])
         expect(selected_agent).to eq(agent1)
       end
+
+      it 'accepts user records as candidates' do
+        selected_agent = selector.select_agent([agent1])
+        expect(selected_agent).to eq(agent1)
+      end
     end
 
     context 'with new agents (no conversations)' do

@@ -8,6 +8,8 @@ import { getInboxIconByType } from 'dashboard/helper/inbox';
 import {
   ROUND_ROBIN,
   EARLIEST_CREATED,
+  DEFAULT_ASSIGNMENT_DELAY_MINUTES,
+  DEFAULT_STICKY_OWNER_DURATION_DAYS,
 } from 'dashboard/routes/dashboard/settings/assignmentPolicy/constants';
 
 import Breadcrumb from 'dashboard/components-next/breadcrumb/Breadcrumb.vue';
@@ -106,6 +108,15 @@ const formData = computed(() => ({
     selectedPolicy.value?.conversationPriority || EARLIEST_CREATED,
   fairDistributionLimit: selectedPolicy.value?.fairDistributionLimit || 100,
   fairDistributionWindow: selectedPolicy.value?.fairDistributionWindow || 3600,
+  assignmentDelayMinutes:
+    selectedPolicy.value?.assignmentDelayMinutes ??
+    DEFAULT_ASSIGNMENT_DELAY_MINUTES,
+  maxOpenConversations: selectedPolicy.value?.maxOpenConversations ?? null,
+  monthlyNewClientQuota: selectedPolicy.value?.monthlyNewClientQuota ?? null,
+  stickyOwnerEnabled: selectedPolicy.value?.stickyOwnerEnabled || false,
+  stickyOwnerDurationDays:
+    selectedPolicy.value?.stickyOwnerDurationDays ??
+    DEFAULT_STICKY_OWNER_DURATION_DAYS,
 }));
 
 const handleDeleteInbox = async inboxId => {

@@ -6,6 +6,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import BaseInfo from 'dashboard/components-next/AssignmentPolicy/components/BaseInfo.vue';
 import RadioCard from 'dashboard/components-next/radioCard/RadioCard.vue';
 import FairDistribution from 'dashboard/components-next/AssignmentPolicy/components/FairDistribution.vue';
+import LoadControls from 'dashboard/components-next/AssignmentPolicy/components/LoadControls.vue';
 import DataTable from 'dashboard/components-next/AssignmentPolicy/components/DataTable.vue';
 import AddDataDropdown from 'dashboard/components-next/AssignmentPolicy/components/AddDataDropdown.vue';
 import WithLabel from 'v3/components/Form/WithLabel.vue';
@@ -16,6 +17,8 @@ import {
   EARLIEST_CREATED,
   DEFAULT_FAIR_DISTRIBUTION_LIMIT,
   DEFAULT_FAIR_DISTRIBUTION_WINDOW,
+  DEFAULT_ASSIGNMENT_DELAY_MINUTES,
+  DEFAULT_STICKY_OWNER_DURATION_DAYS,
 } from 'dashboard/routes/dashboard/settings/assignmentPolicy/constants';
 
 const props = defineProps({
@@ -28,6 +31,11 @@ const props = defineProps({
       conversationPriority: EARLIEST_CREATED,
       fairDistributionLimit: DEFAULT_FAIR_DISTRIBUTION_LIMIT,
       fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
+      assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
+      maxOpenConversations: null,
+      monthlyNewClientQuota: null,
+      stickyOwnerEnabled: false,
+      stickyOwnerDurationDays: DEFAULT_STICKY_OWNER_DURATION_DAYS,
     }),
   },
   mode: {
@@ -83,6 +91,11 @@ const state = reactive({
   conversationPriority: EARLIEST_CREATED,
   fairDistributionLimit: DEFAULT_FAIR_DISTRIBUTION_LIMIT,
   fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
+  assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
+  maxOpenConversations: null,
+  monthlyNewClientQuota: null,
+  stickyOwnerEnabled: false,
+  stickyOwnerDurationDays: DEFAULT_STICKY_OWNER_DURATION_DAYS,
 });
 
 const validationState = ref({
@@ -170,6 +183,11 @@ const resetForm = () => {
     conversationPriority: EARLIEST_CREATED,
     fairDistributionLimit: DEFAULT_FAIR_DISTRIBUTION_LIMIT,
     fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
+    assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
+    maxOpenConversations: null,
+    monthlyNewClientQuota: null,
+    stickyOwnerEnabled: false,
+    stickyOwnerDurationDays: DEFAULT_STICKY_OWNER_DURATION_DAYS,
   });
 };
 
@@ -246,6 +264,32 @@ defineExpose({
           v-model:fair-distribution-limit="state.fairDistributionLimit"
           v-model:fair-distribution-window="state.fairDistributionWindow"
           v-model:window-unit="state.windowUnit"
+        />
+      </div>
+
+      <div class="pt-4 pb-2 flex-col flex gap-4">
+        <div class="flex flex-col items-start gap-1 py-1">
+          <label class="text-sm font-medium text-n-slate-12 py-1">
+            {{
+              t(
+                'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.LABEL'
+              )
+            }}
+          </label>
+          <p class="mb-0 text-n-slate-11 text-sm">
+            {{
+              t(
+                'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.DESCRIPTION'
+              )
+            }}
+          </p>
+        </div>
+        <LoadControls
+          v-model:assignment-delay-minutes="state.assignmentDelayMinutes"
+          v-model:max-open-conversations="state.maxOpenConversations"
+          v-model:monthly-new-client-quota="state.monthlyNewClientQuota"
+          v-model:sticky-owner-enabled="state.stickyOwnerEnabled"
+          v-model:sticky-owner-duration-days="state.stickyOwnerDurationDays"
         />
       </div>
     </div>

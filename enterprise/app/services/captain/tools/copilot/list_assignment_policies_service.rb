@@ -43,7 +43,6 @@ class Captain::Tools::Copilot::ListAssignmentPoliciesService < Captain::Tools::C
 
   def assignment_policy_payload(assignment_policy)
     inboxes = account_inboxes_for(assignment_policy)
-
     {
       id: assignment_policy.id,
       name: assignment_policy.name,
@@ -53,11 +52,22 @@ class Captain::Tools::Copilot::ListAssignmentPoliciesService < Captain::Tools::C
       conversation_priority: assignment_policy.conversation_priority,
       fair_distribution_limit: assignment_policy.fair_distribution_limit,
       fair_distribution_window: assignment_policy.fair_distribution_window,
+      **load_controls_payload(assignment_policy),
       inbox_ids: inboxes.map(&:id),
       inboxes: inboxes.map { |inbox| inbox_payload(inbox) },
       created_at: assignment_policy.created_at&.iso8601,
       updated_at: assignment_policy.updated_at&.iso8601
     }.compact
+  end
+
+  def load_controls_payload(assignment_policy)
+    {
+      assignment_delay_minutes: assignment_policy.assignment_delay_minutes,
+      max_open_conversations: assignment_policy.max_open_conversations,
+      monthly_new_client_quota: assignment_policy.monthly_new_client_quota,
+      sticky_owner_enabled: assignment_policy.sticky_owner_enabled,
+      sticky_owner_duration_days: assignment_policy.sticky_owner_duration_days
+    }
   end
 
   def account_inboxes_for(assignment_policy)

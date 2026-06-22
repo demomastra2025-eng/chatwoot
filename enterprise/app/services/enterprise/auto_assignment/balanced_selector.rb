@@ -4,7 +4,7 @@ class Enterprise::AutoAssignment::BalancedSelector
   def select_agent(available_agents)
     return nil if available_agents.empty?
 
-    agent_users = available_agents.map(&:user)
+    agent_users = available_agents.filter_map { |agent| agent.respond_to?(:user) ? agent.user : agent }
     assignment_counts = fetch_assignment_counts(agent_users)
 
     agent_users.min_by { |user| assignment_counts[user.id] || 0 }

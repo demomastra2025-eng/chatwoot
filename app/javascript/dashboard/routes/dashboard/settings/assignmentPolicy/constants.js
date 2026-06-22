@@ -9,6 +9,8 @@ export const LONGEST_WAITING = 'longest_waiting';
 // Default values for fair distribution
 export const DEFAULT_FAIR_DISTRIBUTION_LIMIT = 100;
 export const DEFAULT_FAIR_DISTRIBUTION_WINDOW = 3600;
+export const DEFAULT_ASSIGNMENT_DELAY_MINUTES = 0;
+export const DEFAULT_STICKY_OWNER_DURATION_DAYS = 30;
 
 // Options groupings
 export const OPTIONS = {

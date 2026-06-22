@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_14_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_19_140000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -199,6 +199,46 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_14_120000) do
     t.index ["views"], name: "index_articles_on_views"
   end
 
+  create_table "assignment_client_ownerships", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "contact_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "assignment_policy_id"
+    t.datetime "last_assigned_at", null: false
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "contact_id"], name: "idx_assignment_ownerships_account_contact", unique: true
+    t.index ["account_id", "user_id"], name: "idx_assignment_ownerships_account_user"
+    t.index ["account_id"], name: "index_assignment_client_ownerships_on_account_id"
+    t.index ["assignment_policy_id"], name: "index_assignment_ownerships_on_policy_id"
+    t.index ["contact_id"], name: "index_assignment_client_ownerships_on_contact_id"
+    t.index ["expires_at"], name: "index_assignment_client_ownerships_on_expires_at"
+    t.index ["user_id"], name: "index_assignment_client_ownerships_on_user_id"
+  end
+
+  create_table "assignment_decision_logs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "assignment_policy_id"
+    t.bigint "assigned_user_id"
+    t.integer "outcome", default: 0, null: false
+    t.jsonb "reasons", default: [], null: false
+    t.jsonb "candidate_summaries", default: [], null: false
+    t.jsonb "decision_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_assignment_decision_logs_account_created_at"
+    t.index ["account_id"], name: "index_assignment_decision_logs_on_account_id"
+    t.index ["assigned_user_id"], name: "index_assignment_decision_logs_on_assigned_user_id"
+    t.index ["assignment_policy_id"], name: "index_assignment_decision_logs_on_policy_id"
+    t.index ["conversation_id", "created_at"], name: "idx_assignment_decision_logs_conversation_created_at"
+    t.index ["conversation_id"], name: "index_assignment_decision_logs_on_conversation_id"
+    t.index ["inbox_id", "outcome", "created_at"], name: "idx_assignment_decision_logs_inbox_outcome_created_at"
+    t.index ["inbox_id"], name: "index_assignment_decision_logs_on_inbox_id"
+  end
+
   create_table "assignment_policies", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "name", limit: 255, null: false
@@ -210,9 +250,33 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_14_120000) do
     t.boolean "enabled", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "assignment_delay_minutes", default: 0, null: false
+    t.integer "max_open_conversations"
+    t.integer "monthly_new_client_quota"
+    t.boolean "sticky_owner_enabled", default: false, null: false
+    t.integer "sticky_owner_duration_days", default: 30, null: false
     t.index ["account_id", "name"], name: "index_assignment_policies_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_assignment_policies_on_account_id"
     t.index ["enabled"], name: "index_assignment_policies_on_enabled"
+  end
+
+  create_table "assignment_quota_usages", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "contact_id", null: false
+    t.bigint "conversation_id"
+    t.bigint "assignment_policy_id"
+    t.date "period_start", null: false
+    t.date "period_end", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "user_id", "contact_id", "period_start"], name: "idx_assignment_quota_usages_unique_contact_period", unique: true
+    t.index ["account_id", "user_id", "period_start"], name: "idx_assignment_quota_usages_account_user_period"
+    t.index ["account_id"], name: "index_assignment_quota_usages_on_account_id"
+    t.index ["assignment_policy_id"], name: "index_assignment_quota_usages_on_policy_id"
+    t.index ["contact_id"], name: "index_assignment_quota_usages_on_contact_id"
+    t.index ["conversation_id"], name: "index_assignment_quota_usages_on_conversation_id"
+    t.index ["user_id"], name: "index_assignment_quota_usages_on_user_id"
   end
 
   create_table "attachments", id: :serial, force: :cascade do |t|
@@ -2725,6 +2789,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_14_120000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "assignment_client_ownerships", "accounts"
+  add_foreign_key "assignment_client_ownerships", "assignment_policies", on_delete: :nullify
+  add_foreign_key "assignment_client_ownerships", "contacts"
+  add_foreign_key "assignment_client_ownerships", "users"
+  add_foreign_key "assignment_decision_logs", "accounts"
+  add_foreign_key "assignment_decision_logs", "assignment_policies", on_delete: :nullify
+  add_foreign_key "assignment_decision_logs", "conversations"
+  add_foreign_key "assignment_decision_logs", "inboxes"
+  add_foreign_key "assignment_decision_logs", "users", column: "assigned_user_id", on_delete: :nullify
+  add_foreign_key "assignment_quota_usages", "accounts"
+  add_foreign_key "assignment_quota_usages", "assignment_policies", on_delete: :nullify
+  add_foreign_key "assignment_quota_usages", "contacts"
+  add_foreign_key "assignment_quota_usages", "conversations"
+  add_foreign_key "assignment_quota_usages", "users"
   add_foreign_key "bulk_action_runs", "accounts"
   add_foreign_key "bulk_action_runs", "users"
   add_foreign_key "campaign_deliveries", "accounts"

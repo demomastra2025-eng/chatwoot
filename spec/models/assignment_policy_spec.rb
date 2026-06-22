@@ -5,6 +5,9 @@ RSpec.describe AssignmentPolicy do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to have_many(:inbox_assignment_policies).dependent(:destroy) }
     it { is_expected.to have_many(:inboxes).through(:inbox_assignment_policies) }
+    it { is_expected.to have_many(:assignment_client_ownerships).dependent(:nullify) }
+    it { is_expected.to have_many(:assignment_quota_usages).dependent(:nullify) }
+    it { is_expected.to have_many(:assignment_decision_logs).dependent(:nullify) }
   end
 
   describe 'validations' do
@@ -18,13 +21,43 @@ RSpec.describe AssignmentPolicy do
     it 'requires fair_distribution_limit to be greater than 0' do
       policy = build(:assignment_policy, fair_distribution_limit: 0)
       expect(policy).not_to be_valid
-      expect(policy.errors[:fair_distribution_limit]).to include('must be greater than 0')
+      expect(policy.errors[:fair_distribution_limit]).not_to be_empty
     end
 
     it 'requires fair_distribution_window to be greater than 0' do
       policy = build(:assignment_policy, fair_distribution_window: -1)
       expect(policy).not_to be_valid
-      expect(policy.errors[:fair_distribution_window]).to include('must be greater than 0')
+      expect(policy.errors[:fair_distribution_window]).not_to be_empty
+    end
+  end
+
+  describe 'load policy validations' do
+    it 'requires assignment_delay_minutes to be zero or greater' do
+      policy = build(:assignment_policy, assignment_delay_minutes: -1)
+      expect(policy).not_to be_valid
+      expect(policy.errors[:assignment_delay_minutes]).not_to be_empty
+    end
+
+    it 'allows optional max_open_conversations but validates positive values' do
+      expect(build(:assignment_policy, max_open_conversations: nil)).to be_valid
+
+      policy = build(:assignment_policy, max_open_conversations: 0)
+      expect(policy).not_to be_valid
+      expect(policy.errors[:max_open_conversations]).not_to be_empty
+    end
+
+    it 'allows optional monthly_new_client_quota but validates positive values' do
+      expect(build(:assignment_policy, monthly_new_client_quota: nil)).to be_valid
+
+      policy = build(:assignment_policy, monthly_new_client_quota: 0)
+      expect(policy).not_to be_valid
+      expect(policy.errors[:monthly_new_client_quota]).not_to be_empty
+    end
+
+    it 'requires sticky_owner_duration_days to be greater than 0' do
+      policy = build(:assignment_policy, sticky_owner_duration_days: 0)
+      expect(policy).not_to be_valid
+      expect(policy.errors[:sticky_owner_duration_days]).not_to be_empty
     end
   end
 

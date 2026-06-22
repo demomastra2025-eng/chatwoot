@@ -7,12 +7,17 @@
 #  conversation_priority    :integer          default("earliest_created"), not null
 #  description              :text
 #  enabled                  :boolean          default(TRUE), not null
-#  fair_distribution_limit  :integer          default(100), not null
-#  fair_distribution_window :integer          default(3600), not null
-#  name                     :string(255)      not null
-#  created_at               :datetime         not null
-#  updated_at               :datetime         not null
-#  account_id               :bigint           not null
+#  assignment_delay_minutes  :integer          default(0), not null
+#  fair_distribution_limit   :integer          default(100), not null
+#  fair_distribution_window  :integer          default(3600), not null
+#  max_open_conversations    :integer
+#  monthly_new_client_quota  :integer
+#  name                      :string(255)      not null
+#  sticky_owner_duration_days :integer         default(30), not null
+#  sticky_owner_enabled      :boolean          default(FALSE), not null
+#  created_at                :datetime         not null
+#  updated_at                :datetime         not null
+#  account_id                :bigint           not null
 #
 # Indexes
 #
@@ -24,10 +29,17 @@ class AssignmentPolicy < ApplicationRecord
   belongs_to :account
   has_many :inbox_assignment_policies, dependent: :destroy
   has_many :inboxes, through: :inbox_assignment_policies
+  has_many :assignment_client_ownerships, dependent: :nullify
+  has_many :assignment_quota_usages, dependent: :nullify
+  has_many :assignment_decision_logs, dependent: :nullify
 
   validates :name, presence: true, uniqueness: { scope: :account_id }
   validates :fair_distribution_limit, numericality: { greater_than: 0 }
   validates :fair_distribution_window, numericality: { greater_than: 0 }
+  validates :assignment_delay_minutes, numericality: { greater_than_or_equal_to: 0 }
+  validates :max_open_conversations, numericality: { greater_than: 0 }, allow_nil: true
+  validates :monthly_new_client_quota, numericality: { greater_than: 0 }, allow_nil: true
+  validates :sticky_owner_duration_days, numericality: { greater_than: 0 }
 
   enum conversation_priority: { earliest_created: 0, longest_waiting: 1 }
 

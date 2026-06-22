@@ -55,7 +55,12 @@ class Captain::Tools::Copilot::GetInboxSettingsService < Captain::Tools::Copilot
       name: policy.name,
       enabled: policy.enabled,
       assignment_order: policy.assignment_order,
-      conversation_priority: policy.conversation_priority
+      conversation_priority: policy.conversation_priority,
+      assignment_delay_minutes: policy.assignment_delay_minutes,
+      max_open_conversations: policy.max_open_conversations,
+      monthly_new_client_quota: policy.monthly_new_client_quota,
+      sticky_owner_enabled: policy.sticky_owner_enabled,
+      sticky_owner_duration_days: policy.sticky_owner_duration_days
     }
   end
 

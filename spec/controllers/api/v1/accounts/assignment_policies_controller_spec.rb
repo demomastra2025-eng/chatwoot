@@ -97,6 +97,11 @@ RSpec.describe 'Assignment Policies API', type: :request do
           description: 'Policy for new team',
           conversation_priority: 'longest_waiting',
           fair_distribution_limit: 15,
+          assignment_delay_minutes: 30,
+          max_open_conversations: 20,
+          monthly_new_client_quota: 500,
+          sticky_owner_enabled: true,
+          sticky_owner_duration_days: 45,
           enabled: true
         }
       }
@@ -120,10 +125,25 @@ RSpec.describe 'Assignment Policies API', type: :request do
                as: :json
         end.to change(AssignmentPolicy, :count).by(1)
 
-        expect(response).to have_http_status(:success)
         json_response = response.parsed_body
-        expect(json_response['name']).to eq('New Assignment Policy')
-        expect(json_response['conversation_priority']).to eq('longest_waiting')
+        expect(response).to have_http_status(:success)
+        expect(json_response.slice(
+                 'name',
+                 'conversation_priority',
+                 'assignment_delay_minutes',
+                 'max_open_conversations',
+                 'monthly_new_client_quota',
+                 'sticky_owner_enabled',
+                 'sticky_owner_duration_days'
+               )).to eq(
+                 'name' => 'New Assignment Policy',
+                 'conversation_priority' => 'longest_waiting',
+                 'assignment_delay_minutes' => 30,
+                 'max_open_conversations' => 20,
+                 'monthly_new_client_quota' => 500,
+                 'sticky_owner_enabled' => true,
+                 'sticky_owner_duration_days' => 45
+               )
       end
 
       it 'creates policy with minimal required params' do
@@ -186,7 +206,9 @@ RSpec.describe 'Assignment Policies API', type: :request do
         assignment_policy: {
           name: 'Updated Policy',
           description: 'Updated description',
-          fair_distribution_limit: 20
+          fair_distribution_limit: 20,
+          assignment_delay_minutes: 15,
+          max_open_conversations: 10
         }
       }
     end
@@ -213,6 +235,8 @@ RSpec.describe 'Assignment Policies API', type: :request do
         assignment_policy.reload
         expect(assignment_policy.name).to eq('Updated Policy')
         expect(assignment_policy.fair_distribution_limit).to eq(20)
+        expect(assignment_policy.assignment_delay_minutes).to eq(15)
+        expect(assignment_policy.max_open_conversations).to eq(10)
       end
 
       it 'allows partial updates' do

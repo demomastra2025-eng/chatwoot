@@ -72,6 +72,35 @@ RSpec.describe AutoAssignment::AssignmentService do
         competing_agent = create(:user, account: account, role: :agent, availability: :online)
         conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
 
+        expect do
+          allow(service).to receive(:unassigned_conversations).and_return([conv])
+          allow(service).to receive(:find_available_agent).and_wrap_original do |original, current_conversation|
+            conv.update!(assignee: competing_agent)
+            original.call(current_conversation)
+          end
+
+          assigned_count = service.perform_bulk_assignment(limit: 1)
+
+          expect(assigned_count).to eq(0)
+        end.to change(AssignmentDecisionLog, :count).by(1)
+
+        failed_log = AssignmentDecisionLog.last
+        expect(failed_log).to have_attributes(
+          conversation_id: conv.id,
+          outcome: 'failed',
+          reasons: ['conversation_claim_failed']
+        )
+        expect(failed_log.decision_metadata).to include('assigned_user_id' => agent.id)
+        expect(conv.reload.assignee).to eq(competing_agent)
+        expect(rate_limiter).not_to have_received(:track_assignment)
+        expect(Current.executed_by).to be_nil
+      end
+
+      it 'does not override a conversation assigned by another worker before the claim without a policy' do
+        InboxAssignmentPolicy.where(inbox: inbox).destroy_all
+        competing_agent = create(:user, account: account, role: :agent, availability: :online)
+        conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
         allow(service).to receive(:unassigned_conversations).and_return([conv])
         allow(service).to receive(:find_available_agent).and_wrap_original do |original, current_conversation|
           conv.update!(assignee: competing_agent)
@@ -170,7 +199,7 @@ RSpec.describe AutoAssignment::AssignmentService do
 
       context 'when priority is longest_waiting' do
         before do
-          allow(inbox).to receive(:auto_assignment_config).and_return({ 'conversation_priority' => 'longest_waiting' })
+          assignment_policy.update!(conversation_priority: :longest_waiting)
         end
 
         it 'assigns conversations with oldest last_activity_at first' do
@@ -382,6 +411,127 @@ RSpec.describe AutoAssignment::AssignmentService do
         service.perform_bulk_assignment(limit: 1)
 
         expect(conversation_with_team.reload.assignee).to be_nil
+      end
+    end
+
+    context 'with load policy controls' do
+      let(:rate_limiter) { instance_double(AutoAssignment::RateLimiter, within_limit?: true, track_assignment: true) }
+      let(:round_robin_selector) { instance_double(AutoAssignment::RoundRobinSelector) }
+
+      before do
+        allow(OnlineStatusTracker).to receive(:get_available_users).and_return({
+                                                                                 agent.id.to_s => 'online',
+                                                                                 agent2.id.to_s => 'online'
+                                                                               })
+        create(:inbox_member, inbox: inbox, user: agent2)
+        allow(AutoAssignment::RateLimiter).to receive(:new).and_return(rate_limiter)
+        allow(AutoAssignment::RoundRobinSelector).to receive(:new).and_return(round_robin_selector)
+      end
+
+      it 'waits until assignment_delay_minutes has elapsed' do
+        assignment_policy.update!(assignment_delay_minutes: 30)
+        young_conversation = create(:conversation, inbox: inbox, status: 'open', created_at: 10.minutes.ago, assignee: nil)
+        ready_conversation = create(:conversation, inbox: inbox, status: 'open', created_at: 40.minutes.ago, assignee: nil)
+
+        allow(round_robin_selector).to receive(:select_agent).and_return(agent)
+
+        assigned_count = service.perform_bulk_assignment(limit: 10)
+
+        expect(assigned_count).to eq(1)
+        expect(young_conversation.reload.assignee).to be_nil
+        expect(ready_conversation.reload.assignee).to eq(agent)
+      end
+
+      it 'skips agents that reached max_open_conversations' do
+        assignment_policy.update!(max_open_conversations: 1)
+        create(:conversation, inbox: inbox, status: 'open', assignee: agent)
+        candidate_conversation = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
+        allow(round_robin_selector).to receive(:select_agent) do |members|
+          members.map(&:user).detect { |user| user == agent2 }
+        end
+
+        service.perform_bulk_assignment(limit: 1)
+
+        expect(candidate_conversation.reload.assignee).to eq(agent2)
+        expect(AssignmentDecisionLog.last.candidate_summaries).to include(
+          hash_including('user_id' => agent.id, 'reasons' => include('max_open_conversations_reached'))
+        )
+      end
+
+      it 'skips agents that reached monthly_new_client_quota and records idempotent quota usage' do
+        assignment_policy.update!(monthly_new_client_quota: 1)
+        existing_contact = create(:contact, account: account)
+        create(:assignment_quota_usage, account: account, user: agent, contact: existing_contact, assignment_policy: assignment_policy)
+        candidate_conversation = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
+        allow(round_robin_selector).to receive(:select_agent) do |members|
+          members.map(&:user).detect { |user| user == agent2 }
+        end
+
+        expect do
+          service.perform_bulk_assignment(limit: 1)
+        end.to change(AssignmentQuotaUsage, :count).by(1)
+
+        expect(candidate_conversation.reload.assignee).to eq(agent2)
+        expect(AssignmentQuotaUsage.last.user).to eq(agent2)
+        expect(AssignmentDecisionLog.last.candidate_summaries).to include(
+          hash_including('user_id' => agent.id, 'reasons' => include('monthly_new_client_quota_reached'))
+        )
+      end
+
+      it 'routes a known contact to an available sticky owner' do
+        assignment_policy.update!(sticky_owner_enabled: true, sticky_owner_duration_days: 15)
+        known_contact = create(:contact, account: account)
+        create(:assignment_client_ownership,
+               account: account,
+               contact: known_contact,
+               user: agent2,
+               assignment_policy: assignment_policy,
+               expires_at: 1.day.from_now)
+        sticky_conversation = create(:conversation, inbox: inbox, contact: known_contact, status: 'open', assignee: nil)
+
+        expect(round_robin_selector).not_to receive(:select_agent)
+
+        service.perform_bulk_assignment(limit: 1)
+
+        expect(sticky_conversation.reload.assignee).to eq(agent2)
+      end
+
+      it 'ignores sticky owner when the owner is not an eligible candidate' do
+        assignment_policy.update!(sticky_owner_enabled: true)
+        offline_owner = create(:user, account: account, role: :agent, availability: :offline)
+        known_contact = create(:contact, account: account)
+        create(:assignment_client_ownership,
+               account: account,
+               contact: known_contact,
+               user: offline_owner,
+               assignment_policy: assignment_policy,
+               expires_at: 1.day.from_now)
+        sticky_conversation = create(:conversation, inbox: inbox, contact: known_contact, status: 'open', assignee: nil)
+
+        allow(round_robin_selector).to receive(:select_agent).and_return(agent)
+
+        service.perform_bulk_assignment(limit: 1)
+
+        expect(sticky_conversation.reload.assignee).to eq(agent)
+      end
+
+      it 'writes a skipped decision log when no candidate is eligible' do
+        assignment_policy.update!(max_open_conversations: 1)
+        create(:conversation, inbox: inbox, status: 'open', assignee: agent)
+        create(:conversation, inbox: inbox, status: 'open', assignee: agent2)
+        blocked_conversation = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
+        assigned_count = service.perform_bulk_assignment(limit: 1)
+
+        expect(assigned_count).to eq(0)
+        expect(blocked_conversation.reload.assignee).to be_nil
+        expect(AssignmentDecisionLog.last).to have_attributes(
+          conversation_id: blocked_conversation.id,
+          outcome: 'skipped',
+          reasons: ['no_eligible_agents']
+        )
       end
     end
   end

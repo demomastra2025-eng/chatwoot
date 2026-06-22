@@ -1149,7 +1149,11 @@
           "ACTIVE": "Active",
           "INACTIVE": "Inactive",
           "POPOVER": "Added inboxes",
-          "EDIT": "Edit"
+          "EDIT": "Edit",
+          "DELAY": "after {minutes} min",
+          "MAX_OPEN": "up to {count} open",
+          "MONTHLY_QUOTA": "{count} new/month",
+          "STICKY_OWNER": "sticky {days} days"
         },
         "NO_RECORDS_FOUND": "No assignment policies found"
       },
@@ -1240,6 +1244,28 @@
           "DESCRIPTION": "Set the maximum number of conversations that can be assigned per agent within a time window to avoid overloading any one agent. This required field defaults to 100 conversations per hour.",
           "INPUT_MAX": "Assign max",
           "DURATION": "Conversations per agent in every"
+        },
+        "LOAD_CONTROLS": {
+          "LABEL": "Limits and ownership",
+          "DESCRIPTION": "Simple workload rules: assignment delay, open conversation cap, monthly new-client quota, and sticky owner routing.",
+          "UNLIMITED_PLACEHOLDER": "No limit",
+          "DELAY": {
+            "LABEL": "Assign after, min",
+            "DESCRIPTION": "New conversations enter the queue only after this delay."
+          },
+          "MAX_OPEN": {
+            "LABEL": "Max open",
+            "DESCRIPTION": "Exclude an agent when they already own this many open conversations."
+          },
+          "MONTHLY_QUOTA": {
+            "LABEL": "New clients/month",
+            "DESCRIPTION": "Monthly new-contact limit per agent."
+          },
+          "STICKY_OWNER": {
+            "LABEL": "Prefer previous owner",
+            "DESCRIPTION": "Return a known client to the same agent when that agent is available.",
+            "DURATION_LABEL": "Days"
+          }
         },
         "INBOXES": {
           "LABEL": "Added inboxes",

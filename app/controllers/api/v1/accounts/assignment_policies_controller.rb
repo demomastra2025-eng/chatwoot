@@ -30,7 +30,10 @@ class Api::V1::Accounts::AssignmentPoliciesController < Api::V1::Accounts::BaseC
   def assignment_policy_params
     params.require(:assignment_policy).permit(
       :name, :description, :assignment_order, :conversation_priority,
-      :fair_distribution_limit, :fair_distribution_window, :enabled
+      :fair_distribution_limit, :fair_distribution_window, :enabled,
+      :assignment_delay_minutes, :max_open_conversations,
+      :monthly_new_client_quota, :sticky_owner_enabled,
+      :sticky_owner_duration_days
     )
   end
 end

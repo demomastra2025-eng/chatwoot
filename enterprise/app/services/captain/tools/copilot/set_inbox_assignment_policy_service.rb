@@ -50,7 +50,12 @@ class Captain::Tools::Copilot::SetInboxAssignmentPolicyService < Captain::Tools:
       assignment_order: policy.assignment_order,
       conversation_priority: policy.conversation_priority,
       fair_distribution_limit: policy.fair_distribution_limit,
-      fair_distribution_window: policy.fair_distribution_window
+      fair_distribution_window: policy.fair_distribution_window,
+      assignment_delay_minutes: policy.assignment_delay_minutes,
+      max_open_conversations: policy.max_open_conversations,
+      monthly_new_client_quota: policy.monthly_new_client_quota,
+      sticky_owner_enabled: policy.sticky_owner_enabled,
+      sticky_owner_duration_days: policy.sticky_owner_duration_days
     }
   end
 end
