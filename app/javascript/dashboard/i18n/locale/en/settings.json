@@ -1124,6 +1124,7 @@
         "FEATURES": [
           "Assign by conversations evenly or by available capacity",
           "Add fair distribution rules to avoid overloading any agent",
+          "Exclude conversations by tag or duration",
           "Add inboxes to a policy - one policy per inbox"
         ]
       },
@@ -1132,8 +1133,8 @@
         "DESCRIPTION": "Manage workload for agents.",
         "FEATURES": [
           "Define maximum conversations per inbox",
-          "Create exceptions based on tags and time",
-          "Add agents to a policy - one policy per agent"
+          "Add agents to a policy - one policy per agent",
+          "Set open conversation limits per inbox"
         ]
       }
     },
@@ -1245,9 +1246,25 @@
           "INPUT_MAX": "Assign max",
           "DURATION": "Conversations per agent in every"
         },
+        "EXCLUSION_RULES": {
+          "LABEL": "Conversation filters",
+          "DESCRIPTION": "Conversations with selected tags or older than the duration will not enter auto-assignment.",
+          "TAGS": {
+            "LABEL": "Exclude conversations with tags",
+            "ADD_TAG": "add tag",
+            "DROPDOWN": {
+              "SEARCH_PLACEHOLDER": "Search and select tags to add"
+            },
+            "EMPTY_STATE": "No tags added to this policy."
+          },
+          "DURATION": {
+            "LABEL": "Exclude conversations older than a specified duration",
+            "PLACEHOLDER": "Set time"
+          }
+        },
         "LOAD_CONTROLS": {
           "LABEL": "Limits and ownership",
-          "DESCRIPTION": "Simple workload rules: assignment delay, open conversation cap, monthly new-client quota, and sticky owner routing.",
+          "DESCRIPTION": "Simple assignment rules: assignment delay, open conversation cap, monthly new-client quota, and sticky owner routing.",
           "UNLIMITED_PLACEHOLDER": "No limit",
           "DELAY": {
             "LABEL": "Assign after, min",

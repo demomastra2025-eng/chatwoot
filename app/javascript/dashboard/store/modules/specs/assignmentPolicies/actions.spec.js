@@ -16,6 +16,7 @@ vi.mock('../../../utils/api');
 describe('#actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    commit.mockReset();
   });
 
   describe('#get', () => {
@@ -25,7 +26,9 @@ describe('#actions', () => {
 
       await actions.get({ commit });
 
-      expect(camelcaseKeys).toHaveBeenCalledWith(assignmentPoliciesList);
+      expect(camelcaseKeys).toHaveBeenCalledWith(assignmentPoliciesList, {
+        deep: true,
+      });
       expect(commit.mock.calls).toEqual([
         [types.SET_ASSIGNMENT_POLICIES_UI_FLAG, { isFetching: true }],
         [types.SET_ASSIGNMENT_POLICIES, camelCaseFixtures],
@@ -55,7 +58,7 @@ describe('#actions', () => {
 
       await actions.show({ commit }, 1);
 
-      expect(camelcaseKeys).toHaveBeenCalledWith(policyData);
+      expect(camelcaseKeys).toHaveBeenCalledWith(policyData, { deep: true });
       expect(commit.mock.calls).toEqual([
         [types.SET_ASSIGNMENT_POLICIES_UI_FLAG, { isFetchingItem: true }],
         [types.SET_ASSIGNMENT_POLICY, camelCasedPolicy],
@@ -87,8 +90,8 @@ describe('#actions', () => {
 
       const result = await actions.create({ commit }, newPolicy);
 
-      expect(snakecaseKeys).toHaveBeenCalledWith(newPolicy);
-      expect(camelcaseKeys).toHaveBeenCalledWith(newPolicy);
+      expect(snakecaseKeys).toHaveBeenCalledWith(newPolicy, { deep: true });
+      expect(camelcaseKeys).toHaveBeenCalledWith(newPolicy, { deep: true });
       expect(commit.mock.calls).toEqual([
         [types.SET_ASSIGNMENT_POLICIES_UI_FLAG, { isCreating: true }],
         [types.ADD_ASSIGNMENT_POLICY, camelCasedData],
@@ -128,8 +131,11 @@ describe('#actions', () => {
 
       const result = await actions.update({ commit }, updateParams);
 
-      expect(snakecaseKeys).toHaveBeenCalledWith({ name: 'Updated Policy' });
-      expect(camelcaseKeys).toHaveBeenCalledWith(responseData);
+      expect(snakecaseKeys).toHaveBeenCalledWith(
+        { name: 'Updated Policy' },
+        { deep: true }
+      );
+      expect(camelcaseKeys).toHaveBeenCalledWith(responseData, { deep: true });
       expect(commit.mock.calls).toEqual([
         [types.SET_ASSIGNMENT_POLICIES_UI_FLAG, { isUpdating: true }],
         [types.EDIT_ASSIGNMENT_POLICY, camelCasedData],

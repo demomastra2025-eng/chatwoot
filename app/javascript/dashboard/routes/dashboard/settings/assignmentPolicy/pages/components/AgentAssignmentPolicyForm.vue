@@ -7,6 +7,7 @@ import BaseInfo from 'dashboard/components-next/AssignmentPolicy/components/Base
 import RadioCard from 'dashboard/components-next/radioCard/RadioCard.vue';
 import FairDistribution from 'dashboard/components-next/AssignmentPolicy/components/FairDistribution.vue';
 import LoadControls from 'dashboard/components-next/AssignmentPolicy/components/LoadControls.vue';
+import ExclusionRules from 'dashboard/components-next/AssignmentPolicy/components/ExclusionRules.vue';
 import DataTable from 'dashboard/components-next/AssignmentPolicy/components/DataTable.vue';
 import AddDataDropdown from 'dashboard/components-next/AssignmentPolicy/components/AddDataDropdown.vue';
 import WithLabel from 'v3/components/Form/WithLabel.vue';
@@ -33,6 +34,10 @@ const props = defineProps({
       fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
       assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
       maxOpenConversations: null,
+      exclusionRules: {
+        excludedLabels: [],
+        excludeOlderThanMinutes: null,
+      },
       monthlyNewClientQuota: null,
       stickyOwnerEnabled: false,
       stickyOwnerDurationDays: DEFAULT_STICKY_OWNER_DURATION_DAYS,
@@ -48,6 +53,10 @@ const props = defineProps({
     default: () => [],
   },
   inboxList: {
+    type: Array,
+    default: () => [],
+  },
+  labelList: {
     type: Array,
     default: () => [],
   },
@@ -93,6 +102,10 @@ const state = reactive({
   fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
   assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
   maxOpenConversations: null,
+  exclusionRules: {
+    excludedLabels: [],
+    excludeOlderThanMinutes: null,
+  },
   monthlyNewClientQuota: null,
   stickyOwnerEnabled: false,
   stickyOwnerDurationDays: DEFAULT_STICKY_OWNER_DURATION_DAYS,
@@ -169,6 +182,10 @@ const buttonLabel = computed(() =>
   t(`${BASE_KEY}.${props.mode.toUpperCase()}.${props.mode}_BUTTON`)
 );
 
+const statusPlaceholder = computed(() =>
+  t(`${BASE_KEY}.FORM.STATUS.${state.enabled ? 'ACTIVE' : 'INACTIVE'}`)
+);
+
 const handleValidationChange = validation => {
   validationState.value = validation;
   emit('validationChange', validation);
@@ -185,6 +202,10 @@ const resetForm = () => {
     fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
     assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
     maxOpenConversations: null,
+    exclusionRules: {
+      excludedLabels: [],
+      excludeOlderThanMinutes: null,
+    },
     monthlyNewClientQuota: null,
     stickyOwnerEnabled: false,
     stickyOwnerDurationDays: DEFAULT_STICKY_OWNER_DURATION_DAYS,
@@ -214,10 +235,13 @@ defineExpose({
       <BaseInfo
         v-model:policy-name="state.name"
         v-model:description="state.description"
+        v-model:enabled="state.enabled"
         :name-label="t(`${BASE_KEY}.FORM.NAME.LABEL`)"
         :name-placeholder="t(`${BASE_KEY}.FORM.NAME.PLACEHOLDER`)"
         :description-label="t(`${BASE_KEY}.FORM.DESCRIPTION.LABEL`)"
         :description-placeholder="t(`${BASE_KEY}.FORM.DESCRIPTION.PLACEHOLDER`)"
+        :status-label="t(`${BASE_KEY}.FORM.STATUS.LABEL`)"
+        :status-placeholder="statusPlaceholder"
         @validation-change="handleValidationChange"
       />
 
@@ -266,6 +290,14 @@ defineExpose({
           v-model:window-unit="state.windowUnit"
         />
       </div>
+
+      <ExclusionRules
+        v-model:excluded-labels="state.exclusionRules.excludedLabels"
+        v-model:exclude-older-than-minutes="
+          state.exclusionRules.excludeOlderThanMinutes
+        "
+        :tags-list="labelList"
+      />
 
       <div class="pt-4 pb-2 flex-col flex gap-4">
         <div class="flex flex-col items-start gap-1 py-1">

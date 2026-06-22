@@ -8,6 +8,7 @@ import Avatar from 'next/avatar/Avatar.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import { labelMarkerEmoji, labelMarkerType } from 'dashboard/helper/labels';
 
 const props = defineProps({
   label: {
@@ -50,6 +51,9 @@ const filteredItems = computed(() => {
 
   return picoSearch(props.items, query, ['name']);
 });
+
+const itemEmoji = item =>
+  labelMarkerType(item) === 'emoji' ? labelMarkerEmoji(item) : '';
 
 const handleAdd = item => {
   emit('add', item);
@@ -132,6 +136,12 @@ const handleClickOutside = () => {
             :icon="item.icon"
             class="size-4 text-n-slate-12 flex-shrink-0 mt-0.5"
           />
+          <span
+            v-else-if="itemEmoji(item)"
+            class="w-5 text-center text-base leading-none flex-shrink-0"
+          >
+            {{ itemEmoji(item) }}
+          </span>
           <span
             v-else-if="item.color"
             :style="{ backgroundColor: item.color }"

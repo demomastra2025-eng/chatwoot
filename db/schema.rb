@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_19_140000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_22_110000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -254,6 +254,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_19_140000) do
     t.integer "max_open_conversations"
     t.integer "monthly_new_client_quota"
     t.boolean "sticky_owner_enabled", default: false, null: false
+    t.jsonb "exclusion_rules", default: {}, null: false
     t.integer "sticky_owner_duration_days", default: 30, null: false
     t.index ["account_id", "name"], name: "index_assignment_policies_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_assignment_policies_on_account_id"

@@ -5,7 +5,6 @@ import BaseInfo from 'dashboard/components-next/AssignmentPolicy/components/Base
 import DataTable from 'dashboard/components-next/AssignmentPolicy/components/DataTable.vue';
 import AddDataDropdown from 'dashboard/components-next/AssignmentPolicy/components/AddDataDropdown.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import ExclusionRules from 'dashboard/components-next/AssignmentPolicy/components/ExclusionRules.vue';
 import InboxCapacityLimits from 'dashboard/components-next/AssignmentPolicy/components/InboxCapacityLimits.vue';
 
 const props = defineProps({
@@ -15,10 +14,6 @@ const props = defineProps({
       name: '',
       description: '',
       enabled: false,
-      exclusionRules: {
-        excludedLabels: [],
-        excludeOlderThanHours: null,
-      },
       inboxCapacityLimits: [],
     }),
   },
@@ -32,10 +27,6 @@ const props = defineProps({
     default: () => [],
   },
   agentList: {
-    type: Array,
-    default: () => [],
-  },
-  labelList: {
     type: Array,
     default: () => [],
   },
@@ -82,10 +73,6 @@ const BASE_KEY = 'ASSIGNMENT_POLICY.AGENT_CAPACITY_POLICY';
 const state = reactive({
   name: '',
   description: '',
-  exclusionRules: {
-    excludedLabels: [],
-    excludeOlderThanHours: null,
-  },
   inboxCapacityLimits: [],
 });
 
@@ -118,10 +105,6 @@ const resetForm = () => {
   Object.assign(state, {
     name: '',
     description: '',
-    exclusionRules: {
-      excludedLabels: [],
-      excludeOlderThanHours: null,
-    },
     inboxCapacityLimits: [],
   });
 };
@@ -154,13 +137,6 @@ defineExpose({
         :description-label="t(`${BASE_KEY}.FORM.DESCRIPTION.LABEL`)"
         :description-placeholder="t(`${BASE_KEY}.FORM.DESCRIPTION.PLACEHOLDER`)"
         @validation-change="handleValidationChange"
-      />
-      <ExclusionRules
-        v-model:excluded-labels="state.exclusionRules.excludedLabels"
-        v-model:exclude-older-than-minutes="
-          state.exclusionRules.excludeOlderThanHours
-        "
-        :tags-list="labelList"
       />
     </div>
     <Button

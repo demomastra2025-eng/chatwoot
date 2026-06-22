@@ -64,6 +64,7 @@ class Captain::Tools::Copilot::ListAssignmentPoliciesService < Captain::Tools::C
     {
       assignment_delay_minutes: assignment_policy.assignment_delay_minutes,
       max_open_conversations: assignment_policy.max_open_conversations,
+      exclusion_rules: assignment_policy.exclusion_rules,
       monthly_new_client_quota: assignment_policy.monthly_new_client_quota,
       sticky_owner_enabled: assignment_policy.sticky_owner_enabled,
       sticky_owner_duration_days: assignment_policy.sticky_owner_duration_days

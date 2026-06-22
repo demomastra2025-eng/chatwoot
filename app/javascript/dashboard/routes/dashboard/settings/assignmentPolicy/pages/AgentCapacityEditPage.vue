@@ -24,7 +24,6 @@ const selectedPolicyById = useMapGetter(
   'agentCapacityPolicies/getAgentCapacityPolicyById'
 );
 const agentsList = useMapGetter('agents/getAgents');
-const labelsList = useMapGetter('labels/getLabels');
 const inboxes = useMapGetter('inboxes/getAllInboxes');
 const inboxesUiFlags = useMapGetter('inboxes/getUIFlags');
 
@@ -57,8 +56,6 @@ const allAgents = computed(() =>
   )
 );
 
-const allLabels = computed(() => buildList(labelsList.value));
-
 const allInboxes = computed(
   () =>
     inboxes.value
@@ -76,13 +73,6 @@ const allInboxes = computed(
 const formData = computed(() => ({
   name: selectedPolicy.value?.name || '',
   description: selectedPolicy.value?.description || '',
-  exclusionRules: {
-    excludedLabels: [
-      ...(selectedPolicy.value?.exclusionRules?.excludedLabels || []),
-    ],
-    excludeOlderThanHours:
-      selectedPolicy.value?.exclusionRules?.excludeOlderThanHours ?? null,
-  },
   inboxCapacityLimits:
     selectedPolicy.value?.inboxCapacityLimits?.map(limit => ({
       ...limit,
@@ -186,7 +176,7 @@ onMounted(() => store.dispatch('agents/get'));
 <template>
   <SettingsLayout
     :is-loading="uiFlags.isFetchingItem"
-    class="w-full max-w-2xl ltr:mr-auto rtl:ml-auto"
+    class="w-full max-w-3xl ltr:mr-auto rtl:ml-auto"
   >
     <template #header>
       <div class="flex items-center gap-2 w-full justify-between mb-4 min-h-10">
@@ -201,7 +191,6 @@ onMounted(() => store.dispatch('agents/get'));
         :initial-data="formData"
         :policy-users="policyUsers"
         :agent-list="allAgents"
-        :label-list="allLabels"
         :inbox-list="allInboxes"
         show-user-section
         show-inbox-limit-section

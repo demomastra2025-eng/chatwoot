@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
-import { formatToTitleCase } from 'dashboard/helper/commons';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
@@ -39,11 +38,35 @@ const inboxes = computed(() => {
 });
 
 const order = computed(() => {
-  return formatToTitleCase(props.assignmentOrder);
+  if (props.assignmentOrder === 'round_robin') {
+    return t(
+      'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.ASSIGNMENT_ORDER.ROUND_ROBIN.LABEL'
+    );
+  }
+
+  if (props.assignmentOrder === 'balanced') {
+    return t(
+      'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.ASSIGNMENT_ORDER.BALANCED.LABEL'
+    );
+  }
+
+  return '';
 });
 
 const priority = computed(() => {
-  return formatToTitleCase(props.conversationPriority);
+  if (props.conversationPriority === 'earliest_created') {
+    return t(
+      'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.ASSIGNMENT_PRIORITY.EARLIEST_CREATED.LABEL'
+    );
+  }
+
+  if (props.conversationPriority === 'longest_waiting') {
+    return t(
+      'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.ASSIGNMENT_PRIORITY.LONGEST_WAITING.LABEL'
+    );
+  }
+
+  return '';
 });
 
 const loadSummary = computed(() => {

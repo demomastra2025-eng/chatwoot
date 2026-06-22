@@ -64,7 +64,7 @@ onMounted(() => {
           )
         }}
       </label>
-      <div class="flex-1">
+      <div class="w-24 flex-none">
         <Input
           v-model="fairDistributionLimit"
           type="number"
@@ -85,7 +85,7 @@ onMounted(() => {
       </label>
 
       <div
-        class="flex items-center gap-2 flex-1 [&>select]:!bg-n-alpha-2 [&>select]:!outline-none [&>select]:hover:brightness-110"
+        class="flex items-center gap-2 w-auto flex-none [&>div:first-child]:!w-16 [&>div:first-child]:!flex-none [&>div:nth-child(2)]:!w-32 [&>div:nth-child(2)]:!flex-none [&>div:nth-child(2)>select]:!w-full [&>div:nth-child(2)>select]:!bg-n-alpha-2 [&>div:nth-child(2)>select]:!outline-none [&>div:nth-child(2)>select]:hover:brightness-110"
       >
         <!-- allow 10 mins to 999 days (in minutes) -->
         <DurationInput

@@ -28,12 +28,10 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
   end
 
   describe 'exclusion rules' do
-    let(:capacity_policy) { create(:agent_capacity_policy, account: account) }
     let(:label1) { create(:label, account: account, title: 'high-priority') }
     let(:label2) { create(:label, account: account, title: 'vip') }
 
     before do
-      create(:inbox_capacity_limit, inbox: inbox, agent_capacity_policy: capacity_policy, conversation_limit: 10)
       inbox.enable_auto_assignment = true
       inbox.save!
     end
@@ -45,9 +43,9 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
       before do
         conversation_with_label.update_labels([label1.title])
 
-        capacity_policy.update!(exclusion_rules: {
-                                  'excluded_labels' => [label1.title]
-                                })
+        assignment_policy.update!(exclusion_rules: {
+                                    'excluded_labels' => [label1.title]
+                                  })
       end
 
       it 'excludes conversations with specified labels' do
@@ -76,9 +74,9 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
       it 'excludes conversations with multiple labels' do
         conversation_without_label.update_labels([label2.title])
 
-        capacity_policy.update!(exclusion_rules: {
-                                  'excluded_labels' => [label1.title, label2.title]
-                                })
+        assignment_policy.update!(exclusion_rules: {
+                                    'excluded_labels' => [label1.title, label2.title]
+                                  })
 
         assigned_count = assignment_service.perform_bulk_assignment(limit: 10)
 
@@ -94,12 +92,12 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
       let!(:recent_conversation) { create(:conversation, inbox: inbox, assignee: nil, created_at: 1.hour.ago) }
 
       before do
-        capacity_policy.update!(exclusion_rules: {
-                                  'exclude_older_than_hours' => 24
-                                })
+        assignment_policy.update!(exclusion_rules: {
+                                    'exclude_older_than_minutes' => 24 * 60
+                                  })
       end
 
-      it 'excludes conversations older than specified hours' do
+      it 'excludes conversations older than specified duration' do
         assigned_count = assignment_service.perform_bulk_assignment(limit: 10)
 
         # Only recent conversation should be assigned
@@ -109,9 +107,9 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
       end
 
       it 'handles different time thresholds' do
-        capacity_policy.update!(exclusion_rules: {
-                                  'exclude_older_than_hours' => 2
-                                })
+        assignment_policy.update!(exclusion_rules: {
+                                    'exclude_older_than_minutes' => 120
+                                  })
 
         assigned_count = assignment_service.perform_bulk_assignment(limit: 10)
 
@@ -133,10 +131,10 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
         old_conversation_with_label.update_labels([label1.title])
         recent_conversation_with_label.update_labels([label1.title])
 
-        capacity_policy.update!(exclusion_rules: {
-                                  'excluded_labels' => [label1.title],
-                                  'exclude_older_than_hours' => 24
-                                })
+        assignment_policy.update!(exclusion_rules: {
+                                    'excluded_labels' => [label1.title],
+                                    'exclude_older_than_minutes' => 24 * 60
+                                  })
 
         assigned_count = assignment_service.perform_bulk_assignment(limit: 10)
 
@@ -154,7 +152,7 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
       let!(:conversation2) { create(:conversation, inbox: inbox, assignee: nil) }
 
       before do
-        capacity_policy.update!(exclusion_rules: {})
+        assignment_policy.update!(exclusion_rules: {})
       end
 
       it 'assigns all eligible conversations' do
@@ -166,13 +164,9 @@ RSpec.describe Enterprise::AutoAssignment::AssignmentService, type: :service do
       end
     end
 
-    context 'when no capacity policy exists' do
+    context 'when no exclusion rules exist' do
       let!(:conversation1) { create(:conversation, inbox: inbox, assignee: nil) }
       let!(:conversation2) { create(:conversation, inbox: inbox, assignee: nil) }
-
-      before do
-        InboxCapacityLimit.destroy_all
-      end
 
       it 'assigns all eligible conversations without exclusions' do
         assigned_count = assignment_service.perform_bulk_assignment(limit: 10)

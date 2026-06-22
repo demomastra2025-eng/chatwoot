@@ -2,22 +2,23 @@
 #
 # Table name: assignment_policies
 #
-#  id                       :bigint           not null, primary key
-#  assignment_order         :integer          default("round_robin"), not null
-#  conversation_priority    :integer          default("earliest_created"), not null
-#  description              :text
-#  enabled                  :boolean          default(TRUE), not null
-#  assignment_delay_minutes  :integer          default(0), not null
-#  fair_distribution_limit   :integer          default(100), not null
-#  fair_distribution_window  :integer          default(3600), not null
-#  max_open_conversations    :integer
-#  monthly_new_client_quota  :integer
-#  name                      :string(255)      not null
-#  sticky_owner_duration_days :integer         default(30), not null
-#  sticky_owner_enabled      :boolean          default(FALSE), not null
-#  created_at                :datetime         not null
-#  updated_at                :datetime         not null
-#  account_id                :bigint           not null
+#  id                         :bigint           not null, primary key
+#  assignment_delay_minutes   :integer          default(0), not null
+#  assignment_order           :integer          default("round_robin"), not null
+#  conversation_priority      :integer          default("earliest_created"), not null
+#  description                :text
+#  enabled                    :boolean          default(TRUE), not null
+#  exclusion_rules            :jsonb            not null
+#  fair_distribution_limit    :integer          default(100), not null
+#  fair_distribution_window   :integer          default(3600), not null
+#  max_open_conversations     :integer
+#  monthly_new_client_quota   :integer
+#  name                       :string(255)      not null
+#  sticky_owner_duration_days :integer          default(30), not null
+#  sticky_owner_enabled       :boolean          default(FALSE), not null
+#  created_at                 :datetime         not null
+#  updated_at                 :datetime         not null
+#  account_id                 :bigint           not null
 #
 # Indexes
 #

@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useRoute, useRouter } from 'vue-router';
 import { useAlert } from 'dashboard/composables';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 
 import Breadcrumb from 'dashboard/components-next/breadcrumb/Breadcrumb.vue';
 import SettingsLayout from 'dashboard/routes/dashboard/settings/SettingsLayout.vue';
@@ -16,6 +17,15 @@ const { t } = useI18n();
 
 const formRef = ref(null);
 const uiFlags = useMapGetter('assignmentPolicies/getUIFlags');
+const labelsList = useMapGetter('labels/getLabels');
+
+const allLabels = computed(() =>
+  (labelsList.value || []).map(label => ({
+    ...label,
+    name: labelDisplayTitle(label),
+    display_title: labelDisplayTitle(label),
+  }))
+);
 
 const inboxIdFromQuery = computed(() => {
   const id = route.query.inboxId;
@@ -85,10 +95,14 @@ const handleSubmit = async formState => {
     );
   }
 };
+
+onMounted(() => {
+  if (!labelsList.value?.length) store.dispatch('labels/get');
+});
 </script>
 
 <template>
-  <SettingsLayout class="w-full max-w-2xl ltr:mr-auto rtl:ml-auto">
+  <SettingsLayout class="w-full max-w-3xl ltr:mr-auto rtl:ml-auto">
     <template #header>
       <div class="flex items-center gap-2 w-full justify-between mb-4 min-h-10">
         <Breadcrumb :items="breadcrumbItems" @click="handleBreadcrumbClick" />
@@ -100,6 +114,7 @@ const handleSubmit = async formState => {
         ref="formRef"
         mode="CREATE"
         :is-loading="uiFlags.isCreating"
+        :label-list="allLabels"
         @submit="handleSubmit"
       />
     </template>

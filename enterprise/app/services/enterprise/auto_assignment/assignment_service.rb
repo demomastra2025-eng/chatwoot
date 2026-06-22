@@ -76,7 +76,6 @@ module Enterprise::AutoAssignment::AssignmentService
   def unassigned_conversations(limit)
     scope = inbox.conversations.unassigned.open
 
-    # Apply exclusion rules from capacity policy or assignment policy
     scope = apply_exclusion_rules(scope)
     scope = apply_assignment_delay(scope)
     scope = apply_conversation_priority(scope)
@@ -85,12 +84,11 @@ module Enterprise::AutoAssignment::AssignmentService
   end
 
   def apply_exclusion_rules(scope)
-    capacity_policy = inbox.inbox_capacity_limits.first&.agent_capacity_policy
-    return scope unless capacity_policy
+    return scope unless policy
 
-    exclusion_rules = capacity_policy.exclusion_rules || {}
+    exclusion_rules = policy.exclusion_rules || {}
     scope = apply_label_exclusions(scope, exclusion_rules['excluded_labels'])
-    apply_age_exclusions(scope, exclusion_rules['exclude_older_than_hours'])
+    apply_age_exclusions(scope, exclusion_rules['exclude_older_than_minutes'])
   end
 
   def apply_label_exclusions(scope, excluded_labels)
@@ -99,12 +97,12 @@ module Enterprise::AutoAssignment::AssignmentService
     scope.tagged_with(excluded_labels, exclude: true, on: :labels)
   end
 
-  def apply_age_exclusions(scope, hours_threshold)
-    return scope if hours_threshold.blank?
+  def apply_age_exclusions(scope, minutes_threshold)
+    return scope if minutes_threshold.blank?
 
-    hours = hours_threshold.to_i
-    return scope unless hours.positive?
+    minutes = minutes_threshold.to_i
+    return scope unless minutes.positive?
 
-    scope.where('conversations.created_at >= ?', hours.hours.ago)
+    scope.where('conversations.created_at >= ?', minutes.minutes.ago)
   end
 end

@@ -8,6 +8,7 @@ FactoryBot.define do
     fair_distribution_limit { 10 }
     fair_distribution_window { 3600 }
     assignment_delay_minutes { 0 }
+    exclusion_rules { {} }
     max_open_conversations { nil }
     monthly_new_client_quota { nil }
     sticky_owner_enabled { false }

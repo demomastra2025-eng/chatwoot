@@ -1,10 +1,11 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useRoute, useRouter } from 'vue-router';
 import { useAlert } from 'dashboard/composables';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 import {
   ROUND_ROBIN,
   EARLIEST_CREATED,
@@ -27,6 +28,7 @@ const store = useStore();
 
 const uiFlags = useMapGetter('assignmentPolicies/getUIFlags');
 const inboxes = useMapGetter('inboxes/getAllInboxes');
+const labelsList = useMapGetter('labels/getLabels');
 const inboxUiFlags = useMapGetter('assignmentPolicies/getInboxUiFlags');
 const selectedPolicyById = useMapGetter(
   'assignmentPolicies/getAssignmentPolicyById'
@@ -99,10 +101,18 @@ const inboxList = computed(() =>
   )
 );
 
+const allLabels = computed(() =>
+  (labelsList.value || []).map(label => ({
+    ...label,
+    name: labelDisplayTitle(label),
+    display_title: labelDisplayTitle(label),
+  }))
+);
+
 const formData = computed(() => ({
   name: selectedPolicy.value?.name || '',
   description: selectedPolicy.value?.description || '',
-  enabled: true,
+  enabled: selectedPolicy.value?.enabled ?? true,
   assignmentOrder: selectedPolicy.value?.assignmentOrder || ROUND_ROBIN,
   conversationPriority:
     selectedPolicy.value?.conversationPriority || EARLIEST_CREATED,
@@ -112,6 +122,13 @@ const formData = computed(() => ({
     selectedPolicy.value?.assignmentDelayMinutes ??
     DEFAULT_ASSIGNMENT_DELAY_MINUTES,
   maxOpenConversations: selectedPolicy.value?.maxOpenConversations ?? null,
+  exclusionRules: {
+    excludedLabels: [
+      ...(selectedPolicy.value?.exclusionRules?.excludedLabels || []),
+    ],
+    excludeOlderThanMinutes:
+      selectedPolicy.value?.exclusionRules?.excludeOlderThanMinutes ?? null,
+  },
   monthlyNewClientQuota: selectedPolicy.value?.monthlyNewClientQuota ?? null,
   stickyOwnerEnabled: selectedPolicy.value?.stickyOwnerEnabled || false,
   stickyOwnerDurationDays:
@@ -259,12 +276,15 @@ const fetchPolicyData = async () => {
 };
 
 watch(routeId, fetchPolicyData, { immediate: true });
+onMounted(() => {
+  if (!labelsList.value?.length) store.dispatch('labels/get');
+});
 </script>
 
 <template>
   <SettingsLayout
     :is-loading="uiFlags.isFetchingItem"
-    class="w-full max-w-2xl ltr:mr-auto rtl:ml-auto"
+    class="w-full max-w-3xl ltr:mr-auto rtl:ml-auto"
   >
     <template #header>
       <div class="flex items-center gap-2 w-full justify-between mb-4 min-h-10">
@@ -279,6 +299,7 @@ watch(routeId, fetchPolicyData, { immediate: true });
         :initial-data="formData"
         :policy-inboxes="policyInboxes"
         :inbox-list="inboxList"
+        :label-list="allLabels"
         show-inbox-section
         :is-loading="uiFlags.isUpdating"
         :is-inbox-loading="inboxUiFlags.isFetching"

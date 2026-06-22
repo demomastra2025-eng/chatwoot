@@ -33,7 +33,8 @@ class Api::V1::Accounts::AssignmentPoliciesController < Api::V1::Accounts::BaseC
       :fair_distribution_limit, :fair_distribution_window, :enabled,
       :assignment_delay_minutes, :max_open_conversations,
       :monthly_new_client_quota, :sticky_owner_enabled,
-      :sticky_owner_duration_days
+      :sticky_owner_duration_days,
+      exclusion_rules: [:exclude_older_than_minutes, { excluded_labels: [] }]
     )
   end
 end

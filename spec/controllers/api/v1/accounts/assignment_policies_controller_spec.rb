@@ -98,7 +98,11 @@ RSpec.describe 'Assignment Policies API', type: :request do
           conversation_priority: 'longest_waiting',
           fair_distribution_limit: 15,
           assignment_delay_minutes: 30,
-          max_open_conversations: 20,
+          max_open_conversations: 25,
+          exclusion_rules: {
+            excluded_labels: ['vip'],
+            exclude_older_than_minutes: 120
+          },
           monthly_new_client_quota: 500,
           sticky_owner_enabled: true,
           sticky_owner_duration_days: 45,
@@ -132,6 +136,7 @@ RSpec.describe 'Assignment Policies API', type: :request do
                  'conversation_priority',
                  'assignment_delay_minutes',
                  'max_open_conversations',
+                 'exclusion_rules',
                  'monthly_new_client_quota',
                  'sticky_owner_enabled',
                  'sticky_owner_duration_days'
@@ -139,7 +144,11 @@ RSpec.describe 'Assignment Policies API', type: :request do
                  'name' => 'New Assignment Policy',
                  'conversation_priority' => 'longest_waiting',
                  'assignment_delay_minutes' => 30,
-                 'max_open_conversations' => 20,
+                 'max_open_conversations' => 25,
+                 'exclusion_rules' => {
+                   'excluded_labels' => ['vip'],
+                   'exclude_older_than_minutes' => 120
+                 },
                  'monthly_new_client_quota' => 500,
                  'sticky_owner_enabled' => true,
                  'sticky_owner_duration_days' => 45
@@ -208,7 +217,11 @@ RSpec.describe 'Assignment Policies API', type: :request do
           description: 'Updated description',
           fair_distribution_limit: 20,
           assignment_delay_minutes: 15,
-          max_open_conversations: 10
+          max_open_conversations: 10,
+          exclusion_rules: {
+            excluded_labels: ['sales'],
+            exclude_older_than_minutes: 60
+          }
         }
       }
     end
@@ -237,6 +250,10 @@ RSpec.describe 'Assignment Policies API', type: :request do
         expect(assignment_policy.fair_distribution_limit).to eq(20)
         expect(assignment_policy.assignment_delay_minutes).to eq(15)
         expect(assignment_policy.max_open_conversations).to eq(10)
+        expect(assignment_policy.exclusion_rules).to eq({
+                                                          'excluded_labels' => ['sales'],
+                                                          'exclude_older_than_minutes' => 60
+                                                        })
       end
 
       it 'allows partial updates' do

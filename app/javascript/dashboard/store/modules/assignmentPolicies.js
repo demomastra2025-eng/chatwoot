@@ -40,7 +40,10 @@ export const actions = {
     commit(types.SET_ASSIGNMENT_POLICIES_UI_FLAG, { isFetching: true });
     try {
       const response = await AssignmentPoliciesAPI.get();
-      commit(types.SET_ASSIGNMENT_POLICIES, camelcaseKeys(response.data));
+      commit(
+        types.SET_ASSIGNMENT_POLICIES,
+        camelcaseKeys(response.data, { deep: true })
+      );
     } catch (error) {
       throwErrorMessage(error);
     } finally {
@@ -52,7 +55,7 @@ export const actions = {
     commit(types.SET_ASSIGNMENT_POLICIES_UI_FLAG, { isFetchingItem: true });
     try {
       const response = await AssignmentPoliciesAPI.show(policyId);
-      const policy = camelcaseKeys(response.data);
+      const policy = camelcaseKeys(response.data, { deep: true });
       commit(types.SET_ASSIGNMENT_POLICY, policy);
     } catch (error) {
       throwErrorMessage(error);
@@ -65,9 +68,12 @@ export const actions = {
     commit(types.SET_ASSIGNMENT_POLICIES_UI_FLAG, { isCreating: true });
     try {
       const response = await AssignmentPoliciesAPI.create(
-        snakecaseKeys(policyObj)
+        snakecaseKeys(policyObj, { deep: true })
       );
-      commit(types.ADD_ASSIGNMENT_POLICY, camelcaseKeys(response.data));
+      commit(
+        types.ADD_ASSIGNMENT_POLICY,
+        camelcaseKeys(response.data, { deep: true })
+      );
       return response.data;
     } catch (error) {
       throwErrorMessage(error);
@@ -82,9 +88,12 @@ export const actions = {
     try {
       const response = await AssignmentPoliciesAPI.update(
         id,
-        snakecaseKeys(policyParams)
+        snakecaseKeys(policyParams, { deep: true })
       );
-      commit(types.EDIT_ASSIGNMENT_POLICY, camelcaseKeys(response.data));
+      commit(
+        types.EDIT_ASSIGNMENT_POLICY,
+        camelcaseKeys(response.data, { deep: true })
+      );
       return response.data;
     } catch (error) {
       throwErrorMessage(error);

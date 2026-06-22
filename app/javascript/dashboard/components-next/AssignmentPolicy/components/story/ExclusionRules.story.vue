@@ -46,7 +46,7 @@ const mockTagsList = [
 ];
 
 const excludedLabelsBasic = ref([]);
-const excludeOlderThanHoursBasic = ref(10);
+const excludeOlderThanMinutesBasic = ref(10);
 </script>
 
 <template>
@@ -58,7 +58,7 @@ const excludeOlderThanHoursBasic = ref(10);
       <div class="p-8 bg-n-background h-[600px]">
         <ExclusionRules
           v-model:excluded-labels="excludedLabelsBasic"
-          v-model:exclude-older-than-minutes="excludeOlderThanHoursBasic"
+          v-model:exclude-older-than-minutes="excludeOlderThanMinutesBasic"
           :tags-list="mockTagsList"
         />
       </div>
