@@ -59,6 +59,45 @@ RSpec.describe Telephony::LegacyAgentBindingReconciliationService do
     expect(binding.reload.enabled).to be(true)
   end
 
+  it 'disables a legacy binding when all eligible voice inboxes are managed by native SIP profiles' do
+    voice_inbox.telephony_number_binding.update!(
+      managed_by: Telephony::NumberBinding::MANAGED_BY_ONELINK,
+      ownership_status: 'local'
+    )
+    binding = create(:telephony_agent_binding, :registered, account: account, user: user)
+
+    result = described_class.new(account: account).perform
+
+    expect(result).to include(checked: 1, disabled: 1, skipped: 0)
+    expect(binding.reload.enabled).to be(false)
+    expect(binding.metadata).to include(
+      'disabled_reason' => 'managed_voice_inboxes_do_not_use_legacy_bindings',
+      'disabled_by' => 'telephony_legacy_agent_binding_reconciliation',
+      'managed_voice_inbox_ids' => [voice_inbox.id],
+      'registration_state' => 'offline',
+      'presence' => 'offline'
+    )
+    expect(binding.metadata['superseded_by_sip_profile_ids']).to be_empty
+    expect(binding.metadata['superseded_for_inbox_ids']).to be_empty
+  end
+
+  it 'keeps a legacy binding when an unmanaged Fonoster voice inbox still depends on it' do
+    voice_inbox.telephony_number_binding.update!(
+      managed_by: Telephony::NumberBinding::MANAGED_BY_ONELINK,
+      ownership_status: 'local'
+    )
+    second_channel = create(:channel_voice, :fonoster, account: account)
+    second_inbox = second_channel.inbox
+    create(:inbox_member, inbox: second_inbox, user: user)
+    binding = create(:telephony_agent_binding, :registered, account: account, user: user)
+
+    result = described_class.new(account: account).perform
+
+    expect(result).to include(checked: 1, disabled: 0, skipped: 1)
+    expect(result[:skip_reasons][:no_active_sip_profile]).to eq(1)
+    expect(binding.reload.enabled).to be(true)
+  end
+
   it 'keeps a legacy binding during inbox-scoped reconciliation when another user voice inbox lacks a SIP profile' do
     second_channel = create(:channel_voice, :fonoster, account: account)
     second_inbox = second_channel.inbox

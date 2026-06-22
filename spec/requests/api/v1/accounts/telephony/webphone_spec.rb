@@ -165,6 +165,44 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['calling_supported']).to be(false)
   end
 
+  it 'does not fall back to a hidden account binding for a managed inbox without a SIP profile' do
+    create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'fonoster',
+      agent_ref: 'legacy-agent-1001',
+      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+    )
+    voice_inbox.telephony_number_binding.update!(
+      managed_by: Telephony::NumberBinding::MANAGED_BY_ONELINK,
+      ownership_status: 'local'
+    )
+
+    token_request = nil
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+
+      post path,
+           params: { inbox_id: voice_inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(token_request).not_to have_been_requested
+    expect(response.parsed_body['payload']).to include(
+      'provider' => 'fonoster',
+      'calling_supported' => false,
+      'registered' => false,
+      'registered_for_routing' => false,
+      'reason' => 'agent_binding_missing'
+    )
+  end
+
   it 'disables browser calling when a signed Fonoster token still points at the test identity' do
     create(
       :telephony_agent_binding,
@@ -269,6 +307,37 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'id')).to eq(sip_profile.id)
     expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
+  end
+
+  it 'does not write browser presence to a hidden account binding for a managed inbox without a SIP profile' do
+    legacy_binding = create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'fonoster',
+      agent_ref: 'legacy-agent-1001',
+      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+    )
+    voice_inbox.telephony_number_binding.update!(
+      managed_by: Telephony::NumberBinding::MANAGED_BY_ONELINK,
+      ownership_status: 'local'
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, inbox_id: voice_inbox.id },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(legacy_binding.reload.metadata).not_to include('last_presence_source')
+    expect(legacy_binding.registered_for_routing?).to be(false)
+    expect(response.parsed_body['payload']).to include(
+      'provider' => 'fonoster',
+      'calling_supported' => false,
+      'registered' => false,
+      'registered_for_routing' => false,
+      'reason' => 'agent_binding_missing'
+    )
   end
 
   it 'treats browser presence without an operator binding as a quiet unsupported state' do

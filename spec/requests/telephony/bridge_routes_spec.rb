@@ -804,11 +804,12 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(call_session.metadata.dig('metadata', 'operator_candidate_binding_ids')).to be_empty
   end
 
-  it 'uses registered account bindings for inbox members without SIP profiles in broadcast mode' do
+  it 'does not use hidden account bindings for managed inbox members without SIP profiles in broadcast mode' do
     profiled_user = create(:user, account: account, role: :agent)
     binding_user = create(:user, account: account, role: :agent)
     create(:inbox_member, inbox: voice_inbox, user: profiled_user)
     create(:inbox_member, inbox: voice_inbox, user: binding_user)
+    number_binding.update!(managed_by: Telephony::NumberBinding::MANAGED_BY_ONELINK, ownership_status: 'local')
 
     stale_profile = create(
       :telephony_sip_profile,
@@ -836,7 +837,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       agent_ref: 'legacy-profiled-user-1001',
       agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
     )
-    binding = create(
+    create(
       :telephony_agent_binding,
       :registered,
       account: account,
@@ -866,22 +867,12 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'operator',
-      'agent_aor' => binding.agent_aor,
-      'agent_aors' => [binding.agent_aor],
-      'operator_distribution_mode' => 'broadcast',
-      'operator_pool' => false,
-      'operator_pool_size' => 1
+      'action' => 'reject',
+      'reason' => 'operator_unavailable',
+      'operator_distribution_mode' => 'broadcast'
     )
-    expect(response.parsed_body['operator_candidates']).to contain_exactly(
-      include(
-        'source' => 'agent_binding',
-        'agent_binding_id' => binding.id,
-        'agent_ref' => binding.agent_ref,
-        'agent_aor' => binding.agent_aor,
-        'user_id' => binding_user.id
-      )
-    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
+    expect(response.parsed_body).not_to have_key('operator_candidates')
   end
 
   it 'routes Sipuni target metadata to the matching managed SIP profile before the configured operator' do

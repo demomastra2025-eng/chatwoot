@@ -190,7 +190,9 @@ class Telephony::EventsIngestionService
       end
     end
 
-    if call_session.present? && !immutable_ai_finalized_late_event && !terminal_late_non_terminal_event && !terminal_late_terminal_event
+    if call_session.present? && terminal_late_terminal_event
+      reconcile_stale_terminal_voice_message!(call_session, account, event)
+    elsif call_session.present? && !immutable_ai_finalized_late_event && !terminal_late_non_terminal_event
       run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
     end
     call_session
@@ -253,6 +255,32 @@ class Telephony::EventsIngestionService
       "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
     )
     call_session
+  end
+
+  def reconcile_stale_terminal_voice_message!(call_session, account, event)
+    call_session.reload
+    return unless call_session.terminal?
+    return unless stale_terminal_voice_message?(call_session)
+
+    ensure_conversation!(call_session, account)
+    call_session.reload
+    sync_voice_message!(call_session)
+  rescue StandardError => e
+    event.update(status: 'failed', error_message: e.message)
+    Rails.logger.error(
+      "FONOSTER_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
+      "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
+    )
+    call_session
+  end
+
+  def stale_terminal_voice_message?(call_session)
+    message = call_session.voice_message_for_current_call
+    return false if message.blank?
+
+    data = normalized_content_attributes(message).fetch('data', {})
+    status = Telephony::CallSession.normalize_status(data['status']) || data['status'].to_s
+    !terminal_status?(status)
   end
 
   def persist_event!(account)

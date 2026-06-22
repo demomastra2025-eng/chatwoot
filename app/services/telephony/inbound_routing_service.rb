@@ -603,9 +603,15 @@ class Telephony::InboundRoutingService
 
   def operator_candidate_scope
     profile_candidates = inbox_sip_profile_candidates
+    return profile_candidates if managed_number_binding?
+
     profiled_user_ids = profile_candidates.filter_map(&:user_id).uniq
 
     profile_candidates + account_agent_binding_candidates(excluding_user_ids: profiled_user_ids)
+  end
+
+  def managed_number_binding?
+    number_binding&.managed?
   end
 
   def account_agent_binding_candidates(excluding_user_ids: [])

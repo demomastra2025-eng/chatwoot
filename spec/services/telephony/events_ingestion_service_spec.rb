@@ -1462,6 +1462,46 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-late-operator-terminal-1')).to be_processed
     end
 
+    it 'repairs a stale ringing voice bubble when a duplicate terminal event arrives after the call is terminal' do
+      ended_at = Time.zone.parse(20.seconds.ago.iso8601)
+      existing_call_session.update!(
+        status: 'rejected',
+        ended_at: ended_at,
+        ended_by: 'system',
+        end_reason: 'rejected_by_policy',
+        last_event_at: ended_at
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'ringing', 'call_sid' => 'call-retry-1' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-terminal-message-repair-1',
+          event: 'rejected',
+          status: 'rejected',
+          ended_at: (ended_at + 1.second).iso8601,
+          ended_by: 'system',
+          reason: 'rejected_by_policy'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'rejected',
+        ended_by: 'system',
+        end_reason: 'rejected_by_policy'
+      )
+      expect(result.ended_at.to_i).to eq(ended_at.to_i)
+      expect(message.reload.content_attributes.dig('data', 'status')).to eq('rejected')
+      expect(account.telephony_events.find_by!(event_key: 'evt-late-terminal-message-repair-1')).to be_processed
+    end
+
     it 'still runs voice bubble side effects for a local webphone release after the terminal state was applied' do
       ended_at = Time.zone.parse(10.seconds.ago.iso8601)
       existing_call_session.update!(

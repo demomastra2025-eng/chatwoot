@@ -94,9 +94,25 @@ class Telephony::OperatorIdentityResolver
   end
 
   def agent_binding_identity
+    return if managed_number_binding?
+
     binding = account.telephony_agent_bindings.find_by(user_id: user&.id)
     return if binding.blank?
 
     Identity.new(source: :agent_binding, record: binding)
+  end
+
+  def managed_number_binding?
+    number_binding&.managed?
+  end
+
+  def number_binding
+    return @number_binding if defined?(@number_binding)
+
+    @number_binding = if inbox.respond_to?(:telephony_number_binding)
+                        inbox.telephony_number_binding
+                      elsif inbox.present?
+                        Telephony::NumberBinding.find_by(account_id: account.id, inbox_id: inbox.id)
+                      end
   end
 end
