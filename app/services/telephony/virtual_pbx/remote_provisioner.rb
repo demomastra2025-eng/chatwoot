@@ -361,18 +361,61 @@ class Telephony::VirtualPbx::RemoteProvisioner
 
   def sipuni_gateway_operation_for_state(operation_attrs, desired_state)
     payload = (operation_attrs[:payload] || {}).with_indifferent_access
+    profile = sipuni_gateway_profile_for_payload(payload, desired_state)
+    attrs = profile&.with_indifferent_access
+
+    credentials_ref = attrs&.dig(:fonoster_credentials_ref).presence || attrs&.dig(:credentials_ref).presence
+    payload = payload.merge(credentialsRef: credentials_ref) if credentials_ref.present?
+
+    number_ref = desired_state.dig(:refs, :number_ref).presence
+    gateway_ref = sipuni_gateway_ref_for_state(desired_state, attrs)
+    if number_ref.present? && gateway_ref.present?
+      payload[:ref] = gateway_ref
+      payload[:gatewayRef] = gateway_ref
+      payload[:numberRef] = number_ref
+    end
+
+    attrs = operation_attrs.merge(payload: payload)
+    return attrs if gateway_ref.blank?
+
+    attrs.merge(path: "/telephony/sipuni-gateways/#{CGI.escape(gateway_ref.to_s)}")
+  end
+
+  def sipuni_gateway_profile_for_payload(payload, desired_state)
     provider_account_number = payload[:providerAccountNumber] || payload[:provider_account_number] || payload[:username]
-    profile = Array.wrap(desired_state[:profiles]).find do |candidate|
-      attrs = candidate.with_indifferent_access
+    sipuni_gateway_profiles_for_state(desired_state).find do |attrs|
       attrs[:sip_username].to_s == provider_account_number.to_s
     end
-    return operation_attrs if profile.blank?
+  end
 
-    attrs = profile.with_indifferent_access
-    credentials_ref = attrs[:fonoster_credentials_ref].presence || attrs[:credentials_ref].presence
-    return operation_attrs if credentials_ref.blank?
+  def sipuni_gateway_profiles_for_state(desired_state)
+    Array.wrap(desired_state[:profiles]).map(&:with_indifferent_access).select do |attrs|
+      attrs[:internal_extension].present? || attrs[:user_id].present? || attrs[:sip_username].present?
+    end.sort_by { |attrs| [attrs[:internal_extension].to_s, attrs[:user_id].to_s, attrs[:sip_username].to_s] }
+  end
 
-    operation_attrs.merge(payload: payload.merge(credentialsRef: credentials_ref))
+  def sipuni_gateway_ref_for_state(desired_state, profile)
+    number_ref = desired_state.dig(:refs, :number_ref).presence
+    return if number_ref.blank?
+    return number_ref if profile.blank?
+
+    profile_index = sipuni_gateway_profiles_for_state(desired_state).index do |candidate|
+      same_sipuni_gateway_profile?(candidate, profile)
+    end
+    return number_ref if profile_index.blank? || profile_index.zero?
+
+    extension = profile[:internal_extension].presence || profile[:user_id].presence || profile[:sip_username]
+    [number_ref, extension].compact.join('-')
+  end
+
+  def same_sipuni_gateway_profile?(left, right)
+    return false if left.blank? || right.blank?
+    return true if left[:id].present? && left[:id].to_s == right[:id].to_s
+    return true if left[:sip_username].present? && left[:sip_username].to_s == right[:sip_username].to_s
+
+    left[:user_id].present? &&
+      left[:user_id].to_s == right[:user_id].to_s &&
+      left[:internal_extension].to_s == right[:internal_extension].to_s
   end
 
   def apply_remote_result_to_state!(desired_state, operation_attrs, result)

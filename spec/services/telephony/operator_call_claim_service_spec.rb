@@ -181,6 +181,49 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(call_session.metadata.dig('operator_claim', 'agent_aor')).to eq('sip:504@ats01.kz.sipuni.com')
   end
 
+  it 'claims a Sipuni internal gateway target route when explicit candidate arrays are absent' do
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: inbox,
+      user: winner_user,
+      internal_extension: '504',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'profile-local-504',
+      fonoster_agent_ref: 'fonoster-profile-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    call_session.update!(
+      metadata: {
+        'metadata' => {
+          'source' => 'sipuni_internal_asterisk_gateway',
+          'routeMode' => 'internal_asterisk_gateway',
+          'target_extension' => '504',
+          'onelink_user_id' => winner_user.id,
+          'telephony_sip_profile_id' => profile.id,
+          'target_operator_agent_aor' => 'sip:504@operator.cloud.vconsult.kz'
+        }
+      }
+    )
+
+    payload = described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+
+    expect(payload).to include(
+      claimed: true,
+      sip_profile_id: profile.id,
+      agent_ref: 'fonoster-profile-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+      user_id: winner_user.id
+    )
+    expect(call_session.reload.metadata.dig('operator_claim', 'sip_profile_id')).to eq(profile.id)
+  end
+
   it 'rejects a later claim after first-answer-wins selected another operator' do
     described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
 

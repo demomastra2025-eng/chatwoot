@@ -116,7 +116,8 @@ class Telephony::OperatorCallClaimService
       route_metadata['operator_candidates'].present? ||
       route_metadata['operator_candidate_user_ids'].present? ||
       route_metadata['operator_candidate_agent_refs'].present? ||
-      route_metadata['operator_candidate_sip_profile_ids'].present?
+      route_metadata['operator_candidate_sip_profile_ids'].present? ||
+      virtual_pbx_target_route?
   end
 
   def inbox_member?
@@ -131,7 +132,10 @@ class Telephony::OperatorCallClaimService
   end
 
   def operator_candidate_sip_profile_ids
-    Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).filter_map { |value| value.presence&.to_i }
+    ids = Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).filter_map { |value| value.presence&.to_i }
+    ids << route_metadata['telephony_sip_profile_id'].presence&.to_i if ids.blank? && virtual_pbx_target_route?
+    ids << route_metadata['target_sip_profile_id'].presence&.to_i if ids.blank? && virtual_pbx_target_route?
+    ids.compact.uniq
   end
 
   def operator_candidate_agent_refs
@@ -139,7 +143,20 @@ class Telephony::OperatorCallClaimService
   end
 
   def operator_candidate_user_ids
-    Array.wrap(route_metadata['operator_candidate_user_ids']).filter_map { |value| value.presence&.to_i }
+    ids = Array.wrap(route_metadata['operator_candidate_user_ids']).filter_map { |value| value.presence&.to_i }
+    ids << route_metadata['onelink_user_id'].presence&.to_i if ids.blank? && virtual_pbx_target_route?
+    ids << route_metadata['target_user_id'].presence&.to_i if ids.blank? && virtual_pbx_target_route?
+    ids.compact.uniq
+  end
+
+  def virtual_pbx_target_route?
+    route_metadata['source'].to_s == 'sipuni_internal_asterisk_gateway' ||
+      route_metadata['routeMode'].to_s == 'internal_asterisk_gateway' ||
+      route_metadata['route_mode'].to_s == 'internal_asterisk_gateway' ||
+      route_metadata['target_extension'].present? ||
+      route_metadata['target_operator_agent_aor'].present? ||
+      route_metadata['operator_agent_aor'].present? ||
+      route_metadata['onelink_user_id'].present?
   end
 
   def route_metadata

@@ -262,6 +262,174 @@ RSpec.describe Telephony::VirtualPbx::RemoteProvisioner do
     expect(resource_client).to have_received(:trunk).with(trunk_uuid)
   end
 
+  it 'uses a Fonoster generated number ref for subsequent Sipuni gateway sync' do
+    second_user = create(:user, account: account, role: :agent)
+    reconciler = instance_double(Telephony::VirtualPbx::Reconciler)
+    sipuni_state = desired_state.merge(
+      refs: { number_ref: 'local-number-ref', trunk_ref: 'trunk-ref', credentials_ref: 'provider-cred' },
+      profiles: [
+        {
+          user_id: admin.id,
+          internal_extension: '504',
+          sip_username: '015856100020',
+          credentials_ref: 'local-cred-504',
+          fonoster_credentials_ref: 'remote-cred-504'
+        },
+        {
+          user_id: second_user.id,
+          internal_extension: '505',
+          sip_username: '015856100021',
+          credentials_ref: 'local-cred-505',
+          fonoster_credentials_ref: 'remote-cred-505'
+        }
+      ]
+    )
+    sipuni_plan = plan.merge(
+      operations: [
+        {
+          key: 'upsert_number',
+          method: 'PUT',
+          path: '/telephony/numbers/local-number-ref',
+          risk: 'requires_approval',
+          payload: { ref: 'local-number-ref', trunkRef: 'trunk-ref' }
+        },
+        {
+          key: 'upsert_sipuni_gateway',
+          method: 'PUT',
+          path: '/telephony/sipuni-gateways/local-number-ref',
+          risk: 'requires_approval',
+          payload: {
+            ref: 'local-number-ref',
+            gatewayRef: 'local-number-ref',
+            numberRef: 'local-number-ref',
+            providerAccountNumber: '015856100020',
+            credentialsRef: 'local-cred-504'
+          }
+        },
+        {
+          key: 'upsert_sipuni_gateway',
+          method: 'PUT',
+          path: '/telephony/sipuni-gateways/local-number-ref-505',
+          risk: 'requires_approval',
+          payload: {
+            ref: 'local-number-ref-505',
+            gatewayRef: 'local-number-ref-505',
+            numberRef: 'local-number-ref',
+            providerAccountNumber: '015856100021',
+            credentialsRef: 'local-cred-505'
+          }
+        },
+        {
+          key: 'update_number_route',
+          method: 'POST',
+          path: '/telephony/numbers/local-number-ref/route',
+          risk: 'requires_approval',
+          payload: { mode: 'operator' }
+        }
+      ]
+    )
+
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(key: 'upsert_number', path: '/telephony/numbers/local-number-ref')
+    ).ordered.and_return({ 'ref' => 'canonical-number-ref' })
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(
+        key: 'upsert_sipuni_gateway',
+        path: '/telephony/sipuni-gateways/canonical-number-ref',
+        payload: hash_including(
+          ref: 'canonical-number-ref',
+          gatewayRef: 'canonical-number-ref',
+          numberRef: 'canonical-number-ref',
+          providerAccountNumber: '015856100020',
+          credentialsRef: 'remote-cred-504'
+        )
+      )
+    ).ordered.and_return({ 'ref' => 'canonical-number-ref' })
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(
+        key: 'upsert_sipuni_gateway',
+        path: '/telephony/sipuni-gateways/canonical-number-ref-505',
+        payload: hash_including(
+          ref: 'canonical-number-ref-505',
+          gatewayRef: 'canonical-number-ref-505',
+          numberRef: 'canonical-number-ref',
+          providerAccountNumber: '015856100021',
+          credentialsRef: 'remote-cred-505'
+        )
+      )
+    ).ordered.and_return({ 'ref' => 'canonical-number-ref-505' })
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(key: 'update_number_route', path: '/telephony/numbers/canonical-number-ref/route')
+    ).ordered.and_return({ 'ok' => true })
+    expect(reconciler).to receive(:check) do |state|
+      expect(state.dig(:refs, :number_ref)).to eq('canonical-number-ref')
+      { ready: true, status: 'fonoster_synced', remote_snapshot: {} }
+    end
+
+    result = described_class.new(account: account, current_user: admin, resource_client: resource_client, reconciler: reconciler)
+                            .execute(operation: 'update', desired_state: sipuni_state, plan: sipuni_plan, remote_commit: true)
+
+    expect(result).to include(status: 'succeeded', remote_commit: true)
+  end
+
+  it 'uses a Fonoster generated number ref for shared Sipuni gateway sync without profile credentials' do
+    reconciler = instance_double(Telephony::VirtualPbx::Reconciler)
+    sipuni_state = desired_state.merge(
+      refs: { number_ref: 'local-number-ref', trunk_ref: 'trunk-ref', credentials_ref: 'shared-cred' },
+      profiles: []
+    )
+    sipuni_plan = plan.merge(
+      operations: [
+        {
+          key: 'upsert_number',
+          method: 'PUT',
+          path: '/telephony/numbers/local-number-ref',
+          risk: 'requires_approval',
+          payload: { ref: 'local-number-ref', trunkRef: 'trunk-ref' }
+        },
+        {
+          key: 'upsert_sipuni_gateway',
+          method: 'PUT',
+          path: '/telephony/sipuni-gateways/local-number-ref',
+          risk: 'requires_approval',
+          payload: {
+            ref: 'local-number-ref',
+            gatewayRef: 'local-number-ref',
+            numberRef: 'local-number-ref',
+            providerAccountNumber: '015856100020',
+            credentialsRef: 'shared-cred'
+          }
+        }
+      ]
+    )
+
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(key: 'upsert_number', path: '/telephony/numbers/local-number-ref')
+    ).ordered.and_return({ 'ref' => 'canonical-number-ref' })
+    expect(resource_client).to receive(:dispatch).with(
+      hash_including(
+        key: 'upsert_sipuni_gateway',
+        path: '/telephony/sipuni-gateways/canonical-number-ref',
+        payload: hash_including(
+          ref: 'canonical-number-ref',
+          gatewayRef: 'canonical-number-ref',
+          numberRef: 'canonical-number-ref',
+          providerAccountNumber: '015856100020',
+          credentialsRef: 'shared-cred'
+        )
+      )
+    ).ordered.and_return({ 'ref' => 'canonical-number-ref' })
+    expect(reconciler).to receive(:check) do |state|
+      expect(state.dig(:refs, :number_ref)).to eq('canonical-number-ref')
+      { ready: true, status: 'fonoster_synced', remote_snapshot: {} }
+    end
+
+    result = described_class.new(account: account, current_user: admin, resource_client: resource_client, reconciler: reconciler)
+                            .execute(operation: 'update', desired_state: sipuni_state, plan: sipuni_plan, remote_commit: true)
+
+    expect(result).to include(status: 'succeeded', remote_commit: true)
+  end
+
   it 'injects transient SIP passwords only into credential dispatch payloads' do
     sip_profile = create(
       :telephony_sip_profile,

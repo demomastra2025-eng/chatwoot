@@ -25,10 +25,12 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     end
 
     expect(plan).to include(status: 'dry_run_valid', remote_mutations: 'requires_approval')
-    expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
+    operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
+    expect(operation_keys).to include(
       'upsert_sipuni_gateway', 'upsert_number', 'update_number_route'
     )
-    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('upsert_trunk')
+    expect(operation_keys.index('upsert_number')).to be < operation_keys.index('upsert_sipuni_gateway')
+    expect(operation_keys).not_to include('upsert_trunk')
     gateway_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_sipuni_gateway' }
     number_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_number' }
     route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
@@ -169,6 +171,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     agent_operation = operations.find { |operation| operation[:key] == 'upsert_agent' }
 
     expect(operation_keys.index('upsert_agent_credentials')).to be < operation_keys.index('upsert_sipuni_gateway')
+    expect(operation_keys.index('upsert_number')).to be < operation_keys.index('upsert_sipuni_gateway')
     expect(gateway_operation.dig(:payload, :providerAccountNumber)).to eq('015856100014')
     expect(gateway_operation.dig(:payload, :credentialsRef)).to eq('cred-profile-1-504')
     expect(gateway_operation.dig(:payload, :metadata, :target_extension)).to eq('504')
@@ -235,7 +238,9 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
 
     plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
     gateway_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+    operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
 
+    expect(operation_keys.index('upsert_number')).to be < operation_keys.index('upsert_sipuni_gateway')
     expect(gateway_operations.map { |operation| operation[:path] }).to eq(
       [
         '/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014',
@@ -293,6 +298,57 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
 
     expect(gateway_operations.map { |operation| operation[:path] }).to eq(['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014'])
     expect(gateway_operations.first.dig(:payload, :providerAccountNumber)).to eq('015856100014')
+    expect(gateway_operations.first.dig(:payload, :metadata)).not_to have_key(:target_extension)
+    expect(cleanup_operations.map { |operation| operation[:path] }).to eq(
+      ['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014-505']
+    )
+  end
+
+  it 'uses the first employee SIP profile as a shared Sipuni gateway when broadcast has no shared credentials' do
+    desired_state = {
+      account_id: account.id,
+      provider_kind: 'sipuni',
+      name: 'Sipuni external line',
+      refs: { number_ref: 'sipuni-internal-asterisk-015856100014', trunk_ref: 'trunk-sipuni-onelink-out' },
+      connection: {
+        host: 'ats01.kz.sipuni.com',
+        port: 5060,
+        transport: 'udp'
+      },
+      phone_numbers: { fonoster_tel_url: 'tel:+177****0999', ingress_number: '015856100014' },
+      routing: { mode: 'operator', app_ref: 'onelink-runtime-app', operator_distribution_mode: 'broadcast' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id,
+        onelink_inbox_id: 158,
+        onelink_channel_id: 777
+      },
+      profiles: [
+        {
+          user_id: admin.id + 1,
+          internal_extension: '505',
+          sip_username: '015856100015',
+          credentials_ref: 'cred-profile-1-505',
+          access_configured: true
+        },
+        {
+          user_id: admin.id,
+          internal_extension: '504',
+          sip_username: '015856100014',
+          credentials_ref: 'cred-profile-1-504',
+          access_configured: true
+        }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    gateway_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+    cleanup_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'delete_broadcast_extra_sipuni_gateway' }
+
+    expect(gateway_operations.map { |operation| operation[:path] }).to eq(['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014'])
+    expect(gateway_operations.first.dig(:payload, :providerAccountNumber)).to eq('015856100014')
+    expect(gateway_operations.first.dig(:payload, :credentialsRef)).to eq('cred-profile-1-504')
     expect(gateway_operations.first.dig(:payload, :metadata)).not_to have_key(:target_extension)
     expect(cleanup_operations.map { |operation| operation[:path] }).to eq(
       ['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014-505']
@@ -417,6 +473,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
       inbox_id: 1001,
       provider_kind: 'sipuni',
       refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
+      routing: { mode: 'operator', operator_distribution_mode: 'targeted' },
       ownership: {
         managed_by: 'onelink',
         ownership_status: 'local',

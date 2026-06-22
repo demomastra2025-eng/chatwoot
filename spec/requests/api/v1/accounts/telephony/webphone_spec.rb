@@ -637,6 +637,78 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(call_session.ended_at).to be_present
   end
 
+  it 'terminates a Sipuni internal gateway target route without explicit candidate arrays' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '504',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'profile-local-504',
+      fonoster_agent_ref: 'fonoster-profile-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    number_binding = Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id)
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      conversation: create(:conversation, account: account, inbox: voice_inbox),
+      number_binding: number_binding,
+      external_call_ref: 'sipuni-target-reject-1',
+      status: 'ringing',
+      metadata: {
+        'metadata' => {
+          'source' => 'sipuni_internal_asterisk_gateway',
+          'routeMode' => 'internal_asterisk_gateway',
+          'target_extension' => '504',
+          'onelink_user_id' => administrator.id,
+          'telephony_sip_profile_id' => profile.id,
+          'target_operator_agent_aor' => 'sip:504@operator.cloud.vconsult.kz'
+        }
+      }
+    )
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      terminate_request = stub_request(
+        :post,
+        'https://bridge.example/telephony/webphone/calls/sipuni-target-reject-1/reject'
+      ).with(
+        body: hash_including(
+          reason: 'operator_declined',
+          agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+          actor: 'operator'
+        ),
+        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
+           headers: headers,
+           as: :json
+
+      expect(terminate_request).to have_been_requested
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'rejected',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'operator_declined'
+    )
+  end
+
   it 'still releases the local operator call when bridge termination fails' do
     agent_binding = create(
       :telephony_agent_binding,
