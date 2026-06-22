@@ -837,6 +837,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: primary_profile.agent_aor,
+      settings: { 'operator_distribution_mode' => 'targeted' },
       fallback_mode: 'reject'
     )
 
@@ -881,6 +882,110 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(call_session.metadata.dig('metadata', 'operator_candidate_sip_profile_ids')).to contain_exactly(secondary_profile.id)
   end
 
+  it 'ignores Sipuni target metadata in broadcast operator distribution mode' do
+    primary_user = create(:user, account: account, role: :agent)
+    secondary_user = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: primary_user)
+    create(:inbox_member, inbox: voice_inbox, user: secondary_user)
+
+    primary_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: primary_user,
+      internal_extension: '504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz'
+    )
+    secondary_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: secondary_user,
+      internal_extension: '505',
+      agent_aor: 'sip:505@operator.cloud.vconsult.kz'
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      settings: { 'operator_distribution_mode' => 'broadcast' },
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-broadcast-ignores-target-extension',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155500005050',
+             diagnostic: true,
+             metadata: {
+               target_extension: '505',
+               operator_agent_aor: secondary_profile.agent_aor
+             }
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'operator_distribution_mode' => 'broadcast',
+      'operator_pool' => true,
+      'operator_pool_size' => 2
+    )
+    expect(response.parsed_body['agent_aors']).to contain_exactly(
+      primary_profile.agent_aor,
+      secondary_profile.agent_aor
+    )
+  end
+
+  it 'rejects duplicate fresh targeted branches in broadcast operator distribution mode' do
+    agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: agent)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: agent,
+      internal_extension: '504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz'
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      settings: { 'operator_distribution_mode' => 'broadcast' },
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-broadcast-primary',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155500005060'
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+      expect(response.parsed_body).to include('action' => 'operator')
+
+      post path,
+           params: {
+             call_ref: 'inbound-route-broadcast-duplicate',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155500005060',
+             metadata: { target_extension: '504' }
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'duplicate_broadcast_branch'
+    )
+  end
+
   it 'rejects a Sipuni target extension that is not assigned in the inbox instead of falling back to another operator' do
     primary_user = create(:user, account: account, role: :agent)
     other_user = create(:user, account: account, role: :agent)
@@ -910,6 +1015,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: primary_profile.agent_aor,
+      settings: { 'operator_distribution_mode' => 'targeted' },
       fallback_mode: 'reject'
     )
 
@@ -962,6 +1068,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: primary_profile.agent_aor,
+      settings: { 'operator_distribution_mode' => 'targeted' },
       fallback_mode: 'reject'
     )
 
@@ -1029,6 +1136,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: primary_profile.agent_aor,
+      settings: { 'operator_distribution_mode' => 'targeted' },
       fallback_mode: 'reject'
     )
 

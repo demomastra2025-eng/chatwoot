@@ -108,8 +108,10 @@ class Channel::Voice < ApplicationRecord
   def validate_fonoster_config
     config = provider_config.with_indifferent_access
     routing_mode = config[:routing_mode].to_s.presence || 'operator'
+    operator_distribution_mode = Telephony::RoutingPolicy.normalized_operator_distribution_mode(config[:operator_distribution_mode])
     operator_agent_aor = normalized_fonoster_operator_agent_aor(config[:operator_agent_aor])
     config[:operator_agent_aor] = operator_agent_aor if operator_agent_aor.present?
+    config[:operator_distribution_mode] = operator_distribution_mode
     self.provider_config = config
 
     errors.add(:provider_config, 'number_ref is required for Fonoster provider') if config[:number_ref].blank? && config[:fonoster_number_ref].blank?
@@ -121,9 +123,10 @@ class Channel::Voice < ApplicationRecord
 
     errors.add(:provider_config, 'app_ref is required when routing_mode is app') if routing_mode == 'app' && config[:app_ref].blank?
 
-    return unless routing_mode == 'operator' && config[:operator_agent_aor].blank? && config[:operator_agent_ref].blank?
+    return unless routing_mode == 'operator' && operator_distribution_mode == Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_TARGETED
+    return if config[:operator_agent_aor].present? || config[:operator_agent_ref].present?
 
-    errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when routing_mode is operator')
+    errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when targeted operator routing is selected')
   end
 
   def normalized_fonoster_operator_agent_aor(value)

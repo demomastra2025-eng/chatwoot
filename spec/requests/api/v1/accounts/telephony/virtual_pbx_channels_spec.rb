@@ -933,7 +933,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
                sip_password: 'do-not-return-this-profile-secret',
                enabled: true
              }
-           ]
+           ],
+           routing: {
+             operator_distribution_mode: 'targeted'
+           }
          ),
          headers: headers,
          as: :json

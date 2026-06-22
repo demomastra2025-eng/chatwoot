@@ -139,7 +139,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
       name: 'Sipuni external line',
       refs: { number_ref: 'number-ref', trunk_ref: 'trunk-sipuni-onelink-out' },
       phone_numbers: { fonoster_tel_url: 'tel:+17705550999' },
-      routing: { mode: 'operator' },
+      routing: { mode: 'operator', operator_distribution_mode: 'targeted' },
       ownership: {
         managed_by: 'onelink',
         ownership_status: 'local',
@@ -195,7 +195,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
       name: 'Sipuni external line',
       refs: { number_ref: 'sipuni-internal-asterisk-015856100014', trunk_ref: 'trunk-sipuni-onelink-out' },
       phone_numbers: { fonoster_tel_url: 'tel:+177****0999', ingress_number: '015856100014' },
-      routing: { mode: 'operator', app_ref: 'onelink-runtime-app' },
+      routing: { mode: 'operator', app_ref: 'onelink-runtime-app', operator_distribution_mode: 'targeted' },
       ownership: {
         managed_by: 'onelink',
         ownership_status: 'local',
@@ -254,6 +254,51 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     expect(plan.to_json).not_to include('do-not-store-this-password')
   end
 
+  it 'plans one shared Sipuni gateway and removes extra employee gateways in broadcast distribution mode' do
+    desired_state = {
+      account_id: account.id,
+      provider_kind: 'sipuni',
+      name: 'Sipuni external line',
+      refs: {
+        number_ref: 'sipuni-internal-asterisk-015856100014',
+        trunk_ref: 'trunk-sipuni-onelink-out',
+        credentials_ref: 'cred-shared-sipuni'
+      },
+      connection: {
+        host: 'ats01.kz.sipuni.com',
+        port: 5060,
+        transport: 'udp',
+        username: '015856100014',
+        credentials_ref: 'cred-shared-sipuni',
+        password_configured: true
+      },
+      phone_numbers: { fonoster_tel_url: 'tel:+177****0999', ingress_number: '015856100014' },
+      routing: { mode: 'operator', app_ref: 'onelink-runtime-app', operator_distribution_mode: 'broadcast' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id,
+        onelink_inbox_id: 158,
+        onelink_channel_id: 777
+      },
+      profiles: [
+        { user_id: admin.id, internal_extension: '504', sip_username: '015856100014' },
+        { user_id: admin.id + 1, internal_extension: '505', sip_username: '015856100015' }
+      ]
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    gateway_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'upsert_sipuni_gateway' }
+    cleanup_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'delete_broadcast_extra_sipuni_gateway' }
+
+    expect(gateway_operations.map { |operation| operation[:path] }).to eq(['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014'])
+    expect(gateway_operations.first.dig(:payload, :providerAccountNumber)).to eq('015856100014')
+    expect(gateway_operations.first.dig(:payload, :metadata)).not_to have_key(:target_extension)
+    expect(cleanup_operations.map { |operation| operation[:path] }).to eq(
+      ['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014-505']
+    )
+  end
+
   it 'skips Sipuni gateway upserts for existing employee profiles without usable remote credentials' do
     desired_state = {
       account_id: account.id,
@@ -261,7 +306,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
       name: 'Sipuni external line',
       refs: { number_ref: 'sipuni-internal-asterisk-015856100014', trunk_ref: 'trunk-sipuni-onelink-out' },
       phone_numbers: { fonoster_tel_url: 'tel:+177****0999', ingress_number: '015856100014' },
-      routing: { mode: 'operator', app_ref: 'onelink-runtime-app' },
+      routing: { mode: 'operator', app_ref: 'onelink-runtime-app', operator_distribution_mode: 'targeted' },
       ownership: {
         managed_by: 'onelink',
         ownership_status: 'local',

@@ -200,6 +200,7 @@ function getVirtualPbxPayload() {
   const routing = {
     mode: 'operator',
     fallback_mode: 'reject',
+    operator_distribution_mode: 'broadcast',
   };
 
   if (isAsteriskAnalogProvider.value) {

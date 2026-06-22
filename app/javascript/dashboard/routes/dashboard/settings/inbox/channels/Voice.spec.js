@@ -108,6 +108,7 @@ describe('Voice channel setup', () => {
       routing: {
         mode: 'operator',
         fallback_mode: 'reject',
+        operator_distribution_mode: 'broadcast',
       },
       metadata: {
         source: 'virtual_pbx_ui',
@@ -224,6 +225,7 @@ describe('Voice channel setup', () => {
       routing: {
         mode: 'operator',
         fallback_mode: 'reject',
+        operator_distribution_mode: 'broadcast',
       },
       metadata: {
         source: 'virtual_pbx_ui',

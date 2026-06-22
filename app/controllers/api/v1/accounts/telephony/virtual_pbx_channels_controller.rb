@@ -104,7 +104,7 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
       :fonoster_tel_url,
       :tel_url,
       connection: %i[host port transport username password send_register],
-      routing: %i[mode fallback_mode ai_enabled operator_agent_aor],
+      routing: %i[mode fallback_mode ai_enabled operator_agent_aor operator_distribution_mode],
       metadata: %i[environment source notes],
       profiles: %i[user_id internal_extension sip_username sip_password enabled availability_mode]
     ).to_h

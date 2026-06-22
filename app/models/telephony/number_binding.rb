@@ -69,6 +69,7 @@ class Telephony::NumberBinding < ApplicationRecord
     ai_voice_settings
     operator_agent_ref
     operator_agent_aor
+    operator_distribution_mode
     fallback_mode
     fallback_message
     display_phone_number
@@ -135,6 +136,9 @@ class Telephony::NumberBinding < ApplicationRecord
         ai_voice_settings: config[:ai_voice_settings].presence || policy.ai_voice_settings || {},
         operator_agent_ref: config[:operator_agent_ref],
         operator_agent_aor: config[:operator_agent_aor],
+        settings: policy.settings.to_h.merge(
+          'operator_distribution_mode' => synced_operator_distribution_mode(config, policy)
+        ),
         fallback_mode: config[:fallback_mode].presence || policy.fallback_mode || 'reject',
         fallback_message: config[:fallback_message]
       )
@@ -172,8 +176,10 @@ class Telephony::NumberBinding < ApplicationRecord
     mode = policy&.mode.to_s
     operator_agent_aor = policy&.resolved_operator_agent_aor
 
-    if mode == 'operator' && sip_target?(operator_agent_aor)
+    if mode == 'operator' && policy&.targeted_operator_distribution? && sip_target?(operator_agent_aor)
       operator_fallback_payload(operator_agent_aor)
+    elsif mode == 'operator'
+      { fallback_mode: 'operator' }
     elsif configured_app_ref.present?
       {
         fallback_mode: 'app',
@@ -291,6 +297,14 @@ class Telephony::NumberBinding < ApplicationRecord
     return Telephony::RoutingPolicy::AI_DEPLOYMENT_ONELINK_MANAGED if captain_ai_configured?(config)
 
     policy.ai_deployment_mode
+  end
+
+  def self.synced_operator_distribution_mode(config, policy)
+    if config.key?(:operator_distribution_mode)
+      return Telephony::RoutingPolicy.normalized_operator_distribution_mode(config[:operator_distribution_mode])
+    end
+
+    policy.operator_distribution_mode
   end
 
   def self.captain_ai_configured?(config)

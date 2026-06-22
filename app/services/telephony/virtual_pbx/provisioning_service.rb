@@ -4,6 +4,7 @@ class Telephony::VirtualPbx::ProvisioningService
   ALLOWED_PROVIDER_KINDS = %w[asterisk_analog sipuni].freeze
   DEFAULT_ROUTE_MODE = 'operator'
   DEFAULT_FALLBACK_MODE = 'reject'
+  DEFAULT_OPERATOR_DISTRIBUTION_MODE = Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
   MANAGED_BY_ONELINK = 'onelink'
   LOCAL_OWNERSHIP_STATUS = 'local'
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
@@ -710,6 +711,7 @@ class Telephony::VirtualPbx::ProvisioningService
       mode: source['mode'].presence || fallback[:mode] || DEFAULT_ROUTE_MODE,
       fallback_mode: source['fallback_mode'].presence || fallback[:fallback_mode] || DEFAULT_FALLBACK_MODE,
       ai_enabled: normalized_routing_ai_enabled(source, fallback),
+      operator_distribution_mode: normalized_operator_distribution_mode(source, fallback),
       operator_agent_aor: normalized_operator_agent_aor(source, fallback, profiles_supplied: profiles_supplied)
     }.compact
   end
@@ -718,6 +720,13 @@ class Telephony::VirtualPbx::ProvisioningService
     value = source.key?('ai_enabled') ? source['ai_enabled'] : fallback[:ai_enabled]
 
     ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def normalized_operator_distribution_mode(source, fallback)
+    value = source.key?('operator_distribution_mode') ? source['operator_distribution_mode'] : fallback[:operator_distribution_mode]
+    value = DEFAULT_OPERATOR_DISTRIBUTION_MODE if value.blank?
+
+    Telephony::RoutingPolicy.normalized_operator_distribution_mode(value)
   end
 
   def normalized_operator_agent_aor(source, fallback, profiles_supplied: false)
@@ -933,7 +942,10 @@ class Telephony::VirtualPbx::ProvisioningService
       fallback_mode: payload.dig(:routing, :fallback_mode),
       ai_enabled: ActiveModel::Type::Boolean.new.cast(payload.dig(:routing, :ai_enabled)),
       operator_agent_aor: operator_agent_aor_for(payload),
-      settings: (policy.settings || {}).merge('virtual_pbx_local' => true)
+      settings: (policy.settings || {}).merge(
+        'virtual_pbx_local' => true,
+        'operator_distribution_mode' => payload.dig(:routing, :operator_distribution_mode)
+      )
     )
     policy.save!
     policy
@@ -1042,6 +1054,7 @@ class Telephony::VirtualPbx::ProvisioningService
       fonoster_tel_url: payload[:fonoster_tel_url],
       routing_mode: payload.dig(:routing, :mode),
       fallback_mode: payload.dig(:routing, :fallback_mode),
+      operator_distribution_mode: payload.dig(:routing, :operator_distribution_mode),
       operator_agent_aor: operator_agent_aor_for(payload),
       provider_connection_id: provider_connection.id,
       managed_by: MANAGED_BY_ONELINK,
@@ -1055,7 +1068,11 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def operator_agent_aor_for(payload)
-    payload.dig(:routing, :operator_agent_aor).presence || generated_profile_aor(Array.wrap(payload[:profiles]).first || {}, payload)
+    explicit_target = payload.dig(:routing, :operator_agent_aor).presence
+    return explicit_target if explicit_target.present?
+    return unless payload.dig(:routing, :operator_distribution_mode) == Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_TARGETED
+
+    generated_profile_aor(Array.wrap(payload[:profiles]).first || {}, payload)
   end
 
   def generated_profile_aor(profile, payload)

@@ -64,6 +64,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     refs = state[:refs] || {}
     [
       *stale_profile_cleanup_operations(state, ownership),
+      *broadcast_sipuni_gateway_cleanup_operations(state, ownership),
       connection_credentials_operation(state, ownership),
       *profile_credentials_operations(state, ownership),
       trunk_operation(state, ownership, 'Sync provider connection metadata'),
@@ -119,7 +120,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def delete_sipuni_gateway_operations(state, ownership)
     return [] unless sipuni_gateway?(state)
 
-    sipuni_gateway_refs(state).filter_map do |gateway_ref|
+    (sipuni_gateway_refs(state) + broadcast_stale_profile_gateway_refs(state)).uniq.filter_map do |gateway_ref|
       operation_payload(
         'delete_sipuni_gateway',
         'DELETE',
@@ -472,6 +473,36 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     [(state[:refs] || {}).with_indifferent_access[:number_ref]]
   end
 
+  def broadcast_sipuni_gateway_cleanup_operations(state, ownership)
+    return [] unless sipuni_gateway?(state)
+    return [] if targeted_operator_distribution?(state)
+
+    broadcast_stale_profile_gateway_refs(state).filter_map do |gateway_ref|
+      operation_payload(
+        'delete_broadcast_extra_sipuni_gateway',
+        'DELETE',
+        path('sipuni-gateways', gateway_ref),
+        'Delete per-employee Sipuni gateway when operator distribution is broadcast',
+        ownership
+      )
+    end
+  end
+
+  def broadcast_stale_profile_gateway_refs(state)
+    refs = (state[:refs] || {}).with_indifferent_access
+    base_number_ref = refs[:number_ref].presence
+    return [] if base_number_ref.blank?
+
+    sipuni_gateway_profiles_for_refs(state).map.with_index.filter_map do |profile, index|
+      next if index.zero?
+
+      gateway_ref = sipuni_gateway_ref_for(state, profile: profile, profile_index: index)
+      next if gateway_ref.blank? || gateway_ref == base_number_ref
+
+      gateway_ref
+    end.uniq
+  end
+
   def sipuni_gateway_ref_for(state, profile:, profile_index: nil)
     refs = (state[:refs] || {}).with_indifferent_access
     number_ref = refs[:number_ref]
@@ -520,15 +551,35 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   end
 
   def sipuni_gateway_profiles(state)
-    profiles = Array.wrap(state[:profiles]).map(&:with_indifferent_access).select do |attrs|
-      next false if provider_managed_extension_profile?(state, attrs)
+    return [] unless targeted_operator_distribution?(state)
 
+    configured_sipuni_gateway_profiles(state)
+  end
+
+  def configured_sipuni_gateway_profiles(state)
+    profiles = sipuni_gateway_profiles_for_refs(state).select do |attrs|
       attrs[:sip_username].present? &&
         attrs[:credentials_ref].present? &&
         (attrs[:sip_password].present? || attrs[:access_configured] || attrs[:fonoster_credentials_ref].present?)
     end
 
     profiles.sort_by { |attrs| [attrs[:internal_extension].to_s, attrs[:user_id].to_s, attrs[:sip_username].to_s] }
+  end
+
+  def sipuni_gateway_profiles_for_refs(state)
+    profiles = Array.wrap(state[:profiles]).map(&:with_indifferent_access).select do |attrs|
+      next false if provider_managed_extension_profile?(state, attrs)
+
+      attrs[:internal_extension].present? || attrs[:user_id].present? || attrs[:sip_username].present?
+    end
+
+    profiles.sort_by { |attrs| [attrs[:internal_extension].to_s, attrs[:user_id].to_s, attrs[:sip_username].to_s] }
+  end
+
+  def targeted_operator_distribution?(state)
+    routing = (state[:routing] || {}).with_indifferent_access
+    Telephony::RoutingPolicy.normalized_operator_distribution_mode(routing[:operator_distribution_mode]) ==
+      Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_TARGETED
   end
 
   def sipuni_gateway_profile_upsertable?(profile)
@@ -619,6 +670,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       metadata: ownership_metadata(state).merge(
         number_ref: refs[:number_ref],
         provider_kind: state[:provider_kind],
+        operator_distribution_mode: routing[:operator_distribution_mode],
         display_phone_number: state.dig(:phone_numbers, :display_phone_number),
         provider_account_number: state.dig(:phone_numbers, :provider_account_number),
         ingress_number: state.dig(:phone_numbers, :ingress_number)

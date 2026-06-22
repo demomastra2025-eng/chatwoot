@@ -30,6 +30,7 @@ const form = reactive({
   aiAppRef: '',
   operatorAgentRef: '',
   operatorAgentAor: '',
+  operatorDistributionMode: 'broadcast',
   fallbackMode: 'reject',
   fallbackMessage: '',
 });
@@ -65,12 +66,28 @@ const fallbackModeOptions = computed(() => [
   ...routeModeOptions.value.filter(option => option.value !== 'reject'),
 ]);
 
+const operatorDistributionModeOptions = computed(() => [
+  {
+    value: 'broadcast',
+    label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.BROADCAST'),
+  },
+  {
+    value: 'targeted',
+    label: t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.TARGETED'),
+  },
+]);
+
 const trimValue = value => String(value || '').trim();
 const hasOperatorTarget = computed(
   () => trimValue(form.operatorAgentRef) || trimValue(form.operatorAgentAor)
 );
+const isTargetedOperatorDistribution = computed(
+  () => form.operatorDistributionMode === 'targeted'
+);
 const needsOperatorTarget = computed(
-  () => form.mode === 'operator' || form.fallbackMode === 'operator'
+  () =>
+    isTargetedOperatorDistribution.value &&
+    (form.mode === 'operator' || form.fallbackMode === 'operator')
 );
 const needsAppRef = computed(
   () => form.mode === 'app' || form.fallbackMode === 'app'
@@ -112,6 +129,8 @@ const resetForm = () => {
   form.aiAppRef = routingPolicy.value.ai_app_ref || '';
   form.operatorAgentRef = routingPolicy.value.operator_agent_ref || '';
   form.operatorAgentAor = routingPolicy.value.operator_agent_aor || '';
+  form.operatorDistributionMode =
+    routingPolicy.value.operator_distribution_mode || 'broadcast';
   form.fallbackMode = routingPolicy.value.fallback_mode || 'reject';
   form.fallbackMessage = routingPolicy.value.fallback_message || '';
   saveError.value = '';
@@ -121,8 +140,13 @@ const routePayload = () => ({
   mode: form.mode,
   app_ref: trimValue(form.appRef) || null,
   ai_app_ref: trimValue(form.aiAppRef) || null,
-  operator_agent_ref: trimValue(form.operatorAgentRef) || null,
-  operator_agent_aor: trimValue(form.operatorAgentAor) || null,
+  operator_agent_ref: isTargetedOperatorDistribution.value
+    ? trimValue(form.operatorAgentRef) || null
+    : null,
+  operator_agent_aor: isTargetedOperatorDistribution.value
+    ? trimValue(form.operatorAgentAor) || null
+    : null,
+  operator_distribution_mode: form.operatorDistributionMode || 'broadcast',
   fallback_mode: form.fallbackMode || 'reject',
   fallback_message: trimValue(form.fallbackMessage) || null,
 });
@@ -157,6 +181,7 @@ watch(
     routingPolicy.value?.ai_app_ref,
     routingPolicy.value?.operator_agent_ref,
     routingPolicy.value?.operator_agent_aor,
+    routingPolicy.value?.operator_distribution_mode,
     routingPolicy.value?.fallback_mode,
     routingPolicy.value?.fallback_message,
   ],
@@ -191,6 +216,18 @@ watch(
           :disabled="isSaving"
         />
       </div>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-n-slate-12">
+        {{ $t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.LABEL') }}
+      </label>
+      <Select
+        v-model="form.operatorDistributionMode"
+        class="w-full"
+        :options="operatorDistributionModeOptions"
+        :disabled="isSaving"
+      />
     </div>
 
     <div

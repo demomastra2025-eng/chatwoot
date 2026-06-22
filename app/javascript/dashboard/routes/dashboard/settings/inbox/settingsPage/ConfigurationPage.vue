@@ -76,6 +76,7 @@ export default {
         connectionUsername: '',
         connectionPassword: '',
         routingMode: 'operator',
+        operatorDistributionMode: 'broadcast',
         profiles: [],
       },
     };
@@ -185,6 +186,22 @@ export default {
         {
           value: 'reject',
           label: this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.REJECT'),
+        },
+      ];
+    },
+    virtualPbxOperatorDistributionOptions() {
+      return [
+        {
+          value: 'broadcast',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.BROADCAST'
+          ),
+        },
+        {
+          value: 'targeted',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.TARGETED'
+          ),
         },
       ];
     },
@@ -602,6 +619,8 @@ export default {
         connectionUsername: providerConnection.username || '',
         connectionPassword: '',
         routingMode: routing.mode || 'operator',
+        operatorDistributionMode:
+          routing.operator_distribution_mode || 'broadcast',
         profiles: this.normalizeVirtualPbxProfiles(
           config.employees || config.profiles || []
         ),
@@ -711,6 +730,8 @@ export default {
         routing: {
           mode: form.routingMode,
           fallback_mode: 'reject',
+          operator_distribution_mode:
+            form.operatorDistributionMode || 'broadcast',
         },
         profiles: this.virtualPbxProfilesPayload(),
         metadata: {
@@ -990,6 +1011,27 @@ export default {
                 :disabled="isVirtualPbxReadOnly"
                 type="text"
               />
+            </label>
+          </div>
+
+          <div class="rounded-xl border border-n-weak p-4">
+            <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.LABEL')
+              }}
+              <select
+                v-model="virtualPbxForm.operatorDistributionMode"
+                class="rounded-lg border border-n-weak py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+              >
+                <option
+                  v-for="option in virtualPbxOperatorDistributionOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
             </label>
           </div>
 

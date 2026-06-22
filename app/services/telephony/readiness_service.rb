@@ -225,7 +225,9 @@ class Telephony::ReadinessService
   end
 
   def operator_route_warning(policy)
-    return unless policy.operator_mode? && policy.resolved_operator_agent_aor.blank?
+    return unless policy.operator_mode?
+    return unless policy.targeted_operator_distribution?
+    return if policy.resolved_operator_agent_aor.present?
 
     warning('mode_requires_operator_agent', 'Operator routing requires a resolvable operator agent')
   end
@@ -241,6 +243,7 @@ class Telephony::ReadinessService
 
       [warning('fallback_requires_ai_app_ref', 'AI fallback requires ai_app_ref')]
     when 'operator'
+      return [] unless policy.targeted_operator_distribution?
       return [] if policy.resolved_operator_agent_aor.present?
 
       [warning('fallback_requires_operator_agent', 'Operator fallback requires a resolvable operator agent')]

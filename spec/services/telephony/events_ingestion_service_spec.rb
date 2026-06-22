@@ -554,6 +554,57 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('completed')
     end
 
+    it 'removes an earlier rejected Fonoster fan-out bubble when the answered branch completes' do
+      conversation = existing_call_session.conversation
+      started_at = Time.current
+      phone_attrs = {
+        'provider' => 'fonoster',
+        'call_direction' => 'inbound',
+        'from_number' => '+77066318623',
+        'to_number' => '+77072890808'
+      }
+      rejected_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:rejected-fanout-before-answer',
+        created_at: started_at,
+        content_attributes: {
+          'data' => phone_attrs.merge(
+            'status' => 'rejected',
+            'call_sid' => 'rejected-fanout-before-answer',
+            'logical_call_key' => 'fonoster-inbound:rejected-branch'
+          )
+        }
+      )
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'inbound',
+        status: 'in_progress',
+        from_number: phone_attrs['from_number'],
+        to_number: phone_attrs['to_number'],
+        started_at: started_at + 1.second,
+        metadata: { 'metadata' => { 'logical_call_key' => 'fonoster-inbound:answered-branch' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-fanout-completed-after-rejected-1',
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'FROM_PSTN'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'completed')
+      expect(conversation.messages.voice_calls.reload.pluck(:id)).not_to include(rejected_message.id)
+      expect(conversation.messages.voice_calls.count).to eq(1)
+      expect(conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('completed')
+    end
+
     it 'uses the answered timestamp for active Fonoster conversation state' do
       started_at = Time.zone.parse(30.seconds.ago.iso8601)
       answered_at = Time.zone.parse(10.seconds.ago.iso8601)

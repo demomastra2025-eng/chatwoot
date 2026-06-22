@@ -3,6 +3,7 @@ require 'digest'
 class Telephony::InboundRoutingService
   DEFAULT_REJECT_MESSAGE = 'We are unable to connect your call right now.'.freeze
   OPERATOR_CANDIDATE_LIMIT = 20
+  DUPLICATE_BROADCAST_BRANCH_WINDOW = 5.seconds
 
   OperatorCandidate = Struct.new(:source, :agent_binding, :sip_profile, keyword_init: true) do
     def agent_binding_id
@@ -74,6 +75,9 @@ class Telephony::InboundRoutingService
     return status_decision if status_decision.present?
 
     return out_of_office_decision if inbox&.out_of_office?
+
+    duplicate_broadcast_decision = duplicate_broadcast_branch_decision
+    return duplicate_broadcast_decision if duplicate_broadcast_decision.present?
 
     primary_decision
   end
@@ -240,6 +244,7 @@ class Telephony::InboundRoutingService
       call_group_key: logical_call_key,
       callGroupKey: logical_call_key,
       status: 'ringing',
+      operator_distribution_mode: operator_distribution_mode,
       call_direction: 'inbound',
       direction: 'inbound',
       conversation_id: conversation&.display_id,
@@ -287,6 +292,7 @@ class Telephony::InboundRoutingService
       chatwoot_account_id: number_binding.account_id,
       chatwoot_inbox_id: number_binding.inbox_id,
       number_ref: number_binding.number_ref,
+      operator_distribution_mode: operator_distribution_mode,
       logical_call_key: logical_call_key,
       call_group_key: logical_call_key,
       logical_call_group_ref: logical_call_group_ref
@@ -457,7 +463,7 @@ class Telephony::InboundRoutingService
   end
 
   def target_operator_requested?
-    target_operator_extension.present? || target_operator_aor.present?
+    targeted_operator_distribution? && (target_operator_extension.present? || target_operator_aor.present?)
   end
 
   def target_operator_block_reason
@@ -471,6 +477,28 @@ class Telephony::InboundRoutingService
 
   def target_operator_busy?(candidate)
     without_busy_operator_candidates([candidate]).blank?
+  end
+
+  def duplicate_broadcast_branch_decision
+    return unless routing_policy&.operator_mode?
+    return if targeted_operator_distribution?
+    return if diagnostic_route_probe?
+    return unless broadcast_operator_branch_target_metadata?
+    return if broadcast_duplicate_call_session.blank?
+
+    reject_decision(reason: 'duplicate_broadcast_branch', include_bridge_context: true)
+  end
+
+  def broadcast_operator_branch_target_metadata?
+    target_operator_extension.present? || target_operator_aor.present?
+  end
+
+  def broadcast_duplicate_call_session
+    @broadcast_duplicate_call_session ||= recent_logical_bridge_call_session_scope
+                                          .where.not(status: Telephony::CallSession::TERMINAL_STATUSES)
+                                          .where('created_at >= ?', DUPLICATE_BROADCAST_BRANCH_WINDOW.ago)
+                                          .order(created_at: :desc, id: :desc)
+                                          .first
   end
 
   def resolved_operator_aor
@@ -717,6 +745,7 @@ class Telephony::InboundRoutingService
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
       number_ref: number_binding.number_ref,
+      operator_distribution_mode: operator_distribution_mode,
       recording: recording_payload
     }
 
@@ -750,6 +779,15 @@ class Telephony::InboundRoutingService
 
   def routing_policy
     @routing_policy ||= number_binding&.routing_policy
+  end
+
+  def operator_distribution_mode
+    @operator_distribution_mode ||= routing_policy&.operator_distribution_mode ||
+                                    Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
+  end
+
+  def targeted_operator_distribution?
+    operator_distribution_mode == Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_TARGETED
   end
 
   def resolved_primary_app_ref

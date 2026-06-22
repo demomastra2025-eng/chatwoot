@@ -5,7 +5,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
   VOICE_ROUTE_POLICY_ATTRIBUTES = %i[
     mode ai_enabled ai_app_ref ai_deployment_mode fonoster_ai_app_ref onelink_ai_app_ref fallback_ai_app_ref
-    captain_assistant_id ai_voice_settings operator_agent_ref operator_agent_aor fallback_mode fallback_message
+    captain_assistant_id ai_voice_settings operator_agent_ref operator_agent_aor operator_distribution_mode fallback_mode fallback_message
   ].freeze
 
   before_action :fetch_inbox, except: [:index, :create]

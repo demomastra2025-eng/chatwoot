@@ -11,6 +11,7 @@ class Telephony::RoutingService
     ai_voice_settings: :ai_voice_settings,
     operator_agent_ref: :operator_agent_ref,
     operator_agent_aor: :operator_agent_aor,
+    operator_distribution_mode: :operator_distribution_mode,
     fallback_mode: :fallback_mode,
     fallback_message: :fallback_message
   }.freeze
@@ -53,7 +54,7 @@ class Telephony::RoutingService
     sync_voice_channel_route_config!(number_binding, attributes)
 
     policy = number_binding.routing_policy || number_binding.build_routing_policy(account: account)
-    policy.assign_attributes(policy_attributes(attributes))
+    policy.assign_attributes(policy_attributes(attributes, policy))
     policy.save!
 
     response = bridge_client.post("/telephony/numbers/#{number_binding.number_ref}/route", number_binding.bridge_route_payload)
@@ -98,8 +99,15 @@ class Telephony::RoutingService
     attributes.to_h.with_indifferent_access
   end
 
-  def policy_attributes(attributes)
-    attributes.except(:app_ref)
+  def policy_attributes(attributes, policy)
+    base_attributes = attributes.except(:app_ref, :operator_distribution_mode)
+    return base_attributes unless attributes.key?(:operator_distribution_mode)
+
+    settings = (policy.settings || {}).deep_stringify_keys
+    settings['operator_distribution_mode'] = Telephony::RoutingPolicy.normalized_operator_distribution_mode(
+      attributes[:operator_distribution_mode]
+    )
+    base_attributes.merge(settings: settings)
   end
 
   def sync_voice_channel_route_config!(number_binding, attributes)
@@ -181,6 +189,9 @@ class Telephony::RoutingService
   end
 
   def operator_route_configured?(policy)
+    return false if policy.blank?
+    return true unless policy.targeted_operator_distribution?
+
     policy.resolved_operator_agent_aor.to_s.downcase.start_with?('sip:')
   end
 end

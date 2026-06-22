@@ -46,6 +46,12 @@ class Telephony::RoutingPolicy < ApplicationRecord
   VALID_MODES = %w[operator app ai reject voicemail ivr].freeze
   VALID_FALLBACK_MODES = %w[reject operator app ai voicemail].freeze
   BRIDGE_SUPPORTED_MODES = %w[operator app ai reject].freeze
+  OPERATOR_DISTRIBUTION_BROADCAST = 'broadcast'.freeze
+  OPERATOR_DISTRIBUTION_TARGETED = 'targeted'.freeze
+  VALID_OPERATOR_DISTRIBUTION_MODES = [
+    OPERATOR_DISTRIBUTION_BROADCAST,
+    OPERATOR_DISTRIBUTION_TARGETED
+  ].freeze
   AI_DEPLOYMENT_FONOSTER_MANAGED = 'fonoster_managed'.freeze
   AI_DEPLOYMENT_ONELINK_MANAGED = 'onelink_managed'.freeze
   AI_DEPLOYMENT_MODES = [AI_DEPLOYMENT_FONOSTER_MANAGED, AI_DEPLOYMENT_ONELINK_MANAGED].freeze
@@ -78,6 +84,14 @@ class Telephony::RoutingPolicy < ApplicationRecord
     mode == 'operator'
   end
 
+  def operator_distribution_mode
+    self.class.normalized_operator_distribution_mode(settings.to_h['operator_distribution_mode'])
+  end
+
+  def targeted_operator_distribution?
+    operator_distribution_mode == OPERATOR_DISTRIBUTION_TARGETED
+  end
+
   def bridge_payload
     { mode: bridge_mode }.merge(bridge_payload_options).compact
   end
@@ -95,6 +109,8 @@ class Telephony::RoutingPolicy < ApplicationRecord
   end
 
   def operator_target_payload
+    return {} unless targeted_operator_distribution?
+
     target = resolved_operator_agent_aor
     return {} if target.blank? || !sip_target?(target)
 
@@ -127,11 +143,19 @@ class Telephony::RoutingPolicy < ApplicationRecord
       ai_voice_settings: ai_voice_settings,
       operator_agent_ref: operator_agent_ref,
       operator_agent_aor: operator_agent_aor,
+      operator_distribution_mode: operator_distribution_mode,
       fallback_mode: fallback_mode,
       fallback_message: fallback_message,
       business_hours: business_hours,
       settings: settings
     }.compact
+  end
+
+  def self.normalized_operator_distribution_mode(value)
+    candidate = value.to_s.strip.downcase.presence
+    return candidate if VALID_OPERATOR_DISTRIBUTION_MODES.include?(candidate)
+
+    OPERATOR_DISTRIBUTION_BROADCAST
   end
 
   private
@@ -154,6 +178,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   def normalize_values
     normalize_mode_fields
     normalize_ai_configuration
+    normalize_operator_distribution_settings
     self.operator_agent_aor = normalize_operator_agent_aor(operator_agent_aor)
   end
 
@@ -166,6 +191,14 @@ class Telephony::RoutingPolicy < ApplicationRecord
     self.ai_deployment_mode = ai_deployment_mode.to_s.strip.downcase.presence || AI_DEPLOYMENT_FONOSTER_MANAGED
     self.ai_enabled = explicit_ai_enabled? || ai_mode? || fallback_mode == 'ai'
     self.ai_voice_settings = (ai_voice_settings || {}).deep_stringify_keys
+  end
+
+  def normalize_operator_distribution_settings
+    normalized_settings = (settings || {}).deep_stringify_keys
+    normalized_settings['operator_distribution_mode'] = self.class.normalized_operator_distribution_mode(
+      normalized_settings['operator_distribution_mode']
+    )
+    self.settings = normalized_settings
   end
 
   def normalize_operator_agent_aor(value)
@@ -191,6 +224,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
 
   def validate_operator_mode_configuration
     return unless operator_mode?
+    return unless targeted_operator_distribution?
     return if sip_target?(resolved_operator_agent_aor)
 
     errors.add(:mode, 'operator routing requires a configured operator agent')

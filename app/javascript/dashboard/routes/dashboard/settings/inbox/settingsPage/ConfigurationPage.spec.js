@@ -70,6 +70,7 @@ const statusPayload = {
       routing: {
         mode: 'operator',
         fallback_mode: 'reject',
+        operator_distribution_mode: 'broadcast',
         operator_target_configured: true,
       },
       employees: [
@@ -186,6 +187,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
         routing: {
           mode: 'operator',
           fallback_mode: 'reject',
+          operator_distribution_mode: 'broadcast',
         },
         connection: {
           host: 'ats01.kz.sipuni.com',
@@ -257,6 +259,9 @@ describe('ConfigurationPage Virtual PBX management', () => {
 
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
+    );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.LABEL'
     );
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'

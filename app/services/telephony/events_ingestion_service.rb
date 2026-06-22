@@ -9,6 +9,7 @@ class Telephony::EventsIngestionService
   UNANSWERED_TERMINAL_STATUSES = %w[
     missed
     no_answer
+    rejected
   ].freeze
   OUTBOUND_CUSTOMER_ANSWER_EVENT_TYPES = %w[
     answered

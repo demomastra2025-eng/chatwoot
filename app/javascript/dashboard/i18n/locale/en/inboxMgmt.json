@@ -446,6 +446,11 @@
             "LABEL": "Operator agent ref",
             "PLACEHOLDER": "Optional Fonoster agent reference"
           },
+          "OPERATOR_DISTRIBUTION": {
+            "LABEL": "Operator distribution",
+            "BROADCAST": "Ring all available operators",
+            "TARGETED": "Route by employee extension"
+          },
           "OPERATOR_TARGET_REQUIRED": "Operator agent ref or AOR is required when operator routing is selected",
           "FALLBACK_MESSAGE": {
             "LABEL": "Reject Message",

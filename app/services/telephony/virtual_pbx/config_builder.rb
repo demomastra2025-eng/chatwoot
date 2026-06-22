@@ -11,21 +11,24 @@ class Telephony::VirtualPbx::ConfigBuilder
       default_transport: 'udp',
       default_port: 5060,
       allows_display_ingress_split: true,
-      default_route_mode: 'operator'
+      default_route_mode: 'operator',
+      default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
     },
     'sipuni' => {
       label: 'Sipuni',
       default_transport: 'udp',
       default_port: 5060,
       allows_display_ingress_split: true,
-      default_route_mode: 'operator'
+      default_route_mode: 'operator',
+      default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
     },
     DEFAULT_PROVIDER_KIND => {
       label: 'Fonoster',
       default_transport: 'udp',
       default_port: 5060,
       allows_display_ingress_split: false,
-      default_route_mode: 'operator'
+      default_route_mode: 'operator',
+      default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
     }
   }.freeze
 
@@ -113,6 +116,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         mode: routing[:mode],
         fallback_mode: routing[:fallback_mode],
         ai_enabled: routing[:ai_enabled],
+        operator_distribution_mode: routing[:operator_distribution_mode],
         operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?
       }.compact,
       employees: ui_employees_payload(config[:profiles]),
@@ -322,6 +326,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       effective_app_ref: binding&.app_ref_for_policy(policy),
       operator_agent_ref: policy&.operator_agent_ref,
       operator_agent_aor: policy&.resolved_operator_agent_aor,
+      operator_distribution_mode: policy&.operator_distribution_mode,
       fallback_mode: policy&.fallback_mode,
       ai_enabled: policy&.ai_enabled,
       ai_app_ref: policy&.effective_ai_app_ref

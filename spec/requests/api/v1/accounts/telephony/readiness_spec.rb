@@ -56,6 +56,46 @@ RSpec.describe 'Telephony Readiness API', type: :request do
     expect(inbox['warnings']).to be_empty
   end
 
+  it 'does not require a single operator target for broadcast operator routing' do
+    voice_inbox.telephony_number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: nil,
+      operator_agent_aor: nil,
+      fallback_mode: 'operator',
+      settings: { 'operator_distribution_mode' => 'broadcast' }
+    )
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      stub_request(:get, 'https://bridge.example/healthz')
+        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
+        .to_return(
+          status: 200,
+          body: {
+            ok: true,
+            service: 'telephony-bridge',
+            fonoster: { applicationsReachable: true },
+            legacyChatwootCompatibility: { configured: true }
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      get path, headers: headers
+    end
+
+    expect(response).to have_http_status(:ok)
+
+    payload = response.parsed_body['payload']
+    inbox = payload['inboxes'].first
+    warning_codes = inbox['warnings'].map { |warning| warning['code'] }
+
+    expect(payload).to include('ready' => true)
+    expect(inbox).to include('ready' => true)
+    expect(warning_codes).not_to include('mode_requires_operator_agent', 'fallback_requires_operator_agent')
+  end
+
   it 'returns blocking warnings when the bridge is not configured and inbox binding is missing' do
     voice_inbox.telephony_number_binding.destroy!
 
