@@ -42,6 +42,9 @@ class CommunicationThreads::ChannelPayloadBuilder
       status: payload[:status],
       primary: payload[:primary],
       last_activity_at: payload[:last_activity_at],
+      agent_last_seen_at: payload[:agent_last_seen_at],
+      assignee_last_seen_at: payload[:assignee_last_seen_at],
+      unread_count: payload[:unread_count].to_i,
       media_server_enabled: media_server_enabled?,
       channel_key: channel_key
     }

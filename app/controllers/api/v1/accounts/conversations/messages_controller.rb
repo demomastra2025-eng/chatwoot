@@ -1,6 +1,7 @@
 class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::Conversations::BaseController
   def index
     @messages = message_finder.perform
+    @first_unread_message_id = first_unread_message_id if first_unread_cursor_requested?
   end
 
   def create
@@ -68,6 +69,19 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
   def message_finder
     @message_finder ||= MessageFinder.new(@conversation, params)
+  end
+
+  def first_unread_message_id
+    @conversation.unread_messages
+                 .where(account_id: @conversation.account_id, private: false)
+                 .incoming
+                 .reorder(:created_at, :id)
+                 .limit(1)
+                 .pick(:id)
+  end
+
+  def first_unread_cursor_requested?
+    params[:after].blank? && params[:before].blank?
   end
 
   def permitted_params

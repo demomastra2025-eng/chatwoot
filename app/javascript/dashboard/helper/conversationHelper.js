@@ -102,3 +102,14 @@ export const getUnreadMessages = (messages, agentLastSeenAt) => {
     message => message.created_at * 1000 > agentLastSeenAt * 1000
   );
 };
+
+export const isPublicIncomingMessage = message =>
+  message?.message_type === 0 && message?.private !== true;
+
+export const getUnreadIncomingMessages = (messages, agentLastSeenAt) => {
+  return messages.filter(
+    message =>
+      isPublicIncomingMessage(message) &&
+      message.created_at * 1000 > Number(agentLastSeenAt || 0) * 1000
+  );
+};

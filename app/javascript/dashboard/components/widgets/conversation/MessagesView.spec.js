@@ -102,6 +102,78 @@ describe('MessagesView', () => {
     });
   });
 
+  describe('unReadMessages', () => {
+    it('only treats public incoming direct-conversation messages as unread', () => {
+      const context = {
+        currentChat: { agent_last_seen_at: 100 },
+        getMessages: [
+          { id: 1, message_type: 2, private: false, created_at: 120 },
+          { id: 2, message_type: 1, private: false, created_at: 120 },
+          { id: 3, message_type: 0, private: true, created_at: 120 },
+          { id: 4, message_type: 0, private: false, created_at: 90 },
+          { id: 5, message_type: 0, private: false, created_at: 120 },
+        ],
+      };
+
+      expect(MessagesView.computed.unReadMessages.call(context)).toEqual([
+        context.getMessages[4],
+      ]);
+    });
+
+    it('uses per-channel last seen values for communication threads', () => {
+      const context = {
+        currentChat: {
+          is_communication_thread: true,
+          channels: [
+            { conversation_id: 11, agent_last_seen_at: 100 },
+            { conversation_id: 12, agent_last_seen_at: 200 },
+          ],
+        },
+        getMessages: [
+          {
+            id: 1,
+            conversation_id: 11,
+            message_type: 2,
+            private: false,
+            created_at: 120,
+          },
+          {
+            id: 2,
+            conversation_id: 11,
+            message_type: 0,
+            private: false,
+            created_at: 120,
+          },
+          {
+            id: 3,
+            conversation_id: 12,
+            message_type: 0,
+            private: false,
+            created_at: 150,
+          },
+        ],
+      };
+      context.communicationThreadLastSeenByConversationId =
+        MessagesView.computed.communicationThreadLastSeenByConversationId.call(
+          context
+        );
+      context.communicationThreadMessageLastSeenAt = message =>
+        MessagesView.methods.communicationThreadMessageLastSeenAt.call(
+          context,
+          message
+        );
+      context.isUnreadCommunicationThreadMessage = message =>
+        MessagesView.methods.isUnreadCommunicationThreadMessage.call(
+          context,
+          message
+        );
+
+      expect(MessagesView.computed.unReadMessages.call(context)).toEqual([
+        context.getMessages[1],
+      ]);
+    });
+  });
+
   describe('#makeMessagesRead', () => {
     it('marks the communication thread read through the thread action', () => {
       const dispatch = vi.fn();

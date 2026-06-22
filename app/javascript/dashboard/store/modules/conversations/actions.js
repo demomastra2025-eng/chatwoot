@@ -103,6 +103,96 @@ const activeChatTypeForPayload = (state, payload) => {
 const withConversationType = (payload, conversationType) =>
   conversationType ? { ...payload, conversationType } : payload;
 
+const sortMessagesByTimeline = (leftMessage, rightMessage) => {
+  const createdAtDifference =
+    Number(leftMessage.created_at || 0) - Number(rightMessage.created_at || 0);
+  if (createdAtDifference !== 0) return createdAtDifference;
+
+  const leftId = Number(leftMessage.id || 0);
+  const rightId = Number(rightMessage.id || 0);
+  if (Number.isFinite(leftId) && Number.isFinite(rightId)) {
+    return leftId - rightId;
+  }
+
+  return String(leftMessage.id || '').localeCompare(
+    String(rightMessage.id || '')
+  );
+};
+
+const mergeMessagePayloadsById = (
+  existingMessages = [],
+  incomingMessages = []
+) => {
+  const mergedMessages = [];
+  const indexById = new Map();
+
+  [...existingMessages, ...incomingMessages].forEach(message => {
+    const messageId = message?.id;
+    if (messageId === undefined || messageId === null) {
+      mergedMessages.push(message);
+      return;
+    }
+
+    const key = String(messageId);
+    const existingIndex = indexById.get(key);
+    if (existingIndex === undefined) {
+      indexById.set(key, mergedMessages.length);
+      mergedMessages.push(message);
+      return;
+    }
+
+    mergedMessages[existingIndex] = {
+      ...mergedMessages[existingIndex],
+      ...message,
+    };
+  });
+
+  return mergedMessages.sort(sortMessagesByTimeline);
+};
+
+const messageExistsInPayload = (messages, messageId) =>
+  (messages || []).some(message => String(message?.id) === String(messageId));
+
+const shouldFetchFirstUnreadPage = ({
+  request,
+  selectedChat,
+  meta,
+  payload,
+}) => {
+  const firstUnreadMessageId = meta?.first_unread_message_id;
+  return (
+    !request.after &&
+    !request.before &&
+    Number(selectedChat?.unread_count || 0) > 0 &&
+    firstUnreadMessageId &&
+    payload.length > 0 &&
+    !messageExistsInPayload(payload, firstUnreadMessageId)
+  );
+};
+
+const payloadWithFirstUnreadPage = async ({
+  request,
+  selectedChat,
+  meta,
+  payload,
+  fetchPage,
+}) => {
+  if (!shouldFetchFirstUnreadPage({ request, selectedChat, meta, payload })) {
+    return payload;
+  }
+
+  const firstUnreadMessageId = meta.first_unread_message_id;
+  const beforeMessageId = payload[0]?.id;
+  const {
+    data: { payload: firstUnreadPayload = [] },
+  } = await fetchPage({
+    after: firstUnreadMessageId,
+    before: beforeMessageId,
+  });
+
+  return mergeMessagePayloadsById(firstUnreadPayload, payload);
+};
+
 const getCommunicationThreadById = (state, conversationId) => {
   if (
     String(state?.selectedChatId) === String(conversationId) &&
@@ -338,6 +428,14 @@ const actions = {
           after: data.after,
           before: data.before,
         });
+        const messagesPayload = await payloadWithFirstUnreadPage({
+          request: data,
+          selectedChat,
+          meta,
+          payload,
+          fetchPage: params =>
+            CommunicationThreadApi.messages(data.conversationId, params),
+        });
         selectedChat.channels = meta.channels || selectedChat.channels || [];
         selectedChat.meta = {
           ...(selectedChat.meta || {}),
@@ -352,12 +450,12 @@ const actions = {
           withConversationType(
             {
               id: data.conversationId,
-              data: payload,
+              data: messagesPayload,
             },
             conversationType
           )
         );
-        if (!payload.length) {
+        if (!messagesPayload.length) {
           commit(
             types.SET_ALL_MESSAGES_LOADED,
             withConversationType({ id: data.conversationId }, conversationType)
@@ -369,6 +467,17 @@ const actions = {
       const {
         data: { meta, payload },
       } = await MessageApi.getPreviousMessages(data);
+      const messagesPayload = await payloadWithFirstUnreadPage({
+        request: data,
+        selectedChat,
+        meta,
+        payload,
+        fetchPage: params =>
+          MessageApi.getPreviousMessages({
+            conversationId: data.conversationId,
+            ...params,
+          }),
+      });
       commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
         id: data.conversationId,
         data: meta,
@@ -378,12 +487,12 @@ const actions = {
         withConversationType(
           {
             id: data.conversationId,
-            data: payload,
+            data: messagesPayload,
           },
           conversationType
         )
       );
-      if (!payload.length) {
+      if (!messagesPayload.length) {
         commit(
           types.SET_ALL_MESSAGES_LOADED,
           withConversationType({ id: data.conversationId }, conversationType)

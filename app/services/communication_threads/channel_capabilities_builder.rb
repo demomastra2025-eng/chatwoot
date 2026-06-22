@@ -83,7 +83,15 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
       status: conversation.status,
       primary: link.primary?,
       last_activity_at: conversation.last_activity_at.to_i
-    }.merge(capabilities))
+    }.merge(read_state_payload(conversation), capabilities))
+  end
+
+  def read_state_payload(conversation)
+    {
+      agent_last_seen_at: conversation.agent_last_seen_at&.to_i,
+      assignee_last_seen_at: conversation.assignee_last_seen_at&.to_i,
+      unread_count: conversation.unread_incoming_messages_count
+    }
   end
 
   def build_unlinked_channel(inbox)

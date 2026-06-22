@@ -23,6 +23,7 @@ import {
  * @property {Boolean} isAnEmailChannel - Whether this is an email channel
  * @property {Object} inboxSupportsReplyTo - Inbox reply support configuration
  * @property {Array} messages - Array of all messages [These are not in camelcase]
+ * @property {Array} unreadMessageIds - IDs of messages counted as unread
  */
 const props = defineProps({
   currentUserId: {
@@ -45,6 +46,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  unreadMessageIds: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['retry']);
@@ -60,6 +65,10 @@ const allMessages = computed(() => {
     stopPaths: ['content_attributes.translations'],
   }).filter(message => !isHiddenDuplicateMessage(message));
 });
+
+const unreadMessageIdSet = computed(
+  () => new Set(props.unreadMessageIds.map(id => String(id)))
+);
 
 const currentChat = useMapGetter('getSelectedChat');
 
@@ -219,6 +228,11 @@ const getInReplyToMessage = parentMessage => {
 
   return replyMessage ? useCamelCase(replyMessage) : null;
 };
+
+const messageReadStateClass = message =>
+  unreadMessageIdSet.value.has(String(message.id))
+    ? 'message--unread'
+    : 'message--read';
 </script>
 
 <template>
@@ -246,6 +260,7 @@ const getInReplyToMessage = parentMessage => {
       </li>
       <Message
         v-bind="message"
+        :class="messageReadStateClass(message)"
         :is-email-inbox="isAnEmailChannel"
         :in-reply-to="getInReplyToMessage(message)"
         :group-with-next="shouldGroupWithNext(index, allMessages)"

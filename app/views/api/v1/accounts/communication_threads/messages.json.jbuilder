@@ -9,6 +9,7 @@ json.meta do
       json.partial! 'api/v1/accounts/communication_threads/partials/channel', formats: [:json], channel: channel
     end
   end
+  json.first_unread_message_id @first_unread_message_id
 end
 
 json.payload do

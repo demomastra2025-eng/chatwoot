@@ -63,6 +63,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       current_user: Current.user,
       params: params
     ).perform
+    @first_unread_message_id = first_unread_message_id_for(@communication_thread) if first_unread_cursor_requested?
   end
 
   def attachments
@@ -136,6 +137,26 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def communication_thread
     @communication_thread = CommunicationThread.find_by!(account_id: Current.account.id, display_id: params[:id])
+  end
+
+  def first_unread_message_id_for(communication_thread)
+    conversation_ids = accessible_links_for(communication_thread).select(:conversation_id)
+
+    Message.joins(:conversation)
+           .where(
+             account_id: Current.account.id,
+             conversation_id: conversation_ids,
+             message_type: Message.message_types[:incoming],
+             private: false
+           )
+           .where('messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)', Time.zone.at(0))
+           .reorder('messages.created_at ASC', 'messages.id ASC')
+           .limit(1)
+           .pick(:id)
+  end
+
+  def first_unread_cursor_requested?
+    params[:after].blank? && params[:before].blank?
   end
 
   def permitted_update_params

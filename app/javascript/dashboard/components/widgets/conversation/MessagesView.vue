@@ -29,8 +29,8 @@ import { calculateScrollTop } from './helpers/scrollTopCalculationHelper';
 import { LocalStorage } from 'shared/helpers/localStorage';
 import {
   filterDuplicateSourceMessages,
-  getReadMessages,
-  getUnreadMessages,
+  getUnreadIncomingMessages,
+  isPublicIncomingMessage,
 } from 'dashboard/helper/conversationHelper';
 
 import {
@@ -158,16 +158,27 @@ export default {
       }
       return messages;
     },
-    readMessages() {
-      return getReadMessages(
-        this.getMessages,
-        this.currentChat.agent_last_seen_at
+    unReadMessages() {
+      if (!isCommunicationThread(this.currentChat)) {
+        return getUnreadIncomingMessages(
+          this.getMessages,
+          this.currentChat.agent_last_seen_at
+        );
+      }
+
+      return this.getMessages.filter(message =>
+        this.isUnreadCommunicationThreadMessage(message)
       );
     },
-    unReadMessages() {
-      return getUnreadMessages(
-        this.getMessages,
-        this.currentChat.agent_last_seen_at
+    unreadMessageIds() {
+      return this.unReadMessages.map(message => message.id);
+    },
+    communicationThreadLastSeenByConversationId() {
+      return new Map(
+        (this.currentChat?.channels || []).map(channel => [
+          String(channel.conversation_id),
+          channel.agent_last_seen_at || 0,
+        ])
       );
     },
     shouldShowSpinner() {
@@ -431,6 +442,26 @@ export default {
         relevantMessages
       );
     },
+    communicationThreadMessageLastSeenAt(message) {
+      const conversationId = String(message?.conversation_id);
+      if (
+        this.communicationThreadLastSeenByConversationId.has(conversationId)
+      ) {
+        return this.communicationThreadLastSeenByConversationId.get(
+          conversationId
+        );
+      }
+
+      return this.currentChat.agent_last_seen_at || 0;
+    },
+    isUnreadCommunicationThreadMessage(message) {
+      if (!isPublicIncomingMessage(message)) return false;
+
+      return (
+        Number(message.created_at || 0) * 1000 >
+        Number(this.communicationThreadMessageLastSeenAt(message) || 0) * 1000
+      );
+    },
     isNearConversationBottom(offset = 80) {
       if (!this.conversationPanel) return true;
 
@@ -556,6 +587,7 @@ export default {
       :is-an-email-channel="isAnEmailChannel"
       :inbox-supports-reply-to="inboxSupportsReplyTo"
       :messages="getMessages"
+      :unread-message-ids="unreadMessageIds"
       @retry="handleMessageRetry"
     >
       <template #beforeAll>
