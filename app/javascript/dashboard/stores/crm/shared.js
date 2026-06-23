@@ -72,6 +72,8 @@ export const formatCrmErrorMessage = (error, t) => {
       return t('CRM.ERRORS.PIPELINE_MUST_BE_ARCHIVED');
     case 'STAGE_HAS_DEALS':
       return t('CRM.ERRORS.STAGE_HAS_DEALS');
+    case 'STANDARD_STAGE_LOCKED':
+      return t('CRM.ERRORS.STANDARD_STAGE_LOCKED');
     case 'TASK_STATUS_HAS_TASKS':
       return t('CRM.ERRORS.TASK_STATUS_HAS_TASKS');
     case 'TASK_STATUS_REQUIRES_FIELDS':

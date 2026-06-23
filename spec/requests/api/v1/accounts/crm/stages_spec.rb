@@ -28,6 +28,25 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(pipeline.stages.find_by!(code: 'negotiation').color).to eq('#14B8A6')
   end
 
+  it 'creates new stages as open even when a terminal outcome is submitted' do
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+
+    post "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages",
+         params: {
+           name: 'Legal Review',
+           color: '#14B8A6',
+           outcome: 'won'
+         },
+         headers: headers,
+         as: :json
+
+    created_stage = pipeline.stages.find_by!(code: 'legal_review')
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'outcome')).to eq('open')
+    expect(created_stage).to be_outcome_open
+  end
+
   it 'rejects plain agents from configuring stages' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
 
@@ -92,6 +111,39 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'color')).to eq('#A855F7')
     expect(stage.reload.color).to eq('#A855F7')
+  end
+
+  it 'only renames standard won and lost stages' do
+    stage = account.crm_stages.find_by!(code: 'won')
+    original_attributes = stage.slice(:active, :color, :default, :outcome, :position)
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+          params: {
+            active: false,
+            color: '#A855F7',
+            default: true,
+            name: 'Closed Won',
+            outcome: 'open',
+            position: 99
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(stage.reload.name).to eq('Closed Won')
+    expect(stage.slice(:active, :color, :default, :outcome, :position)).to eq(original_attributes)
+  end
+
+  it 'rejects deleting standard won and lost stages' do
+    stage = account.crm_stages.find_by!(code: 'lost')
+
+    delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('STANDARD_STAGE_LOCKED')
+    expect(account.crm_stages.exists?(stage.id)).to be(true)
   end
 
   it 'allows duplicate standard colors within the same pipeline' do

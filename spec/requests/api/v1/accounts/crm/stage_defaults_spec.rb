@@ -57,7 +57,7 @@ RSpec.describe 'CRM stage defaults API', type: :request do
     expect(previous_default.reload).not_to be_default
   end
 
-  it 'rejects a default stage that is not active and open' do
+  it 'creates submitted terminal outcomes as open default stages' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
 
     post "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages",
@@ -71,10 +71,12 @@ RSpec.describe 'CRM stage defaults API', type: :request do
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
-    expect(response.parsed_body.dig('details', 'default')).to include(
-      'Default must be an active open stage'
-    )
+    created_stage = pipeline.stages.find_by!(code: 'closed_default')
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'outcome')).to eq('open')
+    expect(response.parsed_body.dig('payload', 'default')).to be(true)
+    expect(created_stage).to be_outcome_open
+    expect(created_stage).to be_default
   end
 end

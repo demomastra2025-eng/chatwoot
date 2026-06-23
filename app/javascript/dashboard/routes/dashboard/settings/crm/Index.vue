@@ -133,14 +133,19 @@ const pipelineOptions = computed(() =>
 const dealTouchPlanOptions = computed(() =>
   touchPlanOptionsForEntityKind('deal')
 );
-const stageOutcomeOptions = computed(() => [
-  { label: t('CRM.SETTINGS.STAGES.OUTCOMES.open'), value: 'open' },
-  { label: t('CRM.SETTINGS.STAGES.OUTCOMES.won'), value: 'won' },
-  { label: t('CRM.SETTINGS.STAGES.OUTCOMES.lost'), value: 'lost' },
-]);
+const TERMINAL_STAGE_OUTCOMES = new Set(['won', 'lost']);
+const isTerminalStageOutcome = outcome =>
+  TERMINAL_STAGE_OUTCOMES.has(String(outcome || '').toLowerCase());
+const isTerminalStage = stage => isTerminalStageOutcome(stage?.outcome);
+const stageFormIsTerminal = computed(() =>
+  Boolean(stageForm.id && isTerminalStageOutcome(stageForm.outcome))
+);
 
 const stageFormCanBeDefault = computed(
-  () => stageForm.active && stageForm.outcome === 'open'
+  () =>
+    !stageFormIsTerminal.value &&
+    stageForm.active &&
+    stageForm.outcome === 'open'
 );
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
@@ -693,17 +698,29 @@ const saveNewPipeline = async () => {
   }
 };
 
+const buildStageSavePayload = () => {
+  const basePayload = {
+    id: stageForm.id,
+    name: stageForm.name.trim(),
+  };
+
+  if (stageFormIsTerminal.value) {
+    return basePayload;
+  }
+
+  return {
+    ...basePayload,
+    active: stageForm.active,
+    color: stageForm.color,
+    default: Boolean(stageForm.default && stageFormCanBeDefault.value),
+    outcome: 'open',
+    pipelineId: Number(stageForm.pipelineId),
+  };
+};
+
 const saveStage = async () => {
   try {
-    await referencesStore.saveStage({
-      active: stageForm.active,
-      color: stageForm.color,
-      default: Boolean(stageForm.default && stageFormCanBeDefault.value),
-      id: stageForm.id,
-      name: stageForm.name.trim(),
-      outcome: stageForm.outcome,
-      pipelineId: Number(stageForm.pipelineId),
-    });
+    await referencesStore.saveStage(buildStageSavePayload());
     useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
     stageDrawerOpen.value = false;
     resetStageForm();
@@ -723,7 +740,11 @@ const persistInlineStageOrder = async pipelineId => {
         ...stage,
         nextPosition: index,
       }))
-      .filter(stage => Number(stage.position ?? 0) !== stage.nextPosition);
+      .filter(
+        stage =>
+          !isTerminalStage(stage) &&
+          Number(stage.position ?? 0) !== stage.nextPosition
+      );
 
     await Promise.all(
       stageUpdates.map(stage =>
@@ -1082,7 +1103,11 @@ onMounted(async () => {
                               </span>
                             </button>
                             <button
-                              v-if="canManage && row.active"
+                              v-if="
+                                canManage &&
+                                row.active &&
+                                !isTerminalStage(stage)
+                              "
                               type="button"
                               class="pipeline-stage-drag-handle inline-flex size-7 shrink-0 items-center justify-center rounded-full text-n-slate-10 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
                               :disabled="isStageOrderSaving(row.id)"
@@ -1266,7 +1291,7 @@ onMounted(async () => {
           :model-value="stageForm.name"
           @update:model-value="stageForm.name = $event"
         />
-        <div class="grid gap-3">
+        <div v-if="!stageFormIsTerminal" class="grid gap-3">
           <span class="text-sm font-medium text-n-slate-12">
             {{ $t('CRM.SETTINGS.STAGES.FORM.COLOR') }}
           </span>
@@ -1306,13 +1331,7 @@ onMounted(async () => {
             <SchedulingColorPicker v-model="stageForm.color" />
           </div>
         </div>
-        <SchedulingSelectField
-          :label="$t('CRM.SETTINGS.STAGES.FORM.OUTCOME')"
-          :model-value="stageForm.outcome"
-          :options="stageOutcomeOptions"
-          @update:model-value="stageForm.outcome = $event"
-        />
-        <div class="flex items-center gap-3">
+        <div v-if="!stageFormIsTerminal" class="flex items-center gap-3">
           <Switch
             :model-value="stageForm.default"
             :disabled="!stageFormCanBeDefault"
@@ -1327,7 +1346,10 @@ onMounted(async () => {
             </span>
           </div>
         </div>
-        <div v-if="stageForm.id" class="flex items-center gap-3">
+        <div
+          v-if="stageForm.id && !stageFormIsTerminal"
+          class="flex items-center gap-3"
+        >
           <Checkbox
             :model-value="!stageForm.active"
             @update:model-value="stageForm.active = !$event"
@@ -1341,7 +1363,7 @@ onMounted(async () => {
       <template #footer>
         <div class="flex items-center justify-between gap-3">
           <Button
-            v-if="stageForm.id"
+            v-if="stageForm.id && !stageFormIsTerminal"
             size="sm"
             color="ruby"
             variant="outline"

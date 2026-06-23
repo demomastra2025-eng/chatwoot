@@ -58,6 +58,7 @@
       "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.",
       "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
       "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
+      "STANDARD_STAGE_LOCKED": "Standard Won and Lost stages can only be renamed.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
       "TASK_STATUS_REQUIRES_FIELDS": "Fill required fields before marking the task as done: {fields}.",
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
@@ -336,7 +337,7 @@
           "CUSTOM_COLOR": "Custom color",
           "DEFAULT": "Default stage",
           "DEFAULT_HELP": "New deals in this pipeline start from this active open stage.",
-          "DEACTIVATE": "Deactivate stage",
+          "DEACTIVATE": "Hide stage",
           "NAME": "Name",
           "OUTCOME": "Outcome",
           "PIPELINE": "Pipeline"

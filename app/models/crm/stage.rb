@@ -34,6 +34,7 @@ class Crm::Stage < ApplicationRecord
   self.table_name = 'crm_stages'
 
   OUTCOMES = %w[open won lost].freeze
+  TERMINAL_OUTCOMES = %w[won lost].freeze
   STANDARD_COLORS = [
     '#F0F0F3',
     '#E8E8EC',
@@ -80,6 +81,10 @@ class Crm::Stage < ApplicationRecord
   before_validation :normalize_color
   before_validation :assign_position, on: :create
   before_save :clear_other_default_stages, if: :default?
+
+  def terminal_outcome?
+    outcome.in?(TERMINAL_OUTCOMES)
+  end
 
   private
 
