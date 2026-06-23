@@ -275,6 +275,36 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
   end
 
+  it 'does not write browser presence to a disabled legacy binding without an inbox' do
+    disabled_binding = create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'fonoster',
+      enabled: false,
+      metadata: {
+        'disabled_reason' => 'managed_voice_inboxes_do_not_use_legacy_bindings',
+        'registration_state' => 'offline'
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(disabled_binding.reload.metadata).to include(
+      'disabled_reason' => 'managed_voice_inboxes_do_not_use_legacy_bindings',
+      'registration_state' => 'offline'
+    )
+    expect(response.parsed_body['payload']).to include(
+      'calling_supported' => false,
+      'registered_for_routing' => false,
+      'reason' => 'agent_binding_missing'
+    )
+  end
+
   it 'records browser registration presence on the current inbox SIP profile' do
     legacy_binding = create(
       :telephony_agent_binding,
@@ -373,6 +403,33 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
     expect(response.parsed_body.dig('payload', 'registered')).to be(false)
+    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(false)
+    expect(response.parsed_body.dig('payload', 'reason')).to eq('agent_binding_missing')
+  end
+
+  it 'does not advertise browser calling or call the bridge for a disabled legacy binding' do
+    create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'fonoster',
+      agent_ref: 'disabled-legacy-agent-1001',
+      enabled: false
+    )
+    token_request = nil
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+
+      post path, headers: headers, as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(token_request).not_to have_been_requested
+    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
     expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(false)
     expect(response.parsed_body.dig('payload', 'reason')).to eq('agent_binding_missing')
   end

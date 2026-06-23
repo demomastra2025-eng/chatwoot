@@ -96,7 +96,7 @@ class Telephony::OperatorIdentityResolver
   def agent_binding_identity
     return if managed_number_binding?
 
-    binding = account.telephony_agent_bindings.find_by(user_id: user&.id)
+    binding = account.telephony_agent_bindings.enabled.find_by(user_id: user&.id)
     return if binding.blank?
 
     Identity.new(source: :agent_binding, record: binding)
