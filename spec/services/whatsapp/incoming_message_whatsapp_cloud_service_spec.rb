@@ -42,6 +42,23 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         expect_message_has_attachment
       end
 
+      it 'preserves the WhatsApp Cloud document filename from the webhook payload' do
+        downloaded_document = downloaded_document_with_header_filename('server-header.docx-filename*=')
+        stub_document_media_url_request
+        allow(Down).to receive(:download).and_return(downloaded_document)
+
+        described_class.new(
+          inbox: whatsapp_channel.inbox,
+          params: document_message_params(filename: 'invoice-22-06-2026.docx')
+        ).perform
+
+        attachment = whatsapp_channel.inbox.messages.last.attachments.first
+        expect(attachment.file.filename.to_s).to eq('invoice-22-06-2026.docx')
+        expect(attachment.extension).to eq('docx')
+      ensure
+        downloaded_document&.close!
+      end
+
       it 'increments reauthorization count if fetching attachment fails' do
         stub_request(
           :get,
@@ -525,6 +542,51 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         }]
       }]
     }.with_indifferent_access
+  end
+
+  def document_message_params(filename:)
+    params.deep_dup.tap do |payload|
+      message = payload[:entry][0][:changes][0][:value][:messages][0]
+      message.delete(:image)
+      message.merge!(
+        id: 'wamid.DOCUMENT_FILENAME_MESSAGE',
+        document: {
+          id: 'document-media-id',
+          filename: filename,
+          mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          sha256: 'sha256'
+        },
+        type: 'document'
+      )
+    end
+  end
+
+  def downloaded_document_with_header_filename(filename)
+    tempfile = Tempfile.new(['whatsapp-cloud-document', '.docx'])
+    tempfile.binmode
+    tempfile.write('fake docx')
+    tempfile.rewind
+    tempfile.define_singleton_method(:original_filename) { filename }
+    tempfile.define_singleton_method(:content_type) { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+    tempfile
+  end
+
+  def stub_document_media_url_request
+    stub_request(
+      :get,
+      whatsapp_channel.media_url('document-media-id')
+    ).to_return(
+      status: 200,
+      body: {
+        messaging_product: 'whatsapp',
+        url: 'https://chatwoot-assets.local/sample.docx',
+        mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        sha256: 'sha256',
+        file_size: 'SIZE',
+        id: 'document-media-id'
+      }.to_json,
+      headers: { 'content-type' => 'application/json' }
+    )
   end
 
   def stub_media_url_request

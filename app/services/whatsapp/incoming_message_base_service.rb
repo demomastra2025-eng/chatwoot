@@ -167,10 +167,22 @@ class Whatsapp::IncomingMessageBaseService
       file_type: file_content_type(message_type),
       file: {
         io: attachment_file,
-        filename: attachment_file.original_filename,
-        content_type: attachment_file.content_type
+        filename: attachment_filename(attachment_payload, attachment_file),
+        content_type: attachment_content_type(attachment_payload, attachment_file)
       }
     ).skip_storage_limit_validation!
+  end
+
+  def attachment_filename(attachment_payload, attachment_file)
+    attachment_payload_value(attachment_payload, :filename).presence || attachment_file.original_filename
+  end
+
+  def attachment_content_type(attachment_payload, attachment_file)
+    attachment_payload_value(attachment_payload, :mime_type).presence || attachment_file.content_type
+  end
+
+  def attachment_payload_value(attachment_payload, key)
+    attachment_payload[key] || attachment_payload[key.to_s]
   end
 
   def attach_location
