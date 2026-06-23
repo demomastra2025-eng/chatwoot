@@ -920,6 +920,100 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
   end
 
+  # rubocop:disable RSpec/ExampleLength, RSpec/MultipleExpectations
+  it 'reassigns an existing Sipuni extension to another collaborator without requiring the SIP password again' do
+    replacement_agent = create(:user, account: account, role: :agent)
+    second_agent = create(:user, account: account, role: :agent)
+    post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    inbox = Inbox.find(inbox_id)
+    inbox.inbox_members.find_or_create_by!(user_id: agent.id)
+    inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
+    inbox.inbox_members.find_or_create_by!(user_id: replacement_agent.id)
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          remote_commit: false,
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '504',
+              sip_username: '056124100020',
+              sip_password: 'first-profile-secret',
+              enabled: true
+            },
+            {
+              user_id: second_agent.id,
+              internal_extension: '505',
+              sip_username: '056124100021',
+              sip_password: 'second-profile-secret',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    original_profile = inbox.reload.telephony_sip_profiles.find_by!(user_id: second_agent.id, internal_extension: '505')
+    original_profile.update!(
+      credentials_ref: 'remote-credentials-505',
+      fonoster_agent_ref: 'remote-agent-505',
+      fonoster_credentials_ref: 'remote-credentials-505'
+    )
+    original_snapshot = original_profile.slice(
+      :id,
+      :internal_extension,
+      :sip_username,
+      :password_secret_ref,
+      :credentials_ref,
+      :fonoster_agent_ref,
+      :fonoster_credentials_ref
+    )
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          remote_commit: false,
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '504',
+              enabled: true
+            },
+            {
+              user_id: replacement_agent.id,
+              internal_extension: '505',
+              sip_username: '056124100021',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    reassigned_profile = inbox.reload.telephony_sip_profiles.find_by!(internal_extension: '505')
+    reassigned_snapshot = reassigned_profile.slice(
+      :id,
+      :internal_extension,
+      :sip_username,
+      :password_secret_ref,
+      :credentials_ref,
+      :fonoster_agent_ref,
+      :fonoster_credentials_ref
+    )
+    expect(reassigned_profile.user_id).to eq(replacement_agent.id)
+    expect(reassigned_snapshot).to eq(original_snapshot)
+    expect(inbox.telephony_sip_profiles.where(user_id: second_agent.id, internal_extension: '505')).to be_empty
+  end
+  # rubocop:enable RSpec/ExampleLength, RSpec/MultipleExpectations
+
   it 'recomputes the pinned operator AOR when profile settings replace the prior extension' do
     post base_path,
          params: valid_create_payload.merge(

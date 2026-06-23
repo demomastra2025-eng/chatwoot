@@ -808,9 +808,22 @@ class Telephony::VirtualPbx::ProvisioningService
       user_id: profile[:user_id],
       internal_extension: profile[:internal_extension]
     )
+    existing_profile ||= reusable_sip_profile_credentials_for(profile, inbox_id: inbox_id)
     return false if existing_profile.blank? || existing_profile.password_secret_ref.blank?
 
     existing_profile.sip_username.to_s == profile[:sip_username].to_s
+  end
+
+  def reusable_sip_profile_credentials_for(profile, inbox_id:)
+    return if inbox_id.blank? || profile[:internal_extension].blank? || profile[:sip_username].blank?
+
+    matching_profiles = account.telephony_sip_profiles
+                               .where(inbox_id: inbox_id, internal_extension: profile[:internal_extension], sip_username: profile[:sip_username])
+                               .where.not(password_secret_ref: [nil, ''])
+                               .to_a
+    return unless matching_profiles.one?
+
+    matching_profiles.first
   end
 
   def password_secret_ref_for(profile_record, profile, payload, index, sip_username:)
@@ -1035,12 +1048,24 @@ class Telephony::VirtualPbx::ProvisioningService
     )
     return exact_profile if exact_profile.present?
 
+    extension_profile = reassignable_sip_profile_for(inbox, profile)
+    return extension_profile if extension_profile.present?
+
     if sip_credentials_omitted?(profile)
       existing_profiles = account.telephony_sip_profiles.where(inbox: inbox, user_id: profile[:user_id])
       return existing_profiles.first if existing_profiles.one?
     end
 
     account.telephony_sip_profiles.new(inbox: inbox, user_id: profile[:user_id], internal_extension: profile[:internal_extension])
+  end
+
+  def reassignable_sip_profile_for(inbox, profile)
+    return if inbox.blank? || profile[:internal_extension].blank?
+
+    existing_profiles = account.telephony_sip_profiles.where(inbox: inbox, internal_extension: profile[:internal_extension]).to_a
+    return unless existing_profiles.one?
+
+    existing_profiles.first
   end
 
   def sip_credentials_omitted?(profile)
