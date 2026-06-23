@@ -80,12 +80,14 @@ class Telephony::OperatorIdentityResolver
   end
 
   def sip_profile_scope
-    return Telephony::SipProfile.none if inbox.blank? || user.blank?
+    return Telephony::SipProfile.none if user.blank?
 
-    scope = if inbox.respond_to?(:telephony_sip_profiles)
+    scope = if inbox.present? && inbox.respond_to?(:telephony_sip_profiles)
               inbox.telephony_sip_profiles
-            else
+            elsif inbox.present?
               account.telephony_sip_profiles.where(inbox_id: inbox.id)
+            else
+              account.telephony_sip_profiles.where(availability_mode: 'browser_webphone')
             end
 
     scope.where(user_id: user.id, enabled: true)

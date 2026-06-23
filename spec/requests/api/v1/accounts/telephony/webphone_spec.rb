@@ -165,6 +165,73 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['calling_supported']).to be(false)
   end
 
+  it 'uses the latest browser SIP profile for no-inbox auto webphone bootstrap' do
+    older_voice_channel = create(
+      :channel_voice,
+      :fonoster,
+      account: account,
+      phone_number: "+1556#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
+    )
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: older_voice_channel.inbox,
+      user: administrator,
+      internal_extension: '9098',
+      agent_ref: 'local-profile-9098',
+      fonoster_agent_ref: 'remote-profile-9098',
+      agent_aor: 'sip:9098@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone'
+    )
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '505',
+      agent_ref: 'local-profile-505',
+      fonoster_agent_ref: 'remote-profile-505',
+      agent_aor: 'sip:505@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone'
+    )
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+        .with(
+          body: hash_including(
+            agent_ref: 'remote-profile-505',
+            agent_aor: 'sip:505@operator.cloud.vconsult.kz'
+          ),
+          headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+        )
+        .to_return(
+          status: 200,
+          body: {
+            token: 'test-token',
+            username: 'internal',
+            domain: 'internal',
+            displayName: 'Test Call Agent',
+            signalingServer: 'wss://bridge.example/ws',
+            targetAor: 'sip:voice@default'
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      post path, headers: headers, as: :json
+    end
+
+    payload = response.parsed_body['payload']
+    expect(payload['agent_ref']).to eq('remote-profile-505')
+    expect(payload['username']).to eq('505')
+    expect(payload['domain']).to eq('operator.cloud.vconsult.kz')
+    expect(payload['targetAor']).to eq('sip:505@operator.cloud.vconsult.kz')
+    expect(payload['browser_join_supported']).to be(true)
+    expect(payload['calling_supported']).to be(true)
+  end
+
   it 'does not fall back to a hidden account binding for a managed inbox without a SIP profile' do
     create(
       :telephony_agent_binding,
@@ -334,6 +401,31 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(sip_profile.reload.registered_for_routing?).to be(true)
     expect(legacy_binding.reload.metadata).not_to include('last_presence_source')
+    expect(response.parsed_body.dig('payload', 'id')).to eq(sip_profile.id)
+    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
+    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
+  end
+
+  it 'records no-inbox browser registration presence on the only browser SIP profile' do
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '505',
+      agent_ref: 'local-profile-505',
+      fonoster_agent_ref: 'remote-profile-505',
+      agent_aor: 'sip:505@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone'
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(sip_profile.reload.registered_for_routing?).to be(true)
     expect(response.parsed_body.dig('payload', 'id')).to eq(sip_profile.id)
     expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
