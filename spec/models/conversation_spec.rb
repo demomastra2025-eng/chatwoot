@@ -298,18 +298,40 @@ RSpec.describe Conversation do
         label_list: [label.title]
       )
 
+      label_content = I18n.t('conversations.activity.labels.added', user_name: old_assignee.name, labels: label.display_title)
+      status_content = I18n.t('conversations.activity.status.resolved', user_name: old_assignee.name)
+      assignee_content = I18n.t(
+        'conversations.activity.assignee.assigned',
+        assignee_name: new_assignee.name,
+        user_name: old_assignee.name
+      )
+
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: "#{old_assignee.name} added #{label.title}" }))
+                              content: label_content }))
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: "Conversation was marked resolved by #{old_assignee.name}" }))
+                              content: status_content }))
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: "Assigned to #{new_assignee.name} by #{old_assignee.name}" }))
+                              content: assignee_content }))
+    end
+
+    it 'creates two-line Russian policy assignment activity' do
+      Current.user = nil
+      Current.executed_by = create(:assignment_policy, account: account, name: 'Default policy')
+
+      I18n.with_locale(:ru) do
+        expect { conversation.update!(assignee: new_assignee) }
+          .to have_enqueued_job(Conversations::ActivityMessageJob)
+          .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
+                                content: "Назначен: #{new_assignee.name}.\nИнициатор: Система политики" })
+      end
+    ensure
+      Current.executed_by = nil
     end
 
     it 'adds a message for system auto resolution if marked resolved by system' do
@@ -324,7 +346,7 @@ RSpec.describe Conversation do
                      else
                        { key: 'auto_resolved_minutes', count: account.auto_resolve_after }
                      end
-      system_resolved_message = "Conversation was marked resolved by system due to #{message_data[:count]} days of inactivity"
+      system_resolved_message = I18n.t("conversations.activity.status.#{message_data[:key]}", count: message_data[:count])
       expect { conversation2.update(status: :resolved) }
         .to have_enqueued_job(Conversations::ActivityMessageJob)
         .with(conversation2, { account_id: conversation2.account_id, inbox_id: conversation2.inbox_id, message_type: :activity,
@@ -338,10 +360,10 @@ RSpec.describe Conversation do
     let(:agent) do
       create(:user, email: 'agent@example.com', account: account, role: :agent)
     end
-    let(:first_label) { create(:label, account: account) }
-    let(:second_label) { create(:label, account: account) }
-    let(:third_label) { create(:label, account: account) }
-    let(:fourth_label) { create(:label, account: account) }
+    let(:first_label) { create(:label, account: account, title: 'sadasd', display_title: 'sadasd') }
+    let(:second_label) { create(:label, account: account, title: 'label_31ad50d8ef40', display_title: 'VIP') }
+    let(:third_label) { create(:label, account: account, title: 'label_f73ca8dec808', display_title: 'Новый клиент') }
+    let(:fourth_label) { create(:label, account: account, title: 'label_ignored', display_title: 'Старый клиент') }
 
     before do
       conversation
@@ -355,35 +377,42 @@ RSpec.describe Conversation do
 
     it 'adds one label to conversation' do
       labels = [first_label].map(&:title)
+      display_labels = [first_label].map(&:display_title)
+      expected_content = I18n.t('conversations.activity.labels.added', user_name: agent.name, labels: display_labels.join(', '))
 
       expect { conversation.update_labels(labels) }
         .to have_enqueued_job(Conversations::ActivityMessageJob)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: "#{agent.name} added #{labels.join(', ')}"  })
+                              content: expected_content })
 
       expect(conversation.label_list).to match_array(labels)
     end
 
     it 'adds and removes previously added labels' do
       labels = [first_label, fourth_label].map(&:title)
+      display_labels = [first_label, fourth_label].map(&:display_title)
+      initial_expected_content = I18n.t('conversations.activity.labels.added', user_name: agent.name, labels: display_labels.join(', '))
       expect { conversation.update_labels(labels) }
         .to have_enqueued_job(Conversations::ActivityMessageJob)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                              content: "#{agent.name} added #{labels.join(', ')}"  })
+                              content: initial_expected_content })
       expect(conversation.label_list).to match_array(labels)
 
       updated_labels = [second_label, third_label].map(&:title)
+      updated_display_labels = [second_label, third_label].map(&:display_title)
+      updated_expected_content = I18n.t('conversations.activity.labels.added', user_name: agent.name, labels: updated_display_labels.join(', '))
+      removed_expected_content = I18n.t('conversations.activity.labels.removed', user_name: agent.name, labels: display_labels.join(', '))
       expect(conversation.update_labels(updated_labels)).to be(true)
       expect(conversation.label_list).to match_array(updated_labels)
 
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id,
-                              message_type: :activity, content: "#{agent.name} added #{updated_labels.join(', ')}" }))
+                              message_type: :activity, content: updated_expected_content }))
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once)
         .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id,
-                              message_type: :activity, content: "#{agent.name} removed #{labels.join(', ')}" }))
+                              message_type: :activity, content: removed_expected_content }))
     end
   end
 
@@ -526,10 +555,12 @@ RSpec.describe Conversation do
     end
 
     it 'creates mute message' do
+      muted_content = I18n.t('conversations.activity.muted', user_name: user.name)
+
       mute!
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once).with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id,
-                                                                    message_type: :activity, content: "#{user.name} has muted the conversation" }))
+                                                                    message_type: :activity, content: muted_content }))
     end
 
     context 'when contact is missing' do
@@ -568,10 +599,12 @@ RSpec.describe Conversation do
     end
 
     it 'creates unmute message' do
+      unmuted_content = I18n.t('conversations.activity.unmuted', user_name: user.name)
+
       unmute!
       expect(Conversations::ActivityMessageJob)
         .to(have_been_enqueued.at_least(:once).with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id,
-                                                                    message_type: :activity, content: "#{user.name} has unmuted the conversation" }))
+                                                                    message_type: :activity, content: unmuted_content }))
     end
 
     context 'when contact is missing' do
@@ -712,6 +745,8 @@ RSpec.describe Conversation do
           hmac_verified: conversation.contact_inbox.hmac_verified
         },
         id: conversation.display_id,
+        campaign: nil,
+        campaign_id: nil,
         messages: [],
         labels: [],
         last_activity_at: conversation.last_activity_at.to_i,
@@ -726,6 +761,7 @@ RSpec.describe Conversation do
         first_reply_created_at: nil,
         contact_last_seen_at: conversation.contact_last_seen_at.to_i,
         agent_last_seen_at: conversation.agent_last_seen_at.to_i,
+        assignee_last_seen_at: conversation.assignee_last_seen_at.to_i,
         created_at: conversation.created_at.to_i,
         updated_at: conversation.updated_at.to_f,
         waiting_since: conversation.waiting_since.to_i,

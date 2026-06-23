@@ -14,6 +14,8 @@ import {
   CONVERSATION_ATTRIBUTES,
 } from './helper/filterHelper';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages.js';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
 
 /**
  * @typedef {Object} FilterOption
@@ -65,6 +67,7 @@ export function useConversationFilterContext() {
   const inboxes = useMapGetter('inboxes/getInboxes');
   const teams = useMapGetter('teams/getTeams');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
+  const crmReferencesStore = useCrmReferencesStore();
 
   const {
     equalityOperators,
@@ -85,6 +88,33 @@ export function useConversationFilterContext() {
     )
   );
 
+  const defaultPipelineStageFilter = computed(() => {
+    const { pipeline, stages } = resolveDefaultPipelineWithStages(
+      crmReferencesStore.pipelines
+    );
+
+    if (!pipeline || !stages.length) return null;
+
+    const label = t('FILTER.ATTRIBUTES.CRM_STAGE_FOR_PIPELINE', {
+      pipeline: pipeline.name,
+    });
+
+    return {
+      attributeKey: CONVERSATION_ATTRIBUTES.CRM_STAGE_ID,
+      value: CONVERSATION_ATTRIBUTES.CRM_STAGE_ID,
+      attributeName: label,
+      label,
+      inputType: 'multiSelect',
+      options: stages.map(stage => ({
+        id: stage.id,
+        name: stage.name,
+      })),
+      dataType: 'number',
+      filterOperators: equalityOperators.value,
+      attributeModel: 'standard',
+    };
+  });
+
   /**
    * @type {import('vue').ComputedRef<FilterType[]>}
    */
@@ -95,7 +125,7 @@ export function useConversationFilterContext() {
       attributeName: t('FILTER.ATTRIBUTES.STATUS'),
       label: t('FILTER.ATTRIBUTES.STATUS'),
       inputType: 'multiSelect',
-      options: ['open', 'resolved', 'pending', 'snoozed', 'all'].map(id => {
+      options: ['open', 'resolved', 'pending', 'snoozed'].map(id => {
         return {
           id,
           name: t(`CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.${id}.TEXT`),
@@ -222,6 +252,9 @@ export function useConversationFilterContext() {
       filterOperators: presenceOperators.value,
       attributeModel: 'standard',
     },
+    ...(defaultPipelineStageFilter.value
+      ? [defaultPipelineStageFilter.value]
+      : []),
     {
       attributeKey: CONVERSATION_ATTRIBUTES.BROWSER_LANGUAGE,
       value: CONVERSATION_ATTRIBUTES.BROWSER_LANGUAGE,

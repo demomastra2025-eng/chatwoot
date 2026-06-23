@@ -77,6 +77,14 @@ const getValuesForPriority = (values, priority) => {
   return priority.filter(option => values.includes(option.id));
 };
 
+const getValuesForCrmStages = (values, crmStages = []) => {
+  const valueSet = new Set(values.map(value => String(value)));
+  const selectedStages = crmStages.filter(stage =>
+    valueSet.has(String(stage.id))
+  );
+  return selectedStages.map(({ id, name }) => ({ id, name }));
+};
+
 export const getValuesForFilter = (filter, params) => {
   const { attribute_key, values } = filter;
   const {
@@ -88,6 +96,7 @@ export const getValuesForFilter = (filter, params) => {
     campaigns,
     labels,
     priority,
+    crmStages,
   } = params;
   switch (attribute_key) {
     case 'status':
@@ -104,6 +113,8 @@ export const getValuesForFilter = (filter, params) => {
       return getValuesForLabels(values, labels);
     case 'priority':
       return getValuesForPriority(values, priority);
+    case 'crm_stage_id':
+      return getValuesForCrmStages(values, crmStages);
     case 'browser_language':
       return getValuesForLanguages(values, languages);
     case 'country_code':
@@ -128,7 +139,12 @@ export const generateValuesForEditCustomViews = (filter, params) => {
       : { id: values[0], name: values[0] };
   }
 
-  return inputType === 'multi_select' || inputType === 'search_select'
+  return [
+    'multi_select',
+    'search_select',
+    'multiSelect',
+    'searchSelect',
+  ].includes(inputType)
     ? getValuesForFilter(filter, params)
     : values[0].toString();
 };

@@ -71,6 +71,14 @@ const filterTypes = [
     attributeModel: 'standard',
   },
   {
+    attributeKey: 'crm_stage_id',
+    attributeI18nKey: 'CRM_STAGE',
+    inputType: 'multi_select',
+    dataType: 'number',
+    filterOperators: OPERATOR_TYPES_1,
+    attributeModel: 'standard',
+  },
+  {
     attributeKey: 'browser_language',
     attributeI18nKey: 'BROWSER_LANGUAGE',
     inputType: 'search_select',
@@ -144,6 +152,10 @@ export const filterAttributeGroups = [
       {
         key: 'labels',
         i18nKey: 'LABELS',
+      },
+      {
+        key: 'crm_stage_id',
+        i18nKey: 'CRM_STAGE',
       },
       {
         key: 'created_at',

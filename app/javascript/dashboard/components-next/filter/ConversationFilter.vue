@@ -1,5 +1,5 @@
 <script setup>
-import { useTemplateRef, onBeforeUnmount, computed, ref } from 'vue';
+import { useTemplateRef, onBeforeUnmount, onMounted, computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useTrack } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
@@ -7,6 +7,7 @@ import { vOnClickOutside } from '@vueuse/components';
 import { CONVERSATION_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { useConversationFilterContext } from './provider.js';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 
 import Button from 'next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -41,6 +42,7 @@ const DEFAULT_FILTER = {
 
 const { t } = useI18n();
 const store = useStore();
+const crmReferencesStore = useCrmReferencesStore();
 
 const resetFilter = () => {
   filters.value = [{ ...DEFAULT_FILTER }];
@@ -93,6 +95,17 @@ const filterModalHeaderTitle = computed(() => {
   return !props.isFolderView
     ? t('FILTER.TITLE')
     : t('FILTER.EDIT_CUSTOM_FILTER');
+});
+
+onMounted(() => {
+  if (
+    crmReferencesStore.pipelines.length ||
+    crmReferencesStore.ui?.isLoadingPipelines
+  ) {
+    return;
+  }
+
+  crmReferencesStore.loadPipelines().catch(() => {});
 });
 
 onBeforeUnmount(() => emit('close'));

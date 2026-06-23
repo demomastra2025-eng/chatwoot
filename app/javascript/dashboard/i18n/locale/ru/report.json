@@ -648,5 +648,122 @@
     "AVG_REPLY_TIME": "Среднее время ожидания клиента",
     "RESOLUTION_COUNT": "Количество завершенных",
     "CONVERSATIONS": "Количество диалогов"
+  },
+  "CRM_DEAL_REPORTS": {
+    "HEADER": "Сделки",
+    "KICKER": "CRM отчёты",
+    "TITLE": "Аналитика сделок без лишнего шума",
+    "DESCRIPTION": "Смотрите открытые сделки, прогноз закрытий, источники, вклад команды и зависшие сделки в одном аккуратном отчёте.",
+    "CURRENCY_HINT": "Денежные метрики: {currency}.",
+    "ERROR": "Не удалось загрузить отчёт по сделкам. Попробуйте ещё раз.",
+    "EMPTY_VALUE": "—",
+    "UNASSIGNED": "Без ответственного",
+    "EMPTY_TITLE": "Пока нет данных для отчёта",
+    "EMPTY_DESCRIPTION": "Создайте сделки или измените период, чтобы увидеть аналитику по сделкам.",
+    "SECTIONS": {
+      "OVERVIEW": {
+        "TITLE": "Этапы",
+        "DESCRIPTION": "Где стоят сделки и какая сумма в работе."
+      },
+      "FORECAST": {
+        "TITLE": "Прогноз",
+        "DESCRIPTION": "Ожидаемое закрытие и won/lost динамика."
+      },
+      "SOURCES": {
+        "TITLE": "Источники",
+        "DESCRIPTION": "Откуда приходят сделки и как они конвертируются."
+      },
+      "TEAM": {
+        "TITLE": "Команда",
+        "DESCRIPTION": "Вклад менеджеров и старение открытых сделок."
+      }
+    },
+    "SUMMARY": {
+      "OPEN_DEALS": "В работе",
+      "OPEN_DEALS_HELPER": "Открытые сделки на активных этапах.",
+      "PIPELINE_AMOUNT": "Сумма в работе",
+      "PIPELINE_AMOUNT_HELPER": "Потенциальная сумма открытых сделок.",
+      "WEIGHTED_PIPELINE": "Взвешенный прогноз",
+      "WEIGHTED_PIPELINE_HELPER": "Сумма с учётом win probability.",
+      "WIN_RATE": "Win rate",
+      "WIN_RATE_HELPER": "Won: {won}, Lost: {lost} за выбранный период."
+    },
+    "CHARTS": {
+      "STAGE_FLOW": {
+        "TITLE": "Сделки по этапам",
+        "DESCRIPTION": "Быстрый список этапов: количество сделок и сумма рядом, без визуального искажения."
+      },
+      "STAGE_AMOUNT": {
+        "TITLE": "Сумма по этапам",
+        "DESCRIPTION": "Какие этапы держат основную сумму открытых сделок.",
+        "DATASET": "Сумма"
+      },
+      "FORECAST_AMOUNT": {
+        "TITLE": "Прогноз закрытий",
+        "DESCRIPTION": "Плановая и взвешенная сумма закрытия по выбранной группировке.",
+        "DATASET": "Плановая сумма"
+      },
+      "FORECAST_WEIGHTED": {
+        "DATASET": "С учётом вероятности"
+      },
+      "WON_LOST": {
+        "TITLE": "Won / Lost",
+        "DESCRIPTION": "Сколько сделок выиграно и проиграно в периоде.",
+        "WON": "Won",
+        "LOST": "Lost"
+      },
+      "SOURCE": {
+        "TITLE": "Конверсия источников",
+        "DESCRIPTION": "Открытые, выигранные и проигранные сделки по источникам.",
+        "DATASET": "Сделки",
+        "OPEN": "Открыто",
+        "WON": "Won",
+        "LOST": "Lost"
+      },
+      "SOURCE_MIX": {
+        "TITLE": "Структура источников",
+        "DESCRIPTION": "Доля каждого источника в общем количестве сделок."
+      },
+      "OWNER_AMOUNT": {
+        "TITLE": "Сумма по менеджерам",
+        "DESCRIPTION": "Топ ответственных по сумме созданных сделок.",
+        "DATASET": "Сумма"
+      },
+      "AGING": {
+        "TITLE": "Возраст открытых сделок",
+        "DESCRIPTION": "Сколько открытых сделок зависло по возрастным группам.",
+        "DATASET": "Сделки"
+      }
+    },
+    "TABLES": {
+      "SOURCE": {
+        "TITLE": "Качество источников",
+        "ROW_HELPER": "Won {won} · Lost {lost} · Win rate {winRate}"
+      },
+      "TEAM": {
+        "ROW_HELPER": "Сделок {deals} · Won {won} · Win rate {winRate}"
+      }
+    },
+    "LABELS": {
+      "DEALS": "сделок",
+      "FORECAST_HEALTH": "Сводка прогноза",
+      "FORECAST_TOTAL": "Плановая сумма",
+      "WEIGHTED_TOTAL": "С учётом вероятности",
+      "CLOSED_TOTAL": "Закрыто сделок"
+    },
+    "SOURCES": {
+      "MANUAL": "Вручную",
+      "CONVERSATION": "Из диалога",
+      "AI": "AI",
+      "IMPORT": "Импорт",
+      "OTHER": "Другое"
+    },
+    "AGING_BUCKETS": {
+      "0_3": "0–3 дня",
+      "4_7": "4–7 дней",
+      "8_14": "8–14 дней",
+      "15_30": "15–30 дней",
+      "31_plus": "31+ дней"
+    }
   }
 }

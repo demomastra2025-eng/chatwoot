@@ -2,6 +2,7 @@
 import { MESSAGE_TYPE } from 'widget/helpers/constants';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import { ATTACHMENT_ICONS } from 'shared/constants/messages';
+import { useMapGetter } from 'dashboard/composables/store';
 import { getLocalizedActivityMessage } from 'dashboard/helper/activityMessageHelper';
 
 export default {
@@ -22,8 +23,10 @@ export default {
   },
   setup() {
     const { getPlainText } = useMessageFormatter();
+    const accountLabels = useMapGetter('labels/getLabels');
     return {
       getPlainText,
+      accountLabels,
     };
   },
   computed: {
@@ -45,7 +48,9 @@ export default {
       const content = subject || this.message.content;
       return this.getPlainText(
         this.isMessageAnActivity
-          ? getLocalizedActivityMessage(content, this.$t.bind(this))
+          ? getLocalizedActivityMessage(content, this.$t.bind(this), {
+              labels: this.accountLabels,
+            })
           : content
       );
     },

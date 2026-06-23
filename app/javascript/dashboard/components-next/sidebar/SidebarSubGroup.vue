@@ -18,6 +18,7 @@ const props = defineProps({
   to: { type: [Object, String], default: '' },
   headerActive: { type: Boolean, default: false },
   badge: { type: [Number, String], default: 0 },
+  count: { type: [Number, String], default: null },
   actionLabel: { type: String, default: '' },
   actionTo: { type: [Object, String], default: '' },
   actionTitle: { type: String, default: '' },
@@ -77,6 +78,7 @@ useEventListener(scrollableContainer, 'scroll', () => {
     :to="to"
     :active="headerActive"
     :badge="badge"
+    :count="count"
     :action-label="actionLabel"
     :action-to="actionTo"
     :action-title="actionTitle"

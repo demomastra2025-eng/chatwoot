@@ -4,6 +4,41 @@ RSpec.describe Crm::Stage do
   let(:account) { create(:account) }
   let(:pipeline) { create(:crm_pipeline, account: account) }
 
+  it 'uses 20 unique non-white standard colors' do
+    expect(described_class::STANDARD_COLORS.length).to eq(20)
+    expect(described_class::STANDARD_COLORS.uniq.length).to eq(20)
+    expect(described_class::STANDARD_COLORS).not_to include('#F0F0F3', '#E8E8EC', '#FFFFFF')
+  end
+
+  it 'assigns the next available spectrum color on create' do
+    create(:crm_stage, account: account, pipeline: pipeline, color: described_class::DEFAULT_COLOR)
+
+    stage = create(:crm_stage, account: account, pipeline: pipeline, color: nil)
+
+    expect(stage.color).to eq('#DC2626')
+  end
+
+  it 'places new open stages before terminal won and lost stages when position is omitted' do
+    create(:crm_stage, account: account, pipeline: pipeline, code: 'new', position: 1)
+    won_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'won', outcome: 'won', position: 2)
+    lost_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'lost', outcome: 'lost', position: 3)
+
+    follow_up = create(:crm_stage, account: account, pipeline: pipeline, code: 'follow_up', position: nil)
+
+    expect(follow_up.position).to eq(2)
+    expect(won_stage.reload.position).to eq(3)
+    expect(lost_stage.reload.position).to eq(4)
+    expect(pipeline.stages.reload.ordered.pluck(:code)).to eq(%w[new follow_up won lost])
+  end
+
+  it 'orders terminal stages last even when their numeric position is stale' do
+    won_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'won', outcome: 'won', position: 1)
+    lost_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'lost', outcome: 'lost', position: 2)
+    open_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'open', position: 3)
+
+    expect(pipeline.stages.reload.ordered).to eq([open_stage, won_stage, lost_stage])
+  end
+
   it 'marks the first active open stage in a pipeline as default' do
     stage = create(
       :crm_stage,

@@ -1,4 +1,6 @@
-import filterQueryGenerator from '../filterQueryGenerator';
+import filterQueryGenerator, {
+  normalizeFilterQueryOperator,
+} from '../filterQueryGenerator';
 
 const testData = [
   {
@@ -63,5 +65,25 @@ describe('#filterQueryGenerator', () => {
     expect(
       filterQueryGenerator(testData).payload.every(i => Array.isArray(i.values))
     ).toBe(true);
+  });
+
+  it('normalizes legacy uppercase query operators for the filter builder', () => {
+    const [firstFilter] = filterQueryGenerator([
+      {
+        attribute_key: 'status',
+        filter_operator: 'equal_to',
+        values: [{ id: 'open', name: 'Open' }],
+        query_operator: 'AND',
+      },
+      {
+        attribute_key: 'priority',
+        filter_operator: 'equal_to',
+        values: [{ id: 'urgent', name: 'Urgent' }],
+        query_operator: null,
+      },
+    ]).payload;
+
+    expect(firstFilter.query_operator).toBe('and');
+    expect(normalizeFilterQueryOperator('OR')).toBe('or');
   });
 });

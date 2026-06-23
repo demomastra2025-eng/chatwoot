@@ -43,6 +43,7 @@ json.channels do
   end
 end
 json.labels Labels::UnifiedAssignmentService.union_for(contact: communication_thread.contact, conversations: linked_conversations)
+json.crm_deal_stages((local_assigns[:crm_deal_stages_by_communication_thread_id] || {}).fetch(communication_thread.id, []))
 json.status communication_thread.status
 json.created_at communication_thread.created_at.to_i
 json.updated_at communication_thread.updated_at.to_f

@@ -29,7 +29,15 @@ import {
   majorAmountToMinor,
   resolveDealAmountMajor,
 } from 'dashboard/components-next/CRM/dealAmount';
+import {
+  buildCrmDealLookupParams,
+  buildCrmDealOriginLookupParams,
+  buildCrmDealSourceContext,
+  mergeUniqueCrmDeals,
+  selectBestCrmDealForContext,
+} from 'dashboard/components-next/CRM/crmConversationDealContext';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
 import {
   buildDefaultCustomAttributes,
   mergeMissingDefaultCustomAttributes,
@@ -82,6 +90,8 @@ const form = reactive({
   description: '',
   expectedCloseOn: '',
   externalRef: '',
+  originatingCommunicationThreadDisplayId: '',
+  originatingCommunicationThreadId: '',
   originatingConversationDisplayId: '',
   originatingConversationId: '',
   ownerId: '',
@@ -133,10 +143,7 @@ const activePipelines = computed(() =>
 );
 
 const defaultPipeline = computed(
-  () =>
-    activePipelines.value.find(pipeline => pipeline.default) ||
-    activePipelines.value[0] ||
-    null
+  () => resolveDefaultPipelineWithStages(activePipelines.value).pipeline
 );
 
 const stageOptions = computed(() =>
@@ -193,13 +200,43 @@ const shouldShowPanel = computed(
 );
 const isEditingDeal = computed(() => !!selectedDeal.value);
 
+const linkedSourceCard = computed(() => {
+  if (form.originatingCommunicationThreadId) {
+    const id =
+      form.originatingCommunicationThreadDisplayId ||
+      form.originatingCommunicationThreadId;
+
+    return {
+      label: t('CRM.GENERAL.LINKED_COMMUNICATION_THREAD'),
+      source: t('CRM.GENERAL.COMMUNICATION_THREAD_SOURCE'),
+      title: t('CRM.TIMELINE.COMMUNICATION_THREAD', { id }),
+    };
+  }
+
+  if (form.originatingConversationId) {
+    const id =
+      form.originatingConversationDisplayId || form.originatingConversationId;
+
+    return {
+      label: t('CRM.GENERAL.LINKED_CONVERSATION'),
+      source: t('CRM.GENERAL.CONVERSATION_SOURCE'),
+      title: t('CRM.TIMELINE.CONVERSATION', { id }),
+    };
+  }
+
+  return null;
+});
+
 const defaultDealCurrency = 'KZT';
 const dealCurrencyOptions = ['KZT', 'USD', 'EUR', 'RUB'];
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
 
 function formatConversationDisplayLabel(value) {
-  return value ? `#${value}` : '';
+  if (!value) return '';
+
+  const stringValue = String(value);
+  return stringValue.startsWith('#') ? stringValue : `#${stringValue}`;
 }
 
 const buildContactOption = contact => {
@@ -290,6 +327,8 @@ const resetForm = () => {
     description: '',
     expectedCloseOn: '',
     externalRef: '',
+    originatingCommunicationThreadDisplayId: '',
+    originatingCommunicationThreadId: '',
     originatingConversationDisplayId: '',
     originatingConversationId: '',
     ownerId: currentUserId.value,
@@ -307,16 +346,19 @@ const closePanel = () => {
   emit('close');
 };
 
-const conversationDisplayId = computed(
-  () => props.currentChat?.display_id || props.currentChat?.displayId || ''
-);
-
-const currentConversationReferenceId = computed(
-  () => conversationDisplayId.value || props.currentChat?.id || ''
+const currentDealSourceContext = computed(() =>
+  buildCrmDealSourceContext(props.currentChat)
 );
 
 const conversationSender = computed(
-  () => props.currentChat?.meta?.sender || {}
+  () => currentDealSourceContext.value.contact || {}
+);
+
+const sourceDisplayId = computed(
+  () =>
+    currentDealSourceContext.value.originatingCommunicationThreadDisplayId ||
+    currentDealSourceContext.value.originatingConversationDisplayId ||
+    ''
 );
 
 const buildPrefillDealTitle = () => {
@@ -326,9 +368,17 @@ const buildPrefillDealTitle = () => {
     });
   }
 
-  if (conversationDisplayId.value) {
+  if (sourceDisplayId.value) {
+    const sourceId = sourceDisplayId.value.replace(/^#/, '');
+
+    if (currentDealSourceContext.value.sourceType === 'communication_thread') {
+      return t('CRM.DEALS.PREFILL.COMMUNICATION_THREAD_GENERIC', {
+        threadId: sourceId,
+      });
+    }
+
     return t('CRM.DEALS.PREFILL.CONVERSATION_GENERIC', {
-      conversationId: conversationDisplayId.value,
+      conversationId: sourceId,
     });
   }
 
@@ -336,16 +386,16 @@ const buildPrefillDealTitle = () => {
 };
 
 const buildConversationPrefill = () => {
-  const contactId = Number(conversationSender.value?.id);
-  const normalizedContactId =
-    Number.isFinite(contactId) && contactId > 0 ? contactId : '';
+  const context = currentDealSourceContext.value;
+  const normalizedContactId = context.contactId || '';
 
   return {
     contactIds: normalizedContactId ? [normalizedContactId] : [],
-    originatingConversationDisplayId: conversationDisplayId.value
-      ? `#${conversationDisplayId.value}`
-      : '',
-    originatingConversationId: currentConversationReferenceId.value,
+    originatingCommunicationThreadDisplayId:
+      context.originatingCommunicationThreadDisplayId,
+    originatingCommunicationThreadId: context.originatingCommunicationThreadId,
+    originatingConversationDisplayId: context.originatingConversationDisplayId,
+    originatingConversationId: context.originatingConversationId,
     ownerId: props.currentChat?.meta?.assignee?.id || currentUserId.value,
     primaryContactId: normalizedContactId,
     teamId: props.currentChat?.meta?.team?.id || '',
@@ -430,11 +480,19 @@ const populateFormFromDeal = deal => {
       ? deal.expectedCloseOn.slice(0, 10)
       : '',
     externalRef: deal.externalRef || '',
+    originatingCommunicationThreadDisplayId: formatConversationDisplayLabel(
+      deal.originatingCommunicationThreadDisplayId ??
+        deal.originatingCommunicationThreadId
+    ),
+    originatingCommunicationThreadId:
+      deal.originatingCommunicationThreadDisplayId ??
+      deal.originatingCommunicationThreadId ??
+      '',
     originatingConversationDisplayId: formatConversationDisplayLabel(
       deal.originatingConversationDisplayId ?? deal.originatingConversationId
     ),
     originatingConversationId: deal.originatingConversationId ?? '',
-    ownerId: deal.ownerId ?? currentUserId.value,
+    ownerId: deal.ownerId ?? '',
     pipelineId: deal.pipelineId,
     primaryContactId: deal.primaryContactId ?? '',
     stageId: deal.stageId,
@@ -445,34 +503,29 @@ const populateFormFromDeal = deal => {
 };
 
 const findConversationDeal = async () => {
-  if (!currentConversationReferenceId.value) {
+  const lookupParams = buildCrmDealLookupParams(currentDealSourceContext.value);
+  if (!lookupParams) {
     return null;
   }
 
-  const { data } = await CrmDealsAPI.get({
-    originating_conversation_id: currentConversationReferenceId.value,
-  });
+  const originLookupParams = buildCrmDealOriginLookupParams(
+    currentDealSourceContext.value
+  );
+  const shouldFetchOrigin =
+    originLookupParams &&
+    JSON.stringify(originLookupParams) !== JSON.stringify(lookupParams);
+  const [lookupResponse, originResponse] = await Promise.all([
+    CrmDealsAPI.get(lookupParams),
+    shouldFetchOrigin ? CrmDealsAPI.get(originLookupParams) : null,
+  ]);
 
-  const linkedDeals = normalizePayload(data)
-    .filter(deal => {
-      const conversationReferenceId =
-        deal.originatingConversationDisplayId ?? deal.originatingConversationId;
-
-      return (
-        Number(conversationReferenceId) ===
-        Number(currentConversationReferenceId.value)
-      );
-    })
-    .sort((left, right) => {
-      const leftTimestamp = Date.parse(left.updatedAt || left.createdAt || 0);
-      const rightTimestamp = Date.parse(
-        right.updatedAt || right.createdAt || 0
-      );
-
-      return rightTimestamp - leftTimestamp;
-    });
-
-  return linkedDeals[0] || null;
+  return selectBestCrmDealForContext(
+    mergeUniqueCrmDeals(
+      normalizePayload(lookupResponse.data),
+      normalizePayload(originResponse?.data)
+    ),
+    currentDealSourceContext.value
+  );
 };
 
 const createContact = async contact => {
@@ -543,6 +596,9 @@ const buildPayload = () =>
     expected_close_on: form.expectedCloseOn || undefined,
     external_ref: form.externalRef || undefined,
     lock_version: selectedDeal.value?.lockVersion,
+    originating_communication_thread_id: form.originatingCommunicationThreadId
+      ? Number(form.originatingCommunicationThreadId)
+      : undefined,
     originating_conversation_id: form.originatingConversationId
       ? Number(form.originatingConversationId)
       : undefined,
@@ -787,23 +843,14 @@ onBeforeRouteLeave(() => {
     </div>
     <div v-else class="grid gap-4">
       <div
-        v-if="form.originatingConversationId"
+        v-if="linkedSourceCard"
         class="rounded-2xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
       >
         <p class="mb-1 text-sm font-medium text-n-slate-12">
-          {{ $t('CRM.GENERAL.LINKED_CONVERSATION') }}
+          {{ linkedSourceCard.label }}
         </p>
         <p class="mb-0 text-sm text-n-slate-11">
-          {{
-            [
-              $t('CRM.TIMELINE.CONVERSATION', {
-                id:
-                  form.originatingConversationDisplayId ||
-                  form.originatingConversationId,
-              }),
-              $t('CRM.GENERAL.CONVERSATION_SOURCE'),
-            ].join(' · ')
-          }}
+          {{ [linkedSourceCard.title, linkedSourceCard.source].join(' · ') }}
         </p>
       </div>
 
@@ -934,8 +981,6 @@ onBeforeRouteLeave(() => {
         :definitions="dealFieldDefinitions"
         :framed="false"
         :model-value="form.customAttributes"
-        :title="$t('CRM.CUSTOM_FIELDS.TITLE')"
-        :description="$t('CRM.CUSTOM_FIELDS.DESCRIPTION')"
         @update:model-value="form.customAttributes = $event"
       />
 

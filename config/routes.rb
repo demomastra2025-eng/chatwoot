@@ -252,6 +252,12 @@ Rails.application.routes.draw do
             resources :stages, only: [:update, :destroy]
             resources :task_statuses, only: [:index, :create, :update, :destroy]
             resources :field_definitions, only: [:index, :create, :update, :destroy]
+            resources :reports, only: [] do
+              collection do
+                get :deals
+                get :funnels
+              end
+            end
             resources :deals, only: [:index, :show, :create, :update] do
               scope module: :deals do
                 resources :comments, only: [:index, :create, :update, :destroy]
@@ -281,6 +287,7 @@ Rails.application.routes.draw do
           resources :communication_threads, only: [:index, :show, :update] do
             collection do
               get :meta
+              post :filter
             end
 
             member do

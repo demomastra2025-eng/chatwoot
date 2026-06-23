@@ -13,6 +13,8 @@ const {
   rejectClientCallMock,
   routeMock,
   inboxGetterMock,
+  selectedChatMock,
+  conversationByIdGetterMock,
   supportsBrowserCallingMock,
 } = vi.hoisted(() => ({
   addEventListenerMock: vi.fn(),
@@ -25,6 +27,8 @@ const {
   rejectClientCallMock: vi.fn(),
   routeMock: { params: {} },
   inboxGetterMock: vi.fn(),
+  selectedChatMock: { value: {} },
+  conversationByIdGetterMock: vi.fn(),
   supportsBrowserCallingMock: vi.fn(),
 }));
 
@@ -36,6 +40,10 @@ vi.mock('vuex', () => ({
   useStore: () => ({
     getters: {
       'inboxes/getInbox': inboxGetterMock,
+      get getSelectedChat() {
+        return selectedChatMock.value;
+      },
+      getConversationById: conversationByIdGetterMock,
     },
   }),
 }));
@@ -88,7 +96,9 @@ describe('useCallSession', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     routeMock.params = {};
+    selectedChatMock.value = {};
     inboxGetterMock.mockReturnValue(null);
+    conversationByIdGetterMock.mockReturnValue(null);
     bootstrapIncomingSupportMock.mockResolvedValue({ provider: 'fonoster' });
     initializeDeviceMock.mockResolvedValue({
       provider: 'fonoster',
@@ -147,9 +157,54 @@ describe('useCallSession', () => {
     expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
   });
 
+  it('bootstraps browser calling for a Channel::Voice route inbox without provider metadata', async () => {
+    routeMock.params = { inbox_id: '4704' };
+    inboxGetterMock.mockReturnValue({
+      id: 4704,
+      channel_type: 'Channel::Voice',
+    });
+
+    mountUseCallSession();
+    await Promise.resolve();
+
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4704);
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+  });
+
   it('does not request an unscoped webphone token while route inbox metadata is loading', async () => {
     routeMock.params = { inbox_id: '4698' };
     inboxGetterMock.mockReturnValue(null);
+
+    mountUseCallSession();
+    await Promise.resolve();
+
+    expect(initializeDeviceMock).not.toHaveBeenCalled();
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+  });
+
+  it('bootstraps browser calling for an active communication thread voice channel', async () => {
+    routeMock.params = { communication_thread_id: '1' };
+    selectedChatMock.value = {
+      id: 1,
+      is_communication_thread: true,
+      channels: [
+        {
+          channel: 'Channel::Voice',
+          inbox_id: 4704,
+        },
+      ],
+    };
+
+    mountUseCallSession();
+    await Promise.resolve();
+
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4704);
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+  });
+
+  it('does not request an unscoped webphone token while a communication thread is loading', async () => {
+    routeMock.params = { communication_thread_id: '1' };
+    selectedChatMock.value = {};
 
     mountUseCallSession();
     await Promise.resolve();

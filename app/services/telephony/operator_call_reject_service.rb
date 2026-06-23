@@ -24,9 +24,10 @@ class Telephony::OperatorCallRejectService
     needs_ingestion = false
     should_terminate_remote = false
     call_session.with_lock do
-      validate_release!
-
-      unless call_session.terminal?
+      if call_session.terminal?
+        validate_terminal_release!
+      else
+        validate_release!
         should_terminate_remote = true
         apply_terminal_state!
         needs_ingestion = true
@@ -99,6 +100,27 @@ class Telephony::OperatorCallRejectService
     raise_not_candidate! unless rejectable_by_user?
     raise_claimed_by_other! if claimed_by_other?
     raise_not_candidate! unless candidate_agent?
+  end
+
+  def validate_terminal_release!
+    if outbound_operator_release?
+      raise_not_candidate! unless outbound_release_allowed?
+      return
+    end
+
+    raise_not_candidate! unless terminal_release_allowed?
+    raise_claimed_by_other! if claimed_by_other?
+  end
+
+  def terminal_release_allowed?
+    return false unless operator_route? && inbox_member?
+    return false unless candidate_binding? && candidate_sip_profile? && candidate_agent_ref? && candidate_user?
+
+    ended_by_current_user? || claimed_by_current_user? || candidate_user?
+  end
+
+  def ended_by_current_user?
+    call_session.ended_by.to_s == "user:#{user.id}"
   end
 
   def outbound_call?

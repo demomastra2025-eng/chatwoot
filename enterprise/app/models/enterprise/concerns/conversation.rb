@@ -15,7 +15,10 @@ module Enterprise::Concerns::Conversation
   private
 
   def ensure_within_conversation_limit
-    allowed = account.usage_limits.fetch(:conversations, ChatwootApp.max_limit).to_i
+    return if account.blank?
+
+    usage_limits = (account.usage_limits || {}).with_indifferent_access
+    allowed = usage_limits.fetch(:conversations, ChatwootApp.max_limit).to_i
     return if allowed >= ChatwootApp.max_limit.to_i
     return if account.conversations_this_month_count < allowed
 

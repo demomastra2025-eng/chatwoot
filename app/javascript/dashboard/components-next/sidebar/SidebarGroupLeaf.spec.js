@@ -25,7 +25,7 @@ const mountComponent = (props = {}) =>
     global: {
       stubs: {
         Policy: {
-          template: '<li><slot /></li>',
+          template: '<li v-bind="$attrs"><slot /></li>',
         },
         Icon: {
           props: ['icon'],
@@ -78,5 +78,26 @@ describe('SidebarGroupLeaf', () => {
     );
     expect(badge.text()).toBe('12');
     expect(badge.classes()).toContain('bg-n-brand/10');
+  });
+
+  it('renders CRM pipeline stage counts and a colored line before the title', () => {
+    const wrapper = mountComponent({
+      icon: null,
+      count: 8,
+      connectorColor: '#22C55E',
+    });
+    const link = wrapper.find('a');
+    const accent = wrapper.find('[data-test-id="sidebar-stage-accent"]');
+
+    expect(wrapper.find('[data-test-id="icon"]').exists()).toBe(false);
+    expect(accent.exists()).toBe(true);
+    expect(accent.classes()).toContain('h-4');
+    expect(accent.attributes('style')).toContain(
+      'background-color: rgb(34, 197, 94)'
+    );
+    expect(wrapper.find('[data-test-id="sidebar-plain-count"]').text()).toBe(
+      '8'
+    );
+    expect(link.classes()).toContain('rounded-lg');
   });
 });

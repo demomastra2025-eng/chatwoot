@@ -79,6 +79,27 @@ const canManage = computed(() =>
   checkPermissions(['administrator', 'crm_settings_manage'])
 );
 
+const pipelineAutoCreateEnabled = pipeline =>
+  Boolean(
+    pipeline?.autoCreateDealOnChannelContact ??
+      pipeline?.auto_create_deal_on_channel_contact
+  );
+
+const pipelineDefaultEnabled = pipeline => Boolean(pipeline?.default);
+
+const pipelineDisplayRank = pipeline => {
+  if (pipelineDefaultEnabled(pipeline)) return 0;
+  return 1;
+};
+
+const sortPipelinesForSettings = pipelines =>
+  [...pipelines].sort((left, right) => {
+    const rankDiff = pipelineDisplayRank(left) - pipelineDisplayRank(right);
+    if (rankDiff !== 0) return rankDiff;
+
+    return Number(left.position ?? 0) - Number(right.position ?? 0);
+  });
+
 const stageForm = reactive({
   active: true,
   color: DEFAULT_STAGE_COLOR,
@@ -94,24 +115,33 @@ const pipelineColumns = computed(() => [
   {
     key: 'name',
     label: t('CRM.SETTINGS.PIPELINES.TABLE.NAME'),
-    width: '1.15fr',
+    width: 'minmax(12rem, 1fr)',
   },
   {
     key: 'default',
     label: t('CRM.SETTINGS.PIPELINES.TABLE.DEFAULT'),
-    width: '0.9fr',
+    title: t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT'),
+    width: '92px',
+  },
+  {
+    key: 'autoCreate',
+    label: t('CRM.SETTINGS.PIPELINES.TABLE.AUTO_CREATE'),
+    title: t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT'),
+    width: '72px',
   },
   {
     key: 'stages',
     label: t('CRM.SETTINGS.PIPELINES.TABLE.STAGES'),
-    width: '2.05fr',
+    width: 'minmax(20rem, 1.8fr)',
   },
-  { key: 'actions', label: '', width: '208px', align: 'end' },
+  { key: 'actions', label: '', width: '156px', align: 'end' },
 ]);
 
 const visiblePipelines = computed(() =>
-  referencesStore.pipelines.filter(
-    pipeline => showArchivedPipelines.value || pipeline.active
+  sortPipelinesForSettings(
+    referencesStore.pipelines.filter(
+      pipeline => showArchivedPipelines.value || pipeline.active
+    )
   )
 );
 
@@ -169,7 +199,10 @@ watch(
 
 function sortStages(stages) {
   return [...(stages || [])].sort(
-    (left, right) => Number(left.position ?? 0) - Number(right.position ?? 0)
+    (left, right) =>
+      Number(isTerminalStage(left)) - Number(isTerminalStage(right)) ||
+      Number(left.position ?? 0) - Number(right.position ?? 0) ||
+      Number(left.id ?? 0) - Number(right.id ?? 0)
   );
 }
 
@@ -292,21 +325,31 @@ const syncPipelineRows = () => {
   pipelineRows.value = [...visiblePipelines.value];
 };
 
-const buildPipelineSavePayload = (pipeline, overrides = {}) => ({
-  active: overrides.active ?? pipeline.active,
-  default: overrides.default ?? pipeline.default,
-  id: pipeline.id,
-  name:
-    overrides.name ??
-    String(
-      pipelineNameDrafts[String(pipeline.id)] ?? pipeline.name ?? ''
-    ).trim(),
-  position:
-    overrides.position ??
-    (pipeline.position === '' || pipeline.position === undefined
-      ? undefined
-      : Number(pipeline.position)),
-});
+const buildPipelineSavePayload = (pipeline, overrides = {}) => {
+  const autoCreateDealOnChannelContact =
+    overrides.autoCreateDealOnChannelContact ??
+    overrides.auto_create_deal_on_channel_contact ??
+    pipelineAutoCreateEnabled(pipeline);
+
+  return {
+    active: overrides.active ?? pipeline.active,
+    auto_create_deal_on_channel_contact: Boolean(
+      autoCreateDealOnChannelContact
+    ),
+    default: Boolean(overrides.default ?? pipelineDefaultEnabled(pipeline)),
+    id: pipeline.id,
+    name:
+      overrides.name ??
+      String(
+        pipelineNameDrafts[String(pipeline.id)] ?? pipeline.name ?? ''
+      ).trim(),
+    position:
+      overrides.position ??
+      (pipeline.position === '' || pipeline.position === undefined
+        ? undefined
+        : Number(pipeline.position)),
+  };
+};
 
 const persistInlinePipeline = async (pipeline, overrides = {}) => {
   const pipelineId = String(pipeline.id);
@@ -350,11 +393,22 @@ const saveInlinePipelineName = async pipeline => {
   await persistInlinePipeline(pipeline, { name: nextName });
 };
 
-const saveInlinePipelineDefault = async (pipeline, nextDefault) => {
+const saveInlinePipelineDefault = async (pipeline, nextValue) => {
   if (isPipelineSaving(String(pipeline.id))) return;
   if (!pipeline.active) return;
+
   await persistInlinePipeline(pipeline, {
-    default: nextDefault,
+    default: Boolean(nextValue),
+    name: pipeline.name,
+  });
+};
+
+const saveInlinePipelineAutoCreate = async (pipeline, nextValue) => {
+  if (isPipelineSaving(String(pipeline.id))) return;
+  if (!pipeline.active) return;
+
+  await persistInlinePipeline(pipeline, {
+    auto_create_deal_on_channel_contact: Boolean(nextValue),
     name: pipeline.name,
   });
 };
@@ -364,7 +418,7 @@ const toggleInlinePipelineArchived = async (pipeline, nextActive) => {
 
   await persistInlinePipeline(pipeline, {
     active: nextActive,
-    default: nextActive ? pipeline.default : false,
+    default: nextActive && pipelineDefaultEnabled(pipeline),
     name: pipeline.name,
   });
 
@@ -433,13 +487,11 @@ const persistPipelineOrder = async () => {
 
     await Promise.all(
       pipelineUpdates.map(pipeline =>
-        referencesStore.savePipeline({
-          active: pipeline.active,
-          default: pipeline.default,
-          id: pipeline.id,
-          name: pipeline.name,
-          position: pipeline.nextPosition,
-        })
+        referencesStore.savePipeline(
+          buildPipelineSavePayload(pipeline, {
+            position: pipeline.nextPosition,
+          })
+        )
       )
     );
 
@@ -608,6 +660,7 @@ const openNewPipelineRow = () => {
   if (newPipelineDraft.value) return;
 
   newPipelineDraft.value = {
+    autoCreateDealOnChannelContact: false,
     default: false,
     name: '',
   };
@@ -686,6 +739,9 @@ const saveNewPipeline = async () => {
   try {
     await referencesStore.savePipeline({
       active: true,
+      auto_create_deal_on_channel_contact: Boolean(
+        newPipelineDraft.value?.autoCreateDealOnChannelContact
+      ),
       default: Boolean(newPipelineDraft.value?.default),
       name: nextName,
     });
@@ -946,17 +1002,21 @@ onMounted(async () => {
           :description="$t('CRM.SETTINGS.PIPELINES.DESCRIPTION')"
         >
           <div
-            class="mt-3 overflow-hidden rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container shadow-sm"
+            class="mt-3 overflow-x-auto rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container shadow-sm"
           >
             <div
-              class="grid border-b border-n-weak bg-n-surface-2/80 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-n-slate-10 backdrop-blur"
+              class="grid min-w-[980px] border-b border-n-weak bg-n-surface-2/80 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-n-slate-10 backdrop-blur"
               :style="{ gridTemplateColumns: pipelineGridTemplate }"
             >
               <div
                 v-for="column in pipelineColumns"
                 :key="column.key"
                 class="min-w-0 truncate"
-                :class="[column.align === 'end' ? 'text-end' : 'text-start']"
+                :class="[
+                  column.align === 'end' ? 'text-end' : 'text-start',
+                  column.key === 'stages' ? 'pl-4' : '',
+                ]"
+                :title="column.title || column.label"
               >
                 {{ column.label }}
               </div>
@@ -982,7 +1042,7 @@ onMounted(async () => {
             >
               <template #item="{ element: row }">
                 <div
-                  class="grid items-center gap-3 px-5 py-3 text-sm text-n-slate-12 transition-colors hover:bg-n-alpha-1"
+                  class="grid min-w-[980px] items-center gap-3 px-5 py-3 text-sm text-n-slate-12 transition-colors hover:bg-n-alpha-1"
                   :class="pipelineRowClass(row)"
                   :style="{ gridTemplateColumns: pipelineGridTemplate }"
                 >
@@ -1008,7 +1068,7 @@ onMounted(async () => {
                       <div class="min-w-0 flex-1 grid gap-1">
                         <div class="flex flex-wrap items-center gap-2">
                           <Input
-                            class="w-full min-w-0 max-w-[11.5rem]"
+                            class="w-full min-w-0 max-w-[10.5rem]"
                             :model-value="
                               pipelineNameDrafts[String(row.id)] ?? row.name
                             "
@@ -1039,12 +1099,13 @@ onMounted(async () => {
                   <div class="min-w-0 pl-3">
                     <div class="flex justify-start">
                       <Switch
-                        :model-value="row.default"
+                        :model-value="pipelineDefaultEnabled(row)"
                         :disabled="
                           !row.active ||
                           isPipelineSaving(String(row.id)) ||
                           pipelineOrderSaving
                         "
+                        :title="$t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT')"
                         @update:model-value="
                           saveInlinePipelineDefault(row, $event)
                         "
@@ -1052,7 +1113,28 @@ onMounted(async () => {
                     </div>
                   </div>
 
-                  <div class="min-w-0">
+                  <div class="min-w-0 pl-3">
+                    <div class="flex justify-start">
+                      <Switch
+                        :model-value="pipelineAutoCreateEnabled(row)"
+                        :disabled="
+                          !row.active ||
+                          isPipelineSaving(String(row.id)) ||
+                          pipelineOrderSaving
+                        "
+                        :title="
+                          $t(
+                            'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT'
+                          )
+                        "
+                        @update:model-value="
+                          saveInlinePipelineAutoCreate(row, $event)
+                        "
+                      />
+                    </div>
+                  </div>
+
+                  <div class="min-w-0 pl-4">
                     <div class="flex min-w-0 flex-wrap items-center gap-2">
                       <Draggable
                         v-if="getStageRows(row.id).length"
@@ -1174,7 +1256,7 @@ onMounted(async () => {
 
             <div v-if="newPipelineDraft" class="border-t border-n-weak">
               <div
-                class="grid items-center gap-3 px-5 py-3 text-sm text-n-slate-12 bg-n-solid-1"
+                class="grid min-w-[980px] items-center gap-3 px-5 py-3 text-sm text-n-slate-12 bg-n-solid-1"
                 :style="{ gridTemplateColumns: pipelineGridTemplate }"
               >
                 <div class="min-w-0">
@@ -1187,7 +1269,7 @@ onMounted(async () => {
                     </span>
                     <div class="min-w-0 flex-1 grid gap-1">
                       <Input
-                        class="w-full min-w-0 max-w-[11.5rem]"
+                        class="w-full min-w-0 max-w-[10.5rem]"
                         :model-value="newPipelineDraft.name"
                         size="sm"
                         :disabled="pipelineCreateSaving"
@@ -1203,13 +1285,33 @@ onMounted(async () => {
                   <div class="flex justify-start">
                     <Switch
                       :model-value="newPipelineDraft.default"
+                      :title="$t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT')"
                       :disabled="pipelineCreateSaving"
                       @update:model-value="newPipelineDraft.default = $event"
                     />
                   </div>
                 </div>
 
-                <div class="min-w-0 flex items-center">
+                <div class="min-w-0 pl-3">
+                  <div class="flex justify-start">
+                    <Switch
+                      :model-value="
+                        newPipelineDraft.autoCreateDealOnChannelContact
+                      "
+                      :title="
+                        $t(
+                          'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT'
+                        )
+                      "
+                      :disabled="pipelineCreateSaving"
+                      @update:model-value="
+                        newPipelineDraft.autoCreateDealOnChannelContact = $event
+                      "
+                    />
+                  </div>
+                </div>
+
+                <div class="min-w-0 flex items-center pl-4">
                   <span class="text-xs leading-5 text-n-slate-10">
                     {{ $t('CRM.SETTINGS.PIPELINES.NEW_PIPELINE_HELP') }}
                   </span>

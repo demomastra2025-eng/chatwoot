@@ -5,11 +5,14 @@
       "ARCHIVE": "Мұрағатқа жіберу",
       "ARCHIVED": "Мұрағатта",
       "ID": "ID",
+      "COMMUNICATION_THREAD_SOURCE": "Біріктірілген коммуникация тармағын бастапқы контекст ретінде сақтайды",
       "CONVERSATION_SOURCE": "Арнадағы диалогты бастапқы контекст ретінде сақтайды",
+      "CANCEL": "Болдырмау",
       "CREATE": "Құру",
       "DEFAULT": "Әдепкі",
       "EMPTY_VALUE": "—",
       "INACTIVE": "Белсенді емес",
+      "LINKED_COMMUNICATION_THREAD": "Байланысты коммуникация тармағы",
       "LINKED_CONVERSATION": "Байланысты диалог",
       "NO": "Жоқ",
       "SAVE": "Сақтау",
@@ -37,6 +40,7 @@
       "ADD_COMMENT": "Пікір қосу",
       "COMMENT": "Пікір",
       "COMMENT_PLACEHOLDER": "Командаңыз үшін ішкі контекст қосыңыз",
+      "COMMUNICATION_THREAD": "Коммуникация тармағы #{id}",
       "CONVERSATION": "Диалог #{id}",
       "DESCRIPTION": "Мұнда оқиғалар, пікірлер және байланысты жұмыс контексті көрсетіледі.",
       "EMPTY": "Таймлайнда әлі белсенділік жоқ",
@@ -104,7 +108,10 @@
         "WIN_PROBABILITY": "Жеңіс ықтималдығы"
       },
       "NEW_DEAL": "Жаңа мәміле",
+      "SIDEBAR_DESCRIPTION": "Контакт мәмілесін ашып, оны диалогтан шықпай өңдеңіз.",
+      "SIDEBAR_TITLE": "Мәмілелер",
       "PREFILL": {
+        "COMMUNICATION_THREAD_GENERIC": "Коммуникация тармағынан мәміле #{threadId}",
         "CONVERSATION_GENERIC": "Диалогтан мәміле #{conversationId}",
         "CONVERSATION_WITH_CONTACT": "{contactName} үшін мәміле",
         "COMPANY": "{companyName} үшін мәміле"
@@ -266,8 +273,9 @@
         "DRAG": "Құбырды сүйреп жылжыту",
         "EDIT_TITLE": "Құбырды өңдеу",
         "FORM": {
+          "AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT": "Арна арқылы мәмілені автоматты құру",
           "CODE": "Код",
-          "DEFAULT": "Әдепкі құбыр",
+          "DEFAULT": "Негізгі",
           "NAME": "Атауы",
           "POSITION": "Позиция"
         },
@@ -279,7 +287,8 @@
         "SUCCESS_RESTORED": "Құбыр қалпына келтірілді",
         "SUCCESS_SAVE": "Құбыр сақталды",
         "TABLE": {
-          "DEFAULT": "Әдепкі",
+          "AUTO_CREATE": "Авто",
+          "DEFAULT": "Негізгі",
           "NAME": "Құбыр",
           "STAGES": "Кезеңдер",
           "STATUS": "Күйі"

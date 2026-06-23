@@ -16,9 +16,11 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       stage = resolve_stage!
       pipeline = stage.pipeline
       conversation = resolve_originating_conversation
-      contacts, primary_contact = resolve_contacts(conversation: conversation)
+      communication_thread = resolve_originating_communication_thread
+      validate_source_contacts!(conversation: conversation, communication_thread: communication_thread)
+      contacts, primary_contact = resolve_contacts(conversation: conversation, communication_thread: communication_thread)
       company = resolve_company(current_contacts: contacts, primary_contact: primary_contact)
-      owner = resolve_optional_record(:owner_id, account.users, current: deal.owner)
+      owner = resolve_deal_owner(conversation: conversation, communication_thread: communication_thread)
       creator = resolve_optional_record(:creator_id, account.users, current: deal.creator || actor)
       team = resolve_optional_record(:team_id, account.teams, current: deal.team)
       external_ref = resolve_optional_text(:external_ref, current: deal.external_ref)
@@ -42,6 +44,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         team: team,
         company: company,
         originating_conversation: conversation,
+        originating_communication_thread: communication_thread,
         title: resolve_title,
         description: resolve_optional_text(:description, current: deal.description),
         amount_minor: resolve_integer(:amount_minor, current: deal.amount_minor, allow_nil: true),
@@ -109,7 +112,8 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     primary_contact&.company || current_contacts.first&.company
   end
 
-  def resolve_contacts(conversation:)
+  def resolve_contacts(conversation:, communication_thread:)
+    source_contact = communication_thread&.contact || conversation&.contact
     contacts = if params.key?(:contact_ids)
                  resolve_many_records(account.contacts, params[:contact_ids])
                else
@@ -118,8 +122,8 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
 
     primary_contact = if params.key?(:primary_contact_id)
                         resolve_optional_record(:primary_contact_id, account.contacts, current: nil)
-                      elsif contacts.blank? && conversation&.contact.present?
-                        conversation.contact
+                      elsif contacts.blank? && source_contact.present?
+                        source_contact
                       else
                         deal.deal_contacts.find(&:primary?)&.contact || contacts.first
                       end
@@ -135,7 +139,8 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     pipeline = if params.key?(:pipeline_id) && params[:pipeline_id].present?
                  account.crm_pipelines.find(params[:pipeline_id])
                else
-                 account.crm_pipelines.active.find_by(default: true) || account.crm_pipelines.active.ordered.first
+                 account.crm_pipelines.active.find_by(default: true) ||
+                   account.crm_pipelines.active.ordered.first
                end
 
     validation_error!('pipeline_id', 'must reference an active pipeline') if pipeline.blank?
@@ -150,6 +155,36 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     validation_error!('title', 'is required') if title.blank?
 
     title
+  end
+
+  def resolve_deal_owner(conversation:, communication_thread:)
+    return resolve_optional_record(:owner_id, account.users, current: deal.owner) if params.key?(:owner_id)
+    return deal.owner if deal.persisted?
+
+    default_owner_for_source(conversation: conversation, communication_thread: communication_thread)
+  end
+
+  def default_owner_for_source(conversation:, communication_thread:)
+    source_owner_candidates(conversation: conversation, communication_thread: communication_thread).find(&:present?) || actor
+  end
+
+  def source_owner_candidates(conversation:, communication_thread:)
+    return [conversation&.assignee, communication_thread&.assignee] if params[:originating_communication_thread_id].blank?
+
+    [
+      communication_thread&.assignee,
+      default_owner_from_thread_conversations(communication_thread),
+      conversation&.assignee
+    ]
+  end
+
+  def default_owner_from_thread_conversations(communication_thread)
+    return if communication_thread.blank?
+
+    communication_thread.conversations
+                        .where.not(assignee_id: nil)
+                        .order(Arel.sql('conversations.last_activity_at DESC NULLS LAST, conversations.id DESC'))
+                        .first&.assignee
   end
 
   def resolve_requested_position
@@ -195,6 +230,34 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
 
     account.conversations.find_by(id: value) ||
       account.conversations.find_by!(display_id: value)
+  end
+
+  def resolve_originating_communication_thread
+    if params.key?(:originating_communication_thread_id)
+      return resolve_originating_communication_thread_by_value(
+        params[:originating_communication_thread_id]
+      )
+    end
+
+    deal.originating_communication_thread if deal.persisted?
+  end
+
+  def resolve_originating_communication_thread_by_value(raw_value)
+    return nil if raw_value.blank?
+
+    value = raw_value.to_s.strip
+    scope = CommunicationThread.where(account_id: account.id)
+    scope.find_by(display_id: value) || scope.find(value)
+  end
+
+  def validate_source_contacts!(conversation:, communication_thread:)
+    return if conversation.blank? || communication_thread.blank?
+    return if conversation.contact_id == communication_thread.contact_id
+
+    validation_error!(
+      'originating_communication_thread_id',
+      'must reference the same contact as originating_conversation_id'
+    )
   end
 
   def write_event!(new_record:, contacts_changed:)

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import ContactPanel from 'dashboard/routes/dashboard/conversation/ContactPanel.vue';
+import CrmConversationDealsSidebar from 'dashboard/components-next/CRM/CrmConversationDealsSidebar.vue';
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAccount } from 'dashboard/composables/useAccount';
@@ -34,12 +35,14 @@ const clickOutsideOptions = {
 const activeTab = computed(() => {
   const {
     is_contact_sidebar_open: isContactSidebarOpen,
+    is_crm_deal_panel_open: isDealsSidebarOpen,
     is_touch_sidebar_open: isTouchSidebarOpen,
   } = uiSettings.value;
 
   if (isContactSidebarOpen) {
     return 'contact';
   }
+  if (isDealsSidebarOpen) return 'deals';
   if (isTouchSidebarOpen) return 'touch';
   return null;
 });
@@ -75,6 +78,7 @@ const closeSidebar = () => {
   if (
     isSmallScreen.value &&
     (uiSettings.value?.is_contact_sidebar_open ||
+      uiSettings.value?.is_crm_deal_panel_open ||
       uiSettings.value?.is_touch_sidebar_open)
   ) {
     updateUISettings({
@@ -84,6 +88,15 @@ const closeSidebar = () => {
       is_touch_sidebar_open: false,
     });
   }
+};
+
+const closeDealsSidebar = () => {
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_copilot_panel_open: false,
+    is_crm_deal_panel_open: false,
+    is_touch_sidebar_open: false,
+  });
 };
 
 const closeTouchSidebar = () => {
@@ -133,6 +146,12 @@ const openTouchesWorkspace = () => {
         :conversation-id="activeConversationId"
         :inbox-id="activeInboxId"
       />
+      <div v-if="activeTab === 'deals'" class="min-w-0 flex-1">
+        <CrmConversationDealsSidebar
+          :current-chat="currentChat"
+          @close="closeDealsSidebar"
+        />
+      </div>
       <div v-if="activeTab === 'touch'" class="min-w-0 flex-1">
         <TouchEditorDrawer
           :model-value="activeTab === 'touch'"

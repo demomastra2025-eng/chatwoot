@@ -57,6 +57,8 @@ import {
   isTelegramPersonalInbox,
   isTelegramPersonalConnected,
 } from 'dashboard/helper/telegramPersonal';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { resolveDefaultPipelineWithStages } from './crmDefaultPipelineSidebar';
 
 const props = defineProps({
   isMobileSidebarOpen: {
@@ -80,6 +82,7 @@ const route = useRoute();
 const router = useRouter();
 const { checkPermissions } = usePolicy();
 const store = useStore();
+const crmReferencesStore = useCrmReferencesStore();
 const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
 const { uiSettings } = useUISettings();
@@ -91,7 +94,7 @@ const isACustomBrandedInstance = useMapGetter(
 
 const { width: windowWidth } = useWindowSize();
 const isMobile = computed(() => windowWidth.value < 768);
-const DESKTOP_RAIL_WIDTH = 56;
+const DESKTOP_RAIL_WIDTH = 44;
 const DESKTOP_SECONDARY_COLUMN_WIDTH = 178;
 const COMPANY_ACTIVE_ROUTE_NAMES = [
   'companies_dashboard_index',
@@ -130,6 +133,13 @@ const hasCommunicationThreads = computed(() => {
   return isFeatureEnabledonAccount.value(
     accountId.value,
     FEATURE_FLAGS.COMMUNICATION_THREADS
+  );
+});
+
+const hasCrmDeals = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.CRM_DEALS
   );
 });
 
@@ -207,14 +217,12 @@ const sidebarWidth = computed(() =>
   isMobile.value ? 200 : DESKTOP_RAIL_WIDTH
 );
 const isEffectivelyCollapsed = computed(() => !isMobile.value);
-const isResizing = ref(false);
 
 provideSidebarContext({
   expandedItem,
   setExpandedItem,
   isCollapsed: isEffectivelyCollapsed,
   sidebarWidth,
-  isResizing,
 });
 
 const inboxes = useMapGetter('inboxes/getInboxes');
@@ -246,7 +254,11 @@ const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
 const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
-const conversationAssigneeTypes = Object.values(wootConstants.ASSIGNEE_TYPE);
+const conversationAssigneeTypes = [
+  wootConstants.ASSIGNEE_TYPE.ALL,
+  wootConstants.ASSIGNEE_TYPE.ME,
+  wootConstants.ASSIGNEE_TYPE.UNASSIGNED,
+];
 const isDialogConversationRoute = routeName =>
   typeof routeName === 'string' &&
   (routeName === 'home' ||
@@ -269,12 +281,34 @@ const conversationStatusActiveOn = [
   'folder_conversations',
   'conversations_through_folders',
 ];
-const allLabelsActiveOn = [];
+
+const normalizeConversationStatus = status => {
+  const normalizedStatus = String(status || '').toLowerCase();
+  return conversationStatuses.includes(normalizedStatus)
+    ? normalizedStatus
+    : '';
+};
+
+const routeHasSelectedConversationContext = computed(() =>
+  Boolean(
+    route.params?.conversation_id ||
+      route.params?.conversationId ||
+      route.params?.communication_thread_id
+  )
+);
 
 const currentConversationStatus = computed(() => {
-  const routeStatus = route.query.status;
+  const selectedStatus = normalizeConversationStatus(
+    selectedConversation.value?.status
+  );
 
-  return conversationStatuses.includes(routeStatus) ? routeStatus : 'open';
+  if (routeHasSelectedConversationContext.value && selectedStatus) {
+    return selectedStatus;
+  }
+
+  return (
+    normalizeConversationStatus(route.query.status) || selectedStatus || 'open'
+  );
 });
 
 const currentConversationAssigneeType = computed(() => {
@@ -282,23 +316,61 @@ const currentConversationAssigneeType = computed(() => {
 
   return conversationAssigneeTypes.includes(assigneeType)
     ? assigneeType
-    : wootConstants.ASSIGNEE_TYPE.ME;
+    : wootConstants.ASSIGNEE_TYPE.ALL;
 });
 
 const conversationNavigationQuery = (overrides = {}) => {
   const baseQuery = { ...route.query };
   const camelAssigneeType = baseQuery.assigneeType;
+  const camelCrmPipelineId = baseQuery.crmPipelineId;
+  const camelCrmStageId = baseQuery.crmStageId;
+  const camelLabelsScope = baseQuery.labelsScope;
+  const camelTeamScope = baseQuery.teamScope;
   delete baseQuery.messageId;
   delete baseQuery.assigneeType;
+  delete baseQuery.crmPipelineId;
+  delete baseQuery.crmStageId;
+  delete baseQuery.labelsScope;
+  delete baseQuery.teamScope;
 
-  const { assigneeType: overrideCamelAssigneeType, ...safeOverrides } =
-    overrides;
+  const {
+    assigneeType: overrideCamelAssigneeType,
+    crmPipelineId: overrideCamelCrmPipelineId,
+    crmStageId: overrideCamelCrmStageId,
+    labelsScope: overrideCamelLabelsScope,
+    teamScope: overrideCamelTeamScope,
+    ...safeOverrides
+  } = overrides;
+  const hasCrmPipelineOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'crm_pipeline_id') ||
+    overrideCamelCrmPipelineId !== undefined;
+  const hasCrmStageOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'crm_stage_id') ||
+    overrideCamelCrmStageId !== undefined;
+  const hasLabelsScopeOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'labels_scope') ||
+    overrideCamelLabelsScope !== undefined;
+  const hasTeamScopeOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'team_scope') ||
+    overrideCamelTeamScope !== undefined;
   const nextAssigneeType =
     safeOverrides.assignee_type ||
     overrideCamelAssigneeType ||
     baseQuery.assignee_type ||
     camelAssigneeType ||
     currentConversationAssigneeType.value;
+  const nextCrmPipelineId = hasCrmPipelineOverride
+    ? safeOverrides.crm_pipeline_id || overrideCamelCrmPipelineId
+    : baseQuery.crm_pipeline_id || camelCrmPipelineId;
+  const nextCrmStageId = hasCrmStageOverride
+    ? safeOverrides.crm_stage_id || overrideCamelCrmStageId
+    : baseQuery.crm_stage_id || camelCrmStageId;
+  const nextLabelsScope = hasLabelsScopeOverride
+    ? safeOverrides.labels_scope || overrideCamelLabelsScope
+    : baseQuery.labels_scope || camelLabelsScope;
+  const nextTeamScope = hasTeamScopeOverride
+    ? safeOverrides.team_scope || overrideCamelTeamScope
+    : baseQuery.team_scope || camelTeamScope;
   const nextQuery = {
     ...baseQuery,
     ...safeOverrides,
@@ -309,6 +381,30 @@ const conversationNavigationQuery = (overrides = {}) => {
     nextQuery.assignee_type = nextAssigneeType;
   } else {
     delete nextQuery.assignee_type;
+  }
+
+  if (nextCrmPipelineId) {
+    nextQuery.crm_pipeline_id = nextCrmPipelineId;
+  } else {
+    delete nextQuery.crm_pipeline_id;
+  }
+
+  if (nextCrmStageId) {
+    nextQuery.crm_stage_id = nextCrmStageId;
+  } else {
+    delete nextQuery.crm_stage_id;
+  }
+
+  if (nextLabelsScope) {
+    nextQuery.labels_scope = nextLabelsScope;
+  } else {
+    delete nextQuery.labels_scope;
+  }
+
+  if (nextTeamScope) {
+    nextQuery.team_scope = nextTeamScope;
+  } else {
+    delete nextQuery.team_scope;
   }
 
   return nextQuery;
@@ -432,11 +528,11 @@ const dedicatedRuntimePollingInboxId = computed(() => {
   return Number.isFinite(inboxId) && inboxId > 0 ? inboxId : null;
 });
 
-const withConversationStatus = (name, params = {}) =>
+const withConversationStatus = (name, params = {}, queryOverrides = {}) =>
   accountScopedRoute(
     resolveConversationRouteName(name),
     params,
-    conversationNavigationQuery()
+    conversationNavigationQuery(queryOverrides)
   );
 
 const withCurrentConversationScopeStatus = status =>
@@ -452,6 +548,139 @@ const withCurrentConversationScopeAssigneeType = assigneeType =>
     currentConversationScope.value.params,
     conversationNavigationQuery({ assignee_type: assigneeType })
   );
+
+const withConversationWithoutCrm = (name = 'home', params = {}) =>
+  accountScopedRoute(
+    resolveConversationRouteName(name),
+    params,
+    conversationNavigationQuery({
+      crm_pipeline_id: undefined,
+      crm_stage_id: undefined,
+    })
+  );
+
+const hasRouteLabelsScopeAny = () => {
+  const labelsScope = route.query.labels_scope ?? route.query.labelsScope;
+  return (
+    String(labelsScope || '') === 'any' &&
+    !['label_conversations', 'conversations_through_label'].includes(route.name)
+  );
+};
+
+const hasRouteTeamScopeAny = () => {
+  const teamScope = route.query.team_scope ?? route.query.teamScope;
+  return (
+    String(teamScope || '') === 'any' &&
+    !['team_conversations', 'conversations_through_team'].includes(route.name)
+  );
+};
+
+const withLabelsScopeToggle = () =>
+  hasRouteLabelsScopeAny()
+    ? withConversationStatus('home', {}, { labels_scope: undefined })
+    : withConversationStatus(
+        'home',
+        {},
+        {
+          labels_scope: 'any',
+          team_scope: undefined,
+        }
+      );
+
+const withTeamScopeToggle = () =>
+  hasRouteTeamScopeAny()
+    ? withConversationStatus('home', {}, { team_scope: undefined })
+    : withConversationStatus(
+        'home',
+        {},
+        {
+          labels_scope: undefined,
+          team_scope: 'any',
+        }
+      );
+
+const isCurrentCrmPipelineOnly = pipelineId => {
+  const routePipelineId =
+    route.query.crm_pipeline_id ?? route.query.crmPipelineId;
+  const routeStageId = route.query.crm_stage_id ?? route.query.crmStageId;
+
+  return String(routePipelineId || '') === String(pipelineId) && !routeStageId;
+};
+
+const withCurrentConversationScopeCrmPipeline = pipelineId => {
+  const query = conversationNavigationQuery({
+    crm_pipeline_id: pipelineId,
+    crm_stage_id: undefined,
+  });
+
+  return accountScopedRoute(
+    resolveConversationRouteName(currentConversationScope.value.name),
+    currentConversationScope.value.params,
+    {
+      ...query,
+      crm_stage_id: undefined,
+    }
+  );
+};
+
+const withCurrentConversationScopeCrmPipelineToggle = pipelineId =>
+  isCurrentCrmPipelineOnly(pipelineId)
+    ? withConversationWithoutCrm('home')
+    : withCurrentConversationScopeCrmPipeline(pipelineId);
+
+const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
+  accountScopedRoute(
+    resolveConversationRouteName(currentConversationScope.value.name),
+    currentConversationScope.value.params,
+    conversationNavigationQuery({
+      crm_pipeline_id: pipelineId,
+      crm_stage_id: stageId,
+    })
+  );
+
+const defaultCrmPipeline = computed(() =>
+  resolveDefaultPipelineWithStages(crmReferencesStore.pipelines)
+);
+
+const crmPipelineSidebarItems = computed(() => {
+  if (!hasCrmDeals.value || !defaultCrmPipeline.value.pipeline) {
+    return [];
+  }
+
+  const { pipeline, stages } = defaultCrmPipeline.value;
+
+  const stageChildren = stages.map(stage => ({
+    name: `PipelineStage:${pipeline.id}:${stage.id}`,
+    label: stage.name,
+    connectorColor: stage.color,
+    count: stage.dealCount ?? 0,
+    activeOn: conversationStatusActiveOn,
+    to: withCurrentConversationScopeCrmStage(pipeline.id, stage.id),
+  }));
+
+  const pipelineItem = {
+    name: `Pipeline:${pipeline.id}`,
+    visibilityKey: 'Conversation:Pipelines',
+    label: pipeline.name,
+    icon: 'i-lucide-filter',
+    active: isCurrentCrmPipelineOnly(pipeline.id),
+    activeOn: conversationStatusActiveOn,
+    count: pipeline.dealCount ?? 0,
+    to: withCurrentConversationScopeCrmPipelineToggle(pipeline.id),
+  };
+
+  if (!stageChildren.length) {
+    return [pipelineItem];
+  }
+
+  return [
+    {
+      ...pipelineItem,
+      suppressHeaderActiveWhenChildActive: true,
+      children: stageChildren,
+    },
+  ];
+});
 
 const userPermissions = computed(() =>
   getUserPermissions(currentUser.value, accountId.value)
@@ -473,7 +702,10 @@ const conversationAssigneeStatusLabels = computed(() => ({
 
 const conversationAssigneeStatusItems = computed(() =>
   filterItemsByPermission(
-    ASSIGNEE_TYPE_TAB_PERMISSIONS,
+    conversationAssigneeTypes.reduce((items, key) => {
+      items[key] = ASSIGNEE_TYPE_TAB_PERMISSIONS[key];
+      return items;
+    }, {}),
     userPermissions.value,
     item => item.permissions
   ).map(({ key }) => {
@@ -712,6 +944,20 @@ watch(
   }
 );
 
+const loadSidebarCrmPipelines = () => {
+  if (!hasCrmDeals.value) {
+    return Promise.resolve();
+  }
+
+  return crmReferencesStore.loadPipelines();
+};
+
+watch(hasCrmDeals, enabled => {
+  if (enabled && !crmReferencesStore.pipelines.length) {
+    loadSidebarCrmPipelines();
+  }
+});
+
 onMounted(async () => {
   await Promise.allSettled([
     store.dispatch('labels/get'),
@@ -722,6 +968,7 @@ onMounted(async () => {
     store.dispatch('attributes/get'),
     store.dispatch('customViews/get', 'conversation'),
     store.dispatch('customViews/get', 'contact'),
+    loadSidebarCrmPipelines(),
   ]);
 
   syncSidebarRuntimePolling();
@@ -1052,6 +1299,7 @@ const menuItems = computed(() => {
               },
             ],
           },
+          ...crmPipelineSidebarItems.value,
           {
             name: 'Folders',
             visibilityKey: 'Conversation:Folders',
@@ -1071,7 +1319,8 @@ const menuItems = computed(() => {
             visibilityKey: 'Conversation:Teams',
             label: t('SIDEBAR.TEAMS'),
             icon: 'i-lucide-users',
-            to: withConversationStatus('home'),
+            active: hasRouteTeamScopeAny(),
+            to: withTeamScopeToggle(),
             suppressExactPathActive: true,
             activeOn: [],
             suppressHeaderActiveWhenChildActive: true,
@@ -1079,9 +1328,16 @@ const menuItems = computed(() => {
               name: `${team.name}-${team.id}`,
               label: team.name,
               badge: teamUnreadCount(team.id),
-              to: withConversationStatus('team_conversations', {
-                teamId: team.id,
-              }),
+              to: withConversationStatus(
+                'team_conversations',
+                {
+                  teamId: team.id,
+                },
+                {
+                  labels_scope: undefined,
+                  team_scope: undefined,
+                }
+              ),
             })),
           },
           ...(labels.value.length
@@ -1092,9 +1348,10 @@ const menuItems = computed(() => {
                   label: t('SIDEBAR.LABELS'),
                   icon: 'i-lucide-tag',
                   actionItems: labelSidebarActionItems.value,
-                  to: withConversationStatus('home'),
+                  active: hasRouteLabelsScopeAny(),
+                  to: withLabelsScopeToggle(),
                   suppressExactPathActive: true,
-                  activeOn: allLabelsActiveOn,
+                  activeOn: [],
                   suppressHeaderActiveWhenChildActive: true,
                   children: [
                     ...labels.value.map(label => ({
@@ -1118,9 +1375,16 @@ const menuItems = computed(() => {
                             ? labelMarkerEmoji(label)
                             : '',
                       }),
-                      to: withConversationStatus('label_conversations', {
-                        label: label.title,
-                      }),
+                      to: withConversationStatus(
+                        'label_conversations',
+                        {
+                          label: label.title,
+                        },
+                        {
+                          labels_scope: undefined,
+                          team_scope: undefined,
+                        }
+                      ),
                     })),
                   ],
                 },
@@ -1502,6 +1766,16 @@ const menuItems = computed(() => {
             label: t('SIDEBAR.REPORTS_CONVERSATION'),
             to: accountScopedRoute('conversation_reports'),
           },
+          ...(hasCrmDeals.value
+            ? [
+                {
+                  name: 'Reports Deals',
+                  visibilityKey: 'Reports:Deals',
+                  label: t('SIDEBAR.REPORTS_DEALS'),
+                  to: accountScopedRoute('deal_reports'),
+                },
+              ]
+            : []),
           ...reportRoutes.value.map(reportRoute => ({
             ...reportRoute,
             visibilityKey: {
@@ -1790,13 +2064,11 @@ const desktopSidebarWidth = computed(() => {
       closeMobileSidebar,
       { ignore: ['#mobile-sidebar-launcher'] },
     ]"
-    class="bg-n-background flex text-sm fixed top-0 ltr:left-0 rtl:right-0 h-full z-40 w-[200px] md:w-auto md:relative md:flex-shrink-0 md:ltr:translate-x-0 md:rtl:translate-x-0 ltr:border-r rtl:border-l border-n-weak"
+    class="bg-n-background flex text-sm fixed top-0 ltr:left-0 rtl:right-0 h-full z-40 w-[200px] md:w-auto md:relative md:flex-shrink-0 md:ltr:translate-x-0 md:rtl:translate-x-0 ltr:border-r rtl:border-l border-n-weak transition-transform duration-200 ease-out"
     :class="[
       {
         'shadow-lg md:shadow-none': isMobileSidebarOpen,
         'ltr:-translate-x-full rtl:translate-x-full': !isMobileSidebarOpen,
-        'transition-transform duration-200 ease-out md:transition-[width]':
-          !isResizing,
       },
     ]"
     :style="isMobile ? undefined : { width: `${desktopSidebarWidth}px` }"
@@ -1805,7 +2077,7 @@ const desktopSidebarWidth = computed(() => {
       class="flex h-full min-w-0 flex-col bg-n-background pb-px"
       :class="[
         isEffectivelyCollapsed
-          ? 'w-14 flex-shrink-0 ltr:border-r rtl:border-l border-n-weak'
+          ? 'w-11 flex-shrink-0 ltr:border-r rtl:border-l border-n-weak'
           : 'w-full',
       ]"
     >
@@ -1880,7 +2152,7 @@ const desktopSidebarWidth = computed(() => {
         </div>
       </section>
       <nav
-        class="grid overflow-y-scroll flex-grow gap-2 pb-5 no-scrollbar min-w-0"
+        class="sidebar-icon-rail-scroll grid overflow-y-auto flex-grow gap-2 pb-5 no-scrollbar min-w-0"
         :class="isEffectivelyCollapsed ? 'px-1' : 'px-2'"
       >
         <ul
@@ -1946,3 +2218,16 @@ const desktopSidebarWidth = computed(() => {
     </Teleport>
   </aside>
 </template>
+
+<style scoped>
+.sidebar-icon-rail-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.sidebar-icon-rail-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+</style>

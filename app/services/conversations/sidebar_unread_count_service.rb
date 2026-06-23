@@ -8,13 +8,19 @@ class Conversations::SidebarUnreadCountService
 
   def perform
     unread_scope = unread_message_scope
+    crm_unread_count_service = Crm::DealDialogUnreadCountService.new(
+      account: account,
+      conversation_scope: unread_scope
+    )
 
     {
       all: unread_dialog_count(unread_scope),
       statuses: normalize_enum_counts(unread_scope.group(:status).distinct.count('conversations.id'), Conversation.statuses),
       inboxes: normalize_counts(unread_scope.group(:inbox_id).distinct.count('conversations.id')),
       teams: normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).distinct.count('conversations.id')),
-      labels: normalize_counts(label_counts(unread_scope))
+      labels: normalize_counts(label_counts(unread_scope)),
+      pipelines: crm_unread_count_service.conversation_pipeline_counts,
+      stages: crm_unread_count_service.conversation_stage_counts
     }
   end
 

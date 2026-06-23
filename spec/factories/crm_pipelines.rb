@@ -6,5 +6,6 @@ FactoryBot.define do
     sequence(:position) { |n| n }
     active { true }
     default { false }
+    auto_create_deal_on_channel_contact { false }
   end
 end

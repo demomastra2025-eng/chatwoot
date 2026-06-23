@@ -35,6 +35,25 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:messages].first[:id]).to eq(message.id)
       end
 
+      it 'returns CRM deal stage accents for linked deals' do
+        account.enable_features!('crm_deals')
+        pipeline = create(:crm_pipeline, account: account)
+        first_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'New', color: '#22C55E', position: 1)
+        second_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified', color: '#3B82F6', position: 2)
+        create(:crm_deal, account: account, pipeline: pipeline, stage: first_stage, originating_conversation: conversation)
+        contact_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: second_stage)
+        create(:crm_deal_contact, account: account, deal: contact_deal, contact: conversation.contact)
+
+        get "/api/v1/accounts/#{account.id}/conversations",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        stages = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first[:crm_deal_stages]
+        expect(stages.pluck(:id)).to eq([first_stage.id, second_stage.id])
+        expect(stages.pluck(:color)).to eq(%w[#22C55E #3B82F6])
+      end
+
       it 'returns full unread counts for public incoming messages' do
         conversation.update!(agent_last_seen_at: 1.hour.ago)
         create_list(
@@ -61,8 +80,11 @@ RSpec.describe 'Conversations API', type: :request do
 
       it 'returns sidebar unread dialog counts scoped by agent inbox access' do
         team = create(:team, account: account, allow_auto_assign: false)
+        pipeline = create(:crm_pipeline, account: account)
+        stage = create(:crm_stage, account: account, pipeline: pipeline)
         conversation.update!(agent_last_seen_at: 1.hour.ago, status: :pending, team: team)
         conversation.update_labels('vip')
+        create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: conversation)
         create_list(
           :message,
           2,
@@ -99,7 +121,9 @@ RSpec.describe 'Conversations API', type: :request do
           statuses: { pending: 2 },
           inboxes: { conversation.inbox_id.to_s.to_sym => 2 },
           teams: { team.id.to_s.to_sym => 2 },
-          labels: { vip: 2 }
+          labels: { vip: 2 },
+          pipelines: { pipeline.id.to_s.to_sym => 1 },
+          stages: { stage.id.to_s.to_sym => 1 }
         )
       end
 
@@ -339,6 +363,23 @@ RSpec.describe 'Conversations API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(JSON.parse(response.body, symbolize_names: true)[:id]).to eq(conversation.display_id)
+      end
+
+      it 'returns CRM deal stage accents on the conversation detail payload' do
+        account.enable_features!('crm_deals')
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+        pipeline = create(:crm_pipeline, account: account)
+        stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#22C55E')
+        create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: conversation)
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(JSON.parse(response.body, symbolize_names: true)[:crm_deal_stages]).to include(
+          a_hash_including(id: stage.id, color: '#22C55E')
+        )
       end
 
       it 'includes contact inbox identity metadata for conversation headers' do

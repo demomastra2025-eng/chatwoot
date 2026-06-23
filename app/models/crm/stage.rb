@@ -5,7 +5,7 @@
 #  id          :bigint           not null, primary key
 #  active      :boolean          default(TRUE), not null
 #  code        :string           not null
-#  color       :string           default("#F0F0F3"), not null
+#  color       :string           default("#E11D48"), not null
 #  default     :boolean          default(FALSE), not null
 #  name        :string           not null
 #  outcome     :string           default("open"), not null
@@ -36,21 +36,32 @@ class Crm::Stage < ApplicationRecord
   OUTCOMES = %w[open won lost].freeze
   TERMINAL_OUTCOMES = %w[won lost].freeze
   STANDARD_COLORS = [
-    '#F0F0F3',
-    '#E8E8EC',
-    '#0EA5E9',
-    '#3B82F6',
-    '#6366F1',
-    '#8B5CF6',
-    '#A855F7',
-    '#EC4899',
+    '#E11D48',
+    '#DC2626',
+    '#EA580C',
     '#F97316',
-    '#EAB308',
-    '#22C55E',
-    '#14B8A6'
+    '#D97706',
+    '#CA8A04',
+    '#84CC16',
+    '#65A30D',
+    '#16A34A',
+    '#059669',
+    '#0D9488',
+    '#0891B2',
+    '#0284C7',
+    '#2563EB',
+    '#4F46E5',
+    '#7C3AED',
+    '#9333EA',
+    '#C026D3',
+    '#DB2777',
+    '#BE123C'
   ].freeze
+  WON_COLOR = '#16A34A'.freeze
+  LOST_COLOR = '#DC2626'.freeze
   DEFAULT_COLOR = STANDARD_COLORS.first
   HEX_COLOR_FORMAT = /\A#[A-F0-9]{6}\z/i
+  TERMINAL_STAGE_SORT_SQL = Arel.sql("CASE WHEN crm_stages.outcome IN ('won', 'lost') THEN 1 ELSE 0 END").freeze
 
   belongs_to :account, class_name: '::Account'
   belongs_to :pipeline, class_name: '::Crm::Pipeline', inverse_of: :stages
@@ -70,7 +81,7 @@ class Crm::Stage < ApplicationRecord
   validate :pipeline_belongs_to_account
   validate :default_stage_must_be_active_open
 
-  scope :ordered, -> { order(:position, :id) }
+  scope :ordered, -> { order(TERMINAL_STAGE_SORT_SQL, :position, :id) }
   scope :active, -> { where(active: true) }
 
   before_validation :sync_account_id
@@ -81,6 +92,7 @@ class Crm::Stage < ApplicationRecord
   before_validation :normalize_color
   before_validation :assign_position, on: :create
   before_save :clear_other_default_stages, if: :default?
+  before_create :shift_sibling_positions_for_insert
 
   def terminal_outcome?
     outcome.in?(TERMINAL_OUTCOMES)
@@ -92,7 +104,25 @@ class Crm::Stage < ApplicationRecord
     return if position.present?
     return if pipeline.blank?
 
-    self.position = pipeline.stages.maximum(:position).to_i + 1
+    terminal_position = pipeline.stages.where(outcome: TERMINAL_OUTCOMES).minimum(:position)
+
+    if outcome_open? && terminal_position.present?
+      self.position = terminal_position
+      @shift_sibling_positions_for_insert = true
+    else
+      self.position = pipeline.stages.maximum(:position).to_i + 1
+    end
+  end
+
+  def shift_sibling_positions_for_insert
+    return unless @shift_sibling_positions_for_insert
+    return if pipeline_id.blank? || position.blank?
+
+    self.class
+        .where(pipeline_id: pipeline_id)
+        .where('position >= ?', position)
+        .order(position: :desc, id: :desc)
+        .each { |stage| stage.update!(position: stage.position + 1) }
   end
 
   def normalize_code

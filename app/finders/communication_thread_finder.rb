@@ -5,6 +5,14 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   DEFAULT_STATUS = 'open'.freeze
   RESULTS_PER_PAGE = ENV.fetch('CONVERSATION_RESULTS_PER_PAGE', '25').to_i
+  THREAD_RELATION_FILTERS = {
+    include_status: true,
+    include_inbox: true,
+    include_assignee: false,
+    include_team: true,
+    include_labels: true,
+    include_crm_deal_context: true
+  }.freeze
   SORT_OPTIONS = {
     'last_activity_at_asc' => 'communication_threads.last_activity_at ASC NULLS LAST, communication_threads.id ASC',
     'last_activity_at_desc' => 'communication_threads.last_activity_at DESC NULLS LAST, communication_threads.id DESC',
@@ -55,6 +63,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     filter_by_inbox
     filter_by_team
     filter_by_labels
+    filter_by_crm_deal_context
   end
 
   def validate_params!
@@ -105,18 +114,24 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def filter_by_team
-    return if params[:team_id].blank?
+    if params[:team_id].present?
+      @communication_threads = @communication_threads.where(team_id: params[:team_id])
+      return
+    end
 
-    @communication_threads = @communication_threads.where(team_id: params[:team_id])
+    @communication_threads = @communication_threads.where.not(team_id: nil) if team_scope_any?
   end
 
   def filter_by_labels
-    return if params[:labels].blank?
+    return if params[:labels].blank? && !labels_scope_any?
 
-    labeled_conversation_ids = accessible_conversations.tagged_with(params[:labels], any: true).reselect(:id)
     @communication_threads = @communication_threads.where(
       communication_thread_conversations: { conversation_id: labeled_conversation_ids }
     )
+  end
+
+  def filter_by_crm_deal_context
+    @communication_threads = current_crm_deal_dialog_scope.filter_communication_threads(@communication_threads)
   end
 
   def filter_by_assignee_type
@@ -182,7 +197,9 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       statuses: status_unread_counts,
       inboxes: channel_counts[:inboxes],
       teams: team_unread_counts,
-      labels: label_unread_counts
+      labels: label_unread_counts,
+      pipelines: pipeline_unread_counts,
+      stages: stage_unread_counts
     }
   end
 
@@ -243,6 +260,14 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     )
   end
 
+  def pipeline_unread_counts
+    crm_unread_count_service.communication_thread_pipeline_counts
+  end
+
+  def stage_unread_counts
+    crm_unread_count_service.communication_thread_stage_counts
+  end
+
   def unread_thread_scope(scope)
     CommunicationThread
       .where(id: scope.except(:order).select(:id))
@@ -257,14 +282,19 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     end
   end
 
-  def scoped_thread_relation(include_status: true, include_inbox: true, include_assignee: false, include_team: true, include_labels: true)
-    scope = base_thread_scope
-    scope = apply_status_filter(scope) if include_status
-    scope = apply_inbox_filter(scope) if include_inbox
-    scope = apply_team_filter(scope) if include_team
-    scope = apply_labels_filter(scope) if include_labels
-    scope = apply_assignee_filter(scope) if include_assignee
-    scope
+  def scoped_thread_relation(filters = {})
+    filters = THREAD_RELATION_FILTERS.merge(filters)
+
+    [
+      [:include_status, method(:apply_status_filter)],
+      [:include_inbox, method(:apply_inbox_filter)],
+      [:include_team, method(:apply_team_filter)],
+      [:include_labels, method(:apply_labels_filter)],
+      [:include_crm_deal_context, method(:apply_crm_deal_context_filter)],
+      [:include_assignee, method(:apply_assignee_filter)]
+    ].reduce(base_thread_scope) do |scope, (filter_key, filter_method)|
+      filters[filter_key] ? filter_method.call(scope) : scope
+    end
   end
 
   def base_thread_scope
@@ -296,16 +326,20 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def apply_team_filter(scope)
-    return scope if params[:team_id].blank?
+    return scope.where(team_id: params[:team_id]) if params[:team_id].present?
+    return scope.where.not(team_id: nil) if team_scope_any?
 
-    scope.where(team_id: params[:team_id])
+    scope
   end
 
   def apply_labels_filter(scope)
-    return scope if params[:labels].blank?
+    return scope if params[:labels].blank? && !labels_scope_any?
 
-    labeled_conversation_ids = accessible_conversations.tagged_with(params[:labels], any: true).reselect(:id)
     scope.where(communication_thread_conversations: { conversation_id: labeled_conversation_ids })
+  end
+
+  def apply_crm_deal_context_filter(scope)
+    current_crm_deal_dialog_scope.filter_communication_threads(scope)
   end
 
   def apply_assignee_filter(scope)
@@ -343,5 +377,61 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       current_user,
       current_account
     ).perform
+  end
+
+  def crm_pipeline_id
+    params[:crm_pipeline_id].presence || params[:crmPipelineId].presence
+  end
+
+  def crm_stage_id
+    params[:crm_stage_id].presence || params[:crmStageId].presence
+  end
+
+  def labels_scope_any?
+    (params[:labels_scope].presence || params[:labelsScope].presence).to_s == 'any'
+  end
+
+  def team_scope_any?
+    (params[:team_scope].presence || params[:teamScope].presence).to_s == 'any'
+  end
+
+  def labeled_conversation_ids
+    return accessible_conversations.tagged_with(params[:labels], any: true).reselect(:id) if params[:labels].present?
+
+    conversations_with_any_label(accessible_conversations).reselect(:id)
+  end
+
+  def conversations_with_any_label(scope)
+    scope.joins(
+      'INNER JOIN taggings conversation_any_label_taggings ' \
+      'ON conversation_any_label_taggings.taggable_id = conversations.id ' \
+      "AND conversation_any_label_taggings.taggable_type = 'Conversation' " \
+      "AND conversation_any_label_taggings.context = 'labels'"
+    ).distinct
+  end
+
+  def current_crm_deal_dialog_scope
+    crm_deal_dialog_scope(pipeline_id: crm_pipeline_id, stage_id: crm_stage_id)
+  end
+
+  def crm_deal_dialog_scope(pipeline_id: nil, stage_id: nil)
+    Crm::DealDialogScopeBuilder.new(
+      account: current_account,
+      pipeline_id: pipeline_id,
+      stage_id: stage_id
+    )
+  end
+
+  def crm_unread_count_service
+    @crm_unread_count_service ||= Crm::DealDialogUnreadCountService.new(
+      account: current_account,
+      communication_thread_scope: crm_unread_thread_scope
+    )
+  end
+
+  def crm_unread_thread_scope
+    @crm_unread_thread_scope ||= unread_thread_scope(
+      scoped_thread_relation(include_crm_deal_context: false, include_assignee: true)
+    )
   end
 end

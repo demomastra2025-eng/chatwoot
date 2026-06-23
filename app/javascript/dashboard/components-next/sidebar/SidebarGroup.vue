@@ -38,7 +38,6 @@ const {
   resolveFeatureFlag,
   isAllowed,
   isCollapsed,
-  isResizing,
 } = useSidebarContext();
 
 const {
@@ -92,7 +91,7 @@ const closePopover = () => {
 };
 
 const handleMouseEnter = () => {
-  if (!props.showCollapsedPopover || !hasChildren.value || isResizing.value) {
+  if (!props.showCollapsedPopover || !hasChildren.value) {
     return;
   }
   cancelClose();
@@ -180,7 +179,7 @@ const queryMatches = child => {
     ? child.name.split(':')[1]
     : null;
   const routeAssigneeType =
-    route.query.assignee_type ?? route.query.assigneeType ?? 'me';
+    route.query.assignee_type ?? route.query.assigneeType ?? 'all';
 
   if (
     assigneeItemType &&
@@ -199,7 +198,23 @@ const queryMatches = child => {
 
     if (key === 'assignee_type') {
       routeValue =
-        route.query.assignee_type ?? route.query.assigneeType ?? 'me';
+        route.query.assignee_type ?? route.query.assigneeType ?? 'all';
+    }
+
+    if (key === 'crm_pipeline_id') {
+      routeValue = route.query.crm_pipeline_id ?? route.query.crmPipelineId;
+    }
+
+    if (key === 'crm_stage_id') {
+      routeValue = route.query.crm_stage_id ?? route.query.crmStageId;
+    }
+
+    if (key === 'labels_scope') {
+      routeValue = route.query.labels_scope ?? route.query.labelsScope;
+    }
+
+    if (key === 'team_scope') {
+      routeValue = route.query.team_scope ?? route.query.teamScope;
     }
 
     return String(routeValue) === String(value);
@@ -292,6 +307,10 @@ const hasActiveChild = computed(() => {
 });
 
 const isSubGroupHeaderActive = child => {
+  if (typeof child?.active === 'boolean') {
+    return child.active;
+  }
+
   if (
     child?.suppressHeaderActiveWhenChildActive &&
     child?.children?.some(subChild =>
@@ -403,7 +422,7 @@ watch(
           ref="triggerRef"
           :to="to && !hasChildren ? to : undefined"
           type="button"
-          class="flex items-center justify-center size-10 rounded-lg"
+          class="flex items-center justify-center size-9 rounded-lg"
           :class="{
             'text-n-slate-12 bg-n-alpha-2':
               isActive || hasActiveChild || isExpanded,
@@ -470,6 +489,7 @@ watch(
             :to="child.to"
             :header-active="isSubGroupHeaderActive(child)"
             :badge="child.badge"
+            :count="child.count"
             :action-label="child.actionLabel"
             :action-to="child.actionTo"
             :action-title="child.actionTitle"

@@ -26,6 +26,42 @@ RSpec.describe Crm::Bootstrap::AccountService do
       )
     end
 
+    it 'creates default deal pipeline stages with won and lost colors' do
+      described_class.new(account: account).perform
+
+      pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+      stages = pipeline.stages.ordered
+
+      expect(stages.pluck(:code)).to eq(%w[new qualified proposal won lost])
+      expect(stages.find_by!(code: 'won')).to have_attributes(outcome: 'won', color: Crm::Stage::WON_COLOR)
+      expect(stages.find_by!(code: 'lost')).to have_attributes(outcome: 'lost', color: Crm::Stage::LOST_COLOR)
+    end
+
+    it 'adds missing terminal stages to existing pipelines without replacing custom open stages' do
+      pipeline = create(:crm_pipeline, account: account, code: 'custom_sales')
+      create(:crm_stage, account: account, pipeline: pipeline, name: 'Lead In', code: 'lead_in', color: '#123456')
+
+      described_class.new(account: account).perform
+
+      stages = pipeline.reload.stages.ordered
+
+      expect(stages.pluck(:code)).to eq(%w[lead_in won lost])
+      expect(stages.find_by!(code: 'won')).to have_attributes(outcome: 'won', color: Crm::Stage::WON_COLOR)
+      expect(stages.find_by!(code: 'lost')).to have_attributes(outcome: 'lost', color: Crm::Stage::LOST_COLOR)
+    end
+
+    it 'normalizes existing terminal stage colors' do
+      pipeline = create(:crm_pipeline, account: account, code: 'custom_sales')
+      create(:crm_stage, account: account, pipeline: pipeline, name: 'Open', code: 'open', color: '#123456')
+      create(:crm_stage, account: account, pipeline: pipeline, name: 'Won', code: 'won', color: '#F97316', outcome: 'won')
+      create(:crm_stage, account: account, pipeline: pipeline, name: 'Lost', code: 'lost', color: '#D97706', outcome: 'lost')
+
+      described_class.new(account: account).perform
+
+      expect(pipeline.reload.stages.find_by!(code: 'won').color).to eq(Crm::Stage::WON_COLOR)
+      expect(pipeline.stages.find_by!(code: 'lost').color).to eq(Crm::Stage::LOST_COLOR)
+    end
+
     it 'ensures the system source field even when deal pipelines already exist' do
       create(:crm_pipeline, account: account)
 

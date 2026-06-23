@@ -17,6 +17,7 @@ const LabelReports = () => import('./LabelReports.vue');
 const TeamReports = () => import('./TeamReports.vue');
 const CsatResponses = () => import('./CsatResponses.vue');
 const BotReports = () => import('./BotReports.vue');
+const DealReports = () => import('./DealReports.vue');
 const LiveReports = () => import('./LiveReports.vue');
 const SLAReports = () => import('./SLAReports.vue');
 const meta = {
@@ -142,6 +143,21 @@ export default {
           name: 'conversation_reports',
           meta,
           component: Index,
+        },
+        {
+          path: 'funnels',
+          name: 'funnel_reports',
+          redirect: to => ({
+            name: 'deal_reports',
+            params: to.params,
+            query: to.query,
+          }),
+        },
+        {
+          path: 'deals',
+          name: 'deal_reports',
+          meta,
+          component: DealReports,
         },
         ...oldReportRoutes,
         ...revisedReportRoutes,

@@ -2229,8 +2229,6 @@ watch(
           :definitions="applicableTaskFieldDefinitions"
           :framed="false"
           :model-value="form.customAttributes"
-          :title="$t('CRM.CUSTOM_FIELDS.TITLE')"
-          :description="$t('CRM.CUSTOM_FIELDS.DESCRIPTION')"
           @update:model-value="form.customAttributes = $event"
         />
 

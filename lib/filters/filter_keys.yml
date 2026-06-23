@@ -74,6 +74,12 @@ conversations:
       - "not_equal_to"
       - "is_present"
       - "is_not_present"
+  crm_stage_id:
+    attribute_type: "crm_deal_context"
+    data_type: "number"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
   browser_language:
     attribute_type: "additional_attributes"
     data_type: "text"

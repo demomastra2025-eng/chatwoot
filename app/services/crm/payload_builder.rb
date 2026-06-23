@@ -3,6 +3,8 @@ module Crm::PayloadBuilder
   module_function
 
   def pipeline(pipeline, include_stages: true, include_inactive_stages: true)
+    deal_counts_by_stage_id = pipeline.deals.kept.group(:stage_id).count
+
     {
       id: pipeline.id,
       account_id: pipeline.account_id,
@@ -11,19 +13,21 @@ module Crm::PayloadBuilder
       position: pipeline.position,
       active: pipeline.active,
       default: pipeline.default,
-      deal_count: pipeline.deals.count,
+      auto_create_deal_on_channel_contact: pipeline.auto_create_deal_on_channel_contact,
+      deal_count: deal_counts_by_stage_id.values.sum,
       stages: pipeline_stages_payload(
         pipeline,
         include_stages: include_stages,
-        include_inactive_stages: include_inactive_stages
+        include_inactive_stages: include_inactive_stages,
+        deal_counts_by_stage_id: deal_counts_by_stage_id
       ),
       created_at: pipeline.created_at&.iso8601,
       updated_at: pipeline.updated_at&.iso8601
     }.compact
   end
 
-  def stage(stage)
-    {
+  def stage(stage, deal_count: nil)
+    payload = {
       id: stage.id,
       account_id: stage.account_id,
       pipeline_id: stage.pipeline_id,
@@ -37,6 +41,8 @@ module Crm::PayloadBuilder
       created_at: stage.created_at&.iso8601,
       updated_at: stage.updated_at&.iso8601
     }
+    payload[:deal_count] = deal_count unless deal_count.nil?
+    payload
   end
 
   def task_status(task_status)
@@ -92,6 +98,8 @@ module Crm::PayloadBuilder
       company_id: deal.company_id,
       originating_conversation_id: deal.originating_conversation_id,
       originating_conversation_display_id: deal.originating_conversation&.display_id,
+      originating_communication_thread_id: deal.originating_communication_thread_id,
+      originating_communication_thread_display_id: deal.originating_communication_thread&.display_id,
       title: deal.title,
       description: deal.description,
       amount: amount_for(deal),
@@ -179,11 +187,12 @@ module Crm::PayloadBuilder
     }
   end
 
-  def pipeline_stages_payload(pipeline, include_stages: true, include_inactive_stages: true)
+  def pipeline_stages_payload(pipeline, include_stages: true, include_inactive_stages: true,
+                              deal_counts_by_stage_id: {})
     return unless include_stages
 
     stages_for_pipeline(pipeline, include_inactive_stages: include_inactive_stages).map do |crm_stage|
-      stage(crm_stage)
+      stage(crm_stage, deal_count: deal_counts_by_stage_id.fetch(crm_stage.id, 0))
     end
   end
 

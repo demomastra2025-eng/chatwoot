@@ -41,21 +41,55 @@ const currentConversationAssigneeTypeFromLocation = () => {
   );
 };
 
+const currentCrmDealContextFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return {};
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return {
+    crmPipelineId: params.get('crm_pipeline_id') || params.get('crmPipelineId'),
+    crmStageId: params.get('crm_stage_id') || params.get('crmStageId'),
+  };
+};
+
+const currentConversationScopesFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return {};
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return {
+    labelsScope: params.get('labels_scope') || params.get('labelsScope'),
+    teamScope: params.get('team_scope') || params.get('teamScope'),
+  };
+};
+
 const conversationQuery = ({
   status,
   assigneeType,
   defaultAssigneeType,
+  crmPipelineId,
+  crmStageId,
+  labelsScope,
+  teamScope,
 } = {}) => {
   const normalizedAssigneeType =
     normalizeConversationAssigneeType(assigneeType) ??
     currentConversationAssigneeTypeFromLocation() ??
     normalizeConversationAssigneeType(defaultAssigneeType);
+  const currentCrmDealContext = currentCrmDealContextFromLocation();
+  const currentConversationScopes = currentConversationScopesFromLocation();
 
   return {
     status:
       normalizeConversationStatus(status) ??
       currentConversationStatusFromLocation(),
     assignee_type: normalizedAssigneeType,
+    crm_pipeline_id: crmPipelineId || currentCrmDealContext.crmPipelineId,
+    crm_stage_id: crmStageId || currentCrmDealContext.crmStageId,
+    labels_scope: labelsScope || currentConversationScopes.labelsScope,
+    team_scope: teamScope || currentConversationScopes.teamScope,
   };
 };
 
@@ -81,6 +115,10 @@ export const conversationUrl = ({
   foldersId,
   status,
   assigneeType,
+  crmPipelineId,
+  crmStageId,
+  labelsScope,
+  teamScope,
   communicationThread = false,
 }) => {
   let url = communicationThread
@@ -92,7 +130,11 @@ export const conversationUrl = ({
       conversationQuery({
         status,
         assigneeType,
-        defaultAssigneeType: 'me',
+        defaultAssigneeType: 'all',
+        crmPipelineId,
+        crmStageId,
+        labelsScope,
+        teamScope,
       })
     );
   }
@@ -111,7 +153,17 @@ export const conversationUrl = ({
   } else if (conversationType === 'unattended') {
     url = `accounts/${accountId}/unattended/conversations/${id}`;
   }
-  return appendQueryToPath(url, conversationQuery({ status, assigneeType }));
+  return appendQueryToPath(
+    url,
+    conversationQuery({
+      status,
+      assigneeType,
+      crmPipelineId,
+      crmStageId,
+      labelsScope,
+      teamScope,
+    })
+  );
 };
 
 export const conversationListPageURL = ({
@@ -123,6 +175,10 @@ export const conversationListPageURL = ({
   customViewId,
   status,
   assigneeType,
+  crmPipelineId,
+  crmStageId,
+  labelsScope,
+  teamScope,
   communicationThread = false,
 }) => {
   let url = communicationThread
@@ -135,7 +191,11 @@ export const conversationListPageURL = ({
         conversationQuery({
           status,
           assigneeType,
-          defaultAssigneeType: 'me',
+          defaultAssigneeType: 'all',
+          crmPipelineId,
+          crmStageId,
+          labelsScope,
+          teamScope,
         })
       )
     );
@@ -157,7 +217,17 @@ export const conversationListPageURL = ({
     url = `accounts/${accountId}/${urlMap[conversationType]}`;
   }
   return frontendURL(
-    appendQueryToPath(url, conversationQuery({ status, assigneeType }))
+    appendQueryToPath(
+      url,
+      conversationQuery({
+        status,
+        assigneeType,
+        crmPipelineId,
+        crmStageId,
+        labelsScope,
+        teamScope,
+      })
+    )
   );
 };
 

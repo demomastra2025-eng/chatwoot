@@ -6,11 +6,14 @@
       "ARCHIVED": "В архиве",
       "CHAT": "Чат",
       "ID": "ID",
+      "COMMUNICATION_THREAD_SOURCE": "Сохраняет объединённую ветку коммуникаций как исходный контекст",
       "CONVERSATION_SOURCE": "Сохраняет диалог из канала как исходный контекст",
+      "CANCEL": "Отмена",
       "CREATE": "Создать",
       "DEFAULT": "По умолчанию",
       "EMPTY_VALUE": "—",
       "INACTIVE": "Неактивно",
+      "LINKED_COMMUNICATION_THREAD": "Связанная ветка коммуникаций",
       "LINKED_CONVERSATION": "Связанный диалог",
       "NO": "Нет",
       "SAVE": "Сохранить",
@@ -38,6 +41,7 @@
       "ADD_COMMENT": "Добавить комментарий",
       "COMMENT": "Комментарий",
       "COMMENT_PLACEHOLDER": "Добавьте внутренний контекст для команды",
+      "COMMUNICATION_THREAD": "Ветка коммуникаций #{id}",
       "CONVERSATION": "Диалог #{id}",
       "DESCRIPTION": "Здесь отображаются события, комментарии и связанный рабочий контекст.",
       "EMPTY": "Пока нет активности в таймлайне",
@@ -123,7 +127,10 @@
         "WIN_PROBABILITY": "Вероятность выигрыша"
       },
       "NEW_DEAL": "Новая сделка",
+      "SIDEBAR_DESCRIPTION": "Откройте любую сделку контакта и редактируйте её прямо в диалоге.",
+      "SIDEBAR_TITLE": "Сделки",
       "PREFILL": {
+        "COMMUNICATION_THREAD_GENERIC": "Сделка из ветки коммуникаций #{threadId}",
         "CONVERSATION_GENERIC": "Сделка из диалога #{conversationId}",
         "CONVERSATION_WITH_CONTACT": "Сделка для {contactName}",
         "COMPANY": "Сделка для {companyName}"
@@ -302,8 +309,9 @@
         "DRAG": "Перетащить воронку",
         "EDIT_TITLE": "Редактировать воронку",
         "FORM": {
+          "AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT": "Автосоздание сделки через канал",
           "CODE": "Код",
-          "DEFAULT": "Воронка по умолчанию",
+          "DEFAULT": "Основная",
           "NAME": "Название",
           "POSITION": "Позиция"
         },
@@ -315,7 +323,8 @@
         "SUCCESS_RESTORED": "Воронка восстановлена",
         "SUCCESS_SAVE": "Воронка сохранена",
         "TABLE": {
-          "DEFAULT": "По умолчанию",
+          "AUTO_CREATE": "Авто",
+          "DEFAULT": "Основная",
           "NAME": "Название",
           "STAGES": "Этапы",
           "STATUS": "Статус"

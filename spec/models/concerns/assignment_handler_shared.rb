@@ -21,14 +21,17 @@ shared_examples_for 'assignment_handler' do
       end
 
       it 'creates team assigned and unassigned message activity' do
+        assigned_content = I18n.t('conversations.activity.team.assigned', team_name: team.name, user_name: agent.name)
+        removed_content = I18n.t('conversations.activity.team.removed', team_name: team.name, user_name: agent.name)
+
         expect(conversation.update(team: team)).to be true
         expect(conversation.update(team: nil)).to be true
         expect(Conversations::ActivityMessageJob).to(have_been_enqueued.at_least(:once)
           .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                                content: "Assigned to #{team.name} by #{agent.name}"  }))
+                                content: assigned_content }))
         expect(Conversations::ActivityMessageJob).to(have_been_enqueued.at_least(:once)
           .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                                content: "Unassigned from #{team.name} by #{agent.name}" }))
+                                content: removed_content }))
       end
 
       it 'changes assignee to nil if they doesnt belong to the team and allow_auto_assign is false' do
@@ -44,10 +47,17 @@ shared_examples_for 'assignment_handler' do
 
         conversation.update(team: team)
 
+        assigned_content = I18n.t(
+          'conversations.activity.team.assigned_with_assignee',
+          assignee_name: conversation.assignee.name,
+          team_name: team.name,
+          user_name: agent.name
+        )
+
         expect(conversation.reload.assignee).to eq agent
         expect(Conversations::ActivityMessageJob).to(have_been_enqueued.at_least(:once)
           .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
-                                content: "Assigned to #{conversation.assignee.name} via #{team.name} by #{agent.name}" }))
+                                content: assigned_content }))
       end
 
       it 'wont change assignee if he is already a team member' do

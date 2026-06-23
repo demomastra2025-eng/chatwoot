@@ -2,6 +2,15 @@ const setArrayValues = item => {
   return item.values[0]?.id ? item.values.map(val => val.id) : item.values;
 };
 
+export const normalizeFilterQueryOperator = operator => {
+  if (typeof operator !== 'string') return operator;
+
+  const normalizedOperator = operator.toLowerCase();
+  return ['and', 'or'].includes(normalizedOperator)
+    ? normalizedOperator
+    : operator;
+};
+
 const generateValues = item => {
   if (item.attribute_key === 'content') {
     const values = item.values || '';
@@ -26,6 +35,7 @@ const generatePayload = data => {
     // If item key is content, we will split it using comma and return as array
     // FIX ME: Make this generic option instead of using the key directly here
     item.values = generateValues(item);
+    item.query_operator = normalizeFilterQueryOperator(item.query_operator);
     return item;
   });
 

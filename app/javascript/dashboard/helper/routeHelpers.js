@@ -63,7 +63,7 @@ export const defaultRedirectPage = (
     currentAccount,
     FEATURE_FLAGS.COMMUNICATION_THREADS
   )
-    ? 'communication_threads?status=open&assignee_type=me'
+    ? 'communication_threads?status=open&assignee_type=all'
     : 'dashboard';
 
   const permissionRoutes = [

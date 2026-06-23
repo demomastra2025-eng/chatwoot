@@ -26,12 +26,10 @@ const WhatsappCallWidget = defineAsyncComponent(
 
 import CopilotLauncher from 'dashboard/components-next/copilot/CopilotLauncher.vue';
 import CopilotContainer from 'dashboard/components/copilot/CopilotContainer.vue';
-import CrmConversationDealPanel from 'dashboard/components-next/CRM/CrmConversationDealPanel.vue';
 
 import MobileSidebarLauncher from 'dashboard/components-next/sidebar/MobileSidebarLauncher.vue';
 import { useCallsStore } from 'dashboard/stores/calls';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
-import { useMapGetter } from 'dashboard/composables/store';
 
 export default {
   components: {
@@ -42,7 +40,6 @@ export default {
     UpgradePage,
     CopilotLauncher,
     CopilotContainer,
-    CrmConversationDealPanel,
     FloatingCallWidget,
     WhatsappCallWidget,
     MobileSidebarLauncher,
@@ -54,13 +51,11 @@ export default {
     const { width: windowWidth } = useWindowSize();
     const callsStore = useCallsStore();
     const whatsappCallsStore = useWhatsappCallsStore();
-    const currentChat = useMapGetter('getSelectedChat');
 
     return {
       uiSettings,
       updateUISettings,
       accountId,
-      currentChat,
       upgradePageRef,
       windowWidth,
       hasActiveCall: computed(() => callsStore.hasActiveCall),
@@ -119,12 +114,6 @@ export default {
     },
   },
   methods: {
-    handleCrmDealPanelModelUpdate(value) {
-      this.updateUISettings({
-        is_crm_deal_panel_open: value,
-        is_touch_sidebar_open: false,
-      });
-    },
     toggleMobileSidebar() {
       this.isMobileSidebarOpen = !this.isMobileSidebarOpen;
     },
@@ -184,11 +173,6 @@ export default {
         <MobileSidebarLauncher
           :is-mobile-sidebar-open="isMobileSidebarOpen"
           @toggle="toggleMobileSidebar"
-        />
-        <CrmConversationDealPanel
-          :current-chat="currentChat"
-          :model-value="uiSettings.is_crm_deal_panel_open"
-          @update:model-value="handleCrmDealPanelModelUpdate"
         />
         <CopilotContainer />
         <FloatingCallWidget />

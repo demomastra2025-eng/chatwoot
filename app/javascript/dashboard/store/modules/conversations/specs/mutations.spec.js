@@ -152,6 +152,30 @@ describe('#mutations', () => {
         { id: 7, is_communication_thread: false },
       ]);
     });
+
+    it('clears the selected chat when the selected aggregate thread loses its last channel', () => {
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11],
+            channels: [{ conversation_id: 11, inbox_id: 101 }],
+          },
+        ],
+      };
+
+      mutations[types.DELETE_COMMUNICATION_THREAD_CONVERSATIONS](state, {
+        threadId: 7,
+        conversationIds: [11],
+      });
+
+      expect(state.allConversations).toEqual([]);
+      expect(state.selectedChatId).toBeNull();
+      expect(state.selectedChatType).toBeNull();
+    });
   });
 
   describe('#UPDATE_CONVERSATION_CALL_STATUS', () => {

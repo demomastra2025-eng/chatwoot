@@ -12,6 +12,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     result = conversation_finder.perform
     @conversations = result[:conversations]
     @conversations_count = result[:count]
+    preload_crm_deal_stages(@conversations)
   end
 
   def meta
@@ -48,23 +49,28 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
                                 .per(ATTACHMENT_RESULTS_PER_PAGE)
   end
 
-  def show; end
+  def show
+    preload_crm_deal_stages([@conversation])
+  end
 
   def create
     ActiveRecord::Base.transaction do
       @conversation = ConversationBuilder.new(params: params, contact_inbox: @contact_inbox).perform
       Messages::MessageBuilder.new(Current.user, @conversation, params[:message]).perform if params[:message].present?
     end
+    preload_crm_deal_stages([@conversation])
   end
 
   def update
     @conversation.update!(permitted_update_params)
+    preload_crm_deal_stages([@conversation])
   end
 
   def filter
     result = ::Conversations::FilterService.new(params.permit!, current_user, current_account).perform
     @conversations = result[:conversations]
     @conversations_count = result[:count]
+    preload_crm_deal_stages(@conversations)
   rescue CustomExceptions::CustomFilter::InvalidAttribute,
          CustomExceptions::CustomFilter::InvalidOperator,
          CustomExceptions::CustomFilter::InvalidQueryOperator,
@@ -133,6 +139,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
       user: Current.user
     ).perform
     @conversation.reload
+    preload_crm_deal_stages([@conversation])
     render :update_last_seen
   end
 
@@ -232,6 +239,11 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
 
   def conversation_finder
     @conversation_finder ||= ConversationFinder.new(Current.user, params)
+  end
+
+  def preload_crm_deal_stages(conversations)
+    @crm_deal_stages_by_conversation_id =
+      Crm::DealDialogStageContextBuilder.new(account: Current.account).for_conversations(conversations)
   end
 
   def assignee?

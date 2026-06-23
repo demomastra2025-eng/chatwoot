@@ -84,6 +84,32 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS', () => {
+    it('keeps CRM pipeline and stage unread counts in sidebar state', () => {
+      const state = { sidebarUnreadCounts: {} };
+
+      mutations[types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS](state, {
+        all: 5,
+        statuses: { open: 2 },
+        inboxes: { 10: 1 },
+        teams: { 20: 2 },
+        labels: { vip: 3 },
+        pipelines: { 30: 4 },
+        stages: { 40: 5 },
+      });
+
+      expect(state.sidebarUnreadCounts).toEqual({
+        all: 5,
+        statuses: { open: 2 },
+        inboxes: { 10: 1 },
+        teams: { 20: 2 },
+        labels: { vip: 3 },
+        pipelines: { 30: 4 },
+        stages: { 40: 5 },
+      });
+    });
+  });
+
   describe('#SET_CURRENT_CHAT_WINDOW', () => {
     it('set current chat window', () => {
       const state = { selectedChatId: 1 };
@@ -1377,7 +1403,7 @@ describe('#mutations', () => {
       expect(state.allConversations).toEqual([conversation]);
     });
 
-    it('should emit events if updating selected conversation', () => {
+    it('should not emit scroll events for selected conversation metadata updates', () => {
       const state = {
         allConversations: [
           {
@@ -1395,8 +1421,9 @@ describe('#mutations', () => {
         updated_at: 200,
       };
 
+      emitter.emit.mockClear();
       mutations[types.UPDATE_CONVERSATION](state, conversation);
-      expect(emitter.emit).toHaveBeenCalledWith('SCROLL_TO_MESSAGE');
+      expect(emitter.emit).not.toHaveBeenCalledWith('SCROLL_TO_MESSAGE');
     });
 
     it('should ignore updates with older timestamps', () => {

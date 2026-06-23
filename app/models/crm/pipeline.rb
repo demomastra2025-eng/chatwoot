@@ -2,15 +2,16 @@
 #
 # Table name: crm_pipelines
 #
-#  id         :bigint           not null, primary key
-#  active     :boolean          default(TRUE), not null
-#  code       :string           not null
-#  default    :boolean          default(FALSE), not null
-#  name       :string           not null
-#  position   :integer          default(0), not null
-#  created_at :datetime         not null
-#  updated_at :datetime         not null
-#  account_id :bigint           not null
+#  id                                  :bigint           not null, primary key
+#  active                              :boolean          default(TRUE), not null
+#  auto_create_deal_on_channel_contact :boolean          default(FALSE), not null
+#  code                                :string           not null
+#  default                             :boolean          default(FALSE), not null
+#  name                                :string           not null
+#  position                            :integer          default(0), not null
+#  created_at                          :datetime         not null
+#  updated_at                          :datetime         not null
+#  account_id                          :bigint           not null
 #
 # Indexes
 #
@@ -27,7 +28,7 @@ class Crm::Pipeline < ApplicationRecord
 
   belongs_to :account, class_name: '::Account'
   has_many :stages, -> { ordered }, class_name: '::Crm::Stage', dependent: :destroy, inverse_of: :pipeline
-  has_many :deals, class_name: '::Crm::Deal', inverse_of: :pipeline
+  has_many :deals, class_name: '::Crm::Deal', inverse_of: :pipeline # rubocop:disable Rails/HasManyOrHasOneDependent
 
   validates :name, presence: true
   validates :code, presence: true, uniqueness: { scope: :account_id }
@@ -57,7 +58,9 @@ class Crm::Pipeline < ApplicationRecord
   end
 
   def disable_default_when_inactive
-    self.default = false unless active?
+    return if active?
+
+    self.default = false
   end
 
   def reassigning_default?

@@ -62,7 +62,7 @@ describe('#defaultRedirectPage', () => {
     };
 
     expect(defaultRedirectPage(to, permissions, user)).toBe(
-      'accounts/2/communication_threads?status=open&assignee_type=me'
+      'accounts/2/communication_threads?status=open&assignee_type=all'
     );
   });
 
@@ -225,7 +225,7 @@ describe('#validateLoggedInRoutes', () => {
               }
             )
           ).toEqual(
-            `accounts/1/communication_threads?status=open&assignee_type=me`
+            `accounts/1/communication_threads?status=open&assignee_type=all`
           );
         });
       });
@@ -259,7 +259,7 @@ describe('#validateLoggedInRoutes', () => {
               }
             )
           ).toEqual(
-            `accounts/1/communication_threads?status=open&assignee_type=me`
+            `accounts/1/communication_threads?status=open&assignee_type=all`
           );
         });
       });

@@ -302,7 +302,7 @@ watch(
         <div
           v-for="call in visibleCalls"
           :key="call.callSid"
-          class="flex gap-3 p-3 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
+          class="flex gap-1 p-3 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
         >
           <div class="flex flex-col items-center w-14 shrink-0 gap-1.5">
             <span

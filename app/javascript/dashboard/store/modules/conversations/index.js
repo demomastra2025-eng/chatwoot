@@ -40,6 +40,8 @@ const state = {
     inboxes: {},
     teams: {},
     labels: {},
+    pipelines: {},
+    stages: {},
   },
 };
 
@@ -572,6 +574,7 @@ export const mutations = {
     );
     if (!deletedIdSet.size) return;
 
+    let removedSelectedThread = false;
     _state.allConversations = _state.allConversations
       .map(conversation => {
         if (
@@ -584,7 +587,13 @@ export const mutations = {
         const channels = (conversation.channels || []).filter(
           channel => !deletedIdSet.has(String(channel.conversation_id))
         );
-        if (!channels.length) return null;
+        if (!channels.length) {
+          removedSelectedThread =
+            removedSelectedThread ||
+            (String(_state.selectedChatId) === String(threadId) &&
+              _state.selectedChatType === 'communication_thread');
+          return null;
+        }
 
         const updatedConversation = {
           ...conversation,
@@ -600,6 +609,11 @@ export const mutations = {
         return updatedConversation;
       })
       .filter(Boolean);
+
+    if (removedSelectedThread) {
+      _state.selectedChatId = null;
+      _state.selectedChatType = null;
+    }
   },
 
   [types.UPDATE_CONVERSATION](_state, conversation) {
@@ -673,6 +687,8 @@ export const mutations = {
       inboxes: counts?.inboxes || {},
       teams: counts?.teams || {},
       labels: counts?.labels || {},
+      pipelines: counts?.pipelines || {},
+      stages: counts?.stages || {},
     };
   },
   [types.CHANGE_CHAT_STATUS_FILTER](_state, data) {

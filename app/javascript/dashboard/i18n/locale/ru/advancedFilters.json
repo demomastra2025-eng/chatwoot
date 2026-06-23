@@ -52,6 +52,8 @@
       "CONVERSATION_IDENTIFIER": "Идентификатор беседы",
       "CAMPAIGN_NAME": "Название кампании",
       "LABELS": "Теги",
+      "CRM_STAGE": "Этап воронки",
+      "CRM_STAGE_FOR_PIPELINE": "Воронка: {pipeline}",
       "BROWSER_LANGUAGE": "Язык браузера",
       "PRIORITY": "Приоритет",
       "COUNTRY_NAME": "Название страны",

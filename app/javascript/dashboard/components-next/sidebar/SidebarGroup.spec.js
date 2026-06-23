@@ -50,7 +50,6 @@ vi.mock('./provider', () => ({
     resolveFeatureFlag: () => '',
     isAllowed: () => true,
     isCollapsed: sidebarCollapsed.value,
-    isResizing: { value: false },
   }),
 }));
 
@@ -228,7 +227,56 @@ describe('SidebarGroup', () => {
     expect(tagsSubGroup.attributes('data-active-child-names')).toBe('VIP-1');
   });
 
-  it('gives the Teams subgroup a clear-filter header like Tags', async () => {
+  it('highlights the Tags subgroup header when the any-tag filter is active', async () => {
+    Object.assign(routeState, {
+      name: 'communication_threads_dashboard',
+      path: '/communication_threads',
+      query: { status: 'open', labels_scope: 'any' },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Labels',
+          label: 'Tags',
+          icon: 'i-lucide-tag',
+          active: true,
+          to: {
+            name: 'communication_threads_dashboard',
+            path: '/communication_threads',
+            query: { status: 'open' },
+          },
+          suppressExactPathActive: true,
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'VIP-1',
+              label: 'VIP',
+              to: {
+                name: 'label_conversations',
+                path: '/label/VIP',
+                params: { label: 'VIP' },
+              },
+              activeOn: ['label_conversations'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const tagsSubGroup = wrapper.find('[data-test-id="sidebar-subgroup"]');
+
+    expect(tagsSubGroup.attributes('data-header-active')).toBe('true');
+    expect(tagsSubGroup.attributes('data-active-child-names')).not.toContain(
+      'VIP-1'
+    );
+  });
+
+  it('keeps the Teams subgroup header available but inactive on the unfiltered route', async () => {
     const wrapper = mountComponent();
 
     await nextTick();
@@ -240,6 +288,54 @@ describe('SidebarGroup', () => {
 
     expect(teamsSubGroup.attributes('data-has-to')).toBe('true');
     expect(teamsSubGroup.attributes('data-header-active')).toBe('false');
+  });
+
+  it('highlights the Teams subgroup header when the any-team filter is active', async () => {
+    Object.assign(routeState, {
+      name: 'communication_threads_dashboard',
+      path: '/communication_threads',
+      query: { status: 'open', team_scope: 'any' },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Teams',
+          label: 'Teams',
+          icon: 'i-lucide-users',
+          active: true,
+          to: {
+            name: 'communication_threads_dashboard',
+            path: '/communication_threads',
+            query: { status: 'open' },
+          },
+          suppressExactPathActive: true,
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'Sales-1',
+              label: 'Sales',
+              to: {
+                name: 'team_conversations',
+                path: '/team/1',
+                params: { teamId: 1 },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const teamsSubGroup = wrapper.find('[data-test-id="sidebar-subgroup"]');
+
+    expect(teamsSubGroup.attributes('data-header-active')).toBe('true');
+    expect(teamsSubGroup.attributes('data-active-child-names')).not.toContain(
+      'Sales-1'
+    );
   });
 
   it('highlights only the concrete team child on a team-filtered route', async () => {
@@ -261,6 +357,144 @@ describe('SidebarGroup', () => {
 
     expect(teamsSubGroup.attributes('data-header-active')).toBe('false');
     expect(teamsSubGroup.attributes('data-active-child-names')).toBe('Sales-1');
+  });
+
+  it('highlights only the selected CRM pipeline stage conversation filter by query', async () => {
+    Object.assign(routeState, {
+      name: 'communication_threads_dashboard',
+      path: '/communication_threads',
+      query: {
+        status: 'open',
+        assignee_type: 'all',
+        crm_pipeline_id: '1',
+        crm_stage_id: '20',
+      },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Pipeline:1',
+          label: 'Sales pipeline',
+          icon: 'i-lucide-filter',
+          to: {
+            name: 'communication_threads_dashboard',
+            path: '/communication_threads',
+            query: {
+              status: 'open',
+              assignee_type: 'all',
+              crm_pipeline_id: 1,
+            },
+          },
+          activeOn: ['communication_threads_dashboard'],
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'PipelineStage:1:10',
+              label: 'Lead',
+              to: {
+                name: 'communication_threads_dashboard',
+                path: '/communication_threads',
+                query: {
+                  status: 'open',
+                  assignee_type: 'all',
+                  crm_pipeline_id: 1,
+                  crm_stage_id: 10,
+                },
+              },
+              activeOn: ['communication_threads_dashboard'],
+            },
+            {
+              name: 'PipelineStage:1:20',
+              label: 'Negotiation',
+              to: {
+                name: 'communication_threads_dashboard',
+                path: '/communication_threads',
+                query: {
+                  status: 'open',
+                  assignee_type: 'all',
+                  crm_pipeline_id: 1,
+                  crm_stage_id: 20,
+                },
+              },
+              activeOn: ['communication_threads_dashboard'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const pipelineSubGroup = wrapper.find('[data-test-id="sidebar-subgroup"]');
+
+    expect(pipelineSubGroup.attributes('data-header-active')).toBe('false');
+    expect(pipelineSubGroup.attributes('data-active-child-names')).toContain(
+      'PipelineStage:1:20'
+    );
+  });
+
+  it('highlights the CRM pipeline header when the pipeline filter has no stage selected', async () => {
+    Object.assign(routeState, {
+      name: 'communication_threads_dashboard',
+      path: '/communication_threads',
+      query: {
+        status: 'open',
+        assignee_type: 'all',
+        crm_pipeline_id: '1',
+      },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Pipeline:1',
+          label: 'Sales pipeline',
+          icon: 'i-lucide-filter',
+          active: true,
+          to: {
+            name: 'communication_threads_dashboard',
+            path: '/communication_threads',
+            query: {
+              status: 'open',
+              assignee_type: 'all',
+            },
+          },
+          suppressExactPathActive: true,
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'PipelineStage:1:20',
+              label: 'Negotiation',
+              to: {
+                name: 'communication_threads_dashboard',
+                path: '/communication_threads',
+                query: {
+                  status: 'open',
+                  assignee_type: 'all',
+                  crm_pipeline_id: 1,
+                  crm_stage_id: 20,
+                },
+              },
+              activeOn: ['communication_threads_dashboard'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const pipelineSubGroup = wrapper.find('[data-test-id="sidebar-subgroup"]');
+
+    expect(pipelineSubGroup.attributes('data-header-active')).toBe('true');
+    expect(
+      pipelineSubGroup.attributes('data-active-child-names')
+    ).not.toContain('PipelineStage:1:20');
   });
 
   it('matches assignee_type sidebar links when the route uses the legacy assigneeType alias', async () => {

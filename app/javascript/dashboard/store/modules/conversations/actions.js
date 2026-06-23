@@ -31,9 +31,13 @@ const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
   'status',
   'assigneeType',
   'labels',
+  'labelsScope',
   'teamId',
+  'teamScope',
   'conversationType',
   'communicationThreadMode',
+  'crmPipelineId',
+  'crmStageId',
 ];
 
 const hasFilterValue = value => {
@@ -396,11 +400,22 @@ const actions = {
   fetchFilteredConversations: async ({ commit, dispatch }, params) => {
     commit(types.SET_LIST_LOADING_STATUS);
     try {
-      const { data } = await ConversationApi.filter(params);
+      const filterApi = params?.communicationThreadMode
+        ? CommunicationThreadApi
+        : ConversationApi;
+      const { data } = await filterApi.filter(params);
+      const responseData = params?.communicationThreadMode
+        ? {
+            meta: data.data?.meta || {},
+            payload: (data.data?.payload || []).map(
+              buildCommunicationThreadConversation
+            ),
+          }
+        : data;
       buildConversationList(
         { commit, dispatch },
         params,
-        data,
+        responseData,
         'appliedFilters'
       );
     } catch (error) {

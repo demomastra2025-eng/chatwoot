@@ -67,6 +67,7 @@ json.contact_last_seen_at conversation.contact_last_seen_at.to_i
 json.custom_attributes conversation.custom_attributes
 json.inbox_id conversation.inbox_id
 json.labels Labels::UnifiedAssignmentService.union_for(contact: conversation.contact, conversations: [conversation])
+json.crm_deal_stages((local_assigns[:crm_deal_stages_by_conversation_id] || {}).fetch(conversation.id, []))
 json.muted conversation.muted?
 json.snoozed_until conversation.snoozed_until
 json.status conversation.status

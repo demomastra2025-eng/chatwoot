@@ -5,15 +5,23 @@ import {
   SIDEBAR_VISIBILITY_ITEMS,
   buildSidebarVisibilityState,
   filterSidebarMenuItems,
+  getConversationSidebarHiddenItemsFromState,
   getSidebarHiddenItems,
   getSidebarHiddenItemsFromState,
 } from './sidebarVisibility';
 
 describe('sidebarVisibility', () => {
-  it('keeps all sidebar items visible by default', () => {
+  it('keeps conversation statuses hidden by default while other sidebar items stay visible', () => {
     const visibilityState = buildSidebarVisibilityState({});
 
     expect(visibilityState.Inbox).toBe(true);
+    expect(visibilityState['Conversation:Assignee:all']).toBe(true);
+    expect(visibilityState['Conversation:Assignee:me']).toBe(true);
+    expect(visibilityState['Conversation:Assignee:unassigned']).toBe(true);
+    expect(visibilityState['Conversation:Statuses']).toBe(false);
+    expect(visibilityState['Conversation:Open']).toBe(true);
+    expect(visibilityState['Conversation:Resolved']).toBe(true);
+    expect(visibilityState['Conversation:Pipelines']).toBe(true);
     expect(visibilityState.Campaigns).toBe(true);
     expect(visibilityState['Campaigns:Templates']).toBe(true);
     expect(visibilityState['Campaigns:Touches']).toBe(true);
@@ -39,6 +47,8 @@ describe('sidebarVisibility', () => {
           'Reports',
           'Unknown',
           'Employees',
+          'Conversation:Assignee:all',
+          'Conversation:DefaultPipeline',
           'Conversation:Channels',
           'Conversation:AllChannels',
           'Settings:CustomAttributes',
@@ -49,6 +59,9 @@ describe('sidebarVisibility', () => {
         ],
       })
     ).toEqual([
+      'Conversation:Assignee:all',
+      'Conversation:Statuses',
+      'Conversation:Pipelines',
       'MyCompany:Tags',
       'MyCompany:Employees',
       'Reports',
@@ -67,13 +80,13 @@ describe('sidebarVisibility', () => {
       getSidebarHiddenItems({
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Captain:Prompts'],
       })
-    ).toEqual([]);
+    ).toEqual(['Conversation:Statuses']);
 
     expect(
       getSidebarHiddenItems({
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Captain:Restrictions'],
       })
-    ).toEqual([]);
+    ).toEqual(['Conversation:Statuses']);
   });
 
   it('keeps merged prompts hidden when both legacy items were hidden', () => {
@@ -84,7 +97,7 @@ describe('sidebarVisibility', () => {
           'Captain:Restrictions',
         ],
       })
-    ).toEqual(['Captain:Prompts']);
+    ).toEqual(['Conversation:Statuses', 'Captain:Prompts']);
   });
 
   it('migrates the legacy personal broadcasts visibility key to touches', () => {
@@ -92,7 +105,25 @@ describe('sidebarVisibility', () => {
       getSidebarHiddenItems({
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:PersonalBroadcasts'],
       })
-    ).toEqual(['Campaigns:Touches']);
+    ).toEqual(['Conversation:Statuses', 'Campaigns:Touches']);
+  });
+
+  it('respects explicitly saved conversation status visibility in the current schema', () => {
+    expect(
+      buildSidebarVisibilityState({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+          SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      })['Conversation:Statuses']
+    ).toBe(true);
+  });
+
+  it('migrates the legacy default pipeline visibility key to pipelines', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:DefaultPipeline'],
+      })
+    ).toEqual(['Conversation:Statuses', 'Conversation:Pipelines']);
   });
 
   it('preserves touches visibility once the new schema version is saved', () => {
@@ -162,5 +193,15 @@ describe('sidebarVisibility', () => {
         'Settings:Macros': false,
       })
     ).toEqual(['Campaigns', 'Settings:Macros']);
+  });
+
+  it('builds conversation-only hidden items from the draft state', () => {
+    expect(
+      getConversationSidebarHiddenItemsFromState({
+        Reports: false,
+        'Conversation:Teams': false,
+        'Conversation:Assignee:me': false,
+      })
+    ).toEqual(['Conversation:Assignee:me', 'Conversation:Teams']);
   });
 });

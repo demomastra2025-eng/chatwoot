@@ -16,6 +16,7 @@ const props = defineProps({
   badge: { type: [Number, String], default: 0 },
   count: { type: [Number, String], default: null },
   component: { type: Function, default: null },
+  connectorColor: { type: String, default: '' },
 });
 
 const { resolvePermissions, resolveFeatureFlag } = useSidebarContext();
@@ -35,6 +36,9 @@ const plainCountLabel = computed(() => {
 });
 const iconComponentClass = computed(() =>
   typeof props.icon === 'string' ? 'size-4 inline-block' : ''
+);
+const stageAccentStyle = computed(() =>
+  props.connectorColor ? { backgroundColor: props.connectorColor } : undefined
 );
 
 const INTERACTIVE_TARGET_SELECTOR = [
@@ -121,6 +125,12 @@ const handleLeafClick = async event => {
         >
           <Icon :icon="icon" :class="iconComponentClass" />
         </span>
+        <span
+          v-else-if="connectorColor"
+          data-test-id="sidebar-stage-accent"
+          class="h-4 w-0.5 shrink-0 rounded-full"
+          :style="stageAccentStyle"
+        />
         <div class="flex-1 truncate min-w-0 text-sm">{{ label }}</div>
         <span
           v-if="hasPlainCount"

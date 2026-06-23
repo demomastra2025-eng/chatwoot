@@ -47,6 +47,8 @@ describe('#ConversationAPI', () => {
         labels: [],
         teamId: 1,
         updatedWithin: 20,
+        labelsScope: 'any',
+        teamScope: 'any',
       });
       expect(axiosMock.get).toHaveBeenCalledWith('/api/v1/conversations', {
         params: {
@@ -56,7 +58,13 @@ describe('#ConversationAPI', () => {
           assignee_type: 'me',
           page: 1,
           labels: [],
+          conversation_type: undefined,
+          sort_by: undefined,
           updated_within: 20,
+          crm_pipeline_id: undefined,
+          crm_stage_id: undefined,
+          labels_scope: 'any',
+          team_scope: 'any',
         },
       });
     });
@@ -150,6 +158,8 @@ describe('#ConversationAPI', () => {
         assigneeType: 'me',
         labels: [],
         teamId: 1,
+        labelsScope: 'any',
+        teamScope: 'any',
       });
       expect(axiosMock.get).toHaveBeenCalledWith('/api/v1/conversations/meta', {
         params: {
@@ -158,6 +168,11 @@ describe('#ConversationAPI', () => {
           status: 'open',
           assignee_type: 'me',
           labels: [],
+          conversation_type: undefined,
+          crm_pipeline_id: undefined,
+          crm_stage_id: undefined,
+          labels_scope: 'any',
+          team_scope: 'any',
         },
       });
     });
@@ -204,6 +219,10 @@ describe('#ConversationAPI', () => {
     it('#filter', () => {
       const payload = {
         page: 1,
+        crmPipelineId: 12,
+        crmStageId: 34,
+        labelsScope: 'any',
+        teamScope: 'any',
         queryData: {
           payload: [
             {
@@ -231,7 +250,15 @@ describe('#ConversationAPI', () => {
       expect(axiosMock.post).toHaveBeenCalledWith(
         '/api/v1/conversations/filter',
         payload.queryData,
-        { params: { page: payload.page } }
+        {
+          params: {
+            page: payload.page,
+            crm_pipeline_id: payload.crmPipelineId,
+            crm_stage_id: payload.crmStageId,
+            labels_scope: payload.labelsScope,
+            team_scope: payload.teamScope,
+          },
+        }
       );
     });
 

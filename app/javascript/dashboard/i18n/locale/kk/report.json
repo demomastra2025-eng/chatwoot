@@ -646,5 +646,122 @@
     "AVG_REPLY_TIME": "Avg. Customer Waiting Time",
     "RESOLUTION_COUNT": "Resolution Count",
     "CONVERSATIONS": "No. of conversations"
+  },
+  "CRM_DEAL_REPORTS": {
+    "HEADER": "Мәмілелер",
+    "KICKER": "CRM есептері",
+    "TITLE": "Түсінікті мәміле аналитикасы",
+    "DESCRIPTION": "Ашық мәмілелерді, жабылу болжамын, көздерді, команда үлесін және тұрып қалған мәмілелерді бір таза агрегатталған есепте бақылаңыз.",
+    "CURRENCY_HINT": "Ақша метрикалары: {currency}.",
+    "ERROR": "Мәміле есебін жүктеу мүмкін болмады. Қайталап көріңіз.",
+    "EMPTY_VALUE": "—",
+    "UNASSIGNED": "Жауапты жоқ",
+    "EMPTY_TITLE": "Әзірге есеп деректері жоқ",
+    "EMPTY_DESCRIPTION": "Мәміле жасаңыз немесе кезеңді өзгертіңіз, сонда аналитика пайда болады.",
+    "SECTIONS": {
+      "OVERVIEW": {
+        "TITLE": "Кезеңдер",
+        "DESCRIPTION": "Мәмілелер қайда тұр және қанша сома жұмыста."
+      },
+      "FORECAST": {
+        "TITLE": "Болжам",
+        "DESCRIPTION": "Күтілетін жабылу және won/lost динамикасы."
+      },
+      "SOURCES": {
+        "TITLE": "Көздер",
+        "DESCRIPTION": "Мәмілелер қайдан келеді және қалай конверсияланады."
+      },
+      "TEAM": {
+        "TITLE": "Команда",
+        "DESCRIPTION": "Менеджер үлесі және ашық мәмілелердің жасы."
+      }
+    },
+    "SUMMARY": {
+      "OPEN_DEALS": "Жұмыста",
+      "OPEN_DEALS_HELPER": "Белсенді кезеңдердегі ашық мәмілелер.",
+      "PIPELINE_AMOUNT": "Жұмыстағы сома",
+      "PIPELINE_AMOUNT_HELPER": "Ашық мәмілелердің әлеуетті сомасы.",
+      "WEIGHTED_PIPELINE": "Ықтималдықпен болжам",
+      "WEIGHTED_PIPELINE_HELPER": "Win probability ескерілген сома.",
+      "WIN_RATE": "Win rate",
+      "WIN_RATE_HELPER": "Won: {won}, Lost: {lost} таңдалған кезеңде."
+    },
+    "CHARTS": {
+      "STAGE_FLOW": {
+        "TITLE": "Кезеңдер бойынша мәмілелер",
+        "DESCRIPTION": "Кезеңдер тізімі: мәміле саны мен сомасы қатар көрсетіледі, визуалды бұрмалаусыз."
+      },
+      "STAGE_AMOUNT": {
+        "TITLE": "Кезеңдер бойынша сома",
+        "DESCRIPTION": "Қай кезеңдерде ашық соманың негізгі бөлігі тұр.",
+        "DATASET": "Сома"
+      },
+      "FORECAST_AMOUNT": {
+        "TITLE": "Жабылу болжамы",
+        "DESCRIPTION": "Таңдалған топтау бойынша жоспарлы және ықтималдықпен есептелген жабылу сомасы.",
+        "DATASET": "Жоспарлы сома"
+      },
+      "FORECAST_WEIGHTED": {
+        "DATASET": "Ықтималдықпен"
+      },
+      "WON_LOST": {
+        "TITLE": "Won / Lost",
+        "DESCRIPTION": "Кезеңде ұтылған және жоғалған мәмілелер.",
+        "WON": "Won",
+        "LOST": "Lost"
+      },
+      "SOURCE": {
+        "TITLE": "Көздер конверсиясы",
+        "DESCRIPTION": "Көздер бойынша ашық, won және lost мәмілелер.",
+        "DATASET": "Мәмілелер",
+        "OPEN": "Ашық",
+        "WON": "Won",
+        "LOST": "Lost"
+      },
+      "SOURCE_MIX": {
+        "TITLE": "Көздер құрылымы",
+        "DESCRIPTION": "Әр көздің жалпы мәміле санындағы үлесі."
+      },
+      "OWNER_AMOUNT": {
+        "TITLE": "Менеджерлер бойынша сома",
+        "DESCRIPTION": "Жасалған мәміле сомасы бойынша топ жауаптылар.",
+        "DATASET": "Сома"
+      },
+      "AGING": {
+        "TITLE": "Ашық мәміле жасы",
+        "DESCRIPTION": "Әр жас тобында қанша ашық мәміле тұрып қалды.",
+        "DATASET": "Мәмілелер"
+      }
+    },
+    "TABLES": {
+      "SOURCE": {
+        "TITLE": "Көз сапасы",
+        "ROW_HELPER": "Won {won} · Lost {lost} · Win rate {winRate}"
+      },
+      "TEAM": {
+        "ROW_HELPER": "Мәмілелер {deals} · Won {won} · Win rate {winRate}"
+      }
+    },
+    "LABELS": {
+      "DEALS": "мәміле",
+      "FORECAST_HEALTH": "Болжам жиыны",
+      "FORECAST_TOTAL": "Жоспарлы сома",
+      "WEIGHTED_TOTAL": "Ықтималдықпен сома",
+      "CLOSED_TOTAL": "Жабылған мәмілелер"
+    },
+    "SOURCES": {
+      "MANUAL": "Қолмен",
+      "CONVERSATION": "Диалогтан",
+      "AI": "AI",
+      "IMPORT": "Импорт",
+      "OTHER": "Басқа"
+    },
+    "AGING_BUCKETS": {
+      "0_3": "0–3 күн",
+      "4_7": "4–7 күн",
+      "8_14": "8–14 күн",
+      "15_30": "15–30 күн",
+      "31_plus": "31+ күн"
+    }
   }
 }

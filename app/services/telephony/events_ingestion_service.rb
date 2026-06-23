@@ -639,6 +639,7 @@ class Telephony::EventsIngestionService
 
   def outbound_customer_answered?(call_session)
     outbound_customer_answer_event? ||
+      outbound_customer_answer_payload? ||
       (call_session.answered_at.present? && !outbound_operator_only_answered?(call_session)) ||
       Array.wrap(call_session.legs).any? { |leg| outbound_customer_answer_leg?(leg) }
   end
@@ -661,6 +662,13 @@ class Telephony::EventsIngestionService
     return false if operator_leg_event?
 
     true
+  end
+
+  def outbound_customer_answer_payload?
+    return false if operator_leg_event?
+
+    truthy_payload_value?('calleeLegAnswered', 'callee_leg_answered', 'targetLegAnswered', 'target_leg_answered') ||
+      (terminal_status?(resolved_status) && resolved_answered_at.present?)
   end
 
   def outbound_customer_answer_leg?(leg)
@@ -699,8 +707,10 @@ class Telephony::EventsIngestionService
   end
 
   def operator_leg_event?
-    payload_value('leg', 'legType', 'leg_type').to_s == 'operator' ||
-      payload_value('routingMode', 'routing_mode', 'mode').to_s == 'operator'
+    explicit_leg = payload_value('leg', 'legType', 'leg_type').to_s
+    return explicit_leg == 'operator' if explicit_leg.present?
+
+    payload_value('routingMode', 'routing_mode', 'mode').to_s == 'operator'
   end
 
   def next_duration_seconds(call_session, status, started_at, answered_at, ended_at)
@@ -740,9 +750,28 @@ class Telephony::EventsIngestionService
   end
 
   def repaired_completed_duration(call_session, status, answered_at, ended_at, current_duration = call_session.duration_seconds)
+    if repairable_terminal_upgrade?(call_session, status)
+      repaired_duration = completed_duration_seconds(answered_at, ended_at)
+      return repaired_duration if repaired_duration.present?
+    end
+
+    repaired_duration = completed_duration_seconds(answered_at, ended_at)
+    return repaired_duration if completed_terminal_duration_mismatch?(call_session, status, repaired_duration, current_duration)
+
     return unless longer_completed_terminal_duration_repair_needed?(call_session, status, answered_at, ended_at, current_duration)
 
-    completed_duration_seconds(answered_at, ended_at)
+    repaired_duration
+  end
+
+  def completed_terminal_duration_mismatch?(call_session, status, repaired_duration, current_duration = call_session.duration_seconds)
+    return false unless status == 'completed'
+    return false unless call_session.terminal?
+    return false unless resolved_event_type.to_s == 'session_completed'
+    return false unless answered_terminal_evidence?(call_session)
+    return false if incoming_terminal_priority < existing_terminal_priority(call_session)
+    return false if repaired_duration.blank? || repaired_duration <= 0 || current_duration.blank?
+
+    repaired_duration != current_duration.to_i
   end
 
   def unanswered_terminal_status?(status)
@@ -835,7 +864,10 @@ class Telephony::EventsIngestionService
 
     answered_at = resolved_answered_at || call_session.answered_at
     ended_at = resolved_ended_at || occurred_at || call_session.ended_at || event_time
+    return true if repairable_terminal_upgrade?(call_session, status) && answered_at.present? && ended_at.present?
+
     recomputable_completed_duration?(status, call_session.duration_seconds.to_i, answered_at, ended_at) ||
+      completed_terminal_duration_mismatch?(call_session, status, completed_duration_seconds(answered_at, ended_at)) ||
       longer_completed_terminal_duration_repair_needed?(call_session, status, answered_at, ended_at)
   end
 
@@ -2238,6 +2270,13 @@ class Telephony::EventsIngestionService
     end
 
     nil
+  end
+
+  def truthy_payload_value?(*keys)
+    keys.any? do |key|
+      value = payload[key.to_s]
+      value == true || value.to_s.strip.downcase.in?(%w[true 1 yes])
+    end
   end
 
   def nested_payload_value(*keys)

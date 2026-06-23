@@ -2,13 +2,19 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 7;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 10;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
 const TOUCHES_VISIBILITY_KEY = 'Campaigns:Touches';
 const LEGACY_EMPLOYEES_VISIBILITY_KEY = 'Employees';
 const MY_COMPANY_EMPLOYEES_VISIBILITY_KEY = 'MyCompany:Employees';
+const CONVERSATION_STATUSES_VISIBILITY_KEY = 'Conversation:Statuses';
+const CONVERSATION_PIPELINES_VISIBILITY_KEY = 'Conversation:Pipelines';
+const LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY =
+  'Conversation:DefaultPipeline';
+const REPORTS_DEALS_VISIBILITY_KEY = 'Reports:Deals';
+const LEGACY_REPORTS_FUNNELS_VISIBILITY_KEY = 'Reports:Funnels';
 // Saved profile UI settings may still contain this pre-touch sidebar key.
 const LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY =
   'Campaigns:PersonalBroadcasts';
@@ -22,10 +28,24 @@ const item = (key, labelKey, children = []) => ({
 export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Inbox', 'SIDEBAR.INBOX'),
   item('Conversation', 'SIDEBAR.CONVERSATIONS', [
+    item('Conversation:Assignee:all', 'CHAT_LIST.ASSIGNEE_TYPE_TABS.all'),
+    item('Conversation:Assignee:me', 'CHAT_LIST.ASSIGNEE_TYPE_TABS.me'),
+    item(
+      'Conversation:Assignee:unassigned',
+      'CHAT_LIST.ASSIGNEE_TYPE_TABS.unassigned'
+    ),
+    item(
+      CONVERSATION_STATUSES_VISIBILITY_KEY,
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STATUSES'
+    ),
     item('Conversation:Pending', 'SIDEBAR.PENDING_CONVERSATIONS'),
     item('Conversation:Open', 'SIDEBAR.OPEN_CONVERSATIONS'),
     item('Conversation:Snoozed', 'SIDEBAR.SNOOZED_CONVERSATIONS'),
     item('Conversation:Resolved', 'SIDEBAR.RESOLVED_CONVERSATIONS'),
+    item(
+      CONVERSATION_PIPELINES_VISIBILITY_KEY,
+      'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
+    ),
     item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
     item('Conversation:Teams', 'SIDEBAR.TEAMS'),
     item('Conversation:Labels', 'SIDEBAR.LABELS'),
@@ -82,6 +102,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Reports', 'SIDEBAR.REPORTS', [
     item('Reports:Overview', 'SIDEBAR.REPORTS_OVERVIEW'),
     item('Reports:Conversation', 'SIDEBAR.REPORTS_CONVERSATION'),
+    item(REPORTS_DEALS_VISIBILITY_KEY, 'SIDEBAR.REPORTS_DEALS'),
     item('Reports:Agent', 'SIDEBAR.REPORTS_AGENT'),
     item('Reports:Label', 'SIDEBAR.REPORTS_LABEL'),
     item('Reports:Inbox', 'SIDEBAR.REPORTS_INBOX'),
@@ -197,19 +218,95 @@ const normalizeLegacyMyCompanyVisibility = (hiddenItems, version) => {
   return hiddenItemsSet;
 };
 
+const normalizeDefaultConversationStatusVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldApplyDefaultVisibility = Number(version || 0) < 8;
+
+  if (shouldApplyDefaultVisibility) {
+    hiddenItemsSet.add(CONVERSATION_STATUSES_VISIBILITY_KEY);
+  }
+
+  return hiddenItemsSet;
+};
+
+const normalizeLegacyConversationPipelinesVisibility = (
+  hiddenItems,
+  version
+) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldMigrateLegacyVisibility = Number(version || 0) < 9;
+
+  if (!shouldMigrateLegacyVisibility) {
+    return hiddenItemsSet;
+  }
+
+  const defaultPipelineWasHidden = hiddenItemsSet.has(
+    LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY
+  );
+  hiddenItemsSet.delete(LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY);
+
+  if (defaultPipelineWasHidden) {
+    hiddenItemsSet.add(CONVERSATION_PIPELINES_VISIBILITY_KEY);
+  }
+
+  return hiddenItemsSet;
+};
+
+const normalizeLegacyReportsDealsVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldMigrateLegacyVisibility = Number(version || 0) < 10;
+
+  if (!shouldMigrateLegacyVisibility) {
+    return hiddenItemsSet;
+  }
+
+  const legacyFunnelsWasHidden = hiddenItemsSet.has(
+    LEGACY_REPORTS_FUNNELS_VISIBILITY_KEY
+  );
+  hiddenItemsSet.delete(LEGACY_REPORTS_FUNNELS_VISIBILITY_KEY);
+
+  if (legacyFunnelsWasHidden) {
+    hiddenItemsSet.add(REPORTS_DEALS_VISIBILITY_KEY);
+  }
+
+  return hiddenItemsSet;
+};
+
 export const getSidebarHiddenItems = uiSettings =>
   normalizeSidebarHiddenItems(
     Array.from(
-      normalizeLegacyMyCompanyVisibility(
-        normalizeLegacyTouchesVisibility(
-          normalizeLegacyCaptainPromptsVisibility(
-            uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+      normalizeLegacyReportsDealsVisibility(
+        normalizeLegacyConversationPipelinesVisibility(
+          normalizeDefaultConversationStatusVisibility(
+            normalizeLegacyMyCompanyVisibility(
+              normalizeLegacyTouchesVisibility(
+                normalizeLegacyCaptainPromptsVisibility(
+                  uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+                  uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+                ),
+                uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+              ),
+              uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+            ),
             uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
           ),
           uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
         ),
         uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
       )
+    )
+  );
+
+export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze(
+  SIDEBAR_VISIBILITY_ITEMS.find(
+    visibilityItem => visibilityItem.key === 'Conversation'
+  )?.children || []
+);
+
+export const getConversationSidebarHiddenItems = uiSettings =>
+  getSidebarHiddenItems(uiSettings).filter(key =>
+    CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.some(
+      visibilityItem => visibilityItem.key === key
     )
   );
 
@@ -224,6 +321,13 @@ export const buildSidebarVisibilityState = uiSettings => {
 
 export const getSidebarHiddenItemsFromState = state =>
   SIDEBAR_VISIBILITY_ITEM_KEYS.filter(key => state?.[key] === false);
+
+export const getConversationSidebarHiddenItemsFromState = state =>
+  getSidebarHiddenItemsFromState(state).filter(key =>
+    CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.some(
+      visibilityItem => visibilityItem.key === key
+    )
+  );
 
 export const filterSidebarMenuItems = (menuItems, uiSettings) => {
   const hiddenItems = new Set(getSidebarHiddenItems(uiSettings));

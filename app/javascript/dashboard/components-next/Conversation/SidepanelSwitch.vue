@@ -6,14 +6,32 @@ import { computed } from 'vue';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
+import { CRM_DEAL_MANAGE_PERMISSIONS } from 'dashboard/constants/permissions';
+import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 
 const { updateUISettings } = useUISettings();
 
 const currentAccountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
 
+const currentAccountPermissions = computed(() => {
+  const currentAccount = currentUser.value?.accounts?.find(
+    account => Number(account.id) === Number(currentAccountId.value)
+  );
+
+  return currentAccount?.permissions || [];
+});
+const showDealAction = computed(
+  () =>
+    isFeatureEnabledonAccount.value(
+      currentAccountId.value,
+      FEATURE_FLAGS.CRM_DEALS
+    ) &&
+    hasPermissions(CRM_DEAL_MANAGE_PERMISSIONS, currentAccountPermissions.value)
+);
 const showCopilotTab = computed(() =>
   isFeatureEnabledonAccount.value(currentAccountId.value, FEATURE_FLAGS.CAPTAIN)
 );
@@ -30,6 +48,9 @@ const isContactSidebarOpen = computed(
 );
 const isCopilotPanelOpen = computed(
   () => uiSettings.value.is_copilot_panel_open
+);
+const isDealsSidebarOpen = computed(
+  () => uiSettings.value.is_crm_deal_panel_open
 );
 const isTouchSidebarOpen = computed(
   () => uiSettings.value.is_touch_sidebar_open
@@ -48,6 +69,15 @@ const handleConversationSidebarToggle = () => {
   updateUISettings({
     is_contact_sidebar_open: true,
     is_crm_deal_panel_open: false,
+    is_copilot_panel_open: false,
+    is_touch_sidebar_open: false,
+  });
+};
+
+const openDealsSidebar = () => {
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: true,
     is_copilot_panel_open: false,
     is_touch_sidebar_open: false,
   });
@@ -94,6 +124,19 @@ useKeyboardEvents(keyboardEvents);
       }"
       icon="i-ph-user-bold"
       @click="handleConversationSidebarToggle"
+    />
+    <Button
+      v-if="showDealAction"
+      v-tooltip.bottom="$t('CRM.DEALS.SIDEBAR_TITLE')"
+      ghost
+      slate
+      sm
+      class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
+      :class="{
+        'bg-n-alpha-2 active:shadow-sm': isDealsSidebarOpen,
+      }"
+      icon="i-lucide-briefcase-business"
+      @click="openDealsSidebar"
     />
     <Button
       v-if="showTouchAction"

@@ -4,6 +4,8 @@ import { useStore } from 'vuex';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import Timer from 'dashboard/helper/Timer';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
@@ -20,6 +22,40 @@ const TERMINAL_CLAIM_FAILURE_STATUSES = new Set([
   'missed',
   'ended',
 ]);
+const BROWSER_CALLING_PROVIDERS = new Set(['fonoster', 'twilio']);
+
+const positiveNumber = value => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? numericValue
+    : null;
+};
+
+const isBrowserCallingInbox = inbox => {
+  if (!inbox) return false;
+
+  const provider = (inbox.provider || inbox.channel?.provider)
+    ?.toString()
+    .toLowerCase();
+  if (BROWSER_CALLING_PROVIDERS.has(provider)) return true;
+
+  const channelType =
+    inbox.channel_type ||
+    inbox.channelType ||
+    inbox.channel?.channel_type ||
+    inbox.channel?.channelType ||
+    inbox.channel;
+  return channelType === INBOX_TYPES.VOICE;
+};
+
+const isVoiceChannel = channel => {
+  const channelType =
+    channel?.channel ||
+    channel?.channel_type ||
+    channel?.channelType ||
+    channel;
+  return channelType === INBOX_TYPES.VOICE;
+};
 
 export function useCallSession() {
   const callsStore = useCallsStore();
@@ -41,18 +77,68 @@ export function useCallSession() {
   const isOutboundCallDirection = callDirection => callDirection === 'outbound';
   const routeInboxId = computed(() => {
     const value = route.params?.inbox_id || route.params?.inboxId;
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) && numericValue > 0
-      ? numericValue
-      : null;
+    return positiveNumber(value);
+  });
+  const routeCommunicationThreadId = computed(() => {
+    const value =
+      route.params?.communication_thread_id ||
+      route.params?.communicationThreadId;
+    return positiveNumber(value);
   });
   const routeVoiceInboxId = computed(() => {
     const inboxId = routeInboxId.value;
     if (!inboxId) return null;
 
     const inbox = store.getters?.['inboxes/getInbox']?.(inboxId);
-    const provider = inbox?.provider || inbox?.channel?.provider;
-    return ['fonoster', 'twilio'].includes(provider) ? inboxId : null;
+    return isBrowserCallingInbox(inbox) ? inboxId : null;
+  });
+  const routeCommunicationThread = computed(() => {
+    const threadId = routeCommunicationThreadId.value;
+    if (!threadId) return null;
+
+    const selectedChat = store.getters?.getSelectedChat;
+    if (
+      String(selectedChat?.id) === String(threadId) &&
+      isCommunicationThread(selectedChat)
+    ) {
+      return selectedChat;
+    }
+
+    const conversationById = store.getters?.getConversationById;
+    if (typeof conversationById !== 'function') return null;
+
+    const communicationThread = conversationById(
+      threadId,
+      'communication_thread'
+    );
+    return isCommunicationThread(communicationThread)
+      ? communicationThread
+      : null;
+  });
+  const routeCommunicationThreadVoiceInboxId = computed(() => {
+    const thread = routeCommunicationThread.value;
+    if (!thread) return null;
+
+    const activeChannel = thread.active_reply_channel;
+    const activeChannelInboxId = positiveNumber(
+      activeChannel?.inbox_id || thread.active_reply_channel_inbox_id
+    );
+    if (activeChannelInboxId && isVoiceChannel(activeChannel)) {
+      return activeChannelInboxId;
+    }
+
+    const voiceChannel = (
+      Array.isArray(thread.channels) ? thread.channels : []
+    ).find(
+      channel => positiveNumber(channel?.inbox_id) && isVoiceChannel(channel)
+    );
+    if (voiceChannel) return positiveNumber(voiceChannel.inbox_id);
+
+    const inboxId = positiveNumber(thread.inbox_id);
+    if (!inboxId) return null;
+
+    const inbox = store.getters?.['inboxes/getInbox']?.(inboxId);
+    return isBrowserCallingInbox(inbox) ? inboxId : null;
   });
   const incomingVoiceInboxId = computed(() => {
     const call = incomingCalls.value.find(item => {
@@ -258,12 +344,14 @@ export function useCallSession() {
   }
 
   const bootstrapIncomingSupport = async (
-    inboxId = routeVoiceInboxId.value || incomingVoiceInboxId.value
+    inboxId = routeVoiceInboxId.value ||
+      routeCommunicationThreadVoiceInboxId.value ||
+      incomingVoiceInboxId.value
   ) => {
     try {
       if (inboxId) {
         await WebphoneClient.initializeDevice(inboxId);
-      } else if (routeInboxId.value) {
+      } else if (routeInboxId.value || routeCommunicationThreadId.value) {
         return;
       } else {
         await WebphoneClient.bootstrapIncomingSupport();
@@ -281,6 +369,12 @@ export function useCallSession() {
   };
 
   watch(routeVoiceInboxId, (inboxId, previousInboxId) => {
+    if (!inboxId || String(inboxId) === String(previousInboxId)) return;
+
+    bootstrapIncomingSupport(inboxId);
+  });
+
+  watch(routeCommunicationThreadVoiceInboxId, (inboxId, previousInboxId) => {
     if (!inboxId || String(inboxId) === String(previousInboxId)) return;
 
     bootstrapIncomingSupport(inboxId);

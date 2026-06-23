@@ -5,6 +5,7 @@ import {
   Chart as ChartJS,
   Title,
   Tooltip,
+  Legend,
   BarElement,
   CategoryScale,
   LinearScale,
@@ -21,7 +22,14 @@ const props = defineProps({
   },
 });
 
-ChartJS.register(Title, Tooltip, BarElement, CategoryScale, LinearScale);
+ChartJS.register(
+  Title,
+  Tooltip,
+  Legend,
+  BarElement,
+  CategoryScale,
+  LinearScale
+);
 
 const fontFamily =
   'Geist,-apple-system,system-ui,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';

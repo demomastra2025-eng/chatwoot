@@ -6,11 +6,14 @@
       "ARCHIVED": "Archived",
       "CHAT": "Chat",
       "ID": "ID",
+      "COMMUNICATION_THREAD_SOURCE": "Keeps the unified communication thread as source context",
       "CONVERSATION_SOURCE": "Keeps the inbox conversation as source context",
+      "CANCEL": "Cancel",
       "CREATE": "Create",
       "DEFAULT": "Default",
       "EMPTY_VALUE": "—",
       "INACTIVE": "Inactive",
+      "LINKED_COMMUNICATION_THREAD": "Linked communication thread",
       "LINKED_CONVERSATION": "Linked conversation",
       "NO": "No",
       "SAVE": "Save",
@@ -38,6 +41,7 @@
       "ADD_COMMENT": "Add comment",
       "COMMENT": "Comment",
       "COMMENT_PLACEHOLDER": "Add internal context for your team",
+      "COMMUNICATION_THREAD": "Communication thread #{id}",
       "CONVERSATION": "Conversation #{id}",
       "DESCRIPTION": "Events, comments, and related runtime context appear here.",
       "EMPTY": "No timeline activity yet",
@@ -123,7 +127,10 @@
         "WIN_PROBABILITY": "Win probability"
       },
       "NEW_DEAL": "New deal",
+      "SIDEBAR_DESCRIPTION": "Open any contact deal and edit it inline without leaving the conversation.",
+      "SIDEBAR_TITLE": "Deals",
       "PREFILL": {
+        "COMMUNICATION_THREAD_GENERIC": "Opportunity from communication thread #{threadId}",
         "CONVERSATION_GENERIC": "Opportunity from conversation #{conversationId}",
         "CONVERSATION_WITH_CONTACT": "Opportunity for {contactName}",
         "COMPANY": "Opportunity for {companyName}"
@@ -302,8 +309,9 @@
         "DRAG": "Drag pipeline",
         "EDIT_TITLE": "Edit pipeline",
         "FORM": {
+          "AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT": "Auto-create deal through channel",
           "CODE": "Code",
-          "DEFAULT": "Default pipeline",
+          "DEFAULT": "Primary",
           "NAME": "Name",
           "POSITION": "Position"
         },
@@ -315,7 +323,8 @@
         "SUCCESS_RESTORED": "Pipeline restored",
         "SUCCESS_SAVE": "Pipeline saved",
         "TABLE": {
-          "DEFAULT": "Default",
+          "AUTO_CREATE": "Auto",
+          "DEFAULT": "Primary",
           "NAME": "Pipeline",
           "STAGES": "Stages",
           "STATUS": "Status"

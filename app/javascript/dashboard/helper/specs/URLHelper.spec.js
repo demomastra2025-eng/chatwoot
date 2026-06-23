@@ -59,7 +59,7 @@ describe('#URL Helpers', () => {
           communicationThread: true,
         })
       ).toBe(
-        '/app/accounts/1/communication_threads?status=open&assignee_type=me'
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all'
       );
     });
 
@@ -73,6 +73,36 @@ describe('#URL Helpers', () => {
         })
       ).toBe(
         '/app/accounts/1/communication_threads?status=open&assignee_type=all'
+      );
+    });
+
+    it('should preserve CRM pipeline and stage filters in conversation list URLs', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          status: 'open',
+          assigneeType: 'all',
+          crmPipelineId: 10,
+          crmStageId: 20,
+          communicationThread: true,
+        })
+      ).toBe(
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20'
+      );
+    });
+
+    it('should preserve tag and team scope filters in conversation list URLs', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          status: 'open',
+          assigneeType: 'all',
+          labelsScope: 'any',
+          teamScope: 'any',
+          communicationThread: true,
+        })
+      ).toBe(
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all&labels_scope=any&team_scope=any'
       );
     });
 
@@ -126,7 +156,7 @@ describe('#URL Helpers', () => {
           communicationThread: true,
         })
       ).toBe(
-        'accounts/1/communication_threads/42?status=pending&assignee_type=me'
+        'accounts/1/communication_threads/42?status=pending&assignee_type=all'
       );
     });
 
@@ -160,6 +190,44 @@ describe('#URL Helpers', () => {
         })
       ).toBe(
         'accounts/1/communication_threads/42?status=open&assignee_type=all'
+      );
+    });
+
+    it('should preserve the current route CRM pipeline filters when explicit values are absent', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20'
+      );
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'open',
+          communicationThread: true,
+        })
+      ).toBe(
+        'accounts/1/communication_threads/42?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20'
+      );
+    });
+
+    it('should preserve current tag and team scope filters when explicit values are absent', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all&labels_scope=any&team_scope=any'
+      );
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'open',
+          communicationThread: true,
+        })
+      ).toBe(
+        'accounts/1/communication_threads/42?status=open&assignee_type=all&labels_scope=any&team_scope=any'
       );
     });
 

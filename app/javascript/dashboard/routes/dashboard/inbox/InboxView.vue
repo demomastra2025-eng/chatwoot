@@ -70,9 +70,10 @@ const isConversationSidebarOpen = computed(() => {
   if (currentChat.value.id) {
     const {
       is_contact_sidebar_open: isContactSidebarOpen,
+      is_crm_deal_panel_open: isDealsSidebarOpen,
       is_touch_sidebar_open: isTouchSidebarOpen,
     } = uiSettings.value;
-    return isContactSidebarOpen || isTouchSidebarOpen;
+    return isContactSidebarOpen || isDealsSidebarOpen || isTouchSidebarOpen;
   }
   return false;
 });

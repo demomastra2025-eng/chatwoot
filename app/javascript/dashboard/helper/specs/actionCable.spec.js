@@ -6,6 +6,7 @@ import {
   useWhatsappCallsStore,
 } from 'dashboard/stores/whatsappCalls';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
@@ -646,6 +647,36 @@ describe('ActionCableConnector - Copilot Tests', () => {
           ...dealPayload,
         }
       );
+    });
+
+    it('should refresh dialog CRM counters after CRM deal ActionCable events', async () => {
+      vi.useFakeTimers();
+      const crmReferencesStore = useCrmReferencesStore();
+      const loadPipelinesSpy = vi
+        .spyOn(crmReferencesStore, 'loadPipelines')
+        .mockResolvedValue([]);
+      const dealPayload = {
+        account_id: 1,
+        deal: { id: 42, title: 'Realtime Deal' },
+        meta: { event_type: 'deal_created' },
+      };
+
+      try {
+        actionCable.onReceived({
+          event: 'crm.deal.created',
+          data: dealPayload,
+        });
+
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
+        expect(loadPipelinesSpy).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(500);
+
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
+        expect(loadPipelinesSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('should reject CRM deal events without account_id', () => {

@@ -23,7 +23,10 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
     expect(response.parsed_body.dig('payload', 0, 'code')).to eq('sales_pipeline')
-    expect(response.parsed_body.dig('payload', 0, 'stages').size).to eq(5)
+    stages = response.parsed_body.dig('payload', 0, 'stages')
+    expect(stages.pluck('code')).to eq(%w[new qualified proposal won lost])
+    expect(stages.find { |stage| stage['code'] == 'won' }).to include('outcome' => 'won', 'color' => Crm::Stage::WON_COLOR)
+    expect(stages.find { |stage| stage['code'] == 'lost' }).to include('outcome' => 'lost', 'color' => Crm::Stage::LOST_COLOR)
   end
 
   it 'allows custom-role users with crm_settings_view' do
@@ -63,7 +66,31 @@ RSpec.describe 'CRM Pipelines API', type: :request do
 
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'code')).to eq('enterprise_sales')
+    expect(response.parsed_body.dig('payload', 'default')).to be(true)
+    stages = response.parsed_body.dig('payload', 'stages')
+    expect(stages.pluck('code')).to eq(%w[new qualified proposal won lost])
+    expect(stages.find { |stage| stage['code'] == 'won' }).to include('outcome' => 'won', 'color' => Crm::Stage::WON_COLOR)
+    expect(stages.find { |stage| stage['code'] == 'lost' }).to include('outcome' => 'lost', 'color' => Crm::Stage::LOST_COLOR)
     expect(account.crm_pipelines.where(code: 'enterprise_sales')).to exist
+  end
+
+  it 'saves primary state and channel-contact auto-create flag' do
+    post path,
+         params: {
+           name: 'Channel Pipeline',
+           code: 'channel_pipeline',
+           default: true,
+           auto_create_deal_on_channel_contact: true
+         },
+         headers: headers,
+         as: :json
+
+    pipeline = account.crm_pipelines.find_by!(code: 'channel_pipeline')
+
+    expect(response).to have_http_status(:created)
+    expect(pipeline.default).to be(true)
+    expect(pipeline.auto_create_deal_on_channel_contact).to be(true)
+    expect(response.parsed_body.dig('payload', 'auto_create_deal_on_channel_contact')).to be(true)
   end
 
   it 'switches the default pipeline when creating another default pipeline' do
@@ -124,11 +151,12 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_pipelines.ordered.last.id).to eq(created_pipeline.id)
   end
 
-  it 'returns deal counts in pipeline payloads' do
+  it 'returns deal counts in pipeline and stage payloads' do
     get path, headers: headers, as: :json
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     stage = pipeline.stages.first
     create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+    create(:crm_deal, account: account, pipeline: pipeline, stage: stage, archived_at: 1.day.ago)
 
     get path, headers: headers, as: :json
 
@@ -137,13 +165,14 @@ RSpec.describe 'CRM Pipelines API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(sales_pipeline['deal_count']).to eq(1)
+    expect(sales_pipeline.fetch('stages').find { |item| item['id'] == stage.id }['deal_count']).to eq(1)
   end
 
   it 'returns only active stages in pipeline payloads by default' do
     get path, headers: headers, as: :json
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
-    active_stage = pipeline.stages.find_by!(code: 'proposal')
-    archived_stage = pipeline.stages.find_by!(code: 'won')
+    active_stage = pipeline.stages.find_by!(code: 'qualified')
+    archived_stage = pipeline.stages.find_by!(code: 'proposal')
     archived_stage.update!(active: false)
 
     get path, headers: headers, as: :json
@@ -159,7 +188,7 @@ RSpec.describe 'CRM Pipelines API', type: :request do
   it 'can include inactive stages when explicitly requested' do
     get path, headers: headers, as: :json
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
-    inactive_stage = pipeline.stages.find_by!(code: 'won')
+    inactive_stage = pipeline.stages.find_by!(code: 'proposal')
     inactive_stage.update!(active: false)
 
     get path, params: { include_inactive_stages: true }, headers: headers, as: :json
@@ -185,6 +214,9 @@ RSpec.describe 'CRM Pipelines API', type: :request do
 
     get path, headers: headers, as: :json
     sales_pipeline = response.parsed_body.fetch('payload').find { |item| item['id'] == pipeline.id }
+    expect(sales_pipeline.fetch('stages').pluck('code')).to eq(
+      %w[new qualified proposal follow-up won lost]
+    )
     expect(sales_pipeline.fetch('stages').pluck('id')).to include(created_stage_id)
 
     patch "/api/v1/accounts/#{account.id}/crm/stages/#{created_stage_id}",

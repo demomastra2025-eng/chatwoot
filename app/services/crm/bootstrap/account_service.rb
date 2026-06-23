@@ -1,12 +1,5 @@
 class Crm::Bootstrap::AccountService
   DEFAULT_PIPELINE_NAME = 'Sales Pipeline'.freeze
-  DEFAULT_STAGE_DEFINITIONS = [
-    { code: 'new', name: 'New', outcome: 'open' },
-    { code: 'qualified', name: 'Qualified', outcome: 'open' },
-    { code: 'proposal', name: 'Proposal', outcome: 'open' },
-    { code: 'won', name: 'Won', outcome: 'won' },
-    { code: 'lost', name: 'Lost', outcome: 'lost' }
-  ].freeze
   DEFAULT_TASK_STATUS_DEFINITIONS = [
     { code: 'todo', name: 'To do', category: 'open', default: true },
     { code: 'in_progress', name: 'In progress', category: 'in_progress', default: false },
@@ -31,29 +24,24 @@ class Crm::Bootstrap::AccountService
   def bootstrap_deal_settings
     ensure_system_field_definitions_for('deal')
     ensure_default_pipeline
+    ensure_default_stages_for_pipelines
   end
 
   def ensure_default_pipeline
     return if account.crm_pipelines.exists?
 
-    pipeline = account.crm_pipelines.create!(
+    account.crm_pipelines.create!(
       name: DEFAULT_PIPELINE_NAME,
       code: 'sales_pipeline',
       position: 1,
       active: true,
       default: true
     )
+  end
 
-    DEFAULT_STAGE_DEFINITIONS.each_with_index do |definition, index|
-      pipeline.stages.create!(
-        account: account,
-        name: definition[:name],
-        code: definition[:code],
-        color: Crm::Stage::STANDARD_COLORS[index] || Crm::Stage::DEFAULT_COLOR,
-        outcome: definition[:outcome],
-        position: index + 1,
-        active: true
-      )
+  def ensure_default_stages_for_pipelines
+    account.crm_pipelines.find_each do |pipeline|
+      ::Crm::Pipelines::DefaultStageBuilder.new(pipeline: pipeline).perform
     end
   end
 
@@ -98,7 +86,7 @@ class Crm::Bootstrap::AccountService
   def merged_system_field_options(field_definition, definition)
     options = Array(
       field_definition.options.presence || definition[:options]
-    ).map { |option| option.deep_stringify_keys }
+    ).map(&:deep_stringify_keys)
     existing_values = options.filter_map do |option|
       option['value'].presence
     end.map(&:to_s)

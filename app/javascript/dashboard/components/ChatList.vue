@@ -46,7 +46,9 @@ import { emitter } from 'shared/helpers/mitt';
 
 import wootConstants from 'dashboard/constants/globals';
 import advancedFilterOptions from './widgets/conversation/advancedFilterItems';
-import filterQueryGenerator from '../helper/filterQueryGenerator.js';
+import filterQueryGenerator, {
+  normalizeFilterQueryOperator,
+} from '../helper/filterQueryGenerator.js';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages';
 import countries from 'shared/constants/countries';
 import { generateValuesForEditCustomViews } from 'dashboard/helper/customViewsHelper';
@@ -64,6 +66,8 @@ import {
   getCommunicationThreadChannelFilterInboxes,
 } from 'dashboard/helper/communicationThreadHelper';
 import { labelDisplayTitle } from 'dashboard/helper/labels';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
 
 const props = defineProps({
   conversationInbox: { type: [String, Number], default: 0 },
@@ -101,6 +105,7 @@ const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const store = useStore();
+const crmReferencesStore = useCrmReferencesStore();
 
 const resolveAttributesModalRef = ref(null);
 const conversationListRef = ref(null);
@@ -108,7 +113,7 @@ const virtualListRef = ref(null);
 
 provide('contextMenuElementTarget', virtualListRef);
 
-const activeAssigneeTab = ref(wootConstants.ASSIGNEE_TYPE.ME);
+const activeAssigneeTab = ref(wootConstants.ASSIGNEE_TYPE.ALL);
 const activeStatus = ref(wootConstants.STATUS_TYPE.OPEN);
 const activeSortBy = ref(wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC);
 const sidebarStatuses = [
@@ -230,23 +235,61 @@ const routeConversationAssigneeType = computed(() => {
   const assigneeType = route.query.assignee_type || route.query.assigneeType;
   return Object.values(wootConstants.ASSIGNEE_TYPE).includes(assigneeType)
     ? assigneeType
-    : wootConstants.ASSIGNEE_TYPE.ME;
+    : wootConstants.ASSIGNEE_TYPE.ALL;
 });
 
 function conversationNavigationQuery(overrides = {}) {
   const baseQuery = { ...route.query };
   const camelAssigneeType = baseQuery.assigneeType;
+  const camelCrmPipelineId = baseQuery.crmPipelineId;
+  const camelCrmStageId = baseQuery.crmStageId;
+  const camelLabelsScope = baseQuery.labelsScope;
+  const camelTeamScope = baseQuery.teamScope;
   delete baseQuery.messageId;
   delete baseQuery.assigneeType;
+  delete baseQuery.crmPipelineId;
+  delete baseQuery.crmStageId;
+  delete baseQuery.labelsScope;
+  delete baseQuery.teamScope;
 
-  const { assigneeType: overrideCamelAssigneeType, ...safeOverrides } =
-    overrides;
+  const {
+    assigneeType: overrideCamelAssigneeType,
+    crmPipelineId: overrideCamelCrmPipelineId,
+    crmStageId: overrideCamelCrmStageId,
+    labelsScope: overrideCamelLabelsScope,
+    teamScope: overrideCamelTeamScope,
+    ...safeOverrides
+  } = overrides;
+  const hasCrmPipelineOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'crm_pipeline_id') ||
+    overrideCamelCrmPipelineId !== undefined;
+  const hasCrmStageOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'crm_stage_id') ||
+    overrideCamelCrmStageId !== undefined;
+  const hasLabelsScopeOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'labels_scope') ||
+    overrideCamelLabelsScope !== undefined;
+  const hasTeamScopeOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'team_scope') ||
+    overrideCamelTeamScope !== undefined;
   const nextAssigneeType =
     safeOverrides.assignee_type ||
     overrideCamelAssigneeType ||
     baseQuery.assignee_type ||
     camelAssigneeType ||
     activeAssigneeTab.value;
+  const nextCrmPipelineId = hasCrmPipelineOverride
+    ? safeOverrides.crm_pipeline_id || overrideCamelCrmPipelineId
+    : baseQuery.crm_pipeline_id || camelCrmPipelineId;
+  const nextCrmStageId = hasCrmStageOverride
+    ? safeOverrides.crm_stage_id || overrideCamelCrmStageId
+    : baseQuery.crm_stage_id || camelCrmStageId;
+  const nextLabelsScope = hasLabelsScopeOverride
+    ? safeOverrides.labels_scope || overrideCamelLabelsScope
+    : baseQuery.labels_scope || camelLabelsScope;
+  const nextTeamScope = hasTeamScopeOverride
+    ? safeOverrides.team_scope || overrideCamelTeamScope
+    : baseQuery.team_scope || camelTeamScope;
   const nextQuery = {
     ...baseQuery,
     ...safeOverrides,
@@ -258,6 +301,30 @@ function conversationNavigationQuery(overrides = {}) {
     nextQuery.assignee_type = nextAssigneeType;
   } else {
     delete nextQuery.assignee_type;
+  }
+
+  if (nextCrmPipelineId) {
+    nextQuery.crm_pipeline_id = nextCrmPipelineId;
+  } else {
+    delete nextQuery.crm_pipeline_id;
+  }
+
+  if (nextCrmStageId) {
+    nextQuery.crm_stage_id = nextCrmStageId;
+  } else {
+    delete nextQuery.crm_stage_id;
+  }
+
+  if (nextLabelsScope) {
+    nextQuery.labels_scope = nextLabelsScope;
+  } else {
+    delete nextQuery.labels_scope;
+  }
+
+  if (nextTeamScope) {
+    nextQuery.team_scope = nextTeamScope;
+  } else {
+    delete nextQuery.team_scope;
   }
 
   return nextQuery;
@@ -354,6 +421,45 @@ const activeChannelFilterKey = computed(() => {
   return props.communicationThreadMode ? 'all' : '';
 });
 
+const activeCrmPipelineId = computed(
+  () => route.query.crm_pipeline_id || route.query.crmPipelineId || ''
+);
+
+const activeCrmStageId = computed(
+  () => route.query.crm_stage_id || route.query.crmStageId || ''
+);
+
+const activeLabelsScope = computed(
+  () => route.query.labels_scope || route.query.labelsScope || ''
+);
+
+const activeTeamScope = computed(
+  () => route.query.team_scope || route.query.teamScope || ''
+);
+
+const activeCrmPipeline = computed(() =>
+  crmReferencesStore.pipelines.find(
+    pipeline => String(pipeline.id) === String(activeCrmPipelineId.value)
+  )
+);
+
+const activeCrmStage = computed(() =>
+  (activeCrmPipeline.value?.stages || []).find(
+    stage => String(stage.id) === String(activeCrmStageId.value)
+  )
+);
+
+const defaultCrmPipelineStages = computed(() => {
+  const { stages } = resolveDefaultPipelineWithStages(
+    crmReferencesStore.pipelines
+  );
+
+  return stages.map(stage => ({
+    id: stage.id,
+    name: stage.name,
+  }));
+});
+
 const shouldShowChannelFilter = computed(() => {
   return props.communicationThreadMode || Boolean(props.conversationInbox);
 });
@@ -393,6 +499,10 @@ const conversationFilters = computed(() => {
     teamId: props.teamId || undefined,
     conversationType: props.conversationType || undefined,
     communicationThreadMode: props.communicationThreadMode,
+    crmPipelineId: activeCrmPipelineId.value || undefined,
+    crmStageId: activeCrmStageId.value || undefined,
+    labelsScope: props.label ? undefined : activeLabelsScope.value || undefined,
+    teamScope: props.teamId ? undefined : activeTeamScope.value || undefined,
   };
 });
 
@@ -412,6 +522,21 @@ const activeTeam = computed(() => {
 const pageTitle = computed(() => {
   if (hasAppliedFilters.value) {
     return t('CHAT_LIST.TAB_HEADING');
+  }
+  if (activeCrmStage.value?.name) {
+    return activeCrmStage.value.name;
+  }
+  if (activeCrmPipeline.value?.name) {
+    return activeCrmPipeline.value.name;
+  }
+  if (activeCrmPipelineId.value || activeCrmStageId.value) {
+    return t('SIDEBAR.PIPELINES');
+  }
+  if (activeTeamScope.value === 'any') {
+    return t('SIDEBAR.TEAMS');
+  }
+  if (activeLabelsScope.value === 'any') {
+    return t('SIDEBAR.LABELS');
   }
   if (inbox.value.name) {
     return inbox.value.name;
@@ -565,6 +690,21 @@ function setFiltersFromUISettings() {
     : wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC;
 }
 
+function ensureCrmReferencesLoaded({ force = false } = {}) {
+  if (!force && !activeCrmPipelineId.value && !activeCrmStageId.value) {
+    return Promise.resolve();
+  }
+
+  if (
+    crmReferencesStore.pipelines.length ||
+    crmReferencesStore.ui?.isLoadingPipelines
+  ) {
+    return Promise.resolve();
+  }
+
+  return crmReferencesStore.loadPipelines().catch(() => {});
+}
+
 function updateConversationStatusQuery(status) {
   const nextStatus = sidebarStatuses.includes(status)
     ? status
@@ -597,6 +737,11 @@ function fetchFilteredConversations(payload) {
     .dispatch('fetchFilteredConversations', {
       queryData: filterQueryGenerator(payload),
       page,
+      communicationThreadMode: props.communicationThreadMode,
+      crmPipelineId: activeCrmPipelineId.value || undefined,
+      crmStageId: activeCrmStageId.value || undefined,
+      labelsScope: activeLabelsScope.value || undefined,
+      teamScope: activeTeamScope.value || undefined,
     })
     .then(emitConversationLoaded);
 
@@ -610,6 +755,11 @@ function fetchSavedFilteredConversations(payload) {
     .dispatch('fetchFilteredConversations', {
       queryData: payload,
       page,
+      communicationThreadMode: props.communicationThreadMode,
+      crmPipelineId: activeCrmPipelineId.value || undefined,
+      crmStageId: activeCrmStageId.value || undefined,
+      labelsScope: activeLabelsScope.value || undefined,
+      teamScope: activeTeamScope.value || undefined,
     })
     .then(emitConversationLoaded);
 }
@@ -672,6 +822,7 @@ function setParamsForEditFolderModal() {
     inboxes: inboxesList.value,
     labels: labels.value,
     campaigns: campaigns.value,
+    crmStages: defaultCrmPipelineStages.value,
     languages: languages,
     countries: countries,
     priority: [
@@ -732,7 +883,8 @@ function initializeFolderToFilterModal(newActiveFolder) {
       attributeModel: transformed.attributeModel,
       customAttributeType: transformed.customAttributeType,
       filterOperator: transformed.filterOperator,
-      queryOperator: transformed.queryOperator ?? 'and',
+      queryOperator:
+        normalizeFilterQueryOperator(transformed.queryOperator) ?? 'and',
       values,
     };
   });
@@ -744,11 +896,13 @@ function initalizeAppliedFiltersToModal() {
   appliedFilter.value = [...appliedFilters.value];
 }
 
-function onToggleAdvanceFiltersModal() {
+async function onToggleAdvanceFiltersModal() {
   if (showAdvancedFilters.value === true) {
     closeAdvanceFiltersModal();
     return;
   }
+
+  await ensureCrmReferencesLoaded({ force: true });
 
   if (!hasAppliedFilters.value && !hasActiveFolders.value) {
     initializeExistingFilterToModal();
@@ -892,6 +1046,10 @@ function redirectToConversationList() {
       teamId,
       status: activeStatus.value,
       assigneeType: activeAssigneeTab.value,
+      crmPipelineId: activeCrmPipelineId.value,
+      crmStageId: activeCrmStageId.value,
+      labelsScope: activeLabelsScope.value,
+      teamScope: activeTeamScope.value,
       communicationThread: props.communicationThreadMode,
     })
   );
@@ -1140,6 +1298,7 @@ useEmitter('fetch_conversation_stats', () => {
 onMounted(() => {
   store.dispatch('setChatListFilters', conversationFilters.value);
   setFiltersFromUISettings();
+  ensureCrmReferencesLoaded();
   store.dispatch('setChatStatusFilter', activeStatus.value);
   store.dispatch('setChatSortFilter', activeSortBy.value);
   resetAndFetchData();
@@ -1306,6 +1465,17 @@ watch(
     resetAndFetchData();
   }
 );
+
+watch([activeCrmPipelineId, activeCrmStageId], () => {
+  ensureCrmReferencesLoaded();
+  clearLocalSearch();
+  resetAndFetchData();
+});
+
+watch([activeLabelsScope, activeTeamScope], () => {
+  clearLocalSearch();
+  resetAndFetchData();
+});
 
 watch(activeFolder, (newVal, oldVal) => {
   if (newVal !== oldVal) {

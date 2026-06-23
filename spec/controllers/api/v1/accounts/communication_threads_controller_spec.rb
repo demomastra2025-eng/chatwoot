@@ -98,6 +98,114 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(payload.pluck(:id)).to eq([matching_conversation.reload.communication_thread.display_id])
     end
 
+    it 'filters threads by child conversations with any label' do
+      matching_conversation = create(:conversation, account: account)
+      other_conversation = create(:conversation, account: account)
+      matching_conversation.update_labels('vip')
+      create(:inbox_member, user: agent, inbox: matching_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: other_conversation.inbox)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { labels_scope: 'any' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      expect(payload.pluck(:id)).to eq([matching_conversation.reload.communication_thread.display_id])
+    end
+
+    it 'filters threads by any team assignment' do
+      team = create(:team, account: account)
+      matching_conversation = create(:conversation, account: account, team: team)
+      other_conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: matching_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: other_conversation.inbox)
+      matching_conversation.reload.refresh_communication_thread!
+      other_conversation.reload.refresh_communication_thread!
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { team_scope: 'any' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      expect(payload.pluck(:id)).to eq([matching_conversation.reload.communication_thread.display_id])
+    end
+
+    it 'filters threads by CRM deal pipeline and stage context' do
+      pipeline = create(:crm_pipeline, account: account)
+      stage = create(:crm_stage, account: account, pipeline: pipeline)
+      other_stage = create(:crm_stage, account: account, pipeline: pipeline)
+      deal_contact = create(:contact, account: account)
+      contact_conversation = create(:conversation, account: account, contact: deal_contact)
+      direct_thread_conversation = create(:conversation, account: account)
+      other_stage_conversation = create(:conversation, account: account)
+      [contact_conversation, direct_thread_conversation, other_stage_conversation].each do |conversation|
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+        conversation.reload.communication_thread.update!(unread_count: 1)
+      end
+
+      contact_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+      create(:crm_deal_contact, account: account, deal: contact_deal, contact: deal_contact)
+      create(
+        :crm_deal,
+        account: account,
+        pipeline: pipeline,
+        stage: stage,
+        originating_communication_thread: direct_thread_conversation.reload.communication_thread
+      )
+      create(
+        :crm_deal,
+        account: account,
+        pipeline: pipeline,
+        stage: other_stage,
+        originating_communication_thread: other_stage_conversation.reload.communication_thread
+      )
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'open', assignee_type: 'all', crm_pipeline_id: pipeline.id, crm_stage_id: stage.id },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      body = JSON.parse(response.body, symbolize_names: true)
+      payload = body.dig(:data, :payload)
+      expect(payload.pluck(:id)).to contain_exactly(
+        contact_conversation.reload.communication_thread.display_id,
+        direct_thread_conversation.reload.communication_thread.display_id
+      )
+      expect(body.dig(:data, :meta, :unread_counts, :pipelines)).to include(pipeline.id.to_s.to_sym => 3)
+      expect(body.dig(:data, :meta, :unread_counts, :stages)).to include(
+        stage.id.to_s.to_sym => 2,
+        other_stage.id.to_s.to_sym => 1
+      )
+    end
+
+    it 'returns CRM deal stage accents for thread and contact deals' do
+      account.enable_features!('crm_deals')
+      contact = create(:contact, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      pipeline = create(:crm_pipeline, account: account)
+      first_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'New', color: '#22C55E', position: 1)
+      second_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified', color: '#3B82F6', position: 2)
+      create(:crm_deal, account: account, pipeline: pipeline, stage: first_stage, originating_communication_thread: thread)
+      contact_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: second_stage)
+      create(:crm_deal_contact, account: account, deal: contact_deal, contact: contact)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      stages = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first[:crm_deal_stages]
+      expect(stages.pluck(:id)).to eq([first_stage.id, second_stage.id])
+      expect(stages.pluck(:color)).to eq(%w[#22C55E #3B82F6])
+    end
+
     it 'filters by child conversation status and prefers the matching channel payload' do
       contact = create(:contact, account: account)
       inbox = create(:inbox, account: account)
@@ -247,6 +355,92 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body['error']).to include('Invalid communication thread')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/communication_threads/filter' do
+    let(:pipeline) { create(:crm_pipeline, account: account) }
+    let(:matching_stage) { create(:crm_stage, account: account, pipeline: pipeline) }
+    let(:other_stage) { create(:crm_stage, account: account, pipeline: pipeline) }
+    let(:matching_conversation) { create(:conversation, account: account, status: :open) }
+    let(:wrong_stage_conversation) { create(:conversation, account: account, status: :open) }
+    let(:wrong_status_conversation) { create(:conversation, account: account, status: :resolved) }
+    let(:advanced_filter_payload) do
+      [
+        {
+          attribute_key: 'status',
+          filter_operator: 'equal_to',
+          values: ['open'],
+          query_operator: 'AND'
+        },
+        {
+          attribute_key: 'crm_stage_id',
+          filter_operator: 'equal_to',
+          values: [matching_stage.id],
+          query_operator: nil
+        }
+      ]
+    end
+
+    before do
+      [matching_conversation, wrong_stage_conversation, wrong_status_conversation].each do |conversation|
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+      end
+
+      create_thread_stage_deal(matching_conversation, matching_stage)
+      create_thread_stage_deal(wrong_stage_conversation, other_stage)
+      create_thread_stage_deal(wrong_status_conversation, matching_stage)
+    end
+
+    def create_thread_stage_deal(conversation, stage)
+      create(
+        :crm_deal,
+        account: account,
+        pipeline: pipeline,
+        stage: stage,
+        originating_communication_thread: conversation.reload.communication_thread
+      )
+    end
+
+    it 'intersects advanced conversation filters with CRM deal stage context' do
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter",
+           params: {
+             payload: advanced_filter_payload
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      body = JSON.parse(response.body, symbolize_names: true)
+      expect(body.dig(:data, :payload).pluck(:id)).to contain_exactly(
+        matching_conversation.reload.communication_thread.display_id
+      )
+      expect(body.dig(:data, :meta)).to include(
+        all_count: 1,
+        unassigned_count: 1
+      )
+    end
+  end
+
+  describe 'GET /api/v1/accounts/:account_id/communication_threads/:id' do
+    it 'returns CRM deal stage accents on the communication thread detail payload' do
+      account.enable_features!('crm_deals')
+      contact = create(:contact, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      pipeline = create(:crm_pipeline, account: account)
+      stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#3B82F6')
+      create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_communication_thread: thread)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}",
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true)[:crm_deal_stages]).to include(
+        a_hash_including(id: stage.id, color: '#3B82F6')
+      )
     end
   end
 

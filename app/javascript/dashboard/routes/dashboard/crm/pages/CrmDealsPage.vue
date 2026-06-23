@@ -1117,6 +1117,37 @@ const resolveStageFilterId = (stageId, pipelineId) => {
   return belongsToPipeline ? stageId : '';
 };
 
+const hasDealListFilterQuery = () => {
+  return (
+    !queryValue('action') &&
+    !numericQueryValue('dealId') &&
+    (numericQueryValue('pipelineId') || numericQueryValue('stageId'))
+  );
+};
+
+const applyDealListFilterQuery = () => {
+  if (!hasDealListFilterQuery()) return false;
+
+  const nextPipelineId = resolvePipelineFilterId(
+    numericQueryValue('pipelineId') || filters.pipelineId
+  );
+  const nextStageId = resolveStageFilterId(
+    numericQueryValue('stageId'),
+    nextPipelineId
+  );
+  const filtersChanged =
+    String(filters.pipelineId || '') !== String(nextPipelineId || '') ||
+    String(filters.stageId || '') !== String(nextStageId || '');
+
+  listCurrentPage.value = 1;
+  filters.pipelineId = nextPipelineId;
+  filters.stageId = nextStageId;
+  filterDraft.pipelineId = nextPipelineId;
+  filterDraft.stageId = nextStageId;
+
+  return filtersChanged;
+};
+
 const ensureSelectedFilterLookups = async () => {
   if (
     filterDraft.contactId &&
@@ -2023,6 +2054,7 @@ onMounted(async () => {
       referencesStore.loadFieldDefinitions('deal'),
     ]);
     ensurePipelineFilterSelection();
+    applyDealListFilterQuery();
     resetForm();
     hasRestoredPreferences.value = true;
     persistDealsPreferences();
@@ -2033,6 +2065,16 @@ onMounted(async () => {
     useAlert(formatErrorMessage(error));
   }
 });
+
+watch(
+  () => [route.query?.pipelineId, route.query?.stageId],
+  async () => {
+    if (!hasRestoredPreferences.value || !canViewDeals.value) return;
+    if (!applyDealListFilterQuery()) return;
+
+    await loadDeals();
+  }
+);
 
 watch(
   () => [
@@ -2564,8 +2606,6 @@ watch(
           :definitions="dealFieldDefinitions"
           :framed="false"
           :model-value="form.customAttributes"
-          :title="$t('CRM.CUSTOM_FIELDS.TITLE')"
-          :description="$t('CRM.CUSTOM_FIELDS.DESCRIPTION')"
           @update:model-value="form.customAttributes = $event"
         />
 

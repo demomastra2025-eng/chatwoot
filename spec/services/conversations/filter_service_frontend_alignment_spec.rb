@@ -250,5 +250,63 @@ describe Conversations::FilterService do
         expect(result[:conversations].length).to be 1
       end
     end
+
+    context 'with CRM deal pipeline and stage params' do
+      let!(:pipeline) { create(:crm_pipeline, account: account) }
+      let!(:matching_stage) { create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified') }
+      let!(:other_stage) { create(:crm_stage, account: account, pipeline: pipeline, name: 'Proposal') }
+      let!(:matching_conversation) { create(:conversation, account: account, inbox: inbox, assignee: user_1, status: 'open') }
+      let!(:wrong_stage_conversation) { create(:conversation, account: account, inbox: inbox, assignee: user_1, status: 'open') }
+      let!(:wrong_status_conversation) { create(:conversation, account: account, inbox: inbox, assignee: user_1, status: 'resolved') }
+      let(:filter_payload) do
+        [
+          {
+            attribute_key: 'status',
+            filter_operator: 'equal_to',
+            values: ['open'],
+            query_operator: nil
+          }.with_indifferent_access
+        ]
+      end
+
+      before do
+        create(:crm_deal, account: account, pipeline: pipeline, stage: matching_stage, originating_conversation: matching_conversation)
+        create(:crm_deal, account: account, pipeline: pipeline, stage: other_stage, originating_conversation: wrong_stage_conversation)
+        create(:crm_deal, account: account, pipeline: pipeline, stage: matching_stage, originating_conversation: wrong_status_conversation)
+      end
+
+      it 'intersects advanced filters with the active CRM stage' do
+        params[:payload] = filter_payload
+        params[:crm_pipeline_id] = pipeline.id
+        params[:crm_stage_id] = matching_stage.id
+
+        result = described_class.new(params, user_1, account).perform
+
+        expect(result[:conversations].pluck(:id)).to contain_exactly(matching_conversation.id)
+        expect(result[:count][:all_count]).to eq 1
+      end
+
+      it 'supports CRM stage as a native advanced filter condition' do
+        params[:payload] = [
+          {
+            attribute_key: 'status',
+            filter_operator: 'equal_to',
+            values: ['open'],
+            query_operator: 'AND'
+          }.with_indifferent_access,
+          {
+            attribute_key: 'crm_stage_id',
+            filter_operator: 'equal_to',
+            values: [matching_stage.id],
+            query_operator: nil
+          }.with_indifferent_access
+        ]
+
+        result = described_class.new(params, user_1, account).perform
+
+        expect(result[:conversations].pluck(:id)).to contain_exactly(matching_conversation.id)
+        expect(result[:count][:all_count]).to eq 1
+      end
+    end
   end
 end

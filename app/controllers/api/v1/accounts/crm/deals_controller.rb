@@ -7,6 +7,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     team_id
     company_id
     originating_conversation_id
+    originating_communication_thread_id
     title
     description
     amount_minor
@@ -24,6 +25,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     team_id
     company_id
     originating_conversation_id
+    originating_communication_thread_id
     title
     description
     amount_minor
@@ -169,6 +171,15 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope.where(originating_conversation_id: conversation.id)
   end
 
+  def filter_by_originating_communication_thread(scope)
+    return scope if params[:originating_communication_thread_id].blank?
+
+    communication_thread = resolve_originating_communication_thread(params[:originating_communication_thread_id])
+    return scope.none if communication_thread.blank?
+
+    scope.where(originating_communication_thread_id: communication_thread.id)
+  end
+
   def filter_by_query(scope)
     return scope if params[:q].blank?
 
@@ -177,7 +188,12 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def filtered_deals
-    scope = policy_scope(::Crm::Deal).preload(:company, deal_contacts: :contact).ordered
+    scope = policy_scope(::Crm::Deal).preload(
+      :company,
+      :originating_conversation,
+      :originating_communication_thread,
+      deal_contacts: :contact
+    ).ordered
     scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
     scope = filter_by_exact(scope, :pipeline_id)
     scope = filter_by_exact(scope, :stage_id)
@@ -185,6 +201,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope = filter_by_exact(scope, :team_id)
     scope = filter_by_exact(scope, :company_id)
     scope = filter_by_originating_conversation(scope)
+    scope = filter_by_originating_communication_thread(scope)
     scope = filter_by_contact(scope)
     scope = filter_by_query(scope)
 
@@ -198,11 +215,21 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   def idempotent_deal
     return if create_deal_params[:idempotency_key].blank?
 
-    Current.account.crm_deals.preload(:company, deal_contacts: :contact).find_by(idempotency_key: create_deal_params[:idempotency_key])
+    Current.account.crm_deals.preload(
+      :company,
+      :originating_conversation,
+      :originating_communication_thread,
+      deal_contacts: :contact
+    ).find_by(idempotency_key: create_deal_params[:idempotency_key])
   end
 
   def set_deal
-    @deal = policy_scope(::Crm::Deal).preload(:company, deal_contacts: :contact).find(params[:id])
+    @deal = policy_scope(::Crm::Deal).preload(
+      :company,
+      :originating_conversation,
+      :originating_communication_thread,
+      deal_contacts: :contact
+    ).find(params[:id])
   end
 
   def resolve_originating_conversation(raw_value)
@@ -211,6 +238,14 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
     Current.account.conversations.find_by(id: value) ||
       Current.account.conversations.find_by(display_id: value)
+  end
+
+  def resolve_originating_communication_thread(raw_value)
+    value = raw_value.to_s.strip
+    return if value.blank?
+
+    CommunicationThread.find_by(account_id: Current.account.id, display_id: value) ||
+      CommunicationThread.find_by(account_id: Current.account.id, id: value)
   end
 
   def update_deal_params

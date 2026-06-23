@@ -1,12 +1,12 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import Copilot from 'dashboard/components-next/copilot/Copilot.vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConfig } from 'dashboard/composables/useConfig';
-import { useEventListener, useWindowSize } from '@vueuse/core';
+import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 import { useRoute, useRouter } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
@@ -39,12 +39,6 @@ const currentChat = useMapGetter('getSelectedChat');
 const selectedCopilotThreadId = ref(null);
 const hydratedRouteThreadId = ref(null);
 const hydratingRouteThread = ref(false);
-const resizedPanelWidth = ref(null);
-const isResizingPanel = ref(false);
-const resizePointerId = ref(null);
-const resizeHandleElement = ref(null);
-const resizeStartX = ref(0);
-const resizeStartWidth = ref(0);
 
 const isSmallScreen = computed(
   () => windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
@@ -59,10 +53,7 @@ const maxPanelWidth = computed(() =>
   )
 );
 const copilotPanelWidth = computed(() =>
-  Math.min(
-    resizedPanelWidth.value || defaultPanelWidth.value,
-    maxPanelWidth.value
-  )
+  Math.min(defaultPanelWidth.value, maxPanelWidth.value)
 );
 const copilotPanelStyle = computed(() => {
   if (isSmallScreen.value) return {};
@@ -184,71 +175,6 @@ const handleReset = () => {
   selectedCopilotThreadId.value = null;
 };
 
-const clampPanelWidth = width =>
-  Math.min(Math.max(width, MIN_PANEL_WIDTH), maxPanelWidth.value);
-
-const isRtlLayout = () => document.documentElement.dir === 'rtl';
-
-const startPanelResize = event => {
-  if (isSmallScreen.value || (event.pointerType === 'mouse' && event.button)) {
-    return;
-  }
-
-  isResizingPanel.value = true;
-  resizePointerId.value = event.pointerId;
-  resizeHandleElement.value = event.currentTarget;
-  resizeStartX.value = event.clientX;
-  resizeStartWidth.value = copilotPanelWidth.value;
-  resizeHandleElement.value?.setPointerCapture?.(event.pointerId);
-  Object.assign(document.body.style, {
-    cursor: 'col-resize',
-    userSelect: 'none',
-  });
-};
-
-const handlePanelResize = event => {
-  if (!isResizingPanel.value) return;
-  if (resizePointerId.value !== event.pointerId) return;
-
-  const delta = isRtlLayout()
-    ? event.clientX - resizeStartX.value
-    : resizeStartX.value - event.clientX;
-  resizedPanelWidth.value = clampPanelWidth(resizeStartWidth.value + delta);
-  event.preventDefault();
-};
-
-const releaseResizePointer = () => {
-  try {
-    resizeHandleElement.value?.releasePointerCapture?.(resizePointerId.value);
-  } catch {
-    // The browser may already release pointer capture on pointerup/cancel.
-  }
-};
-
-const stopPanelResize = event => {
-  if (!isResizingPanel.value) return;
-  if (
-    event?.pointerId !== undefined &&
-    resizePointerId.value !== event.pointerId
-  ) {
-    return;
-  }
-
-  releaseResizePointer();
-
-  isResizingPanel.value = false;
-  resizePointerId.value = null;
-  resizeHandleElement.value = null;
-  Object.assign(document.body.style, {
-    cursor: '',
-    userSelect: '',
-  });
-};
-
-const resetPanelWidth = () => {
-  resizedPanelWidth.value = null;
-};
-
 const hydrateThreadFromRoute = async () => {
   const threadId = routeCopilotThreadId.value;
   if (!isEnterprise || !threadId) return;
@@ -326,15 +252,6 @@ onMounted(() => {
   }
 });
 
-onBeforeUnmount(() => {
-  stopPanelResize();
-});
-
-useEventListener(document, 'pointermove', handlePanelResize);
-useEventListener(document, 'pointerup', stopPanelResize);
-useEventListener(document, 'pointercancel', stopPanelResize);
-useEventListener(window, 'blur', stopPanelResize);
-
 watch(
   [routeCopilotThreadId, assistants],
   async () => {
@@ -366,19 +283,6 @@ watch(
       },
     ]"
   >
-    <button
-      type="button"
-      class="group absolute inset-y-0 z-30 hidden w-4 cursor-col-resize touch-none select-none items-center justify-center transition-colors hover:bg-n-alpha-2 md:flex ltr:left-0 rtl:right-0"
-      :aria-label="$t('CAPTAIN.COPILOT.RESIZE_PANEL')"
-      :title="$t('CAPTAIN.COPILOT.RESIZE_PANEL')"
-      @pointerdown.prevent="startPanelResize"
-      @dblclick.stop="resetPanelWidth"
-    >
-      <span
-        class="h-10 w-0.5 rounded-full bg-n-slate-6 opacity-60 transition-opacity group-hover:opacity-100"
-        :class="{ 'opacity-100 bg-n-brand': isResizingPanel }"
-      />
-    </button>
     <Copilot
       :messages="messages"
       :conversation-inbox-type="conversationInboxType"

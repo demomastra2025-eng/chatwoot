@@ -164,7 +164,7 @@ describe('useGoToCommandHotKeys', () => {
     command.handler();
 
     expect(useRouter().push).toHaveBeenCalledWith(
-      'accounts/1/communication_threads?status=open&assignee_type=me'
+      'accounts/1/communication_threads?status=open&assignee_type=all'
     );
   });
 

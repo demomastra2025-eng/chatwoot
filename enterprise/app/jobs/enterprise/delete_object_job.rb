@@ -8,6 +8,7 @@ module Enterprise::DeleteObjectJob
   end
 
   def process_post_deletion_tasks(object, user, ip, deletion_context = {})
+    super
     create_audit_entry(object, user, ip, deletion_context)
   end
 

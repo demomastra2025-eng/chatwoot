@@ -646,5 +646,122 @@
     "AVG_REPLY_TIME": "Avg. Customer Waiting Time",
     "RESOLUTION_COUNT": "Resolution Count",
     "CONVERSATIONS": "No. of conversations"
+  },
+  "CRM_DEAL_REPORTS": {
+    "HEADER": "Deals",
+    "KICKER": "CRM reports",
+    "TITLE": "Deal analytics that is easy to read",
+    "DESCRIPTION": "Track open deals, close forecast, sources, team contribution, and stale opportunities in one clean aggregated report.",
+    "CURRENCY_HINT": "Money metrics: {currency}.",
+    "ERROR": "Could not load deal reports. Please try again.",
+    "EMPTY_VALUE": "—",
+    "UNASSIGNED": "Unassigned",
+    "EMPTY_TITLE": "No report data yet",
+    "EMPTY_DESCRIPTION": "Create deals or change the date range to see deal analytics.",
+    "SECTIONS": {
+      "OVERVIEW": {
+        "TITLE": "Stages",
+        "DESCRIPTION": "Where deals stand and how much value is open."
+      },
+      "FORECAST": {
+        "TITLE": "Forecast",
+        "DESCRIPTION": "Expected close and won/lost movement."
+      },
+      "SOURCES": {
+        "TITLE": "Sources",
+        "DESCRIPTION": "Where deals come from and how they convert."
+      },
+      "TEAM": {
+        "TITLE": "Team",
+        "DESCRIPTION": "Manager contribution and open-deal aging."
+      }
+    },
+    "SUMMARY": {
+      "OPEN_DEALS": "In progress",
+      "OPEN_DEALS_HELPER": "Open deals on active stages.",
+      "PIPELINE_AMOUNT": "Open value",
+      "PIPELINE_AMOUNT_HELPER": "Potential value of open deals.",
+      "WEIGHTED_PIPELINE": "Weighted forecast",
+      "WEIGHTED_PIPELINE_HELPER": "Value adjusted by win probability.",
+      "WIN_RATE": "Win rate",
+      "WIN_RATE_HELPER": "Won: {won}, Lost: {lost} in the selected period."
+    },
+    "CHARTS": {
+      "STAGE_FLOW": {
+        "TITLE": "Deals by stage",
+        "DESCRIPTION": "A readable stage list with deal count and value side by side, without visual distortion."
+      },
+      "STAGE_AMOUNT": {
+        "TITLE": "Value by stage",
+        "DESCRIPTION": "Which stages hold the largest open value.",
+        "DATASET": "Value"
+      },
+      "FORECAST_AMOUNT": {
+        "TITLE": "Close forecast",
+        "DESCRIPTION": "Planned and weighted close value by the selected grouping.",
+        "DATASET": "Planned value"
+      },
+      "FORECAST_WEIGHTED": {
+        "DATASET": "Weighted value"
+      },
+      "WON_LOST": {
+        "TITLE": "Won / Lost",
+        "DESCRIPTION": "Deals won and lost during the selected period.",
+        "WON": "Won",
+        "LOST": "Lost"
+      },
+      "SOURCE": {
+        "TITLE": "Source conversion",
+        "DESCRIPTION": "Open, won, and lost deals by source.",
+        "DATASET": "Deals",
+        "OPEN": "Open",
+        "WON": "Won",
+        "LOST": "Lost"
+      },
+      "SOURCE_MIX": {
+        "TITLE": "Source mix",
+        "DESCRIPTION": "Each source share in total deals."
+      },
+      "OWNER_AMOUNT": {
+        "TITLE": "Value by manager",
+        "DESCRIPTION": "Top owners by created deal value.",
+        "DATASET": "Value"
+      },
+      "AGING": {
+        "TITLE": "Open deal aging",
+        "DESCRIPTION": "How many open deals are stuck in each age bucket.",
+        "DATASET": "Deals"
+      }
+    },
+    "TABLES": {
+      "SOURCE": {
+        "TITLE": "Source quality",
+        "ROW_HELPER": "Won {won} · Lost {lost} · Win rate {winRate}"
+      },
+      "TEAM": {
+        "ROW_HELPER": "Deals {deals} · Won {won} · Win rate {winRate}"
+      }
+    },
+    "LABELS": {
+      "DEALS": "deals",
+      "FORECAST_HEALTH": "Forecast summary",
+      "FORECAST_TOTAL": "Planned value",
+      "WEIGHTED_TOTAL": "Weighted value",
+      "CLOSED_TOTAL": "Closed deals"
+    },
+    "SOURCES": {
+      "MANUAL": "Manual",
+      "CONVERSATION": "Conversation",
+      "AI": "AI",
+      "IMPORT": "Import",
+      "OTHER": "Other"
+    },
+    "AGING_BUCKETS": {
+      "0_3": "0–3 days",
+      "4_7": "4–7 days",
+      "8_14": "8–14 days",
+      "15_30": "15–30 days",
+      "31_plus": "31+ days"
+    }
   }
 }

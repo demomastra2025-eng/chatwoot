@@ -4,25 +4,29 @@ const normalizeColor = color =>
     .toUpperCase();
 
 export const STAGE_STANDARD_COLORS = [
-  '#F0F0F3',
-  '#E8E8EC',
-  '#0EA5E9',
-  '#3B82F6',
-  '#6366F1',
-  '#8B5CF6',
-  '#A855F7',
-  '#EC4899',
+  '#E11D48',
+  '#DC2626',
+  '#EA580C',
   '#F97316',
-  '#EAB308',
-  '#22C55E',
-  '#14B8A6',
+  '#D97706',
+  '#CA8A04',
+  '#84CC16',
+  '#65A30D',
+  '#16A34A',
+  '#059669',
+  '#0D9488',
+  '#0891B2',
+  '#0284C7',
+  '#2563EB',
+  '#4F46E5',
+  '#7C3AED',
+  '#9333EA',
+  '#C026D3',
+  '#DB2777',
+  '#BE123C',
 ];
 
-export const DEFAULT_STAGE_COLOR =
-  STAGE_STANDARD_COLORS.find(color => color === '#F0F0F3') ||
-  STAGE_STANDARD_COLORS.find(color => color === '#E8E8EC') ||
-  STAGE_STANDARD_COLORS[0] ||
-  '';
+export const DEFAULT_STAGE_COLOR = STAGE_STANDARD_COLORS[0] || '';
 
 const getUsedStandardColors = (
   stages = [],

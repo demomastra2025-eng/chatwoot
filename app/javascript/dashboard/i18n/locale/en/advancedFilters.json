@@ -52,6 +52,8 @@
       "CONVERSATION_IDENTIFIER": "Conversation identifier",
       "CAMPAIGN_NAME": "Campaign name",
       "LABELS": "Tags",
+      "CRM_STAGE": "Pipeline stage",
+      "CRM_STAGE_FOR_PIPELINE": "Pipeline: {pipeline}",
       "BROWSER_LANGUAGE": "Browser language",
       "PRIORITY": "Priority",
       "COUNTRY_NAME": "Country name",

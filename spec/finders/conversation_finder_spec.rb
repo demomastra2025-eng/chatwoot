@@ -159,6 +159,19 @@ describe ConversationFinder do
       end
     end
 
+    context 'with any team scope' do
+      let(:team) { create(:team, account: account) }
+      let(:params) { { team_scope: 'any' } }
+
+      it 'filters conversations to records assigned to a team' do
+        conversation = create(:conversation, account: account, inbox: inbox, team: team)
+
+        result = conversation_finder.perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(conversation.id)
+      end
+    end
+
     context 'with labels' do
       let(:params) { { labels: ['resolved'] } }
 
@@ -168,6 +181,77 @@ describe ConversationFinder do
 
         result = conversation_finder.perform
         expect(result[:conversations].length).to be 1
+      end
+    end
+
+    context 'with any label scope' do
+      let(:params) { { labels_scope: 'any' } }
+
+      it 'filters conversations to records that have at least one label' do
+        conversation = inbox.conversations.first
+        conversation.update_labels('vip')
+
+        result = conversation_finder.perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(conversation.id)
+      end
+    end
+
+    context 'with CRM deal context' do
+      let(:pipeline) { create(:crm_pipeline, account: account) }
+      let(:stage) { create(:crm_stage, account: account, pipeline: pipeline) }
+      let(:other_stage) { create(:crm_stage, account: account, pipeline: pipeline) }
+      let(:other_pipeline) { create(:crm_pipeline, account: account) }
+      let(:other_pipeline_stage) { create(:crm_stage, account: account, pipeline: other_pipeline) }
+      let(:params) { { status: 'open', assignee_type: 'all', crm_pipeline_id: pipeline.id } }
+
+      it 'filters conversations by deal pipeline through deal contacts and originating conversations' do
+        deal_contact = create(:contact, account: account)
+        contact_conversation = create(:conversation, account: account, inbox: inbox, contact: deal_contact)
+        direct_conversation = create(:conversation, account: account, inbox: inbox)
+        other_conversation = create(:conversation, account: account, inbox: inbox)
+
+        deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+        create(:crm_deal_contact, account: account, deal: deal, contact: deal_contact)
+        create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: direct_conversation)
+        create(:crm_deal, account: account, pipeline: other_pipeline, stage: other_pipeline_stage,
+                          originating_conversation: other_conversation)
+
+        result = conversation_finder.perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(contact_conversation.id, direct_conversation.id)
+      end
+
+      it 'filters conversations by deal stage and returns pipeline and stage unread counts' do
+        matching_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 1.hour.ago
+        )
+        other_stage_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 1.hour.ago
+        )
+        create(:message, account: account, conversation: matching_conversation, created_at: 10.minutes.ago)
+        create(:message, account: account, conversation: other_stage_conversation, created_at: 10.minutes.ago)
+        create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: matching_conversation)
+        create(:crm_deal, account: account, pipeline: pipeline, stage: other_stage,
+                          originating_conversation: other_stage_conversation)
+
+        stage_result = described_class.new(
+          user_1,
+          { status: 'open', assignee_type: 'all', crm_pipeline_id: pipeline.id, crm_stage_id: stage.id }
+        ).perform
+
+        expect(stage_result[:conversations].map(&:id)).to contain_exactly(matching_conversation.id)
+        expect(stage_result[:count].dig(:unread_counts, :pipelines)).to include(pipeline.id.to_s => 2)
+        expect(stage_result[:count].dig(:unread_counts, :stages)).to include(
+          stage.id.to_s => 1,
+          other_stage.id.to_s => 1
+        )
       end
     end
 

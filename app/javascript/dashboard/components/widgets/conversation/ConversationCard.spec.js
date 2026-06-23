@@ -122,7 +122,7 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=me'
+      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
     );
   });
 
@@ -208,7 +208,7 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=me'
+      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
     );
   });
 
@@ -241,6 +241,40 @@ describe('ConversationCard', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.findComponent({ name: 'Avatar' }).props('size')).toBe(28);
+  });
+
+  it('renders CRM stage color accents on the left card edge', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        crm_deal_stages: [
+          { id: 10, name: 'New', color: '#22C55E' },
+          { id: 20, name: 'Qualified', color: '#3B82F6' },
+        ],
+      },
+    });
+
+    const accents = wrapper.find(
+      '[data-test-id="conversation-crm-stage-accents"]'
+    );
+    const stripes = accents.findAll('span');
+
+    expect(accents.exists()).toBe(true);
+    expect(accents.element.parentElement).toBe(wrapper.element);
+    expect(accents.classes()).toContain('absolute');
+    expect(accents.classes()).toContain('left-0');
+    expect(accents.classes()).toContain('top-0');
+    expect(accents.classes()).toContain('bottom-0');
+    expect(stripes).toHaveLength(2);
+    expect(stripes[0].attributes('style')).toContain(
+      'background-color: rgb(34, 197, 94)'
+    );
+    expect(stripes[1].attributes('title')).toBe('Qualified');
+    expect(
+      wrapper
+        .find('h4 [data-test-id="conversation-crm-stage-accents"]')
+        .exists()
+    ).toBe(false);
   });
 
   it('renders compact time under the avatar and compact inbox name inline with the contact', () => {

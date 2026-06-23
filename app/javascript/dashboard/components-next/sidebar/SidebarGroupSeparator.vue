@@ -25,6 +25,10 @@ const props = defineProps({
     type: [Number, String],
     default: 0,
   },
+  count: {
+    type: [Number, String],
+    default: null,
+  },
   actionLabel: {
     type: String,
     default: '',
@@ -77,6 +81,13 @@ const hasActionButtons = computed(
 );
 
 const badgeCount = computed(() => Number(props.badge) || 0);
+const hasPlainCount = computed(
+  () => props.count !== null && typeof props.count !== 'undefined'
+);
+const plainCountLabel = computed(() => {
+  const count = Number(props.count) || 0;
+  return count > 999 ? '999+' : String(count);
+});
 
 const isActionActive = action => {
   if (action.active) return true;
@@ -134,7 +145,14 @@ const handleRootClick = async () => {
     >
       {{ label }}
     </span>
-    <SidebarUnreadBadge :value="badgeCount" />
+    <span
+      v-if="hasPlainCount"
+      data-test-id="sidebar-plain-count"
+      class="shrink-0 px-1 text-xs font-medium leading-5 tabular-nums text-current"
+    >
+      {{ plainCountLabel }}
+    </span>
+    <SidebarUnreadBadge v-else :value="badgeCount" />
     <span
       v-if="actionLabel"
       class="text-xs font-medium shrink-0 rounded-md px-2 py-0.5"

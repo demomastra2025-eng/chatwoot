@@ -2,6 +2,14 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   attr_reader :current_user, :current_account, :params
 
   DEFAULT_STATUS = 'open'.freeze
+  COUNT_RELATION_FILTERS = {
+    include_status: true,
+    include_inbox: true,
+    include_assignee: false,
+    include_team: true,
+    include_labels: true,
+    include_crm_deal_context: true
+  }.freeze
   SORT_OPTIONS = {
     'last_activity_at_asc' => %w[sort_on_last_activity_at asc],
     'last_activity_at_desc' => %w[sort_on_last_activity_at desc],
@@ -67,6 +75,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     filter_by_status unless params[:q]
     filter_by_team
     filter_by_labels
+    filter_by_crm_deal_context
     filter_by_query
     filter_by_source_id
   end
@@ -149,15 +158,25 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   end
 
   def filter_by_team
-    return unless @team
+    if @team
+      @conversations = @conversations.where(team: @team)
+      return
+    end
 
-    @conversations = @conversations.where(team: @team)
+    @conversations = @conversations.where.not(team_id: nil) if team_scope_any?
   end
 
   def filter_by_labels
-    return unless params[:labels]
+    if params[:labels].present?
+      @conversations = @conversations.tagged_with(params[:labels], any: true)
+      return
+    end
 
-    @conversations = @conversations.tagged_with(params[:labels], any: true)
+    @conversations = conversations_with_any_label(@conversations) if labels_scope_any?
+  end
+
+  def filter_by_crm_deal_context
+    @conversations = current_crm_deal_dialog_scope.filter_conversations(@conversations)
   end
 
   def filter_by_source_id
@@ -199,7 +218,9 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       statuses: status_unread_counts,
       inboxes: inbox_unread_counts,
       teams: team_unread_counts,
-      labels: label_unread_counts
+      labels: label_unread_counts,
+      pipelines: pipeline_unread_counts,
+      stages: stage_unread_counts
     }
   end
 
@@ -229,6 +250,14 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     unread_scope = unread_conversation_scope(scope)
 
     normalize_counts(label_counts(unread_scope))
+  end
+
+  def pipeline_unread_counts
+    crm_unread_count_service.conversation_pipeline_counts
+  end
+
+  def stage_unread_counts
+    crm_unread_count_service.conversation_stage_counts
   end
 
   def unread_conversation_scope(scope)
@@ -280,15 +309,20 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     end
   end
 
-  def scoped_count_relation(include_status: true, include_inbox: true, include_assignee: false, include_team: true, include_labels: true)
-    scope = base_count_scope
-    scope = apply_inbox_filter(scope) if include_inbox
-    scope = apply_status_filter(scope) if include_status && !params[:q]
-    scope = apply_team_filter(scope) if include_team
-    scope = apply_labels_filter(scope) if include_labels
-    scope = apply_source_id_filter(scope)
-    scope = apply_assignee_filter(scope) if include_assignee
-    scope
+  def scoped_count_relation(filters = {})
+    filters = COUNT_RELATION_FILTERS.merge(filters)
+
+    [
+      [:include_inbox, method(:apply_inbox_filter)],
+      [:include_status, method(:apply_status_count_filter)],
+      [:include_team, method(:apply_team_filter)],
+      [:include_labels, method(:apply_labels_filter)],
+      [:include_crm_deal_context, method(:apply_crm_deal_context_filter)],
+      [:include_source_id, method(:apply_source_id_filter)],
+      [:include_assignee, method(:apply_assignee_filter)]
+    ].reduce(base_count_scope) do |scope, (filter_key, filter_method)|
+      filters.fetch(filter_key, true) ? filter_method.call(scope) : scope
+    end
   end
 
   def base_count_scope
@@ -327,16 +361,28 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     scope.where(status: selected_status.presence || DEFAULT_STATUS)
   end
 
-  def apply_team_filter(scope)
-    return scope unless @team
+  def apply_status_count_filter(scope)
+    return scope if params[:q]
 
-    scope.where(team: @team)
+    apply_status_filter(scope)
+  end
+
+  def apply_team_filter(scope)
+    return scope.where(team: @team) if @team
+    return scope.where.not(team_id: nil) if team_scope_any?
+
+    scope
   end
 
   def apply_labels_filter(scope)
-    return scope unless params[:labels]
+    return scope.tagged_with(params[:labels], any: true) if params[:labels].present?
+    return conversations_with_any_label(scope) if labels_scope_any?
 
-    scope.tagged_with(params[:labels], any: true)
+    scope
+  end
+
+  def apply_crm_deal_context_filter(scope)
+    current_crm_deal_dialog_scope.filter_conversations(scope)
   end
 
   def apply_source_id_filter(scope)
@@ -356,6 +402,56 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     else
       scope
     end
+  end
+
+  def crm_pipeline_id
+    params[:crm_pipeline_id].presence || params[:crmPipelineId].presence
+  end
+
+  def crm_stage_id
+    params[:crm_stage_id].presence || params[:crmStageId].presence
+  end
+
+  def labels_scope_any?
+    (params[:labels_scope].presence || params[:labelsScope].presence).to_s == 'any'
+  end
+
+  def team_scope_any?
+    (params[:team_scope].presence || params[:teamScope].presence).to_s == 'any'
+  end
+
+  def conversations_with_any_label(scope)
+    scope.joins(
+      'INNER JOIN taggings conversation_any_label_taggings ' \
+      'ON conversation_any_label_taggings.taggable_id = conversations.id ' \
+      "AND conversation_any_label_taggings.taggable_type = 'Conversation' " \
+      "AND conversation_any_label_taggings.context = 'labels'"
+    ).distinct
+  end
+
+  def current_crm_deal_dialog_scope
+    crm_deal_dialog_scope(pipeline_id: crm_pipeline_id, stage_id: crm_stage_id)
+  end
+
+  def crm_deal_dialog_scope(pipeline_id: nil, stage_id: nil)
+    Crm::DealDialogScopeBuilder.new(
+      account: current_account,
+      pipeline_id: pipeline_id,
+      stage_id: stage_id
+    )
+  end
+
+  def crm_unread_count_service
+    @crm_unread_count_service ||= Crm::DealDialogUnreadCountService.new(
+      account: current_account,
+      conversation_scope: crm_unread_conversation_scope
+    )
+  end
+
+  def crm_unread_conversation_scope
+    @crm_unread_conversation_scope ||= unread_conversation_scope(
+      scoped_count_relation(include_crm_deal_context: false, include_assignee: true)
+    )
   end
 
   def current_page

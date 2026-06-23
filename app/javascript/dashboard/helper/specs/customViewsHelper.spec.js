@@ -202,6 +202,20 @@ describe('customViewsHelper', () => {
         name: 1,
       });
     });
+
+    it('should return selected CRM stage names for crm_stage_id', () => {
+      const filter = { attribute_key: 'crm_stage_id', values: [12] };
+      const params = {
+        crmStages: [
+          { id: 11, name: 'New' },
+          { id: 12, name: 'Qualified' },
+        ],
+      };
+
+      expect(getValuesForFilter(filter, params)).toEqual([
+        { id: 12, name: 'Qualified' },
+      ]);
+    });
   });
 
   describe('#generateValuesForEditCustomViews', () => {
@@ -272,6 +286,25 @@ describe('customViewsHelper', () => {
         ],
       };
       expect(generateValuesForEditCustomViews(filter, params)).toEqual('1');
+    });
+
+    it('supports next filter input type names when editing saved filters', () => {
+      const filter = {
+        attribute_key: 'crm_stage_id',
+        filter_operator: 'equal_to',
+        values: [12],
+      };
+      const params = {
+        filterTypes: [
+          { attributeKey: 'crm_stage_id', inputType: 'multiSelect' },
+        ],
+        allCustomAttributes: [],
+        crmStages: [{ id: 12, name: 'Qualified' }],
+      };
+
+      expect(generateValuesForEditCustomViews(filter, params)).toEqual([
+        { id: 12, name: 'Qualified' },
+      ]);
     });
   });
 

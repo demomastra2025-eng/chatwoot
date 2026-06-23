@@ -319,7 +319,9 @@
         "AUTO_OPENED_AFTER_AGENT_REPLY": "Разговор был открыт автоматически после ответа сотрудника"
       },
       "ASSIGNEE": {
-        "DEFAULT_POLICY_ASSIGNED": "Назначен ответственный: {assigneeName}. Инициатор: Политика по умолчанию"
+        "DEFAULT_POLICY_ASSIGNED": "Назначен: {assigneeName}.",
+        "ASSIGNED_BY": "Назначен: {assigneeName}.\nИнициатор: {initiatorName}",
+        "POLICY_SYSTEM": "Система политики"
       }
     },
     "CHANGE_AGENT": "Назначенный сотрудник изменен",

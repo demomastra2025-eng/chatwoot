@@ -9,6 +9,7 @@ import {
   getOutboundCallState,
 } from 'dashboard/stores/whatsappCalls';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   clearPreparedInboundAgentAnswer,
   handleAgentOffer,
@@ -21,6 +22,7 @@ import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 
 let audioNotificationHelperPromise;
 const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 250;
+const CRM_PIPELINES_REFRESH_DELAY = 500;
 
 const getAudioNotificationHelper = () => {
   audioNotificationHelperPromise ||= import(
@@ -50,6 +52,9 @@ class ActionCableConnector extends BaseActionCableConnector {
     this.sidebarUnreadCountsRefreshTimer = null;
     this.isSidebarUnreadCountsRefreshInFlight = false;
     this.hasQueuedSidebarUnreadCountsRefresh = false;
+    this.crmPipelinesRefreshTimer = null;
+    this.isCrmPipelinesRefreshInFlight = false;
+    this.hasQueuedCrmPipelinesRefresh = false;
     this.events = {
       'message.created': this.onMessageCreated,
       'message.updated': this.onMessageUpdated,
@@ -129,9 +134,10 @@ class ActionCableConnector extends BaseActionCableConnector {
     handleSessionReplaced(data);
   };
 
-  // eslint-disable-next-line class-methods-use-this
   onCrmDealRealtimeEvent = (event, data) => {
     emitter.emit(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, { event, ...data });
+    this.fetchSidebarUnreadCounts();
+    this.fetchCrmPipelines();
   };
 
   onMessageUpdated = data => {
@@ -280,6 +286,34 @@ class ActionCableConnector extends BaseActionCableConnector {
         if (this.hasQueuedSidebarUnreadCountsRefresh) {
           this.hasQueuedSidebarUnreadCountsRefresh = false;
           this.fetchSidebarUnreadCounts();
+        }
+      });
+  };
+
+  fetchCrmPipelines = () => {
+    if (this.crmPipelinesRefreshTimer) return;
+
+    if (this.isCrmPipelinesRefreshInFlight) {
+      this.hasQueuedCrmPipelinesRefresh = true;
+      return;
+    }
+
+    this.crmPipelinesRefreshTimer = setTimeout(() => {
+      this.crmPipelinesRefreshTimer = null;
+      this.dispatchCrmPipelinesRefresh();
+    }, CRM_PIPELINES_REFRESH_DELAY);
+  };
+
+  dispatchCrmPipelinesRefresh = () => {
+    this.isCrmPipelinesRefreshInFlight = true;
+    Promise.resolve()
+      .then(() => useCrmReferencesStore().loadPipelines())
+      .catch(() => {})
+      .finally(() => {
+        this.isCrmPipelinesRefreshInFlight = false;
+        if (this.hasQueuedCrmPipelinesRefresh) {
+          this.hasQueuedCrmPipelinesRefresh = false;
+          this.fetchCrmPipelines();
         }
       });
   };

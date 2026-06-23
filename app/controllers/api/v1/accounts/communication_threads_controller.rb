@@ -30,6 +30,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @communication_threads = result[:communication_threads]
     @communication_threads_count = result[:count]
     preload_accessible_links(@communication_threads)
+    preload_crm_deal_stages(@communication_threads)
   end
 
   def meta
@@ -38,8 +39,23 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     render json: { meta: result[:count] }
   end
 
+  def filter
+    result = CommunicationThreads::FilterService.new(params.permit!, Current.user, Current.account).perform
+    @communication_threads = result[:communication_threads]
+    @communication_threads_count = result[:count]
+    preload_accessible_links(@communication_threads)
+    preload_crm_deal_stages(@communication_threads)
+    render :index
+  rescue CustomExceptions::CustomFilter::InvalidAttribute,
+         CustomExceptions::CustomFilter::InvalidOperator,
+         CustomExceptions::CustomFilter::InvalidQueryOperator,
+         CustomExceptions::CustomFilter::InvalidValue => e
+    render_could_not_create_error(e.message)
+  end
+
   def show
     preload_accessible_links([@communication_thread], include_unlinked: true)
+    preload_crm_deal_stages([@communication_thread])
   end
 
   def update
@@ -49,6 +65,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       accessible_links: accessible_links_for(@communication_thread)
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
+    preload_crm_deal_stages([@communication_thread])
     render :show
   end
 
@@ -119,6 +136,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       accessible_links: accessible_links_for(@communication_thread)
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
+    preload_crm_deal_stages([@communication_thread])
     render :message
   end
 
@@ -130,6 +148,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       accessible_links: accessible_links_for(@communication_thread)
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
+    preload_crm_deal_stages([@communication_thread])
     render :show
   end
 
@@ -334,6 +353,11 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       ).perform
     end
     preload_last_public_messages_by_thread
+  end
+
+  def preload_crm_deal_stages(communication_threads)
+    @crm_deal_stages_by_communication_thread_id =
+      Crm::DealDialogStageContextBuilder.new(account: Current.account).for_communication_threads(communication_threads)
   end
 
   def preload_last_public_messages_by_thread

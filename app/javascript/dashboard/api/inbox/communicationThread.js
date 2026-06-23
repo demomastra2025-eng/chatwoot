@@ -7,7 +7,19 @@ class CommunicationThreadApi extends ApiClient {
     super('communication_threads', { accountScoped: true });
   }
 
-  get({ inboxId, status, assigneeType, page, labels, teamId, sortBy } = {}) {
+  get({
+    inboxId,
+    status,
+    assigneeType,
+    page,
+    labels,
+    teamId,
+    sortBy,
+    crmPipelineId,
+    crmStageId,
+    labelsScope,
+    teamScope,
+  } = {}) {
     return axios.get(this.url, {
       params: {
         inbox_id: inboxId,
@@ -17,11 +29,26 @@ class CommunicationThreadApi extends ApiClient {
         labels,
         team_id: teamId,
         sort_by: sortBy,
+        crm_pipeline_id: crmPipelineId,
+        crm_stage_id: crmStageId,
+        labels_scope: labelsScope,
+        team_scope: teamScope,
       },
     });
   }
 
-  meta({ inboxId, status, assigneeType, labels, teamId, sortBy } = {}) {
+  meta({
+    inboxId,
+    status,
+    assigneeType,
+    labels,
+    teamId,
+    sortBy,
+    crmPipelineId,
+    crmStageId,
+    labelsScope,
+    teamScope,
+  } = {}) {
     return axios.get(`${this.url}/meta`, {
       params: {
         inbox_id: inboxId,
@@ -30,6 +57,22 @@ class CommunicationThreadApi extends ApiClient {
         labels,
         team_id: teamId,
         sort_by: sortBy,
+        crm_pipeline_id: crmPipelineId,
+        crm_stage_id: crmStageId,
+        labels_scope: labelsScope,
+        team_scope: teamScope,
+      },
+    });
+  }
+
+  filter(payload) {
+    return axios.post(`${this.url}/filter`, payload.queryData, {
+      params: {
+        page: payload.page,
+        crm_pipeline_id: payload.crmPipelineId || payload.crm_pipeline_id,
+        crm_stage_id: payload.crmStageId || payload.crm_stage_id,
+        labels_scope: payload.labelsScope || payload.labels_scope,
+        team_scope: payload.teamScope || payload.team_scope,
       },
     });
   }

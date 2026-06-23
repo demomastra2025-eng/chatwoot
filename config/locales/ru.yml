@@ -252,15 +252,15 @@ ru:
         removed: "%{user_name} удалил приоритет"
       assignee:
         self_assigned: "%{user_name} назначил(а) разговор себе"
-        assigned: "Назначен ответственный: %{assignee_name}. Инициатор: %{user_name}"
+        assigned: "Назначен: %{assignee_name}.\nИнициатор: %{user_name}"
         removed: Ответственный снят %{user_name}
       team:
         assigned: "%{user_name} назначил %{team_name} ответственным"
         assigned_with_assignee: "%{user_name} назначил %{assignee_name} в %{team_name}"
         removed: "%{user_name} исключил из %{team_name}"
       labels:
-        added: "%{user_name} добавил %{labels}"
-        removed: "%{user_name} удалил %{labels}"
+        added: "%{user_name} добавил тег: %{labels}"
+        removed: "%{user_name} удалил тег: %{labels}"
       sla:
         added: "%{user_name} добавил политику SLA %{sla_name}"
         removed: "%{user_name} удалил политику SLA %{sla_name}"
@@ -792,4 +792,4 @@ ru:
           - "© 2026 ИП «Veritas Consult» (VConsult)"
   auto_assignment:
     default_policy_name: Политика по умолчанию
-    policy_actor: Система автоматизации через %{policy_name}
+    policy_actor: Система политики

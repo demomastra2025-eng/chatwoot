@@ -381,6 +381,7 @@
     "CONTACTS": "Contacts",
     "CRM": "CRM",
     "PIPELINES": "Pipelines",
+    "DEFAULT_PIPELINE": "Main",
     "CRM_DEALS": "Deals",
     "CRM_TASKS": "Tasks",
     "CRM_TASK_SETTINGS": "Task settings",
@@ -452,6 +453,7 @@
     "ONGOING": "Ongoing",
     "ONE_OFF": "One off",
     "REPORTS_SLA": "SLA",
+    "REPORTS_DEALS": "Deals",
     "REPORTS_BOT": "Bot",
     "REPORTS_AGENT": "Agents",
     "REPORTS_LABEL": "Tags",
@@ -1028,7 +1030,33 @@
     },
     "TABS": {
       "CLOSURE": "Conversation closure",
+      "VISIBILITY": "Visibility",
       "SLA": "SLA"
+    },
+    "VISIBILITY": {
+      "HEADER": {
+        "TITLE": "Conversation visibility",
+        "DESCRIPTION": "Choose which conversation navigation groups are shown in the sidebar."
+      },
+      "SECTIONS": {
+        "ASSIGNEE": "Ownership",
+        "STATUSES": "Statuses",
+        "PIPELINE": "Conversation pipelines",
+        "ORGANIZATION": "Organization"
+      },
+      "DESCRIPTIONS": {
+        "ASSIGNEE": "Show or hide All, Mine, and Unassigned conversation scopes.",
+        "STATUSES": "Show or hide status navigation. Statuses are hidden by default.",
+        "PIPELINE": "Show or hide conversation filters by the general pipeline, AI pipeline, and their stages.",
+        "ORGANIZATION": "Show or hide custom views, teams, and tags."
+      },
+      "ITEMS": {
+        "STATUSES": "Status group"
+      },
+      "SAVE": {
+        "BUTTON": "Save visibility",
+        "SUCCESS": "Conversation visibility updated"
+      }
     },
     "REQUIRED_ATTRIBUTES": {
       "TITLE": "Additional fields required on closure",

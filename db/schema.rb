@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_22_110000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_23_193000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1265,10 +1265,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_22_110000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "position", default: 0, null: false
+    t.bigint "originating_communication_thread_id"
     t.index ["account_id", "company_id"], name: "index_crm_deals_on_account_company"
     t.index ["account_id", "expected_close_on", "updated_at", "id"], name: "index_crm_deals_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
     t.index ["account_id", "external_ref"], name: "index_crm_deals_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "index_crm_deals_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "originating_communication_thread_id"], name: "index_crm_deals_on_account_originating_thread"
     t.index ["account_id", "originating_conversation_id"], name: "index_crm_deals_on_account_originating_conversation"
     t.index ["account_id", "pipeline_id", "stage_id", "owner_id", "expected_close_on"], name: "index_crm_deals_on_active_list_dimensions", where: "(archived_at IS NULL)"
     t.index ["account_id", "stage_id", "position", "id"], name: "index_crm_deals_on_account_stage_position"
@@ -1277,6 +1279,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_22_110000) do
     t.index ["company_id"], name: "index_crm_deals_on_company_id"
     t.index ["creator_id"], name: "index_crm_deals_on_creator_id"
     t.index ["custom_attributes"], name: "index_crm_deals_on_custom_attributes", using: :gin
+    t.index ["originating_communication_thread_id"], name: "index_crm_deals_on_originating_communication_thread_id"
     t.index ["originating_conversation_id"], name: "index_crm_deals_on_originating_conversation_id"
     t.index ["owner_id"], name: "index_crm_deals_on_owner_id"
     t.index ["pipeline_id"], name: "index_crm_deals_on_pipeline_id"
@@ -1326,6 +1329,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_22_110000) do
     t.boolean "default", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "auto_create_deal_on_channel_contact", default: false, null: false
     t.index ["account_id", "code"], name: "index_crm_pipelines_on_account_id_and_code", unique: true
     t.index ["account_id"], name: "index_crm_pipelines_on_account_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["account_id"], name: "index_crm_pipelines_on_account_id"
@@ -1341,7 +1345,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_22_110000) do
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.string "color", default: "#F0F0F3", null: false
+    t.string "color", default: "#E11D48", null: false
     t.boolean "default", default: false, null: false
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
@@ -2850,6 +2854,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_22_110000) do
   add_foreign_key "crm_deal_contacts", "contacts"
   add_foreign_key "crm_deal_contacts", "crm_deals", column: "deal_id"
   add_foreign_key "crm_deals", "accounts"
+  add_foreign_key "crm_deals", "communication_threads", column: "originating_communication_thread_id"
   add_foreign_key "crm_deals", "companies"
   add_foreign_key "crm_deals", "conversations", column: "originating_conversation_id"
   add_foreign_key "crm_deals", "crm_pipelines", column: "pipeline_id"

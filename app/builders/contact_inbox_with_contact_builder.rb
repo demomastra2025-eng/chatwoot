@@ -14,6 +14,7 @@ class ContactInboxWithContactBuilder
   end
 
   def find_or_create_contact_and_contact_inbox
+    @created_contact = false
     @contact_inbox = inbox.contact_inboxes.find_by(source_id: source_id) if source_id.present?
     if @contact_inbox
       upsert_channel_profile
@@ -70,6 +71,7 @@ class ContactInboxWithContactBuilder
     )
     contact.skip_runtime_events = skip_runtime_events
     contact.save!
+    @created_contact = true
     contact
   end
 

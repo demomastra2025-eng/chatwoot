@@ -46,7 +46,48 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
     expect(response.parsed_body.dig('payload', 'originating_conversation_display_id')).to eq(conversation.display_id)
+    expect(response.parsed_body.dig('payload', 'originating_communication_thread_id')).to be_nil
     expect(response.parsed_body.dig('payload', 'primary_contact_id')).to eq(contact.id)
+  end
+
+  it 'creates a deal from a communication thread display id and binds the thread contact' do
+    contact = create(:contact, :with_email, account: account)
+    communication_thread = create(:communication_thread, account: account, contact: contact)
+
+    post path,
+         params: {
+           title: 'Deal from communication thread panel',
+           originating_communication_thread_id: communication_thread.display_id
+         },
+         headers: headers,
+         as: :json
+
+    deal = account.crm_deals.find(response.parsed_body.dig('payload', 'id'))
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'originating_communication_thread_id')).to eq(communication_thread.id)
+    expect(response.parsed_body.dig('payload', 'originating_communication_thread_display_id')).to eq(communication_thread.display_id)
+    expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to be_nil
+    expect(response.parsed_body.dig('payload', 'primary_contact_id')).to eq(contact.id)
+    expect(deal.deal_contacts.find_by(contact_id: contact.id)&.primary).to be(true)
+  end
+
+  it 'rejects conflicting conversation and communication thread contacts' do
+    conversation = create(:conversation, account: account, contact: create(:contact, account: account))
+    communication_thread = create(:communication_thread, account: account, contact: create(:contact, account: account))
+
+    post path,
+         params: {
+           title: 'Invalid source context',
+           originating_conversation_id: conversation.display_id,
+           originating_communication_thread_id: communication_thread.display_id
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
+    expect(response.parsed_body.dig('details', 'originating_communication_thread_id')).to be_present
   end
 
   it 'creates a standalone deal without contacts or company' do
@@ -367,5 +408,42 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
     expect(response.parsed_body.dig('payload', 0, 'id')).to eq(matching_deal.id)
     expect(response.parsed_body.dig('payload', 0, 'originating_conversation_display_id')).to eq(conversation.display_id)
+  end
+
+  it 'filters deals by originating communication thread display id' do
+    communication_thread = create(:communication_thread, account: account)
+    matching_deal = create(
+      :crm_deal,
+      account: account,
+      originating_communication_thread: communication_thread
+    )
+    create(:crm_deal, account: account)
+
+    get path,
+        params: { originating_communication_thread_id: communication_thread.display_id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 0, 'id')).to eq(matching_deal.id)
+    expect(response.parsed_body.dig('payload', 0, 'originating_communication_thread_display_id')).to eq(communication_thread.display_id)
+  end
+
+  it 'filters deals by linked contact across conversation sources' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    matching_deal = create(:crm_deal, account: account, originating_conversation: conversation)
+    create(:crm_deal_contact, account: account, deal: matching_deal, contact: contact, primary: true)
+    create(:crm_deal, account: account)
+
+    get path,
+        params: { contact_id: contact.id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 0, 'id')).to eq(matching_deal.id)
   end
 end

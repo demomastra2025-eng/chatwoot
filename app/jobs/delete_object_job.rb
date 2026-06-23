@@ -8,25 +8,47 @@ class DeleteObjectJob < ApplicationJob
 
     mark_pending_deletion(object)
     teardown_remote_dependencies(object)
+    destroy_with_prepared_dependencies(object)
+    process_post_deletion_tasks(object, user, ip, deletion_context)
+  end
+
+  def process_post_deletion_tasks(_object, _user, _ip, deletion_context = {})
+    cleanup_empty_communication_threads(deletion_context[:communication_thread_ids])
+  end
+
+  private
+
+  def destroy_with_prepared_dependencies(object)
+    if object.is_a?(Conversation)
+      object.class.transaction do
+        prepare_telephony_dependencies(object)
+        object.destroy!
+      end
+      return
+    end
+
     prepare_telephony_dependencies(object)
 
     # Pre-purge heavy associations for large objects to avoid
     # timeouts & race conditions due to destroy_async fan-out.
     purge_heavy_associations(object)
     object.destroy!
-    process_post_deletion_tasks(object, user, ip, deletion_context)
   end
 
-  def process_post_deletion_tasks(object, user, ip, deletion_context = {}); end
-
-  private
-
   def build_post_deletion_context(object)
-    return {} unless object.is_a?(Inbox)
-
-    {
-      channel_medium: object.channel.try(:medium)
-    }.compact
+    case object
+    when Inbox
+      {
+        channel_medium: object.channel.try(:medium),
+        communication_thread_ids: communication_thread_ids_for_conversations(object.conversations.select(:id))
+      }.compact
+    when Conversation
+      {
+        communication_thread_ids: communication_thread_ids_for_conversations(object.id)
+      }.compact
+    else
+      {}
+    end
   end
 
   def heavy_associations
@@ -49,13 +71,10 @@ class DeleteObjectJob < ApplicationJob
 
   def teardown_remote_dependencies(object)
     return unless object.is_a?(Inbox)
-    return unless object.whatsapp_web? || object.telegram_personal?
+    return object.channel&.teardown_provider_instance! if object.whatsapp_web?
+    return object.channel&.teardown_runtime! if object.telegram_personal?
 
-    if object.whatsapp_web?
-      object.channel&.teardown_provider_instance!
-    elsif object.telegram_personal?
-      object.channel&.teardown_runtime!
-    end
+    nil
   end
 
   def prepare_telephony_dependencies(object)
@@ -90,6 +109,7 @@ class DeleteObjectJob < ApplicationJob
   def prepare_conversation_dependencies(conversation_ids)
     message_ids = Message.where(conversation_id: conversation_ids).select(:id)
 
+    delete_communication_thread_links(conversation_ids)
     nullify_records(Reminder.where(conversation_id: conversation_ids), conversation_id: nil)
     nullify_records(Reminder.where(target_conversation_id: conversation_ids), target_conversation_id: nil)
     nullify_records(Reminder.where(remindable_type: 'Conversation', remindable_id: conversation_ids), remindable_type: nil, remindable_id: nil)
@@ -99,6 +119,43 @@ class DeleteObjectJob < ApplicationJob
     nullify_records(Crm::Deal.where(originating_conversation_id: conversation_ids), originating_conversation_id: nil)
     nullify_records(Crm::Task.where(originating_conversation_id: conversation_ids), originating_conversation_id: nil)
     nullify_records(Scheduling::Appointment.where(conversation_id: conversation_ids), conversation_id: nil)
+    nullify_records(AssignmentQuotaUsage.where(conversation_id: conversation_ids), conversation_id: nil)
+    delete_assignment_decision_logs(conversation_ids)
+  end
+
+  def communication_thread_ids_for_conversations(conversation_ids)
+    ids = CommunicationThreadConversation
+          .where(conversation_id: conversation_ids)
+          .distinct
+          .pluck(:communication_thread_id)
+
+    ids.presence
+  end
+
+  def cleanup_empty_communication_threads(thread_ids)
+    Array(thread_ids).compact.each_slice(BATCH_SIZE) do |ids|
+      CommunicationThread.where(id: ids).find_each do |thread|
+        next if thread.communication_thread_conversations.exists?
+
+        nullify_records(
+          Crm::Deal.where(originating_communication_thread_id: thread.id),
+          originating_communication_thread_id: nil
+        )
+        thread.destroy!
+      end
+    end
+  end
+
+  def delete_communication_thread_links(conversation_ids)
+    CommunicationThreadConversation
+      .where(conversation_id: conversation_ids)
+      .in_batches(of: BATCH_SIZE, &:delete_all)
+  end
+
+  def delete_assignment_decision_logs(conversation_ids)
+    AssignmentDecisionLog
+      .where(conversation_id: conversation_ids)
+      .in_batches(of: BATCH_SIZE, &:delete_all)
   end
 
   def nullify_records(relation, assignments)

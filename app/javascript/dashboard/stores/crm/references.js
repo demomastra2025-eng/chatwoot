@@ -18,13 +18,39 @@ const defaultUi = () => ({
   isSaving: false,
 });
 
+const TERMINAL_STAGE_OUTCOMES = new Set(['won', 'lost']);
+
+const stageSortWeight = stage =>
+  TERMINAL_STAGE_OUTCOMES.has(String(stage?.outcome || '').toLowerCase())
+    ? 1
+    : 0;
+
+const sortStages = stages =>
+  [...(stages || [])].sort(
+    (left, right) =>
+      stageSortWeight(left) - stageSortWeight(right) ||
+      Number(left.position ?? 0) - Number(right.position ?? 0) ||
+      Number(left.id ?? 0) - Number(right.id ?? 0)
+  );
+
 const upsertStageInPipelines = (pipelines, stage) => {
   return pipelines.map(pipeline => {
     if (Number(pipeline.id) !== Number(stage.pipelineId)) {
       return pipeline;
     }
 
-    const nextStages = upsertRecord(pipeline.stages || [], stage).map(item => {
+    const existingStage = (pipeline.stages || []).find(
+      item => Number(item.id) === Number(stage.id)
+    );
+    const stageWithCounters = {
+      ...stage,
+      dealCount: stage.dealCount ?? existingStage?.dealCount ?? 0,
+    };
+
+    const nextStages = upsertRecord(
+      pipeline.stages || [],
+      stageWithCounters
+    ).map(item => {
       if (!stage.default || Number(item.id) === Number(stage.id)) {
         return item;
       }
@@ -34,7 +60,7 @@ const upsertStageInPipelines = (pipelines, stage) => {
 
     return {
       ...pipeline,
-      stages: nextStages.sort((left, right) => left.position - right.position),
+      stages: sortStages(nextStages),
     };
   });
 };
@@ -47,9 +73,7 @@ const removeStageFromPipelines = (pipelines, stage) => {
 
     return {
       ...pipeline,
-      stages: removeRecord(pipeline.stages || [], stage.id).sort(
-        (left, right) => left.position - right.position
-      ),
+      stages: sortStages(removeRecord(pipeline.stages || [], stage.id)),
     };
   });
 };

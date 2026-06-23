@@ -23,9 +23,13 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
   def create
     authorize ::Crm::Pipeline
 
-    pipeline = Current.account.crm_pipelines.new(pipeline_params)
-    pipeline.position = nil unless params.key?(:position)
-    pipeline.save!
+    pipeline = nil
+    ApplicationRecord.transaction do
+      pipeline = Current.account.crm_pipelines.new(pipeline_params)
+      pipeline.position = nil unless params.key?(:position)
+      pipeline.save!
+      ::Crm::Pipelines::DefaultStageBuilder.new(pipeline: pipeline).perform
+    end
 
     render_payload(::Crm::PayloadBuilder.pipeline(pipeline.reload), status: :created)
   end
@@ -53,7 +57,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
   end
 
   def pipeline_params
-    params.permit(:name, :code, :position, :active, :default)
+    params.permit(:name, :code, :position, :active, :default, :auto_create_deal_on_channel_contact)
   end
 
   def include_inactive_stages?

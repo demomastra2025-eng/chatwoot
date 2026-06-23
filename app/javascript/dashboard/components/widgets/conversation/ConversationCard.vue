@@ -115,6 +115,18 @@ const truncateInlineMetaText = value => {
 const contactDisplayName = computed(() =>
   truncateInlineMetaText(currentContact.value.name)
 );
+const crmDealStages = computed(() => {
+  const stages = props.chat.crm_deal_stages || props.chat.crmDealStages || [];
+  return Array.isArray(stages)
+    ? stages
+        .filter(stage => stage?.color)
+        .map(stage => ({
+          id: stage.id,
+          name: stage.name,
+          color: stage.color,
+        }))
+    : [];
+});
 
 const cardMatchesListMode = computed(
   () =>
@@ -417,6 +429,20 @@ const togglePinnedConversation = async nextPinnedState => {
     @click="onCardClick"
     @contextmenu="openContextMenu($event)"
   >
+    <span
+      v-if="crmDealStages.length"
+      data-test-id="conversation-crm-stage-accents"
+      class="absolute bottom-0 left-0 top-0 z-[1] flex"
+      aria-hidden="true"
+    >
+      <span
+        v-for="stage in crmDealStages"
+        :key="stage.id"
+        class="w-0.5"
+        :title="stage.name"
+        :style="{ backgroundColor: stage.color }"
+      />
+    </span>
     <div
       class="relative flex w-10 flex-shrink-0 flex-col items-center"
       @mouseenter="onThumbnailHover"

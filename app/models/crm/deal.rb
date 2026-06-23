@@ -2,56 +2,60 @@
 #
 # Table name: crm_deals
 #
-#  id                          :bigint           not null, primary key
-#  amount_minor                :bigint
-#  archived_at                 :datetime
-#  closed_at                   :datetime
-#  currency                    :string
-#  custom_attributes           :jsonb            not null
-#  description                 :text
-#  expected_close_on           :date
-#  external_ref                :string
-#  idempotency_key             :string
-#  lock_version                :integer          default(0), not null
-#  position                    :integer          default(0), not null
-#  title                       :string           not null
-#  win_probability             :integer
-#  created_at                  :datetime         not null
-#  updated_at                  :datetime         not null
-#  account_id                  :bigint           not null
-#  company_id                  :bigint
-#  creator_id                  :bigint
-#  originating_conversation_id :bigint
-#  owner_id                    :bigint
-#  pipeline_id                 :bigint           not null
-#  stage_id                    :bigint           not null
-#  team_id                     :bigint
+#  id                                  :bigint           not null, primary key
+#  amount_minor                        :bigint
+#  archived_at                         :datetime
+#  closed_at                           :datetime
+#  currency                            :string
+#  custom_attributes                   :jsonb            not null
+#  description                         :text
+#  expected_close_on                   :date
+#  external_ref                        :string
+#  idempotency_key                     :string
+#  lock_version                        :integer          default(0), not null
+#  position                            :integer          default(0), not null
+#  title                               :string           not null
+#  win_probability                     :integer
+#  created_at                          :datetime         not null
+#  updated_at                          :datetime         not null
+#  account_id                          :bigint           not null
+#  company_id                          :bigint
+#  creator_id                          :bigint
+#  originating_communication_thread_id :bigint
+#  originating_conversation_id         :bigint
+#  owner_id                            :bigint
+#  pipeline_id                         :bigint           not null
+#  stage_id                            :bigint           not null
+#  team_id                             :bigint
 #
 # Indexes
 #
-#  index_crm_deals_on_account_company                   (account_id,company_id)
-#  index_crm_deals_on_account_external_ref              (account_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
-#  index_crm_deals_on_account_id                        (account_id)
-#  index_crm_deals_on_account_idempotency_key           (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
-#  index_crm_deals_on_account_originating_conversation  (account_id,originating_conversation_id)
-#  index_crm_deals_on_account_stage_position            (account_id,stage_id,position,id)
-#  index_crm_deals_on_account_team                      (account_id,team_id)
-#  index_crm_deals_on_active_list_dimensions            (account_id,pipeline_id,stage_id,owner_id,expected_close_on) WHERE (archived_at IS NULL)
-#  index_crm_deals_on_active_ordering                   (account_id,expected_close_on,updated_at DESC,id DESC) WHERE (archived_at IS NULL)
-#  index_crm_deals_on_company_id                        (company_id)
-#  index_crm_deals_on_creator_id                        (creator_id)
-#  index_crm_deals_on_custom_attributes                 (custom_attributes) USING gin
-#  index_crm_deals_on_originating_conversation_id       (originating_conversation_id)
-#  index_crm_deals_on_owner_id                          (owner_id)
-#  index_crm_deals_on_pipeline_id                       (pipeline_id)
-#  index_crm_deals_on_stage_id                          (stage_id)
-#  index_crm_deals_on_team_id                           (team_id)
+#  index_crm_deals_on_account_company                      (account_id,company_id)
+#  index_crm_deals_on_account_external_ref                 (account_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
+#  index_crm_deals_on_account_id                           (account_id)
+#  index_crm_deals_on_account_idempotency_key              (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
+#  index_crm_deals_on_account_originating_conversation     (account_id,originating_conversation_id)
+#  index_crm_deals_on_account_originating_thread           (account_id,originating_communication_thread_id)
+#  index_crm_deals_on_account_stage_position               (account_id,stage_id,position,id)
+#  index_crm_deals_on_account_team                         (account_id,team_id)
+#  index_crm_deals_on_active_list_dimensions               (account_id,pipeline_id,stage_id,owner_id,expected_close_on) WHERE (archived_at IS NULL)
+#  index_crm_deals_on_active_ordering                      (account_id,expected_close_on,updated_at DESC,id DESC) WHERE (archived_at IS NULL)
+#  index_crm_deals_on_company_id                           (company_id)
+#  index_crm_deals_on_creator_id                           (creator_id)
+#  index_crm_deals_on_custom_attributes                    (custom_attributes) USING gin
+#  index_crm_deals_on_originating_communication_thread_id  (originating_communication_thread_id)
+#  index_crm_deals_on_originating_conversation_id          (originating_conversation_id)
+#  index_crm_deals_on_owner_id                             (owner_id)
+#  index_crm_deals_on_pipeline_id                          (pipeline_id)
+#  index_crm_deals_on_stage_id                             (stage_id)
+#  index_crm_deals_on_team_id                              (team_id)
 #
 # Foreign Keys
 #
 #  fk_rails_...  (account_id => accounts.id)
 #  fk_rails_...  (company_id => companies.id)
 #  fk_rails_...  (creator_id => users.id)
+#  fk_rails_...  (originating_communication_thread_id => communication_threads.id)
 #  fk_rails_...  (originating_conversation_id => conversations.id)
 #  fk_rails_...  (owner_id => users.id)
 #  fk_rails_...  (pipeline_id => crm_pipelines.id)
@@ -71,6 +75,7 @@ class Crm::Deal < ApplicationRecord
   belongs_to :team, class_name: '::Team', optional: true
   belongs_to :company, class_name: '::Company', optional: true
   belongs_to :originating_conversation, class_name: '::Conversation', optional: true
+  belongs_to :originating_communication_thread, class_name: '::CommunicationThread', optional: true
 
   has_many :deal_contacts,
            -> { ordered },
@@ -132,6 +137,7 @@ class Crm::Deal < ApplicationRecord
         team_id: team_id,
         company_id: company_id,
         originating_conversation_id: originating_conversation_id,
+        originating_communication_thread_id: originating_communication_thread_id,
         primary_contact_id: primary_contact_id,
         archived_at: archived_at,
         custom_attributes: custom_attributes
@@ -152,6 +158,14 @@ class Crm::Deal < ApplicationRecord
     payload[:team] = { id: team.id, name: team.name } if team.present?
     payload[:company] = { id: company.id, name: company.name, domain: company.domain } if company.present?
     payload[:conversation] = originating_conversation.webhook_data if originating_conversation.present?
+    if originating_communication_thread.present?
+      payload[:communication_thread] = {
+        id: originating_communication_thread.id,
+        display_id: originating_communication_thread.display_id,
+        contact_id: originating_communication_thread.contact_id,
+        status: originating_communication_thread.status
+      }
+    end
     payload[:contacts] = contacts.map(&:webhook_data) if contacts.exists?
 
     payload
@@ -196,6 +210,7 @@ class Crm::Deal < ApplicationRecord
     validate_account_match(:team, team)
     validate_account_match(:company, company)
     validate_account_match(:originating_conversation, originating_conversation)
+    validate_account_match(:originating_communication_thread, originating_communication_thread)
   end
 
   def stage_belongs_to_pipeline

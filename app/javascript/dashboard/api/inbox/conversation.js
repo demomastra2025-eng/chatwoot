@@ -16,6 +16,10 @@ class ConversationApi extends ApiClient {
     conversationType,
     sortBy,
     updatedWithin,
+    crmPipelineId,
+    crmStageId,
+    labelsScope,
+    teamScope,
   }) {
     return axios.get(this.url, {
       params: {
@@ -28,6 +32,10 @@ class ConversationApi extends ApiClient {
         conversation_type: conversationType,
         sort_by: sortBy,
         updated_within: updatedWithin,
+        crm_pipeline_id: crmPipelineId,
+        crm_stage_id: crmStageId,
+        labels_scope: labelsScope,
+        team_scope: teamScope,
       },
     });
   }
@@ -36,6 +44,10 @@ class ConversationApi extends ApiClient {
     return axios.post(`${this.url}/filter`, payload.queryData, {
       params: {
         page: payload.page,
+        crm_pipeline_id: payload.crmPipelineId || payload.crm_pipeline_id,
+        crm_stage_id: payload.crmStageId || payload.crm_stage_id,
+        labels_scope: payload.labelsScope || payload.labels_scope,
+        team_scope: payload.teamScope || payload.team_scope,
       },
     });
   }
@@ -100,7 +112,18 @@ class ConversationApi extends ApiClient {
     return axios.post(`${this.url}/${conversationId}/unmute`);
   }
 
-  meta({ inboxId, status, assigneeType, labels, teamId, conversationType }) {
+  meta({
+    inboxId,
+    status,
+    assigneeType,
+    labels,
+    teamId,
+    conversationType,
+    crmPipelineId,
+    crmStageId,
+    labelsScope,
+    teamScope,
+  }) {
     return axios.get(`${this.url}/meta`, {
       params: {
         inbox_id: inboxId,
@@ -109,6 +132,10 @@ class ConversationApi extends ApiClient {
         labels,
         team_id: teamId,
         conversation_type: conversationType,
+        crm_pipeline_id: crmPipelineId,
+        crm_stage_id: crmStageId,
+        labels_scope: labelsScope,
+        team_scope: teamScope,
       },
     });
   }

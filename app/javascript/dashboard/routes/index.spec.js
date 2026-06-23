@@ -101,7 +101,7 @@ describe('#validateAuthenticateRoutePermission', () => {
 
         expect(store.dispatch).toHaveBeenCalledWith('accounts/get');
         expect(next).toHaveBeenCalledWith(
-          '/app/accounts/1/communication_threads?status=open&assignee_type=me'
+          '/app/accounts/1/communication_threads?status=open&assignee_type=all'
         );
       });
     });
@@ -122,7 +122,7 @@ describe('#validateAuthenticateRoutePermission', () => {
         await validateAuthenticateRoutePermission(to, next);
 
         expect(next).toHaveBeenCalledWith(
-          '/app/accounts/1/communication_threads?status=open&assignee_type=me'
+          '/app/accounts/1/communication_threads?status=open&assignee_type=all'
         );
       });
 
@@ -152,7 +152,7 @@ describe('#validateAuthenticateRoutePermission', () => {
 
         expect(store.dispatch).toHaveBeenCalledWith('accounts/get');
         expect(next).toHaveBeenCalledWith(
-          '/app/accounts/1/communication_threads?status=open&assignee_type=me'
+          '/app/accounts/1/communication_threads?status=open&assignee_type=all'
         );
       });
 
@@ -171,7 +171,7 @@ describe('#validateAuthenticateRoutePermission', () => {
         await validateAuthenticateRoutePermission(to, next);
 
         expect(next).toHaveBeenCalledWith(
-          '/app/accounts/1/communication_threads?status=open&assignee_type=me'
+          '/app/accounts/1/communication_threads?status=open&assignee_type=all'
         );
       });
     });

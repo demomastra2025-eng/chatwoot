@@ -5,6 +5,8 @@ import { conversationSettingsTabs } from '../conversationSettingsTabs';
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const ConversationWorkflowIndex = () => import('./index.vue');
+const ConversationVisibilitySettings = () =>
+  import('./ConversationVisibilitySettings.vue');
 const AttributesHome = () => import('../attributes/Index.vue');
 export default {
   routes: [
@@ -35,6 +37,14 @@ export default {
           meta: {
             permissions: ['administrator'],
             featureFlag: FEATURE_FLAGS.CUSTOM_ATTRIBUTES,
+          },
+        },
+        {
+          path: 'visibility',
+          name: 'conversation_visibility_settings_index',
+          component: ConversationVisibilitySettings,
+          meta: {
+            permissions: ['administrator'],
           },
         },
       ],

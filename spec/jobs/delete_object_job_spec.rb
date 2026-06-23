@@ -171,6 +171,24 @@ RSpec.describe DeleteObjectJob, type: :job do
         deal = create(:crm_deal, account: account, originating_conversation: conversation)
         task = create(:crm_task, account: account, originating_conversation: conversation)
         appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
+        assignment_policy = create(:assignment_policy, account: account)
+        assigned_user = create(:user, account: account, role: :agent)
+        quota_usage = create(
+          :assignment_quota_usage,
+          account: account,
+          user: assigned_user,
+          contact: conversation.contact,
+          conversation: conversation,
+          assignment_policy: assignment_policy
+        )
+        decision_log = create(
+          :assignment_decision_log,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          assignment_policy: assignment_policy,
+          assigned_user: assigned_user
+        )
 
         described_class.perform_now(conversation)
 
@@ -190,6 +208,73 @@ RSpec.describe DeleteObjectJob, type: :job do
         expect(deal.reload.originating_conversation_id).to be_nil
         expect(task.reload.originating_conversation_id).to be_nil
         expect(appointment.reload.conversation_id).to be_nil
+        expect(quota_usage.reload.conversation_id).to be_nil
+        expect(AssignmentDecisionLog.exists?(decision_log.id)).to be(false)
+      end
+
+      it 'removes the empty communication thread and detaches CRM deals after destroying the last conversation' do
+        thread = create(:communication_thread, account: account, contact: conversation.contact)
+        create(
+          :communication_thread_conversation,
+          account: account,
+          communication_thread: thread,
+          conversation: conversation,
+          inbox: conversation.inbox,
+          contact_inbox: conversation.contact_inbox,
+          primary: true
+        )
+        deal = create(:crm_deal, account: account, originating_communication_thread: thread)
+
+        described_class.perform_now(conversation)
+
+        expect(CommunicationThread.exists?(thread.id)).to be(false)
+        expect(deal.reload.originating_communication_thread_id).to be_nil
+      end
+
+      it 'keeps a communication thread when other linked conversations remain' do
+        other_conversation = create(:conversation, account: account, contact: conversation.contact)
+        thread = create(:communication_thread, account: account, contact: conversation.contact)
+        create(
+          :communication_thread_conversation,
+          account: account,
+          communication_thread: thread,
+          conversation: conversation,
+          inbox: conversation.inbox,
+          contact_inbox: conversation.contact_inbox,
+          primary: true
+        )
+        create(
+          :communication_thread_conversation,
+          account: account,
+          communication_thread: thread,
+          conversation: other_conversation,
+          inbox: other_conversation.inbox,
+          contact_inbox: other_conversation.contact_inbox
+        )
+        deal = create(:crm_deal, account: account, originating_communication_thread: thread)
+
+        described_class.perform_now(conversation)
+
+        expect(CommunicationThread.exists?(thread.id)).to be(true)
+        expect(deal.reload.originating_communication_thread_id).to eq(thread.id)
+      end
+
+      it 'keeps communication thread links when conversation destruction fails' do
+        thread = create(:communication_thread, account: account, contact: conversation.contact)
+        link = create(
+          :communication_thread_conversation,
+          account: account,
+          communication_thread: thread,
+          conversation: conversation,
+          inbox: conversation.inbox,
+          contact_inbox: conversation.contact_inbox,
+          primary: true
+        )
+        allow(conversation).to receive(:destroy!).and_raise(StandardError, 'blocked deletion')
+
+        expect { described_class.perform_now(conversation) }.to raise_error(StandardError, 'blocked deletion')
+        expect(CommunicationThread.exists?(thread.id)).to be(true)
+        expect(CommunicationThreadConversation.exists?(link.id)).to be(true)
       end
     end
 

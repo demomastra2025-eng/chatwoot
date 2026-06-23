@@ -924,6 +924,144 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'keeps an outbound operator-mode call completed when the terminal payload shows the customer answered' do
+      started_at = Time.zone.parse(45.seconds.ago.iso8601)
+      answered_at = started_at + 10.seconds
+      ended_at = answered_at + 4.seconds
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'ringing',
+        started_at: started_at,
+        last_event_at: started_at,
+        to_number: '+77066318623'
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-terminal-callee-answered-1',
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          routingMode: 'operator',
+          leg: 'callee',
+          calleeLegAnswered: true,
+          targetLegAnswered: true,
+          answered_at: answered_at.iso8601,
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'remote_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        answered_at: answered_at,
+        ended_at: ended_at,
+        duration_seconds: 4
+      )
+    end
+
+    it 'repairs an early outbound no-answer terminal when a later completed event includes answer evidence' do
+      started_at = Time.zone.parse(60.seconds.ago.iso8601)
+      answered_at = started_at + 12.seconds
+      early_ended_at = started_at + 30.seconds
+      final_ended_at = answered_at + 4.seconds
+      later_event_at = Time.zone.parse(Time.current.iso8601)
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'no_answer',
+        started_at: started_at,
+        ended_at: early_ended_at,
+        ended_by: 'operator',
+        end_reason: 'operator_hangup',
+        duration_seconds: 30,
+        last_event_at: later_event_at,
+        to_number: '+77066318623'
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-no-answer-repaired-by-completed-1',
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          routingMode: 'operator',
+          leg: 'callee',
+          callee_leg_answered: true,
+          target_leg_answered: true,
+          answered_at: answered_at.iso8601,
+          occurred_at: final_ended_at.iso8601,
+          ended_at: final_ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'remote_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        answered_at: answered_at,
+        ended_at: final_ended_at,
+        ended_by: 'caller',
+        end_reason: 'remote_hangup',
+        duration_seconds: 4,
+        last_event_at: later_event_at
+      )
+    end
+
+    it 'repairs an already completed outbound terminal with a stale no-answer duration' do
+      started_at = Time.zone.parse(60.seconds.ago.iso8601)
+      answered_at = started_at + 12.seconds
+      ended_at = answered_at + 4.seconds
+      later_event_at = Time.zone.parse(Time.current.iso8601)
+      existing_call_session.update!(
+        provider: 'fonoster',
+        direction: 'outbound',
+        status: 'completed',
+        started_at: started_at,
+        answered_at: answered_at,
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'remote_hangup',
+        duration_seconds: 30,
+        last_event_at: later_event_at,
+        to_number: '+77066318623'
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-outbound-completed-duration-repaired-1',
+          provider: 'fonoster',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          routingMode: 'operator',
+          leg: 'callee',
+          callee_leg_answered: true,
+          target_leg_answered: true,
+          answered_at: answered_at.iso8601,
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'remote_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        answered_at: answered_at,
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'remote_hangup',
+        duration_seconds: 4,
+        last_event_at: later_event_at
+      )
+    end
+
     it 'keeps an outbound call completed when a customer answer event was observed before hangup' do
       started_at = Time.zone.parse(60.seconds.ago.iso8601)
       answered_at = started_at + 8.seconds

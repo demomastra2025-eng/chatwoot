@@ -181,5 +181,47 @@ describe ContactInboxWithContactBuilder do
       expect(contact_inbox.id).not_to eq(existing_contact_inbox.id)
       expect(contact_inbox.inbox_id).to eq(new_inbox.id)
     end
+
+    it 'does not auto-create a CRM deal before a conversation exists for a newly created contact' do
+      account.enable_features!('crm_deals')
+      pipeline = create(
+        :crm_pipeline,
+        account: account,
+        auto_create_deal_on_channel_contact: true
+      )
+      create(:crm_stage, account: account, pipeline: pipeline, default: true)
+
+      described_class.new(
+        source_id: 'new-channel-contact',
+        inbox: inbox,
+        contact_attributes: {
+          name: 'New Channel Contact',
+          email: 'new-channel-contact@example.com'
+        }
+      ).perform
+
+      expect(account.crm_deals.where(pipeline: pipeline)).not_to exist
+    end
+
+    it 'does not auto-create a CRM deal before a conversation exists' do
+      account.enable_features!('crm_deals')
+      pipeline = create(
+        :crm_pipeline,
+        account: account,
+        auto_create_deal_on_channel_contact: true
+      )
+      create(:crm_stage, account: account, pipeline: pipeline, default: true)
+
+      described_class.new(
+        source_id: 'existing-channel-contact',
+        inbox: inbox,
+        contact_attributes: {
+          name: 'Contact',
+          email: contact.email
+        }
+      ).perform
+
+      expect(account.crm_deals.joins(:deal_contacts).where(crm_deal_contacts: { contact_id: contact.id })).not_to exist
+    end
   end
 end

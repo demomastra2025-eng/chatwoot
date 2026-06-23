@@ -190,6 +190,7 @@ const openHeaderAction = async action => {
             :to="child.to"
             :header-active="isSubGroupHeaderActive(child)"
             :badge="child.badge"
+            :count="child.count"
             :action-label="child.actionLabel"
             :action-to="child.actionTo"
             :action-title="child.actionTitle"

@@ -319,7 +319,9 @@
         "AUTO_OPENED_AFTER_AGENT_REPLY": "Conversation was marked open automatically after an agent reply"
       },
       "ASSIGNEE": {
-        "DEFAULT_POLICY_ASSIGNED": "Default policy assigned {assigneeName} as responsible"
+        "DEFAULT_POLICY_ASSIGNED": "Assigned: {assigneeName}.",
+        "ASSIGNED_BY": "Assigned: {assigneeName}.\nInitiator: {initiatorName}",
+        "POLICY_SYSTEM": "Policy system"
       }
     },
     "CHANGE_AGENT": "Conversation Assignee changed",

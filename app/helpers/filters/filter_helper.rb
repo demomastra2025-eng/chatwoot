@@ -35,6 +35,8 @@ module Filters::FilterHelper
     case current_filter['attribute_type']
     when 'additional_attributes'
       handle_additional_attributes(query_hash, filter_operator_value, current_filter['data_type'])
+    when 'crm_deal_context'
+      crm_deal_context_filter_query(query_hash, current_index)
     else
       handle_standard_attributes(current_filter, query_hash, current_index, filter_operator_value)
     end
