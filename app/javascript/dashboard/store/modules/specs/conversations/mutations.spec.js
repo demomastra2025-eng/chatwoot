@@ -945,6 +945,53 @@ describe('#mutations', () => {
       ]);
     });
 
+    it('replaces a pending communication thread message when fetched server message has the same echo_id', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 321,
+            is_communication_thread: true,
+            messages: [
+              {
+                id: 'temp-echo-id',
+                echo_id: 'temp-echo-id',
+                status: 'progress',
+                content: 'hello',
+                created_at: 10,
+              },
+            ],
+            channels: [],
+          },
+        ],
+      };
+
+      mutations[types.SET_PREVIOUS_CONVERSATIONS](state, {
+        id: 321,
+        conversationType: 'communication_thread',
+        data: [
+          {
+            id: 393095,
+            echo_id: 'temp-echo-id',
+            status: 'read',
+            content: 'hello',
+            created_at: 10,
+            source_id: 'wamid.example',
+          },
+        ],
+      });
+
+      expect(state.allConversations[0].messages).toEqual([
+        {
+          id: 393095,
+          echo_id: 'temp-echo-id',
+          status: 'read',
+          content: 'hello',
+          created_at: 10,
+          source_id: 'wamid.example',
+        },
+      ]);
+    });
+
     it('updates the typed communication thread when a same-id conversation is present first', () => {
       const conversation = { id: 3, messages: [{ id: 'conversation-old' }] };
       const thread = {

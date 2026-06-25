@@ -41,7 +41,7 @@ export class DataManager {
   async replace({ modelName, data }) {
     this.validateModel(modelName);
 
-    this.db.clear(modelName);
+    await this.db.clear(modelName);
     return this.push({ modelName, data });
   }
 
@@ -65,9 +65,11 @@ export class DataManager {
   }
 
   async setCacheKeys(cacheKeys) {
-    Object.keys(cacheKeys).forEach(async modelName => {
-      this.db.put('cache-keys', cacheKeys[modelName], modelName);
-    });
+    await Promise.all(
+      Object.keys(cacheKeys).map(modelName =>
+        this.db.put('cache-keys', cacheKeys[modelName], modelName)
+      )
+    );
   }
 
   async getCacheKey(modelName) {

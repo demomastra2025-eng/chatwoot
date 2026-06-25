@@ -1,4 +1,7 @@
-import { CONVERSATION_PRIORITY_ORDER } from 'shared/constants/messages';
+import {
+  CONVERSATION_PRIORITY_ORDER,
+  MESSAGE_TYPE,
+} from 'shared/constants/messages';
 
 export const findPendingMessageIndex = (chat, message) => {
   const { echo_id: tempMessageId } = message;
@@ -137,8 +140,11 @@ export const applyRoleFilter = (
 };
 
 const SORT_OPTIONS = {
-  last_activity_at_asc: ['sortOnLastActivityAt', 'asc'],
-  last_activity_at_desc: ['sortOnLastActivityAt', 'desc'],
+  last_activity_at_asc: ['sortOnLastMessageAt', 'asc'],
+  last_activity_at_desc: ['sortOnLastMessageAt', 'desc'],
+  last_event_activity_at_asc: ['sortOnLastActivityAt', 'asc'],
+  last_event_activity_at_desc: ['sortOnLastActivityAt', 'desc'],
+  latest: ['sortOnLastMessageAt', 'desc'],
   created_at_asc: ['sortOnCreatedAt', 'asc'],
   created_at_desc: ['sortOnCreatedAt', 'desc'],
   priority_asc: ['sortOnPriority', 'asc'],
@@ -150,10 +156,41 @@ const SORT_OPTIONS = {
 const sortAscending = (valueA, valueB) => valueA - valueB;
 const sortDescending = (valueA, valueB) => valueB - valueA;
 
+const getLastNonActivityMessage = conversation => {
+  const apiMessage =
+    conversation.last_non_activity_message ||
+    conversation.lastNonActivityMessage;
+
+  if (apiMessage?.created_at) {
+    return apiMessage;
+  }
+
+  const messages = Array.isArray(conversation.messages)
+    ? conversation.messages
+    : [];
+
+  return [...messages]
+    .reverse()
+    .find(
+      message =>
+        message.message_type !== MESSAGE_TYPE.ACTIVITY && !message.private
+    );
+};
+
+const lastMessageAt = conversation => {
+  return (
+    getLastNonActivityMessage(conversation)?.created_at ||
+    conversation.created_at
+  );
+};
+
 const getSortOrderFunction = sortOrder =>
   sortOrder === 'asc' ? sortAscending : sortDescending;
 
 const sortConfig = {
+  sortOnLastMessageAt: (a, b, sortDirection) =>
+    getSortOrderFunction(sortDirection)(lastMessageAt(a), lastMessageAt(b)),
+
   sortOnLastActivityAt: (a, b, sortDirection) =>
     getSortOrderFunction(sortDirection)(a.last_activity_at, b.last_activity_at),
 

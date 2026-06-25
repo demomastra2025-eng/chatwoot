@@ -202,21 +202,50 @@ const addAttachmentsForChat = (_state, id, message) => {
   _state.attachments[id] = [...existingAttachments, ...attachmentsToAdd];
 };
 
+const identityKey = (type, value) => `${type}:${String(value)}`;
+
+const messageIdentityKeys = message => {
+  const keys = [];
+  if (message?.id !== undefined && message?.id !== null) {
+    keys.push(identityKey('id', message.id));
+  }
+  if (message?.echo_id !== undefined && message?.echo_id !== null) {
+    keys.push(identityKey('echo', message.echo_id));
+  }
+  return keys;
+};
+
+const messageLookupKeys = message => {
+  const keys = messageIdentityKeys(message);
+  if (message?.echo_id !== undefined && message?.echo_id !== null) {
+    keys.push(identityKey('id', message.echo_id));
+  }
+  return keys;
+};
+
+const registerMessageIdentity = (indexByIdentity, message, index) => {
+  messageIdentityKeys(message).forEach(key => {
+    indexByIdentity.set(key, index);
+  });
+};
+
 const mergeMessagesById = (existingMessages = [], incomingMessages = []) => {
   const mergedMessages = [];
-  const indexById = new Map();
+  const indexByIdentity = new Map();
 
   [...existingMessages, ...incomingMessages].forEach(message => {
-    const messageId = message?.id;
-    if (messageId === undefined || messageId === null) {
+    const identityKeys = messageIdentityKeys(message);
+    if (!identityKeys.length) {
       mergedMessages.push(message);
       return;
     }
 
-    const key = String(messageId);
-    const existingIndex = indexById.get(key);
+    const existingIndex = messageLookupKeys(message)
+      .map(key => indexByIdentity.get(key))
+      .find(index => index !== undefined);
+
     if (existingIndex === undefined) {
-      indexById.set(key, mergedMessages.length);
+      registerMessageIdentity(indexByIdentity, message, mergedMessages.length);
       mergedMessages.push(message);
       return;
     }
@@ -225,6 +254,11 @@ const mergeMessagesById = (existingMessages = [], incomingMessages = []) => {
       ...mergedMessages[existingIndex],
       ...message,
     };
+    registerMessageIdentity(
+      indexByIdentity,
+      mergedMessages[existingIndex],
+      existingIndex
+    );
   });
 
   return mergedMessages.sort(sortMessagesByTimeline);

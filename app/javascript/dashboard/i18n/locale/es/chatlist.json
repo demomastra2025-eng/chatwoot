@@ -59,6 +59,12 @@
       "last_activity_at_desc": {
         "TEXT": "Última actividad: Más reciente primero"
       },
+      "last_event_activity_at_asc": {
+        "TEXT": "Event activity: Oldest first"
+      },
+      "last_event_activity_at_desc": {
+        "TEXT": "Event activity: Newest first"
+      },
       "created_at_desc": {
         "TEXT": "Creado el: Más Nuevo primero"
       },

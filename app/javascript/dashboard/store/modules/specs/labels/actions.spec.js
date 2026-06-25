@@ -2,12 +2,26 @@ import axios from 'axios';
 import { actions } from '../../labels';
 import * as types from '../../../mutation-types';
 import labelsList from './fixtures';
+import { sortLabelsByDisplayTitle } from '../../../../helper/labels';
 
 const commit = vi.fn();
 global.axios = axios;
 vi.mock('axios');
 
 describe('#actions', () => {
+  beforeEach(() => {
+    commit.mockClear();
+    window.history.pushState({}, '', '/');
+    axios.get.mockReset();
+    axios.post.mockReset();
+    axios.patch.mockReset();
+    axios.delete.mockReset();
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
   describe('#get', () => {
     it('sends correct actions if API is success', async () => {
       const mockedGet = vi.fn(url => {
@@ -26,7 +40,7 @@ describe('#actions', () => {
       await actions.get({ commit });
       expect(commit.mock.calls).toEqual([
         [types.default.SET_LABEL_UI_FLAG, { isFetching: true }],
-        [types.default.SET_LABELS, labelsList],
+        [types.default.SET_LABELS, sortLabelsByDisplayTitle(labelsList)],
         [types.default.SET_LABEL_UI_FLAG, { isFetching: false }],
       ]);
     });
@@ -36,6 +50,36 @@ describe('#actions', () => {
       expect(commit.mock.calls).toEqual([
         [types.default.SET_LABEL_UI_FLAG, { isFetching: true }],
         [types.default.SET_LABEL_UI_FLAG, { isFetching: false }],
+      ]);
+    });
+
+    it('does not commit stale labels when the route account changes before the response resolves', async () => {
+      let resolveLabels;
+
+      window.history.pushState({}, '', '/app/accounts/64/settings/labels');
+      axios.get.mockImplementation(url => {
+        if (url === '/api/v1/accounts/64/cache_keys') {
+          return Promise.resolve({ data: { cache_keys: {} } });
+        }
+        if (url === '/api/v1/accounts/64/labels') {
+          return new Promise(resolve => {
+            resolveLabels = resolve;
+          });
+        }
+        return Promise.reject(new Error('Unexpected request: ' + url));
+      });
+
+      const request = actions.get({ commit });
+      await vi.waitFor(() =>
+        expect(resolveLabels).toEqual(expect.any(Function))
+      );
+      window.history.pushState({}, '', '/app/accounts/6/settings/labels');
+
+      resolveLabels({ data: { payload: labelsList } });
+      await request;
+
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_LABEL_UI_FLAG, { isFetching: true }],
       ]);
     });
   });

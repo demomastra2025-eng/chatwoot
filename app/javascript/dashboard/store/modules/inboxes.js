@@ -699,25 +699,70 @@ const sendAnalyticsEvent = channelType => {
   });
 };
 
+const currentRouteAccountId = () => {
+  const accountId = Number(InboxesAPI.accountIdFromRoute);
+  return Number.isFinite(accountId) && accountId > 0 ? accountId : null;
+};
+
+const isCurrentRouteAccountId = accountId =>
+  !accountId || currentRouteAccountId() === accountId;
+
+const withCurrentRouteAccountId = (
+  inbox,
+  accountId = currentRouteAccountId()
+) => {
+  if (!accountId || !inbox) return inbox;
+
+  return {
+    ...inbox,
+    account_id: inbox.account_id ?? accountId,
+  };
+};
+
+const withCurrentRouteAccountIdList = (
+  inboxes,
+  accountId = currentRouteAccountId()
+) =>
+  Array.isArray(inboxes)
+    ? inboxes.map(inbox => withCurrentRouteAccountId(inbox, accountId))
+    : inboxes;
+
 export const actions = {
   revalidate: async ({ commit }, { newKey }) => {
+    const accountId = currentRouteAccountId();
     try {
-      const isExistingKeyValid = await InboxesAPI.validateCacheKey(newKey);
+      const isExistingKeyValid = await InboxesAPI.validateCacheKey(
+        newKey,
+        accountId
+      );
       if (!isExistingKeyValid) {
-        const response = await InboxesAPI.refetchAndCommit(newKey);
-        commit(types.default.SET_INBOXES, response.data.payload);
+        const response = await InboxesAPI.refetchAndCommit(newKey, accountId);
+        if (!isCurrentRouteAccountId(accountId)) return;
+
+        commit(
+          types.default.SET_INBOXES,
+          withCurrentRouteAccountIdList(response.data.payload, accountId)
+        );
       }
     } catch (error) {
       // Ignore error
     }
   },
   get: async ({ commit }) => {
+    const accountId = currentRouteAccountId();
     commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: true });
     try {
       const response = await InboxesAPI.get(true);
+      if (!isCurrentRouteAccountId(accountId)) return;
+
       commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: false });
-      commit(types.default.SET_INBOXES, response.data.payload);
+      commit(
+        types.default.SET_INBOXES,
+        withCurrentRouteAccountIdList(response.data.payload, accountId)
+      );
     } catch (error) {
+      if (!isCurrentRouteAccountId(accountId)) return;
+
       commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: false });
     }
   },

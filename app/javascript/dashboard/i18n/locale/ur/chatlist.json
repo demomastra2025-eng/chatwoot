@@ -54,10 +54,16 @@
     },
     "SORT_ORDER_ITEMS": {
       "last_activity_at_asc": {
-        "TEXT": "Last activity: Oldest first"
+        "TEXT": "Last message: Oldest first"
       },
       "last_activity_at_desc": {
-        "TEXT": "Last activity: Newest first"
+        "TEXT": "Last message: Newest first"
+      },
+      "last_event_activity_at_asc": {
+        "TEXT": "Event activity: Oldest first"
+      },
+      "last_event_activity_at_desc": {
+        "TEXT": "Event activity: Newest first"
       },
       "created_at_desc": {
         "TEXT": "Created at: Newest first"

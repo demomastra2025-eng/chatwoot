@@ -42,7 +42,10 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def communication_threads
-    @communication_threads
+    relation = @communication_threads
+    relation = with_last_message_activity_sort(relation) if message_sort?
+
+    relation
       .includes(:contact, :assignee, :team)
       .order(Arel.sql(sort_clause))
       .page(current_page)
@@ -105,7 +108,24 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def sort_clause
-    CommunicationThreadFinder::SORT_OPTIONS.fetch(@params[:sort_by].presence || DEFAULT_SORT)
+    CommunicationThreadFinder::SORT_OPTIONS.fetch(sort_key)
+  end
+
+  def sort_key
+    @params[:sort_by].presence || DEFAULT_SORT
+  end
+
+  def message_sort?
+    CommunicationThreadFinder.message_sort?(sort_key)
+  end
+
+  def with_last_message_activity_sort(relation)
+    sort_sql = CommunicationThreadFinder.last_message_activity_sort_sql(base_relation)
+
+    relation
+      .select(
+        Arel.sql("communication_threads.*, #{sort_sql} AS last_message_activity_sort_at")
+      )
   end
 
   def thread_counts

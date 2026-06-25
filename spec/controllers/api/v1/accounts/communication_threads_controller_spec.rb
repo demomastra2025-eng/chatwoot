@@ -81,6 +81,38 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(thread_payload[:channels].pluck(:conversation_id)).not_to include(inaccessible_conversation.display_id)
     end
 
+    it 'does not sort accessible threads by messages from inaccessible channel links' do
+      base_time = Time.zone.now
+      hidden_contact = create(:contact, :with_email, account: account)
+      accessible_conversation = create(:conversation, account: account, contact: hidden_contact, created_at: base_time - 5.days)
+      inaccessible_conversation = create(:conversation, account: account, contact: hidden_contact, created_at: base_time - 5.days)
+      visible_conversation = create(:conversation, account: account, created_at: base_time - 5.days)
+
+      create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: visible_conversation.inbox)
+      accessible_message = create(
+        :message,
+        account: account,
+        conversation: accessible_conversation,
+        message_type: :incoming,
+        created_at: base_time - 2.days
+      )
+      create(:message, account: account, conversation: inaccessible_conversation, message_type: :incoming, created_at: base_time)
+      create(:message, account: account, conversation: visible_conversation, message_type: :incoming, created_at: base_time - 1.hour)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      expect(payload.pluck(:id).first(2)).to eq(
+        [
+          visible_conversation.reload.communication_thread.display_id,
+          accessible_conversation.reload.communication_thread.display_id
+        ]
+      )
+      expect(payload.second.dig(:last_non_activity_message, :id)).to eq(accessible_message.id)
+    end
+
     it 'filters threads by child conversation labels' do
       matching_conversation = create(:conversation, account: account)
       other_conversation = create(:conversation, account: account)
@@ -419,6 +451,43 @@ RSpec.describe 'Communication Threads API', type: :request do
         all_count: 1,
         unassigned_count: 1
       )
+    end
+
+    it 'sorts advanced filter results by public non-activity messages by default' do
+      base_time = Time.zone.now
+      second_matching_conversation = create(
+        :conversation,
+        account: account,
+        status: :open,
+        created_at: base_time - 5.days,
+        last_activity_at: base_time - 5.days
+      )
+      create(:inbox_member, user: agent, inbox: second_matching_conversation.inbox)
+      create_thread_stage_deal(second_matching_conversation, matching_stage)
+
+      hidden_linked_conversation = create(:conversation, account: account, contact: matching_conversation.contact)
+      matching_public_message = create(:message, conversation: matching_conversation, message_type: :incoming, created_at: base_time - 2.days)
+      matching_activity_message = create(:message, conversation: matching_conversation, message_type: :activity, created_at: base_time)
+      create(:message, conversation: hidden_linked_conversation, message_type: :incoming, created_at: base_time + 1.hour)
+      create(:message, conversation: second_matching_conversation, message_type: :incoming, created_at: base_time - 1.hour)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter",
+           params: {
+             payload: advanced_filter_payload
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      expect(payload.pluck(:id)).to eq(
+        [
+          second_matching_conversation.reload.communication_thread.display_id,
+          matching_conversation.reload.communication_thread.display_id
+        ]
+      )
+      expect(payload.second.dig(:messages, 0, :id)).to eq(matching_activity_message.id)
+      expect(payload.second.dig(:last_non_activity_message, :id)).to eq(matching_public_message.id)
     end
   end
 

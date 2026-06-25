@@ -30,12 +30,22 @@ export const getters = {
   },
 };
 
+const currentRouteAccountId = () => LabelsAPI.accountIdFromRoute;
+const isCurrentRouteAccountId = accountId =>
+  String(LabelsAPI.accountIdFromRoute) === String(accountId);
+
 export const actions = {
   revalidate: async function revalidate({ commit }, { newKey }) {
+    const accountId = currentRouteAccountId();
     try {
-      const isExistingKeyValid = await LabelsAPI.validateCacheKey(newKey);
+      const isExistingKeyValid = await LabelsAPI.validateCacheKey(
+        newKey,
+        accountId
+      );
       if (!isExistingKeyValid) {
-        const response = await LabelsAPI.refetchAndCommit(newKey);
+        const response = await LabelsAPI.refetchAndCommit(newKey, accountId);
+        if (!isCurrentRouteAccountId(accountId)) return;
+
         commit(types.SET_LABELS, response.data.payload);
       }
     } catch (error) {
@@ -44,15 +54,20 @@ export const actions = {
   },
 
   get: async function getLabels({ commit }) {
+    const accountId = currentRouteAccountId();
     commit(types.SET_LABEL_UI_FLAG, { isFetching: true });
     try {
       const response = await LabelsAPI.get(true);
+      if (!isCurrentRouteAccountId(accountId)) return;
+
       const sortedLabels = sortLabelsByDisplayTitle(response.data.payload);
       commit(types.SET_LABELS, sortedLabels);
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.SET_LABEL_UI_FLAG, { isFetching: false });
+      if (isCurrentRouteAccountId(accountId)) {
+        commit(types.SET_LABEL_UI_FLAG, { isFetching: false });
+      }
     }
   },
 

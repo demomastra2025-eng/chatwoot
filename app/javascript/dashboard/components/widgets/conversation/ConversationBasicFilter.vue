@@ -43,6 +43,14 @@ const chatSortOptions = computed(() => [
     value: 'last_activity_at_desc',
   },
   {
+    label: t('CHAT_LIST.SORT_ORDER_ITEMS.last_event_activity_at_asc.TEXT'),
+    value: 'last_event_activity_at_asc',
+  },
+  {
+    label: t('CHAT_LIST.SORT_ORDER_ITEMS.last_event_activity_at_desc.TEXT'),
+    value: 'last_event_activity_at_desc',
+  },
+  {
     label: t('CHAT_LIST.SORT_ORDER_ITEMS.created_at_desc.TEXT'),
     value: 'created_at_desc',
   },
@@ -74,7 +82,7 @@ const chatSortOptions = computed(() => [
 
 const activeChatSortLabel = computed(
   () =>
-    chatSortOptions.value.find(m => m.value === chatSortFilter.value)?.label ||
+    chatSortOptions.value.find(m => m.value === currentSortBy.value)?.label ||
     ''
 );
 
@@ -123,7 +131,7 @@ const handleSortChange = value => {
           {{ $t('CHAT_LIST.CHAT_SORT.ORDER_BY') }}
         </span>
         <SelectMenu
-          :model-value="chatSortFilter"
+          :model-value="currentSortBy"
           :options="chatSortOptions"
           :label="activeChatSortLabel"
           :sub-menu-position="isOnExpandedLayout ? 'left' : 'right'"

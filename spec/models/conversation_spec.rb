@@ -971,6 +971,21 @@ RSpec.describe Conversation do
       end
     end
 
+    describe 'sort_on_last_message_at' do
+      it 'sorts by public non-activity messages and ignores activity/private messages' do
+        base_time = Time.zone.now
+        create(:message, conversation: conversation_1, message_type: :incoming, created_at: base_time - 2.days)
+        create(:message, conversation: conversation_2, message_type: :incoming, created_at: base_time - 1.day)
+        create(:message, conversation: conversation_1, message_type: :activity, created_at: base_time)
+        create(:message, conversation: conversation_2, message_type: :outgoing, private: true, created_at: base_time + 1.hour)
+
+        scope = described_class.where(id: [conversation_1.id, conversation_2.id])
+
+        expect(scope.sort_on_last_message_at.map(&:id)).to eq([conversation_2.id, conversation_1.id])
+        expect(scope.sort_on_last_message_at(:asc).map(&:id)).to eq([conversation_1.id, conversation_2.id])
+      end
+    end
+
     context 'when last_activity_at updated by some actions' do
       before do
         create(:message, conversation_id: conversation_1.id, message_type: :incoming, created_at: DateTime.now - 8.days)

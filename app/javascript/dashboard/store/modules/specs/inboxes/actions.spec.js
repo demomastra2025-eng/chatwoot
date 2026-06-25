@@ -11,6 +11,7 @@ describe('#actions', () => {
   beforeEach(() => {
     commit.mockClear();
     inboxState.records = [];
+    window.history.pushState({}, '', '/');
     axios.get.mockReset();
     axios.post.mockReset();
     axios.patch.mockReset();
@@ -39,6 +40,56 @@ describe('#actions', () => {
         [types.default.SET_INBOXES, inboxList],
       ]);
     });
+
+    it('tags fetched inboxes with the current route account id', async () => {
+      window.history.pushState({}, '', '/app/accounts/64/settings/inboxes/57');
+      axios.get.mockImplementation(url => {
+        if (url === '/api/v1/accounts/64/cache_keys') {
+          return Promise.resolve({ data: { cache_keys: { inbox: 1 } } });
+        }
+        if (url === '/api/v1/accounts/64/inboxes') {
+          return Promise.resolve({ data: { payload: [inboxList[0]] } });
+        }
+        return Promise.reject(new Error('Unexpected request: ' + url));
+      });
+
+      await actions.get({ commit });
+
+      expect(commit.mock.calls).toContainEqual([
+        types.default.SET_INBOXES,
+        [{ ...inboxList[0], account_id: 64 }],
+      ]);
+    });
+
+    it('does not commit stale inboxes when the route account changes before the response resolves', async () => {
+      let resolveInboxes;
+
+      window.history.pushState({}, '', '/app/accounts/64/settings/inboxes');
+      axios.get.mockImplementation(url => {
+        if (url === '/api/v1/accounts/64/cache_keys') {
+          return Promise.resolve({ data: { cache_keys: {} } });
+        }
+        if (url === '/api/v1/accounts/64/inboxes') {
+          return new Promise(resolve => {
+            resolveInboxes = resolve;
+          });
+        }
+        return Promise.reject(new Error('Unexpected request: ' + url));
+      });
+
+      const request = actions.get({ commit });
+      await Promise.resolve();
+      await Promise.resolve();
+      window.history.pushState({}, '', '/app/accounts/6/settings/inboxes');
+
+      resolveInboxes({ data: { payload: [inboxList[0]] } });
+      await request;
+
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_INBOXES_UI_FLAG, { isFetching: true }],
+      ]);
+    });
+
     it('sends correct actions if API is error', async () => {
       axios.get.mockRejectedValue({ message: 'Incorrect header' });
       await actions.get({ commit });

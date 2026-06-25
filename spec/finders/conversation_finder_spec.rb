@@ -273,6 +273,42 @@ describe ConversationFinder do
       end
     end
 
+    context 'with message and event activity sort options' do
+      let(:params) { { status: 'open', assignee_type: 'all' } }
+
+      it 'sorts by public non-activity messages by default and keeps event activity as an explicit legacy option' do
+        base_time = Time.zone.now
+        Conversation.where(account: account).find_each do |conversation|
+          conversation.update!(created_at: base_time - 10.days, last_activity_at: base_time - 10.days)
+        end
+
+        event_activity_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          created_at: base_time - 3.days,
+          last_activity_at: base_time - 3.days
+        )
+        latest_message_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          created_at: base_time - 4.days,
+          last_activity_at: base_time - 4.days
+        )
+
+        create(:message, conversation: event_activity_conversation, message_type: :incoming, created_at: base_time - 2.days)
+        create(:message, conversation: event_activity_conversation, message_type: :activity, created_at: base_time)
+        create(:message, conversation: latest_message_conversation, message_type: :incoming, created_at: base_time - 1.hour)
+
+        default_result = conversation_finder.perform
+        legacy_result = described_class.new(user_1, params.merge(sort_by: 'last_event_activity_at_desc')).perform
+
+        expect(default_result[:conversations].first.id).to eq(latest_message_conversation.id)
+        expect(legacy_result[:conversations].first.id).to eq(event_activity_conversation.id)
+      end
+    end
+
     context 'with updated_within' do
       let(:params) { { updated_within: 20, assignee_type: 'unassigned', sort_by: 'created_at_asc' } }
 

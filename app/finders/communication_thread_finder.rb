@@ -14,8 +14,11 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     include_crm_deal_context: true
   }.freeze
   SORT_OPTIONS = {
-    'last_activity_at_asc' => 'communication_threads.last_activity_at ASC NULLS LAST, communication_threads.id ASC',
-    'last_activity_at_desc' => 'communication_threads.last_activity_at DESC NULLS LAST, communication_threads.id DESC',
+    'last_activity_at_asc' => 'last_message_activity_sort_at ASC NULLS LAST, communication_threads.id ASC',
+    'last_activity_at_desc' => 'last_message_activity_sort_at DESC NULLS LAST, communication_threads.id DESC',
+    'last_event_activity_at_asc' => 'communication_threads.last_activity_at ASC NULLS LAST, communication_threads.id ASC',
+    'last_event_activity_at_desc' => 'communication_threads.last_activity_at DESC NULLS LAST, communication_threads.id DESC',
+    'latest' => 'last_message_activity_sort_at DESC NULLS LAST, communication_threads.id DESC',
     'created_at_asc' => 'communication_threads.created_at ASC, communication_threads.id ASC',
     'created_at_desc' => 'communication_threads.created_at DESC, communication_threads.id DESC',
     'priority_asc' => [
@@ -29,7 +32,40 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       'communication_threads.id DESC'
     ].join(', ')
   }.with_indifferent_access
+  MESSAGE_SORT_KEYS = %w[last_activity_at_asc last_activity_at_desc latest].freeze
   STATUS_COUNT_KEYS = %w[open pending snoozed resolved].freeze
+
+  def self.message_sort?(sort_key)
+    MESSAGE_SORT_KEYS.include?(sort_key.to_s)
+  end
+
+  def self.last_message_activity_sort_sql(conversation_scope)
+    <<~SQL.squish
+      COALESCE(
+        (#{last_message_activity_subquery_sql(conversation_scope)}),
+        communication_threads.created_at
+      )
+    SQL
+  end
+
+  def self.last_message_activity_subquery_sql(conversation_scope)
+    activity_message_type = Message.message_types[:activity]
+    conversation_ids_sql = conversation_scope.reselect('conversations.id').to_sql
+
+    <<~SQL.squish
+      SELECT MAX(messages.created_at)
+      FROM messages
+      INNER JOIN communication_thread_conversations sort_thread_links
+        ON sort_thread_links.conversation_id = messages.conversation_id
+       AND sort_thread_links.communication_thread_id = communication_threads.id
+      INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
+        ON sort_accessible_conversations.id = sort_thread_links.conversation_id
+      WHERE sort_thread_links.account_id = communication_threads.account_id
+        AND messages.account_id = communication_threads.account_id
+        AND messages.private = FALSE
+        AND messages.message_type != #{activity_message_type}
+    SQL
+  end
 
   def initialize(current_user, params)
     @current_user = current_user
@@ -360,7 +396,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def communication_threads
-    @communication_threads
+    relation = @communication_threads
+    relation = with_last_message_activity_sort(relation) if message_sort?
+
+    relation
       .includes(:contact, :assignee, :team)
       .order(Arel.sql(sort_clause))
       .page(params[:page] || 1)
@@ -368,7 +407,24 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def sort_clause
-    SORT_OPTIONS[params[:sort_by].presence || 'last_activity_at_desc']
+    SORT_OPTIONS[sort_key]
+  end
+
+  def sort_key
+    params[:sort_by].presence || 'last_activity_at_desc'
+  end
+
+  def message_sort?
+    self.class.message_sort?(sort_key)
+  end
+
+  def with_last_message_activity_sort(relation)
+    sort_sql = self.class.last_message_activity_sort_sql(accessible_conversations)
+
+    relation
+      .select(
+        Arel.sql("communication_threads.*, #{sort_sql} AS last_message_activity_sort_at")
+      )
   end
 
   def accessible_conversations

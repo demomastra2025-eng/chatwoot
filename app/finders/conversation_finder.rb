@@ -11,8 +11,10 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     include_crm_deal_context: true
   }.freeze
   SORT_OPTIONS = {
-    'last_activity_at_asc' => %w[sort_on_last_activity_at asc],
-    'last_activity_at_desc' => %w[sort_on_last_activity_at desc],
+    'last_activity_at_asc' => %w[sort_on_last_message_at asc],
+    'last_activity_at_desc' => %w[sort_on_last_message_at desc],
+    'last_event_activity_at_asc' => %w[sort_on_last_activity_at asc],
+    'last_event_activity_at_desc' => %w[sort_on_last_activity_at desc],
     'created_at_asc' => %w[sort_on_created_at asc],
     'created_at_desc' => %w[sort_on_created_at desc],
     'priority_asc' => %w[sort_on_priority asc],
@@ -22,7 +24,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     'priority_desc_created_at_asc' => %w[sort_on_priority_created_at desc],
 
     # To be removed in v3.5.0
-    'latest' => %w[sort_on_last_activity_at desc],
+    'latest' => %w[sort_on_last_message_at desc],
     'sort_on_created_at' => %w[sort_on_created_at asc],
     'sort_on_priority' => %w[sort_on_priority desc],
     'sort_on_waiting_since' => %w[sort_on_waiting_since asc]

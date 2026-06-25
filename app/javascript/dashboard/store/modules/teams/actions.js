@@ -8,6 +8,10 @@ import {
 } from './types';
 import TeamsAPI from '../../../api/teams';
 
+const currentRouteAccountId = () => TeamsAPI.accountIdFromRoute;
+const isCurrentRouteAccountId = accountId =>
+  String(TeamsAPI.accountIdFromRoute) === String(accountId);
+
 export const actions = {
   create: async ({ commit }, teamInfo) => {
     commit(SET_TEAM_UI_FLAG, { isCreating: true });
@@ -21,10 +25,16 @@ export const actions = {
     }
   },
   revalidate: async ({ commit }, { newKey }) => {
+    const accountId = currentRouteAccountId();
     try {
-      const isExistingKeyValid = await TeamsAPI.validateCacheKey(newKey);
+      const isExistingKeyValid = await TeamsAPI.validateCacheKey(
+        newKey,
+        accountId
+      );
       if (!isExistingKeyValid) {
-        const response = await TeamsAPI.refetchAndCommit(newKey);
+        const response = await TeamsAPI.refetchAndCommit(newKey, accountId);
+        if (!isCurrentRouteAccountId(accountId)) return;
+
         commit(SET_TEAMS, response.data);
       }
     } catch (error) {
@@ -32,13 +42,18 @@ export const actions = {
     }
   },
   get: async ({ commit }) => {
+    const accountId = currentRouteAccountId();
     commit(SET_TEAM_UI_FLAG, { isFetching: true });
     try {
       const { data } = await TeamsAPI.get(true);
+      if (!isCurrentRouteAccountId(accountId)) return;
+
       commit(CLEAR_TEAMS);
       commit(SET_TEAMS, data);
     } finally {
-      commit(SET_TEAM_UI_FLAG, { isFetching: false });
+      if (isCurrentRouteAccountId(accountId)) {
+        commit(SET_TEAM_UI_FLAG, { isFetching: false });
+      }
     }
   },
 

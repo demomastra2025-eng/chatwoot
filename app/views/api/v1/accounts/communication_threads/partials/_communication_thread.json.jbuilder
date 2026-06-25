@@ -1,6 +1,7 @@
 links = local_assigns.fetch(:links, [])
 channels = local_assigns.fetch(:channels, [])
 last_public_message = local_assigns[:last_public_message]
+last_non_activity_message = local_assigns[:last_non_activity_message]
 linked_conversations = links.map(&:conversation).compact
 agent_last_seen_values = linked_conversations.map(&:agent_last_seen_at)
 assignee_last_seen_values = linked_conversations.map(&:assignee_last_seen_at)
@@ -36,6 +37,7 @@ json.account_id communication_thread.account_id
 json.contact_id communication_thread.contact_id
 json.inbox_id nil
 json.messages(last_public_message.present? ? [last_public_message.push_event_data] : [])
+json.last_non_activity_message last_non_activity_message&.push_event_data
 json.conversation_ids links.map { |link| link.conversation.display_id }
 json.channels do
   json.array! channels do |channel|

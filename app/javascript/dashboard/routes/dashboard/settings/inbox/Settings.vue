@@ -732,7 +732,10 @@ export default {
       return this.$route.params.inboxId;
     },
     inbox() {
-      return this.$store.getters['inboxes/getInbox'](this.currentInboxId);
+      const inbox = this.$store.getters['inboxes/getInbox'](
+        this.currentInboxId
+      );
+      return this.isInboxFromCurrentAccount(inbox) ? inbox : {};
     },
     inboxHealthStatus() {
       return getInboxHealthStatus(this.inbox);
@@ -1062,6 +1065,14 @@ export default {
     }
   },
   methods: {
+    isInboxFromCurrentAccount(inbox) {
+      if (!inbox?.id) return false;
+      if (inbox.account_id === undefined || inbox.account_id === null) {
+        return false;
+      }
+
+      return String(inbox.account_id) === String(this.$route.params.accountId);
+    },
     async ensureCurrentInboxExists() {
       if (!this.currentInboxId) {
         return false;
@@ -1078,7 +1089,9 @@ export default {
       }
 
       return Boolean(
-        this.$store.getters['inboxes/getInbox'](this.currentInboxId)?.id
+        this.isInboxFromCurrentAccount(
+          this.$store.getters['inboxes/getInbox'](this.currentInboxId)
+        )
       );
     },
     async redirectToInboxListIfMissing() {

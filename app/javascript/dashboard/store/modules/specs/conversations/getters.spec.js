@@ -1,5 +1,6 @@
 import commonHelpers from '../../../../helper/commons';
 import getters from '../../conversations/getters';
+import { MESSAGE_TYPE } from '../../../../../shared/constants/messages';
 /*
   Order of conversations in the fixture is as follows:
   - lastActivity: c0 < c3 < c2 < c1
@@ -14,7 +15,7 @@ commonHelpers();
 
 describe('#getters', () => {
   describe('#getAllConversations', () => {
-    it('returns conversations ordered by lastActivityAt in descending order if no sort order is available', () => {
+    it('returns conversations ordered by latest public non-activity message in descending order if no sort order is available', () => {
       const state = { allConversations: [...conversations] };
       expect(getters.getAllConversations(state)).toEqual([
         conversations[1],
@@ -24,7 +25,7 @@ describe('#getters', () => {
       ]);
     });
 
-    it('returns conversations ordered by lastActivityAt in descending order if invalid sort order is available', () => {
+    it('returns conversations ordered by latest public non-activity message in descending order if invalid sort order is available', () => {
       const state = {
         allConversations: [...conversations],
         chatSortFilter: 'latest',
@@ -37,7 +38,7 @@ describe('#getters', () => {
       ]);
     });
 
-    it('returns conversations ordered by lastActivityAt in descending order if chatStatusFilter = last_activity_at_desc', () => {
+    it('returns conversations ordered by latest public non-activity message in descending order if chatStatusFilter = last_activity_at_desc', () => {
       const state = {
         allConversations: [...conversations],
         chatSortFilter: 'last_activity_at_desc',
@@ -50,7 +51,7 @@ describe('#getters', () => {
       ]);
     });
 
-    it('returns conversations ordered by lastActivityAt in ascending order if chatStatusFilter = last_activity_at_asc', () => {
+    it('returns conversations ordered by latest public non-activity message in ascending order if chatStatusFilter = last_activity_at_asc', () => {
       const state = {
         allConversations: [...conversations],
         chatSortFilter: 'last_activity_at_asc',
@@ -61,6 +62,64 @@ describe('#getters', () => {
         conversations[2],
         conversations[1],
       ]);
+    });
+
+    it('keeps legacy event activity sorting as an explicit sort option', () => {
+      const eventFirstConversation = {
+        ...conversations[0],
+        last_activity_at: 200,
+        last_non_activity_message: { created_at: 1 },
+      };
+      const messageFirstConversation = {
+        ...conversations[1],
+        last_activity_at: 100,
+        last_non_activity_message: { created_at: 300 },
+      };
+
+      expect(
+        getters.getAllConversations({
+          allConversations: [eventFirstConversation, messageFirstConversation],
+          chatSortFilter: 'last_activity_at_desc',
+        })
+      ).toEqual([messageFirstConversation, eventFirstConversation]);
+      expect(
+        getters.getAllConversations({
+          allConversations: [eventFirstConversation, messageFirstConversation],
+          chatSortFilter: 'last_event_activity_at_desc',
+        })
+      ).toEqual([eventFirstConversation, messageFirstConversation]);
+    });
+
+    it('uses thread last_non_activity_message instead of activity-only preview messages for message sorting', () => {
+      const eventFirstThread = {
+        id: 10,
+        is_communication_thread: true,
+        created_at: 1,
+        last_activity_at: 500,
+        last_non_activity_message: { created_at: 100 },
+        messages: [{ created_at: 500, message_type: MESSAGE_TYPE.ACTIVITY }],
+      };
+      const messageFirstThread = {
+        id: 11,
+        is_communication_thread: true,
+        created_at: 1,
+        last_activity_at: 200,
+        last_non_activity_message: { created_at: 300 },
+        messages: [{ created_at: 300, message_type: MESSAGE_TYPE.INCOMING }],
+      };
+
+      expect(
+        getters.getAllConversations({
+          allConversations: [eventFirstThread, messageFirstThread],
+          chatSortFilter: 'last_activity_at_desc',
+        })
+      ).toEqual([messageFirstThread, eventFirstThread]);
+      expect(
+        getters.getAllConversations({
+          allConversations: [eventFirstThread, messageFirstThread],
+          chatSortFilter: 'last_event_activity_at_desc',
+        })
+      ).toEqual([eventFirstThread, messageFirstThread]);
     });
 
     it('returns conversations ordered by createdAt in descending order if chatStatusFilter = created_at_desc', () => {
@@ -525,18 +584,21 @@ describe('#getters', () => {
         status: 'open',
         meta: { assignee: { id: 1 } },
         last_activity_at: 1000,
+        last_non_activity_message: { created_at: 1000 },
       },
       {
         id: 2,
         status: 'open',
         meta: { current_user_participant: true },
         last_activity_at: 2000,
+        last_non_activity_message: { created_at: 2000 },
       },
       {
         id: 3,
         status: 'resolved',
         meta: { assignee: { id: 2 } },
         last_activity_at: 3000,
+        last_non_activity_message: { created_at: 3000 },
       },
     ];
 

@@ -353,6 +353,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       ).perform
     end
     preload_last_public_messages_by_thread
+    preload_last_non_activity_messages_by_thread
   end
 
   def preload_crm_deal_stages(communication_threads)
@@ -361,22 +362,31 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def preload_last_public_messages_by_thread
+    @last_public_messages_by_thread_id = preload_last_messages_by_thread
+  end
+
+  def preload_last_non_activity_messages_by_thread
+    @last_non_activity_messages_by_thread_id = preload_last_messages_by_thread(non_activity: true)
+  end
+
+  def preload_last_messages_by_thread(non_activity: false)
     links = @accessible_links_by_thread_id.values.flatten
     conversation_ids = links.map(&:conversation_id)
-    @last_public_messages_by_thread_id = {}
-    return if conversation_ids.empty?
+    return {} if conversation_ids.empty?
 
-    last_messages_by_conversation_id = Message
-                                       .where(
-                                         account_id: Current.account.id,
-                                         conversation_id: conversation_ids,
-                                         private: false
-                                       )
+    message_scope = Message.where(
+      account_id: Current.account.id,
+      conversation_id: conversation_ids,
+      private: false
+    )
+    message_scope = message_scope.where.not(message_type: Message.message_types[:activity]) if non_activity
+
+    last_messages_by_conversation_id = message_scope
                                        .select('DISTINCT ON (messages.conversation_id) messages.*')
                                        .reorder(Arel.sql('messages.conversation_id, messages.created_at DESC, messages.id DESC'))
                                        .index_by(&:conversation_id)
 
-    @last_public_messages_by_thread_id = @accessible_links_by_thread_id.transform_values do |thread_links|
+    @accessible_links_by_thread_id.transform_values do |thread_links|
       thread_links.filter_map { |link| last_messages_by_conversation_id[link.conversation_id] }
                   .max_by { |message| [message.created_at, message.id] }
     end

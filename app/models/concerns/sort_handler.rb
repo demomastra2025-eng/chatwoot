@@ -1,9 +1,16 @@
 module SortHandler
   extend ActiveSupport::Concern
 
-  class_methods do
+  class_methods do # rubocop:disable Metrics/BlockLength
     def sort_on_last_activity_at(sort_direction = :desc)
       order(last_activity_at: sort_direction)
+    end
+
+    def sort_on_last_message_at(sort_direction = :desc)
+      direction = sort_direction.to_s.downcase == 'asc' ? 'ASC' : 'DESC'
+
+      select(Arel.sql("conversations.*, #{last_message_sort_timestamp_sql} AS last_message_activity_sort_at"))
+        .order(generate_sql_query("last_message_activity_sort_at #{direction}, conversations.id #{direction}"))
     end
 
     def sort_on_created_at(sort_direction = :asc)
@@ -36,6 +43,24 @@ module SortHandler
 
     def generate_sql_query(query)
       Arel::Nodes::SqlLiteral.new(sanitize_sql_for_order(query))
+    end
+
+    def last_message_sort_timestamp_sql
+      activity_message_type = Message.message_types[:activity]
+
+      <<~SQL.squish
+        COALESCE(
+          (
+            SELECT MAX(messages.created_at)
+            FROM messages
+            WHERE messages.conversation_id = conversations.id
+              AND messages.account_id = conversations.account_id
+              AND messages.private = FALSE
+              AND messages.message_type != #{activity_message_type}
+          ),
+          conversations.created_at
+        )
+      SQL
     end
   end
 end
