@@ -47,6 +47,47 @@ RSpec.describe Conversation do
     end
   end
 
+  describe 'contact owner sync' do
+    let(:account) { create(:account) }
+    let(:owner) { create(:user, account: account, role: :agent) }
+    let(:new_owner) { create(:user, account: account, role: :agent) }
+    let(:contact) { create(:contact, account: account, owner: owner) }
+
+    before do
+      allow(Rails.configuration.dispatcher).to receive(:dispatch)
+    end
+
+    it 'inherits the contact owner for new conversations when assignee is omitted' do
+      conversation = create(:conversation, account: account, contact: contact, assignee: nil)
+
+      expect(conversation.assignee).to eq(owner)
+    end
+
+    it 'updates contact owner when a new conversation has an explicit human assignee' do
+      conversation = create(:conversation, account: account, contact: contact, assignee: new_owner)
+
+      expect(conversation.assignee).to eq(new_owner)
+      expect(contact.reload.owner).to eq(new_owner)
+    end
+
+    it 'updates contact owner when the conversation assignee changes' do
+      conversation = create(:conversation, account: account, contact: contact, assignee: owner)
+
+      conversation.update!(assignee: new_owner)
+
+      expect(contact.reload.owner).to eq(new_owner)
+    end
+
+    it 'does not clear contact owner when a conversation is handed to an agent bot' do
+      agent_bot = create(:agent_bot, account: account)
+      conversation = create(:conversation, account: account, contact: contact, assignee: owner)
+
+      conversation.update!(assignee: nil, assignee_agent_bot: agent_bot)
+
+      expect(contact.reload.owner).to eq(owner)
+    end
+  end
+
   describe '.after_create' do
     let(:account) { create(:account) }
     let(:agent) { create(:user, email: 'agent1@example.com', account: account) }

@@ -20,7 +20,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       validate_source_contacts!(conversation: conversation, communication_thread: communication_thread)
       contacts, primary_contact = resolve_contacts(conversation: conversation, communication_thread: communication_thread)
       company = resolve_company(current_contacts: contacts, primary_contact: primary_contact)
-      owner = resolve_deal_owner(conversation: conversation, communication_thread: communication_thread)
+      owner = resolve_deal_owner(conversation: conversation, communication_thread: communication_thread, primary_contact: primary_contact)
       creator = resolve_optional_record(:creator_id, account.users, current: deal.creator || actor)
       team = resolve_optional_record(:team_id, account.teams, current: deal.team)
       external_ref = resolve_optional_text(:external_ref, current: deal.external_ref)
@@ -63,6 +63,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       reposition_deal!(requested_position) if requested_position.present?
 
       contacts_changed = sync_contacts!(contacts: contacts, primary_contact: primary_contact)
+      sync_owner_to_primary_contact!(primary_contact)
       realtime_event_name = realtime_event_name_for(
         new_record: new_record,
         contacts_changed: contacts_changed
@@ -157,21 +158,27 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     title
   end
 
-  def resolve_deal_owner(conversation:, communication_thread:)
+  def resolve_deal_owner(conversation:, communication_thread:, primary_contact:)
     return resolve_optional_record(:owner_id, account.users, current: deal.owner) if params.key?(:owner_id)
     return deal.owner if deal.persisted?
 
-    default_owner_for_source(conversation: conversation, communication_thread: communication_thread)
+    default_owner_for_source(conversation: conversation, communication_thread: communication_thread, primary_contact: primary_contact)
   end
 
-  def default_owner_for_source(conversation:, communication_thread:)
-    source_owner_candidates(conversation: conversation, communication_thread: communication_thread).find(&:present?) || actor
+  def default_owner_for_source(conversation:, communication_thread:, primary_contact:)
+    source_owner_candidates(
+      conversation: conversation,
+      communication_thread: communication_thread,
+      primary_contact: primary_contact
+    ).find(&:present?) || actor
   end
 
-  def source_owner_candidates(conversation:, communication_thread:)
-    return [conversation&.assignee, communication_thread&.assignee] if params[:originating_communication_thread_id].blank?
+  def source_owner_candidates(conversation:, communication_thread:, primary_contact:)
+    contact_owner = primary_contact&.owner || communication_thread&.contact&.owner || conversation&.contact&.owner
+    return [contact_owner, conversation&.assignee, communication_thread&.assignee] if params[:originating_communication_thread_id].blank?
 
     [
+      contact_owner,
       communication_thread&.assignee,
       default_owner_from_thread_conversations(communication_thread),
       conversation&.assignee
@@ -220,6 +227,13 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     end
 
     changed
+  end
+
+  def sync_owner_to_primary_contact!(primary_contact)
+    return if primary_contact.blank?
+    return if primary_contact.owner_id == deal.owner_id
+
+    primary_contact.update!(owner_id: deal.owner_id)
   end
 
   def resolve_originating_conversation

@@ -47,7 +47,7 @@ class Conversations::CommunicationThreadResolver
       contact_id: conversation.contact_id,
       status: conversation.status,
       priority: conversation.priority,
-      assignee_id: conversation.assignee_id,
+      assignee_id: conversation.contact&.owner_id || conversation.assignee_id,
       team_id: conversation.team_id,
       last_activity_at: conversation.last_activity_at,
       unread_count: conversation.unread_incoming_messages_count
@@ -160,7 +160,7 @@ class Conversations::CommunicationThreadResolver
   end
 
   def aggregate_assignee_id(thread)
-    latest_routing_conversation(thread)&.assignee_id
+    thread.contact&.owner_id || latest_routing_conversation(thread)&.assignee_id
   end
 
   def aggregate_team_id(thread)

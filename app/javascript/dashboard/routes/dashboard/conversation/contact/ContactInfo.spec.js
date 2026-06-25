@@ -32,6 +32,10 @@ const createStore = conversations => ({
     },
     'accounts/isFeatureEnabledonAccount': () => false,
     'contacts/getUIFlags': {},
+    'agents/getVerifiedAgents': [
+      { id: 7, name: 'Aigerim Agent' },
+      { id: 9, name: 'Bob Agent' },
+    ],
     'contactConversations/getAllConversationsByContactId': () => conversations,
   },
   state: {
@@ -44,13 +48,14 @@ const createStore = conversations => ({
   dispatch: dispatchMock,
 });
 
-const buildWrapper = ({ conversations = [] } = {}) =>
+const buildWrapper = ({ conversations = [], contact = {} } = {}) =>
   shallowMount(ContactInfo, {
     props: {
       contact: {
         id: 154,
         name: 'Jane Doe',
         additional_attributes: {},
+        ...contact,
       },
     },
     global: {
@@ -74,6 +79,7 @@ const buildWrapper = ({ conversations = [] } = {}) =>
         ContactChannelLabels: true,
         ContactInfoRow: true,
         ContactMergeModal: true,
+        ComboBox: true,
         EditContact: true,
         NextButton: true,
         SocialIcons: true,
@@ -133,5 +139,29 @@ describe('ContactInfo', () => {
       .vm.$emit('update:show', false);
 
     expect(wrapper.vm.showEditModal).toBe(false);
+  });
+
+  it('updates the shared contact owner from the owner combobox', async () => {
+    const wrapper = buildWrapper({
+      contact: {
+        owner_id: 7,
+        owner: { id: 7, name: 'Aigerim Agent' },
+      },
+    });
+
+    const ownerSelector = wrapper.findComponent({ name: 'ComboBox' });
+    expect(ownerSelector.props('modelValue')).toBe(7);
+    expect(ownerSelector.props('options')).toEqual([
+      { value: '', label: 'CONTACT_PANEL.OWNER_UNASSIGNED' },
+      { value: 7, label: 'Aigerim Agent' },
+      { value: 9, label: 'Bob Agent' },
+    ]);
+
+    await ownerSelector.vm.$emit('update:modelValue', 9);
+
+    expect(dispatchMock).toHaveBeenCalledWith('contacts/update', {
+      id: 154,
+      owner_id: 9,
+    });
   });
 });

@@ -178,7 +178,10 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def permitted_params
-    params.permit(:name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url, additional_attributes: {}, custom_attributes: {})
+    params.permit(
+      :name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url, :owner_id,
+      additional_attributes: {}, custom_attributes: {}
+    )
   end
 
   def contact_custom_attributes
@@ -240,7 +243,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def contact_includes
-    includes = [{ avatar_attachment: [:blob] }]
+    includes = [:owner, { avatar_attachment: [:blob] }]
     return includes unless @include_contact_inboxes
 
     includes << :contact_channel_profiles

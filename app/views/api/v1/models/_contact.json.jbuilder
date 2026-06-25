@@ -3,6 +3,14 @@ json.availability_status resource.availability_status
 json.email resource.email
 json.id resource.id
 json.name resource.name
+json.owner_id resource.owner_id
+if resource.owner.present?
+  json.owner do
+    json.partial! 'api/v1/models/agent', formats: [:json], resource: resource.owner
+  end
+else
+  json.owner nil
+end
 json.phone_number resource.phone_number
 json.blocked resource.blocked
 json.identifier resource.identifier

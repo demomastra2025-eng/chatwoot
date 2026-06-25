@@ -46,6 +46,7 @@ export default {
       name: '',
       phoneNumber: '',
       activeDialCode: '',
+      ownerId: '',
       avatarFile: null,
       avatarUrl: '',
       country: {
@@ -115,6 +116,23 @@ export default {
         ? `${this.activeDialCode}${this.phoneNumber}`
         : '';
     },
+    agents() {
+      return this.$store.getters['agents/getVerifiedAgents'] || [];
+    },
+    ownerOptions() {
+      const unassigned = {
+        value: '',
+        label: this.$t('CONTACT_PANEL.OWNER_UNASSIGNED'),
+      };
+
+      return [
+        unassigned,
+        ...this.agents.map(agent => ({
+          value: agent.id,
+          label: agent.name || agent.email,
+        })),
+      ];
+    },
   },
   watch: {
     contact() {
@@ -124,6 +142,9 @@ export default {
   mounted() {
     this.setContactObject();
     this.setDialCode();
+    if (!this.agents.length) {
+      this.$store.dispatch('agents/get');
+    }
   },
   methods: {
     onCancel() {
@@ -164,6 +185,7 @@ export default {
       this.name = name || '';
       this.email = emailAddress || '';
       this.phoneNumber = phoneNumber || '';
+      this.ownerId = this.contact.owner_id || this.contact.owner?.id || '';
       this.companyName = additionalAttributes.company_name || '';
       this.country = {
         id: additionalAttributes.country_code || '',
@@ -201,6 +223,7 @@ export default {
         name: this.name,
         email: this.email,
         phone_number: this.setPhoneNumber,
+        owner_id: this.ownerId ? Number(this.ownerId) : null,
         additional_attributes: {
           ...this.contact.additional_attributes,
           description: this.description,
@@ -328,6 +351,18 @@ export default {
             {{ $t('CONTACT_FORM.FORM.EMAIL_ADDRESS.ERROR') }}
           </span>
         </label>
+        <div class="w-full mb-4">
+          <label>
+            {{ $t('CONTACT_PANEL.OWNER') }}
+          </label>
+          <ComboBox
+            v-model="ownerId"
+            :options="ownerOptions"
+            input-like
+            dropdown-placement="auto"
+            :placeholder="$t('CONTACT_PANEL.OWNER_PLACEHOLDER')"
+          />
+        </div>
       </div>
     </div>
     <div class="w-full">

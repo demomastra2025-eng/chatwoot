@@ -66,6 +66,24 @@ RSpec.describe Crm::Deals::UpsertService do
     expect(deal.stage).not_to eq(later_open_stage)
   end
 
+  it 'defaults a new conversation-sourced deal owner to the contact owner when owner_id is omitted' do
+    create(:crm_stage, account: account, pipeline: pipeline, default: true)
+    contact_owner = create(:user, account: account, role: :agent)
+    contact = create(:contact, account: account, owner: contact_owner)
+    conversation = create(:conversation, account: account, contact: contact, assignee: nil)
+
+    deal = described_class.new(
+      account: account,
+      params: {
+        title: 'Contact-owned deal',
+        pipeline_id: pipeline.id,
+        originating_conversation_id: conversation.id
+      }
+    ).perform
+
+    expect(deal.owner).to eq(contact_owner)
+  end
+
   it 'defaults a new conversation-sourced deal owner to the conversation assignee when owner_id is omitted' do
     create(:crm_stage, account: account, pipeline: pipeline, default: true)
     assignee = create(:user, account: account, role: :agent)
@@ -185,5 +203,25 @@ RSpec.describe Crm::Deals::UpsertService do
     ).perform
 
     expect(updated_deal.owner).to be_nil
+  end
+
+  it 'syncs the deal owner to the primary contact when an explicit owner is provided' do
+    create(:crm_stage, account: account, pipeline: pipeline, default: true)
+    owner = create(:user, account: account, role: :agent)
+    contact = create(:contact, account: account, owner: nil)
+
+    deal = described_class.new(
+      account: account,
+      params: {
+        title: 'Explicit owner deal',
+        pipeline_id: pipeline.id,
+        contact_ids: [contact.id],
+        primary_contact_id: contact.id,
+        owner_id: owner.id
+      }
+    ).perform
+
+    expect(deal.owner).to eq(owner)
+    expect(contact.reload.owner).to eq(owner)
   end
 end

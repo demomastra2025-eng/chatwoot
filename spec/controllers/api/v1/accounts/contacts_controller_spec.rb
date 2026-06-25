@@ -738,6 +738,20 @@ RSpec.describe 'Contacts API', type: :request do
         )
       end
 
+      it 'updates the contact owner and serializes it' do
+        owner = create(:user, account: account, role: :agent)
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { owner_id: owner.id },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.owner).to eq(owner)
+        expect(response.parsed_body.dig('payload', 'owner_id')).to eq(owner.id)
+        expect(response.parsed_body.dig('payload', 'owner', 'id')).to eq(owner.id)
+      end
+
       it 'marks manual name edits as the primary name source' do
         patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
               headers: admin.create_new_auth_token,

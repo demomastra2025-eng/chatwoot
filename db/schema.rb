@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_23_193000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1116,6 +1116,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_23_193000) do
     t.string "country_code", default: ""
     t.boolean "blocked", default: false, null: false
     t.bigint "company_id"
+    t.bigint "owner_id"
     t.index "account_id, ((custom_attributes ->> 'medelement_patient_code'::text))", name: "idx_contacts_account_medelement_patient_code", unique: true, where: "((custom_attributes ->> 'medelement_patient_code'::text) IS NOT NULL)"
     t.index "lower((email)::text), account_id", name: "index_contacts_on_lower_email_account_id"
     t.index ["account_id", "contact_type"], name: "index_contacts_on_account_id_and_contact_type"
@@ -1128,6 +1129,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_23_193000) do
     t.index ["email", "account_id"], name: "uniq_email_per_account_contact", unique: true
     t.index ["identifier", "account_id"], name: "uniq_identifier_per_account_contact", unique: true
     t.index ["name", "email", "phone_number", "identifier"], name: "index_contacts_on_name_email_phone_number_identifier", opclass: :gin_trgm_ops, using: :gin
+    t.index ["owner_id"], name: "index_contacts_on_owner_id"
     t.index ["phone_number", "account_id"], name: "index_contacts_on_phone_number_and_account_id"
   end
 
@@ -2848,6 +2850,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_23_193000) do
   add_foreign_key "contact_channel_profiles", "contact_inboxes"
   add_foreign_key "contact_channel_profiles", "contacts"
   add_foreign_key "contact_channel_profiles", "inboxes"
+  add_foreign_key "contacts", "users", column: "owner_id"
   add_foreign_key "crm_comments", "accounts"
   add_foreign_key "crm_comments", "users"
   add_foreign_key "crm_deal_contacts", "accounts"

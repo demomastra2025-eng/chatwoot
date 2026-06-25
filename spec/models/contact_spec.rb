@@ -7,12 +7,21 @@ require Rails.root.join 'spec/models/concerns/avatarable_shared.rb'
 RSpec.describe Contact do
   context 'with validations' do
     it { is_expected.to validate_presence_of(:account_id) }
+
+    it 'rejects an owner from another account' do
+      contact = build(:contact, owner: create(:user))
+
+      expect(contact).not_to be_valid
+      expect(contact.errors[:owner_id]).to include('must belong to the current account')
+    end
   end
 
   context 'with associations' do
     it { is_expected.to belong_to(:account) }
+    it { is_expected.to belong_to(:owner).optional }
     it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
     it { is_expected.to have_many(:conversations).dependent(:destroy_async) }
+    it { is_expected.to have_many(:crm_deals).through(:crm_deal_contacts) }
   end
 
   describe 'concerns' do

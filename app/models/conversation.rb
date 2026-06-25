@@ -68,6 +68,7 @@ class Conversation < ApplicationRecord
   validates :inbox_id, presence: true
   validates :contact_id, presence: true
   before_validation :validate_additional_attributes
+  before_validation :inherit_contact_owner, on: :create
   before_validation :reset_agent_bot_when_assignee_present
   validates :additional_attributes, jsonb_attributes_length: true
   validates :custom_attributes, jsonb_attributes_length: true
@@ -127,6 +128,7 @@ class Conversation < ApplicationRecord
   after_update_commit :execute_after_update_commit_callbacks
   after_create_commit :notify_conversation_creation
   after_create_commit :load_attributes_created_by_db_triggers
+  after_create_commit :sync_contact_owner_from_assignee
   after_create_commit :ensure_communication_thread, if: :communication_threads_enabled?
   after_create_commit :auto_create_crm_deal_from_channel_contact
 
@@ -261,6 +263,7 @@ class Conversation < ApplicationRecord
   def execute_after_update_commit_callbacks
     handle_resolved_status_change
     refresh_communication_thread! if communication_threads_enabled?
+    sync_contact_owner_from_assignee
     return if runtime_events_suppressed?
 
     notify_status_change
@@ -288,6 +291,22 @@ class Conversation < ApplicationRecord
 
   def validate_additional_attributes
     self.additional_attributes = {} unless additional_attributes.is_a?(Hash)
+  end
+
+  def inherit_contact_owner
+    return if assignee_id.present? || assignee_agent_bot_id.present?
+    return if contact&.owner_id.blank?
+
+    self.assignee = contact.owner
+  end
+
+  def sync_contact_owner_from_assignee
+    return unless saved_change_to_assignee_id?
+    return if contact.blank? || contact.owner_id == assignee_id
+    return if assignee_id.blank? && assignee_agent_bot_id.present?
+    return if assignee_id.present? && !account.users.exists?(id: assignee_id)
+
+    contact.update!(owner_id: assignee_id)
   end
 
   def reset_agent_bot_when_assignee_present

@@ -23,6 +23,9 @@
     "CALL": "Call",
     "CALL_INITIATED": "Calling the contact…",
     "CALL_FAILED": "Unable to start the call. Please try again.",
+    "OWNER": "Owner",
+    "OWNER_PLACEHOLDER": "Choose owner",
+    "OWNER_UNASSIGNED": "Unassigned",
     "SOURCE_IDENTITIES": {
       "TITLE": "Names and photos from sources",
       "DESCRIPTION": "Choose which synced source controls the main contact name and photo.",

@@ -22,6 +22,7 @@
 #  updated_at            :datetime         not null
 #  account_id            :integer          not null
 #  company_id            :bigint
+#  owner_id              :bigint
 #
 # Indexes
 #
@@ -34,10 +35,15 @@
 #  index_contacts_on_lower_email_account_id              (lower((email)::text), account_id)
 #  index_contacts_on_name_email_phone_number_identifier  (name,email,phone_number,identifier) USING gin
 #  index_contacts_on_nonempty_fields                     (account_id,email,phone_number,identifier) WHERE (((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))
+#  index_contacts_on_owner_id                            (owner_id)
 #  index_contacts_on_phone_number_and_account_id         (phone_number,account_id)
 #  index_resolved_contact_account_id                     (account_id) WHERE (((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))
 #  uniq_email_per_account_contact                        (email,account_id) UNIQUE
 #  uniq_identifier_per_account_contact                   (identifier,account_id) UNIQUE
+#
+# Foreign Keys
+#
+#  fk_rails_...  (owner_id => users.id)
 #
 
 # rubocop:enable Layout/LineLength
@@ -64,22 +70,27 @@ class Contact < ApplicationRecord
   validates :phone_number,
             allow_blank: true, uniqueness: { scope: [:account_id] },
             format: { with: /\+[1-9]\d{1,14}\z/, message: I18n.t('errors.contacts.phone_number.invalid') }
+  validate :owner_belongs_to_account
 
   belongs_to :account
+  belongs_to :owner, class_name: 'User', optional: true
   has_many :campaign_deliveries, dependent: :delete_all
   has_many :conversations, dependent: :destroy_async
   has_many :contact_inboxes, dependent: :destroy_async
   has_many :contact_channel_profiles, dependent: :destroy
+  has_many :crm_deal_contacts, class_name: 'Crm::DealContact', dependent: :destroy_async
+  has_many :crm_deals, through: :crm_deal_contacts, source: :deal
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :inboxes, through: :contact_inboxes
   has_many :messages, as: :sender, dependent: :destroy_async
   has_many :notes, dependent: :destroy_async
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
   before_validation :prepare_contact_attributes, :normalize_phone_number
+  before_save :sync_contact_attributes
+  after_commit :sync_unified_owner, if: :saved_change_to_owner_id?
   after_create_commit :dispatch_create_event, :ip_lookup
   after_update_commit :dispatch_update_event
   after_destroy_commit :dispatch_destroy_event
-  before_save :sync_contact_attributes
 
   enum contact_type: { visitor: 0, lead: 1, customer: 2 }
 
@@ -168,6 +179,8 @@ class Contact < ApplicationRecord
       id: id,
       identifier: identifier,
       name: name,
+      owner_id: owner_id,
+      owner: owner&.push_event_data,
       phone_number: phone_number,
       thumbnail: resolved_avatar_url,
       blocked: blocked,
@@ -187,6 +200,8 @@ class Contact < ApplicationRecord
       id: id,
       identifier: identifier,
       name: name,
+      owner_id: owner_id,
+      owner: owner&.webhook_data,
       phone_number: phone_number,
       thumbnail: resolved_avatar_url,
       blocked: blocked
@@ -477,6 +492,19 @@ class Contact < ApplicationRecord
 
   def sync_contact_attributes
     ::Contacts::SyncAttributes.new(self).perform
+  end
+
+  def sync_unified_owner
+    return if destroyed?
+
+    ::Contacts::OwnerSyncService.new(contact: self).perform
+  end
+
+  def owner_belongs_to_account
+    return if owner_id.blank?
+    return if account&.users&.exists?(id: owner_id)
+
+    errors.add(:owner_id, 'must belong to the current account')
   end
 
   def dispatch_create_event

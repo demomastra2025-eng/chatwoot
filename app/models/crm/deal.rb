@@ -108,9 +108,14 @@ class Crm::Deal < ApplicationRecord
   before_validation :normalize_currency
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
+  after_commit :sync_primary_contact_owner, if: :saved_change_to_owner_id?
+
+  def primary_contact
+    deal_contacts.find(&:primary?)&.contact
+  end
 
   def primary_contact_id
-    deal_contacts.find(&:primary?)&.contact_id
+    primary_contact&.id
   end
 
   def closed?
@@ -200,6 +205,13 @@ class Crm::Deal < ApplicationRecord
     return if position.present? && position.to_i.positive?
 
     self.position = stage.deals.kept.maximum(:position).to_i + 1
+  end
+
+  def sync_primary_contact_owner
+    contact = primary_contact
+    return if contact.blank? || contact.owner_id == owner_id
+
+    contact.update!(owner_id: owner_id)
   end
 
   def related_records_belong_to_account

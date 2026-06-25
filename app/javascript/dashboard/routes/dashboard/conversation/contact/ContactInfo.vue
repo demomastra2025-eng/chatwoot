@@ -26,6 +26,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
+import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 
 import {
   isAConversationRoute,
@@ -46,6 +47,7 @@ export default {
     ContactMergeModal,
     VoiceCallButton,
     InlineInput,
+    ComboBox,
   },
   props: {
     contact: {
@@ -80,6 +82,7 @@ export default {
       currentUser: 'getCurrentUser',
       isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
       uiFlags: 'contacts/getUIFlags',
+      agents: 'agents/getVerifiedAgents',
     }),
     contactProfileLink() {
       return `/app/accounts/${this.$route.params.accountId}/contacts/${this.contact.id}`;
@@ -152,6 +155,22 @@ export default {
         telegram,
       };
     },
+    ownerId() {
+      return this.contact.owner_id || this.contact.owner?.id || '';
+    },
+    ownerOptions() {
+      const unassigned = {
+        value: '',
+        label: this.$t('CONTACT_PANEL.OWNER_UNASSIGNED'),
+      };
+
+      const agentOptions = (this.agents || []).map(agent => ({
+        value: agent.id,
+        label: agent.name || agent.email,
+      }));
+
+      return [unassigned, ...agentOptions];
+    },
     // Delete Modal
     confirmDeleteMessage() {
       return ` ${this.contact.name}?`;
@@ -197,6 +216,11 @@ export default {
       },
       immediate: true,
     },
+  },
+  mounted() {
+    if (!this.agents?.length) {
+      this.$store.dispatch('agents/get');
+    }
   },
   methods: {
     dynamicTime,
@@ -340,6 +364,10 @@ export default {
     },
     onFieldUpdate(field, value) {
       this.updateContactField({ [field]: value });
+    },
+    onOwnerUpdate(value) {
+      const ownerId = value ? Number(value) : null;
+      this.updateContactField({ owner_id: ownerId });
     },
     async updateContactField(attrs) {
       const contactId = this.contact.id;
@@ -518,6 +546,19 @@ export default {
                   })
               "
             />
+            <div class="w-full grid gap-1">
+              <span class="mb-0.5 text-sm font-medium text-n-slate-12">
+                {{ $t('CONTACT_PANEL.OWNER') }}
+              </span>
+              <ComboBox
+                :model-value="ownerId"
+                :options="ownerOptions"
+                input-like
+                dropdown-placement="auto"
+                :placeholder="$t('CONTACT_PANEL.OWNER_PLACEHOLDER')"
+                @update:model-value="onOwnerUpdate"
+              />
+            </div>
             <ContactInfoRow
               v-if="location || additionalAttributes.location"
               :value="location || additionalAttributes.location"
