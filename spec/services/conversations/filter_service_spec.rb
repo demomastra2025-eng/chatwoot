@@ -58,6 +58,49 @@ describe Conversations::FilterService do
            attribute_display_type: 'currency')
   end
 
+  def create_filter_message(conversation, message_type, created_at)
+    create(
+      :message,
+      account: conversation.account,
+      inbox: conversation.inbox,
+      conversation: conversation,
+      message_type: message_type,
+      created_at: created_at
+    )
+  end
+
+  def create_filter_conversation(timestamp)
+    create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      assignee: user_1,
+      created_at: timestamp,
+      last_activity_at: timestamp
+    )
+  end
+
+  def last_activity_filter_scenario
+    threshold_date = '2026-01-12'
+    old_message_at = Time.zone.parse('2026-01-10 10:00:00')
+    recent_event_at = Time.zone.parse('2026-01-15 10:00:00')
+    recent_message_at = Time.zone.parse('2026-01-14 10:00:00')
+
+    activity_event_conversation = create_filter_conversation(old_message_at)
+    recent_message_conversation = create_filter_conversation(old_message_at)
+
+    create_filter_message(activity_event_conversation, :incoming, old_message_at)
+    create_filter_message(activity_event_conversation, :activity, recent_event_at)
+    create_filter_message(recent_message_conversation, :incoming, recent_message_at)
+
+    {
+      threshold_date: threshold_date,
+      recent_event_at: recent_event_at,
+      activity_event_conversation: activity_event_conversation,
+      recent_message_conversation: recent_message_conversation
+    }
+  end
+
   describe '#perform' do
     context 'with query present' do
       let!(:params) { { payload: [], page: 1 } }
@@ -120,6 +163,24 @@ describe Conversations::FilterService do
         result = filter_service.new(params, user_1, account).perform
         expect(result[:conversations].length).to eq 2
         expect(result[:conversations].pluck(:id)).to include(high_priority.id, urgent_priority.id)
+      end
+
+      it 'filters last_activity_at by latest public message instead of activity events', :aggregate_failures do
+        scenario = last_activity_filter_scenario
+        params[:payload] = [
+          {
+            attribute_key: 'last_activity_at',
+            filter_operator: 'is_greater_than',
+            values: [scenario[:threshold_date]],
+            query_operator: nil,
+            custom_attribute_type: ''
+          }.with_indifferent_access
+        ]
+
+        result = filter_service.new(params, user_1, account).perform
+
+        expect(scenario[:activity_event_conversation].reload.last_activity_at).to be_within(1.second).of(scenario[:recent_event_at])
+        expect(result[:conversations].pluck(:id)).to contain_exactly(scenario[:recent_message_conversation].id)
       end
 
       it 'filter conversations with not_equal_to priority operator' do
@@ -509,6 +570,28 @@ describe Conversations::FilterService do
           en_conversation_1.update!(last_activity_at: (Time.zone.today - 4.days))
           en_conversation_2.update!(last_activity_at: (Time.zone.today - 5.days))
           user_2_assigned_conversation.update!(last_activity_at: (Time.zone.today - 2.days))
+
+          create(
+            :message,
+            account: account,
+            inbox: inbox,
+            conversation: en_conversation_1,
+            created_at: Time.zone.today - 4.days
+          )
+          create(
+            :message,
+            account: account,
+            inbox: inbox,
+            conversation: en_conversation_2,
+            created_at: Time.zone.today - 5.days
+          )
+          create(
+            :message,
+            account: account,
+            inbox: inbox,
+            conversation: user_2_assigned_conversation,
+            created_at: Time.zone.today - 2.days
+          )
         end
 
         it 'filter by last_activity_at 3_days_before and custom_attributes' do

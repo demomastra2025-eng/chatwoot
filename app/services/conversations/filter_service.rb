@@ -54,6 +54,33 @@ class Conversations::FilterService < FilterService
 
   private
 
+  def date_filter(current_filter, query_hash, filter_operator_value)
+    return last_message_activity_filter(query_hash, filter_operator_value) if last_activity_filter?(query_hash)
+
+    super
+  end
+
+  def last_activity_filter?(query_hash)
+    query_hash['attribute_key'].to_s == 'last_activity_at'
+  end
+
+  def last_message_activity_filter(query_hash, filter_operator_value)
+    <<~SQL.squish
+      (#{last_public_message_activity_sql})::date #{filter_operator_value} #{query_hash[:query_operator]}
+    SQL
+  end
+
+  def last_public_message_activity_sql
+    <<~SQL.squish
+      SELECT MAX(messages.created_at)
+      FROM messages
+      WHERE messages.conversation_id = conversations.id
+        AND messages.account_id = conversations.account_id
+        AND messages.private = FALSE
+        AND messages.message_type != #{Message.message_types[:activity]}
+    SQL
+  end
+
   def apply_crm_deal_context(scope)
     Crm::DealDialogScopeBuilder.new(
       account: @account,
