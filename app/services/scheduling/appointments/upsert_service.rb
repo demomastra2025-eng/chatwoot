@@ -37,6 +37,7 @@ class Scheduling::Appointments::UpsertService
     company = resolve_company(contact)
     conversation = resolve_optional_record(:conversation_id, account.conversations, current: appointment.conversation)
     created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
+    owner = resolve_owner(contact: contact, resource: resource)
 
     starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
     duration_min = resolve_duration_min(
@@ -69,6 +70,7 @@ class Scheduling::Appointments::UpsertService
       company: company,
       conversation: conversation,
       created_by: created_by,
+      owner: owner,
       starts_at: starts_at,
       ends_at: ends_at,
       duration_min: duration_min,
@@ -183,6 +185,13 @@ class Scheduling::Appointments::UpsertService
     return nil unless company_attachment_enabled?
 
     resolve_optional_record(:company_id, account.companies, current: appointment.company || contact&.company)
+  end
+
+  def resolve_owner(contact:, resource:)
+    return resolve_optional_record(:owner_id, account.users, current: appointment.owner) if params.key?(:owner_id)
+    return appointment.owner if appointment.persisted?
+
+    contact&.owner || resource&.user || actor
   end
 
   def resolve_custom_attributes(services:)

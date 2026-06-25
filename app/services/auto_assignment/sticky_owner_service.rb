@@ -12,8 +12,11 @@ class AutoAssignment::StickyOwnerService
   end
 
   def owner_for(conversation)
-    return nil unless sticky_owner_enabled?
     return nil if conversation.contact_id.blank?
+
+    contact = conversation.contact
+    return contact.owner if contact&.owner.present?
+    return nil unless sticky_owner_enabled?
 
     AssignmentClientOwnership.active
                              .includes(:user)

@@ -63,7 +63,7 @@ class Crm::FieldDefinition < ApplicationRecord
       start_at due_at completed_at external_ref idempotency_key lock_version archived_at
     ],
     'appointment' => %w[
-      resource_id contact_id service_id company_id conversation_id created_by_id
+      resource_id contact_id service_id company_id conversation_id created_by_id owner_id
       starts_at ends_at duration_min status appointment_type client_name client_phone
       client_identifier client_birth_date client_gender client_comment source
       external_ref idempotency_key service_name_snapshot service_type_snapshot

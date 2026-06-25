@@ -10,6 +10,14 @@ import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 
 const props = defineProps({
+  communicationThreadDisplayId: {
+    type: [Number, String],
+    default: '',
+  },
+  communicationThreadId: {
+    type: [Number, String],
+    default: '',
+  },
   conversationId: {
     type: [Number, String],
     default: '',
@@ -51,11 +59,42 @@ const normalizedConversationId = computed(() =>
 const normalizedConversationDisplayId = computed(() =>
   normalizePositiveNumber(props.conversationDisplayId)
 );
+const normalizedCommunicationThreadId = computed(() =>
+  normalizePositiveNumber(props.communicationThreadId)
+);
+const normalizedCommunicationThreadDisplayId = computed(() =>
+  normalizePositiveNumber(props.communicationThreadDisplayId)
+);
+const isCommunicationThreadTarget = computed(
+  () =>
+    !!normalizedCommunicationThreadDisplayId.value ||
+    !!normalizedCommunicationThreadId.value
+);
 const conversationApiId = computed(
   () => normalizedConversationDisplayId.value || normalizedConversationId.value
 );
 const conversationLabelId = computed(
   () => normalizedConversationDisplayId.value || normalizedConversationId.value
+);
+const communicationThreadApiId = computed(
+  () =>
+    normalizedCommunicationThreadDisplayId.value ||
+    normalizedCommunicationThreadId.value
+);
+const communicationThreadLabelId = computed(
+  () =>
+    normalizedCommunicationThreadDisplayId.value ||
+    normalizedCommunicationThreadId.value
+);
+const chatApiId = computed(() =>
+  isCommunicationThreadTarget.value
+    ? communicationThreadApiId.value
+    : conversationApiId.value
+);
+const chatLabelId = computed(() =>
+  isCommunicationThreadTarget.value
+    ? communicationThreadLabelId.value
+    : conversationLabelId.value
 );
 const conversationByDisplayId = computed(() => {
   if (!normalizedConversationDisplayId.value) return null;
@@ -64,6 +103,18 @@ const conversationByDisplayId = computed(() => {
     return (
       normalizePositiveNumber(conversation.display_id) ===
       normalizedConversationDisplayId.value
+    );
+  });
+});
+const communicationThreadByDisplayId = computed(() => {
+  if (!normalizedCommunicationThreadDisplayId.value) return null;
+
+  return (getAllConversations.value || []).find(conversation => {
+    return (
+      conversation.is_communication_thread &&
+      normalizePositiveNumber(
+        conversation.display_id || conversation.communication_thread_id
+      ) === normalizedCommunicationThreadDisplayId.value
     );
   });
 });
@@ -80,25 +131,69 @@ const activeConversation = computed(() => {
     null
   );
 });
+const activeCommunicationThread = computed(() => {
+  if (!communicationThreadApiId.value) {
+    return null;
+  }
+
+  return (
+    getConversationById.value(
+      communicationThreadApiId.value,
+      'communication_thread'
+    ) ||
+    getConversationById.value(
+      normalizedCommunicationThreadId.value,
+      'communication_thread'
+    ) ||
+    communicationThreadByDisplayId.value ||
+    null
+  );
+});
+const activeChat = computed(() =>
+  isCommunicationThreadTarget.value
+    ? activeCommunicationThread.value
+    : activeConversation.value
+);
 
 const isConversationReady = computed(() => {
   const currentChatId = normalizePositiveNumber(currentChat.value?.id);
   const currentChatDisplayId = normalizePositiveNumber(
     currentChat.value?.display_id || currentChat.value?.displayId
   );
-
-  const candidateConversationIds = new Set(
-    [
-      normalizedConversationId.value,
-      normalizedConversationDisplayId.value,
-      conversationApiId.value,
-    ].filter(Boolean)
+  const currentChatThreadId = normalizePositiveNumber(
+    currentChat.value?.communication_thread_id ||
+      currentChat.value?.communicationThreadId
   );
 
+  const candidateConversationIds = new Set(
+    (isCommunicationThreadTarget.value
+      ? [
+          normalizedCommunicationThreadId.value,
+          normalizedCommunicationThreadDisplayId.value,
+          communicationThreadApiId.value,
+        ]
+      : [
+          normalizedConversationId.value,
+          normalizedConversationDisplayId.value,
+          conversationApiId.value,
+        ]
+    ).filter(Boolean)
+  );
+
+  if (isCommunicationThreadTarget.value) {
+    return (
+      currentChat.value?.is_communication_thread &&
+      (candidateConversationIds.has(currentChatId) ||
+        candidateConversationIds.has(currentChatDisplayId) ||
+        candidateConversationIds.has(currentChatThreadId))
+    );
+  }
+
   return (
-    candidateConversationIds.has(currentChatId) ||
-    (normalizedConversationDisplayId.value &&
-      currentChatDisplayId === normalizedConversationDisplayId.value)
+    !currentChat.value?.is_communication_thread &&
+    (candidateConversationIds.has(currentChatId) ||
+      (normalizedConversationDisplayId.value &&
+        currentChatDisplayId === normalizedConversationDisplayId.value))
   );
 });
 
@@ -118,7 +213,7 @@ const resetPanelState = () => {
 };
 
 const activateConversation = async () => {
-  if (!props.visible || !conversationApiId.value) {
+  if (!props.visible || !chatApiId.value) {
     return;
   }
 
@@ -128,19 +223,24 @@ const activateConversation = async () => {
   ui.isLoading = true;
 
   try {
-    if (!activeConversation.value) {
-      await store.dispatch('getConversation', conversationApiId.value);
-    }
-
     if (
       requestId !== activationRequestId.value ||
       !props.visible ||
-      !conversationApiId.value
+      !chatApiId.value
     ) {
       return;
     }
+    let conversation = activeChat.value;
 
-    const conversation = activeConversation.value;
+    if (!conversation) {
+      conversation =
+        (await store.dispatch(
+          isCommunicationThreadTarget.value
+            ? 'getCommunicationThread'
+            : 'getConversation',
+          chatApiId.value
+        )) || activeChat.value;
+    }
 
     if (!conversation) {
       throw new Error(t('CRM.ERRORS.LOAD_TITLE'));
@@ -166,7 +266,7 @@ const handleAfterLeave = () => {
 };
 
 watch(
-  [() => props.visible, conversationApiId],
+  [() => props.visible, chatApiId],
   ([isVisible, apiId]) => {
     if (!isVisible || !apiId) {
       invalidateActivation();
@@ -202,8 +302,8 @@ onBeforeUnmount(() => {
     @after-leave="handleAfterLeave"
   >
     <div
-      v-if="visible && conversationApiId"
-      class="fixed inset-0 z-[120] bg-black/35 backdrop-blur-[4px] md:absolute md:inset-y-0 md:left-auto md:right-[22rem] md:z-30 md:bg-transparent md:backdrop-blur-0 xl:right-[28rem]"
+      v-if="visible && chatApiId"
+      class="fixed inset-0 z-[120] bg-black/35 backdrop-blur-[4px] md:static md:inset-auto md:z-auto md:h-full md:w-[22rem] md:min-w-[22rem] md:flex-shrink-0 md:bg-transparent md:backdrop-blur-0 xl:w-[28rem] xl:min-w-[28rem]"
     >
       <div class="flex h-full w-full justify-end md:pointer-events-none">
         <aside
@@ -218,9 +318,13 @@ onBeforeUnmount(() => {
               </h3>
               <p class="mb-0 text-sm text-n-slate-11">
                 {{
-                  $t('CRM.TIMELINE.CONVERSATION', {
-                    id: conversationLabelId,
-                  })
+                  isCommunicationThreadTarget
+                    ? $t('CRM.TIMELINE.COMMUNICATION_THREAD', {
+                        id: chatLabelId,
+                      })
+                    : $t('CRM.TIMELINE.CONVERSATION', {
+                        id: chatLabelId,
+                      })
                 }}
               </p>
             </div>

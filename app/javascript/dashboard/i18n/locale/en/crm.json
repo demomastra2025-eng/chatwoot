@@ -52,6 +52,8 @@
       "UNKNOWN_CONTACT": "Unknown contact"
     },
     "ERRORS": {
+      "DEAL_STAGE_INVALID_CLOSING_REASONS": "Choose a closing reason from the configured list.",
+      "DEAL_STAGE_REQUIRES_CLOSING_REASONS": "Choose a closing reason before moving the deal to this stage.",
       "DEAL_STAGE_REQUIRES_FIELDS": "Fill required fields before moving the deal to a closed stage: {fields}.",
       "DUPLICATE_EXTERNAL_REF": "This external reference already exists in CRM.",
       "DUPLICATE_IDEMPOTENCY_KEY": "This idempotency key has already been used.",
@@ -62,7 +64,7 @@
       "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.",
       "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
       "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
-      "STANDARD_STAGE_LOCKED": "Standard Won and Lost stages can only be renamed.",
+      "STANDARD_STAGE_LOCKED": "Standard Won and Lost stages can only be renamed and configured with closing reasons.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
       "TASK_STATUS_REQUIRES_FIELDS": "Fill required fields before marking the task as done: {fields}.",
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
@@ -146,7 +148,18 @@
         "TITLE": "Deal",
         "UPDATED": "Updated"
       },
-      "TITLE": "Pipelines"
+      "TITLE": "Pipelines",
+      "CLOSING_REASONS": {
+        "CONFIRM": "Apply",
+        "EMPTY_STATE": "No reasons available",
+        "OPTIONAL_DESCRIPTION": "You can select a closing reason before moving the deal to “{stage}”.",
+        "PLACEHOLDER": "Select reason",
+        "REQUIRED_DESCRIPTION": "Select a closing reason before moving the deal to “{stage}”.",
+        "REQUIRED_HINT": "This stage requires at least one reason.",
+        "SEARCH_PLACEHOLDER": "Search reasons",
+        "STAGE_FALLBACK": "closed stage",
+        "TITLE": "Closing reason: {stage}"
+      }
     },
     "TASKS": {
       "CREATE_TITLE": "Create task",
@@ -343,6 +356,12 @@
           "ACTIVE": "Stage is active",
           "COLOR": "Color",
           "COLOR_UNAVAILABLE": "Already used in this pipeline",
+          "CLOSING_REASONS": "Closing reasons",
+          "CLOSING_REASONS_HELP": "These options are shown to managers and Captain when a deal is moved to this final stage.",
+          "CLOSING_REASONS_PLACEHOLDER": "Example: Too expensive, Not relevant, Competitor",
+          "CLOSING_REASONS_REQUIRED": "Require a reason",
+          "CLOSING_REASONS_REQUIRED_ERROR": "Add at least one reason or turn off the requirement.",
+          "CLOSING_REASONS_REQUIRED_HELP": "Deals cannot move to this stage without a selected reason.",
           "CUSTOM_COLOR": "Custom color",
           "DEFAULT": "Default stage",
           "DEFAULT_HELP": "New deals in this pipeline start from this active open stage.",

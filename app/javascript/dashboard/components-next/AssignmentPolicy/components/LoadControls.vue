@@ -25,6 +25,16 @@ const maxOpenConversations = defineModel('maxOpenConversations', {
   set: normalizeOptionalPositiveNumber,
 });
 
+const assignPendingConversations = defineModel('assignPendingConversations', {
+  type: Boolean,
+  default: false,
+});
+
+const assignOnlineOnly = defineModel('assignOnlineOnly', {
+  type: Boolean,
+  default: true,
+});
+
 const monthlyNewClientQuota = defineModel('monthlyNewClientQuota', {
   type: Number,
   default: null,
@@ -135,6 +145,50 @@ const stickyOwnerDurationDays = defineModel('stickyOwnerDurationDays', {
         />
       </label>
     </div>
+
+    <label
+      class="flex items-start gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-3"
+    >
+      <Switch v-model="assignOnlineOnly" class="mt-0.5" />
+      <span class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-n-slate-12">
+          {{
+            t(
+              'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ONLINE_ONLY.LABEL'
+            )
+          }}
+        </span>
+        <span class="text-xs text-n-slate-11">
+          {{
+            t(
+              'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ONLINE_ONLY.DESCRIPTION'
+            )
+          }}
+        </span>
+      </span>
+    </label>
+
+    <label
+      class="flex items-start gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-3"
+    >
+      <Switch v-model="assignPendingConversations" class="mt-0.5" />
+      <span class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-n-slate-12">
+          {{
+            t(
+              'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ASSIGN_PENDING.LABEL'
+            )
+          }}
+        </span>
+        <span class="text-xs text-n-slate-11">
+          {{
+            t(
+              'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ASSIGN_PENDING.DESCRIPTION'
+            )
+          }}
+        </span>
+      </span>
+    </label>
 
     <div
       class="flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-3"

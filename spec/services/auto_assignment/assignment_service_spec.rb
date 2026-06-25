@@ -68,6 +68,17 @@ RSpec.describe AutoAssignment::AssignmentService do
         expect(conversation.reload.assignee).to be_nil
       end
 
+      it 'assigns to inbox members regardless of presence when online-only is disabled' do
+        assignment_policy.update!(assign_online_only: false)
+        allow(OnlineStatusTracker).to receive(:get_available_users).and_return({ agent.id.to_s => 'busy' })
+        conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
+        assigned_count = service.perform_bulk_assignment(limit: 1)
+
+        expect(assigned_count).to eq(1)
+        expect(conv.reload.assignee).to eq(agent)
+      end
+
       it 'does not override a conversation assigned by another worker before the claim' do
         competing_agent = create(:user, account: account, role: :agent, availability: :online)
         conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
@@ -75,7 +86,7 @@ RSpec.describe AutoAssignment::AssignmentService do
         expect do
           allow(service).to receive(:unassigned_conversations).and_return([conv])
           allow(service).to receive(:find_available_agent).and_wrap_original do |original, current_conversation|
-            conv.update!(assignee: competing_agent)
+            conv.update_columns(assignee_id: competing_agent.id, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
             original.call(current_conversation)
           end
 
@@ -103,7 +114,7 @@ RSpec.describe AutoAssignment::AssignmentService do
 
         allow(service).to receive(:unassigned_conversations).and_return([conv])
         allow(service).to receive(:find_available_agent).and_wrap_original do |original, current_conversation|
-          conv.update!(assignee: competing_agent)
+          conv.update_columns(assignee_id: competing_agent.id, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
           original.call(current_conversation)
         end
 
@@ -132,11 +143,13 @@ RSpec.describe AutoAssignment::AssignmentService do
         conversation.update!(assignee_id: nil)
         resolved_conversation = create(:conversation, inbox: inbox, status: 'resolved')
         resolved_conversation.update!(assignee_id: nil)
+        pending_conversation = create(:conversation, inbox: inbox, status: 'pending', assignee: nil)
 
         service.perform_bulk_assignment(limit: 10)
 
         expect(conversation.reload.assignee).to eq(agent)
         expect(resolved_conversation.reload.assignee).to be_nil
+        expect(pending_conversation.reload.assignee).to be_nil
       end
 
       it 'does not reassign already assigned conversations' do
@@ -442,6 +455,21 @@ RSpec.describe AutoAssignment::AssignmentService do
         expect(ready_conversation.reload.assignee).to eq(agent)
       end
 
+      it 'assigns pending conversations after AI handoff only when the policy toggle and delay allow it' do
+        assignment_policy.update!(assign_pending_conversations: true, assignment_delay_minutes: 30)
+        young_pending_conversation = create(:conversation, inbox: inbox, status: 'pending', created_at: 10.minutes.ago, assignee: nil)
+        ready_pending_conversation = create(:conversation, inbox: inbox, status: 'pending', created_at: 40.minutes.ago, assignee: nil)
+
+        allow(round_robin_selector).to receive(:select_agent).and_return(agent)
+
+        assigned_count = service.perform_bulk_assignment(limit: 10)
+
+        expect(assigned_count).to eq(1)
+        expect(young_pending_conversation.reload.assignee).to be_nil
+        expect(ready_pending_conversation.reload.assignee).to eq(agent)
+        expect(ready_pending_conversation).to be_pending
+      end
+
       it 'skips agents that reached max_open_conversations' do
         assignment_policy.update!(max_open_conversations: 1)
         create(:conversation, inbox: inbox, status: 'open', assignee: agent)
@@ -454,6 +482,24 @@ RSpec.describe AutoAssignment::AssignmentService do
         service.perform_bulk_assignment(limit: 1)
 
         expect(candidate_conversation.reload.assignee).to eq(agent2)
+        expect(AssignmentDecisionLog.last.candidate_summaries).to include(
+          hash_including('user_id' => agent.id, 'reasons' => include('max_open_conversations_reached'))
+        )
+      end
+
+      it 'counts assigned pending conversations toward max_open_conversations when pending assignment is enabled' do
+        assignment_policy.update!(assign_pending_conversations: true, max_open_conversations: 1)
+        create(:conversation, inbox: inbox, status: 'pending', assignee: agent)
+        candidate_conversation = create(:conversation, inbox: inbox, status: 'pending', assignee: nil)
+
+        allow(round_robin_selector).to receive(:select_agent) do |members|
+          members.map(&:user).detect { |user| user == agent2 }
+        end
+
+        service.perform_bulk_assignment(limit: 1)
+
+        expect(candidate_conversation.reload.assignee).to eq(agent2)
+        expect(candidate_conversation).to be_pending
         expect(AssignmentDecisionLog.last.candidate_summaries).to include(
           hash_including('user_id' => agent.id, 'reasons' => include('max_open_conversations_reached'))
         )
@@ -478,6 +524,36 @@ RSpec.describe AutoAssignment::AssignmentService do
         expect(AssignmentDecisionLog.last.candidate_summaries).to include(
           hash_including('user_id' => agent.id, 'reasons' => include('monthly_new_client_quota_reached'))
         )
+      end
+
+      it 'routes a known contact to the central contact owner even without sticky policy' do
+        known_contact = create(:contact, account: account, owner: agent2)
+        owner_conversation = create(:conversation, inbox: inbox, contact: known_contact, status: 'open', assignee: nil)
+        owner_conversation.update_columns(assignee_id: nil, assignee_agent_bot_id: nil) # rubocop:disable Rails/SkipsModelValidations
+
+        expect(round_robin_selector).not_to receive(:select_agent)
+
+        service.perform_bulk_assignment(limit: 1)
+
+        expect(owner_conversation.reload.assignee).to eq(agent2)
+      end
+
+      it 'falls back to the current inbox policy when the central owner is not an inbox member' do
+        other_inbox = create(:inbox, account: account)
+        other_inbox_owner = create(:user, account: account, role: :agent, availability: :online)
+        create(:inbox_member, inbox: other_inbox, user: other_inbox_owner)
+        known_contact = create(:contact, account: account, owner: other_inbox_owner)
+        other_conversation = create(:conversation, inbox: other_inbox, contact: known_contact, status: 'open', assignee: nil)
+        current_inbox_conversation = create(:conversation, inbox: inbox, contact: known_contact, status: 'open', assignee: nil)
+        current_inbox_conversation.update_columns(assignee_id: nil, assignee_agent_bot_id: nil) # rubocop:disable Rails/SkipsModelValidations
+
+        allow(round_robin_selector).to receive(:select_agent).and_return(agent)
+
+        service.perform_bulk_assignment(limit: 1)
+
+        expect(current_inbox_conversation.reload.assignee).to eq(agent)
+        expect(known_contact.reload.owner).to eq(other_inbox_owner)
+        expect(other_conversation.reload.assignee).to eq(other_inbox_owner)
       end
 
       it 'routes a known contact to an available sticky owner' do

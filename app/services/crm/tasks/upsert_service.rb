@@ -13,10 +13,10 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       requested_position = resolve_requested_position
       deal = resolve_optional_record(:deal_id, account.crm_deals, current: task.deal)
       status = resolve_status!
-      assignee = resolve_assignee(deal: deal)
+      originating_conversation = resolve_originating_conversation(deal: deal)
+      assignee = resolve_assignee(deal: deal, originating_conversation: originating_conversation)
       creator = resolve_optional_record(:creator_id, account.users, current: task.creator || actor)
       team = resolve_team(deal: deal)
-      originating_conversation = resolve_originating_conversation(deal: deal)
       external_ref = resolve_optional_text(:external_ref, current: task.external_ref)
       idempotency_key = resolve_optional_text(:idempotency_key, current: task.idempotency_key)
 
@@ -73,11 +73,11 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     ::Crm::FieldCatalog.new(account: account, entity_kind: 'task', context: context)
   end
 
-  def resolve_assignee(deal:)
+  def resolve_assignee(deal:, originating_conversation:)
     return resolve_optional_record(:assignee_id, account.users, current: task.assignee) if params.key?(:assignee_id)
     return task.assignee if task.persisted?
 
-    deal&.owner
+    deal&.owner || originating_conversation&.contact&.owner || originating_conversation&.assignee
   end
 
   def resolve_originating_conversation(deal:)

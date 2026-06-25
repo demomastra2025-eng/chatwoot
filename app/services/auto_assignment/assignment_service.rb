@@ -15,7 +15,7 @@ class AutoAssignment::AssignmentService
     inbox.auto_assignment_v2_enabled? &&
       inbox.enable_auto_assignment? &&
       active_policy_enabled? &&
-      inbox.available_agents.exists?
+      candidate_agent_members.exists?
   end
 
   def active_policy_enabled? = active_policy.blank? || active_policy.enabled?
@@ -39,20 +39,56 @@ class AutoAssignment::AssignmentService
     assign_conversation(conversation, agent)
   end
 
-  def assignable?(conversation) = conversation.status == 'open' && conversation.assignee_id.nil?
+  def assignable?(conversation) = assignable_status?(conversation) && conversation.assignee_id.nil?
 
   def unassigned_conversations(limit)
-    scope = inbox.conversations.unassigned.open
+    scope = assignable_conversations_scope.unassigned
     scope = apply_assignment_delay(scope)
     scope = apply_conversation_priority(scope)
     scope.limit(limit)
+  end
+
+  def assignable_conversations_scope
+    scope = inbox.conversations.open
+    return scope unless assign_pending_conversations?
+
+    scope.or(inbox.conversations.pending)
+  end
+
+  def assignable_status?(conversation)
+    conversation.open? || (assign_pending_conversations? && conversation.pending?)
+  end
+
+  def assign_pending_conversations?
+    active_policy&.assign_pending_conversations?
+  end
+
+  def assign_online_only?
+    active_policy.blank? || active_policy.assign_online_only?
+  end
+
+  def candidate_agent_members
+    return inbox.available_agents if assign_online_only?
+
+    inbox.inbox_members.joins(:user).includes(:user)
   end
 
   def apply_assignment_delay(scope)
     delay_minutes = active_policy&.assignment_delay_minutes.to_i
     return scope unless delay_minutes.positive?
 
-    scope.where('conversations.created_at <= ?', delay_minutes.minutes.ago)
+    delay_anchor_sql = <<~SQL.squish
+      CASE WHEN conversations.status = :pending_status
+      THEN COALESCE(conversations.waiting_since, conversations.updated_at, conversations.created_at)
+      ELSE conversations.created_at
+      END <= :threshold
+    SQL
+
+    scope.where(
+      delay_anchor_sql,
+      pending_status: Conversation.statuses[:pending],
+      threshold: delay_minutes.minutes.ago
+    )
   end
 
   def apply_conversation_priority(scope)
@@ -66,7 +102,7 @@ class AutoAssignment::AssignmentService
   def find_available_agent(conversation = nil)
     reset_candidate_summaries
 
-    agents = filter_agents_by_team(inbox.available_agents, conversation)
+    agents = filter_agents_by_team(candidate_agent_members, conversation)
     return nil if agents.nil?
 
     agents = filter_agents_by_rate_limit(agents)
@@ -139,7 +175,7 @@ class AutoAssignment::AssignmentService
 
     Conversation.transaction do
       locked_conversation = inbox.conversations
-                                 .open
+                                 .where(id: assignable_conversations_scope.select(:id))
                                  .where(id: conversation.id, assignee_id: nil)
                                  .lock('FOR UPDATE SKIP LOCKED')
                                  .first
@@ -185,6 +221,8 @@ class AutoAssignment::AssignmentService
       strategy: active_policy&.assignment_order || 'round_robin',
       assignment_delay_minutes: active_policy&.assignment_delay_minutes.to_i,
       max_open_conversations: active_policy&.max_open_conversations,
+      assign_online_only: assign_online_only?,
+      assign_pending_conversations: assign_pending_conversations?,
       monthly_new_client_quota: active_policy&.monthly_new_client_quota,
       sticky_owner_enabled: active_policy&.sticky_owner_enabled?,
       assigned_user_id: agent.id

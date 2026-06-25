@@ -261,7 +261,7 @@ class Reminder < ApplicationRecord
                  when Crm::Deal
                    remindable.owner
                  when Scheduling::Appointment
-                   remindable.created_by
+                   remindable.owner || remindable.created_by
                  end
   end
 

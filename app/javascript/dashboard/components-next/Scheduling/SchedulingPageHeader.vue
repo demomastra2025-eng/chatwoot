@@ -14,9 +14,9 @@ defineProps({
 <template>
   <header class="bg-n-surface-1 px-5 pb-2 pt-4">
     <div
-      class="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,max-content)_1fr_minmax(0,max-content)] md:items-center md:gap-4"
+      class="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:gap-4"
     >
-      <div class="flex min-w-0 flex-col gap-1">
+      <div class="flex min-w-0 flex-1 flex-col gap-1">
         <div class="flex min-w-0 flex-wrap items-center gap-3 md:gap-4">
           <div class="flex min-w-0 items-center gap-0.5">
             <h1 class="mb-0 text-lg font-semibold text-n-slate-12">
@@ -41,13 +41,13 @@ defineProps({
 
       <div
         v-if="$slots.center"
-        class="flex flex-wrap items-center justify-center gap-2 min-w-0"
+        class="flex min-w-0 flex-wrap items-center justify-center gap-2"
       >
         <slot name="center" />
       </div>
 
       <div
-        class="flex items-center gap-2 self-start md:justify-end md:self-auto"
+        class="flex min-w-0 flex-wrap items-center gap-2 self-start md:ml-auto md:justify-end md:self-auto"
       >
         <slot name="actions" />
       </div>

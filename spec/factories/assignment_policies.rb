@@ -8,6 +8,8 @@ FactoryBot.define do
     fair_distribution_limit { 10 }
     fair_distribution_window { 3600 }
     assignment_delay_minutes { 0 }
+    assign_online_only { true }
+    assign_pending_conversations { false }
     exclusion_rules { {} }
     max_open_conversations { nil }
     monthly_new_client_quota { nil }

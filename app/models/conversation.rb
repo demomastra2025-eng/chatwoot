@@ -295,9 +295,17 @@ class Conversation < ApplicationRecord
 
   def inherit_contact_owner
     return if assignee_id.present? || assignee_agent_bot_id.present?
-    return if contact&.owner_id.blank?
+    return unless contact_owner_assignable_to_conversation?
 
     self.assignee = contact.owner
+  end
+
+  def contact_owner_assignable_to_conversation?
+    return false if contact&.owner_id.blank?
+    return false unless inbox&.members&.exists?(id: contact.owner_id)
+    return true if team.blank?
+
+    team.members.exists?(id: contact.owner_id)
   end
 
   def sync_contact_owner_from_assignee
@@ -314,9 +322,14 @@ class Conversation < ApplicationRecord
 
   def contact_owner_sync_allowed?
     return false if assignee_id.blank? && assignee_agent_bot_id.present?
+    return false if auto_assignment_fallback_for_existing_owner?
     return true if assignee_id.blank?
 
     account.users.exists?(id: assignee_id)
+  end
+
+  def auto_assignment_fallback_for_existing_owner?
+    contact&.owner_id.present? && (Current.executed_by.is_a?(AssignmentPolicy) || Current.executed_by.is_a?(Inbox))
   end
 
   def reset_agent_bot_when_assignee_present

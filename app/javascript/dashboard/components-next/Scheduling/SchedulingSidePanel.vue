@@ -22,6 +22,11 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  desktopPlacement: {
+    type: String,
+    default: 'right',
+    validator: value => ['left', 'right'].includes(value),
+  },
   isLoading: {
     type: Boolean,
     default: false,
@@ -74,6 +79,18 @@ const mobileWidthClass = computed(() => {
 
   return widthMap[props.width] || widthMap.lg;
 });
+
+const desktopChromeClass = computed(() => {
+  if (props.desktopPlacement === 'left') {
+    return 'border-r border-n-weak shadow-[24px_0_48px_rgba(15,23,42,0.08)]';
+  }
+
+  return 'border-l border-n-weak shadow-[-24px_0_48px_rgba(15,23,42,0.08)]';
+});
+
+const desktopSlideOffsetClass = computed(() =>
+  props.desktopPlacement === 'left' ? '-translate-x-8' : 'translate-x-8'
+);
 
 const close = () => {
   emit('update:modelValue', false);
@@ -181,16 +198,16 @@ useEventListener(document, 'keydown', event => {
 
   <Transition
     enter-active-class="transition-all duration-200 ease-out"
-    enter-from-class="translate-x-8 opacity-0"
+    :enter-from-class="`${desktopSlideOffsetClass} opacity-0`"
     enter-to-class="translate-x-0 opacity-100"
     leave-active-class="transition-all duration-150 ease-in"
     leave-from-class="translate-x-0 opacity-100"
-    leave-to-class="translate-x-8 opacity-0"
+    :leave-to-class="`${desktopSlideOffsetClass} opacity-0`"
   >
     <aside
       v-if="modelValue"
-      class="hidden h-full min-h-0 flex-col overflow-hidden border-l border-n-weak bg-n-solid-2 shadow-[-24px_0_48px_rgba(15,23,42,0.08)] md:flex"
-      :class="desktopWidthClass"
+      class="hidden h-full min-h-0 flex-col overflow-hidden bg-n-solid-2 md:flex"
+      :class="[desktopWidthClass, desktopChromeClass]"
     >
       <header
         class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-6 py-4"

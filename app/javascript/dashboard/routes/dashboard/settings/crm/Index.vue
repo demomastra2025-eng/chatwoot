@@ -15,6 +15,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 import TouchPlanSelectField from 'dashboard/components-next/Outbound/TouchPlanSelectField.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
@@ -102,6 +103,8 @@ const sortPipelinesForSettings = pipelines =>
 
 const stageForm = reactive({
   active: true,
+  closingReasonOptions: [],
+  closingReasonRequired: false,
   color: DEFAULT_STAGE_COLOR,
   default: false,
   id: null,
@@ -176,6 +179,32 @@ const stageFormCanBeDefault = computed(
     !stageFormIsTerminal.value &&
     stageForm.active &&
     stageForm.outcome === 'open'
+);
+
+const normalizedTextValues = values => [
+  ...new Set(
+    (Array.isArray(values) ? values : [values])
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+  ),
+];
+
+const stageFormClosingReasonOptions = computed(() =>
+  normalizedTextValues(stageForm.closingReasonOptions)
+);
+
+const stageFormHasInvalidClosingReasonRequirement = computed(
+  () =>
+    stageFormIsTerminal.value &&
+    stageForm.closingReasonRequired &&
+    stageFormClosingReasonOptions.value.length === 0
+);
+
+const stageFormDisableConfirm = computed(
+  () =>
+    !stageForm.name.trim() ||
+    !stageForm.pipelineId ||
+    stageFormHasInvalidClosingReasonRequirement.value
 );
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
@@ -643,6 +672,8 @@ const resetStageForm = () => {
 
   Object.assign(stageForm, {
     active: true,
+    closingReasonOptions: [],
+    closingReasonRequired: false,
     color: defaultStageColor({
       currentStageId: null,
       pipelineId: firstPipelineId,
@@ -674,6 +705,8 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
   if (stage) {
     Object.assign(stageForm, {
       active: stage.active,
+      closingReasonOptions: normalizedTextValues(stage.closingReasonOptions),
+      closingReasonRequired: Boolean(stage.closingReasonRequired),
       color:
         stage.color ||
         defaultStageColor({
@@ -756,6 +789,8 @@ const saveNewPipeline = async () => {
 
 const buildStageSavePayload = () => {
   const basePayload = {
+    closing_reason_options: stageFormClosingReasonOptions.value,
+    closing_reason_required: Boolean(stageForm.closingReasonRequired),
     id: stageForm.id,
     name: stageForm.name.trim(),
   };
@@ -1377,7 +1412,7 @@ onMounted(async () => {
       "
       :confirm-label="$t('CRM.GENERAL.SAVE')"
       :is-loading="referencesStore.ui.isSaving"
-      :disable-confirm="!stageForm.name.trim() || !stageForm.pipelineId"
+      :disable-confirm="stageFormDisableConfirm"
       @confirm="saveStage"
     >
       <div class="mx-auto grid w-full max-w-[26rem] gap-4">
@@ -1393,6 +1428,49 @@ onMounted(async () => {
           :model-value="stageForm.name"
           @update:model-value="stageForm.name = $event"
         />
+        <div
+          v-if="stageFormIsTerminal"
+          class="grid gap-3 rounded-xl border border-n-weak bg-n-alpha-black2 p-3"
+        >
+          <div class="grid gap-1">
+            <span class="text-sm font-medium text-n-slate-12">
+              {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS') }}
+            </span>
+            <span class="text-xs leading-5 text-n-slate-11">
+              {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_HELP') }}
+            </span>
+          </div>
+          <TagInput
+            v-model="stageForm.closingReasonOptions"
+            allow-create
+            :auto-open-dropdown="false"
+            :placeholder="
+              $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_PLACEHOLDER')
+            "
+          />
+          <div class="flex items-center gap-3">
+            <Switch
+              :model-value="stageForm.closingReasonRequired"
+              @update:model-value="stageForm.closingReasonRequired = $event"
+            />
+            <div class="grid gap-1">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_REQUIRED') }}
+              </span>
+              <span class="text-xs leading-5 text-n-slate-11">
+                {{
+                  $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_REQUIRED_HELP')
+                }}
+              </span>
+            </div>
+          </div>
+          <p
+            v-if="stageFormHasInvalidClosingReasonRequirement"
+            class="mb-0 text-xs leading-5 text-n-ruby-10"
+          >
+            {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_REQUIRED_ERROR') }}
+          </p>
+        </div>
         <div v-if="!stageFormIsTerminal" class="grid gap-3">
           <span class="text-sm font-medium text-n-slate-12">
             {{ $t('CRM.SETTINGS.STAGES.FORM.COLOR') }}
@@ -1484,11 +1562,7 @@ onMounted(async () => {
             <Button
               size="sm"
               :is-loading="referencesStore.ui.isSaving"
-              :disabled="
-                !stageForm.name.trim() ||
-                !stageForm.pipelineId ||
-                referencesStore.ui.isSaving
-              "
+              :disabled="stageFormDisableConfirm || referencesStore.ui.isSaving"
               :label="$t('CRM.GENERAL.SAVE')"
               @click="saveStage"
             />

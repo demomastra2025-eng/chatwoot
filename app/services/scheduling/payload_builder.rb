@@ -13,6 +13,7 @@ module Scheduling::PayloadBuilder
       company_id: appointment.company_id,
       conversation_id: appointment.conversation_id,
       created_by_id: appointment.created_by_id,
+      owner_id: appointment.owner_id,
       service_name_snapshot: appointment.service_name_snapshot,
       service_type_snapshot: appointment.service_type_snapshot,
       service_duration_min_snapshot: appointment.service_duration_min_snapshot,

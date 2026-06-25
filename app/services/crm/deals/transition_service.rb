@@ -7,19 +7,26 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
   def perform
     target_stage = account.crm_stages.find(params[:stage_id])
     requested_position = resolve_requested_position
-    return deal if deal.stage_id == target_stage.id && requested_position.blank?
+    stage_changing = deal.stage_id != target_stage.id
+    closing_reasons_requested = params.key?(:closing_reasons)
+    return deal if !stage_changing && requested_position.blank? && !closing_reasons_requested
 
-    realtime_event_name = if deal.stage_id == target_stage.id
-                            Events::Types::CRM_DEAL_UPDATED
-                          else
+    realtime_event_name = if stage_changing
                             Events::Types::CRM_DEAL_STAGE_CHANGED
+                          else
+                            Events::Types::CRM_DEAL_UPDATED
                           end
     saved_deal = ApplicationRecord.transaction do
       deal.lock!
       assert_lock_version!
 
+      closing_reasons = resolve_closing_reasons!(
+        target_stage: target_stage,
+        current_reasons: deal.closing_reasons,
+        require_input: stage_changing
+      )
       ensure_required_fields_for_closed_stage!(target_stage)
-      transition_to_stage!(target_stage)
+      transition_to_stage!(target_stage, closing_reasons: closing_reasons)
     end
 
     event_type = if realtime_event_name == Events::Types::CRM_DEAL_STAGE_CHANGED
@@ -39,15 +46,17 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
 
   attr_reader :deal
 
-  def transition_to_stage!(target_stage)
+  def transition_to_stage!(target_stage, closing_reasons:)
     from_stage_id = deal.stage_id
     from_pipeline_id = deal.pipeline_id
+    from_closing_reasons = deal.closing_reasons
     requested_position = resolve_requested_position
 
     deal.stage = target_stage
     deal.pipeline = target_stage.pipeline
     deal.position = requested_position if requested_position.present?
     deal.closed_at = target_stage.outcome_open? ? nil : Time.zone.now
+    deal.closing_reasons = closing_reasons
     deal.save!
 
     ::Crm::BoardPositioner.place!(
@@ -70,7 +79,9 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
         from_stage_id: from_stage_id,
         to_stage_id: target_stage.id,
         from_pipeline_id: from_pipeline_id,
-        to_pipeline_id: target_stage.pipeline_id
+        to_pipeline_id: target_stage.pipeline_id,
+        from_closing_reasons: from_closing_reasons,
+        closing_reasons: deal.closing_reasons
       }
     )
 

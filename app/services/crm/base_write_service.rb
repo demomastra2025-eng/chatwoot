@@ -93,6 +93,22 @@ class Crm::BaseWriteService
     )
   end
 
+  def resolve_closing_reasons!(target_stage:, current_reasons:, require_input:)
+    return [] if target_stage.outcome_open?
+    return current_reasons unless params.key?(:closing_reasons) || require_input
+
+    submitted_reasons = ::Crm::Stage.normalize_closing_reason_values(params[:closing_reasons])
+    invalid_reasons = target_stage.invalid_closing_reasons(submitted_reasons)
+    raise_invalid_closing_reasons!(target_stage, invalid_reasons) if invalid_reasons.present?
+
+    canonical_reasons = target_stage.canonical_closing_reasons(submitted_reasons)
+    if target_stage.closing_reason_required? && canonical_reasons.blank?
+      raise_missing_closing_reasons!(target_stage)
+    end
+
+    canonical_reasons
+  end
+
   def dispatch_crm_deal_realtime_event!(event_name, deal, meta: {})
     Rails.configuration.dispatcher.dispatch(
       event_name,
@@ -101,6 +117,33 @@ class Crm::BaseWriteService
         account: account,
         deal: deal,
         meta: meta
+      }
+    )
+  end
+
+  def raise_missing_closing_reasons!(target_stage)
+    raise ::Crm::Error.new(
+      code: 'DEAL_STAGE_REQUIRES_CLOSING_REASONS',
+      message: "Select at least one closing reason before moving the deal to #{target_stage.name}.",
+      status: :unprocessable_content,
+      details: {
+        stage_id: target_stage.id,
+        outcome: target_stage.outcome,
+        closing_reason_options: target_stage.closing_reason_options
+      }
+    )
+  end
+
+  def raise_invalid_closing_reasons!(target_stage, invalid_reasons)
+    raise ::Crm::Error.new(
+      code: 'DEAL_STAGE_INVALID_CLOSING_REASONS',
+      message: "Closing reasons are not configured for #{target_stage.name}: #{invalid_reasons.join(', ')}.",
+      status: :unprocessable_content,
+      details: {
+        stage_id: target_stage.id,
+        outcome: target_stage.outcome,
+        invalid_reasons: invalid_reasons,
+        closing_reason_options: target_stage.closing_reason_options
       }
     )
   end

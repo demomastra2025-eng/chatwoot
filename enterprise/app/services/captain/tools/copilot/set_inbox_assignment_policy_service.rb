@@ -53,6 +53,8 @@ class Captain::Tools::Copilot::SetInboxAssignmentPolicyService < Captain::Tools:
       fair_distribution_window: policy.fair_distribution_window,
       assignment_delay_minutes: policy.assignment_delay_minutes,
       max_open_conversations: policy.max_open_conversations,
+      assign_online_only: policy.assign_online_only,
+      assign_pending_conversations: policy.assign_pending_conversations,
       exclusion_rules: policy.exclusion_rules,
       monthly_new_client_quota: policy.monthly_new_client_quota,
       sticky_owner_enabled: policy.sticky_owner_enabled,

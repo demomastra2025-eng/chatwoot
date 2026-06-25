@@ -1257,6 +1257,15 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       inbox: inbox,
       contact_inbox: conversation.contact_inbox
     )
+    deal = create(:crm_deal, account: account, originating_communication_thread: thread)
+    assignment_policy = create(:assignment_policy, account: account)
+    decision_log = create(
+      :assignment_decision_log,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      assignment_policy: assignment_policy
+    )
 
     delete "#{base_path}/#{inbox_id}", params: { confirm: true, dry_run: false, remote_commit: false }, headers: headers, as: :json
 
@@ -1266,6 +1275,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(Inbox.exists?(inbox_id)).to be(false)
     expect(CommunicationThreadConversation.exists?(link.id)).to be(false)
     expect(CommunicationThread.exists?(thread.id)).to be(false)
+    expect(deal.reload.originating_communication_thread_id).to be_nil
+    expect(AssignmentDecisionLog.exists?(decision_log.id)).to be(false)
   end
 
   it 'blocks managed local delete when an aliased active call normalizes to a canonical active status' do

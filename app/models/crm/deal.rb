@@ -6,6 +6,7 @@
 #  amount_minor                        :bigint
 #  archived_at                         :datetime
 #  closed_at                           :datetime
+#  closing_reasons                     :jsonb            not null
 #  currency                            :string
 #  custom_attributes                   :jsonb            not null
 #  description                         :text
@@ -106,6 +107,7 @@ class Crm::Deal < ApplicationRecord
   before_validation :normalize_title
   before_validation :normalize_description
   before_validation :normalize_currency
+  before_validation :normalize_closing_reasons
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
   after_commit :sync_primary_contact_owner, if: :saved_change_to_owner_id?
@@ -134,6 +136,7 @@ class Crm::Deal < ApplicationRecord
         expected_close_on: expected_close_on,
         win_probability: win_probability,
         closed_at: closed_at,
+        closing_reasons: closing_reasons,
         external_ref: external_ref,
         pipeline_id: pipeline_id,
         stage_id: stage_id,
@@ -186,6 +189,10 @@ class Crm::Deal < ApplicationRecord
 
   def normalize_currency
     self.currency = currency.to_s.strip.upcase.presence
+  end
+
+  def normalize_closing_reasons
+    self.closing_reasons = ::Crm::Stage.normalize_closing_reason_values(closing_reasons)
   end
 
   def normalize_description

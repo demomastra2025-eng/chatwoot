@@ -122,6 +122,9 @@ const formData = computed(() => ({
     selectedPolicy.value?.assignmentDelayMinutes ??
     DEFAULT_ASSIGNMENT_DELAY_MINUTES,
   maxOpenConversations: selectedPolicy.value?.maxOpenConversations ?? null,
+  assignOnlineOnly: selectedPolicy.value?.assignOnlineOnly ?? true,
+  assignPendingConversations:
+    selectedPolicy.value?.assignPendingConversations ?? false,
   exclusionRules: {
     excludedLabels: [
       ...(selectedPolicy.value?.exclusionRules?.excludedLabels || []),

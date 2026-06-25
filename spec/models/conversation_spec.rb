@@ -52,15 +52,25 @@ RSpec.describe Conversation do
     let(:owner) { create(:user, account: account, role: :agent) }
     let(:new_owner) { create(:user, account: account, role: :agent) }
     let(:contact) { create(:contact, account: account, owner: owner) }
+    let(:inbox) { create(:inbox, account: account) }
 
     before do
       allow(Rails.configuration.dispatcher).to receive(:dispatch)
     end
 
     it 'inherits the contact owner for new conversations when assignee is omitted' do
-      conversation = create(:conversation, account: account, contact: contact, assignee: nil)
+      create(:inbox_member, inbox: inbox, user: owner)
+
+      conversation = create(:conversation, account: account, contact: contact, inbox: inbox, assignee: nil)
 
       expect(conversation.assignee).to eq(owner)
+    end
+
+    it 'does not inherit the contact owner when the owner cannot access the inbox' do
+      conversation = create(:conversation, account: account, contact: contact, inbox: inbox, assignee: nil)
+
+      expect(conversation.assignee).to be_nil
+      expect(contact.reload.owner).to eq(owner)
     end
 
     it 'updates contact owner when a new conversation has an explicit human assignee' do

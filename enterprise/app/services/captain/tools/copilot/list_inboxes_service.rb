@@ -106,6 +106,8 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
       conversation_priority: policy.conversation_priority,
       assignment_delay_minutes: policy.assignment_delay_minutes,
       max_open_conversations: policy.max_open_conversations,
+      assign_online_only: policy.assign_online_only,
+      assign_pending_conversations: policy.assign_pending_conversations,
       exclusion_rules: policy.exclusion_rules,
       monthly_new_client_quota: policy.monthly_new_client_quota,
       sticky_owner_enabled: policy.sticky_owner_enabled,

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -254,8 +254,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.integer "max_open_conversations"
     t.integer "monthly_new_client_quota"
     t.boolean "sticky_owner_enabled", default: false, null: false
-    t.jsonb "exclusion_rules", default: {}, null: false
     t.integer "sticky_owner_duration_days", default: 30, null: false
+    t.jsonb "exclusion_rules", default: {}, null: false
+    t.boolean "assign_pending_conversations", default: false, null: false
+    t.boolean "assign_online_only", default: true, null: false
     t.index ["account_id", "name"], name: "index_assignment_policies_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_assignment_policies_on_account_id"
     t.index ["enabled"], name: "index_assignment_policies_on_enabled"
@@ -962,7 +964,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.index ["webhook_identifier"], name: "index_channel_whatsapp_web_on_webhook_identifier", unique: true
   end
 
-
   create_table "communication_thread_conversations", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "communication_thread_id", null: false
@@ -1258,6 +1259,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.string "currency"
     t.date "expected_close_on"
     t.datetime "closed_at"
+    t.jsonb "closing_reasons", default: [], null: false
     t.integer "win_probability"
     t.string "external_ref"
     t.string "idempotency_key"
@@ -1349,12 +1351,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.datetime "updated_at", null: false
     t.string "color", default: "#E11D48", null: false
     t.boolean "default", default: false, null: false
+    t.jsonb "closing_reason_options", default: [], null: false
+    t.boolean "closing_reason_required", default: false, null: false
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
-    t.check_constraint "NOT \"default\" OR active AND outcome::text = 'open'::text", name: "crm_stages_default_active_open"
   end
 
   create_table "crm_task_statuses", force: :cascade do |t|
@@ -2205,6 +2208,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "compensation_percent_snapshot", default: 0, null: false
+    t.bigint "owner_id"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
@@ -2214,6 +2218,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.index ["contact_id"], name: "index_scheduling_appointments_on_contact_id"
     t.index ["conversation_id"], name: "index_scheduling_appointments_on_conversation_id"
     t.index ["created_by_id"], name: "index_scheduling_appointments_on_created_by_id"
+    t.index ["owner_id"], name: "index_scheduling_appointments_on_owner_id"
     t.index ["resource_id"], name: "index_scheduling_appointments_on_resource_id"
     t.index ["service_id"], name: "index_scheduling_appointments_on_service_id"
   end
@@ -2539,6 +2544,31 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.index ["number_binding_id"], name: "index_telephony_call_sessions_on_number_binding_id"
   end
 
+  create_table "telephony_contact_endpoints", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "contact_id", null: false
+    t.bigint "inbox_id"
+    t.bigint "number_binding_id"
+    t.string "provider", default: "fonoster", null: false
+    t.string "endpoint_type", null: false
+    t.string "endpoint_value", null: false
+    t.string "main_number"
+    t.string "display_name"
+    t.string "trunk_ref"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "verified_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "contact_id", "provider"], name: "idx_tel_contact_endpoints_account_contact"
+    t.index ["account_id", "main_number"], name: "idx_tel_contact_endpoints_account_main_number", where: "(main_number IS NOT NULL)"
+    t.index ["account_id", "provider", "inbox_id", "endpoint_type", "endpoint_value"], name: "idx_tel_contact_endpoints_unique_inbox", unique: true, where: "(inbox_id IS NOT NULL)"
+    t.index ["account_id", "provider", "number_binding_id", "endpoint_type", "endpoint_value"], name: "idx_tel_contact_endpoints_unique_binding", unique: true, where: "(number_binding_id IS NOT NULL)"
+    t.index ["account_id"], name: "index_telephony_contact_endpoints_on_account_id"
+    t.index ["contact_id"], name: "index_telephony_contact_endpoints_on_contact_id"
+    t.index ["inbox_id"], name: "index_telephony_contact_endpoints_on_inbox_id"
+    t.index ["number_binding_id"], name: "index_telephony_contact_endpoints_on_number_binding_id"
+  end
+
   create_table "telephony_events", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "call_session_id"
@@ -2554,6 +2584,40 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.index ["account_id", "event_type", "created_at"], name: "index_telephony_events_on_account_event_type_created_at"
     t.index ["account_id"], name: "index_telephony_events_on_account_id"
     t.index ["call_session_id"], name: "index_telephony_events_on_call_session_id"
+  end
+
+  create_table "telephony_number_bindings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "provider", default: "fonoster", null: false
+    t.string "number_ref", null: false
+    t.string "phone_number"
+    t.string "app_ref"
+    t.string "trunk_ref"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "last_synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "provider_connection_id"
+    t.string "display_phone_number"
+    t.string "provider_account_number"
+    t.string "ingress_number"
+    t.string "fonoster_tel_url"
+    t.string "managed_by"
+    t.string "ownership_status", default: "legacy_reference", null: false
+    t.string "provisioning_status", default: "local_only", null: false
+    t.datetime "last_reconciled_at"
+    t.datetime "remote_drift_detected_at"
+    t.jsonb "remote_drift_summary", default: {}, null: false
+    t.index ["account_id", "ingress_number"], name: "idx_tel_number_bindings_account_ingress"
+    t.index ["account_id", "number_ref"], name: "index_telephony_number_bindings_on_account_number_ref", unique: true
+    t.index ["account_id", "ownership_status"], name: "idx_tel_number_bindings_account_ownership"
+    t.index ["account_id", "phone_number"], name: "index_telephony_number_bindings_on_account_phone"
+    t.index ["account_id", "provider_connection_id"], name: "idx_tel_number_bindings_account_provider_connection"
+    t.index ["account_id", "provisioning_status"], name: "idx_tel_number_bindings_account_provisioning_status"
+    t.index ["account_id"], name: "index_telephony_number_bindings_on_account_id"
+    t.index ["inbox_id"], name: "index_telephony_number_bindings_on_inbox_id", unique: true
+    t.index ["provider_connection_id"], name: "index_telephony_number_bindings_on_provider_connection_id"
   end
 
   create_table "telephony_provider_connections", force: :cascade do |t|
@@ -2590,40 +2654,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.index ["account_id"], name: "index_telephony_provider_connections_on_account_id"
     t.index ["created_by_id"], name: "index_telephony_provider_connections_on_created_by_id"
     t.index ["updated_by_id"], name: "index_telephony_provider_connections_on_updated_by_id"
-  end
-
-  create_table "telephony_number_bindings", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "inbox_id", null: false
-    t.string "provider", default: "fonoster", null: false
-    t.string "number_ref", null: false
-    t.string "phone_number"
-    t.string "app_ref"
-    t.string "trunk_ref"
-    t.jsonb "metadata", default: {}, null: false
-    t.datetime "last_synced_at"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.bigint "provider_connection_id"
-    t.string "display_phone_number"
-    t.string "provider_account_number"
-    t.string "ingress_number"
-    t.string "fonoster_tel_url"
-    t.string "managed_by"
-    t.string "ownership_status", default: "legacy_reference", null: false
-    t.string "provisioning_status", default: "local_only", null: false
-    t.datetime "last_reconciled_at"
-    t.datetime "remote_drift_detected_at"
-    t.jsonb "remote_drift_summary", default: {}, null: false
-    t.index ["account_id", "ingress_number"], name: "idx_tel_number_bindings_account_ingress"
-    t.index ["account_id", "number_ref"], name: "index_telephony_number_bindings_on_account_number_ref", unique: true
-    t.index ["account_id", "ownership_status"], name: "idx_tel_number_bindings_account_ownership"
-    t.index ["account_id", "phone_number"], name: "index_telephony_number_bindings_on_account_phone"
-    t.index ["account_id", "provider_connection_id"], name: "idx_tel_number_bindings_account_provider_connection"
-    t.index ["account_id", "provisioning_status"], name: "idx_tel_number_bindings_account_provisioning_status"
-    t.index ["account_id"], name: "index_telephony_number_bindings_on_account_id"
-    t.index ["inbox_id"], name: "index_telephony_number_bindings_on_inbox_id", unique: true
-    t.index ["provider_connection_id"], name: "index_telephony_number_bindings_on_provider_connection_id"
   end
 
   create_table "telephony_provisioning_runs", force: :cascade do |t|
@@ -2778,6 +2808,52 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
     t.index ["account_id", "url"], name: "index_webhooks_on_account_id_and_url", unique: true
   end
 
+  create_table "whatsapp_flow_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "whatsapp_flow_id", null: false
+    t.bigint "conversation_id"
+    t.bigint "message_id"
+    t.bigint "response_message_id"
+    t.string "token", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "request_payload", default: {}, null: false
+    t.jsonb "response_payload", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "sent_at"
+    t.datetime "submitted_at"
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "inbox_id", "status"], name: "idx_whatsapp_flow_sessions_on_account_inbox_status"
+    t.index ["conversation_id", "status"], name: "idx_whatsapp_flow_sessions_on_conversation_status"
+    t.index ["conversation_id"], name: "index_whatsapp_flow_sessions_on_conversation_id"
+    t.index ["inbox_id"], name: "index_whatsapp_flow_sessions_on_inbox_id"
+    t.index ["message_id"], name: "index_whatsapp_flow_sessions_on_message_id"
+    t.index ["response_message_id"], name: "index_whatsapp_flow_sessions_on_response_message_id"
+    t.index ["token"], name: "index_whatsapp_flow_sessions_on_token", unique: true
+    t.index ["whatsapp_flow_id"], name: "index_whatsapp_flow_sessions_on_whatsapp_flow_id"
+  end
+
+  create_table "whatsapp_flows", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "provider_flow_id"
+    t.string "name", null: false
+    t.string "title"
+    t.string "status", default: "draft", null: false
+    t.string "category"
+    t.string "mode"
+    t.jsonb "flow_json", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "last_synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "inbox_id", "name"], name: "index_whatsapp_flows_on_account_id_and_inbox_id_and_name", unique: true
+    t.index ["account_id", "inbox_id", "provider_flow_id"], name: "idx_whatsapp_flows_on_inbox_provider_flow_id", unique: true, where: "(provider_flow_id IS NOT NULL)"
+    t.index ["inbox_id"], name: "index_whatsapp_flows_on_inbox_id"
+  end
+
   create_table "working_hours", force: :cascade do |t|
     t.bigint "inbox_id"
     t.bigint "account_id"
@@ -2796,20 +2872,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
-  add_foreign_key "assignment_client_ownerships", "accounts"
-  add_foreign_key "assignment_client_ownerships", "assignment_policies", on_delete: :nullify
-  add_foreign_key "assignment_client_ownerships", "contacts"
-  add_foreign_key "assignment_client_ownerships", "users"
-  add_foreign_key "assignment_decision_logs", "accounts"
-  add_foreign_key "assignment_decision_logs", "assignment_policies", on_delete: :nullify
-  add_foreign_key "assignment_decision_logs", "conversations"
-  add_foreign_key "assignment_decision_logs", "inboxes"
-  add_foreign_key "assignment_decision_logs", "users", column: "assigned_user_id", on_delete: :nullify
-  add_foreign_key "assignment_quota_usages", "accounts"
-  add_foreign_key "assignment_quota_usages", "assignment_policies", on_delete: :nullify
-  add_foreign_key "assignment_quota_usages", "contacts"
-  add_foreign_key "assignment_quota_usages", "conversations"
-  add_foreign_key "assignment_quota_usages", "users"
+  add_foreign_key "assignment_client_ownerships", "accounts", name: "fk_rails_assignment_client_ownerships_account"
+  add_foreign_key "assignment_client_ownerships", "assignment_policies", name: "fk_rails_assignment_client_ownerships_policy", on_delete: :nullify
+  add_foreign_key "assignment_client_ownerships", "contacts", name: "fk_rails_assignment_client_ownerships_contact"
+  add_foreign_key "assignment_client_ownerships", "users", name: "fk_rails_assignment_client_ownerships_user"
+  add_foreign_key "assignment_decision_logs", "accounts", name: "fk_rails_assignment_decision_logs_account"
+  add_foreign_key "assignment_decision_logs", "assignment_policies", name: "fk_rails_assignment_decision_logs_policy", on_delete: :nullify
+  add_foreign_key "assignment_decision_logs", "conversations", name: "fk_rails_assignment_decision_logs_conversation"
+  add_foreign_key "assignment_decision_logs", "inboxes", name: "fk_rails_assignment_decision_logs_inbox"
+  add_foreign_key "assignment_decision_logs", "users", column: "assigned_user_id", name: "fk_rails_assignment_decision_logs_assigned_user", on_delete: :nullify
+  add_foreign_key "assignment_quota_usages", "accounts", name: "fk_rails_assignment_quota_usages_account"
+  add_foreign_key "assignment_quota_usages", "assignment_policies", name: "fk_rails_assignment_quota_usages_policy", on_delete: :nullify
+  add_foreign_key "assignment_quota_usages", "contacts", name: "fk_rails_assignment_quota_usages_contact"
+  add_foreign_key "assignment_quota_usages", "conversations", name: "fk_rails_assignment_quota_usages_conversation"
+  add_foreign_key "assignment_quota_usages", "users", name: "fk_rails_assignment_quota_usages_user"
   add_foreign_key "bulk_action_runs", "accounts"
   add_foreign_key "bulk_action_runs", "users"
   add_foreign_key "campaign_deliveries", "accounts"
@@ -2906,6 +2982,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
   add_foreign_key "scheduling_appointments", "scheduling_resources", column: "resource_id"
   add_foreign_key "scheduling_appointments", "scheduling_services", column: "service_id"
   add_foreign_key "scheduling_appointments", "users", column: "created_by_id"
+  add_foreign_key "scheduling_appointments", "users", column: "owner_id"
   add_foreign_key "scheduling_break_rules", "accounts"
   add_foreign_key "scheduling_break_rules", "scheduling_resources", column: "resource_id"
   add_foreign_key "scheduling_expenses", "accounts"
@@ -2937,19 +3014,23 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
   add_foreign_key "telephony_call_sessions", "inboxes", on_delete: :nullify
   add_foreign_key "telephony_call_sessions", "telephony_agent_bindings", column: "agent_binding_id"
   add_foreign_key "telephony_call_sessions", "telephony_number_bindings", column: "number_binding_id"
+  add_foreign_key "telephony_contact_endpoints", "accounts"
+  add_foreign_key "telephony_contact_endpoints", "contacts"
+  add_foreign_key "telephony_contact_endpoints", "inboxes", on_delete: :nullify
+  add_foreign_key "telephony_contact_endpoints", "telephony_number_bindings", column: "number_binding_id", on_delete: :nullify
   add_foreign_key "telephony_events", "accounts"
   add_foreign_key "telephony_events", "telephony_call_sessions", column: "call_session_id"
-  add_foreign_key "telephony_provider_connections", "accounts"
-  add_foreign_key "telephony_provider_connections", "users", column: "created_by_id"
-  add_foreign_key "telephony_provider_connections", "users", column: "updated_by_id"
   add_foreign_key "telephony_number_bindings", "accounts"
   add_foreign_key "telephony_number_bindings", "inboxes"
   add_foreign_key "telephony_number_bindings", "telephony_provider_connections", column: "provider_connection_id"
-  add_foreign_key "telephony_provisioning_runs", "accounts", on_delete: :cascade
-  add_foreign_key "telephony_provisioning_runs", "inboxes", on_delete: :nullify
-  add_foreign_key "telephony_provisioning_runs", "telephony_number_bindings", column: "number_binding_id", on_delete: :nullify
-  add_foreign_key "telephony_provisioning_runs", "telephony_provider_connections", column: "provider_connection_id", on_delete: :nullify
-  add_foreign_key "telephony_provisioning_runs", "users", column: "requested_by_id", on_delete: :nullify
+  add_foreign_key "telephony_provider_connections", "accounts"
+  add_foreign_key "telephony_provider_connections", "users", column: "created_by_id"
+  add_foreign_key "telephony_provider_connections", "users", column: "updated_by_id"
+  add_foreign_key "telephony_provisioning_runs", "accounts"
+  add_foreign_key "telephony_provisioning_runs", "inboxes"
+  add_foreign_key "telephony_provisioning_runs", "telephony_number_bindings", column: "number_binding_id"
+  add_foreign_key "telephony_provisioning_runs", "telephony_provider_connections", column: "provider_connection_id"
+  add_foreign_key "telephony_provisioning_runs", "users", column: "requested_by_id"
   add_foreign_key "telephony_routing_policies", "accounts"
   add_foreign_key "telephony_routing_policies", "captain_assistants"
   add_foreign_key "telephony_routing_policies", "telephony_number_bindings", column: "number_binding_id"
@@ -2957,6 +3038,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_24_110000) do
   add_foreign_key "telephony_sip_profiles", "inboxes"
   add_foreign_key "telephony_sip_profiles", "telephony_provider_connections", column: "provider_connection_id"
   add_foreign_key "telephony_sip_profiles", "users"
+  add_foreign_key "whatsapp_flow_sessions", "accounts"
+  add_foreign_key "whatsapp_flow_sessions", "conversations"
+  add_foreign_key "whatsapp_flow_sessions", "inboxes"
+  add_foreign_key "whatsapp_flow_sessions", "messages"
+  add_foreign_key "whatsapp_flow_sessions", "messages", column: "response_message_id"
+  add_foreign_key "whatsapp_flow_sessions", "whatsapp_flows"
+  add_foreign_key "whatsapp_flows", "accounts"
+  add_foreign_key "whatsapp_flows", "inboxes"
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()

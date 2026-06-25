@@ -54,6 +54,29 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => next_stage.id, 'pipeline_id' => pipeline.id)
   end
 
+  it 'passes closing reasons through the confirmed copilot tool call' do
+    pipeline = create(:crm_pipeline, account: account)
+    current_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Новый', code: 'new', position: 1, color: '#111111')
+    lost_stage = create(
+      :crm_stage,
+      account: account,
+      pipeline: pipeline,
+      name: 'Проиграно',
+      code: 'lost',
+      position: 2,
+      outcome: 'lost',
+      closing_reason_options: ['Too expensive', 'Competitor'],
+      closing_reason_required: true,
+      color: '#222222'
+    )
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
+
+    payload = JSON.parse(execute_confirmed(stage_code: 'lost', closing_reasons: ['competitor']))
+
+    expect(payload['deal']).to include('id' => deal.id, 'stage_id' => lost_stage.id, 'closing_reasons' => ['Competitor'])
+    expect(deal.reload.closing_reasons).to eq(['Competitor'])
+  end
+
   it 'rejects stage_action combined with explicit target selectors' do
     pipeline = create(:crm_pipeline, account: account)
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Новый', code: 'new', position: 1, color: '#111111')

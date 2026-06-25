@@ -99,6 +99,8 @@ RSpec.describe 'Assignment Policies API', type: :request do
           fair_distribution_limit: 15,
           assignment_delay_minutes: 30,
           max_open_conversations: 25,
+          assign_online_only: true,
+          assign_pending_conversations: true,
           exclusion_rules: {
             excluded_labels: ['vip'],
             exclude_older_than_minutes: 120
@@ -136,6 +138,8 @@ RSpec.describe 'Assignment Policies API', type: :request do
                  'conversation_priority',
                  'assignment_delay_minutes',
                  'max_open_conversations',
+                 'assign_online_only',
+                 'assign_pending_conversations',
                  'exclusion_rules',
                  'monthly_new_client_quota',
                  'sticky_owner_enabled',
@@ -145,6 +149,8 @@ RSpec.describe 'Assignment Policies API', type: :request do
                  'conversation_priority' => 'longest_waiting',
                  'assignment_delay_minutes' => 30,
                  'max_open_conversations' => 25,
+                 'assign_online_only' => true,
+                 'assign_pending_conversations' => true,
                  'exclusion_rules' => {
                    'excluded_labels' => ['vip'],
                    'exclude_older_than_minutes' => 120
@@ -218,6 +224,8 @@ RSpec.describe 'Assignment Policies API', type: :request do
           fair_distribution_limit: 20,
           assignment_delay_minutes: 15,
           max_open_conversations: 10,
+          assign_online_only: false,
+          assign_pending_conversations: true,
           exclusion_rules: {
             excluded_labels: ['sales'],
             exclude_older_than_minutes: 60
@@ -250,6 +258,8 @@ RSpec.describe 'Assignment Policies API', type: :request do
         expect(assignment_policy.fair_distribution_limit).to eq(20)
         expect(assignment_policy.assignment_delay_minutes).to eq(15)
         expect(assignment_policy.max_open_conversations).to eq(10)
+        expect(assignment_policy.assign_online_only).to be(false)
+        expect(assignment_policy.assign_pending_conversations).to be(true)
         expect(assignment_policy.exclusion_rules).to eq({
                                                           'excluded_labels' => ['sales'],
                                                           'exclude_older_than_minutes' => 60

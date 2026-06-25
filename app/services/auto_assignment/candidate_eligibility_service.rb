@@ -42,7 +42,14 @@ class AutoAssignment::CandidateEligibilityService
     limit = policy&.max_open_conversations.to_i
     return true unless limit.positive?
 
-    inbox.conversations.open.where(assignee_id: user.id).count < limit
+    active_conversations_scope.where(assignee_id: user.id).count < limit
+  end
+
+  def active_conversations_scope
+    scope = inbox.conversations.open
+    return scope unless policy&.assign_pending_conversations?
+
+    scope.or(inbox.conversations.pending)
   end
 
   def quota_service

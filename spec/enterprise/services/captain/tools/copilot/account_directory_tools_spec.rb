@@ -101,7 +101,7 @@ RSpec.describe 'Captain account directory copilot tools' do
     it 'lists account inbox routing metadata and excludes other accounts' do
       inbox = create(:inbox, account: account, name: 'WhatsApp Sales', timezone: 'Asia/Almaty', working_hours_enabled: true)
       other_inbox = create(:inbox, account: create(:account), name: 'External Inbox')
-      policy = create(:assignment_policy, account: account, name: 'Sales Round Robin')
+      policy = create(:assignment_policy, account: account, name: 'Sales Round Robin', assign_online_only: false)
       create(:inbox_assignment_policy, inbox: inbox, assignment_policy: policy)
       create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
 
@@ -116,7 +116,7 @@ RSpec.describe 'Captain account directory copilot tools' do
           'timezone' => 'Asia/Almaty',
           'enable_auto_assignment' => true,
           'working_hours_enabled' => true,
-          'assignment_policy' => include('id' => policy.id, 'name' => 'Sales Round Robin', 'enabled' => true),
+          'assignment_policy' => include('id' => policy.id, 'name' => 'Sales Round Robin', 'enabled' => true, 'assign_online_only' => false),
           'captain' => include(
             'enabled' => true,
             'assistant_id' => assistant.id,
@@ -148,7 +148,7 @@ RSpec.describe 'Captain account directory copilot tools' do
 
     it 'lists account assignment policies with attached inboxes and excludes other accounts' do
       inbox = create(:inbox, account: account, name: 'Support Inbox')
-      policy = create(:assignment_policy, account: account, name: 'Support Policy', description: 'Support routing')
+      policy = create(:assignment_policy, account: account, name: 'Support Policy', description: 'Support routing', assign_online_only: false)
       other_policy = create(:assignment_policy, account: create(:account), name: 'External Policy')
       foreign_inbox = create(:inbox, account: other_policy.account, name: 'Foreign Inbox')
       create(:inbox_assignment_policy, inbox: inbox, assignment_policy: policy)
@@ -167,6 +167,7 @@ RSpec.describe 'Captain account directory copilot tools' do
           'conversation_priority' => 'earliest_created',
           'fair_distribution_limit' => 10,
           'fair_distribution_window' => 3600,
+          'assign_online_only' => false,
           'inbox_ids' => [inbox.id],
           'inboxes' => [include('id' => inbox.id, 'name' => 'Support Inbox', 'channel_type' => 'Channel::WebWidget')]
         )

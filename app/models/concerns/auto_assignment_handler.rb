@@ -10,9 +10,9 @@ module AutoAssignmentHandler
 
   def run_auto_assignment
     return if Current.suppress_runtime_events || (respond_to?(:skip_runtime_events) && skip_runtime_events)
-    # Assignment V2: Also trigger assignment when conversation is resolved or snoozed,
-    # bypassing the open-only condition so the AssignmentJob can redistribute capacity.
-    return unless conversation_status_changed_to_open? || conversation_status_changed_to_resolved_or_snoozed?
+    # Assignment V2: Also trigger assignment when capacity should be redistributed,
+    # or when a policy explicitly allows pending AI-agent handoff assignment.
+    return unless conversation_status_changed_for_auto_assignment?
     return unless should_run_auto_assignment?
 
     if inbox.auto_assignment_v2_enabled?
@@ -28,6 +28,16 @@ module AutoAssignmentHandler
 
   def conversation_status_changed_to_resolved_or_snoozed?
     inbox.auto_assignment_v2_enabled? && saved_change_to_status? && (resolved? || snoozed?)
+  end
+
+  def conversation_status_changed_for_auto_assignment?
+    conversation_status_changed_to_open? || conversation_status_changed_to_resolved_or_snoozed? ||
+      conversation_status_changed_to_pending_for_assignment?
+  end
+
+  def conversation_status_changed_to_pending_for_assignment?
+    inbox.auto_assignment_v2_enabled? && saved_change_to_status? && pending? &&
+      inbox.assignment_policy&.assign_pending_conversations?
   end
 
   def team_member_ids_with_capacity

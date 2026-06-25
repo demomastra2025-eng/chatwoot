@@ -55,6 +55,10 @@ export const formatCrmErrorMessage = (error, t) => {
       return t('CRM.ERRORS.DUPLICATE_EXTERNAL_REF');
     case 'DUPLICATE_IDEMPOTENCY_KEY':
       return t('CRM.ERRORS.DUPLICATE_IDEMPOTENCY_KEY');
+    case 'DEAL_STAGE_INVALID_CLOSING_REASONS':
+      return t('CRM.ERRORS.DEAL_STAGE_INVALID_CLOSING_REASONS');
+    case 'DEAL_STAGE_REQUIRES_CLOSING_REASONS':
+      return t('CRM.ERRORS.DEAL_STAGE_REQUIRES_CLOSING_REASONS');
     case 'DEAL_STAGE_REQUIRES_FIELDS':
       return translateOrFallback(
         t,

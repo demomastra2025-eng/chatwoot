@@ -20,6 +20,10 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
   param :stage_id, type: :integer, desc: 'Positive target stage ID from list_deal_stages/list_deal_pipelines. Omit when unknown.', required: false
   param :stage_name, type: :string, desc: 'Target stage name; only use with pipeline_id/pipeline_code if names repeat', required: false
   param :stage_code, type: :string, desc: 'Target stage code; only use with pipeline_id/pipeline_code if codes repeat', required: false
+  param :closing_reasons,
+        type: :array,
+        desc: 'Configured closing reason labels when moving to a Won/Lost stage',
+        required: false
   param :amount,
         type: :string,
         desc: 'Updated amount as a whole number in major currency units. Use 200 for 200 KZT; do not multiply by 100. ' \
@@ -36,7 +40,7 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
 
   def execute(deal_id: nil, title: nil, description: nil, amount: nil, currency: nil, expected_close_on: nil,
               win_probability: nil, custom_attributes: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil,
-              stage_name: nil, stage_code: nil)
+              stage_name: nil, stage_code: nil, closing_reasons: nil)
     deal = deal_operations.update_current_deal(
       deal_id: deal_id,
       title: title,
@@ -50,7 +54,8 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
       pipeline_code: pipeline_code,
       stage_id: stage_id,
       stage_name: stage_name,
-      stage_code: stage_code
+      stage_code: stage_code,
+      closing_reasons: closing_reasons
     )
     formatted_payload(::Crm::ToolPayloadBuilder.deal_payload(action: 'update_deal', deal: deal))
   rescue StandardError => e

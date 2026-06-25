@@ -34,6 +34,11 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         incoming_attributes: params[:custom_attributes],
         apply_defaults: new_record
       )
+      closing_reasons = resolve_closing_reasons!(
+        target_stage: stage,
+        current_reasons: deal.closing_reasons,
+        require_input: new_record || deal.stage_id != stage.id
+      )
 
       deal.assign_attributes(
         account: account,
@@ -53,7 +58,8 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         win_probability: resolve_integer(:win_probability, current: deal.win_probability, allow_nil: true),
         external_ref: external_ref,
         idempotency_key: idempotency_key,
-        custom_attributes: custom_attributes
+        custom_attributes: custom_attributes,
+        closing_reasons: closing_reasons
       )
       deal.position = requested_position if requested_position.present?
       deal.closed_at = resolve_closed_at(stage: stage)

@@ -1181,6 +1181,8 @@
           "EDIT": "Edit",
           "DELAY": "after {minutes} min",
           "MAX_OPEN": "up to {count} open",
+          "ASSIGN_PENDING": "pending after AI",
+          "ONLINE_ONLY": "online only",
           "MONTHLY_QUOTA": "{count} new/month",
           "STICKY_OWNER": "sticky {days} days"
         },
@@ -1300,7 +1302,15 @@
           },
           "MAX_OPEN": {
             "LABEL": "Max open",
-            "DESCRIPTION": "Exclude an agent when they already own this many open conversations."
+            "DESCRIPTION": "Exclude an agent when they already own this many active conversations. Pending conversations are counted when the pending handoff toggle is on."
+          },
+          "ASSIGN_PENDING": {
+            "LABEL": "Assign after AI agent",
+            "DESCRIPTION": "Apply this policy to pending conversations waiting after AI or bot handling. Delay and workload limits still apply."
+          },
+          "ONLINE_ONLY": {
+            "LABEL": "Assign only online agents",
+            "DESCRIPTION": "When enabled, only online inbox members receive new conversations. Turn it off to include busy and offline members."
           },
           "MONTHLY_QUOTA": {
             "LABEL": "New clients/month",

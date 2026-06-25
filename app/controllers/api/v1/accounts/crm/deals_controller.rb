@@ -105,7 +105,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     deal = ::Crm::Deals::TransitionService.new(
       account: Current.account,
       deal: @deal,
-      params: params.permit(:stage_id, :position, :lock_version),
+      params: params.permit(:stage_id, :position, :lock_version, closing_reasons: []),
       actor: Current.user
     ).perform
 
@@ -147,7 +147,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def create_deal_params
-    params.permit(*CREATE_PARAM_KEYS, contact_ids: [], custom_attributes: {})
+    params.permit(*CREATE_PARAM_KEYS, contact_ids: [], closing_reasons: [], custom_attributes: {})
   end
 
   def filter_by_contact(scope)
@@ -249,6 +249,6 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def update_deal_params
-    params.permit(*UPDATE_PARAM_KEYS, contact_ids: [], custom_attributes: {})
+    params.permit(*UPDATE_PARAM_KEYS, contact_ids: [], closing_reasons: [], custom_attributes: {})
   end
 end

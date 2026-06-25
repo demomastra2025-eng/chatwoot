@@ -37,6 +37,29 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => next_stage.id)
   end
 
+  it 'passes closing reasons when transitioning to terminal stages' do
+    pipeline = create(:crm_pipeline, account: account)
+    current_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'new', position: 1, color: '#111111')
+    lost_stage = create(
+      :crm_stage,
+      account: account,
+      pipeline: pipeline,
+      code: 'lost',
+      outcome: 'lost',
+      closing_reason_options: ['Too expensive', 'Competitor'],
+      closing_reason_required: true,
+      color: '#222222'
+    )
+    conversation = create(:conversation, account: account)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id } })
+
+    payload = JSON.parse(tool.perform(tool_context, stage_code: 'lost', closing_reasons: ['competitor']))
+
+    expect(payload['deal']).to include('id' => deal.id, 'stage_id' => lost_stage.id, 'closing_reasons' => ['Competitor'])
+    expect(deal.reload.closing_reasons).to eq(['Competitor'])
+  end
+
   it 'returns a validation error instead of looking up zero ID placeholders' do
     pipeline = create(:crm_pipeline, account: account)
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'new', position: 1, color: '#111111')

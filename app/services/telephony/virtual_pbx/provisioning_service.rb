@@ -891,6 +891,7 @@ class Telephony::VirtualPbx::ProvisioningService
       deleted_inbox_id = inbox.id
 
       nullify_provisioning_run_links!(inbox: inbox, binding: binding)
+      delete_assignment_decision_logs_for_inbox!(inbox)
       delete_communication_thread_links_for_inbox!(inbox)
       inbox.telephony_sip_profiles.destroy_all
       inbox.destroy!
@@ -1167,16 +1168,34 @@ class Telephony::VirtualPbx::ProvisioningService
            .update_all(inbox_id: nil, number_binding_id: nil, provider_connection_id: nil, updated_at: Time.current)
   end
 
+  def delete_assignment_decision_logs_for_inbox!(inbox)
+    account_scope = AssignmentDecisionLog.where(account_id: account.id)
+    conversation_ids = inbox.conversations.select(:id)
+
+    account_scope
+      .where(inbox_id: inbox.id)
+      .or(account_scope.where(conversation_id: conversation_ids))
+      .in_batches(of: 5_000, &:delete_all)
+  end
+
   def delete_communication_thread_links_for_inbox!(inbox)
     scope = CommunicationThreadConversation.where(account_id: account.id, inbox_id: inbox.id)
     thread_ids = scope.distinct.pluck(:communication_thread_id)
     scope.delete_all
     return if thread_ids.blank?
 
-    CommunicationThread
+    empty_threads = CommunicationThread
       .where(account_id: account.id, id: thread_ids)
       .where.missing(:communication_thread_conversations)
-      .destroy_all
+
+    empty_thread_ids = empty_threads.pluck(:id)
+    return if empty_thread_ids.blank?
+
+    Crm::Deal
+      .where(account_id: account.id, originating_communication_thread_id: empty_thread_ids)
+      .update_all(originating_communication_thread_id: nil, updated_at: Time.current)
+
+    empty_threads.destroy_all
   end
 
   def create_steps(payload)

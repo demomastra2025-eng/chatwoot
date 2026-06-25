@@ -13,11 +13,15 @@ vi.mock('vue-i18n', () => ({
 }));
 
 const mountPanel = ({
+  communicationThreadDisplayId = '',
+  communicationThreadId = '',
   conversationId = 11963,
   conversationDisplayId = 185,
 } = {}) =>
   mount(CrmDealConversationPanel, {
     props: {
+      communicationThreadDisplayId,
+      communicationThreadId,
       conversationDisplayId,
       conversationId,
       visible: true,
@@ -54,18 +58,40 @@ describe('CrmDealConversationPanel', () => {
         ];
       }
 
+      if (action === 'getCommunicationThread' && payload === 41) {
+        const thread = {
+          communication_thread_id: 41,
+          display_id: 41,
+          id: 41,
+          inbox_id: 7,
+          is_communication_thread: true,
+          messages: [{ id: 2 }],
+        };
+        conversations.value = [thread];
+        return thread;
+      }
+
       if (action === 'setActiveChat') {
         currentChat.value = payload.data;
       }
+
+      return undefined;
     });
 
     useStore.mockReturnValue({ dispatch });
     useMapGetter.mockImplementation(getter => {
       if (getter === 'getConversationById') {
-        return ref(conversationId =>
-          conversations.value.find(
-            conversation => Number(conversation.id) === Number(conversationId)
-          )
+        return ref((conversationId, selectedType = null) =>
+          conversations.value.find(conversation => {
+            const conversationType = conversation.is_communication_thread
+              ? 'communication_thread'
+              : 'conversation';
+
+            return (
+              Number(conversation.id) === Number(conversationId) &&
+              (!selectedType || selectedType === conversationType)
+            );
+          })
         );
       }
 
@@ -74,7 +100,7 @@ describe('CrmDealConversationPanel', () => {
       }
 
       if (getter === 'getAllConversations') {
-        return ref(conversations);
+        return conversations;
       }
 
       return ref(undefined);
@@ -116,6 +142,25 @@ describe('CrmDealConversationPanel', () => {
       data: expect.objectContaining({
         display_id: 185,
         id: 11963,
+      }),
+    });
+  });
+
+  it('loads and activates the linked communication thread when present', async () => {
+    mountPanel({
+      communicationThreadDisplayId: 41,
+      communicationThreadId: 9001,
+      conversationDisplayId: '',
+      conversationId: '',
+    });
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('getCommunicationThread', 41);
+    expect(dispatch).toHaveBeenCalledWith('setActiveChat', {
+      data: expect.objectContaining({
+        display_id: 41,
+        id: 41,
+        is_communication_thread: true,
       }),
     });
   });

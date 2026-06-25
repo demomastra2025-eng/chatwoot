@@ -17,6 +17,10 @@ class Captain::Tools::Copilot::CreateDealService < Captain::Tools::Copilot::Base
         required: false
   param :stage_name, type: :string, desc: 'Stage name; only use with pipeline_id/pipeline_code if names repeat', required: false
   param :stage_code, type: :string, desc: 'Stage code; only use with pipeline_id/pipeline_code if codes repeat', required: false
+  param :closing_reasons,
+        type: :array,
+        desc: 'Configured closing reason labels when creating directly in a Won/Lost stage',
+        required: false
   param :amount,
         type: :string,
         desc: 'Deal amount as a whole number in major currency units. Use 200 for 200 KZT; do not multiply by 100. Decimal zero forms like 200.00 are accepted; fractional amounts like 200.50 are rejected.',
@@ -32,7 +36,7 @@ class Captain::Tools::Copilot::CreateDealService < Captain::Tools::Copilot::Base
 
   def execute(title:, description: nil, amount: nil, currency: nil, expected_close_on: nil,
               win_probability: nil, custom_attributes: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil,
-              stage_name: nil, stage_code: nil)
+              stage_name: nil, stage_code: nil, closing_reasons: nil)
     deal = deal_operations.create_deal(
       title: title,
       description: description,
@@ -45,7 +49,8 @@ class Captain::Tools::Copilot::CreateDealService < Captain::Tools::Copilot::Base
       pipeline_code: pipeline_code,
       stage_id: stage_id,
       stage_name: stage_name,
-      stage_code: stage_code
+      stage_code: stage_code,
+      closing_reasons: closing_reasons
     )
     formatted_payload(::Crm::ToolPayloadBuilder.deal_payload(action: 'create_deal', deal: deal))
   rescue StandardError => e

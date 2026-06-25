@@ -1,6 +1,46 @@
 require 'rails_helper'
 
 RSpec.describe Scheduling::Appointment do
+  describe 'contact owner sync' do
+    let(:account) { create(:account) }
+    let(:owner) { create(:user, account: account, role: :agent) }
+    let(:new_owner) { create(:user, account: account, role: :agent) }
+    let(:contact) { create(:contact, account: account, owner: owner) }
+
+    it 'inherits the contact owner on create' do
+      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: nil)
+
+      expect(appointment.owner).to eq(owner)
+    end
+
+    it 'inherits the linked resource user when the contact has no owner' do
+      resource_owner = create(:user, account: account, role: :agent)
+      resource = create(:scheduling_resource, account: account, user: resource_owner)
+      unowned_contact = create(:contact, account: account, owner: nil)
+
+      appointment = create(:scheduling_appointment, account: account, contact: unowned_contact, resource: resource, owner: nil)
+
+      expect(appointment.owner).to eq(resource_owner)
+      expect(unowned_contact.reload.owner).to eq(resource_owner)
+    end
+
+    it 'syncs owner changes back to the contact' do
+      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: owner)
+
+      appointment.update!(owner: new_owner)
+
+      expect(contact.reload.owner).to eq(new_owner)
+    end
+
+    it 'allows clearing the owner and clears the contact owner' do
+      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: owner)
+
+      appointment.update!(owner: nil)
+
+      expect(contact.reload.owner).to be_nil
+    end
+  end
+
   describe 'automation events' do
     let(:appointment) { create(:scheduling_appointment) }
 

@@ -13,13 +13,13 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
 
   it 'attaches an account assignment policy to an inbox' do
     inbox = create(:inbox, account: account, name: 'Support')
-    policy = create(:assignment_policy, account: account, name: 'Support routing')
+    policy = create(:assignment_policy, account: account, name: 'Support routing', assign_online_only: false)
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, assignment_policy_id: policy.id))
 
     expect(payload['action']).to eq('set_inbox_assignment_policy')
     expect(payload['inbox']).to include('id' => inbox.id, 'name' => 'Support')
-    expect(payload['assignment_policy']).to include('id' => policy.id, 'name' => 'Support routing')
+    expect(payload['assignment_policy']).to include('id' => policy.id, 'name' => 'Support routing', 'assign_online_only' => false)
     expect(inbox.reload.assignment_policy).to eq(policy)
   end
 

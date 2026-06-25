@@ -16,6 +16,8 @@ const props = defineProps({
   assignedInboxCount: { type: Number, default: 0 },
   assignmentDelayMinutes: { type: Number, default: 0 },
   maxOpenConversations: { type: Number, default: null },
+  assignOnlineOnly: { type: Boolean, default: true },
+  assignPendingConversations: { type: Boolean, default: false },
   monthlyNewClientQuota: { type: Number, default: null },
   stickyOwnerEnabled: { type: Boolean, default: false },
   stickyOwnerDurationDays: { type: Number, default: 30 },
@@ -85,6 +87,18 @@ const loadSummary = computed(() => {
       t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.MAX_OPEN', {
         count: props.maxOpenConversations,
       })
+    );
+  }
+
+  if (props.assignOnlineOnly) {
+    items.push(
+      t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.ONLINE_ONLY')
+    );
+  }
+
+  if (props.assignPendingConversations) {
+    items.push(
+      t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.ASSIGN_PENDING')
     );
   }
 

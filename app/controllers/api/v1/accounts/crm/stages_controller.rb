@@ -45,13 +45,17 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   end
 
   def update_stage_params
-    return params.permit(:name) if @stage.terminal_outcome?
+    return terminal_stage_params if @stage.terminal_outcome?
 
-    stage_params.except(:outcome)
+    stage_params.except(:outcome, :closing_reason_required, :closing_reason_options)
   end
 
   def stage_params
-    params.permit(:name, :code, :position, :outcome, :active, :color, :default)
+    params.permit(:name, :code, :position, :outcome, :active, :color, :default, :closing_reason_required, closing_reason_options: [])
+  end
+
+  def terminal_stage_params
+    params.permit(:name, :closing_reason_required, closing_reason_options: [])
   end
 
   def ensure_mutable_stage!
@@ -59,7 +63,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
 
     raise ::Crm::Error.new(
       code: 'STANDARD_STAGE_LOCKED',
-      message: 'Standard won/lost stages can only be renamed.',
+      message: 'Standard won/lost stages can only be renamed or configured with closing reasons.',
       status: :unprocessable_content
     )
   end

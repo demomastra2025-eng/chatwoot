@@ -34,6 +34,8 @@ const props = defineProps({
       fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
       assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
       maxOpenConversations: null,
+      assignOnlineOnly: true,
+      assignPendingConversations: false,
       exclusionRules: {
         excludedLabels: [],
         excludeOlderThanMinutes: null,
@@ -102,6 +104,8 @@ const state = reactive({
   fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
   assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
   maxOpenConversations: null,
+  assignOnlineOnly: true,
+  assignPendingConversations: false,
   exclusionRules: {
     excludedLabels: [],
     excludeOlderThanMinutes: null,
@@ -202,6 +206,8 @@ const resetForm = () => {
     fairDistributionWindow: DEFAULT_FAIR_DISTRIBUTION_WINDOW,
     assignmentDelayMinutes: DEFAULT_ASSIGNMENT_DELAY_MINUTES,
     maxOpenConversations: null,
+    assignOnlineOnly: true,
+    assignPendingConversations: false,
     exclusionRules: {
       excludedLabels: [],
       excludeOlderThanMinutes: null,
@@ -319,6 +325,10 @@ defineExpose({
         <LoadControls
           v-model:assignment-delay-minutes="state.assignmentDelayMinutes"
           v-model:max-open-conversations="state.maxOpenConversations"
+          v-model:assign-online-only="state.assignOnlineOnly"
+          v-model:assign-pending-conversations="
+            state.assignPendingConversations
+          "
           v-model:monthly-new-client-quota="state.monthlyNewClientQuota"
           v-model:sticky-owner-enabled="state.stickyOwnerEnabled"
           v-model:sticky-owner-duration-days="state.stickyOwnerDurationDays"

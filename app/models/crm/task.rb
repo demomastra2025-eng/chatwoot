@@ -91,6 +91,7 @@ class Crm::Task < ApplicationRecord
   before_validation :normalize_description
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
+  after_commit :sync_contact_owner_from_assignee, if: :saved_change_to_assignee_id?
 
   def automation_webhook_data
     payload = {
@@ -170,5 +171,17 @@ class Crm::Task < ApplicationRecord
     return false unless record.respond_to?(:account_id)
 
     record.account_id == account_id
+  end
+
+  def sync_contact_owner_from_assignee
+    contact = owner_sync_contact
+    return if contact.blank? || contact.owner_id == assignee_id
+    return if assignee_id.present? && !account.users.exists?(id: assignee_id)
+
+    contact.update!(owner_id: assignee_id)
+  end
+
+  def owner_sync_contact
+    deal&.primary_contact || originating_conversation&.contact
   end
 end

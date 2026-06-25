@@ -11,7 +11,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
 
   def create_deal(title:, description: nil, amount: nil, currency: nil, expected_close_on: nil,
                   win_probability: nil, custom_attributes: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil,
-                  stage_name: nil, stage_code: nil)
+                  stage_name: nil, stage_code: nil, closing_reasons: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     bootstrap_crm_defaults!
     pipeline_id = optional_positive_id(pipeline_id)
@@ -40,6 +40,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
       company_id: current_company&.id,
       originating_conversation_id: conversation&.id,
       primary_contact_id: current_contact&.id,
+      closing_reasons: closing_reasons,
       custom_attributes: parsed_hash(custom_attributes, field_name: 'custom_attributes')
     }.compact
 
@@ -53,7 +54,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
   end
 
   def transition_current_deal_stage(stage_id: nil, stage_name: nil, stage_code: nil, pipeline_id: nil, pipeline_code: nil,
-                                    stage_action: nil)
+                                    stage_action: nil, closing_reasons: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     raise ArgumentError, 'Current deal is not available' if current_deal.blank?
 
@@ -81,12 +82,12 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
               )
             end
 
-    transition_deal_to_stage(current_deal, stage)
+    transition_deal_to_stage(current_deal, stage, closing_reasons: closing_reasons)
   end
 
   def update_current_deal(deal_id: nil, title: nil, description: nil, amount: nil, currency: nil,
                           expected_close_on: nil, win_probability: nil, custom_attributes: nil, pipeline_id: nil,
-                          pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil)
+                          pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil, closing_reasons: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     explicit_deal_id = optional_positive_id(deal_id).present?
     deal = deal_for_update(deal_id)
@@ -131,7 +132,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
 
     ApplicationRecord.transaction do
       deal = update_deal_fields(deal, params) unless params.keys == [:lock_version]
-      deal = transition_deal_to_stage(deal, target_stage) if target_stage.present?
+      deal = transition_deal_to_stage(deal, target_stage, closing_reasons: closing_reasons) if target_stage.present?
       deal
     end
   end
@@ -254,14 +255,15 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     target_stage
   end
 
-  def transition_deal_to_stage(deal, stage)
+  def transition_deal_to_stage(deal, stage, closing_reasons: nil)
     ::Crm::Deals::TransitionService.new(
       account: account,
       deal: deal,
       params: {
+        closing_reasons: closing_reasons,
         stage_id: stage.id,
         lock_version: deal.lock_version
-      },
+      }.compact,
       actor: actor
     ).perform
   end

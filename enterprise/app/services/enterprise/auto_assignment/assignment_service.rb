@@ -19,7 +19,7 @@ module Enterprise::AutoAssignment::AssignmentService
   def find_available_agent(conversation = nil)
     reset_candidate_summaries
 
-    agents = filter_agents_by_team(inbox.available_agents, conversation)
+    agents = filter_agents_by_team(candidate_agent_members, conversation)
     return nil if agents.nil?
 
     agents = filter_agents_by_rate_limit(agents)
@@ -74,7 +74,7 @@ module Enterprise::AutoAssignment::AssignmentService
 
   # Override to apply exclusion rules
   def unassigned_conversations(limit)
-    scope = inbox.conversations.unassigned.open
+    scope = assignable_conversations_scope.unassigned
 
     scope = apply_exclusion_rules(scope)
     scope = apply_assignment_delay(scope)

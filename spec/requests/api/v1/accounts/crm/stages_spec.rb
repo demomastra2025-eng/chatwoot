@@ -80,9 +80,9 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(pipeline.stages.find_by!(code: 'этап_продажи').name).to eq('Этап продажи')
   end
 
-  it 'creates a stage at the end of the pipeline when position is omitted' do
+  it 'creates an open stage before terminal won/lost stages when position is omitted' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
-    previous_last_position = pipeline.stages.maximum(:position)
+    first_terminal_position = pipeline.stages.where(outcome: Crm::Stage::TERMINAL_OUTCOMES).minimum(:position)
 
     post "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages",
          params: {
@@ -94,10 +94,12 @@ RSpec.describe 'CRM Stages API', type: :request do
          as: :json
 
     created_stage = pipeline.stages.find_by!(code: 'final_review')
+    ordered_stages = pipeline.reload.stages.ordered.load.to_a
+    ordered_outcomes = ordered_stages[-2, 2].map(&:outcome)
 
     expect(response).to have_http_status(:created)
-    expect(created_stage.position).to eq(previous_last_position + 1)
-    expect(pipeline.reload.stages.ordered.last.id).to eq(created_stage.id)
+    expect(created_stage.position).to eq(first_terminal_position)
+    expect(ordered_outcomes).to all(be_in(Crm::Stage::TERMINAL_OUTCOMES))
   end
 
   it 'updates a stage color' do
@@ -132,6 +134,26 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(stage.reload.name).to eq('Closed Won')
     expect(stage.slice(:active, :color, :default, :outcome, :position)).to eq(original_attributes)
+  end
+
+  it 'configures closing reasons on standard won and lost stages' do
+    stage = account.crm_stages.find_by!(code: 'lost')
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+          params: {
+            closing_reason_options: ['Too expensive', 'Competitor', 'Too expensive'],
+            closing_reason_required: true,
+            name: 'Closed Lost'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'name')).to eq('Closed Lost')
+    expect(response.parsed_body.dig('payload', 'closing_reason_options')).to eq(['Too expensive', 'Competitor'])
+    expect(response.parsed_body.dig('payload', 'closing_reason_required')).to be(true)
+    expect(stage.reload.closing_reason_options).to eq(['Too expensive', 'Competitor'])
+    expect(stage.closing_reason_required).to be(true)
   end
 
   it 'rejects deleting standard won and lost stages' do
