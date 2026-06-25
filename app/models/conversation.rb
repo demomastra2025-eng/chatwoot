@@ -302,11 +302,21 @@ class Conversation < ApplicationRecord
 
   def sync_contact_owner_from_assignee
     return unless saved_change_to_assignee_id?
-    return if contact.blank? || contact.owner_id == assignee_id
-    return if assignee_id.blank? && assignee_agent_bot_id.present?
-    return if assignee_id.present? && !account.users.exists?(id: assignee_id)
+    return if contact_owner_synced?
+    return unless contact_owner_sync_allowed?
 
     contact.update!(owner_id: assignee_id)
+  end
+
+  def contact_owner_synced?
+    contact.blank? || contact.owner_id == assignee_id
+  end
+
+  def contact_owner_sync_allowed?
+    return false if assignee_id.blank? && assignee_agent_bot_id.present?
+    return true if assignee_id.blank?
+
+    account.users.exists?(id: assignee_id)
   end
 
   def reset_agent_bot_when_assignee_present
