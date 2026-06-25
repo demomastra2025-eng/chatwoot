@@ -547,9 +547,12 @@ export default {
               "
             />
             <div class="w-full grid gap-1">
-              <span class="mb-0.5 text-sm font-medium text-n-slate-12">
-                {{ $t('CONTACT_PANEL.OWNER') }}
-              </span>
+              <div class="mb-0.5 flex items-center gap-2">
+                <span class="i-lucide-user-round text-sm text-n-slate-10" />
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{ $t('CONTACT_PANEL.OWNER') }}
+                </span>
+              </div>
               <ComboBox
                 :model-value="ownerId"
                 :options="ownerOptions"

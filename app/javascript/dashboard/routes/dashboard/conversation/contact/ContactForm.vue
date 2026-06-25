@@ -352,7 +352,10 @@ export default {
           </span>
         </label>
         <div class="w-full mb-4">
-          <label>
+          <label
+            class="mb-1 flex items-center gap-2 text-sm font-medium text-n-slate-12"
+          >
+            <span class="i-lucide-user-round text-sm text-n-slate-10" />
             {{ $t('CONTACT_PANEL.OWNER') }}
           </label>
           <ComboBox
