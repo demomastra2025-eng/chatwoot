@@ -22,6 +22,18 @@ export const isWhatsappWebInbox = inbox => {
   return inbox?.channel_type === INBOX_TYPES.WHATSAPP_WEB;
 };
 
+export const getWhatsappWebLifecycleState = inbox => {
+  const state = getWhatsappWebState(inbox);
+
+  return state.status || state.lifecycle_state || inbox?.lifecycle_state || '';
+};
+
+export const getWhatsappWebConnectionState = inbox => {
+  const state = getWhatsappWebState(inbox);
+
+  return state.connection_state || inbox?.connection_state || '';
+};
+
 export const isInboxPendingDeletion = inbox => {
   if (!inbox) {
     return false;
@@ -46,11 +58,9 @@ export const isWhatsappWebConnected = inbox => {
     return false;
   }
 
-  const state = getWhatsappWebState(inbox);
-
   return (
-    state.status === CONNECTED_LIFECYCLE_STATE &&
-    state.connection_state === OPEN_CONNECTION_STATE
+    getWhatsappWebLifecycleState(inbox) === CONNECTED_LIFECYCLE_STATE &&
+    getWhatsappWebConnectionState(inbox) === OPEN_CONNECTION_STATE
   );
 };
 
@@ -67,9 +77,8 @@ export const isWhatsappWebReconnecting = inbox => {
     return false;
   }
 
-  const state = getWhatsappWebState(inbox);
-  const lifecycleState = state.status || inbox?.lifecycle_state;
-  const connectionState = state.connection_state || inbox?.connection_state;
+  const lifecycleState = getWhatsappWebLifecycleState(inbox);
+  const connectionState = getWhatsappWebConnectionState(inbox);
 
   return (
     lifecycleState === RECONNECTING_CONNECTION_STATE ||
@@ -82,9 +91,8 @@ export const isWhatsappWebTransientState = inbox => {
     return false;
   }
 
-  const state = getWhatsappWebState(inbox);
-  const lifecycleState = state.status || inbox?.lifecycle_state;
-  const connectionState = state.connection_state || inbox?.connection_state;
+  const lifecycleState = getWhatsappWebLifecycleState(inbox);
+  const connectionState = getWhatsappWebConnectionState(inbox);
 
   return (
     TRANSIENT_LIFECYCLE_STATES.includes(lifecycleState) ||
@@ -126,9 +134,8 @@ const shouldRequestWhatsappWebQr = inbox => {
     return false;
   }
 
-  const state = getWhatsappWebState(inbox);
-  const lifecycleState = state.status || inbox?.lifecycle_state;
-  const connectionState = state.connection_state || inbox?.connection_state;
+  const lifecycleState = getWhatsappWebLifecycleState(inbox);
+  const connectionState = getWhatsappWebConnectionState(inbox);
 
   return (
     lifecycleState !== CONNECTED_LIFECYCLE_STATE ||
@@ -149,9 +156,8 @@ export const shouldRequestWhatsappWebQrAfterReconnect = inbox => {
 };
 
 export const hasWhatsappWebConnectionIssue = inbox => {
-  const state = getWhatsappWebState(inbox);
-  const lifecycleState = state.status || inbox?.lifecycle_state;
-  const connectionState = state.connection_state || inbox?.connection_state;
+  const lifecycleState = getWhatsappWebLifecycleState(inbox);
+  const connectionState = getWhatsappWebConnectionState(inbox);
 
   return (
     hasWhatsappWebNonOpenState(inbox) &&

@@ -3,6 +3,8 @@ import {
   hasWhatsappWebNonOpenState,
   WHATSAPP_WEB_SIDEBAR_STATUS_POLL_INTERVAL,
   getWhatsappWebState,
+  getWhatsappWebConnectionState,
+  getWhatsappWebLifecycleState,
   hasWhatsappWebAuthenticationArtifacts,
   hasWhatsappWebConnectionIssue,
   hasWhatsappWebImportInProgress,
@@ -50,6 +52,27 @@ describe('#whatsappWeb helpers', () => {
   it('treats connected whatsapp web inboxes as healthy', () => {
     expect(isWhatsappWebConnected(whatsappWebInbox)).toBe(true);
     expect(hasWhatsappWebConnectionIssue(whatsappWebInbox)).toBe(false);
+  });
+
+  it('prefers live evolution state over stale top-level inbox lifecycle state', () => {
+    const waitingForQrInbox = {
+      ...whatsappWebInbox,
+      lifecycle_state: 'connected',
+      connection_state: 'open',
+      additional_attributes: {
+        evolution: {
+          status: 'waiting_for_qr',
+          connection_state: 'connecting',
+        },
+      },
+    };
+
+    expect(getWhatsappWebLifecycleState(waitingForQrInbox)).toBe(
+      'waiting_for_qr'
+    );
+    expect(getWhatsappWebConnectionState(waitingForQrInbox)).toBe('connecting');
+    expect(isWhatsappWebConnected(waitingForQrInbox)).toBe(false);
+    expect(hasWhatsappWebNonOpenState(waitingForQrInbox)).toBe(true);
   });
 
   it('treats disconnected whatsapp web inboxes as issues', () => {
