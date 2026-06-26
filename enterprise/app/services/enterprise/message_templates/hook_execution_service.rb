@@ -97,7 +97,11 @@ module Enterprise::MessageTemplates::HookExecutionService
     Rails.logger.info("[CAPTAIN][AutoReply] Opening conversation #{conversation.id} because Captain auto-reply is not allowed now")
     previous_current = [Current.user, Current.executed_by]
     Current.user = Current.executed_by = nil
-    conversation.open!
+    Conversations::StatusTransitionService.new(
+      conversation: conversation,
+      params: { status: 'open' },
+      source: 'system'
+    ).perform
     return unless conversation.saved_change_to_status?
 
     Captain::Conversation::TypingIndicatorService.turn_off(conversation: conversation, assistant: inbox.captain_assistant)
@@ -115,7 +119,7 @@ module Enterprise::MessageTemplates::HookExecutionService
       inbox_id: conversation.inbox.id,
       content: 'Transferring to another agent for further assistance.'
     )
-    conversation.bot_handoff!
+    conversation.bot_handoff!(source: 'system')
     send_out_of_office_message_after_handoff
   end
 

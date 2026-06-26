@@ -236,6 +236,14 @@ describe('captainUiActions helper', () => {
       params: { accountId: 1 },
     });
 
+    expect(routeForCaptainUiAction({ type: 'open_touch_plans' }, 1)).toEqual({
+      name: 'captain_assistants_index',
+      params: {
+        accountId: 1,
+        navigationPath: 'captain_assistants_follow_ups_index',
+      },
+    });
+
     expect(
       routeForCaptainUiAction(
         { type: 'open_captain_documents', targetId: '12' },
@@ -283,6 +291,17 @@ describe('captainUiActions helper', () => {
       )
     ).toEqual({
       name: 'captain_assistants_settings_index',
+      params: { accountId: 1, assistantId: '12' },
+      query: { source: 'captain_ui_action' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_captain_follow_ups', targetId: '12' },
+        1
+      )
+    ).toEqual({
+      name: 'captain_assistants_follow_ups_index',
       params: { accountId: 1, assistantId: '12' },
       query: { source: 'captain_ui_action' },
     });

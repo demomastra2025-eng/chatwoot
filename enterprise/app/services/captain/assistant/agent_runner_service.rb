@@ -1085,12 +1085,14 @@ class Captain::Assistant::AgentRunnerService
 
   def human_handoff_response(handoff_payload, agent_name, handoff_tool_called: false)
     reason = handoff_payload[:reason].presence || handoff_payload['reason'].presence
+    status_reason = handoff_payload[:status_reason].presence || handoff_payload['status_reason'].presence
     message = handoff_payload[:message].presence || handoff_payload['message'].presence
 
     response = {
       'response' => 'conversation_handoff',
       'reasoning' => reason.present? ? "Human handoff requested: #{reason}" : 'Human handoff requested',
       'handoff_reason' => reason,
+      'handoff_status_reason' => status_reason,
       'handoff_message' => message,
       'agent_name' => agent_name
     }

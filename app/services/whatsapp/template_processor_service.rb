@@ -54,6 +54,7 @@ class Whatsapp::TemplateProcessorService
 
   def process_enhanced_template_params(template, processed_params = nil)
     processed_params ||= template_params['processed_params']
+    processed_params = render_template_param_values(processed_params || {})
     components = []
 
     components.concat(process_header_components(processed_params))
@@ -141,6 +142,32 @@ class Whatsapp::TemplateProcessorService
 
   def parameter_builder
     @parameter_builder ||= Whatsapp::PopulateTemplateParametersService.new
+  end
+
+  def render_template_param_values(value)
+    case value
+    when Hash
+      value.transform_values { |item| render_template_param_values(item) }
+    when Array
+      value.map { |item| render_template_param_values(item) }
+    when String
+      render_template_param_string(value)
+    else
+      value
+    end
+  end
+
+  def render_template_param_string(value)
+    return value if message.blank?
+
+    Outbound::RenderedTextService.new(
+      content: value,
+      conversation: message.conversation,
+      contact: message.conversation&.contact,
+      inbox: message.inbox || message.conversation&.inbox,
+      account: message.account || message.conversation&.account,
+      sender: message.sender
+    ).render
   end
 
   def namespace_matches?(template)

@@ -18,6 +18,10 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  allowedScopes: {
+    type: Array,
+    default: () => [],
+  },
   usedItemIds: {
     type: Array,
     default: () => [],
@@ -57,12 +61,21 @@ const loadFields = async () => {
 };
 
 const usedItemIdSet = computed(() => new Set(props.usedItemIds || []));
+const allowedScopeSet = computed(
+  () => new Set((props.allowedScopes || []).filter(Boolean))
+);
 
 const normalizedFields = computed(() =>
-  fields.value.map(field => ({
-    ...localizeCatalogField(field, { t, te }),
-    isUsed: usedItemIdSet.value.has(field.id),
-  }))
+  fields.value
+    .filter(field => {
+      if (allowedScopeSet.value.size === 0) return true;
+
+      return allowedScopeSet.value.has(field.table_name);
+    })
+    .map(field => ({
+      ...localizeCatalogField(field, { t, te }),
+      isUsed: usedItemIdSet.value.has(field.id),
+    }))
 );
 
 const filteredFields = computed(() => {

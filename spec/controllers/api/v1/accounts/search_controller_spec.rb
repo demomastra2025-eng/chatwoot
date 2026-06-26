@@ -169,6 +169,29 @@ RSpec.describe 'Search', type: :request do
         expect(response_data[:payload][:conversations].length).to eq 1
       end
 
+      it 'returns conversations matching message content' do
+        matching_contact = create(:contact, email: 'message-match@example.com', account: account)
+        matching_conversation = create(:conversation, account: account, contact: matching_contact)
+        create(
+          :message,
+          conversation: matching_conversation,
+          account: account,
+          inbox: matching_conversation.inbox,
+          content: 'native text search phrase'
+        )
+        create(:inbox_member, user: agent, inbox: matching_conversation.inbox)
+
+        get "/api/v1/accounts/#{account.id}/search/conversations",
+            headers: agent.create_new_auth_token,
+            params: { q: 'native text search phrase' },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        response_data = JSON.parse(response.body, symbolize_names: true)
+
+        expect(response_data[:payload][:conversations].pluck(:id)).to include(matching_conversation.display_id)
+      end
+
       context 'with advanced_search feature enabled', :opensearch do
         before do
           account.enable_features!('advanced_search')

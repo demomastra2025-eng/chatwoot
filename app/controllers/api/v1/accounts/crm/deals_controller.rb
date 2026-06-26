@@ -37,6 +37,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     idempotency_key
     primary_contact_id
     lock_version
+    transition_reason
   ].freeze
 
   before_action :ensure_crm_deals_enabled!
@@ -105,7 +106,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     deal = ::Crm::Deals::TransitionService.new(
       account: Current.account,
       deal: @deal,
-      params: params.permit(:stage_id, :position, :lock_version, closing_reasons: []),
+      params: params.permit(:stage_id, :position, :lock_version, :transition_reason, closing_reasons: []),
       actor: Current.user
     ).perform
 
@@ -148,6 +149,21 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def create_deal_params
     params.permit(*CREATE_PARAM_KEYS, contact_ids: [], closing_reasons: [], custom_attributes: {})
+  end
+
+  def filter_by_ai_only(scope)
+    return scope unless parse_boolean(params[:ai_only])
+
+    pending_conversation_ids = Current.account.conversations.pending.select(:id)
+    pending_thread_ids = CommunicationThread.pending.where(account_id: Current.account.id).select(:id)
+
+    scope.where(originating_communication_thread_id: pending_thread_ids)
+         .or(
+           scope.where(
+             originating_communication_thread_id: nil,
+             originating_conversation_id: pending_conversation_ids
+           )
+         )
   end
 
   def filter_by_contact(scope)
@@ -195,13 +211,11 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
       deal_contacts: :contact
     ).ordered
     scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
-    scope = filter_by_exact(scope, :pipeline_id)
-    scope = filter_by_exact(scope, :stage_id)
-    scope = filter_by_exact(scope, :owner_id)
-    scope = filter_by_exact(scope, :team_id)
-    scope = filter_by_exact(scope, :company_id)
+    %i[pipeline_id stage_id owner_id team_id company_id].each do |field_name|
+      scope = filter_by_exact(scope, field_name)
+    end
     scope = filter_by_originating_conversation(scope)
-    scope = filter_by_originating_communication_thread(scope)
+    scope = filter_by_ai_only(filter_by_originating_communication_thread(scope))
     scope = filter_by_contact(scope)
     scope = filter_by_query(scope)
 

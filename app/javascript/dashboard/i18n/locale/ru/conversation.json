@@ -27,6 +27,10 @@
     },
     "UNREAD_MESSAGES": "Непрочитанные сообщения",
     "UNREAD_MESSAGE": "Непрочитанное сообщение",
+    "DATE_DIVIDER": {
+      "TODAY": "Сегодня",
+      "YESTERDAY": "Вчера"
+    },
     "CLICK_HERE": "Нажмите здесь",
     "LOADING_INBOXES": "Загружаем каналы",
     "LOADING_CONVERSATIONS": "Загрузка диалогов",
@@ -316,7 +320,8 @@
     "CHANGE_STATUS_FAILED": "Не удалось изменить статус диалога",
     "ACTIVITY": {
       "CAPTAIN": {
-        "AUTO_OPENED_AFTER_AGENT_REPLY": "Разговор был открыт автоматически после ответа сотрудника"
+        "AUTO_OPENED_AFTER_AGENT_REPLY": "Разговор был открыт автоматически после ответа сотрудника",
+        "OPEN_WITH_REASON": "Диалог был открыт {userName}: {reason}"
       },
       "ASSIGNEE": {
         "DEFAULT_POLICY_ASSIGNED": "Назначен: {assigneeName}.",
@@ -406,7 +411,26 @@
     "UNSUPPORTED_MESSAGE_TIKTOK": "Это сообщение не поддерживается. Вы можете открыть его в приложении TikTok.",
     "FILE_TYPE_NOT_SUPPORTED": "Тип файла {fileName} не поддерживается в этом диалоге",
     "NATIVE_APP": "Нативное приложение",
-    "NATIVE_APP_ADVISORY": "Это сообщение было отправлено из нативного приложения {platform}. Ответьте из {installationName}, чтобы сохранить окно сообщений."
+    "NATIVE_APP_ADVISORY": "Это сообщение было отправлено из нативного приложения {platform}. Ответьте из {installationName}, чтобы сохранить окно сообщений.",
+    "STATUS_REASONS": {
+      "STATUS": {
+        "OPEN": "Открыт",
+        "RESOLVED": "Завершён",
+        "PENDING": "В ожидании",
+        "SNOOZED": "Отложен"
+      },
+      "MODAL": {
+        "TITLE": "Выберите причину для статуса «{status}»",
+        "CONFIRM": "Продолжить",
+        "NO_REASON": "Без причины",
+        "REQUIRED_DESCRIPTION": "Перед переводом диалога в статус «{status}» нужно выбрать причину.",
+        "OPTIONAL_DESCRIPTION": "Выберите причину перевода диалога в статус «{status}».",
+        "PLACEHOLDER": "Выберите причину",
+        "SEARCH_PLACEHOLDER": "Поиск причин",
+        "EMPTY_STATE": "Причины не настроены",
+        "REQUIRED_HINT": "Выберите причину, чтобы продолжить"
+      }
+    }
   },
   "EMAIL_TRANSCRIPT": {
     "TITLE": "Отправить субтитры разговора",

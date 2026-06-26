@@ -1,7 +1,7 @@
 class Captain::Tools::CreateTouchPlanTool < Captain::Tools::BasePublicTool
-  description 'Create a reusable outbound touch plan with one or more scheduled touch definitions'
-  param :name, type: 'string', desc: 'Touch plan name', required: true
-  param :description, type: 'string', desc: 'Optional touch plan description', required: false
+  description 'Create a reusable AI staff follow-up scenario with one or more scheduled touch definitions'
+  param :name, type: 'string', desc: 'Follow-up scenario name', required: true
+  param :description, type: 'string', desc: 'Optional follow-up scenario description', required: false
   param :entity_kinds, type: 'array', desc: 'Supported entity kinds: conversation, deal, task, appointment. Defaults to conversation', required: false
   param :touches, type: 'array',
                   desc: 'Array of touch definitions using touch fields such as body, content_kind, timing_mode, scheduled_at, relative_anchor, relative_offset_seconds, timezone, target_inbox_id, template_params, metadata',

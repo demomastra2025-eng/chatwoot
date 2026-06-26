@@ -3,6 +3,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   include DateRangeHelper
   include HmacConcern
 
+  rescue_from Conversations::StatusReasonConfig::Error, with: :render_status_reason_error
+
   before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :create, :filter]
   before_action :inbox, :contact, :contact_inbox, only: [:create]
 
@@ -102,11 +104,9 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     # FIXME: move this logic into a service object
     if pending_to_open_by_bot?
       @conversation.bot_handoff!
-    elsif params[:status].present?
-      set_conversation_status
-      @status = @conversation.save!
+      @status = true
     else
-      @status = @conversation.toggle_status
+      @status = transition_conversation_status!
     end
     assign_conversation if should_assign_conversation?
   end
@@ -189,6 +189,23 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   def set_conversation_status
     @conversation.status = params[:status]
     @conversation.snoozed_until = parse_date_time(params[:snoozed_until].to_s) if params[:snoozed_until]
+  end
+
+  def transition_conversation_status!
+    Conversations::StatusTransitionService.new(
+      conversation: @conversation,
+      params: status_transition_params,
+      actor: Current.user,
+      source: 'api'
+    ).perform
+  end
+
+  def status_transition_params
+    params.permit(:status, :snoozed_until, :status_reason)
+  end
+
+  def render_status_reason_error(error)
+    render json: { error: error.message, code: error.code, details: error.details }, status: error.status
   end
 
   def assign_conversation

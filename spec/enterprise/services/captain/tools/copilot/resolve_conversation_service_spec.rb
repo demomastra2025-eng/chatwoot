@@ -19,6 +19,20 @@ RSpec.describe Captain::Tools::Copilot::ResolveConversationService do
     )
   end
 
+  it 'returns the canonical status reason written by the transition' do
+    account.update!(
+      conversation_status_reason_config: {
+        resolved: { options: ['Customer confirmed'], required: false }
+      }
+    )
+
+    payload = JSON.parse(service.execute(status_reason: 'customer confirmed'))
+
+    expect(payload['status']).to eq('resolved')
+    expect(payload['status_reason']).to eq('Customer confirmed')
+    expect(conversation.reload.status_transitions.last.reason).to eq('Customer confirmed')
+  end
+
   it 'returns a normalized payload without a reason when none is provided' do
     payload = JSON.parse(service.execute)
 

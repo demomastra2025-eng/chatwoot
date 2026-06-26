@@ -42,7 +42,12 @@ import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import ColorPicker from 'dashboard/components-next/colorpicker/ColorPicker.vue';
 import SelectInput from 'dashboard/components-next/select/Select.vue';
 import Widget from 'dashboard/modules/widget-preview/components/Widget.vue';
-import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
+import {
+  getWhatsappWebConnectionState,
+  getWhatsappWebLifecycleState,
+  isInboxPendingDeletion,
+  isWhatsappWebConnected as hasOpenWhatsappWebSession,
+} from 'dashboard/helper/whatsappWeb';
 import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 import { getInboxHealthStatus } from './helpers/inboxHealthStatus';
 import AccessToken from 'dashboard/routes/dashboard/settings/profile/AccessToken.vue';
@@ -222,6 +227,15 @@ export default {
     whatsappWebQrCode() {
       return this.whatsappWebEvolutionState.qrcode?.base64 || '';
     },
+    whatsappWebLifecycleState() {
+      return getWhatsappWebLifecycleState(this.inbox);
+    },
+    whatsappWebConnectionState() {
+      return getWhatsappWebConnectionState(this.inbox);
+    },
+    isWhatsappWebConnected() {
+      return hasOpenWhatsappWebSession(this.inbox);
+    },
     whatsappWebQrValue() {
       return this.whatsappWebEvolutionState.qrcode?.code || '';
     },
@@ -251,7 +265,7 @@ export default {
     shouldShowWhatsappWebQrPreview() {
       return Boolean(
         this.isAWhatsAppWebInbox &&
-          this.whatsappWebEvolutionState.status !== 'connected' &&
+          !this.isWhatsappWebConnected &&
           (this.whatsappWebDisplayQrCode ||
             this.formattedWhatsappWebPairingCode)
       );
@@ -1480,19 +1494,10 @@ export default {
         return false;
       }
 
-      const lifecycleState =
-        this.inbox?.lifecycle_state ||
-        this.whatsappWebEvolutionState.lifecycle_state ||
-        '';
-      const connectionState =
-        this.inbox?.connection_state ||
-        this.whatsappWebEvolutionState.connection_state ||
-        '';
+      const lifecycleState = this.whatsappWebLifecycleState;
+      const connectionState = this.whatsappWebConnectionState;
 
-      return (
-        !['open', 'connected'].includes(connectionState) &&
-        !['open', 'connected'].includes(lifecycleState)
-      );
+      return !(lifecycleState === 'connected' && connectionState === 'open');
     },
     syncWhatsappWebPolling() {
       this.stopWhatsappWebPolling();

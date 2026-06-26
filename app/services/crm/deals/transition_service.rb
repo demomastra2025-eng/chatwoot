@@ -9,7 +9,8 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
     requested_position = resolve_requested_position
     stage_changing = deal.stage_id != target_stage.id
     closing_reasons_requested = params.key?(:closing_reasons)
-    return deal if !stage_changing && requested_position.blank? && !closing_reasons_requested
+    transition_reason_requested = params.key?(:transition_reason)
+    return deal if !stage_changing && requested_position.blank? && !closing_reasons_requested && !transition_reason_requested
 
     realtime_event_name = if stage_changing
                             Events::Types::CRM_DEAL_STAGE_CHANGED
@@ -25,8 +26,12 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
         current_reasons: deal.closing_reasons,
         require_input: stage_changing
       )
+      transition_reason = resolve_transition_reason!(
+        target_stage: target_stage,
+        require_input: stage_changing
+      )
       ensure_required_fields_for_closed_stage!(target_stage)
-      transition_to_stage!(target_stage, closing_reasons: closing_reasons)
+      transition_to_stage!(target_stage, closing_reasons: closing_reasons, transition_reason: transition_reason)
     end
 
     event_type = if realtime_event_name == Events::Types::CRM_DEAL_STAGE_CHANGED
@@ -46,7 +51,7 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
 
   attr_reader :deal
 
-  def transition_to_stage!(target_stage, closing_reasons:)
+  def transition_to_stage!(target_stage, closing_reasons:, transition_reason: nil)
     from_stage_id = deal.stage_id
     from_pipeline_id = deal.pipeline_id
     from_closing_reasons = deal.closing_reasons
@@ -80,9 +85,10 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
         to_stage_id: target_stage.id,
         from_pipeline_id: from_pipeline_id,
         to_pipeline_id: target_stage.pipeline_id,
+        transition_reason: transition_reason,
         from_closing_reasons: from_closing_reasons,
         closing_reasons: deal.closing_reasons
-      }
+      }.compact
     )
 
     deal.reload

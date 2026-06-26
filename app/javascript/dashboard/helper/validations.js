@@ -142,10 +142,43 @@ const validateSingleAction = action => {
     const params = Array.isArray(action.action_params)
       ? action.action_params[0]
       : action.action_params;
+    const actionType = params?.action_type || 'send_message';
+    const contentKind = params?.content_kind || 'free_text';
+    const textMode = params?.text_mode;
     const body = params?.body?.trim?.() || '';
+    const instructions = params?.instructions?.trim?.() || '';
     const delayMinutes = params?.delay_minutes;
+    const timingMode = params?.timing_mode;
+    const repeatMode = params?.repeat_mode;
+    const hasAttachments = Array.isArray(params?.attachments)
+      ? params.attachments.length > 0
+      : false;
+    const hasTemplateParams =
+      params?.template_params && Object.keys(params.template_params).length > 0;
 
-    if (!body) {
+    if (
+      actionType === 'send_message' &&
+      textMode === 'agent' &&
+      !instructions
+    ) {
+      return ACTION_PARAMETERS_REQUIRED;
+    }
+
+    if (
+      actionType === 'send_message' &&
+      contentKind === 'channel_template' &&
+      !hasTemplateParams
+    ) {
+      return ACTION_PARAMETERS_REQUIRED;
+    }
+
+    if (
+      actionType === 'send_message' &&
+      contentKind !== 'channel_template' &&
+      textMode !== 'agent' &&
+      !body &&
+      !hasAttachments
+    ) {
       return ACTION_PARAMETERS_REQUIRED;
     }
 
@@ -155,6 +188,18 @@ const validateSingleAction = action => {
       delayMinutes !== '' &&
       (Number.isNaN(Number(delayMinutes)) || Number(delayMinutes) < 0)
     ) {
+      return CREATE_TOUCH_DELAY_INVALID;
+    }
+
+    if (
+      timingMode === 'relative' &&
+      (!params?.relative_anchor ||
+        params?.relative_offset_seconds === undefined)
+    ) {
+      return CREATE_TOUCH_DELAY_INVALID;
+    }
+
+    if (timingMode === 'relative' && repeatMode && repeatMode !== 'once') {
       return CREATE_TOUCH_DELAY_INVALID;
     }
 

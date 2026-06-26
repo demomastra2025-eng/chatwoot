@@ -390,24 +390,29 @@ defineExpose({
       />
 
       <div v-if="showDescriptionField" class="flex flex-col gap-2">
-        <div class="flex w-full flex-wrap items-center justify-center gap-2">
-          <Button
-            v-for="action in instructionReferenceActions"
-            :key="action.id"
-            size="sm"
-            color="slate"
-            variant="faded"
-            class="!px-3"
-            @mousedown.prevent
-            @click="openInstructionReferenceMenu(action.id)"
-          >
-            <span class="flex min-w-0 truncate">
-              <span class="font-semibold text-n-brand">
-                {{ action.marker }}
+        <div class="flex w-full flex-wrap items-center justify-between gap-2">
+          <span class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL') }}
+          </span>
+          <div class="flex min-w-0 flex-wrap items-center justify-center gap-2">
+            <Button
+              v-for="action in instructionReferenceActions"
+              :key="action.id"
+              size="sm"
+              color="slate"
+              variant="faded"
+              class="!px-3"
+              @mousedown.prevent
+              @click="openInstructionReferenceMenu(action.id)"
+            >
+              <span class="flex min-w-0 truncate">
+                <span class="font-semibold text-n-brand">
+                  {{ action.marker }}
+                </span>
+                <span class="min-w-0 truncate">{{ action.label }}</span>
               </span>
-              <span class="min-w-0 truncate">{{ action.label }}</span>
-            </span>
-          </Button>
+            </Button>
+          </div>
         </div>
         <Editor
           ref="instructionEditorRef"
@@ -415,7 +420,6 @@ defineExpose({
           override-line-breaks
           auto-height
           :editor-key="`captain:assistant:${assistant?.id || 'new'}:basic-description`"
-          :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
           :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
           :max-length="descriptionMaxLength"
           :initial-height="descriptionInitialHeight"

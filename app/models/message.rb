@@ -471,7 +471,7 @@ class Message < ApplicationRecord
     return if conversation.muted?
     return unless incoming?
 
-    conversation.open! if conversation.snoozed?
+    transition_conversation_status!('open', source: 'contact') if conversation.snoozed?
 
     reopen_resolved_conversation if conversation.resolved?
   end
@@ -482,7 +482,7 @@ class Message < ApplicationRecord
     return if private?
     return if scheduled_touch_message?
 
-    conversation.open!
+    transition_conversation_status!('open', source: 'system')
   end
 
   def scheduled_touch_message?
@@ -499,13 +499,22 @@ class Message < ApplicationRecord
   def reopen_resolved_conversation
     # mark resolved bot conversation as pending to be reopened by bot processor service
     if conversation.inbox.active_bot?
-      conversation.pending!
+      transition_conversation_status!('pending', source: 'contact')
     elsif conversation.inbox.api?
       Current.executed_by = sender if reopened_by_contact?
-      conversation.open!
+      transition_conversation_status!('open', source: reopened_by_contact? ? 'contact' : 'system')
     else
-      conversation.open!
+      transition_conversation_status!('open', source: reopened_by_contact? ? 'contact' : 'system')
     end
+  end
+
+  def transition_conversation_status!(target_status, source: 'system')
+    Conversations::StatusTransitionService.new(
+      conversation: conversation,
+      params: { status: target_status },
+      actor: Current.user || Current.executed_by || (sender if reopened_by_contact?),
+      source: source
+    ).perform
   end
 
   def reopened_by_contact?

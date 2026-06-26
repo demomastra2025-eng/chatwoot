@@ -1,6 +1,267 @@
 require 'rails_helper'
 
 RSpec.describe Reminder do
+  describe '#renderable_body' do
+    it 'renders manual touch field references across contact, conversation, deal, task, appointment, and custom fields' do
+      account = create(:account)
+      account.enable_features!('crm_deals', 'crm_tasks', 'scheduling', 'communication_threads')
+      owner = create(:user, :administrator, account: account, name: 'Olivia Owner')
+      creator = create(:user, :administrator, account: account, name: 'Chris Creator')
+      assignee = create(:user, :administrator, account: account, name: 'Alex Assignee')
+      team = create(:team, account: account, name: 'Sales Team')
+      company = create(:company, account: account, name: 'Acme Clinic')
+      pipeline = create(:crm_pipeline, account: account, name: 'Primary Pipeline')
+      stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified')
+
+      create(
+        :custom_attribute_definition,
+        account: account,
+        attribute_model: :contact_attribute,
+        attribute_key: 'vip_level',
+        attribute_display_name: 'VIP Level'
+      )
+      create(
+        :custom_attribute_definition,
+        account: account,
+        attribute_model: :conversation_attribute,
+        attribute_key: 'order_id',
+        attribute_display_name: 'Order ID'
+      )
+      create(:crm_field_definition, account: account, entity_kind: 'deal', key: 'sales_region', label: 'Sales Region')
+      create(:crm_field_definition, account: account, entity_kind: 'task', key: 'follow_up_channel', label: 'Follow Up Channel')
+      create(:crm_field_definition, account: account, entity_kind: 'appointment', key: 'visit_room', label: 'Visit Room')
+
+      contact = create(
+        :contact,
+        account: account,
+        name: 'Jane Patient',
+        email: 'jane.patient@example.com',
+        phone_number: '+77005550101',
+        identifier: 'CRM-42',
+        contact_type: 'customer',
+        custom_attributes: { 'vip_level' => 'gold' }
+      )
+      inbox = create(:inbox, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number)
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        assignee: assignee,
+        status: 'pending',
+        priority: 'urgent',
+        custom_attributes: { 'order_id' => 'ORD-1' }
+      )
+      conversation.label_list.add('sales')
+      conversation.label_list.add('vip')
+      conversation.save!
+
+      communication_thread = conversation.reload.communication_thread || conversation.refresh_communication_thread!
+
+      deal = create(
+        :crm_deal,
+        account: account,
+        title: 'Apartment Purchase',
+        description: 'Client wants a two-room apartment',
+        amount_minor: 1_500_000,
+        currency: 'KZT',
+        expected_close_on: Date.new(2026, 7, 30),
+        win_probability: 80,
+        closed_at: Time.zone.parse('2026-07-20 12:00'),
+        external_ref: 'DEAL-1',
+        pipeline: pipeline,
+        stage: stage,
+        owner: owner,
+        creator: creator,
+        team: team,
+        company: company,
+        originating_conversation: conversation,
+        originating_communication_thread: communication_thread,
+        custom_attributes: { 'sales_region' => 'Almaty' }
+      )
+      status = create(:crm_task_status, account: account, name: 'In Progress')
+      task = create(
+        :crm_task,
+        account: account,
+        title: 'Call client',
+        description: 'Clarify preferred district',
+        due_at: Time.zone.parse('2026-07-21 15:00'),
+        start_at: Time.zone.parse('2026-07-21 14:00'),
+        priority: 'high',
+        completed_at: Time.zone.parse('2026-07-21 16:00'),
+        external_ref: 'TASK-1',
+        status: status,
+        assignee: assignee,
+        creator: creator,
+        team: team,
+        deal: deal,
+        originating_conversation: conversation,
+        custom_attributes: { 'follow_up_channel' => 'telegram' }
+      )
+      service = create(
+        :scheduling_service,
+        account: account,
+        name: 'Consultation',
+        base_price: 20_000,
+        duration_min: 45,
+        service_type: 'consultation'
+      )
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        company: company,
+        conversation: conversation,
+        created_by: creator,
+        owner: owner,
+        service: service,
+        starts_at: Time.zone.parse('2026-07-22 10:00'),
+        ends_at: Time.zone.parse('2026-07-22 10:45'),
+        duration_min: 45,
+        status: 'scheduled',
+        appointment_type: 'primary',
+        client_name: 'Jane Patient',
+        client_phone: '+77005550101',
+        client_identifier: 'IIN-1',
+        client_birth_date: Date.new(1990, 1, 2),
+        client_gender: 'female',
+        client_comment: 'Prefers morning',
+        source: 'manual',
+        external_ref: 'APPT-1',
+        payment_status: 'paid',
+        service_name_snapshot: 'Consultation',
+        service_type_snapshot: 'consultation',
+        service_duration_min_snapshot: 45,
+        service_amount: 20_000,
+        compensation_type_snapshot: 'fixed',
+        compensation_value_snapshot: 5_000,
+        compensation_percent_snapshot: 0,
+        prepaid_amount: 10_000,
+        prepaid_payment_method: 'card',
+        settlement_amount: 10_000,
+        settlement_payment_method: 'cash',
+        custom_attributes: { 'visit_room' => 'B12' }
+      )
+
+      deal.reload
+      task.reload
+      appointment.reload
+
+      field_values = {
+        'contact.id' => contact.id,
+        'contact.name' => contact.name,
+        'contact.email' => contact.email,
+        'contact.phone_number' => contact.phone_number,
+        'contact.identifier' => contact.identifier,
+        'contact.contact_type' => contact.contact_type,
+        'contact.custom_attributes.vip_level' => 'gold',
+        'conversation.id' => conversation.id,
+        'conversation.display_id' => conversation.display_id,
+        'conversation.inbox_id' => conversation.inbox_id,
+        'conversation.contact_id' => conversation.contact_id,
+        'conversation.status' => conversation.status,
+        'conversation.priority' => conversation.priority,
+        'conversation.label_list' => conversation.label_list.join(', '),
+        'conversation.custom_attributes.order_id' => 'ORD-1',
+        'deal.id' => deal.id,
+        'deal.title' => deal.title,
+        'deal.description' => deal.description,
+        'deal.amount' => '15000',
+        'deal.currency' => deal.currency,
+        'deal.expected_close_on' => deal.expected_close_on,
+        'deal.win_probability' => deal.win_probability,
+        'deal.closed_at' => deal.closed_at,
+        'deal.external_ref' => deal.external_ref,
+        'deal.pipeline_id' => pipeline.id,
+        'deal.pipeline_name' => pipeline.name,
+        'deal.stage_id' => stage.id,
+        'deal.stage_name' => stage.name,
+        'deal.owner_id' => owner.id,
+        'deal.owner_name' => owner.name,
+        'deal.creator_id' => creator.id,
+        'deal.creator_name' => creator.name,
+        'deal.team_id' => team.id,
+        'deal.team_name' => team.name,
+        'deal.company_id' => company.id,
+        'deal.company_name' => company.name,
+        'deal.originating_conversation_id' => conversation.id,
+        'deal.custom_attributes.sales_region' => 'Almaty',
+        'task.id' => task.id,
+        'task.title' => task.title,
+        'task.description' => task.description,
+        'task.due_at' => task.due_at,
+        'task.start_at' => task.start_at,
+        'task.priority' => task.priority,
+        'task.completed_at' => task.completed_at,
+        'task.external_ref' => task.external_ref,
+        'task.status_id' => status.id,
+        'task.status_name' => status.name,
+        'task.assignee_id' => task.assignee_id,
+        'task.assignee_name' => task.assignee&.name,
+        'task.creator_id' => creator.id,
+        'task.creator_name' => creator.name,
+        'task.team_id' => team.id,
+        'task.team_name' => team.name,
+        'task.deal_id' => deal.id,
+        'task.deal_title' => deal.title,
+        'task.originating_conversation_id' => conversation.id,
+        'task.custom_attributes.follow_up_channel' => 'telegram',
+        'appointment.id' => appointment.id,
+        'appointment.resource_id' => appointment.resource_id,
+        'appointment.contact_id' => contact.id,
+        'appointment.service_id' => service.id,
+        'appointment.company_id' => company.id,
+        'appointment.conversation_id' => conversation.id,
+        'appointment.created_by_id' => creator.id,
+        'appointment.starts_at' => appointment.starts_at,
+        'appointment.ends_at' => appointment.ends_at,
+        'appointment.duration_min' => appointment.duration_min,
+        'appointment.status' => appointment.status,
+        'appointment.appointment_type' => appointment.appointment_type,
+        'appointment.client_name' => appointment.client_name,
+        'appointment.client_phone' => appointment.client_phone,
+        'appointment.client_identifier' => appointment.client_identifier,
+        'appointment.client_birth_date' => appointment.client_birth_date,
+        'appointment.client_gender' => appointment.client_gender,
+        'appointment.client_comment' => appointment.client_comment,
+        'appointment.source' => appointment.source,
+        'appointment.external_ref' => appointment.external_ref,
+        'appointment.payment_status' => appointment.payment_status,
+        'appointment.service_name_snapshot' => appointment.service_name_snapshot,
+        'appointment.service_type_snapshot' => appointment.service_type_snapshot,
+        'appointment.service_duration_min_snapshot' => appointment.service_duration_min_snapshot,
+        'appointment.service_amount' => appointment.service_amount,
+        'appointment.compensation_type_snapshot' => appointment.compensation_type_snapshot,
+        'appointment.compensation_value_snapshot' => appointment.compensation_value_snapshot,
+        'appointment.compensation_percent_snapshot' => appointment.compensation_percent_snapshot,
+        'appointment.prepaid_amount' => appointment.prepaid_amount,
+        'appointment.prepaid_payment_method' => appointment.prepaid_payment_method,
+        'appointment.settlement_amount' => appointment.settlement_amount,
+        'appointment.settlement_payment_method' => appointment.settlement_payment_method,
+        'appointment.custom_attributes.visit_room' => 'B12'
+      }
+      body = field_values.keys.map { |field_id| "#{field_id}: [#{field_id}](field://#{field_id})" }.join("\n")
+      reminder = build(
+        :reminder,
+        account: account,
+        creator: creator,
+        owner: owner,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        body: body
+      )
+
+      rendered = reminder.renderable_body(conversation: conversation, sender: owner)
+
+      field_values.each do |field_id, value|
+        expect(rendered).to include("#{field_id}: #{value}")
+      end
+    end
+  end
+
   describe 'relative scheduling' do
     it 'materializes scheduled_at from the relative anchor' do
       conversation = create(:conversation)
@@ -19,6 +280,73 @@ RSpec.describe Reminder do
       reminder.validate
 
       expect(reminder.scheduled_at.to_i).to eq((conversation.created_at + 1.hour).to_i)
+    end
+
+    it 'materializes relative scheduling on the calculated date with a fixed time of day' do
+      zone = Time.find_zone!('Asia/Almaty')
+      appointment = create(
+        :scheduling_appointment,
+        starts_at: zone.parse('2026-07-10 15:00'),
+        ends_at: zone.parse('2026-07-10 15:30')
+      )
+      reminder = build(
+        :reminder,
+        account: appointment.account,
+        remindable: appointment,
+        timing_mode: :relative,
+        relative_anchor: 'appointment.starts_at',
+        relative_offset_seconds: -1.day.to_i,
+        relative_time_mode: 'fixed_time_of_day',
+        relative_time_of_day: '10:00',
+        timezone: 'Asia/Almaty',
+        body: 'Fixed time reminder',
+        scheduled_at: nil
+      )
+
+      reminder.validate
+
+      expect(reminder.scheduled_at.to_i).to eq(zone.parse('2026-07-09 10:00').to_i)
+      expect(reminder.last_materialized_anchor_at.to_i).to eq(appointment.starts_at.to_i)
+    end
+
+    it 'requires HH:MM time when relative scheduling uses fixed time of day' do
+      reminder = build(
+        :reminder,
+        timing_mode: :relative,
+        relative_anchor: 'touch.created_at',
+        relative_offset_seconds: 1.hour.to_i,
+        relative_time_mode: 'fixed_time_of_day',
+        relative_time_of_day: nil,
+        scheduled_at: nil
+      )
+
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:relative_time_of_day]).to include(
+        'must be present for fixed time of day relative touches'
+      )
+    end
+
+    it 'does not rematerialize scheduled_at when manual schedule override is enabled' do
+      appointment = create(:scheduling_appointment, starts_at: 2.days.from_now)
+      manual_scheduled_at = 3.days.from_now.change(sec: 0)
+      reminder = build(
+        :reminder,
+        account: appointment.account,
+        remindable: appointment,
+        timing_mode: :relative,
+        relative_anchor: 'appointment.starts_at',
+        relative_offset_seconds: -1.day.to_i,
+        relative_time_mode: 'fixed_time_of_day',
+        relative_time_of_day: '10:00',
+        manual_schedule_override: true,
+        scheduled_at: manual_scheduled_at,
+        body: 'Manual override reminder'
+      )
+
+      reminder.validate
+
+      expect(reminder.scheduled_at.to_i).to eq(manual_scheduled_at.to_i)
+      expect(reminder.last_materialized_anchor_at).to be_nil
     end
 
     it 'materializes touch.created_at relative scheduling from current time for new touches' do

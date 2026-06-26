@@ -39,6 +39,7 @@
     "VIEW_FILTER": "View",
     "SORT_TOOLTIP_LABEL": "Sort conversations",
     "LOCAL_SEARCH": {
+      "TITLE": "Quick search",
       "TOOLTIP_LABEL": "Search conversations",
       "PLACEHOLDER": "Search by name, phone, account or identifier",
       "EMPTY": "No conversations match this search.",

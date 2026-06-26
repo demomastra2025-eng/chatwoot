@@ -8,6 +8,9 @@ class Reminders::ApplyGroupService
     repeat_until_at
     relative_anchor
     relative_offset_seconds
+    relative_time_mode
+    relative_time_of_day
+    manual_schedule_override
     scheduled_at
     timezone
     body

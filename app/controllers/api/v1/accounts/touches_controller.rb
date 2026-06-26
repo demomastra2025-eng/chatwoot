@@ -101,6 +101,7 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
     attrs = touch_params.to_h.symbolize_keys
     attrs[:conversation_id] = resolve_conversation_reference!(attrs[:conversation_id]).id if attrs[:conversation_id].present?
     attrs[:target_conversation_id] = resolve_conversation_reference!(attrs[:target_conversation_id]).id if attrs[:target_conversation_id].present?
+    attrs[:manual_schedule_override] = true if manual_schedule_override_update?(attrs)
 
     if params[:remindable_type].present? || params[:remindable_id].present?
       attrs.delete(:remindable_type)
@@ -163,6 +164,15 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
       )
   end
 
+  def manual_schedule_override_update?(attrs)
+    return false if @touch.blank?
+    return false unless @touch.relative?
+    return false unless attrs.key?(:scheduled_at)
+    return false if ActiveModel::Type::Boolean.new.cast(attrs[:manual_schedule_override])
+
+    attrs[:scheduled_at].present? && attrs[:scheduled_at].to_s != @touch.scheduled_at&.iso8601
+  end
+
   # rubocop:disable Metrics/MethodLength
   def touch_params
     params.permit(
@@ -180,6 +190,9 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
       :repeat_until_at,
       :relative_anchor,
       :relative_offset_seconds,
+      :relative_time_mode,
+      :relative_time_of_day,
+      :manual_schedule_override,
       :scheduled_at,
       :timezone,
       :body,

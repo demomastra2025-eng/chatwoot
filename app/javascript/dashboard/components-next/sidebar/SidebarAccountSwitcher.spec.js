@@ -165,6 +165,7 @@ describe('SidebarAccountSwitcher', () => {
     expect(avatar.attributes('data-src')).toBe(
       'https://example.com/customer-logo.png'
     );
+    expect(avatar.attributes('data-size')).toBe('28');
     expect(
       wrapper.find('[data-test-id="default-workspace-logo"]').exists()
     ).toBe(false);
@@ -188,38 +189,21 @@ describe('SidebarAccountSwitcher', () => {
 
     const wrapper = mountComponent({ isCollapsed: true });
 
-    expect(wrapper.findAll('[data-test-id="workspace-avatar"]')).toHaveLength(
-      2
-    );
+    const avatars = wrapper.findAll('[data-test-id="workspace-avatar"]');
+
+    expect(avatars).toHaveLength(2);
+    expect(avatars[0].attributes('data-size')).toBe('32');
+    expect(avatars[1].attributes('data-size')).toBe('20');
     expect(
       wrapper.find('[data-test-id="default-workspace-logo"]').exists()
     ).toBe(false);
   });
 
-  it('positions the company menu to the right of the briefcase trigger', () => {
-    const wrapper = mountComponent({
-      isCollapsed: false,
-      companyMenuItem: {
-        name: 'my_company',
-        label: 'Company',
-        to: { name: 'settings_general' },
-        children: [
-          {
-            name: 'employees',
-            label: 'Employees',
-            icon: 'i-lucide-users',
-            to: { name: 'settings_agents' },
-          },
-        ],
-      },
-    });
+  it('does not render a separate company briefcase trigger', () => {
+    const wrapper = mountComponent({ isCollapsed: true });
 
-    const containers = wrapper.findAll('.dropdown-container');
-
-    expect(containers).toHaveLength(2);
-    expect(containers[1].attributes('data-menu-class')).toBe(
-      'ltr:left-full rtl:right-full top-0 ltr:ml-2 rtl:mr-2 !mt-0'
+    expect(wrapper.find('[data-icon="i-lucide-briefcase"]').exists()).toBe(
+      false
     );
-    expect(wrapper.text()).toContain('Employees');
   });
 });

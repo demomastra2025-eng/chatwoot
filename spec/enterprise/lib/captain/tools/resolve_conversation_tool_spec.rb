@@ -54,6 +54,21 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
       expect(payload).not_to have_key('reason')
     end
 
+    it 'canonicalizes explicit configured status reasons' do
+      account.update!(
+        conversation_status_reason_config: {
+          resolved: { options: ['Customer confirmed'], required: false }
+        }
+      )
+
+      result = tool.perform(tool_context, status_reason: 'customer confirmed')
+      payload = JSON.parse(result)
+
+      expect(conversation.reload).to be_resolved
+      expect(payload['status_reason']).to eq('Customer confirmed')
+      expect(conversation.status_transitions.last.reason).to eq('Customer confirmed')
+    end
+
     it 'creates a conversation_resolved reporting event' do
       create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
 

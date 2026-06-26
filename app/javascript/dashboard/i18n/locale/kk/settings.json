@@ -360,7 +360,7 @@
     "UNATTENDED_CONVERSATIONS": "Unattended",
     "REPORTS": "Reports",
     "SETTINGS": "Settings",
-    "ADDITIONAL": "Қосымша",
+    "ADDITIONAL": "Баптаулар",
     "CONTACTS": "Contacts",
     "ACTIVE": "Active",
     "COMPANIES": "Ұйымдар",
@@ -388,6 +388,11 @@
     "CAPTAIN_PLAYGROUND": "Playground",
     "CAPTAIN_INBOXES": "Channels",
     "CAPTAIN_SETTINGS": "Settings",
+    "CAPTAIN_PROMPTS": "Нұсқаулар",
+    "CAPTAIN_FOLLOW_UPS": "Дожим сценарийлері",
+    "CAPTAIN_RESTRICTIONS": "Restrictions",
+    "CAPTAIN_ACCESS": "Access",
+    "CAPTAIN_CHANNELS": "Channels",
     "HOME": "Home",
     "AGENTS": "Employees",
     "AGENT_BOTS": "Вебхуктар",
@@ -1044,6 +1049,32 @@
         "AVAILABLE_ON": "The required conversation attributes feature is available on the paid plans.",
         "UPGRADE_PROMPT": "Upgrade to a paid plan to enforce required attributes before conversation resolution.",
         "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      }
+    },
+    "STATUS_REASONS": {
+      "TITLE": "Статусты өзгерту себептері",
+      "DESCRIPTION": "Диалог статустарын ауыстырғанда қызметкерлер таңдайтын себептерді баптаңыз.",
+      "STATUS": {
+        "OPEN": "Ашық",
+        "RESOLVED": "Аяқталған",
+        "PENDING": "Күтуде",
+        "SNOOZED": "Кейінге қалдырылған"
+      },
+      "STATUS_HELP": {
+        "OPEN": "Диалогты қайта ашу немесе жұмысқа қайтару себептері.",
+        "RESOLVED": "Диалогты аяқтау себептері.",
+        "PENDING": "Диалогты күтуге ауыстыру себептері.",
+        "SNOOZED": "Диалогты кейінге қалдыру себептері."
+      },
+      "OPTIONS_PLACEHOLDER": "Себепті енгізіп, Enter басыңыз",
+      "REQUIRED": "Себеп міндетті",
+      "REQUIRED_HELP": "Қызметкер бұл статусқа ауыстырмас бұрын бапталған себептердің бірін таңдауы керек.",
+      "REQUIRED_ERROR": "Кемінде бір себеп қосыңыз немесе міндеттілікті өшіріңіз.",
+      "SAVE": {
+        "BUTTON": "Себептерді сақтау",
+        "SUCCESS": "Статус себептері жаңартылды",
+        "ERROR": "Статус себептерін жаңарту мүмкін болмады",
+        "REQUIRED_ERROR": "Міндетті себептер үшін кемінде бір нұсқа қосыңыз."
       }
     }
   },

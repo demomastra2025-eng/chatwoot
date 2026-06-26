@@ -181,7 +181,8 @@ export function useBulkActions() {
   async function onUpdateConversations(
     status,
     snoozedUntil,
-    isCommunicationThreadMode = false
+    isCommunicationThreadMode = false,
+    statusReason = null
   ) {
     if (selectedConversations.value.length === 0) return;
 
@@ -226,12 +227,13 @@ export function useBulkActions() {
 
     try {
       if (conversationIds.length > 0) {
+        const fields = { status };
+        if (statusReason) fields.status_reason = statusReason;
+
         await store.dispatch('bulkActions/process', {
           type: bulkType(isCommunicationThreadMode),
           ids: conversationIds,
-          fields: {
-            status,
-          },
+          fields,
           snoozed_until: snoozedUntil,
         });
 

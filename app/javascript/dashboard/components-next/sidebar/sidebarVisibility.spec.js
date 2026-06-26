@@ -25,13 +25,16 @@ describe('sidebarVisibility', () => {
     expect(visibilityState.Campaigns).toBe(true);
     expect(visibilityState['Campaigns:Templates']).toBe(true);
     expect(visibilityState['Campaigns:Touches']).toBe(true);
+    expect(visibilityState['Campaigns:TouchPlans']).toBeUndefined();
+    expect(visibilityState['Captain:FollowUps']).toBe(true);
     expect(visibilityState['Captain:Evaluations']).toBe(true);
     expect(visibilityState['Captain:Observability']).toBe(true);
     expect(visibilityState['Captain:FAQs']).toBe(true);
     expect(visibilityState['Captain:Documents']).toBeUndefined();
     expect(visibilityState['Conversation:Channels']).toBeUndefined();
     expect(visibilityState['Conversation:AllChannels']).toBeUndefined();
-    expect(visibilityState.MyCompany).toBe(true);
+    expect(visibilityState.MyCompany).toBeUndefined();
+    expect(visibilityState['MyCompany:Workspace']).toBe(true);
     expect(visibilityState['MyCompany:Tags']).toBe(true);
     expect(visibilityState['MyCompany:Employees']).toBe(true);
     expect(visibilityState.Employees).toBeUndefined();
@@ -62,17 +65,50 @@ describe('sidebarVisibility', () => {
       'Conversation:Assignee:all',
       'Conversation:Statuses',
       'Conversation:Pipelines',
+      'Reports',
       'MyCompany:Tags',
       'MyCompany:Employees',
-      'Reports',
       'Settings:Macros',
     ]);
   });
 
-  it('keeps company settings immediately before reports in the visibility menu', () => {
-    const itemKeys = SIDEBAR_VISIBILITY_ITEMS.map(item => item.key);
+  it('migrates the removed company group visibility to its moved children', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['MyCompany'],
+      })
+    ).toEqual([
+      'Conversation:Statuses',
+      'MyCompany:Workspace',
+      'MyCompany:Channels',
+      'MyCompany:Tags',
+      'MyCompany:Employees',
+      'MyCompany:Teams',
+      'MyCompany:Roles',
+      'MyCompany:Policies',
+      'MyCompany:AuditLogs',
+    ]);
+  });
 
-    expect(itemKeys.indexOf('MyCompany')).toBe(itemKeys.indexOf('Reports') - 1);
+  it('places company settings first inside the settings visibility menu', () => {
+    const itemKeys = SIDEBAR_VISIBILITY_ITEMS.map(item => item.key);
+    const settingsItem = SIDEBAR_VISIBILITY_ITEMS.find(
+      item => item.key === 'Settings'
+    );
+    const settingsChildKeys = settingsItem.children.map(item => item.key);
+
+    expect(itemKeys).not.toContain('MyCompany');
+    expect(settingsChildKeys.slice(0, 8)).toEqual([
+      'MyCompany:Workspace',
+      'MyCompany:Channels',
+      'MyCompany:Tags',
+      'MyCompany:Employees',
+      'MyCompany:Teams',
+      'MyCompany:Roles',
+      'MyCompany:Policies',
+      'MyCompany:AuditLogs',
+    ]);
+    expect(settingsChildKeys[8]).toBe('Settings:Automation');
   });
 
   it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {

@@ -15,6 +15,10 @@ const CURRENT_RU_ASSIGNEE_ASSIGNED_PATTERN =
   /^Назначен: (?<assigneeName>.+)\.\nИнициатор: (?<initiatorName>.+)$/;
 const CURRENT_EN_ASSIGNEE_ASSIGNED_PATTERN =
   /^Assigned: (?<assigneeName>.+)\.\nInitiator: (?<initiatorName>.+)$/;
+const CURRENT_RU_CAPTAIN_OPEN_WITH_REASON_PATTERN =
+  /^Диалог был открыт (?<userName>.+?) \((?<reason>.+)\)$/u;
+const CURRENT_EN_CAPTAIN_OPEN_WITH_REASON_PATTERN =
+  /^Conversation was marked open by (?<userName>.+?) \((?<reason>.+)\)$/;
 const LABEL_ACTIVITY_PATTERN =
   /^(?<userName>.+?)\s(?<action>добавил|удалил|added|removed)(?<tagPrefix>\s+тег:)?\s+(?<labels>.+)$/u;
 
@@ -56,6 +60,13 @@ const formatAssignedActivity = (translate, assigneeName, initiatorName) => {
   return translate('CONVERSATION.ACTIVITY.ASSIGNEE.ASSIGNED_BY', {
     assigneeName: normalizedAssigneeName,
     initiatorName: normalizePolicyInitiator(initiatorName, translate),
+  });
+};
+
+const formatCaptainOpenWithReasonActivity = (translate, userName, reason) => {
+  return translate('CONVERSATION.ACTIVITY.CAPTAIN.OPEN_WITH_REASON', {
+    userName: userName.trim(),
+    reason: reason.trim(),
   });
 };
 
@@ -156,6 +167,17 @@ export const getLocalizedActivityMessage = (
       translate,
       legacyAssignedMatch.groups.assigneeName,
       legacyAssignedMatch.groups.initiatorName
+    );
+  }
+
+  const captainOpenWithReasonMatch =
+    normalizedContent.match(CURRENT_RU_CAPTAIN_OPEN_WITH_REASON_PATTERN) ||
+    normalizedContent.match(CURRENT_EN_CAPTAIN_OPEN_WITH_REASON_PATTERN);
+  if (captainOpenWithReasonMatch?.groups?.reason) {
+    return formatCaptainOpenWithReasonActivity(
+      translate,
+      captainOpenWithReasonMatch.groups.userName,
+      captainOpenWithReasonMatch.groups.reason
     );
   }
 

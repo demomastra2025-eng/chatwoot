@@ -326,4 +326,51 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       end.to raise_error(ArgumentError, /approved channel_template/)
     end
   end
+
+  describe '#create_touch_plan' do
+    it 'creates assistant-owned follow-up scenarios' do
+      touch_plan = described_class.new(
+        assistant: assistant,
+        conversation: conversation,
+        actor: user
+      ).create_touch_plan(
+        name: 'Nurture scenario',
+        entity_kinds: ['conversation'],
+        touches: [
+          {
+            action_type: 'send_message',
+            content_kind: 'free_text',
+            timing_mode: 'relative',
+            relative_anchor: 'conversation.last_incoming_message_at',
+            relative_offset_seconds: 900,
+            timezone: 'UTC',
+            body: 'Checking in'
+          }
+        ]
+      )
+
+      expect(touch_plan).to be_persisted
+      expect(touch_plan.assistant).to eq(assistant)
+      expect(touch_plan.creator).to eq(user)
+      expect(touch_plan.entity_kinds).to eq(['conversation'])
+    end
+  end
+
+  describe '#apply_touch_plan' do
+    it 'does not apply another assistant plan by id' do
+      other_assistant = create(:captain_assistant, account: account)
+      other_plan = create(
+        :reminder_group,
+        account: account,
+        assistant: other_assistant,
+        entity_kinds: ['conversation']
+      )
+
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      expect do
+        operation.apply_touch_plan(touch_plan_id: other_plan.id, remindable_kind: 'conversation')
+      end.to raise_error(ActiveRecord::RecordNotFound, 'Touch plan not found')
+    end
+  end
 end

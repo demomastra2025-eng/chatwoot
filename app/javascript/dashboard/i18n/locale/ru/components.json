@@ -8,7 +8,8 @@
     "EMPTY_SEARCH_RESULTS": "Не найдено элементов для поиска `{searchTerm}`",
     "EMPTY_STATE": "Результаты не найдены.",
     "SEARCH_PLACEHOLDER": "Поиск...",
-    "MORE": "+{count} еще"
+    "MORE": "+{count} еще",
+    "OPEN_IN_NEW_TAB": "Открыть в новой вкладке"
   },
   "DROPDOWN_MENU": {
     "SEARCH_PLACEHOLDER": "Поиск...",
@@ -18,6 +19,7 @@
   "DIALOG": {
     "BUTTONS": {
       "CANCEL": "Отменить",
+      "CLOSE": "Закрыть",
       "CONFIRM": "Подтвердить"
     }
   },

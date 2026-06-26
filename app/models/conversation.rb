@@ -111,6 +111,7 @@ class Conversation < ApplicationRecord
 
   has_many :mentions, dependent: :destroy_async
   has_many :messages, dependent: :destroy_async, autosave: true
+  has_many :status_transitions, class_name: 'ConversationStatusTransition', dependent: :destroy_async
   has_many :telephony_call_sessions, class_name: 'Telephony::CallSession', dependent: :nullify
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :conversation_participants, dependent: :destroy_async
@@ -157,10 +158,11 @@ class Conversation < ApplicationRecord
   end
 
   def toggle_status
-    # FIXME: implement state machine with aasm
-    self.status = open? ? :resolved : :open
-    self.status = :open if pending? || snoozed?
-    save
+    Conversations::StatusTransitionService.new(
+      conversation: self,
+      actor: Current.user || Current.executed_by,
+      source: 'system'
+    ).perform
   end
 
   def toggle_priority(priority = nil)
@@ -168,9 +170,14 @@ class Conversation < ApplicationRecord
     save
   end
 
-  def bot_handoff!
-    update(waiting_since: Time.current) if waiting_since.blank?
-    open!
+  def bot_handoff!(status_reason: nil, actor: Current.user || Current.executed_by, source: 'system')
+    self.waiting_since = Time.current if waiting_since.blank?
+    Conversations::StatusTransitionService.new(
+      conversation: self,
+      params: { status: 'open', status_reason: status_reason }.compact,
+      actor: actor,
+      source: source
+    ).perform
     dispatcher_dispatch(CONVERSATION_BOT_HANDOFF)
   end
 

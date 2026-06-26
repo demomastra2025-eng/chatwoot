@@ -44,6 +44,14 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  showCloseButton: {
+    type: Boolean,
+    default: false,
+  },
+  closeButtonLabel: {
+    type: String,
+    default: '',
+  },
   overflowYAuto: {
     type: Boolean,
     default: false,
@@ -154,11 +162,26 @@ defineExpose({ open, close });
       >
         <form
           ref="dialogContentRef"
-          class="flex flex-col w-full h-auto gap-6 p-6 overflow-visible text-start align-middle transition-all duration-300 ease-in-out transform bg-n-alpha-3 backdrop-blur-[100px] shadow-xl rounded-xl"
+          class="relative flex flex-col w-full h-auto gap-6 p-6 overflow-visible text-start align-middle transition-all duration-300 ease-in-out transform bg-n-alpha-3 backdrop-blur-[100px] shadow-xl rounded-xl"
           @submit.prevent="confirm"
           @click.stop
         >
-          <div v-if="title || description" class="flex flex-col gap-2">
+          <Button
+            v-if="showCloseButton"
+            icon="i-lucide-x"
+            variant="ghost"
+            color="slate"
+            size="sm"
+            type="button"
+            class="absolute z-10 ltr:right-4 rtl:left-4 top-4"
+            :aria-label="closeButtonLabel || t('DIALOG.BUTTONS.CLOSE')"
+            @click="close"
+          />
+          <div
+            v-if="title || description"
+            class="flex flex-col gap-2"
+            :class="showCloseButton ? 'ltr:pr-10 rtl:pl-10' : ''"
+          >
             <h3 class="text-base font-medium leading-6 text-n-slate-12">
               {{ title }}
             </h3>

@@ -101,4 +101,22 @@ describe('AssistantsIndexPage', () => {
       replace: true,
     });
   });
+
+  it('routes the old outbound touch plans target to assistant follow-up scenarios', async () => {
+    mocks.route.params = {
+      accountId: '1',
+      navigationPath: 'outbound_touch_plans_index',
+    };
+
+    await mountPage();
+
+    expect(mocks.replace).toHaveBeenCalledWith({
+      name: 'captain_assistants_follow_ups_index',
+      params: {
+        accountId: '1',
+        assistantId: 2,
+      },
+      replace: true,
+    });
+  });
 });

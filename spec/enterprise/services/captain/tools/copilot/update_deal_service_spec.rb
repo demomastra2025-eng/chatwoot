@@ -60,6 +60,31 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       expect(deal.stage_id).to eq(target_stage.id)
     end
 
+    it 'can update fields and move with a configured transition reason' do
+      pipeline = deal.pipeline
+      current_stage = deal.stage
+      current_stage.update!(code: 'new', position: 1)
+      target_stage = create(
+        :crm_stage,
+        account: account,
+        pipeline: pipeline,
+        name: 'В работе',
+        code: 'work',
+        position: 2,
+        transition_reason_options: ['Needs docs', 'Waiting payment'],
+        transition_reason_required: true,
+        color: '#222222'
+      )
+
+      payload = JSON.parse(execute_confirmed(title: 'Reasoned renewal', stage_code: 'Work', transition_reason: 'waiting payment'))
+      event = deal.reload.events.where(event_type: 'deal_stage_changed').last
+
+      expect(deal.title).to eq('Reasoned renewal')
+      expect(deal.stage_id).to eq(target_stage.id)
+      expect(payload['deal']).to include('id' => deal.id, 'title' => 'Reasoned renewal', 'stage_id' => target_stage.id)
+      expect(event.meta['transition_reason']).to eq('Waiting payment')
+    end
+
     it 'updates an explicit deal_id instead of the current conversation deal' do
       target_deal = create(:crm_deal, account: account, title: 'Target deal')
 

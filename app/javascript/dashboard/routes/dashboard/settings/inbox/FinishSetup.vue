@@ -19,7 +19,12 @@ import DuplicateInboxBanner from './channels/instagram/DuplicateInboxBanner.vue'
 import EmailInboxFinish from './channels/emailChannels/EmailInboxFinish.vue';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
-import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
+import {
+  getWhatsappWebConnectionState,
+  getWhatsappWebLifecycleState,
+  isInboxPendingDeletion,
+  isWhatsappWebConnected as hasOpenWhatsappWebSession,
+} from 'dashboard/helper/whatsappWeb';
 import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 
 const { t } = useI18n();
@@ -339,19 +344,23 @@ const whatsappWebState = computed(() => {
 });
 
 const whatsappWebStatus = computed(() => {
+  return getWhatsappWebLifecycleState(currentInbox.value) || 'creating';
+});
+
+const whatsappWebConnectionState = computed(() => {
+  return getWhatsappWebConnectionState(currentInbox.value);
+});
+
+const isWhatsappWebConnected = computed(() => {
   return (
-    currentInbox.value?.lifecycle_state ||
-    whatsappWebState.value.status ||
-    'creating'
+    hasOpenWhatsappWebSession(currentInbox.value) ||
+    (whatsappWebStatus.value === 'connected' &&
+      whatsappWebConnectionState.value === 'open')
   );
 });
 
 const isWhatsappWebDeleting = computed(() => {
   return isInboxPendingDeletion(currentInbox.value);
-});
-
-const isWhatsappWebConnected = computed(() => {
-  return whatsappWebStatus.value === 'connected';
 });
 
 const isWhatsappWebHistorySyncing = computed(() => {
@@ -1092,7 +1101,7 @@ function shouldPollWhatsappWebStatus() {
     isDocumentVisible.value &&
     currentInbox.value?.id &&
     !isWhatsappWebDeleting.value &&
-    whatsappWebStatus.value !== 'connected'
+    !isWhatsappWebConnected.value
   );
 }
 
@@ -1120,7 +1129,7 @@ async function fetchWhatsappWebStatus() {
     !isDocumentVisible.value ||
     !currentInbox.value?.id ||
     isWhatsappWebDeleting.value ||
-    whatsappWebStatus.value === 'connected'
+    isWhatsappWebConnected.value
   ) {
     return;
   }

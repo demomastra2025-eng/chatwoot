@@ -51,12 +51,14 @@ RSpec.describe Whatsapp::TemplateProcessorService do
       service = described_class.new(channel: channel, template_params: template_params)
       _, _, _, processed_params = service.call
 
-      expect(processed_params).to eq([
-        {
-          type: 'body',
-          parameters: [{ type: 'text', parameter_name: 'ticket_id', text: '123' }]
-        }
-      ])
+      expect(processed_params).to eq(
+        [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', parameter_name: 'ticket_id', text: '123' }]
+          }
+        ]
+      )
     end
 
     it 'rejects authentication templates even if they exist in the local cache' do
@@ -107,6 +109,47 @@ RSpec.describe Whatsapp::TemplateProcessorService do
       service = described_class.new(channel: channel, template_params: template_params)
 
       expect(service.call).to eq(['carousel_template', nil, 'en_US', nil])
+    end
+
+    it 'renders field references in processed template params before building WhatsApp Cloud components' do
+      account = channel.account
+      contact = create(:contact, account: account, name: 'Ахан')
+      conversation = create(:conversation, account: account, inbox: channel.inbox, contact: contact)
+      message = create(
+        :message,
+        account: account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: 'outgoing'
+      )
+      channel.update!(
+        message_templates: [
+          {
+            'name' => 'sample_template',
+            'language' => 'en_US',
+            'status' => 'APPROVED',
+            'components' => [{ 'type' => 'BODY', 'text' => 'Hello {{1}}' }]
+          }
+        ]
+      )
+
+      template_params = {
+        'name' => 'sample_template',
+        'language' => 'en_US',
+        'processed_params' => { 'body' => { '1' => '[Имя](field://contact.name)' } }
+      }
+
+      service = described_class.new(channel: channel, template_params: template_params, message: message)
+      _, _, _, processed_params = service.call
+
+      expect(processed_params).to eq(
+        [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: 'Ахан' }]
+          }
+        ]
+      )
     end
   end
 end

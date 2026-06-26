@@ -19,14 +19,14 @@ class Reminders::SyncRemindableService
 
   def sync_touch!(touch)
     touch.assign_attributes(sync_attributes_for(touch))
-    touch.scheduled_at_will_change! if touch.relative?
+    touch.scheduled_at_will_change! if touch.relative? && !touch.manual_schedule_override?
     return unless touch.changed?
 
     touch.save!
     touch.approve! if touch.reload.draft? && touch.ready_for_pending?
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def sync_attributes_for(touch)
     attrs = {}
 
@@ -52,7 +52,7 @@ class Reminders::SyncRemindableService
 
     attrs
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def route_sync_attributes(touch, contact)
     return {} if touch.target_inbox_id.blank?

@@ -1710,7 +1710,7 @@ watch(
           color="slate"
           variant="ghost"
           icon="i-lucide-settings-2"
-          class="!size-7"
+          class="!size-7 !text-n-slate-11 hover:!text-n-slate-12"
           :aria-label="$t('SIDEBAR.SETTINGS')"
           :title="$t('SIDEBAR.SETTINGS')"
           @click="openTaskSettings"
@@ -1771,8 +1771,9 @@ watch(
         <Button
           size="sm"
           color="slate"
-          variant="outline"
+          variant="ghost"
           icon="i-lucide-filter"
+          class="!text-n-slate-11 hover:!text-n-slate-12"
           @click="openFilterDialog"
         />
         <SchedulingViewSwitcher
@@ -2232,22 +2233,16 @@ watch(
           @update:model-value="form.customAttributes = $event"
         />
 
-        <SchedulingFormFieldGroup
+        <CrmTimelineFeed
           v-if="selectedTask"
-          :framed="false"
-          :title="$t('CRM.TIMELINE.TITLE')"
-          :description="$t('CRM.TIMELINE.DESCRIPTION')"
-        >
-          <CrmTimelineFeed
-            :items="timelineItems"
-            :is-loading="ui.isTimelineLoading"
-            :is-saving-comment="ui.isSavingComment"
-            :can-manage-comments="canManageTasks"
-            :empty-message="$t('CRM.TIMELINE.EMPTY')"
-            @create-comment="saveComment"
-            @delete-comment="deleteComment"
-          />
-        </SchedulingFormFieldGroup>
+          :items="timelineItems"
+          :is-loading="ui.isTimelineLoading"
+          :is-saving-comment="ui.isSavingComment"
+          :can-manage-comments="canManageTasks"
+          :empty-message="$t('CRM.TIMELINE.EMPTY')"
+          @create-comment="saveComment"
+          @delete-comment="deleteComment"
+        />
       </div>
 
       <template v-if="selectedTask && canManageTasks" #footer>

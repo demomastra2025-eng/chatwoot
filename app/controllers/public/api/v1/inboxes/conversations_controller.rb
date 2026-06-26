@@ -21,9 +21,13 @@ class Public::Api::V1::Inboxes::ConversationsController < Public::Api::V1::Inbox
     # If this assignment is not made, the system implicitly becomes the resolver by default
     Current.contact = @conversation.contact
 
-    # Update the conversation's status to 'resolved' to reflect its closure
-    @conversation.status = :resolved
-    @conversation.save!
+    # Contact initiated closes should not be blocked by operator-only reason requirements.
+    Conversations::StatusTransitionService.new(
+      conversation: @conversation,
+      params: { status: 'resolved' },
+      actor: @conversation.contact,
+      source: 'contact'
+    ).perform
   end
 
   def toggle_typing

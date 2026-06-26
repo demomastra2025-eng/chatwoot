@@ -19,6 +19,7 @@ import {
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ConversationResolveAttributesModal from 'dashboard/components-next/ConversationWorkflow/ConversationResolveAttributesModal.vue';
+import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
 
 const store = useStore();
 const getters = useStoreGetters();
@@ -28,6 +29,7 @@ const { checkMissingAttributes } = useConversationRequiredAttributes();
 const arrowDownButtonRef = ref(null);
 const isLoading = ref(false);
 const resolveAttributesModalRef = ref(null);
+const statusReasonDialogRef = ref(null);
 
 const [showActionsDropdown, toggleDropdown] = useToggle();
 const closeDropdown = () => toggleDropdown(false);
@@ -79,24 +81,40 @@ const openSnoozeModal = () => {
   ninja.open({ parent: 'snooze_conversation' });
 };
 
-const toggleStatus = (status, snoozedUntil, customAttributes = null) => {
+const resolveStatusReason = async status => {
+  const result = await statusReasonDialogRef.value?.open({ status });
+  if (result === statusReasonDialogRef.value?.CANCELLED) {
+    return { cancelled: true };
+  }
+
+  return { statusReason: result };
+};
+
+const toggleStatus = async (status, snoozedUntil, customAttributes = null) => {
   closeDropdown();
+
+  const { cancelled, statusReason } = await resolveStatusReason(status);
+  if (cancelled) return;
+
   isLoading.value = true;
 
   const payload = {
     conversationId: currentChat.value.id,
     status,
     snoozedUntil,
+    statusReason,
   };
 
   if (customAttributes) {
     payload.customAttributes = customAttributes;
   }
 
-  store.dispatch('toggleStatus', payload).then(() => {
+  try {
+    await store.dispatch('toggleStatus', payload);
     useAlert(t('CONVERSATION.CHANGE_STATUS'));
+  } finally {
     isLoading.value = false;
-  });
+  }
 };
 
 const handleResolveWithAttributes = ({ attributes, context }) => {
@@ -200,6 +218,11 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
         size="sm"
         color="slate"
         no-animation
+        :class="
+          showAdditionalActions
+            ? 'ltr:rounded-r-none rtl:rounded-l-none !outline-0'
+            : ''
+        "
         :is-loading="isLoading"
         @click="onCmdOpenConversation"
       />
@@ -252,5 +275,6 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
       ref="resolveAttributesModalRef"
       @submit="handleResolveWithAttributes"
     />
+    <ConversationStatusReasonDialog ref="statusReasonDialogRef" />
   </div>
 </template>

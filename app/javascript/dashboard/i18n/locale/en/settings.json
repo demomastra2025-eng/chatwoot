@@ -377,7 +377,7 @@
     "UNATTENDED_CONVERSATIONS": "Unattended",
     "REPORTS": "Reports",
     "SETTINGS": "Settings",
-    "ADDITIONAL": "Additional",
+    "ADDITIONAL": "Settings",
     "CONTACTS": "Contacts",
     "CRM": "CRM",
     "PIPELINES": "Pipelines",
@@ -406,6 +406,7 @@
     "CAPTAIN_INBOXES": "Inboxes",
     "CAPTAIN_SETTINGS": "AI Settings",
     "CAPTAIN_PROMPTS": "Prompts",
+    "CAPTAIN_FOLLOW_UPS": "Follow-up scenarios",
     "CAPTAIN_RESTRICTIONS": "Restrictions",
     "CAPTAIN_ACCESS": "Access",
     "CAPTAIN_CHANNELS": "Channels",
@@ -1100,6 +1101,32 @@
         "AVAILABLE_ON": "The required conversation attributes feature is available on the paid plans.",
         "UPGRADE_PROMPT": "Upgrade to a paid plan to require additional fields before closing a conversation.",
         "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      }
+    },
+    "STATUS_REASONS": {
+      "TITLE": "Status change reasons",
+      "DESCRIPTION": "Configure reasons teammates must select when moving conversations between statuses.",
+      "STATUS": {
+        "OPEN": "Open",
+        "RESOLVED": "Resolved",
+        "PENDING": "Pending",
+        "SNOOZED": "Snoozed"
+      },
+      "STATUS_HELP": {
+        "OPEN": "Reasons for reopening or returning a conversation to work.",
+        "RESOLVED": "Reasons for closing a conversation.",
+        "PENDING": "Reasons for moving a conversation to waiting.",
+        "SNOOZED": "Reasons for snoozing a conversation."
+      },
+      "OPTIONS_PLACEHOLDER": "Type a reason and press Enter",
+      "REQUIRED": "Require reason",
+      "REQUIRED_HELP": "Agents must select one of the configured reasons before changing to this status.",
+      "REQUIRED_ERROR": "Add at least one reason or turn off the requirement.",
+      "SAVE": {
+        "BUTTON": "Save reasons",
+        "SUCCESS": "Status reasons updated",
+        "ERROR": "Could not update status reasons",
+        "REQUIRED_ERROR": "Statuses with required reasons must have at least one reason."
       }
     }
   },

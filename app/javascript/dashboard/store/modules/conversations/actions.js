@@ -739,7 +739,13 @@ const actions = {
 
   toggleStatus: async (
     { commit, state },
-    { conversationId, status, snoozedUntil = null, customAttributes = null }
+    {
+      conversationId,
+      status,
+      snoozedUntil = null,
+      customAttributes = null,
+      statusReason = null,
+    }
   ) => {
     try {
       const communicationThread = getCommunicationThreadById(
@@ -750,6 +756,7 @@ const actions = {
         const response = await CommunicationThreadApi.update(conversationId, {
           status,
           snoozed_until: snoozedUntil,
+          status_reason: statusReason,
         });
         commitCommunicationThreadUpdate(commit, response.data);
         return;
@@ -779,6 +786,7 @@ const actions = {
         conversationId,
         status,
         snoozedUntil,
+        statusReason,
       });
       commit(types.CHANGE_CONVERSATION_STATUS, {
         conversationId,

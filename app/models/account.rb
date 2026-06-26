@@ -57,6 +57,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :reporting_timezone
   store_accessor :settings, :keep_pending_on_bot_failure
   store_accessor :settings, :captain_auto_resolve_mode
+  store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings,
                  :scheduling_contact_required,
                  :scheduling_company_enabled,
@@ -83,6 +84,7 @@ class Account < ApplicationRecord
   has_many :categories, dependent: :destroy_async, class_name: '::Category'
   has_many :contacts, dependent: :destroy_async
   has_many :conversations, dependent: :destroy_async
+  has_many :conversation_status_transitions, dependent: :destroy_async
   has_many :crm_pipelines, dependent: :destroy_async, class_name: '::Crm::Pipeline'
   has_many :crm_stages, dependent: :destroy_async, class_name: '::Crm::Stage'
   has_many :crm_task_statuses, dependent: :destroy_async, class_name: '::Crm::TaskStatus'

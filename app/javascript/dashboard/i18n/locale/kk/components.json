@@ -18,6 +18,7 @@
   "DIALOG": {
     "BUTTONS": {
       "CANCEL": "Cancel",
+      "CLOSE": "Close",
       "CONFIRM": "Confirm"
     }
   },

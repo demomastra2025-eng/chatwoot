@@ -92,6 +92,86 @@ RSpec.describe AutomationRule do
       expect(rule.valid?).to be true
     end
 
+    it 'allows full create_touch params with AI text and relative timing' do
+      params[:actions] = [
+        {
+          action_name: :create_touch,
+          action_params: {
+            instructions: 'Generate a contextual AI follow-up',
+            text_mode: 'agent',
+            timing_mode: 'relative',
+            relative_anchor: 'conversation.last_incoming_message_at',
+            relative_offset_seconds: 3600,
+            auto_cancel_on_incoming: true,
+            timezone: 'Asia/Almaty'
+          }
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be true
+    end
+
+    it 'allows full create_touch params with absolute recurrence' do
+      params[:actions] = [
+        {
+          action_name: :create_touch,
+          action_params: [{
+            body: 'Recurring follow-up',
+            timing_mode: 'absolute',
+            scheduled_at: 1.day.from_now.iso8601,
+            repeat_mode: 'daily',
+            repeat_until_at: 1.week.from_now.iso8601,
+            timezone: 'Asia/Almaty'
+          }]
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be true
+    end
+
+    it 'allows full create_touch params with WhatsApp template params' do
+      params[:actions] = [
+        {
+          action_name: :create_touch,
+          action_params: {
+            content_kind: 'channel_template',
+            template_params: {
+              name: 'payment_reminder',
+              language: 'ru',
+              processed_params: { body: { '1' => 'Akhan' } }
+            },
+            timing_mode: 'relative',
+            relative_anchor: 'touch.created_at',
+            relative_offset_seconds: 1800
+          }
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be true
+    end
+
+    it 'rejects full create_touch params with recurring relative timing' do
+      params[:actions] = [
+        {
+          action_name: :create_touch,
+          action_params: [{
+            body: 'Invalid recurring relative follow-up',
+            timing_mode: 'relative',
+            relative_anchor: 'touch.created_at',
+            relative_offset_seconds: 3600,
+            repeat_mode: 'daily'
+          }]
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be false
+      expect(rule.errors.messages[:actions]).to eq(['Automation action parameters create_touch not supported.'])
+    end
+
     it 'rejects cancel_touches touch plans for unsupported entity kinds' do
       touch_plan = create(:reminder_group, account: account, entity_kinds: ['appointment'])
       params[:actions] = [

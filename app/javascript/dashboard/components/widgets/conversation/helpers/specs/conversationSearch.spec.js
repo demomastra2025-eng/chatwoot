@@ -4,6 +4,17 @@ describe('conversationMatchesLocalSearch', () => {
   const conversation = {
     id: 42,
     display_id: 4201,
+    messages: [
+      { id: 100, content: 'Customer wants a refund for invoice A-42' },
+      {
+        id: 101,
+        content_attributes: { email: { subject: 'Delivery follow up' } },
+      },
+    ],
+    last_non_activity_message: {
+      id: 102,
+      content: 'Last public preview from loaded chat list',
+    },
     meta: {
       sender: {
         id: 7,
@@ -68,6 +79,24 @@ describe('conversationMatchesLocalSearch', () => {
     expect(conversationMatchesLocalSearch(conversation, contact, '4201')).toBe(
       true
     );
+  });
+
+  it('matches by loaded message text', () => {
+    expect(
+      conversationMatchesLocalSearch(conversation, contact, 'refund')
+    ).toBe(true);
+  });
+
+  it('matches by loaded email subject text', () => {
+    expect(
+      conversationMatchesLocalSearch(conversation, contact, 'delivery')
+    ).toBe(true);
+  });
+
+  it('matches by last message preview text', () => {
+    expect(
+      conversationMatchesLocalSearch(conversation, contact, 'preview')
+    ).toBe(true);
   });
 
   it('returns false when nothing matches', () => {

@@ -38,6 +38,13 @@
     },
     "VIEW_FILTER": "View",
     "SORT_TOOLTIP_LABEL": "Sort conversations",
+    "LOCAL_SEARCH": {
+      "TITLE": "Жылдам іздеу",
+      "TOOLTIP_LABEL": "Диалогтарды іздеу",
+      "PLACEHOLDER": "Аты, нөмірі, аккаунты немесе идентификаторы бойынша іздеу",
+      "EMPTY": "Бұл сұрау бойынша диалогтар табылмады.",
+      "CLEAR_BUTTON_LABEL": "Жергілікті іздеуді тазарту"
+    },
     "CHAT_SORT": {
       "STATUS": "Status",
       "ORDER_BY": "Order by"

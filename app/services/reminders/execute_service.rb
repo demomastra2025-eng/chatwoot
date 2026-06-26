@@ -62,10 +62,10 @@ class Reminders::ExecuteService
 
     if conversation.respond_to?(:with_captain_activity_context)
       conversation.with_captain_activity_context(reason: 'touch_ai_wakeup', reason_type: :touch) do
-        conversation.pending! unless conversation.pending?
+        transition_conversation_status!(conversation, 'pending') unless conversation.pending?
       end
     else
-      conversation.pending! unless conversation.pending?
+      transition_conversation_status!(conversation, 'pending') unless conversation.pending?
     end
 
     generated_payload = generate_captain_message(conversation, mode: :wakeup)
@@ -81,6 +81,14 @@ class Reminders::ExecuteService
     reminder.complete!
     schedule_next_occurrence
     message
+  end
+
+  def transition_conversation_status!(conversation, status)
+    Conversations::StatusTransitionService.new(
+      conversation: conversation,
+      params: { status: status },
+      source: 'system'
+    ).perform
   end
 
   def generate_captain_message(conversation, mode:)

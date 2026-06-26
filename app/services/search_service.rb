@@ -48,6 +48,10 @@ class SearchService
       column_name: 'contacts.phone_number',
       bindings_prefix: 'conversation_phone'
     )
+    append_message_content_search_clause!(
+      search_conditions: search_conditions,
+      search_bindings: search_bindings
+    )
 
     conversations_query = current_account.conversations.where(inbox_id: accessable_inbox_ids)
                                          .joins('INNER JOIN contacts ON conversations.contact_id = contacts.id')
@@ -245,12 +249,28 @@ class SearchService
     search_bindings.merge!(phone_search_bindings)
   end
 
+  def append_message_content_search_clause!(search_conditions:, search_bindings:)
+    return if search_query.blank?
+
+    search_conditions << <<~SQL.squish
+      EXISTS (
+        SELECT 1 FROM messages
+        WHERE messages.conversation_id = conversations.id
+          AND messages.account_id = conversations.account_id
+          AND messages.inbox_id = conversations.inbox_id
+          AND messages.created_at >= :message_search_since
+          AND messages.content ILIKE :search
+      )
+    SQL
+    search_bindings[:message_search_since] = 3.months.ago
+  end
+
   def build_phone_search_clause(column_name, bindings_prefix)
     variants = phone_search_variants
     return ['', {}] if variants.blank?
 
     normalized_column_sql = "regexp_replace(COALESCE(#{column_name}, ''), '\\D', '', 'g')"
-    clauses = variants.each_with_index.map do |variant, index|
+    clauses = variants.each_with_index.map do |_variant, index|
       "#{normalized_column_sql} LIKE :#{bindings_prefix}_#{index}"
     end
 

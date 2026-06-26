@@ -2,6 +2,8 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
+import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+
 const props = defineProps({
   dropdownStyle: {
     type: Object,
@@ -70,7 +72,7 @@ defineExpose({
     <div
       v-show="open"
       data-modal-safe-interaction
-      class="dashboard-combobox-dropdown fixed z-[170] rounded-lg border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
+      class="dashboard-combobox-dropdown fixed z-[170] flex flex-col overflow-hidden rounded-lg border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
       :style="props.dropdownStyle"
       @mousedown.stop
       @mouseup.stop
@@ -92,7 +94,7 @@ defineExpose({
         </div>
       </div>
       <ul
-        class="mb-0 max-h-[min(15rem,calc(100vh-9rem))] overflow-auto pt-2"
+        class="mb-0 min-h-0 flex-1 overflow-auto pt-2"
         role="listbox"
         :aria-multiselectable="multiple"
       >
@@ -108,6 +110,19 @@ defineExpose({
           @click="emit('select', option)"
         >
           <span class="flex min-w-0 flex-1 items-center gap-2 text-left">
+            <Avatar
+              v-if="option.thumbnail"
+              :name="option.thumbnail.name || option.label"
+              :src="option.thumbnail.src"
+              :size="20"
+              rounded-full
+            />
+            <span
+              v-else-if="option.stageColor"
+              class="h-5 w-1 shrink-0 rounded-full"
+              :style="{ backgroundColor: option.stageColor }"
+              aria-hidden="true"
+            />
             <span
               v-if="option.icon"
               class="size-4 flex-shrink-0 text-n-slate-11"
@@ -123,6 +138,17 @@ defineExpose({
               {{ option.label }}
             </span>
           </span>
+          <a
+            v-if="option.href"
+            class="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-n-slate-10 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
+            :href="option.href"
+            target="_blank"
+            rel="noopener noreferrer"
+            :aria-label="$t('COMBOBOX.OPEN_IN_NEW_TAB')"
+            @click.stop
+          >
+            <span class="i-lucide-external-link size-3.5" aria-hidden="true" />
+          </a>
           <span
             v-if="isSelected(option)"
             class="flex-shrink-0 i-lucide-check size-4 text-n-slate-11"

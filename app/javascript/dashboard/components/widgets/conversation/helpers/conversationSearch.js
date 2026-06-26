@@ -24,10 +24,38 @@ const resolveSocialProfiles = entity => {
   );
 };
 
+const resolveMessageSearchTerms = message => {
+  const contentAttributes =
+    message?.content_attributes || message?.contentAttributes || {};
+  const emailAttributes = contentAttributes.email || {};
+
+  return compactValues([
+    message?.content,
+    message?.processed_message_content,
+    message?.processedMessageContent,
+    contentAttributes.text,
+    contentAttributes.text_content,
+    contentAttributes.textContent,
+    contentAttributes.transcribed_text,
+    contentAttributes.transcribedText,
+    emailAttributes.subject,
+    emailAttributes.text_content,
+    emailAttributes.textContent,
+  ]);
+};
+
 const resolveConversationSearchTerms = (conversation = {}, contact = {}) => {
   const sender = conversation?.meta?.sender || {};
   const contactAdditionalAttributes = resolveAdditionalAttributes(contact);
   const senderAdditionalAttributes = resolveAdditionalAttributes(sender);
+  const messages = Array.isArray(conversation.messages)
+    ? conversation.messages
+    : [];
+  const lastMessages = [
+    conversation.last_non_activity_message,
+    conversation.lastNonActivityMessage,
+    conversation.message,
+  ].filter(Boolean);
 
   return compactValues([
     contact.name,
@@ -56,6 +84,8 @@ const resolveConversationSearchTerms = (conversation = {}, contact = {}) => {
     contactAdditionalAttributes.screenName,
     senderAdditionalAttributes.screen_name,
     senderAdditionalAttributes.screenName,
+    messages.map(resolveMessageSearchTerms),
+    lastMessages.map(resolveMessageSearchTerms),
   ]);
 };
 

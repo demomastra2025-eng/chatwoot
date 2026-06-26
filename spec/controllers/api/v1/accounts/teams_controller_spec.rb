@@ -159,6 +159,22 @@ RSpec.describe 'Teams API', type: :request do
         expect(response).to have_http_status(:success)
         expect(Team.count).to eq(0)
       end
+
+      it 'removes team assignment from CRM and communication thread records before destroy' do
+        crm_deal = create(:crm_deal, account: account, team: team)
+        crm_task = create(:crm_task, account: account, team: team)
+        communication_thread = create(:communication_thread, account: account, team: team)
+
+        delete "/api/v1/accounts/#{account.id}/teams/#{team.id}",
+               headers: administrator.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(Team.exists?(team.id)).to be(false)
+        expect(crm_deal.reload.team_id).to be_nil
+        expect(crm_task.reload.team_id).to be_nil
+        expect(communication_thread.reload.team_id).to be_nil
+      end
     end
   end
 end

@@ -15,17 +15,27 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { INBOX_TYPES, TWILIO_CHANNEL_MEDIUM } from 'dashboard/helper/inbox.js';
 
-import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
-import WhatsAppTemplateParser from 'dashboard/components-next/whatsapp/WhatsAppTemplateParser.vue';
+import TouchMessageComposer from 'dashboard/components-next/Outbound/TouchMessageComposer.vue';
 import CampaignPreviewSummary from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignPreviewSummary.vue';
-import WootMessageEditor from 'dashboard/components/widgets/WootWriter/Editor.vue';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
+import {
+  buildTouchContentModeTabs,
+  isWhatsAppTemplateCapableChannel,
+  normalizeTouchContentKindForCapabilities,
+} from 'dashboard/components-next/Outbound/touchContentModes';
 import { groupWhatsAppTemplates } from 'dashboard/helper/whatsappTemplateLibrary';
+
+const props = defineProps({
+  inboxScope: {
+    type: String,
+    default: 'outbound',
+  },
+});
 
 const emit = defineEmits(['submit']);
 
@@ -39,6 +49,7 @@ const formState = {
   getFilteredWhatsAppTemplates: useMapGetter(
     'inboxes/getFilteredWhatsAppTemplates'
   ),
+  cannedResponses: useMapGetter('getCannedResponses'),
 };
 
 const initialState = {
@@ -46,6 +57,7 @@ const initialState = {
   title: '',
   message: '',
   inboxId: null,
+  contentKind: 'free_text',
   templateName: null,
   templateLanguage: null,
   scheduledAt: null,
@@ -54,12 +66,38 @@ const initialState = {
 };
 
 const state = reactive({ ...initialState });
-const templateParserRef = ref(null);
+const messageComposerRef = ref(null);
+const templateState = ref({ processedParams: {}, rawRenderedTemplate: '' });
 const lastPreviewSignature = ref(null);
+
+const matchesInboxScope = inbox => {
+  if (props.inboxScope === 'sms') {
+    return (
+      inbox.channel_type === INBOX_TYPES.SMS ||
+      (inbox.channel_type === INBOX_TYPES.TWILIO &&
+        inbox.medium === TWILIO_CHANNEL_MEDIUM.SMS)
+    );
+  }
+
+  if (props.inboxScope === 'whatsapp') {
+    return isWhatsAppTemplateCapableChannel({
+      channelType: inbox.channel_type,
+      medium: inbox.medium,
+    });
+  }
+
+  return true;
+};
+
+const scopedInboxes = computed(() =>
+  (formState.inboxes.value || []).filter(matchesInboxScope)
+);
 
 const selectedInbox = computed(
   () =>
-    formState.inboxes.value?.find(inbox => inbox.id === state.inboxId) || null
+    scopedInboxes.value.find(
+      inbox => Number(inbox.id) === Number(state.inboxId)
+    ) || null
 );
 
 const selectedInboxCapabilities = computed(
@@ -70,15 +108,16 @@ const isEmailInbox = computed(
   () => selectedInbox.value?.channel_type === INBOX_TYPES.EMAIL
 );
 
-const requiresTemplate = computed(() => {
-  if (!selectedInbox.value) return false;
-
-  return (
-    selectedInbox.value.channel_type === INBOX_TYPES.WHATSAPP ||
-    (selectedInbox.value.channel_type === INBOX_TYPES.TWILIO &&
-      selectedInbox.value.medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP)
-  );
-});
+const isWhatsAppTemplateCapable = computed(() =>
+  isWhatsAppTemplateCapableChannel({
+    channelType: selectedInbox.value?.channel_type,
+    medium: selectedInbox.value?.medium,
+  })
+);
+const isChannelTemplate = computed(
+  () => state.contentKind === 'channel_template'
+);
+const requiresTemplate = computed(() => isChannelTemplate.value);
 
 const supportsAiAuthoring = computed(() => {
   if (!selectedInbox.value || requiresTemplate.value) {
@@ -125,6 +164,12 @@ const mapToOptions = (items, valueKey, labelKey) =>
     label: item[labelKey],
   })) ?? [];
 
+const buildFreeTextTemplateOption = template => ({
+  value: template.id || template.short_code,
+  label: template.short_code || template.name || `#${template.id}`,
+  content: template.content || '',
+});
+
 const channelLabel = inbox => {
   if (inbox.channel_type === INBOX_TYPES.TWILIO) {
     return inbox.medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP
@@ -168,11 +213,44 @@ const audienceList = computed(() =>
 
 const inboxOptions = computed(
   () =>
-    formState.inboxes.value?.map(inbox => ({
+    scopedInboxes.value.map(inbox => ({
       value: inbox.id,
       label: `${inbox.name} · ${channelLabel(inbox)}`,
     })) ?? []
 );
+
+const freeTextTemplateOptions = computed(() =>
+  (formState.cannedResponses.value || [])
+    .filter(template => template?.short_code && template?.content)
+    .map(buildFreeTextTemplateOption)
+);
+const hasFreeTextTemplates = computed(
+  () => freeTextTemplateOptions.value.length > 0
+);
+
+const contentModeTabs = computed(() =>
+  buildTouchContentModeTabs({
+    t,
+    supportsFreeText: hasFreeTextTemplates.value,
+    supportsWhatsAppTemplates: isWhatsAppTemplateCapable.value,
+  })
+);
+
+const activeContentTabIndex = computed(() => {
+  const tabIndex = contentModeTabs.value.findIndex(
+    tab => tab.id === state.contentKind
+  );
+
+  return tabIndex === -1 ? 0 : tabIndex;
+});
+
+const contentModeTabId = computed(
+  () => `outbound-campaign-content-${state.inboxId || 'new'}`
+);
+
+const handleContentTabChanged = tab => {
+  state.contentKind = tab.id;
+};
 
 const friendlyTemplateName = templateName =>
   templateName
@@ -283,7 +361,7 @@ const messageHelpMessage = computed(() => {
 const hasRequiredTemplateParams = computed(() => {
   if (!requiresTemplate.value || !selectedTemplate.value) return true;
 
-  return templateParserRef.value?.isFormInvalid === false;
+  return messageComposerRef.value?.isTemplateReady?.() === true;
 });
 
 const formatToUTCString = localDateTime =>
@@ -291,7 +369,7 @@ const formatToUTCString = localDateTime =>
 
 const resolvedPreviewMessage = computed(() => {
   if (requiresTemplate.value) {
-    return templateParserRef.value?.rawRenderedTemplate || '';
+    return templateState.value.rawRenderedTemplate || '';
   }
 
   if (state.useAiAuthoring) {
@@ -302,7 +380,6 @@ const resolvedPreviewMessage = computed(() => {
 });
 
 const previewPayload = computed(() => {
-  const parserData = templateParserRef.value;
   const payload = {
     instructions:
       !requiresTemplate.value && state.useAiAuthoring
@@ -331,7 +408,7 @@ const previewPayload = computed(() => {
       namespace: selectedTemplate.value?.namespace || '',
       category: selectedTemplate.value?.category || 'UTILITY',
       language: selectedTemplate.value?.language || 'en_US',
-      processed_params: parserData?.processedParams || {},
+      processed_params: templateState.value.processedParams || {},
     };
   }
 
@@ -389,7 +466,7 @@ const prepareCampaignDetails = () => previewPayload.value;
 
 const validateTemplate = async () =>
   requiresTemplate.value
-    ? ((await templateParserRef.value?.v$?.$validate?.()) ?? true)
+    ? ((await messageComposerRef.value?.validateTemplate?.()) ?? true)
     : true;
 
 const handlePreview = async () => {
@@ -437,20 +514,11 @@ const handleSubmit = async () => {
   return true;
 };
 
-const aiToggleButtonClass = isEnabled => {
-  return isEnabled
-    ? '!bg-n-violet-3 !text-n-violet-9 hover:enabled:!bg-n-violet-4 focus-visible:!bg-n-violet-4 !outline-transparent'
-    : '';
-};
-
-const campaignEditorClass = isAiAuthoring => {
-  return [
-    'touch-rich-editor w-full min-w-0 max-w-full overflow-visible rounded-2xl px-3 py-2 transition-all duration-200',
-    'campaign-editor-large',
-    isAiAuthoring
-      ? 'bg-n-violet-3 ring-1 ring-inset ring-n-violet-6/20'
-      : 'bg-n-solid-1 outline outline-1 outline-n-weak dark:outline-n-strong',
-  ].join(' ');
+const handleTemplateStateChange = payload => {
+  templateState.value = {
+    processedParams: payload?.processedParams || {},
+    rawRenderedTemplate: String(payload?.rawRenderedTemplate || ''),
+  };
 };
 
 const bodyEditorId = 'outbound-campaign-message';
@@ -464,9 +532,14 @@ const hasMessageError = computed(() => {
 watch(
   () => state.inboxId,
   () => {
+    state.contentKind = normalizeTouchContentKindForCapabilities({
+      contentKind: state.contentKind,
+      supportsWhatsAppTemplates: isWhatsAppTemplateCapable.value,
+    });
     state.templateName = null;
     state.templateLanguage = null;
     state.useAiAuthoring = false;
+    templateState.value = { processedParams: {}, rawRenderedTemplate: '' };
     clearPreviewState();
   }
 );
@@ -481,11 +554,45 @@ watch(
 );
 
 watch(
+  () => state.contentKind,
+  value => {
+    if (value !== 'channel_template') {
+      state.templateName = null;
+      state.templateLanguage = null;
+      templateState.value = { processedParams: {}, rawRenderedTemplate: '' };
+    }
+
+    if (value === 'channel_template') {
+      state.useAiAuthoring = false;
+    }
+
+    clearPreviewState();
+  }
+);
+
+watch(
+  () => contentModeTabs.value.map(tab => tab.id).join('|'),
+  () => {
+    if (contentModeTabs.value.length === 0) {
+      return;
+    }
+
+    const hasCurrentTab = contentModeTabs.value.some(
+      tab => tab.id === state.contentKind
+    );
+    if (!hasCurrentTab) {
+      state.contentKind = contentModeTabs.value[0].id;
+    }
+  }
+);
+
+watch(
   () => state.templateName,
   () => {
     const variants = selectedTemplateGroup.value?.variants || [];
     state.templateLanguage =
       variants.length === 1 ? variants[0].language : null;
+    templateState.value = { processedParams: {}, rawRenderedTemplate: '' };
     clearPreviewState();
   }
 );
@@ -493,6 +600,7 @@ watch(
 watch(
   () => state.templateLanguage,
   () => {
+    templateState.value = { processedParams: {}, rawRenderedTemplate: '' };
     clearPreviewState();
   }
 );
@@ -513,7 +621,10 @@ watch(
   }
 );
 
-onMounted(clearPreviewState);
+onMounted(() => {
+  clearPreviewState();
+  store.dispatch('getCannedResponse', { searchKey: '' });
+});
 onBeforeUnmount(clearPreviewState);
 
 defineExpose({
@@ -527,134 +638,82 @@ defineExpose({
 
 <template>
   <form class="grid gap-5" @submit.prevent>
-    <SchedulingFormFieldGroup
-      :framed="false"
-      :title="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.DETAILS.TITLE')"
-      :description="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.DETAILS.DESCRIPTION')"
+    <div
+      class="rounded-xl bg-n-brand/5 px-4 py-4 outline outline-1 outline-n-brand/10"
     >
-      <Input
-        v-model="state.title"
-        :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.TITLE.LABEL')"
-        :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.TITLE.PLACEHOLDER')"
-        :message="titleHelpMessage"
-        :message-type="formErrors.title ? 'error' : 'info'"
-      />
+      <p class="mb-1 text-sm font-semibold text-n-slate-12">
+        {{ t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.DETAILS.TITLE') }}
+      </p>
+      <p class="mb-0 text-sm leading-6 text-n-slate-11">
+        {{ t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.DETAILS.DESCRIPTION') }}
+      </p>
+    </div>
 
-      <SchedulingSelectField
-        v-model="state.inboxId"
-        :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.INBOX.LABEL')"
-        :options="inboxOptions"
-        :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.INBOX.PLACEHOLDER')"
-        :message="formErrors.inbox"
-        :has-error="!!formErrors.inbox"
-      />
-    </SchedulingFormFieldGroup>
-
-    <SchedulingFormFieldGroup
-      :framed="false"
-      :title="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.MESSAGE.TITLE')"
-      :description="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.MESSAGE.DESCRIPTION')"
-    >
-      <template v-if="requiresTemplate">
-        <SchedulingSelectField
-          v-model="state.templateName"
-          :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.TEMPLATE.LABEL')"
-          :options="templateOptions"
-          :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.TEMPLATE.PLACEHOLDER')"
-          :message="
-            formErrors.template ||
-            t('CAMPAIGN.OUTBOUND.CREATE.FORM.TEMPLATE.INFO')
-          "
-          :has-error="!!formErrors.template"
+    <SchedulingFormFieldGroup :framed="false">
+      <div class="grid gap-4">
+        <Input
+          v-model="state.title"
+          :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.TITLE.LABEL')"
+          :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.TITLE.PLACEHOLDER')"
+          :message="titleHelpMessage"
+          :message-type="formErrors.title ? 'error' : 'info'"
         />
 
         <SchedulingSelectField
-          v-if="selectedTemplateGroup"
-          v-model="state.templateLanguage"
-          :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.TEMPLATE_LANGUAGE.LABEL')"
-          :options="templateLanguageOptions"
-          :placeholder="
-            t('CAMPAIGN.OUTBOUND.CREATE.FORM.TEMPLATE_LANGUAGE.PLACEHOLDER')
-          "
-          :message="formErrors.templateLanguage"
-          :has-error="!!formErrors.templateLanguage"
+          v-model="state.inboxId"
+          :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.INBOX.LABEL')"
+          :options="inboxOptions"
+          :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.INBOX.PLACEHOLDER')"
+          :message="formErrors.inbox"
+          :has-error="!!formErrors.inbox"
         />
-
-        <WhatsAppTemplateParser
-          v-if="selectedTemplate"
-          ref="templateParserRef"
-          :template="selectedTemplate"
-        />
-      </template>
-
-      <template v-else>
-        <div class="flex items-center justify-between gap-3">
-          <p class="mb-0 text-sm font-medium text-n-slate-12">
-            {{ t('CAMPAIGN.OUTBOUND.CREATE.FORM.MESSAGE.LABEL') }}
-          </p>
-          <Button
-            v-if="supportsAiAuthoring"
-            v-tooltip.top-end="
-              t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AI_AGENT')
-            "
-            icon="i-woot-captain"
-            :variant="state.useAiAuthoring ? 'solid' : 'faded'"
-            color="slate"
-            size="sm"
-            :aria-pressed="state.useAiAuthoring"
-            :class="aiToggleButtonClass(state.useAiAuthoring)"
-            @click="state.useAiAuthoring = !state.useAiAuthoring"
-          />
-        </div>
-
-        <WootMessageEditor
-          v-if="!state.useAiAuthoring"
-          :model-value="state.message"
-          :editor-id="bodyEditorId"
-          :class="campaignEditorClass(false)"
-          :channel-type="selectedInbox?.channel_type || ''"
-          :medium="selectedInbox?.medium || ''"
-          enable-variables
-          enable-captain-fields
-          enable-canned-responses
-          canned-menu-placement="bottom"
-          :canned-menu-visible-items="3"
-          :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.MESSAGE.PLACEHOLDER')"
-          @update:model-value="state.message = $event"
-        />
-
-        <WootMessageEditor
-          v-else
-          :model-value="state.instructions"
-          :editor-id="instructionsEditorId"
-          :class="campaignEditorClass(true)"
-          :channel-type="selectedInbox?.channel_type || ''"
-          :medium="selectedInbox?.medium || ''"
-          enable-variables
-          enable-captain-fields
-          enable-canned-responses
-          canned-menu-placement="bottom"
-          :canned-menu-visible-items="3"
-          :placeholder="
-            t('CAMPAIGN.OUTBOUND.CREATE.FORM.INSTRUCTIONS.PLACEHOLDER')
-          "
-          @update:model-value="state.instructions = $event"
-        />
-
-        <p
-          class="mb-0 text-xs"
-          :class="hasMessageError ? 'text-n-ruby-9' : 'text-n-slate-11'"
-        >
-          {{ messageHelpMessage }}
-        </p>
-      </template>
+      </div>
     </SchedulingFormFieldGroup>
 
-    <SchedulingFormFieldGroup
-      :framed="false"
-      :title="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.AUDIENCE.TITLE')"
-      :description="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.AUDIENCE.DESCRIPTION')"
-    >
+    <SchedulingFormFieldGroup :framed="false">
+      <TouchMessageComposer
+        ref="messageComposerRef"
+        :active-content-tab-index="activeContentTabIndex"
+        :allow-ai-authoring="supportsAiAuthoring"
+        :body="state.message"
+        :body-editor-id="bodyEditorId"
+        :body-label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.MESSAGE.LABEL')"
+        :body-placeholder="
+          t('CAMPAIGN.OUTBOUND.CREATE.FORM.MESSAGE.PLACEHOLDER')
+        "
+        :channel-type="selectedInbox?.channel_type || ''"
+        :content-kind="state.contentKind"
+        :content-mode-tab-id="contentModeTabId"
+        :content-mode-tabs="contentModeTabs"
+        :editor-message="messageHelpMessage"
+        :editor-message-type="hasMessageError ? 'error' : 'info'"
+        :enable-attachments="false"
+        :free-text-template-options="freeTextTemplateOptions"
+        :instructions="state.instructions"
+        :instructions-editor-id="instructionsEditorId"
+        :instructions-placeholder="
+          t('CAMPAIGN.OUTBOUND.CREATE.FORM.INSTRUCTIONS.PLACEHOLDER')
+        "
+        :medium="selectedInbox?.medium || ''"
+        :selected-template="selectedTemplate"
+        :selected-template-group="selectedTemplateGroup"
+        :template-language="state.templateLanguage || ''"
+        :template-language-options="templateLanguageOptions"
+        :template-name="state.templateName || ''"
+        :template-options="templateOptions"
+        :template-params="templateState.processedParams || {}"
+        :use-ai-authoring="state.useAiAuthoring"
+        @content-tab-change="handleContentTabChanged"
+        @template-state-change="handleTemplateStateChange"
+        @update:body="state.message = $event"
+        @update:instructions="state.instructions = $event"
+        @update:template-language="state.templateLanguage = $event"
+        @update:template-name="state.templateName = $event"
+        @update:use-ai-authoring="state.useAiAuthoring = $event"
+      />
+    </SchedulingFormFieldGroup>
+
+    <SchedulingFormFieldGroup :framed="false">
       <TagMultiSelectComboBox
         v-model="state.selectedAudience"
         :options="audienceList"
@@ -666,11 +725,7 @@ defineExpose({
       />
     </SchedulingFormFieldGroup>
 
-    <SchedulingFormFieldGroup
-      :framed="false"
-      :title="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.SCHEDULE.TITLE')"
-      :description="t('CAMPAIGN.OUTBOUND.CREATE.SECTIONS.SCHEDULE.DESCRIPTION')"
-    >
+    <SchedulingFormFieldGroup :framed="false">
       <SchedulingDateTimeField
         v-model="state.scheduledAt"
         :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.SCHEDULED_AT.LABEL')"
@@ -682,35 +737,13 @@ defineExpose({
       />
     </SchedulingFormFieldGroup>
 
-    <SchedulingFormFieldGroup
-      :framed="false"
-      :title="t('CAMPAIGN.PREVIEW.TITLE')"
-      :description="previewHint"
-    >
-      <CampaignPreviewSummary :preview="preview" :stale="isPreviewStale" />
+    <SchedulingFormFieldGroup :framed="false">
+      <div class="grid gap-3">
+        <CampaignPreviewSummary :preview="preview" :stale="isPreviewStale" />
+        <p class="mb-0 text-xs leading-5 text-n-slate-11">
+          {{ previewHint }}
+        </p>
+      </div>
     </SchedulingFormFieldGroup>
   </form>
 </template>
-
-<style scoped>
-.campaign-editor-large {
-  min-height: 13rem;
-}
-
-.touch-rich-editor :deep(.ProseMirror-menubar-wrapper),
-.touch-rich-editor :deep(.ProseMirror),
-.touch-rich-editor :deep(.ProseMirror-menubar) {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-}
-
-.campaign-editor-large :deep(.ProseMirror) {
-  min-height: 8.5rem;
-}
-
-.touch-rich-editor :deep(.mention--box),
-.touch-rich-editor :deep(.copilot-editor-menu) {
-  z-index: 70;
-}
-</style>

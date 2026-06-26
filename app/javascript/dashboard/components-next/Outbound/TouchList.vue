@@ -16,7 +16,7 @@ const emit = defineEmits(['analytics', 'approve', 'cancel', 'delete', 'edit']);
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-2">
     <TouchCard
       v-for="touch in touches"
       :key="touch.id"

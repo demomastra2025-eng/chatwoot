@@ -77,6 +77,28 @@ describe('ConversationSidebar', () => {
     expect(wrapper.classes()).not.toContain('pointer-events-none');
   });
 
+  it('uses contact-sized width for the deal sidebar', () => {
+    mocks.uiSettings = ref({
+      is_contact_sidebar_open: false,
+      is_crm_deal_panel_open: true,
+      is_touch_sidebar_open: false,
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.classes()).toEqual(
+      expect.arrayContaining([
+        'max-w-sm',
+        'md:w-[320px]',
+        'md:min-w-[320px]',
+        '2xl:w-[360px]',
+        '2xl:min-w-[360px]',
+      ])
+    );
+    expect(wrapper.classes()).not.toContain('md:w-[28rem]');
+    expect(wrapper.classes()).not.toContain('xl:w-[30rem]');
+  });
+
   it('uses the active reply conversation for communication thread contact sidebar', () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: true,

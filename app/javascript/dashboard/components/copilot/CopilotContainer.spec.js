@@ -170,7 +170,7 @@ describe('CopilotContainer', () => {
     wrapper.unmount();
   });
 
-  it('opens the copilot panel automatically on Captain settings routes', () => {
+  it('does not open the copilot panel automatically on Captain routes', () => {
     testState.uiSettings.value = {
       is_copilot_panel_open: false,
       preferred_captain_assistant_id: null,
@@ -180,12 +180,7 @@ describe('CopilotContainer', () => {
 
     const wrapper = mountComponent();
 
-    expect(testState.updateUISettings).toHaveBeenCalledWith({
-      is_contact_sidebar_open: false,
-      is_copilot_panel_open: true,
-      is_crm_deal_panel_open: false,
-      is_touch_sidebar_open: false,
-    });
+    expect(testState.updateUISettings).not.toHaveBeenCalled();
 
     wrapper.unmount();
   });

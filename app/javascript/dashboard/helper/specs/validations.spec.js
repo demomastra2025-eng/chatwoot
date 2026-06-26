@@ -150,6 +150,66 @@ describe('validateAutomation', () => {
     expect(errors).toEqual({});
   });
 
+  it('should validate create_touch with AI instructions and relative timing', () => {
+    const automation = {
+      name: 'Create AI touch',
+      description: 'Create an AI delayed touch',
+      event_name: 'message_created',
+      conditions: [
+        {
+          attribute_key: 'content',
+          filter_operator: 'contains',
+          values: 'hello',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'create_touch',
+          action_params: {
+            instructions: 'Generate a useful follow-up',
+            text_mode: 'agent',
+            timing_mode: 'relative',
+            relative_anchor: 'touch.created_at',
+            relative_offset_seconds: 3600,
+          },
+        },
+      ],
+    };
+
+    const errors = validateAutomation(automation);
+    expect(errors).toEqual({});
+  });
+
+  it('should reject create_touch with recurring relative timing', () => {
+    const automation = {
+      name: 'Create invalid touch',
+      description: 'Create an invalid delayed touch',
+      event_name: 'message_created',
+      conditions: [
+        {
+          attribute_key: 'content',
+          filter_operator: 'contains',
+          values: 'hello',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'create_touch',
+          action_params: {
+            body: 'Follow up later',
+            timing_mode: 'relative',
+            relative_anchor: 'touch.created_at',
+            relative_offset_seconds: 3600,
+            repeat_mode: 'daily',
+          },
+        },
+      ],
+    };
+
+    const errors = validateAutomation(automation);
+    expect(errors).toHaveProperty('action_0');
+  });
+
   it('should reject create_touch without body', () => {
     const automation = {
       name: 'Create touch',

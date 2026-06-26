@@ -4,6 +4,14 @@ export const TOUCH_TIMING_STATES = {
   BEFORE: 'before',
 };
 
+export const RELATIVE_TIME_MODES = {
+  INHERIT_ANCHOR_TIME: 'inherit_anchor_time',
+  FIXED_TIME_OF_DAY: 'fixed_time_of_day',
+};
+
+export const DEFAULT_RELATIVE_TIME_OF_DAY = '10:00';
+export const FIXED_RELATIVE_TIME_UNIT = 'days';
+
 export const RELATIVE_OFFSET_UNIT_SECONDS = {
   minutes: 60,
   hours: 60 * 60,
@@ -12,7 +20,9 @@ export const RELATIVE_OFFSET_UNIT_SECONDS = {
 
 export const normalizeRelativeOffset = totalSeconds => {
   const numericValue = Number(totalSeconds || 0);
-  const safeSeconds = Number.isFinite(numericValue) ? Math.abs(numericValue) : 0;
+  const safeSeconds = Number.isFinite(numericValue)
+    ? Math.abs(numericValue)
+    : 0;
 
   if (safeSeconds <= 0) {
     return {
@@ -29,7 +39,9 @@ export const normalizeRelativeOffset = totalSeconds => {
     ) || 'minutes';
 
   const unitSeconds = RELATIVE_OFFSET_UNIT_SECONDS[matchedUnit];
-  const normalizedValue = unitSeconds ? safeSeconds / unitSeconds : safeSeconds / 60;
+  const normalizedValue = unitSeconds
+    ? safeSeconds / unitSeconds
+    : safeSeconds / 60;
 
   return {
     direction:
@@ -37,9 +49,7 @@ export const normalizeRelativeOffset = totalSeconds => {
     unit: matchedUnit,
     value: Math.max(
       1,
-      Number.isFinite(normalizedValue)
-        ? Number(normalizedValue.toFixed(3))
-        : 1
+      Number.isFinite(normalizedValue) ? Number(normalizedValue.toFixed(3)) : 1
     ),
   };
 };
@@ -56,6 +66,30 @@ export const toRelativeOffsetSeconds = ({ direction, unit, value }) => {
   return direction === TOUCH_TIMING_STATES.BEFORE
     ? -Math.abs(sanitizedTotalSeconds)
     : Math.abs(sanitizedTotalSeconds);
+};
+
+export const canUseFixedRelativeTimeForUnit = unit =>
+  unit === FIXED_RELATIVE_TIME_UNIT;
+
+export const normalizeRelativeTimeForUnit = ({
+  relativeTimeMode,
+  relativeTimeOfDay,
+  unit,
+}) => {
+  if (
+    !canUseFixedRelativeTimeForUnit(unit) ||
+    relativeTimeMode !== RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY
+  ) {
+    return {
+      relativeTimeMode: RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+      relativeTimeOfDay: '',
+    };
+  }
+
+  return {
+    relativeTimeMode: RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY,
+    relativeTimeOfDay: relativeTimeOfDay || DEFAULT_RELATIVE_TIME_OF_DAY,
+  };
 };
 
 export const resolveTouchTimingState = ({

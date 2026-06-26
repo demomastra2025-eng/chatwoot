@@ -51,7 +51,19 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   end
 
   def stage_params
-    params.permit(:name, :code, :position, :outcome, :active, :color, :default, :closing_reason_required, closing_reason_options: [])
+    params.permit(
+      :name,
+      :code,
+      :position,
+      :outcome,
+      :active,
+      :color,
+      :default,
+      :closing_reason_required,
+      :transition_reason_required,
+      closing_reason_options: [],
+      transition_reason_options: []
+    )
   end
 
   def terminal_stage_params

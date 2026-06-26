@@ -58,8 +58,12 @@ class Api::V1::Widget::ConversationsController < Api::V1::Widget::BaseController
     return head :forbidden unless @web_widget.end_conversation?
 
     unless conversation.resolved?
-      conversation.status = :resolved
-      conversation.save!
+      Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: { status: 'resolved' },
+        actor: conversation.contact,
+        source: 'contact'
+      ).perform
     end
     head :ok
   end

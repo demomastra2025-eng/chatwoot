@@ -246,11 +246,19 @@ class Captain::ContextFields
       return if account.blank? || conversation.blank?
       return unless deal_context_enabled?(account)
 
-      deals = account.crm_deals.where(originating_conversation_id: conversation.id)
+      deals = deals_for_conversation_context(account: account, conversation: conversation)
 
       deals.kept.where(closed_at: nil).order(updated_at: :desc, id: :desc).first ||
         deals.kept.order(updated_at: :desc, id: :desc).first ||
         deals.order(updated_at: :desc, id: :desc).first
+    end
+
+    def deals_for_conversation_context(account:, conversation:)
+      deals = account.crm_deals.where(originating_conversation_id: conversation.id)
+      thread = conversation.communication_thread || conversation.reload.communication_thread
+      return deals if thread.blank? || thread.account_id != account.id
+
+      deals.or(account.crm_deals.where(originating_communication_thread_id: thread.id))
     end
 
     def task_for(account:, conversation:)
@@ -300,7 +308,8 @@ class Captain::ContextFields
       thread = conversation.communication_thread || conversation.reload.communication_thread
       return if thread.blank? || thread.account_id != account.id
 
-      links = thread.communication_thread_conversations.includes(:conversation, :inbox, :contact_inbox).order(primary: :desc, created_at: :asc, id: :asc).to_a
+      links = thread.communication_thread_conversations.includes(:conversation, :inbox, :contact_inbox).order(primary: :desc, created_at: :asc,
+                                                                                                              id: :asc).to_a
       visible_links = visible_communication_thread_links(
         links,
         account: account,
@@ -502,9 +511,7 @@ class Captain::ContextFields
     def communication_thread_accessible_inboxes(account:, assistant:, actor:, accessible_inboxes:)
       return Array(accessible_inboxes) if accessible_inboxes
 
-      if assistant.present?
-        return assistant.inboxes.where(account_id: account.id).includes(:channel).to_a
-      end
+      return assistant.inboxes.where(account_id: account.id).includes(:channel).to_a if assistant.present?
 
       if actor.present? && actor.respond_to?(:id)
         account_user = AccountUser.find_by(account_id: account.id, user_id: actor.id)

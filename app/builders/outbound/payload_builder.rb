@@ -17,6 +17,11 @@ module Outbound::PayloadBuilder
       repeat_until_at: reminder.repeat_until_at,
       relative_anchor: reminder.relative_anchor,
       relative_offset_seconds: reminder.relative_offset_seconds,
+      relative_time_mode: reminder.relative_time_mode,
+      relative_time_of_day: reminder.relative_time_of_day,
+      manual_schedule_override: reminder.manual_schedule_override,
+      schedule_revision: reminder.schedule_revision,
+      last_materialized_anchor_at: reminder.last_materialized_anchor_at,
       scheduled_at: reminder.scheduled_at,
       timezone: reminder.timezone,
       body: reminder.body,
@@ -45,6 +50,8 @@ module Outbound::PayloadBuilder
       id: reminder_group.id,
       account_id: reminder_group.account_id,
       creator_id: reminder_group.creator_id,
+      assistant_id: reminder_group.assistant_id,
+      assistant: assistant_payload(reminder_group.assistant),
       name: reminder_group.name,
       description: reminder_group.description,
       entity_kinds: reminder_group.entity_kinds,
@@ -65,6 +72,16 @@ module Outbound::PayloadBuilder
       id: display_id_reference(record) || record.id,
       type: record.class.name,
       title: remindable_title(record)
+    }
+  end
+
+  def assistant_payload(assistant)
+    return if assistant.blank?
+
+    {
+      id: assistant.id,
+      name: assistant.name,
+      usage_mode: assistant.usage_mode
     }
   end
 

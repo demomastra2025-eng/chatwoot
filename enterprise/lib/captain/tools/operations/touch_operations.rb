@@ -57,18 +57,20 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     touch = find_touch!(touch_id)
 
     touch.with_lock do
-      return touch if touch.cancelled?
+      if touch.cancelled?
+        touch
+      else
+        raise ArgumentError, 'Touch can only be cancelled while draft or pending' unless touch.draft? || touch.pending?
 
-      raise ArgumentError, 'Touch can only be cancelled while draft or pending' unless touch.draft? || touch.pending?
-
-      cancellation_reason = reason.presence || CAPTAIN_CANCEL_REASON
-      touch.update!(
-        status: :cancelled,
-        cancelled_at: Time.current,
-        last_error: cancellation_reason,
-        metadata: touch.metadata.to_h.merge(cancellation_metadata(cancelled_via: 'captain_cancel_touch', reason: cancellation_reason))
-      )
-      touch
+        cancellation_reason = reason.presence || CAPTAIN_CANCEL_REASON
+        touch.update!(
+          status: :cancelled,
+          cancelled_at: Time.current,
+          last_error: cancellation_reason,
+          metadata: touch.metadata.to_h.merge(cancellation_metadata(cancelled_via: 'captain_cancel_touch', reason: cancellation_reason))
+        )
+        touch
+      end
     end
   end
 
@@ -115,7 +117,8 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
       name: normalized_name,
       description: description.presence,
       entity_kinds: normalized_plan_entity_kinds(entity_kinds),
-      touches: normalized_touch_definitions(touches)
+      touches: normalized_touch_definitions(touches),
+      assistant_id: assistant.id
     }.compact
 
     with_idempotent_creation('create_touch_plan', create_params) do
@@ -208,7 +211,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
   end
 
   def find_touch_plan!(touch_plan_id: nil, touch_plan_name: nil)
-    scope = account.reminder_groups
+    scope = account.reminder_groups.for_assistant_workspace(assistant.id)
     touch_plan = find_touch_plan_in_scope(scope, touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
     raise ActiveRecord::RecordNotFound, 'Touch plan not found' if touch_plan.blank?
 
@@ -216,7 +219,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
   end
 
   def find_kept_touch_plan!(touch_plan_id: nil, touch_plan_name: nil)
-    scope = account.reminder_groups.kept
+    scope = account.reminder_groups.kept.for_assistant_workspace(assistant.id)
     touch_plan = find_touch_plan_in_scope(scope, touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
     raise ActiveRecord::RecordNotFound, 'Touch plan not found' if touch_plan.blank?
 

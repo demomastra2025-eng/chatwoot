@@ -8,6 +8,8 @@ const AssistantEmptyStateIndex = () => import('./assistants/Index.vue');
 const AssistantSettingsIndex = () =>
   import('./assistants/settings/Settings.vue');
 const AssistantPromptsIndex = () => import('./assistants/prompts/Index.vue');
+const AssistantFollowUpsIndex = () =>
+  import('../campaigns/pages/OutboundTouchPlansPage.vue');
 const DocumentsIndex = () => import('./documents/Index.vue');
 const ResponsesIndex = () => import('./responses/Index.vue');
 const ResponsesPendingIndex = () => import('./responses/Pending.vue');
@@ -149,6 +151,12 @@ const assistantRoutes = [
     component: AssistantPromptsIndex,
     name: 'captain_assistants_prompts_index',
     meta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/follow-ups'),
+    component: AssistantFollowUpsIndex,
+    name: 'captain_assistants_follow_ups_index',
+    meta: metaV2,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/access'),

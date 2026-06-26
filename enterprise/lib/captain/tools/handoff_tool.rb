@@ -1,13 +1,15 @@
 class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   description 'Hand off the current conversation to a human team'
   param :reason, type: 'string', desc: 'Optional handoff reason for the human team', required: false
+  param :status_reason, type: 'string', desc: 'Configured conversation status reason for opening/handoff when status reasons are enabled',
+                        required: false
   param :message, type: 'string', desc: 'Optional customer-facing handoff message to send when AI handoff message mode is enabled', required: false
 
-  def perform(tool_context, reason: nil, message: nil)
+  def perform(tool_context, reason: nil, status_reason: nil, message: nil)
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
 
-    request_handoff(tool_context, reason, message)
+    request_handoff(tool_context, reason, status_reason, message)
 
     # Log the handoff with reason
     log_tool_usage('tool_handoff', {
@@ -23,9 +25,10 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
 
   private
 
-  def request_handoff(tool_context, reason, message)
+  def request_handoff(tool_context, reason, status_reason, message)
     tool_context.context[:pending_human_handoff] = {
       reason: reason.presence,
+      status_reason: status_reason.presence,
       message: message.presence,
       timestamp: Time.current
     }.compact

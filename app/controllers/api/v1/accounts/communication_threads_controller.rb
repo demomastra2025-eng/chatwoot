@@ -17,6 +17,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   rescue_from CommunicationThreadFinder::InvalidParameter, with: :render_communication_thread_parameter_error
   rescue_from CommunicationThreads::MessageCreateService::Error, with: :render_communication_thread_parameter_error
+  rescue_from Conversations::StatusReasonConfig::Error, with: :render_status_reason_error
   rescue_from ArgumentError, with: :render_communication_thread_parameter_error
 
   before_action :ensure_communication_threads_feature_enabled!
@@ -62,7 +63,9 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @communication_thread = CommunicationThreads::UpdateService.new(
       communication_thread: @communication_thread,
       params: permitted_update_params,
-      accessible_links: accessible_links_for(@communication_thread)
+      accessible_links: accessible_links_for(@communication_thread),
+      actor: Current.user,
+      source: 'communication_thread'
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
@@ -179,7 +182,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def permitted_update_params
-    params.permit(:status, :priority, :assignee_id, :assignee_type, :team_id, :snoozed_until)
+    params.permit(:status, :priority, :assignee_id, :assignee_type, :team_id, :snoozed_until, :status_reason)
   end
 
   def attachment_params
@@ -315,6 +318,10 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def render_communication_thread_parameter_error(error)
     render_could_not_create_error(error.message)
+  end
+
+  def render_status_reason_error(error)
+    render json: { error: error.message, code: error.code, details: error.details }, status: error.status
   end
 
   def ensure_communication_threads_feature_enabled!

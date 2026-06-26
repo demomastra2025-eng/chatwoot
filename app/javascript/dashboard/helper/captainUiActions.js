@@ -8,7 +8,6 @@ const SIMPLE_ROUTE_ACTIONS = {
   open_outbound: 'outbound_broadcasts_index',
   open_touches: 'outbound_touches_index',
   open_outbound_personal: 'outbound_touches_index',
-  open_touch_plans: 'outbound_touch_plans_index',
   open_templates: 'outbound_templates_index',
   open_automation_rules: 'automation_list',
   open_macros: 'macros_wrapper',
@@ -32,6 +31,10 @@ const SIMPLE_ROUTE_ACTIONS = {
   open_captain_assistants: 'captain_assistants_create_index',
   open_captain_channels: 'settings_inbox_list',
   open_captain_observability: 'captain_observability_index',
+};
+
+const CAPTAIN_LAST_ACTIVE_ASSISTANT_ROUTE_ACTIONS = {
+  open_touch_plans: 'captain_assistants_follow_ups_index',
 };
 
 const TARGET_ROUTE_ACTIONS = {
@@ -66,6 +69,7 @@ const CAPTAIN_ASSISTANT_ROUTE_ACTIONS = {
   open_captain_documents: 'captain_assistants_documents_index',
   open_captain_tools: 'captain_tools_index',
   open_captain_scenarios: 'captain_assistants_scenarios_index',
+  open_captain_follow_ups: 'captain_assistants_follow_ups_index',
   open_captain_playground: 'captain_assistants_prompts_index',
   open_captain_assistant_settings: 'captain_assistants_settings_index',
   open_captain_prompts: 'captain_assistants_prompts_index',
@@ -164,6 +168,7 @@ const CREATE_ACTION_QUERY_FIELDS = {
 
 const SUPPORTED_ACTION_TYPES = new Set([
   ...Object.keys(SIMPLE_ROUTE_ACTIONS),
+  ...Object.keys(CAPTAIN_LAST_ACTIVE_ASSISTANT_ROUTE_ACTIONS),
   ...Object.keys(TARGET_ROUTE_ACTIONS),
   ...Object.keys(CAPTAIN_ASSISTANT_ROUTE_ACTIONS),
   ...Object.keys(QUERY_TARGET_ROUTE_ACTIONS),
@@ -191,7 +196,7 @@ const DEFAULT_LABELS = {
   open_outbound: 'Open outbound',
   open_touches: 'Open touches',
   open_outbound_personal: 'Open touches',
-  open_touch_plans: 'Open touch plans',
+  open_touch_plans: 'Open follow-up scenarios',
   open_templates: 'Open templates',
   open_automation_rules: 'Open automation rules',
   open_macros: 'Open macros',
@@ -217,6 +222,7 @@ const DEFAULT_LABELS = {
   open_captain_documents: 'Open Captain documents',
   open_captain_tools: 'Open Captain tools',
   open_captain_scenarios: 'Open Captain scenarios',
+  open_captain_follow_ups: 'Open follow-up scenarios',
   open_captain_playground: 'Open assistant prompts',
   open_captain_channels: 'Open Captain channels',
   open_captain_assistant_settings: 'Open assistant settings',
@@ -335,6 +341,11 @@ export const normalizeCaptainUiActions = actions => {
 const simpleRoute = (name, accountId) => ({
   name,
   params: { accountId },
+});
+
+const lastActiveAssistantRoute = (name, accountId) => ({
+  name: 'captain_assistants_index',
+  params: { accountId, navigationPath: name },
 });
 
 const targetRoute = (action, accountId, routeConfig) => {
@@ -464,6 +475,13 @@ const captainAssistantRoute = (action, accountId) => {
 };
 
 export const routeForCaptainUiAction = (action, accountId) => {
+  if (CAPTAIN_LAST_ACTIVE_ASSISTANT_ROUTE_ACTIONS[action.type]) {
+    return lastActiveAssistantRoute(
+      CAPTAIN_LAST_ACTIVE_ASSISTANT_ROUTE_ACTIONS[action.type],
+      accountId
+    );
+  }
+
   if (SIMPLE_ROUTE_ACTIONS[action.type]) {
     return simpleRoute(SIMPLE_ROUTE_ACTIONS[action.type], accountId);
   }

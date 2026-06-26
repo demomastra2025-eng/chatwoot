@@ -20,6 +20,10 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
         type: 'array',
         desc: 'Configured closing reason labels when moving to a Won/Lost stage',
         required: false
+  param :transition_reason,
+        type: 'string',
+        desc: 'Configured transition reason label when moving to an open stage',
+        required: false
   param :amount,
         type: 'string',
         desc: 'Updated amount as a whole number in major currency units. Use 200 for 200 KZT; do not multiply by 100. ' \
@@ -36,7 +40,8 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
 
   def perform(tool_context, deal_id: nil, title: nil, description: nil, amount: nil, currency: nil,
               expected_close_on: nil, win_probability: nil, custom_attributes: nil, pipeline_id: nil,
-              pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil, closing_reasons: nil)
+              pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil, closing_reasons: nil,
+              transition_reason: nil)
     deal = operations(tool_context.state).update_current_deal(
       deal_id: deal_id,
       title: title,
@@ -51,7 +56,8 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
       stage_id: stage_id,
       stage_name: stage_name,
       stage_code: stage_code,
-      closing_reasons: closing_reasons
+      closing_reasons: closing_reasons,
+      transition_reason: transition_reason
     )
 
     JSON.pretty_generate(::Crm::ToolPayloadBuilder.deal_payload(action: 'update_deal', deal: deal))

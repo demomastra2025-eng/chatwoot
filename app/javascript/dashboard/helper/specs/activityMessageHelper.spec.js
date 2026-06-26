@@ -5,6 +5,7 @@ describe('activityMessageHelper', () => {
     const translations = {
       'CONVERSATION.ACTIVITY.CAPTAIN.AUTO_OPENED_AFTER_AGENT_REPLY':
         'Разговор был открыт автоматически после ответа сотрудника',
+      'CONVERSATION.ACTIVITY.CAPTAIN.OPEN_WITH_REASON': `Диалог был открыт ${params.userName}: ${params.reason}`,
       'CONVERSATION.ACTIVITY.ASSIGNEE.DEFAULT_POLICY_ASSIGNED': `Назначен: ${params.assigneeName}.`,
       'CONVERSATION.ACTIVITY.ASSIGNEE.ASSIGNED_BY': `Назначен: ${params.assigneeName}.\nИнициатор: ${params.initiatorName}`,
       'CONVERSATION.ACTIVITY.ASSIGNEE.POLICY_SYSTEM': 'Система политики',
@@ -46,6 +47,15 @@ describe('activityMessageHelper', () => {
         translate
       )
     ).toBe('Назначен: Akhan Bakhitov.');
+  });
+
+  it('localizes AI open activity with reason', () => {
+    expect(
+      getLocalizedActivityMessage(
+        'Conversation was marked open by Captain (Customer requested a specialist)',
+        translate
+      )
+    ).toBe('Диалог был открыт Captain: Customer requested a specialist');
   });
 
   it('normalizes legacy one-line manual assignment text into two lines', () => {

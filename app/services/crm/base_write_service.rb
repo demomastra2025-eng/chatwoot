@@ -102,11 +102,23 @@ class Crm::BaseWriteService
     raise_invalid_closing_reasons!(target_stage, invalid_reasons) if invalid_reasons.present?
 
     canonical_reasons = target_stage.canonical_closing_reasons(submitted_reasons)
-    if target_stage.closing_reason_required? && canonical_reasons.blank?
-      raise_missing_closing_reasons!(target_stage)
-    end
+    raise_missing_closing_reasons!(target_stage) if target_stage.closing_reason_required? && canonical_reasons.blank?
 
     canonical_reasons
+  end
+
+  def resolve_transition_reason!(target_stage:, require_input:)
+    return if target_stage.terminal_outcome?
+    return unless params.key?(:transition_reason) || (require_input && target_stage.transition_reason_required?)
+
+    submitted_reason = ::Crm::Stage.normalize_closing_reason_values([params[:transition_reason]]).first
+    invalid_reasons = target_stage.invalid_transition_reason(submitted_reason)
+    raise_invalid_transition_reason!(target_stage, invalid_reasons) if invalid_reasons.present?
+
+    canonical_reason = target_stage.canonical_transition_reason(submitted_reason)
+    raise_missing_transition_reason!(target_stage) if target_stage.transition_reason_required? && canonical_reason.blank?
+
+    canonical_reason
   end
 
   def dispatch_crm_deal_realtime_event!(event_name, deal, meta: {})
@@ -144,6 +156,33 @@ class Crm::BaseWriteService
         outcome: target_stage.outcome,
         invalid_reasons: invalid_reasons,
         closing_reason_options: target_stage.closing_reason_options
+      }
+    )
+  end
+
+  def raise_missing_transition_reason!(target_stage)
+    raise ::Crm::Error.new(
+      code: 'DEAL_STAGE_REQUIRES_TRANSITION_REASON',
+      message: "Select a transition reason before moving the deal to #{target_stage.name}.",
+      status: :unprocessable_content,
+      details: {
+        stage_id: target_stage.id,
+        outcome: target_stage.outcome,
+        transition_reason_options: target_stage.transition_reason_options
+      }
+    )
+  end
+
+  def raise_invalid_transition_reason!(target_stage, invalid_reasons)
+    raise ::Crm::Error.new(
+      code: 'DEAL_STAGE_INVALID_TRANSITION_REASON',
+      message: "Transition reason is not configured for #{target_stage.name}: #{invalid_reasons.join(', ')}.",
+      status: :unprocessable_content,
+      details: {
+        stage_id: target_stage.id,
+        outcome: target_stage.outcome,
+        invalid_reasons: invalid_reasons,
+        transition_reason_options: target_stage.transition_reason_options
       }
     )
   end

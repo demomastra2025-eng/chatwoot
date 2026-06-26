@@ -442,6 +442,26 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response.body).not_to include(contact1.email)
       end
 
+      it 'matches a contact without phone or email so channel-backed contacts can be selected' do
+        telegram_only_contact = create(
+          :contact,
+          account: account,
+          name: 'Telegram Only Lead',
+          email: nil,
+          phone_number: nil,
+          identifier: 'telegram_personal:4242'
+        )
+
+        get "/api/v1/accounts/#{account.id}/contacts/search",
+            params: { q: 'Telegram Only' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        response_body = response.parsed_body
+        expect(response_body['payload'].pluck('id')).to include(telegram_only_contact.id)
+      end
+
       it 'returns has_more as false when results fit in one page' do
         get "/api/v1/accounts/#{account.id}/contacts/search",
             params: { q: contact2.email },

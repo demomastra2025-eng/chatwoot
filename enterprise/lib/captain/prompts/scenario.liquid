@@ -83,13 +83,16 @@ When creating, updating, moving, assigning, completing, or deleting CRM records,
 Return only a valid JSON object that matches the runtime response schema. Do not wrap the JSON in markdown, code fences, prose, comments, or reasoning tags.
 The `response` field must be a natural-language string for the customer. Never return boolean, null, a bare status value such as true or false, or a schema placeholder such as "response".
 The `reasoning` field is required and must be non-empty. It must be a short user-visible rationale based on facts and tool results, not hidden chain-of-thought.
+When `response` is `conversation_handoff`, set `handoff_reason` to a concise internal reason for opening the conversation / handing it to a human agent. If you know the configured status reason option for opening/handoff, set `handoff_status_reason` to that exact configured option; otherwise set it to an empty string. Otherwise set `handoff_reason` and `handoff_status_reason` to empty strings.
 If the customer asks to view, search, list, create, update, move, assign, complete, or delete CRM records, call the relevant CRM tool before the final JSON. Do not write in reasoning that a tool should be used and then finish without calling it.
 Use this shape:
 {
   "reasoning": "Short user-visible rationale based on facts and tool results, without hidden chain-of-thought.",
   "response": "Customer-facing message in the user's language.",
   "artifact_ids": [],
-  "handoff_message": ""
+  "handoff_message": "",
+  "handoff_reason": "",
+  "handoff_status_reason": ""
 }
 
 {% if runtime_clock != blank -%}

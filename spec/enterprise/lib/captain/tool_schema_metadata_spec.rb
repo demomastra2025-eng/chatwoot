@@ -9,8 +9,16 @@ RSpec.describe 'Captain tool schema metadata' do
       'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
       'Only relative scheduling is supported: provide a positive relative_offset_minutes; scheduled_at/absolute/immediate sends are rejected. ' \
       'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
-    expected_relative_anchor_description = 'Optional relative anchor: touch.created_at, conversation.created_at, conversation.last_incoming_message_at, conversation.last_activity_at, conversation.last_outgoing_message_at, conversation.waiting_since, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at. Defaults to conversation.last_incoming_message_at for conversation touches, falling back to touch.created_at when no incoming customer message exists.'
-    expected_auto_cancel_description = 'Set true only when a customer reply in the same conversation should cancel this scheduled touch; set false when the touch must remain scheduled'
+    expected_relative_anchor_description =
+      'Optional relative anchor: touch.created_at, conversation.created_at, ' \
+      'conversation.last_incoming_message_at, conversation.last_activity_at, ' \
+      'conversation.last_outgoing_message_at, conversation.waiting_since, ' \
+      'deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at. ' \
+      'Defaults to conversation.last_incoming_message_at for conversation touches, ' \
+      'falling back to touch.created_at when no incoming customer message exists.'
+    expected_auto_cancel_description =
+      'Set true only when a customer reply in the same conversation should cancel this scheduled touch; ' \
+      'set false when the touch must remain scheduled'
 
     expect(Captain::Tools::CreateTouchTool.description).to eq(expected_create_touch_description)
     expect(Captain::Tools::Copilot::CreateTouchService.description).to eq(expected_create_touch_description)
@@ -116,9 +124,15 @@ RSpec.describe 'Captain tool schema metadata' do
 
     expect(resolve_public[:reason].required).to be(false)
     expect(resolve_assistant[:reason].required).to be(false)
+    expect(resolve_public[:status_reason].required).to be(false)
+    expect(resolve_assistant[:status_reason].required).to be(false)
     expect(resolve_public[:reason].description).to eq('Optional reason for resolving the conversation')
     expect(resolve_assistant[:reason].description).to eq('Optional reason for resolving the conversation')
+    expect(resolve_public[:status_reason].description).to include('Configured conversation status reason')
+    expect(resolve_assistant[:status_reason].description).to include('Configured conversation status reason')
     expect(handoff_public[:reason].description).to eq('Optional handoff reason for the human team')
     expect(handoff_assistant[:reason].description).to eq('Optional handoff reason for the human team')
+    expect(handoff_public[:status_reason].description).to include('Configured conversation status reason')
+    expect(handoff_assistant[:status_reason].description).to include('Configured conversation status reason')
   end
 end

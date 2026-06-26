@@ -812,7 +812,7 @@ class Captain::ToolRegistry
         definition(
           id: 'transition_deal_stage',
           title: 'Transition Deal Stage',
-          description: 'Move current conversation deal by stage_id or stage_action next/previous within the current pipeline position order',
+          description: 'Move current conversation deal by stage_id or stage_action next/previous; supports closing_reasons for Won/Lost stages and transition_reason for open stages',
           group_name: 'CRM Deals',
           icon: 'arrow-right',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -970,8 +970,8 @@ class Captain::ToolRegistry
         ),
         definition(
           id: 'create_touch_plan',
-          title: 'Create Touch Plan',
-          description: 'Create a reusable outbound touch plan with one or more scheduled touch definitions',
+          title: 'Create Follow-up Scenario',
+          description: 'Create a reusable AI staff follow-up scenario with one or more scheduled touch definitions',
           group_name: 'Outbound',
           icon: 'clock-plus',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

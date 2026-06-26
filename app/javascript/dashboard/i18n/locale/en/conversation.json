@@ -27,6 +27,10 @@
     },
     "UNREAD_MESSAGES": "Unread Messages",
     "UNREAD_MESSAGE": "Unread Message",
+    "DATE_DIVIDER": {
+      "TODAY": "Today",
+      "YESTERDAY": "Yesterday"
+    },
     "CLICK_HERE": "Click here",
     "LOADING_INBOXES": "Loading inboxes",
     "LOADING_CONVERSATIONS": "Loading Conversations",
@@ -316,7 +320,8 @@
     "CHANGE_STATUS_FAILED": "Conversation status change failed",
     "ACTIVITY": {
       "CAPTAIN": {
-        "AUTO_OPENED_AFTER_AGENT_REPLY": "Conversation was marked open automatically after an agent reply"
+        "AUTO_OPENED_AFTER_AGENT_REPLY": "Conversation was marked open automatically after an agent reply",
+        "OPEN_WITH_REASON": "Conversation was marked open by {userName}: {reason}"
       },
       "ASSIGNEE": {
         "DEFAULT_POLICY_ASSIGNED": "Assigned: {assigneeName}.",
@@ -405,6 +410,25 @@
       "CLOSE": "Close",
       "UNKNOWN_CALLER": "Unknown caller",
       "DEFAULT_INBOX_NAME": "Customer support"
+    },
+    "STATUS_REASONS": {
+      "STATUS": {
+        "OPEN": "Open",
+        "RESOLVED": "Resolved",
+        "PENDING": "Pending",
+        "SNOOZED": "Snoozed"
+      },
+      "MODAL": {
+        "TITLE": "Select a reason for {status}",
+        "CONFIRM": "Continue",
+        "NO_REASON": "No reason",
+        "REQUIRED_DESCRIPTION": "A reason is required before moving this conversation to {status}.",
+        "OPTIONAL_DESCRIPTION": "Select a reason for moving this conversation to {status}.",
+        "PLACEHOLDER": "Select reason",
+        "SEARCH_PLACEHOLDER": "Search reasons",
+        "EMPTY_STATE": "No reasons configured",
+        "REQUIRED_HINT": "Select a reason to continue"
+      }
     }
   },
   "EMAIL_TRANSCRIPT": {

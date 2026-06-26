@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
-import Button from 'dashboard/components-next/button/Button.vue';
 import ConversationBox from 'dashboard/components/widgets/conversation/ConversationBox.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
@@ -73,15 +72,7 @@ const isCommunicationThreadTarget = computed(
 const conversationApiId = computed(
   () => normalizedConversationDisplayId.value || normalizedConversationId.value
 );
-const conversationLabelId = computed(
-  () => normalizedConversationDisplayId.value || normalizedConversationId.value
-);
 const communicationThreadApiId = computed(
-  () =>
-    normalizedCommunicationThreadDisplayId.value ||
-    normalizedCommunicationThreadId.value
-);
-const communicationThreadLabelId = computed(
   () =>
     normalizedCommunicationThreadDisplayId.value ||
     normalizedCommunicationThreadId.value
@@ -90,11 +81,6 @@ const chatApiId = computed(() =>
   isCommunicationThreadTarget.value
     ? communicationThreadApiId.value
     : conversationApiId.value
-);
-const chatLabelId = computed(() =>
-  isCommunicationThreadTarget.value
-    ? communicationThreadLabelId.value
-    : conversationLabelId.value
 );
 const conversationByDisplayId = computed(() => {
   if (!normalizedConversationDisplayId.value) return null;
@@ -303,40 +289,12 @@ onBeforeUnmount(() => {
   >
     <div
       v-if="visible && chatApiId"
-      class="fixed inset-0 z-[120] bg-black/35 backdrop-blur-[4px] md:static md:inset-auto md:z-auto md:h-full md:w-[22rem] md:min-w-[22rem] md:flex-shrink-0 md:bg-transparent md:backdrop-blur-0 xl:w-[28rem] xl:min-w-[28rem]"
+      class="fixed inset-0 z-[120] bg-n-solid-2 md:static md:inset-auto md:z-auto md:h-full md:min-w-0 md:flex-1 md:bg-transparent"
     >
-      <div class="flex h-full w-full justify-end md:pointer-events-none">
+      <div class="flex h-full w-full justify-end">
         <aside
-          class="pointer-events-auto flex h-full w-full flex-col overflow-hidden border border-n-weak bg-n-solid-2 shadow-2xl md:w-[22rem] md:min-w-[22rem] xl:w-[28rem] xl:min-w-[28rem]"
+          class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:min-w-0 md:flex-1 md:bg-transparent"
         >
-          <header
-            class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-6 py-4"
-          >
-            <div class="flex flex-col gap-1">
-              <h3 class="mb-0 text-lg font-semibold text-n-slate-12">
-                {{ $t('CRM.GENERAL.CHAT') }}
-              </h3>
-              <p class="mb-0 text-sm text-n-slate-11">
-                {{
-                  isCommunicationThreadTarget
-                    ? $t('CRM.TIMELINE.COMMUNICATION_THREAD', {
-                        id: chatLabelId,
-                      })
-                    : $t('CRM.TIMELINE.CONVERSATION', {
-                        id: chatLabelId,
-                      })
-                }}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              color="slate"
-              icon="i-lucide-x"
-              @click="closePanel"
-            />
-          </header>
-
           <SchedulingErrorState
             v-if="ui.error"
             class="m-4"

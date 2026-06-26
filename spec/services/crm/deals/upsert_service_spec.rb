@@ -224,4 +224,32 @@ RSpec.describe Crm::Deals::UpsertService do
     expect(deal.owner).to eq(owner)
     expect(contact.reload.owner).to eq(owner)
   end
+
+  it 'updates closed_at when an existing deal changes between open and closed stages' do
+    open_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'open')
+    won_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won')
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage, closed_at: nil)
+
+    closed_deal = described_class.new(
+      account: account,
+      deal: deal,
+      params: {
+        stage_id: won_stage.id,
+        lock_version: deal.lock_version
+      }
+    ).perform
+
+    expect(closed_deal.closed_at).to be_present
+
+    reopened_deal = described_class.new(
+      account: account,
+      deal: closed_deal,
+      params: {
+        stage_id: open_stage.id,
+        lock_version: closed_deal.lock_version
+      }
+    ).perform
+
+    expect(reopened_deal.closed_at).to be_nil
+  end
 end

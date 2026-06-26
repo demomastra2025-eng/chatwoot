@@ -18,7 +18,7 @@ class Scheduling::Appointments::UpsertService
       appointment.save!
       notify_assignment!(new_record: new_record)
       auto_apply_default_touch_plan! if new_record
-      sync_related_touches!
+      sync_or_cancel_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
       appointment.reload
     end
@@ -349,8 +349,20 @@ class Scheduling::Appointments::UpsertService
     ).perform
   end
 
-  def sync_related_touches!
+  def sync_or_cancel_related_touches!
+    return cancel_related_touches! if appointment.status == 'cancelled'
+
     Reminders::SyncRemindableService.new(remindable: appointment).perform
+  end
+
+  def cancel_related_touches!
+    Reminders::BulkCancelService.new(
+      account: account,
+      remindable: appointment,
+      actor: actor,
+      reason: 'отменен из-за отмены записи',
+      metadata: { cancelled_via: 'appointment_cancelled' }
+    ).perform
   end
 
   def resolve_optional_record(key, scope, current:)

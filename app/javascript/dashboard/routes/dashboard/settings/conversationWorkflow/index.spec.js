@@ -33,6 +33,9 @@ const mountComponent = ({ featureEnabled = () => false } = {}) => {
           template:
             '<div data-test="required-attributes" :data-enabled="isEnabled" />',
         },
+        ConversationStatusReasons: {
+          template: '<div data-test="status-reasons" />',
+        },
         SettingsLayout: {
           template:
             '<div><slot name="header" /><slot name="body" /><slot /></div>',
@@ -66,6 +69,13 @@ describe('ConversationWorkflow settings', () => {
     ).toMatchObject({
       'data-enabled': 'true',
     });
+    expect(wrapper.find('[data-test="status-reasons"]').exists()).toBe(true);
+    expect(
+      wrapper.find('[data-test="workflow-section-divider"]').classes()
+    ).toEqual(expect.arrayContaining(['h-px', 'bg-n-weak']));
+    expect(
+      wrapper.find('[data-test="status-reasons-section"]').classes()
+    ).not.toContain('border-t');
   });
 
   it('keeps required attributes visible behind its feature paywall state', () => {

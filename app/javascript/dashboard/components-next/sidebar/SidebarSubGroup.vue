@@ -91,13 +91,12 @@ useEventListener(scrollableContainer, 'scroll', () => {
     v-if="children.length"
     class="m-0 list-none reset-base relative group min-w-0"
   >
-    <!-- Each element has h-8, which is 32px, we will show 7 items with one hidden at the end,
-    which is 14rem. Then we add 16px so that we have some text visible from the next item  -->
+    <!-- Each element has h-8, which is 32px. We show roughly a third more than the previous 14rem + 16px limit. -->
     <div
       ref="scrollableContainer"
       class="min-w-0"
       :class="{
-        'max-h-[calc(14rem+16px)] overflow-y-scroll no-scrollbar': isScrollable,
+        'max-h-[20rem] overflow-y-scroll no-scrollbar': isScrollable,
       }"
     >
       <SidebarGroupLeaf

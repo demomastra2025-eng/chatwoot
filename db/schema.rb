@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_26_093000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1146,6 +1146,25 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
     t.index ["user_id"], name: "index_conversation_participants_on_user_id"
   end
 
+  create_table "conversation_status_transitions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.string "actor_type"
+    t.bigint "actor_id"
+    t.string "from_status", null: false
+    t.string "to_status", null: false
+    t.string "reason"
+    t.string "source", default: "manual", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "conversation_id", "created_at"], name: "idx_conv_status_transitions_on_account_conversation_created"
+    t.index ["account_id", "to_status", "created_at"], name: "idx_conv_status_transitions_on_account_status_created"
+    t.index ["account_id"], name: "index_conversation_status_transitions_on_account_id"
+    t.index ["actor_type", "actor_id"], name: "index_conversation_status_transitions_on_actor"
+    t.index ["conversation_id"], name: "index_conversation_status_transitions_on_conversation_id"
+  end
+
   create_table "conversations", id: :serial, force: :cascade do |t|
     t.integer "account_id", null: false
     t.integer "inbox_id", null: false
@@ -1259,7 +1278,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
     t.string "currency"
     t.date "expected_close_on"
     t.datetime "closed_at"
-    t.jsonb "closing_reasons", default: [], null: false
     t.integer "win_probability"
     t.string "external_ref"
     t.string "idempotency_key"
@@ -1270,6 +1288,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
     t.datetime "updated_at", null: false
     t.integer "position", default: 0, null: false
     t.bigint "originating_communication_thread_id"
+    t.jsonb "closing_reasons", default: [], null: false
     t.index ["account_id", "company_id"], name: "index_crm_deals_on_account_company"
     t.index ["account_id", "expected_close_on", "updated_at", "id"], name: "index_crm_deals_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
     t.index ["account_id", "external_ref"], name: "index_crm_deals_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
@@ -1353,6 +1372,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
     t.boolean "default", default: false, null: false
     t.jsonb "closing_reason_options", default: [], null: false
     t.boolean "closing_reason_required", default: false, null: false
+    t.jsonb "transition_reason_options", default: [], null: false
+    t.boolean "transition_reason_required", default: false, null: false
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
@@ -2075,8 +2096,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
     t.datetime "archived_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "assistant_id"
     t.index ["account_id", "active", "created_at"], name: "idx_reminder_groups_on_account_active_created"
     t.index ["account_id"], name: "index_reminder_groups_on_account_id"
+    t.index ["assistant_id"], name: "index_reminder_groups_on_assistant_id"
     t.index ["creator_id"], name: "index_reminder_groups_on_creator_id"
   end
 
@@ -2117,6 +2140,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
     t.datetime "updated_at", null: false
     t.integer "repeat_mode", default: 0, null: false
     t.datetime "repeat_until_at"
+    t.string "relative_time_mode", default: "inherit_anchor_time", null: false
+    t.string "relative_time_of_day"
+    t.boolean "manual_schedule_override", default: false, null: false
+    t.integer "schedule_revision", default: 0, null: false
+    t.datetime "last_materialized_anchor_at"
     t.index ["account_id", "fingerprint"], name: "idx_reminders_on_account_fingerprint"
     t.index ["account_id", "owner_id", "scheduled_at"], name: "idx_reminders_on_account_owner_scheduled"
     t.index ["account_id", "repeat_mode", "scheduled_at"], name: "idx_reminders_on_account_repeat_scheduled"
@@ -2927,6 +2955,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
   add_foreign_key "contact_channel_profiles", "contacts"
   add_foreign_key "contact_channel_profiles", "inboxes"
   add_foreign_key "contacts", "users", column: "owner_id"
+  add_foreign_key "conversation_status_transitions", "accounts"
+  add_foreign_key "conversation_status_transitions", "conversations"
   add_foreign_key "crm_comments", "accounts"
   add_foreign_key "crm_comments", "users"
   add_foreign_key "crm_deal_contacts", "accounts"
@@ -2965,6 +2995,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_25_113000) do
   add_foreign_key "llm_event_annotations", "users"
   add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
   add_foreign_key "reminder_groups", "accounts"
+  add_foreign_key "reminder_groups", "captain_assistants", column: "assistant_id"
   add_foreign_key "reminder_groups", "users", column: "creator_id"
   add_foreign_key "reminders", "accounts"
   add_foreign_key "reminders", "contact_inboxes", column: "target_contact_inbox_id"

@@ -260,7 +260,7 @@ describe SearchService do
         random = create(:contact, account_id: account.id)
         create(:conversation, contact: random, inbox: inbox, account: account)
         conv2 = create(:conversation, contact: harry, inbox: inbox, account: account)
-        params = { q: 'Harry' }
+        params = { q: 'test@test.com' }
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
         expect(search.perform[:conversations].map(&:id)).to eq([conv2.id, conversation.id])
       end
@@ -271,6 +271,45 @@ describe SearchService do
         params = { q: new_converstion.display_id }
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
         expect(search.perform[:conversations].map(&:id)).to include new_converstion.id
+      end
+
+      it 'searches conversations by message content without duplicating conversations' do
+        matching_contact = create(:contact, account_id: account.id, name: 'Message Match')
+        matching_conversation = create(:conversation, contact: matching_contact, inbox: inbox, account: account)
+        create(:message, conversation: matching_conversation, account: account, inbox: inbox, content: 'needle text in first message')
+        create(:message, conversation: matching_conversation, account: account, inbox: inbox, content: 'needle text in second message')
+        create(:conversation, contact: create(:contact, account_id: account.id, name: 'No Match'), inbox: inbox, account: account)
+
+        params = { q: 'needle text' }
+        search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
+
+        expect(search.perform[:conversations].map(&:id)).to eq([matching_conversation.id])
+      end
+
+      it 'keeps message-content conversation search account and inbox scoped' do
+        inaccessible_inbox = create(:inbox, account: account)
+        inaccessible_conversation = create(
+          :conversation,
+          contact: create(:contact, account_id: account.id),
+          inbox: inaccessible_inbox,
+          account: account
+        )
+        other_account = create(:account)
+        other_inbox = create(:inbox, account: other_account)
+        other_conversation = create(
+          :conversation,
+          contact: create(:contact, account_id: other_account.id),
+          inbox: other_inbox,
+          account: other_account
+        )
+
+        create(:message, conversation: inaccessible_conversation, account: account, inbox: inaccessible_inbox, content: 'scoped secret phrase')
+        create(:message, conversation: other_conversation, account: other_account, inbox: other_inbox, content: 'scoped secret phrase')
+
+        params = { q: 'scoped secret phrase' }
+        search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
+
+        expect(search.perform[:conversations]).to be_empty
       end
 
       it 'searches conversations by phone when the query uses 8 instead of +7' do

@@ -4,7 +4,7 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
   def index
     authorize ReminderGroup
 
-    touch_plans = policy_scope(ReminderGroup).kept.ordered
+    touch_plans = filtered_touch_plans
     render_payload(
       touch_plans.map { |touch_plan| Outbound::PayloadBuilder.touch_plan_payload(touch_plan) },
       meta: { count: touch_plans.size }
@@ -20,7 +20,7 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
   def create
     authorize ReminderGroup
 
-    touch_plan = Current.account.reminder_groups.new(touch_plan_params)
+    touch_plan = Current.account.reminder_groups.new(touch_plan_attributes)
     touch_plan.creator ||= Current.user
     touch_plan.save!
 
@@ -30,7 +30,7 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
   def update
     authorize @touch_plan
 
-    @touch_plan.update!(touch_plan_params)
+    @touch_plan.update!(touch_plan_attributes)
     render_payload(Outbound::PayloadBuilder.touch_plan_payload(@touch_plan))
   end
 
@@ -60,6 +60,16 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
 
   private
 
+  def filtered_touch_plans
+    scope = policy_scope(ReminderGroup).kept
+    if params[:assistant_id].present?
+      assistant = load_assistant!(params[:assistant_id])
+      scope = scope.for_assistant_workspace(assistant.id)
+    end
+
+    scope.ordered
+  end
+
   def load_remindable!
     type = params.require(:remindable_type).to_s
     id = params.require(:remindable_id)
@@ -87,12 +97,25 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
     @touch_plan = policy_scope(ReminderGroup).find(params[:id])
   end
 
+  def touch_plan_attributes
+    attrs = touch_plan_params.to_h.symbolize_keys
+    attrs[:assistant] = load_assistant!(attrs.delete(:assistant_id)) if attrs.key?(:assistant_id)
+    attrs
+  end
+
+  def load_assistant!(assistant_id)
+    return nil if assistant_id.blank?
+
+    Current.account.captain_assistants.find(assistant_id)
+  end
+
   # rubocop:disable Metrics/MethodLength
   def touch_plan_params
     params.permit(
       :name,
       :description,
       :active,
+      :assistant_id,
       entity_kinds: [],
       touches: [
         :action_type,
@@ -103,6 +126,9 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
         :repeat_until_at,
         :relative_anchor,
         :relative_offset_seconds,
+        :relative_time_mode,
+        :relative_time_of_day,
+        :manual_schedule_override,
         :scheduled_at,
         :timezone,
         :body,

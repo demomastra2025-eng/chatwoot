@@ -1,6 +1,5 @@
 <script setup>
 import { computed } from 'vue';
-import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useMapGetter } from 'dashboard/composables/store';
@@ -16,14 +15,10 @@ import {
   DropdownItem,
 } from 'next/dropdown-menu/base';
 
-const props = defineProps({
+defineProps({
   isCollapsed: {
     type: Boolean,
     default: false,
-  },
-  companyMenuItem: {
-    type: Object,
-    default: null,
   },
 });
 
@@ -31,7 +26,6 @@ const emit = defineEmits(['showCreateAccountModal']);
 
 const { accountId, currentAccount } = useAccount();
 const { t } = useI18n();
-const route = useRoute();
 const currentUser = useMapGetter('getCurrentUser');
 const globalConfig = useMapGetter('globalConfig/get');
 
@@ -44,21 +38,6 @@ const showAccountSwitcher = computed(
 const sortedCurrentUserAccounts = computed(() => {
   return [...(currentUser.value.accounts || [])].sort((a, b) =>
     a.name.localeCompare(b.name)
-  );
-});
-
-const companyMenuItems = computed(() => props.companyMenuItem?.children || []);
-const showCompanyMenu = computed(() => companyMenuItems.value.length > 0);
-
-const routeMatchesItem = item => {
-  const activeRouteNames = new Set([...(item?.activeOn || []), item?.to?.name]);
-  return activeRouteNames.has(route.name);
-};
-
-const isCompanyMenuActive = computed(() => {
-  return (
-    routeMatchesItem(props.companyMenuItem) ||
-    companyMenuItems.value.some(item => routeMatchesItem(item))
   );
 });
 
@@ -82,7 +61,7 @@ const emitNewAccount = () => {
         <!-- Collapsed view: Logo trigger -->
         <button
           v-if="isCollapsed"
-          class="grid flex-shrink-0 place-content-center p-1.5 rounded-lg cursor-pointer hover:bg-n-alpha-1"
+          class="grid flex-shrink-0 place-content-center size-9 rounded-xl cursor-pointer hover:bg-n-alpha-1"
           :class="{ 'bg-n-alpha-1': isOpen }"
           :title="currentAccount.name"
           @click="toggle"
@@ -91,9 +70,9 @@ const emitNewAccount = () => {
             v-if="currentAccount.logo_url"
             :src="currentAccount.logo_url"
             :name="currentAccount.name"
-            :size="24"
+            :size="32"
           />
-          <Logo v-else class="size-6" />
+          <Logo v-else class="size-8" />
         </button>
         <!-- Expanded view: Account name trigger -->
         <button
@@ -102,7 +81,7 @@ const emitNewAccount = () => {
           :data-account-id="accountId"
           aria-haspopup="listbox"
           aria-controls="account-options"
-          class="flex items-center gap-2 justify-between w-full rounded-lg px-2 min-w-0"
+          class="flex items-center gap-2 justify-between w-full rounded-xl px-1.5 py-1 min-w-0"
           :class="[
             isOpen && 'bg-n-alpha-1',
             showAccountSwitcher
@@ -116,9 +95,9 @@ const emitNewAccount = () => {
               v-if="currentAccount.logo_url"
               :src="currentAccount.logo_url"
               :name="currentAccount.name"
-              :size="24"
+              :size="28"
             />
-            <Logo v-else class="size-5 flex-shrink-0" />
+            <Logo v-else class="size-7 flex-shrink-0" />
             <span
               class="text-sm font-medium leading-5 text-n-slate-12 truncate"
               aria-live="polite"
@@ -195,39 +174,6 @@ const emitNewAccount = () => {
             {{ t('CREATE_ACCOUNT.NEW_ACCOUNT') }}
           </ButtonNext>
         </DropdownItem>
-      </DropdownBody>
-    </DropdownContainer>
-
-    <DropdownContainer
-      v-if="showCompanyMenu"
-      menu-class="ltr:left-full rtl:right-full top-0 ltr:ml-2 rtl:mr-2 !mt-0"
-    >
-      <template #trigger="{ toggle, isOpen }">
-        <button
-          class="grid flex-shrink-0 place-content-center rounded-lg cursor-pointer text-n-slate-11 hover:bg-n-alpha-1 hover:text-n-slate-12"
-          :class="[
-            isCollapsed ? 'size-8' : 'size-7',
-            (isOpen || isCompanyMenuActive) && 'bg-n-alpha-1 text-n-slate-12',
-          ]"
-          :title="t('SIDEBAR.MY_COMPANY')"
-          :aria-label="t('SIDEBAR.MY_COMPANY')"
-          @click="toggle"
-        >
-          <Icon icon="i-lucide-briefcase" class="size-4" />
-        </button>
-      </template>
-      <DropdownBody class="min-w-64 z-50">
-        <DropdownSection :title="t('SIDEBAR.MY_COMPANY')">
-          <DropdownItem
-            v-for="item in companyMenuItems"
-            :key="item.name"
-            :label="item.label"
-            :icon="item.icon"
-            :link="item.to"
-            class="cursor-pointer"
-            :class="{ 'bg-n-alpha-2 rounded-lg': routeMatchesItem(item) }"
-          />
-        </DropdownSection>
       </DropdownBody>
     </DropdownContainer>
   </div>

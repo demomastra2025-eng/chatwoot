@@ -155,4 +155,49 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
       expect(message.additional_attributes['delivery_policy']).to include('delivery_mode' => 'channel_template', 'requires_template' => true)
     end
   end
+
+  describe '#resolve_conversation' do
+    it 'maps a free-text Captain reason only when it matches configured status reasons' do
+      account.update!(
+        conversation_status_reason_config: {
+          resolved: { options: ['Customer confirmed'], required: false }
+        }
+      )
+
+      operations.resolve_conversation(reason: 'customer confirmed')
+
+      expect(conversation.reload).to be_resolved
+      expect(conversation.status_transitions.last.reason).to eq('Customer confirmed')
+    end
+
+    it 'does not pass arbitrary Captain free text as a status reason' do
+      account.update!(
+        conversation_status_reason_config: {
+          resolved: { options: ['Customer confirmed'], required: false }
+        }
+      )
+
+      operations.resolve_conversation(reason: 'free-text internal explanation')
+
+      expect(conversation.reload).to be_resolved
+      expect(conversation.status_transitions.last.reason).to be_nil
+    end
+  end
+
+  describe '#handoff' do
+    let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox, status: 'pending') }
+
+    it 'canonicalizes explicit handoff status reasons before transition' do
+      account.update!(
+        conversation_status_reason_config: {
+          open: { options: ['Needs agent'], required: false }
+        }
+      )
+
+      operations.handoff(status_reason: 'needs agent')
+
+      expect(conversation.reload).to be_open
+      expect(conversation.status_transitions.last.reason).to eq('Needs agent')
+    end
+  end
 end

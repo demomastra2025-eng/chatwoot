@@ -22,6 +22,19 @@ const isTouchPlanEditorOpen = ref(false);
 const editingTouchPlan = ref(null);
 const mutatingPlanId = ref(null);
 const editTouchPlanLoadRequestId = ref(0);
+const assistantId = computed(() => Number(route.params.assistantId) || null);
+const isCaptainAssistantScope = computed(() => !!assistantId.value);
+
+const pageTitle = computed(() =>
+  isCaptainAssistantScope.value
+    ? t('OUTBOUND_WORKSPACE.TOUCH_PLANS.CAPTAIN_TITLE')
+    : t('OUTBOUND_WORKSPACE.TOUCH_PLANS.TITLE')
+);
+const pageDescription = computed(() =>
+  isCaptainAssistantScope.value
+    ? t('OUTBOUND_WORKSPACE.TOUCH_PLANS.CAPTAIN_DESCRIPTION')
+    : t('OUTBOUND_WORKSPACE.TOUCH_PLANS.DESCRIPTION')
+);
 
 const entityContext = computed(() => {
   const remindableType = route.query.remindable_type?.toString() || '';
@@ -84,7 +97,9 @@ const fetchTouchPlans = async () => {
   isFetchingTouchPlans.value = true;
 
   try {
-    const { data } = await TouchPlansAPI.get();
+    const { data } = await TouchPlansAPI.get(
+      assistantId.value ? { assistant_id: assistantId.value } : {}
+    );
     touchPlans.value = data.payload || [];
   } catch (error) {
     useAlert(
@@ -209,10 +224,7 @@ watch(
 </script>
 
 <template>
-  <OutboundWorkspaceLayout
-    :title="$t('OUTBOUND_WORKSPACE.TOUCH_PLANS.TITLE')"
-    :description="$t('OUTBOUND_WORKSPACE.TOUCH_PLANS.DESCRIPTION')"
-  >
+  <OutboundWorkspaceLayout :title="pageTitle" :description="pageDescription">
     <template #meta>
       <span class="text-sm text-n-slate-11">
         {{
@@ -282,6 +294,7 @@ watch(
 
   <TouchPlanEditorDrawer
     v-model="isTouchPlanEditorOpen"
+    :assistant-id="assistantId"
     :touch-plan="editingTouchPlan"
     :create-title="$t('OUTBOUND_WORKSPACE.TOUCHES.PLANS_MODAL.CREATE_TITLE')"
     :edit-title="$t('OUTBOUND_WORKSPACE.TOUCHES.PLANS_MODAL.EDIT_TITLE')"

@@ -95,6 +95,8 @@ const props = defineProps({
   enableCaptainTools: { type: Boolean, default: false },
   enableCaptainFields: { type: Boolean, default: false },
   enableCaptainSkills: { type: Boolean, default: false },
+  allowedVariablePrefixes: { type: Array, default: () => [] },
+  allowedFieldScopes: { type: Array, default: () => [] },
   enableCopilotMenu: { type: Boolean, default: true },
   captainContextAssistantId: { type: Number, default: null },
   captainContextAccess: { type: Object, default: null },
@@ -1033,6 +1035,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
     <VariableList
       v-if="shouldShowVariables"
       :search-key="variableSearchTerm"
+      :allowed-prefixes="allowedVariablePrefixes"
       @select-variable="content => insertSpecialContent('variable', content)"
     />
     <KeyboardEmojiSelector
@@ -1054,6 +1057,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       v-if="showFieldsMenu"
       :search-key="fieldSearchKey"
       :assistant-id="captainContextAssistantId"
+      :allowed-scopes="allowedFieldScopes"
       :context-access="captainContextAccess"
       :used-item-ids="usedCaptainFieldIds"
       @close="closeFieldsMenu"

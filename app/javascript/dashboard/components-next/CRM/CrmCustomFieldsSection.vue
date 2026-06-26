@@ -222,6 +222,8 @@ const updateValue = (key, value) => {
             class="crm-custom-fields-section-control crm-custom-fields-section-select-control"
             :model-value="resolvedValue(definition)"
             :options="optionList(definition)"
+            :placeholder="definition.label"
+            dropdown-placement="auto"
             @update:model-value="updateValue(definition.key, $event)"
           />
         </div>
@@ -380,15 +382,15 @@ const updateValue = (key, value) => {
 }
 
 .crm-custom-fields-section-label-block {
-  @apply grid min-w-0 gap-1;
+  @apply grid min-w-0 gap-0;
 }
 
 .crm-custom-fields-section-label {
-  @apply mb-0 min-w-0 text-xs font-medium leading-4 text-n-slate-11;
+  @apply mb-0 min-w-0 text-[13px] font-medium leading-4 text-n-slate-12;
 }
 
 .crm-custom-fields-section-description {
-  @apply text-[11px] leading-4 text-n-slate-10;
+  @apply text-[10px] leading-3 text-n-slate-10;
 }
 
 .crm-custom-fields-section-control {
@@ -488,7 +490,12 @@ const updateValue = (key, value) => {
 
 .crm-custom-fields-section-rows
   :deep(.crm-custom-fields-section-multi-control button > div) {
-  @apply rounded-md bg-n-alpha-black1 px-1.5 py-0.5 !important;
+  @apply max-w-[75%] rounded-md border border-n-blue-4/40 bg-n-blue-3/60 px-1.5 py-0.5 text-n-blue-11 !important;
+}
+
+.crm-custom-fields-section-rows
+  :deep(.crm-custom-fields-section-multi-control button > div span) {
+  @apply text-n-blue-11 !important;
 }
 
 .crm-custom-fields-section-checkbox-control {

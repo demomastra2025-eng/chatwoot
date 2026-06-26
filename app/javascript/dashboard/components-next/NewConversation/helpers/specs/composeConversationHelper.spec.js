@@ -422,13 +422,13 @@ describe('composeConversationHelper', () => {
         ]);
       });
 
-      it('searches contacts and returns only contacts with email or phone number', async () => {
+      it('keeps contacts without phone or email so channel-backed contacts can be selected', async () => {
         const mockPayload = [
           {
             id: 1,
             name: 'John Doe',
             email: 'john@example.com',
-            phone_number: '+1234567890',
+            phone_number: '+123****7890',
             created_at: '2023-01-01',
           },
           {
@@ -453,13 +453,19 @@ describe('composeConversationHelper', () => {
 
         const result = await searchContacts('john');
 
-        // Should only return contacts with either email or phone number
         expect(result).toEqual([
           {
             id: 1,
             name: 'John Doe',
             email: 'john@example.com',
-            phoneNumber: '+1234567890',
+            phoneNumber: '+123****7890',
+            createdAt: '2023-01-01',
+          },
+          {
+            id: 2,
+            name: 'Jane Doe',
+            email: null,
+            phoneNumber: null,
             createdAt: '2023-01-01',
           },
           {

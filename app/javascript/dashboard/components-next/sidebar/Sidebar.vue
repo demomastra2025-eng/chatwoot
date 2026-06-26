@@ -16,7 +16,6 @@ import { useWindowSize, useEventListener } from '@vueuse/core';
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 
-import Icon from 'next/icon/Icon.vue';
 import SidebarGroup from './SidebarGroup.vue';
 import SidebarSecondaryColumn from './SidebarSecondaryColumn.vue';
 import SidebarProfileMenu from './SidebarProfileMenu.vue';
@@ -42,10 +41,7 @@ import {
   getInboxFlowRouteNames,
   INBOX_FLOW_ROUTE_NAMES,
 } from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
-import {
-  EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
-  employeeSettingsTabs,
-} from 'dashboard/routes/dashboard/settings/employeeSettingsTabs';
+import { employeeSettingsTabs } from 'dashboard/routes/dashboard/settings/employeeSettingsTabs';
 import { CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/conversationSettingsTabs';
 import { WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/workspaceSettingsTabs';
 import {
@@ -1098,134 +1094,92 @@ const activeOnForEmployeeTab = routeName =>
     routeName,
   ];
 
-const buildMyCompanyMenuItem = () => ({
-  name: 'MyCompany',
-  label: t('SIDEBAR.MY_COMPANY'),
-  icon: 'i-lucide-briefcase',
-  defaultChildName: 'Workspace',
-  activeOn: [
-    ...WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
-    ...settingsInboxRouteNames,
-    ...contactTagSettingsRouteNames,
-    ...EMPLOYEE_SETTINGS_ACTIVE_ROUTE_NAMES,
-    'auditlogs_list',
-  ],
-  children: [
-    {
-      name: 'Workspace',
-      visibilityKey: 'MyCompany:Workspace',
-      label: t('SIDEBAR.ACCOUNT_SETTINGS'),
-      icon: 'i-lucide-building-2',
-      activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
-      to: accountScopedRoute('general_settings_index'),
-    },
-    ...(hasInboxManagement.value
-      ? [
-          {
-            name: 'Channels',
-            visibilityKey: 'MyCompany:Channels',
-            label: t('SIDEBAR.CHANNELS'),
-            icon: 'i-lucide-mailbox',
-            activeOn: settingsInboxRouteNames,
-            to: accountScopedRoute('settings_inbox_list'),
-          },
-        ]
-      : []),
-    {
-      name: 'Tags',
-      visibilityKey: 'MyCompany:Tags',
-      label: t('SIDEBAR.LABELS'),
-      icon: 'i-lucide-tag',
-      activeOn: contactTagSettingsRouteNames,
-      to: accountScopedRoute('labels_list'),
-    },
-    {
-      name: 'Employees',
-      visibilityKey: 'MyCompany:Employees',
-      label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-      icon: 'i-lucide-user-round',
-      activeOn: activeOnForEmployeeTab('agent_list'),
-      to: accountScopedRoute('agent_list'),
-    },
-    {
-      name: 'Teams',
-      visibilityKey: 'MyCompany:Teams',
-      label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
-      icon: 'i-lucide-users-round',
-      activeOn: activeOnForEmployeeTab('settings_teams_list'),
-      to: accountScopedRoute('settings_teams_list'),
-    },
-    {
-      name: 'Roles',
-      visibilityKey: 'MyCompany:Roles',
-      label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
-      icon: 'i-lucide-shield-user',
-      activeOn: activeOnForEmployeeTab('custom_roles_list'),
-      to: accountScopedRoute('custom_roles_list'),
-    },
-    ...(hasAssignmentPolicies.value
-      ? [
-          {
-            name: 'Policies',
-            visibilityKey: 'MyCompany:Policies',
-            label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-            icon: 'i-lucide-shield-check',
-            activeOn: activeOnForEmployeeTab('assignment_policy_index'),
-            to: accountScopedRoute('assignment_policy_index'),
-          },
-        ]
-      : []),
-    ...(hasAuditLogs.value
-      ? [
-          {
-            name: 'Audit Logs',
-            visibilityKey: 'MyCompany:AuditLogs',
-            label: t('SIDEBAR.AUDIT_LOGS'),
-            icon: 'i-lucide-scroll-text',
-            activeOn: ['auditlogs_list'],
-            to: accountScopedRoute('auditlogs_list'),
-          },
-        ]
-      : []),
-  ],
-});
+const buildMyCompanySettingsMenuItems = () => [
+  {
+    name: 'Workspace',
+    visibilityKey: 'MyCompany:Workspace',
+    label: t('SIDEBAR.ACCOUNT_SETTINGS'),
+    icon: 'i-lucide-building-2',
+    activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+    to: accountScopedRoute('general_settings_index'),
+  },
+  ...(hasInboxManagement.value
+    ? [
+        {
+          name: 'Channels',
+          visibilityKey: 'MyCompany:Channels',
+          label: t('SIDEBAR.CHANNELS'),
+          icon: 'i-lucide-mailbox',
+          activeOn: settingsInboxRouteNames,
+          to: accountScopedRoute('settings_inbox_list'),
+        },
+      ]
+    : []),
+  {
+    name: 'Tags',
+    visibilityKey: 'MyCompany:Tags',
+    label: t('SIDEBAR.LABELS'),
+    icon: 'i-lucide-tag',
+    activeOn: contactTagSettingsRouteNames,
+    to: accountScopedRoute('labels_list'),
+  },
+  {
+    name: 'Employees',
+    visibilityKey: 'MyCompany:Employees',
+    label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+    icon: 'i-lucide-user-round',
+    activeOn: activeOnForEmployeeTab('agent_list'),
+    to: accountScopedRoute('agent_list'),
+  },
+  {
+    name: 'Teams',
+    visibilityKey: 'MyCompany:Teams',
+    label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
+    icon: 'i-lucide-users-round',
+    activeOn: activeOnForEmployeeTab('settings_teams_list'),
+    to: accountScopedRoute('settings_teams_list'),
+  },
+  {
+    name: 'Roles',
+    visibilityKey: 'MyCompany:Roles',
+    label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
+    icon: 'i-lucide-shield-user',
+    activeOn: activeOnForEmployeeTab('custom_roles_list'),
+    to: accountScopedRoute('custom_roles_list'),
+  },
+  ...(hasAssignmentPolicies.value
+    ? [
+        {
+          name: 'Policies',
+          visibilityKey: 'MyCompany:Policies',
+          label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+          icon: 'i-lucide-shield-check',
+          activeOn: activeOnForEmployeeTab('assignment_policy_index'),
+          to: accountScopedRoute('assignment_policy_index'),
+        },
+      ]
+    : []),
+  ...(hasAuditLogs.value
+    ? [
+        {
+          name: 'Audit Logs',
+          visibilityKey: 'MyCompany:AuditLogs',
+          label: t('SIDEBAR.AUDIT_LOGS'),
+          icon: 'i-lucide-scroll-text',
+          activeOn: ['auditlogs_list'],
+          to: accountScopedRoute('auditlogs_list'),
+        },
+      ]
+    : []),
+];
 
-const myCompanyMenuItem = computed(() => {
-  if (!checkPermissions(['administrator'])) return null;
-  return (
-    filterSidebarMenuItems([buildMyCompanyMenuItem()], uiSettings.value)[0] ||
-    null
+const myCompanySettingsMenuItems = computed(() => {
+  if (!checkPermissions(['administrator'])) return [];
+  return filterSidebarMenuItems(
+    buildMyCompanySettingsMenuItems(),
+    uiSettings.value
   );
 });
-
-const hasMyCompanyShortcut = computed(() => !!myCompanyMenuItem.value);
-
-const isMyCompanyRouteActive = computed(() =>
-  myCompanyMenuItem.value?.activeOn?.includes(route.name)
-);
-
-const isMyCompanyShortcutActive = computed(
-  () => expandedItem.value === 'MyCompany' || isMyCompanyRouteActive.value
-);
-
-const myCompanyDefaultRoute = computed(() => {
-  const item = myCompanyMenuItem.value;
-  if (!item) return null;
-
-  return (
-    item.children?.find(child => child.name === item.defaultChildName)?.to ||
-    item.children?.find(child => child.to)?.to ||
-    null
-  );
-});
-
-const openMyCompanySidebar = async () => {
-  expandedItem.value = 'MyCompany';
-
-  if (myCompanyDefaultRoute.value) {
-    await router.push(myCompanyDefaultRoute.value);
-  }
-};
 
 const menuItems = computed(() => {
   return filterSidebarMenuItems(
@@ -1429,14 +1383,6 @@ const menuItems = computed(() => {
                 },
               ]
             : []),
-          {
-            name: 'Touch plans',
-            visibilityKey: 'Campaigns:TouchPlans',
-            label: t('SIDEBAR.TOUCH_PLANS'),
-            icon: 'i-lucide-route',
-            activeOn: ['outbound_touch_plans_index'],
-            to: accountScopedRoute('outbound_touch_plans_index'),
-          },
         ],
       },
       {
@@ -1478,6 +1424,16 @@ const menuItems = computed(() => {
             ],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_prompts_index',
+            }),
+          },
+          {
+            name: 'Follow-up scenarios',
+            visibilityKey: 'Captain:FollowUps',
+            label: t('SIDEBAR.CAPTAIN_FOLLOW_UPS'),
+            icon: 'i-lucide-route',
+            activeOn: ['captain_assistants_follow_ups_index'],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_follow_ups_index',
             }),
           },
           {
@@ -1593,7 +1549,6 @@ const menuItems = computed(() => {
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: labelDisplayTitle(label),
-                    badge: label.contacts_count,
                     compactIconGap: labelMarkerType(label) === 'emoji',
                     iconClass:
                       labelMarkerType(label) === 'emoji' ? '!size-5' : '',
@@ -1857,13 +1812,13 @@ const menuItems = computed(() => {
           },
         ],
       },
-      ...(myCompanyMenuItem.value ? [myCompanyMenuItem.value] : []),
       {
         name: 'Settings',
         label: t('SIDEBAR.ADDITIONAL'),
-        icon: 'i-lucide-ellipsis-vertical',
-        defaultChildName: 'Settings Automation',
+        icon: 'i-lucide-settings-2',
+        defaultChildName: 'Workspace',
         children: [
+          ...myCompanySettingsMenuItems.value,
           ...(hasAutomationRules.value
             ? [
                 {
@@ -1910,12 +1865,6 @@ const menuItems = computed(() => {
     uiSettings.value
   );
 });
-
-const visibleMenuItems = computed(() =>
-  menuItems.value.filter(
-    item => !(isEffectivelyCollapsed.value && item.name === 'MyCompany')
-  )
-);
 
 const resolvePath = to => {
   if (to) return router.resolve(to)?.path || '/';
@@ -2083,7 +2032,7 @@ const desktopSidebarWidth = computed(() => {
     >
       <section
         class="grid"
-        :class="isEffectivelyCollapsed ? 'mt-3 mb-6 gap-4' : 'mt-1 mb-4 gap-2'"
+        :class="isEffectivelyCollapsed ? 'mt-2 mb-4 gap-3' : 'mt-1 mb-3 gap-2'"
       >
         <div
           class="flex gap-2 items-center min-w-0"
@@ -2109,20 +2058,6 @@ const desktopSidebarWidth = computed(() => {
           class="flex gap-2"
           :class="isEffectivelyCollapsed ? 'flex-col items-center' : 'px-2'"
         >
-          <button
-            v-if="isEffectivelyCollapsed && hasMyCompanyShortcut"
-            type="button"
-            class="inline-flex size-8 items-center justify-center rounded-lg outline outline-1 outline-n-weak hover:bg-n-alpha-2 hover:text-n-slate-12"
-            :class="{
-              'bg-n-alpha-2 text-n-slate-12': isMyCompanyShortcutActive,
-              'bg-n-button-color text-n-slate-11': !isMyCompanyShortcutActive,
-            }"
-            :aria-label="myCompanyMenuItem.label"
-            :title="myCompanyMenuItem.label"
-            @click="openMyCompanySidebar"
-          >
-            <Icon :icon="myCompanyMenuItem.icon" class="size-4" />
-          </button>
           <RouterLink
             v-if="!isEffectivelyCollapsed"
             :to="{ name: 'search' }"
@@ -2160,7 +2095,7 @@ const desktopSidebarWidth = computed(() => {
           :class="{ 'items-center': isEffectivelyCollapsed }"
         >
           <SidebarGroup
-            v-for="item in visibleMenuItems"
+            v-for="item in menuItems"
             :key="item.name"
             v-bind="item"
             :show-collapsed-popover="false"

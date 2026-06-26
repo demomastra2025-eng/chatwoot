@@ -38,6 +38,8 @@ module Crm::PayloadBuilder
       outcome: stage.outcome,
       closing_reason_options: stage.closing_reason_options,
       closing_reason_required: stage.closing_reason_required,
+      transition_reason_options: stage.transition_reason_options,
+      transition_reason_required: stage.transition_reason_required,
       active: stage.active,
       default: stage.default,
       created_at: stage.created_at&.iso8601,
@@ -88,6 +90,7 @@ module Crm::PayloadBuilder
   def deal(deal)
     primary_contact =
       deal.deal_contacts.detect(&:primary?)&.contact || deal.deal_contacts.first&.contact
+    dialog_context = compact_dialog_context(deal)
 
     {
       id: deal.id,
@@ -102,6 +105,10 @@ module Crm::PayloadBuilder
       originating_conversation_display_id: deal.originating_conversation&.display_id,
       originating_communication_thread_id: deal.originating_communication_thread_id,
       originating_communication_thread_display_id: deal.originating_communication_thread&.display_id,
+      dialog_id: dialog_context&.fetch(:id, nil),
+      dialog_display_id: dialog_context&.fetch(:display_id, nil),
+      dialog_kind: dialog_context&.fetch(:kind, nil),
+      dialog_status: dialog_context&.fetch(:status, nil),
       title: deal.title,
       description: deal.description,
       amount: amount_for(deal),
@@ -187,6 +194,26 @@ module Crm::PayloadBuilder
       name: contact.name,
       email: contact.email,
       phone_number: contact.phone_number
+    }
+  end
+
+  def compact_dialog_context(deal)
+    if deal.originating_communication_thread.present?
+      return {
+        display_id: deal.originating_communication_thread.display_id,
+        id: deal.originating_communication_thread_id,
+        kind: 'communication_thread',
+        status: deal.originating_communication_thread.status
+      }
+    end
+
+    return if deal.originating_conversation.blank?
+
+    {
+      display_id: deal.originating_conversation.display_id,
+      id: deal.originating_conversation_id,
+      kind: 'conversation',
+      status: deal.originating_conversation.status
     }
   end
 

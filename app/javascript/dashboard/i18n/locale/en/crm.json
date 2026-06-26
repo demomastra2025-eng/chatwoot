@@ -45,15 +45,33 @@
       "CONVERSATION": "Conversation #{id}",
       "DESCRIPTION": "Events, comments, and related runtime context appear here.",
       "EMPTY": "No timeline activity yet",
+      "ACTIVITY_COUNT": "Records: {count}",
       "EVENT_RECORDED": "Activity recorded",
+      "FIELD_CHANGES": "Changed fields: {count}",
+      "CLOSING_REASONS": "Closing reason: {reasons}",
+      "TRANSITION_REASON": "Transition reason: {reason}",
       "LOADING": "Loading timeline...",
       "POST_COMMENT": "Post comment",
       "TITLE": "Timeline",
-      "UNKNOWN_CONTACT": "Unknown contact"
+      "UNKNOWN_CONTACT": "Unknown contact",
+      "EVENT_LABELS": {
+        "DEAL_ARCHIVED": "Deal archived",
+        "DEAL_CREATED": "Deal created",
+        "DEAL_STAGE_CHANGED": "Deal stage changed",
+        "DEAL_UNARCHIVED": "Deal restored",
+        "DEAL_UPDATED": "Deal updated",
+        "TASK_ARCHIVED": "Task archived",
+        "TASK_CREATED": "Task created",
+        "TASK_STATUS_CHANGED": "Task status changed",
+        "TASK_UNARCHIVED": "Task restored",
+        "TASK_UPDATED": "Task updated"
+      }
     },
     "ERRORS": {
       "DEAL_STAGE_INVALID_CLOSING_REASONS": "Choose a closing reason from the configured list.",
+      "DEAL_STAGE_INVALID_TRANSITION_REASON": "Choose a transition reason from the configured list.",
       "DEAL_STAGE_REQUIRES_CLOSING_REASONS": "Choose a closing reason before moving the deal to this stage.",
+      "DEAL_STAGE_REQUIRES_TRANSITION_REASON": "Choose a transition reason before moving the deal to this stage.",
       "DEAL_STAGE_REQUIRES_FIELDS": "Fill required fields before moving the deal to a closed stage: {fields}.",
       "DUPLICATE_EXTERNAL_REF": "This external reference already exists in CRM.",
       "DUPLICATE_IDEMPOTENCY_KEY": "This idempotency key has already been used.",
@@ -75,6 +93,8 @@
       "DESCRIPTION": "Track opportunities without leaving the account dashboard.",
       "DRAWER_DESCRIPTION": "Keep ownership, contacts, and stage movement in one place.",
       "EDIT_TITLE": "Edit deal",
+      "AI_BADGE": "AI",
+      "AI_ONLY": "Only AI",
       "EMPTY_DESCRIPTION": "Create your first deal to start tracking pipeline movement.",
       "EMPTY_TITLE": "No deals yet",
       "BOARD": {
@@ -152,6 +172,7 @@
       "CLOSING_REASONS": {
         "CONFIRM": "Apply",
         "EMPTY_STATE": "No reasons available",
+        "NO_REASON": "No reason",
         "OPTIONAL_DESCRIPTION": "You can select a closing reason before moving the deal to “{stage}”.",
         "PLACEHOLDER": "Select reason",
         "REQUIRED_DESCRIPTION": "Select a closing reason before moving the deal to “{stage}”.",
@@ -159,6 +180,18 @@
         "SEARCH_PLACEHOLDER": "Search reasons",
         "STAGE_FALLBACK": "closed stage",
         "TITLE": "Closing reason: {stage}"
+      },
+      "TRANSITION_REASONS": {
+        "CONFIRM": "Apply",
+        "EMPTY_STATE": "No reasons available",
+        "NO_REASON": "No reason",
+        "OPTIONAL_DESCRIPTION": "You can select why the deal is moving to “{stage}”.",
+        "PLACEHOLDER": "Select reason",
+        "REQUIRED_DESCRIPTION": "Select why the deal is moving to “{stage}”.",
+        "REQUIRED_HINT": "This stage requires a reason.",
+        "SEARCH_PLACEHOLDER": "Search reasons",
+        "STAGE_FALLBACK": "stage",
+        "TITLE": "Transition reason: {stage}"
       }
     },
     "TASKS": {
@@ -362,6 +395,12 @@
           "CLOSING_REASONS_REQUIRED": "Require a reason",
           "CLOSING_REASONS_REQUIRED_ERROR": "Add at least one reason or turn off the requirement.",
           "CLOSING_REASONS_REQUIRED_HELP": "Deals cannot move to this stage without a selected reason.",
+          "TRANSITION_REASONS": "Transition reasons",
+          "TRANSITION_REASONS_HELP": "These options are shown when a manager or Captain moves a deal into this open stage.",
+          "TRANSITION_REASONS_PLACEHOLDER": "Example: Waiting for payment, Needs documents, Customer is thinking",
+          "TRANSITION_REASONS_REQUIRED": "Require a reason",
+          "TRANSITION_REASONS_REQUIRED_ERROR": "Add at least one reason or turn off the requirement.",
+          "TRANSITION_REASONS_REQUIRED_HELP": "Deals cannot move to this stage without a selected reason.",
           "CUSTOM_COLOR": "Custom color",
           "DEFAULT": "Default stage",
           "DEFAULT_HELP": "New deals in this pipeline start from this active open stage.",

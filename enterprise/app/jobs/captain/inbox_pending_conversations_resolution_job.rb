@@ -28,7 +28,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
 
     resolvable_pending_conversations(inbox).each do |conversation|
       create_resolution_message(conversation, inbox)
-      conversation.resolved!
+      transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system')
     end
   end
 
@@ -86,7 +86,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     conversation.with_captain_activity_context(
       reason: CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON,
       reason_type: :inference
-    ) { conversation.resolved! }
+    ) { transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system') }
     conversation.dispatch_captain_inference_resolved_event
   end
 
@@ -96,9 +96,18 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     conversation.with_captain_activity_context(
       reason: CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON,
       reason_type: :inference
-    ) { conversation.bot_handoff! }
+    ) { conversation.bot_handoff!(actor: inbox.captain_assistant, source: 'system') }
     conversation.dispatch_captain_inference_handoff_event
     send_out_of_office_message_if_applicable(conversation.reload)
+  end
+
+  def transition_conversation_status!(conversation, status, actor:, source:)
+    Conversations::StatusTransitionService.new(
+      conversation: conversation,
+      params: { status: status },
+      actor: actor,
+      source: source
+    ).perform
   end
 
   def send_out_of_office_message_if_applicable(conversation)

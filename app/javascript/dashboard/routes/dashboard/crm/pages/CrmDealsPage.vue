@@ -29,6 +29,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
 import CrmDealConversationPanel from 'dashboard/components-next/CRM/CrmDealConversationPanel.vue';
@@ -42,10 +43,8 @@ import PaginationFooter from 'dashboard/components-next/pagination/PaginationFoo
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
 import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
-import SchedulingSidePanel from 'dashboard/components-next/Scheduling/SchedulingSidePanel.vue';
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
-import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingMultiSelectFilter from 'dashboard/components-next/Scheduling/SchedulingMultiSelectFilter.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
@@ -122,6 +121,7 @@ const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const editingDealTitleId = ref(null);
 const dealTitleDraft = ref('');
 const savingDealTitleId = ref(null);
+const formBaselineSnapshot = ref('');
 const customFieldFilters = ref({});
 const customFieldFilterDraft = ref({});
 const listSort = ref({
@@ -142,6 +142,7 @@ const persistedPreferencesByAccount = useLocalStorage(
 const LIST_PAGE_SIZE = 25;
 
 const filters = reactive({
+  aiOnly: false,
   archived: false,
   companyId: '',
   contactId: '',
@@ -257,32 +258,6 @@ const canOpenLinkedConversation = computed(
     !!linkedConversationId.value ||
     !!linkedConversationDisplayId.value
 );
-const linkedSourceCard = computed(() => {
-  if (form.originatingCommunicationThreadId) {
-    const id =
-      form.originatingCommunicationThreadDisplayId ||
-      form.originatingCommunicationThreadId;
-
-    return {
-      label: t('CRM.GENERAL.LINKED_COMMUNICATION_THREAD'),
-      source: t('CRM.GENERAL.COMMUNICATION_THREAD_SOURCE'),
-      title: t('CRM.TIMELINE.COMMUNICATION_THREAD', { id }),
-    };
-  }
-
-  if (form.originatingConversationId) {
-    const id =
-      form.originatingConversationDisplayId || form.originatingConversationId;
-
-    return {
-      label: t('CRM.GENERAL.LINKED_CONVERSATION'),
-      source: t('CRM.GENERAL.CONVERSATION_SOURCE'),
-      title: t('CRM.TIMELINE.CONVERSATION', { id }),
-    };
-  }
-
-  return null;
-});
 const archiveTooltip = computed(() =>
   selectedDeal.value?.archivedAt
     ? t('CRM.GENERAL.UNARCHIVE')
@@ -296,6 +271,7 @@ const activePipelines = computed(() =>
 
 const pipelineOptions = computed(() =>
   referencesStore.pipelines.map(pipeline => ({
+    icon: 'i-lucide-funnel',
     label: pipeline.name,
     value: pipeline.id,
   }))
@@ -348,15 +324,27 @@ const stageOptions = computed(() =>
     )?.stages || []
   ).map(stage => ({
     label: stage.name,
+    stageColor: stage.color || DEFAULT_STAGE_COLOR,
     value: stage.id,
   }))
 );
+
+const agentAvatarSrc = agent =>
+  agent.thumbnail?.src ||
+  (typeof agent.thumbnail === 'string' ? agent.thumbnail : '') ||
+  agent.avatarUrl ||
+  agent.avatar_url ||
+  agent.avatar ||
+  agent.imageUrl ||
+  agent.image_url ||
+  '';
 
 const ownerOptions = computed(() =>
   agents.value.map(agent => ({
     label: agent.name || agent.email,
     thumbnail: {
       name: agent.name || agent.email,
+      src: agentAvatarSrc(agent),
     },
     value: agent.id,
   }))
@@ -369,6 +357,17 @@ const teamOptions = computed(() =>
   }))
 );
 
+const shouldShowTeamField = computed(
+  () => teamOptions.value.length > 0 || !!form.teamId
+);
+
+const drawerModalClass = computed(() => [
+  'mx-auto flex h-full w-full overflow-hidden rounded-2xl border border-n-weak bg-n-solid-2 shadow-2xl',
+  showLinkedConversationPanel.value
+    ? 'max-w-[min(96rem,calc(100vw-1.5rem))] flex-col md:flex-row'
+    : 'max-w-[min(30rem,calc(100vw-1.5rem))] flex-col',
+]);
+
 const filterStageOptions = computed(() => {
   const pipelineId = resolvePipelineFilterId(
     filterDraft.pipelineId || filters.pipelineId
@@ -379,6 +378,7 @@ const filterStageOptions = computed(() => {
 
   return (pipeline?.stages || []).map(stage => ({
     label: stage.name,
+    stageColor: stage.color || DEFAULT_STAGE_COLOR,
     value: stage.id,
   }));
 });
@@ -423,12 +423,16 @@ const normalizedTextValues = values => [
 ];
 const closingReasonOptionsForStage = stage =>
   normalizedTextValues(stage?.closingReasonOptions);
+const transitionReasonOptionsForStage = stage =>
+  normalizedTextValues(stage?.transitionReasonOptions);
 const findStageById = stageId =>
   activePipelines.value
     .flatMap(pipeline => pipeline.stages || [])
     .find(stage => Number(stage.id) === Number(stageId));
 const shouldPromptForClosingReasons = stage =>
   isTerminalStage(stage) && closingReasonOptionsForStage(stage).length > 0;
+const shouldPromptForTransitionReason = stage =>
+  !isTerminalStage(stage) && transitionReasonOptionsForStage(stage).length > 0;
 
 const collectClosingReasonsForStage = async ({ targetStage, deal = null }) => {
   if (!targetStage) return [];
@@ -439,8 +443,21 @@ const collectClosingReasonsForStage = async ({ targetStage, deal = null }) => {
       currentReasons: normalizedTextValues(
         deal?.closingReasons || form.closingReasons
       ),
+      kind: 'closing',
       targetStage,
     }) ?? []
+  );
+};
+
+const collectTransitionReasonForStage = async ({ targetStage }) => {
+  if (!targetStage) return '';
+  if (!shouldPromptForTransitionReason(targetStage)) return '';
+
+  return (
+    closingReasonDialogRef.value?.open({
+      kind: 'transition',
+      targetStage,
+    }) ?? ''
   );
 };
 
@@ -719,6 +736,7 @@ const defaultDealsPreferences = () => ({
   boardSortDirections: {},
   currentPresentation: 'board',
   filters: {
+    aiOnly: false,
     archived: false,
     companyId: '',
     contactId: '',
@@ -851,6 +869,28 @@ const currentUserId = computed(() => {
 const defaultDealCurrency = 'KZT';
 const dealCurrencyOptions = ['KZT', 'USD', 'EUR', 'RUB'];
 
+const contactHref = contactId => {
+  if (!contactId || !accountId.value) return '';
+
+  return router.resolve({
+    name: 'contacts_edit',
+    params: {
+      accountId: accountId.value,
+      contactId,
+    },
+  }).href;
+};
+
+const contactAvatarSrc = contact =>
+  contact.thumbnail?.src ||
+  (typeof contact.thumbnail === 'string' ? contact.thumbnail : '') ||
+  contact.avatarUrl ||
+  contact.avatar_url ||
+  contact.avatar ||
+  contact.imageUrl ||
+  contact.image_url ||
+  '';
+
 const buildContactOption = contact => {
   const primaryLabel =
     contact.name ||
@@ -863,7 +903,12 @@ const buildContactOption = contact => {
     : '';
 
   return {
+    href: contactHref(contact.id),
     label: [primaryLabel, secondaryLabel].filter(Boolean).join(' · '),
+    thumbnail: {
+      name: primaryLabel,
+      src: contactAvatarSrc(contact),
+    },
     value: contact.id,
   };
 };
@@ -1003,6 +1048,71 @@ const populateFormFromDeal = deal => {
   });
 };
 
+const normalizeSnapshotValue = value => {
+  if (Array.isArray(value)) {
+    return value.map(normalizeSnapshotValue);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = normalizeSnapshotValue(value[key]);
+        return result;
+      }, {});
+  }
+
+  return value ?? '';
+};
+
+const formSnapshotPayload = () =>
+  normalizeSnapshotValue({
+    amount: form.amount,
+    companyId: form.companyId,
+    contactIds: form.contactIds,
+    closingReasons: form.closingReasons,
+    currency: form.currency,
+    customAttributes: form.customAttributes,
+    description: form.description,
+    expectedCloseOn: form.expectedCloseOn,
+    externalRef: form.externalRef,
+    originatingCommunicationThreadId: form.originatingCommunicationThreadId,
+    originatingConversationId: form.originatingConversationId,
+    ownerId: form.ownerId,
+    pipelineId: form.pipelineId,
+    primaryContactId: form.primaryContactId,
+    stageId: form.stageId,
+    teamId: form.teamId,
+    title: form.title.trim(),
+    winProbability: form.winProbability,
+  });
+
+const captureFormBaseline = () => {
+  formBaselineSnapshot.value = JSON.stringify(formSnapshotPayload());
+};
+
+const isDealFormDirty = computed(
+  () => JSON.stringify(formSnapshotPayload()) !== formBaselineSnapshot.value
+);
+
+const shouldShowDealSaveAction = computed(
+  () => !selectedDeal.value || isDealFormDirty.value
+);
+
+const disableDealSave = computed(
+  () => ui.isSaving || !form.title.trim() || !form.pipelineId || !form.stageId
+);
+
+const primaryContactOptions = computed(() =>
+  contactOptions.value.filter(option =>
+    form.contactIds.map(Number).includes(Number(option.value))
+  )
+);
+
+const shouldShowPrimaryContactSelect = computed(
+  () => form.contactIds.length > 1
+);
+
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
 
 const formatDealAmountLabel = deal =>
@@ -1117,6 +1227,7 @@ const dealMatchesCurrentFilters = deal => {
 
   const archived = Boolean(deal.archivedAt);
   if (archived !== Boolean(filters.archived)) return false;
+  if (filters.aiOnly && deal.dialogStatus !== 'pending') return false;
   if (
     filters.companyId &&
     Number(deal.companyId) !== Number(filters.companyId)
@@ -1297,7 +1408,10 @@ const openCreateDrawer = async prefill => {
 
   if (prefill) {
     Object.assign(form, prefill);
+    showLinkedConversationPanel.value = canOpenLinkedConversation.value;
   }
+
+  captureFormBaseline();
 };
 
 const openEditDrawer = async deal => {
@@ -1306,10 +1420,11 @@ const openEditDrawer = async deal => {
   selectedDeal.value = deal;
   populateFormFromDeal(deal);
   drawerOpen.value = true;
-  showLinkedConversationPanel.value = false;
+  showLinkedConversationPanel.value = canOpenLinkedConversation.value;
   await Promise.all([loadContacts(''), loadCompanies('')]);
   await ensureSelectedLookups(deal);
   await loadTimeline(deal.id);
+  captureFormBaseline();
 };
 
 const closeDrawer = () => {
@@ -1320,14 +1435,7 @@ const closeDrawer = () => {
   selectedDeal.value = null;
   timelineItems.value = [];
   resetForm();
-};
-
-const toggleLinkedConversationPanel = () => {
-  if (!canOpenLinkedConversation.value) {
-    return;
-  }
-
-  showLinkedConversationPanel.value = !showLinkedConversationPanel.value;
+  captureFormBaseline();
 };
 
 const openCreateNewContactDialog = () => {
@@ -1448,6 +1556,8 @@ const saveDeal = async () => {
     !selectedDeal.value ||
     Number(form.stageId) !== Number(selectedDeal.value.stageId);
 
+  let transitionReason = '';
+
   if (stageChanging) {
     const closingReasons = await collectClosingReasonsForStage({
       deal: selectedDeal.value,
@@ -1455,6 +1565,12 @@ const saveDeal = async () => {
     });
 
     if (closingReasons === null) return;
+
+    transitionReason = selectedDeal.value
+      ? await collectTransitionReasonForStage({ targetStage })
+      : '';
+
+    if (transitionReason === null) return;
 
     form.closingReasons = closingReasons;
   }
@@ -1484,6 +1600,7 @@ const saveDeal = async () => {
           closing_reasons: form.closingReasons,
           lock_version: deal.lockVersion,
           stage_id: Number(form.stageId),
+          transition_reason: transitionReason || undefined,
         });
         deal = normalizePayload(transitionResponse.data);
       }
@@ -1496,6 +1613,7 @@ const saveDeal = async () => {
     selectedDeal.value = deal;
     pendingCreateCustomFieldDefaultsHydration.value = false;
     populateFormFromDeal(deal);
+    captureFormBaseline();
     await Promise.allSettled([
       ensureSelectedLookups(deal),
       loadTimeline(deal.id),
@@ -1546,6 +1664,7 @@ async function loadDeals() {
   try {
     const { data } = await CrmDealsAPI.get(
       compactPayload({
+        ai_only: filters.aiOnly || undefined,
         archived: filters.archived,
         company_id: filters.companyId || undefined,
         contact_id: filters.contactId || undefined,
@@ -1708,6 +1827,12 @@ const openDealSettings = () => {
   });
 };
 
+const handleAiOnlyFilterChange = async value => {
+  filters.aiOnly = Boolean(value);
+  listCurrentPage.value = 1;
+  await loadDeals();
+};
+
 const handleBoardCreateDeal = async ({ pipelineId, stageId }) => {
   await openCreateDrawer({
     pipelineId,
@@ -1842,6 +1967,15 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     return;
   }
 
+  const transitionReason = stageChanging
+    ? await collectTransitionReasonForStage({ targetStage })
+    : '';
+
+  if (transitionReason === null) {
+    await loadDeals();
+    return;
+  }
+
   if (
     selectedDeal.value &&
     Number(selectedDeal.value.id) === Number(currentDeal.id)
@@ -1869,6 +2003,7 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
             lock_version: currentDeal.lockVersion,
             position: nextPosition || undefined,
             stage_id: nextStageId,
+            transition_reason: transitionReason || undefined,
           });
     const updatedDeal = normalizePayload(response.data);
     upsertDeal(updatedDeal);
@@ -2287,7 +2422,7 @@ watch(
             color="slate"
             variant="ghost"
             icon="i-lucide-settings-2"
-            class="!size-7"
+            class="!size-7 !text-n-slate-11 hover:!text-n-slate-12"
             :aria-label="$t('SIDEBAR.SETTINGS')"
             :title="$t('SIDEBAR.SETTINGS')"
             @click="openDealSettings"
@@ -2319,6 +2454,18 @@ watch(
           </label>
         </template>
         <template #actions>
+          <div
+            class="flex h-8 items-center gap-2 rounded-lg border border-n-weak px-2.5 text-xs font-medium text-n-slate-11"
+          >
+            <Switch
+              :model-value="filters.aiOnly"
+              :aria-label="$t('CRM.DEALS.AI_ONLY')"
+              @change="handleAiOnlyFilterChange"
+            />
+            <span class="whitespace-nowrap text-n-slate-12">
+              {{ $t('CRM.DEALS.AI_ONLY') }}
+            </span>
+          </div>
           <SelectMenu
             v-if="currentPresentation === 'board'"
             icon="i-lucide-arrow-down-up"
@@ -2348,8 +2495,9 @@ watch(
           <Button
             size="sm"
             color="slate"
-            variant="outline"
+            variant="ghost"
             icon="i-lucide-filter"
+            class="!text-n-slate-11 hover:!text-n-slate-12"
             @click="openFilterDialog"
           />
           <SchedulingViewSwitcher
@@ -2611,334 +2759,333 @@ watch(
       </div>
     </div>
 
-    <SchedulingSidePanel
-      v-model="drawerOpen"
-      :close-on-click-outside="false"
-      desktop-placement="left"
-      width="xs"
-      :title="
-        selectedDeal ? $t('CRM.DEALS.EDIT_TITLE') : $t('CRM.DEALS.CREATE_TITLE')
-      "
-      :confirm-label="
-        selectedDeal ? $t('CRM.GENERAL.SAVE') : $t('CRM.GENERAL.CREATE')
-      "
-      :is-loading="ui.isSaving"
-      :disable-confirm="!form.title.trim() || !form.pipelineId || !form.stageId"
-      @close="closeDrawer"
-      @confirm="saveDeal"
+    <Transition
+      enter-active-class="transition-opacity duration-200 ease-out"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-150 ease-in"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
     >
-      <div class="crm-deal-drawer-form">
-        <div v-if="linkedSourceCard" class="crm-deal-drawer-source">
-          <span class="font-medium text-n-slate-12">
-            {{ linkedSourceCard.label }}
-          </span>
-          <span class="min-w-0 truncate">
-            {{ [linkedSourceCard.title, linkedSourceCard.source].join(' · ') }}
-          </span>
-        </div>
-
-        <div class="crm-deal-drawer-section">
-          <div class="crm-deal-drawer-row crm-deal-drawer-row--wide-control">
-            <label class="crm-deal-drawer-label" for="crm-deal-drawer-title">
-              {{ $t('CRM.DEALS.FORM.TITLE') }}
-            </label>
-            <Input
-              id="crm-deal-drawer-title"
-              class="crm-deal-drawer-control"
-              :aria-label="$t('CRM.DEALS.FORM.TITLE')"
-              :model-value="form.title"
-              size="sm"
-              @update:model-value="form.title = $event"
-            />
-          </div>
-
-          <div v-if="selectedDeal" class="crm-deal-drawer-row">
-            <label class="crm-deal-drawer-label" for="crm-deal-drawer-pipeline">
-              {{ $t('CRM.DEALS.FORM.PIPELINE') }}
-            </label>
-            <SchedulingSelectField
-              id="crm-deal-drawer-pipeline"
-              class="crm-deal-drawer-control crm-deal-drawer-select-control"
-              :aria-label="$t('CRM.DEALS.FORM.PIPELINE')"
-              :model-value="form.pipelineId"
-              :options="pipelineOptions"
-              :placeholder="$t('CRM.DEALS.FORM.PIPELINE')"
-              @update:model-value="form.pipelineId = $event"
-            />
-          </div>
-
-          <div class="crm-deal-drawer-row">
-            <label class="crm-deal-drawer-label" for="crm-deal-drawer-stage">
-              {{ $t('CRM.DEALS.FORM.STAGE') }}
-            </label>
-            <SchedulingSelectField
-              id="crm-deal-drawer-stage"
-              class="crm-deal-drawer-control crm-deal-drawer-select-control"
-              :aria-label="$t('CRM.DEALS.FORM.STAGE')"
-              :model-value="form.stageId"
-              :options="stageOptions"
-              :placeholder="$t('CRM.DEALS.FORM.STAGE')"
-              @update:model-value="form.stageId = $event"
-            />
-          </div>
-
-          <div class="crm-deal-drawer-row">
-            <label class="crm-deal-drawer-label" for="crm-deal-drawer-owner">
-              {{ $t('CRM.DEALS.FORM.OWNER') }}
-            </label>
-            <SchedulingSelectField
-              id="crm-deal-drawer-owner"
-              class="crm-deal-drawer-control crm-deal-drawer-select-control"
-              :aria-label="$t('CRM.DEALS.FORM.OWNER')"
-              :model-value="form.ownerId"
-              :options="ownerOptions"
-              :placeholder="$t('CRM.DEALS.FORM.OWNER')"
-              @update:model-value="form.ownerId = $event"
-            />
-          </div>
-
-          <div class="crm-deal-drawer-row">
-            <label class="crm-deal-drawer-label" for="crm-deal-drawer-team">
-              {{ $t('CRM.DEALS.FORM.TEAM') }}
-            </label>
-            <SchedulingSelectField
-              id="crm-deal-drawer-team"
-              class="crm-deal-drawer-control crm-deal-drawer-select-control"
-              :aria-label="$t('CRM.DEALS.FORM.TEAM')"
-              :model-value="form.teamId"
-              :options="teamOptions"
-              :placeholder="$t('CRM.DEALS.FORM.TEAM')"
-              @update:model-value="form.teamId = $event"
-            />
-          </div>
-
-          <div class="crm-deal-drawer-row">
-            <span class="crm-deal-drawer-label">
-              {{ $t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON') }}
-            </span>
-            <SchedulingDateTimeField
-              class="crm-deal-drawer-control"
-              :aria-label="$t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON')"
-              :model-value="form.expectedCloseOn"
-              :placeholder="$t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON')"
-              type="date"
-              @update:model-value="form.expectedCloseOn = $event"
-            />
-          </div>
-
-          <div class="crm-deal-drawer-row">
-            <label class="crm-deal-drawer-label" for="crm-deal-drawer-amount">
-              {{ $t('CRM.DEALS.FORM.AMOUNT') }}
-            </label>
-            <div class="crm-deal-drawer-control crm-deal-drawer-amount-control">
-              <SchedulingCurrencyAmountInput
-                id="crm-deal-drawer-amount"
-                v-model:amount="form.amount"
-                v-model:currency="form.currency"
-                :aria-label="$t('CRM.DEALS.FORM.AMOUNT')"
-                :currencies="dealCurrencyOptions"
-                :currency-aria-label="$t('CRM.DEALS.FORM.CURRENCY')"
-                size="sm"
-                step="1"
+      <div
+        v-if="drawerOpen"
+        class="modal-mask fixed inset-0 z-[110] bg-black/35 p-3 backdrop-blur-[4px]"
+      >
+        <div :class="drawerModalClass">
+          <aside
+            class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]"
+            :class="{
+              'md:border-r md:border-n-weak': showLinkedConversationPanel,
+            }"
+          >
+            <header
+              class="flex items-center gap-2 border-b border-n-weak bg-n-surface-1 px-4 py-2"
+            >
+              <input
+                id="crm-deal-drawer-title"
+                class="reset-base min-w-0 flex-1 border-none bg-transparent text-base font-semibold text-n-slate-12 outline-none placeholder:text-n-slate-10"
+                :aria-label="$t('CRM.DEALS.FORM.TITLE')"
+                :placeholder="
+                  selectedDeal
+                    ? $t('CRM.DEALS.FORM.TITLE')
+                    : $t('CRM.DEALS.CREATE_TITLE')
+                "
+                :readonly="!canManageDeals"
+                :value="form.title"
+                @input="form.title = $event.target.value"
               />
-            </div>
-          </div>
-        </div>
 
-        <div class="crm-deal-drawer-section">
-          <div class="crm-deal-drawer-row crm-deal-drawer-row--start">
-            <div class="crm-deal-drawer-label crm-deal-drawer-label-action">
-              <label for="crm-deal-drawer-contacts">
-                {{ $t('CRM.DEALS.FORM.CONTACTS') }}
-              </label>
               <Button
-                v-tooltip.top="$t('CRM.DEALS.FORM.CREATE_CONTACT')"
-                class="crm-deal-drawer-label-button"
+                v-if="selectedDeal && canManageDeals"
+                v-tooltip.top="archiveTooltip"
                 size="sm"
                 color="slate"
                 variant="ghost"
-                icon="i-lucide-plus"
-                @click="openCreateNewContactDialog"
+                :icon="
+                  selectedDeal.archivedAt
+                    ? 'i-lucide-archive-restore'
+                    : 'i-lucide-archive'
+                "
+                @click="toggleArchived(selectedDeal)"
               />
-            </div>
-            <TagMultiSelectComboBox
-              id="crm-deal-drawer-contacts"
-              class="crm-deal-drawer-control crm-deal-drawer-multi-control"
-              :aria-label="$t('CRM.DEALS.FORM.CONTACTS')"
-              :model-value="form.contactIds"
-              :options="contactOptions"
-              :placeholder="$t('CRM.DEALS.FORM.CONTACTS')"
-              use-api-results
-              dropdown-placement="top"
-              :search-placeholder="
-                $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
-              "
-              :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
-              @open="loadContacts('')"
-              @search="loadContacts"
-              @update:model-value="form.contactIds = $event"
-            />
-          </div>
-
-          <div class="crm-deal-drawer-row">
-            <label
-              class="crm-deal-drawer-label"
-              for="crm-deal-drawer-primary-contact"
-            >
-              {{ $t('CRM.DEALS.FORM.PRIMARY_CONTACT') }}
-            </label>
-            <SchedulingSelectField
-              id="crm-deal-drawer-primary-contact"
-              class="crm-deal-drawer-control crm-deal-drawer-select-control"
-              :aria-label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
-              :model-value="form.primaryContactId"
-              dropdown-placement="top"
-              :options="
-                contactOptions.filter(option =>
-                  form.contactIds.includes(option.value)
-                )
-              "
-              :placeholder="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
-              @open="loadContacts('')"
-              @search="loadContacts"
-              @update:model-value="form.primaryContactId = $event"
-            />
-          </div>
-
-          <div v-if="companiesEnabled" class="crm-deal-drawer-row">
-            <div class="crm-deal-drawer-label crm-deal-drawer-label-action">
-              <label for="crm-deal-drawer-company">
-                {{ $t('CRM.DEALS.FORM.COMPANY') }}
-              </label>
               <Button
-                v-tooltip.top="$t('CRM.DEALS.FORM.CREATE_COMPANY')"
-                class="crm-deal-drawer-label-button"
+                v-if="canManageDeals && shouldShowDealSaveAction"
+                size="sm"
+                :is-loading="ui.isSaving"
+                :disabled="disableDealSave"
+                :label="
+                  selectedDeal
+                    ? $t('CRM.GENERAL.SAVE')
+                    : $t('CRM.GENERAL.CREATE')
+                "
+                @click="saveDeal"
+              />
+              <Button
                 size="sm"
                 color="slate"
                 variant="ghost"
-                icon="i-lucide-plus"
-                @click="openCreateCompanyDialog"
+                icon="i-lucide-x"
+                @click="closeDrawer"
               />
+            </header>
+
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              <div class="crm-deal-drawer-form">
+                <div
+                  class="crm-deal-drawer-section crm-deal-drawer-section--top"
+                >
+                  <div class="crm-deal-drawer-status-grid">
+                    <SchedulingSelectField
+                      id="crm-deal-drawer-pipeline"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.PIPELINE')"
+                      :disabled="!canManageDeals"
+                      :model-value="form.pipelineId"
+                      :options="pipelineOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.PIPELINE')"
+                      dropdown-placement="auto"
+                      @update:model-value="form.pipelineId = $event"
+                    />
+                    <SchedulingSelectField
+                      id="crm-deal-drawer-stage"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.STAGE')"
+                      :disabled="!canManageDeals"
+                      :model-value="form.stageId"
+                      :options="stageOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.STAGE')"
+                      dropdown-placement="auto"
+                      @update:model-value="form.stageId = $event"
+                    />
+                    <SchedulingSelectField
+                      id="crm-deal-drawer-owner"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.OWNER')"
+                      :disabled="!canManageDeals"
+                      :model-value="form.ownerId"
+                      :options="ownerOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.OWNER')"
+                      dropdown-placement="auto"
+                      @update:model-value="form.ownerId = $event"
+                    />
+                  </div>
+
+                  <div v-if="shouldShowTeamField" class="crm-deal-drawer-row">
+                    <label
+                      class="crm-deal-drawer-label"
+                      for="crm-deal-drawer-team"
+                    >
+                      {{ $t('CRM.DEALS.FORM.TEAM') }}
+                    </label>
+                    <SchedulingSelectField
+                      id="crm-deal-drawer-team"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.TEAM')"
+                      :disabled="!canManageDeals"
+                      :model-value="form.teamId"
+                      :options="teamOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.TEAM')"
+                      dropdown-placement="auto"
+                      @update:model-value="form.teamId = $event"
+                    />
+                  </div>
+
+                  <div class="crm-deal-drawer-inline-row">
+                    <div class="crm-deal-drawer-inline-field">
+                      <span class="crm-deal-drawer-label">
+                        {{ $t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON') }}
+                      </span>
+                      <SchedulingDateTimeField
+                        class="crm-deal-drawer-control"
+                        :aria-label="$t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON')"
+                        :model-value="form.expectedCloseOn"
+                        :placeholder="$t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON')"
+                        type="date"
+                        @update:model-value="form.expectedCloseOn = $event"
+                      />
+                    </div>
+
+                    <div class="crm-deal-drawer-inline-field">
+                      <label
+                        class="crm-deal-drawer-label"
+                        for="crm-deal-drawer-amount"
+                      >
+                        {{ $t('CRM.DEALS.FORM.AMOUNT') }}
+                      </label>
+                      <div
+                        class="crm-deal-drawer-control crm-deal-drawer-amount-control"
+                      >
+                        <SchedulingCurrencyAmountInput
+                          id="crm-deal-drawer-amount"
+                          v-model:amount="form.amount"
+                          v-model:currency="form.currency"
+                          :aria-label="$t('CRM.DEALS.FORM.AMOUNT')"
+                          :currencies="dealCurrencyOptions"
+                          :currency-aria-label="$t('CRM.DEALS.FORM.CURRENCY')"
+                          size="sm"
+                          step="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="crm-deal-drawer-section">
+                  <div class="crm-deal-drawer-row crm-deal-drawer-row--start">
+                    <div
+                      class="crm-deal-drawer-label crm-deal-drawer-label-action"
+                    >
+                      <label for="crm-deal-drawer-contacts">
+                        {{ $t('CRM.DEALS.FORM.CONTACTS') }}
+                      </label>
+                      <Button
+                        v-if="canManageDeals"
+                        v-tooltip.top="$t('CRM.DEALS.FORM.CREATE_CONTACT')"
+                        class="crm-deal-drawer-label-button"
+                        size="sm"
+                        color="slate"
+                        variant="ghost"
+                        icon="i-lucide-plus"
+                        @click="openCreateNewContactDialog"
+                      />
+                    </div>
+                    <TagMultiSelectComboBox
+                      id="crm-deal-drawer-contacts"
+                      class="crm-deal-drawer-control crm-deal-drawer-multi-control"
+                      :aria-label="$t('CRM.DEALS.FORM.CONTACTS')"
+                      :disabled="!canManageDeals"
+                      :model-value="form.contactIds"
+                      :options="contactOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.CONTACTS')"
+                      use-api-results
+                      dropdown-placement="auto"
+                      :search-placeholder="
+                        $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
+                      "
+                      :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
+                      @open="loadContacts('')"
+                      @search="loadContacts"
+                      @update:model-value="form.contactIds = $event"
+                    />
+                  </div>
+
+                  <div
+                    v-if="shouldShowPrimaryContactSelect"
+                    class="crm-deal-drawer-row"
+                  >
+                    <label
+                      class="crm-deal-drawer-label"
+                      for="crm-deal-drawer-primary-contact"
+                    >
+                      {{ $t('CRM.DEALS.FORM.PRIMARY_CONTACT') }}
+                    </label>
+                    <SchedulingSelectField
+                      id="crm-deal-drawer-primary-contact"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+                      :disabled="!canManageDeals"
+                      :model-value="form.primaryContactId"
+                      dropdown-placement="auto"
+                      :options="primaryContactOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+                      @open="loadContacts('')"
+                      @search="loadContacts"
+                      @update:model-value="form.primaryContactId = $event"
+                    />
+                  </div>
+
+                  <div v-if="companiesEnabled" class="crm-deal-drawer-row">
+                    <div
+                      class="crm-deal-drawer-label crm-deal-drawer-label-action"
+                    >
+                      <label for="crm-deal-drawer-company">
+                        {{ $t('CRM.DEALS.FORM.COMPANY') }}
+                      </label>
+                      <Button
+                        v-if="canManageDeals"
+                        v-tooltip.top="$t('CRM.DEALS.FORM.CREATE_COMPANY')"
+                        class="crm-deal-drawer-label-button"
+                        size="sm"
+                        color="slate"
+                        variant="ghost"
+                        icon="i-lucide-plus"
+                        @click="openCreateCompanyDialog"
+                      />
+                    </div>
+                    <SchedulingSelectField
+                      id="crm-deal-drawer-company"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.COMPANY')"
+                      :disabled="!canManageDeals"
+                      :model-value="form.companyId"
+                      dropdown-placement="auto"
+                      :options="companyOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
+                      use-api-results
+                      @open="loadCompanies('')"
+                      @search="loadCompanies"
+                      @update:model-value="form.companyId = $event"
+                    />
+                  </div>
+                </div>
+
+                <CrmCustomFieldsSection
+                  :definitions="dealFieldDefinitions"
+                  :framed="false"
+                  layout="rows"
+                  :model-value="form.customAttributes"
+                  @update:model-value="form.customAttributes = $event"
+                />
+
+                <div class="crm-deal-drawer-section">
+                  <div class="crm-deal-drawer-row crm-deal-drawer-row--start">
+                    <label
+                      class="crm-deal-drawer-label"
+                      for="crm-deal-drawer-description"
+                    >
+                      {{ $t('CRM.DEALS.FORM.DESCRIPTION') }}
+                    </label>
+                    <TextArea
+                      id="crm-deal-drawer-description"
+                      class="crm-deal-drawer-control"
+                      :aria-label="$t('CRM.DEALS.FORM.DESCRIPTION')"
+                      :model-value="form.description"
+                      auto-height
+                      custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1 hover:!border-n-slate-6"
+                      min-height="3rem"
+                      max-height="none"
+                      @update:model-value="form.description = $event"
+                    />
+                  </div>
+                </div>
+
+                <CrmTimelineFeed
+                  v-if="selectedDeal"
+                  :items="timelineItems"
+                  :is-loading="ui.isTimelineLoading"
+                  :is-saving-comment="ui.isSavingComment"
+                  :can-manage-comments="canManageDeals"
+                  :empty-message="$t('CRM.TIMELINE.EMPTY')"
+                  @create-comment="saveComment"
+                  @delete-comment="deleteComment"
+                />
+              </div>
             </div>
-            <SchedulingSelectField
-              id="crm-deal-drawer-company"
-              class="crm-deal-drawer-control crm-deal-drawer-select-control"
-              :aria-label="$t('CRM.DEALS.FORM.COMPANY')"
-              :model-value="form.companyId"
-              dropdown-placement="top"
-              :options="companyOptions"
-              :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
-              use-api-results
-              @open="loadCompanies('')"
-              @search="loadCompanies"
-              @update:model-value="form.companyId = $event"
-            />
-          </div>
-        </div>
+          </aside>
 
-        <CrmCustomFieldsSection
-          :definitions="dealFieldDefinitions"
-          :framed="false"
-          layout="rows"
-          :model-value="form.customAttributes"
-          @update:model-value="form.customAttributes = $event"
-        />
-
-        <div class="crm-deal-drawer-section">
-          <div class="crm-deal-drawer-row crm-deal-drawer-row--start">
-            <label
-              class="crm-deal-drawer-label"
-              for="crm-deal-drawer-description"
-            >
-              {{ $t('CRM.DEALS.FORM.DESCRIPTION') }}
-            </label>
-            <TextArea
-              id="crm-deal-drawer-description"
-              class="crm-deal-drawer-control"
-              :aria-label="$t('CRM.DEALS.FORM.DESCRIPTION')"
-              :model-value="form.description"
-              auto-height
-              custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1 hover:!border-n-slate-6"
-              min-height="3rem"
-              @update:model-value="form.description = $event"
-            />
-          </div>
-        </div>
-
-        <SchedulingFormFieldGroup
-          v-if="selectedDeal"
-          :framed="false"
-          :title="$t('CRM.TIMELINE.TITLE')"
-          :description="$t('CRM.TIMELINE.DESCRIPTION')"
-        >
-          <CrmTimelineFeed
-            :items="timelineItems"
-            :is-loading="ui.isTimelineLoading"
-            :is-saving-comment="ui.isSavingComment"
-            :can-manage-comments="canManageDeals"
-            :empty-message="$t('CRM.TIMELINE.EMPTY')"
-            @create-comment="saveComment"
-            @delete-comment="deleteComment"
+          <CrmDealConversationPanel
+            :communication-thread-id="linkedCommunicationThreadId"
+            :communication-thread-display-id="
+              linkedCommunicationThreadDisplayId
+            "
+            :conversation-id="linkedConversationId"
+            :conversation-display-id="linkedConversationDisplayId"
+            :visible="drawerOpen && showLinkedConversationPanel"
+            @close="showLinkedConversationPanel = false"
           />
-        </SchedulingFormFieldGroup>
+        </div>
       </div>
-
-      <template v-if="canManageDeals" #footer>
-        <div class="flex items-center justify-between gap-3">
-          <Button
-            size="sm"
-            color="slate"
-            variant="faded"
-            :label="$t('SCHEDULING.GENERAL.CANCEL')"
-            @click="closeDrawer"
-          />
-          <div class="flex items-center gap-2">
-            <Button
-              v-if="selectedDeal"
-              v-tooltip.top="archiveTooltip"
-              size="sm"
-              color="slate"
-              variant="outline"
-              :icon="
-                selectedDeal.archivedAt
-                  ? 'i-lucide-archive-restore'
-                  : 'i-lucide-archive'
-              "
-              @click="toggleArchived(selectedDeal)"
-            />
-            <Button
-              v-if="canOpenLinkedConversation"
-              size="sm"
-              color="slate"
-              variant="outline"
-              icon="i-lucide-message-circle"
-              :label="$t('CRM.GENERAL.CHAT')"
-              @click="toggleLinkedConversationPanel"
-            />
-            <Button
-              size="sm"
-              :is-loading="ui.isSaving"
-              :disabled="
-                !form.title.trim() || !form.pipelineId || !form.stageId
-              "
-              :label="
-                selectedDeal ? $t('CRM.GENERAL.SAVE') : $t('CRM.GENERAL.CREATE')
-              "
-              @click="saveDeal"
-            />
-          </div>
-        </div>
-      </template>
-    </SchedulingSidePanel>
-
-    <CrmDealConversationPanel
-      :communication-thread-id="linkedCommunicationThreadId"
-      :communication-thread-display-id="linkedCommunicationThreadDisplayId"
-      :conversation-id="linkedConversationId"
-      :conversation-display-id="linkedConversationDisplayId"
-      :visible="drawerOpen && showLinkedConversationPanel"
-      @close="showLinkedConversationPanel = false"
-    />
+    </Transition>
 
     <CrmClosingReasonDialog ref="closingReasonDialogRef" />
 
@@ -2974,6 +3121,7 @@ watch(
         />
 
         <SchedulingSelectField
+          v-if="shouldShowTeamField"
           :label="$t('CRM.DEALS.FORM.TEAM')"
           :model-value="filterDraft.teamId"
           :options="teamOptions"
@@ -3053,10 +3201,6 @@ watch(
   @apply grid gap-3;
 }
 
-.crm-deal-drawer-source {
-  @apply flex min-w-0 items-center gap-2 rounded-xl bg-n-alpha-black2 px-3 py-2 text-xs text-n-slate-11 outline outline-1 outline-n-weak;
-}
-
 .crm-deal-drawer-section {
   @apply grid gap-2 border-t border-n-weak pt-3;
 }
@@ -3065,14 +3209,30 @@ watch(
   @apply border-t-0 pt-0;
 }
 
-.crm-deal-drawer-row {
+.crm-deal-drawer-status-grid {
+  @apply grid gap-2 md:grid-cols-3;
+}
+
+.crm-deal-drawer-status-grid :deep(button) {
+  @apply min-w-0;
+}
+
+.crm-deal-drawer-row,
+.crm-deal-drawer-inline-row,
+.crm-deal-drawer-inline-field {
   display: grid;
   gap: 0.375rem;
   min-width: 0;
 }
 
+.crm-deal-drawer-inline-row {
+  align-items: end;
+  column-gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+}
+
 .crm-deal-drawer-label {
-  @apply mb-0 min-w-0 text-xs font-medium leading-4 text-n-slate-11;
+  @apply mb-0 min-w-0 text-[13px] font-medium leading-4 text-n-slate-12;
 }
 
 .crm-deal-drawer-label-action {
@@ -3170,7 +3330,11 @@ watch(
 }
 
 .crm-deal-drawer-form :deep(.crm-deal-drawer-multi-control button > div) {
-  @apply rounded-md bg-n-alpha-black1 px-1.5 py-0.5 !important;
+  @apply max-w-[75%] rounded-md border border-n-blue-4/40 bg-n-blue-3/60 px-1.5 py-0.5 text-n-blue-11 !important;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-multi-control button > div span) {
+  @apply text-n-blue-11 !important;
 }
 
 @media (min-width: 768px) {

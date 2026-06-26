@@ -48,6 +48,7 @@ const LEGACY_NAVIGATION_ALIASES = {
   captain_assistants_responses_index: 'knowledge_base',
   captain_assistants_documents_index: 'documents',
   captain_tools_index: 'tools',
+  outbound_touch_plans_index: 'captain_assistants_follow_ups_index',
 };
 
 const SHARED_NAVIGATION_ROUTES = {
@@ -61,6 +62,7 @@ const VALID_NAVIGATION_ROUTES = [
   'captain_assistants_scenarios_index', // Legacy prompts alias
   'captain_assistants_settings_index', // Settings page
   'captain_assistants_prompts_index', // Prompts page
+  'captain_assistants_follow_ups_index', // Follow-up scenarios
   'captain_assistants_restrictions_index', // Legacy prompts alias
   'captain_assistants_guardrails_index', // Legacy prompts alias
   'captain_assistants_guidelines_index', // Legacy prompts alias

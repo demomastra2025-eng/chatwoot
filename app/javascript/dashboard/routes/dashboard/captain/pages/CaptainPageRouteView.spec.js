@@ -2,7 +2,6 @@ import { shallowMount } from '@vue/test-utils';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
 import CaptainPageRouteView from './CaptainPageRouteView.vue';
-import { CAPTAIN_COPILOT_PANEL_CLOSED_SESSION_KEY } from 'dashboard/helper/captainCopilotPanel';
 
 const mocks = vi.hoisted(() => ({
   route: {
@@ -41,7 +40,6 @@ const mountComponent = () =>
 
 describe('CaptainPageRouteView', () => {
   beforeEach(() => {
-    window.sessionStorage.clear();
     mocks.updateUISettings.mockReset();
     mocks.route.params.assistantId = '42';
     mocks.uiSettings.value = {
@@ -50,37 +48,23 @@ describe('CaptainPageRouteView', () => {
     };
   });
 
-  it('opens the copilot panel by default inside Captain pages', () => {
+  it('stores the last active assistant id from Captain routes', () => {
     mountComponent();
 
-    expect(mocks.updateUISettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        is_copilot_panel_open: true,
-        is_contact_sidebar_open: false,
-        is_crm_deal_panel_open: false,
-        is_touch_sidebar_open: false,
-      })
-    );
+    expect(mocks.updateUISettings).toHaveBeenCalledWith({
+      last_active_assistant_id: 42,
+    });
   });
 
-  it('reopens the copilot panel on Captain pages even if it was closed earlier in the session', () => {
-    window.sessionStorage.setItem(
-      CAPTAIN_COPILOT_PANEL_CLOSED_SESSION_KEY,
-      'true'
-    );
+  it('does not open the copilot panel by default inside Captain pages', () => {
+    mocks.uiSettings.value = {
+      is_copilot_panel_open: false,
+      last_active_assistant_id: 42,
+    };
 
     mountComponent();
 
-    expect(mocks.updateUISettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        is_copilot_panel_open: true,
-      })
-    );
-    expect(mocks.updateUISettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        last_active_assistant_id: 42,
-      })
-    );
+    expect(mocks.updateUISettings).not.toHaveBeenCalled();
   });
 
   it('keeps the copilot panel open when leaving Captain pages', () => {

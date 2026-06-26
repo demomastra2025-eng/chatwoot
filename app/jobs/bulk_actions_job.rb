@@ -69,9 +69,15 @@ class BulkActionsJob < ApplicationJob
   def process_conversation(conversation)
     remove_labels(conversation)
     bulk_add_labels(conversation)
-    bulk_snoozed_until(conversation)
 
     params = available_params(@params)
+    if status_update_params?(params)
+      transition_conversation_status!(conversation, params)
+      params = params.except(:status, :status_reason)
+    else
+      bulk_snoozed_until(conversation)
+    end
+
     conversation.update!(params) if params.present?
 
     return unless @params[:action_name] == 'mark_read'
@@ -94,7 +100,9 @@ class BulkActionsJob < ApplicationJob
       CommunicationThreads::UpdateService.new(
         communication_thread: communication_thread,
         params: params,
-        accessible_links: accessible_links
+        accessible_links: accessible_links,
+        actor: @user,
+        source: 'bulk_action'
       ).perform
     end
 
@@ -158,6 +166,22 @@ class BulkActionsJob < ApplicationJob
     return params unless @params[:snoozed_until]
 
     params.merge(snoozed_until: @params[:snoozed_until])
+  end
+
+  def status_update_params?(params)
+    params.present? && params.key?(:status)
+  end
+
+  def transition_conversation_status!(conversation, params)
+    status_params = params.slice(:status, :status_reason)
+    status_params[:snoozed_until] = @params[:snoozed_until] if @params.key?(:snoozed_until)
+
+    Conversations::StatusTransitionService.new(
+      conversation: conversation,
+      params: status_params,
+      actor: @user,
+      source: 'bulk_action'
+    ).perform
   end
 
   def ensure_full_thread_accessible!(communication_thread, accessible_links)

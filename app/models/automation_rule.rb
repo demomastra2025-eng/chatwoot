@@ -463,9 +463,48 @@ class AutomationRule < ApplicationRecord
   def create_touch_action_params_supported?(action_params)
     params = normalized_action_hash(action_params)
     return false if params.blank?
-    return false if params[:body].to_s.strip.blank?
+    return false unless create_touch_content_supported?(params)
+    return false unless create_touch_timing_supported?(params)
 
-    delay_minutes_supported?(params[:delay_minutes])
+    true
+  end
+
+  def create_touch_content_supported?(params)
+    action_type = params[:action_type].presence || 'send_message'
+    return true if action_type.to_s == 'ai_agent_wakeup'
+
+    content_kind = params[:content_kind].presence || 'free_text'
+    text_mode = Reminders::TextModeResolver.call(
+      action_type: action_type,
+      body: params[:body],
+      instructions: params[:instructions],
+      text_mode: params[:text_mode]
+    )
+
+    return params[:instructions].to_s.strip.present? if text_mode.to_s == 'agent'
+    return params[:template_params].respond_to?(:to_h) && params[:template_params].to_h.present? if content_kind.to_s == 'channel_template'
+
+    params[:body].to_s.strip.present? || Array(params[:attachments]).any?
+  end
+
+  def create_touch_timing_supported?(params)
+    return false unless delay_minutes_supported?(params[:delay_minutes])
+    return false unless repeat_mode_supported?(params[:repeat_mode])
+    return false if params[:timing_mode].to_s == 'relative' && params[:relative_anchor].blank?
+    return false if params[:timing_mode].to_s == 'relative' && params[:relative_offset_seconds].blank?
+    return false if params[:timing_mode].to_s == 'relative' && params[:repeat_mode].present? && params[:repeat_mode].to_s != 'once'
+    return false if fixed_time_of_day_timing?(params) && params[:relative_time_of_day].to_s !~ Reminder::RELATIVE_TIME_OF_DAY_FORMAT
+
+    true
+  end
+
+  def fixed_time_of_day_timing?(params)
+    params[:timing_mode].to_s == 'relative' &&
+      params[:relative_time_mode].to_s == Reminder::RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY
+  end
+
+  def repeat_mode_supported?(value)
+    value.blank? || value.to_s.in?(Reminder.repeat_modes.keys)
   end
 
   def optional_reference_supported?(scope, action_params)
@@ -476,13 +515,14 @@ class AutomationRule < ApplicationRecord
   end
 
   def normalized_action_param(action_params)
-    Array(action_params).first.to_s.presence
+    raw = first_action_param(action_params)
+    raw = raw.with_indifferent_access if raw.is_a?(Hash)
+    value = raw.is_a?(Hash) ? (raw[:id] || raw[:reminder_group_id] || raw[:touch_plan_id]) : raw
+    value.to_s.presence
   end
 
   def normalized_action_hash(action_params)
-    value = Array(action_params).first
-    value = value.to_unsafe_h if value.is_a?(ActionController::Parameters)
-    value = value.to_h if value.respond_to?(:to_h) && !value.is_a?(Hash)
+    value = first_action_param(action_params)
     return unless value.is_a?(Hash)
 
     value.with_indifferent_access
@@ -503,8 +543,18 @@ class AutomationRule < ApplicationRecord
   end
 
   def normalized_optional_action_param(action_params)
-    value = Array(action_params).first.to_s.strip
+    value = first_action_param(action_params).to_s.strip
     return nil if value.blank? || value == 'nil'
+
+    value
+  end
+
+  def first_action_param(action_params)
+    value = action_params
+    value = value.to_unsafe_h if value.is_a?(ActionController::Parameters)
+    value = value.to_h if value.respond_to?(:to_h) && !value.is_a?(Hash) && !value.is_a?(Array)
+    return value if value.is_a?(Hash)
+    return value.first if value.is_a?(Array)
 
     value
   end

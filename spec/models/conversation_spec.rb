@@ -522,6 +522,26 @@ RSpec.describe Conversation do
       end
     end
 
+    it 'does not persist waiting_since when a configured handoff reason is missing' do
+      conversation.update!(waiting_since: nil)
+      conversation.account.update!(
+        conversation_status_reason_config: {
+          'open' => {
+            options: ['Needs human'],
+            required: true
+          }
+        }
+      )
+
+      expect do
+        conversation.bot_handoff!(source: 'captain')
+      end.to raise_error(Conversations::StatusReasonConfig::Error)
+
+      conversation.reload
+      expect(conversation.status).to eq('pending')
+      expect(conversation.waiting_since).to be_nil
+    end
+
     it 'changes status to open' do
       conversation.bot_handoff!
       expect(conversation.reload.status).to eq('open')

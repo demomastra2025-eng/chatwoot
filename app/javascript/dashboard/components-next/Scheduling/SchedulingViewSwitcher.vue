@@ -23,7 +23,7 @@ const handleViewSelect = value => {
 
 <template>
   <ButtonGroup
-    class="inline-flex items-center gap-1 rounded-xl bg-n-alpha-black2 p-0.5 outline outline-1 outline-n-weak"
+    class="inline-flex h-8 items-center gap-0.5 rounded-lg bg-n-alpha-black2 p-0.5 outline outline-1 outline-n-weak"
   >
     <Button
       v-for="view in views"
@@ -32,7 +32,7 @@ const handleViewSelect = value => {
       color="slate"
       :variant="view.value === modelValue ? 'solid' : 'ghost'"
       :label="view.label"
-      class="!h-8 !rounded-lg !px-3 !text-sm"
+      class="!h-7 !rounded-md !px-2.5 !text-sm"
       @click="handleViewSelect(view.value)"
     />
   </ButtonGroup>

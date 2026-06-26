@@ -36,6 +36,8 @@ const props = defineProps({
   },
   focusOnMount: { type: Boolean, default: false },
   allowCreate: { type: Boolean, default: false },
+  tagClass: { type: [String, Object, Array], default: '' },
+  tagLabelClass: { type: [String, Object, Array], default: '' },
   // Skip label-based dedup when the consumer already filters menuItems by ID.
   // Prevents removing all same-name items when one is selected (e.g. duplicate agent names).
   skipLabelDedup: { type: Boolean, default: false },
@@ -215,13 +217,17 @@ const handleBlur = e => emit('blur', e);
     <div
       v-for="(tag, index) in tags"
       :key="index"
-      class="flex items-center justify-center max-w-full gap-1 px-3 py-1 rounded-lg h-7 bg-n-alpha-2"
+      :class="tagClass"
+      class="flex h-7 max-w-full items-center justify-center gap-1 rounded-lg bg-n-blue-5/70 px-3 py-1 outline outline-1 outline-n-blue-7/60"
     >
-      <span class="flex-grow min-w-0 text-sm truncate text-n-slate-12">{{
-        tag
-      }}</span>
       <span
-        class="flex-shrink-0 cursor-pointer i-lucide-x size-3.5 text-n-slate-11"
+        :class="tagLabelClass"
+        class="min-w-0 flex-grow truncate text-sm text-n-blue-12"
+      >
+        {{ tag }}
+      </span>
+      <span
+        class="i-lucide-x size-3.5 flex-shrink-0 cursor-pointer text-n-blue-10 hover:text-n-blue-12"
         @click.stop="removeTag(index)"
       />
     </div>

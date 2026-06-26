@@ -356,6 +356,10 @@ class Captain::Assistant < ApplicationRecord
   has_many :inboxes,
            through: :captain_inboxes
   has_many :messages, as: :sender, dependent: :nullify
+  has_many :touch_plans,
+           class_name: 'ReminderGroup',
+           inverse_of: :assistant,
+           dependent: :nullify
   has_many :copilot_threads, dependent: :destroy_async
   has_many :scenarios, class_name: 'Captain::Scenario', dependent: :destroy_async
 

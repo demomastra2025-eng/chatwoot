@@ -11,23 +11,23 @@ class ActionService
   end
 
   def snooze_conversation(_params)
-    @conversation.snoozed!
+    transition_conversation_status!('snoozed')
   end
 
   def resolve_conversation(_params)
-    @conversation.resolved!
+    transition_conversation_status!('resolved')
   end
 
   def open_conversation(_params)
-    @conversation.open!
+    transition_conversation_status!('open')
   end
 
   def pending_conversation(_params)
-    @conversation.pending!
+    transition_conversation_status!('pending')
   end
 
   def change_status(status)
-    @conversation.update!(status: status[0])
+    transition_conversation_status!(status[0])
   end
 
   def change_priority(priority)
@@ -94,6 +94,27 @@ class ActionService
   end
 
   private
+
+  def transition_conversation_status!(status)
+    Conversations::StatusTransitionService.new(
+      conversation: @conversation,
+      params: { status: status },
+      actor: status_transition_actor,
+      source: status_transition_source
+    ).perform
+    @conversation.reload
+  end
+
+  def status_transition_actor
+    Current.user || Current.executed_by
+  end
+
+  def status_transition_source
+    return 'automation' if is_a?(AutomationRules::ActionService)
+    return 'macro' if is_a?(Macros::ExecutionService)
+
+    'system'
+  end
 
   def last_responding_agent_id
     @conversation.messages.outgoing.where(sender_type: 'User', private: false).last&.sender_id

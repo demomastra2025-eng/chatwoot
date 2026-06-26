@@ -27,6 +27,10 @@
     },
     "UNREAD_MESSAGES": "Unread Messages",
     "UNREAD_MESSAGE": "Unread Message",
+    "DATE_DIVIDER": {
+      "TODAY": "Бүгін",
+      "YESTERDAY": "Кеше"
+    },
     "CLICK_HERE": "Click here",
     "LOADING_INBOXES": "Loading inboxes",
     "LOADING_CONVERSATIONS": "Loading Conversations",
@@ -367,6 +371,25 @@
       "CLOSE": "Жабу",
       "UNKNOWN_CALLER": "Белгісіз қоңырау шалушы",
       "DEFAULT_INBOX_NAME": "Клиенттерді қолдау"
+    },
+    "STATUS_REASONS": {
+      "STATUS": {
+        "OPEN": "Ашық",
+        "RESOLVED": "Аяқталған",
+        "PENDING": "Күтуде",
+        "SNOOZED": "Кейінге қалдырылған"
+      },
+      "MODAL": {
+        "TITLE": "«{status}» статусы үшін себеп таңдаңыз",
+        "CONFIRM": "Жалғастыру",
+        "NO_REASON": "Себепсіз",
+        "REQUIRED_DESCRIPTION": "Диалогты «{status}» статусына ауыстыру үшін себеп таңдау қажет.",
+        "OPTIONAL_DESCRIPTION": "Диалогты «{status}» статусына ауыстыру себебін таңдаңыз.",
+        "PLACEHOLDER": "Себепті таңдаңыз",
+        "SEARCH_PLACEHOLDER": "Себептерді іздеу",
+        "EMPTY_STATE": "Себептер бапталмаған",
+        "REQUIRED_HINT": "Жалғастыру үшін себеп таңдаңыз"
+      }
     }
   },
   "EMAIL_TRANSCRIPT": {

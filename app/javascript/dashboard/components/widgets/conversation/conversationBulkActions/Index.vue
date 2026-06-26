@@ -19,6 +19,7 @@ import BulkUpdateActions from './BulkUpdateActions.vue';
 import BulkLabelActions from './BulkLabelActions.vue';
 import BulkTeamActions from './BulkTeamActions.vue';
 import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
+import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
 
 const props = defineProps({
   conversations: {
@@ -66,6 +67,7 @@ const { t } = useI18n();
 const bulkActionRun = useMapGetter('bulkActions/getCurrentBulkActionRun');
 const bulkActionUiFlags = useMapGetter('bulkActions/getUIFlags');
 const showCustomTimeSnoozeModal = ref(false);
+const statusReasonDialogRef = ref(null);
 
 const allSelected = computed({
   get: () => props.allConversationsSelected,
@@ -109,9 +111,22 @@ const progressMetaLabel = computed(() => {
   });
 });
 
-function updateConversations(status, snoozedUntil = null) {
+async function resolveStatusReason(status) {
+  const result = await statusReasonDialogRef.value?.open({ status });
+  if (result === statusReasonDialogRef.value?.CANCELLED) {
+    return { cancelled: true };
+  }
+
+  return { statusReason: result };
+}
+
+async function updateConversations(status, snoozedUntil = null) {
   if (bulkActionUiFlags.value.isUpdating) return;
-  emit('updateConversations', status, snoozedUntil);
+
+  const { cancelled, statusReason } = await resolveStatusReason(status);
+  if (cancelled) return;
+
+  emit('updateConversations', status, snoozedUntil, statusReason);
 }
 
 function assignAgent(agent) {
@@ -294,4 +309,5 @@ onUnmounted(() => {
       @choose-time="customSnoozeTime"
     />
   </woot-modal>
+  <ConversationStatusReasonDialog ref="statusReasonDialogRef" />
 </template>

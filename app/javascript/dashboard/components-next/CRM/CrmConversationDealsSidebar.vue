@@ -11,8 +11,8 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
-import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
+import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 import {
@@ -71,6 +71,7 @@ const isFeatureEnabledonAccount = useMapGetter(
 
 const deals = ref([]);
 const companyOptions = ref([]);
+const closingReasonDialogRef = ref(null);
 const openDealKeys = ref([]);
 const scrollContainer = ref(null);
 const isCreating = ref(false);
@@ -152,14 +153,36 @@ const stageOptionsForForm = form =>
     )?.stages || []
   ).map(stage => ({
     label: stage.name,
+    stageColor: stage.color || DEFAULT_STAGE_COLOR,
     value: stage.id,
   }));
+
+const agentAvatarSrc = agent =>
+  agent.thumbnail?.src ||
+  (typeof agent.thumbnail === 'string' ? agent.thumbnail : '') ||
+  agent.avatarUrl ||
+  agent.avatar_url ||
+  agent.avatar ||
+  agent.imageUrl ||
+  agent.image_url ||
+  '';
 
 const ownerOptions = computed(() =>
   agents.value.map(agent => ({
     label: agent.name || agent.email,
-    thumbnail: { name: agent.name || agent.email },
+    thumbnail: {
+      name: agent.name || agent.email,
+      src: agentAvatarSrc(agent),
+    },
     value: agent.id,
+  }))
+);
+
+const pipelineOptions = computed(() =>
+  activePipelines.value.map(pipeline => ({
+    icon: 'i-lucide-funnel',
+    label: pipeline.name,
+    value: pipeline.id,
   }))
 );
 
@@ -170,11 +193,65 @@ const teamOptions = computed(() =>
   }))
 );
 
+const shouldShowTeamFieldForForm = form =>
+  teamOptions.value.length > 0 || !!form?.teamId;
+
 const formatReferenceDisplayId = value => {
   if (!value) return '';
 
   const stringValue = String(value);
   return stringValue.startsWith('#') ? stringValue : `#${stringValue}`;
+};
+
+const normalizedTextValues = values => [
+  ...new Set(
+    (Array.isArray(values) ? values : [values])
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+  ),
+];
+
+const isTerminalStage = stage => ['won', 'lost'].includes(stage?.outcome);
+const closingReasonOptionsForStage = stage =>
+  normalizedTextValues(stage?.closingReasonOptions);
+const transitionReasonOptionsForStage = stage =>
+  normalizedTextValues(stage?.transitionReasonOptions);
+const shouldPromptForClosingReasons = stage =>
+  isTerminalStage(stage) && closingReasonOptionsForStage(stage).length > 0;
+const shouldPromptForTransitionReason = stage =>
+  !isTerminalStage(stage) && transitionReasonOptionsForStage(stage).length > 0;
+const isStageReasonCancelled = value =>
+  value === closingReasonDialogRef.value?.CANCELLED;
+
+const collectClosingReasonsForStage = async ({
+  form,
+  targetStage,
+  deal = null,
+}) => {
+  if (!targetStage) return [];
+  if (!shouldPromptForClosingReasons(targetStage)) return [];
+
+  return (
+    closingReasonDialogRef.value?.open({
+      currentReasons: normalizedTextValues(
+        deal?.closingReasons || form?.closingReasons
+      ),
+      kind: 'closing',
+      targetStage,
+    }) ?? []
+  );
+};
+
+const collectTransitionReasonForStage = async ({ targetStage }) => {
+  if (!targetStage) return '';
+  if (!shouldPromptForTransitionReason(targetStage)) return '';
+
+  return (
+    closingReasonDialogRef.value?.open({
+      kind: 'transition',
+      targetStage,
+    }) ?? ''
+  );
 };
 
 const buildPrefillDealTitle = () => {
@@ -209,6 +286,7 @@ const buildNewDealForm = () => {
     amount: 0,
     companyId: '',
     contactIds: contactId ? [Number(contactId)] : [],
+    closingReasons: [],
     currency: defaultDealCurrency,
     customAttributes: buildDefaultCustomAttributes(dealFieldDefinitions.value),
     description: '',
@@ -244,6 +322,7 @@ const formFromDeal = deal => {
     amount: resolveDealAmountMajor(deal) ?? 0,
     companyId: deal.companyId ?? '',
     contactIds: [...new Set(contactIds)],
+    closingReasons: normalizedTextValues(deal.closingReasons),
     currency: deal.currency || defaultDealCurrency,
     customAttributes: mergeMissingDefaultCustomAttributes(
       { ...(deal.customAttributes || {}) },
@@ -461,6 +540,7 @@ const buildPayload = form =>
     amount_minor: majorAmountToMinor(form.amount),
     company_id: form.companyId ? Number(form.companyId) : undefined,
     contact_ids: form.contactIds.map(Number),
+    closing_reasons: normalizedTextValues(form.closingReasons),
     currency: form.currency || undefined,
     custom_attributes: form.customAttributes,
     description: form.description || undefined,
@@ -515,6 +595,30 @@ const saveDeal = async item => {
   const form = forms[item.key];
   if (!form || !form.title.trim() || !form.pipelineId || !form.stageId) return;
 
+  const targetStage = stageForForm(form);
+  const stageChanging =
+    !item.deal?.id || Number(form.stageId) !== Number(item.deal.stageId);
+
+  let transitionReason = '';
+
+  if (stageChanging) {
+    const closingReasons = await collectClosingReasonsForStage({
+      deal: item.deal,
+      form,
+      targetStage,
+    });
+
+    if (isStageReasonCancelled(closingReasons)) return;
+
+    transitionReason = item.deal?.id
+      ? await collectTransitionReasonForStage({ targetStage })
+      : '';
+
+    if (isStageReasonCancelled(transitionReason)) return;
+
+    form.closingReasons = closingReasons;
+  }
+
   savingDealKey.value = item.key;
 
   try {
@@ -523,7 +627,11 @@ const saveDeal = async item => {
 
     if (item.deal?.id) {
       const currentStageId = item.deal.stageId;
-      const { stage_id: _stageId, ...updatePayload } = {
+      const {
+        closing_reasons: _closingReasons,
+        stage_id: _stageId,
+        ...updatePayload
+      } = {
         ...payload,
         lock_version: item.deal.lockVersion,
       };
@@ -534,8 +642,10 @@ const saveDeal = async item => {
         const transitionResponse = await CrmDealsAPI.transitionStage(
           savedDeal.id,
           {
+            closing_reasons: form.closingReasons,
             lock_version: savedDeal.lockVersion,
             stage_id: Number(form.stageId),
+            transition_reason: transitionReason || undefined,
           }
         );
         savedDeal = normalizePayload(transitionResponse.data);
@@ -631,97 +741,209 @@ watch(dealFieldDefinitions, definitions => {
             </span>
           </button>
 
-          <div v-show="isDealOpen(item.key)" class="border-t border-n-weak p-3">
+          <div
+            v-show="isDealOpen(item.key)"
+            class="border-t border-n-weak px-4 py-3"
+          >
             <div v-if="forms[item.key]" class="grid gap-3">
-              <SchedulingFormFieldGroup :framed="false">
-                <div class="grid gap-2">
-                  <Input
-                    :label="$t('CRM.DEALS.FORM.TITLE')"
-                    :model-value="forms[item.key].title"
-                    @update:model-value="forms[item.key].title = $event"
-                  />
-                  <div class="grid grid-cols-2 gap-2">
-                    <SchedulingSelectField
-                      :label="$t('CRM.DEALS.FORM.PIPELINE')"
-                      :model-value="forms[item.key].pipelineId"
-                      :options="
-                        activePipelines.map(pipeline => ({
-                          label: pipeline.name,
-                          value: pipeline.id,
-                        }))
-                      "
-                      dropdown-placement="top"
-                      @update:model-value="
-                        value => {
-                          forms[item.key].pipelineId = value;
-                          syncStageAfterPipelineChange(forms[item.key]);
-                        }
-                      "
+              <div class="crm-deal-drawer-form">
+                <div
+                  class="crm-deal-drawer-section crm-deal-drawer-section--top"
+                >
+                  <div class="crm-deal-drawer-row">
+                    <label
+                      class="crm-deal-drawer-label"
+                      :for="`crm-conversation-deal-title-${item.key}`"
+                    >
+                      {{ $t('CRM.DEALS.FORM.TITLE') }}
+                    </label>
+                    <Input
+                      :id="`crm-conversation-deal-title-${item.key}`"
+                      class="crm-deal-drawer-control"
+                      custom-input-class="!rounded-md !bg-n-alpha-black2"
+                      :aria-label="$t('CRM.DEALS.FORM.TITLE')"
+                      :model-value="forms[item.key].title"
+                      size="sm"
+                      @update:model-value="forms[item.key].title = $event"
                     />
+                  </div>
+
+                  <div class="crm-deal-drawer-status-grid">
+                    <div class="crm-deal-drawer-row">
+                      <label
+                        class="crm-deal-drawer-label"
+                        :for="`crm-conversation-deal-pipeline-${item.key}`"
+                      >
+                        {{ $t('CRM.DEALS.FORM.PIPELINE') }}
+                      </label>
+                      <SchedulingSelectField
+                        :id="`crm-conversation-deal-pipeline-${item.key}`"
+                        class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                        :aria-label="$t('CRM.DEALS.FORM.PIPELINE')"
+                        :model-value="forms[item.key].pipelineId"
+                        :options="pipelineOptions"
+                        :placeholder="$t('CRM.DEALS.FORM.PIPELINE')"
+                        dropdown-placement="auto"
+                        @update:model-value="
+                          value => {
+                            forms[item.key].pipelineId = value;
+                            syncStageAfterPipelineChange(forms[item.key]);
+                          }
+                        "
+                      />
+                    </div>
+
+                    <div class="crm-deal-drawer-row">
+                      <label
+                        class="crm-deal-drawer-label"
+                        :for="`crm-conversation-deal-stage-${item.key}`"
+                      >
+                        {{ $t('CRM.DEALS.FORM.STAGE') }}
+                      </label>
+                      <SchedulingSelectField
+                        :id="`crm-conversation-deal-stage-${item.key}`"
+                        class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                        :aria-label="$t('CRM.DEALS.FORM.STAGE')"
+                        :model-value="forms[item.key].stageId"
+                        :options="stageOptionsForForm(forms[item.key])"
+                        :placeholder="$t('CRM.DEALS.FORM.STAGE')"
+                        dropdown-placement="auto"
+                        @update:model-value="forms[item.key].stageId = $event"
+                      />
+                    </div>
+
+                    <div class="crm-deal-drawer-row">
+                      <label
+                        class="crm-deal-drawer-label"
+                        :for="`crm-conversation-deal-owner-${item.key}`"
+                      >
+                        {{ $t('CRM.DEALS.FORM.OWNER') }}
+                      </label>
+                      <SchedulingSelectField
+                        :id="`crm-conversation-deal-owner-${item.key}`"
+                        class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                        :aria-label="$t('CRM.DEALS.FORM.OWNER')"
+                        :model-value="forms[item.key].ownerId"
+                        :options="ownerOptions"
+                        :placeholder="$t('CRM.DEALS.FORM.OWNER')"
+                        dropdown-placement="auto"
+                        @update:model-value="forms[item.key].ownerId = $event"
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="shouldShowTeamFieldForForm(forms[item.key])"
+                    class="crm-deal-drawer-row"
+                  >
+                    <label
+                      class="crm-deal-drawer-label"
+                      :for="`crm-conversation-deal-team-${item.key}`"
+                    >
+                      {{ $t('CRM.DEALS.FORM.TEAM') }}
+                    </label>
                     <SchedulingSelectField
-                      :label="$t('CRM.DEALS.FORM.STAGE')"
-                      :model-value="forms[item.key].stageId"
-                      :options="stageOptionsForForm(forms[item.key])"
-                      dropdown-placement="top"
-                      @update:model-value="forms[item.key].stageId = $event"
-                    />
-                    <SchedulingSelectField
-                      :label="$t('CRM.DEALS.FORM.OWNER')"
-                      :model-value="forms[item.key].ownerId"
-                      :options="ownerOptions"
-                      dropdown-placement="top"
-                      @update:model-value="forms[item.key].ownerId = $event"
-                    />
-                    <SchedulingSelectField
-                      :label="$t('CRM.DEALS.FORM.TEAM')"
+                      :id="`crm-conversation-deal-team-${item.key}`"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.TEAM')"
                       :model-value="forms[item.key].teamId"
                       :options="teamOptions"
-                      dropdown-placement="top"
+                      :placeholder="$t('CRM.DEALS.FORM.TEAM')"
+                      dropdown-placement="auto"
                       @update:model-value="forms[item.key].teamId = $event"
                     />
+                  </div>
+
+                  <div class="crm-deal-drawer-row">
+                    <span class="crm-deal-drawer-label">
+                      {{ $t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON') }}
+                    </span>
                     <SchedulingDateTimeField
-                      :label="$t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON')"
+                      class="crm-deal-drawer-control"
+                      :aria-label="$t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON')"
                       :model-value="forms[item.key].expectedCloseOn"
+                      :placeholder="$t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON')"
                       type="date"
                       @update:model-value="
                         forms[item.key].expectedCloseOn = $event
                       "
                     />
                   </div>
-                  <SchedulingCurrencyAmountInput
-                    v-model:amount="forms[item.key].amount"
-                    v-model:currency="forms[item.key].currency"
-                    :currencies="dealCurrencyOptions"
-                    :currency-aria-label="$t('CRM.DEALS.FORM.CURRENCY')"
-                    step="1"
-                    :label="$t('CRM.DEALS.FORM.AMOUNT')"
-                  />
-                  <SchedulingSelectField
-                    v-if="companiesEnabled"
-                    :label="$t('CRM.DEALS.FORM.COMPANY')"
-                    :model-value="forms[item.key].companyId"
-                    :options="companyOptions"
-                    dropdown-placement="top"
-                    @update:model-value="forms[item.key].companyId = $event"
-                  />
+
+                  <div class="crm-deal-drawer-row">
+                    <label
+                      class="crm-deal-drawer-label"
+                      :for="`crm-conversation-deal-amount-${item.key}`"
+                    >
+                      {{ $t('CRM.DEALS.FORM.AMOUNT') }}
+                    </label>
+                    <div
+                      class="crm-deal-drawer-control crm-deal-drawer-amount-control"
+                    >
+                      <SchedulingCurrencyAmountInput
+                        :id="`crm-conversation-deal-amount-${item.key}`"
+                        v-model:amount="forms[item.key].amount"
+                        v-model:currency="forms[item.key].currency"
+                        :aria-label="$t('CRM.DEALS.FORM.AMOUNT')"
+                        :currencies="dealCurrencyOptions"
+                        :currency-aria-label="$t('CRM.DEALS.FORM.CURRENCY')"
+                        size="sm"
+                        step="1"
+                      />
+                    </div>
+                  </div>
+
+                  <div v-if="companiesEnabled" class="crm-deal-drawer-row">
+                    <label
+                      class="crm-deal-drawer-label"
+                      :for="`crm-conversation-deal-company-${item.key}`"
+                    >
+                      {{ $t('CRM.DEALS.FORM.COMPANY') }}
+                    </label>
+                    <SchedulingSelectField
+                      :id="`crm-conversation-deal-company-${item.key}`"
+                      class="crm-deal-drawer-control crm-deal-drawer-select-control"
+                      :aria-label="$t('CRM.DEALS.FORM.COMPANY')"
+                      :model-value="forms[item.key].companyId"
+                      :options="companyOptions"
+                      :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
+                      dropdown-placement="auto"
+                      @update:model-value="forms[item.key].companyId = $event"
+                    />
+                  </div>
                 </div>
-              </SchedulingFormFieldGroup>
 
-              <CrmCustomFieldsSection
-                :definitions="dealFieldDefinitions"
-                :framed="false"
-                :model-value="forms[item.key].customAttributes"
-                @update:model-value="forms[item.key].customAttributes = $event"
-              />
-
-              <SchedulingFormFieldGroup :framed="false">
-                <TextArea
-                  :label="$t('CRM.DEALS.FORM.DESCRIPTION')"
-                  :model-value="forms[item.key].description"
-                  auto-height
-                  @update:model-value="forms[item.key].description = $event"
+                <CrmCustomFieldsSection
+                  :definitions="dealFieldDefinitions"
+                  :framed="false"
+                  layout="rows"
+                  :model-value="forms[item.key].customAttributes"
+                  @update:model-value="
+                    forms[item.key].customAttributes = $event
+                  "
                 />
-              </SchedulingFormFieldGroup>
+
+                <div class="crm-deal-drawer-section">
+                  <div class="crm-deal-drawer-row crm-deal-drawer-row--start">
+                    <label
+                      class="crm-deal-drawer-label"
+                      :for="`crm-conversation-deal-description-${item.key}`"
+                    >
+                      {{ $t('CRM.DEALS.FORM.DESCRIPTION') }}
+                    </label>
+                    <TextArea
+                      :id="`crm-conversation-deal-description-${item.key}`"
+                      class="crm-deal-drawer-control"
+                      :aria-label="$t('CRM.DEALS.FORM.DESCRIPTION')"
+                      :model-value="forms[item.key].description"
+                      auto-height
+                      custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1 hover:!border-n-slate-6"
+                      min-height="3rem"
+                      @update:model-value="forms[item.key].description = $event"
+                    />
+                  </div>
+                </div>
+              </div>
 
               <div class="flex items-center justify-end gap-2">
                 <Button
@@ -750,5 +972,130 @@ watch(dealFieldDefinitions, definitions => {
         </section>
       </div>
     </div>
+    <CrmClosingReasonDialog ref="closingReasonDialogRef" />
   </div>
 </template>
+
+<style scoped>
+.crm-deal-drawer-form {
+  @apply grid gap-3;
+}
+
+.crm-deal-drawer-section {
+  @apply grid gap-2 border-t border-n-weak pt-3;
+}
+
+.crm-deal-drawer-section:first-of-type {
+  @apply border-t-0 pt-0;
+}
+
+.crm-deal-drawer-status-grid {
+  @apply grid gap-2;
+}
+
+.crm-deal-drawer-status-grid :deep(button) {
+  @apply min-w-0;
+}
+
+.crm-deal-drawer-row {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.crm-deal-drawer-label {
+  @apply mb-0 min-w-0 text-[13px] font-medium leading-4 text-n-slate-12;
+}
+
+.crm-deal-drawer-control,
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control) {
+  width: 100%;
+  min-width: 0;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control input),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control select),
+.crm-deal-drawer-form
+  :deep(.crm-deal-drawer-control .reka-date-time-picker__trigger),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-select-control button) {
+  @apply border border-n-weak bg-n-alpha-black2 text-sm font-normal text-n-slate-12 shadow-none outline outline-1 outline-transparent transition-colors duration-150 !important;
+  border-radius: 0.375rem !important;
+  min-height: 2rem !important;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control input),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control select),
+.crm-deal-drawer-form
+  :deep(.crm-deal-drawer-control .reka-date-time-picker__trigger),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-select-control button) {
+  height: 2rem !important;
+}
+
+.crm-deal-drawer-form
+  :deep(.crm-deal-drawer-control:not(.crm-deal-drawer-amount-control) input) {
+  @apply px-2 py-1 !important;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-amount-control input) {
+  @apply py-1 pr-2 !important;
+  border-bottom-right-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  padding-left: 2rem !important;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-amount-control select) {
+  border-bottom-left-radius: 0 !important;
+  border-top-left-radius: 0 !important;
+}
+
+.crm-deal-drawer-form
+  :deep(.crm-deal-drawer-control .reka-date-time-picker__trigger),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-select-control button) {
+  @apply justify-start py-1 !important;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control input:hover),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control select:hover),
+.crm-deal-drawer-form
+  :deep(.crm-deal-drawer-control .reka-date-time-picker__trigger:hover),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-select-control button:hover) {
+  @apply border-n-slate-6 bg-n-alpha-black2 outline-transparent !important;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control input:focus),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control select:focus),
+.crm-deal-drawer-form
+  :deep(.crm-deal-drawer-control .reka-date-time-picker__trigger:focus),
+.crm-deal-drawer-form
+  :deep(
+    .crm-deal-drawer-control .reka-date-time-picker__trigger[data-state='open']
+  ),
+.crm-deal-drawer-form :deep(.crm-deal-drawer-select-control button:focus),
+.crm-deal-drawer-form
+  :deep(.crm-deal-drawer-select-control button[data-state='open']) {
+  @apply border-n-weak bg-n-alpha-black2 outline-n-brand !important;
+}
+
+.crm-deal-drawer-form :deep(.crm-deal-drawer-control textarea) {
+  @apply text-sm font-normal text-n-slate-12 !important;
+}
+
+@media (min-width: 768px) {
+  .crm-deal-drawer-row {
+    align-items: center;
+    grid-template-columns: minmax(6.5rem, 1fr) minmax(8rem, 14rem);
+  }
+
+  .crm-deal-drawer-row--start {
+    align-items: start;
+  }
+
+  .crm-deal-drawer-label {
+    @apply text-left;
+  }
+
+  .crm-deal-drawer-row--start > .crm-deal-drawer-label {
+    padding-top: 0.5rem;
+  }
+}
+</style>

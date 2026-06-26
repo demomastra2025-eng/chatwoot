@@ -46,6 +46,8 @@ const activeTab = computed(() => {
   if (isTouchSidebarOpen) return 'touch';
   return null;
 });
+const sidebarSizeClass =
+  'max-w-sm md:w-[320px] md:min-w-[320px] 2xl:min-w-[360px] 2xl:w-[360px]';
 const isCommunicationThread = computed(() =>
   Boolean(props.currentChat?.is_communication_thread)
 );
@@ -129,8 +131,9 @@ const openTouchesWorkspace = () => {
 <template>
   <div
     v-on-click-outside="[() => closeSidebar(), clickOutsideOptions]"
-    class="bg-n-surface-2 h-full overflow-hidden flex flex-col fixed top-0 z-40 w-full max-w-sm transition-transform duration-300 ease-in-out ltr:right-0 rtl:left-0 md:static md:w-[320px] md:min-w-[320px] ltr:border-l rtl:border-r border-n-weak 2xl:min-w-[360px] 2xl:w-[360px] shadow-lg md:shadow-none"
+    class="bg-n-surface-2 h-full overflow-hidden flex flex-col fixed top-0 z-40 w-full transition-transform duration-300 ease-in-out ltr:right-0 rtl:left-0 md:static ltr:border-l rtl:border-r border-n-weak shadow-lg md:shadow-none"
     :class="[
+      sidebarSizeClass,
       {
         'translate-x-0': !!activeTab,
         'ltr:translate-x-full rtl:-translate-x-full pointer-events-none md:translate-x-0 md:pointer-events-auto':

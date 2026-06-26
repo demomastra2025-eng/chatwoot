@@ -20,9 +20,14 @@ class Reminders::SyncConversationTimingService
     scope = conversation.account.reminders
                         .where(status: [Reminder.statuses[:draft], Reminder.statuses[:pending]])
                         .where(timing_mode: Reminder.timing_modes[:relative])
+                        .where(manual_schedule_override: false)
                         .where(relative_anchor: Reminder::CONVERSATION_DYNAMIC_RELATIVE_ANCHORS)
                         .where(
-                          'conversation_id = :conversation_id OR target_conversation_id = :conversation_id OR (remindable_type = :remindable_type AND remindable_id = :conversation_id)',
+                          [
+                            'conversation_id = :conversation_id',
+                            'target_conversation_id = :conversation_id',
+                            '(remindable_type = :remindable_type AND remindable_id = :conversation_id)'
+                          ].join(' OR '),
                           conversation_id: conversation.id,
                           remindable_type: 'Conversation'
                         )

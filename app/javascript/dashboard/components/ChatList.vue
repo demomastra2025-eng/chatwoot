@@ -27,6 +27,7 @@ import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirecti
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import IntersectionObserver from 'dashboard/components/IntersectionObserver.vue';
 import ConversationResolveAttributesModal from 'dashboard/components-next/ConversationWorkflow/ConversationResolveAttributesModal.vue';
+import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
 
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAlert } from 'dashboard/composables';
@@ -108,6 +109,7 @@ const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
 
 const resolveAttributesModalRef = ref(null);
+const statusReasonDialogRef = ref(null);
 const conversationListRef = ref(null);
 const virtualListRef = ref(null);
 
@@ -132,10 +134,44 @@ const showDeleteFoldersModal = ref(false);
 const isContextMenuOpen = ref(false);
 const appliedFilter = ref([]);
 const localSearchQuery = ref('');
+
+const filterAttributeName = attributeI18nKey => {
+  switch (attributeI18nKey) {
+    case 'ASSIGNEE_NAME':
+      return t('FILTER.ATTRIBUTES.ASSIGNEE_NAME');
+    case 'BROWSER_LANGUAGE':
+      return t('FILTER.ATTRIBUTES.BROWSER_LANGUAGE');
+    case 'CAMPAIGN_NAME':
+      return t('FILTER.ATTRIBUTES.CAMPAIGN_NAME');
+    case 'CONVERSATION_IDENTIFIER':
+      return t('FILTER.ATTRIBUTES.CONVERSATION_IDENTIFIER');
+    case 'CREATED_AT':
+      return t('FILTER.ATTRIBUTES.CREATED_AT');
+    case 'CRM_STAGE':
+      return t('FILTER.ATTRIBUTES.CRM_STAGE');
+    case 'INBOX_NAME':
+      return t('FILTER.ATTRIBUTES.INBOX_NAME');
+    case 'LABELS':
+      return t('FILTER.ATTRIBUTES.LABELS');
+    case 'LAST_ACTIVITY':
+      return t('FILTER.ATTRIBUTES.LAST_ACTIVITY');
+    case 'PRIORITY':
+      return t('FILTER.ATTRIBUTES.PRIORITY');
+    case 'REFERER_LINK':
+      return t('FILTER.ATTRIBUTES.REFERER_LINK');
+    case 'STATUS':
+      return t('FILTER.ATTRIBUTES.STATUS');
+    case 'TEAM_NAME':
+      return t('FILTER.ATTRIBUTES.TEAM_NAME');
+    default:
+      return attributeI18nKey;
+  }
+};
+
 const advancedFilterTypes = ref(
   advancedFilterOptions.map(filter => ({
     ...filter,
-    attributeName: t(`FILTER.ATTRIBUTES.${filter.attributeI18nKey}`),
+    attributeName: filterAttributeName(filter.attributeI18nKey),
   }))
 );
 
@@ -1209,16 +1245,29 @@ async function markAsRead(conversationId) {
   }
 }
 
-function toggleConversationStatus(
+async function resolveStatusReason(status) {
+  const result = await statusReasonDialogRef.value?.open({ status });
+  if (result === statusReasonDialogRef.value?.CANCELLED) {
+    return { cancelled: true };
+  }
+
+  return { statusReason: result };
+}
+
+async function toggleConversationStatus(
   conversationId,
   status,
   snoozedUntil,
   customAttributes = null
 ) {
+  const { cancelled, statusReason } = await resolveStatusReason(status);
+  if (cancelled) return;
+
   const payload = {
     conversationId,
     status,
     snoozedUntil,
+    statusReason,
   };
 
   if (customAttributes) {
@@ -1563,8 +1612,13 @@ watch(conversationFilters, (newVal, oldVal) => {
       @select-all-conversations="toggleSelectAll"
       @assign-agent="handleAssignAgent"
       @update-conversations="
-        (status, snoozedUntil) =>
-          onUpdateConversations(status, snoozedUntil, communicationThreadMode)
+        (status, snoozedUntil, statusReason) =>
+          onUpdateConversations(
+            status,
+            snoozedUntil,
+            communicationThreadMode,
+            statusReason
+          )
       "
       @assign-labels="handleAssignLabels"
       @assign-team="handleAssignTeam"
@@ -1665,5 +1719,6 @@ watch(conversationFilters, (newVal, oldVal) => {
       ref="resolveAttributesModalRef"
       @submit="handleResolveWithAttributes"
     />
+    <ConversationStatusReasonDialog ref="statusReasonDialogRef" />
   </div>
 </template>

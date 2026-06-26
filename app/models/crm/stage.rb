@@ -2,20 +2,22 @@
 #
 # Table name: crm_stages
 #
-#  id                      :bigint           not null, primary key
-#  active                  :boolean          default(TRUE), not null
-#  closing_reason_options  :jsonb            not null
-#  closing_reason_required :boolean          default(FALSE), not null
-#  code                    :string           not null
-#  color                   :string           default("#E11D48"), not null
-#  default                 :boolean          default(FALSE), not null
-#  name                    :string           not null
-#  outcome                 :string           default("open"), not null
-#  position                :integer          default(0), not null
-#  created_at              :datetime         not null
-#  updated_at              :datetime         not null
-#  account_id              :bigint           not null
-#  pipeline_id             :bigint           not null
+#  id                         :bigint           not null, primary key
+#  active                     :boolean          default(TRUE), not null
+#  closing_reason_options     :jsonb            not null
+#  closing_reason_required    :boolean          default(FALSE), not null
+#  code                       :string           not null
+#  color                      :string           default("#E11D48"), not null
+#  default                    :boolean          default(FALSE), not null
+#  name                       :string           not null
+#  outcome                    :string           default("open"), not null
+#  position                   :integer          default(0), not null
+#  transition_reason_options  :jsonb            not null
+#  transition_reason_required :boolean          default(FALSE), not null
+#  created_at                 :datetime         not null
+#  updated_at                 :datetime         not null
+#  account_id                 :bigint           not null
+#  pipeline_id                :bigint           not null
 #
 # Indexes
 #
@@ -83,6 +85,7 @@ class Crm::Stage < ApplicationRecord
   validate :pipeline_belongs_to_account
   validate :default_stage_must_be_active_open
   validate :closing_reason_required_requires_options
+  validate :transition_reason_required_requires_options
 
   scope :ordered, -> { order(TERMINAL_STAGE_SORT_SQL, :position, :id) }
   scope :active, -> { where(active: true) }
@@ -94,6 +97,7 @@ class Crm::Stage < ApplicationRecord
   before_validation :normalize_code
   before_validation :normalize_color
   before_validation :normalize_closing_reason_config
+  before_validation :normalize_transition_reason_config
   before_validation :assign_position, on: :create
   before_save :clear_other_default_stages, if: :default?
   before_create :shift_sibling_positions_for_insert
@@ -121,9 +125,9 @@ class Crm::Stage < ApplicationRecord
     return [] if normalized_values.blank?
 
     options_by_key = closing_reason_options.index_by { |reason| reason.to_s.downcase }
-    normalized_values.map do |reason|
+    normalized_values.filter_map do |reason|
       options_by_key[reason.to_s.downcase]
-    end.compact.uniq
+    end.uniq
   end
 
   def invalid_closing_reasons(values)
@@ -133,6 +137,22 @@ class Crm::Stage < ApplicationRecord
     normalized_values.reject do |reason|
       canonical_values.any? { |canonical_reason| canonical_reason.casecmp?(reason) }
     end
+  end
+
+  def canonical_transition_reason(value)
+    reason = self.class.normalize_closing_reason_values([value]).first
+    return if reason.blank?
+
+    options_by_key = transition_reason_options.index_by { |option| option.to_s.downcase }
+    options_by_key[reason.to_s.downcase]
+  end
+
+  def invalid_transition_reason(value)
+    reason = self.class.normalize_closing_reason_values([value]).first
+    return [] if reason.blank?
+    return [] if canonical_transition_reason(reason).present?
+
+    [reason]
   end
 
   private
@@ -184,12 +204,29 @@ class Crm::Stage < ApplicationRecord
     self.closing_reason_required = false
   end
 
+  def normalize_transition_reason_config
+    self.transition_reason_options = self.class.normalize_closing_reason_values(transition_reason_options)
+
+    return if outcome_open?
+
+    self.transition_reason_options = []
+    self.transition_reason_required = false
+  end
+
   def closing_reason_required_requires_options
     return unless terminal_outcome?
     return unless closing_reason_required?
     return if closing_reason_options.present?
 
     errors.add(:closing_reason_options, 'must include at least one reason when required')
+  end
+
+  def transition_reason_required_requires_options
+    return unless outcome_open?
+    return unless transition_reason_required?
+    return if transition_reason_options.present?
+
+    errors.add(:transition_reason_options, 'must include at least one reason when required')
   end
 
   def assign_default_color

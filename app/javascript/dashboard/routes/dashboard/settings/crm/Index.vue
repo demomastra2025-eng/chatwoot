@@ -112,6 +112,8 @@ const stageForm = reactive({
   outcome: 'open',
   pipelineId: '',
   position: '',
+  transitionReasonOptions: [],
+  transitionReasonRequired: false,
 });
 
 const pipelineColumns = computed(() => [
@@ -193,6 +195,10 @@ const stageFormClosingReasonOptions = computed(() =>
   normalizedTextValues(stageForm.closingReasonOptions)
 );
 
+const stageFormTransitionReasonOptions = computed(() =>
+  normalizedTextValues(stageForm.transitionReasonOptions)
+);
+
 const stageFormHasInvalidClosingReasonRequirement = computed(
   () =>
     stageFormIsTerminal.value &&
@@ -200,11 +206,19 @@ const stageFormHasInvalidClosingReasonRequirement = computed(
     stageFormClosingReasonOptions.value.length === 0
 );
 
+const stageFormHasInvalidTransitionReasonRequirement = computed(
+  () =>
+    !stageFormIsTerminal.value &&
+    stageForm.transitionReasonRequired &&
+    stageFormTransitionReasonOptions.value.length === 0
+);
+
 const stageFormDisableConfirm = computed(
   () =>
     !stageForm.name.trim() ||
     !stageForm.pipelineId ||
-    stageFormHasInvalidClosingReasonRequirement.value
+    stageFormHasInvalidClosingReasonRequirement.value ||
+    stageFormHasInvalidTransitionReasonRequirement.value
 );
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
@@ -684,6 +698,8 @@ const resetStageForm = () => {
     outcome: 'open',
     pipelineId: firstPipelineId,
     position: '',
+    transitionReasonOptions: [],
+    transitionReasonRequired: false,
   });
 };
 
@@ -719,6 +735,10 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
       outcome: stage.outcome || 'open',
       pipelineId: stage.pipelineId,
       position: stage.position ?? '',
+      transitionReasonOptions: normalizedTextValues(
+        stage.transitionReasonOptions
+      ),
+      transitionReasonRequired: Boolean(stage.transitionReasonRequired),
     });
   } else {
     resetStageForm();
@@ -789,14 +809,16 @@ const saveNewPipeline = async () => {
 
 const buildStageSavePayload = () => {
   const basePayload = {
-    closing_reason_options: stageFormClosingReasonOptions.value,
-    closing_reason_required: Boolean(stageForm.closingReasonRequired),
     id: stageForm.id,
     name: stageForm.name.trim(),
   };
 
   if (stageFormIsTerminal.value) {
-    return basePayload;
+    return {
+      ...basePayload,
+      closing_reason_options: stageFormClosingReasonOptions.value,
+      closing_reason_required: Boolean(stageForm.closingReasonRequired),
+    };
   }
 
   return {
@@ -806,6 +828,8 @@ const buildStageSavePayload = () => {
     default: Boolean(stageForm.default && stageFormCanBeDefault.value),
     outcome: 'open',
     pipelineId: Number(stageForm.pipelineId),
+    transition_reason_options: stageFormTransitionReasonOptions.value,
+    transition_reason_required: Boolean(stageForm.transitionReasonRequired),
   };
 };
 
@@ -1423,14 +1447,29 @@ onMounted(async () => {
           :disabled="Boolean(stageForm.id)"
           @update:model-value="handleStagePipelineSelection($event)"
         />
-        <Input
-          :label="$t('CRM.SETTINGS.STAGES.FORM.NAME')"
-          :model-value="stageForm.name"
-          @update:model-value="stageForm.name = $event"
-        />
+        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <Input
+            class="min-w-0"
+            :label="$t('CRM.SETTINGS.STAGES.FORM.NAME')"
+            :model-value="stageForm.name"
+            @update:model-value="stageForm.name = $event"
+          />
+          <label
+            v-if="stageForm.id && !stageFormIsTerminal"
+            class="mb-0 flex h-10 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm text-n-slate-12 outline outline-1 outline-n-weak"
+          >
+            <Checkbox
+              :model-value="!stageForm.active"
+              @update:model-value="stageForm.active = !$event"
+            />
+            <span class="whitespace-nowrap">
+              {{ $t('CRM.SETTINGS.STAGES.FORM.DEACTIVATE') }}
+            </span>
+          </label>
+        </div>
         <div
           v-if="stageFormIsTerminal"
-          class="grid gap-3 rounded-xl border border-n-weak bg-n-alpha-black2 p-3"
+          class="grid gap-3 rounded-xl border border-n-weak p-3"
         >
           <div class="grid gap-1">
             <span class="text-sm font-medium text-n-slate-12">
@@ -1442,6 +1481,7 @@ onMounted(async () => {
           </div>
           <TagInput
             v-model="stageForm.closingReasonOptions"
+            class="rounded-lg bg-n-alpha-black2 p-2 outline outline-1 outline-n-weak"
             allow-create
             :auto-open-dropdown="false"
             :placeholder="
@@ -1527,16 +1567,52 @@ onMounted(async () => {
           </div>
         </div>
         <div
-          v-if="stageForm.id && !stageFormIsTerminal"
-          class="flex items-center gap-3"
+          v-if="!stageFormIsTerminal"
+          class="grid gap-3 rounded-xl border border-n-weak p-3"
         >
-          <Checkbox
-            :model-value="!stageForm.active"
-            @update:model-value="stageForm.active = !$event"
+          <div class="grid gap-1">
+            <span class="text-sm font-medium text-n-slate-12">
+              {{ $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS') }}
+            </span>
+            <span class="text-xs leading-5 text-n-slate-11">
+              {{ $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_HELP') }}
+            </span>
+          </div>
+          <TagInput
+            v-model="stageForm.transitionReasonOptions"
+            class="rounded-lg bg-n-alpha-black2 p-2 outline outline-1 outline-n-weak"
+            allow-create
+            :auto-open-dropdown="false"
+            :placeholder="
+              $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_PLACEHOLDER')
+            "
           />
-          <span class="text-sm text-n-slate-12">
-            {{ $t('CRM.SETTINGS.STAGES.FORM.DEACTIVATE') }}
-          </span>
+          <div class="flex items-center gap-3">
+            <Switch
+              :model-value="stageForm.transitionReasonRequired"
+              @update:model-value="stageForm.transitionReasonRequired = $event"
+            />
+            <div class="grid gap-1">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_REQUIRED') }}
+              </span>
+              <span class="text-xs leading-5 text-n-slate-11">
+                {{
+                  $t(
+                    'CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_REQUIRED_HELP'
+                  )
+                }}
+              </span>
+            </div>
+          </div>
+          <p
+            v-if="stageFormHasInvalidTransitionReasonRequirement"
+            class="mb-0 text-xs leading-5 text-n-ruby-10"
+          >
+            {{
+              $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_REQUIRED_ERROR')
+            }}
+          </p>
         </div>
       </div>
 

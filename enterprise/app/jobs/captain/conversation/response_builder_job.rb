@@ -315,25 +315,51 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       I18n.with_locale(@assistant.account.locale) do
         create_handoff_private_note
         create_handoff_message
-        @conversation.bot_handoff!
+        bot_handoff_with_activity_reason
         send_out_of_office_message_if_applicable
       end
     when 'provider_error_handoff'
       create_provider_error_private_note
-      @conversation.bot_handoff!
+      bot_handoff_with_activity_reason(provider_error_note_content)
       send_out_of_office_message_if_applicable
     when 'v2_handoff'
       if conversation_pending?
         I18n.with_locale(@assistant.account.locale) do
           create_handoff_private_note
           create_handoff_message
-          @conversation.bot_handoff!
+          bot_handoff_with_activity_reason
           send_out_of_office_message_if_applicable
         end
       else
         create_handoff_message(preserve_waiting_since: true)
       end
     end
+  end
+
+  def bot_handoff_with_activity_reason(reason = handoff_activity_reason)
+    status_reason = handoff_status_reason
+    source = status_reason.present? ? 'captain' : 'system'
+
+    if reason.present?
+      @conversation.with_captain_activity_context(
+        reason: reason,
+        reason_type: v2_handoff_tool_fired? ? :tool : :inference
+      ) { @conversation.bot_handoff!(status_reason: status_reason, actor: @assistant, source: source) }
+    else
+      @conversation.bot_handoff!(status_reason: status_reason, actor: @assistant, source: source)
+    end
+  end
+
+  def handoff_activity_reason
+    @response['handoff_reason'].to_s.strip.presence || @response['reasoning'].to_s.strip.presence
+  end
+
+  def handoff_status_reason
+    explicit_reason = @response['handoff_status_reason'].to_s.strip.presence || @response['status_reason'].to_s.strip.presence
+    config = Conversations::StatusReasonConfig.new(@conversation.account)
+    return config.resolve_reason!('open', explicit_reason, enforce_required: false) if explicit_reason.present?
+
+    config.canonical_reason('open', handoff_activity_reason)
   end
 
   def send_out_of_office_message_if_applicable

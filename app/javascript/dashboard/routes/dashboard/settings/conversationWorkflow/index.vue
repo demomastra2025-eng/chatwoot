@@ -6,6 +6,7 @@ import { FEATURE_FLAGS } from '../../../../featureFlags';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import ConversationRequiredAttributes from 'dashboard/components-next/ConversationWorkflow/ConversationRequiredAttributes.vue';
+import ConversationStatusReasons from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasons.vue';
 import AutoResolve from 'dashboard/routes/dashboard/settings/account/components/AutoResolve.vue';
 
 const { accountId } = useAccount();
@@ -39,9 +40,17 @@ const showRequiredAttributes = computed(() => {
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-6 mt-4">
+      <div class="flex flex-col gap-8 mt-4">
         <AutoResolve v-if="showAutoResolutionConfig" />
         <ConversationRequiredAttributes :is-enabled="showRequiredAttributes" />
+        <div
+          aria-hidden="true"
+          class="h-px bg-n-weak"
+          data-test="workflow-section-divider"
+        />
+        <div data-test="status-reasons-section">
+          <ConversationStatusReasons />
+        </div>
       </div>
     </template>
   </SettingsLayout>

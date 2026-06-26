@@ -288,11 +288,19 @@ const handleOwnerChange = (deal, ownerId) => {
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <h4
-                    class="mb-0 truncate text-xs font-semibold text-n-slate-12"
-                  >
-                    {{ element.title }}
-                  </h4>
+                  <div class="flex min-w-0 items-center gap-1.5">
+                    <h4
+                      class="mb-0 min-w-0 truncate text-xs font-semibold text-n-slate-12"
+                    >
+                      {{ element.title }}
+                    </h4>
+                    <span
+                      v-if="element.dialogStatus === 'pending'"
+                      class="shrink-0 rounded-full bg-n-violet-3 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-n-violet-9 ring-1 ring-inset ring-n-violet-6/20"
+                    >
+                      {{ $t('CRM.DEALS.AI_BADGE') }}
+                    </span>
+                  </div>
                   <p class="mb-0 mt-0.5 text-[10px] text-n-slate-11">
                     {{ dealSubtitle(element) || $t('CRM.GENERAL.EMPTY_VALUE') }}
                   </p>

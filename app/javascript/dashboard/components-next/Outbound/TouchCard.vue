@@ -160,15 +160,15 @@ const canDelete = computed(() =>
 </script>
 
 <template>
-  <CardLayout layout="row">
-    <div class="flex min-w-0 flex-1 flex-col items-start justify-between gap-2">
+  <CardLayout layout="row" compact>
+    <div class="flex min-w-0 flex-1 flex-col items-start justify-between gap-1">
       <div class="flex min-w-0 w-full items-center gap-2 overflow-hidden">
         <span
-          class="min-w-0 max-w-[10rem] truncate text-base font-medium text-n-slate-12 sm:max-w-[14rem] xl:max-w-[18rem]"
+          class="min-w-0 max-w-[10rem] truncate text-sm font-medium text-n-slate-12 sm:max-w-[14rem] xl:max-w-[18rem]"
         >
           {{ recipientTitle }}
         </span>
-        <span v-if="remindableLabel" class="shrink-0 text-sm text-n-slate-10">
+        <span v-if="remindableLabel" class="shrink-0 text-xs text-n-slate-10">
           {{ remindableLabel }}
         </span>
         <span
@@ -184,17 +184,17 @@ const canDelete = computed(() =>
         </span>
       </div>
 
-      <div class="flex min-h-6 w-full items-center gap-2 overflow-hidden">
+      <div class="flex min-h-5 w-full items-center gap-2 overflow-hidden">
         <span
-          class="inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-medium"
+          class="inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-xs font-medium"
           :class="statusClass"
         >
           {{ statusText }}
         </span>
-        <span v-if="contactIdentifier" class="truncate text-sm text-n-slate-10">
+        <span v-if="contactIdentifier" class="truncate text-xs text-n-slate-10">
           {{ contactIdentifier }}
         </span>
-        <span class="shrink-0 text-sm text-n-slate-11 whitespace-nowrap">
+        <span class="shrink-0 text-xs text-n-slate-11 whitespace-nowrap">
           {{ t('CAMPAIGN.SMS.CARD.CAMPAIGN_DETAILS.SENT_FROM') }}
         </span>
         <div class="flex shrink-0 items-center gap-1.5">
@@ -203,14 +203,14 @@ const canDelete = computed(() =>
             :icon="inboxIcon"
             class="size-3 shrink-0 text-n-slate-12"
           />
-          <span class="text-sm font-medium text-n-slate-12">
+          <span class="text-xs font-medium text-n-slate-12">
             {{ inboxName }}
           </span>
         </div>
-        <span class="shrink-0 text-sm text-n-slate-11 whitespace-nowrap">
+        <span class="shrink-0 text-xs text-n-slate-11 whitespace-nowrap">
           {{ t('CAMPAIGN.SMS.CARD.CAMPAIGN_DETAILS.ON') }}
         </span>
-        <span class="flex-1 truncate text-sm font-medium text-n-slate-12">
+        <span class="flex-1 truncate text-xs font-medium text-n-slate-12">
           {{ timingText }}
         </span>
       </div>
@@ -218,12 +218,12 @@ const canDelete = computed(() =>
 
     <div
       v-if="showActions"
-      class="flex shrink-0 flex-wrap items-center justify-end gap-2 pl-2"
+      class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 pl-2"
     >
       <Button
         v-if="canEdit"
         variant="faded"
-        size="sm"
+        size="xs"
         color="slate"
         icon="i-lucide-sliders-horizontal"
         :disabled="isMutating"
@@ -232,7 +232,7 @@ const canDelete = computed(() =>
       />
       <Button
         variant="faded"
-        size="sm"
+        size="xs"
         color="slate"
         icon="i-lucide-chart-column"
         :disabled="isMutating"
@@ -242,7 +242,7 @@ const canDelete = computed(() =>
       <Button
         v-if="canApprove"
         variant="faded"
-        size="sm"
+        size="xs"
         color="blue"
         icon="i-lucide-check"
         :is-loading="isMutating"
@@ -253,7 +253,7 @@ const canDelete = computed(() =>
       <Button
         v-if="canCancel"
         variant="faded"
-        size="sm"
+        size="xs"
         color="ruby"
         icon="i-lucide-circle-stop"
         :is-loading="isMutating"
@@ -264,7 +264,7 @@ const canDelete = computed(() =>
       <Button
         v-if="canDelete"
         variant="faded"
-        size="sm"
+        size="xs"
         color="ruby"
         icon="i-lucide-trash"
         :disabled="isMutating"

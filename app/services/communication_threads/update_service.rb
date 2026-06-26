@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
 class CommunicationThreads::UpdateService
-  include DateRangeHelper
-
-  def initialize(communication_thread:, params:, accessible_links:)
+  def initialize(communication_thread:, params:, accessible_links:, actor: Current.user, source: 'communication_thread')
     @communication_thread = communication_thread
     @current_account = communication_thread.account
-    @params = params
+    @params = params.to_h.with_indifferent_access
     @accessible_links = accessible_links.includes(:conversation)
+    @actor = actor
+    @source = source.to_s.presence || 'communication_thread'
   end
 
   def perform
@@ -20,7 +20,7 @@ class CommunicationThreads::UpdateService
 
   private
 
-  attr_reader :communication_thread, :current_account, :params, :accessible_links
+  attr_reader :communication_thread, :current_account, :params, :accessible_links, :actor, :source
 
   def sync_accessible_conversations!
     accessible_links.each do |link|
@@ -39,8 +39,13 @@ class CommunicationThreads::UpdateService
   def assign_status!(conversation)
     return unless params.key?(:status)
 
-    conversation.status = params[:status]
-    conversation.snoozed_until = parsed_snoozed_until if params[:snoozed_until].present?
+    Conversations::StatusTransitionService.new(
+      conversation: conversation,
+      params: status_transition_params,
+      actor: actor,
+      source: source
+    ).perform
+    conversation.reload
   end
 
   def assign_priority!(conversation)
@@ -82,10 +87,8 @@ class CommunicationThreads::UpdateService
     params[:assignee_type].to_s == 'AgentBot'
   end
 
-  def parsed_snoozed_until
-    return if params[:snoozed_until].blank?
-
-    parse_date_time(params[:snoozed_until].to_s)
+  def status_transition_params
+    params.slice(:status, :status_reason, :snoozed_until)
   end
 
   def refresh_communication_thread!

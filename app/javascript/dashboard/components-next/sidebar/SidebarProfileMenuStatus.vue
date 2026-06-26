@@ -114,7 +114,7 @@ function changeAvailabilityStatus(availability) {
           </DropdownBody>
         </DropdownContainer>
       </DropdownItem>
-      <DropdownItem>
+      <DropdownItem preserve-open>
         <div class="flex-grow min-w-0">
           {{ $t('SIDEBAR.SET_AUTO_OFFLINE.TEXT') }}
           <Icon

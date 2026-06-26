@@ -1,5 +1,6 @@
 <script setup>
-import { defineProps, computed, reactive } from 'vue';
+import { computed, reactive } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Message from './Message.vue';
 import { MESSAGE_TYPES } from './constants.js';
 import { useCamelCase } from 'dashboard/composables/useTransformKeys';
@@ -13,6 +14,10 @@ import {
   CHANNEL_ICON_NEUTRAL_CLASS,
   getInboxIconByType,
 } from 'dashboard/helper/inbox';
+import {
+  formatMessageDateDivider,
+  messageDateKey,
+} from './messageDateDivider.js';
 
 /**
  * Props definition for the component
@@ -53,6 +58,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['retry']);
+const { t, locale } = useI18n();
 
 const isHiddenDuplicateMessage = message => {
   const data = message.contentAttributes?.data || {};
@@ -65,6 +71,22 @@ const allMessages = computed(() => {
     stopPaths: ['content_attributes.translations'],
   }).filter(message => !isHiddenDuplicateMessage(message));
 });
+
+const shouldShowDateDivider = (message, index, messages) => {
+  const currentDateKey = messageDateKey(message?.createdAt);
+  if (!currentDateKey) return false;
+
+  const previousMessage = messages[index - 1];
+  return (
+    !previousMessage ||
+    messageDateKey(previousMessage.createdAt) !== currentDateKey
+  );
+};
+
+const dateDividerLabelForMessage = message =>
+  formatMessageDateDivider(message?.createdAt, { t, locale });
+
+const dateTimeForMessage = message => messageDateKey(message?.createdAt);
 
 const unreadMessageIdSet = computed(
   () => new Set(props.unreadMessageIds.map(id => String(id)))
@@ -239,6 +261,19 @@ const messageReadStateClass = message =>
   <ul class="px-4 bg-n-surface-1">
     <slot name="beforeAll" />
     <template v-for="(message, index) in allMessages" :key="message.id">
+      <li
+        v-if="shouldShowDateDivider(message, index, allMessages)"
+        class="my-4 flex items-center gap-3"
+      >
+        <span class="h-px flex-1 bg-n-weak" />
+        <time
+          :datetime="dateTimeForMessage(message)"
+          class="shrink-0 px-2 text-xs font-medium text-n-slate-11"
+        >
+          {{ dateDividerLabelForMessage(message) }}
+        </time>
+        <span class="h-px flex-1 bg-n-weak" />
+      </li>
       <slot
         v-if="firstUnreadId && message.id === firstUnreadId"
         name="unreadBadge"

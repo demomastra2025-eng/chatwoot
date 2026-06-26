@@ -14,6 +14,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       new_record = deal.new_record?
       requested_position = resolve_requested_position
       stage = resolve_stage!
+      stage_changing = new_record || deal.stage_id != stage.id
       pipeline = stage.pipeline
       conversation = resolve_originating_conversation
       communication_thread = resolve_originating_communication_thread
@@ -37,7 +38,11 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       closing_reasons = resolve_closing_reasons!(
         target_stage: stage,
         current_reasons: deal.closing_reasons,
-        require_input: new_record || deal.stage_id != stage.id
+        require_input: stage_changing
+      )
+      transition_reason = resolve_transition_reason!(
+        target_stage: stage,
+        require_input: !new_record && stage_changing
       )
 
       deal.assign_attributes(
@@ -62,7 +67,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         closing_reasons: closing_reasons
       )
       deal.position = requested_position if requested_position.present?
-      deal.closed_at = resolve_closed_at(stage: stage)
+      deal.closed_at = resolve_closed_at(stage: stage, stage_changing: stage_changing)
       deal.save!
       auto_apply_default_touch_plan! if new_record
       sync_related_touches!
@@ -78,7 +83,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         new_record: new_record,
         contacts_changed: contacts_changed
       )
-      write_event!(new_record: new_record, contacts_changed: contacts_changed)
+      write_event!(new_record: new_record, contacts_changed: contacts_changed, transition_reason: transition_reason)
       notify_assignment!(new_record: new_record)
 
       deal.reload
@@ -106,8 +111,8 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     @field_catalog ||= ::Crm::FieldCatalog.new(account: account, entity_kind: 'deal')
   end
 
-  def resolve_closed_at(stage:)
-    return deal.closed_at unless deal.new_record?
+  def resolve_closed_at(stage:, stage_changing:)
+    return deal.closed_at unless stage_changing
 
     stage.outcome_open? ? nil : Time.zone.now
   end
@@ -280,19 +285,22 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     )
   end
 
-  def write_event!(new_record:, contacts_changed:)
+  def write_event!(new_record:, contacts_changed:, transition_reason: nil)
     return unless new_record || contacts_changed || filtered_previous_changes.present?
+
+    meta = {
+      changes: filtered_previous_changes,
+      contact_ids: deal.deal_contacts.ordered.pluck(:contact_id),
+      primary_contact_id: deal.primary_contact_id
+    }
+    meta[:transition_reason] = transition_reason if transition_reason.present?
 
     ::Crm::Events::Writer.record!(
       account: account,
       eventable: deal,
       actor: actor,
       event_type: new_record ? 'deal_created' : 'deal_updated',
-      meta: {
-        changes: filtered_previous_changes,
-        contact_ids: deal.deal_contacts.ordered.pluck(:contact_id),
-        primary_contact_id: deal.primary_contact_id
-      }
+      meta: meta
     )
   end
 

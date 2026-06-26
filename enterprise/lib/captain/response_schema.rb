@@ -11,6 +11,18 @@ class Captain::ResponseSchema < RubyLLM::Schema
       'AI handoff message mode is enabled. Return an empty string when no handoff message should be sent.'
     ].join
   ).freeze
+  HANDOFF_REASON_DESCRIPTION = (
+    [
+      'Concise internal reason for opening the conversation / handing it to a human agent when ',
+      'response is conversation_handoff. Return an empty string when no handoff is requested.'
+    ].join
+  ).freeze
+  HANDOFF_STATUS_REASON_DESCRIPTION = (
+    [
+      'Configured conversation status reason for opening/handoff when status reasons are enabled. ',
+      'Use only an exact configured option; return an empty string when unknown or not configured.'
+    ].join
+  ).freeze
   REASONING_DESCRIPTION = (
     [
       'Required non-empty, brief user-visible outcome rationale based on facts and tool results. ',
@@ -22,4 +34,6 @@ class Captain::ResponseSchema < RubyLLM::Schema
   string :reasoning, description: REASONING_DESCRIPTION
   array :artifact_ids, of: :string, description: ARTIFACT_IDS_DESCRIPTION
   string :handoff_message, description: HANDOFF_MESSAGE_DESCRIPTION
+  string :handoff_reason, description: HANDOFF_REASON_DESCRIPTION
+  string :handoff_status_reason, description: HANDOFF_STATUS_REASON_DESCRIPTION
 end

@@ -7,6 +7,10 @@ class TouchPlansAPI extends ApiClient {
     super('touch_plans', { accountScoped: true });
   }
 
+  get(params = {}) {
+    return axios.get(this.url, { params });
+  }
+
   archive(id) {
     return axios.post(`${this.url}/${id}/archive`);
   }

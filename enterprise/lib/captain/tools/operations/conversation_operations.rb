@@ -172,24 +172,41 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     target_conversation.reload
   end
 
-  def handoff(reason: nil)
+  def handoff(reason: nil, status_reason: nil)
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
 
     add_private_note(note: reason) if reason.present?
-    conversation.bot_handoff!
+    conversation.bot_handoff!(
+      status_reason: configured_status_reason_for(conversation, 'open', status_reason, fallback_reason: reason),
+      actor: actor || assistant,
+      source: captain_status_source
+    )
     ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation) unless conversation.campaign.present?
     conversation.reload
   end
 
-  def resolve_conversation(reason: nil)
+  def resolve_conversation(reason: nil, status_reason: nil)
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
     raise ArgumentError, 'Conversation is already resolved' if conversation.resolved?
     raise ArgumentError, 'Auto-resolve is disabled for this account' if conversation.account.captain_auto_resolve_disabled?
 
+    params = { status: 'resolved' }
+    status_reason = configured_status_reason_for(conversation, 'resolved', status_reason, fallback_reason: reason)
+    params[:status_reason] = status_reason if status_reason.present?
+
+    transition = lambda do
+      ::Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: params,
+        actor: actor || assistant,
+        source: captain_status_source
+      ).perform
+    end
+
     if reason.present?
-      conversation.with_captain_activity_context(reason: reason, reason_type: :tool) { conversation.resolved! }
+      conversation.with_captain_activity_context(reason: reason, reason_type: :tool, &transition)
     else
-      conversation.resolved!
+      transition.call
     end
     conversation.reload
   end
@@ -399,6 +416,18 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     return if actor.blank?
 
     @actor_account_user ||= AccountUser.find_by(account_id: account.id, user_id: actor.id)
+  end
+
+  def configured_status_reason_for(target_conversation, target_status, explicit_reason, fallback_reason: nil)
+    config = ::Conversations::StatusReasonConfig.new(target_conversation.account)
+    explicit_reason = explicit_reason.to_s.strip.presence
+    return config.resolve_reason!(target_status, explicit_reason, enforce_required: false) if explicit_reason.present?
+
+    config.canonical_reason(target_status, fallback_reason)
+  end
+
+  def captain_status_source
+    actor.present? ? 'copilot' : 'captain'
   end
 
   def with_current_account_context

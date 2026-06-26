@@ -5,6 +5,7 @@ import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
 import Button from 'dashboard/components-next/button/Button.vue';
+import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ComboBoxDropdown from 'dashboard/components-next/combobox/ComboBoxDropdown.vue';
 
 const props = defineProps({
@@ -50,10 +51,8 @@ const dropdownStyle = ref({});
 const teleportTarget = ref('body');
 
 const resolveTeleportTarget = () => {
-  const overlayElement = comboboxRef.value?.closest(
-    'dialog[open], .modal-mask'
-  );
-  teleportTarget.value = overlayElement || 'body';
+  const dialogElement = comboboxRef.value?.closest('dialog[open]');
+  teleportTarget.value = dialogElement || 'body';
 };
 
 const resolveDropdownPlacement = ({ availableAbove, availableBelow }) => {
@@ -75,18 +74,19 @@ const updateDropdownPosition = () => {
     Math.max(rect.left, viewportPadding),
     window.innerWidth - width - viewportPadding
   );
-  const availableAbove = Math.max(
-    rect.top - viewportPadding - dropdownGap,
-    160
-  );
+  const availableAbove = Math.max(rect.top - viewportPadding - dropdownGap, 0);
   const availableBelow = Math.max(
     window.innerHeight - rect.bottom - viewportPadding - dropdownGap,
-    160
+    0
   );
   const placement = resolveDropdownPlacement({
     availableAbove,
     availableBelow,
   });
+  const maxHeight = Math.max(
+    Math.min(placement === 'top' ? availableAbove : availableBelow, 320),
+    96
+  );
 
   dropdownStyle.value = {
     bottom:
@@ -94,9 +94,7 @@ const updateDropdownPosition = () => {
         ? `${Math.round(window.innerHeight - rect.top + dropdownGap)}px`
         : 'auto',
     left: `${Math.round(left)}px`,
-    maxHeight: `${Math.round(
-      placement === 'top' ? availableAbove : availableBelow
-    )}px`,
+    maxHeight: `${Math.round(maxHeight)}px`,
     top:
       placement === 'bottom'
         ? `${Math.round(rect.bottom + dropdownGap)}px`
@@ -144,11 +142,11 @@ const triggerColor = computed(() => {
 const hasAppendSlot = computed(() => !!slots.append);
 
 const triggerClass = computed(() => [
-  'w-full !px-3 text-n-slate-12 font-normal focus:outline-n-brand',
+  'w-full !px-2 text-n-slate-12 font-normal focus:outline-n-brand',
   props.inputLike
     ? '!h-10 !rounded-lg !bg-n-alpha-black2 !py-2.5 !outline-n-weak hover:!outline-n-slate-6 dark:hover:!outline-n-slate-6'
     : '!py-2.5 group-hover/combobox:border-n-slate-6',
-  hasAppendSlot.value ? '!pr-[4.25rem]' : '!pr-10',
+  hasAppendSlot.value ? '!pr-[4.25rem]' : '!pr-2',
   {
     focused: open.value,
     '[&:not(.focused)]:dark:outline-n-weak [&:not(.focused)]:hover:enabled:outline-n-slate-6 [&:not(.focused)]:dark:hover:enabled:outline-n-slate-6':
@@ -236,8 +234,21 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
           @click="toggleDropdown"
         >
           <span
-            class="flex min-w-0 flex-1 items-center justify-start gap-2 pr-2 text-left"
+            class="flex min-w-0 flex-1 items-center justify-start gap-2 text-left"
           >
+            <Avatar
+              v-if="selectedOption?.thumbnail"
+              :name="selectedOption.thumbnail.name || selectedLabel"
+              :src="selectedOption.thumbnail.src"
+              :size="18"
+              rounded-full
+            />
+            <span
+              v-else-if="selectedOption?.stageColor"
+              class="h-5 w-1 shrink-0 rounded-full"
+              :style="{ backgroundColor: selectedOption.stageColor }"
+              aria-hidden="true"
+            />
             <span
               v-if="selectedIcon"
               class="size-4 shrink-0 text-n-slate-10"
@@ -250,14 +261,13 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
             >
               {{ selectedLabel }}
             </span>
+            <span
+              class="size-4 shrink-0 text-n-slate-10"
+              :class="[open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down']"
+              aria-hidden="true"
+            />
           </span>
         </Button>
-
-        <span
-          class="pointer-events-none absolute inset-y-0 right-3 z-10 my-auto inline-flex size-4 items-center justify-center text-n-slate-10"
-          :class="[open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down']"
-          aria-hidden="true"
-        />
 
         <div
           v-if="hasAppendSlot"

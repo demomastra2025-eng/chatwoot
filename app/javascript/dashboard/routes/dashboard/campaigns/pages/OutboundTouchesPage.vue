@@ -222,24 +222,6 @@ const setStatusFilter = status => {
   });
 };
 
-const openPlansPage = () => {
-  router.push({
-    name: 'outbound_touch_plans_index',
-    params: route.params,
-    query: {
-      ...(entityContext.value.conversationId
-        ? { conversation_id: entityContext.value.conversationId }
-        : {}),
-      ...(entityContext.value.remindableId
-        ? { remindable_id: entityContext.value.remindableId }
-        : {}),
-      ...(entityContext.value.remindableType
-        ? { remindable_type: entityContext.value.remindableType }
-        : {}),
-    },
-  });
-};
-
 watch(
   () => [
     activeStatusFilter.value,
@@ -284,12 +266,6 @@ watch(
         size="sm"
         :label="$t('OUTBOUND_WORKSPACE.TOUCHES.ACTIONS.CREATE')"
         @click="openCreateTouch"
-      />
-      <Button
-        size="sm"
-        slate
-        :label="$t('SIDEBAR.TOUCH_PLANS')"
-        @click="openPlansPage"
       />
       <Button
         size="sm"

@@ -33,7 +33,7 @@ RSpec.describe 'CRM Deals API', type: :request do
 
   it 'creates a deal when originating conversation is provided as display id' do
     contact = create(:contact, :with_email, account: account)
-    conversation = create(:conversation, account: account, contact: contact)
+    conversation = create(:conversation, account: account, contact: contact, status: :pending)
 
     post path,
          params: {
@@ -47,12 +47,14 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
     expect(response.parsed_body.dig('payload', 'originating_conversation_display_id')).to eq(conversation.display_id)
     expect(response.parsed_body.dig('payload', 'originating_communication_thread_id')).to be_nil
+    expect(response.parsed_body.dig('payload', 'dialog_kind')).to eq('conversation')
+    expect(response.parsed_body.dig('payload', 'dialog_status')).to eq('pending')
     expect(response.parsed_body.dig('payload', 'primary_contact_id')).to eq(contact.id)
   end
 
   it 'creates a deal from a communication thread display id and binds the thread contact' do
     contact = create(:contact, :with_email, account: account)
-    communication_thread = create(:communication_thread, account: account, contact: contact)
+    communication_thread = create(:communication_thread, account: account, contact: contact, status: :pending)
 
     post path,
          params: {
@@ -62,13 +64,18 @@ RSpec.describe 'CRM Deals API', type: :request do
          headers: headers,
          as: :json
 
-    deal = account.crm_deals.find(response.parsed_body.dig('payload', 'id'))
+    payload = response.parsed_body['payload']
+    deal = account.crm_deals.find(payload['id'])
 
     expect(response).to have_http_status(:created)
-    expect(response.parsed_body.dig('payload', 'originating_communication_thread_id')).to eq(communication_thread.id)
-    expect(response.parsed_body.dig('payload', 'originating_communication_thread_display_id')).to eq(communication_thread.display_id)
-    expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to be_nil
-    expect(response.parsed_body.dig('payload', 'primary_contact_id')).to eq(contact.id)
+    expect(payload).to include(
+      'dialog_kind' => 'communication_thread',
+      'dialog_status' => 'pending',
+      'originating_communication_thread_display_id' => communication_thread.display_id,
+      'originating_communication_thread_id' => communication_thread.id,
+      'originating_conversation_id' => nil,
+      'primary_contact_id' => contact.id
+    )
     expect(deal.deal_contacts.find_by(contact_id: contact.id)&.primary).to be(true)
   end
 
@@ -88,6 +95,48 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
     expect(response.parsed_body.dig('details', 'originating_communication_thread_id')).to be_present
+  end
+
+  it 'filters deals to linked pending dialogs when ai_only is enabled' do
+    pending_thread = create(:communication_thread, account: account, status: :pending)
+    open_thread = create(:communication_thread, account: account, status: :open)
+    pending_conversation = create(:conversation, account: account, status: :pending)
+    resolved_conversation = create(:conversation, account: account, status: :resolved)
+    pending_thread_deal = create(
+      :crm_deal,
+      account: account,
+      originating_communication_thread: pending_thread
+    )
+    open_thread_deal = create(
+      :crm_deal,
+      account: account,
+      originating_communication_thread: open_thread
+    )
+    pending_conversation_deal = create(
+      :crm_deal,
+      account: account,
+      originating_conversation: pending_conversation
+    )
+    resolved_conversation_deal = create(
+      :crm_deal,
+      account: account,
+      originating_conversation: resolved_conversation
+    )
+    create(:crm_deal, account: account)
+
+    get path, params: { ai_only: true }, headers: headers, as: :json
+
+    payload_ids = response.parsed_body['payload'].pluck('id')
+
+    expect(response).to have_http_status(:ok)
+    expect(payload_ids).to contain_exactly(
+      pending_thread_deal.id,
+      pending_conversation_deal.id
+    )
+    expect(payload_ids).not_to include(
+      open_thread_deal.id,
+      resolved_conversation_deal.id
+    )
   end
 
   it 'creates a standalone deal without contacts or company' do
@@ -271,6 +320,73 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body['code']).to eq('DEAL_STAGE_INVALID_CLOSING_REASONS')
     expect(response.parsed_body.dig('details', 'invalid_reasons')).to eq(['Other'])
+    expect(deal.reload.stage_id).to eq(open_stage.id)
+  end
+
+  it 'requires configured transition reason when moving a deal to a required open stage' do
+    Crm::Bootstrap::AccountService.new(account: account).perform
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    open_stage = pipeline.stages.find_by!(code: 'new')
+    proposal_stage = pipeline.stages.find_by!(code: 'proposal')
+    proposal_stage.update!(transition_reason_options: ['Needs docs'], transition_reason_required: true)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: { stage_id: proposal_stage.id, lock_version: deal.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('DEAL_STAGE_REQUIRES_TRANSITION_REASON')
+    expect(response.parsed_body.dig('details', 'transition_reason_options')).to eq(['Needs docs'])
+    expect(deal.reload.stage_id).to eq(open_stage.id)
+  end
+
+  it 'stores selected transition reason on the stage-change event' do
+    Crm::Bootstrap::AccountService.new(account: account).perform
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    open_stage = pipeline.stages.find_by!(code: 'new')
+    proposal_stage = pipeline.stages.find_by!(code: 'proposal')
+    proposal_stage.update!(transition_reason_options: ['Needs docs', 'Waiting payment'])
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: {
+           stage_id: proposal_stage.id,
+           lock_version: deal.lock_version,
+           transition_reason: 'waiting payment'
+         },
+         headers: headers,
+         as: :json
+
+    event = deal.reload.events.where(event_type: 'deal_stage_changed').last
+
+    expect(response).to have_http_status(:ok)
+    expect(deal.stage_id).to eq(proposal_stage.id)
+    expect(event.meta['transition_reason']).to eq('Waiting payment')
+    expect(event.meta['closing_reasons']).to eq([])
+  end
+
+  it 'rejects transition reason that is not configured for the open stage' do
+    Crm::Bootstrap::AccountService.new(account: account).perform
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    open_stage = pipeline.stages.find_by!(code: 'new')
+    proposal_stage = pipeline.stages.find_by!(code: 'proposal')
+    proposal_stage.update!(transition_reason_options: ['Needs docs'])
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: {
+           stage_id: proposal_stage.id,
+           lock_version: deal.lock_version,
+           transition_reason: 'Waiting payment'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('DEAL_STAGE_INVALID_TRANSITION_REASON')
+    expect(response.parsed_body.dig('details', 'invalid_reasons')).to eq(['Waiting payment'])
     expect(deal.reload.stage_id).to eq(open_stage.id)
   end
 

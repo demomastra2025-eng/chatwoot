@@ -44,11 +44,27 @@
       "CONVERSATION": "Диалог #{id}",
       "DESCRIPTION": "Мұнда оқиғалар, пікірлер және байланысты жұмыс контексті көрсетіледі.",
       "EMPTY": "Таймлайнда әлі белсенділік жоқ",
+      "ACTIVITY_COUNT": "Жазбалар: {count}",
       "EVENT_RECORDED": "Оқиға тіркелді",
+      "FIELD_CHANGES": "Өзгерген өрістер: {count}",
+      "CLOSING_REASONS": "Жабу себебі: {reasons}",
+      "TRANSITION_REASON": "Ауыстыру себебі: {reason}",
       "LOADING": "Таймлайн жүктелуде...",
       "POST_COMMENT": "Пікірді жариялау",
       "TITLE": "Таймлайн",
-      "UNKNOWN_CONTACT": "Белгісіз контакт"
+      "UNKNOWN_CONTACT": "Белгісіз контакт",
+      "EVENT_LABELS": {
+        "DEAL_ARCHIVED": "Мәміле архивтелді",
+        "DEAL_CREATED": "Мәміле құрылды",
+        "DEAL_STAGE_CHANGED": "Мәміле кезеңі өзгерді",
+        "DEAL_UNARCHIVED": "Мәміле қалпына келтірілді",
+        "DEAL_UPDATED": "Мәміле жаңартылды",
+        "TASK_ARCHIVED": "Тапсырма архивтелді",
+        "TASK_CREATED": "Тапсырма құрылды",
+        "TASK_STATUS_CHANGED": "Тапсырма мәртебесі өзгерді",
+        "TASK_UNARCHIVED": "Тапсырма қалпына келтірілді",
+        "TASK_UPDATED": "Тапсырма жаңартылды"
+      }
     },
     "ERRORS": {
       "DUPLICATE_EXTERNAL_REF": "Мұндай сыртқы сілтеме CRM-де бұрыннан бар.",
@@ -65,13 +81,17 @@
       "STALE_RECORD": "Жазба басқа сұрауда өзгертілген. Жаңартып, қайта көріңіз.",
       "VALIDATION_ERROR": "Формадағы қателерді түзетіп, қайта көріңіз.",
       "DEAL_STAGE_INVALID_CLOSING_REASONS": "Жабу себебін бапталған тізімнен таңдаңыз.",
-      "DEAL_STAGE_REQUIRES_CLOSING_REASONS": "Мәмілені осы кезеңге ауыстырмас бұрын жабу себебін таңдаңыз."
+      "DEAL_STAGE_INVALID_TRANSITION_REASON": "Ауыстыру себебін бапталған тізімнен таңдаңыз.",
+      "DEAL_STAGE_REQUIRES_CLOSING_REASONS": "Мәмілені осы кезеңге ауыстырмас бұрын жабу себебін таңдаңыз.",
+      "DEAL_STAGE_REQUIRES_TRANSITION_REASON": "Мәмілені осы кезеңге ауыстырмас бұрын ауыстыру себебін таңдаңыз."
     },
     "DEALS": {
       "CREATE_TITLE": "Мәміле құру",
       "DESCRIPTION": "Мүмкіндіктерді аккаунт интерфейсінен шықпай жүргізіңіз.",
       "DRAWER_DESCRIPTION": "Иесін, контактілерді және кезең қозғалысын бір жерде ұстаңыз.",
       "EDIT_TITLE": "Мәмілені өңдеу",
+      "AI_BADGE": "AI",
+      "AI_ONLY": "Тек AI",
       "EMPTY_DESCRIPTION": "Құбырдағы қозғалысты бақылау үшін алғашқы мәмілені құрыңыз.",
       "EMPTY_TITLE": "Әзірге мәмілелер жоқ",
       "BOARD": {
@@ -133,6 +153,7 @@
       "CLOSING_REASONS": {
         "CONFIRM": "Қолдану",
         "EMPTY_STATE": "Қолжетімді себеп жоқ",
+        "NO_REASON": "Себепсіз",
         "OPTIONAL_DESCRIPTION": "Мәмілені «{stage}» кезеңіне ауыстырмас бұрын жабу себебін көрсетуге болады.",
         "PLACEHOLDER": "Себепті таңдаңыз",
         "REQUIRED_DESCRIPTION": "Мәмілені «{stage}» кезеңіне ауыстырмас бұрын жабу себебін көрсетіңіз.",
@@ -140,6 +161,18 @@
         "SEARCH_PLACEHOLDER": "Себеп іздеу",
         "STAGE_FALLBACK": "жабық кезең",
         "TITLE": "Жабу себебі: {stage}"
+      },
+      "TRANSITION_REASONS": {
+        "CONFIRM": "Қолдану",
+        "EMPTY_STATE": "Қолжетімді себеп жоқ",
+        "NO_REASON": "Себепсіз",
+        "OPTIONAL_DESCRIPTION": "Мәміленің «{stage}» кезеңіне неге ауыстырылып жатқанын көрсетуге болады.",
+        "PLACEHOLDER": "Себепті таңдаңыз",
+        "REQUIRED_DESCRIPTION": "Мәміленің «{stage}» кезеңіне неге ауыстырылып жатқанын көрсетіңіз.",
+        "REQUIRED_HINT": "Бұл кезең үшін себеп қажет.",
+        "SEARCH_PLACEHOLDER": "Себеп іздеу",
+        "STAGE_FALLBACK": "кезең",
+        "TITLE": "Ауыстыру себебі: {stage}"
       }
     },
     "TASKS": {
@@ -326,6 +359,12 @@
           "CLOSING_REASONS_REQUIRED": "Себепті міндеттеу",
           "CLOSING_REASONS_REQUIRED_ERROR": "Кемінде бір себеп қосыңыз немесе міндеттілікті өшіріңіз.",
           "CLOSING_REASONS_REQUIRED_HELP": "Таңдалған себепсіз мәмілені бұл кезеңге ауыстыру мүмкін болмайды.",
+          "TRANSITION_REASONS": "Ауыстыру себептері",
+          "TRANSITION_REASONS_HELP": "Бұл нұсқалар менеджер немесе Captain мәмілені осы ашық кезеңге ауыстырғанда көрсетіледі.",
+          "TRANSITION_REASONS_PLACEHOLDER": "Мысалы: Төлем күтілуде, Құжаттар қажет, Клиент ойланып жатыр",
+          "TRANSITION_REASONS_REQUIRED": "Себепті міндеттеу",
+          "TRANSITION_REASONS_REQUIRED_ERROR": "Кемінде бір себеп қосыңыз немесе міндеттілікті өшіріңіз.",
+          "TRANSITION_REASONS_REQUIRED_HELP": "Таңдалған себепсіз мәмілені бұл кезеңге ауыстыру мүмкін болмайды.",
           "CUSTOM_COLOR": "Жеке түс",
           "DEFAULT": "Әдепкі кезең",
           "DEFAULT_HELP": "Бұл құбырдағы жаңа мәмілелер осы белсенді ашық кезеңнен басталады.",

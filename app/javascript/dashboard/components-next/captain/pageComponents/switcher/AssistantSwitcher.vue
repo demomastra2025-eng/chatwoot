@@ -104,7 +104,7 @@ const handleAssistantChange = async assistant => {
 
 <template>
   <div
-    class="pt-5 pb-3 bg-n-alpha-3 backdrop-blur-[100px] outline outline-n-container outline-1 z-50 absolute w-[27.5rem] rounded-xl shadow-md flex flex-col gap-4"
+    class="pt-5 pb-3 bg-n-solid-1 border border-n-weak outline outline-n-container outline-1 z-50 absolute w-[27.5rem] rounded-xl shadow-lg flex flex-col gap-4"
   >
     <div class="flex flex-col gap-1 px-6 pb-3 border-b border-n-alpha-2">
       <div class="flex flex-col gap-1">

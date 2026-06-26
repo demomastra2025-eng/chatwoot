@@ -1,27 +1,37 @@
 <script setup>
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'dashboard/composables/store';
 import { useAlert, useTrack } from 'dashboard/composables';
 import { CAMPAIGN_TYPES } from 'shared/constants/campaign.js';
 import { CAMPAIGNS_EVENTS } from 'dashboard/helper/AnalyticsHelper/events.js';
 
-import SMSCampaignForm from 'dashboard/components-next/Campaigns/Pages/CampaignPage/SMSCampaign/SMSCampaignForm.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
+import TouchEditorShell from 'dashboard/components-next/Outbound/TouchEditorShell.vue';
+import OutboundCampaignForm from 'dashboard/components-next/Campaigns/Pages/CampaignPage/OutboundCampaign/OutboundCampaignForm.vue';
 
 const emit = defineEmits(['close']);
 
 const store = useStore();
 const { t } = useI18n();
+const formRef = ref(null);
 
-const addCampaign = async campaignDetails => {
+const isCreating = computed(() => formRef.value?.isCreating || false);
+const isPreviewing = computed(() => formRef.value?.isPreviewing || false);
+const canSubmit = computed(() => formRef.value?.canSubmit || false);
+
+const handleClose = () => emit('close');
+
+const handleSubmit = async campaignDetails => {
   try {
     await store.dispatch('campaigns/create', campaignDetails);
 
-    // tracking this here instead of the store to track the type of campaign
     useTrack(CAMPAIGNS_EVENTS.CREATE_CAMPAIGN, {
       type: CAMPAIGN_TYPES.ONE_OFF,
     });
 
     useAlert(t('CAMPAIGN.SMS.CREATE.FORM.API.SUCCESS_MESSAGE'));
+    handleClose();
   } catch (error) {
     const errorMessage =
       error?.response?.message ||
@@ -30,20 +40,60 @@ const addCampaign = async campaignDetails => {
   }
 };
 
-const handleSubmit = campaignDetails => {
-  addCampaign(campaignDetails);
+const runPreview = () => {
+  formRef.value?.handlePreview?.();
 };
 
-const handleClose = () => emit('close');
+const runCreate = () => {
+  formRef.value?.handleSubmit?.();
+};
 </script>
 
 <template>
-  <div
-    class="w-[25rem] z-50 min-w-0 absolute top-10 ltr:right-0 rtl:left-0 bg-n-alpha-3 backdrop-blur-[100px] p-6 rounded-xl border border-n-weak shadow-md flex flex-col gap-6"
+  <TouchEditorShell
+    model-value
+    :title="t('CAMPAIGN.SMS.CREATE.TITLE')"
+    :close-on-outside="false"
+    width="md"
+    @update:model-value="emit('close')"
+    @close="handleClose"
   >
-    <h3 class="text-base font-medium text-n-slate-12">
-      {{ t(`CAMPAIGN.SMS.CREATE.TITLE`) }}
-    </h3>
-    <SMSCampaignForm @submit="handleSubmit" @cancel="handleClose" />
-  </div>
+    <OutboundCampaignForm
+      ref="formRef"
+      inbox-scope="sms"
+      @submit="handleSubmit"
+    />
+
+    <template #footer>
+      <div class="flex w-full items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="faded"
+            color="slate"
+            :label="$t('SCHEDULING.GENERAL.CANCEL')"
+            :disabled="isCreating || isPreviewing"
+            @click="handleClose"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            color="slate"
+            :label="$t('CAMPAIGN.PREVIEW.ACTION')"
+            :is-loading="isPreviewing"
+            :disabled="isCreating || isPreviewing"
+            @click="runPreview"
+          />
+        </div>
+
+        <Button
+          size="sm"
+          :label="$t('CAMPAIGN.SMS.CREATE.FORM.BUTTONS.CREATE')"
+          :is-loading="isCreating"
+          :disabled="isCreating || isPreviewing || !canSubmit"
+          @click="runCreate"
+        />
+      </div>
+    </template>
+  </TouchEditorShell>
 </template>

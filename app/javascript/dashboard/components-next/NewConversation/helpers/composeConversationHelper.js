@@ -8,9 +8,19 @@ const CHANNEL_PRIORITY = {
   'Channel::Whatsapp': 2,
   'Channel::Sms': 3,
   'Channel::TwilioSms': 4,
-  'Channel::WebWidget': 5,
-  'Channel::Api': 6,
-  'Channel::WhatsappWeb': 6,
+  'Channel::WhatsappWeb': 5,
+  'Channel::TelegramPersonal': 6,
+  'Channel::Telegram': 7,
+  'Channel::LinkedinPersonal': 8,
+  'Channel::Weixin': 9,
+  'Channel::VkCommunity': 10,
+  'Channel::Line': 11,
+  'Channel::FacebookPage': 12,
+  'Channel::Instagram': 13,
+  'Channel::Tiktok': 14,
+  'Channel::TwitterProfile': 15,
+  'Channel::WebWidget': 16,
+  'Channel::Api': 17,
 };
 
 export const generateLabelForContactableInboxesList = ({
@@ -199,12 +209,7 @@ export const createContactSearcher = () => {
         data: { payload },
       } = await ContactAPI.search(trimmed, 1, 'name', '', { signal });
 
-      const camelCasedPayload = camelcaseKeys(payload, { deep: true });
-      // Filter contacts that have either phone_number or email
-      const filteredPayload = camelCasedPayload?.filter(
-        contact => contact.phoneNumber || contact.email
-      );
-      return filteredPayload || [];
+      return camelcaseKeys(payload || [], { deep: true });
     } catch (error) {
       // Return null for aborted requests so callers can distinguish
       // "request was cancelled" from "no results found"

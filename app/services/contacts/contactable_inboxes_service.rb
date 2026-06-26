@@ -1,4 +1,23 @@
 class Contacts::ContactableInboxesService
+  CONTACTABLE_INBOX_METHODS = {
+    'Channel::TwilioSms' => :twilio_contactable_inbox,
+    'Channel::Whatsapp' => :whatsapp_contactable_inbox,
+    'Channel::WhatsappWeb' => :whatsapp_web_contactable_inbox,
+    'Channel::Sms' => :sms_contactable_inbox,
+    'Channel::TelegramPersonal' => :telegram_personal_contactable_inbox,
+    'Channel::Telegram' => :telegram_contactable_inbox,
+    'Channel::LinkedinPersonal' => :existing_source_contactable_inbox,
+    'Channel::Weixin' => :existing_source_contactable_inbox,
+    'Channel::VkCommunity' => :existing_source_contactable_inbox,
+    'Channel::Line' => :existing_source_contactable_inbox,
+    'Channel::FacebookPage' => :existing_source_contactable_inbox,
+    'Channel::Instagram' => :existing_source_contactable_inbox,
+    'Channel::Tiktok' => :existing_source_contactable_inbox,
+    'Channel::TwitterProfile' => :twitter_contactable_inbox,
+    'Channel::Email' => :email_contactable_inbox,
+    'Channel::WebWidget' => :website_contactable_inbox
+  }.freeze
+
   pattr_initialize [:contact!]
 
   def get
@@ -9,38 +28,10 @@ class Contacts::ContactableInboxesService
   private
 
   def get_contactable_inbox(inbox)
-    case inbox.channel_type
-    when 'Channel::TwilioSms'
-      twilio_contactable_inbox(inbox)
-    when 'Channel::Whatsapp'
-      whatsapp_contactable_inbox(inbox)
-    when 'Channel::WhatsappWeb'
-      whatsapp_web_contactable_inbox(inbox)
-    when 'Channel::Sms'
-      sms_contactable_inbox(inbox)
-    when 'Channel::TelegramPersonal'
-      telegram_personal_contactable_inbox(inbox)
-    when 'Channel::Telegram'
-      telegram_contactable_inbox(inbox)
-    when 'Channel::VkCommunity'
-      vk_community_contactable_inbox(inbox)
-    when 'Channel::Line'
-      line_contactable_inbox(inbox)
-    when 'Channel::FacebookPage'
-      facebook_contactable_inbox(inbox)
-    when 'Channel::Instagram'
-      instagram_contactable_inbox(inbox)
-    when 'Channel::Tiktok'
-      tiktok_contactable_inbox(inbox)
-    when 'Channel::TwitterProfile'
-      twitter_contactable_inbox(inbox)
-    when 'Channel::Email'
-      email_contactable_inbox(inbox)
-    when *Inbox::API_CHANNEL_TYPES
-      api_contactable_inbox(inbox)
-    when 'Channel::WebWidget'
-      website_contactable_inbox(inbox)
-    end
+    contactable_method = CONTACTABLE_INBOX_METHODS[inbox.channel_type]
+    return __send__(contactable_method, inbox) if contactable_method
+
+    api_contactable_inbox(inbox) if Inbox::API_CHANNEL_TYPES.include?(inbox.channel_type)
   end
 
   def website_contactable_inbox(inbox)
@@ -101,35 +92,7 @@ class Contacts::ContactableInboxesService
     { source_id: source_id.to_s, inbox: inbox }
   end
 
-  def vk_community_contactable_inbox(inbox)
-    source_id = inbox.contact_inboxes.where(contact: @contact).last&.source_id
-    return if source_id.blank?
-
-    { source_id: source_id.to_s, inbox: inbox }
-  end
-
-  def line_contactable_inbox(inbox)
-    source_id = inbox.contact_inboxes.where(contact: @contact).last&.source_id
-    return if source_id.blank?
-
-    { source_id: source_id.to_s, inbox: inbox }
-  end
-
-  def facebook_contactable_inbox(inbox)
-    source_id = inbox.contact_inboxes.where(contact: @contact).last&.source_id
-    return if source_id.blank?
-
-    { source_id: source_id.to_s, inbox: inbox }
-  end
-
-  def instagram_contactable_inbox(inbox)
-    source_id = inbox.contact_inboxes.where(contact: @contact).last&.source_id
-    return if source_id.blank?
-
-    { source_id: source_id.to_s, inbox: inbox }
-  end
-
-  def tiktok_contactable_inbox(inbox)
+  def existing_source_contactable_inbox(inbox)
     source_id = inbox.contact_inboxes.where(contact: @contact).last&.source_id
     return if source_id.blank?
 
@@ -139,7 +102,9 @@ class Contacts::ContactableInboxesService
   def twitter_contactable_inbox(inbox)
     source_id = inbox.contact_inboxes.where(contact: @contact).last&.source_id
     return if source_id.blank?
-    return unless inbox.conversations.where(contact: @contact).where("additional_attributes ->> 'type' = ?", 'direct_message').exists?
+    return unless inbox.conversations.where(contact: @contact).exists?(
+      ["additional_attributes ->> 'type' = ?", 'direct_message']
+    )
 
     { source_id: source_id.to_s, inbox: inbox }
   end

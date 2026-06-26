@@ -5,16 +5,19 @@ class Captain::Tools::Copilot::ResolveConversationService < Captain::Tools::Copi
 
   description 'Resolve the current conversation when the issue has been addressed or the conversation should be closed'
   param :reason, type: :string, desc: 'Optional reason for resolving the conversation', required: false
+  param :status_reason, type: :string, desc: 'Configured conversation status reason for resolving when status reasons are enabled', required: false
 
-  def execute(reason: nil)
-    conversation = conversation_operations.resolve_conversation(reason: reason)
+  def execute(reason: nil, status_reason: nil)
+    conversation = conversation_operations.resolve_conversation(reason: reason, status_reason: status_reason)
+    resolved_status_reason = latest_status_transition_reason(conversation, 'resolved')
     formatted_payload(
       {
         action: 'resolve_conversation',
         conversation_id: conversation.id,
         conversation_display_id: conversation.display_id,
         status: conversation.status,
-        reason: reason
+        reason: reason,
+        status_reason: resolved_status_reason
       }.compact
     )
   rescue StandardError => e
@@ -36,5 +39,9 @@ class Captain::Tools::Copilot::ResolveConversationService < Captain::Tools::Copi
       conversation: current_conversation,
       actor: @user
     )
+  end
+
+  def latest_status_transition_reason(conversation, target_status)
+    conversation.status_transitions.order(created_at: :desc, id: :desc).find_by(to_status: target_status)&.reason
   end
 end

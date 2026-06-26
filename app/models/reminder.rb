@@ -2,43 +2,48 @@
 #
 # Table name: reminders
 #
-#  id                      :bigint           not null, primary key
-#  action_type             :integer          default("send_message"), not null
-#  attachments             :jsonb            not null
-#  attempts_count          :integer          default(0), not null
-#  auto_cancel_on_incoming :boolean          default(FALSE), not null
-#  body                    :text
-#  cancelled_at            :datetime
-#  completed_at            :datetime
-#  content_kind            :integer          default("free_text"), not null
-#  fingerprint             :string
-#  instructions            :text
-#  last_error              :text
-#  metadata                :jsonb            not null
-#  processing_started_at   :datetime
-#  relative_anchor         :string
-#  relative_offset_seconds :integer          default(0), not null
-#  remindable_type         :string
-#  repeat_mode             :integer          default("once"), not null
-#  repeat_until_at         :datetime
-#  scheduled_at            :datetime
-#  status                  :integer          default("draft"), not null
-#  template_params         :jsonb            not null
-#  text_mode               :integer          default("static"), not null
-#  timezone                :string           default("UTC"), not null
-#  timing_mode             :integer          default("absolute"), not null
-#  created_at              :datetime         not null
-#  updated_at              :datetime         not null
-#  account_id              :bigint           not null
-#  conversation_id         :bigint
-#  creator_id              :bigint
-#  owner_id                :bigint
-#  remindable_id           :bigint
-#  reminder_group_id       :bigint
-#  target_contact_id       :bigint
-#  target_contact_inbox_id :bigint
-#  target_conversation_id  :bigint
-#  target_inbox_id         :bigint
+#  id                          :bigint           not null, primary key
+#  action_type                 :integer          default("send_message"), not null
+#  attachments                 :jsonb            not null
+#  attempts_count              :integer          default(0), not null
+#  auto_cancel_on_incoming     :boolean          default(FALSE), not null
+#  body                        :text
+#  cancelled_at                :datetime
+#  completed_at                :datetime
+#  content_kind                :integer          default("free_text"), not null
+#  fingerprint                 :string
+#  instructions                :text
+#  last_error                  :text
+#  last_materialized_anchor_at :datetime
+#  manual_schedule_override    :boolean          default(FALSE), not null
+#  metadata                    :jsonb            not null
+#  processing_started_at       :datetime
+#  relative_anchor             :string
+#  relative_offset_seconds     :integer          default(0), not null
+#  relative_time_mode          :string           default("inherit_anchor_time"), not null
+#  relative_time_of_day        :string
+#  remindable_type             :string
+#  repeat_mode                 :integer          default("once"), not null
+#  repeat_until_at             :datetime
+#  schedule_revision           :integer          default(0), not null
+#  scheduled_at                :datetime
+#  status                      :integer          default("draft"), not null
+#  template_params             :jsonb            not null
+#  text_mode                   :integer          default("static"), not null
+#  timezone                    :string           default("UTC"), not null
+#  timing_mode                 :integer          default("absolute"), not null
+#  created_at                  :datetime         not null
+#  updated_at                  :datetime         not null
+#  account_id                  :bigint           not null
+#  conversation_id             :bigint
+#  creator_id                  :bigint
+#  owner_id                    :bigint
+#  remindable_id               :bigint
+#  reminder_group_id           :bigint
+#  target_contact_id           :bigint
+#  target_contact_inbox_id     :bigint
+#  target_conversation_id      :bigint
+#  target_inbox_id             :bigint
 #
 # Indexes
 #
@@ -74,6 +79,13 @@ class Reminder < ApplicationRecord
   include AccountStorageLimitable
 
   OPEN_STATUSES = %w[draft pending processing].freeze
+  RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
+  RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY = 'fixed_time_of_day'.freeze
+  RELATIVE_TIME_MODES = [
+    RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME,
+    RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY
+  ].freeze
+  RELATIVE_TIME_OF_DAY_FORMAT = /\A(?:[01]\d|2[0-3]):[0-5]\d\z/
   CONVERSATION_RELATIVE_ANCHORS = %w[
     conversation.created_at
     conversation.last_activity_at
@@ -143,12 +155,14 @@ class Reminder < ApplicationRecord
   }
 
   validates :timezone, inclusion: { in: TZInfo::Timezone.all_identifiers }
+  validates :relative_time_mode, inclusion: { in: RELATIVE_TIME_MODES }
   validates :relative_anchor, inclusion: { in: RELATIVE_ANCHORS }, allow_blank: true
   validate :validate_account_matches
   validate :validate_json_field_shapes
   validate :validate_content_requirements
   validate :validate_delivery_policy
   validate :validate_repeat_requirements
+  validate :validate_relative_time_of_day
   validate :validate_open_duplicate_absence
 
   before_validation :normalize_json_fields
@@ -157,9 +171,11 @@ class Reminder < ApplicationRecord
   before_validation :hydrate_target_defaults
   before_validation :assign_owner_default, on: :create
   before_validation :normalize_repeat_fields
+  before_validation :normalize_relative_time_fields
   before_validation :materialize_schedule
   before_validation :assign_default_status
   before_validation :refresh_fingerprint
+  before_save :increment_schedule_revision, if: :will_save_change_to_scheduled_at?
   after_create :retain_attachment_blobs
 
   scope :ordered, -> { order(scheduled_at: :asc, created_at: :asc, id: :asc) }
@@ -230,6 +246,10 @@ class Reminder < ApplicationRecord
     !once?
   end
 
+  def fixed_relative_time_of_day?
+    relative_time_mode == RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY
+  end
+
   # rubocop:disable Metrics/CyclomaticComplexity
   def message_sender
     owner || creator || conversation&.assignee || account&.administrators&.order(:id)&.first
@@ -276,6 +296,7 @@ class Reminder < ApplicationRecord
 
   def materialize_schedule
     return unless relative?
+    return if manual_schedule_override?
 
     anchor_time = relative_anchor_time
     if anchor_time.blank?
@@ -284,7 +305,33 @@ class Reminder < ApplicationRecord
       return
     end
 
-    self.scheduled_at = anchor_time + relative_offset_seconds.to_i.seconds
+    self.last_materialized_anchor_at = anchor_time
+    self.scheduled_at = materialized_schedule_at(anchor_time)
+  end
+
+  def materialized_schedule_at(anchor_time)
+    candidate = anchor_time + relative_offset_seconds.to_i.seconds
+    return candidate unless fixed_relative_time_of_day?
+    return candidate unless relative_time_of_day.to_s.match?(RELATIVE_TIME_OF_DAY_FORMAT)
+
+    zone = Time.find_zone(timezone) || Time.zone
+    hour, minute = relative_time_of_day.to_s.split(':').map(&:to_i)
+    candidate_in_zone = candidate.in_time_zone(zone)
+    zone.local(
+      candidate_in_zone.year,
+      candidate_in_zone.month,
+      candidate_in_zone.day,
+      hour,
+      minute
+    )
+  end
+
+  def normalize_relative_time_fields
+    self.relative_time_mode = relative_time_mode.presence || RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME
+    self.relative_time_of_day = relative_time_of_day.to_s.strip.presence
+    self.relative_time_of_day = nil unless fixed_relative_time_of_day?
+    self.manual_schedule_override = ActiveModel::Type::Boolean.new.cast(manual_schedule_override)
+    self.schedule_revision = schedule_revision.to_i
   end
 
   def normalize_json_fields
@@ -323,6 +370,11 @@ class Reminder < ApplicationRecord
       target_contact_inbox_id,
       target_conversation_id,
       scheduled_at&.utc&.iso8601,
+      timing_mode,
+      relative_anchor,
+      relative_offset_seconds,
+      relative_time_mode,
+      relative_time_of_day,
       content_kind,
       text_mode,
       body.to_s.strip,
@@ -341,18 +393,14 @@ class Reminder < ApplicationRecord
       # New delayed messages do not have created_at yet during before_validation.
       # Use the current server time so "after creation" touches materialize immediately.
       created_at || Time.current
-    when 'appointment.created_at'
+    when 'appointment.created_at', 'task.created_at', 'deal.created_at'
       remindable.try(:created_at)
     when 'appointment.starts_at'
       remindable.try(:starts_at)
     when 'appointment.ends_at'
       remindable.try(:ends_at)
-    when 'task.created_at'
-      remindable.try(:created_at)
     when 'task.due_at'
       remindable.try(:due_at)
-    when 'deal.created_at'
-      remindable.try(:created_at)
     when 'deal.expected_close_on'
       remindable.try(:expected_close_on)&.in_time_zone
     when 'conversation.created_at'
@@ -523,6 +571,23 @@ class Reminder < ApplicationRecord
     return unless repeat_until_at.present? && scheduled_at.present? && repeat_until_at <= scheduled_at
 
     errors.add(:repeat_until_at, 'must be after the first scheduled time')
+  end
+
+  def validate_relative_time_of_day
+    return unless relative? && fixed_relative_time_of_day?
+
+    if relative_time_of_day.blank?
+      errors.add(:relative_time_of_day, 'must be present for fixed time of day relative touches')
+      return
+    end
+
+    return if relative_time_of_day.match?(RELATIVE_TIME_OF_DAY_FORMAT)
+
+    errors.add(:relative_time_of_day, 'must be in HH:MM format')
+  end
+
+  def increment_schedule_revision
+    self.schedule_revision = schedule_revision.to_i + 1
   end
 
   def validate_open_duplicate_absence

@@ -66,6 +66,10 @@
           "API": {
             "SUCCESS_MESSAGE": "Live chat campaign created successfully",
             "ERROR_MESSAGE": "There was an error. Please try again."
+          },
+          "INSTRUCTIONS": {
+            "PLACEHOLDER": "ИИ агент осы кампания үшін қандай хабарлама жазуы керегін сипаттаңыз",
+            "ERROR": "ИИ агент нұсқаулығы міндетті"
           }
         }
       },
@@ -352,7 +356,8 @@
       }
     },
     "BADGE": {
-      "BROADCAST": "Broadcast"
+      "BROADCAST": "Broadcast",
+      "DELAYED": "Кейінге қалдырылған"
     },
     "PREVIEW": {
       "TITLE": "Audience preview",
@@ -739,8 +744,25 @@
           "RELATIVE_ANCHOR": "Точка отсчёта",
           "RELATIVE_OFFSET_MINUTES": "Смещение в минутах",
           "RELATIVE_OFFSET_NOTE": "0 минуттан үлкен мәнді көрсетіңіз.",
+          "RELATIVE_FIXED_TIME": "Нақты уақыт",
+          "RELATIVE_FIXED_TIME_DESCRIPTION": "Дата всё равно считается до/после точки отсчёта, но касание уйдёт в выбранное время этого дня.",
+          "RELATIVE_TIME_OF_DAY": "Время в этот день",
           "AUTO_CANCEL": "Отменять при входящем ответе",
-          "AUTO_CANCEL_DESCRIPTION": "Если контакт ответит в том же канале до исполнения, касание будет отменено автоматически."
+          "AUTO_CANCEL_DESCRIPTION": "Если контакт ответит в том же канале до исполнения, касание будет отменено автоматически.",
+          "TEXT_AUTHOR": "Мәтінді кім жазады",
+          "AI_AGENT": "ИИ агент",
+          "FREE_TEXT_TAB": "Еркін мәтін",
+          "WHATSAPP_TEMPLATE_TAB": "WhatsApp шаблоны",
+          "TEMPLATE": "Шаблон",
+          "TEMPLATE_PLACEHOLDER": "Шаблон таңдаңыз",
+          "TEMPLATE_LANGUAGE": "Шаблон тілі",
+          "TEMPLATE_LANGUAGE_PLACEHOLDER": "Шаблон тілін таңдаңыз",
+          "TEMPLATE_EMPTY": "Бұл inbox үшін WhatsApp шаблондары әзірге жоқ.",
+          "TEMPLATE_EMPTY_DESCRIPTION": "Ағымдағы WhatsApp inbox үшін шаблондарды синхрондаңыз немесе еркін мәтінге ауысыңыз.",
+          "BODY_NOTE": "Хабарламада {{...}}, {%...%} немесе field:// сілтемелері болса, шаблон режимі автоматты түрде анықталады.",
+          "RELATIVE_TOGGLE": "арқылы",
+          "FREE_TEXT_TEMPLATE": "Еркін мәтін шаблоны",
+          "FREE_TEXT_TEMPLATE_PLACEHOLDER": "Сақталған еркін мәтін шаблонын таңдаңыз"
         },
         "SUCCESS": {
           "CREATED": "Касание создано.",
@@ -748,6 +770,10 @@
         },
         "ERRORS": {
           "SAVE": "Не удалось сохранить касание."
+        },
+        "TEXT_AUTHOR_HELP": {
+          "SELF": "Дайын мәтінді өзіңіз жазыңыз. Liquid айнымалылары {{...}}, {%...%} тегтері және field:// сілтемелері автоматты түрде анықталады.",
+          "AGENT": "ИИ агент хабарламаны орындау кезінде нұсқауларыңыз бен ағымдағы контекст бойынша жасайды."
         }
       },
       "TOUCH_PLAN_EDITOR": {
@@ -784,7 +810,9 @@
     },
     "TOUCH_PLANS": {
       "TITLE": "Дожимы",
+      "CAPTAIN_TITLE": "Дожим сценарийлері",
       "DESCRIPTION": "Собирайте переиспользуемые группы касаний и применяйте их из нужного контекста.",
+      "CAPTAIN_DESCRIPTION": "Осы AI қызметкері клиентке қалай қайта хабарласатынын баптаңыз: контекст, хабарлама қадамдары, интервалдар, арна шаблондары және жауап келгендегі авто-бас тарту.",
       "COUNT": "Дожимов: {n}",
       "CONTEXT_BADGE": "Контекст: {entity}",
       "EMPTY_TITLE": "Дожимов пока нет.",
@@ -878,19 +906,29 @@
         "REPEAT_UNTIL_AT": "Повторять до",
         "RELATIVE_ANCHOR": "Точка отсчёта",
         "RELATIVE_OFFSET_VALUE": "Қанша уақыттан кейін",
+        "RELATIVE_OFFSET_AFTER_EVENT": "Оқиғадан кейін",
+        "RELATIVE_OFFSET_BEFORE_EVENT": "Оқиғаға дейін",
         "RELATIVE_OFFSET_MINUTES": "Смещение в минутах",
         "RELATIVE_OFFSET_NOTE": "0-ден үлкен мәнді көрсетіңіз.",
+        "RELATIVE_FIXED_TIME": "Нақты уақыт",
+        "RELATIVE_FIXED_TIME_DESCRIPTION": "Дата всё равно считается до/после точки отсчёта, но касание уйдёт в выбранное время этого дня.",
+        "RELATIVE_TIME_OF_DAY": "Время в этот день",
         "RELATIVE_OFFSET_UNITS": {
           "MINUTES": "минут",
           "HOURS": "сағат",
           "DAYS": "күн"
         },
         "AUTO_CANCEL": "Отменять при входящем ответе",
-        "AUTO_CANCEL_DESCRIPTION": "Если контакт ответит в том же канале до исполнения, касание будет отменено автоматически."
+        "AUTO_CANCEL_DESCRIPTION": "Если контакт ответит в том же канале до исполнения, касание будет отменено автоматически.",
+        "TEXT_AUTHOR": "Мәтінді кім жазады",
+        "BODY_NOTE": "Хабарламада {{...}}, {%...%} немесе field:// сілтемелері болса, шаблон режимі автоматты түрде анықталады.",
+        "FREE_TEXT_TEMPLATE": "Еркін мәтін шаблоны",
+        "FREE_TEXT_TEMPLATE_PLACEHOLDER": "Сақталған еркін мәтін шаблонын таңдаңыз"
       },
       "ATTACHMENTS": {
         "TITLE": "Тіркемелер",
         "DESCRIPTION": "Файлдар қазір аккаунтқа жүктеледі және касание орындалғанда нативті хабарлама тіркемелері ретінде жіберіледі.",
+        "DROP_HINT": "Файлдарды осында сүйреңіз немесе таңдау үшін басыңыз.",
         "ADD": "Файл қосу",
         "UPLOADING": "Жүктелуде...",
         "REMOVE": "Тіркемені жою",
@@ -903,6 +941,10 @@
       },
       "ERRORS": {
         "SAVE": "Не удалось сохранить касание."
+      },
+      "TEXT_AUTHOR_HELP": {
+        "SELF": "Дайын мәтінді өзіңіз жазыңыз. Liquid айнымалылары {{...}}, {%...%} тегтері және field:// сілтемелері автоматты түрде анықталады.",
+        "AGENT": "ИИ агент хабарламаны орындау кезінде нұсқауларыңыз бен ағымдағы контекст бойынша жасайды."
       }
     },
     "TOUCH_PLAN_EDITOR": {
@@ -948,7 +990,17 @@
     },
     "TEMPLATES": {
       "TITLE": "Шаблоны",
-      "DESCRIPTION": "Управляйте переиспользуемыми текстовыми заготовками и slash-шаблонами в отдельной outbound-странице."
+      "DESCRIPTION": "Управляйте переиспользуемыми текстовыми заготовками и slash-шаблонами в отдельной outbound-странице.",
+      "TABS": {
+        "FREE_TEXT": "Еркін мәтін",
+        "WHATSAPP": "WhatsApp"
+      },
+      "WHATSAPP": {
+        "EMPTY_TITLE": "Шаблондарға арналған WhatsApp inbox жоқ",
+        "EMPTY_DESCRIPTION": "Хабарлама шаблондарын көру және басқару үшін WhatsApp inbox қосыңыз немесе таңдаңыз.",
+        "INBOX_LABEL": "WhatsApp inbox",
+        "INBOX_PLACEHOLDER": "Inbox таңдаңыз"
+      }
     }
   }
 }

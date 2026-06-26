@@ -156,6 +156,26 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(stage.closing_reason_required).to be(true)
   end
 
+  it 'configures transition reasons on open stages' do
+    stage = account.crm_stages.find_by!(code: 'proposal')
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+          params: {
+            transition_reason_options: ['Needs approval', 'Waiting payment', 'Needs approval'],
+            transition_reason_required: true,
+            name: 'Proposal sent'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'name')).to eq('Proposal sent')
+    expect(response.parsed_body.dig('payload', 'transition_reason_options')).to eq(['Needs approval', 'Waiting payment'])
+    expect(response.parsed_body.dig('payload', 'transition_reason_required')).to be(true)
+    expect(stage.reload.transition_reason_options).to eq(['Needs approval', 'Waiting payment'])
+    expect(stage.transition_reason_required).to be(true)
+  end
+
   it 'rejects deleting standard won and lost stages' do
     stage = account.crm_stages.find_by!(code: 'lost')
 

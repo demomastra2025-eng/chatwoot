@@ -4,6 +4,7 @@ import { OnClickOutside } from '@vueuse/components';
 import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
+import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ComboBoxDropdown from 'dashboard/components-next/combobox/ComboBoxDropdown.vue';
 
 const props = defineProps({
@@ -74,10 +75,8 @@ const dropdownStyle = ref({});
 const teleportTarget = ref('body');
 
 const resolveTeleportTarget = () => {
-  const overlayElement = comboboxRef.value?.closest(
-    'dialog[open], .modal-mask'
-  );
-  teleportTarget.value = overlayElement || 'body';
+  const dialogElement = comboboxRef.value?.closest('dialog[open]');
+  teleportTarget.value = dialogElement || 'body';
 };
 
 const resolveDropdownPlacement = ({ availableAbove, availableBelow }) => {
@@ -99,18 +98,19 @@ const updateDropdownPosition = () => {
     Math.max(rect.left, viewportPadding),
     window.innerWidth - width - viewportPadding
   );
-  const availableAbove = Math.max(
-    rect.top - viewportPadding - dropdownGap,
-    160
-  );
+  const availableAbove = Math.max(rect.top - viewportPadding - dropdownGap, 0);
   const availableBelow = Math.max(
     window.innerHeight - rect.bottom - viewportPadding - dropdownGap,
-    160
+    0
   );
   const placement = resolveDropdownPlacement({
     availableAbove,
     availableBelow,
   });
+  const maxHeight = Math.max(
+    Math.min(placement === 'top' ? availableAbove : availableBelow, 320),
+    96
+  );
 
   dropdownStyle.value = {
     bottom:
@@ -118,9 +118,7 @@ const updateDropdownPosition = () => {
         ? `${Math.round(window.innerHeight - rect.top + dropdownGap)}px`
         : 'auto',
     left: `${Math.round(left)}px`,
-    maxHeight: `${Math.round(
-      placement === 'top' ? availableAbove : availableBelow
-    )}px`,
+    maxHeight: `${Math.round(maxHeight)}px`,
     top:
       placement === 'bottom'
         ? `${Math.round(rect.bottom + dropdownGap)}px`
@@ -242,7 +240,7 @@ defineExpose({
       <button
         :id="triggerId"
         type="button"
-        class="flex flex-wrap w-full gap-2 px-3 py-2.5 border rounded-lg cursor-pointer bg-n-alpha-black2 min-h-[42px] transition-all duration-500 ease-in-out"
+        class="flex flex-wrap w-full gap-2 px-2 py-2.5 border rounded-lg cursor-pointer bg-n-alpha-black2 min-h-[42px] transition-all duration-500 ease-in-out"
         :class="{
           'border-n-ruby-8': hasError,
           'border-n-weak dark:border-n-weak hover:border-n-slate-6 dark:hover:border-n-slate-6':
@@ -256,20 +254,38 @@ defineExpose({
         <div
           v-for="tag in selectedTags"
           :key="tag.value"
-          class="flex items-center justify-center max-w-full gap-1 px-2 py-0.5 rounded-lg bg-n-alpha-black1"
+          class="flex max-w-[75%] items-center justify-center gap-1 rounded-lg bg-n-blue-5/70 px-2 py-0.5 outline outline-1 outline-n-blue-7/60"
           @click.stop
         >
-          <span class="flex-grow min-w-0 text-sm truncate text-n-slate-12">
+          <Avatar
+            v-if="tag.thumbnail"
+            :name="tag.thumbnail.name || tag.label"
+            :src="tag.thumbnail.src"
+            :size="18"
+            rounded-full
+          />
+          <span class="min-w-0 flex-grow truncate text-sm text-n-blue-12">
             {{ tag.label }}
           </span>
+          <a
+            v-if="tag.href"
+            class="inline-flex size-5 flex-shrink-0 items-center justify-center rounded-md text-n-blue-10 transition-colors hover:bg-n-blue-6/50 hover:text-n-blue-12"
+            :href="tag.href"
+            target="_blank"
+            rel="noopener noreferrer"
+            :aria-label="$t('COMBOBOX.OPEN_IN_NEW_TAB')"
+            @click.stop
+          >
+            <span class="i-lucide-external-link size-3" aria-hidden="true" />
+          </a>
           <span
-            class="flex-shrink-0 cursor-pointer i-lucide-x size-3 text-n-slate-11"
+            class="i-lucide-x size-3 flex-shrink-0 cursor-pointer text-n-blue-10 hover:text-n-blue-12"
             @click="removeTag(tag.value)"
           />
         </div>
         <span
           v-if="selectedTags.length === 0"
-          class="flex items-center text-sm text-n-slate-11"
+          class="flex items-center text-sm text-n-slate-10"
         >
           {{ selectPlaceholder }}
         </span>

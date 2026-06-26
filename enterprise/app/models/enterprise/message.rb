@@ -5,7 +5,11 @@ module Enterprise::Message
     return unless captain_auto_open_candidate?
 
     without_current_actor do
-      conversation.open!
+      Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: { status: 'open' },
+        source: 'system'
+      ).perform
       return unless conversation.saved_change_to_status?
 
       turn_off_captain_typing_indicator

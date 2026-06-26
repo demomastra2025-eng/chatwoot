@@ -2,12 +2,23 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 10;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 12;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
 const TOUCHES_VISIBILITY_KEY = 'Campaigns:Touches';
 const LEGACY_EMPLOYEES_VISIBILITY_KEY = 'Employees';
+const MY_COMPANY_VISIBILITY_KEY = 'MyCompany';
+const MY_COMPANY_VISIBILITY_ITEM_KEYS = Object.freeze([
+  'MyCompany:Workspace',
+  'MyCompany:Channels',
+  'MyCompany:Tags',
+  'MyCompany:Employees',
+  'MyCompany:Teams',
+  'MyCompany:Roles',
+  'MyCompany:Policies',
+  'MyCompany:AuditLogs',
+]);
 const MY_COMPANY_EMPLOYEES_VISIBILITY_KEY = 'MyCompany:Employees';
 const CONVERSATION_STATUSES_VISIBILITY_KEY = 'Conversation:Statuses';
 const CONVERSATION_PIPELINES_VISIBILITY_KEY = 'Conversation:Pipelines';
@@ -24,6 +35,17 @@ const item = (key, labelKey, children = []) => ({
   labelKey,
   children,
 });
+
+const MY_COMPANY_VISIBILITY_ITEMS = Object.freeze([
+  item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
+  item('MyCompany:Channels', 'SIDEBAR.CHANNELS'),
+  item('MyCompany:Tags', 'SIDEBAR.LABELS'),
+  item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+  item('MyCompany:Teams', 'EMPLOYEE_SETTINGS.TABS.TEAM'),
+  item('MyCompany:Roles', 'EMPLOYEE_SETTINGS.TABS.ROLES'),
+  item('MyCompany:Policies', 'EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+  item('MyCompany:AuditLogs', 'SIDEBAR.AUDIT_LOGS'),
+]);
 
 export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Inbox', 'SIDEBAR.INBOX'),
@@ -53,12 +75,12 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Campaigns', 'SIDEBAR.OUTBOUND', [
     item('Campaigns:Templates', 'SIDEBAR.TEMPLATES'),
     item(TOUCHES_VISIBILITY_KEY, 'SIDEBAR.TOUCHES'),
-    item('Campaigns:TouchPlans', 'SIDEBAR.TOUCH_PLANS'),
     item('Campaigns:MassBroadcasts', 'SIDEBAR.MASS_BROADCASTS'),
   ]),
   item('Captain', 'SIDEBAR.CAPTAIN', [
     item('Captain:Settings', 'PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
     item('Captain:Prompts', 'SIDEBAR.CAPTAIN_PROMPTS'),
+    item('Captain:FollowUps', 'SIDEBAR.CAPTAIN_FOLLOW_UPS'),
     item('Captain:Channels', 'SIDEBAR.CAPTAIN_CHANNELS'),
     item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),
     item('Captain:Observability', 'SIDEBAR.CAPTAIN_OBSERVABILITY'),
@@ -89,16 +111,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('SMM:Analytics', 'SIDEBAR.SMM_ANALYTICS'),
     item('SMM:Settings', 'SIDEBAR.SMM_SETTINGS'),
   ]),
-  item('MyCompany', 'SIDEBAR.MY_COMPANY', [
-    item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
-    item('MyCompany:Channels', 'SIDEBAR.CHANNELS'),
-    item('MyCompany:Tags', 'SIDEBAR.LABELS'),
-    item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-    item('MyCompany:Teams', 'EMPLOYEE_SETTINGS.TABS.TEAM'),
-    item('MyCompany:Roles', 'EMPLOYEE_SETTINGS.TABS.ROLES'),
-    item('MyCompany:Policies', 'EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-    item('MyCompany:AuditLogs', 'SIDEBAR.AUDIT_LOGS'),
-  ]),
   item('Reports', 'SIDEBAR.REPORTS', [
     item('Reports:Overview', 'SIDEBAR.REPORTS_OVERVIEW'),
     item('Reports:Conversation', 'SIDEBAR.REPORTS_CONVERSATION'),
@@ -118,6 +130,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Portals:Settings', 'SIDEBAR.HELP_CENTER.SETTINGS'),
   ]),
   item('Settings', 'SIDEBAR.ADDITIONAL', [
+    ...MY_COMPANY_VISIBILITY_ITEMS,
     item('Settings:Automation', 'SIDEBAR.AUTOMATION'),
     item('Settings:AgentBots', 'SIDEBAR.AGENT_BOTS'),
     item('Settings:Macros', 'SIDEBAR.MACROS'),
@@ -218,6 +231,24 @@ const normalizeLegacyMyCompanyVisibility = (hiddenItems, version) => {
   return hiddenItemsSet;
 };
 
+const normalizeRemovedMyCompanyGroupVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldMigrateRemovedGroup = Number(version || 0) < 11;
+
+  if (!shouldMigrateRemovedGroup) {
+    return hiddenItemsSet;
+  }
+
+  const groupWasHidden = hiddenItemsSet.has(MY_COMPANY_VISIBILITY_KEY);
+  hiddenItemsSet.delete(MY_COMPANY_VISIBILITY_KEY);
+
+  if (groupWasHidden) {
+    MY_COMPANY_VISIBILITY_ITEM_KEYS.forEach(key => hiddenItemsSet.add(key));
+  }
+
+  return hiddenItemsSet;
+};
+
 const normalizeDefaultConversationStatusVisibility = (hiddenItems, version) => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
   const shouldApplyDefaultVisibility = Number(version || 0) < 8;
@@ -275,13 +306,16 @@ const normalizeLegacyReportsDealsVisibility = (hiddenItems, version) => {
 export const getSidebarHiddenItems = uiSettings =>
   normalizeSidebarHiddenItems(
     Array.from(
-      normalizeLegacyReportsDealsVisibility(
-        normalizeLegacyConversationPipelinesVisibility(
-          normalizeDefaultConversationStatusVisibility(
-            normalizeLegacyMyCompanyVisibility(
-              normalizeLegacyTouchesVisibility(
-                normalizeLegacyCaptainPromptsVisibility(
-                  uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+      normalizeRemovedMyCompanyGroupVisibility(
+        normalizeLegacyReportsDealsVisibility(
+          normalizeLegacyConversationPipelinesVisibility(
+            normalizeDefaultConversationStatusVisibility(
+              normalizeLegacyMyCompanyVisibility(
+                normalizeLegacyTouchesVisibility(
+                  normalizeLegacyCaptainPromptsVisibility(
+                    uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+                    uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+                  ),
                   uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
                 ),
                 uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]

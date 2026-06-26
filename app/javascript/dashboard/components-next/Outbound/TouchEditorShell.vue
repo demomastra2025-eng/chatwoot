@@ -43,6 +43,10 @@ const props = defineProps({
     type: String,
     default: 'sm',
   },
+  panelClass: {
+    type: [String, Array, Object],
+    default: '',
+  },
 });
 
 const emit = defineEmits(['close', 'confirm', 'update:modelValue']);
@@ -68,6 +72,7 @@ const confirm = () => emit('confirm');
     :close-on-outside="closeOnOutside"
     :disable-confirm="disableConfirm"
     :width="width"
+    :panel-class="panelClass"
     @update:model-value="emit('update:modelValue', $event)"
     @close="close"
     @confirm="confirm"

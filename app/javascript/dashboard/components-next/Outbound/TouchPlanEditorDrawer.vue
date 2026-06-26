@@ -16,8 +16,7 @@ import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/Sched
 import SchedulingRelativeOffsetInput from 'dashboard/components-next/Scheduling/SchedulingRelativeOffsetInput.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
-import WhatsAppTemplateParser from 'dashboard/components-next/whatsapp/WhatsAppTemplateParser.vue';
-import WootMessageEditor from 'dashboard/components/widgets/WootWriter/Editor.vue';
+import TouchMessageComposer from 'dashboard/components-next/Outbound/TouchMessageComposer.vue';
 import {
   TOUCH_CREATED_AT_ANCHOR,
   buildTouchAnchorOptions,
@@ -31,9 +30,13 @@ import {
 } from 'dashboard/helper/templateHelper';
 import {
   normalizeRelativeOffset,
+  normalizeRelativeTimeForUnit,
   resolveTouchTimingState,
   toRelativeOffsetSeconds,
+  DEFAULT_RELATIVE_TIME_OF_DAY,
+  RELATIVE_TIME_MODES,
   TOUCH_TIMING_STATES,
+  canUseFixedRelativeTimeForUnit,
 } from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
 import {
@@ -52,6 +55,10 @@ import {
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 
 const props = defineProps({
+  assistantId: {
+    type: [Number, String],
+    default: null,
+  },
   createLabel: {
     type: String,
     default: '',
@@ -131,7 +138,7 @@ const ui = reactive({
   isSaving: false,
 });
 
-const templateParserRefs = ref({});
+const messageComposerRefs = ref({});
 
 const drawerTitle = computed(() => {
   if (props.touchPlan?.id) {
@@ -419,6 +426,12 @@ const createStep = (seed = {}) => {
   const normalizedRelativeOffset = normalizeRelativeOffset(
     seed.relative_offset_seconds
   );
+  const relativeTime = normalizeRelativeTimeForUnit({
+    relativeTimeMode:
+      seed.relative_time_mode || RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+    relativeTimeOfDay: seed.relative_time_of_day,
+    unit: normalizedRelativeOffset.unit,
+  });
 
   return {
     autoCancelOnIncoming: seed.auto_cancel_on_incoming ?? false,
@@ -434,6 +447,9 @@ const createStep = (seed = {}) => {
     relativeOffsetDirection: normalizedRelativeOffset.direction,
     relativeOffsetUnit: normalizedRelativeOffset.unit,
     relativeOffsetValue: normalizedRelativeOffset.value,
+    relativeTimeMode: relativeTime.relativeTimeMode,
+    relativeTimeOfDay: relativeTime.relativeTimeOfDay,
+    manualScheduleOverride: seed.manual_schedule_override ?? false,
     repeatMode: seed.repeat_mode || 'once',
     repeatUntilAt: seed.repeat_until_at
       ? toDateTimeInputValue(seed.repeat_until_at)
@@ -441,6 +457,8 @@ const createStep = (seed = {}) => {
     scheduledAt: seed.scheduled_at
       ? toDateTimeInputValue(seed.scheduled_at)
       : '',
+    templateBody:
+      seed.content_kind === 'channel_template' ? seed.body || '' : '',
     templateLanguage:
       seed.template_params?.language ||
       seed.template_params?.language_code ||
@@ -499,17 +517,17 @@ const derivedEntityKindsSummary = computed(() => {
   return derivedEntityKinds.value.map(entityKindLabel).join(', ');
 });
 
-const templateParserRefForStep = step => {
-  return templateParserRefs.value[step.localId] || null;
+const messageComposerRefForStep = step => {
+  return messageComposerRefs.value[step.localId] || null;
 };
 
-const setTemplateParserRef = (localId, componentRef) => {
+const setMessageComposerRef = (localId, componentRef) => {
   if (!componentRef) {
-    delete templateParserRefs.value[localId];
+    delete messageComposerRefs.value[localId];
     return;
   }
 
-  templateParserRefs.value[localId] = componentRef;
+  messageComposerRefs.value[localId] = componentRef;
 };
 
 function templateHasRequiredParams(template, templateParams = {}) {
@@ -567,11 +585,6 @@ function templateParamsForStep(step) {
     return {};
   }
 
-  const parserRef = templateParserRefForStep(step);
-  if (parserRef?.processedParams) {
-    return cloneTemplateParams(parserRef.processedParams);
-  }
-
   return cloneTemplateParams(step.templateParams);
 }
 
@@ -581,15 +594,15 @@ const stepHasRequiredTemplateParams = step => {
   }
 
   const template = selectedTemplate(step);
-  const parserRef = templateParserRefForStep(step);
-  if (!parserRef) {
-    return (
-      !!template &&
-      templateHasRequiredParams(template, templateParamsForStep(step))
-    );
+  const composerRef = messageComposerRefForStep(step);
+  if (composerRef?.isTemplateReady) {
+    return !!template && composerRef.isTemplateReady() === true;
   }
 
-  return !!template && parserRef.isFormInvalid === false;
+  return (
+    !!template &&
+    templateHasRequiredParams(template, templateParamsForStep(step))
+  );
 };
 
 const templateBodyForStep = step => {
@@ -597,9 +610,8 @@ const templateBodyForStep = step => {
     return '';
   }
 
-  const parserRef = templateParserRefForStep(step);
-  if (parserRef?.rawRenderedTemplate) {
-    return String(parserRef.rawRenderedTemplate || '').trim();
+  if (step.templateBody) {
+    return String(step.templateBody || '').trim();
   }
 
   return String(getTemplateBodyPreview(selectedTemplate(step)) || '').trim();
@@ -652,7 +664,7 @@ const resetForm = () => {
   form.description = '';
   form.name = '';
   form.steps = [createStep()];
-  templateParserRefs.value = {};
+  messageComposerRefs.value = {};
 };
 
 const deriveTouchPlanInboxId = touchPlan => {
@@ -673,7 +685,7 @@ const hydrateForm = () => {
     return;
   }
 
-  templateParserRefs.value = {};
+  messageComposerRefs.value = {};
 
   if (!props.touchPlan) {
     resetForm();
@@ -709,16 +721,35 @@ const normalizeStepAnchorForEntityKind = step => {
   return step;
 };
 
+const stepCanUseFixedRelativeTime = step =>
+  canUseFixedRelativeTimeForUnit(step.relativeOffsetUnit);
+
+const normalizeStepRelativeTimeForUnit = step => {
+  const relativeTime = normalizeRelativeTimeForUnit({
+    relativeTimeMode: step.relativeTimeMode,
+    relativeTimeOfDay: step.relativeTimeOfDay,
+    unit: step.relativeOffsetUnit,
+  });
+
+  return {
+    ...step,
+    relativeTimeMode: relativeTime.relativeTimeMode,
+    relativeTimeOfDay: relativeTime.relativeTimeOfDay,
+  };
+};
+
 const updateStep = (localId, patch) => {
   form.steps = form.steps.map(step => {
     if (step.localId !== localId) {
       return step;
     }
 
-    return normalizeStepAnchorForEntityKind({
-      ...step,
-      ...patch,
-    });
+    return normalizeStepAnchorForEntityKind(
+      normalizeStepRelativeTimeForUnit({
+        ...step,
+        ...patch,
+      })
+    );
   });
 };
 
@@ -732,7 +763,7 @@ const removeStep = localId => {
   }
 
   form.steps = form.steps.filter(step => step.localId !== localId);
-  delete templateParserRefs.value[localId];
+  delete messageComposerRefs.value[localId];
 };
 
 const stepBodyEditorId = step => {
@@ -749,6 +780,12 @@ const stepContentTabId = step => {
 
 const stepTimingTabId = step => {
   return `touch-plan-timing-mode-${step.localId}`;
+};
+
+const stepRelativeOffsetLabel = step => {
+  return step.relativeOffsetDirection === TOUCH_TIMING_STATES.BEFORE
+    ? t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_BEFORE_EVENT')
+    : t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_AFTER_EVENT');
 };
 
 const activeContentTabIndex = step => {
@@ -778,6 +815,7 @@ const activeTimingTabIndex = step => {
 function setStepContentKind(step, contentKind) {
   updateStep(step.localId, {
     contentKind,
+    templateBody: contentKind === 'channel_template' ? step.templateBody : '',
     templateLanguage:
       contentKind === 'channel_template' ? step.templateLanguage : '',
     templateName: contentKind === 'channel_template' ? step.templateName : '',
@@ -796,6 +834,8 @@ const setStepTimingState = (step, timingState) => {
   if (timingState === TOUCH_TIMING_STATES.ABSOLUTE) {
     updateStep(step.localId, {
       timingMode: TOUCH_TIMING_STATES.ABSOLUTE,
+      relativeTimeMode: RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+      relativeTimeOfDay: '',
     });
     return;
   }
@@ -805,6 +845,25 @@ const setStepTimingState = (step, timingState) => {
     repeatMode: 'once',
     repeatUntilAt: '',
     timingMode: 'relative',
+  });
+};
+
+const setStepFixedRelativeTime = (step, value) => {
+  if (!stepCanUseFixedRelativeTime(step)) {
+    updateStep(step.localId, {
+      relativeTimeMode: RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+      relativeTimeOfDay: '',
+    });
+    return;
+  }
+
+  updateStep(step.localId, {
+    relativeTimeMode: value
+      ? RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY
+      : RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+    relativeTimeOfDay: value
+      ? step.relativeTimeOfDay || DEFAULT_RELATIVE_TIME_OF_DAY
+      : '',
   });
 };
 
@@ -830,6 +889,7 @@ const ensureTemplateLanguageForStep = step => {
 
 const handleTemplateNameChange = (step, templateName) => {
   updateStep(step.localId, {
+    templateBody: '',
     templateLanguage: '',
     templateName,
     templateParams: {},
@@ -842,24 +902,21 @@ const handleTemplateNameChange = (step, templateName) => {
 
 const handleTemplateLanguageChange = (step, templateLanguage) => {
   updateStep(step.localId, {
+    templateBody: '',
     templateLanguage,
     templateParams: {},
   });
 };
 
-const aiToggleButtonClass = isEnabled => {
-  return isEnabled
-    ? '!bg-n-violet-3 !text-n-violet-9 hover:enabled:!bg-n-violet-4 focus-visible:!bg-n-violet-4 !outline-transparent'
-    : '';
-};
+const handleTemplateStateChange = (step, payload) => {
+  if (step.contentKind !== 'channel_template') {
+    return;
+  }
 
-const touchEditorClass = isAiAuthoring => {
-  return [
-    'touch-rich-editor w-full min-w-0 max-w-full overflow-visible rounded-2xl px-3 py-2 transition-all duration-200',
-    isAiAuthoring
-      ? 'bg-n-violet-3 ring-1 ring-inset ring-n-violet-6/20'
-      : 'bg-n-solid-1 outline outline-1 outline-n-weak dark:outline-n-strong',
-  ].join(' ');
+  updateStep(step.localId, {
+    templateBody: String(payload?.rawRenderedTemplate || ''),
+    templateParams: cloneTemplateParams(payload?.processedParams),
+  });
 };
 
 const buildStepBody = step => {
@@ -898,6 +955,7 @@ const buildStepTemplateParams = step => {
 
 const buildPayload = () => {
   return {
+    ...(props.assistantId ? { assistant_id: Number(props.assistantId) } : {}),
     description: String(form.description || '').trim(),
     entity_kinds: derivedEntityKinds.value,
     name: String(form.name || '').trim(),
@@ -939,6 +997,15 @@ const buildPayload = () => {
               unit: step.relativeOffsetUnit,
               value: step.relativeOffsetValue,
             }),
+            relative_time_mode: stepCanUseFixedRelativeTime(step)
+              ? step.relativeTimeMode
+              : RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+            relative_time_of_day:
+              stepCanUseFixedRelativeTime(step) &&
+              step.relativeTimeMode === RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY
+                ? step.relativeTimeOfDay || DEFAULT_RELATIVE_TIME_OF_DAY
+                : '',
+            manual_schedule_override: step.manualScheduleOverride,
           }),
     })),
   };
@@ -1210,155 +1277,44 @@ watch(
               </div>
             </div>
 
-            <template v-if="stepContentModeTabs.length > 1">
-              <div class="rounded-2xl bg-n-surface-1 p-1">
-                <TabBar
-                  :key="stepContentTabId(step)"
-                  :tabs="stepContentModeTabs"
-                  :initial-active-tab="activeContentTabIndex(step)"
-                  @tab-changed="handleContentTabChanged(step, $event)"
-                />
-              </div>
-            </template>
-
-            <template v-if="step.contentKind === 'channel_template'">
-              <div v-if="templateGroups.length" class="grid gap-4">
-                <div class="grid gap-1">
-                  <label
-                    :for="`touch-plan-template-name-${step.localId}`"
-                    class="mb-0.5 text-sm font-medium text-n-slate-12"
-                  >
-                    {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE') }}
-                  </label>
-                  <ComboBox
-                    :id="`touch-plan-template-name-${step.localId}`"
-                    :model-value="step.templateName"
-                    :options="templateOptions"
-                    :placeholder="
-                      $t(
-                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_PLACEHOLDER'
-                      )
-                    "
-                    input-like
-                    @update:model-value="handleTemplateNameChange(step, $event)"
-                  />
-                </div>
-
-                <div v-if="selectedTemplateGroup(step)" class="grid gap-1">
-                  <label
-                    :for="`touch-plan-template-language-${step.localId}`"
-                    class="mb-0.5 text-sm font-medium text-n-slate-12"
-                  >
-                    {{
-                      $t(
-                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_LANGUAGE'
-                      )
-                    }}
-                  </label>
-                  <ComboBox
-                    :id="`touch-plan-template-language-${step.localId}`"
-                    :model-value="step.templateLanguage"
-                    :options="templateLanguageOptions(step)"
-                    :placeholder="
-                      $t(
-                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_LANGUAGE_PLACEHOLDER'
-                      )
-                    "
-                    input-like
-                    @update:model-value="
-                      handleTemplateLanguageChange(step, $event)
-                    "
-                  />
-                </div>
-
-                <WhatsAppTemplateParser
-                  v-if="selectedTemplate(step)"
-                  :ref="
-                    refValue => setTemplateParserRef(step.localId, refValue)
-                  "
-                  :template="selectedTemplate(step)"
-                  :initial-processed-params="step.templateParams"
-                />
-              </div>
-
-              <div
-                v-else
-                class="rounded-2xl bg-n-alpha-black2 px-4 py-4 text-sm text-n-slate-11"
-              >
-                <p class="mb-1 font-medium text-n-slate-12">
-                  {{
-                    $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_EMPTY')
-                  }}
-                </p>
-                <p class="mb-0 leading-6">
-                  {{
-                    $t(
-                      'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_EMPTY_DESCRIPTION'
-                    )
-                  }}
-                </p>
-              </div>
-            </template>
-
-            <div v-else class="grid gap-4">
-              <div class="flex items-center justify-between gap-3">
-                <p class="mb-0 text-sm font-medium text-n-slate-12">
-                  {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.BODY') }}
-                </p>
-                <Button
-                  v-tooltip.top-end="
-                    $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AI_AGENT')
-                  "
-                  icon="i-woot-captain"
-                  :variant="step.useAiAuthoring ? 'solid' : 'faded'"
-                  color="slate"
-                  size="sm"
-                  :aria-pressed="step.useAiAuthoring"
-                  :class="aiToggleButtonClass(step.useAiAuthoring)"
-                  @click="
-                    updateStep(step.localId, {
-                      useAiAuthoring: !step.useAiAuthoring,
-                    })
-                  "
-                />
-              </div>
-
-              <WootMessageEditor
-                v-if="!step.useAiAuthoring"
-                :model-value="step.body"
-                :editor-id="stepBodyEditorId(step)"
-                :class="touchEditorClass(false)"
-                enable-variables
-                enable-captain-fields
-                enable-canned-responses
-                canned-menu-placement="bottom"
-                :canned-menu-visible-items="3"
-                :placeholder="
-                  $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.BODY_PLACEHOLDER')
-                "
-                @update:model-value="updateStep(step.localId, { body: $event })"
-              />
-
-              <WootMessageEditor
-                v-else
-                :model-value="step.instructions"
-                :editor-id="stepInstructionsEditorId(step)"
-                :class="touchEditorClass(true)"
-                enable-variables
-                enable-captain-fields
-                enable-canned-responses
-                canned-menu-placement="bottom"
-                :canned-menu-visible-items="3"
-                :placeholder="
-                  $t(
-                    'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.INSTRUCTIONS_PLACEHOLDER'
-                  )
-                "
-                @update:model-value="
-                  updateStep(step.localId, { instructions: $event })
-                "
-              />
-            </div>
+            <TouchMessageComposer
+              :ref="refValue => setMessageComposerRef(step.localId, refValue)"
+              :id-prefix="`touch-plan-step-${step.localId}`"
+              :active-content-tab-index="activeContentTabIndex(step)"
+              allow-ai-authoring
+              :attachments="[]"
+              :body="step.body"
+              :body-editor-id="stepBodyEditorId(step)"
+              :channel-type="selectedDeliveryChannelType"
+              :content-kind="step.contentKind"
+              :content-mode-tab-id="stepContentTabId(step)"
+              :content-mode-tabs="stepContentModeTabs"
+              :enable-attachments="false"
+              :instructions="step.instructions"
+              :instructions-editor-id="stepInstructionsEditorId(step)"
+              :medium="selectedDeliveryInboxMedium"
+              :selected-template="selectedTemplate(step)"
+              :selected-template-group="selectedTemplateGroup(step)"
+              :template-language="step.templateLanguage"
+              :template-language-options="templateLanguageOptions(step)"
+              :template-name="step.templateName"
+              :template-options="templateOptions"
+              :template-params="step.templateParams"
+              :use-ai-authoring="step.useAiAuthoring"
+              @content-tab-change="handleContentTabChanged(step, $event)"
+              @template-state-change="handleTemplateStateChange(step, $event)"
+              @update:body="updateStep(step.localId, { body: $event })"
+              @update:instructions="
+                updateStep(step.localId, { instructions: $event })
+              "
+              @update:template-language="
+                handleTemplateLanguageChange(step, $event)
+              "
+              @update:template-name="handleTemplateNameChange(step, $event)"
+              @update:use-ai-authoring="
+                updateStep(step.localId, { useAiAuthoring: $event })
+              "
+            />
 
             <div class="grid gap-4">
               <div class="flex items-center justify-between gap-3">
@@ -1369,7 +1325,7 @@ watch(
                 </p>
               </div>
 
-              <div class="rounded-2xl bg-n-surface-1 p-1">
+              <div class="rounded-xl bg-n-surface-1 p-1">
                 <TabBar
                   :key="stepTimingTabId(step)"
                   :tabs="timingModeTabs"
@@ -1388,29 +1344,81 @@ watch(
               />
 
               <div v-else class="grid gap-4">
-                <SchedulingRelativeOffsetInput
-                  :amount="step.relativeOffsetValue"
-                  :unit="step.relativeOffsetUnit"
-                  :label="
-                    $t(
-                      'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_VALUE'
-                    )
+                <div
+                  class="grid gap-3"
+                  :class="
+                    stepCanUseFixedRelativeTime(step)
+                      ? 'md:grid-cols-[minmax(0,1fr)_minmax(12rem,14rem)] md:items-end'
+                      : ''
                   "
-                  :unit-options="relativeOffsetUnitOptions"
-                  min="1"
-                  @update:amount="
-                    updateStep(step.localId, {
-                      relativeOffsetValue: Math.max(1, Number($event || 0)),
-                      repeatMode: 'once',
-                      repeatUntilAt: '',
-                    })
-                  "
-                  @update:unit="
-                    updateStep(step.localId, {
-                      relativeOffsetUnit: $event,
-                    })
-                  "
-                />
+                >
+                  <SchedulingRelativeOffsetInput
+                    :amount="step.relativeOffsetValue"
+                    :unit="step.relativeOffsetUnit"
+                    :label="stepRelativeOffsetLabel(step)"
+                    :unit-options="relativeOffsetUnitOptions"
+                    min="1"
+                    @update:amount="
+                      updateStep(step.localId, {
+                        relativeOffsetValue: Math.max(1, Number($event || 0)),
+                        repeatMode: 'once',
+                        repeatUntilAt: '',
+                      })
+                    "
+                    @update:unit="
+                      updateStep(step.localId, {
+                        relativeOffsetUnit: $event,
+                      })
+                    "
+                  />
+
+                  <div
+                    v-if="stepCanUseFixedRelativeTime(step)"
+                    class="grid gap-1"
+                  >
+                    <label
+                      class="mb-0.5 flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                    >
+                      <Checkbox
+                        class="shrink-0"
+                        :model-value="
+                          step.relativeTimeMode ===
+                          RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY
+                        "
+                        @update:model-value="
+                          setStepFixedRelativeTime(step, $event)
+                        "
+                      />
+                      <span>{{
+                        $t(
+                          'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_FIXED_TIME'
+                        )
+                      }}</span>
+                    </label>
+
+                    <SchedulingDateTimeField
+                      v-if="
+                        step.relativeTimeMode ===
+                        RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY
+                      "
+                      :model-value="step.relativeTimeOfDay"
+                      type="time"
+                      :placeholder="
+                        $t(
+                          'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_TIME_OF_DAY'
+                        )
+                      "
+                      @update:model-value="
+                        updateStep(step.localId, {
+                          relativeTimeMode:
+                            RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY,
+                          relativeTimeOfDay:
+                            $event || DEFAULT_RELATIVE_TIME_OF_DAY,
+                        })
+                      "
+                    />
+                  </div>
+                </div>
 
                 <SchedulingSelectField
                   :id="`touch-plan-timing-anchor-${step.localId}`"
@@ -1462,7 +1470,7 @@ watch(
             </div>
 
             <div
-              class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-2xl bg-n-solid-1 px-4 py-3"
+              class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-n-weak bg-transparent px-4 py-3"
             >
               <Checkbox
                 class="mt-0.5 shrink-0"
@@ -1477,7 +1485,7 @@ watch(
                 <p class="mb-1 text-sm font-medium text-n-slate-12">
                   {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AUTO_CANCEL') }}
                 </p>
-                <p class="mb-0 text-xs leading-5 text-n-slate-11">
+                <p class="mb-0 text-xs leading-5 text-n-slate-10">
                   {{
                     $t(
                       'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AUTO_CANCEL_DESCRIPTION'
@@ -1520,22 +1528,3 @@ watch(
     </template>
   </SchedulingDrawer>
 </template>
-
-<style scoped>
-.touch-rich-editor :deep(.ProseMirror-menubar-wrapper),
-.touch-rich-editor :deep(.ProseMirror),
-.touch-rich-editor :deep(.ProseMirror-menubar) {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-}
-
-.touch-rich-editor {
-  overflow: visible;
-}
-
-.touch-rich-editor :deep(.mention--box),
-.touch-rich-editor :deep(.copilot-editor-menu) {
-  z-index: 70;
-}
-</style>

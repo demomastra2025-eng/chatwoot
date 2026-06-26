@@ -38,6 +38,9 @@ const textareaRef = ref(null);
 const isFocused = ref(false);
 
 const characterCount = computed(() => props.modelValue.length);
+const characterCountLabel = computed(
+  () => `${characterCount.value} / ${props.maxLength}`
+);
 const cleanedSignature = computed(() =>
   extractTextFromMarkdown(props.signature)
 );
@@ -173,6 +176,7 @@ onMounted(() => {
           customTextAreaClass,
           {
             'resize-none': !resize,
+            'overflow-hidden': autoHeight,
           },
         ]"
         :style="{
@@ -191,7 +195,7 @@ onMounted(() => {
         class="flex items-center justify-end h-4 mt-1 bottom-3 ltr:right-3 rtl:left-3"
       >
         <span class="text-xs tabular-nums text-n-slate-10">
-          {{ characterCount }} / {{ maxLength }}
+          {{ characterCountLabel }}
         </span>
       </div>
     </div>

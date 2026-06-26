@@ -323,6 +323,33 @@ RSpec.describe Captain::ContextFields do
       expect(state[:amount]).to eq('200')
       expect(state).not_to have_key(:amount_minor)
     end
+
+    it 'resolves deals linked through the current communication thread' do
+      communication_thread = create(:communication_thread, account: account, contact: conversation_record.contact)
+      create(
+        :communication_thread_conversation,
+        account: account,
+        communication_thread: communication_thread,
+        conversation: conversation_record,
+        inbox: conversation_record.inbox,
+        contact_inbox: conversation_record.contact_inbox
+      )
+      thread_deal = create(
+        :crm_deal,
+        account: account,
+        originating_communication_thread: communication_thread,
+        originating_conversation: nil,
+        amount_minor: 150_000,
+        currency: 'KZT',
+        updated_at: Time.current
+      )
+
+      state = described_class.deal_state_for(account: account, conversation: conversation_record)
+
+      expect(state[:id]).to eq(thread_deal.id)
+      expect(state[:amount]).to eq('1500')
+      expect(state[:currency]).to eq('KZT')
+    end
   end
 
   describe '.task_state_for' do

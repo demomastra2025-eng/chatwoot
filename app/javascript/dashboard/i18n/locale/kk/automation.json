@@ -106,17 +106,37 @@
       "URL_INPUT_PLACEHOLDER": "Enter URL",
       "TOUCH_EDITOR": {
         "TITLE": "Touch details",
+        "ACTION_TYPE_LABEL": "Touch type",
+        "CONTENT_KIND_LABEL": "Content type",
         "BODY_LABEL": "Message",
         "BODY_PLACEHOLDER": "Write the message that should be sent later",
         "DELAY_LABEL": "Delay in minutes",
         "DELAY_NOTE": "0 means the touch is created immediately when the automation runs.",
         "AUTO_CANCEL_LABEL": "Cancel after incoming reply",
         "AUTO_CANCEL_NOTE": "Only cancel this touch if the contact replies in the same target channel before execution.",
+        "TIMEZONE_LABEL": "Timezone",
+        "RELATIVE_UNIT_LABEL": "Unit",
+        "ATTACHMENTS_LABEL": "Attachments",
+        "TARGET_INBOX_LABEL": "Sending channel",
+        "TARGET_INBOX_NOTE": "Choose the inbox/channel this automation should use to send the touch. Appointment touches without a conversation need this explicit route.",
+        "TARGET_INBOX_EMPTY": "No sending channels are available.",
+        "WHATSAPP_INBOX_LABEL": "WhatsApp channel for template",
+        "WHATSAPP_INBOX_NOTE": "Automation stores the selected template and channel before the trigger runs.",
+        "WHATSAPP_INBOX_EMPTY": "No official WhatsApp channels with templates are available.",
+        "TEMPLATE_PARAMS_LABEL": "Template parameters JSON",
+        "TEMPLATE_PARAMS_INVALID": "Template parameters JSON is invalid",
+        "ACTION_TYPES": {
+          "SEND_MESSAGE": "Send message",
+          "AI_WAKEUP": "Wake AI agent"
+        },
+        "TEXT_AUTHORS": {
+          "SELF": "Prepared text"
+        },
         "HELPERS": {
-          "conversation": "Create one follow-up touch for the current conversation using the selected delay.",
-          "appointment": "Create one follow-up touch for the appointment using the selected delay.",
-          "deal": "Create one follow-up touch for the deal using the selected delay.",
-          "task": "Create one follow-up touch for the task using the selected delay."
+          "conversation": "Create a full follow-up touch for the current conversation.",
+          "appointment": "Create a full follow-up touch for the appointment.",
+          "deal": "Create a full follow-up touch for the deal.",
+          "task": "Create a full follow-up touch for the task."
         }
       }
     },
@@ -171,7 +191,9 @@
       "TASK_UPDATED": "Task Updated",
       "TASK_STATUS_CHANGED": "Task Status Changed",
       "TASK_ARCHIVED": "Task Archived",
-      "TASK_UNARCHIVED": "Task Unarchived"
+      "TASK_UNARCHIVED": "Task Unarchived",
+      "CONVERSATION_PENDING": "Диалог күтуге ауыстырылды",
+      "CONVERSATION_TRANSFERRED_TO_AI": "Диалог AI-ға ауыстырылды"
     },
     "ACTIONS": {
       "ASSIGN_AGENT": "Assign to Agent",

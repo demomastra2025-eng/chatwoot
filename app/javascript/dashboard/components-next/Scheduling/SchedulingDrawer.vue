@@ -39,6 +39,10 @@ const props = defineProps({
     default: 'lg',
     validator: value => ['sm', 'md', 'lg', 'xl'].includes(value),
   },
+  panelClass: {
+    type: [String, Array, Object],
+    default: '',
+  },
 });
 
 const emit = defineEmits(['close', 'confirm', 'update:modelValue']);
@@ -112,7 +116,7 @@ useEventListener(document, 'keydown', event => {
           >
             <aside
               class="flex h-full w-full flex-col overflow-hidden border border-n-weak bg-n-solid-2 shadow-2xl sm:rounded-[1.75rem]"
-              :class="widthClass"
+              :class="[widthClass, panelClass]"
             >
               <header
                 class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-6 py-4"

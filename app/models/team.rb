@@ -22,6 +22,9 @@ class Team < ApplicationRecord
   has_many :team_members, dependent: :destroy_async
   has_many :members, through: :team_members, source: :user
   has_many :conversations, dependent: :nullify
+  has_many :communication_threads, dependent: :nullify
+  has_many :crm_deals, class_name: 'Crm::Deal', dependent: :nullify, inverse_of: :team
+  has_many :crm_tasks, class_name: 'Crm::Task', dependent: :nullify, inverse_of: :team
 
   validates :name,
             presence: { message: I18n.t('errors.validations.presence') },

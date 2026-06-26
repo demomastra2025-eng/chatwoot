@@ -278,12 +278,14 @@
           "TITLE": {
             "LABEL": "Title",
             "PLACEHOLDER": "Please enter the title of campaign",
-            "ERROR": "Title is required"
+            "ERROR": "Title is required",
+            "EMAIL_INFO": "Used as the email subject for Email inboxes."
           },
           "MESSAGE": {
             "LABEL": "Message",
             "PLACEHOLDER": "Please enter the message of campaign",
-            "ERROR": "Message is required"
+            "ERROR": "Message is required",
+            "EMAIL_INFO": "Sent as the email body and rendered to HTML automatically."
           },
           "INBOX": {
             "LABEL": "Select Inbox",
@@ -318,6 +320,10 @@
           "API": {
             "SUCCESS_MESSAGE": "Bulk mailing created successfully",
             "ERROR_MESSAGE": "There was an error. Please try again."
+          },
+          "INSTRUCTIONS": {
+            "PLACEHOLDER": "Describe the message the AI agent should generate for this campaign",
+            "ERROR": "AI agent instructions are required"
           }
         },
         "SECTIONS": {
@@ -743,8 +749,14 @@
           "RELATIVE_ANCHOR": "Anchor",
           "RELATIVE_OFFSET_MINUTES": "Offset in minutes",
           "RELATIVE_OFFSET_NOTE": "Use a value greater than 0 minutes.",
+          "RELATIVE_FIXED_TIME": "Exact time",
+          "RELATIVE_FIXED_TIME_DESCRIPTION": "The date will still be calculated before/after the anchor, but the touch will run at the selected time on that day.",
+          "RELATIVE_TIME_OF_DAY": "Time on that day",
           "AUTO_CANCEL": "Cancel on incoming reply",
-          "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically."
+          "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically.",
+          "TEXT_MODE": "Text mode",
+          "FREE_TEXT_TEMPLATE": "Free text template",
+          "FREE_TEXT_TEMPLATE_PLACEHOLDER": "Select a saved free text template"
         },
         "SUCCESS": {
           "CREATED": "Touch created.",
@@ -752,6 +764,16 @@
         },
         "ERRORS": {
           "SAVE": "Failed to save the touch."
+        },
+        "TEXT_MODE": {
+          "STATIC": "Prepared text",
+          "DYNAMIC": "Dynamic text",
+          "AGENT": "AI-generated"
+        },
+        "TEXT_MODE_HELP": {
+          "STATIC": "Use this mode when the message should be sent exactly as saved.",
+          "DYNAMIC": "Use field references when the final text should be resolved from the current record at send time.",
+          "AGENT": "Use AI agent instructions when the final text should be generated at execution time from the current conversation and record context."
         }
       },
       "TOUCH_PLAN_EDITOR": {
@@ -788,7 +810,9 @@
     },
     "TOUCH_PLANS": {
       "TITLE": "Follow-ups",
+      "CAPTAIN_TITLE": "Follow-up scenarios",
       "DESCRIPTION": "Build reusable follow-up groups and apply them from the right entity context.",
+      "CAPTAIN_DESCRIPTION": "Configure how this AI staff member follows up: supported context, message steps, timing, channel template policy, and auto-cancel behavior.",
       "COUNT": "Follow-ups: {n}",
       "CONTEXT_BADGE": "Context: {entity}",
       "EMPTY_TITLE": "No follow-ups yet.",
@@ -877,19 +901,28 @@
         "REPEAT_UNTIL_AT": "Repeat until",
         "RELATIVE_ANCHOR": "Anchor",
         "RELATIVE_OFFSET_VALUE": "Send after",
+        "RELATIVE_OFFSET_AFTER_EVENT": "After event",
+        "RELATIVE_OFFSET_BEFORE_EVENT": "Before event",
         "RELATIVE_OFFSET_MINUTES": "Offset in minutes",
         "RELATIVE_OFFSET_NOTE": "Use a value greater than 0.",
+        "RELATIVE_FIXED_TIME": "Exact time",
+        "RELATIVE_FIXED_TIME_DESCRIPTION": "The date will still be calculated before/after the anchor, but the touch will run at the selected time on that day.",
+        "RELATIVE_TIME_OF_DAY": "Time on that day",
         "RELATIVE_OFFSET_UNITS": {
           "MINUTES": "minutes",
           "HOURS": "hours",
           "DAYS": "days"
         },
         "AUTO_CANCEL": "Cancel on incoming reply",
-        "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically."
+        "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically.",
+        "TEXT_MODE": "Text mode",
+        "FREE_TEXT_TEMPLATE": "Free text template",
+        "FREE_TEXT_TEMPLATE_PLACEHOLDER": "Select a saved free text template"
       },
       "ATTACHMENTS": {
         "TITLE": "Attachments",
         "DESCRIPTION": "Files are uploaded to this account now and sent as native message attachments when the touch runs.",
+        "DROP_HINT": "Drag files here or click to choose.",
         "ADD": "Add file",
         "UPLOADING": "Uploading...",
         "REMOVE": "Remove attachment",
@@ -902,6 +935,16 @@
       },
       "ERRORS": {
         "SAVE": "Failed to save the touch."
+      },
+      "TEXT_MODE": {
+        "STATIC": "Prepared text",
+        "DYNAMIC": "Dynamic text",
+        "AGENT": "AI-generated"
+      },
+      "TEXT_MODE_HELP": {
+        "STATIC": "Use this mode when the message should be sent exactly as saved.",
+        "DYNAMIC": "Use field references when the final text should be resolved from the current record at send time.",
+        "AGENT": "Use AI agent instructions when the final text should be generated at execution time from the current conversation and record context."
       }
     },
     "TOUCH_PLAN_EDITOR": {

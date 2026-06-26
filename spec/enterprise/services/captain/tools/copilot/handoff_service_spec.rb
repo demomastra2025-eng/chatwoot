@@ -20,4 +20,22 @@ RSpec.describe Captain::Tools::Copilot::HandoffService do
       expect(payload['waiting_since']).to eq(Time.current.iso8601)
     end
   end
+
+  context 'with configured open status reasons' do
+    let(:conversation) { create(:conversation, account: account, status: 'pending') }
+
+    it 'returns the canonical status reason written by the transition' do
+      account.update!(
+        conversation_status_reason_config: {
+          open: { options: ['Needs agent'], required: false }
+        }
+      )
+
+      payload = JSON.parse(service.execute(status_reason: 'needs agent'))
+
+      expect(payload['status']).to eq('open')
+      expect(payload['status_reason']).to eq('Needs agent')
+      expect(conversation.reload.status_transitions.last.reason).to eq('Needs agent')
+    end
+  end
 end

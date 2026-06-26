@@ -8,17 +8,14 @@ import ContactAPI from 'dashboard/api/contacts';
 import TouchesAPI from 'dashboard/api/touches';
 import { uploadFile } from 'dashboard/helper/uploadHelper';
 import { useAlert } from 'dashboard/composables';
-import { useMapGetter } from 'dashboard/composables/store';
+import { useMapGetter, useStore } from 'dashboard/composables/store';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
-import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
-import ContactSelector from 'dashboard/components-next/NewConversation/components/ContactSelector.vue';
-import InboxSelector from 'dashboard/components-next/NewConversation/components/InboxSelector.vue';
 import {
   buildContactableInboxesList,
   createContactSearcher,
-  createNewContact,
   fetchContactableInboxes,
   mergeInboxDetails,
   processContactableInboxes,
@@ -29,8 +26,7 @@ import SchedulingRelativeOffsetInput from 'dashboard/components-next/Scheduling/
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import TouchEditorShell from 'dashboard/components-next/Outbound/TouchEditorShell.vue';
-import WhatsAppTemplateParser from 'dashboard/components-next/whatsapp/WhatsAppTemplateParser.vue';
-import WootMessageEditor from 'dashboard/components/widgets/WootWriter/Editor.vue';
+import TouchMessageComposer from 'dashboard/components-next/Outbound/TouchMessageComposer.vue';
 import {
   TOUCH_CREATED_AT_ANCHOR,
   buildTouchAnchorOptions,
@@ -38,13 +34,20 @@ import {
 } from 'dashboard/components-next/Outbound/touchAnchors';
 import {
   normalizeRelativeOffset,
+  normalizeRelativeTimeForUnit,
   resolveTouchTimingState,
   toRelativeOffsetSeconds,
+  DEFAULT_RELATIVE_TIME_OF_DAY,
+  RELATIVE_TIME_MODES,
   TOUCH_TIMING_STATES,
+  canUseFixedRelativeTimeForUnit,
 } from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
+import {
+  buildTouchContentModeTabs,
+  isWhatsAppTemplateCapableChannel,
+} from 'dashboard/components-next/Outbound/touchContentModes';
 import { groupWhatsAppTemplates } from 'dashboard/helper/whatsappTemplateLibrary';
-import { INBOX_TYPES, TWILIO_CHANNEL_MEDIUM } from 'dashboard/helper/inbox.js';
 import {
   toDateTimeInputValue,
   fromDateTimeInputValue,
@@ -124,22 +127,20 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved', 'update:modelValue', 'viewAll']);
 
 const { t } = useI18n();
+const store = useStore();
 const currentAccountId = useMapGetter('getCurrentAccountId');
+const cannedResponses = useMapGetter('getCannedResponses');
 const getAllInboxes = useMapGetter('inboxes/getAllInboxes');
 const getFilteredWhatsAppTemplates = useMapGetter(
   'inboxes/getFilteredWhatsAppTemplates'
 );
-const templateParserRef = ref(null);
+const messageComposerRef = ref(null);
 const searchContacts = createContactSearcher();
 const contacts = ref([]);
-const isCreatingTargetContact = ref(false);
 const isSearchingContacts = ref(false);
 const isFetchingTargetInboxes = ref(false);
 const selectedContact = ref(null);
-const showContactsDropdown = ref(false);
-const showInboxesDropdown = ref(false);
 const targetInbox = ref(null);
-const attachmentFileInput = ref(null);
 const touchAttachments = ref([]);
 
 const cloneTemplateParams = value => JSON.parse(JSON.stringify(value || {}));
@@ -147,6 +148,11 @@ const friendlyTemplateName = templateName =>
   String(templateName || '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, letter => letter.toUpperCase());
+const buildFreeTextTemplateOption = template => ({
+  value: template.id || template.short_code,
+  label: template.short_code || template.name || `#${template.id}`,
+  content: template.content || '',
+});
 
 const form = reactive({
   actionType: 'send_message',
@@ -161,6 +167,9 @@ const form = reactive({
   relativeOffsetDirection: TOUCH_TIMING_STATES.AFTER,
   relativeOffsetUnit: 'minutes',
   relativeOffsetValue: 1,
+  relativeTimeMode: RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+  relativeTimeOfDay: '',
+  manualScheduleOverride: false,
   repeatMode: 'once',
   repeatUntilAt: '',
   scheduledAt: '',
@@ -176,6 +185,7 @@ const form = reactive({
 const ui = reactive({
   isSaving: false,
   isUploadingAttachment: false,
+  isDraggingAttachment: false,
 });
 
 const drawerCreateLabel = computed(() => {
@@ -213,6 +223,11 @@ const successUpdatedMessage = computed(() => {
   );
 });
 const inboxesList = computed(() => getAllInboxes.value || []);
+const freeTextTemplateOptions = computed(() =>
+  (cannedResponses.value || [])
+    .filter(template => template?.short_code && template?.content)
+    .map(buildFreeTextTemplateOption)
+);
 const contactableInboxesList = computed(() => {
   return buildContactableInboxesList(selectedContact.value?.contactInboxes);
 });
@@ -220,6 +235,67 @@ const selectedContactId = computed(() => {
   const numericId = Number(selectedContact.value?.id);
   return Number.isFinite(numericId) && numericId > 0 ? numericId : null;
 });
+const selectedTargetContactIds = computed(() =>
+  selectedContactId.value ? [selectedContactId.value] : []
+);
+const contactAvatarSrc = contact =>
+  contact?.thumbnail?.src ||
+  (typeof contact?.thumbnail === 'string' ? contact.thumbnail : '') ||
+  contact?.avatarUrl ||
+  contact?.avatar_url ||
+  contact?.avatar ||
+  contact?.imageUrl ||
+  contact?.image_url ||
+  '';
+const buildTargetContactOption = contact => {
+  if (!contact?.id) return null;
+
+  const primaryLabel =
+    contact.name ||
+    contact.phoneNumber ||
+    contact.phone_number ||
+    contact.email ||
+    contact.identifier ||
+    t('CRM.GENERAL.EMPTY_VALUE');
+  const secondaryLabel = contact.name
+    ? contact.phoneNumber ||
+      contact.phone_number ||
+      contact.email ||
+      contact.identifier
+    : '';
+
+  return {
+    contact,
+    label: [primaryLabel, secondaryLabel].filter(Boolean).join(' · '),
+    thumbnail: {
+      name: primaryLabel,
+      src: contactAvatarSrc(contact),
+    },
+    value: Number(contact.id),
+  };
+};
+const dedupeTargetOptions = options => {
+  const optionMap = new Map();
+  options.filter(Boolean).forEach(option => {
+    optionMap.set(Number(option.value), option);
+  });
+  return Array.from(optionMap.values());
+};
+const targetContactOptions = computed(() => {
+  const selectedOption = selectedContact.value
+    ? [buildTargetContactOption(selectedContact.value)]
+    : [];
+  return dedupeTargetOptions([
+    ...selectedOption,
+    ...contacts.value.map(buildTargetContactOption),
+  ]);
+});
+const targetInboxOptions = computed(() =>
+  contactableInboxesList.value.map(inbox => ({
+    ...inbox,
+    value: inbox.id,
+  }))
+);
 
 const resolvedRemindableType = computed(() => {
   if (isTargetSelectionMode.value) {
@@ -274,23 +350,12 @@ const resolvedChannelType = computed(
     resolvedInbox.value?.channel_type || resolvedInbox.value?.channelType || ''
 );
 const resolvedInboxMedium = computed(() => resolvedInbox.value?.medium || '');
-const requiresTemplateOnly = computed(
-  () =>
-    resolvedChannelType.value === INBOX_TYPES.WHATSAPP ||
-    (resolvedChannelType.value === INBOX_TYPES.TWILIO &&
-      resolvedInboxMedium.value === TWILIO_CHANNEL_MEDIUM.WHATSAPP)
+const isWhatsAppTemplateCapable = computed(() =>
+  isWhatsAppTemplateCapableChannel({
+    channelType: resolvedChannelType.value,
+    medium: resolvedInboxMedium.value,
+  })
 );
-const isWhatsAppTemplateCapable = computed(() => {
-  if (!resolvedInbox.value) {
-    return false;
-  }
-
-  return (
-    resolvedChannelType.value === INBOX_TYPES.WHATSAPP ||
-    (resolvedChannelType.value === INBOX_TYPES.TWILIO &&
-      resolvedInboxMedium.value === TWILIO_CHANNEL_MEDIUM.WHATSAPP)
-  );
-});
 const templateGroups = computed(() => {
   if (!resolvedInboxId.value) {
     return [];
@@ -300,25 +365,13 @@ const templateGroups = computed(() => {
     getFilteredWhatsAppTemplates.value(resolvedInboxId.value) || []
   );
 });
-const contentModeTabs = computed(() => {
-  const tabs = [];
-
-  if (!requiresTemplateOnly.value) {
-    tabs.push({
-      id: 'free_text',
-      label: t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.FREE_TEXT_TAB'),
-    });
-  }
-
-  if (isWhatsAppTemplateCapable.value) {
-    tabs.push({
-      id: 'channel_template',
-      label: t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.WHATSAPP_TEMPLATE_TAB'),
-    });
-  }
-
-  return tabs;
-});
+const contentModeTabs = computed(() =>
+  buildTouchContentModeTabs({
+    t,
+    supportsFreeText: true,
+    supportsWhatsAppTemplates: isWhatsAppTemplateCapable.value,
+  })
+);
 const activeContentTabIndex = computed(() => {
   const tabIndex = contentModeTabs.value.findIndex(
     tab => tab.id === form.contentKind
@@ -361,6 +414,36 @@ const entityLabel = computed(() => {
       return t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_KINDS.CONVERSATION');
   }
 });
+const resolvedEntityKind = computed(() =>
+  touchAnchorEntityKindForRemindableType(resolvedRemindableType.value)
+);
+const availableVariablePrefixes = computed(() => {
+  if (isTargetSelectionMode.value && !resolvedRemindableType.value) {
+    return ['contact', 'agent', 'inbox'];
+  }
+
+  if (resolvedEntityKind.value === 'conversation') {
+    return ['conversation', 'contact', 'agent', 'inbox'];
+  }
+
+  return ['contact', 'agent'];
+});
+const availableFieldScopes = computed(() => {
+  if (isTargetSelectionMode.value && !resolvedRemindableType.value) {
+    return ['contact'];
+  }
+
+  const scopesByEntity = {
+    appointment: ['contact', 'appointment'],
+    conversation: ['contact', 'conversation'],
+    deal: ['contact', 'deal'],
+    task: ['contact', 'task'],
+  };
+
+  return (
+    scopesByEntity[resolvedEntityKind.value] || scopesByEntity.conversation
+  );
+});
 const entityTypeOptions = computed(() => {
   return [
     {
@@ -399,6 +482,11 @@ const repeatModeDescription = computed(() => {
 const relativeOffsetNote = computed(() => {
   return t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_NOTE');
 });
+const relativeOffsetInputLabel = computed(() => {
+  return form.relativeOffsetDirection === TOUCH_TIMING_STATES.BEFORE
+    ? t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_BEFORE_EVENT')
+    : t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_AFTER_EVENT');
+});
 const timingModeTabs = computed(() => {
   return [
     {
@@ -421,7 +509,67 @@ const showAbsoluteTimingEditor = computed(
 const showRelativeTimingEditor = computed(
   () => !showAbsoluteTimingEditor.value
 );
+const canUseFixedRelativeTime = computed(() =>
+  canUseFixedRelativeTimeForUnit(form.relativeOffsetUnit)
+);
+const useFixedRelativeTime = computed({
+  get: () =>
+    canUseFixedRelativeTime.value &&
+    form.relativeTimeMode === RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY,
+  set: value => {
+    if (!canUseFixedRelativeTime.value) {
+      form.relativeTimeMode = RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME;
+      form.relativeTimeOfDay = '';
+      return;
+    }
+
+    form.relativeTimeMode = value
+      ? RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY
+      : RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME;
+    form.relativeTimeOfDay = value
+      ? form.relativeTimeOfDay || DEFAULT_RELATIVE_TIME_OF_DAY
+      : '';
+  },
+});
 const canConfigureRepeat = computed(() => showAbsoluteTimingEditor.value);
+const relativeSchedulePayload = () => {
+  const relativeTimeMode = canUseFixedRelativeTime.value
+    ? form.relativeTimeMode
+    : RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME;
+  const relativeTimeOfDay =
+    canUseFixedRelativeTime.value &&
+    form.relativeTimeMode === RELATIVE_TIME_MODES.FIXED_TIME_OF_DAY
+      ? form.relativeTimeOfDay || DEFAULT_RELATIVE_TIME_OF_DAY
+      : '';
+
+  return {
+    relative_anchor: form.relativeAnchor,
+    relative_offset_seconds: toRelativeOffsetSeconds({
+      direction: form.relativeOffsetDirection,
+      unit: form.relativeOffsetUnit,
+      value: form.relativeOffsetValue,
+    }),
+    relative_time_mode: relativeTimeMode,
+    relative_time_of_day: relativeTimeOfDay,
+  };
+};
+const relativeScheduleChanged = relativePayload => {
+  if (!props.touch?.id || props.touch.timing_mode !== 'relative') {
+    return true;
+  }
+
+  return (
+    relativePayload.relative_anchor !==
+      (props.touch.relative_anchor || TOUCH_CREATED_AT_ANCHOR) ||
+    relativePayload.relative_offset_seconds !==
+      Number(props.touch.relative_offset_seconds || 0) ||
+    relativePayload.relative_time_mode !==
+      (props.touch.relative_time_mode ||
+        RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME) ||
+    relativePayload.relative_time_of_day !==
+      (props.touch.relative_time_of_day || '')
+  );
+};
 const relativeOffsetUnitOptions = computed(() => {
   return [
     {
@@ -499,7 +647,8 @@ const hasRequiredTemplateParams = computed(() => {
   }
 
   return (
-    !!selectedTemplate.value && templateParserRef.value?.isFormInvalid === false
+    !!selectedTemplate.value &&
+    messageComposerRef.value?.isTemplateReady?.() === true
   );
 });
 const canSave = computed(() => {
@@ -567,21 +716,6 @@ const contentModeTabId = computed(() => {
   return `touch-editor-content-kind-${props.touch?.id || resolvedRemindableId.value || 'new'}`;
 });
 
-const aiToggleButtonClass = isEnabled => {
-  return isEnabled
-    ? '!bg-n-violet-3 !text-n-violet-9 hover:enabled:!bg-n-violet-4 focus-visible:!bg-n-violet-4 !outline-transparent'
-    : '';
-};
-
-const touchEditorClass = isAiAuthoring => {
-  return [
-    'touch-rich-editor w-full min-w-0 max-w-full overflow-visible rounded-2xl px-3 py-2 transition-all duration-200',
-    isAiAuthoring
-      ? 'bg-n-violet-3 ring-1 ring-inset ring-n-violet-6/20'
-      : 'bg-n-solid-1 outline outline-1 outline-n-weak dark:outline-n-strong',
-  ].join(' ');
-};
-
 const normalizeAttachment = attachment => {
   const blobId =
     attachment?.blobId ||
@@ -615,15 +749,9 @@ const attachmentIds = computed(() =>
   touchAttachments.value.map(attachment => attachment.blobId).filter(Boolean)
 );
 
-const formatAttachmentSize = size => {
-  const byteSize = Number(size || 0);
-  if (!Number.isFinite(byteSize) || byteSize <= 0) return '';
-  if (byteSize < 1024 * 1024) return `${Math.ceil(byteSize / 1024)} KB`;
-  return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
-};
-
-const openAttachmentPicker = () => {
-  attachmentFileInput.value?.click();
+const setAttachmentDragState = value => {
+  if (ui.isUploadingAttachment) return;
+  ui.isDraggingAttachment = value;
 };
 
 const removeAttachment = blobId => {
@@ -632,9 +760,8 @@ const removeAttachment = blobId => {
   );
 };
 
-const handleAttachmentUpload = async event => {
-  const files = Array.from(event.target.files || []);
-  event.target.value = '';
+const uploadAttachmentFiles = async filesInput => {
+  const files = Array.from(filesInput || []);
 
   if (files.length === 0) return;
 
@@ -671,6 +798,7 @@ const handleAttachmentUpload = async event => {
     );
   } finally {
     ui.isUploadingAttachment = false;
+    ui.isDraggingAttachment = false;
   }
 };
 
@@ -679,11 +807,26 @@ const setContentKind = kind => {
 
   if (kind === 'channel_template') {
     form.useAiAuthoring = false;
+    return;
   }
+
+  form.templateBody = '';
+  form.templateLanguage = '';
+  form.templateName = '';
+  form.templateParams = {};
 };
 
 const handleContentTabChanged = tab => {
   setContentKind(tab.id);
+};
+
+const handleTemplateStateChange = payload => {
+  if (form.contentKind !== 'channel_template') {
+    return;
+  }
+
+  form.templateParams = cloneTemplateParams(payload?.processedParams);
+  form.templateBody = String(payload?.rawRenderedTemplate || '');
 };
 
 const setTimingState = state => {
@@ -784,8 +927,6 @@ const loadContact = async contactId => {
 const clearTargetSelection = () => {
   contacts.value = [];
   selectedContact.value = null;
-  showContactsDropdown.value = false;
-  showInboxesDropdown.value = false;
   targetInbox.value = null;
 };
 
@@ -812,65 +953,59 @@ const syncTargetInboxFromContact = inboxId => {
   targetInbox.value = matchingInbox;
 };
 
-const onContactSearch = debounce(
-  async query => {
-    isSearchingContacts.value = true;
-    contacts.value = [];
+const loadTargetContacts = async (query = '') => {
+  const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+  isSearchingContacts.value = true;
+  contacts.value = [];
 
-    try {
-      const results = await searchContacts(query);
-      if (results === null) {
-        return;
-      }
-
+  try {
+    if (trimmedQuery) {
+      const results = await searchContacts(trimmedQuery, {
+        skipMinLength: true,
+      });
+      if (results === null) return;
       contacts.value = results;
-    } catch {
-      useAlert(t('COMPOSE_NEW_CONVERSATION.CONTACT_SEARCH.ERROR_MESSAGE'));
-    } finally {
-      isSearchingContacts.value = false;
+      return;
     }
-  },
-  400,
-  false
-);
 
-const handleContactSearch = value => {
-  showContactsDropdown.value = value.trim().length > 1;
-  onContactSearch(value);
-};
-
-const handleDropdownUpdate = (type, value) => {
-  if (type === 'contacts') {
-    showContactsDropdown.value = value;
+    const {
+      data: { payload = [] },
+    } = await ContactAPI.get(1);
+    contacts.value = camelcaseKeys(payload || [], { deep: true });
+  } catch {
+    useAlert(t('COMPOSE_NEW_CONVERSATION.CONTACT_SEARCH.ERROR_MESSAGE'));
+  } finally {
+    isSearchingContacts.value = false;
   }
 };
 
-const clearSelectedContact = () => {
-  clearTargetSelection();
-};
+const debouncedLoadTargetContacts = debounce(loadTargetContacts, 300, false);
 
-const handleTargetInboxAction = inbox => {
-  targetInbox.value = inbox;
-  showInboxesDropdown.value = false;
-};
+const handleTargetContactIdsUpdate = async values => {
+  const selectedValues = Array.isArray(values) ? values : [];
+  const contactId = Number(selectedValues.at(-1));
 
-const setSelectedContactOption = async ({ value, action, ...rest }) => {
-  let contact = rest;
-
-  if (action === 'create') {
-    isCreatingTargetContact.value = true;
-    try {
-      contact = await createNewContact(value);
-    } finally {
-      isCreatingTargetContact.value = false;
-    }
+  if (!Number.isFinite(contactId) || contactId <= 0) {
+    clearTargetSelection();
+    return;
   }
+
+  const option = targetContactOptions.value.find(
+    item => Number(item.value) === contactId
+  );
+  const contact = option?.contact || (await loadContact(contactId));
 
   selectedContact.value = await prepareContactWithInboxes(contact);
   contacts.value = [];
-  showContactsDropdown.value = false;
-  showInboxesDropdown.value = true;
   resetTargetInbox();
+};
+
+const handleTargetInboxValueUpdate = inboxId => {
+  const selectedInbox =
+    contactableInboxesList.value.find(
+      inbox => Number(inbox.id) === Number(inboxId)
+    ) || null;
+  targetInbox.value = selectedInbox;
 };
 
 const hydrateTargetSelection = async () => {
@@ -920,6 +1055,9 @@ const resetForm = () => {
   form.relativeOffsetDirection = TOUCH_TIMING_STATES.AFTER;
   form.relativeOffsetUnit = 'minutes';
   form.relativeOffsetValue = 1;
+  form.relativeTimeMode = RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME;
+  form.relativeTimeOfDay = '';
+  form.manualScheduleOverride = false;
   form.repeatMode = 'once';
   form.repeatUntilAt = '';
   form.scheduledAt = '';
@@ -968,6 +1106,15 @@ const hydrateForm = () => {
   form.relativeOffsetDirection = normalizedRelativeOffset.direction;
   form.relativeOffsetUnit = normalizedRelativeOffset.unit;
   form.relativeOffsetValue = normalizedRelativeOffset.value;
+  const relativeTime = normalizeRelativeTimeForUnit({
+    relativeTimeMode:
+      props.touch.relative_time_mode || RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME,
+    relativeTimeOfDay: props.touch.relative_time_of_day,
+    unit: normalizedRelativeOffset.unit,
+  });
+  form.relativeTimeMode = relativeTime.relativeTimeMode;
+  form.relativeTimeOfDay = relativeTime.relativeTimeOfDay;
+  form.manualScheduleOverride = props.touch.manual_schedule_override ?? false;
   form.repeatMode = props.touch.repeat_mode || 'once';
   form.repeatUntilAt = toDateTimeInputValue(props.touch.repeat_until_at);
   form.scheduledAt = toDateTimeInputValue(props.touch.scheduled_at);
@@ -990,6 +1137,10 @@ const hydrateForm = () => {
   hydrateTargetSelection();
 };
 
+const loadFreeTextTemplates = () => {
+  store.dispatch('getCannedResponse', { searchKey: '' });
+};
+
 const closeDrawer = () => {
   emit('update:modelValue', false);
   emit('close');
@@ -1004,6 +1155,14 @@ const buildPayload = () => {
       body = form.body.trim();
     }
   }
+
+  const relativePayload = showRelativeTimingEditor.value
+    ? relativeSchedulePayload()
+    : null;
+  const shouldPreserveManualSchedule =
+    form.manualScheduleOverride &&
+    relativePayload &&
+    !relativeScheduleChanged(relativePayload);
 
   return {
     action_type: form.actionType,
@@ -1072,12 +1231,8 @@ const buildPayload = () => {
           scheduled_at: fromDateTimeInputValue(form.scheduledAt),
         }
       : {
-          relative_anchor: form.relativeAnchor,
-          relative_offset_seconds: toRelativeOffsetSeconds({
-            direction: form.relativeOffsetDirection,
-            unit: form.relativeOffsetUnit,
-            value: form.relativeOffsetValue,
-          }),
+          ...relativePayload,
+          manual_schedule_override: shouldPreserveManualSchedule,
         }),
   };
 };
@@ -1128,6 +1283,16 @@ watch(
 );
 
 watch(
+  () => props.modelValue,
+  value => {
+    if (value) {
+      loadFreeTextTemplates();
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   () => resolvedRemindableType.value,
   () => {
     const availableAnchors = relativeAnchorOptions.value.map(
@@ -1159,12 +1324,28 @@ watch(
 );
 
 watch(
+  () => form.relativeOffsetUnit,
+  unit => {
+    if (canUseFixedRelativeTimeForUnit(unit)) {
+      return;
+    }
+
+    form.relativeTimeMode = RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME;
+    form.relativeTimeOfDay = '';
+  }
+);
+
+watch(
   () => form.timingMode,
   value => {
     if (value !== 'absolute') {
       form.repeatMode = 'once';
       form.repeatUntilAt = '';
+      return;
     }
+
+    form.relativeTimeMode = RELATIVE_TIME_MODES.INHERIT_ANCHOR_TIME;
+    form.relativeTimeOfDay = '';
   }
 );
 
@@ -1207,20 +1388,26 @@ watch(
 );
 
 watch(
-  () => requiresTemplateOnly.value,
-  value => {
-    if (value) {
-      setContentKind('channel_template');
-    }
-  },
-  { immediate: true }
-);
-
-watch(
   () => isWhatsAppTemplateCapable.value,
   value => {
     if (!value && form.contentKind === 'channel_template') {
       setContentKind('free_text');
+    }
+  }
+);
+
+watch(
+  () => contentModeTabs.value.map(tab => tab.id).join('|'),
+  () => {
+    if (contentModeTabs.value.length === 0) {
+      return;
+    }
+
+    const hasCurrentTab = contentModeTabs.value.some(
+      tab => tab.id === form.contentKind
+    );
+    if (!hasCurrentTab) {
+      setContentKind(contentModeTabs.value[0].id);
     }
   }
 );
@@ -1272,23 +1459,6 @@ watch(
     form.templateBody = '';
   }
 );
-
-watch(
-  () =>
-    JSON.stringify({
-      processedParams: templateParserRef.value?.processedParams || {},
-      rawRenderedTemplate: templateParserRef.value?.rawRenderedTemplate || '',
-    }),
-  payload => {
-    if (form.contentKind !== 'channel_template' || !templateParserRef.value) {
-      return;
-    }
-
-    const parsedPayload = JSON.parse(payload || '{}');
-    form.templateParams = cloneTemplateParams(parsedPayload.processedParams);
-    form.templateBody = String(parsedPayload.rawRenderedTemplate || '');
-  }
-);
 </script>
 
 <template>
@@ -1297,6 +1467,7 @@ watch(
     :display-mode="displayMode"
     :close-on-outside="false"
     width="md"
+    panel-class="sm:!rounded-2xl"
     :title="drawerTitle"
     :description="drawerDescription"
     :confirm-label="touch?.id ? drawerSaveLabel : drawerCreateLabel"
@@ -1309,7 +1480,7 @@ watch(
     <div class="grid gap-5">
       <div
         v-if="!isSidebarMode && !isTargetSelectionMode"
-        class="rounded-2xl bg-n-brand/5 px-4 py-4 outline outline-1 outline-n-brand/10"
+        class="rounded-xl bg-n-brand/5 px-4 py-4 outline outline-1 outline-n-brand/10"
       >
         <p class="mb-1 text-sm font-semibold text-n-slate-12">
           {{
@@ -1324,31 +1495,55 @@ watch(
       </div>
 
       <SchedulingFormFieldGroup v-if="isTargetSelectionMode" :framed="false">
-        <div class="grid gap-1 rounded-2xl bg-n-alpha-black2 py-1">
-          <ContactSelector
-            :contacts="contacts"
-            :selected-contact="selectedContact"
-            :show-contacts-dropdown="showContactsDropdown"
-            :is-loading="isSearchingContacts"
-            :is-creating-contact="isCreatingTargetContact"
-            :contactable-inboxes-list="contactableInboxesList"
-            :show-inboxes-dropdown="showInboxesDropdown"
-            @search-contacts="handleContactSearch"
-            @set-selected-contact="setSelectedContactOption"
-            @clear-selected-contact="clearSelectedContact"
-            @update-dropdown="handleDropdownUpdate"
-          />
+        <div class="touch-target-section">
+          <div class="touch-target-row touch-target-row--start">
+            <label class="touch-target-label" for="touch-target-contact">
+              {{ $t('COMPOSE_NEW_CONVERSATION.FORM.CONTACT_SELECTOR.LABEL') }}
+            </label>
+            <TagMultiSelectComboBox
+              id="touch-target-contact"
+              class="touch-target-control touch-target-contact-control"
+              :aria-label="
+                $t('COMPOSE_NEW_CONVERSATION.FORM.CONTACT_SELECTOR.LABEL')
+              "
+              :model-value="selectedTargetContactIds"
+              :options="targetContactOptions"
+              :placeholder="$t('NEW_CONVERSATION.FORM.TO.LABEL')"
+              use-api-results
+              dropdown-placement="auto"
+              :search-placeholder="
+                $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
+              "
+              :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
+              :message="
+                isSearchingContacts
+                  ? $t('CONTACT_PANEL.SIDEBAR.MERGE.IS_SEARCHING')
+                  : ''
+              "
+              @open="loadTargetContacts('')"
+              @search="debouncedLoadTargetContacts"
+              @update:model-value="handleTargetContactIdsUpdate"
+            />
+          </div>
 
-          <InboxSelector
-            :target-inbox="targetInbox"
-            :selected-contact="selectedContact"
-            :show-inboxes-dropdown="showInboxesDropdown"
-            :contactable-inboxes-list="contactableInboxesList"
-            :is-fetching-inboxes="isFetchingTargetInboxes"
-            @update-inbox="handleTargetInboxAction"
-            @toggle-dropdown="showInboxesDropdown = $event"
-            @handle-inbox-action="handleTargetInboxAction"
-          />
+          <div class="touch-target-row">
+            <label class="touch-target-label" for="touch-target-inbox">
+              {{ $t('COMPOSE_NEW_CONVERSATION.FORM.INBOX_SELECTOR.LABEL') }}
+            </label>
+            <SchedulingSelectField
+              id="touch-target-inbox"
+              class="touch-target-control touch-target-select-control"
+              :aria-label="
+                $t('COMPOSE_NEW_CONVERSATION.FORM.INBOX_SELECTOR.LABEL')
+              "
+              :disabled="!selectedContact || isFetchingTargetInboxes"
+              :model-value="targetInbox?.id || ''"
+              :options="targetInboxOptions"
+              :placeholder="$t('NEW_CONVERSATION.FORM.INBOX.PLACEHOLDER')"
+              dropdown-placement="auto"
+              @update:model-value="handleTargetInboxValueUpdate"
+            />
+          </div>
         </div>
       </SchedulingFormFieldGroup>
 
@@ -1388,242 +1583,52 @@ watch(
             @update:model-value="form.actionType = $event"
           />
 
-          <template v-if="form.actionType === 'send_message'">
-            <div
-              v-if="contentModeTabs.length > 1"
-              class="rounded-2xl bg-n-alpha-black2 p-1"
-            >
-              <TabBar
-                :key="contentModeTabId"
-                :tabs="contentModeTabs"
-                :initial-active-tab="activeContentTabIndex"
-                @tab-changed="handleContentTabChanged"
-              />
-            </div>
-
-            <template v-if="form.contentKind === 'channel_template'">
-              <div v-if="templateGroups.length" class="grid gap-4">
-                <div class="flex flex-col gap-1">
-                  <label
-                    for="touch-template-name"
-                    class="mb-0.5 text-sm font-medium text-n-slate-12"
-                  >
-                    {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE') }}
-                  </label>
-                  <ComboBox
-                    id="touch-template-name"
-                    v-model="form.templateName"
-                    :options="templateOptions"
-                    :placeholder="
-                      $t(
-                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_PLACEHOLDER'
-                      )
-                    "
-                    class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"
-                  />
-                </div>
-
-                <div v-if="selectedTemplateGroup" class="flex flex-col gap-1">
-                  <label
-                    for="touch-template-language"
-                    class="mb-0.5 text-sm font-medium text-n-slate-12"
-                  >
-                    {{
-                      $t(
-                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_LANGUAGE'
-                      )
-                    }}
-                  </label>
-                  <ComboBox
-                    id="touch-template-language"
-                    v-model="form.templateLanguage"
-                    :options="templateLanguageOptions"
-                    :placeholder="
-                      $t(
-                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_LANGUAGE_PLACEHOLDER'
-                      )
-                    "
-                    class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"
-                  />
-                </div>
-
-                <WhatsAppTemplateParser
-                  v-if="selectedTemplate"
-                  ref="templateParserRef"
-                  :template="selectedTemplate"
-                  :initial-processed-params="form.templateParams"
-                />
-              </div>
-
-              <div
-                v-else
-                class="rounded-2xl border border-dashed border-n-weak bg-n-solid-1 px-4 py-5"
-              >
-                <p class="mb-1 text-sm font-medium text-n-slate-12">
-                  {{
-                    $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_EMPTY')
-                  }}
-                </p>
-                <p class="mb-0 text-sm text-n-slate-11">
-                  {{
-                    $t(
-                      'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.TEMPLATE_EMPTY_DESCRIPTION'
-                    )
-                  }}
-                </p>
-              </div>
-            </template>
-
-            <template v-else>
-              <div class="flex items-center justify-between gap-3">
-                <p class="mb-0 text-sm font-medium text-n-slate-12">
-                  {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.BODY') }}
-                </p>
-                <Button
-                  v-tooltip.top-end="
-                    $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AI_AGENT')
-                  "
-                  icon="i-woot-captain"
-                  :variant="form.useAiAuthoring ? 'solid' : 'faded'"
-                  color="slate"
-                  size="sm"
-                  :aria-pressed="form.useAiAuthoring"
-                  :class="aiToggleButtonClass(form.useAiAuthoring)"
-                  @click="form.useAiAuthoring = !form.useAiAuthoring"
-                />
-              </div>
-
-              <WootMessageEditor
-                v-if="!form.useAiAuthoring"
-                :model-value="form.body"
-                :editor-id="bodyEditorId"
-                class="touch-editor-large"
-                :class="[touchEditorClass(false)]"
-                :channel-type="resolvedChannelType"
-                :conversation-id="Number(resolvedConversationId) || null"
-                :medium="resolvedInboxMedium"
-                enable-variables
-                enable-captain-fields
-                enable-canned-responses
-                canned-menu-placement="bottom"
-                :canned-menu-visible-items="3"
-                :placeholder="
-                  $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.BODY_PLACEHOLDER')
-                "
-                @update:model-value="form.body = $event"
-              />
-
-              <WootMessageEditor
-                v-else
-                :model-value="form.instructions"
-                :editor-id="instructionsEditorId"
-                class="touch-editor-large"
-                :class="[touchEditorClass(true)]"
-                :channel-type="resolvedChannelType"
-                :conversation-id="Number(resolvedConversationId) || null"
-                :medium="resolvedInboxMedium"
-                enable-variables
-                enable-captain-fields
-                enable-canned-responses
-                canned-menu-placement="bottom"
-                :canned-menu-visible-items="3"
-                :placeholder="
-                  $t(
-                    'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.INSTRUCTIONS_PLACEHOLDER'
-                  )
-                "
-                @update:model-value="form.instructions = $event"
-              />
-            </template>
-
-            <div class="grid gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="mb-1 text-sm font-medium text-n-slate-12">
-                    {{
-                      $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.TITLE')
-                    }}
-                  </p>
-                  <p class="mb-0 text-xs leading-5 text-n-slate-10">
-                    {{
-                      $t(
-                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.DESCRIPTION'
-                      )
-                    }}
-                  </p>
-                </div>
-                <Button
-                  icon="i-lucide-paperclip"
-                  size="sm"
-                  color="slate"
-                  variant="faded"
-                  :is-loading="ui.isUploadingAttachment"
-                  :disabled="ui.isUploadingAttachment"
-                  :label="
-                    ui.isUploadingAttachment
-                      ? $t(
-                          'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.UPLOADING'
-                        )
-                      : $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.ADD')
-                  "
-                  @click="openAttachmentPicker"
-                />
-              </div>
-
-              <input
-                ref="attachmentFileInput"
-                type="file"
-                multiple
-                class="hidden"
-                @change="handleAttachmentUpload"
-              />
-
-              <div v-if="touchAttachments.length" class="grid gap-2">
-                <div
-                  v-for="attachment in touchAttachments"
-                  :key="attachment.blobId"
-                  class="flex items-center gap-3 rounded-xl bg-n-solid-1 px-3 py-2 outline outline-1 outline-n-weak"
-                >
-                  <span class="i-lucide-file size-4 shrink-0 text-n-slate-11" />
-                  <div class="min-w-0 flex-1">
-                    <p
-                      class="mb-0 truncate text-sm font-medium text-n-slate-12"
-                    >
-                      {{ attachment.fileName }}
-                    </p>
-                    <p
-                      v-if="
-                        formatAttachmentSize(attachment.fileSize) ||
-                        attachment.contentType
-                      "
-                      class="mb-0 truncate text-xs text-n-slate-10"
-                    >
-                      {{
-                        formatAttachmentSize(attachment.fileSize) ||
-                        attachment.contentType
-                      }}
-                    </p>
-                  </div>
-                  <Button
-                    icon="i-lucide-x"
-                    size="xs"
-                    color="slate"
-                    variant="ghost"
-                    :aria-label="
-                      $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.REMOVE')
-                    "
-                    @click="removeAttachment(attachment.blobId)"
-                  />
-                </div>
-              </div>
-            </div>
-          </template>
+          <TouchMessageComposer
+            v-if="form.actionType === 'send_message'"
+            ref="messageComposerRef"
+            :active-content-tab-index="activeContentTabIndex"
+            allow-ai-authoring
+            :attachments="touchAttachments"
+            :available-field-scopes="availableFieldScopes"
+            :available-variable-prefixes="availableVariablePrefixes"
+            :body="form.body"
+            :body-editor-id="bodyEditorId"
+            :channel-type="resolvedChannelType"
+            :content-kind="form.contentKind"
+            :content-mode-tab-id="contentModeTabId"
+            :content-mode-tabs="contentModeTabs"
+            :conversation-id="Number(resolvedConversationId) || null"
+            :free-text-template-options="freeTextTemplateOptions"
+            :instructions="form.instructions"
+            :instructions-editor-id="instructionsEditorId"
+            :is-dragging-attachment="ui.isDraggingAttachment"
+            :is-uploading-attachment="ui.isUploadingAttachment"
+            :medium="resolvedInboxMedium"
+            :selected-template="selectedTemplate"
+            :selected-template-group="selectedTemplateGroup"
+            :template-language="form.templateLanguage"
+            :template-language-options="templateLanguageOptions"
+            :template-name="form.templateName"
+            :template-options="templateOptions"
+            :template-params="form.templateParams"
+            :use-ai-authoring="form.useAiAuthoring"
+            @attachment-files="uploadAttachmentFiles"
+            @content-tab-change="handleContentTabChanged"
+            @remove-attachment="removeAttachment"
+            @set-attachment-dragging="setAttachmentDragState"
+            @template-state-change="handleTemplateStateChange"
+            @update:body="form.body = $event"
+            @update:instructions="form.instructions = $event"
+            @update:template-language="form.templateLanguage = $event"
+            @update:template-name="form.templateName = $event"
+            @update:use-ai-authoring="form.useAiAuthoring = $event"
+          />
         </div>
       </SchedulingFormFieldGroup>
 
       <SchedulingFormFieldGroup :framed="false">
         <div class="grid gap-4">
-          <div class="rounded-2xl bg-n-surface-1 p-1">
+          <div class="rounded-xl bg-n-surface-1 p-1">
             <TabBar
               :key="`touch-timing-mode-${activeTimingTabIndex}`"
               :tabs="timingModeTabs"
@@ -1641,20 +1646,61 @@ watch(
           />
 
           <template v-else>
-            <SchedulingRelativeOffsetInput
-              v-model:amount="form.relativeOffsetValue"
-              v-model:unit="form.relativeOffsetUnit"
-              :label="
-                $t(
-                  'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_VALUE'
-                )
+            <div
+              class="grid gap-3"
+              :class="
+                canUseFixedRelativeTime
+                  ? 'md:grid-cols-[minmax(0,1fr)_minmax(12rem,14rem)] md:items-start'
+                  : ''
               "
-              :unit-options="relativeOffsetUnitOptions"
-              min="1"
-              @update:amount="
-                form.relativeOffsetValue = Math.max(1, Number($event || 0))
-              "
-            />
+            >
+              <SchedulingRelativeOffsetInput
+                v-model:amount="form.relativeOffsetValue"
+                v-model:unit="form.relativeOffsetUnit"
+                :label="relativeOffsetInputLabel"
+                :unit-options="relativeOffsetUnitOptions"
+                min="1"
+                @update:amount="
+                  form.relativeOffsetValue = Math.max(1, Number($event || 0))
+                "
+              />
+
+              <div
+                v-if="canUseFixedRelativeTime"
+                class="grid"
+                :class="
+                  useFixedRelativeTime ? 'gap-1' : 'gap-2 md:pt-[1.625rem]'
+                "
+              >
+                <label
+                  class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                  :class="useFixedRelativeTime ? 'mb-0.5' : 'min-h-10'"
+                >
+                  <Checkbox
+                    class="shrink-0"
+                    :model-value="useFixedRelativeTime"
+                    @update:model-value="useFixedRelativeTime = $event"
+                  />
+                  <span>{{
+                    $t(
+                      'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_FIXED_TIME'
+                    )
+                  }}</span>
+                </label>
+
+                <SchedulingDateTimeField
+                  v-if="useFixedRelativeTime"
+                  :model-value="form.relativeTimeOfDay"
+                  type="time"
+                  :placeholder="
+                    $t(
+                      'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_TIME_OF_DAY'
+                    )
+                  "
+                  @update:model-value="form.relativeTimeOfDay = $event"
+                />
+              </div>
+            </div>
 
             <SchedulingSelectField
               :label="
@@ -1707,7 +1753,7 @@ watch(
 
       <SchedulingFormFieldGroup :framed="false">
         <div
-          class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3"
+          class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-n-weak bg-transparent px-4 py-3"
         >
           <Checkbox
             class="mt-0.5 shrink-0"
@@ -1762,34 +1808,90 @@ watch(
 </template>
 
 <style scoped>
-.touch-editor-large {
-  min-height: 13rem;
+.touch-target-section {
+  @apply grid gap-2 rounded-xl border border-n-weak bg-n-solid-1 p-3 shadow-sm;
 }
 
-.touch-rich-editor :deep(.ProseMirror-menubar-wrapper),
-.touch-rich-editor :deep(.ProseMirror),
-.touch-rich-editor :deep(.ProseMirror-menubar) {
+.touch-target-row {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.touch-target-label {
+  @apply mb-0 min-w-0 text-[13px] font-medium leading-4 text-n-slate-12;
+}
+
+.touch-target-control,
+.touch-target-section :deep(.touch-target-control) {
   min-width: 0;
   width: 100%;
-  max-width: 100%;
 }
 
-.touch-editor-large :deep(.ProseMirror) {
-  min-height: 8.5rem;
+.touch-target-section :deep(.touch-target-contact-control button),
+.touch-target-section :deep(.touch-target-select-control button) {
+  @apply border border-n-weak bg-n-alpha-black2 text-sm font-normal text-n-slate-12 shadow-none outline outline-1 outline-transparent transition-colors duration-150 !important;
+  border-radius: 0.375rem !important;
 }
 
-.touch-rich-editor {
-  overflow: visible;
+.touch-target-section :deep(.touch-target-contact-control button) {
+  height: auto !important;
+  min-height: 2rem !important;
 }
 
-.touch-rich-editor :deep(.mention--box),
-.touch-rich-editor :deep(.copilot-editor-menu) {
-  z-index: 70;
+.touch-target-section :deep(.touch-target-select-control button) {
+  height: 2rem !important;
+}
+
+.touch-target-section :deep(.touch-target-contact-control button),
+.touch-target-section :deep(.touch-target-select-control button) {
+  @apply justify-start py-1 !important;
+}
+
+.touch-target-section :deep(.touch-target-contact-control button:hover),
+.touch-target-section :deep(.touch-target-select-control button:hover) {
+  @apply border-n-slate-6 bg-n-alpha-black2 outline-transparent !important;
+}
+
+.touch-target-section :deep(.touch-target-contact-control button:focus),
+.touch-target-section
+  :deep(.touch-target-contact-control button[data-state='open']),
+.touch-target-section :deep(.touch-target-select-control button:focus),
+.touch-target-section
+  :deep(.touch-target-select-control button[data-state='open']) {
+  @apply border-n-weak bg-n-alpha-black2 outline-n-brand !important;
+}
+
+.touch-target-section :deep(.touch-target-contact-control button > div) {
+  @apply max-w-[75%] rounded-md border border-n-blue-4/40 bg-n-blue-3/60 px-1.5 py-0.5 text-n-blue-11 !important;
+}
+
+.touch-target-section :deep(.touch-target-contact-control button > div span) {
+  @apply text-n-blue-11 !important;
 }
 
 .touch-relative-anchor-select :deep(button) {
   height: auto !important;
   min-height: 2.75rem;
+}
+
+@media (min-width: 768px) {
+  .touch-target-row {
+    align-items: center;
+    grid-template-columns: minmax(4.5rem, 5.5rem) minmax(0, 1fr);
+  }
+
+  .touch-target-row--start {
+    align-items: start;
+  }
+
+  .touch-target-row--start > .touch-target-label {
+    padding-top: 0.5rem;
+  }
+
+  .touch-target-label {
+    @apply text-left;
+  }
 }
 
 .touch-relative-anchor-select :deep(button > span) {

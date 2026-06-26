@@ -11,6 +11,10 @@ export default {
       type: String,
       default: '',
     },
+    allowedPrefixes: {
+      type: Array,
+      default: () => [],
+    },
   },
   emits: ['selectVariable'],
   computed: {
@@ -19,6 +23,9 @@ export default {
     }),
     sanitizedSearchKey() {
       return sanitizeVariableSearchKey(this.searchKey);
+    },
+    allowedPrefixSet() {
+      return new Set((this.allowedPrefixes || []).filter(Boolean));
     },
     items() {
       return [
@@ -29,8 +36,9 @@ export default {
     standardAttributeVariables() {
       return MESSAGE_VARIABLES.filter(variable => {
         return (
-          variable.label.includes(this.sanitizedSearchKey) ||
-          variable.key.includes(this.sanitizedSearchKey)
+          this.isVariableAllowed(variable.key) &&
+          (variable.label.includes(this.sanitizedSearchKey) ||
+            variable.key.includes(this.sanitizedSearchKey))
         );
       }).map(variable => ({
         label: variable.key,
@@ -39,21 +47,36 @@ export default {
       }));
     },
     customAttributeVariables() {
-      return this.customAttributes.map(attribute => {
-        const attributePrefix =
-          attribute.attribute_model === 'conversation_attribute'
-            ? 'conversation'
-            : 'contact';
+      return this.customAttributes
+        .filter(attribute => {
+          const attributePrefix =
+            attribute.attribute_model === 'conversation_attribute'
+              ? 'conversation'
+              : 'contact';
 
-        return {
-          label: `${attributePrefix}.custom_attribute.${attribute.attribute_key}`,
-          key: `${attributePrefix}.custom_attribute.${attribute.attribute_key}`,
-          description: attribute.attribute_description,
-        };
-      });
+          return this.isVariableAllowed(attributePrefix);
+        })
+        .map(attribute => {
+          const attributePrefix =
+            attribute.attribute_model === 'conversation_attribute'
+              ? 'conversation'
+              : 'contact';
+
+          return {
+            label: `${attributePrefix}.custom_attribute.${attribute.attribute_key}`,
+            key: `${attributePrefix}.custom_attribute.${attribute.attribute_key}`,
+            description: attribute.attribute_description,
+          };
+        });
     },
   },
   methods: {
+    isVariableAllowed(variableKey) {
+      if (this.allowedPrefixSet.size === 0) return true;
+
+      const prefix = String(variableKey || '').split('.')[0];
+      return this.allowedPrefixSet.has(prefix);
+    },
     handleVariableClick(item = {}) {
       this.$emit('selectVariable', item.key);
     },

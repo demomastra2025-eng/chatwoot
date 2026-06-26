@@ -744,6 +744,27 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(private_note.content).to eq('Customer requested billing specialist')
         expect(private_note.sender).to eq(assistant)
       end
+
+      it 'records the AI open activity with the handoff reason' do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_reason' => 'Customer requested billing specialist'
+          }
+        )
+
+        expected_content = I18n.t(
+          'conversations.activity.captain.open_with_reason',
+          locale: account.locale,
+          user_name: assistant.name,
+          reason: 'Customer requested billing specialist'
+        )
+
+        expect { described_class.perform_now(conversation, assistant) }
+          .to have_enqueued_job(Conversations::ActivityMessageJob)
+          .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
+                                content: expected_content })
+      end
     end
 
     context 'when provider error handoff is requested' do
