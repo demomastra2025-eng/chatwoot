@@ -503,18 +503,19 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def runtime_error_message(payload)
-    merged_runtime_message(
-      payload['message'],
-      payload['status'],
-      payload['error'].is_a?(String) ? payload['error'] : nil,
-      labeled_runtime_value('status code', payload['statusCode'])
-    )
+    Channel::WhatsappWeb.human_readable_error_message(merged_runtime_message(
+                                                        payload['message'],
+                                                        payload['status'],
+                                                        payload['error'].is_a?(String) ? payload['error'] : nil,
+                                                        labeled_runtime_value('status code', payload['statusCode'])
+                                                      ))
   end
 
   def runtime_error_for_state(normalized_state, runtime_error)
     return nil if %w[open connecting reconnecting].include?(normalized_state)
 
-    runtime_error.presence || channel.last_error.presence || default_terminal_state_message(normalized_state)
+    runtime_error.presence || Channel::WhatsappWeb.human_readable_error_message(channel.last_error).presence ||
+      default_terminal_state_message(normalized_state)
   end
 
   def message_remote_jid(message)
@@ -804,7 +805,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def parsed_error_message(parsed, response)
-    parsed['message'].presence || parsed['error'].presence || "Evolution request failed with status #{response.code}"
+    Channel::WhatsappWeb.human_readable_error_message(parsed).presence ||
+      "Evolution request failed with status #{response.code}"
   end
 
   def request_headers

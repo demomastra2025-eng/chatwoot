@@ -46,12 +46,52 @@ const SENSITIVE_KEY_PATTERN = new RegExp(
   'gi'
 );
 
-export const sanitizeInboxHealthDetail = value => {
-  if (!value || typeof value !== 'string') {
+const INSTANCE_BEING_DELETED_MESSAGE =
+  'Инстанс WhatsApp Web сейчас удаляется или перезапускается. Подождите минуту и повторите подключение.';
+
+const extractProviderErrorDetail = value => {
+  if (!value) {
     return '';
   }
 
-  return value
+  if (Array.isArray(value)) {
+    return value
+      .map(entry => extractProviderErrorDetail(entry))
+      .filter(Boolean)
+      .join(' | ');
+  }
+
+  if (typeof value === 'object') {
+    return (
+      extractProviderErrorDetail(value.message) ||
+      extractProviderErrorDetail(value.error) ||
+      extractProviderErrorDetail(value.detail)
+    );
+  }
+
+  const detail = String(value).trim();
+  if (!detail) {
+    return '';
+  }
+
+  try {
+    const parsedDetail = JSON.parse(detail);
+    return extractProviderErrorDetail(parsedDetail) || detail;
+  } catch {
+    return /instance is being deleted/i.test(detail)
+      ? INSTANCE_BEING_DELETED_MESSAGE
+      : detail;
+  }
+};
+
+export const sanitizeInboxHealthDetail = value => {
+  const detail = extractProviderErrorDetail(value);
+
+  if (!detail) {
+    return '';
+  }
+
+  return detail
     .replace(AUTHORIZATION_HEADER_PATTERN, (_match, prefix) => {
       return `${prefix}[REDACTED]`;
     })

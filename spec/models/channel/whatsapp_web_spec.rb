@@ -148,6 +148,37 @@ RSpec.describe Channel::WhatsappWeb do
         expect(payload['qr_generated_at']).to be_present
       end
     end
+
+    it 'returns a user-safe error message instead of raw Evolution JSON' do
+      channel = create(:channel_whatsapp_web)
+      channel.update!(
+        last_error: {
+          status: 400,
+          error: 'Bad Request',
+          message: ["The \"#{channel.instance_name}\" instance is being deleted"]
+        }.to_json
+      )
+
+      payload = channel.reload.evolution_state_payload
+
+      expect(payload['last_error']).to eq(described_class::INSTANCE_BEING_DELETED_MESSAGE)
+      expect(payload['last_error']).not_to include(channel.instance_name)
+      expect(payload['last_error']).not_to include('{')
+    end
+  end
+
+  describe '.human_readable_error_message' do
+    it 'extracts array messages from provider JSON and maps deleting-instance errors' do
+      raw_error = {
+        status: 400,
+        error: 'Bad Request',
+        message: ['The "onelink-waweb-1_77066318623" instance is being deleted']
+      }.to_json
+
+      expect(described_class.human_readable_error_message(raw_error)).to eq(
+        described_class::INSTANCE_BEING_DELETED_MESSAGE
+      )
+    end
   end
 
   describe '#request_history_sync!' do

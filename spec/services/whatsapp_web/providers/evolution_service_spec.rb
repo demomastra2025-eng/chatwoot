@@ -13,6 +13,33 @@ describe WhatsappWeb::Providers::EvolutionService do
 
   let(:channel) { create(:channel_whatsapp_web) }
 
+  describe '#request' do
+    it 'normalizes Evolution deleting-instance JSON errors before raising' do
+      service = described_class.new(channel: channel)
+      response = instance_double(
+        HTTParty::Response,
+        success?: false,
+        code: 400,
+        body: {
+          status: 400,
+          error: 'Bad Request',
+          message: ["The \"#{channel.instance_name}\" instance is being deleted"]
+        }.to_json,
+        parsed_response: {
+          'status' => 400,
+          'error' => 'Bad Request',
+          'message' => ["The \"#{channel.instance_name}\" instance is being deleted"]
+        }
+      )
+
+      allow(HTTParty).to receive(:get).and_return(response)
+
+      expect do
+        service.send(:request, :get, "/instance/connect/#{channel.instance_name}")
+      end.to raise_error(described_class::RequestError, Channel::WhatsappWeb::INSTANCE_BEING_DELETED_MESSAGE)
+    end
+  end
+
   describe '#refresh_qr!' do
     it 'returns a saved fresh QR artifact without calling Evolution again' do
       service = described_class.new(channel: channel)

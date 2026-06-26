@@ -47,6 +47,8 @@ class Channel::WhatsappWeb < ApplicationRecord
     'code' => 'pairing_code',
     'pairing_code' => 'pairing_code'
   }.freeze
+  INSTANCE_BEING_DELETED_MESSAGE =
+    'Инстанс WhatsApp Web сейчас удаляется или перезапускается. Подождите минуту и повторите подключение.'.freeze
   DEFAULT_SYNC_STATE = {
     'history_synced_at' => nil,
     'history_sync_requested_at' => nil,
@@ -137,6 +139,38 @@ class Channel::WhatsappWeb < ApplicationRecord
   def self.normalize_auth_artifact_type(value)
     AUTH_ARTIFACT_TYPES[value.to_s.presence || 'qr'] || 'qr'
   end
+
+  def self.human_readable_error_message(value)
+    message = extract_error_message(value)
+    return if message.blank?
+
+    return INSTANCE_BEING_DELETED_MESSAGE if message.match?(/instance is being deleted/i)
+
+    message
+  end
+
+  def self.extract_error_message(value)
+    case value
+    when Hash
+      extract_error_message(value['message'] || value[:message]).presence ||
+        extract_error_message(value['error'] || value[:error]).presence ||
+        extract_error_message(value['detail'] || value[:detail]).presence
+    when Array
+      value.filter_map { |entry| extract_error_message(entry).presence }.join(' | ')
+    else
+      text = value.to_s.strip
+      return if text.blank?
+
+      parsed = begin
+        JSON.parse(text)
+      rescue JSON::ParserError
+        nil
+      end
+
+      parsed.present? ? extract_error_message(parsed) : text
+    end
+  end
+  private_class_method :extract_error_message
 
   def webhook_callback_url
     "#{frontend_url}/webhooks/whatsapp_web/#{webhook_identifier}"
@@ -490,7 +524,7 @@ class Channel::WhatsappWeb < ApplicationRecord
       'instance_name' => instance_name,
       'number' => phone_number,
       'last_synced_at' => last_synced_at&.iso8601,
-      'last_error' => last_error,
+      'last_error' => self.class.human_readable_error_message(last_error),
       'history_synced_at' => sync_state_payload['history_synced_at'],
       'history_sync_requested_at' => sync_state_payload['history_sync_requested_at'],
       'last_fulfilled_history_sync_requested_at' => sync_state_payload['last_fulfilled_history_sync_requested_at'],
@@ -523,7 +557,7 @@ class Channel::WhatsappWeb < ApplicationRecord
   def mark_failed!(message)
     update!(
       lifecycle_state: 'failed',
-      last_error: message,
+      last_error: self.class.human_readable_error_message(message),
       last_synced_at: Time.current
     )
   end

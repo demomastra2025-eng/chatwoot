@@ -82,6 +82,24 @@ describe('#getInboxHealthStatus', () => {
     });
   });
 
+  it('does not expose raw provider JSON in the health detail', () => {
+    const detail = JSON.stringify({
+      status: 400,
+      error: 'Bad Request',
+      message: ['The "onelink-waweb-1_77066318623" instance is being deleted'],
+    });
+
+    expect(
+      getInboxHealthStatus({
+        runtime_state: { last_error: detail },
+      })
+    ).toMatchObject({
+      id: 'provider_unavailable',
+      detail:
+        'Инстанс WhatsApp Web сейчас удаляется или перезапускается. Подождите минуту и повторите подключение.',
+    });
+  });
+
   it('does not mark failed or error states as connected', () => {
     expect(
       getInboxHealthStatus({ runtime_state: { connection_state: 'failed' } })
@@ -136,6 +154,18 @@ describe('#getInboxHealthStatus', () => {
 });
 
 describe('#sanitizeInboxHealthDetail', () => {
+  it('extracts user-safe text from provider JSON error strings', () => {
+    const detail = JSON.stringify({
+      status: 400,
+      error: 'Bad Request',
+      message: ['The "onelink-waweb-1_77066318623" instance is being deleted'],
+    });
+
+    expect(sanitizeInboxHealthDetail(detail)).toBe(
+      'Инстанс WhatsApp Web сейчас удаляется или перезапускается. Подождите минуту и повторите подключение.'
+    );
+  });
+
   it('redacts sensitive key-value pairs', () => {
     expect(
       sanitizeInboxHealthDetail(
