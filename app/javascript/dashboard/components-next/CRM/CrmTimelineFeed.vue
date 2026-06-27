@@ -12,6 +12,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  collapsible: {
+    type: Boolean,
+    default: true,
+  },
   emptyMessage: {
     type: String,
     default: '',
@@ -27,6 +31,10 @@ const props = defineProps({
   items: {
     type: Array,
     default: () => [],
+  },
+  showHeader: {
+    type: Boolean,
+    default: true,
   },
 });
 
@@ -79,6 +87,14 @@ const timelineSummary = computed(() => {
     count: sortedItems.value.length,
   });
 });
+
+const isContentVisible = computed(() => !props.collapsible || isExpanded.value);
+
+const toggleExpanded = () => {
+  if (!props.collapsible) return;
+
+  isExpanded.value = !isExpanded.value;
+};
 
 const formatRelativeTime = value => {
   if (!value) return '';
@@ -191,10 +207,11 @@ const submitComment = () => {
     class="overflow-hidden rounded-2xl border border-n-weak bg-n-solid-1 shadow-sm"
   >
     <button
+      v-if="showHeader"
       type="button"
       class="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-n-alpha-black2"
-      :aria-expanded="isExpanded"
-      @click="isExpanded = !isExpanded"
+      :aria-expanded="isContentVisible"
+      @click="toggleExpanded"
     >
       <span class="flex min-w-0 items-center gap-3">
         <span
@@ -220,13 +237,19 @@ const submitComment = () => {
           {{ sortedItems.length }}
         </span>
         <Icon
-          :icon="isExpanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+          :icon="
+            isContentVisible ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+          "
           class="size-4 text-n-slate-10 transition-transform group-hover:text-n-slate-12"
         />
       </span>
     </button>
 
-    <div v-show="isExpanded" class="border-t border-n-weak bg-n-solid-2">
+    <div
+      v-show="isContentVisible"
+      class="bg-n-solid-2"
+      :class="{ 'border-t border-n-weak': showHeader }"
+    >
       <div v-if="canManageComments" class="grid gap-2 px-4 py-3">
         <TextArea
           :label="t('CRM.TIMELINE.ADD_COMMENT')"

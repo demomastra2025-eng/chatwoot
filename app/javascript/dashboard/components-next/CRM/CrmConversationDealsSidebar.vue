@@ -1,7 +1,6 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
 
 import CompanyAPI from 'dashboard/api/companies';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
@@ -15,6 +14,7 @@ import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/Schedu
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
+import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 import {
   formatDealAmount,
@@ -63,7 +63,6 @@ const dealCurrencyOptions = ['KZT', 'USD', 'EUR', 'RUB'];
 
 const { t, locale } = useI18n();
 const store = useStore();
-const router = useRouter();
 const referencesStore = useCrmReferencesStore();
 
 const accountId = useMapGetter('getCurrentAccountId');
@@ -122,6 +121,10 @@ const defaultPipeline = computed(
 const dealFieldDefinitions = computed(
   () => referencesStore.dealFieldDefinitions
 );
+const taskFieldDefinitions = computed(
+  () => referencesStore.taskFieldDefinitions
+);
+const taskStatuses = computed(() => referencesStore.taskStatuses);
 const dealKey = deal => `deal-${deal.id}`;
 const accordionItems = computed(() => {
   const items = deals.value.map(deal => ({
@@ -436,7 +439,9 @@ const initializeSidebar = async () => {
 
     await Promise.all([
       referencesStore.loadPipelines(),
+      referencesStore.loadTaskStatuses(),
       referencesStore.loadFieldDefinitions('deal'),
+      referencesStore.loadFieldDefinitions('task'),
       loadCompanies(),
     ]);
     await loadDeals();
@@ -494,31 +499,6 @@ const handleHeaderAction = key => {
   if (key === 'new_deal') {
     startCreateDeal();
   }
-};
-
-const buildCreateTaskTitleForDeal = deal =>
-  t('CRM.TASKS.PREFILL.DEAL', {
-    dealTitle: deal?.title || `#${deal?.id}`,
-  });
-
-const openCreateTaskForDeal = deal => {
-  if (!deal?.id || !canManageTasks.value) return;
-
-  router.push({
-    name: 'crm_tasks_index',
-    params: { accountId: accountId.value },
-    query: compactPayload({
-      action: 'new',
-      assigneeId: deal.ownerId,
-      conversationDisplayId:
-        deal.originatingConversationDisplayId || deal.originatingConversationId,
-      dealId: deal.id,
-      originatingConversationId: deal.originatingConversationId,
-      source: 'deal',
-      teamId: deal.teamId,
-      title: buildCreateTaskTitleForDeal(deal),
-    }),
-  });
 };
 
 const pipelineForForm = form =>
@@ -980,16 +960,17 @@ watch(dealFieldDefinitions, definitions => {
                 </div>
               </div>
 
+              <CrmDealTasksPanel
+                v-if="item.deal?.id"
+                :assignees="ownerOptions"
+                :can-manage-tasks="canManageTasks"
+                :deal="item.deal"
+                :statuses="taskStatuses"
+                :task-field-definitions="taskFieldDefinitions"
+                :team-options="teamOptions"
+              />
+
               <div class="flex items-center justify-end gap-2">
-                <Button
-                  v-if="item.deal?.id && canManageTasks"
-                  v-tooltip.top="$t('CRM.DEALS.CREATE_TASK')"
-                  size="sm"
-                  color="slate"
-                  variant="ghost"
-                  icon="i-lucide-list-plus"
-                  @click="openCreateTaskForDeal(item.deal)"
-                />
                 <Button
                   v-if="item.isNew && deals.length"
                   size="sm"

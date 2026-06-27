@@ -1,6 +1,7 @@
 <script setup>
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -39,6 +40,7 @@ import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomField
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
 import CrmDealOwnerMenu from 'dashboard/components-next/CRM/CrmDealOwnerMenu.vue';
 import CrmDealStageMenu from 'dashboard/components-next/CRM/CrmDealStageMenu.vue';
+import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -110,6 +112,8 @@ const deals = ref([]);
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
 const closingReasonDialogRef = ref(null);
+const dealTasksPanelRef = ref(null);
+const dealActivityTab = ref('history');
 const filterDialogRef = ref(null);
 const listCurrentPage = ref(1);
 const timelineItems = ref([]);
@@ -581,6 +585,10 @@ const tableColumns = computed(() => [
 const dealFieldDefinitions = computed(
   () => referencesStore.dealFieldDefinitions
 );
+const taskFieldDefinitions = computed(
+  () => referencesStore.taskFieldDefinitions
+);
+const taskStatuses = computed(() => referencesStore.taskStatuses);
 
 const pipelineNameById = computed(() =>
   referencesStore.pipelines.reduce((result, pipeline) => {
@@ -1424,6 +1432,7 @@ const openEditDrawer = async deal => {
   closeDealTitleEditor();
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedDeal.value = deal;
+  dealActivityTab.value = 'history';
   populateFormFromDeal(deal);
   drawerOpen.value = true;
   showLinkedConversationPanel.value = canOpenLinkedConversation.value;
@@ -1439,6 +1448,7 @@ const closeDrawer = () => {
   drawerOpen.value = false;
   showLinkedConversationPanel.value = false;
   selectedDeal.value = null;
+  dealActivityTab.value = 'history';
   timelineItems.value = [];
   resetForm();
   captureFormBaseline();
@@ -1452,29 +1462,12 @@ const openCreateCompanyDialog = () => {
   createCompanyDialogRef.value?.dialogRef?.open();
 };
 
-const buildCreateTaskTitleForDeal = deal =>
-  t('CRM.TASKS.PREFILL.DEAL', {
-    dealTitle: deal?.title || `#${deal?.id}`,
-  });
-
-const openCreateTaskForDeal = deal => {
+const openCreateTaskForDeal = async deal => {
   if (!deal?.id || !canManageTasks.value) return;
 
-  router.push({
-    name: 'crm_tasks_index',
-    params: { accountId: accountId.value },
-    query: compactPayload({
-      action: 'new',
-      assigneeId: deal.ownerId,
-      conversationDisplayId:
-        deal.originatingConversationDisplayId || deal.originatingConversationId,
-      dealId: deal.id,
-      originatingConversationId: deal.originatingConversationId,
-      source: 'deal',
-      teamId: deal.teamId,
-      title: buildCreateTaskTitleForDeal(deal),
-    }),
-  });
+  dealActivityTab.value = 'tasks';
+  await nextTick();
+  dealTasksPanelRef.value?.openCreateTaskDialog();
 };
 
 const createContact = async contact => {
@@ -2388,7 +2381,9 @@ onMounted(async () => {
 
     await Promise.all([
       referencesStore.loadPipelines(),
+      referencesStore.loadTaskStatuses(),
       referencesStore.loadFieldDefinitions('deal'),
+      referencesStore.loadFieldDefinitions('task'),
     ]);
     ensurePipelineFilterSelection();
     applyDealListFilterQuery();
@@ -3099,16 +3094,72 @@ watch(
                   </div>
                 </div>
 
-                <CrmTimelineFeed
-                  v-if="selectedDeal"
-                  :items="timelineItems"
-                  :is-loading="ui.isTimelineLoading"
-                  :is-saving-comment="ui.isSavingComment"
-                  :can-manage-comments="canManageDeals"
-                  :empty-message="$t('CRM.TIMELINE.EMPTY')"
-                  @create-comment="saveComment"
-                  @delete-comment="deleteComment"
-                />
+                <div v-if="selectedDeal" class="crm-deal-drawer-section">
+                  <div
+                    class="grid grid-cols-2 rounded-xl bg-n-alpha-black2 p-1"
+                    role="tablist"
+                    :aria-label="$t('CRM.DEALS.TABS.LABEL')"
+                  >
+                    <button
+                      type="button"
+                      class="inline-flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors"
+                      :class="
+                        dealActivityTab === 'history'
+                          ? 'bg-n-solid-1 text-n-slate-12 shadow-sm'
+                          : 'text-n-slate-11 hover:text-n-slate-12'
+                      "
+                      role="tab"
+                      :aria-selected="dealActivityTab === 'history'"
+                      @click="dealActivityTab = 'history'"
+                    >
+                      <Icon icon="i-lucide-history" class="size-4" />
+                      {{ $t('CRM.DEALS.TABS.HISTORY') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors"
+                      :class="
+                        dealActivityTab === 'tasks'
+                          ? 'bg-n-solid-1 text-n-slate-12 shadow-sm'
+                          : 'text-n-slate-11 hover:text-n-slate-12'
+                      "
+                      role="tab"
+                      :aria-selected="dealActivityTab === 'tasks'"
+                      @click="dealActivityTab = 'tasks'"
+                    >
+                      <Icon icon="i-lucide-list-checks" class="size-4" />
+                      {{ $t('CRM.DEALS.TABS.TASKS') }}
+                    </button>
+                  </div>
+
+                  <div v-show="dealActivityTab === 'history'" role="tabpanel">
+                    <CrmTimelineFeed
+                      :items="timelineItems"
+                      :is-loading="ui.isTimelineLoading"
+                      :is-saving-comment="ui.isSavingComment"
+                      :can-manage-comments="canManageDeals"
+                      :empty-message="$t('CRM.TIMELINE.EMPTY')"
+                      :collapsible="false"
+                      :show-header="false"
+                      @create-comment="saveComment"
+                      @delete-comment="deleteComment"
+                    />
+                  </div>
+
+                  <div v-show="dealActivityTab === 'tasks'" role="tabpanel">
+                    <CrmDealTasksPanel
+                      ref="dealTasksPanelRef"
+                      :assignees="ownerOptions"
+                      :can-manage-tasks="canManageTasks"
+                      :deal="selectedDeal"
+                      :statuses="taskStatuses"
+                      :task-field-definitions="taskFieldDefinitions"
+                      :team-options="teamOptions"
+                      @created="loadTimeline(selectedDeal.id)"
+                      @updated="loadTimeline(selectedDeal.id)"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </aside>

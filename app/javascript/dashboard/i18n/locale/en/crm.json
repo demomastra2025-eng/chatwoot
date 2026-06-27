@@ -44,15 +44,15 @@
       "COMMUNICATION_THREAD": "Communication thread #{id}",
       "CONVERSATION": "Conversation #{id}",
       "DESCRIPTION": "Events, comments, and related runtime context appear here.",
-      "EMPTY": "No timeline activity yet",
+      "EMPTY": "No history records yet",
       "ACTIVITY_COUNT": "Records: {count}",
       "EVENT_RECORDED": "Activity recorded",
       "FIELD_CHANGES": "Changed fields: {count}",
       "CLOSING_REASONS": "Closing reason: {reasons}",
       "TRANSITION_REASON": "Transition reason: {reason}",
-      "LOADING": "Loading timeline...",
+      "LOADING": "Loading history...",
       "POST_COMMENT": "Post comment",
-      "TITLE": "Timeline",
+      "TITLE": "History",
       "UNKNOWN_CONTACT": "Unknown contact",
       "EVENT_LABELS": {
         "DEAL_ARCHIVED": "Deal archived",
@@ -91,6 +91,22 @@
     "DEALS": {
       "CREATE_TITLE": "Create deal",
       "CREATE_TASK": "Create task for deal",
+      "TABS": {
+        "HISTORY": "History",
+        "LABEL": "Deal sections",
+        "TASKS": "Tasks"
+      },
+      "TASKS": {
+        "ADD": "Add task",
+        "COUNT": "Tasks: {count}",
+        "CREATE_DESCRIPTION": "The task will be created and linked to the current deal.",
+        "DUE_AT": "Due: {date}",
+        "EMPTY_DESCRIPTION": "Create a follow-up, call, or internal task without leaving the deal.",
+        "EMPTY_TITLE": "No tasks linked to this deal yet",
+        "LOADING": "Loading tasks...",
+        "START_AT": "Starts: {date}",
+        "TITLE": "Deal tasks"
+      },
       "DESCRIPTION": "Track opportunities without leaving the account dashboard.",
       "DRAWER_DESCRIPTION": "Keep ownership, contacts, and stage movement in one place.",
       "EDIT_TITLE": "Edit deal",
