@@ -329,6 +329,9 @@ const genderOptions = computed(() => [
 ]);
 
 const selectedStatusFilters = computed(() => calendarStore.statusFilters);
+const hasSelectedResources = computed(
+  () => calendarStore.selectedResourceIds.length > 0
+);
 const isContactEditorOpen = computed(() => !!contactEditorMode.value);
 const isEditingContact = computed(() => contactEditorMode.value === 'edit');
 const appointmentFieldDefinitions = computed(
@@ -358,15 +361,24 @@ const advancedAppointmentFieldDefinitions = computed(() =>
     isAdvancedFilterableCustomFieldDefinition
   )
 );
-const visibleAppointments = computed(() =>
-  calendarStore.appointments.filter(appointment =>
+const calendarEmptyMessage = computed(() => {
+  if (filterableResources.value.length && !hasSelectedResources.value) {
+    return t('SCHEDULING.TOOLBAR.RESOURCES_SELECTED', { count: 0 });
+  }
+
+  return t('SCHEDULING.CALENDAR.NO_RESOURCES');
+});
+const visibleAppointments = computed(() => {
+  if (!hasSelectedResources.value) return [];
+
+  return calendarStore.appointments.filter(appointment =>
     appointmentMatchesCustomFieldFilters(
       appointment,
       filterableAppointmentFieldDefinitions.value,
       customFieldFilters.value
     )
-  )
-);
+  );
+});
 
 const drawerTitle = computed(() =>
   formStore.mode === 'edit'
@@ -580,10 +592,9 @@ const handleAnchorDateSelect = async nextDate => {
 };
 
 const openNewAppointment = (defaults = {}) => {
-  const preferredResources = calendarStore.visibleResources.length
-    ? calendarStore.visibleResources
-    : calendarStore.resources;
-  const primaryResource = preferredResources[0] || null;
+  const primaryResource = hasSelectedResources.value
+    ? calendarStore.visibleResources[0] || null
+    : null;
   const primaryResourceId = primaryResource?.id || '';
   const primaryDurationMin = Math.max(
     5,
@@ -591,24 +602,18 @@ const openNewAppointment = (defaults = {}) => {
   );
   const now = new Date();
 
-  const nextSlot =
-    calendarStore.slots
-      .filter(slot => {
-        return (
-          (!primaryResourceId ||
-            Number(slot.resourceId) === Number(primaryResourceId)) &&
-          new Date(slot.endsAt) > now
-        );
-      })
-      .sort(
-        (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
-      )[0] ||
-    calendarStore.slots
-      .filter(slot => new Date(slot.endsAt) > now)
-      .sort(
-        (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
-      )[0] ||
-    null;
+  const nextSlot = primaryResourceId
+    ? calendarStore.slots
+        .filter(slot => {
+          return (
+            Number(slot.resourceId) === Number(primaryResourceId) &&
+            new Date(slot.endsAt) > now
+          );
+        })
+        .sort(
+          (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
+        )[0] || null
+    : null;
 
   const startsAt = nextSlot ? new Date(nextSlot.startsAt) : new Date(now);
   if (!nextSlot) {
@@ -1068,6 +1073,7 @@ onMounted(async () => {
           :appointments="visibleAppointments"
           :break-rules="calendarStore.breakRules"
           :custom-field-definitions="appointmentFieldDefinitions"
+          :empty-message="calendarEmptyMessage"
           :holidays="calendarStore.holidays"
           :presentation="currentPresentation"
           :resources="calendarStore.visibleResources"

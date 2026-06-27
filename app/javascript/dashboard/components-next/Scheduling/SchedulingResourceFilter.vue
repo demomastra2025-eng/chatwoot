@@ -49,7 +49,7 @@ const selectedResources = computed(() => {
 
 const buttonLabel = computed(() => {
   if (!props.modelValue.length) {
-    return t('SCHEDULING.TOOLBAR.ALL_RESOURCES');
+    return t('SCHEDULING.TOOLBAR.RESOURCES_SELECTED', { count: 0 });
   }
 
   if (props.modelValue.length === 1) {

@@ -117,6 +117,30 @@ describe('useSchedulingCalendarStore', () => {
     );
   });
 
+  it('does not expose all specialists when no resource is selected', () => {
+    const store = useSchedulingCalendarStore();
+
+    store.payload = {
+      appointments: [],
+      breakRules: [],
+      expenses: [],
+      holidays: [],
+      payments: [],
+      range: { from: null, to: null },
+      resources: [
+        { id: 5, name: 'Dr. Sam' },
+        { id: 8, name: 'Dr. Lee' },
+      ],
+      slots: [],
+      timeOffs: [],
+      workRules: [],
+      workdayOverrides: [],
+    };
+
+    expect(store.selectedResourceIds).toEqual([]);
+    expect(store.visibleResources).toEqual([]);
+  });
+
   it('merges updated appointment finance snapshots into the calendar payload', () => {
     const store = useSchedulingCalendarStore();
 

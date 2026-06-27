@@ -86,7 +86,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     timeOffs: state => state.payload.timeOffs,
     visibleResources: state => {
       if (!state.selectedResourceIds.length) {
-        return state.payload.resources;
+        return [];
       }
 
       return state.payload.resources.filter(resource =>

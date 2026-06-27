@@ -29,6 +29,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  emptyMessage: {
+    type: String,
+    default: '',
+  },
   holidays: {
     type: Array,
     default: () => [],
@@ -171,7 +175,7 @@ const handleStatusChange = payload => {
       v-if="!resources.length"
       class="px-4 py-10 text-sm text-center rounded-2xl outline outline-1 outline-dashed outline-n-strong text-n-slate-11 bg-n-alpha-black2"
     >
-      {{ $t('SCHEDULING.CALENDAR.NO_RESOURCES') }}
+      {{ emptyMessage || $t('SCHEDULING.CALENDAR.NO_RESOURCES') }}
     </div>
 
     <template v-else-if="isCalendarView">
