@@ -1,7 +1,6 @@
 <script setup>
 import {
   computed,
-  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -112,7 +111,6 @@ const deals = ref([]);
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
 const closingReasonDialogRef = ref(null);
-const dealTasksPanelRef = ref(null);
 const dealActivityTab = ref('history');
 const filterDialogRef = ref(null);
 const listCurrentPage = ref(1);
@@ -1460,14 +1458,6 @@ const openCreateNewContactDialog = () => {
 
 const openCreateCompanyDialog = () => {
   createCompanyDialogRef.value?.dialogRef?.open();
-};
-
-const openCreateTaskForDeal = async deal => {
-  if (!deal?.id || !canManageTasks.value) return;
-
-  dealActivityTab.value = 'tasks';
-  await nextTick();
-  dealTasksPanelRef.value?.openCreateTaskDialog();
 };
 
 const createContact = async contact => {
@@ -2822,15 +2812,6 @@ watch(
               />
 
               <Button
-                v-if="selectedDeal && canManageTasks"
-                v-tooltip.top="$t('CRM.DEALS.CREATE_TASK')"
-                size="sm"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-list-plus"
-                @click="openCreateTaskForDeal(selectedDeal)"
-              />
-              <Button
                 v-if="selectedDeal && canManageDeals"
                 v-tooltip.top="archiveTooltip"
                 size="sm"
@@ -3148,10 +3129,10 @@ watch(
 
                   <div v-show="dealActivityTab === 'tasks'" role="tabpanel">
                     <CrmDealTasksPanel
-                      ref="dealTasksPanelRef"
                       :assignees="ownerOptions"
                       :can-manage-tasks="canManageTasks"
                       :deal="selectedDeal"
+                      :show-create-actions="false"
                       :statuses="taskStatuses"
                       :task-field-definitions="taskFieldDefinitions"
                       :team-options="teamOptions"

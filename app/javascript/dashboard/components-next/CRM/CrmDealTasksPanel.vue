@@ -43,6 +43,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  showCreateActions: {
+    type: Boolean,
+    default: true,
+  },
   taskFieldDefinitions: {
     type: Array,
     default: () => [],
@@ -125,6 +129,9 @@ const sortedTasks = computed(() =>
 
 const hasDeal = computed(() => !!props.deal?.id);
 const canCreateTask = computed(() => props.canManageTasks && hasDeal.value);
+const shouldShowCreateActions = computed(
+  () => props.showCreateActions && props.canManageTasks
+);
 const isCreateDisabled = computed(
   () => !form.title.trim() || !form.statusId || !hasDeal.value
 );
@@ -316,12 +323,8 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     <header
       class="flex items-center justify-between gap-3 border-b border-n-weak px-4 py-3"
     >
-      <div class="flex min-w-0 items-center gap-3">
-        <span
-          class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-n-blue-3 text-n-blue-11"
-        >
-          <Icon icon="i-lucide-list-checks" class="size-4" />
-        </span>
+      <div class="flex min-w-0 items-center gap-2">
+        <Icon icon="i-lucide-list-checks" class="size-4 text-n-slate-10" />
         <div class="grid min-w-0 gap-0.5">
           <h4 class="mb-0 truncate text-sm font-medium text-n-slate-12">
             {{ $t('CRM.DEALS.TASKS.TITLE') }}
@@ -333,7 +336,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
       </div>
 
       <Button
-        v-if="canManageTasks"
+        v-if="shouldShowCreateActions"
         size="sm"
         color="slate"
         variant="ghost"
@@ -369,7 +372,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
         </p>
       </div>
       <Button
-        v-if="canManageTasks"
+        v-if="shouldShowCreateActions"
         size="sm"
         icon="i-lucide-plus"
         :label="$t('CRM.DEALS.TASKS.ADD')"
