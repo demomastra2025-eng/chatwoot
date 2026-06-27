@@ -3132,7 +3132,6 @@ watch(
                       :assignees="ownerOptions"
                       :can-manage-tasks="canManageTasks"
                       :deal="selectedDeal"
-                      :show-create-actions="false"
                       :statuses="taskStatuses"
                       :task-field-definitions="taskFieldDefinitions"
                       :team-options="teamOptions"

@@ -325,14 +325,9 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     >
       <div class="flex min-w-0 items-center gap-2">
         <Icon icon="i-lucide-list-checks" class="size-4 text-n-slate-10" />
-        <div class="grid min-w-0 gap-0.5">
-          <h4 class="mb-0 truncate text-sm font-medium text-n-slate-12">
-            {{ $t('CRM.DEALS.TASKS.TITLE') }}
-          </h4>
-          <p class="mb-0 truncate text-xs text-n-slate-10">
-            {{ $t('CRM.DEALS.TASKS.COUNT', { count: tasks.length }) }}
-          </p>
-        </div>
+        <p class="mb-0 truncate text-sm font-medium text-n-slate-12">
+          {{ $t('CRM.DEALS.TASKS.COUNT', { count: tasks.length }) }}
+        </p>
       </div>
 
       <Button
@@ -371,14 +366,6 @@ defineExpose({ openCreateTaskDialog, loadTasks });
           {{ $t('CRM.DEALS.TASKS.EMPTY_DESCRIPTION') }}
         </p>
       </div>
-      <Button
-        v-if="shouldShowCreateActions"
-        size="sm"
-        icon="i-lucide-plus"
-        :label="$t('CRM.DEALS.TASKS.ADD')"
-        :disabled="!hasDeal"
-        @click="openCreateTaskDialog"
-      />
     </div>
 
     <ol v-else class="divide-y divide-n-weak">
