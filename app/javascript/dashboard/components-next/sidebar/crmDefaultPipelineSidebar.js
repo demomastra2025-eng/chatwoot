@@ -39,3 +39,6 @@ export const resolveDefaultPipelineWithStages = (pipelines = []) => {
 
   return { pipeline, stages: pipeline.stages };
 };
+
+export const resolveDialogDealCount = record =>
+  Number(record?.dialogDealCount ?? record?.dealCount ?? 0);

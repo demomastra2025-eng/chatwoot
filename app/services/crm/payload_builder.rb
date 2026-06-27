@@ -4,7 +4,29 @@ module Crm::PayloadBuilder
 
   def pipeline(pipeline, include_stages: true, include_inactive_stages: true)
     deal_counts_by_stage_id = pipeline.deals.kept.group(:stage_id).count
+    dialog_deal_counts_by_stage_id = pipeline_dialog_deal_counts_by_stage_id(pipeline)
 
+    pipeline_attributes(pipeline).merge(
+      deal_count: deal_counts_by_stage_id.values.sum,
+      dialog_deal_count: dialog_deal_counts_by_stage_id.values.sum,
+      stages: pipeline_stages_payload(
+        pipeline,
+        include_stages: include_stages,
+        include_inactive_stages: include_inactive_stages,
+        deal_counts_by_stage_id: deal_counts_by_stage_id,
+        dialog_deal_counts_by_stage_id: dialog_deal_counts_by_stage_id
+      )
+    ).compact
+  end
+
+  def stage(stage, deal_count: nil, dialog_deal_count: nil)
+    stage_attributes(stage).tap do |payload|
+      payload[:deal_count] = deal_count unless deal_count.nil?
+      payload[:dialog_deal_count] = dialog_deal_count unless dialog_deal_count.nil?
+    end
+  end
+
+  def pipeline_attributes(pipeline)
     {
       id: pipeline.id,
       account_id: pipeline.account_id,
@@ -14,20 +36,13 @@ module Crm::PayloadBuilder
       active: pipeline.active,
       default: pipeline.default,
       auto_create_deal_on_channel_contact: pipeline.auto_create_deal_on_channel_contact,
-      deal_count: deal_counts_by_stage_id.values.sum,
-      stages: pipeline_stages_payload(
-        pipeline,
-        include_stages: include_stages,
-        include_inactive_stages: include_inactive_stages,
-        deal_counts_by_stage_id: deal_counts_by_stage_id
-      ),
       created_at: pipeline.created_at&.iso8601,
       updated_at: pipeline.updated_at&.iso8601
-    }.compact
+    }
   end
 
-  def stage(stage, deal_count: nil)
-    payload = {
+  def stage_attributes(stage)
+    {
       id: stage.id,
       account_id: stage.account_id,
       pipeline_id: stage.pipeline_id,
@@ -45,8 +60,6 @@ module Crm::PayloadBuilder
       created_at: stage.created_at&.iso8601,
       updated_at: stage.updated_at&.iso8601
     }
-    payload[:deal_count] = deal_count unless deal_count.nil?
-    payload
   end
 
   def task_status(task_status)
@@ -218,12 +231,44 @@ module Crm::PayloadBuilder
   end
 
   def pipeline_stages_payload(pipeline, include_stages: true, include_inactive_stages: true,
-                              deal_counts_by_stage_id: {})
+                              deal_counts_by_stage_id: {}, dialog_deal_counts_by_stage_id: {})
     return unless include_stages
 
     stages_for_pipeline(pipeline, include_inactive_stages: include_inactive_stages).map do |crm_stage|
-      stage(crm_stage, deal_count: deal_counts_by_stage_id.fetch(crm_stage.id, 0))
+      stage(
+        crm_stage,
+        deal_count: deal_counts_by_stage_id.fetch(crm_stage.id, 0),
+        dialog_deal_count: dialog_deal_counts_by_stage_id.fetch(crm_stage.id, 0)
+      )
     end
+  end
+
+  def pipeline_dialog_deal_counts_by_stage_id(pipeline)
+    dialog_deals_for_pipeline(pipeline).group(:stage_id).count
+  end
+
+  def dialog_deals_for_pipeline(pipeline)
+    deals = pipeline.deals.kept
+    direct_conversation_deals = deals.where.not(originating_conversation_id: nil)
+    direct_thread_deals = deals.where.not(originating_communication_thread_id: nil)
+    contact_dialog_deals = deals.where(
+      id: ::Crm::DealContact
+        .where(account_id: pipeline.account_id, contact_id: dialog_contact_ids(pipeline.account_id))
+        .select(:deal_id)
+    )
+
+    direct_conversation_deals.or(direct_thread_deals).or(contact_dialog_deals)
+  end
+
+  def dialog_contact_ids(account_id)
+    contacts_with_conversations = ::Contact.where(account_id: account_id).where(
+      id: ::Conversation.where(account_id: account_id).select(:contact_id)
+    )
+    contacts_with_threads = ::Contact.where(account_id: account_id).where(
+      id: ::CommunicationThread.where(account_id: account_id).select(:contact_id)
+    )
+
+    contacts_with_conversations.or(contacts_with_threads).select(:id)
   end
 
   def stages_for_pipeline(pipeline, include_inactive_stages: true)

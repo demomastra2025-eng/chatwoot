@@ -54,7 +54,10 @@ import {
   isTelegramPersonalConnected,
 } from 'dashboard/helper/telegramPersonal';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
-import { resolveDefaultPipelineWithStages } from './crmDefaultPipelineSidebar';
+import {
+  resolveDefaultPipelineWithStages,
+  resolveDialogDealCount,
+} from './crmDefaultPipelineSidebar';
 
 const props = defineProps({
   isMobileSidebarOpen: {
@@ -649,7 +652,7 @@ const crmPipelineSidebarItems = computed(() => {
     name: `PipelineStage:${pipeline.id}:${stage.id}`,
     label: stage.name,
     connectorColor: stage.color,
-    count: stage.dealCount ?? 0,
+    count: resolveDialogDealCount(stage),
     activeOn: conversationStatusActiveOn,
     to: withCurrentConversationScopeCrmStage(pipeline.id, stage.id),
   }));
@@ -661,7 +664,7 @@ const crmPipelineSidebarItems = computed(() => {
     icon: 'i-lucide-filter',
     active: isCurrentCrmPipelineOnly(pipeline.id),
     activeOn: conversationStatusActiveOn,
-    count: pipeline.dealCount ?? 0,
+    count: resolveDialogDealCount(pipeline),
     to: withCurrentConversationScopeCrmPipelineToggle(pipeline.id),
   };
 

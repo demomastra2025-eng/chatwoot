@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveDefaultPipelineWithStages } from './crmDefaultPipelineSidebar';
+import {
+  resolveDefaultPipelineWithStages,
+  resolveDialogDealCount,
+} from './crmDefaultPipelineSidebar';
 
 describe('crmDefaultPipelineSidebar', () => {
   it('returns no pipeline and no stages when no active pipelines exist', () => {
@@ -106,5 +109,16 @@ describe('crmDefaultPipelineSidebar', () => {
 
     expect(pipeline.id).toBe(1);
     expect(stages.map(stage => stage.id)).toEqual([11]);
+  });
+
+  it('resolves dialog deal count before the total CRM deal count', () => {
+    expect(resolveDialogDealCount({ dialogDealCount: 2, dealCount: 9 })).toBe(
+      2
+    );
+    expect(resolveDialogDealCount({ dialogDealCount: 0, dealCount: 9 })).toBe(
+      0
+    );
+    expect(resolveDialogDealCount({ dealCount: 4 })).toBe(4);
+    expect(resolveDialogDealCount({})).toBe(0);
   });
 });
