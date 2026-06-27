@@ -90,6 +90,7 @@
     },
     "DEALS": {
       "CREATE_TITLE": "Create deal",
+      "CREATE_TASK": "Create task for deal",
       "DESCRIPTION": "Track opportunities without leaving the account dashboard.",
       "DRAWER_DESCRIPTION": "Keep ownership, contacts, and stage movement in one place.",
       "EDIT_TITLE": "Edit deal",
@@ -254,7 +255,8 @@
       "NEW_TASK": "New task",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Follow up conversation #{conversationId}",
-        "CONVERSATION_WITH_CONTACT": "Follow up with {contactName}"
+        "CONVERSATION_WITH_CONTACT": "Follow up with {contactName}",
+        "DEAL": "Task for deal “{dealTitle}”"
       },
       "PRIORITY": {
         "high": "High",

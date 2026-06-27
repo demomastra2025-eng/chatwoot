@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 
 import CompanyAPI from 'dashboard/api/companies';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
@@ -29,7 +30,10 @@ import {
 } from 'dashboard/components-next/CRM/crmConversationDealContext';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
-import { CRM_DEAL_MANAGE_PERMISSIONS } from 'dashboard/constants/permissions';
+import {
+  CRM_DEAL_MANAGE_PERMISSIONS,
+  CRM_TASK_MANAGE_PERMISSIONS,
+} from 'dashboard/constants/permissions';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import {
@@ -59,6 +63,7 @@ const dealCurrencyOptions = ['KZT', 'USD', 'EUR', 'RUB'];
 
 const { t, locale } = useI18n();
 const store = useStore();
+const router = useRouter();
 const referencesStore = useCrmReferencesStore();
 
 const accountId = useMapGetter('getCurrentAccountId');
@@ -99,6 +104,11 @@ const canManageDeals = computed(
   () =>
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
     hasPermissions(CRM_DEAL_MANAGE_PERMISSIONS, currentAccountPermissions.value)
+);
+const canManageTasks = computed(
+  () =>
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
+    hasPermissions(CRM_TASK_MANAGE_PERMISSIONS, currentAccountPermissions.value)
 );
 const companiesEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
@@ -484,6 +494,31 @@ const handleHeaderAction = key => {
   if (key === 'new_deal') {
     startCreateDeal();
   }
+};
+
+const buildCreateTaskTitleForDeal = deal =>
+  t('CRM.TASKS.PREFILL.DEAL', {
+    dealTitle: deal?.title || `#${deal?.id}`,
+  });
+
+const openCreateTaskForDeal = deal => {
+  if (!deal?.id || !canManageTasks.value) return;
+
+  router.push({
+    name: 'crm_tasks_index',
+    params: { accountId: accountId.value },
+    query: compactPayload({
+      action: 'new',
+      assigneeId: deal.ownerId,
+      conversationDisplayId:
+        deal.originatingConversationDisplayId || deal.originatingConversationId,
+      dealId: deal.id,
+      originatingConversationId: deal.originatingConversationId,
+      source: 'deal',
+      teamId: deal.teamId,
+      title: buildCreateTaskTitleForDeal(deal),
+    }),
+  });
 };
 
 const pipelineForForm = form =>
@@ -946,6 +981,15 @@ watch(dealFieldDefinitions, definitions => {
               </div>
 
               <div class="flex items-center justify-end gap-2">
+                <Button
+                  v-if="item.deal?.id && canManageTasks"
+                  v-tooltip.top="$t('CRM.DEALS.CREATE_TASK')"
+                  size="sm"
+                  color="slate"
+                  variant="ghost"
+                  icon="i-lucide-list-plus"
+                  @click="openCreateTaskForDeal(item.deal)"
+                />
                 <Button
                   v-if="item.isNew && deals.length"
                   size="sm"

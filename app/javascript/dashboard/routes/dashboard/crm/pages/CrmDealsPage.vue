@@ -22,6 +22,7 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import {
   CRM_DEAL_MANAGE_PERMISSIONS,
   CRM_DEAL_VIEW_PERMISSIONS,
+  CRM_TASK_MANAGE_PERMISSIONS,
 } from 'dashboard/constants/permissions';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
@@ -214,6 +215,11 @@ const isFeatureEnabledonAccount = useMapGetter(
 
 const canManageDeals = computed(() =>
   checkPermissions(CRM_DEAL_MANAGE_PERMISSIONS)
+);
+const canManageTasks = computed(
+  () =>
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
+    checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
 );
 const canAccessDealSettings = computed(
   () =>
@@ -1444,6 +1450,31 @@ const openCreateNewContactDialog = () => {
 
 const openCreateCompanyDialog = () => {
   createCompanyDialogRef.value?.dialogRef?.open();
+};
+
+const buildCreateTaskTitleForDeal = deal =>
+  t('CRM.TASKS.PREFILL.DEAL', {
+    dealTitle: deal?.title || `#${deal?.id}`,
+  });
+
+const openCreateTaskForDeal = deal => {
+  if (!deal?.id || !canManageTasks.value) return;
+
+  router.push({
+    name: 'crm_tasks_index',
+    params: { accountId: accountId.value },
+    query: compactPayload({
+      action: 'new',
+      assigneeId: deal.ownerId,
+      conversationDisplayId:
+        deal.originatingConversationDisplayId || deal.originatingConversationId,
+      dealId: deal.id,
+      originatingConversationId: deal.originatingConversationId,
+      source: 'deal',
+      teamId: deal.teamId,
+      title: buildCreateTaskTitleForDeal(deal),
+    }),
+  });
 };
 
 const createContact = async contact => {
@@ -2795,6 +2826,15 @@ watch(
                 @input="form.title = $event.target.value"
               />
 
+              <Button
+                v-if="selectedDeal && canManageTasks"
+                v-tooltip.top="$t('CRM.DEALS.CREATE_TASK')"
+                size="sm"
+                color="slate"
+                variant="ghost"
+                icon="i-lucide-list-plus"
+                @click="openCreateTaskForDeal(selectedDeal)"
+              />
               <Button
                 v-if="selectedDeal && canManageDeals"
                 v-tooltip.top="archiveTooltip"

@@ -87,6 +87,7 @@
     },
     "DEALS": {
       "CREATE_TITLE": "Мәміле құру",
+      "CREATE_TASK": "Мәміле бойынша тапсырма жасау",
       "DESCRIPTION": "Мүмкіндіктерді аккаунт интерфейсінен шықпай жүргізіңіз.",
       "DRAWER_DESCRIPTION": "Иесін, контактілерді және кезең қозғалысын бір жерде ұстаңыз.",
       "EDIT_TITLE": "Мәмілені өңдеу",
@@ -218,7 +219,8 @@
       "NEW_TASK": "Жаңа міндет",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Диалог бойынша follow-up #{conversationId}",
-        "CONVERSATION_WITH_CONTACT": "{contactName} контактісімен follow-up"
+        "CONVERSATION_WITH_CONTACT": "{contactName} контактісімен follow-up",
+        "DEAL": "«{dealTitle}» мәмілесі бойынша тапсырма"
       },
       "PRIORITY": {
         "high": "Жоғары",

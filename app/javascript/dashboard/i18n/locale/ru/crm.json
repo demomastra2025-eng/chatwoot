@@ -90,6 +90,7 @@
     },
     "DEALS": {
       "CREATE_TITLE": "Создать сделку",
+      "CREATE_TASK": "Создать задачу по сделке",
       "DESCRIPTION": "Ведите возможности прямо в интерфейсе аккаунта.",
       "DRAWER_DESCRIPTION": "Владелец, контакты и этапы в одном месте.",
       "EDIT_TITLE": "Редактировать сделку",
@@ -254,7 +255,8 @@
       "NEW_TASK": "Новая задача",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Follow-up по диалогу #{conversationId}",
-        "CONVERSATION_WITH_CONTACT": "Follow-up с {contactName}"
+        "CONVERSATION_WITH_CONTACT": "Follow-up с {contactName}",
+        "DEAL": "Задача по сделке «{dealTitle}»"
       },
       "PRIORITY": {
         "high": "Высокий",
