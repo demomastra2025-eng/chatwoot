@@ -100,6 +100,70 @@ describe('#mutations', () => {
         team: { id: 5, name: 'Sales' },
       });
     });
+
+    it('replaces and clears communication thread assignment from realtime meta', () => {
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            updated_at: 1,
+            meta: {
+              sender: { id: 42, name: 'Customer' },
+              assignee: { id: 179, name: 'John' },
+              assignee_type: 'User',
+              team: { id: 5, name: 'Sales' },
+            },
+            messages: [],
+            channels: [{ conversation_id: 11, inbox_id: 101 }],
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        updated_at: 2,
+        source_event: 'conversation.assignee_changed',
+        meta: {
+          assignee: { id: 87, name: 'Жандаулет Гусман' },
+          assignee_type: 'User',
+          channel: 'CommunicationThread',
+          team: { id: 9, name: 'Support' },
+        },
+        channels: [{ conversation_id: 11, inbox_id: 101 }],
+      });
+
+      expect(state.allConversations[0].meta).toMatchObject({
+        assignee: { id: 87, name: 'Жандаулет Гусман' },
+        assignee_type: 'User',
+        team: { id: 9, name: 'Support' },
+      });
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        updated_at: 3,
+        source_event: 'conversation.assignee_changed',
+        meta: {
+          assignee: null,
+          assignee_type: null,
+          channel: 'CommunicationThread',
+          team: null,
+        },
+        channels: [{ conversation_id: 11, inbox_id: 101 }],
+      });
+
+      expect(state.allConversations[0].meta).toMatchObject({
+        assignee: null,
+        assignee_type: null,
+        team: null,
+      });
+    });
   });
 
   describe('#DELETE_COMMUNICATION_THREAD_CONVERSATIONS', () => {

@@ -113,6 +113,51 @@ describe ActionCableListener do
       )
     end
 
+    it 'broadcasts assignee and team in communication thread meta' do
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.refresh_communication_thread!
+      team = create(:team, account: account)
+      communication_thread.update!(team: team)
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(
+          id: communication_thread.display_id,
+          meta: hash_including(
+            assignee: hash_including(id: agent.id),
+            assignee_type: 'User',
+            team: hash_including(id: team.id)
+          )
+        )
+      )
+    end
+
+    it 'broadcasts explicit nil assignment fields so stale thread assignee and team can be cleared' do
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.refresh_communication_thread!
+      communication_thread.update!(assignee: nil, team: nil)
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(
+          id: communication_thread.display_id,
+          meta: hash_including(
+            assignee: nil,
+            assignee_type: nil,
+            team: nil
+          )
+        )
+      )
+    end
+
     it 'filters communication thread realtime payloads per recipient conversation permission scope' do
       account.enable_features!('communication_threads')
       communication_thread = conversation.refresh_communication_thread!

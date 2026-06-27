@@ -303,7 +303,10 @@ class ActionCableListener < BaseListener
   def communication_thread_meta(communication_thread, source_conversation)
     {
       sender: communication_thread.contact.push_event_data(contact_inbox: source_conversation.contact_inbox),
-      channel: 'CommunicationThread'
+      channel: 'CommunicationThread',
+      assignee: communication_thread.assignee&.push_event_data,
+      assignee_type: communication_thread.assignee.present? ? 'User' : nil,
+      team: communication_thread.team&.push_event_data
     }
   end
 
