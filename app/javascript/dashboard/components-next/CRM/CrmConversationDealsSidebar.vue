@@ -964,6 +964,7 @@ watch(dealFieldDefinitions, definitions => {
                 v-if="item.deal?.id"
                 :assignees="ownerOptions"
                 :can-manage-tasks="canManageTasks"
+                create-action-icon-only
                 :deal="item.deal"
                 :statuses="taskStatuses"
                 :task-field-definitions="taskFieldDefinitions"

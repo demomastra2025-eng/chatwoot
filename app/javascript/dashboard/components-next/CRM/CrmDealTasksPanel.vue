@@ -35,6 +35,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  createActionIconOnly: {
+    type: Boolean,
+    default: false,
+  },
   deal: {
     type: Object,
     default: null,
@@ -318,25 +322,28 @@ defineExpose({ openCreateTaskDialog, loadTasks });
 
 <template>
   <section
-    class="overflow-hidden rounded-2xl border border-n-weak bg-n-solid-1 shadow-sm"
+    class="overflow-hidden rounded-xl border border-n-weak bg-n-solid-1 shadow-sm"
   >
     <header
-      class="flex items-center justify-between gap-3 border-b border-n-weak px-4 py-3"
+      class="flex items-center justify-between gap-2 border-b border-n-weak px-3 py-2"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <Icon icon="i-lucide-list-checks" class="size-4 text-n-slate-10" />
-        <p class="mb-0 truncate text-sm font-medium text-n-slate-12">
+        <Icon icon="i-lucide-list-checks" class="size-3.5 text-n-slate-10" />
+        <p class="mb-0 truncate text-xs font-medium text-n-slate-12">
           {{ $t('CRM.DEALS.TASKS.COUNT', { count: tasks.length }) }}
         </p>
       </div>
 
       <Button
         v-if="shouldShowCreateActions"
-        size="sm"
+        v-tooltip.top="
+          createActionIconOnly ? $t('CRM.DEALS.TASKS.ADD') : undefined
+        "
+        size="xs"
         color="slate"
         variant="ghost"
         icon="i-lucide-plus"
-        :label="$t('CRM.DEALS.TASKS.ADD')"
+        :label="createActionIconOnly ? '' : $t('CRM.DEALS.TASKS.ADD')"
         :disabled="!hasDeal"
         @click="openCreateTaskDialog"
       />
@@ -344,25 +351,25 @@ defineExpose({ openCreateTaskDialog, loadTasks });
 
     <div
       v-if="ui.isLoading"
-      class="px-4 py-6 text-center text-sm text-n-slate-11"
+      class="px-3 py-4 text-center text-xs text-n-slate-11"
     >
       {{ $t('CRM.DEALS.TASKS.LOADING') }}
     </div>
 
     <div
       v-else-if="sortedTasks.length === 0"
-      class="grid place-items-center gap-3 px-4 py-8 text-center"
+      class="grid place-items-center gap-2 px-3 py-5 text-center"
     >
       <span
-        class="flex size-10 items-center justify-center rounded-2xl bg-n-alpha-black2 text-n-slate-11"
+        class="flex size-8 items-center justify-center rounded-xl bg-n-alpha-black2 text-n-slate-11"
       >
-        <Icon icon="i-lucide-list-checks" class="size-5" />
+        <Icon icon="i-lucide-list-checks" class="size-4" />
       </span>
-      <div class="grid gap-1">
-        <p class="mb-0 text-sm font-medium text-n-slate-12">
+      <div class="grid gap-0.5">
+        <p class="mb-0 text-xs font-medium text-n-slate-12">
           {{ $t('CRM.DEALS.TASKS.EMPTY_TITLE') }}
         </p>
-        <p class="mb-0 text-sm text-n-slate-11">
+        <p class="mb-0 text-xs text-n-slate-11">
           {{ $t('CRM.DEALS.TASKS.EMPTY_DESCRIPTION') }}
         </p>
       </div>
@@ -372,22 +379,24 @@ defineExpose({ openCreateTaskDialog, loadTasks });
       <li
         v-for="task in sortedTasks"
         :key="task.id"
-        class="grid gap-3 px-4 py-3 transition-colors hover:bg-n-alpha-black2/70"
+        class="grid gap-1.5 px-3 py-2 transition-colors hover:bg-n-alpha-black2/70"
       >
-        <div class="flex min-w-0 items-start justify-between gap-3">
-          <div class="grid min-w-0 gap-1">
-            <h4 class="mb-0 truncate text-sm font-medium text-n-slate-12">
+        <div class="flex min-w-0 items-start justify-between gap-2">
+          <div class="grid min-w-0 gap-0.5">
+            <h4
+              class="mb-0 truncate text-xs font-medium leading-4 text-n-slate-12"
+            >
               {{ task.title }}
             </h4>
             <p
               v-if="task.description"
-              class="mb-0 line-clamp-2 whitespace-pre-wrap text-xs leading-4 text-n-slate-11"
+              class="mb-0 line-clamp-1 whitespace-pre-wrap text-[11px] leading-3 text-n-slate-11"
             >
               {{ task.description }}
             </p>
             <p
               v-if="taskDateSummary(task)"
-              class="mb-0 text-xs text-n-slate-10"
+              class="mb-0 text-[11px] leading-3 text-n-slate-10"
             >
               {{ taskDateSummary(task) }}
             </p>
@@ -402,7 +411,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
           />
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-1.5">
           <CrmTaskPriorityMenu
             :model-value="task.priority || 'medium'"
             :options="priorityOptions"
