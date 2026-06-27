@@ -322,14 +322,14 @@ defineExpose({ openCreateTaskDialog, loadTasks });
 
 <template>
   <section
-    class="overflow-hidden rounded-xl border border-n-weak bg-n-solid-1 shadow-sm"
+    class="overflow-hidden rounded-2xl border border-n-weak bg-n-solid-1 shadow-sm"
   >
     <header
-      class="flex items-center justify-between gap-2 border-b border-n-weak px-3 py-2"
+      class="flex items-center justify-between gap-3 border-b border-n-weak px-4 py-3"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <Icon icon="i-lucide-list-checks" class="size-3.5 text-n-slate-10" />
-        <p class="mb-0 truncate text-xs font-medium text-n-slate-12">
+        <Icon icon="i-lucide-list-checks" class="size-4 text-n-slate-10" />
+        <p class="mb-0 truncate text-sm font-medium text-n-slate-12">
           {{ $t('CRM.DEALS.TASKS.COUNT', { count: tasks.length }) }}
         </p>
       </div>
@@ -339,7 +339,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
         v-tooltip.top="
           createActionIconOnly ? $t('CRM.DEALS.TASKS.ADD') : undefined
         "
-        size="xs"
+        size="sm"
         color="slate"
         variant="ghost"
         icon="i-lucide-plus"
@@ -351,25 +351,25 @@ defineExpose({ openCreateTaskDialog, loadTasks });
 
     <div
       v-if="ui.isLoading"
-      class="px-3 py-4 text-center text-xs text-n-slate-11"
+      class="px-4 py-6 text-center text-sm text-n-slate-11"
     >
       {{ $t('CRM.DEALS.TASKS.LOADING') }}
     </div>
 
     <div
       v-else-if="sortedTasks.length === 0"
-      class="grid place-items-center gap-2 px-3 py-5 text-center"
+      class="grid place-items-center gap-3 px-4 py-8 text-center"
     >
       <span
-        class="flex size-8 items-center justify-center rounded-xl bg-n-alpha-black2 text-n-slate-11"
+        class="flex size-10 items-center justify-center rounded-2xl bg-n-alpha-black2 text-n-slate-11"
       >
-        <Icon icon="i-lucide-list-checks" class="size-4" />
+        <Icon icon="i-lucide-list-checks" class="size-5" />
       </span>
-      <div class="grid gap-0.5">
-        <p class="mb-0 text-xs font-medium text-n-slate-12">
+      <div class="grid gap-1">
+        <p class="mb-0 text-sm font-medium text-n-slate-12">
           {{ $t('CRM.DEALS.TASKS.EMPTY_TITLE') }}
         </p>
-        <p class="mb-0 text-xs text-n-slate-11">
+        <p class="mb-0 text-sm text-n-slate-11">
           {{ $t('CRM.DEALS.TASKS.EMPTY_DESCRIPTION') }}
         </p>
       </div>
