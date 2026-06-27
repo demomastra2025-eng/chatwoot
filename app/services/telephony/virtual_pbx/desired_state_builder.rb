@@ -82,6 +82,7 @@ class Telephony::VirtualPbx::DesiredStateBuilder
       operator_distribution_mode: routing[:operator_distribution_mode],
       app_ref: binding&.app_ref_for_policy(binding&.routing_policy),
       operator_agent_ref: routing[:operator_agent_ref],
+      operator_agent_aor: routing[:operator_agent_aor],
       operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?,
       ai_enabled: routing[:ai_enabled],
       ai_app_ref: routing[:ai_app_ref]

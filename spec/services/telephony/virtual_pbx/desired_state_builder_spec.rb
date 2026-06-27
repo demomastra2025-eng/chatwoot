@@ -21,6 +21,10 @@ RSpec.describe Telephony::VirtualPbx::DesiredStateBuilder do
         transport: 'udp',
         username: '056124100014',
         password: 'do-not-return-this-secret'
+      },
+      routing: {
+        operator_distribution_mode: 'targeted',
+        operator_agent_aor: 'sip:501@operator.example.test'
       }
     }
   end
@@ -39,6 +43,8 @@ RSpec.describe Telephony::VirtualPbx::DesiredStateBuilder do
     )
     expect(state.dig(:phone_numbers, :display_phone_number)).to eq('+17705550999')
     expect(state.dig(:phone_numbers, :ingress_number)).to eq('056124100014')
+    expect(state.dig(:routing, :operator_agent_aor)).to eq('sip:501@operator.example.test')
+    expect(state.dig(:routing, :operator_target_configured)).to be(true)
     expect(state.dig(:ownership, :onelink_account_id)).to eq(account.id)
     expect(state.dig(:ownership, :onelink_inbox_id)).to eq(inbox.id)
     expect(state.dig(:connection, :password_configured)).to be(true)
