@@ -428,7 +428,9 @@
           "POSITION": "Позиция"
         },
         "NEW_PIPELINE_HELP": "Код будет создан автоматически",
+        "EMPTY_FILTERED": "По этому запросу воронки не найдены",
         "RESTORE": "Восстановить",
+        "SEARCH_PLACEHOLDER": "Поиск по воронкам и этапам...",
         "SHOW_ARCHIVED": "Архивные",
         "SUCCESS_ARCHIVED": "Воронка отправлена в архив",
         "SUCCESS_DELETE": "Воронка удалена",

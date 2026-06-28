@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useTrack } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useAccount } from 'dashboard/composables/useAccount';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { INBOX_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { emitter } from 'shared/helpers/mitt';
@@ -15,6 +16,7 @@ import InboxEmptyState from './InboxEmptyState.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
 import {
+  buildEffectiveSidebarVisibilitySettings,
   buildSidebarVisibilityState,
   CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
   CONVERSATION_PIPELINES_VISIBILITY_KEY,
@@ -24,6 +26,7 @@ const route = useRoute();
 const router = useRouter();
 const store = useStore();
 const { uiSettings } = useUISettings();
+const { accountId, currentAccount } = useAccount();
 
 const isConversationLoading = ref(false);
 
@@ -41,6 +44,14 @@ const activeSortOrder = computed(() => {
   const { sort_by: sortBy } = filterBy;
   return sortBy || 'desc';
 });
+
+const effectiveSidebarVisibilitySettings = computed(() =>
+  buildEffectiveSidebarVisibilitySettings({
+    accountId: accountId.value,
+    accountSettings: currentAccount.value?.settings || {},
+    uiSettings: uiSettings.value,
+  })
+);
 
 const notifications = computed(() => {
   return notification.value({
@@ -79,7 +90,9 @@ const isConversationSidebarOpen = computed(() => {
       is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
       is_touch_sidebar_open: isTouchSidebarOpen,
     } = uiSettings.value;
-    const visibility = buildSidebarVisibilityState(uiSettings.value);
+    const visibility = buildSidebarVisibilityState(
+      effectiveSidebarVisibilitySettings.value
+    );
 
     return (
       isContactSidebarOpen ||

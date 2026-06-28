@@ -1,10 +1,14 @@
 import {
+  SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY,
+  SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_ITEMS,
+  buildEffectiveSidebarVisibilitySettings,
   buildSidebarVisibilityState,
   filterSidebarMenuItems,
+  getAccountScopedSidebarHiddenItems,
   getConversationSidebarHiddenItemsFromState,
   getSidebarHiddenItems,
   getSidebarHiddenItemsFromState,
@@ -202,6 +206,74 @@ describe('sidebarVisibility', () => {
           SIDEBAR_VISIBILITY_CURRENT_VERSION,
       })
     ).toEqual(['Captain:Prompts']);
+  });
+
+  it('merges account policy visibility with account-scoped personal overrides', () => {
+    const uiSettings = {
+      [SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]: {
+        1: ['Reports'],
+        2: ['Campaigns'],
+      },
+      [SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY]: {
+        1: SIDEBAR_VISIBILITY_CURRENT_VERSION,
+        2: SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      },
+    };
+    const accountSettings = {
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Teams'],
+      [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+        SIDEBAR_VISIBILITY_CURRENT_VERSION,
+    };
+
+    expect(getAccountScopedSidebarHiddenItems(uiSettings, 1)).toEqual([
+      'Reports',
+    ]);
+    expect(
+      buildEffectiveSidebarVisibilitySettings({
+        accountId: 1,
+        accountSettings,
+        uiSettings,
+      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
+    ).toEqual(['Conversation:Teams', 'Reports']);
+    expect(
+      buildEffectiveSidebarVisibilitySettings({
+        accountId: 2,
+        accountSettings,
+        uiSettings,
+      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
+    ).toEqual(['Conversation:Teams', 'Campaigns']);
+    expect(
+      buildEffectiveSidebarVisibilitySettings({
+        accountId: 1,
+        accountSettings: {},
+        uiSettings,
+      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
+    ).toEqual(['Reports']);
+    expect(
+      buildEffectiveSidebarVisibilitySettings({
+        accountId: 3,
+        accountSettings: {},
+        uiSettings,
+      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
+    ).toEqual(['Conversation:Statuses']);
+  });
+
+  it('falls back to legacy personal sidebar visibility before account-scoped settings exist', () => {
+    const uiSettings = {
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:Macros'],
+    };
+
+    expect(getAccountScopedSidebarHiddenItems(uiSettings, 1)).toEqual([
+      'Conversation:Statuses',
+      'Settings:Macros',
+    ]);
+    expect(
+      buildEffectiveSidebarVisibilitySettings({
+        accountId: 1,
+        accountSettings: {},
+        uiSettings,
+      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
+    ).toEqual(['Conversation:Statuses', 'Settings:Macros']);
   });
 
   it('filters hidden sidebar sections and subsections from the rendered menu', () => {

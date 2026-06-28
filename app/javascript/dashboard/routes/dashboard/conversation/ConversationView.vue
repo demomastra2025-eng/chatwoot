@@ -12,6 +12,7 @@ import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwi
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import {
+  buildEffectiveSidebarVisibilitySettings,
   buildSidebarVisibilityState,
   CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
   CONVERSATION_PIPELINES_VISIBILITY_KEY,
@@ -65,12 +66,13 @@ export default {
   },
   setup() {
     const { uiSettings, updateUISettings } = useUISettings();
-    const { accountId } = useAccount();
+    const { accountId, currentAccount } = useAccount();
 
     return {
       uiSettings,
       updateUISettings,
       accountId,
+      currentAccount,
     };
   },
   data() {
@@ -98,6 +100,14 @@ export default {
       return conversationDisplayType !== CONDENSED;
     },
 
+    effectiveSidebarVisibilitySettings() {
+      return buildEffectiveSidebarVisibilitySettings({
+        accountId: this.accountId,
+        accountSettings: this.currentAccount?.settings || {},
+        uiSettings: this.uiSettings,
+      });
+    },
+
     shouldShowSidebar() {
       if (!this.currentChat.id) {
         return false;
@@ -109,7 +119,9 @@ export default {
         is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
         is_touch_sidebar_open: isTouchSidebarOpen,
       } = this.uiSettings;
-      const visibility = buildSidebarVisibilityState(this.uiSettings);
+      const visibility = buildSidebarVisibilityState(
+        this.effectiveSidebarVisibilitySettings
+      );
 
       return (
         isContactSidebarOpen ||

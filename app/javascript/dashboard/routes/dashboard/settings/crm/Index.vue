@@ -59,6 +59,7 @@ const showArchivedPipelines = ref(false);
 const pipelineNameDrafts = reactive({});
 const pipelineLastSyncedNames = reactive({});
 const pipelineSavingIds = reactive({});
+const pipelineSearchQuery = ref('');
 const pipelineRows = ref([]);
 const draggingPipelines = ref(false);
 const pipelineOrderSaving = ref(false);
@@ -142,12 +143,52 @@ const pipelineColumns = computed(() => [
   { key: 'actions', label: '', width: '156px', align: 'end' },
 ]);
 
-const visiblePipelines = computed(() =>
-  sortPipelinesForSettings(
+const normalizeSearchText = value =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
+
+const pipelineMatchesSearch = (pipeline, query) => {
+  if (!query) return true;
+
+  const searchableValues = [
+    pipeline.name,
+    pipeline.code,
+    pipeline.active ? t('CRM.GENERAL.ACTIVE') : t('CRM.GENERAL.ARCHIVED'),
+    ...(pipeline.stages || []).flatMap(stage => [
+      stage.name,
+      stage.code,
+      stage.outcome,
+      stage.default ? t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') : '',
+      ...(stage.closingReasonOptions || []),
+      ...(stage.transitionReasonOptions || []),
+    ]),
+  ];
+
+  return searchableValues.some(value =>
+    normalizeSearchText(value).includes(query)
+  );
+};
+
+const visiblePipelines = computed(() => {
+  const query = normalizeSearchText(pipelineSearchQuery.value);
+
+  return sortPipelinesForSettings(
     referencesStore.pipelines.filter(
-      pipeline => showArchivedPipelines.value || pipeline.active
+      pipeline =>
+        (showArchivedPipelines.value || pipeline.active) &&
+        pipelineMatchesSearch(pipeline, query)
     )
-  )
+  );
+});
+
+const pipelineEmptyStateMessage = computed(() =>
+  pipelineSearchQuery.value
+    ? t('CRM.SETTINGS.PIPELINES.EMPTY_FILTERED')
+    : t('SCHEDULING.GENERAL.NO_DATA')
+);
+const pipelineSearchActive = computed(() =>
+  Boolean(normalizeSearchText(pipelineSearchQuery.value))
 );
 
 const pipelineGridTemplate = computed(() =>
@@ -509,6 +550,12 @@ const deletePipeline = async () => {
 };
 
 const persistPipelineOrder = async () => {
+  if (pipelineSearchActive.value) {
+    draggingPipelines.value = false;
+    syncPipelineRows();
+    return;
+  }
+
   pipelineOrderSaving.value = true;
 
   try {
@@ -550,10 +597,17 @@ const persistPipelineOrder = async () => {
 };
 
 const handlePipelineDragStart = () => {
+  if (pipelineSearchActive.value) return;
   draggingPipelines.value = true;
 };
 
 const handlePipelineDragEnd = async event => {
+  if (pipelineSearchActive.value) {
+    draggingPipelines.value = false;
+    syncPipelineRows();
+    return;
+  }
+
   if (event.oldIndex === event.newIndex) {
     draggingPipelines.value = false;
     syncPipelineRows();
@@ -1085,7 +1139,7 @@ onMounted(async () => {
               v-if="pipelineRows.length === 0 && !newPipelineDraft"
               class="px-5 py-10 text-sm text-center text-n-slate-11"
             >
-              {{ $t('SCHEDULING.GENERAL.NO_DATA') }}
+              {{ pipelineEmptyStateMessage }}
             </div>
 
             <Draggable
@@ -1093,6 +1147,9 @@ onMounted(async () => {
               v-model="pipelineRows"
               item-key="id"
               handle=".drag-handle"
+              :disabled="
+                !canManage || pipelineOrderSaving || pipelineSearchActive
+              "
               animation="200"
               ghost-class="pipeline-ghost"
               class="divide-y divide-n-weak"
@@ -1111,11 +1168,17 @@ onMounted(async () => {
                         type="button"
                         class="drag-handle inline-flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors"
                         :class="
-                          row.active && !pipelineOrderSaving
+                          row.active &&
+                          !pipelineOrderSaving &&
+                          !pipelineSearchActive
                             ? 'cursor-grab text-n-slate-10 hover:bg-n-alpha-black2 hover:text-n-slate-12 active:cursor-grabbing'
                             : 'cursor-default text-n-slate-8'
                         "
-                        :disabled="!row.active || pipelineOrderSaving"
+                        :disabled="
+                          !row.active ||
+                          pipelineOrderSaving ||
+                          pipelineSearchActive
+                        "
                         :title="$t('CRM.SETTINGS.PIPELINES.DRAG')"
                       >
                         <span
@@ -1402,7 +1465,13 @@ onMounted(async () => {
           </div>
 
           <template #headerActions>
-            <div class="flex items-center gap-3">
+            <div class="flex flex-wrap items-center justify-end gap-3">
+              <Input
+                v-model="pipelineSearchQuery"
+                class="w-64 max-w-full"
+                size="sm"
+                :placeholder="$t('CRM.SETTINGS.PIPELINES.SEARCH_PLACEHOLDER')"
+              />
               <label
                 class="flex cursor-pointer items-center gap-2 text-sm text-n-slate-12"
               >

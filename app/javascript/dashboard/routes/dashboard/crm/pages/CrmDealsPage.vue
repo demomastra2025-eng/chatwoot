@@ -469,6 +469,9 @@ const collectTransitionReasonForStage = async ({ targetStage }) => {
   );
 };
 
+const isStageReasonSelectionCancelled = value =>
+  value === null || value === closingReasonDialogRef.value?.CANCELLED;
+
 const shouldRenderBoard = computed(
   () => currentPresentation.value === 'board' && hasBoardStages.value
 );
@@ -680,7 +683,7 @@ const searchableDealCustomFieldTerms = deal =>
     entry.displayValue,
   ]);
 
-const filteredListDeals = computed(() => {
+const quickFilteredDeals = computed(() => {
   const search = normalizeFilterText(listQuickFilters.q);
 
   return deals.value.filter(deal => {
@@ -704,6 +707,8 @@ const filteredListDeals = computed(() => {
     ].some(value => normalizeFilterText(value).includes(search));
   });
 });
+
+const filteredListDeals = computed(() => quickFilteredDeals.value);
 
 const resolveDealSortValue = computed(() =>
   createDealListSortValueResolver({
@@ -1578,13 +1583,13 @@ const saveDeal = async () => {
       targetStage,
     });
 
-    if (closingReasons === null) return;
+    if (isStageReasonSelectionCancelled(closingReasons)) return;
 
     transitionReason = selectedDeal.value
       ? await collectTransitionReasonForStage({ targetStage })
       : '';
 
-    if (transitionReason === null) return;
+    if (isStageReasonSelectionCancelled(transitionReason)) return;
 
     form.closingReasons = closingReasons;
   }
@@ -1976,7 +1981,7 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     ? await collectClosingReasonsForStage({ deal: currentDeal, targetStage })
     : [];
 
-  if (closingReasons === null) {
+  if (isStageReasonSelectionCancelled(closingReasons)) {
     await loadDeals();
     return;
   }
@@ -1985,7 +1990,7 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     ? await collectTransitionReasonForStage({ targetStage })
     : '';
 
-  if (transitionReason === null) {
+  if (isStageReasonSelectionCancelled(transitionReason)) {
     await loadDeals();
     return;
   }
@@ -2492,7 +2497,6 @@ watch(
             @update:model-value="boardSort.key = $event"
           />
           <Input
-            v-if="currentPresentation === 'list'"
             size="sm"
             type="search"
             :model-value="listQuickFilters.q"
@@ -2571,7 +2575,8 @@ watch(
             v-else-if="currentPresentation === 'board'"
             class="min-h-0 flex-1"
             :can-manage="canManageDeals"
-            :deals="deals"
+            :can-reorder="!hasListSearchQuery"
+            :deals="quickFilteredDeals"
             :field-definitions="dealFieldDefinitions"
             :owners="ownerOptions"
             :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"

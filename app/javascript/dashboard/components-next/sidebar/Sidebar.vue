@@ -33,6 +33,7 @@ import {
 import {
   CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
   CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS,
+  buildEffectiveSidebarVisibilitySettings,
   filterSidebarMenuItems,
 } from './sidebarVisibility';
 import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions';
@@ -86,7 +87,7 @@ const emit = defineEmits([
 const SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS = 60 * 1000;
 const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 
-const { accountScopedRoute, isOnChatwootCloud } = useAccount();
+const { accountScopedRoute, currentAccount, isOnChatwootCloud } = useAccount();
 const route = useRoute();
 const router = useRouter();
 const { checkPermissions } = usePolicy();
@@ -96,6 +97,14 @@ const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
 const { uiSettings } = useUISettings();
 const composeConversationRef = ref(null);
+
+const effectiveSidebarVisibilitySettings = computed(() =>
+  buildEffectiveSidebarVisibilitySettings({
+    accountId: currentAccount.value?.id,
+    accountSettings: currentAccount.value?.settings || {},
+    uiSettings: uiSettings.value,
+  })
+);
 
 const isACustomBrandedInstance = useMapGetter(
   'globalConfig/isACustomBrandedInstance'
@@ -1315,7 +1324,7 @@ const myCompanySettingsMenuItems = computed(() => {
   if (!checkPermissions(['administrator'])) return [];
   return filterSidebarMenuItems(
     buildMyCompanySettingsMenuItems(),
-    uiSettings.value
+    effectiveSidebarVisibilitySettings.value
   );
 });
 
@@ -2001,7 +2010,7 @@ const menuItems = computed(() => {
         ],
       },
     ],
-    uiSettings.value
+    effectiveSidebarVisibilitySettings.value
   );
 });
 

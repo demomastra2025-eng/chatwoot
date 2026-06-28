@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
-import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useAccount } from 'dashboard/composables/useAccount';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Button from 'next/button/Button.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
@@ -77,7 +77,7 @@ const CONVERSATION_VISIBILITY_GROUPS = Object.freeze([
 ]);
 
 const { t } = useI18n();
-const { uiSettings, updateUISettings } = useUISettings();
+const { currentAccount, updateAccount } = useAccount();
 
 const visibilityDraft = ref({});
 
@@ -91,7 +91,7 @@ const conversationVisibilityItemsByKey = computed(
 );
 
 const savedConversationHiddenItems = computed(() =>
-  getConversationSidebarHiddenItems(uiSettings.value)
+  getConversationSidebarHiddenItems(currentAccount.value?.settings || {})
 );
 
 const draftConversationHiddenItems = computed(() =>
@@ -162,27 +162,31 @@ const toggleVisibility = item => {
   visibilityDraft.value[item.key] = !visibilityDraft.value[item.key];
 };
 
-const saveVisibility = () => {
+const saveVisibility = async () => {
   const nonConversationHiddenItems = getSidebarHiddenItems(
-    uiSettings.value
+    currentAccount.value?.settings || {}
   ).filter(key => !conversationVisibilityKeys.value.has(key));
 
-  updateUISettings({
-    [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
-      ...nonConversationHiddenItems,
-      ...draftConversationHiddenItems.value,
-    ],
-    [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
-      SIDEBAR_VISIBILITY_CURRENT_VERSION,
-  });
+  try {
+    await updateAccount({
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+        ...nonConversationHiddenItems,
+        ...draftConversationHiddenItems.value,
+      ],
+      [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+        SIDEBAR_VISIBILITY_CURRENT_VERSION,
+    });
 
-  useAlert(t('CONVERSATION_WORKFLOW.VISIBILITY.SAVE.SUCCESS'));
+    useAlert(t('CONVERSATION_WORKFLOW.VISIBILITY.SAVE.SUCCESS'));
+  } catch {
+    useAlert(t('GENERAL_SETTINGS.UPDATE.ERROR'));
+  }
 };
 
 watch(
-  uiSettings,
+  () => currentAccount.value?.settings,
   value => {
-    visibilityDraft.value = buildSidebarVisibilityState(value);
+    visibilityDraft.value = buildSidebarVisibilityState(value || {});
   },
   { immediate: true }
 );

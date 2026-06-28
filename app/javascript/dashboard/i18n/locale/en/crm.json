@@ -428,7 +428,9 @@
           "POSITION": "Position"
         },
         "NEW_PIPELINE_HELP": "Code will be generated automatically",
+        "EMPTY_FILTERED": "No pipelines found for this search",
         "RESTORE": "Restore",
+        "SEARCH_PLACEHOLDER": "Search pipelines or stages...",
         "SHOW_ARCHIVED": "Show archived",
         "SUCCESS_ARCHIVED": "Pipeline archived",
         "SUCCESS_DELETE": "Pipeline deleted",

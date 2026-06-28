@@ -2,35 +2,43 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
+import { useAccount } from 'dashboard/composables/useAccount';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import {
   SIDEBAR_VISIBILITY_ITEMS,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
-  SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
-  SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
   buildSidebarVisibilityState,
-  getSidebarHiddenItems,
+  buildAccountScopedSidebarUISettings,
+  getAccountScopedSidebarHiddenItems,
   getSidebarHiddenItemsFromState,
 } from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const { t } = useI18n();
 const { uiSettings, updateUISettings } = useUISettings();
+const { accountId } = useAccount();
 
 const visibilityDraft = ref({});
 const expandedSections = ref({});
 
 watch(
-  uiSettings,
-  value => {
-    visibilityDraft.value = buildSidebarVisibilityState(value);
+  [uiSettings, accountId],
+  ([value, currentAccountId]) => {
+    visibilityDraft.value = buildSidebarVisibilityState({
+      dashboard_sidebar_hidden_items: getAccountScopedSidebarHiddenItems(
+        value,
+        currentAccountId
+      ),
+      dashboard_sidebar_hidden_items_version:
+        SIDEBAR_VISIBILITY_CURRENT_VERSION,
+    });
   },
   { immediate: true }
 );
 
 const savedHiddenItems = computed(() =>
-  getSidebarHiddenItems(uiSettings.value)
+  getAccountScopedSidebarHiddenItems(uiSettings.value, accountId.value)
 );
 const draftHiddenItems = computed(() =>
   getSidebarHiddenItemsFromState(visibilityDraft.value)
@@ -63,11 +71,13 @@ const toggleSection = item => {
 };
 
 const saveSidebarVisibility = () => {
-  updateUISettings({
-    [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: draftHiddenItems.value,
-    [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
-      SIDEBAR_VISIBILITY_CURRENT_VERSION,
-  });
+  updateUISettings(
+    buildAccountScopedSidebarUISettings({
+      accountId: accountId.value,
+      hiddenItems: draftHiddenItems.value,
+      uiSettings: uiSettings.value,
+    })
+  );
 
   useAlert(
     t(

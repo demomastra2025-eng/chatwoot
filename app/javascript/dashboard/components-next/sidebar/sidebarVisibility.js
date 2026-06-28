@@ -2,6 +2,10 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
+export const SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY =
+  'dashboard_sidebar_hidden_items_by_account';
+export const SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY =
+  'dashboard_sidebar_hidden_items_version_by_account';
 export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 14;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
@@ -363,6 +367,88 @@ export const getSidebarHiddenItems = uiSettings =>
       )
     )
   );
+
+const accountScopedValue = (uiSettings, settingsKey, accountId) => {
+  const scopedSettings = uiSettings?.[settingsKey];
+  const accountKey = String(accountId || '');
+
+  if (!accountKey || !scopedSettings || typeof scopedSettings !== 'object') {
+    return undefined;
+  }
+
+  return scopedSettings[accountKey];
+};
+
+export const getAccountScopedSidebarHiddenItems = (uiSettings, accountId) => {
+  const scopedHiddenItems = accountScopedValue(
+    uiSettings,
+    SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY,
+    accountId
+  );
+
+  if (!Array.isArray(scopedHiddenItems)) {
+    return Array.isArray(uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY])
+      ? getSidebarHiddenItems(uiSettings)
+      : getSidebarHiddenItems({});
+  }
+
+  return getSidebarHiddenItems({
+    [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: scopedHiddenItems,
+    [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+      accountScopedValue(
+        uiSettings,
+        SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY,
+        accountId
+      ) || SIDEBAR_VISIBILITY_CURRENT_VERSION,
+  });
+};
+
+export const buildAccountScopedSidebarUISettings = ({
+  uiSettings,
+  accountId,
+  hiddenItems,
+}) => {
+  const accountKey = String(accountId || '');
+  if (!accountKey) return {};
+
+  return {
+    [SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]: {
+      ...(uiSettings?.[SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY] || {}),
+      [accountKey]: normalizeSidebarHiddenItems(hiddenItems),
+    },
+    [SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY]: {
+      ...(uiSettings?.[SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY] ||
+        {}),
+      [accountKey]: SIDEBAR_VISIBILITY_CURRENT_VERSION,
+    },
+  };
+};
+
+export const buildEffectiveSidebarVisibilitySettings = ({
+  uiSettings,
+  accountSettings,
+  accountId,
+}) => {
+  const accountPolicyHiddenItems = Array.isArray(
+    accountSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
+  )
+    ? getSidebarHiddenItems(accountSettings)
+    : [];
+  const personalHiddenItems = getAccountScopedSidebarHiddenItems(
+    uiSettings,
+    accountId
+  );
+
+  return {
+    ...(uiSettings || {}),
+    [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: normalizeSidebarHiddenItems([
+      ...accountPolicyHiddenItems,
+      ...personalHiddenItems,
+    ]),
+    [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+      SIDEBAR_VISIBILITY_CURRENT_VERSION,
+  };
+};
 
 export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze(
   SIDEBAR_VISIBILITY_ITEMS.find(

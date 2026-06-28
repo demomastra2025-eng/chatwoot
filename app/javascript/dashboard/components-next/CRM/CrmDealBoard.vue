@@ -14,6 +14,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  canReorder: {
+    type: Boolean,
+    default: true,
+  },
   deals: {
     type: Array,
     default: () => [],
@@ -65,6 +69,7 @@ const emit = defineEmits([
 const { locale, t } = useI18n();
 
 const boardColumns = ref({});
+const canDragDeals = computed(() => props.canManage && props.canReorder);
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
 );
@@ -188,8 +193,6 @@ const emitStageChange = (deal, stageId, position) => {
     return;
   }
 
-  deal.stageId = nextStageId;
-  deal.position = nextPosition || deal.position;
   emit('changeStage', {
     deal,
     position: nextPosition || null,
@@ -272,8 +275,8 @@ const handleOwnerChange = (deal, ownerId) => {
 
         <Draggable
           :list="boardColumns[column.stageId]"
-          :disabled="!canManage"
-          :sort="sortKey === 'position'"
+          :disabled="!canDragDeals"
+          :sort="canDragDeals && sortKey === 'position'"
           animation="180"
           class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
           ghost-class="crm-deal-board-card-ghost"

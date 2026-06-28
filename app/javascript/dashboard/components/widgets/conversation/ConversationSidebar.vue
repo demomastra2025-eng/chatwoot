@@ -11,6 +11,7 @@ import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 import wootConstants from 'dashboard/constants/globals';
 import {
+  buildEffectiveSidebarVisibilitySettings,
   buildSidebarVisibilityState,
   CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
   CONVERSATION_PIPELINES_VISIBILITY_KEY,
@@ -24,7 +25,7 @@ const props = defineProps({
 });
 
 const router = useRouter();
-const { accountScopedRoute } = useAccount();
+const { accountId, accountScopedRoute, currentAccount } = useAccount();
 
 const { uiSettings, updateUISettings } = useUISettings();
 const { width: windowWidth } = useWindowSize();
@@ -38,8 +39,18 @@ const clickOutsideOptions = {
   ],
 };
 
+const effectiveSidebarVisibilitySettings = computed(() =>
+  buildEffectiveSidebarVisibilitySettings({
+    accountId: accountId.value,
+    accountSettings: currentAccount.value?.settings || {},
+    uiSettings: uiSettings.value,
+  })
+);
+
 const activeTab = computed(() => {
-  const visibility = buildSidebarVisibilityState(uiSettings.value);
+  const visibility = buildSidebarVisibilityState(
+    effectiveSidebarVisibilitySettings.value
+  );
   const {
     is_contact_sidebar_open: isContactSidebarOpen,
     is_crm_deal_panel_open: isDealsSidebarOpen,

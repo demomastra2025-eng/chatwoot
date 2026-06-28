@@ -113,7 +113,9 @@ class Api::V1::AccountsController < Api::BaseController
       :scheduling_company_enabled,
       :default_appointment_touch_plan_id,
       :default_deal_touch_plan_id,
-      :default_task_touch_plan_id
+      :default_task_touch_plan_id,
+      :dashboard_sidebar_hidden_items_version,
+      { dashboard_sidebar_hidden_items: [] }
     ]
   end
 
