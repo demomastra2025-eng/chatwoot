@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
-import { shallowMount } from '@vue/test-utils';
+import { flushPromises, shallowMount } from '@vue/test-utils';
 
 import ConversationSidebar from './ConversationSidebar.vue';
 
@@ -28,7 +28,11 @@ vi.mock('vue-router', () => ({
 }));
 
 vi.mock('dashboard/composables/useAccount', () => ({
-  useAccount: () => ({ accountScopedRoute: mocks.accountScopedRoute }),
+  useAccount: () => ({
+    accountId: { value: 1 },
+    currentAccount: { value: { settings: {} } },
+    accountScopedRoute: mocks.accountScopedRoute,
+  }),
 }));
 
 const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
@@ -38,8 +42,24 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
     },
     global: {
       stubs: {
-        ContactPanel: true,
-        TouchEditorDrawer: true,
+        ContactPanel: {
+          name: 'ContactPanel',
+          props: ['conversationId', 'inboxId'],
+          template: '<div />',
+        },
+        CrmConversationDealsSidebar: {
+          name: 'CrmConversationDealsSidebar',
+          template: '<div />',
+        },
+        SchedulingConversationAppointmentsSidebar: {
+          name: 'SchedulingConversationAppointmentsSidebar',
+          template: '<div />',
+        },
+        TouchEditorDrawer: {
+          name: 'TouchEditorDrawer',
+          props: ['conversationId', 'remindableType', 'remindableId'],
+          template: '<div />',
+        },
       },
     },
   });
@@ -126,7 +146,7 @@ describe('ConversationSidebar', () => {
     ).toBe(false);
   });
 
-  it('uses the active reply conversation for communication thread contact sidebar', () => {
+  it('uses the active reply conversation for communication thread contact sidebar', async () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: true,
       is_touch_sidebar_open: false,
@@ -141,13 +161,14 @@ describe('ConversationSidebar', () => {
         inbox_id: 202,
       },
     });
+    await flushPromises();
 
     const contactPanel = wrapper.findComponent({ name: 'ContactPanel' });
     expect(contactPanel.props('conversationId')).toBe(101);
     expect(contactPanel.props('inboxId')).toBe(202);
   });
 
-  it('opens communication thread touch drawer with thread reminder context', () => {
+  it('opens communication thread touch drawer with thread reminder context', async () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
       is_touch_sidebar_open: true,
@@ -162,6 +183,7 @@ describe('ConversationSidebar', () => {
         inbox_id: 202,
       },
     });
+    await flushPromises();
 
     const touchDrawer = wrapper.findComponent({ name: 'TouchEditorDrawer' });
     expect(touchDrawer.props('conversationId')).toBe(101);

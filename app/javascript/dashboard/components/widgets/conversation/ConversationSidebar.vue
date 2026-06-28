@@ -1,10 +1,6 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import { useRouter } from 'vue-router';
-import ContactPanel from 'dashboard/routes/dashboard/conversation/ContactPanel.vue';
-import CrmConversationDealsSidebar from 'dashboard/components-next/CRM/CrmConversationDealsSidebar.vue';
-import SchedulingConversationAppointmentsSidebar from 'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue';
-import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useWindowSize } from '@vueuse/core';
@@ -23,6 +19,21 @@ const props = defineProps({
     type: Object,
   },
 });
+const ContactPanel = defineAsyncComponent(
+  () => import('dashboard/routes/dashboard/conversation/ContactPanel.vue')
+);
+const CrmConversationDealsSidebar = defineAsyncComponent(
+  () => import('dashboard/components-next/CRM/CrmConversationDealsSidebar.vue')
+);
+const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
+  () =>
+    import(
+      'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue'
+    )
+);
+const TouchEditorDrawer = defineAsyncComponent(
+  () => import('dashboard/components-next/Outbound/TouchEditorDrawer.vue')
+);
 
 const router = useRouter();
 const { accountId, accountScopedRoute, currentAccount } = useAccount();
@@ -186,7 +197,7 @@ const openTouchesWorkspace = () => {
   >
     <div class="flex flex-1 overflow-auto">
       <ContactPanel
-        v-show="activeTab === 'contact'"
+        v-if="activeTab === 'contact'"
         :conversation-id="activeConversationId"
         :inbox-id="activeInboxId"
       />

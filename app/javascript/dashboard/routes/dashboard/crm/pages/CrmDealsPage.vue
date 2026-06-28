@@ -1,6 +1,7 @@
 <script setup>
 import {
   computed,
+  defineAsyncComponent,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -33,14 +34,11 @@ import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
-import CrmDealConversationPanel from 'dashboard/components-next/CRM/CrmDealConversationPanel.vue';
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
 import CrmDealOwnerMenu from 'dashboard/components-next/CRM/CrmDealOwnerMenu.vue';
 import CrmDealStageMenu from 'dashboard/components-next/CRM/CrmDealStageMenu.vue';
-import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
-import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
@@ -93,6 +91,15 @@ import {
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
+const CrmDealConversationPanel = defineAsyncComponent(
+  () => import('dashboard/components-next/CRM/CrmDealConversationPanel.vue')
+);
+const CrmDealTasksPanel = defineAsyncComponent(
+  () => import('dashboard/components-next/CRM/CrmDealTasksPanel.vue')
+);
+const CrmTimelineFeed = defineAsyncComponent(
+  () => import('dashboard/components-next/CRM/CrmTimelineFeed.vue')
+);
 const referencesStore = useCrmReferencesStore();
 const store = useStore();
 const route = useRoute();
@@ -112,6 +119,7 @@ const currentPresentation = ref('board');
 const drawerOpen = ref(false);
 const closingReasonDialogRef = ref(null);
 const dealActivityTab = ref('history');
+const hasVisitedDealTasksTab = ref(false);
 const filterDialogRef = ref(null);
 const listCurrentPage = ref(1);
 const timelineItems = ref([]);
@@ -375,6 +383,11 @@ const drawerModalClass = computed(() => [
     ? 'max-w-[min(96rem,calc(100vw-1.5rem))] flex-col md:flex-row'
     : 'max-w-[min(30rem,calc(100vw-1.5rem))] flex-col',
 ]);
+const shouldRenderDealTasksPanel = computed(
+  () =>
+    drawerOpen.value &&
+    (dealActivityTab.value === 'tasks' || hasVisitedDealTasksTab.value)
+);
 
 const filterStageOptions = computed(() => {
   const pipelineId = resolvePipelineFilterId(
@@ -1419,6 +1432,8 @@ const openCreateDrawer = async prefill => {
   pendingCreateCustomFieldDefaultsHydration.value = true;
   resetForm();
   drawerOpen.value = true;
+  dealActivityTab.value = 'history';
+  hasVisitedDealTasksTab.value = false;
   timelineItems.value = [];
   showLinkedConversationPanel.value = false;
   await Promise.all([loadContacts(''), loadCompanies('')]);
@@ -1436,6 +1451,7 @@ const openEditDrawer = async deal => {
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedDeal.value = deal;
   dealActivityTab.value = 'history';
+  hasVisitedDealTasksTab.value = false;
   populateFormFromDeal(deal);
   drawerOpen.value = true;
   showLinkedConversationPanel.value = canOpenLinkedConversation.value;
@@ -1452,6 +1468,7 @@ const closeDrawer = () => {
   showLinkedConversationPanel.value = false;
   selectedDeal.value = null;
   dealActivityTab.value = 'history';
+  hasVisitedDealTasksTab.value = false;
   timelineItems.value = [];
   resetForm();
   captureFormBaseline();
@@ -1923,6 +1940,12 @@ const applyFilters = async () => {
   filterDialogRef.value?.close();
   await loadDeals();
 };
+
+watch(dealActivityTab, tab => {
+  if (tab === 'tasks') {
+    hasVisitedDealTasksTab.value = true;
+  }
+});
 
 watch(
   filterableDealFieldDefinitions,
@@ -2487,15 +2510,6 @@ watch(
               {{ $t('CRM.DEALS.AI_ONLY') }}
             </span>
           </div>
-          <SelectMenu
-            v-if="currentPresentation === 'board'"
-            icon="i-lucide-arrow-down-up"
-            :model-value="boardSort.key"
-            :options="boardSortOptions"
-            :label="selectedBoardSortLabel"
-            sub-menu-position="bottom"
-            @update:model-value="boardSort.key = $event"
-          />
           <Input
             size="sm"
             type="search"
@@ -2512,6 +2526,15 @@ watch(
               />
             </template>
           </Input>
+          <SelectMenu
+            v-if="currentPresentation === 'board'"
+            icon="i-lucide-arrow-down-up"
+            :model-value="boardSort.key"
+            :options="boardSortOptions"
+            :label="selectedBoardSortLabel"
+            sub-menu-position="bottom"
+            @update:model-value="boardSort.key = $event"
+          />
           <Button
             size="sm"
             color="slate"
@@ -3132,7 +3155,11 @@ watch(
                     />
                   </div>
 
-                  <div v-show="dealActivityTab === 'tasks'" role="tabpanel">
+                  <div
+                    v-if="shouldRenderDealTasksPanel"
+                    v-show="dealActivityTab === 'tasks'"
+                    role="tabpanel"
+                  >
                     <CrmDealTasksPanel
                       :assignees="ownerOptions"
                       :can-manage-tasks="canManageTasks"
@@ -3150,13 +3177,14 @@ watch(
           </aside>
 
           <CrmDealConversationPanel
+            v-if="drawerOpen && showLinkedConversationPanel"
             :communication-thread-id="linkedCommunicationThreadId"
             :communication-thread-display-id="
               linkedCommunicationThreadDisplayId
             "
             :conversation-id="linkedConversationId"
             :conversation-display-id="linkedConversationDisplayId"
-            :visible="drawerOpen && showLinkedConversationPanel"
+            visible
             @close="showLinkedConversationPanel = false"
           />
         </div>
