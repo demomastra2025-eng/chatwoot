@@ -42,6 +42,7 @@ const state = {
     labels: {},
     pipelines: {},
     stages: {},
+    appointment_statuses: {},
   },
 };
 
@@ -723,6 +724,7 @@ export const mutations = {
       labels: counts?.labels || {},
       pipelines: counts?.pipelines || {},
       stages: counts?.stages || {},
+      appointment_statuses: counts?.appointment_statuses || {},
     };
   },
   [types.CHANGE_CHAT_STATUS_FILTER](_state, data) {

@@ -33,9 +33,7 @@ class Scheduling::CalendarViewService
   private
 
   def appointments
-    @appointments ||= begin
-      appointment_custom_field_filter_set.apply(base_appointments_scope).to_a
-    end
+    @appointments ||= appointment_custom_field_filter_set.apply(base_appointments_scope).to_a
   end
 
   def break_rules
@@ -125,7 +123,7 @@ class Scheduling::CalendarViewService
 
   def base_appointments_scope
     @base_appointments_scope ||= account.scheduling_appointments
-                                        .includes(:expense, :payments)
+                                        .includes(:expense, :payments, :contact, conversation: :communication_thread)
                                         .where(resource_id: resource_ids)
                                         .where('starts_at < ? AND ends_at > ?', @to, @from)
                                         .ordered

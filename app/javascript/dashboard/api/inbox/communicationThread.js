@@ -17,8 +17,10 @@ class CommunicationThreadApi extends ApiClient {
     sortBy,
     crmPipelineId,
     crmStageId,
+    appointmentStatus,
     labelsScope,
     teamScope,
+    unread,
   } = {}) {
     return axios.get(this.url, {
       params: {
@@ -31,8 +33,10 @@ class CommunicationThreadApi extends ApiClient {
         sort_by: sortBy,
         crm_pipeline_id: crmPipelineId,
         crm_stage_id: crmStageId,
+        appointment_status: appointmentStatus,
         labels_scope: labelsScope,
         team_scope: teamScope,
+        unread,
       },
     });
   }
@@ -46,8 +50,10 @@ class CommunicationThreadApi extends ApiClient {
     sortBy,
     crmPipelineId,
     crmStageId,
+    appointmentStatus,
     labelsScope,
     teamScope,
+    unread,
   } = {}) {
     return axios.get(`${this.url}/meta`, {
       params: {
@@ -59,8 +65,10 @@ class CommunicationThreadApi extends ApiClient {
         sort_by: sortBy,
         crm_pipeline_id: crmPipelineId,
         crm_stage_id: crmStageId,
+        appointment_status: appointmentStatus,
         labels_scope: labelsScope,
         team_scope: teamScope,
+        unread,
       },
     });
   }
@@ -71,8 +79,11 @@ class CommunicationThreadApi extends ApiClient {
         page: payload.page,
         crm_pipeline_id: payload.crmPipelineId || payload.crm_pipeline_id,
         crm_stage_id: payload.crmStageId || payload.crm_stage_id,
+        appointment_status:
+          payload.appointmentStatus || payload.appointment_status,
         labels_scope: payload.labelsScope || payload.labels_scope,
         team_scope: payload.teamScope || payload.team_scope,
+        unread: payload.unread,
       },
     });
   }

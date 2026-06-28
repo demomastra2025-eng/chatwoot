@@ -5,6 +5,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     service_id
     company_id
     conversation_id
+    conversation_display_id
     created_by_id
     owner_id
     starts_at
@@ -21,6 +22,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     source
     external_ref
     idempotency_key
+    service_name_snapshot
     service_amount
     prepaid_amount
     prepaid_payment_method
@@ -108,12 +110,20 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     scope.where(column => parse_csv_ids(value))
   end
 
+  def filter_by_conversation_display_ids(scope)
+    return scope if params[:conversation_display_ids].blank?
+
+    conversation_ids = Current.account.conversations
+                              .where(display_id: parse_csv_ids(params[:conversation_display_ids]))
+                              .select(:id)
+    scope.where(conversation_id: conversation_ids)
+  end
+
   def filtered_appointments
-    scope = Current.account.scheduling_appointments.includes(:payments, :expense).ordered
+    scope = appointments_with_payload_associations.ordered
     scope = filter_by_range(scope)
-    scope = filter_by_csv(scope, :resource_id, params[:resource_ids])
-    scope = filter_by_csv(scope, :status, params[:status])
-    scope = filter_by_csv(scope, :payment_status, params[:payment_status])
+    scope = filter_by_reference_params(scope)
+    scope = filter_by_status_params(scope)
 
     Scheduling::AppointmentCustomFieldFilterSet.new(
       account: Current.account,
@@ -121,14 +131,30 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     ).apply(scope).to_a
   end
 
+  def appointments_with_payload_associations
+    Current.account.scheduling_appointments.includes(:payments, :expense, :contact, conversation: :communication_thread)
+  end
+
+  def filter_by_reference_params(scope)
+    scope = filter_by_csv(scope, :resource_id, params[:resource_ids])
+    scope = filter_by_csv(scope, :contact_id, params[:contact_ids])
+    scope = filter_by_csv(scope, :conversation_id, params[:conversation_ids])
+    filter_by_conversation_display_ids(scope)
+  end
+
+  def filter_by_status_params(scope)
+    scope = filter_by_csv(scope, :status, params[:status])
+    filter_by_csv(scope, :payment_status, params[:payment_status])
+  end
+
   def set_appointment
-    @appointment = Current.account.scheduling_appointments.includes(:payments, :expense).find(params[:id])
+    @appointment = appointments_with_payload_associations.find(params[:id])
   end
 
   def idempotent_appointment
     return if appointment_params[:idempotency_key].blank?
 
-    Current.account.scheduling_appointments.includes(:payments, :expense).find_by(idempotency_key: appointment_params[:idempotency_key])
+    appointments_with_payload_associations.find_by(idempotency_key: appointment_params[:idempotency_key])
   end
 
   def ensure_editable_appointment!

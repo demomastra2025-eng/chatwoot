@@ -5,6 +5,11 @@ import format from 'date-fns/format';
 
 import CrmReportsAPI from 'dashboard/api/crm/reports';
 import { useAlert } from 'dashboard/composables';
+import {
+  downloadCsvFile,
+  downloadExcelFile,
+  generateFileName,
+} from 'dashboard/helper/downloadHelper';
 import { normalizeMeta, normalizePayload } from 'dashboard/stores/crm/shared';
 import BarChart from 'shared/components/charts/BarChart.vue';
 import DoughnutChart from 'shared/components/charts/DoughnutChart.vue';
@@ -16,6 +21,10 @@ const { t, locale } = useI18n();
 
 const report = ref(null);
 const meta = ref({});
+const managerEffectiveness = ref(null);
+const managerMeta = ref({});
+const managerEffectivenessError = ref(false);
+const isExportMenuOpen = ref(false);
 const isLoading = ref(false);
 const activeSection = ref('overview');
 
@@ -43,6 +52,12 @@ const sections = computed(() => [
     icon: 'i-lucide-layout-dashboard',
     label: t('CRM_DEAL_REPORTS.SECTIONS.OVERVIEW.TITLE'),
     description: t('CRM_DEAL_REPORTS.SECTIONS.OVERVIEW.DESCRIPTION'),
+  },
+  {
+    key: 'effectiveness',
+    icon: 'i-lucide-table-properties',
+    label: t('CRM_DEAL_REPORTS.SECTIONS.EFFECTIVENESS.TITLE'),
+    description: t('CRM_DEAL_REPORTS.SECTIONS.EFFECTIVENESS.DESCRIPTION'),
   },
   {
     key: 'forecast',
@@ -77,6 +92,11 @@ const wonLostByPeriod = computed(() => report.value?.wonLostByPeriod || []);
 const sourcePerformance = computed(() => report.value?.sourcePerformance || []);
 const ownerPerformance = computed(() => report.value?.ownerPerformance || []);
 const agingBuckets = computed(() => report.value?.agingBuckets || []);
+const managerRows = computed(() => managerEffectiveness.value?.rows || []);
+const managerTotals = computed(() => managerEffectiveness.value?.totals || {});
+const callDurationThresholdSeconds = computed(
+  () => managerMeta.value?.callDurationThresholdSeconds || 25
+);
 
 const numberFormatter = computed(
   () =>
@@ -534,12 +554,220 @@ const summaryCards = computed(() => [
   },
 ]);
 
+const effectivenessSummaryCards = computed(() => [
+  {
+    key: 'leads',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.CARDS.LEADS'),
+    value: formatNumber(managerTotals.value.leadsCount),
+  },
+  {
+    key: 'longCalls',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.CARDS.LONG_CALLS', {
+      seconds: callDurationThresholdSeconds.value,
+    }),
+    value: formatNumber(managerTotals.value.longCallsCount),
+  },
+  {
+    key: 'meetings',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.CARDS.MEETINGS'),
+    value: formatNumber(managerTotals.value.meetingsCount),
+  },
+  {
+    key: 'won',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.CARDS.WON'),
+    value: formatNumber(managerTotals.value.wonCount),
+  },
+  {
+    key: 'payments',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.CARDS.PAYMENTS'),
+    value: formatMoney(managerTotals.value.paymentsAmountMinor),
+  },
+]);
+
+const effectivenessMoneyColumns = computed(() => [
+  {
+    key: 'cashAmountMinor',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.CASH'),
+  },
+  {
+    key: 'nonCashAmountMinor',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.NON_CASH'),
+  },
+  {
+    key: 'kaspiAmountMinor',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.KASPI'),
+  },
+  {
+    key: 'tradeInAmountMinor',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.TRADE_IN'),
+  },
+]);
+
+const effectivenessNumberColumns = computed(() => [
+  {
+    key: 'leadsCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.LEADS'),
+  },
+  {
+    key: 'openCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.IN_PROGRESS'),
+  },
+  {
+    key: 'badCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.BAD'),
+  },
+  {
+    key: 'callAttemptsCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.CALL_ATTEMPTS'),
+  },
+  {
+    key: 'connectedCallsCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.CONNECTED_CALLS'),
+  },
+  {
+    key: 'longCallsCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.LONG_CALLS', {
+      seconds: callDurationThresholdSeconds.value,
+    }),
+  },
+  {
+    key: 'meetingsCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.MEETINGS'),
+  },
+  {
+    key: 'wonCount',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.WON'),
+  },
+]);
+
+const effectivenessPercentColumns = computed(() => [
+  {
+    key: 'badRate',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.BAD_RATE'),
+  },
+  {
+    key: 'leadToMeetingConversion',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.LEAD_TO_MEETING'),
+  },
+  {
+    key: 'callToMeetingConversion',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.CALL_TO_MEETING'),
+  },
+  {
+    key: 'meetingToDealConversion',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.MEETING_TO_DEAL'),
+  },
+  {
+    key: 'leadToDealConversion',
+    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.LEAD_TO_DEAL'),
+  },
+]);
+
+const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+const csvRow = values => values.map(csvCell).join(',');
+const htmlEntities = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+const htmlCell = (value, tag = 'td') =>
+  `<${tag}>${String(value ?? '').replace(
+    /[&<>"']/g,
+    character => htmlEntities[character]
+  )}</${tag}>`;
+const htmlRow = (values, tag = 'td') =>
+  `<tr>${values.map(value => htmlCell(value, tag)).join('')}</tr>`;
+const csvMoney = value => minorToMajor(value).toFixed(2);
+const csvPercent = value => toNumber(value).toFixed(1);
+
+const effectivenessExportHeader = computed(() => [
+  t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.MANAGER'),
+  ...effectivenessNumberColumns.value.map(column => column.label),
+  ...effectivenessPercentColumns.value.map(column => column.label),
+  t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.DEAL_AMOUNT'),
+  t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.WON_AMOUNT'),
+  t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.PAYMENTS'),
+  ...effectivenessMoneyColumns.value.map(column => column.label),
+]);
+
+const effectivenessExportRowFor = (row, label) => [
+  label,
+  ...effectivenessNumberColumns.value.map(column => toNumber(row[column.key])),
+  ...effectivenessPercentColumns.value.map(column =>
+    csvPercent(row[column.key])
+  ),
+  csvMoney(row.dealAmountMinor),
+  csvMoney(row.wonAmountMinor),
+  csvMoney(row.paymentsAmountMinor),
+  ...effectivenessMoneyColumns.value.map(column => csvMoney(row[column.key])),
+];
+
+const effectivenessExportRows = computed(() => [
+  ...managerRows.value.map(row =>
+    effectivenessExportRowFor(
+      row,
+      row.ownerName || t('CRM_DEAL_REPORTS.UNASSIGNED')
+    )
+  ),
+  effectivenessExportRowFor(
+    managerTotals.value,
+    t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TOTAL')
+  ),
+]);
+
+const managerEffectivenessFileName = extension =>
+  generateFileName({
+    extension,
+    type: 'manager-effectiveness',
+    to: Math.floor(Date.now() / 1000),
+  });
+
+const downloadManagerEffectivenessCsv = () => {
+  const content = [
+    effectivenessExportHeader.value,
+    ...effectivenessExportRows.value,
+  ]
+    .map(csvRow)
+    .join('\n');
+
+  downloadCsvFile(managerEffectivenessFileName('csv'), `\uFEFF${content}`);
+};
+
+const downloadManagerEffectivenessExcel = () => {
+  const rows = [
+    htmlRow(effectivenessExportHeader.value, 'th'),
+    ...effectivenessExportRows.value.map(row => htmlRow(row)),
+  ].join('');
+  const content = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${rows}</table></body></html>`;
+
+  downloadExcelFile(managerEffectivenessFileName('xls'), `\uFEFF${content}`);
+};
+
+const downloadManagerEffectiveness = formatType => {
+  if (!managerRows.value.length) return;
+
+  if (formatType === 'excel') {
+    downloadManagerEffectivenessExcel();
+  } else {
+    downloadManagerEffectivenessCsv();
+  }
+
+  isExportMenuOpen.value = false;
+};
+
+const toggleExportMenu = () => {
+  isExportMenuOpen.value = !isExportMenuOpen.value;
+};
+
 const hasReportData = computed(
   () =>
     toNumber(summary.value.createdDealsCount) > 0 ||
     toNumber(summary.value.openDealsCount) > 0 ||
     toNumber(summary.value.wonDealsCount) > 0 ||
-    toNumber(summary.value.lostDealsCount) > 0
+    toNumber(summary.value.lostDealsCount) > 0 ||
+    managerRows.value.length > 0
 );
 
 const requestPayload = payload => ({
@@ -551,10 +779,32 @@ const requestPayload = payload => ({
 const loadDealReport = async payload => {
   isLoading.value = true;
 
+  managerEffectivenessError.value = false;
+
   try {
-    const { data } = await CrmReportsAPI.deals(requestPayload(payload));
-    report.value = normalizePayload(data);
-    meta.value = normalizeMeta(data);
+    const [dealReportResult, managerEffectivenessResult] =
+      await Promise.allSettled([
+        CrmReportsAPI.deals(requestPayload(payload)),
+        CrmReportsAPI.managerEffectiveness(requestPayload(payload)),
+      ]);
+
+    if (dealReportResult.status === 'rejected') {
+      throw dealReportResult.reason;
+    }
+
+    report.value = normalizePayload(dealReportResult.value.data);
+    meta.value = normalizeMeta(dealReportResult.value.data);
+
+    if (managerEffectivenessResult.status === 'fulfilled') {
+      managerEffectiveness.value = normalizePayload(
+        managerEffectivenessResult.value.data
+      );
+      managerMeta.value = normalizeMeta(managerEffectivenessResult.value.data);
+    } else {
+      managerEffectiveness.value = { rows: [], totals: {} };
+      managerMeta.value = {};
+      managerEffectivenessError.value = true;
+    }
   } catch {
     useAlert(t('CRM_DEAL_REPORTS.ERROR'));
   } finally {
@@ -669,7 +919,7 @@ const onFilterChange = payload => {
       </div>
 
       <template v-else>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <button
             v-for="section in sections"
             :key="section.key"
@@ -790,6 +1040,318 @@ const onFilterChange = payload => {
                 >
                   {{ $t('REPORT.NO_ENOUGH_DATA') }}
                 </p>
+              </div>
+            </section>
+          </div>
+
+          <div
+            v-else-if="activeSection === 'effectiveness'"
+            class="mt-5 flex flex-col gap-5"
+          >
+            <div
+              v-if="managerEffectivenessError"
+              class="rounded-xl border border-n-amber-5 bg-n-amber-2 p-4 text-sm text-n-amber-12"
+            >
+              <div class="flex gap-2">
+                <i class="i-lucide-triangle-alert mt-0.5" />
+                <p>
+                  {{ $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.LOAD_ERROR') }}
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-5">
+              <div
+                v-for="card in effectivenessSummaryCards"
+                :key="card.key"
+                class="rounded-xl border border-n-container bg-n-alpha-1 p-4"
+              >
+                <p class="text-xs font-medium text-n-slate-10">
+                  {{ card.label }}
+                </p>
+                <p class="mt-2 text-xl font-semibold text-n-slate-12">
+                  {{ card.value }}
+                </p>
+              </div>
+            </div>
+
+            <section class="rounded-xl border border-n-container p-4">
+              <div
+                class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+              >
+                <div class="flex flex-col gap-1">
+                  <h4 class="text-sm font-semibold text-n-slate-12">
+                    {{
+                      $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TABLE_TITLE')
+                    }}
+                  </h4>
+                  <p class="text-xs leading-5 text-n-slate-10">
+                    {{
+                      $t(
+                        'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TABLE_DESCRIPTION'
+                      )
+                    }}
+                  </p>
+                </div>
+                <div
+                  v-if="managerRows.length"
+                  class="relative inline-flex"
+                  @keydown.escape="isExportMenuOpen = false"
+                >
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center gap-2 rounded-lg border border-n-container bg-n-solid-2 px-3 py-2 text-sm font-medium text-n-slate-11 transition hover:border-n-blue-6 hover:text-n-blue-11"
+                    :aria-expanded="isExportMenuOpen"
+                    aria-haspopup="menu"
+                    @click="toggleExportMenu"
+                  >
+                    <i class="i-lucide-download size-4" />
+                    <span>
+                      {{ $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.EXPORT') }}
+                    </span>
+                    <i class="i-lucide-chevron-down size-4" />
+                  </button>
+
+                  <div
+                    v-if="isExportMenuOpen"
+                    class="absolute right-0 top-full z-20 mt-2 w-44 overflow-hidden rounded-lg border border-n-container bg-n-solid-2 py-1 shadow-lg"
+                    role="menu"
+                  >
+                    <button
+                      type="button"
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-n-slate-11 hover:bg-n-alpha-1 hover:text-n-slate-12"
+                      role="menuitem"
+                      @click="downloadManagerEffectiveness('csv')"
+                    >
+                      <i class="i-lucide-file-text size-4" />
+                      <span>
+                        {{
+                          $t(
+                            'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.EXPORT_CSV'
+                          )
+                        }}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-n-slate-11 hover:bg-n-alpha-1 hover:text-n-slate-12"
+                      role="menuitem"
+                      @click="downloadManagerEffectiveness('excel')"
+                    >
+                      <i class="i-lucide-file-spreadsheet size-4" />
+                      <span>
+                        {{
+                          $t(
+                            'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.EXPORT_EXCEL'
+                          )
+                        }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="managerRows.length"
+                class="mt-4 overflow-x-auto rounded-xl border border-n-container"
+              >
+                <table class="w-full min-w-[108rem] text-left text-sm">
+                  <thead class="bg-n-alpha-1 text-xs text-n-slate-10">
+                    <tr>
+                      <th
+                        class="sticky left-0 z-10 bg-n-alpha-1 px-4 py-3 font-medium"
+                      >
+                        {{
+                          $t(
+                            'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.MANAGER'
+                          )
+                        }}
+                      </th>
+                      <th
+                        v-for="column in effectivenessNumberColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right font-medium"
+                      >
+                        {{ column.label }}
+                      </th>
+                      <th
+                        v-for="column in effectivenessPercentColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right font-medium"
+                      >
+                        {{ column.label }}
+                      </th>
+                      <th class="px-3 py-3 text-right font-medium">
+                        {{
+                          $t(
+                            'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.DEAL_AMOUNT'
+                          )
+                        }}
+                      </th>
+                      <th class="px-3 py-3 text-right font-medium">
+                        {{
+                          $t(
+                            'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.WON_AMOUNT'
+                          )
+                        }}
+                      </th>
+                      <th class="px-3 py-3 text-right font-medium">
+                        {{
+                          $t(
+                            'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.PAYMENTS'
+                          )
+                        }}
+                      </th>
+                      <th
+                        v-for="column in effectivenessMoneyColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right font-medium"
+                      >
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-n-weak">
+                    <tr
+                      v-for="row in managerRows"
+                      :key="row.ownerId || 'unassigned'"
+                      class="bg-n-solid-2 align-top text-n-slate-11"
+                    >
+                      <td class="sticky left-0 z-10 bg-n-solid-2 px-4 py-3">
+                        <div class="flex flex-col">
+                          <span class="font-medium text-n-slate-12">
+                            {{
+                              row.ownerName || $t('CRM_DEAL_REPORTS.UNASSIGNED')
+                            }}
+                          </span>
+                          <span class="text-xs text-n-slate-10">
+                            {{
+                              $t(
+                                'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.ROW_HELPER',
+                                {
+                                  won: formatNumber(row.wonCount),
+                                  badRate: formatPercent(row.badRate),
+                                }
+                              )
+                            }}
+                          </span>
+                        </div>
+                      </td>
+                      <td
+                        v-for="column in effectivenessNumberColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right tabular-nums"
+                      >
+                        {{ formatNumber(row[column.key]) }}
+                      </td>
+                      <td
+                        v-for="column in effectivenessPercentColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right tabular-nums"
+                      >
+                        {{ formatPercent(row[column.key]) }}
+                      </td>
+                      <td class="px-3 py-3 text-right tabular-nums">
+                        {{ formatMoney(row.dealAmountMinor) }}
+                      </td>
+                      <td class="px-3 py-3 text-right tabular-nums">
+                        {{ formatMoney(row.wonAmountMinor) }}
+                      </td>
+                      <td class="px-3 py-3 text-right tabular-nums">
+                        {{ formatMoney(row.paymentsAmountMinor) }}
+                      </td>
+                      <td
+                        v-for="column in effectivenessMoneyColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right tabular-nums"
+                      >
+                        {{ formatMoney(row[column.key]) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tfoot
+                    class="border-t border-n-container bg-n-alpha-1 font-semibold text-n-slate-12"
+                  >
+                    <tr>
+                      <td class="sticky left-0 z-10 bg-n-alpha-1 px-4 py-3">
+                        {{ $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TOTAL') }}
+                      </td>
+                      <td
+                        v-for="column in effectivenessNumberColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right tabular-nums"
+                      >
+                        {{ formatNumber(managerTotals[column.key]) }}
+                      </td>
+                      <td
+                        v-for="column in effectivenessPercentColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right tabular-nums"
+                      >
+                        {{ formatPercent(managerTotals[column.key]) }}
+                      </td>
+                      <td class="px-3 py-3 text-right tabular-nums">
+                        {{ formatMoney(managerTotals.dealAmountMinor) }}
+                      </td>
+                      <td class="px-3 py-3 text-right tabular-nums">
+                        {{ formatMoney(managerTotals.wonAmountMinor) }}
+                      </td>
+                      <td class="px-3 py-3 text-right tabular-nums">
+                        {{ formatMoney(managerTotals.paymentsAmountMinor) }}
+                      </td>
+                      <td
+                        v-for="column in effectivenessMoneyColumns"
+                        :key="column.key"
+                        class="px-3 py-3 text-right tabular-nums"
+                      >
+                        {{ formatMoney(managerTotals[column.key]) }}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <p
+                v-else
+                class="mt-4 rounded-xl bg-n-alpha-1 p-6 text-center text-sm text-n-slate-10"
+              >
+                {{ $t('REPORT.NO_ENOUGH_DATA') }}
+              </p>
+            </section>
+
+            <section
+              class="rounded-xl border border-n-container bg-n-alpha-1 p-4"
+            >
+              <div class="flex gap-3">
+                <i class="i-lucide-info mt-0.5 text-n-blue-10" />
+                <div class="space-y-1 text-xs leading-5 text-n-slate-10">
+                  <p>
+                    {{
+                      $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.LEADS')
+                    }}
+                  </p>
+                  <p>
+                    {{
+                      $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.CALLS', {
+                        seconds: callDurationThresholdSeconds,
+                      })
+                    }}
+                  </p>
+                  <p>
+                    {{
+                      $t(
+                        'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.MEETINGS'
+                      )
+                    }}
+                  </p>
+                  <p>
+                    {{
+                      $t(
+                        'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.PAYMENTS'
+                      )
+                    }}
+                  </p>
+                </div>
               </div>
             </section>
           </div>

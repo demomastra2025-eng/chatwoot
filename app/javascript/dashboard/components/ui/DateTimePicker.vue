@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, useAttrs, watch } from 'vue';
+import { computed, onMounted, ref, useAttrs, watch } from 'vue';
 import { format as formatDate } from 'date-fns';
 import { CalendarDate, Time, getLocalTimeZone } from '@internationalized/date';
 import { useI18n } from 'vue-i18n';
@@ -174,6 +174,8 @@ const datePickerModel = ref(undefined);
 const timePickerModel = ref(undefined);
 const inlineInputValue = ref('');
 const inlineInputInvalid = ref(false);
+const rootRef = ref(null);
+const teleportTarget = ref('body');
 const localeCode = computed(() => locale.value?.replace(/_/g, '-') || 'en');
 const normalizedMinuteStep = computed(() => Math.max(1, props.minuteStep || 1));
 const isInlineInputMode = computed(() => !props.displayLabel);
@@ -339,6 +341,8 @@ const popupClasses = computed(() => [
   timePopupWidthClass.value,
   props.popupClass,
 ]);
+
+const popupPortal = computed(() => ({ to: teleportTarget.value }));
 
 const popupContentClasses = computed(() => {
   if (props.type !== 'datetime') {
@@ -664,10 +668,25 @@ const handlePlaceholderChange = nextValue => {
   calendarPlaceholder.value = nextValue;
 };
 
+const resolveTeleportTarget = () => {
+  const overlayElement = rootRef.value?.closest('dialog[open], .modal-mask');
+  teleportTarget.value = overlayElement || 'body';
+};
+
 const handleDatePickerOpenChange = nextValue => {
+  if (nextValue) {
+    resolveTeleportTarget();
+  }
+
   isDatePickerOpen.value = nextValue;
   if (!nextValue) {
     calendarPanel.value = 'day';
+  }
+};
+
+const handlePopoverOpenChange = nextValue => {
+  if (nextValue) {
+    resolveTeleportTarget();
   }
 };
 
@@ -750,10 +769,13 @@ const pickerGridCellClass = ({ disabled, selected, unavailable }) => [
 ];
 
 syncModelsFromDate(currentDate.value);
+
+onMounted(resolveTeleportTarget);
 </script>
 
 <template>
   <div
+    ref="rootRef"
     v-bind="rootAttrs"
     class="reka-date-time-picker relative w-full"
     :class="[attrs.class]"
@@ -819,7 +841,13 @@ syncModelsFromDate(currentDate.value);
         </button>
       </DatePickerTrigger>
 
-      <DatePickerContent align="start" :side-offset="8" :class="popupClasses">
+      <DatePickerContent
+        align="start"
+        :side-offset="8"
+        :class="popupClasses"
+        :portal="popupPortal"
+        data-modal-safe-interaction
+      >
         <div :class="popupContentClasses">
           <div :class="popupCalendarPanelClasses">
             <DatePickerCalendar
@@ -1130,7 +1158,7 @@ syncModelsFromDate(currentDate.value);
       </DatePickerContent>
     </DatePickerRoot>
 
-    <PopoverRoot v-else>
+    <PopoverRoot v-else @update:open="handlePopoverOpenChange">
       <div v-if="isInlineInputMode" :class="inlineInputWrapperClasses">
         <input
           :value="inlineInputValue"
@@ -1176,8 +1204,13 @@ syncModelsFromDate(currentDate.value);
         </button>
       </PopoverTrigger>
 
-      <PopoverPortal>
-        <PopoverContent align="start" :side-offset="8" :class="popupClasses">
+      <PopoverPortal :to="teleportTarget">
+        <PopoverContent
+          align="start"
+          :side-offset="8"
+          :class="popupClasses"
+          data-modal-safe-interaction
+        >
           <TimeWheelPicker
             v-if="useWheelTimePicker"
             :model-value="timePickerModel"

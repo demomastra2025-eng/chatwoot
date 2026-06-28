@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_26_093000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_28_062000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1419,6 +1419,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_26_093000) do
     t.datetime "updated_at", null: false
     t.bigint "originating_conversation_id"
     t.integer "position", default: 0, null: false
+    t.string "activity_type", default: "task", null: false
+    t.string "outcome"
+    t.text "outcome_note"
+    t.index ["account_id", "activity_type", "due_at"], name: "index_crm_tasks_on_account_activity_type_due_at"
+    t.index ["account_id", "deal_id", "activity_type"], name: "index_crm_tasks_on_account_deal_activity_type"
     t.index ["account_id", "deal_id"], name: "index_crm_tasks_on_account_deal"
     t.index ["account_id", "due_at", "updated_at", "id"], name: "index_crm_tasks_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
     t.index ["account_id", "external_ref"], name: "index_crm_tasks_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"

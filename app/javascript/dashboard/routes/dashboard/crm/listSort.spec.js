@@ -94,6 +94,7 @@ describe('createDealListSortValueResolver', () => {
 
 describe('createTaskListSortValueResolver', () => {
   const resolveValue = createTaskListSortValueResolver({
+    activityTypeLabelByValue: { meeting: 'Meeting' },
     assigneeNameById: { 7: 'Nina Assignee' },
     priorityLabelByValue: { high: 'High' },
     statusNameById: { 8: 'In Progress' },
@@ -101,6 +102,7 @@ describe('createTaskListSortValueResolver', () => {
 
   it('resolves every visible task list column', () => {
     const task = {
+      activityType: 'meeting',
       assigneeId: 7,
       dueAt: '2026-03-04T10:00:00Z',
       id: 77,
@@ -110,6 +112,7 @@ describe('createTaskListSortValueResolver', () => {
     };
 
     expect(resolveValue(task, 'id')).toBe(77);
+    expect(resolveValue(task, 'activityType')).toBe('meeting');
     expect(resolveValue(task, 'title')).toBe('call client');
     expect(resolveValue(task, 'status')).toBe('in progress');
     expect(resolveValue(task, 'priority')).toBe('high');

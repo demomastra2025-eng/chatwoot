@@ -6,9 +6,17 @@ import { useEventListener } from '@vueuse/core';
 import Button from 'dashboard/components-next/button/Button.vue';
 
 const props = defineProps({
+  bodyClass: {
+    type: [String, Array, Object],
+    default: '',
+  },
   confirmLabel: {
     type: String,
     default: '',
+  },
+  contentClass: {
+    type: [String, Array, Object],
+    default: 'px-6 py-5',
   },
   description: {
     type: String,
@@ -43,6 +51,11 @@ const props = defineProps({
     type: [String, Array, Object],
     default: '',
   },
+  placement: {
+    type: String,
+    default: 'right',
+    validator: value => ['center', 'right'].includes(value),
+  },
 });
 
 const emit = defineEmits(['close', 'confirm', 'update:modelValue']);
@@ -64,6 +77,40 @@ const widthClass = computed(() => {
   };
 
   return widthMap[props.width] || widthMap.lg;
+});
+
+const isCentered = computed(() => props.placement === 'center');
+
+const overlayClass = computed(() => [
+  'fixed inset-0 z-[110] bg-black/35 p-2 backdrop-blur-[4px] sm:p-3',
+  isCentered.value ? 'flex items-center justify-center' : 'flex justify-end',
+]);
+
+const clickOutsideClass = computed(() => [
+  'flex h-full w-full',
+  isCentered.value ? 'items-center justify-center' : 'justify-end',
+]);
+
+const panelTransitionClasses = computed(() => {
+  if (isCentered.value) {
+    return {
+      enterActive: 'transition-all duration-200 ease-out',
+      enterFrom: 'scale-[0.98] opacity-0',
+      enterTo: 'scale-100 opacity-100',
+      leaveActive: 'transition-all duration-150 ease-in',
+      leaveFrom: 'scale-100 opacity-100',
+      leaveTo: 'scale-[0.98] opacity-0',
+    };
+  }
+
+  return {
+    enterActive: 'transition-transform duration-200 ease-out',
+    enterFrom: 'translate-x-full',
+    enterTo: 'translate-x-0',
+    leaveActive: 'transition-transform duration-150 ease-in',
+    leaveFrom: 'translate-x-0',
+    leaveTo: 'translate-x-full',
+  };
 });
 
 const close = () => {
@@ -97,20 +144,17 @@ useEventListener(document, 'keydown', event => {
       leave-from-class="opacity-100"
       leave-to-class="opacity-0"
     >
-      <div
-        v-if="modelValue"
-        class="fixed inset-0 z-[110] flex justify-end bg-black/35 p-2 backdrop-blur-[4px] sm:p-3"
-      >
+      <div v-if="modelValue" :class="overlayClass">
         <Transition
-          enter-active-class="transition-transform duration-200 ease-out"
-          enter-from-class="translate-x-full"
-          enter-to-class="translate-x-0"
-          leave-active-class="transition-transform duration-150 ease-in"
-          leave-from-class="translate-x-0"
-          leave-to-class="translate-x-full"
+          :enter-active-class="panelTransitionClasses.enterActive"
+          :enter-from-class="panelTransitionClasses.enterFrom"
+          :enter-to-class="panelTransitionClasses.enterTo"
+          :leave-active-class="panelTransitionClasses.leaveActive"
+          :leave-from-class="panelTransitionClasses.leaveFrom"
+          :leave-to-class="panelTransitionClasses.leaveTo"
         >
           <OnClickOutside
-            class="flex justify-end w-full"
+            :class="clickOutsideClass"
             :options="{ ignore: clickOutsideIgnore }"
             @trigger="handleOutsideTrigger"
           >
@@ -138,8 +182,8 @@ useEventListener(document, 'keydown', event => {
                 />
               </header>
 
-              <div class="flex-1 min-h-0 overflow-y-auto">
-                <div class="px-6 py-5">
+              <div class="flex-1 min-h-0 overflow-y-auto" :class="[bodyClass]">
+                <div :class="contentClass">
                   <slot />
                 </div>
               </div>

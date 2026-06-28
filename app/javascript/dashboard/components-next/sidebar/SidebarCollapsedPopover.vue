@@ -266,11 +266,17 @@ onMounted(async () => {
                           subChild.iconClass,
                         ]"
                       />
-                      <span class="flex-1 truncate">{{ subChild.label }}</span>
+                      <span
+                        class="flex-1 truncate"
+                        :class="subChild.labelClass"
+                      >
+                        {{ subChild.label }}
+                      </span>
                       <span
                         v-if="hasPlainCount(subChild)"
                         data-test-id="sidebar-plain-count"
-                        class="shrink-0 text-xs font-medium leading-5 tabular-nums text-current"
+                        class="shrink-0 text-xs font-medium leading-5 tabular-nums"
+                        :class="subChild.countClass || 'text-current'"
                       >
                         {{ plainCountLabel(subChild) }}
                       </span>
@@ -302,11 +308,14 @@ onMounted(async () => {
                   v-bind="renderIcon(child.icon).props"
                   :class="[iconBaseClass(child.icon), child.iconClass]"
                 />
-                <span class="flex-1 truncate">{{ child.label }}</span>
+                <span class="flex-1 truncate" :class="child.labelClass">
+                  {{ child.label }}
+                </span>
                 <span
                   v-if="hasPlainCount(child)"
                   data-test-id="sidebar-plain-count"
-                  class="shrink-0 text-xs font-medium leading-5 tabular-nums text-current"
+                  class="shrink-0 text-xs font-medium leading-5 tabular-nums"
+                  :class="child.countClass || 'text-current'"
                 >
                   {{ plainCountLabel(child) }}
                 </span>

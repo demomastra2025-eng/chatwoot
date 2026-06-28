@@ -27,6 +27,10 @@
     },
     "UNREAD_MESSAGES": "Непрочитанные сообщения",
     "UNREAD_MESSAGE": "Непрочитанное сообщение",
+    "UNREAD_FILTER": {
+      "SHOW_UNREAD": "Показать непрочитанные чаты",
+      "SHOW_ALL": "Показать все чаты"
+    },
     "DATE_DIVIDER": {
       "TODAY": "Сегодня",
       "YESTERDAY": "Вчера"

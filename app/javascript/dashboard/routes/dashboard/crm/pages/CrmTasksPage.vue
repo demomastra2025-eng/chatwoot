@@ -117,19 +117,45 @@ const persistedPreferencesByAccount = useLocalStorage(
 );
 
 const LIST_PAGE_SIZE = 25;
+const TASK_ACTIVITY_TYPES = ['task', 'call', 'meeting', 'message', 'touch'];
+const NOT_DONE_OUTCOME = 'not_done';
+const TASK_OUTCOME_VALUES = [
+  'completed',
+  'held',
+  'cancelled',
+  'no_show',
+  'rescheduled',
+  'answered',
+  'no_answer',
+  'not_done',
+  'busy',
+  'sent',
+  'failed',
+];
+const TASK_OUTCOMES_BY_ACTIVITY_TYPE = {
+  call: ['answered', 'no_answer', 'busy', 'cancelled', 'not_done'],
+  meeting: ['held', 'cancelled', 'no_show', 'rescheduled', 'not_done'],
+  message: ['sent', 'failed', 'not_done'],
+  task: ['completed', 'not_done', 'cancelled'],
+  touch: ['completed', 'no_answer', 'cancelled', 'not_done'],
+};
 
 const filters = reactive({
+  activityType: '',
   archived: false,
   assigneeId: '',
   dealId: '',
+  outcome: '',
   priority: '',
   statusId: '',
   teamId: '',
 });
 const filterDraft = reactive({
+  activityType: '',
   archived: false,
   assigneeId: '',
   dealId: '',
+  outcome: '',
   priority: '',
   statusId: '',
   teamId: '',
@@ -139,6 +165,7 @@ const listQuickFilters = reactive({
 });
 
 const form = reactive({
+  activityType: 'task',
   assigneeId: '',
   customAttributes: {},
   dealId: '',
@@ -147,6 +174,8 @@ const form = reactive({
   externalRef: '',
   originatingConversationDisplayId: '',
   originatingConversationId: '',
+  outcome: '',
+  outcomeNote: '',
   priority: 'medium',
   startAt: '',
   statusId: '',
@@ -180,6 +209,12 @@ const canAccessTaskSettings = computed(() =>
 );
 const canViewTasks = computed(() =>
   checkPermissions(CRM_TASK_VIEW_PERMISSIONS)
+);
+const isTaskFormDisabled = computed(
+  () =>
+    !form.title.trim() ||
+    !form.statusId ||
+    (form.outcome === NOT_DONE_OUTCOME && !form.outcomeNote.trim())
 );
 
 const taskStatusOptions = computed(() =>
@@ -315,6 +350,99 @@ const dealNameById = computed(() =>
   }, {})
 );
 
+const activityTypeMetaByValue = computed(() => ({
+  call: {
+    icon: 'i-lucide-phone',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.call'),
+  },
+  meeting: {
+    icon: 'i-lucide-users',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.meeting'),
+  },
+  message: {
+    icon: 'i-lucide-message-square',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.message'),
+  },
+  task: {
+    icon: 'i-lucide-list-todo',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.task'),
+  },
+  touch: {
+    icon: 'i-lucide-handshake',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.touch'),
+  },
+}));
+
+const activityTypeOptions = computed(() =>
+  TASK_ACTIVITY_TYPES.map(value => ({
+    icon: activityTypeMetaByValue.value[value]?.icon,
+    label: activityTypeMetaByValue.value[value]?.label || value,
+    value,
+  }))
+);
+
+const activityTypeLabelByValue = computed(() =>
+  Object.entries(activityTypeMetaByValue.value).reduce(
+    (result, [value, meta]) => {
+      result[value] = meta.label;
+      return result;
+    },
+    {}
+  )
+);
+
+const outcomeLabelByValue = computed(() => ({
+  answered: t('CRM.TASKS.OUTCOME.answered'),
+  busy: t('CRM.TASKS.OUTCOME.busy'),
+  cancelled: t('CRM.TASKS.OUTCOME.cancelled'),
+  completed: t('CRM.TASKS.OUTCOME.completed'),
+  failed: t('CRM.TASKS.OUTCOME.failed'),
+  held: t('CRM.TASKS.OUTCOME.held'),
+  no_answer: t('CRM.TASKS.OUTCOME.no_answer'),
+  no_show: t('CRM.TASKS.OUTCOME.no_show'),
+  not_done: t('CRM.TASKS.OUTCOME.not_done'),
+  rescheduled: t('CRM.TASKS.OUTCOME.rescheduled'),
+  sent: t('CRM.TASKS.OUTCOME.sent'),
+}));
+
+const buildOutcomeOptions = (activityType, currentOutcome = '') => {
+  const values = new Set(
+    TASK_OUTCOMES_BY_ACTIVITY_TYPE[activityType] || TASK_OUTCOME_VALUES
+  );
+
+  if (currentOutcome) {
+    values.add(currentOutcome);
+  }
+
+  return [...values].map(value => ({
+    label: outcomeLabelByValue.value[value] || value,
+    value,
+  }));
+};
+
+const taskOutcomeOptions = computed(() =>
+  buildOutcomeOptions(form.activityType, form.outcome)
+);
+const filterOutcomeOptions = computed(() =>
+  buildOutcomeOptions(filterDraft.activityType, filterDraft.outcome)
+);
+
+const normalizeActivityType = value =>
+  TASK_ACTIVITY_TYPES.includes(value) ? value : 'task';
+
+const updateFormActivityType = value => {
+  const activityType = normalizeActivityType(value);
+  form.activityType = activityType;
+
+  if (
+    form.outcome &&
+    !TASK_OUTCOMES_BY_ACTIVITY_TYPE[activityType]?.includes(form.outcome)
+  ) {
+    form.outcome = '';
+    form.outcomeNote = '';
+  }
+};
+
 const priorityOptions = computed(() => [
   { label: t('CRM.TASKS.PRIORITY.low'), value: 'low' },
   { label: t('CRM.TASKS.PRIORITY.medium'), value: 'medium' },
@@ -402,6 +530,10 @@ const boardSortOptions = computed(() => [
     value: 'createdAt',
   },
   {
+    label: t('CRM.TASKS.TABLE.ACTIVITY_TYPE'),
+    value: 'activityType',
+  },
+  {
     label: t('CRM.TASKS.BOARD.SORT.OPTIONS.PRIORITY'),
     value: 'priority',
   },
@@ -462,7 +594,14 @@ const tableColumns = computed(() => [
   {
     key: 'title',
     label: t('CRM.TASKS.TABLE.TITLE'),
-    width: '2.4fr',
+    width: '2.1fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
+  {
+    key: 'activityType',
+    label: t('CRM.TASKS.TABLE.ACTIVITY_TYPE'),
+    width: '1fr',
     sortable: true,
     defaultSortDirection: 'asc',
   },
@@ -530,6 +669,9 @@ const filteredListTasks = computed(() => {
     return [
       task.title,
       task.description,
+      task.outcomeNote,
+      activityTypeLabelByValue.value[task.activityType || 'task'],
+      outcomeLabelByValue.value[task.outcome],
       `#${task.id}`,
       dealNameById.value[task.dealId],
       assigneeNameById.value[task.assigneeId],
@@ -540,6 +682,7 @@ const filteredListTasks = computed(() => {
 
 const resolveTaskSortValue = computed(() =>
   createTaskListSortValueResolver({
+    activityTypeLabelByValue: activityTypeLabelByValue.value,
     assigneeNameById: assigneeNameById.value,
     priorityLabelByValue: priorityLabelByValue.value,
     statusNameById: statusNameById.value,
@@ -556,6 +699,10 @@ const prioritySortRank = {
 
 const resolveTaskBoardSortValue = (task, key) => {
   switch (key) {
+    case 'activityType':
+      return normalizeFilterText(
+        activityTypeLabelByValue.value[task.activityType] || task.activityType
+      );
     case 'createdAt':
       return task.createdAt ? new Date(task.createdAt).getTime() : null;
     case 'dueAt':
@@ -592,9 +739,11 @@ const defaultTasksPreferences = () => ({
   currentPresentation: 'list',
   currentTaskScope: 'mine',
   filters: {
+    activityType: '',
     archived: false,
     assigneeId: '',
     dealId: '',
+    outcome: '',
     priority: '',
     statusId: '',
     teamId: '',
@@ -733,6 +882,7 @@ const resetForm = () => {
     referencesStore.taskStatuses[0];
 
   Object.assign(form, {
+    activityType: 'task',
     assigneeId: currentUserId.value,
     customAttributes: buildDefaultCustomAttributes(
       referencesStore.taskFieldDefinitions
@@ -743,6 +893,8 @@ const resetForm = () => {
     externalRef: '',
     originatingConversationDisplayId: '',
     originatingConversationId: '',
+    outcome: '',
+    outcomeNote: '',
     priority: 'medium',
     startAt: '',
     statusId: defaultStatus?.id || '',
@@ -760,6 +912,7 @@ const formatDate = value => {
 
 const crmPrefillKeys = [
   'action',
+  'activityType',
   'assigneeId',
   'contactName',
   'conversationDisplayId',
@@ -767,6 +920,8 @@ const crmPrefillKeys = [
   'description',
   'dueAt',
   'originatingConversationId',
+  'outcome',
+  'outcomeNote',
   'priority',
   'source',
   'startAt',
@@ -852,6 +1007,7 @@ const openEditDrawer = async task => {
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedTask.value = task;
   Object.assign(form, {
+    activityType: normalizeActivityType(task.activityType || 'task'),
     assigneeId: task.assigneeId ?? '',
     customAttributes: { ...(task.customAttributes || {}) },
     dealId: task.dealId ?? '',
@@ -862,6 +1018,8 @@ const openEditDrawer = async task => {
       ? `#${task.originatingConversationId}`
       : '',
     originatingConversationId: task.originatingConversationId ?? '',
+    outcome: task.outcome || '',
+    outcomeNote: task.outcomeNote || '',
     priority: task.priority || 'medium',
     startAt: task.startAt ? task.startAt.slice(0, 16) : '',
     statusId: task.statusId,
@@ -925,7 +1083,8 @@ const syncSelectedTask = records => {
 };
 
 const buildPayload = () => {
-  return compactPayload({
+  const payload = compactPayload({
+    activity_type: form.activityType || 'task',
     assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
     custom_attributes: form.customAttributes,
     deal_id: form.dealId ? Number(form.dealId) : undefined,
@@ -936,12 +1095,24 @@ const buildPayload = () => {
     originating_conversation_id: form.originatingConversationId
       ? Number(form.originatingConversationId)
       : undefined,
+    outcome: form.outcome || undefined,
+    outcome_note: form.outcomeNote || undefined,
     priority: form.priority || undefined,
     start_at: form.startAt || undefined,
     status_id: form.statusId ? Number(form.statusId) : undefined,
     team_id: form.teamId ? Number(form.teamId) : undefined,
     title: form.title.trim(),
   });
+
+  if (selectedTask.value && !form.outcome) {
+    payload.outcome = '';
+  }
+
+  if (selectedTask.value && !form.outcomeNote) {
+    payload.outcome_note = '';
+  }
+
+  return payload;
 };
 
 const saveTask = async () => {
@@ -1012,10 +1183,12 @@ const loadTasks = async () => {
 
   try {
     const query = compactPayload({
+      activity_type: filters.activityType || undefined,
       archived: filters.archived,
       assignee_id: effectiveTaskAssigneeId.value || undefined,
       custom_attribute_filters: customFieldFilters.value,
       deal_id: filters.dealId || undefined,
+      outcome: filters.outcome || undefined,
       priority: filters.priority || undefined,
       status_id: filters.statusId || undefined,
       team_id: filters.teamId || undefined,
@@ -1087,6 +1260,7 @@ const consumeTaskPrefillQuery = async () => {
   }
 
   await openCreateDrawer({
+    activityType: normalizeActivityType(queryValue('activityType') || 'task'),
     assigneeId: numericQueryValue('assigneeId'),
     dealId: numericQueryValue('dealId'),
     description: queryValue('description') || '',
@@ -1095,6 +1269,8 @@ const consumeTaskPrefillQuery = async () => {
       ? `#${queryValue('conversationDisplayId')}`
       : '',
     originatingConversationId: numericQueryValue('originatingConversationId'),
+    outcome: queryValue('outcome') || '',
+    outcomeNote: queryValue('outcomeNote') || '',
     priority: queryValue('priority') || 'medium',
     startAt: queryValue('startAt') || '',
     statusId: numericQueryValue('statusId') || form.statusId,
@@ -1164,9 +1340,11 @@ watch(
 
 const syncFilterDraft = () => {
   Object.assign(filterDraft, {
+    activityType: filters.activityType,
     archived: filters.archived,
     assigneeId: filters.assigneeId,
     dealId: filters.dealId,
+    outcome: filters.outcome,
     priority: filters.priority,
     statusId: filters.statusId,
     teamId: filters.teamId,
@@ -1205,9 +1383,11 @@ const updateTaskCustomFieldFilterDraft = (key, value) => {
 const applyFilters = async () => {
   listCurrentPage.value = 1;
   Object.assign(filters, {
+    activityType: filterDraft.activityType,
     archived: filterDraft.archived,
     assigneeId: filterDraft.assigneeId,
     dealId: filterDraft.dealId,
+    outcome: filterDraft.outcome,
     priority: filterDraft.priority,
     statusId: filterDraft.statusId,
     teamId: filterDraft.teamId,
@@ -1686,9 +1866,11 @@ watch(
     route.query?.source,
     route.query?.title,
     route.query?.description,
+    route.query?.activityType,
     route.query?.dueAt,
     route.query?.startAt,
     route.query?.priority,
+    route.query?.outcome,
     route.query?.dealId,
     route.query?.statusId,
     route.query?.assigneeId,
@@ -1942,6 +2124,34 @@ watch(
               </div>
             </template>
 
+            <template #cell-activityType="{ row }">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span
+                  class="inline-flex items-center gap-1 rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                >
+                  <span
+                    class="size-3"
+                    :class="
+                      activityTypeMetaByValue[row.activityType || 'task']
+                        ?.icon || 'i-lucide-list-todo'
+                    "
+                    aria-hidden="true"
+                  />
+                  {{
+                    activityTypeLabelByValue[row.activityType || 'task'] ||
+                    row.activityType ||
+                    $t('CRM.TASKS.ACTIVITY_TYPE.task')
+                  }}
+                </span>
+                <span
+                  v-if="row.outcome"
+                  class="rounded-md bg-n-alpha-black2 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-10"
+                >
+                  {{ outcomeLabelByValue[row.outcome] || row.outcome }}
+                </span>
+              </div>
+            </template>
+
             <template #cell-status="{ row }">
               <CrmTaskStatusMenu
                 v-if="canManageTasks"
@@ -2141,7 +2351,7 @@ watch(
         selectedTask ? $t('CRM.GENERAL.SAVE') : $t('CRM.GENERAL.CREATE')
       "
       :is-loading="ui.isSaving"
-      :disable-confirm="!form.title.trim() || !form.statusId"
+      :disable-confirm="isTaskFormDisabled"
       @close="closeDrawer"
       @confirm="saveTask"
     >
@@ -2179,6 +2389,19 @@ watch(
               :model-value="form.statusId"
               :options="taskStatusOptions"
               @update:model-value="form.statusId = $event"
+            />
+            <SchedulingSelectField
+              :label="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
+              :model-value="form.activityType"
+              :options="activityTypeOptions"
+              @update:model-value="updateFormActivityType"
+            />
+            <SchedulingSelectField
+              :label="$t('CRM.TASKS.FORM.OUTCOME')"
+              :model-value="form.outcome"
+              :options="taskOutcomeOptions"
+              :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
+              @update:model-value="form.outcome = $event"
             />
             <SchedulingSelectField
               :label="$t('CRM.TASKS.FORM.ASSIGNEE')"
@@ -2222,6 +2445,14 @@ watch(
               :model-value="form.description"
               auto-height
               @update:model-value="form.description = $event"
+            />
+            <TextArea
+              v-if="form.outcome"
+              class="md:col-span-2"
+              :label="$t('CRM.TASKS.FORM.OUTCOME_NOTE')"
+              :model-value="form.outcomeNote"
+              auto-height
+              @update:model-value="form.outcomeNote = $event"
             />
           </div>
         </SchedulingFormFieldGroup>
@@ -2293,6 +2524,22 @@ watch(
           :options="taskStatusOptions"
           :placeholder="$t('CRM.TASKS.FORM.STATUS')"
           @update:model-value="filterDraft.statusId = $event"
+        />
+
+        <SchedulingSelectField
+          :label="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
+          :model-value="filterDraft.activityType"
+          :options="activityTypeOptions"
+          :placeholder="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
+          @update:model-value="filterDraft.activityType = $event"
+        />
+
+        <SchedulingSelectField
+          :label="$t('CRM.TASKS.FORM.OUTCOME')"
+          :model-value="filterDraft.outcome"
+          :options="filterOutcomeOptions"
+          :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
+          @update:model-value="filterDraft.outcome = $event"
         />
 
         <SchedulingSelectField

@@ -10,6 +10,10 @@ class CrmReportsAPI extends ApiClient {
     return axios.get(`${this.url}/deals`, { params });
   }
 
+  managerEffectiveness(params = {}) {
+    return axios.get(`${this.url}/manager_effectiveness`, { params });
+  }
+
   funnels(params = {}) {
     return axios.get(`${this.url}/funnels`, { params });
   }

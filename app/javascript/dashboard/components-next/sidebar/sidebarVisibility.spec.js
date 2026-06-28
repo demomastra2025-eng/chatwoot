@@ -22,6 +22,16 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Conversation:Open']).toBe(true);
     expect(visibilityState['Conversation:Resolved']).toBe(true);
     expect(visibilityState['Conversation:Pipelines']).toBe(true);
+    expect(visibilityState['Conversation:AppointmentStatuses']).toBe(true);
+    expect(visibilityState['Conversation:AppointmentStatus:scheduled']).toBe(
+      true
+    );
+    expect(visibilityState['Conversation:AppointmentStatus:confirmed']).toBe(
+      true
+    );
+    expect(visibilityState['Conversation:AppointmentStatus:completed']).toBe(
+      true
+    );
     expect(visibilityState.Campaigns).toBe(true);
     expect(visibilityState['Campaigns:Templates']).toBe(true);
     expect(visibilityState['Campaigns:Touches']).toBe(true);
@@ -52,6 +62,8 @@ describe('sidebarVisibility', () => {
           'Employees',
           'Conversation:Assignee:all',
           'Conversation:DefaultPipeline',
+          'Conversation:AppointmentStatuses',
+          'Conversation:AppointmentStatus:completed',
           'Conversation:Channels',
           'Conversation:AllChannels',
           'Settings:CustomAttributes',
@@ -65,6 +77,8 @@ describe('sidebarVisibility', () => {
       'Conversation:Assignee:all',
       'Conversation:Statuses',
       'Conversation:Pipelines',
+      'Conversation:AppointmentStatuses',
+      'Conversation:AppointmentStatus:completed',
       'Reports',
       'MyCompany:Tags',
       'MyCompany:Employees',
@@ -204,9 +218,26 @@ describe('sidebarVisibility', () => {
             { name: 'Settings Agents', visibilityKey: 'Settings:Agents' },
           ],
         },
+        {
+          name: 'AppointmentStatuses',
+          visibilityKey: 'Conversation:AppointmentStatuses',
+          children: [
+            {
+              name: 'AppointmentStatus:scheduled',
+              visibilityKey: 'Conversation:AppointmentStatus:scheduled',
+            },
+            {
+              name: 'AppointmentStatus:confirmed',
+              visibilityKey: 'Conversation:AppointmentStatus:confirmed',
+            },
+          ],
+        },
       ],
       {
-        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:Macros'],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Settings:Macros',
+          'Conversation:AppointmentStatus:confirmed',
+        ],
       }
     );
 
@@ -216,6 +247,16 @@ describe('sidebarVisibility', () => {
         name: 'Settings',
         children: [
           { name: 'Settings Agents', visibilityKey: 'Settings:Agents' },
+        ],
+      },
+      {
+        name: 'AppointmentStatuses',
+        visibilityKey: 'Conversation:AppointmentStatuses',
+        children: [
+          {
+            name: 'AppointmentStatus:scheduled',
+            visibilityKey: 'Conversation:AppointmentStatus:scheduled',
+          },
         ],
       },
     ]);
@@ -236,8 +277,15 @@ describe('sidebarVisibility', () => {
       getConversationSidebarHiddenItemsFromState({
         Reports: false,
         'Conversation:Teams': false,
+        'Conversation:AppointmentStatuses': false,
+        'Conversation:AppointmentStatus:scheduled': false,
         'Conversation:Assignee:me': false,
       })
-    ).toEqual(['Conversation:Assignee:me', 'Conversation:Teams']);
+    ).toEqual([
+      'Conversation:Assignee:me',
+      'Conversation:AppointmentStatuses',
+      'Conversation:AppointmentStatus:scheduled',
+      'Conversation:Teams',
+    ]);
   });
 });

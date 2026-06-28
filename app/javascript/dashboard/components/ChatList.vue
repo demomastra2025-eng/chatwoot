@@ -59,6 +59,7 @@ import {
   isOnParticipatingView,
   isOnUnattendedView,
 } from '../store/modules/conversations/helpers/actionHelpers';
+import { filterByUnread } from '../store/modules/conversations/helpers';
 import { matchesFilters } from '../store/modules/conversations/helpers/filterHelpers';
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
@@ -69,6 +70,10 @@ import {
 import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
+import {
+  APPOINTMENT_STATUS_ANY,
+  APPOINTMENT_STATUS_VALUES,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   conversationInbox: { type: [String, Number], default: 0 },
@@ -274,26 +279,40 @@ const routeConversationAssigneeType = computed(() => {
     : wootConstants.ASSIGNEE_TYPE.ALL;
 });
 
+const truthyQueryValue = value =>
+  value === true || value === 'true' || value === '1' || value === 1;
+
+const activeUnreadOnly = computed(() =>
+  truthyQueryValue(route.query.unread || route.query.unreadOnly)
+);
+
 function conversationNavigationQuery(overrides = {}) {
   const baseQuery = { ...route.query };
   const camelAssigneeType = baseQuery.assigneeType;
   const camelCrmPipelineId = baseQuery.crmPipelineId;
   const camelCrmStageId = baseQuery.crmStageId;
+  const camelAppointmentStatus = baseQuery.appointmentStatus;
   const camelLabelsScope = baseQuery.labelsScope;
   const camelTeamScope = baseQuery.teamScope;
+  const camelUnreadOnly = baseQuery.unreadOnly;
   delete baseQuery.messageId;
   delete baseQuery.assigneeType;
   delete baseQuery.crmPipelineId;
   delete baseQuery.crmStageId;
+  delete baseQuery.appointmentStatus;
   delete baseQuery.labelsScope;
   delete baseQuery.teamScope;
+  delete baseQuery.unreadOnly;
 
   const {
     assigneeType: overrideCamelAssigneeType,
     crmPipelineId: overrideCamelCrmPipelineId,
     crmStageId: overrideCamelCrmStageId,
+    appointmentStatus: overrideCamelAppointmentStatus,
     labelsScope: overrideCamelLabelsScope,
     teamScope: overrideCamelTeamScope,
+    unread: overrideUnread,
+    unreadOnly: overrideUnreadOnly,
     ...safeOverrides
   } = overrides;
   const hasCrmPipelineOverride =
@@ -302,12 +321,17 @@ function conversationNavigationQuery(overrides = {}) {
   const hasCrmStageOverride =
     Object.prototype.hasOwnProperty.call(safeOverrides, 'crm_stage_id') ||
     overrideCamelCrmStageId !== undefined;
+  const hasAppointmentStatusOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'appointment_status') ||
+    overrideCamelAppointmentStatus !== undefined;
   const hasLabelsScopeOverride =
     Object.prototype.hasOwnProperty.call(safeOverrides, 'labels_scope') ||
     overrideCamelLabelsScope !== undefined;
   const hasTeamScopeOverride =
     Object.prototype.hasOwnProperty.call(safeOverrides, 'team_scope') ||
     overrideCamelTeamScope !== undefined;
+  const hasUnreadOverride =
+    overrideUnread !== undefined || overrideUnreadOnly !== undefined;
   const nextAssigneeType =
     safeOverrides.assignee_type ||
     overrideCamelAssigneeType ||
@@ -320,12 +344,18 @@ function conversationNavigationQuery(overrides = {}) {
   const nextCrmStageId = hasCrmStageOverride
     ? safeOverrides.crm_stage_id || overrideCamelCrmStageId
     : baseQuery.crm_stage_id || camelCrmStageId;
+  const nextAppointmentStatus = hasAppointmentStatusOverride
+    ? safeOverrides.appointment_status || overrideCamelAppointmentStatus
+    : baseQuery.appointment_status || camelAppointmentStatus;
   const nextLabelsScope = hasLabelsScopeOverride
     ? safeOverrides.labels_scope || overrideCamelLabelsScope
     : baseQuery.labels_scope || camelLabelsScope;
   const nextTeamScope = hasTeamScopeOverride
     ? safeOverrides.team_scope || overrideCamelTeamScope
     : baseQuery.team_scope || camelTeamScope;
+  const nextUnread = hasUnreadOverride
+    ? (overrideUnread ?? overrideUnreadOnly)
+    : baseQuery.unread || camelUnreadOnly;
   const nextQuery = {
     ...baseQuery,
     ...safeOverrides,
@@ -351,6 +381,12 @@ function conversationNavigationQuery(overrides = {}) {
     delete nextQuery.crm_stage_id;
   }
 
+  if (nextAppointmentStatus) {
+    nextQuery.appointment_status = nextAppointmentStatus;
+  } else {
+    delete nextQuery.appointment_status;
+  }
+
   if (nextLabelsScope) {
     nextQuery.labels_scope = nextLabelsScope;
   } else {
@@ -361,6 +397,12 @@ function conversationNavigationQuery(overrides = {}) {
     nextQuery.team_scope = nextTeamScope;
   } else {
     delete nextQuery.team_scope;
+  }
+
+  if (truthyQueryValue(nextUnread)) {
+    nextQuery.unread = 'true';
+  } else {
+    delete nextQuery.unread;
   }
 
   return nextQuery;
@@ -465,6 +507,42 @@ const activeCrmStageId = computed(
   () => route.query.crm_stage_id || route.query.crmStageId || ''
 );
 
+const activeAppointmentStatusFilter = computed(() => {
+  const status =
+    route.query.appointment_status || route.query.appointmentStatus || '';
+
+  if (status === APPOINTMENT_STATUS_ANY) {
+    return APPOINTMENT_STATUS_ANY;
+  }
+
+  return APPOINTMENT_STATUS_VALUES.includes(status) ? status : '';
+});
+
+const activeAppointmentStatus = computed(() => {
+  const status = activeAppointmentStatusFilter.value;
+  return APPOINTMENT_STATUS_VALUES.includes(status) ? status : '';
+});
+
+const isFilteringAnyAppointmentStatus = computed(
+  () => activeAppointmentStatusFilter.value === APPOINTMENT_STATUS_ANY
+);
+
+const appointmentStatusLabels = computed(() => ({
+  cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
+  completed: t('SCHEDULING.APPOINTMENT_STATUS.completed'),
+  confirmed: t('SCHEDULING.APPOINTMENT_STATUS.confirmed'),
+  no_show: t('SCHEDULING.APPOINTMENT_STATUS.no_show'),
+  scheduled: t('SCHEDULING.APPOINTMENT_STATUS.scheduled'),
+}));
+
+const activeAppointmentStatusLabel = computed(() => {
+  if (isFilteringAnyAppointmentStatus.value) {
+    return t('SCHEDULING.DIALOGS.SIDEBAR_TITLE');
+  }
+
+  return appointmentStatusLabels.value[activeAppointmentStatus.value] || '';
+});
+
 const activeLabelsScope = computed(
   () => route.query.labels_scope || route.query.labelsScope || ''
 );
@@ -537,8 +615,10 @@ const conversationFilters = computed(() => {
     communicationThreadMode: props.communicationThreadMode,
     crmPipelineId: activeCrmPipelineId.value || undefined,
     crmStageId: activeCrmStageId.value || undefined,
+    appointmentStatus: activeAppointmentStatusFilter.value || undefined,
     labelsScope: props.label ? undefined : activeLabelsScope.value || undefined,
     teamScope: props.teamId ? undefined : activeTeamScope.value || undefined,
+    unread: activeUnreadOnly.value || undefined,
   };
 });
 
@@ -567,6 +647,9 @@ const pageTitle = computed(() => {
   }
   if (activeCrmPipelineId.value || activeCrmStageId.value) {
     return t('SIDEBAR.PIPELINES');
+  }
+  if (activeAppointmentStatusLabel.value) {
+    return activeAppointmentStatusLabel.value;
   }
   if (activeTeamScope.value === 'any') {
     return t('SIDEBAR.TEAMS');
@@ -643,6 +726,10 @@ const conversationList = computed(() => {
       return matchesFilters(conversation, payload);
     });
   }
+
+  localConversationList = localConversationList.filter(conversation =>
+    filterByUnread(true, activeUnreadOnly.value, conversation.unread_count)
+  );
 
   return filterConversationsByCommunicationThreadMode(
     localConversationList,
@@ -757,6 +844,16 @@ function updateConversationStatusQuery(status) {
   });
 }
 
+function onUnreadFilterToggle() {
+  router.push({
+    name: route.name,
+    params: route.params,
+    query: conversationNavigationQuery({
+      unread: !activeUnreadOnly.value,
+    }),
+  });
+}
+
 function emitConversationLoaded() {
   emit('conversationLoad');
 }
@@ -776,8 +873,10 @@ function fetchFilteredConversations(payload) {
       communicationThreadMode: props.communicationThreadMode,
       crmPipelineId: activeCrmPipelineId.value || undefined,
       crmStageId: activeCrmStageId.value || undefined,
+      appointmentStatus: activeAppointmentStatusFilter.value || undefined,
       labelsScope: activeLabelsScope.value || undefined,
       teamScope: activeTeamScope.value || undefined,
+      unread: activeUnreadOnly.value || undefined,
     })
     .then(emitConversationLoaded);
 
@@ -794,8 +893,10 @@ function fetchSavedFilteredConversations(payload) {
       communicationThreadMode: props.communicationThreadMode,
       crmPipelineId: activeCrmPipelineId.value || undefined,
       crmStageId: activeCrmStageId.value || undefined,
+      appointmentStatus: activeAppointmentStatusFilter.value || undefined,
       labelsScope: activeLabelsScope.value || undefined,
       teamScope: activeTeamScope.value || undefined,
+      unread: activeUnreadOnly.value || undefined,
     })
     .then(emitConversationLoaded);
 }
@@ -1084,8 +1185,10 @@ function redirectToConversationList() {
       assigneeType: activeAssigneeTab.value,
       crmPipelineId: activeCrmPipelineId.value,
       crmStageId: activeCrmStageId.value,
+      appointmentStatus: activeAppointmentStatusFilter.value,
       labelsScope: activeLabelsScope.value,
       teamScope: activeTeamScope.value,
+      unread: activeUnreadOnly.value,
       communicationThread: props.communicationThreadMode,
     })
   );
@@ -1521,7 +1624,17 @@ watch([activeCrmPipelineId, activeCrmStageId], () => {
   resetAndFetchData();
 });
 
+watch(activeAppointmentStatusFilter, () => {
+  clearLocalSearch();
+  resetAndFetchData();
+});
+
 watch([activeLabelsScope, activeTeamScope], () => {
+  clearLocalSearch();
+  resetAndFetchData();
+});
+
+watch(activeUnreadOnly, () => {
   clearLocalSearch();
   resetAndFetchData();
 });
@@ -1565,12 +1678,14 @@ watch(conversationFilters, (newVal, oldVal) => {
       :show-channel-filter="shouldShowChannelFilter"
       :channel-filter-items="channelFilterItems"
       :active-channel-filter-key="activeChannelFilterKey"
+      :active-unread-only="activeUnreadOnly"
       @add-folders="onClickOpenAddFoldersModal"
       @delete-folders="onClickOpenDeleteFoldersModal"
       @filters-modal="onToggleAdvanceFiltersModal"
       @reset-filters="resetAndFetchData"
       @basic-filter-change="onBasicFilterChange"
       @channel-filter-select="onChannelFilterSelect"
+      @unread-filter-toggle="onUnreadFilterToggle"
     />
 
     <TeleportWithDirection

@@ -665,6 +665,10 @@
         "TITLE": "Этапы",
         "DESCRIPTION": "Где стоят сделки и какая сумма в работе."
       },
+      "EFFECTIVENESS": {
+        "TITLE": "Эффективность продаж",
+        "DESCRIPTION": "Лиды, звонки, встречи, сделки, конверсии и деньги по менеджерам."
+      },
       "FORECAST": {
         "TITLE": "Прогноз",
         "DESCRIPTION": "Ожидаемое закрытие и won/lost динамика."
@@ -742,6 +746,52 @@
       },
       "TEAM": {
         "ROW_HELPER": "Сделок {deals} · Won {won} · Win rate {winRate}"
+      }
+    },
+    "MANAGER_EFFECTIVENESS": {
+      "TABLE_TITLE": "Эффективность менеджеров",
+      "TABLE_DESCRIPTION": "Нативный отчет продаж из сделок, телефонии, записей, CRM-встреч и платежей по записям.",
+      "LOAD_ERROR": "Основной отчет по сделкам загрузился, но метрики эффективности менеджеров не удалось рассчитать. Существующий отчет по сделкам доступен.",
+      "EXPORT": "Экспорт",
+      "EXPORT_CSV": "CSV",
+      "EXPORT_EXCEL": "Excel (.xls)",
+      "TOTAL": "Итого",
+      "ROW_HELPER": "Сделки {won} · Брак {badRate}",
+      "CARDS": {
+        "LEADS": "Лиды",
+        "LONG_CALLS": "Звонки ≥ {seconds}с",
+        "MEETINGS": "Встречи",
+        "WON": "Сделки",
+        "PAYMENTS": "Оплаты"
+      },
+      "COLUMNS": {
+        "MANAGER": "Менеджер",
+        "LEADS": "Лиды",
+        "IN_PROGRESS": "В работе",
+        "BAD": "Брак",
+        "BAD_RATE": "Брак %",
+        "CALL_ATTEMPTS": "Попытки звонков",
+        "CONNECTED_CALLS": "Успешные звонки",
+        "LONG_CALLS": "Звонки ≥ {seconds}с",
+        "MEETINGS": "Встречи",
+        "WON": "Сделки",
+        "LEAD_TO_MEETING": "Лид → встреча",
+        "CALL_TO_MEETING": "Звонок → встреча",
+        "MEETING_TO_DEAL": "Встреча → сделка",
+        "LEAD_TO_DEAL": "Лид → сделка",
+        "DEAL_AMOUNT": "Сумма сделок",
+        "WON_AMOUNT": "Сумма won",
+        "PAYMENTS": "Оплаты",
+        "CASH": "Наличные",
+        "NON_CASH": "Безнал",
+        "KASPI": "Kaspi",
+        "TRADE_IN": "Обмен"
+      },
+      "NOTES": {
+        "LEADS": "Лиды считаются как CRM-сделки, созданные за период и связанные с исходным диалогом; брак — такие сделки на lost-этапах.",
+        "CALLS": "Звонки берутся из outbound telephony sessions по менеджеру; длинный звонок — от {seconds} секунд.",
+        "MEETINGS": "Встречи берутся из Scheduling записей по владельцу; CRM-задачи типа meeting используются как fallback, если у менеджера нет записей.",
+        "PAYMENTS": "Оплаты берутся из Scheduling платежей по владельцу записи. Обмен показывается нулем, пока нет CRM payment ledger или отдельного поля."
       }
     },
     "LABELS": {

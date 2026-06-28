@@ -6,4 +6,5 @@ json.counts do
   json.labels @sidebar_unread_counts[:labels]
   json.pipelines @sidebar_unread_counts[:pipelines]
   json.stages @sidebar_unread_counts[:stages]
+  json.appointment_statuses @sidebar_unread_counts[:appointment_statuses]
 end

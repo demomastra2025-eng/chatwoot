@@ -86,6 +86,24 @@
       "NO_SERVICE": "No service",
       "UNAVAILABLE_SLOT": "This time is unavailable"
     },
+    "DIALOGS": {
+      "CLIENT": "Client",
+      "DATE_TIME": "Date and time",
+      "EMPTY": "No appointments linked to this dialog",
+      "ERROR": "Unable to load appointments",
+      "OPEN_CALENDAR": "Open calendar",
+      "PANEL_TITLE": "Appointments",
+      "PAYMENT": "Payment",
+      "RESOURCE": "Specialist",
+      "SERVICE": "Service",
+      "SIDEBAR_TITLE": "Appointments",
+      "STATUS": "Status",
+      "APPOINTMENT_STATUS_SHORT": {
+        "scheduled": "Assigned",
+        "confirmed": "Confirmed",
+        "completed": "Done"
+      }
+    },
     "APPOINTMENT_FORM": {
       "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",
       "APPOINTMENT_TITLE": "Appointment details",

@@ -15,6 +15,63 @@ describe('#getInboxHealthStatus', () => {
     });
   });
 
+  it('marks WhatsApp Web connected only when provider status is connected and connection is open', () => {
+    expect(
+      getInboxHealthStatus({
+        channel_type: 'Channel::WhatsappWeb',
+        additional_attributes: {
+          evolution: { status: 'connected', connection_state: 'open' },
+        },
+      })
+    ).toMatchObject({ id: 'connected', tone: 'teal' });
+
+    expect(
+      getInboxHealthStatus({
+        channel_type: 'Channel::WhatsappWeb',
+        additional_attributes: {
+          evolution: { status: 'connected', connection_state: 'connecting' },
+        },
+      })
+    ).toMatchObject({ id: 'pending', tone: 'amber' });
+  });
+
+  it('shows WhatsApp Web QR/auth states as pending instead of connected', () => {
+    expect(
+      getInboxHealthStatus({
+        channel_type: 'Channel::WhatsappWeb',
+        lifecycle_state: 'connected',
+        connection_state: 'open',
+        additional_attributes: {
+          evolution: {
+            status: 'waiting_for_qr',
+            connection_state: 'connecting',
+          },
+        },
+      })
+    ).toMatchObject({
+      id: 'pending',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.PENDING',
+      tone: 'amber',
+    });
+  });
+
+  it('keeps WhatsApp Web QR lifecycle states pending even when provider connection is close', () => {
+    ['creating', 'waiting_for_qr', 'qr_ready', 'qr_scanned'].forEach(status => {
+      expect(
+        getInboxHealthStatus({
+          channel_type: 'Channel::WhatsappWeb',
+          additional_attributes: {
+            evolution: { status, connection_state: 'close' },
+          },
+        })
+      ).toMatchObject({
+        id: 'pending',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.PENDING',
+        tone: 'amber',
+      });
+    });
+  });
+
   it('prioritizes reauthorization_required from the inbox payload', () => {
     expect(
       getInboxHealthStatus({ id: 1, reauthorization_required: true })

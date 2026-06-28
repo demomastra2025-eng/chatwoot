@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { formatNumber } from '@chatwoot/utils';
 import wootConstants from 'dashboard/constants/globals';
@@ -20,6 +21,7 @@ const props = defineProps({
   showChannelFilter: { type: Boolean, default: false },
   channelFilterItems: { type: Array, default: () => [] },
   activeChannelFilterKey: { type: String, default: '' },
+  activeUnreadOnly: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -29,6 +31,7 @@ const emit = defineEmits([
   'basicFilterChange',
   'filtersModal',
   'channelFilterSelect',
+  'unreadFilterToggle',
 ]);
 
 const localSearchQuery = defineModel('localSearchQuery', {
@@ -36,6 +39,7 @@ const localSearchQuery = defineModel('localSearchQuery', {
   default: '',
 });
 
+const { t } = useI18n();
 const { uiSettings, updateUISettings } = useUISettings();
 
 const onBasicFilterChange = (value, type) => {
@@ -48,6 +52,11 @@ const hasAppliedFiltersOrActiveFolders = computed(() => {
 
 const allCount = computed(() => props.conversationStats?.allCount || 0);
 const formattedAllCount = computed(() => formatNumber(allCount.value));
+const unreadFilterTooltip = computed(() =>
+  props.activeUnreadOnly
+    ? t('CONVERSATION.UNREAD_FILTER.SHOW_ALL')
+    : t('CONVERSATION.UNREAD_FILTER.SHOW_UNREAD')
+);
 
 const toggleConversationLayout = () => {
   const { LAYOUT_TYPES } = wootConstants;
@@ -98,6 +107,16 @@ const toggleConversationLayout = () => {
       </template>
     </div>
     <div class="flex shrink-0 items-center gap-1">
+      <NextButton
+        v-tooltip.top-end="unreadFilterTooltip"
+        :aria-label="unreadFilterTooltip"
+        :aria-pressed="activeUnreadOnly"
+        :icon="activeUnreadOnly ? 'i-lucide-mail' : 'i-lucide-mail-open'"
+        variant="faded"
+        :color="activeUnreadOnly ? 'blue' : 'slate'"
+        xs
+        @click="emit('unreadFilterToggle')"
+      />
       <template v-if="hasAppliedFilters && !hasActiveFolders">
         <div class="relative">
           <NextButton

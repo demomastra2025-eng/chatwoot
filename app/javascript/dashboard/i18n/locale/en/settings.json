@@ -1043,16 +1043,26 @@
         "ASSIGNEE": "Ownership",
         "STATUSES": "Statuses",
         "PIPELINE": "Conversation pipelines",
+        "APPOINTMENTS": "Appointments",
         "ORGANIZATION": "Organization"
       },
       "DESCRIPTIONS": {
         "ASSIGNEE": "Show or hide All, Mine, and Unassigned conversation scopes.",
         "STATUSES": "Show or hide status navigation. Statuses are hidden by default.",
         "PIPELINE": "Show or hide conversation filters by the general pipeline, AI pipeline, and their stages.",
+        "APPOINTMENTS": "Show or hide appointment status filters in the conversation sidebar.",
         "ORGANIZATION": "Show or hide custom views, teams, and tags."
       },
       "ITEMS": {
-        "STATUSES": "Status group"
+        "STATUSES": "Status group",
+        "APPOINTMENTS": "Appointment status group",
+        "APPOINTMENT_STATUSES": {
+          "SCHEDULED": "Assigned",
+          "CONFIRMED": "Confirmed",
+          "COMPLETED": "Done",
+          "CANCELLED": "Cancelled",
+          "NO_SHOW": "No show"
+        }
       },
       "SAVE": {
         "BUTTON": "Save visibility",

@@ -3,16 +3,19 @@ class Captain::Tools::Copilot::SearchTasksService < Captain::Tools::Copilot::Bas
     'search_tasks'
   end
 
-  description 'Search CRM tasks by title, status, assignee, deal, or priority'
+  description 'Search CRM tasks by title, status, assignee, deal, type, outcome, or priority'
   param :query, type: :string, desc: 'Task title or external reference query', required: false
   param :status_name, type: :string, desc: 'Task status name', required: false
   param :assignee_id, type: :integer, desc: 'Positive assignee user ID. Omit when unknown.', required: false
   param :deal_id, type: :integer, desc: 'Positive deal ID. Omit when unknown.', required: false
+  param :activity_type, type: :string, desc: 'Task type: task, call, meeting, message, or touch', required: false
+  param :outcome, type: :string, desc: 'Task outcome/result, for example held, no_show, answered, sent, or not_done', required: false
   param :priority, type: :string, desc: 'Task priority: low, medium, high, or urgent', required: false
   param :archived, type: :boolean, desc: 'Whether to search archived tasks', required: false
   param :limit, type: :number, desc: 'Maximum number of tasks to return', required: false
 
-  def execute(query: nil, status_name: nil, assignee_id: nil, deal_id: nil, priority: nil, archived: nil, limit: nil)
+  def execute(query: nil, status_name: nil, assignee_id: nil, deal_id: nil, activity_type: nil, outcome: nil,
+              priority: nil, archived: nil, limit: nil)
     assignee_id = optional_positive_id(assignee_id)
     deal_id = optional_positive_id(deal_id)
 
@@ -20,6 +23,8 @@ class Captain::Tools::Copilot::SearchTasksService < Captain::Tools::Copilot::Bas
     tasks = cast_boolean(archived) ? tasks.archived : tasks.kept
     tasks = tasks.where(assignee_id: assignee_id) if assignee_id.present?
     tasks = tasks.where(deal_id: deal_id) if deal_id.present?
+    tasks = tasks.where(activity_type: activity_type) if activity_type.present?
+    tasks = tasks.where(outcome: outcome) if outcome.present?
     tasks = tasks.where(priority: priority) if priority.present?
     tasks = tasks.joins(:status).where('LOWER(crm_task_statuses.name) = ?', status_name.to_s.downcase) if status_name.present?
     tasks = tasks.where('crm_tasks.title ILIKE :query OR crm_tasks.external_ref ILIKE :query', query: "%#{query.strip}%") if query.present?
@@ -33,6 +38,8 @@ class Captain::Tools::Copilot::SearchTasksService < Captain::Tools::Copilot::Bas
         status_name: status_name,
         assignee_id: assignee_id,
         deal_id: deal_id,
+        activity_type: activity_type,
+        outcome: outcome,
         priority: priority,
         archived: cast_boolean(archived)
       }.compact,

@@ -96,6 +96,174 @@ describe ConversationFinder do
       end
     end
 
+    context 'with unread filter' do
+      let(:params) { { status: 'all', assignee_type: 'all', unread: 'true' } }
+
+      it 'returns only conversations with unread incoming public messages' do
+        unread_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 1.hour.ago
+        )
+        read_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 5.minutes.ago
+        )
+        private_message_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 1.hour.ago
+        )
+        outgoing_message_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 1.hour.ago
+        )
+
+        create(:message, account: account, conversation: unread_conversation, created_at: 10.minutes.ago)
+        create(:message, account: account, conversation: read_conversation, created_at: 10.minutes.ago)
+        create(
+          :message,
+          account: account,
+          conversation: private_message_conversation,
+          private: true,
+          created_at: 10.minutes.ago
+        )
+        create(
+          :message,
+          account: account,
+          conversation: outgoing_message_conversation,
+          message_type: :outgoing,
+          created_at: 10.minutes.ago
+        )
+
+        result = conversation_finder.perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(unread_conversation.id)
+      end
+
+      it 'intersects unread with status, assignee, inbox, team, label, CRM, and appointment filters' do
+        team = create(:team, account: account)
+        other_team = create(:team, account: account)
+        pipeline = create(:crm_pipeline, account: account)
+        stage = create(:crm_stage, account: account, pipeline: pipeline)
+        other_stage = create(:crm_stage, account: account, pipeline: pipeline)
+        matching_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          assignee: user_1,
+          team: team,
+          status: 'pending',
+          agent_last_seen_at: 1.hour.ago
+        )
+        read_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          assignee: user_1,
+          team: team,
+          status: 'pending',
+          agent_last_seen_at: 5.minutes.ago
+        )
+        wrong_team_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          assignee: user_1,
+          team: other_team,
+          status: 'pending',
+          agent_last_seen_at: 1.hour.ago
+        )
+        wrong_label_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          assignee: user_1,
+          team: team,
+          status: 'pending',
+          agent_last_seen_at: 1.hour.ago
+        )
+        wrong_stage_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          assignee: user_1,
+          team: team,
+          status: 'pending',
+          agent_last_seen_at: 1.hour.ago
+        )
+        wrong_appointment_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          assignee: user_1,
+          team: team,
+          status: 'pending',
+          agent_last_seen_at: 1.hour.ago
+        )
+
+        [
+          matching_conversation,
+          read_conversation,
+          wrong_team_conversation,
+          wrong_label_conversation,
+          wrong_stage_conversation,
+          wrong_appointment_conversation
+        ].each do |conversation|
+          create(:message, account: account, conversation: conversation, created_at: 10.minutes.ago)
+        end
+
+        matching_conversation.update!(status: 'pending', assignee: user_1, team: team)
+        read_conversation.update!(status: 'pending', assignee: user_1, team: team)
+        wrong_team_conversation.update!(status: 'pending', assignee: user_1, team: other_team)
+        wrong_label_conversation.update!(status: 'pending', assignee: user_1, team: team)
+        wrong_stage_conversation.update!(status: 'pending', assignee: user_1, team: team)
+        wrong_appointment_conversation.update!(status: 'pending', assignee: user_1, team: team)
+
+        [matching_conversation, read_conversation, wrong_team_conversation, wrong_stage_conversation,
+         wrong_appointment_conversation].each { |conversation| conversation.update_labels('vip') }
+        wrong_label_conversation.update_labels('other')
+
+        [matching_conversation, read_conversation, wrong_team_conversation, wrong_label_conversation,
+         wrong_appointment_conversation].each do |conversation|
+          create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: conversation)
+        end
+        create(:crm_deal, account: account, pipeline: pipeline, stage: other_stage,
+                          originating_conversation: wrong_stage_conversation)
+
+        [matching_conversation, read_conversation, wrong_team_conversation, wrong_label_conversation,
+         wrong_stage_conversation].each do |conversation|
+          create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation,
+                                          status: 'confirmed')
+        end
+        create(:scheduling_appointment, account: account, contact: wrong_appointment_conversation.contact,
+                                        conversation: wrong_appointment_conversation, status: 'scheduled')
+
+        result = described_class.new(
+          user_1,
+          {
+            status: 'pending',
+            assignee_type: 'me',
+            inbox_id: inbox.id,
+            team_id: team.id,
+            labels: ['vip'],
+            crm_pipeline_id: pipeline.id,
+            crm_stage_id: stage.id,
+            appointment_status: 'confirmed',
+            unread: 'true'
+          }
+        ).perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(matching_conversation.id)
+      end
+    end
+
     context 'with assignee_type assigned' do
       let(:params) { { assignee_type: 'assigned' } }
 
@@ -251,6 +419,123 @@ describe ConversationFinder do
         expect(stage_result[:count].dig(:unread_counts, :stages)).to include(
           stage.id.to_s => 1,
           other_stage.id.to_s => 1
+        )
+      end
+    end
+
+    context 'with scheduling appointment context' do
+      let(:params) { { status: 'open', assignee_type: 'all', appointment_status: 'confirmed' } }
+
+      it 'filters conversations by appointment status through contacts and direct conversation links' do
+        appointment_contact = create(:contact, account: account)
+        contact_conversation = create(:conversation, account: account, inbox: inbox, contact: appointment_contact)
+        direct_conversation = create(:conversation, account: account, inbox: inbox)
+        other_conversation = create(:conversation, account: account, inbox: inbox)
+
+        create(:scheduling_appointment, account: account, contact: appointment_contact, status: 'confirmed')
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: direct_conversation.contact,
+          conversation: direct_conversation,
+          status: 'confirmed'
+        )
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: other_conversation.contact,
+          conversation: other_conversation,
+          status: 'scheduled'
+        )
+
+        result = conversation_finder.perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(contact_conversation.id, direct_conversation.id)
+      end
+
+      it 'filters conversations with any appointment when appointment status is any' do
+        confirmed_conversation = create(:conversation, account: account, inbox: inbox)
+        scheduled_conversation = create(:conversation, account: account, inbox: inbox)
+        no_appointment_conversation = create(:conversation, account: account, inbox: inbox)
+
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: confirmed_conversation.contact,
+          conversation: confirmed_conversation,
+          status: 'confirmed'
+        )
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: scheduled_conversation.contact,
+          conversation: scheduled_conversation,
+          status: 'scheduled'
+        )
+
+        result = described_class.new(user_1, params.merge(appointment_status: 'any')).perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(confirmed_conversation.id, scheduled_conversation.id)
+        expect(result[:conversations].map(&:id)).not_to include(no_appointment_conversation.id)
+      end
+
+      it 'keeps appointment status counts as appointment records scoped by dialog context' do
+        confirmed_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 1.hour.ago
+        )
+        scheduled_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 1.hour.ago
+        )
+        read_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          agent_last_seen_at: 5.minutes.ago
+        )
+        create(:message, account: account, conversation: confirmed_conversation, created_at: 10.minutes.ago)
+        create(:message, account: account, conversation: scheduled_conversation, created_at: 10.minutes.ago)
+        create(:message, account: account, conversation: read_conversation, created_at: 10.minutes.ago)
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: confirmed_conversation.contact,
+          conversation: confirmed_conversation,
+          status: 'confirmed'
+        )
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: confirmed_conversation.contact,
+          conversation: confirmed_conversation,
+          status: 'confirmed'
+        )
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: scheduled_conversation.contact,
+          conversation: scheduled_conversation,
+          status: 'scheduled'
+        )
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: read_conversation.contact,
+          conversation: read_conversation,
+          status: 'confirmed'
+        )
+        create(:scheduling_appointment, account: account, status: 'confirmed')
+
+        result = conversation_finder.perform
+
+        expect(result[:count].dig(:unread_counts, :appointment_statuses)).to include(
+          'confirmed' => 2,
+          'scheduled' => 1
         )
       end
     end

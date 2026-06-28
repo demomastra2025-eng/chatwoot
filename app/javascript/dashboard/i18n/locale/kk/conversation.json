@@ -27,6 +27,10 @@
     },
     "UNREAD_MESSAGES": "Unread Messages",
     "UNREAD_MESSAGE": "Unread Message",
+    "UNREAD_FILTER": {
+      "SHOW_UNREAD": "Show unread chats",
+      "SHOW_ALL": "Show all chats"
+    },
     "DATE_DIVIDER": {
       "TODAY": "Бүгін",
       "YESTERDAY": "Кеше"

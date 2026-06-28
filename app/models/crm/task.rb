@@ -3,6 +3,7 @@
 # Table name: crm_tasks
 #
 #  id                          :bigint           not null, primary key
+#  activity_type               :string           default("task"), not null
 #  archived_at                 :datetime
 #  completed_at                :datetime
 #  custom_attributes           :jsonb            not null
@@ -11,6 +12,8 @@
 #  external_ref                :string
 #  idempotency_key             :string
 #  lock_version                :integer          default(0), not null
+#  outcome                     :string
+#  outcome_note                :text
 #  position                    :integer          default(0), not null
 #  priority                    :string           default("medium"), not null
 #  start_at                    :datetime
@@ -27,7 +30,9 @@
 #
 # Indexes
 #
+#  index_crm_tasks_on_account_activity_type_due_at      (account_id,activity_type,due_at)
 #  index_crm_tasks_on_account_deal                      (account_id,deal_id)
+#  index_crm_tasks_on_account_deal_activity_type        (account_id,deal_id,activity_type)
 #  index_crm_tasks_on_account_external_ref              (account_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
 #  index_crm_tasks_on_account_id                        (account_id)
 #  index_crm_tasks_on_account_idempotency_key           (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
@@ -59,6 +64,10 @@ class Crm::Task < ApplicationRecord
 
   include LlmFormattable
 
+  ACTIVITY_TYPES = %w[task call meeting message touch].freeze
+  OUTCOMES = %w[
+    completed held cancelled no_show rescheduled answered no_answer not_done busy sent failed
+  ].freeze
   PRIORITIES = %w[low medium high urgent].freeze
 
   belongs_to :account, class_name: '::Account'
@@ -76,6 +85,9 @@ class Crm::Task < ApplicationRecord
   enum :priority, PRIORITIES.index_with(&:itself), prefix: true
 
   validates :title, presence: true
+  validates :activity_type, inclusion: { in: ACTIVITY_TYPES }
+  validates :outcome, inclusion: { in: OUTCOMES }, allow_blank: true
+  validates :outcome_note, presence: true, if: -> { outcome == 'not_done' }
   validates :priority, inclusion: { in: PRIORITIES }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
@@ -87,6 +99,9 @@ class Crm::Task < ApplicationRecord
   scope :kept, -> { where(archived_at: nil) }
   scope :archived, -> { where.not(archived_at: nil) }
 
+  before_validation :normalize_activity_type
+  before_validation :normalize_outcome
+  before_validation :normalize_outcome_note
   before_validation :normalize_title
   before_validation :normalize_description
   before_validation :prepare_custom_attributes
@@ -100,6 +115,9 @@ class Crm::Task < ApplicationRecord
         id: id,
         title: title,
         description: description,
+        activity_type: activity_type,
+        outcome: outcome,
+        outcome_note: outcome_note,
         priority: priority,
         start_at: start_at,
         due_at: due_at,
@@ -132,8 +150,20 @@ class Crm::Task < ApplicationRecord
 
   private
 
+  def normalize_activity_type
+    self.activity_type = activity_type.to_s.strip.downcase.presence || 'task'
+  end
+
   def normalize_description
     self.description = description.to_s.strip.presence
+  end
+
+  def normalize_outcome
+    self.outcome = outcome.to_s.strip.downcase.presence
+  end
+
+  def normalize_outcome_note
+    self.outcome_note = outcome_note.to_s.strip.presence
   end
 
   def normalize_title

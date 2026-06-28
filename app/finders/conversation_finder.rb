@@ -8,7 +8,9 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     include_assignee: false,
     include_team: true,
     include_labels: true,
-    include_crm_deal_context: true
+    include_crm_deal_context: true,
+    include_scheduling_appointment_context: true,
+    include_unread: true
   }.freeze
   SORT_OPTIONS = {
     'last_activity_at_asc' => %w[sort_on_last_message_at asc],
@@ -78,6 +80,8 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     filter_by_team
     filter_by_labels
     filter_by_crm_deal_context
+    filter_by_scheduling_appointment_context
+    filter_by_unread
     filter_by_query
     filter_by_source_id
   end
@@ -181,6 +185,14 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     @conversations = current_crm_deal_dialog_scope.filter_conversations(@conversations)
   end
 
+  def filter_by_scheduling_appointment_context
+    @conversations = current_scheduling_appointment_dialog_scope.filter_conversations(@conversations)
+  end
+
+  def filter_by_unread
+    @conversations = apply_unread_filter(@conversations)
+  end
+
   def filter_by_source_id
     return unless params[:source_id]
 
@@ -216,39 +228,40 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
   def unread_counts
     {
-      all: unread_dialog_count(scoped_count_relation(include_inbox: false, include_assignee: true)),
+      all: unread_dialog_count(scoped_count_relation(include_inbox: false, include_assignee: true, include_unread: false)),
       statuses: status_unread_counts,
       inboxes: inbox_unread_counts,
       teams: team_unread_counts,
       labels: label_unread_counts,
       pipelines: pipeline_unread_counts,
-      stages: stage_unread_counts
+      stages: stage_unread_counts,
+      appointment_statuses: appointment_status_unread_counts
     }
   end
 
   def status_unread_counts
-    scope = scoped_count_relation(include_status: false, include_assignee: true)
+    scope = scoped_count_relation(include_status: false, include_assignee: true, include_unread: false)
     unread_scope = unread_conversation_scope(scope)
 
     normalize_enum_counts(unread_scope.group(:status).distinct.count('conversations.id'), Conversation.statuses)
   end
 
   def inbox_unread_counts
-    scope = scoped_count_relation(include_inbox: false, include_assignee: true)
+    scope = scoped_count_relation(include_inbox: false, include_assignee: true, include_unread: false)
     unread_scope = unread_conversation_scope(scope)
 
     normalize_counts(unread_scope.group(:inbox_id).distinct.count('conversations.id'))
   end
 
   def team_unread_counts
-    scope = scoped_count_relation(include_team: false, include_assignee: true)
+    scope = scoped_count_relation(include_team: false, include_assignee: true, include_unread: false)
     unread_scope = unread_conversation_scope(scope)
 
     normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).distinct.count('conversations.id'))
   end
 
   def label_unread_counts
-    scope = scoped_count_relation(include_labels: false, include_assignee: true)
+    scope = scoped_count_relation(include_labels: false, include_assignee: true, include_unread: false)
     unread_scope = unread_conversation_scope(scope)
 
     normalize_counts(label_counts(unread_scope))
@@ -260,6 +273,10 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
   def stage_unread_counts
     crm_unread_count_service.conversation_stage_counts
+  end
+
+  def appointment_status_unread_counts
+    scheduling_appointment_count_service.conversation_status_counts
   end
 
   def unread_conversation_scope(scope)
@@ -320,7 +337,9 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       [:include_team, method(:apply_team_filter)],
       [:include_labels, method(:apply_labels_filter)],
       [:include_crm_deal_context, method(:apply_crm_deal_context_filter)],
+      [:include_scheduling_appointment_context, method(:apply_scheduling_appointment_context_filter)],
       [:include_source_id, method(:apply_source_id_filter)],
+      [:include_unread, method(:apply_unread_filter)],
       [:include_assignee, method(:apply_assignee_filter)]
     ].reduce(base_count_scope) do |scope, (filter_key, filter_method)|
       filters.fetch(filter_key, true) ? filter_method.call(scope) : scope
@@ -387,6 +406,16 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     current_crm_deal_dialog_scope.filter_conversations(scope)
   end
 
+  def apply_scheduling_appointment_context_filter(scope)
+    current_scheduling_appointment_dialog_scope.filter_conversations(scope)
+  end
+
+  def apply_unread_filter(scope)
+    return scope unless unread_only?
+
+    scope.where(id: unread_conversation_scope(scope).reselect('conversations.id'))
+  end
+
   def apply_source_id_filter(scope)
     return scope unless params[:source_id]
 
@@ -414,12 +443,22 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     params[:crm_stage_id].presence || params[:crmStageId].presence
   end
 
+  def scheduling_appointment_status
+    params[:appointment_status].presence || params[:appointmentStatus].presence
+  end
+
   def labels_scope_any?
     (params[:labels_scope].presence || params[:labelsScope].presence).to_s == 'any'
   end
 
   def team_scope_any?
     (params[:team_scope].presence || params[:teamScope].presence).to_s == 'any'
+  end
+
+  def unread_only?
+    ActiveModel::Type::Boolean.new.cast(
+      params[:unread].presence || params[:unread_only].presence || params[:unreadOnly].presence
+    )
   end
 
   def conversations_with_any_label(scope)
@@ -452,8 +491,40 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
   def crm_unread_conversation_scope
     @crm_unread_conversation_scope ||= unread_conversation_scope(
-      scoped_count_relation(include_crm_deal_context: false, include_assignee: true)
+      scoped_count_relation(include_crm_deal_context: false, include_assignee: true, include_unread: false)
     )
+  end
+
+  def current_scheduling_appointment_dialog_scope
+    scheduling_appointment_dialog_scope(status: scheduling_appointment_status)
+  end
+
+  def scheduling_appointment_dialog_scope(status: nil)
+    Scheduling::AppointmentDialogScopeBuilder.new(
+      account: current_account,
+      status: status
+    )
+  end
+
+  def scheduling_appointment_count_service
+    @scheduling_appointment_count_service ||= Scheduling::AppointmentDialogCountService.new(
+      account: current_account,
+      conversation_scope: scheduling_appointment_count_conversation_scope
+    )
+  end
+
+  def scheduling_appointment_count_conversation_scope
+    @scheduling_appointment_count_conversation_scope ||= unread_conversation_scope(
+      scoped_count_relation(
+        include_scheduling_appointment_context: false,
+        include_assignee: true,
+        include_unread: false
+      )
+    )
+  end
+
+  def search_query_last_message_sort?(sort_by)
+    params[:q].present? && sort_by == 'sort_on_last_message_at'
   end
 
   def current_page
@@ -471,6 +542,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     @conversations = conversations_base_query
 
     sort_by, sort_order = SORT_OPTIONS[params[:sort_by]] || SORT_OPTIONS['last_activity_at_desc']
+    sort_by, sort_order = SORT_OPTIONS['last_event_activity_at_desc'] if search_query_last_message_sort?(sort_by)
     @conversations = @conversations.send(sort_by, sort_order)
 
     if params[:updated_within].present?

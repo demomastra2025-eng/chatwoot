@@ -28,8 +28,7 @@ describe ParticipationListener do
 
     it 'logs a debug message if participant save fails due to a race condition' do
       allow(Rails.logger).to receive(:warn)
-      allow(conversation).to receive(:conversation_participants).and_return(double)
-      allow(conversation.conversation_participants).to receive(:find_or_create_by!).and_raise(ActiveRecord::RecordNotUnique)
+      allow(ConversationParticipant).to receive(:find_or_create_for!).and_raise(ActiveRecord::RecordNotUnique)
       expect { listener.assignee_changed(event) }.not_to raise_error
       expect(Rails.logger).to have_received(:warn).with('Failed to create conversation participant for account ' \
                                                         "#{account.id} : user #{agent.id} : conversation #{conversation.id}")

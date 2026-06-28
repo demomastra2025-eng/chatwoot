@@ -29,6 +29,27 @@ class ConversationParticipant < ApplicationRecord
 
   before_validation :ensure_account_id
 
+  def self.find_or_create_for!(conversation:, user_id:)
+    participant_scope = conversation.conversation_participants
+    participant_scope.find_by(user_id: user_id) || create_for_scope!(participant_scope, user_id)
+  end
+
+  def self.create_for_scope!(participant_scope, user_id)
+    transaction(requires_new: true) { participant_scope.create!(user_id: user_id) }
+  rescue ActiveRecord::RecordNotUnique
+    participant_scope.find_by!(user_id: user_id)
+  rescue ActiveRecord::RecordInvalid => e
+    existing_record = participant_scope.find_by(user_id: user_id)
+    return existing_record if existing_record.present? && duplicate_user_error?(e)
+
+    raise
+  end
+
+  def self.duplicate_user_error?(error)
+    error.record.is_a?(ConversationParticipant) && error.record.errors.of_kind?(:user_id, :taken)
+  end
+  private_class_method :create_for_scope!, :duplicate_user_error?
+
   private
 
   def ensure_account_id

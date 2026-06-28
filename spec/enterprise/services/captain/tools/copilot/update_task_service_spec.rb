@@ -25,12 +25,34 @@ RSpec.describe Captain::Tools::Copilot::UpdateTaskService do
 
   describe '#execute' do
     it 'updates the current task using JSON custom_attributes' do
-      payload = JSON.parse(execute_confirmed(priority: 'urgent', custom_attributes: { source: 'captain', playbook: 'recovery' }.to_json))
+      payload = JSON.parse(
+        execute_confirmed(
+          activity_type: 'meeting',
+          outcome: 'not_done',
+          outcome_note: 'Client did not join; retry tomorrow',
+          priority: 'urgent',
+          custom_attributes: { source: 'captain', playbook: 'recovery' }.to_json
+        )
+      )
 
       task.reload
 
       expect(payload).to include('action' => 'update_task', 'task_id' => task.id)
-      expect(payload['task']).to include('id' => task.id, 'priority' => 'urgent')
+      expect(payload).to include(
+        'activity_type' => 'meeting',
+        'outcome' => 'not_done',
+        'outcome_note' => 'Client did not join; retry tomorrow'
+      )
+      expect(payload['task']).to include(
+        'activity_type' => 'meeting',
+        'id' => task.id,
+        'outcome' => 'not_done',
+        'outcome_note' => 'Client did not join; retry tomorrow',
+        'priority' => 'urgent'
+      )
+      expect(task.activity_type).to eq('meeting')
+      expect(task.outcome).to eq('not_done')
+      expect(task.outcome_note).to eq('Client did not join; retry tomorrow')
       expect(task.priority).to eq('urgent')
       expect(task.custom_attributes).to include(
         'source' => 'captain',

@@ -12,6 +12,73 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     Crm::Bootstrap::AccountService.new(account: account).perform
   end
 
+  it 'creates task activity types and outcomes for CRM task workflows' do
+    post path,
+         params: {
+           activity_type: 'meeting',
+           outcome: 'held',
+           outcome_note: 'Client joined and approved next step',
+           title: 'Client meeting'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    payload = response.parsed_body.fetch('payload')
+    expect(payload['activity_type']).to eq('meeting')
+    expect(payload['outcome']).to eq('held')
+    expect(payload['outcome_note']).to eq('Client joined and approved next step')
+
+    created_task = account.crm_tasks.find(payload['id'])
+    expect(created_task.activity_type).to eq('meeting')
+    expect(created_task.outcome).to eq('held')
+    expect(created_task.outcome_note).to eq('Client joined and approved next step')
+  end
+
+  it 'updates task outcome details through the task API' do
+    task = create(:crm_task, account: account, status: account.crm_task_statuses.find_by!(code: 'todo'))
+
+    patch "#{path}/#{task.id}",
+          params: {
+            lock_version: task.lock_version,
+            outcome: 'not_done',
+            outcome_note: 'Customer asked to postpone until next week'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'outcome')).to eq('not_done')
+    expect(response.parsed_body.dig('payload', 'outcome_note')).to eq('Customer asked to postpone until next week')
+    expect(task.reload.outcome_note).to eq('Customer asked to postpone until next week')
+  end
+
+  it 'filters tasks by activity type and outcome' do
+    status = account.crm_task_statuses.find_by!(code: 'todo')
+    matching_task = create(
+      :crm_task,
+      account: account,
+      status: status,
+      activity_type: 'meeting',
+      outcome: 'no_show'
+    )
+    create(
+      :crm_task,
+      account: account,
+      status: status,
+      activity_type: 'call',
+      outcome: 'no_answer'
+    )
+
+    get path,
+        params: { activity_type: 'meeting', outcome: 'no_show' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].map { |task| task['id'] }).to eq([matching_task.id])
+  end
+
   it 'creates a deal task and defaults assignee/team from the deal' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     stage = pipeline.stages.find_by!(code: 'new')
@@ -184,14 +251,22 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     task = create(:crm_task, account: account, status: open_status)
 
     post "#{path}/#{task.id}/change_status",
-         params: { status_id: done_status.id, lock_version: task.lock_version },
+         params: {
+           status_id: done_status.id,
+           lock_version: task.lock_version,
+           outcome: 'not_done',
+           outcome_note: 'Client was unavailable; retry tomorrow'
+         },
          headers: headers,
          as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'status_id')).to eq(done_status.id)
+    expect(response.parsed_body.dig('payload', 'outcome')).to eq('not_done')
+    expect(response.parsed_body.dig('payload', 'outcome_note')).to eq('Client was unavailable; retry tomorrow')
     expect(response.parsed_body.dig('payload', 'completed_at')).to be_present
     expect(task.reload.events.where(event_type: 'task_status_changed')).to exist
+    expect(task.outcome_note).to eq('Client was unavailable; retry tomorrow')
   end
 
   it 'reorders tasks inside a status using board position' do

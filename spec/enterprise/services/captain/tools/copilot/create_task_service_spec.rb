@@ -24,6 +24,9 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
       payload = JSON.parse(
         execute_confirmed(
           title: 'Call back tomorrow',
+          activity_type: 'call',
+          outcome: 'answered',
+          outcome_note: 'Customer confirmed they can talk tomorrow',
           priority: 'high',
           custom_attributes: { source: 'captain', channel: 'telegram' }.to_json
         )
@@ -32,8 +35,23 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
       task = account.crm_tasks.order(:id).last
 
       expect(payload).to include('action' => 'create_task', 'task_id' => task.id)
-      expect(payload['task']).to include('id' => task.id, 'title' => 'Call back tomorrow', 'priority' => 'high')
+      expect(payload).to include(
+        'activity_type' => 'call',
+        'outcome' => 'answered',
+        'outcome_note' => 'Customer confirmed they can talk tomorrow'
+      )
+      expect(payload['task']).to include(
+        'activity_type' => 'call',
+        'id' => task.id,
+        'outcome' => 'answered',
+        'outcome_note' => 'Customer confirmed they can talk tomorrow',
+        'priority' => 'high',
+        'title' => 'Call back tomorrow'
+      )
       expect(task.title).to eq('Call back tomorrow')
+      expect(task.activity_type).to eq('call')
+      expect(task.outcome).to eq('answered')
+      expect(task.outcome_note).to eq('Customer confirmed they can talk tomorrow')
       expect(task.priority).to eq('high')
       expect(task.deal_id).to eq(deal.id)
       expect(task.originating_conversation_id).to eq(conversation.id)

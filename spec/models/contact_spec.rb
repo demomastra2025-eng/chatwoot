@@ -20,6 +20,7 @@ RSpec.describe Contact do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:owner).optional }
     it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
+    it { is_expected.to have_many(:communication_threads).dependent(:destroy) }
     it { is_expected.to have_many(:conversations).dependent(:destroy_async) }
     it { is_expected.to have_many(:crm_deals).through(:crm_deal_contacts) }
   end
@@ -169,6 +170,18 @@ RSpec.describe Contact do
 
       expect(described_class.exists?(contact.id)).to be false
       expect(CampaignDelivery.exists?(delivery.id)).to be false
+    end
+  end
+
+  context 'when a contact has communication threads' do
+    it 'can be deleted without foreign key violations' do
+      contact = create(:contact, :with_phone_number)
+      thread = create(:communication_thread, account: contact.account, contact: contact)
+
+      contact.destroy!
+
+      expect(described_class.exists?(contact.id)).to be false
+      expect(CommunicationThread.exists?(thread.id)).to be false
     end
   end
 

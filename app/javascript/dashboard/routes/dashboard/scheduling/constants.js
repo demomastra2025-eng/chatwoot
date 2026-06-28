@@ -18,12 +18,38 @@ export const APPOINTMENT_STATUS_VALUES = [
   'no_show',
 ];
 
+export const APPOINTMENT_STATUS_ANY = 'any';
+
 export const APPOINTMENT_STATUS_ICONS = {
   scheduled: 'i-lucide-clock-3',
   confirmed: 'i-lucide-badge-check',
   completed: 'i-lucide-check-check',
   cancelled: 'i-lucide-circle-off',
   no_show: 'i-lucide-user-round-x',
+};
+
+export const APPOINTMENT_STATUS_ICON_CLASSES = {
+  scheduled: '',
+  confirmed: 'text-n-amber-11',
+  completed: 'text-n-teal-11',
+  cancelled: 'text-n-ruby-11',
+  no_show: 'text-n-ruby-11',
+};
+
+export const APPOINTMENT_STATUS_ACCENT_CLASSES = {
+  scheduled: 'bg-n-amber-9',
+  confirmed: 'bg-n-amber-9',
+  completed: 'bg-n-teal-9',
+  cancelled: 'bg-n-ruby-9',
+  no_show: 'bg-n-ruby-9',
+};
+
+export const APPOINTMENT_STATUS_PILL_CLASSES = {
+  scheduled: 'bg-n-amber-3 text-n-amber-11 ring-n-amber-4/60',
+  confirmed: 'bg-n-amber-3 text-n-amber-11 ring-n-amber-4/60',
+  completed: 'bg-n-teal-3 text-n-teal-11 ring-n-teal-4/60',
+  cancelled: 'bg-n-ruby-3 text-n-ruby-11 ring-n-ruby-4/60',
+  no_show: 'bg-n-ruby-3 text-n-ruby-11 ring-n-ruby-4/60',
 };
 
 export const PAYMENT_STATUS_VALUES = [

@@ -5,13 +5,13 @@ class Api::V1::Accounts::Conversations::ParticipantsController < Api::V1::Accoun
 
   def create
     ActiveRecord::Base.transaction do
-      @participants = participants_to_be_added_ids.map { |user_id| @conversation.conversation_participants.find_or_create_by(user_id: user_id) }
+      @participants = participants_to_be_added_ids.map { |user_id| find_or_create_participant(user_id) }
     end
   end
 
   def update
     ActiveRecord::Base.transaction do
-      participants_to_be_added_ids.each { |user_id| @conversation.conversation_participants.find_or_create_by(user_id: user_id) }
+      participants_to_be_added_ids.each { |user_id| find_or_create_participant(user_id) }
       participants_to_be_removed_ids.each { |user_id| @conversation.conversation_participants.find_by(user_id: user_id)&.destroy }
     end
     @participants = @conversation.conversation_participants
@@ -37,5 +37,9 @@ class Api::V1::Accounts::Conversations::ParticipantsController < Api::V1::Accoun
 
   def current_participant_ids
     @current_participant_ids ||= @conversation.conversation_participants.pluck(:user_id)
+  end
+
+  def find_or_create_participant(user_id)
+    ConversationParticipant.find_or_create_for!(conversation: @conversation, user_id: user_id)
   end
 end

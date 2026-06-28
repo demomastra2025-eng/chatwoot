@@ -573,6 +573,7 @@ class WhatsappWeb::ContactSyncService
 
     source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
     ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
+    CommunicationThread.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Message.where(sender_type: 'Contact', sender_id: source_contact.id).update_all(sender_id: target_contact.id, updated_at: now)
 

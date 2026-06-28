@@ -35,7 +35,7 @@ class Scheduling::Appointments::UpsertService
     services = resolve_services(current: current_services)
     primary_service = services.first
     company = resolve_company(contact)
-    conversation = resolve_optional_record(:conversation_id, account.conversations, current: appointment.conversation)
+    conversation = resolve_conversation
     created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
     owner = resolve_owner(contact: contact, resource: resource)
 
@@ -372,6 +372,24 @@ class Scheduling::Appointments::UpsertService
     scope.find(params[key])
   end
 
+  def resolve_conversation
+    if params.key?(:conversation_id)
+      return nil if params[:conversation_id].blank?
+
+      return account.conversations.find_by(id: params[:conversation_id]) ||
+             account.conversations.find_by!(display_id: params[:conversation_id])
+    end
+    return resolve_conversation_by_display_id if params.key?(:conversation_display_id)
+
+    appointment.conversation
+  end
+
+  def resolve_conversation_by_display_id
+    return nil if params[:conversation_display_id].blank?
+
+    account.conversations.find_by!(display_id: params[:conversation_display_id])
+  end
+
   def resolve_services(current:)
     ids = normalized_service_ids(current: current)
     return [] if ids.blank?
@@ -439,7 +457,10 @@ class Scheduling::Appointments::UpsertService
     if services.blank?
       return {
         resolved_price: nil,
-        service_name_snapshot: nil,
+        service_name_snapshot: resolve_optional_text(
+          :service_name_snapshot,
+          current: appointment.service_name_snapshot
+        ),
         service_type_snapshot: nil,
         service_duration_min_snapshot: nil,
         compensation_type_snapshot: resource.compensation_type,

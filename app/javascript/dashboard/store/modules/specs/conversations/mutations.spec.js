@@ -85,7 +85,7 @@ describe('#mutations', () => {
   });
 
   describe('#SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS', () => {
-    it('keeps CRM pipeline and stage unread counts in sidebar state', () => {
+    it('keeps CRM and appointment sidebar counts in state', () => {
       const state = { sidebarUnreadCounts: {} };
 
       mutations[types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS](state, {
@@ -96,6 +96,7 @@ describe('#mutations', () => {
         labels: { vip: 3 },
         pipelines: { 30: 4 },
         stages: { 40: 5 },
+        appointment_statuses: { confirmed: 6 },
       });
 
       expect(state.sidebarUnreadCounts).toEqual({
@@ -106,6 +107,7 @@ describe('#mutations', () => {
         labels: { vip: 3 },
         pipelines: { 30: 4 },
         stages: { 40: 5 },
+        appointment_statuses: { confirmed: 6 },
       });
     });
   });

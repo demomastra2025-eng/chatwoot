@@ -497,6 +497,70 @@ describe('SidebarGroup', () => {
     ).not.toContain('PipelineStage:1:20');
   });
 
+  it('highlights appointment status header for the all-appointments toggle without selecting a concrete status', async () => {
+    Object.assign(routeState, {
+      name: 'communication_threads_dashboard',
+      path: '/communication_threads',
+      query: {
+        status: 'open',
+        assignee_type: 'all',
+        appointment_status: 'any',
+      },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'AppointmentStatuses',
+          label: 'Appointments',
+          icon: 'i-lucide-calendar-clock',
+          active: true,
+          to: {
+            name: 'communication_threads_dashboard',
+            path: '/communication_threads',
+            query: {
+              status: 'open',
+              assignee_type: 'all',
+              appointment_status: 'any',
+            },
+          },
+          suppressExactPathActive: true,
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'AppointmentStatus:scheduled',
+              label: 'Scheduled',
+              to: {
+                name: 'communication_threads_dashboard',
+                path: '/communication_threads',
+                query: {
+                  status: 'open',
+                  assignee_type: 'all',
+                  appointment_status: 'scheduled',
+                },
+              },
+              activeOn: ['communication_threads_dashboard'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const appointmentSubGroup = wrapper.find(
+      '[data-test-id="sidebar-subgroup"]'
+    );
+
+    expect(appointmentSubGroup.attributes('data-header-active')).toBe('true');
+    expect(appointmentSubGroup.attributes('data-has-to')).toBe('true');
+    expect(
+      appointmentSubGroup.attributes('data-active-child-names')
+    ).not.toContain('AppointmentStatus:scheduled');
+  });
+
   it('matches assignee_type sidebar links when the route uses the legacy assigneeType alias', async () => {
     Object.assign(routeState, {
       name: 'communication_threads_dashboard',

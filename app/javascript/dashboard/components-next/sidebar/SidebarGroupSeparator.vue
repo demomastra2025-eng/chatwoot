@@ -135,9 +135,13 @@ const handleRootClick = async () => {
     }"
     @click.stop="handleRootClick"
   >
-    <Icon v-if="icon" :icon="icon" class="size-4" />
+    <Icon
+      v-if="icon"
+      :icon="icon"
+      :class="compactLabel ? 'size-3.5' : 'size-4'"
+    />
     <span
-      class="sidebar-group-separator-label text-sm leading-5 flex-grow min-w-0 truncate"
+      class="sidebar-group-separator-label px-1 text-sm leading-5 flex-grow min-w-0 truncate"
       :class="{
         'font-medium text-n-slate-12': active && !actionLabel,
         '!text-xs': compactLabel,
@@ -148,7 +152,7 @@ const handleRootClick = async () => {
     <span
       v-if="hasPlainCount"
       data-test-id="sidebar-plain-count"
-      class="shrink-0 px-1 text-xs font-medium leading-5 tabular-nums text-current"
+      class="shrink-0 text-xs px-1 font-medium leading-5 tabular-nums text-current"
     >
       {{ plainCountLabel }}
     </span>

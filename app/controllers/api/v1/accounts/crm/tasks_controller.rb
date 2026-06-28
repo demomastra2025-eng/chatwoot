@@ -8,6 +8,9 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     originating_conversation_id
     title
     description
+    activity_type
+    outcome
+    outcome_note
     priority
     start_at
     due_at
@@ -23,6 +26,9 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     originating_conversation_id
     title
     description
+    activity_type
+    outcome
+    outcome_note
     priority
     start_at
     due_at
@@ -98,7 +104,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     task = ::Crm::Tasks::StatusTransitionService.new(
       account: Current.account,
       task: @task,
-      params: params.permit(:status_id, :position, :lock_version),
+      params: params.permit(:status_id, :position, :lock_version, :outcome, :outcome_note),
       actor: Current.user
     ).perform
 
@@ -171,6 +177,8 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     scope = policy_scope(::Crm::Task).ordered
     scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
     scope = filter_by_exact(scope, :status_id)
+    scope = filter_by_exact(scope, :activity_type)
+    scope = filter_by_exact(scope, :outcome)
     scope = filter_by_exact(scope, :assignee_id)
     scope = filter_by_exact(scope, :team_id)
     scope = filter_by_exact(scope, :priority)

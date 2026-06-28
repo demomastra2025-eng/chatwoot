@@ -11,7 +11,9 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     include_assignee: false,
     include_team: true,
     include_labels: true,
-    include_crm_deal_context: true
+    include_crm_deal_context: true,
+    include_scheduling_appointment_context: true,
+    include_unread: true
   }.freeze
   SORT_OPTIONS = {
     'last_activity_at_asc' => 'last_message_activity_sort_at ASC NULLS LAST, communication_threads.id ASC',
@@ -100,6 +102,8 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     filter_by_team
     filter_by_labels
     filter_by_crm_deal_context
+    filter_by_scheduling_appointment_context
+    filter_by_unread
   end
 
   def validate_params!
@@ -170,6 +174,14 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     @communication_threads = current_crm_deal_dialog_scope.filter_communication_threads(@communication_threads)
   end
 
+  def filter_by_scheduling_appointment_context
+    @communication_threads = current_scheduling_appointment_dialog_scope.filter_communication_threads(@communication_threads)
+  end
+
+  def filter_by_unread
+    @communication_threads = apply_unread_filter(@communication_threads)
+  end
+
   def filter_by_assignee_type
     case params[:assignee_type]
     when 'me'
@@ -235,12 +247,13 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       teams: team_unread_counts,
       labels: label_unread_counts,
       pipelines: pipeline_unread_counts,
-      stages: stage_unread_counts
+      stages: stage_unread_counts,
+      appointment_statuses: appointment_status_unread_counts
     }
   end
 
   def status_unread_counts
-    scope = scoped_thread_relation(include_status: false, include_assignee: true)
+    scope = scoped_thread_relation(include_status: false, include_assignee: true, include_unread: false)
 
     STATUS_COUNT_KEYS.index_with do |status|
       unread_thread_count(apply_status_filter(scope, status))
@@ -248,7 +261,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def channel_unread_counts
-    scope = scoped_thread_relation(include_inbox: false, include_assignee: true)
+    scope = scoped_thread_relation(include_inbox: false, include_assignee: true, include_unread: false)
     unread_scope = unread_thread_scope(scope)
     thread_ids = unread_scope.select(:id)
 
@@ -268,13 +281,13 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def team_unread_counts
-    scope = scoped_thread_relation(include_team: false, include_assignee: true)
+    scope = scoped_thread_relation(include_team: false, include_assignee: true, include_unread: false)
 
     normalize_counts(unread_thread_scope(scope).where.not(team_id: nil).group(:team_id).count)
   end
 
   def label_unread_counts
-    scope = scoped_thread_relation(include_labels: false, include_assignee: true)
+    scope = scoped_thread_relation(include_labels: false, include_assignee: true, include_unread: false)
     thread_ids = unread_thread_scope(scope).select(:id)
 
     normalize_counts(
@@ -304,6 +317,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     crm_unread_count_service.communication_thread_stage_counts
   end
 
+  def appointment_status_unread_counts
+    scheduling_appointment_count_service.communication_thread_status_counts
+  end
+
   def unread_thread_scope(scope)
     CommunicationThread
       .where(id: scope.except(:order).select(:id))
@@ -327,6 +344,8 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       [:include_team, method(:apply_team_filter)],
       [:include_labels, method(:apply_labels_filter)],
       [:include_crm_deal_context, method(:apply_crm_deal_context_filter)],
+      [:include_scheduling_appointment_context, method(:apply_scheduling_appointment_context_filter)],
+      [:include_unread, method(:apply_unread_filter)],
       [:include_assignee, method(:apply_assignee_filter)]
     ].reduce(base_thread_scope) do |scope, (filter_key, filter_method)|
       filters[filter_key] ? filter_method.call(scope) : scope
@@ -336,9 +355,16 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def base_thread_scope
     CommunicationThread
       .where(account_id: current_account.id)
-      .joins(:communication_thread_conversations)
-      .where(communication_thread_conversations: { conversation_id: accessible_conversations.select(:id) })
-      .distinct
+      .where(id: linked_thread_ids)
+  end
+
+  def linked_thread_ids(conversation_ids: accessible_conversations.select(:id), inbox_id: nil)
+    relation = CommunicationThreadConversation
+               .where(account_id: current_account.id)
+               .where(conversation_id: conversation_ids)
+    relation = relation.where(inbox_id: inbox_id) if inbox_id.present?
+
+    relation.select(:communication_thread_id)
   end
 
   def apply_status_filter(scope, status = nil)
@@ -346,19 +372,23 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     return scope if selected_status == 'all'
 
     status_value = selected_status.presence || DEFAULT_STATUS
-    scope.where(
-      'communication_threads.status = :thread_status OR communication_thread_conversations.conversation_id IN (:matching_conversation_ids)',
-      thread_status: CommunicationThread.statuses.fetch(status_value),
-      matching_conversation_ids: accessible_conversations
+    matching_thread_ids = linked_thread_ids(
+      conversation_ids: accessible_conversations
         .where(status: Conversation.statuses.fetch(status_value))
         .select(:id)
+    )
+
+    scope.where(
+      'communication_threads.status = :thread_status OR communication_threads.id IN (:matching_thread_ids)',
+      thread_status: CommunicationThread.statuses.fetch(status_value),
+      matching_thread_ids: matching_thread_ids
     )
   end
 
   def apply_inbox_filter(scope)
     return scope if params[:inbox_id].blank?
 
-    scope.where(communication_thread_conversations: { inbox_id: params[:inbox_id] })
+    scope.where(id: linked_thread_ids(inbox_id: params[:inbox_id]))
   end
 
   def apply_team_filter(scope)
@@ -371,11 +401,21 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def apply_labels_filter(scope)
     return scope if params[:labels].blank? && !labels_scope_any?
 
-    scope.where(communication_thread_conversations: { conversation_id: labeled_conversation_ids })
+    scope.where(id: linked_thread_ids(conversation_ids: labeled_conversation_ids))
   end
 
   def apply_crm_deal_context_filter(scope)
     current_crm_deal_dialog_scope.filter_communication_threads(scope)
+  end
+
+  def apply_scheduling_appointment_context_filter(scope)
+    current_scheduling_appointment_dialog_scope.filter_communication_threads(scope)
+  end
+
+  def apply_unread_filter(scope)
+    return scope unless unread_only?
+
+    unread_thread_scope(scope)
   end
 
   def apply_assignee_filter(scope)
@@ -443,12 +483,22 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     params[:crm_stage_id].presence || params[:crmStageId].presence
   end
 
+  def scheduling_appointment_status
+    params[:appointment_status].presence || params[:appointmentStatus].presence
+  end
+
   def labels_scope_any?
     (params[:labels_scope].presence || params[:labelsScope].presence).to_s == 'any'
   end
 
   def team_scope_any?
     (params[:team_scope].presence || params[:teamScope].presence).to_s == 'any'
+  end
+
+  def unread_only?
+    ActiveModel::Type::Boolean.new.cast(
+      params[:unread].presence || params[:unread_only].presence || params[:unreadOnly].presence
+    )
   end
 
   def labeled_conversation_ids
@@ -487,7 +537,35 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   def crm_unread_thread_scope
     @crm_unread_thread_scope ||= unread_thread_scope(
-      scoped_thread_relation(include_crm_deal_context: false, include_assignee: true)
+      scoped_thread_relation(include_crm_deal_context: false, include_assignee: true, include_unread: false)
+    )
+  end
+
+  def current_scheduling_appointment_dialog_scope
+    scheduling_appointment_dialog_scope(status: scheduling_appointment_status)
+  end
+
+  def scheduling_appointment_dialog_scope(status: nil)
+    Scheduling::AppointmentDialogScopeBuilder.new(
+      account: current_account,
+      status: status
+    )
+  end
+
+  def scheduling_appointment_count_service
+    @scheduling_appointment_count_service ||= Scheduling::AppointmentDialogCountService.new(
+      account: current_account,
+      communication_thread_scope: scheduling_appointment_count_thread_scope
+    )
+  end
+
+  def scheduling_appointment_count_thread_scope
+    @scheduling_appointment_count_thread_scope ||= unread_thread_scope(
+      scoped_thread_relation(
+        include_scheduling_appointment_context: false,
+        include_assignee: true,
+        include_unread: false
+      )
     )
   end
 end

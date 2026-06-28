@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 
 import DateTimePicker from './DateTimePicker.vue';
@@ -21,7 +21,11 @@ const calendarStub = {
 const stubs = {
   DatePickerRoot: passthroughStub,
   DatePickerTrigger: passthroughStub,
-  DatePickerContent: { template: '<div><slot /></div>' },
+  DatePickerContent: {
+    name: 'DatePickerContent',
+    props: ['portal'],
+    template: '<div><slot /></div>',
+  },
   DatePickerCalendar: calendarStub,
   DatePickerHeader: passthroughStub,
   DatePickerPrev: passthroughStub,
@@ -63,6 +67,10 @@ const stubs = {
 };
 
 describe('DateTimePicker', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
   it('vertically centers the time wheel panel in datetime picker popup', () => {
     const wrapper = mount(DateTimePicker, {
       props: {
@@ -81,5 +89,28 @@ describe('DateTimePicker', () => {
     );
     expect(timePanelClasses).toContain('self-center');
     expect(timePanelClasses).not.toContain('self-start');
+  });
+
+  it('renders date picker popup inside the active dialog top layer', async () => {
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    document.body.append(dialog);
+
+    const wrapper = mount(DateTimePicker, {
+      attachTo: dialog,
+      props: {
+        type: 'datetime',
+        value: new Date('2026-04-24T12:30:00'),
+      },
+      global: { stubs },
+    });
+
+    await wrapper.vm.$nextTick();
+
+    expect(
+      wrapper.findComponent({ name: 'DatePickerContent' }).props('portal')
+    ).toEqual({
+      to: dialog,
+    });
   });
 });

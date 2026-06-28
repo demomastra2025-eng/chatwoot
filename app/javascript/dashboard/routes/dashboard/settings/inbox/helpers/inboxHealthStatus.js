@@ -7,6 +7,10 @@ const ERROR_SOURCE_KEYS = [
   'error',
 ];
 
+const WHATSAPP_WEB_CHANNEL_TYPE = 'Channel::WhatsappWeb';
+const WHATSAPP_WEB_CONNECTED_STATE = 'connected';
+const WHATSAPP_WEB_OPEN_CONNECTION_STATE = 'open';
+
 const DISCONNECTED_STATES = [
   'disconnected',
   'disconnecting',
@@ -19,6 +23,15 @@ const DISCONNECTED_STATES = [
   'pending_auth',
   'qr_expired',
   'closed',
+];
+
+const WHATSAPP_WEB_WAITING_STATES = [
+  'creating',
+  'waiting_for_qr',
+  'qr_ready',
+  'qr_scanned',
+  'connecting',
+  'reconnecting',
 ];
 
 const ERROR_STATES = ['degraded', 'error', 'failed', 'failure'];
@@ -128,6 +141,12 @@ const stateFrom = (source, keys) => {
     .join(' ');
 };
 
+const firstStateFrom = (sources, keys) =>
+  sources
+    .filter(source => source && typeof source === 'object')
+    .flatMap(source => keys.map(key => normalizeState(source[key])))
+    .find(Boolean) || '';
+
 const errorValuesFrom = sources =>
   sources.flatMap(source =>
     ERROR_SOURCE_KEYS.map(key =>
@@ -201,11 +220,23 @@ export const getInboxHealthStatus = inbox => {
       'connection_state',
       'status',
     ]),
-    stateFrom(evolutionState, ['status', 'state']),
+    stateFrom(evolutionState, ['status', 'state', 'connection_state']),
   ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
+  const isWhatsappWebChannel = inbox.channel_type === WHATSAPP_WEB_CHANNEL_TYPE;
+  const whatsappWebLifecycleState = firstStateFrom(
+    [evolutionState, runtimeState, additionalAttributes, inbox],
+    ['status', 'state', 'lifecycle_state', 'auth_state']
+  );
+  const whatsappWebConnectionState = firstStateFrom(
+    [evolutionState, runtimeState, additionalAttributes, inbox],
+    ['connection_state']
+  );
+  const isWhatsappWebOpen =
+    whatsappWebLifecycleState === WHATSAPP_WEB_CONNECTED_STATE &&
+    whatsappWebConnectionState === WHATSAPP_WEB_OPEN_CONNECTION_STATE;
 
   if (inbox.reauthorization_required || inbox.requires_reauthorization) {
     return {
@@ -243,6 +274,60 @@ export const getInboxHealthStatus = inbox => {
       labelKey: 'INBOX_MGMT.HEALTH_STATUS.PROVIDER_UNAVAILABLE',
       descriptionKey:
         'INBOX_MGMT.HEALTH_STATUS.PROVIDER_UNAVAILABLE_DESCRIPTION',
+      detail,
+    };
+  }
+
+  if (isWhatsappWebChannel && !isWhatsappWebOpen) {
+    if (
+      DISCONNECTED_STATES.includes(whatsappWebLifecycleState) ||
+      ERROR_STATES.includes(whatsappWebLifecycleState)
+    ) {
+      return {
+        id: 'disconnected',
+        tone: 'ruby',
+        icon: 'i-lucide-plug-zap',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED',
+        descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED_DESCRIPTION',
+        detail,
+      };
+    }
+
+    if (
+      WHATSAPP_WEB_WAITING_STATES.includes(whatsappWebLifecycleState) ||
+      WHATSAPP_WEB_WAITING_STATES.includes(whatsappWebConnectionState)
+    ) {
+      return {
+        id: 'pending',
+        tone: 'amber',
+        icon: 'i-lucide-loader-circle',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.PENDING',
+        descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.PENDING_DESCRIPTION',
+        detail,
+      };
+    }
+
+    if (
+      DISCONNECTED_STATES.includes(whatsappWebConnectionState) ||
+      ERROR_STATES.includes(whatsappWebConnectionState) ||
+      whatsappWebConnectionState === 'close'
+    ) {
+      return {
+        id: 'disconnected',
+        tone: 'ruby',
+        icon: 'i-lucide-plug-zap',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED',
+        descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED_DESCRIPTION',
+        detail,
+      };
+    }
+
+    return {
+      id: 'disconnected',
+      tone: 'ruby',
+      icon: 'i-lucide-plug-zap',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED',
+      descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED_DESCRIPTION',
       detail,
     };
   }

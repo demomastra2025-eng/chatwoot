@@ -2,7 +2,7 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 12;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 14;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -21,7 +21,16 @@ const MY_COMPANY_VISIBILITY_ITEM_KEYS = Object.freeze([
 ]);
 const MY_COMPANY_EMPLOYEES_VISIBILITY_KEY = 'MyCompany:Employees';
 const CONVERSATION_STATUSES_VISIBILITY_KEY = 'Conversation:Statuses';
-const CONVERSATION_PIPELINES_VISIBILITY_KEY = 'Conversation:Pipelines';
+export const CONVERSATION_PIPELINES_VISIBILITY_KEY = 'Conversation:Pipelines';
+export const CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY =
+  'Conversation:AppointmentStatuses';
+export const CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS = Object.freeze({
+  scheduled: 'Conversation:AppointmentStatus:scheduled',
+  confirmed: 'Conversation:AppointmentStatus:confirmed',
+  completed: 'Conversation:AppointmentStatus:completed',
+  cancelled: 'Conversation:AppointmentStatus:cancelled',
+  no_show: 'Conversation:AppointmentStatus:no_show',
+});
 const LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY =
   'Conversation:DefaultPipeline';
 const REPORTS_DEALS_VISIBILITY_KEY = 'Reports:Deals';
@@ -67,6 +76,30 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item(
       CONVERSATION_PIPELINES_VISIBILITY_KEY,
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
+    ),
+    item(
+      CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENTS'
+    ),
+    item(
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.scheduled,
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.SCHEDULED'
+    ),
+    item(
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.confirmed,
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CONFIRMED'
+    ),
+    item(
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.completed,
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.COMPLETED'
+    ),
+    item(
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.cancelled,
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CANCELLED'
+    ),
+    item(
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.NO_SHOW'
     ),
     item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
     item('Conversation:Teams', 'SIDEBAR.TEAMS'),

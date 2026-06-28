@@ -100,4 +100,25 @@ describe('SidebarGroupLeaf', () => {
     );
     expect(link.classes()).toContain('rounded-lg');
   });
+
+  it('applies status color classes to appointment status label and count', () => {
+    const wrapper = mountComponent({
+      label: 'Подтвержден',
+      icon: 'i-lucide-badge-check',
+      iconClass: 'text-n-amber-11',
+      labelClass: 'text-n-amber-11',
+      count: 7,
+      countClass: 'text-n-amber-11',
+    });
+    const count = wrapper.find('[data-test-id="sidebar-plain-count"]');
+
+    expect(wrapper.text()).toContain('Подтвержден');
+    expect(count.text()).toBe('7');
+    expect(count.classes()).toContain('text-n-amber-11');
+    expect(
+      wrapper
+        .findAll('.text-n-amber-11')
+        .some(element => element.text().includes('Подтвержден'))
+    ).toBe(true);
+  });
 });

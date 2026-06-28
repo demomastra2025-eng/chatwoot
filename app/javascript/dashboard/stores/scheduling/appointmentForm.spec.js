@@ -132,6 +132,35 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.form.prepaidPaymentMethod).toBe('kaspi_qr');
   });
 
+  it('keeps the linked conversation display id for the appointment modal chat panel', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      conversationDisplayId: 185,
+      conversationId: 11963,
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+
+    expect(store.form.conversationId).toBe(11963);
+    expect(store.form.conversationDisplayId).toBe(185);
+    expect(store.buildPayload()).toMatchObject({ conversation_id: 11963 });
+    expect(store.buildPayload()).not.toHaveProperty('conversation_display_id');
+  });
+
+  it('sends conversation_display_id when only a display id is available', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate({}, { conversationDisplayId: 185 });
+
+    expect(store.buildPayload()).toMatchObject({
+      conversation_display_id: 185,
+    });
+    expect(store.buildPayload()).not.toHaveProperty('conversation_id');
+  });
+
   it('defaults prepaid payment method to cash when prepaid amount is positive', () => {
     const store = useSchedulingAppointmentFormStore();
 
@@ -143,6 +172,46 @@ describe('useSchedulingAppointmentFormStore', () => {
       prepaid_amount: 4000,
       prepaid_payment_method: 'cash',
     });
+  });
+
+  it('sends a manual service name snapshot when creating without configured services', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    store.updateField('resourceId', 3);
+    store.updateField('serviceNameSnapshot', 'Осмотр');
+    store.updateField('serviceAmount', 12000);
+
+    expect(store.buildPayload()).toMatchObject({
+      resource_id: 3,
+      service_amount: 12000,
+      service_ids: [],
+      service_name_snapshot: 'Осмотр',
+    });
+    expect(store.buildPayload()).not.toHaveProperty('service_id');
+  });
+
+  it('sends an empty service list when an edited appointment switches to a manual service name', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      serviceAmount: 20000,
+      serviceId: 5,
+      serviceNameSnapshot: 'Консультация',
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    store.updateField('serviceIds', []);
+    store.updateField('serviceAmount', 22000);
+
+    expect(store.buildPayload()).toMatchObject({
+      service_amount: 22000,
+      service_ids: [],
+      service_name_snapshot: 'Консультация',
+    });
+    expect(store.buildPayload()).not.toHaveProperty('service_id');
   });
 
   it('clears prepaid payment method when prepaid amount is zeroed out', () => {

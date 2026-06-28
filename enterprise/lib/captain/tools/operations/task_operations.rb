@@ -24,8 +24,22 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     ).perform
   end
 
-  def create_task(title:, description: nil, priority: nil, start_at: nil, due_at: nil, deal_id: nil, originating_conversation_id: nil,
-                  status_id: nil, assignee_id: nil, team_id: nil, custom_attributes: nil)
+  def create_task(
+    title:,
+    description: nil,
+    activity_type: nil,
+    outcome: nil,
+    outcome_note: nil,
+    priority: nil,
+    start_at: nil,
+    due_at: nil,
+    deal_id: nil,
+    originating_conversation_id: nil,
+    status_id: nil,
+    assignee_id: nil,
+    team_id: nil,
+    custom_attributes: nil
+  )
     ensure_feature_enabled!('crm_tasks', 'CRM tasks are not enabled for this account')
     bootstrap_crm_defaults!
     deal_id = optional_positive_id(deal_id)
@@ -37,6 +51,9 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     create_params = {
       title: title,
       description: description,
+      activity_type: activity_type,
+      outcome: outcome,
+      outcome_note: outcome_note,
       priority: priority,
       start_at: start_at,
       due_at: due_at,
@@ -57,7 +74,17 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     end
   end
 
-  def update_current_task(title: nil, description: nil, priority: nil, start_at: nil, due_at: nil, custom_attributes: nil)
+  def update_current_task(
+    title: nil,
+    description: nil,
+    activity_type: nil,
+    outcome: nil,
+    outcome_note: nil,
+    priority: nil,
+    start_at: nil,
+    due_at: nil,
+    custom_attributes: nil
+  )
     ensure_feature_enabled!('crm_tasks', 'CRM tasks are not enabled for this account')
     raise ArgumentError, 'Current task is not available' if current_task.blank?
 
@@ -66,6 +93,9 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     }
     params[:title] = title if title.present?
     params[:description] = description unless description.nil?
+    params[:activity_type] = activity_type unless activity_type.nil?
+    params[:outcome] = outcome unless outcome.nil?
+    params[:outcome_note] = outcome_note unless outcome_note.nil?
     params[:priority] = priority unless priority.nil?
     params[:start_at] = start_at unless start_at.nil?
     params[:due_at] = due_at unless due_at.nil?

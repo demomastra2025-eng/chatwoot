@@ -125,6 +125,13 @@ const selectedLabel = computed(() => {
   return selectedOption.value?.label ?? selectPlaceholder.value;
 });
 const selectedIcon = computed(() => selectedOption.value?.icon || '');
+const selectedIconClass = computed(
+  () => selectedOption.value?.iconClass || 'text-n-slate-10'
+);
+const selectedLabelClass = computed(() => {
+  if (!selectedOption.value) return 'text-n-slate-10';
+  return selectedOption.value.labelClass || 'text-n-slate-12';
+});
 const triggerId = computed(() => props.id || attrs.id || undefined);
 const rootAttrs = computed(() => {
   const forwardedAttrs = { ...attrs };
@@ -251,13 +258,13 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
             />
             <span
               v-if="selectedIcon"
-              class="size-4 shrink-0 text-n-slate-10"
-              :class="selectedIcon"
+              class="size-4 shrink-0"
+              :class="[selectedIcon, selectedIconClass]"
               aria-hidden="true"
             />
             <span
               class="min-w-0 flex-1 truncate text-left"
-              :class="selectedOption ? 'text-n-slate-12' : 'text-n-slate-10'"
+              :class="selectedLabelClass"
             >
               {{ selectedLabel }}
             </span>

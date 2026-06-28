@@ -125,15 +125,16 @@ defineExpose({
             />
             <span
               v-if="option.icon"
-              class="size-4 flex-shrink-0 text-n-slate-11"
-              :class="option.icon"
+              class="size-4 flex-shrink-0"
+              :class="[option.icon, option.iconClass || 'text-n-slate-11']"
               aria-hidden="true"
             />
             <span
-              :class="{
-                'font-medium': isSelected(option),
-              }"
-              class="min-w-0 flex-1 truncate text-left text-n-slate-12"
+              :class="[
+                option.labelClass || 'text-n-slate-12',
+                { 'font-medium': isSelected(option) },
+              ]"
+              class="min-w-0 flex-1 truncate text-left"
             >
               {{ option.label }}
             </span>

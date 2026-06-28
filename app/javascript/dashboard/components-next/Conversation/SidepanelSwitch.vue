@@ -6,10 +6,18 @@ import { computed } from 'vue';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
-import { CRM_DEAL_MANAGE_PERMISSIONS } from 'dashboard/constants/permissions';
+import {
+  CRM_DEAL_MANAGE_PERMISSIONS,
+  SCHEDULING_ACCESS_PERMISSIONS,
+} from 'dashboard/constants/permissions';
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
+import {
+  buildSidebarVisibilityState,
+  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+  CONVERSATION_PIPELINES_VISIBILITY_KEY,
+} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
-const { updateUISettings } = useUISettings();
+const { uiSettings, updateUISettings } = useUISettings();
 
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
@@ -24,8 +32,21 @@ const currentAccountPermissions = computed(() => {
 
   return currentAccount?.permissions || [];
 });
+const conversationVisibility = computed(() =>
+  buildSidebarVisibilityState(uiSettings.value)
+);
+const isDealPanelVisible = computed(
+  () => conversationVisibility.value[CONVERSATION_PIPELINES_VISIBILITY_KEY]
+);
+const isAppointmentPanelVisible = computed(
+  () =>
+    conversationVisibility.value[
+      CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY
+    ]
+);
 const showDealAction = computed(
   () =>
+    isDealPanelVisible.value &&
     isFeatureEnabledonAccount.value(
       currentAccountId.value,
       FEATURE_FLAGS.CRM_DEALS
@@ -41,8 +62,19 @@ const showTouchAction = computed(() =>
     FEATURE_FLAGS.CAMPAIGNS
   )
 );
+const showAppointmentAction = computed(
+  () =>
+    isAppointmentPanelVisible.value &&
+    isFeatureEnabledonAccount.value(
+      currentAccountId.value,
+      FEATURE_FLAGS.SCHEDULING
+    ) &&
+    hasPermissions(
+      SCHEDULING_ACCESS_PERMISSIONS,
+      currentAccountPermissions.value
+    )
+);
 
-const { uiSettings } = useUISettings();
 const isContactSidebarOpen = computed(
   () => uiSettings.value.is_contact_sidebar_open
 );
@@ -51,6 +83,9 @@ const isCopilotPanelOpen = computed(
 );
 const isDealsSidebarOpen = computed(
   () => uiSettings.value.is_crm_deal_panel_open
+);
+const isAppointmentsSidebarOpen = computed(
+  () => uiSettings.value.is_scheduling_appointments_panel_open
 );
 const isTouchSidebarOpen = computed(
   () => uiSettings.value.is_touch_sidebar_open
@@ -61,6 +96,7 @@ const toggleConversationSidebarToggle = () => {
     is_contact_sidebar_open: !isContactSidebarOpen.value,
     is_crm_deal_panel_open: false,
     is_copilot_panel_open: false,
+    is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
 };
@@ -70,6 +106,7 @@ const handleConversationSidebarToggle = () => {
     is_contact_sidebar_open: true,
     is_crm_deal_panel_open: false,
     is_copilot_panel_open: false,
+    is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
 };
@@ -79,6 +116,17 @@ const openDealsSidebar = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: true,
     is_copilot_panel_open: false,
+    is_scheduling_appointments_panel_open: false,
+    is_touch_sidebar_open: false,
+  });
+};
+
+const openAppointmentsSidebar = () => {
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: false,
+    is_copilot_panel_open: false,
+    is_scheduling_appointments_panel_open: true,
     is_touch_sidebar_open: false,
   });
 };
@@ -88,6 +136,7 @@ const handleCopilotSidebarToggle = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
     is_copilot_panel_open: true,
+    is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
 };
@@ -97,6 +146,7 @@ const openTouchEditor = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
     is_copilot_panel_open: false,
+    is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: true,
   });
 };
@@ -150,6 +200,19 @@ useKeyboardEvents(keyboardEvents);
       }"
       icon="i-lucide-timer-reset"
       @click="openTouchEditor"
+    />
+    <Button
+      v-if="showAppointmentAction"
+      v-tooltip.bottom="$t('SCHEDULING.DIALOGS.PANEL_TITLE')"
+      ghost
+      slate
+      sm
+      class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
+      :class="{
+        'bg-n-alpha-2 active:shadow-sm': isAppointmentsSidebarOpen,
+      }"
+      icon="i-lucide-calendar-clock"
+      @click="openAppointmentsSidebar"
     />
     <Button
       v-if="showCopilotTab"

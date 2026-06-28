@@ -11,6 +11,8 @@ const props = defineProps({
   to: { type: [String, Object], required: true },
   icon: { type: [String, Object], default: null },
   iconClass: { type: String, default: '' },
+  labelClass: { type: String, default: '' },
+  countClass: { type: String, default: '' },
   compactIconGap: { type: Boolean, default: false },
   active: { type: Boolean, default: false },
   badge: { type: [Number, String], default: 0 },
@@ -116,11 +118,12 @@ const handleLeafClick = async event => {
         :active
         :badge="badgeCount"
         :count="count"
+        :count-class="countClass"
       />
       <template v-else>
         <span
           v-if="icon"
-          class="size-4 grid place-content-center rounded-full"
+          class="size-4 grid place-content-center rounded-full shrink-0"
           :class="iconClass"
         >
           <Icon :icon="icon" :class="iconComponentClass" />
@@ -131,11 +134,14 @@ const handleLeafClick = async event => {
           class="h-4 w-0.5 shrink-0 rounded-full"
           :style="stageAccentStyle"
         />
-        <div class="flex-1 truncate min-w-0 text-sm">{{ label }}</div>
+        <div class="flex-1 truncate min-w-0 text-sm" :class="labelClass">
+          {{ label }}
+        </div>
         <span
           v-if="hasPlainCount"
           data-test-id="sidebar-plain-count"
-          class="shrink-0 text-xs font-medium leading-5 tabular-nums text-current"
+          class="shrink-0 text-xs font-medium leading-5 tabular-nums"
+          :class="countClass || 'text-current'"
         >
           {{ plainCountLabel }}
         </span>

@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Scheduling Appointments API', type: :request do
   let(:account) { create(:account) }
-  let!(:work_rule) do
+  let(:work_rule) do
     create(:scheduling_work_rule, resource: resource, account: account, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
   end
   let(:base_params) do
@@ -26,6 +26,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   let(:path) { "/api/v1/accounts/#{account.id}/scheduling/appointments" }
 
   before do
+    work_rule
     account.enable_features!('scheduling', 'scheduling_finance')
   end
 
@@ -39,6 +40,178 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response).to have_http_status(:created)
     expect(response_body.dig('payload', 'resource_id')).to eq(resource.id)
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
+  end
+
+  it 'resolves a linked conversation by display id when creating from a dialog panel' do
+    conversation = create(:conversation, account: account, contact: contact)
+
+    post path,
+         params: base_params.merge(conversation_display_id: conversation.display_id),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
+    expect(response_body.dig('payload', 'conversation_display_id')).to eq(
+      conversation.display_id
+    )
+    expect(
+      Scheduling::Appointment.find(response_body.dig('payload', 'id')).conversation_id
+    ).to eq(conversation.id)
+  end
+
+  it 'falls back to conversation display id for legacy dialog payloads' do
+    conversation = create(
+      :conversation,
+      account: account,
+      contact: contact,
+      display_id: 659_001
+    )
+
+    post path,
+         params: base_params.merge(conversation_id: conversation.display_id),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
+    expect(response_body.dig('payload', 'conversation_display_id')).to eq(
+      conversation.display_id
+    )
+  end
+
+  it 'resolves a linked conversation by display id when updating from a dialog panel' do
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { conversation_display_id: conversation.display_id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
+    expect(response_body.dig('payload', 'conversation_display_id')).to eq(
+      conversation.display_id
+    )
+    expect(appointment.reload.conversation_id).to eq(conversation.id)
+  end
+
+  it 'clears the linked conversation when conversation_id is explicitly blank' do
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      conversation: conversation,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { conversation_id: nil },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'conversation_id')).to be_nil
+    expect(appointment.reload.conversation_id).to be_nil
+  end
+
+  it 'exposes a contact communication thread as the appointment drawer chat target' do
+    conversation = create(:conversation, account: account, contact: contact)
+    communication_thread = create(:communication_thread, account: account, contact: contact)
+    create(
+      :communication_thread_conversation,
+      account: account,
+      communication_thread: communication_thread,
+      conversation: conversation,
+      primary: true
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    get "#{path}/#{appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'conversation_id')).to be_nil
+    expect(response_body.dig('payload', 'conversation_display_id')).to be_nil
+    expect(response_body.dig('payload', 'communication_thread_id')).to eq(communication_thread.id)
+    expect(response_body.dig('payload', 'communication_thread_display_id')).to eq(communication_thread.display_id)
+    expect(response_body.dig('payload', 'chat_conversation_id')).to eq(conversation.id)
+    expect(response_body.dig('payload', 'chat_conversation_display_id')).to eq(conversation.display_id)
+  end
+
+  it 'keeps an explicit appointment conversation ahead of a separate contact thread target' do
+    explicit_conversation = create(:conversation, account: account, contact: contact)
+    thread_conversation = create(:conversation, account: account, contact: contact)
+    communication_thread = create(:communication_thread, account: account, contact: contact)
+    create(
+      :communication_thread_conversation,
+      account: account,
+      communication_thread: communication_thread,
+      conversation: thread_conversation,
+      primary: true
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      conversation: explicit_conversation,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    get "#{path}/#{appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'conversation_id')).to eq(explicit_conversation.id)
+    expect(response_body.dig('payload', 'conversation_display_id')).to eq(explicit_conversation.display_id)
+    expect(response_body.dig('payload', 'communication_thread_id')).to be_nil
+    expect(response_body.dig('payload', 'communication_thread_display_id')).to be_nil
+    expect(response_body.dig('payload', 'chat_conversation_id')).to eq(explicit_conversation.id)
+    expect(response_body.dig('payload', 'chat_conversation_display_id')).to eq(explicit_conversation.display_id)
+  end
+
+  it 'creates a no-service appointment with a manual service name snapshot' do
+    post path,
+         params: base_params.except(:service_id).merge(
+           service_name_snapshot: 'Осмотр',
+           service_amount: 12_000
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'service_id')).to be_nil
+    expect(response_body.dig('payload', 'service_name_snapshot')).to eq('Осмотр')
+    expect(response_body.dig('payload', 'service_amount')).to eq(12_000)
+    expect(
+      Scheduling::Appointment.find(response_body.dig('payload', 'id')).service_name_snapshot
+    ).to eq('Осмотр')
   end
 
   it 'applies default values from managed appointment custom fields' do
@@ -437,6 +610,48 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(Time.iso8601(response_body.dig('payload', 'ends_at'))).to eq(booking_day + 90.minutes)
   end
 
+  it 'clears an existing service when updating with an explicit empty service list' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      custom_attributes: {
+        'service_ids' => [service.id],
+        'services' => [
+          {
+            'id' => service.id,
+            'name' => service.name,
+            'duration_min' => service.duration_min
+          }
+        ]
+      },
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: {
+          service_amount: 22_000,
+          service_ids: [],
+          service_name_snapshot: 'Ручная услуга'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'service_id')).to be_nil
+    expect(response_body.dig('payload', 'service_ids')).to eq([])
+    expect(response_body.dig('payload', 'service_name_snapshot')).to eq('Ручная услуга')
+    expect(response_body.dig('payload', 'service_amount')).to eq(22_000)
+
+    appointment.reload
+    expect(appointment.service_id).to be_nil
+    expect(appointment.custom_attributes).not_to include('service_ids', 'services')
+  end
+
   it 'keeps the saved service amount when updating an appointment without changing service or specialist' do
     create(
       :scheduling_service_price,
@@ -564,11 +779,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   it 'returns a stable calendar payload shape' do
+    conversation = create(:conversation, account: account, contact: contact)
     appointment = create(
       :scheduling_appointment,
       resource: resource,
       account: account,
       contact: contact,
+      conversation: conversation,
       service: service,
       starts_at: booking_day,
       ends_at: booking_day + 30.minutes,
@@ -597,6 +814,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       'resources', 'work_rules', 'break_rules', 'holidays', 'workday_overrides',
       'time_offs', 'appointments', 'payments', 'expenses', 'slots'
     )
+    expect(response_body.dig('payload', 'appointments', 0, 'conversation_display_id')).to eq(conversation.display_id)
   end
 
   it 'filters the calendar payload by managed appointment custom fields' do
@@ -701,6 +919,38 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     )
   end
 
+  it 'filters appointments index by conversation display id for dialog panels' do
+    conversation = create(:conversation, account: account, contact: contact)
+    matching_appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      conversation: conversation,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day + 1.hour,
+      ends_at: booking_day + 90.minutes
+    )
+
+    get path,
+        params: { conversation_display_ids: conversation.display_id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body['payload'].pluck('id')).to eq([matching_appointment.id])
+    expect(response_body.dig('payload', 0, 'conversation_display_id')).to eq(conversation.display_id)
+  end
+
   it 'filters appointments index by managed appointment custom fields' do
     create(
       :crm_field_definition,
@@ -743,7 +993,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload').pluck('id')).to eq([matching_appointment.id])
+    expect(response_body['payload'].pluck('id')).to eq([matching_appointment.id])
   end
 
   it 'filters the calendar payload by text appointment custom fields' do

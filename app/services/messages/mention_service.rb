@@ -62,7 +62,7 @@ class Messages::MentionService
 
   def add_mentioned_users_as_participants(validated_mentioned_ids)
     validated_mentioned_ids.each do |user_id|
-      message.conversation.conversation_participants.find_or_create_by(user_id: user_id)
+      ConversationParticipant.find_or_create_for!(conversation: message.conversation, user_id: user_id)
     end
   end
 end

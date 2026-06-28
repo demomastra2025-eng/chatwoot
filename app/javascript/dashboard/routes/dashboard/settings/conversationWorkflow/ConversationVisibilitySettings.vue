@@ -8,6 +8,8 @@ import Button from 'next/button/Button.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import {
+  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+  CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS,
   CONVERSATION_SIDEBAR_VISIBILITY_ITEMS,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
@@ -46,6 +48,20 @@ const CONVERSATION_VISIBILITY_GROUPS = Object.freeze([
     labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE',
     descriptionKey: 'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.PIPELINE',
     itemKeys: ['Conversation:Pipelines'],
+  },
+  {
+    key: 'appointments',
+    labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.APPOINTMENTS',
+    descriptionKey:
+      'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.APPOINTMENTS',
+    itemKeys: [
+      CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.scheduled,
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.confirmed,
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.completed,
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.cancelled,
+      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
+    ],
   },
   {
     key: 'organization',
@@ -128,8 +144,21 @@ const isStatusChildDisabled = item =>
   isStatusChild(item) &&
   visibilityDraft.value['Conversation:Statuses'] === false;
 
+const isAppointmentStatusChild = item =>
+  Object.values(CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS).includes(
+    item.key
+  );
+
+const isAppointmentStatusChildDisabled = item =>
+  isAppointmentStatusChild(item) &&
+  visibilityDraft.value[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY] ===
+    false;
+
+const isChildDisabled = item =>
+  isStatusChildDisabled(item) || isAppointmentStatusChildDisabled(item);
+
 const toggleVisibility = item => {
-  if (isStatusChildDisabled(item)) return;
+  if (isChildDisabled(item)) return;
   visibilityDraft.value[item.key] = !visibilityDraft.value[item.key];
 };
 
@@ -191,9 +220,7 @@ watch(
               :key="item.key"
               class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-n-weak px-3 py-2 transition-colors"
               :class="
-                isStatusChildDisabled(item)
-                  ? 'opacity-60'
-                  : 'hover:bg-n-alpha-1'
+                isChildDisabled(item) ? 'opacity-60' : 'hover:bg-n-alpha-1'
               "
               @click="toggleVisibility(item)"
             >
@@ -203,7 +230,7 @@ watch(
               <Switch
                 :id="switchId(item.key)"
                 v-model="visibilityDraft[item.key]"
-                :disabled="isStatusChildDisabled(item)"
+                :disabled="isChildDisabled(item)"
                 @click.stop
               />
             </div>

@@ -70,6 +70,7 @@ const createDefaultForm = () => ({
   clientPhone: '',
   companyId: '',
   contactId: '',
+  conversationDisplayId: '',
   conversationId: '',
   customAttributes: {},
   endsAt: '',
@@ -79,6 +80,7 @@ const createDefaultForm = () => ({
   serviceAmount: '',
   serviceId: '',
   serviceIds: [],
+  serviceNameSnapshot: '',
   source: 'manual',
   startsAt: '',
   status: 'scheduled',
@@ -186,6 +188,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           clientPhone: appointment.clientPhone || '',
           companyId: appointment.companyId || '',
           contactId: appointment.contactId || '',
+          conversationDisplayId: appointment.conversationDisplayId || '',
           conversationId: appointment.conversationId || '',
           customAttributes: appointment.customAttributes || {},
           endsAt: toDateTimeInputValue(appointment.endsAt),
@@ -198,6 +201,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
             normalizeIdArray(appointment.serviceIds).length > 0
               ? normalizeIdArray(appointment.serviceIds)
               : normalizeIdArray([appointment.serviceId]),
+          serviceNameSnapshot: appointment.serviceNameSnapshot || '',
           source: appointment.source || 'manual',
           startsAt: toDateTimeInputValue(appointment.startsAt),
           status: appointment.status || 'scheduled',
@@ -220,13 +224,18 @@ export const useSchedulingAppointmentFormStore = defineStore(
       updateField(field, value) {
         const normalizedValue =
           field === 'serviceIds' ? normalizeIdArray(value) : value;
+        const normalizedServiceIds =
+          field === 'serviceIds' ? normalizeIdArray(value) : [];
 
         this.form = normalizePrepaymentForm({
           ...this.form,
           [field]: normalizedValue,
           ...(field === 'serviceIds'
             ? {
-                serviceId: normalizeIdArray(value)[0] || '',
+                serviceId: normalizedServiceIds[0] || '',
+                ...(normalizedServiceIds.length
+                  ? { serviceNameSnapshot: '' }
+                  : {}),
               }
             : {}),
         });
@@ -364,8 +373,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
 
       buildPayload() {
         const normalizedForm = normalizePrepaymentForm(this.form);
-
-        return compactPayload({
+        const serviceIds = normalizeIdArray(normalizedForm.serviceIds);
+        const serviceId = toNumeric(normalizedForm.serviceId);
+        const hasSelectedService = serviceIds.length || serviceId;
+        const payload = compactPayload({
           appointment_type: normalizedForm.appointmentType,
           client_birth_date: normalizedForm.clientBirthDate || undefined,
           client_comment: normalizedForm.clientComment,
@@ -375,6 +386,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
             normalizedForm.clientName || this.selectedContact?.fullName,
           client_phone: normalizedForm.clientPhone,
           contact_id: toNumeric(normalizedForm.contactId),
+          conversation_display_id: toNumeric(
+            normalizedForm.conversationId
+              ? undefined
+              : normalizedForm.conversationDisplayId
+          ),
           conversation_id: toNumeric(normalizedForm.conversationId),
           custom_attributes: normalizedForm.customAttributes || {},
           ends_at: fromDateTimeInputValue(normalizedForm.endsAt),
@@ -387,8 +403,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
           service_amount:
             toIntegerNumeric(normalizedForm.serviceAmount, 'service_amount') ||
             0,
-          service_id: toNumeric(normalizedForm.serviceId),
-          service_ids: normalizeIdArray(normalizedForm.serviceIds),
+          service_id: serviceId,
+          service_ids: serviceIds,
+          service_name_snapshot: hasSelectedService
+            ? undefined
+            : normalizedForm.serviceNameSnapshot,
           source: normalizedForm.source || 'manual',
           starts_at: fromDateTimeInputValue(normalizedForm.startsAt),
           status: normalizedForm.status,
@@ -398,6 +417,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
               }
             : {}),
         });
+
+        if (!hasSelectedService) {
+          payload.service_ids = [];
+        }
+
+        return payload;
       },
 
       async submit(calendarStore) {

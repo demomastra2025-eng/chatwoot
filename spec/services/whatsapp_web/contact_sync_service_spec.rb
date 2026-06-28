@@ -117,6 +117,41 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(resolved_contact_inbox.contact.additional_attributes['lid_jid']).to eq('143907392331785@lid')
   end
 
+  it 'moves communication threads when merging a provisional lid contact into an existing phone contact' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    phone_contact = create(
+      :contact,
+      account: channel.account,
+      name: '+15559876543',
+      phone_number: '+15559876543',
+      identifier: nil,
+      additional_attributes: { provider: 'whatsapp_web' }
+    )
+    create(:contact_inbox, inbox: channel.inbox, contact: phone_contact, source_id: '15559876543')
+
+    provisional_contact = create(
+      :contact,
+      account: channel.account,
+      name: 'LID User',
+      identifier: 'whatsapp_web:143907392331785@lid'
+    )
+    thread = create(:communication_thread, account: channel.account, contact: provisional_contact)
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '15559876543@s.whatsapp.net',
+        remoteLid: '143907392331785@lid',
+        pushName: 'Alice'
+      }
+    ).perform
+
+    expect(contact_inbox.contact_id).to eq(phone_contact.id)
+    expect(thread.reload.contact_id).to eq(phone_contact.id)
+    expect(Contact.exists?(provisional_contact.id)).to be false
+  end
+
   it 'retries fresh failed provisional lid messages when the canonical phone jid arrives later' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 

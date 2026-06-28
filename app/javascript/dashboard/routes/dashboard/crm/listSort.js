@@ -63,12 +63,17 @@ export const createDealListSortValueResolver = ({
 };
 
 export const createTaskListSortValueResolver = ({
+  activityTypeLabelByValue = {},
   assigneeNameById = {},
   priorityLabelByValue = {},
   statusNameById = {},
 } = {}) => {
   return (task, key) => {
     switch (key) {
+      case 'activityType':
+        return normalizeSortText(
+          activityTypeLabelByValue[task.activityType] || task.activityType
+        );
       case 'assignee':
         return normalizeSortText(assigneeNameById[task.assigneeId]);
       case 'dueAt':

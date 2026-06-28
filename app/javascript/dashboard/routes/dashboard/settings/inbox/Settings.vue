@@ -773,6 +773,7 @@ export default {
 
       const labels = {
         connected: this.$t('INBOX_MGMT.HEALTH_STATUS.CONNECTED'),
+        pending: this.$t('INBOX_MGMT.HEALTH_STATUS.PENDING'),
         disconnected: this.$t('INBOX_MGMT.HEALTH_STATUS.DISCONNECTED'),
         reauthorization_required: this.$t(
           'INBOX_MGMT.HEALTH_STATUS.REAUTHORIZATION_REQUIRED'
@@ -794,6 +795,7 @@ export default {
 
       const descriptions = {
         connected: this.$t('INBOX_MGMT.HEALTH_STATUS.CONNECTED_DESCRIPTION'),
+        pending: this.$t('INBOX_MGMT.HEALTH_STATUS.PENDING_DESCRIPTION'),
         disconnected: this.$t(
           'INBOX_MGMT.HEALTH_STATUS.DISCONNECTED_DESCRIPTION'
         ),

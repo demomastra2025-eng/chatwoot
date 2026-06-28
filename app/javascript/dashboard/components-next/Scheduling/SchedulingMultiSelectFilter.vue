@@ -37,6 +37,9 @@ const teleportTarget = ref('body');
 const selectedOptions = computed(() =>
   props.options.filter(option => props.modelValue.includes(option.value))
 );
+const singleSelectedOption = computed(() =>
+  props.modelValue.length === 1 ? selectedOptions.value[0] : null
+);
 const allOptionValues = computed(() =>
   props.options.map(option => option.value)
 );
@@ -65,6 +68,12 @@ const triggerIcon = computed(() =>
   props.modelValue.length === 1
     ? selectedOptions.value[0]?.icon || 'i-lucide-filter'
     : 'i-lucide-filter'
+);
+const triggerIconClass = computed(
+  () => singleSelectedOption.value?.iconClass || 'text-n-slate-10'
+);
+const buttonLabelClass = computed(
+  () => singleSelectedOption.value?.labelClass || 'text-n-slate-12'
 );
 
 const resolveTeleportTarget = () => {
@@ -161,9 +170,13 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
       <div class="relative">
         <span
           v-if="showTriggerIcon"
-          class="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center text-n-slate-10"
+          class="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center"
         >
-          <span class="size-4" :class="triggerIcon" aria-hidden="true" />
+          <span
+            class="size-4"
+            :class="[triggerIcon, triggerIconClass]"
+            aria-hidden="true"
+          />
         </span>
 
         <Button
@@ -181,7 +194,8 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
           @click="toggleDropdown"
         >
           <span
-            class="min-w-0 flex-1 truncate text-left text-sm text-n-slate-12"
+            class="min-w-0 flex-1 truncate text-left text-sm"
+            :class="buttonLabelClass"
           >
             {{ buttonLabel }}
           </span>
@@ -235,11 +249,14 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
                 />
                 <span
                   v-if="option.icon"
-                  class="size-4 shrink-0 text-n-slate-11"
-                  :class="option.icon"
+                  class="size-4 shrink-0"
+                  :class="[option.icon, option.iconClass || 'text-n-slate-11']"
                   aria-hidden="true"
                 />
-                <span class="min-w-0 text-sm text-n-slate-12">
+                <span
+                  class="min-w-0 text-sm"
+                  :class="option.labelClass || 'text-n-slate-12'"
+                >
                   {{ option.label }}
                 </span>
               </button>

@@ -175,6 +175,39 @@ const priorityLabelByValue = computed(() => ({
   urgent: t('CRM.TASKS.PRIORITY.urgent'),
 }));
 
+const activityTypeMetaByValue = computed(() => ({
+  call: {
+    icon: 'i-lucide-phone',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.call'),
+  },
+  meeting: {
+    icon: 'i-lucide-users',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.meeting'),
+  },
+  message: {
+    icon: 'i-lucide-message-square',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.message'),
+  },
+  task: {
+    icon: 'i-lucide-list-todo',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.task'),
+  },
+  touch: {
+    icon: 'i-lucide-handshake',
+    label: t('CRM.TASKS.ACTIVITY_TYPE.touch'),
+  },
+}));
+
+const formatActivityTypeLabel = activityType => {
+  return (
+    activityTypeMetaByValue.value[activityType || 'task']?.label || activityType
+  );
+};
+
+const activityTypeIcon = activityType =>
+  activityTypeMetaByValue.value[activityType || 'task']?.icon ||
+  'i-lucide-list-todo';
+
 const formatPriorityLabel = priority => {
   if (!priority) return t('CRM.GENERAL.EMPTY_VALUE');
 
@@ -323,18 +356,30 @@ const handleAssigneeChange = (task, assigneeId) => {
               </div>
 
               <div class="mt-2 flex items-center justify-between gap-2">
-                <span
-                  v-if="element.archivedAt"
-                  class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
-                >
-                  {{ $t('CRM.GENERAL.ARCHIVED') }}
-                </span>
-                <span
-                  v-else
-                  class="text-[10px] font-medium leading-none tracking-normal text-n-slate-10"
-                >
-                  {{ formatPriorityLabel(element.priority) }}
-                </span>
+                <div class="flex min-w-0 items-center gap-1.5">
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full border border-n-weak bg-n-surface-1 px-2 py-0.5 text-[10px] font-medium text-n-slate-11"
+                  >
+                    <span
+                      class="size-3"
+                      :class="activityTypeIcon(element.activityType)"
+                      aria-hidden="true"
+                    />
+                    {{ formatActivityTypeLabel(element.activityType) }}
+                  </span>
+                  <span
+                    v-if="element.archivedAt"
+                    class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
+                  >
+                    {{ $t('CRM.GENERAL.ARCHIVED') }}
+                  </span>
+                  <span
+                    v-else
+                    class="text-[10px] font-medium leading-none tracking-normal text-n-slate-10"
+                  >
+                    {{ formatPriorityLabel(element.priority) }}
+                  </span>
+                </div>
 
                 <span class="text-[9px] text-n-slate-10/90">
                   {{ formatDateLabel(element.dueAt || element.updatedAt) }}

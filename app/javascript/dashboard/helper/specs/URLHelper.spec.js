@@ -13,6 +13,10 @@ import {
 
 describe('#URL Helpers', () => {
   describe('conversationListPageURL', () => {
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
     it('should return url to dashboard', () => {
       expect(conversationListPageURL({ accountId: 1 })).toBe(
         '/app/accounts/1/dashboard'
@@ -49,6 +53,32 @@ describe('#URL Helpers', () => {
           status: 'pending',
         })
       ).toBe('/app/accounts/1/inbox/1?status=pending');
+    });
+
+    it('should include unread filter in conversation list urls', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          inboxId: 1,
+          unread: true,
+        })
+      ).toBe('/app/accounts/1/inbox/1?unread=true');
+    });
+
+    it('should clear current unread filter when unread is explicitly false', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/dashboard?unread=true'
+      );
+
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          inboxId: 1,
+          unread: false,
+        })
+      ).toBe('/app/accounts/1/inbox/1');
     });
 
     it('should return communication thread list URL when communication thread mode is active', () => {
@@ -103,6 +133,25 @@ describe('#URL Helpers', () => {
         })
       ).toBe(
         '/app/accounts/1/communication_threads?status=open&assignee_type=all&labels_scope=any&team_scope=any'
+      );
+    });
+
+    it('should preserve unread with communication thread CRM, appointment, label, and team scope filters', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          status: 'open',
+          assigneeType: 'all',
+          communicationThread: true,
+          crmPipelineId: 10,
+          crmStageId: 20,
+          appointmentStatus: 'confirmed',
+          labelsScope: 'any',
+          teamScope: 'any',
+          unread: true,
+        })
+      ).toBe(
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20&appointment_status=confirmed&labels_scope=any&team_scope=any&unread=true'
       );
     });
 
@@ -231,6 +280,24 @@ describe('#URL Helpers', () => {
       );
     });
 
+    it('should preserve current unread and dialog filters when opening communication thread detail', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20&appointment_status=confirmed&labels_scope=any&team_scope=any&unread=true'
+      );
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          communicationThread: true,
+        })
+      ).toBe(
+        'accounts/1/communication_threads/42?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20&appointment_status=confirmed&labels_scope=any&team_scope=any&unread=true'
+      );
+    });
+
     it('should let an explicit me assignee override a previous all route scope', () => {
       window.history.replaceState(
         {},
@@ -256,6 +323,22 @@ describe('#URL Helpers', () => {
 
       expect(conversationUrl({ accountId: 1, id: 1 })).toBe(
         'accounts/1/conversations/1?status=resolved'
+      );
+    });
+
+    it('should preserve current unread filter when explicit unread is absent', () => {
+      window.history.replaceState({}, '', '/app/accounts/1?unread=true');
+
+      expect(conversationUrl({ accountId: 1, id: 1 })).toBe(
+        'accounts/1/conversations/1?unread=true'
+      );
+    });
+
+    it('should clear current unread filter when unread is explicitly false', () => {
+      window.history.replaceState({}, '', '/app/accounts/1?unread=true');
+
+      expect(conversationUrl({ accountId: 1, id: 1, unread: false })).toBe(
+        'accounts/1/conversations/1'
       );
     });
   });

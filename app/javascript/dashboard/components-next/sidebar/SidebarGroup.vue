@@ -209,6 +209,11 @@ const queryMatches = child => {
       routeValue = route.query.crm_stage_id ?? route.query.crmStageId;
     }
 
+    if (key === 'appointment_status') {
+      routeValue =
+        route.query.appointment_status ?? route.query.appointmentStatus;
+    }
+
     if (key === 'labels_scope') {
       routeValue = route.query.labels_scope ?? route.query.labelsScope;
     }
@@ -495,6 +500,7 @@ watch(
             :action-title="child.actionTitle"
             :action-icon="child.actionIcon"
             :action-items="child.actionItems"
+            :compact-header="child.compactHeader"
           />
           <SidebarGroupLeaf
             v-else-if="!child.headerAction && isAllowed(child.to)"

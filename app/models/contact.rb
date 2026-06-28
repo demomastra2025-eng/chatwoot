@@ -75,6 +75,7 @@ class Contact < ApplicationRecord
   belongs_to :account
   belongs_to :owner, class_name: 'User', optional: true
   has_many :campaign_deliveries, dependent: :delete_all
+  has_many :communication_threads, dependent: :destroy
   has_many :conversations, dependent: :destroy_async
   has_many :contact_inboxes, dependent: :destroy_async
   has_many :contact_channel_profiles, dependent: :destroy

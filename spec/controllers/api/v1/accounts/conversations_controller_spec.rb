@@ -85,6 +85,8 @@ RSpec.describe 'Conversations API', type: :request do
         conversation.update!(agent_last_seen_at: 1.hour.ago, status: :pending, team: team)
         conversation.update_labels('vip')
         create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: conversation)
+        create_sidebar_appointment(conversation, status: 'confirmed')
+        create_sidebar_appointment(conversation, status: 'confirmed')
         create_list(
           :message,
           2,
@@ -104,10 +106,13 @@ RSpec.describe 'Conversations API', type: :request do
           agent_last_seen_at: 1.hour.ago
         )
         other_unread_conversation.update_labels('vip')
+        create_sidebar_appointment(other_unread_conversation, status: 'scheduled')
         create(:message, conversation: other_unread_conversation, account: account, created_at: 10.minutes.ago)
 
         inaccessible_conversation = create(:conversation, account: account, status: :open, agent_last_seen_at: 1.hour.ago)
         inaccessible_conversation.update_labels('vip')
+        create_sidebar_appointment(inaccessible_conversation, status: 'confirmed')
+        create(:scheduling_appointment, account: account, status: 'confirmed')
         create(:message, conversation: inaccessible_conversation, account: account, created_at: 10.minutes.ago)
 
         get "/api/v1/accounts/#{account.id}/conversations/sidebar_unread_counts",
@@ -123,7 +128,8 @@ RSpec.describe 'Conversations API', type: :request do
           teams: { team.id.to_s.to_sym => 2 },
           labels: { vip: 2 },
           pipelines: { pipeline.id.to_s.to_sym => 1 },
-          stages: { stage.id.to_s.to_sym => 1 }
+          stages: { stage.id.to_s.to_sym => 1 },
+          appointment_statuses: { confirmed: 2, scheduled: 1 }
         )
       end
 
@@ -284,6 +290,41 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to conform_schema(200)
         response_data = JSON.parse(response.body, symbolize_names: true)
         expect(response_data.count).to eq(2)
+      end
+
+      it 'keeps unread CRM stage counts switchable when sidebar CRM context is combined with advanced filters' do
+        pipeline = create(:crm_pipeline, account: account)
+        matching_stage = create(:crm_stage, account: account, pipeline: pipeline)
+        other_stage = create(:crm_stage, account: account, pipeline: pipeline)
+        matching_conversation = create(:conversation, account: account, status: :open, agent_last_seen_at: 1.hour.ago)
+        other_stage_conversation = create(:conversation, account: account, status: :open, agent_last_seen_at: 1.hour.ago)
+
+        [matching_conversation, other_stage_conversation].each do |conversation|
+          create(:inbox_member, user: agent, inbox: conversation.inbox)
+          create(:message, account: account, conversation: conversation, created_at: 10.minutes.ago)
+        end
+
+        create(:crm_deal, account: account, pipeline: pipeline, stage: matching_stage, originating_conversation: matching_conversation)
+        create(:crm_deal, account: account, pipeline: pipeline, stage: other_stage, originating_conversation: other_stage_conversation)
+
+        post "/api/v1/accounts/#{account.id}/conversations/filter?crm_stage_id=#{matching_stage.id}",
+             headers: agent.create_new_auth_token,
+             params: {
+               payload: [{
+                 attribute_key: 'status',
+                 filter_operator: 'equal_to',
+                 values: ['open']
+               }]
+             },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        response_data = JSON.parse(response.body, symbolize_names: true)
+        expect(response_data[:payload].pluck(:id)).to contain_exactly(matching_conversation.display_id)
+        expect(response_data.dig(:meta, :unread_counts, :stages)).to include(
+          matching_stage.id.to_s.to_sym => 1,
+          other_stage.id.to_s.to_sym => 1
+        )
       end
 
       it 'returns error if the filters contain invalid attributes' do
@@ -1595,5 +1636,15 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:ok)
       end
     end
+  end
+
+  def create_sidebar_appointment(conversation, status:)
+    create(
+      :scheduling_appointment,
+      account: conversation.account,
+      contact: conversation.contact,
+      conversation: conversation,
+      status: status
+    )
   end
 end

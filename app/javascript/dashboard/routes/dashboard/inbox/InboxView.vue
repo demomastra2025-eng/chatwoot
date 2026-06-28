@@ -14,6 +14,11 @@ import ConversationBox from 'dashboard/components/widgets/conversation/Conversat
 import InboxEmptyState from './InboxEmptyState.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
+import {
+  buildSidebarVisibilityState,
+  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+  CONVERSATION_PIPELINES_VISIBILITY_KEY,
+} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const route = useRoute();
 const router = useRouter();
@@ -71,9 +76,19 @@ const isConversationSidebarOpen = computed(() => {
     const {
       is_contact_sidebar_open: isContactSidebarOpen,
       is_crm_deal_panel_open: isDealsSidebarOpen,
+      is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
       is_touch_sidebar_open: isTouchSidebarOpen,
     } = uiSettings.value;
-    return isContactSidebarOpen || isDealsSidebarOpen || isTouchSidebarOpen;
+    const visibility = buildSidebarVisibilityState(uiSettings.value);
+
+    return (
+      isContactSidebarOpen ||
+      (isDealsSidebarOpen &&
+        visibility[CONVERSATION_PIPELINES_VISIBILITY_KEY]) ||
+      (isAppointmentsSidebarOpen &&
+        visibility[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY]) ||
+      isTouchSidebarOpen
+    );
   }
   return false;
 });

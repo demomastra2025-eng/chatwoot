@@ -6,6 +6,7 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
   let(:headers) { administrator.create_new_auth_token }
   let(:path) { "/api/v1/accounts/#{account.id}/crm/reports/deals" }
   let(:legacy_path) { "/api/v1/accounts/#{account.id}/crm/reports/funnels" }
+  let(:manager_effectiveness_path) { "/api/v1/accounts/#{account.id}/crm/reports/manager_effectiveness" }
 
   before do
     account.enable_features!('crm_deals')
@@ -116,6 +117,87 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
     get legacy_path, headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
+  end
+
+  it 'returns manager effectiveness metrics from native CRM, telephony, scheduling, and payment data' do
+    travel_to Time.zone.local(2026, 1, 15, 12, 0, 0) do
+      pipeline = create(:crm_pipeline, account: account, name: 'Sales', code: 'sales', default: true)
+      open_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'open', position: 1)
+      won_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won', position: 2)
+      lost_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'lost', position: 3)
+      owner = create(:user, account: account, role: :agent, name: 'Manager One')
+      binding = create(:telephony_agent_binding, account: account, user: owner)
+      conversation = create(:conversation, account: account)
+
+      create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage, owner: owner,
+                        originating_conversation: conversation, amount_minor: 100_000, currency: 'KZT', created_at: 1.day.ago)
+      create(:crm_deal, account: account, pipeline: pipeline, stage: won_stage, owner: owner,
+                        originating_conversation: conversation, amount_minor: 200_000, currency: 'KZT', created_at: 1.day.ago)
+      create(:crm_deal, account: account, pipeline: pipeline, stage: lost_stage, owner: owner,
+                        originating_conversation: conversation, amount_minor: 300_000, currency: 'KZT', created_at: 1.day.ago)
+      create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage, owner: owner,
+                        amount_minor: 700_000, currency: 'KZT', created_at: 1.day.ago)
+      create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage, owner: owner,
+                        originating_conversation: conversation, amount_minor: 900_000, currency: 'KZT', created_at: 45.days.ago)
+      create(:crm_deal, amount_minor: 800_000, currency: 'KZT', created_at: 1.day.ago)
+
+      create(:telephony_call_session, account: account, agent_binding: binding, status: 'completed',
+                                      started_at: 1.day.ago, answered_at: 1.day.ago, duration_seconds: 35)
+      create(:telephony_call_session, account: account, agent_binding: binding, status: 'no_answer',
+                                      started_at: 1.day.ago, duration_seconds: 0)
+      create(:telephony_call_session, account: account, agent_binding: binding, direction: 'inbound',
+                                      status: 'completed', started_at: 1.day.ago, duration_seconds: 80)
+
+      appointment = create(:scheduling_appointment, account: account, owner: owner, status: 'completed',
+                                                    starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
+      create(:scheduling_payment, account: account, appointment: appointment, amount: 5_000, payment_method: 'cash')
+      create(:scheduling_payment, account: account, appointment: appointment, amount: 7_000, payment_method: 'kaspi_qr')
+      create(:crm_task, account: account, assignee: owner, activity_type: 'meeting', due_at: 1.day.ago)
+
+      get manager_effectiveness_path,
+          params: {
+            since: 7.days.ago.to_i.to_s,
+            until: 1.day.from_now.to_i.to_s,
+            call_duration_threshold_seconds: '25'
+          },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+
+      payload = response.parsed_body.fetch('payload')
+      row = payload.fetch('rows').find { |item| item['owner_id'] == owner.id }
+      totals = payload.fetch('totals')
+
+      expect(row).to include(
+        'owner_name' => 'Manager One',
+        'leads_count' => 3,
+        'open_count' => 1,
+        'bad_count' => 1,
+        'won_count' => 1,
+        'deal_amount_minor' => 600_000,
+        'won_amount_minor' => 200_000,
+        'call_attempts_count' => 2,
+        'connected_calls_count' => 1,
+        'long_calls_count' => 1,
+        'appointments_count' => 1,
+        'meeting_tasks_count' => 1,
+        'meetings_count' => 1,
+        'payments_amount_minor' => 12_000,
+        'cash_amount_minor' => 5_000,
+        'kaspi_amount_minor' => 7_000,
+        'trade_in_amount_minor' => 0,
+        'bad_rate' => 33.3,
+        'lead_to_deal_conversion' => 33.3
+      )
+      expect(totals).to include(
+        'leads_count' => 3,
+        'meetings_count' => 1,
+        'payments_amount_minor' => 12_000,
+        'lead_to_meeting_conversion' => 33.3
+      )
+      expect(response.parsed_body.dig('meta', 'call_duration_threshold_seconds')).to eq(25)
+    end
   end
 
   it 'returns unauthorized without auth' do

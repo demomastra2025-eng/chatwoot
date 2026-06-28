@@ -851,7 +851,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_tasks',
           title: 'Search Tasks',
-          description: 'Search CRM tasks by title, status, assignee, deal, or priority',
+          description: 'Search CRM tasks by title, status, assignee, deal, type, outcome, or priority',
           group_name: 'CRM Tasks',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

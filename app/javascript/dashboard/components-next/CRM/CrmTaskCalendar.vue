@@ -58,6 +58,18 @@ const priorityColor = priority => {
   return colors[priority] || '#2563EB';
 };
 
+const activityTypeLabelByValue = computed(() => ({
+  call: t('CRM.TASKS.ACTIVITY_TYPE.call'),
+  meeting: t('CRM.TASKS.ACTIVITY_TYPE.meeting'),
+  message: t('CRM.TASKS.ACTIVITY_TYPE.message'),
+  task: t('CRM.TASKS.ACTIVITY_TYPE.task'),
+  touch: t('CRM.TASKS.ACTIVITY_TYPE.touch'),
+}));
+
+const activityTypeLabel = task =>
+  activityTypeLabelByValue.value[task.activityType || 'task'] ||
+  task.activityType;
+
 const resolveTaskRange = task => {
   const startValue = task.startAt || task.dueAt;
   const endValue = task.dueAt || task.startAt;
@@ -81,6 +93,7 @@ const resolveTaskRange = task => {
 
 const buildTaskSubtitle = task => {
   return [
+    activityTypeLabel(task),
     props.statusNames[task.statusId],
     props.dealNames[task.dealId],
     props.assigneeNames[task.assigneeId],

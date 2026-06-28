@@ -4,6 +4,7 @@ import {
   filterByInbox,
   filterByTeam,
   filterByLabel,
+  filterByUnread,
   filterByUnattended,
   applyRoleFilter,
 } from '../../conversations/helpers';
@@ -106,6 +107,24 @@ describe('#applyPageFilters', () => {
         labels: ['dev'],
       };
       expect(applyPageFilters(conversationList[2], filters)).toEqual(false);
+    });
+  });
+
+  describe('#filter-unread', () => {
+    it('returns true when unread filter is active and unread_count is greater than zero', () => {
+      const conversation = { ...conversationList[0], unread_count: 2 };
+
+      expect(
+        applyPageFilters(conversation, { status: 'open', unread: true })
+      ).toEqual(true);
+    });
+
+    it('returns false when unread filter is active and unread_count is zero', () => {
+      const conversation = { ...conversationList[0], unread_count: 0 };
+
+      expect(
+        applyPageFilters(conversation, { status: 'open', unread: true })
+      ).toEqual(false);
     });
   });
 
@@ -239,6 +258,20 @@ describe('#filterByLabel', () => {
     const labels = ['dev', 'cs', 'sales'];
     const chatLabels = ['cs', 'sales'];
     expect(filterByLabel(true, labels, chatLabels)).toEqual(false);
+  });
+});
+
+describe('#filterByUnread', () => {
+  it('returns true if unread filter is active and unread_count is greater than zero', () => {
+    expect(filterByUnread(true, 'true', 1)).toEqual(true);
+  });
+
+  it('returns false if unread filter is active and unread_count is zero', () => {
+    expect(filterByUnread(true, 'true', 0)).toEqual(false);
+  });
+
+  it('keeps previous filter result if unread filter is inactive', () => {
+    expect(filterByUnread(true, undefined, 0)).toEqual(true);
   });
 });
 

@@ -8,6 +8,8 @@
     "HEALTH_STATUS": {
       "CONNECTED": "Подключено",
       "CONNECTED_DESCRIPTION": "Канал готов принимать сообщения.",
+      "PENDING": "В ожидании",
+      "PENDING_DESCRIPTION": "Канал ожидает сканирования QR, подтверждения входа или открытия соединения провайдера.",
       "DISCONNECTED": "Отключено",
       "DISCONNECTED_DESCRIPTION": "Канал не подключен. Переподключите его перед ожиданием новых сообщений.",
       "REAUTHORIZATION_REQUIRED": "Нужна повторная авторизация",

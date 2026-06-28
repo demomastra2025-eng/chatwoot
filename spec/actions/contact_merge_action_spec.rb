@@ -56,6 +56,17 @@ describe ContactMergeAction do
       end
     end
 
+    context 'when mergee contact has communication threads' do
+      it 'moves the communication threads to base contact' do
+        thread = create(:communication_thread, account: account, contact: mergee_contact)
+
+        contact_merge
+
+        expect(thread.reload.contact_id).to eq(base_contact.id)
+        expect(CommunicationThread.exists?(thread.id)).to be true
+      end
+    end
+
     context 'when mergee contact has contact inboxes' do
       it 'moves the contact inboxes to base contact' do
         contact_merge

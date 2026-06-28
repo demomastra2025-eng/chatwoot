@@ -86,6 +86,24 @@
       "NO_SERVICE": "Без услуги",
       "UNAVAILABLE_SLOT": "Это время недоступно"
     },
+    "DIALOGS": {
+      "CLIENT": "Клиент",
+      "DATE_TIME": "Дата и время",
+      "EMPTY": "По этому диалогу записей нет",
+      "ERROR": "Не удалось загрузить записи",
+      "OPEN_CALENDAR": "Открыть календарь",
+      "PANEL_TITLE": "Записи",
+      "PAYMENT": "Оплата",
+      "RESOURCE": "Специалист",
+      "SERVICE": "Услуга",
+      "SIDEBAR_TITLE": "Записи",
+      "STATUS": "Статус",
+      "APPOINTMENT_STATUS_SHORT": {
+        "scheduled": "Назначен",
+        "confirmed": "Подтвержден",
+        "completed": "Прошло"
+      }
+    },
     "APPOINTMENT_FORM": {
       "APPOINTMENT_DESCRIPTION": "Выберите специалиста, услугу и временной слот для приёма.",
       "APPOINTMENT_TITLE": "Детали записи",

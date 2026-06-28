@@ -11,6 +11,11 @@ import { emitter } from 'shared/helpers/mitt';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
+import {
+  buildSidebarVisibilityState,
+  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+  CONVERSATION_PIPELINES_VISIBILITY_KEY,
+} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 export default {
   components: {
@@ -101,9 +106,19 @@ export default {
       const {
         is_contact_sidebar_open: isContactSidebarOpen,
         is_crm_deal_panel_open: isDealsSidebarOpen,
+        is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
         is_touch_sidebar_open: isTouchSidebarOpen,
       } = this.uiSettings;
-      return isContactSidebarOpen || isDealsSidebarOpen || isTouchSidebarOpen;
+      const visibility = buildSidebarVisibilityState(this.uiSettings);
+
+      return (
+        isContactSidebarOpen ||
+        (isDealsSidebarOpen &&
+          visibility[CONVERSATION_PIPELINES_VISIBILITY_KEY]) ||
+        (isAppointmentsSidebarOpen &&
+          visibility[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY]) ||
+        isTouchSidebarOpen
+      );
     },
   },
   watch: {

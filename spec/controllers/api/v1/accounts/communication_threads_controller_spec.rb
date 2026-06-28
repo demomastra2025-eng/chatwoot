@@ -453,6 +453,29 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
+    it 'keeps unread CRM stage counts switchable when sidebar CRM context is combined with advanced filters' do
+      [matching_conversation, wrong_stage_conversation, wrong_status_conversation].each do |conversation|
+        conversation.reload.communication_thread.update!(unread_count: 1)
+      end
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter?crm_stage_id=#{matching_stage.id}",
+           params: {
+             payload: [advanced_filter_payload.first.merge(query_operator: nil)]
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      body = JSON.parse(response.body, symbolize_names: true)
+      expect(body.dig(:data, :payload).pluck(:id)).to contain_exactly(
+        matching_conversation.reload.communication_thread.display_id
+      )
+      expect(body.dig(:data, :meta, :unread_counts, :stages)).to include(
+        matching_stage.id.to_s.to_sym => 1,
+        other_stage.id.to_s.to_sym => 1
+      )
+    end
+
     it 'sorts advanced filter results by public non-activity messages by default' do
       base_time = Time.zone.now
       second_matching_conversation = create(

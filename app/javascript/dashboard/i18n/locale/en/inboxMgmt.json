@@ -8,6 +8,8 @@
     "HEALTH_STATUS": {
       "CONNECTED": "Connected",
       "CONNECTED_DESCRIPTION": "The channel is ready to receive messages.",
+      "PENDING": "Waiting",
+      "PENDING_DESCRIPTION": "The channel is waiting for QR scan, pairing confirmation, or the provider connection to open.",
       "DISCONNECTED": "Disconnected",
       "DISCONNECTED_DESCRIPTION": "The channel is not connected. Reconnect it before expecting new messages.",
       "REAUTHORIZATION_REQUIRED": "Reauthorization required",

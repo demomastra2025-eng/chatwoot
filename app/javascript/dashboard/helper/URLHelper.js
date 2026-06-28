@@ -53,6 +53,18 @@ const currentCrmDealContextFromLocation = () => {
   };
 };
 
+const currentAppointmentContextFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return {};
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return {
+    appointmentStatus:
+      params.get('appointment_status') || params.get('appointmentStatus'),
+  };
+};
+
 const currentConversationScopesFromLocation = () => {
   if (typeof window === 'undefined' || !window.location?.search) {
     return {};
@@ -65,21 +77,44 @@ const currentConversationScopesFromLocation = () => {
   };
 };
 
-const conversationQuery = ({
-  status,
-  assigneeType,
-  defaultAssigneeType,
-  crmPipelineId,
-  crmStageId,
-  labelsScope,
-  teamScope,
-} = {}) => {
+const truthyQueryValue = value =>
+  value === true || value === 'true' || value === '1' || value === 1;
+
+const currentConversationUnreadFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return undefined;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return truthyQueryValue(params.get('unread') || params.get('unreadOnly'))
+    ? 'true'
+    : undefined;
+};
+
+const conversationQuery = (options = {}) => {
+  const {
+    status,
+    assigneeType,
+    defaultAssigneeType,
+    crmPipelineId,
+    crmStageId,
+    appointmentStatus,
+    labelsScope,
+    teamScope,
+    unread,
+  } = options;
   const normalizedAssigneeType =
     normalizeConversationAssigneeType(assigneeType) ??
     currentConversationAssigneeTypeFromLocation() ??
     normalizeConversationAssigneeType(defaultAssigneeType);
   const currentCrmDealContext = currentCrmDealContextFromLocation();
+  const currentAppointmentContext = currentAppointmentContextFromLocation();
   const currentConversationScopes = currentConversationScopesFromLocation();
+  const hasUnreadOption = unread !== undefined;
+  let unreadQueryValue = currentConversationUnreadFromLocation();
+  if (hasUnreadOption) {
+    unreadQueryValue = truthyQueryValue(unread) ? 'true' : undefined;
+  }
 
   return {
     status:
@@ -88,8 +123,11 @@ const conversationQuery = ({
     assignee_type: normalizedAssigneeType,
     crm_pipeline_id: crmPipelineId || currentCrmDealContext.crmPipelineId,
     crm_stage_id: crmStageId || currentCrmDealContext.crmStageId,
+    appointment_status:
+      appointmentStatus || currentAppointmentContext.appointmentStatus,
     labels_scope: labelsScope || currentConversationScopes.labelsScope,
     team_scope: teamScope || currentConversationScopes.teamScope,
+    unread: unreadQueryValue,
   };
 };
 
@@ -117,8 +155,10 @@ export const conversationUrl = ({
   assigneeType,
   crmPipelineId,
   crmStageId,
+  appointmentStatus,
   labelsScope,
   teamScope,
+  unread,
   communicationThread = false,
 }) => {
   let url = communicationThread
@@ -133,8 +173,10 @@ export const conversationUrl = ({
         defaultAssigneeType: 'all',
         crmPipelineId,
         crmStageId,
+        appointmentStatus,
         labelsScope,
         teamScope,
+        unread,
       })
     );
   }
@@ -160,8 +202,10 @@ export const conversationUrl = ({
       assigneeType,
       crmPipelineId,
       crmStageId,
+      appointmentStatus,
       labelsScope,
       teamScope,
+      unread,
     })
   );
 };
@@ -177,8 +221,10 @@ export const conversationListPageURL = ({
   assigneeType,
   crmPipelineId,
   crmStageId,
+  appointmentStatus,
   labelsScope,
   teamScope,
+  unread,
   communicationThread = false,
 }) => {
   let url = communicationThread
@@ -194,8 +240,10 @@ export const conversationListPageURL = ({
           defaultAssigneeType: 'all',
           crmPipelineId,
           crmStageId,
+          appointmentStatus,
           labelsScope,
           teamScope,
+          unread,
         })
       )
     );
@@ -224,8 +272,10 @@ export const conversationListPageURL = ({
         assigneeType,
         crmPipelineId,
         crmStageId,
+        appointmentStatus,
         labelsScope,
         teamScope,
+        unread,
       })
     )
   );

@@ -30,7 +30,11 @@ import {
   labelMarkerEmoji,
   labelMarkerType,
 } from 'dashboard/helper/labels';
-import { filterSidebarMenuItems } from './sidebarVisibility';
+import {
+  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+  CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS,
+  filterSidebarMenuItems,
+} from './sidebarVisibility';
 import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions';
 import wootConstants from 'dashboard/constants/globals';
 import {
@@ -58,6 +62,12 @@ import {
   resolveDefaultPipelineWithStages,
   resolveDialogDealCount,
 } from './crmDefaultPipelineSidebar';
+import {
+  APPOINTMENT_STATUS_ANY,
+  APPOINTMENT_STATUS_ICON_CLASSES,
+  APPOINTMENT_STATUS_ICONS,
+  APPOINTMENT_STATUS_VALUES,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   isMobileSidebarOpen: {
@@ -251,6 +261,14 @@ const getSidebarUnreadCount = (collection, key) => {
 const statusUnreadCount = status => getSidebarUnreadCount('statuses', status);
 const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
 const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
+const appointmentStatusCount = status =>
+  getSidebarUnreadCount('appointment_statuses', status);
+const appointmentStatusTotalCount = computed(() =>
+  APPOINTMENT_STATUS_VALUES.reduce(
+    (total, status) => total + appointmentStatusCount(status),
+    0
+  )
+);
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
 const conversationAssigneeTypes = [
@@ -318,26 +336,49 @@ const currentConversationAssigneeType = computed(() => {
     : wootConstants.ASSIGNEE_TYPE.ALL;
 });
 
+const currentAppointmentStatusFilter = computed(
+  () => route.query.appointment_status || route.query.appointmentStatus || ''
+);
+
+const currentAppointmentStatus = computed(() => {
+  const status = currentAppointmentStatusFilter.value;
+  return APPOINTMENT_STATUS_VALUES.includes(status) ? status : '';
+});
+
+const hasAnyAppointmentStatusFilter = computed(
+  () => currentAppointmentStatusFilter.value === APPOINTMENT_STATUS_ANY
+);
+
+const truthyQueryValue = value =>
+  value === true || value === 'true' || value === '1' || value === 1;
+
 const conversationNavigationQuery = (overrides = {}) => {
   const baseQuery = { ...route.query };
   const camelAssigneeType = baseQuery.assigneeType;
   const camelCrmPipelineId = baseQuery.crmPipelineId;
   const camelCrmStageId = baseQuery.crmStageId;
+  const camelAppointmentStatus = baseQuery.appointmentStatus;
   const camelLabelsScope = baseQuery.labelsScope;
   const camelTeamScope = baseQuery.teamScope;
+  const camelUnreadOnly = baseQuery.unreadOnly;
   delete baseQuery.messageId;
   delete baseQuery.assigneeType;
   delete baseQuery.crmPipelineId;
   delete baseQuery.crmStageId;
+  delete baseQuery.appointmentStatus;
   delete baseQuery.labelsScope;
   delete baseQuery.teamScope;
+  delete baseQuery.unreadOnly;
 
   const {
     assigneeType: overrideCamelAssigneeType,
     crmPipelineId: overrideCamelCrmPipelineId,
     crmStageId: overrideCamelCrmStageId,
+    appointmentStatus: overrideCamelAppointmentStatus,
     labelsScope: overrideCamelLabelsScope,
     teamScope: overrideCamelTeamScope,
+    unread: overrideUnread,
+    unreadOnly: overrideUnreadOnly,
     ...safeOverrides
   } = overrides;
   const hasCrmPipelineOverride =
@@ -346,12 +387,17 @@ const conversationNavigationQuery = (overrides = {}) => {
   const hasCrmStageOverride =
     Object.prototype.hasOwnProperty.call(safeOverrides, 'crm_stage_id') ||
     overrideCamelCrmStageId !== undefined;
+  const hasAppointmentStatusOverride =
+    Object.prototype.hasOwnProperty.call(safeOverrides, 'appointment_status') ||
+    overrideCamelAppointmentStatus !== undefined;
   const hasLabelsScopeOverride =
     Object.prototype.hasOwnProperty.call(safeOverrides, 'labels_scope') ||
     overrideCamelLabelsScope !== undefined;
   const hasTeamScopeOverride =
     Object.prototype.hasOwnProperty.call(safeOverrides, 'team_scope') ||
     overrideCamelTeamScope !== undefined;
+  const hasUnreadOverride =
+    overrideUnread !== undefined || overrideUnreadOnly !== undefined;
   const nextAssigneeType =
     safeOverrides.assignee_type ||
     overrideCamelAssigneeType ||
@@ -364,12 +410,18 @@ const conversationNavigationQuery = (overrides = {}) => {
   const nextCrmStageId = hasCrmStageOverride
     ? safeOverrides.crm_stage_id || overrideCamelCrmStageId
     : baseQuery.crm_stage_id || camelCrmStageId;
+  const nextAppointmentStatus = hasAppointmentStatusOverride
+    ? safeOverrides.appointment_status || overrideCamelAppointmentStatus
+    : baseQuery.appointment_status || camelAppointmentStatus;
   const nextLabelsScope = hasLabelsScopeOverride
     ? safeOverrides.labels_scope || overrideCamelLabelsScope
     : baseQuery.labels_scope || camelLabelsScope;
   const nextTeamScope = hasTeamScopeOverride
     ? safeOverrides.team_scope || overrideCamelTeamScope
     : baseQuery.team_scope || camelTeamScope;
+  const nextUnread = hasUnreadOverride
+    ? (overrideUnread ?? overrideUnreadOnly)
+    : baseQuery.unread || camelUnreadOnly;
   const nextQuery = {
     ...baseQuery,
     ...safeOverrides,
@@ -394,6 +446,12 @@ const conversationNavigationQuery = (overrides = {}) => {
     delete nextQuery.crm_stage_id;
   }
 
+  if (nextAppointmentStatus) {
+    nextQuery.appointment_status = nextAppointmentStatus;
+  } else {
+    delete nextQuery.appointment_status;
+  }
+
   if (nextLabelsScope) {
     nextQuery.labels_scope = nextLabelsScope;
   } else {
@@ -404,6 +462,12 @@ const conversationNavigationQuery = (overrides = {}) => {
     nextQuery.team_scope = nextTeamScope;
   } else {
     delete nextQuery.team_scope;
+  }
+
+  if (truthyQueryValue(nextUnread)) {
+    nextQuery.unread = 'true';
+  } else {
+    delete nextQuery.unread;
   }
 
   return nextQuery;
@@ -636,6 +700,77 @@ const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
       crm_stage_id: stageId,
     })
   );
+
+const withCurrentConversationScopeAppointmentStatus = status =>
+  accountScopedRoute(
+    resolveConversationRouteName(currentConversationScope.value.name),
+    currentConversationScope.value.params,
+    conversationNavigationQuery({
+      appointment_status:
+        currentAppointmentStatus.value === status ? undefined : status,
+    })
+  );
+
+const withCurrentConversationScopeAnyAppointments = () =>
+  accountScopedRoute(
+    resolveConversationRouteName(currentConversationScope.value.name),
+    currentConversationScope.value.params,
+    conversationNavigationQuery({
+      appointment_status: hasAnyAppointmentStatusFilter.value
+        ? undefined
+        : APPOINTMENT_STATUS_ANY,
+    })
+  );
+
+const appointmentStatusLabels = computed(() => ({
+  cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
+  completed: t('SCHEDULING.APPOINTMENT_STATUS.completed'),
+  confirmed: t('SCHEDULING.APPOINTMENT_STATUS.confirmed'),
+  no_show: t('SCHEDULING.APPOINTMENT_STATUS.no_show'),
+  scheduled: t('SCHEDULING.APPOINTMENT_STATUS.scheduled'),
+}));
+
+const appointmentStatusSidebarLabels = computed(() => ({
+  cancelled: appointmentStatusLabels.value.cancelled,
+  completed: t('SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.completed'),
+  confirmed: t('SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.confirmed'),
+  no_show: appointmentStatusLabels.value.no_show,
+  scheduled: t('SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.scheduled'),
+}));
+
+const appointmentStatusSidebarItems = computed(() => {
+  if (!hasSchedulingSettings.value) {
+    return [];
+  }
+
+  return [
+    {
+      name: 'AppointmentStatuses',
+      visibilityKey: CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+      label: t('SCHEDULING.DIALOGS.SIDEBAR_TITLE'),
+      icon: 'i-lucide-calendar-clock',
+      count: appointmentStatusTotalCount.value,
+      active: hasAnyAppointmentStatusFilter.value,
+      suppressExactPathActive: true,
+      activeOn: [],
+      suppressHeaderActiveWhenChildActive: true,
+      to: withCurrentConversationScopeAnyAppointments(),
+      children: APPOINTMENT_STATUS_VALUES.map(status => ({
+        name: `AppointmentStatus:${status}`,
+        visibilityKey: CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS[status],
+        label: appointmentStatusSidebarLabels.value[status] || status,
+        icon: APPOINTMENT_STATUS_ICONS[status],
+        iconClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
+        labelClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
+        countClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
+        count: appointmentStatusCount(status),
+        active: currentAppointmentStatus.value === status,
+        activeOn: conversationStatusActiveOn,
+        to: withCurrentConversationScopeAppointmentStatus(status),
+      })),
+    },
+  ];
+});
 
 const defaultCrmPipeline = computed(() =>
   resolveDefaultPipelineWithStages(crmReferencesStore.pipelines)
@@ -1257,6 +1392,7 @@ const menuItems = computed(() => {
             ],
           },
           ...crmPipelineSidebarItems.value,
+          ...appointmentStatusSidebarItems.value,
           {
             name: 'Folders',
             visibilityKey: 'Conversation:Folders',

@@ -3,12 +3,18 @@ import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import ContactPanel from 'dashboard/routes/dashboard/conversation/ContactPanel.vue';
 import CrmConversationDealsSidebar from 'dashboard/components-next/CRM/CrmConversationDealsSidebar.vue';
+import SchedulingConversationAppointmentsSidebar from 'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue';
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 import wootConstants from 'dashboard/constants/globals';
+import {
+  buildSidebarVisibilityState,
+  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+  CONVERSATION_PIPELINES_VISIBILITY_KEY,
+} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const props = defineProps({
   currentChat: {
@@ -33,16 +39,26 @@ const clickOutsideOptions = {
 };
 
 const activeTab = computed(() => {
+  const visibility = buildSidebarVisibilityState(uiSettings.value);
   const {
     is_contact_sidebar_open: isContactSidebarOpen,
     is_crm_deal_panel_open: isDealsSidebarOpen,
+    is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
     is_touch_sidebar_open: isTouchSidebarOpen,
   } = uiSettings.value;
 
   if (isContactSidebarOpen) {
     return 'contact';
   }
-  if (isDealsSidebarOpen) return 'deals';
+  if (isDealsSidebarOpen && visibility[CONVERSATION_PIPELINES_VISIBILITY_KEY]) {
+    return 'deals';
+  }
+  if (
+    isAppointmentsSidebarOpen &&
+    visibility[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY]
+  ) {
+    return 'appointments';
+  }
   if (isTouchSidebarOpen) return 'touch';
   return null;
 });
@@ -81,12 +97,14 @@ const closeSidebar = () => {
     isSmallScreen.value &&
     (uiSettings.value?.is_contact_sidebar_open ||
       uiSettings.value?.is_crm_deal_panel_open ||
+      uiSettings.value?.is_scheduling_appointments_panel_open ||
       uiSettings.value?.is_touch_sidebar_open)
   ) {
     updateUISettings({
       is_contact_sidebar_open: false,
       is_copilot_panel_open: false,
       is_crm_deal_panel_open: false,
+      is_scheduling_appointments_panel_open: false,
       is_touch_sidebar_open: false,
     });
   }
@@ -97,6 +115,17 @@ const closeDealsSidebar = () => {
     is_contact_sidebar_open: false,
     is_copilot_panel_open: false,
     is_crm_deal_panel_open: false,
+    is_scheduling_appointments_panel_open: false,
+    is_touch_sidebar_open: false,
+  });
+};
+
+const closeAppointmentsSidebar = () => {
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_copilot_panel_open: false,
+    is_crm_deal_panel_open: false,
+    is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
 };
@@ -106,6 +135,7 @@ const closeTouchSidebar = () => {
     is_contact_sidebar_open: false,
     is_copilot_panel_open: false,
     is_crm_deal_panel_open: false,
+    is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
 };
@@ -153,6 +183,12 @@ const openTouchesWorkspace = () => {
         <CrmConversationDealsSidebar
           :current-chat="currentChat"
           @close="closeDealsSidebar"
+        />
+      </div>
+      <div v-if="activeTab === 'appointments'" class="min-w-0 flex-1">
+        <SchedulingConversationAppointmentsSidebar
+          :current-chat="currentChat"
+          @close="closeAppointmentsSidebar"
         />
       </div>
       <div v-if="activeTab === 'touch'" class="min-w-0 flex-1">

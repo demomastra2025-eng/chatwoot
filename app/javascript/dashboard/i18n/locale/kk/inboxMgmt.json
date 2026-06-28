@@ -8,6 +8,8 @@
     "HEALTH_STATUS": {
       "CONNECTED": "Қосылған",
       "CONNECTED_DESCRIPTION": "Арна хабарламаларды қабылдауға дайын.",
+      "PENDING": "Күтуде",
+      "PENDING_DESCRIPTION": "Арна QR сканерлеуді, кіруді растауды немесе провайдер байланысының ашылуын күтіп тұр.",
       "DISCONNECTED": "Ажыратылған",
       "DISCONNECTED_DESCRIPTION": "Арна қосылмаған. Жаңа хабарламаларды күтер алдында қайта қосыңыз.",
       "REAUTHORIZATION_REQUIRED": "Қайта авторизация қажет",

@@ -256,6 +256,7 @@ Rails.application.routes.draw do
               collection do
                 get :deals
                 get :funnels
+                get :manager_effectiveness
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do

@@ -215,4 +215,23 @@ describe('SidebarCollapsedPopover', () => {
       false
     );
   });
+
+  it('applies countClass to plain counts in the collapsed popover', () => {
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'AppointmentStatus:confirmed',
+          label: 'Подтвержден',
+          icon: 'i-lucide-badge-check',
+          count: 5,
+          countClass: 'text-n-amber-11',
+          to: allChannelsRoute,
+        },
+      ],
+    });
+    const count = wrapper.find('[data-test-id="sidebar-plain-count"]');
+
+    expect(count.text()).toBe('5');
+    expect(count.classes()).toContain('text-n-amber-11');
+  });
 });

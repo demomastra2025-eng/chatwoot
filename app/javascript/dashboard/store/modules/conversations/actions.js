@@ -38,6 +38,7 @@ const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
   'communicationThreadMode',
   'crmPipelineId',
   'crmStageId',
+  'appointmentStatus',
 ];
 
 const hasFilterValue = value => {

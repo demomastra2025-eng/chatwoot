@@ -9,6 +9,7 @@
       "COMMUNICATION_THREAD_SOURCE": "Keeps the unified communication thread as source context",
       "CONVERSATION_SOURCE": "Keeps the inbox conversation as source context",
       "CANCEL": "Cancel",
+      "CLOSE": "Close",
       "CREATE": "Create",
       "DEFAULT": "Default",
       "EMPTY_VALUE": "—",
@@ -100,6 +101,7 @@
         "ADD": "Add task",
         "COUNT": "Tasks: {count}",
         "CREATE_DESCRIPTION": "The task will be created and linked to the current deal.",
+        "EDIT_DESCRIPTION": "Until the task is closed, you can change details, dates, owner, and status.",
         "DUE_AT": "Due: {date}",
         "EMPTY_DESCRIPTION": "Create a follow-up, call, or internal task without leaving the deal.",
         "EMPTY_TITLE": "No tasks linked to this deal yet",
@@ -216,6 +218,8 @@
       "DESCRIPTION": "Run standalone work and deal-linked follow-ups from one surface.",
       "DRAWER_DESCRIPTION": "Status changes and task context stay in the same native drawer.",
       "EDIT_TITLE": "Edit task",
+      "VIEW_DESCRIPTION": "This task is completed. Details are available in read-only mode.",
+      "VIEW_TITLE": "View task",
       "EMPTY_DESCRIPTION": "Create your first CRM task to organize follow-ups and internal work.",
       "EMPTY_TITLE": "No tasks yet",
       "CALENDAR": {
@@ -255,6 +259,7 @@
         "MY": "My tasks"
       },
       "FORM": {
+        "ACTIVITY_TYPE": "Task type",
         "ASSIGNEE": "Assignee",
         "BASICS": "Task details",
         "BASICS_DESCRIPTION": "Define ownership, schedule, and linkage to an optional deal.",
@@ -262,6 +267,8 @@
         "DESCRIPTION": "Description",
         "DUE_AT": "Due at",
         "EXTERNAL_REF": "External reference",
+        "OUTCOME": "Result",
+        "OUTCOME_NOTE": "Result details",
         "PRIORITY": "Priority",
         "START_AT": "Start at",
         "STATUS": "Status",
@@ -281,11 +288,52 @@
         "none": "None",
         "urgent": "Urgent"
       },
+      "RESULT": {
+        "cancelled": "Not done",
+        "completed": "Done"
+      },
+      "RESULT_DIALOG": {
+        "ACTION": "Complete",
+        "CANCELLED_DESCRIPTION": "Briefly record why the task was not done and what remains.",
+        "CANCELLED_LABEL": "Why was it not done?",
+        "CANCELLED_PREFIX": "Not done",
+        "CANCELLED_TITLE": "Task not done",
+        "CHANGE_ACTION": "Result",
+        "COMPLETED_DESCRIPTION": "Briefly record what exactly was completed.",
+        "COMPLETED_LABEL": "What was done?",
+        "COMPLETED_PREFIX": "Done",
+        "COMPLETED_TITLE": "Task done",
+        "DESCRIPTION": "Choose the task outcome from the list and add details if needed.",
+        "NOTE_LABEL": "Result comment",
+        "NOT_DONE_LABEL": "Reason",
+        "TITLE": "Complete task"
+      },
+      "ACTIVITY_TYPE": {
+        "call": "Call",
+        "meeting": "Meeting",
+        "message": "Message",
+        "task": "Task",
+        "touch": "Touch"
+      },
+      "OUTCOME": {
+        "answered": "Answered",
+        "busy": "Busy",
+        "cancelled": "Cancelled",
+        "completed": "Completed",
+        "failed": "Failed",
+        "held": "Held",
+        "no_answer": "No answer",
+        "no_show": "No-show",
+        "not_done": "Not done with reason",
+        "rescheduled": "Rescheduled",
+        "sent": "Sent"
+      },
       "SUCCESS_ARCHIVED": "Task archived",
       "SUCCESS_CREATED": "Task created",
       "SUCCESS_UNARCHIVED": "Task restored",
       "SUCCESS_UPDATED": "Task updated",
       "TABLE": {
+        "ACTIVITY_TYPE": "Type",
         "ASSIGNEE": "Assignee",
         "DEAL": "Deal",
         "DUE_AT": "Due",

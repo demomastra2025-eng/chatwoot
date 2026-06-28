@@ -10,6 +10,7 @@ class ContactMergeAction
     ActiveRecord::Base.transaction do
       validate_contacts
       merge_conversations
+      merge_communication_threads
       merge_messages
       merge_contact_inboxes
       merge_contact_channel_profiles
@@ -35,6 +36,13 @@ class ContactMergeAction
   def merge_conversations
     bulk_reassign(
       Conversation.where(contact_id: @mergee_contact.id),
+      contact_id: @base_contact.id
+    )
+  end
+
+  def merge_communication_threads
+    bulk_reassign(
+      CommunicationThread.where(contact_id: @mergee_contact.id),
       contact_id: @base_contact.id
     )
   end

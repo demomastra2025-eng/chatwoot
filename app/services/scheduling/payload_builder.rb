@@ -2,6 +2,10 @@ module Scheduling::PayloadBuilder
   module_function
 
   def appointment(appointment, payments: nil, expense_record: nil)
+    conversation = appointment.conversation
+    chat_conversation = conversation || appointment_chat_conversation(appointment)
+    communication_thread = appointment_communication_thread(appointment, chat_conversation)
+
     {
       id: appointment.id,
       account_id: appointment.account_id,
@@ -12,6 +16,11 @@ module Scheduling::PayloadBuilder
       services: appointment.custom_attributes['services'].presence || [],
       company_id: appointment.company_id,
       conversation_id: appointment.conversation_id,
+      conversation_display_id: conversation&.display_id,
+      communication_thread_id: communication_thread&.id,
+      communication_thread_display_id: communication_thread&.display_id,
+      chat_conversation_id: chat_conversation&.id,
+      chat_conversation_display_id: chat_conversation&.display_id,
       created_by_id: appointment.created_by_id,
       owner_id: appointment.owner_id,
       service_name_snapshot: appointment.service_name_snapshot,
@@ -50,6 +59,40 @@ module Scheduling::PayloadBuilder
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
     }
+  end
+
+  def appointment_chat_conversation(appointment)
+    thread = appointment_communication_thread(appointment, nil)
+    return thread_primary_conversation(thread) if thread.present?
+
+    return if appointment.contact_id.blank?
+
+    appointment.account.conversations
+               .where(contact_id: appointment.contact_id)
+               .order(last_activity_at: :desc, id: :desc)
+               .first
+  end
+
+  def appointment_communication_thread(appointment, chat_conversation)
+    return appointment.conversation.communication_thread if appointment.conversation.present?
+    return chat_conversation.communication_thread if chat_conversation&.communication_thread.present?
+    return if chat_conversation.present?
+    return if appointment.contact_id.blank?
+
+    CommunicationThread
+      .where(account_id: appointment.account_id, contact_id: appointment.contact_id)
+      .order(last_activity_at: :desc, id: :desc)
+      .first
+  end
+
+  def thread_primary_conversation(thread)
+    return if thread.blank?
+
+    link = thread.communication_thread_conversations
+                 .includes(:conversation)
+                 .order(primary: :desc, id: :desc)
+                 .first
+    link&.conversation
   end
 
   def break_rule(rule)
