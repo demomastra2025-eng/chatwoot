@@ -113,6 +113,25 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     end
   end
 
+  it 'marks managed Sipuni channels without shared trunk credentials as not ready' do
+    result = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator).create_channel(
+      {
+        provider_kind: 'sipuni',
+        channel_name: 'Sipuni managed line without trunk credentials',
+        display_phone_number: '+17770004445',
+        provider_account_number: '056124100015',
+        ingress_number: '056124100015',
+        connection: { host: 'ats01.kz.sipuni.com', port: 5060, transport: 'udp', username: '056124100015' }
+      },
+      dry_run: false
+    )
+
+    payload = described_class.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
+
+    expect(payload[:ready]).to be(false)
+    expect(payload.fetch(:warnings).map { |warning| warning[:code] }).to include('missing_shared_sipuni_trunk_credentials')
+  end
+
   it 'exposes non-secret Asterisk analog connection details for settings edits' do
     service = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator)
     result = service.create_channel(

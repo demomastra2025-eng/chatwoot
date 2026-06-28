@@ -699,7 +699,6 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def default_profile_availability_mode(provider_kind)
     return 'browser_webphone' if provider_kind.to_s == 'sipuni'
-    return 'browser_webphone' if provider_kind.to_s == 'asterisk_analog'
 
     'external_extension'
   end
@@ -1185,8 +1184,8 @@ class Telephony::VirtualPbx::ProvisioningService
     return if thread_ids.blank?
 
     empty_threads = CommunicationThread
-      .where(account_id: account.id, id: thread_ids)
-      .where.missing(:communication_thread_conversations)
+                    .where(account_id: account.id, id: thread_ids)
+                    .where.missing(:communication_thread_conversations)
 
     empty_thread_ids = empty_threads.pluck(:id)
     return if empty_thread_ids.blank?

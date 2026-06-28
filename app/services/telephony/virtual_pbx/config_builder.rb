@@ -371,8 +371,31 @@ class Telephony::VirtualPbx::ConfigBuilder
                             severity: 'blocking')
       end
       warnings << split_phone_warning(parts)
+      warnings << sipuni_trunk_credentials_warning(channel: channel, binding: binding, parts: parts)
       warnings << legacy_ownership_warning(channel: channel, binding: binding)
     end.compact
+  end
+
+  def sipuni_trunk_credentials_warning(channel:, binding:, parts:)
+    return unless parts[:provider_kind] == 'sipuni'
+    return unless ownership_payload(channel: channel, binding: binding)[:managed]
+    return if shared_sipuni_trunk_credentials_configured?(binding)
+
+    warning(
+      'missing_shared_sipuni_trunk_credentials',
+      'Shared Sipuni trunk credentials are missing; configure a OneLink SIP trunk login before remote gateway sync',
+      severity: 'blocking'
+    )
+  end
+
+  def shared_sipuni_trunk_credentials_configured?(binding)
+    connection = binding&.provider_connection
+    return false if connection.blank?
+
+    connection.username.present? && (
+      connection.password_secret_ref.present? ||
+      connection.fonoster_credentials_ref.present?
+    )
   end
 
   def split_phone_warning(parts)

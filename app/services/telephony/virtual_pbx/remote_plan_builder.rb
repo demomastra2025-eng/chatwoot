@@ -54,6 +54,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       operation_payload('upsert_number', 'PUT', path('numbers', refs[:number_ref]), 'Connect the business number to OneLink runtime', ownership,
                         payload: number_payload(state)),
       *sipuni_gateway_operations(state, ownership, 'Prepare Sipuni Asterisk gateway for inbound and outbound calls'),
+      sipuni_gateway_credentials_blocker(state),
       operation_payload('update_number_route', 'POST', "#{path('numbers', refs[:number_ref])}/route", 'Apply selected routing mode', ownership,
                         payload: route_payload(state)),
       *agent_assignment_operations(state, ownership)
@@ -71,6 +72,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
       operation_payload('upsert_number', 'PUT', path('numbers', refs[:number_ref]), 'Sync business number metadata', ownership,
                         payload: number_payload(state)),
       *sipuni_gateway_operations(state, ownership, 'Sync Sipuni Asterisk gateway metadata'),
+      sipuni_gateway_credentials_blocker(state),
       operation_payload('update_number_route', 'POST', "#{path('numbers', refs[:number_ref])}/route", 'Sync routing mode', ownership,
                         payload: route_payload(state)),
       *agent_assignment_operations(state, ownership)
@@ -115,6 +117,27 @@ class Telephony::VirtualPbx::RemotePlanBuilder
         payload: payload
       )
     end
+  end
+
+  def sipuni_gateway_credentials_blocker(state)
+    return unless sipuni_gateway?(state)
+    return if sipuni_gateway_payloads(state).any? { |payload| shared_sipuni_gateway_payload?(payload) }
+
+    {
+      key: 'missing_sipuni_gateway_credentials',
+      method: 'CONFIGURE',
+      path: path('sipuni-gateways', (state[:refs] || {})[:number_ref]),
+      description: 'Configure explicit Sipuni gateway credentials before remote sync',
+      owned: false,
+      shared: false,
+      risk: 'blocked',
+      conflict: 'missing_sipuni_gateway_credentials',
+      payload_preview: {
+        key: 'missing_sipuni_gateway_credentials',
+        provider_kind: 'sipuni',
+        remote_mutation: 'blocked'
+      }
+    }.compact
   end
 
   def delete_sipuni_gateway_operations(state, ownership)
@@ -433,12 +456,13 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     end
 
     shared_payload = sipuni_gateway_payload(state)
-    return [shared_payload] if shared_payload[:providerAccountNumber].present? && shared_payload[:credentialsRef].present?
+    return [shared_payload] if shared_sipuni_gateway_payload?(shared_payload)
 
-    profile = configured_sipuni_gateway_profiles(state).find { |attrs| sipuni_gateway_profile_upsertable?(attrs) }
-    return [sipuni_gateway_payload(state, profile: profile, profile_index: 0, target_metadata: false)] if profile.present?
+    []
+  end
 
-    [shared_payload]
+  def shared_sipuni_gateway_payload?(payload)
+    payload[:providerAccountNumber].present? && payload[:credentialsRef].present?
   end
 
   def sipuni_gateway_payload(state, profile: nil, profile_index: nil, target_metadata: profile.present?)

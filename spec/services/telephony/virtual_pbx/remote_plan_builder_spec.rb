@@ -53,8 +53,9 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
 
     plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
 
+    expect(plan).to include(status: 'requires_manual_reconcile')
     expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
-      'upsert_number', 'update_number_route'
+      'upsert_number', 'update_number_route', 'missing_sipuni_gateway_credentials'
     )
     expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include(
       'upsert_connection_credentials',
@@ -287,8 +288,8 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
         onelink_channel_id: 777
       },
       profiles: [
-        { user_id: admin.id, internal_extension: '504', sip_username: '015856100014' },
-        { user_id: admin.id + 1, internal_extension: '505', sip_username: '015856100015' }
+        { user_id: admin.id, internal_extension: '504', sip_username: '015856100504' },
+        { user_id: admin.id + 1, internal_extension: '505', sip_username: '015856100505' }
       ]
     }
 
@@ -304,7 +305,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     )
   end
 
-  it 'uses the first employee SIP profile as a shared Sipuni gateway when broadcast has no shared credentials' do
+  it 'blocks broadcast Sipuni gateway sync instead of using an employee SIP profile as shared credentials' do
     desired_state = {
       account_id: account.id,
       provider_kind: 'sipuni',
@@ -346,10 +347,15 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     gateway_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'upsert_sipuni_gateway' }
     cleanup_operations = plan.fetch(:operations).select { |operation| operation[:key] == 'delete_broadcast_extra_sipuni_gateway' }
 
-    expect(gateway_operations.map { |operation| operation[:path] }).to eq(['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014'])
-    expect(gateway_operations.first.dig(:payload, :providerAccountNumber)).to eq('015856100014')
-    expect(gateway_operations.first.dig(:payload, :credentialsRef)).to eq('cred-profile-1-504')
-    expect(gateway_operations.first.dig(:payload, :metadata)).not_to have_key(:target_extension)
+    blocker = plan.fetch(:operations).find { |operation| operation[:key] == 'missing_sipuni_gateway_credentials' }
+
+    expect(plan).to include(status: 'requires_manual_reconcile')
+    expect(gateway_operations).to be_empty
+    expect(blocker).to include(
+      risk: 'blocked',
+      conflict: 'missing_sipuni_gateway_credentials',
+      description: 'Configure explicit Sipuni gateway credentials before remote sync'
+    )
     expect(cleanup_operations.map { |operation| operation[:path] }).to eq(
       ['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014-505']
     )
@@ -545,12 +551,13 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
       ['delete_stale_sipuni_gateway', 'DELETE', '/telephony/sipuni-gateways/015856100020'],
       ['delete_stale_sipuni_gateway', 'DELETE', '/telephony/sipuni-gateways/number-ref-504'],
       ['upsert_agent_credentials', 'PUT', '/telephony/credentials/new-credentials-ref'],
-      ['upsert_sipuni_gateway', 'PUT', '/telephony/sipuni-gateways/number-ref'],
+      ['missing_sipuni_gateway_credentials', 'CONFIGURE', '/telephony/sipuni-gateways/number-ref'],
       ['upsert_agent', 'PUT', '/telephony/agents/new-agent-ref']
     )
     stale_gateway_index = operation_paths.index(['delete_stale_sipuni_gateway', 'DELETE', '/telephony/sipuni-gateways/number-ref-504'])
-    upsert_gateway_index = operation_paths.index(['upsert_sipuni_gateway', 'PUT', '/telephony/sipuni-gateways/number-ref'])
-    expect(stale_gateway_index).to be < upsert_gateway_index
+    blocker_index = operation_paths.index(['missing_sipuni_gateway_credentials', 'CONFIGURE', '/telephony/sipuni-gateways/number-ref'])
+    expect(stale_gateway_index).to be < blocker_index
+    expect(plan.fetch(:operations).map { |operation| operation[:key] }).not_to include('upsert_sipuni_gateway')
     expect(plan.to_json).not_to include('new-password')
   end
 
