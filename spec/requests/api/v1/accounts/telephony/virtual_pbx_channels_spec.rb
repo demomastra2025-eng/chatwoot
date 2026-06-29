@@ -163,7 +163,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq('sipuni-internal-asterisk-056124100014')
   end
 
-  it 'keeps Asterisk analog employee extensions out of channel provider numbers' do
+  it 'keeps Asterisk analog employee extensions out of channel provider numbers and remote agent upserts' do
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
       channel_name: 'Analog external line',
@@ -195,14 +195,18 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('diagnostics', 'payload', 'profiles').first).to include(
       'internal_extension' => '9098',
       'user_id' => agent.id,
-      'availability_mode' => 'browser_webphone'
+      'availability_mode' => 'external_extension'
     )
     expect(body.dig('diagnostics', 'payload', 'connection', 'host')).to eq('10.77.0.5')
     expect(body.dig('diagnostics', 'payload', 'connection', 'send_register')).to be(false)
     expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq("asterisk-analog-#{account.id}-17770005175")
     expect(body.dig('diagnostics', 'generated_refs', 'trunk_ref')).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
-    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).to include('upsert_agent')
-    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).not_to include('upsert_agent_credentials')
+    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).to include(
+      'upsert_trunk', 'upsert_number', 'update_number_route'
+    )
+    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).not_to include(
+      'upsert_agent', 'upsert_agent_credentials'
+    )
     expect(body.to_json).not_to include('tel:9098')
   end
 
@@ -460,7 +464,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
             {
               user_id: agent.id,
               internal_extension: '207',
-              sip_username: '056124100014',
+              sip_username: 'manager-207-login',
               sip_password: 'raw-profile-password',
               enabled: true
             }
@@ -472,7 +476,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
     desired_profile = captured_args.dig(:desired_state, :profiles).first
     expect(desired_profile).to include(
-      sip_username: '056124100014',
+      sip_username: 'manager-207-login',
       sip_password: 'raw-profile-password',
       credentials_ref: "cred-profile-#{account.id}-#{agent.id}-207",
       agent_aor: 'sip:207@operator.cloud.vconsult.kz',
@@ -486,7 +490,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response.parsed_body.to_json).not_to include('raw-profile-password')
   end
 
-  it 'defaults Asterisk analog employee profiles to browser webphone without SIP credentials' do
+  it 'defaults Asterisk analog employee profiles to provider-managed external extensions without SIP credentials' do
     create_payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
       channel_name: 'Analog line 9098',
@@ -539,8 +543,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     desired_profile = captured_args.dig(:desired_state, :profiles).first
     expect(desired_profile).to include(
       internal_extension: '9098',
-      agent_aor: 'sip:9098@operator.cloud.vconsult.kz',
-      availability_mode: 'browser_webphone'
+      agent_aor: 'sip:9098@10.77.0.5',
+      availability_mode: 'external_extension'
     )
     expect(captured_args.dig(:desired_state, :connection)).to include(
       host: '10.77.0.5',
@@ -549,10 +553,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
     expect(desired_profile).not_to include(:sip_username, :sip_password, :credentials_ref)
     expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).to include(
-      'upsert_trunk', 'upsert_number', 'update_number_route', 'upsert_agent'
+      'upsert_trunk', 'upsert_number', 'update_number_route'
     )
     expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).not_to include(
-      'upsert_agent_credentials'
+      'upsert_agent', 'upsert_agent_credentials'
     )
   end
 
@@ -679,7 +683,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
              {
                user_id: agent.id,
                internal_extension: '207',
-               sip_username: '056124100014',
+               sip_username: 'manager-207-login',
                sip_password: 'do-not-return-this-profile-secret',
                enabled: true
              }
@@ -696,7 +700,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(inbox.inbox_members.pluck(:user_id)).to include(agent.id)
     expect(profile).to have_attributes(
       internal_extension: '207',
-      sip_username: '056124100014',
+      sip_username: 'manager-207-login',
       sip_host: 'operator.cloud.vconsult.kz',
       agent_aor: 'sip:207@operator.cloud.vconsult.kz',
       availability_mode: 'browser_webphone'
@@ -722,14 +726,14 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
             {
               user_id: agent.id,
               internal_extension: '207',
-              sip_username: '056124100014',
+              sip_username: 'manager-207-login',
               sip_password: 'do-not-return-this-profile-secret',
               enabled: true
             },
             {
               user_id: second_agent.id,
               internal_extension: '208',
-              sip_username: '056124100015',
+              sip_username: 'manager-208-login',
               sip_password: 'do-not-return-second-profile-secret',
               enabled: true
             }
@@ -741,8 +745,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(inbox.reload.inbox_members.pluck(:user_id)).to contain_exactly(agent.id, second_agent.id)
     expect(inbox.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
-      [agent.id, '207', '056124100014'],
-      [second_agent.id, '208', '056124100015']
+      [agent.id, '207', 'manager-207-login'],
+      [second_agent.id, '208', 'manager-208-login']
     )
     expect(response.parsed_body.to_json).not_to include('do-not-return-this-profile-secret')
     expect(response.parsed_body.to_json).not_to include('do-not-return-second-profile-secret')
@@ -776,8 +780,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
     expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
-      [agent.id, '207', '056124100014'],
-      [second_agent.id, '208', '056124100015']
+      [agent.id, '207', 'manager-207-login'],
+      [second_agent.id, '208', 'manager-208-login']
     )
     credentials_after = inbox.telephony_sip_profiles.index_by(&:user_id).transform_values do |profile|
       [profile.sip_username, profile.password_secret_ref, profile.credentials_ref]
@@ -807,8 +811,8 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
     expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
-      [agent.id, '217', '056124100014'],
-      [second_agent.id, '208', '056124100015']
+      [agent.id, '217', 'manager-207-login'],
+      [second_agent.id, '208', 'manager-208-login']
     )
     expect(inbox.telephony_sip_profiles.index_by(&:user_id).transform_values(&:id)).to eq(profile_ids_before)
     credentials_after_extension_change = inbox.telephony_sip_profiles.index_by(&:user_id).transform_values do |profile|
@@ -824,13 +828,13 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
             {
               user_id: agent.id,
               internal_extension: '217',
-              sip_username: '056124100014',
+              sip_username: 'manager-207-login',
               enabled: true
             },
             {
               user_id: second_agent.id,
               internal_extension: '208',
-              sip_username: '056124100015',
+              sip_username: 'manager-208-login',
               enabled: true
             }
           ]

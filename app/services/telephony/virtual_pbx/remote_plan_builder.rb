@@ -364,6 +364,10 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     end.uniq
   end
 
+  def normalized_sip_identity(value)
+    value.to_s.strip.presence
+  end
+
   def delete_connection_credentials_operation(state, ownership)
     credentials_ref = connection_credentials_ref(state)
     return if credentials_ref.blank?
@@ -456,13 +460,26 @@ class Telephony::VirtualPbx::RemotePlanBuilder
     end
 
     shared_payload = sipuni_gateway_payload(state)
-    return [shared_payload] if shared_sipuni_gateway_payload?(shared_payload)
+    return [shared_payload] if usable_shared_sipuni_gateway_payload?(state, shared_payload)
 
     []
   end
 
+  def usable_shared_sipuni_gateway_payload?(state, payload)
+    shared_sipuni_gateway_payload?(payload) && !shared_sipuni_gateway_uses_employee_sip_username?(state, payload)
+  end
+
   def shared_sipuni_gateway_payload?(payload)
     payload[:providerAccountNumber].present? && payload[:credentialsRef].present?
+  end
+
+  def shared_sipuni_gateway_uses_employee_sip_username?(state, payload)
+    return false if targeted_operator_distribution?(state)
+
+    provider_account_number = normalized_sip_identity(payload[:providerAccountNumber])
+    return false if provider_account_number.blank?
+
+    current_profile_sip_usernames(state).filter_map { |username| normalized_sip_identity(username) }.include?(provider_account_number)
   end
 
   def sipuni_gateway_payload(state, profile: nil, profile_index: nil, target_metadata: profile.present?)

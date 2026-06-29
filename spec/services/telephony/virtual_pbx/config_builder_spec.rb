@@ -132,6 +132,48 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     expect(payload.fetch(:warnings).map { |warning| warning[:code] }).to include('missing_shared_sipuni_trunk_credentials')
   end
 
+  it 'marks managed Sipuni channels using an employee SIP profile as shared trunk credentials as not ready' do
+    service = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator)
+    result = service.create_channel(
+      {
+        provider_kind: 'sipuni',
+        channel_name: 'Sipuni managed line with employee trunk login',
+        display_phone_number: '+15551234446',
+        provider_account_number: 'shared-line-4446',
+        ingress_number: 'shared-line-4446',
+        connection: {
+          host: 'ats01.kz.sipuni.com',
+          port: 5060,
+          transport: 'udp',
+          username: 'manager-501-login',
+          password: 'do-not-return-this-secret'
+        }
+      },
+      dry_run: false
+    )
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+    binding = inbox.telephony_number_binding
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: inbox,
+      user: operator,
+      provider_connection: binding.provider_connection,
+      internal_extension: '501',
+      sip_username: 'manager-501-login',
+      password_secret_ref: 'cred-profile-501',
+      credentials_ref: 'cred-profile-501',
+      availability_mode: 'browser_webphone',
+      status: 'active'
+    )
+
+    payload = described_class.new(account: account).for_inbox(inbox.id)
+
+    expect(payload[:ready]).to be(false)
+    expect(payload.fetch(:warnings).map { |warning| warning[:code] }).to include('shared_sipuni_trunk_uses_employee_profile')
+    expect(payload.to_json).not_to include('do-not-return-this-secret')
+  end
+
   it 'exposes non-secret Asterisk analog connection details for settings edits' do
     service = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator)
     result = service.create_channel(

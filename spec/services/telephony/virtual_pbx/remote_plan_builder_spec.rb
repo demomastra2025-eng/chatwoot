@@ -15,6 +15,55 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     }
   end
 
+  it 'rejects Sipuni create payloads that use an employee SIP username as shared trunk credentials' do
+    manager = create(:user, account: account, role: :agent)
+    payload = base_payload.deep_dup
+    payload[:connection][:username] = 'manager-501-login'
+    payload[:routing] = { operator_distribution_mode: 'broadcast' }
+    payload[:profiles] = [
+      {
+        user_id: manager.id,
+        internal_extension: '501',
+        sip_username: 'manager-501-login',
+        sip_password: 'employee-secret',
+        enabled: true
+      }
+    ]
+
+    result = service.create_channel(payload, dry_run: true)
+
+    expect(result[:valid]).to be(false)
+    expect(result.fetch(:errors).map { |error| error[:code] }).to include('shared_sipuni_trunk_uses_employee_profile')
+    expect(result[:ui_config]).to be_nil
+  end
+
+  it 'rejects Sipuni update payloads that omit profiles but point shared trunk at an existing employee SIP username' do
+    result = service.create_channel(base_payload, dry_run: false)
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: inbox,
+      user: admin,
+      provider_connection: inbox.telephony_number_binding.provider_connection,
+      internal_extension: '501',
+      sip_username: 'manager-501-login',
+      password_secret_ref: 'cred-profile-501',
+      credentials_ref: 'cred-profile-501',
+      status: 'active'
+    )
+
+    update_payload = base_payload.deep_dup
+    update_payload[:connection][:username] = 'manager-501-login'
+    update_payload[:routing] = { operator_distribution_mode: 'broadcast' }
+    update_payload.delete(:profiles)
+
+    update_result = service.update_channel(inbox_id: inbox.id, payload: update_payload, dry_run: true)
+
+    expect(update_result[:valid]).to be(false)
+    expect(update_result.fetch(:errors).map { |error| error[:code] }).to include('shared_sipuni_trunk_uses_employee_profile')
+  end
+
   it 'builds a sanitized local-only create plan through the shared Sipuni gateway' do
     result = service.create_channel(base_payload, dry_run: false)
     state = Telephony::VirtualPbx::DesiredStateBuilder.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
@@ -303,6 +352,52 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     expect(cleanup_operations.map { |operation| operation[:path] }).to eq(
       ['/telephony/sipuni-gateways/sipuni-internal-asterisk-015856100014-505']
     )
+  end
+
+  it 'blocks broadcast Sipuni gateway sync when shared credentials point at an employee SIP profile' do
+    desired_state = {
+      account_id: account.id,
+      provider_kind: 'sipuni',
+      name: 'Sipuni external line',
+      refs: {
+        number_ref: 'sipuni-internal-asterisk-shared-line',
+        trunk_ref: 'trunk-sipuni-onelink-out',
+        credentials_ref: 'cred-shared-sipuni'
+      },
+      connection: {
+        host: 'ats01.kz.sipuni.com',
+        port: 5060,
+        transport: 'udp',
+        username: 'manager-501-login',
+        credentials_ref: 'cred-shared-sipuni',
+        password_configured: true
+      },
+      phone_numbers: { fonoster_tel_url: 'tel:shared-line', ingress_number: 'shared-line' },
+      routing: { mode: 'operator', app_ref: 'onelink-runtime-app', operator_distribution_mode: 'broadcast' },
+      ownership: {
+        managed_by: 'onelink',
+        ownership_status: 'local',
+        onelink_account_id: account.id,
+        onelink_inbox_id: 158,
+        onelink_channel_id: 777
+      },
+      profiles: %w[501 502 503 504 505].map do |extension|
+        {
+          user_id: admin.id + extension.to_i,
+          internal_extension: extension,
+          sip_username: "manager-#{extension}-login",
+          credentials_ref: "cred-profile-#{extension}",
+          access_configured: true
+        }
+      end
+    }
+
+    plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
+
+    expect(plan).to include(status: 'requires_manual_reconcile')
+    expect(operation_keys).to include('missing_sipuni_gateway_credentials')
+    expect(operation_keys).not_to include('upsert_sipuni_gateway')
   end
 
   it 'blocks broadcast Sipuni gateway sync instead of using an employee SIP profile as shared credentials' do

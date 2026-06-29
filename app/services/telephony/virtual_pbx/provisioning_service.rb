@@ -756,6 +756,12 @@ class Telephony::VirtualPbx::ProvisioningService
       if check_duplicate_number_ref && number_ref_taken?(payload, exclude_inbox_id: exclude_inbox_id)
         errors << error('number_ref_taken', 'Generated number_ref is already used by another channel')
       end
+      if shared_sipuni_trunk_uses_employee_profile?(payload, inbox_id: profile_inbox_id)
+        errors << error(
+          'shared_sipuni_trunk_uses_employee_profile',
+          'connection.username must be a shared Sipuni trunk login, not an employee SIP profile username'
+        )
+      end
       errors.concat(profile_errors(payload[:profiles], inbox_id: profile_inbox_id)) if require_profiles
     end
   end
@@ -811,6 +817,49 @@ class Telephony::VirtualPbx::ProvisioningService
     return false if existing_profile.blank? || existing_profile.password_secret_ref.blank?
 
     existing_profile.sip_username.to_s == profile[:sip_username].to_s
+  end
+
+  def shared_sipuni_trunk_uses_employee_profile?(payload, inbox_id: nil)
+    return false unless payload[:provider_kind].to_s == 'sipuni'
+    return false if payload.dig(:routing, :operator_distribution_mode).to_s == Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_TARGETED
+
+    trunk_username = normalized_sip_identity(payload.dig(:connection, :username))
+    return false if trunk_username.blank?
+
+    sip_profile_usernames_for_validation(payload, inbox_id: inbox_id).include?(trunk_username)
+  end
+
+  def sip_profile_usernames_for_validation(payload, inbox_id: nil)
+    if payload.key?(:profiles)
+      return Array.wrap(payload[:profiles]).filter_map do |profile|
+        profile_sip_username_for_validation(profile, inbox_id: inbox_id)
+      end
+    end
+
+    return [] if inbox_id.blank?
+
+    account.telephony_sip_profiles.where(inbox_id: inbox_id).filter_map { |profile| normalized_sip_identity(profile.sip_username) }
+  end
+
+  def profile_sip_username_for_validation(profile, inbox_id: nil)
+    attrs = profile.with_indifferent_access
+    return normalized_sip_identity(attrs[:sip_username]) if attrs.key?(:sip_username)
+
+    normalized_sip_identity(existing_sip_username_for_profile(attrs, inbox_id: inbox_id))
+  end
+
+  def existing_sip_username_for_profile(profile, inbox_id: nil)
+    return if inbox_id.blank? || profile[:user_id].blank? || profile[:internal_extension].blank?
+
+    account.telephony_sip_profiles.find_by(
+      inbox_id: inbox_id,
+      user_id: profile[:user_id],
+      internal_extension: profile[:internal_extension]
+    )&.sip_username
+  end
+
+  def normalized_sip_identity(value)
+    value.to_s.strip.presence
   end
 
   def reusable_sip_profile_credentials_for(profile, inbox_id:)

@@ -379,6 +379,14 @@ class Telephony::VirtualPbx::ConfigBuilder
   def sipuni_trunk_credentials_warning(channel:, binding:, parts:)
     return unless parts[:provider_kind] == 'sipuni'
     return unless ownership_payload(channel: channel, binding: binding)[:managed]
+
+    if shared_sipuni_trunk_uses_employee_profile?(binding)
+      return warning(
+        'shared_sipuni_trunk_uses_employee_profile',
+        'Shared Sipuni trunk credentials point to an employee SIP profile; configure a separate trunk login before remote gateway sync',
+        severity: 'blocking'
+      )
+    end
     return if shared_sipuni_trunk_credentials_configured?(binding)
 
     warning(
@@ -392,10 +400,30 @@ class Telephony::VirtualPbx::ConfigBuilder
     connection = binding&.provider_connection
     return false if connection.blank?
 
+    shared_sipuni_trunk_credentials_present?(connection)
+  end
+
+  def shared_sipuni_trunk_credentials_present?(connection)
     connection.username.present? && (
       connection.password_secret_ref.present? ||
       connection.fonoster_credentials_ref.present?
     )
+  end
+
+  def shared_sipuni_trunk_uses_employee_profile?(binding)
+    connection = binding&.provider_connection
+    return false if connection.blank? || !shared_sipuni_trunk_credentials_present?(connection)
+
+    username = normalized_sip_identity(connection.username)
+    return false if username.blank? || binding&.inbox_id.blank?
+
+    account.telephony_sip_profiles.where(inbox_id: binding.inbox_id).filter_map do |profile|
+      normalized_sip_identity(profile.sip_username)
+    end.include?(username)
+  end
+
+  def normalized_sip_identity(value)
+    value.to_s.strip.presence
   end
 
   def split_phone_warning(parts)
