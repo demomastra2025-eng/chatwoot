@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_28_062000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_29_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1670,6 +1670,60 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_28_062000) do
     t.index ["title", "account_id"], name: "index_labels_on_title_and_account_id", unique: true
   end
 
+  create_table "lead_forms", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id"
+    t.string "name", null: false
+    t.text "description"
+    t.string "source_kind", null: false
+    t.string "status", default: "active", null: false
+    t.string "external_ref"
+    t.string "public_token", null: false
+    t.jsonb "field_schema", default: [], null: false
+    t.jsonb "settings", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "source_kind", "external_ref"], name: "idx_on_account_id_source_kind_external_ref_7153b85ff3", unique: true, where: "(external_ref IS NOT NULL)"
+    t.index ["account_id", "source_kind", "status"], name: "index_lead_forms_on_account_id_and_source_kind_and_status"
+    t.index ["account_id"], name: "index_lead_forms_on_account_id"
+    t.index ["inbox_id"], name: "index_lead_forms_on_inbox_id"
+    t.index ["public_token"], name: "index_lead_forms_on_public_token", unique: true
+    t.index ["settings"], name: "index_lead_forms_on_settings", using: :gin
+  end
+
+  create_table "lead_submissions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "lead_form_id", null: false
+    t.bigint "inbox_id"
+    t.bigint "contact_id"
+    t.bigint "contact_inbox_id"
+    t.bigint "conversation_id"
+    t.bigint "crm_deal_id"
+    t.string "source_kind", null: false
+    t.string "status", default: "received", null: false
+    t.string "external_ref"
+    t.string "idempotency_key"
+    t.jsonb "field_values", default: {}, null: false
+    t.jsonb "utm", default: {}, null: false
+    t.jsonb "payload", default: {}, null: false
+    t.jsonb "processing_errors", default: {}, null: false
+    t.datetime "processed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "lead_form_id", "external_ref"], name: "idx_on_account_id_lead_form_id_external_ref_9960822a16", unique: true, where: "(external_ref IS NOT NULL)"
+    t.index ["account_id", "lead_form_id", "idempotency_key"], name: "idx_on_account_id_lead_form_id_idempotency_key_8efec97c53", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "source_kind", "created_at"], name: "idx_on_account_id_source_kind_created_at_6919889fce"
+    t.index ["account_id"], name: "index_lead_submissions_on_account_id"
+    t.index ["contact_id"], name: "index_lead_submissions_on_contact_id"
+    t.index ["contact_inbox_id"], name: "index_lead_submissions_on_contact_inbox_id"
+    t.index ["conversation_id"], name: "index_lead_submissions_on_conversation_id"
+    t.index ["crm_deal_id"], name: "index_lead_submissions_on_crm_deal_id"
+    t.index ["field_values"], name: "index_lead_submissions_on_field_values", using: :gin
+    t.index ["inbox_id"], name: "index_lead_submissions_on_inbox_id"
+    t.index ["lead_form_id"], name: "index_lead_submissions_on_lead_form_id"
+    t.index ["payload"], name: "index_lead_submissions_on_payload", using: :gin
+  end
+
   create_table "leaves", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "user_id", null: false
@@ -2993,6 +3047,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_28_062000) do
   add_foreign_key "inboxes", "portals"
   add_foreign_key "kaspi_pay_payments", "accounts"
   add_foreign_key "kaspi_pay_payments", "integrations_hooks", column: "integration_hook_id"
+  add_foreign_key "lead_forms", "accounts"
+  add_foreign_key "lead_forms", "inboxes"
+  add_foreign_key "lead_submissions", "accounts"
+  add_foreign_key "lead_submissions", "contact_inboxes"
+  add_foreign_key "lead_submissions", "contacts"
+  add_foreign_key "lead_submissions", "conversations"
+  add_foreign_key "lead_submissions", "crm_deals"
+  add_foreign_key "lead_submissions", "inboxes"
+  add_foreign_key "lead_submissions", "lead_forms"
   add_foreign_key "llm_eval_runs", "accounts"
   add_foreign_key "llm_eval_runs", "users"
   add_foreign_key "llm_event_annotations", "accounts"

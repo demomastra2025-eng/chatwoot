@@ -1830,6 +1830,12 @@ const menuItems = computed(() => {
                   to: accountScopedRoute('smm_channels'),
                 },
                 {
+                  name: 'SMM Lead Forms',
+                  visibilityKey: 'SMM:LeadForms',
+                  label: t('SIDEBAR.LEAD_FORMS'),
+                  to: accountScopedRoute('lead_forms_index'),
+                },
+                {
                   name: 'SMM Media',
                   visibilityKey: 'SMM:Media',
                   label: t('SIDEBAR.SMM_MEDIA'),

@@ -14,7 +14,9 @@ class ConversationBuilder
   end
 
   def create_new_conversation
-    ::Conversation.create!(conversation_params)
+    conversation = ::Conversation.create!(conversation_params)
+    ::LeadForms::WidgetSubmissionSyncService.new(conversation: conversation, params: params).perform
+    conversation
   end
 
   def conversation_params

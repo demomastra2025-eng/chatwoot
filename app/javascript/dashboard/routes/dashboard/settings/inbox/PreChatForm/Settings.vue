@@ -16,6 +16,7 @@ const props = defineProps({
     default: () => ({}),
   },
 });
+const emit = defineEmits(['saved']);
 
 const { t } = useI18n();
 const store = useStore();
@@ -80,6 +81,7 @@ const updateInbox = async () => {
       },
     };
     await store.dispatch('inboxes/updateInbox', payload);
+    emit('saved');
     useAlert(t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
   } catch (error) {
     useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));

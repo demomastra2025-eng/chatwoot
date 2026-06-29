@@ -427,6 +427,7 @@
     "CUSTOM_ATTRIBUTES": "Дополнительные поля",
     "AUTOMATION": "Автоматизация",
     "MACROS": "Макрос",
+    "LEAD_FORMS": "Заявки",
     "TEAMS": "Команды",
     "BILLING": "Платёж",
     "CUSTOM_VIEWS_FOLDER": "Папки",
@@ -494,6 +495,125 @@
     "SMM_MEDIA": "Медиа",
     "SMM_ANALYTICS": "Аналитика",
     "SMM_SETTINGS": "Настройки"
+  },
+  "LEAD_FORMS": {
+    "KICKER": "Прием заявок",
+    "TITLE": "Заявки",
+    "DESCRIPTION": "Принимайте заявки с сайта, лендингов, Meta Lead Ads и формы виджета сайта в одном нативном потоке. Каждая обработанная заявка создает контакт, диалог, первое сообщение и сделку CRM, если сделки включены.",
+    "CREATE": "Создать форму",
+    "CREATED": "Форма заявки создана.",
+    "REFRESH": "Обновить",
+    "SEPARATOR": "·",
+    "EMPTY": "Форм пока нет.",
+    "FIELDS": {
+      "NAME": "Имя",
+      "PHONE": "Телефон",
+      "EMAIL": "Email",
+      "COMMENT": "Комментарий"
+    },
+    "SOURCE": {
+      "API": "API",
+      "META": "Meta",
+      "WIDGET": "Виджет"
+    },
+    "STATUS": {
+      "ACTIVE": "Активна",
+      "PAUSED": "Пауза",
+      "ARCHIVED": "Архив",
+      "RECEIVED": "Получена",
+      "PROCESSED": "Обработана",
+      "FAILED": "Ошибка"
+    },
+    "API_FORMS": {
+      "TITLE": "API-формы",
+      "DESCRIPTION": "Для форм на сайте, лендингах и партнерских системах.",
+      "NEW_TITLE": "Новая API-форма",
+      "NEW_DESCRIPTION": "Выберите канал аккаунта. Поля формы можно менять, добавлять, отключать, делать обязательными и задавать типы.",
+      "NAME_PLACEHOLDER": "Название формы",
+      "INBOX_PLACEHOLDER": "ID канала",
+      "NAME_LABEL": "Название формы",
+      "INBOX_LABEL": "Канал для диалога",
+      "SELECT_INBOX": "Выберите канал",
+      "NO_CHANNELS": "Нет подключенных каналов для приема диалогов. Сначала подключите канал аккаунта.",
+      "ENDPOINT_TITLE": "Как отправлять заявки",
+      "ENDPOINT_DESCRIPTION": "После создания формы используйте публичный endpoint из списка форм. Сайт или лендинг отправляет туда поля формы и UTM-метки.",
+      "FIELD_PLACEHOLDERS": {
+        "NAME": "Введите имя",
+        "PHONE": "Введите телефон",
+        "EMAIL": "Введите email",
+        "COMMENT": "Комментарий клиента"
+      },
+      "LIST_TITLE": "Список API-форм",
+      "FIELD_ENABLED": "Вкл.",
+      "CUSTOM_FIELD_LABEL": "Новое поле",
+      "ADD_FIELD": "Добавить поле",
+      "TOKEN_LABEL": "Токен формы",
+      "JSON_EXAMPLE": "Пример JSON"
+    },
+    "META_FORMS": {
+      "TITLE": "Meta Lead Forms",
+      "DESCRIPTION": "Для заявок из Facebook и Instagram Lead Ads. Свяжите ID формы Meta с формой приема OneLink.",
+      "WEBHOOK_NOTE": "Webhook URL:",
+      "WEBHOOK_PATH": "/webhooks/meta_lead_forms",
+      "EMPTY": "Meta-формы еще не настроены.",
+      "NEW_TITLE": "Новая Meta-форма",
+      "NEW_DESCRIPTION": "Сначала используйте уже подключенный Meta-канал или подключите Facebook/Instagram/WhatsApp через общий мастер каналов. Затем свяжите Meta Form ID с приемом заявок.",
+      "LIST_TITLE": "Список Meta-форм",
+      "NAME_LABEL": "Название формы",
+      "NAME_PLACEHOLDER": "Например: Facebook лиды · Июнь",
+      "FORM_ID_LABEL": "Meta Form ID",
+      "FORM_ID_PLACEHOLDER": "ID формы из Meta",
+      "PAGE_ID_LABEL": "Meta Page ID",
+      "PAGE_ID_PLACEHOLDER": "ID страницы, необязательно",
+      "INBOX_LABEL": "Канал для диалога",
+      "VERIFY_TOKEN_LABEL": "Verify token",
+      "VERIFY_TOKEN_PLACEHOLDER": "Токен проверки webhook, необязательно",
+      "REQUIRED": "Название, Meta-регистрация, Meta Form ID и канал обязательны.",
+      "CONNECT_TITLE": "Meta-канал еще не подключен",
+      "CONNECT_DESCRIPTION": "Для надежного приема Lead Ads нужен существующий Meta-канал с серверными токенами. Подключите его через стандартную регистрацию канала — если он уже есть, OneLink переиспользует его.",
+      "CONNECT_FACEBOOK": "Подключить Facebook",
+      "CONNECT_INSTAGRAM": "Подключить Instagram",
+      "CONNECT_WHATSAPP": "Подключить WhatsApp",
+      "CONNECTION_LABEL": "Meta-регистрация",
+      "SELECT_CONNECTION": "Выберите подключенный Meta-канал",
+      "NO_CONNECTIONS": "Нет подключенных Meta-каналов",
+      "CONNECT_REQUIRED": "Сначала подключите Facebook, Instagram или официальный WhatsApp через мастер каналов."
+    },
+    "WIDGET_FORMS": {
+      "TITLE": "Форма виджета сайта",
+      "DESCRIPTION": "Форма виджета сайта теперь редактируется здесь: выберите виджет и настройте сообщение, поля, обязательность и порядок.",
+      "EMPTY": "Формы виджета сайта не найдены.",
+      "EDIT": "Редактировать форму виджета",
+      "NEW_TITLE": "Создать/настроить Widget chat форму",
+      "NEW_DESCRIPTION": "Выберите website widget канала и настройте pre-chat форму прямо здесь: сообщение, поля, обязательность и порядок.",
+      "LIST_TITLE": "Список Widget chat форм",
+      "SELECT_INBOX": "Выберите виджет"
+    },
+    "SUBMISSIONS": {
+      "TITLE": "Журнал заявок",
+      "EMPTY": "Заявок пока нет.",
+      "OPEN_CONVERSATION": "Открыть диалог"
+    },
+    "ERRORS": {
+      "LOAD": "Не удалось загрузить настройки заявок.",
+      "SAVE": "Не удалось сохранить форму заявки.",
+      "REQUIRED": "Название, канал и хотя бы одно поле формы обязательны."
+    },
+    "TABS": {
+      "META": "Meta",
+      "API": "API",
+      "WIDGET_CHAT": "Widget chat"
+    },
+    "FIELD_TYPES": {
+      "TEXT": "Текст",
+      "TEXTAREA": "Многострочный текст",
+      "PHONE": "Телефон",
+      "EMAIL": "Email",
+      "NUMBER": "Число",
+      "DATE": "Дата",
+      "URL": "Ссылка",
+      "SELECT": "Список"
+    }
   },
   "EMPLOYEE_SETTINGS": {
     "TABS": {

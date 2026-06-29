@@ -44,6 +44,7 @@ Rails.application.routes.draw do
   get '/api', to: 'api#index'
   namespace :api, defaults: { format: 'json' } do
     namespace :v1 do
+      post 'lead_forms/:lead_form_token/submissions', to: 'lead_forms/submissions#create'
       # ----------------------------------
       # start of account scoped api routes
       get 'accounts/:account_id/context_fields', to: 'accounts/context_fields#index'
@@ -502,6 +503,8 @@ Rails.application.routes.draw do
             end
           end
           resources :labels, only: [:index, :show, :create, :update, :destroy]
+          resources :lead_forms, only: [:index, :show, :create, :update, :destroy]
+          resources :lead_submissions, only: [:index, :show]
 
           resources :notifications, only: [:index, :update, :destroy] do
             collection do
@@ -875,6 +878,8 @@ Rails.application.routes.draw do
   post 'webhooks/whatsapp_web/:webhook_identifier', to: 'webhooks/whatsapp_web#process_payload'
   get 'webhooks/instagram', to: 'webhooks/instagram#verify'
   post 'webhooks/instagram', to: 'webhooks/instagram#events'
+  get 'webhooks/meta_lead_forms', to: 'webhooks/meta_lead_forms#verify'
+  post 'webhooks/meta_lead_forms', to: 'webhooks/meta_lead_forms#events'
   post 'webhooks/tiktok', to: 'webhooks/tiktok#events'
   post 'webhooks/shopify', to: 'webhooks/shopify#events'
   post 'webhooks/macrocrm/:webhook_key/manager_changed', to: 'webhooks/macrocrm#manager_changed'

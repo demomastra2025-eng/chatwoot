@@ -201,5 +201,30 @@ describe ConversationBuilder do
         expect(conversation.id).to eq(existing_conversation.id)
       end
     end
+
+    it 'syncs website pre-chat conversations into widget lead submissions' do
+      account.enable_features!('crm_deals')
+      channel = create(:channel_widget, account: account, pre_chat_form_enabled: true)
+      contact = create(:contact, account: account, name: 'Widget Client')
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: 'widget-client-1')
+
+      LeadForms::WidgetSyncService.new(account: account).perform
+
+      params = ActionController::Parameters.new(
+        custom_attributes: {
+          fullName: 'Widget Client',
+          phoneNumber: '+77001234567'
+        }
+      )
+      conversation = described_class.new(params: params, contact_inbox: contact_inbox).perform
+      submission = account.lead_submissions.last
+
+      expect(submission).to be_processed
+      expect(submission.source_kind).to eq('widget')
+      expect(submission.conversation).to eq(conversation)
+      expect(submission.contact).to eq(contact)
+      expect(submission.field_values).to include('fullName' => 'Widget Client')
+      expect(submission.crm_deal).to be_present
+    end
   end
 end

@@ -427,6 +427,7 @@
     "CUSTOM_ATTRIBUTES": "Additional Fields",
     "AUTOMATION": "Automation",
     "MACROS": "Macros",
+    "LEAD_FORMS": "Leads",
     "TEAMS": "Teams",
     "BILLING": "Billing",
     "CUSTOM_VIEWS_FOLDER": "Folders",
@@ -494,6 +495,125 @@
     "SMM_MEDIA": "Media",
     "SMM_ANALYTICS": "Analytics",
     "SMM_SETTINGS": "Settings"
+  },
+  "LEAD_FORMS": {
+    "KICKER": "Lead intake",
+    "TITLE": "Leads",
+    "DESCRIPTION": "Receive website, landing page, Meta Lead Ads, and website widget form submissions in one native intake flow. Every processed lead creates a contact, conversation, first message, and CRM deal when CRM deals are enabled.",
+    "CREATE": "Create form",
+    "CREATED": "Lead form created.",
+    "REFRESH": "Refresh",
+    "SEPARATOR": "·",
+    "EMPTY": "No forms yet.",
+    "FIELDS": {
+      "NAME": "Name",
+      "PHONE": "Phone",
+      "EMAIL": "Email",
+      "COMMENT": "Comment"
+    },
+    "SOURCE": {
+      "API": "API",
+      "META": "Meta",
+      "WIDGET": "Widget"
+    },
+    "STATUS": {
+      "ACTIVE": "Active",
+      "PAUSED": "Paused",
+      "ARCHIVED": "Archived",
+      "RECEIVED": "Received",
+      "PROCESSED": "Processed",
+      "FAILED": "Failed"
+    },
+    "API_FORMS": {
+      "TITLE": "API forms",
+      "DESCRIPTION": "For forms on your website, landing pages, or partner systems.",
+      "NEW_TITLE": "New API form",
+      "NEW_DESCRIPTION": "Choose an account channel. You can change, add, disable, require, and type form fields.",
+      "NAME_PLACEHOLDER": "Form name",
+      "INBOX_PLACEHOLDER": "Inbox ID",
+      "NAME_LABEL": "Form name",
+      "INBOX_LABEL": "Conversation channel",
+      "SELECT_INBOX": "Select a channel",
+      "NO_CHANNELS": "No connected channels are available for lead conversations. Connect an account channel first.",
+      "ENDPOINT_TITLE": "How to submit leads",
+      "ENDPOINT_DESCRIPTION": "After creating a form, use the public endpoint from the forms list. Your website or landing page sends form fields and UTM tags there.",
+      "FIELD_PLACEHOLDERS": {
+        "NAME": "Enter full name",
+        "PHONE": "Enter phone number",
+        "EMAIL": "Enter email",
+        "COMMENT": "Customer comment"
+      },
+      "LIST_TITLE": "API forms list",
+      "FIELD_ENABLED": "On",
+      "CUSTOM_FIELD_LABEL": "New field",
+      "ADD_FIELD": "Add field",
+      "TOKEN_LABEL": "Form token",
+      "JSON_EXAMPLE": "JSON example"
+    },
+    "META_FORMS": {
+      "TITLE": "Meta Lead Forms",
+      "DESCRIPTION": "For Facebook and Instagram lead ads. Connect Meta form IDs to OneLink intake forms.",
+      "WEBHOOK_NOTE": "Webhook URL:",
+      "WEBHOOK_PATH": "/webhooks/meta_lead_forms",
+      "EMPTY": "No Meta lead forms configured yet.",
+      "NEW_TITLE": "New Meta form",
+      "NEW_DESCRIPTION": "First reuse an already connected Meta channel or connect Facebook/Instagram/WhatsApp through the shared channel setup. Then link the Meta Form ID to lead intake.",
+      "LIST_TITLE": "Meta forms list",
+      "NAME_LABEL": "Form name",
+      "NAME_PLACEHOLDER": "Example: Facebook leads · June",
+      "FORM_ID_LABEL": "Meta Form ID",
+      "FORM_ID_PLACEHOLDER": "Form ID from Meta",
+      "PAGE_ID_LABEL": "Meta Page ID",
+      "PAGE_ID_PLACEHOLDER": "Page ID, optional",
+      "INBOX_LABEL": "Conversation channel",
+      "VERIFY_TOKEN_LABEL": "Verify token",
+      "VERIFY_TOKEN_PLACEHOLDER": "Webhook verification token, optional",
+      "REQUIRED": "Name, Meta registration, Meta Form ID, and channel are required.",
+      "CONNECT_TITLE": "No Meta channel connected yet",
+      "CONNECT_DESCRIPTION": "Reliable Lead Ads intake needs an existing Meta channel with server-side tokens. Connect it through the standard channel setup; if it already exists, OneLink reuses it.",
+      "CONNECT_FACEBOOK": "Connect Facebook",
+      "CONNECT_INSTAGRAM": "Connect Instagram",
+      "CONNECT_WHATSAPP": "Connect WhatsApp",
+      "CONNECTION_LABEL": "Meta registration",
+      "SELECT_CONNECTION": "Select a connected Meta channel",
+      "NO_CONNECTIONS": "No connected Meta channels",
+      "CONNECT_REQUIRED": "Connect Facebook, Instagram, or official WhatsApp through the channel setup first."
+    },
+    "WIDGET_FORMS": {
+      "TITLE": "Website widget form",
+      "DESCRIPTION": "The website widget form is edited here now: pick a widget and configure message, fields, required flags, and order.",
+      "EMPTY": "No website widget forms found.",
+      "EDIT": "Edit widget form",
+      "NEW_TITLE": "Create/configure Widget chat form",
+      "NEW_DESCRIPTION": "Choose a website widget channel and configure the pre-chat form here: message, fields, required flags, and order.",
+      "LIST_TITLE": "Widget chat forms list",
+      "SELECT_INBOX": "Select widget"
+    },
+    "SUBMISSIONS": {
+      "TITLE": "Submission journal",
+      "EMPTY": "No submissions yet.",
+      "OPEN_CONVERSATION": "Open conversation"
+    },
+    "ERRORS": {
+      "LOAD": "Failed to load lead intake settings.",
+      "SAVE": "Failed to save lead form.",
+      "REQUIRED": "Form name, channel, and at least one enabled field are required."
+    },
+    "TABS": {
+      "META": "Meta",
+      "API": "API",
+      "WIDGET_CHAT": "Widget chat"
+    },
+    "FIELD_TYPES": {
+      "TEXT": "Text",
+      "TEXTAREA": "Long text",
+      "PHONE": "Phone",
+      "EMAIL": "Email",
+      "NUMBER": "Number",
+      "DATE": "Date",
+      "URL": "URL",
+      "SELECT": "List"
+    }
   },
   "EMPLOYEE_SETTINGS": {
     "TABS": {

@@ -54,6 +54,8 @@ describe('sidebarVisibility', () => {
     expect(visibilityState.Employees).toBeUndefined();
     expect(visibilityState.Settings).toBe(true);
     expect(visibilityState['Settings:Automation']).toBe(true);
+    expect(visibilityState.SMM).toBe(true);
+    expect(visibilityState['SMM:LeadForms']).toBe(true);
     expect(visibilityState['Reports:Overview']).toBe(true);
   });
 
@@ -127,6 +129,11 @@ describe('sidebarVisibility', () => {
       'MyCompany:AuditLogs',
     ]);
     expect(settingsChildKeys[8]).toBe('Settings:Automation');
+    expect(settingsChildKeys).not.toContain('Settings:LeadForms');
+
+    const smmItem = SIDEBAR_VISIBILITY_ITEMS.find(item => item.key === 'SMM');
+    const smmChildKeys = smmItem.children.map(item => item.key);
+    expect(smmChildKeys).toContain('SMM:LeadForms');
   });
 
   it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {
@@ -160,6 +167,14 @@ describe('sidebarVisibility', () => {
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:PersonalBroadcasts'],
       })
     ).toEqual(['Conversation:Statuses', 'Campaigns:Touches']);
+  });
+
+  it('migrates the legacy settings lead forms visibility key to SMM', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:LeadForms'],
+      })
+    ).toEqual(['Conversation:Statuses', 'SMM:LeadForms']);
   });
 
   it('respects explicitly saved conversation status visibility in the current schema', () => {

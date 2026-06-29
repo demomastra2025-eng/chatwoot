@@ -6,7 +6,7 @@ export const SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_by_account';
 export const SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version_by_account';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 14;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 15;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -42,6 +42,8 @@ const LEGACY_REPORTS_FUNNELS_VISIBILITY_KEY = 'Reports:Funnels';
 // Saved profile UI settings may still contain this pre-touch sidebar key.
 const LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY =
   'Campaigns:PersonalBroadcasts';
+const SMM_LEAD_FORMS_VISIBILITY_KEY = 'SMM:LeadForms';
+const LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY = 'Settings:LeadForms';
 
 const item = (key, labelKey, children = []) => ({
   key,
@@ -144,6 +146,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('SMM:Calendar', 'SIDEBAR.SMM_CALENDAR'),
     item('SMM:Posts', 'SIDEBAR.SMM_POSTS'),
     item('SMM:Channels', 'SIDEBAR.SMM_CHANNELS'),
+    item(SMM_LEAD_FORMS_VISIBILITY_KEY, 'SIDEBAR.LEAD_FORMS'),
     item('SMM:Media', 'SIDEBAR.SMM_MEDIA'),
     item('SMM:Analytics', 'SIDEBAR.SMM_ANALYTICS'),
     item('SMM:Settings', 'SIDEBAR.SMM_SETTINGS'),
@@ -340,17 +343,40 @@ const normalizeLegacyReportsDealsVisibility = (hiddenItems, version) => {
   return hiddenItemsSet;
 };
 
+const normalizeLegacyLeadFormsVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldMigrateLegacyVisibility = Number(version || 0) < 15;
+
+  if (!shouldMigrateLegacyVisibility) {
+    return hiddenItemsSet;
+  }
+
+  const legacyLeadFormsWasHidden = hiddenItemsSet.has(
+    LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY
+  );
+  hiddenItemsSet.delete(LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY);
+
+  if (legacyLeadFormsWasHidden) {
+    hiddenItemsSet.add(SMM_LEAD_FORMS_VISIBILITY_KEY);
+  }
+
+  return hiddenItemsSet;
+};
+
 export const getSidebarHiddenItems = uiSettings =>
   normalizeSidebarHiddenItems(
     Array.from(
-      normalizeRemovedMyCompanyGroupVisibility(
-        normalizeLegacyReportsDealsVisibility(
-          normalizeLegacyConversationPipelinesVisibility(
-            normalizeDefaultConversationStatusVisibility(
-              normalizeLegacyMyCompanyVisibility(
-                normalizeLegacyTouchesVisibility(
-                  normalizeLegacyCaptainPromptsVisibility(
-                    uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+      normalizeLegacyLeadFormsVisibility(
+        normalizeRemovedMyCompanyGroupVisibility(
+          normalizeLegacyReportsDealsVisibility(
+            normalizeLegacyConversationPipelinesVisibility(
+              normalizeDefaultConversationStatusVisibility(
+                normalizeLegacyMyCompanyVisibility(
+                  normalizeLegacyTouchesVisibility(
+                    normalizeLegacyCaptainPromptsVisibility(
+                      uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+                      uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+                    ),
                     uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
                   ),
                   uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
