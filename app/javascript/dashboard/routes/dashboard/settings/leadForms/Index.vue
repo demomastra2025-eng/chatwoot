@@ -7,10 +7,10 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import PreChatFormSettings from 'dashboard/routes/dashboard/settings/inbox/PreChatForm/Settings.vue';
 import { getInboxFlowRouteName } from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
 import leadFormsAPI from 'dashboard/api/leadForms';
-import leadSubmissionsAPI from 'dashboard/api/leadSubmissions';
 import { getInboxIconByType, INBOX_TYPES } from 'dashboard/helper/inbox';
 import ApiFieldBuilder from './ApiFieldBuilder.vue';
 
@@ -20,8 +20,6 @@ const router = useRouter();
 const store = useStore();
 
 const forms = ref([]);
-const submissions = ref([]);
-const isLoading = ref(false);
 const savingSource = ref('');
 const activeTab = ref('meta');
 const selectedWidgetInboxId = ref('');
@@ -87,18 +85,23 @@ const widgetForms = computed(() =>
 );
 
 const tabs = computed(() => [
-  {
-    id: 'meta',
-    label: t('LEAD_FORMS.TABS.META'),
-    count: metaForms.value.length,
-  },
-  { id: 'api', label: t('LEAD_FORMS.TABS.API'), count: apiForms.value.length },
-  {
-    id: 'widget',
-    label: t('LEAD_FORMS.TABS.WIDGET_CHAT'),
-    count: widgetForms.value.length,
-  },
+  { id: 'meta', label: t('LEAD_FORMS.TABS.META') },
+  { id: 'api', label: t('LEAD_FORMS.TABS.API') },
+  { id: 'widget', label: t('LEAD_FORMS.TABS.WIDGET_CHAT') },
 ]);
+
+const activeTabIndex = computed(() =>
+  Math.max(
+    0,
+    tabs.value.findIndex(tab => tab.id === activeTab.value)
+  )
+);
+
+const switchTab = tab => {
+  if (!tab?.id) return;
+
+  activeTab.value = tab.id;
+};
 
 const excludedLeadTargetInboxTypes = new Set([
   INBOX_TYPES.WEB,
@@ -157,16 +160,6 @@ const selectedMetaConnection = computed(() =>
   )
 );
 
-const apiSubmissions = computed(() =>
-  submissions.value.filter(submission => submission.source_kind === 'api')
-);
-const metaSubmissions = computed(() =>
-  submissions.value.filter(submission => submission.source_kind === 'meta')
-);
-const widgetSubmissions = computed(() =>
-  submissions.value.filter(submission => submission.source_kind === 'widget')
-);
-
 const metaRegistrationChannels = computed(() => [
   {
     key: 'facebook',
@@ -186,23 +179,15 @@ const metaRegistrationChannels = computed(() => [
 ]);
 
 const fetchLeadIntake = async () => {
-  isLoading.value = true;
   try {
-    const [formsResponse, submissionsResponse] = await Promise.all([
-      leadFormsAPI.get(),
-      leadSubmissionsAPI.get({ limit: 20 }),
-    ]);
+    const formsResponse = await leadFormsAPI.get();
     forms.value = formsResponse.data.payload || [];
-    submissions.value = submissionsResponse.data.payload || [];
   } catch (error) {
     useAlert(t('LEAD_FORMS.ERRORS.LOAD'));
-  } finally {
-    isLoading.value = false;
   }
 };
 
 const loadPage = async () => {
-  isLoading.value = true;
   try {
     await Promise.all([
       store.dispatch('inboxes/get'),
@@ -211,27 +196,47 @@ const loadPage = async () => {
     ]);
   } catch (error) {
     useAlert(t('LEAD_FORMS.ERRORS.LOAD'));
-  } finally {
-    isLoading.value = false;
   }
 };
 
+const isPhoneField = field =>
+  ['phoneNumber', 'phone_number', 'phone', 'mobile'].includes(field?.name);
+
 const enabledApiFields = () =>
   apiFormFields.value
-    .filter(field => field.enabled)
+    .filter(field => field.enabled || isPhoneField(field))
     .map(field => ({
       name: field.name?.trim(),
       label: field.label?.trim(),
       placeholder: field.placeholder?.trim(),
-      type: field.type || 'text',
-      required: field.required === true,
+      type: isPhoneField(field) ? 'tel' : field.type || 'text',
+      required: isPhoneField(field) || field.required === true,
     }))
     .filter(field => field.name && field.label);
+
+const hasRequiredPhoneField = fields =>
+  fields.some(field => isPhoneField(field) && field.required);
+
+const defaultMetaFormFields = () => [
+  {
+    name: 'phone_number',
+    label: t('LEAD_FORMS.FIELDS.PHONE'),
+    placeholder: t('LEAD_FORMS.API_FORMS.FIELD_PLACEHOLDERS.PHONE'),
+    type: 'tel',
+    required: true,
+    enabled: true,
+  },
+];
 
 const createApiForm = async () => {
   const fieldSchema = enabledApiFields();
 
-  if (!apiForm.name || !apiForm.inboxId || !fieldSchema.length) {
+  if (
+    !apiForm.name ||
+    !apiForm.inboxId ||
+    !fieldSchema.length ||
+    !hasRequiredPhoneField(fieldSchema)
+  ) {
     useAlert(t('LEAD_FORMS.ERRORS.REQUIRED'));
     return;
   }
@@ -285,7 +290,7 @@ const createMetaForm = async () => {
       source_kind: 'meta',
       status: 'active',
       external_ref: metaForm.metaFormId,
-      field_schema: [],
+      field_schema: defaultMetaFormFields(),
       settings: {
         conversation_status: 'open',
         meta_form_id: metaForm.metaFormId,
@@ -338,12 +343,6 @@ const statusLabel = status => {
       return status;
   }
 };
-
-const submissionTitle = submission =>
-  submission.contact_name ||
-  submission.field_values?.full_name ||
-  submission.field_values?.fullName ||
-  `#${submission.id}`;
 
 const endpointFor = form =>
   `${publicApiOrigin}/api/v1/lead_forms/${form.public_token}/submissions`;
@@ -426,58 +425,22 @@ onMounted(loadPage);
 </script>
 
 <template>
-  <main
-    class="flex h-full min-h-0 flex-col overflow-y-auto bg-n-background p-6"
-  >
+  <main class="flex h-full min-h-0 flex-col overflow-y-auto bg-n-surface-1 p-6">
     <section class="w-full max-w-6xl mx-auto space-y-6">
-      <header
-        class="rounded-3xl border border-n-weak bg-gradient-to-br from-n-solid-1 to-n-alpha-2 p-5"
-      >
-        <p class="text-sm font-medium text-n-blue-text">
-          {{ $t('LEAD_FORMS.KICKER') }}
-        </p>
-        <div
-          class="mt-1 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"
-        >
-          <div>
-            <h1 class="text-2xl font-semibold text-n-slate-12">
-              {{ $t('LEAD_FORMS.TITLE') }}
-            </h1>
-            <p class="mt-2 max-w-3xl text-sm text-n-slate-11">
-              {{ $t('LEAD_FORMS.DESCRIPTION') }}
-            </p>
-          </div>
-          <Button
-            :label="$t('LEAD_FORMS.REFRESH')"
-            variant="secondary"
-            size="sm"
-            :is-loading="isLoading"
-            @click="loadPage"
-          />
-        </div>
-        <div
-          class="mt-5 inline-flex flex-wrap rounded-2xl border border-n-weak bg-n-background p-1"
-        >
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            type="button"
-            class="rounded-xl px-4 py-2 text-sm font-medium transition"
-            :class="
-              activeTab === tab.id
-                ? 'bg-n-brand text-white shadow-sm'
-                : 'text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12'
-            "
-            @click="activeTab = tab.id"
-          >
-            {{ tab.label }}
-            <span class="opacity-70">{{ tab.count }}</span>
-          </button>
-        </div>
+      <header class="flex flex-col gap-4">
+        <h1 class="text-2xl font-semibold text-n-slate-12">
+          {{ $t('LEAD_FORMS.TITLE') }}
+        </h1>
+        <TabBar
+          active-text-class="text-n-slate-12 scale-100"
+          :tabs="tabs"
+          :initial-active-tab="activeTabIndex"
+          @tab-changed="switchTab"
+        />
       </header>
 
       <section v-if="activeTab === 'meta'" class="grid gap-4 lg:grid-cols-2">
-        <article class="rounded-3xl border border-n-weak bg-n-solid-1 p-5">
+        <article class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
           <div class="mb-5 flex items-start gap-3">
             <div
               class="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-n-brand/10 text-n-brand"
@@ -611,7 +574,7 @@ onMounted(loadPage);
           </form>
         </article>
 
-        <article class="rounded-3xl border border-n-weak bg-n-solid-1 p-5">
+        <article class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
           <h2 class="text-lg font-semibold text-n-slate-12">
             {{ $t('LEAD_FORMS.META_FORMS.LIST_TITLE') }}
           </h2>
@@ -631,58 +594,11 @@ onMounted(loadPage);
             </div>
           </div>
         </article>
-
-        <article
-          class="rounded-3xl border border-n-weak bg-n-solid-1 p-5 lg:col-span-2"
-        >
-          <h2 class="text-lg font-semibold text-n-slate-12">
-            {{ $t('LEAD_FORMS.SUBMISSIONS.TITLE') }}
-          </h2>
-          <div class="mt-3 divide-y divide-n-weak">
-            <p
-              v-if="!metaSubmissions.length"
-              class="py-4 text-sm text-n-slate-11"
-            >
-              {{ $t('LEAD_FORMS.SUBMISSIONS.EMPTY') }}
-            </p>
-            <div
-              v-for="submission in metaSubmissions"
-              :key="submission.id"
-              class="py-3"
-            >
-              <div class="flex items-start justify-between gap-4">
-                <div>
-                  <p class="font-medium text-n-slate-12">
-                    {{ submissionTitle(submission) }}
-                  </p>
-                  <p class="text-xs text-n-slate-11">
-                    {{ submission.lead_form_name }}
-                    {{ $t('LEAD_FORMS.SEPARATOR') }}
-                    {{ statusLabel(submission.status) }}
-                  </p>
-                </div>
-                <router-link
-                  v-if="submission.conversation_id"
-                  class="text-sm text-n-blue-text hover:underline"
-                  :to="{
-                    name: 'inbox_conversation',
-                    params: {
-                      accountId,
-                      conversation_id: submission.conversation_id,
-                    },
-                  }"
-                >
-                  {{ $t('LEAD_FORMS.SUBMISSIONS.OPEN_CONVERSATION') }}
-                </router-link>
-              </div>
-            </div>
-          </div>
-        </article>
       </section>
 
       <section v-if="activeTab === 'api'" class="grid gap-4 lg:grid-cols-2">
         <article
-          class="rounded-3xl border border-n-weak bg-n-solid-1 p-5 lg:col-span-2"
+          class="rounded-3xl border border-n-weak bg-n-surface-2 p-5 lg:col-span-2"
         >
           <div class="mb-5 flex items-start gap-3">
             <div
@@ -755,7 +671,7 @@ onMounted(loadPage);
           </form>
         </article>
 
-        <article class="rounded-3xl border border-n-weak bg-n-solid-1 p-5">
+        <article class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
           <h2 class="text-lg font-semibold text-n-slate-12">
             {{ $t('LEAD_FORMS.API_FORMS.LIST_TITLE') }}
           </h2>
@@ -774,7 +690,7 @@ onMounted(loadPage);
                   </p>
                 </div>
               </div>
-              <div class="space-y-2 rounded-2xl bg-n-background p-3">
+              <div class="space-y-2 rounded-2xl bg-n-surface-1 p-3">
                 <p class="text-xs font-medium uppercase text-n-slate-10">
                   {{ $t('LEAD_FORMS.API_FORMS.ENDPOINT_TITLE') }}
                 </p>
@@ -801,55 +717,10 @@ onMounted(loadPage);
             </div>
           </div>
         </article>
-
-        <article class="rounded-3xl border border-n-weak bg-n-solid-1 p-5">
-          <h2 class="text-lg font-semibold text-n-slate-12">
-            {{ $t('LEAD_FORMS.SUBMISSIONS.TITLE') }}
-          </h2>
-          <div class="mt-3 divide-y divide-n-weak">
-            <p
-              v-if="!apiSubmissions.length"
-              class="py-4 text-sm text-n-slate-11"
-            >
-              {{ $t('LEAD_FORMS.SUBMISSIONS.EMPTY') }}
-            </p>
-            <div
-              v-for="submission in apiSubmissions"
-              :key="submission.id"
-              class="py-3"
-            >
-              <div class="flex items-start justify-between gap-4">
-                <div>
-                  <p class="font-medium text-n-slate-12">
-                    {{ submissionTitle(submission) }}
-                  </p>
-                  <p class="text-xs text-n-slate-11">
-                    {{ submission.lead_form_name }}
-                    {{ $t('LEAD_FORMS.SEPARATOR') }}
-                    {{ statusLabel(submission.status) }}
-                  </p>
-                </div>
-                <router-link
-                  v-if="submission.conversation_id"
-                  class="text-sm text-n-blue-text hover:underline"
-                  :to="{
-                    name: 'inbox_conversation',
-                    params: {
-                      accountId,
-                      conversation_id: submission.conversation_id,
-                    },
-                  }"
-                >
-                  {{ $t('LEAD_FORMS.SUBMISSIONS.OPEN_CONVERSATION') }}
-                </router-link>
-              </div>
-            </div>
-          </div>
-        </article>
       </section>
 
       <section v-if="activeTab === 'widget'" class="space-y-4">
-        <section class="rounded-3xl border border-n-weak bg-n-solid-1 p-5">
+        <section class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
           <div
             class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
           >
@@ -873,7 +744,7 @@ onMounted(loadPage);
 
           <div
             v-if="selectedWidgetInbox"
-            class="rounded-2xl border border-n-weak bg-n-background py-4"
+            class="rounded-2xl border border-n-weak bg-n-surface-1 py-4"
           >
             <div class="mb-4 flex items-center gap-3 px-6">
               <span
@@ -902,7 +773,7 @@ onMounted(loadPage);
           </p>
         </section>
 
-        <section class="rounded-3xl border border-n-weak bg-n-solid-1 p-5">
+        <section class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
           <h2 class="text-lg font-semibold text-n-slate-12">
             {{ $t('LEAD_FORMS.WIDGET_FORMS.LIST_TITLE') }}
           </h2>
@@ -911,56 +782,19 @@ onMounted(loadPage);
               {{ $t('LEAD_FORMS.WIDGET_FORMS.EMPTY') }}
             </p>
             <div v-for="form in widgetForms" :key="form.id" class="py-3">
-              <p class="font-medium text-n-slate-12">{{ form.name }}</p>
-              <p class="text-xs text-n-slate-11">
-                {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
-                {{ $t('LEAD_FORMS.SEPARATOR') }}
-                {{ statusLabel(form.status) }}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section class="rounded-3xl border border-n-weak bg-n-solid-1 p-5">
-          <h2 class="text-lg font-semibold text-n-slate-12">
-            {{ $t('LEAD_FORMS.SUBMISSIONS.TITLE') }}
-          </h2>
-          <div class="mt-3 divide-y divide-n-weak">
-            <p
-              v-if="!widgetSubmissions.length"
-              class="py-4 text-sm text-n-slate-11"
-            >
-              {{ $t('LEAD_FORMS.SUBMISSIONS.EMPTY') }}
-            </p>
-            <div
-              v-for="submission in widgetSubmissions"
-              :key="submission.id"
-              class="py-3"
-            >
-              <div class="flex items-start justify-between gap-4">
+              <div class="flex items-start gap-3">
+                <span
+                  class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-n-alpha-2 text-n-slate-11"
+                  :class="getInboxIconByType(INBOX_TYPES.WEB)"
+                />
                 <div>
-                  <p class="font-medium text-n-slate-12">
-                    {{ submissionTitle(submission) }}
-                  </p>
+                  <p class="font-medium text-n-slate-12">{{ form.name }}</p>
                   <p class="text-xs text-n-slate-11">
-                    {{ submission.lead_form_name }}
+                    {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
                     {{ $t('LEAD_FORMS.SEPARATOR') }}
-                    {{ statusLabel(submission.status) }}
+                    {{ statusLabel(form.status) }}
                   </p>
                 </div>
-                <router-link
-                  v-if="submission.conversation_id"
-                  class="text-sm text-n-blue-text hover:underline"
-                  :to="{
-                    name: 'inbox_conversation',
-                    params: {
-                      accountId,
-                      conversation_id: submission.conversation_id,
-                    },
-                  }"
-                >
-                  {{ $t('LEAD_FORMS.SUBMISSIONS.OPEN_CONVERSATION') }}
-                </router-link>
               </div>
             </div>
           </div>

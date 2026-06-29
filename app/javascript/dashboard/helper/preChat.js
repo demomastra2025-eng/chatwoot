@@ -21,6 +21,10 @@ export const standardFieldKeys = {
   },
 };
 
+const phoneFieldNames = ['phoneNumber', 'phone_number', 'phone', 'mobile'];
+
+export const isPhoneField = field => phoneFieldNames.includes(field?.name);
+
 export const getLabel = ({ key, label }) => {
   return defaultTranslations.PRE_CHAT_FORM.FIELDS[key]
     ? defaultTranslations.PRE_CHAT_FORM.FIELDS[key].LABEL
@@ -30,6 +34,40 @@ export const getPlaceHolder = ({ key, placeholder }) => {
   return defaultTranslations.PRE_CHAT_FORM.FIELDS[key]
     ? defaultTranslations.PRE_CHAT_FORM.FIELDS[key].PLACEHOLDER
     : placeholder;
+};
+
+const withRequiredPhoneField = fields => {
+  const formattedFields = fields.map(field => {
+    if (!isPhoneField(field)) return field;
+
+    return {
+      ...field,
+      type: field.type === 'text' ? 'tel' : field.type || 'tel',
+      required: true,
+      enabled: true,
+    };
+  });
+
+  if (formattedFields.some(isPhoneField)) return formattedFields;
+
+  return [
+    {
+      label: getLabel({
+        key: standardFieldKeys.phoneNumber.key,
+        label: standardFieldKeys.phoneNumber.label,
+      }),
+      name: 'phoneNumber',
+      placeholder: getPlaceHolder({
+        key: standardFieldKeys.phoneNumber.key,
+        placeholder: standardFieldKeys.phoneNumber.placeholder,
+      }),
+      type: 'tel',
+      field_type: 'standard',
+      required: true,
+      enabled: true,
+    },
+    ...formattedFields,
+  ];
 };
 
 export const getCustomFields = ({ standardFields, customAttributes }) => {
@@ -58,7 +96,7 @@ export const getCustomFields = ({ standardFields, customAttributes }) => {
 };
 
 export const getFormattedPreChatFields = ({ preChatFields }) => {
-  return preChatFields.map(item => {
+  const formattedFields = preChatFields.map(item => {
     return {
       ...item,
       label: getLabel({
@@ -71,13 +109,15 @@ export const getFormattedPreChatFields = ({ preChatFields }) => {
       }),
     };
   });
+
+  return withRequiredPhoneField(formattedFields);
 };
 
 export const getPreChatFields = ({
   preChatFormOptions = {},
   customAttributes = [],
 }) => {
-  const { pre_chat_message, pre_chat_fields } = preChatFormOptions;
+  const { pre_chat_message, pre_chat_fields = [] } = preChatFormOptions;
   let customFields = {};
   let preChatFields = {};
 

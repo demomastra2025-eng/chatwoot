@@ -100,7 +100,6 @@ onMounted(() => {
     <SettingsToggleSection
       v-model="preChatFormEnabled"
       :header="$t('INBOX_MGMT.PRE_CHAT_FORM.ENABLE.LABEL')"
-      :description="$t('INBOX_MGMT.PRE_CHAT_FORM.DESCRIPTION')"
     >
       <template v-if="preChatFormEnabled" #editor>
         <WootMessageEditor

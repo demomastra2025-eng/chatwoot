@@ -499,7 +499,7 @@
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
     "TITLE": "Leads",
-    "DESCRIPTION": "Receive website, landing page, Meta Lead Ads, and website widget form submissions in one native intake flow. Every processed lead creates a contact, conversation, first message, and CRM deal when CRM deals are enabled.",
+    "DESCRIPTION": "Receive website, landing page, Meta Lead Ads, and website widget form submissions in one native intake flow. Intake creates a contact, conversation, and visual form card in the conversation; deals are created only by the standard pipeline auto-create setting.",
     "CREATE": "Create form",
     "CREATED": "Lead form created.",
     "REFRESH": "Refresh",

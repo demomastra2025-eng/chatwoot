@@ -26,7 +26,6 @@ class CreateLeadFormsAndSubmissions < ActiveRecord::Migration[7.1]
       t.references :contact, foreign_key: true, index: true
       t.references :contact_inbox, foreign_key: true, index: true
       t.references :conversation, foreign_key: true, index: true
-      t.references :crm_deal, foreign_key: { to_table: :crm_deals }, index: true
       t.string :source_kind, null: false
       t.string :status, null: false, default: 'received'
       t.string :external_ref

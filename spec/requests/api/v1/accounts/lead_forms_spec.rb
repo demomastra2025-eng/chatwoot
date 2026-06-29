@@ -16,7 +16,10 @@ RSpec.describe 'Lead Forms API', type: :request do
            name: 'Landing form',
            source_kind: 'api',
            inbox_id: inbox.id,
-           field_schema: [{ name: 'full_name', label: 'Full name', type: 'text', required: true }]
+           field_schema: [
+             { name: 'full_name', label: 'Full name', type: 'text', required: true },
+             { name: 'phone_number', label: 'Phone', type: 'tel', required: true }
+           ]
          },
          headers: headers,
          as: :json
@@ -40,9 +43,11 @@ RSpec.describe 'Lead Forms API', type: :request do
     expect(widget_form).to be_present
     expect(widget_form['inbox_id']).to eq(inbox.id)
     expect(widget_form.dig('settings', 'pre_chat_form_enabled')).to be(true)
+    phone_field = inbox.channel.reload.pre_chat_form_options['pre_chat_fields'].find { |field| field['name'] == 'phoneNumber' }
+    expect(phone_field).to include('required' => true, 'enabled' => true, 'type' => 'tel')
   end
 
-  it 'accepts public submissions and converts them into CRM intake records' do
+  it 'accepts public submissions and converts them into contact, conversation, and visual form message' do
     lead_form = create(:lead_form, account: account, inbox: inbox)
 
     post "/api/v1/lead_forms/#{lead_form.public_token}/submissions",
@@ -60,7 +65,34 @@ RSpec.describe 'Lead Forms API', type: :request do
     expect(response_body.dig('payload', 'status')).to eq('processed')
     expect(account.lead_submissions.count).to eq(1)
     expect(account.conversations.count).to eq(1)
-    expect(account.crm_deals.count).to eq(1)
+    expect(account.crm_deals.count).to eq(0)
+    expect(account.conversations.last.messages.last.content_type).to eq('form')
+    expect(account.conversations.last.messages.last.content_attributes['submitted_values']).to be_present
+  end
+
+  it 'returns validation error when public submission misses required phone' do
+    lead_form = create(:lead_form, account: account, inbox: inbox)
+
+    post "/api/v1/lead_forms/#{lead_form.public_token}/submissions",
+         params: {
+           idempotency_key: 'web-missing-phone',
+           field_values: { full_name: 'Lead without phone' }
+         },
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['error']).to include('Phone')
+    expect(account.lead_submissions.count).to eq(0)
+  end
+
+  it 'lists lead submissions with a safe default limit' do
+    lead_form = create(:lead_form, account: account, inbox: inbox)
+    create_list(:lead_submission, 2, account: account, lead_form: lead_form, inbox: inbox, status: 'processed')
+
+    get "/api/v1/accounts/#{account.id}/lead_submissions", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body['payload'].size).to eq(2)
   end
 
   it 'returns validation error when public submission misses required schema fields' do
@@ -68,7 +100,10 @@ RSpec.describe 'Lead Forms API', type: :request do
       :lead_form,
       account: account,
       inbox: inbox,
-      field_schema: [{ name: 'fullName', label: 'Client name', type: 'text', required: true }]
+      field_schema: [
+        { name: 'fullName', label: 'Client name', type: 'text', required: true },
+        { name: 'phoneNumber', label: 'Phone number', type: 'tel', required: true }
+      ]
     )
 
     post "/api/v1/lead_forms/#{lead_form.public_token}/submissions",

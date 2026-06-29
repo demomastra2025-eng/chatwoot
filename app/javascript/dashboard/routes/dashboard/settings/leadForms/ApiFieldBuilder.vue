@@ -21,6 +21,8 @@ const { t } = useI18n();
 const localFields = ref([]);
 
 const cloneFields = fields => fields.map(field => ({ ...field }));
+const phoneFieldNames = ['phoneNumber', 'phone_number', 'phone', 'mobile'];
+const isPhoneField = field => phoneFieldNames.includes(field?.name);
 
 const typeOptions = computed(() => [
   {
@@ -70,10 +72,22 @@ const emitFields = () => {
 };
 
 const updateField = (index, key, value) => {
+  const currentField = localFields.value[index];
+  if (isPhoneField(currentField) && ['enabled', 'required'].includes(key))
+    return;
+
   localFields.value[index] = {
-    ...localFields.value[index],
+    ...currentField,
     [key]: value,
   };
+
+  if (isPhoneField(localFields.value[index])) {
+    localFields.value[index].enabled = true;
+    localFields.value[index].required = true;
+    if (localFields.value[index].type === 'text')
+      localFields.value[index].type = 'tel';
+  }
+
   emitFields();
 };
 
@@ -110,7 +124,8 @@ const addField = () => {
 };
 
 const removeField = index => {
-  if (localFields.value.length <= 1) return;
+  if (localFields.value.length <= 1 || isPhoneField(localFields.value[index]))
+    return;
   localFields.value.splice(index, 1);
   emitFields();
 };
@@ -118,7 +133,16 @@ const removeField = index => {
 watch(
   () => props.fields,
   fields => {
-    localFields.value = cloneFields(fields || []);
+    localFields.value = cloneFields(fields || []).map(field => {
+      if (!isPhoneField(field)) return field;
+
+      return {
+        ...field,
+        type: field.type === 'text' ? 'tel' : field.type || 'tel',
+        enabled: true,
+        required: true,
+      };
+    });
   },
   { deep: true, immediate: true }
 );
@@ -173,6 +197,7 @@ watch(
               <td class="px-3 py-3 align-middle">
                 <ToggleSwitch
                   :model-value="field.enabled"
+                  :disabled="isPhoneField(field)"
                   @change="toggleField(index, 'enabled')"
                 />
               </td>
@@ -181,7 +206,7 @@ watch(
                   :value="field.name"
                   type="text"
                   class="h-9 w-full rounded-lg border border-n-weak bg-n-solid-1 px-2 text-sm text-n-slate-12 disabled:text-n-slate-10"
-                  :disabled="!field.enabled"
+                  :disabled="!field.enabled || isPhoneField(field)"
                   @input="updateField(index, 'name', $event.target.value)"
                 />
               </td>
@@ -190,7 +215,7 @@ watch(
                   :model-value="field.type"
                   :options="typeOptions"
                   input-like
-                  :disabled="!field.enabled"
+                  :disabled="!field.enabled || isPhoneField(field)"
                   @update:model-value="updateField(index, 'type', $event)"
                 />
               </td>
@@ -199,7 +224,7 @@ watch(
                   :checked="field.required"
                   type="checkbox"
                   class="m-0"
-                  :disabled="!field.enabled"
+                  :disabled="!field.enabled || isPhoneField(field)"
                   @change="toggleField(index, 'required')"
                 />
               </td>
@@ -208,7 +233,7 @@ watch(
                   :value="field.label"
                   type="text"
                   class="h-9 w-full rounded-lg border border-n-weak bg-n-solid-1 px-2 text-sm text-n-slate-12 disabled:text-n-slate-10"
-                  :disabled="!field.enabled"
+                  :disabled="!field.enabled || isPhoneField(field)"
                   @input="updateField(index, 'label', $event.target.value)"
                 />
               </td>
@@ -217,7 +242,7 @@ watch(
                   :value="field.placeholder"
                   type="text"
                   class="h-9 w-full rounded-lg border border-n-weak bg-n-solid-1 px-2 text-sm text-n-slate-12 disabled:text-n-slate-10"
-                  :disabled="!field.enabled"
+                  :disabled="!field.enabled || isPhoneField(field)"
                   @input="
                     updateField(index, 'placeholder', $event.target.value)
                   "
@@ -230,7 +255,7 @@ watch(
                   variant="ghost"
                   color="ruby"
                   size="sm"
-                  :disabled="localFields.length <= 1"
+                  :disabled="localFields.length <= 1 || isPhoneField(field)"
                   @click="removeField(index)"
                 />
               </td>

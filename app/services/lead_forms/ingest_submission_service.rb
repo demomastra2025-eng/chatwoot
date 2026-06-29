@@ -1,6 +1,6 @@
 module LeadForms
   class IngestSubmissionService
-    REDACTED_KEY_PATTERN = /(token|secret|password|authorization|access_key|api_key)/i
+    REDACTED_KEY_PATTERN = /(token|secret|password|authorization|access_?key|api_?key)/i
     EMAIL_KEYS = %w[email email_address emailAddress].freeze
     PHONE_KEYS = %w[phone phone_number phoneNumber mobile].freeze
     NAME_KEYS = %w[name full_name fullName].freeze
@@ -22,6 +22,7 @@ module LeadForms
       return submission if submission&.processed?
 
       validate_required_fields!
+      validate_phone_number!
       submission ||= build_submission
       refresh_submission_payload!(submission) unless submission.new_record?
       process_submission!(submission)
@@ -51,11 +52,10 @@ module LeadForms
     end
 
     def contact_attributes
-      explicit_contact = params.fetch('contact', {}).to_h
       attributes = {
         name: pick_value(explicit_contact, *NAME_KEYS) || pick_value(field_values, *NAME_KEYS) || composed_name,
         email: pick_value(explicit_contact, *EMAIL_KEYS) || pick_value(field_values, *EMAIL_KEYS),
-        phone_number: pick_value(explicit_contact, *PHONE_KEYS) || pick_value(field_values, *PHONE_KEYS),
+        phone_number: lead_phone_number,
         identifier: pick_value(explicit_contact, *IDENTIFIER_KEYS) || pick_value(field_values, *IDENTIFIER_KEYS),
         additional_attributes: {
           lead_form_id: lead_form.id,
@@ -100,32 +100,8 @@ module LeadForms
         }.compact,
         custom_attributes: lead_form.settings.to_h.fetch('conversation_custom_attributes', {})
       )
-      conversation.skip_runtime_events = true
       conversation.save!
       conversation
-    end
-
-    def create_deal!(submission, conversation)
-      return unless account.feature_enabled?('crm_deals')
-
-      ::Crm::Bootstrap::AccountService.new(account: account).perform
-      reference = "lead_submission:#{submission.id}"
-      existing = account.crm_deals.find_by(idempotency_key: reference) || account.crm_deals.find_by(external_ref: reference)
-      return existing if existing.present?
-
-      ::Crm::Deals::UpsertService.new(
-        account: account,
-        params: {
-          title: deal_title,
-          description: deal_description,
-          originating_conversation_id: conversation.id,
-          contact_ids: [conversation.contact_id],
-          primary_contact_id: conversation.contact_id,
-          external_ref: reference,
-          idempotency_key: reference
-        },
-        actor: nil
-      ).perform
     end
 
     def create_message!(submission, conversation)
@@ -134,8 +110,12 @@ module LeadForms
         inbox: lead_form.inbox,
         sender: conversation.contact,
         message_type: :incoming,
-        content_type: :text,
+        content_type: :form,
         content: message_content,
+        content_attributes: {
+          items: form_items,
+          submitted_values: submitted_values
+        },
         source_id: "lead_submission:#{submission.id}",
         additional_attributes: {
           lead_form_id: lead_form.id,
@@ -144,6 +124,32 @@ module LeadForms
           external_ref: submission.external_ref
         }.compact
       )
+    end
+
+    def form_items
+      schema_by_name = Array.wrap(lead_form.field_schema).each_with_object({}) do |field, result|
+        field = field.to_h
+        result[field['name'].to_s] = field if field['name'].present?
+      end
+
+      field_values.keys.map do |name|
+        schema = schema_by_name[name] || schema_by_name[name.underscore] || schema_by_name[name.camelize(:lower)] || {}
+        {
+          name: name,
+          label: schema['label'].presence || name.to_s.humanize,
+          type: schema['type'].presence || 'text'
+        }
+      end
+    end
+
+    def submitted_values
+      field_values.map do |name, value|
+        {
+          name: name,
+          title: value,
+          value: value
+        }
+      end
     end
 
     def conversation_status
@@ -157,23 +163,6 @@ module LeadForms
       "lead_form:#{lead_form.id}:#{digest}"
     end
 
-    def deal_description
-      [
-        "Source: #{lead_form.source_kind}",
-        "Form: #{lead_form.name}",
-        params['landing_url'].present? ? "Landing: #{params['landing_url']}" : nil,
-        params['referer_url'].present? ? "Referer: #{params['referer_url']}" : nil,
-        field_values.map { |key, value| "#{key}: #{value}" }
-      ].flatten.compact.join("\n")
-    end
-
-    def deal_title
-      name = pick_value(field_values, *NAME_KEYS) || composed_name
-      phone = pick_value(field_values, *PHONE_KEYS)
-      suffix = [name, phone].compact_blank.first
-      ['Заявка', suffix, lead_form.name].compact_blank.join(' · ')
-    end
-
     def existing_submission
       return lead_form.lead_submissions.find_by(external_ref: external_ref) if external_ref.present?
       return lead_form.lead_submissions.find_by(idempotency_key: idempotency_key) if idempotency_key.present?
@@ -183,16 +172,31 @@ module LeadForms
       params['external_ref'].presence || params['leadgen_id'].presence || params['id'].presence
     end
 
+    def explicit_contact
+      @explicit_contact ||= params.fetch('contact', {}).to_h
+    end
+
     def field_values
       @field_values ||= begin
         raw = params['field_values'].presence || params['fields'].presence || params['data'].presence || {}
         raw = raw.to_h if raw.respond_to?(:to_h)
-        raw.deep_stringify_keys
+        values = raw.deep_stringify_keys
+        phone_value = pick_value(values, *PHONE_KEYS) || contact_phone_number
+        values[phone_field_name] = phone_value if phone_value.present? && pick_value(values, *PHONE_KEYS).blank?
+        values
       end
     end
 
     def idempotency_key
       params['idempotency_key'].presence
+    end
+
+    def lead_phone_number
+      pick_value(field_values, *PHONE_KEYS)
+    end
+
+    def contact_phone_number
+      pick_value(explicit_contact, *PHONE_KEYS)
     end
 
     def mark_failed!(submission, error)
@@ -221,6 +225,16 @@ module LeadForms
       raw_params.to_h.deep_stringify_keys
     end
 
+    def phone_field_name
+      schema_field_names.find { |name| PHONE_KEYS.include?(name.to_s) } || 'phone_number'
+    end
+
+    def schema_field_names
+      Array.wrap(lead_form.field_schema).filter_map do |field|
+        field.to_h['name'].presence
+      end
+    end
+
     def pick_value(source, *keys)
       keys.each do |key|
         value = source[key]
@@ -234,15 +248,15 @@ module LeadForms
         submission.save! if submission.new_record?
         contact_inbox = submission.contact_inbox || create_contact_inbox!
         conversation = submission.conversation || create_conversation!(submission, contact_inbox)
-        create_message!(submission, conversation) if conversation.messages.where(source_id: "lead_submission:#{submission.id}").blank?
-        deal = submission.crm_deal || create_deal!(submission, conversation)
+        create_message!(submission, conversation) unless conversation.messages.exists?(
+          source_id: "lead_submission:#{submission.id}"
+        )
 
         submission.update!(
           contact: contact_inbox.contact,
           contact_inbox: contact_inbox,
           inbox: lead_form.inbox,
           conversation: conversation,
-          crm_deal: deal,
           status: 'processed',
           processing_errors: {},
           processed_at: Time.current
@@ -291,6 +305,8 @@ module LeadForms
 
     def submitted_field_value(field_name)
       key = field_name.to_s
+      return lead_phone_number if PHONE_KEYS.include?(key)
+
       candidates = [key, key.underscore, key.camelize(:lower)].uniq
       candidates.filter_map { |candidate| field_values[candidate] }.find(&:present?)
     end
@@ -306,6 +322,12 @@ module LeadForms
       return if missing_fields.blank?
 
       raise ArgumentError, "Missing required form fields: #{missing_fields.join(', ')}"
+    end
+
+    def validate_phone_number!
+      return if lead_phone_number.present?
+
+      raise ArgumentError, 'Missing required form fields: Phone number'
     end
   end
 end

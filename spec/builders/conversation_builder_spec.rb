@@ -224,7 +224,12 @@ describe ConversationBuilder do
       expect(submission.conversation).to eq(conversation)
       expect(submission.contact).to eq(contact)
       expect(submission.field_values).to include('fullName' => 'Widget Client')
-      expect(submission.crm_deal).to be_present
+      lead_message = conversation.messages.find_by!(source_id: "lead_submission:#{submission.id}")
+      expect(lead_message.content_type).to eq('form')
+      submitted_values = lead_message.content_attributes['submitted_values']
+      phone_value = submitted_values.map(&:with_indifferent_access).find { |value| value[:name] == 'phoneNumber' }
+      expect(phone_value[:value]).to eq(submission.field_values['phoneNumber'])
+      expect(account.crm_deals.count).to eq(0)
     end
   end
 end

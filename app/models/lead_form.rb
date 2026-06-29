@@ -33,6 +33,7 @@
 class LeadForm < ApplicationRecord
   SOURCE_KINDS = %w[api meta widget].freeze
   STATUSES = %w[active paused archived].freeze
+  PHONE_FIELD_NAMES = %w[phone phone_number phoneNumber mobile].freeze
   META_CONNECTION_CHANNEL_TYPES = %w[
     Channel::FacebookPage
     Channel::Instagram
@@ -55,6 +56,7 @@ class LeadForm < ApplicationRecord
   validates :external_ref, uniqueness: { scope: [:account_id, :source_kind] }, allow_blank: true
   validate :source_configuration_is_complete
   validate :field_schema_is_valid
+  validate :phone_field_is_required
   validate :inbox_belongs_to_account
   validate :meta_connection_inbox_belongs_to_account
 
@@ -125,6 +127,18 @@ class LeadForm < ApplicationRecord
       errors.add(:field_schema, 'field label is required') if field['label'].blank?
       errors.add(:field_schema, 'field type is required') if field['type'].blank?
     end
+  end
+
+  def phone_field_is_required
+    return if field_schema.any? { |field| required_phone_field?(field.to_h) }
+
+    errors.add(:field_schema, 'must include an enabled required phone number field')
+  end
+
+  def required_phone_field?(field)
+    PHONE_FIELD_NAMES.include?(field['name'].to_s) &&
+      ActiveModel::Type::Boolean.new.cast(field.fetch('enabled', true)) &&
+      ActiveModel::Type::Boolean.new.cast(field['required'])
   end
 
   def normalize_json_columns

@@ -37,7 +37,6 @@ module LeadForms
           contact_name: submission.contact&.name,
           conversation_id: submission.conversation&.display_id,
           conversation_internal_id: submission.conversation_id,
-          crm_deal_id: submission.crm_deal_id,
           processed_at: submission.processed_at&.iso8601,
           created_at: submission.created_at&.iso8601,
           updated_at: submission.updated_at&.iso8601

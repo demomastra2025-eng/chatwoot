@@ -475,7 +475,7 @@
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
     "TITLE": "Өтінімдер",
-    "DESCRIPTION": "Receive website, landing page, Meta Lead Ads, and website widget form submissions in one native intake flow.",
+    "DESCRIPTION": "Сайт, лендинг, Meta Lead Ads және сайт виджеті формаларынан өтінімдерді бір нативті ағында қабылдаңыз. Өтінім контакт, диалог және диалогтағы форма карточкасын жасайды; мәмілелер тек воронканың стандартты автожасау баптауымен жасалады.",
     "CREATE": "Create form",
     "CREATED": "Lead form created.",
     "REFRESH": "Refresh",

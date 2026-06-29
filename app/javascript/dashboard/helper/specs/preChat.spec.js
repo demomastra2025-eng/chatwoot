@@ -9,10 +9,17 @@ const { customFields, customAttributes, customAttributesWithRegex } =
   inboxFixture;
 describe('#Pre chat Helpers', () => {
   describe('getPreChatFields', () => {
-    it('should return correct pre-chat fields form options passed', () => {
-      expect(getPreChatFields({ preChatFormOptions: customFields })).toEqual(
-        customFields
+    it('forces the phone field to stay enabled and required', () => {
+      const fields = getPreChatFields({ preChatFormOptions: customFields });
+      const phoneField = fields.pre_chat_fields.find(
+        field => field.name === 'phoneNumber'
       );
+
+      expect(phoneField).toMatchObject({
+        type: 'tel',
+        required: true,
+        enabled: true,
+      });
     });
   });
   describe('getFormattedPreChatFields', () => {
@@ -44,10 +51,10 @@ describe('#Pre chat Helpers', () => {
           label: 'Phone Number',
           name: 'phoneNumber',
           placeholder: 'Please enter your phone number',
-          type: 'text',
+          type: 'tel',
           field_type: 'standard',
-          required: false,
-          enabled: false,
+          required: true,
+          enabled: true,
         },
       ]);
     });

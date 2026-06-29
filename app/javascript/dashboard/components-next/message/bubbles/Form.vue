@@ -12,10 +12,17 @@ const { isAWebWidgetInbox } = useInbox();
 
 const formValues = computed(() => {
   if (contentType.value === CONTENT_TYPES.FORM) {
-    const { items, submittedValues = [] } = contentAttributes.value;
+    const {
+      items = [],
+      submittedValues = [],
+      submitted_values: submittedValuesSnake = [],
+    } = contentAttributes.value;
+    const values = submittedValues.length
+      ? submittedValues
+      : submittedValuesSnake;
 
-    if (submittedValues.length) {
-      return submittedValues.map(submittedValue => {
+    if (values.length) {
+      return values.map(submittedValue => {
         const item = items.find(
           formItem => formItem.name === submittedValue.name
         );

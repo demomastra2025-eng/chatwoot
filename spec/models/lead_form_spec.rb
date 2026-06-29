@@ -45,6 +45,22 @@ RSpec.describe LeadForm do
     expect(form.errors[:settings]).to include('meta connection inbox must be a Meta channel')
   end
 
+  it 'requires a required phone field for every lead form source' do
+    account = create(:account)
+    form = build(
+      :lead_form,
+      account: account,
+      inbox: create(:inbox, account: account),
+      source_kind: 'meta',
+      external_ref: 'meta-form-without-phone',
+      field_schema: [{ 'name' => 'full_name', 'label' => 'Name', 'type' => 'text', 'required' => true }],
+      settings: { 'meta_connection_inbox_id' => create(:channel_instagram, account: account).inbox.id }
+    )
+
+    expect(form).not_to be_valid
+    expect(form.errors[:field_schema]).to include('must include an enabled required phone number field')
+  end
+
   it 'requires API field schema labels' do
     account = create(:account)
     form = build(

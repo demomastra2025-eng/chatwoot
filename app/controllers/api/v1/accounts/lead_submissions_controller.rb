@@ -3,7 +3,7 @@ class Api::V1::Accounts::LeadSubmissionsController < Api::V1::Accounts::LeadForm
   before_action :set_lead_submission, only: [:show]
 
   def index
-    submissions = Current.account.lead_submissions.includes(:lead_form, :inbox, :contact, :conversation, :crm_deal).ordered
+    submissions = Current.account.lead_submissions.includes(:lead_form, :inbox, :contact, :conversation).ordered
     submissions = submissions.where(lead_form_id: params[:lead_form_id]) if params[:lead_form_id].present?
     submissions = submissions.for_source(params[:source_kind]) if params[:source_kind].present?
     submissions = submissions.for_status(params[:status]) if params[:status].present?
@@ -22,7 +22,8 @@ class Api::V1::Accounts::LeadSubmissionsController < Api::V1::Accounts::LeadForm
   private
 
   def limit_param
-    [[params[:limit].to_i, 1].max, 100].min
+    requested_limit = params[:limit].presence || 20
+    requested_limit.to_i.clamp(1, 100)
   end
 
   def set_lead_submission

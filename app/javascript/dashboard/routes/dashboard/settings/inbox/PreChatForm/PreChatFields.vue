@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import Draggable from 'vuedraggable';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import { isPhoneField } from 'dashboard/helper/preChat';
 
 const props = defineProps({
   preChatFields: {
@@ -20,6 +21,8 @@ const isFieldEditable = item => {
 };
 
 const handlePreChatFieldOptions = (event, type, item) => {
+  if (isPhoneField(item) && ['enabled', 'required'].includes(type)) return;
+
   emit('update', event, type, item);
 };
 
@@ -53,6 +56,7 @@ watch(
         <td class="py-4 ltr:pr-3 rtl:pl-3 text-body-main">
           <ToggleSwitch
             :model-value="item['enabled']"
+            :disabled="isPhoneField(item)"
             @change="handlePreChatFieldOptions($event, 'enabled', item)"
           />
         </td>
@@ -73,7 +77,7 @@ watch(
             v-model="item['required']"
             type="checkbox"
             :value="`${item.name}-required`"
-            :disabled="!item['enabled']"
+            :disabled="!item['enabled'] || isPhoneField(item)"
             class="m-0"
             @change="handlePreChatFieldOptions($event, 'required', item)"
           />

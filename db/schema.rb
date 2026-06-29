@@ -1698,7 +1698,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_29_120000) do
     t.bigint "contact_id"
     t.bigint "contact_inbox_id"
     t.bigint "conversation_id"
-    t.bigint "crm_deal_id"
     t.string "source_kind", null: false
     t.string "status", default: "received", null: false
     t.string "external_ref"
@@ -1717,7 +1716,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_29_120000) do
     t.index ["contact_id"], name: "index_lead_submissions_on_contact_id"
     t.index ["contact_inbox_id"], name: "index_lead_submissions_on_contact_inbox_id"
     t.index ["conversation_id"], name: "index_lead_submissions_on_conversation_id"
-    t.index ["crm_deal_id"], name: "index_lead_submissions_on_crm_deal_id"
     t.index ["field_values"], name: "index_lead_submissions_on_field_values", using: :gin
     t.index ["inbox_id"], name: "index_lead_submissions_on_inbox_id"
     t.index ["lead_form_id"], name: "index_lead_submissions_on_lead_form_id"
@@ -3053,7 +3051,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_29_120000) do
   add_foreign_key "lead_submissions", "contact_inboxes"
   add_foreign_key "lead_submissions", "contacts"
   add_foreign_key "lead_submissions", "conversations"
-  add_foreign_key "lead_submissions", "crm_deals"
   add_foreign_key "lead_submissions", "inboxes"
   add_foreign_key "lead_submissions", "lead_forms"
   add_foreign_key "llm_eval_runs", "accounts"
