@@ -44,7 +44,51 @@ RSpec.describe 'Telephony Virtual PBX remote orchestration API', type: :request 
     expect(payload.dig('ui_config', 'inbox_id')).to eq(inbox_id)
     expect(payload).not_to have_key('config')
     expect(payload.to_json).not_to include('do-not-return-this-secret')
-    expect(payload.to_json).not_to include('ats01.kz.sipuni.com')
+    expect(payload).not_to have_key('diagnostics')
+  end
+
+  it 'adopts an existing shared Sipuni trunk credential when creating after local deletion' do
+    payload = create_payload.deep_dup
+    payload[:connection].delete(:username)
+    payload[:connection].delete(:password)
+    bridge_client = instance_double(Telephony::BridgeClient)
+    provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
+
+    allow(Telephony::BridgeClient).to receive(:new).and_return(bridge_client)
+    allow(bridge_client).to receive(:get).with('/telephony/trunks/trunk-sipuni-onelink-out').and_return(
+      { 'ref' => 'trunk-sipuni-onelink-out', 'outboundCredentialsRef' => 'cred-shared-sipuni' }
+    )
+    allow(bridge_client).to receive(:get).with('/telephony/trunks').and_return(
+      {
+        'items' => [
+          {
+            'ref' => 'trunk-sipuni-onelink-out',
+            'outboundCredentials' => { 'ref' => 'cred-shared-sipuni', 'username' => 'shared-sipuni-login' }
+          }
+        ]
+      }
+    )
+    allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
+    allow(provisioner).to receive(:execute) do |operation:, desired_state:, plan:, remote_commit:|
+      expect(operation).to eq('create')
+      expect(remote_commit).to be(true)
+      expect(plan.fetch(:operations).map { |item| item[:key] }).not_to include('missing_sipuni_gateway_credentials')
+      expect(desired_state.dig(:connection, :username)).to eq('shared-sipuni-login')
+      expect(desired_state.dig(:connection, :credentials_ref)).to eq('cred-shared-sipuni')
+      expect(desired_state.dig(:connection, :password_configured)).to be(true)
+      { status: 'succeeded', remote_commit: true, provisioning_run: { status: 'succeeded' }, executed_operations: [] }
+    end
+
+    post base_path, params: payload.merge(dry_run: false, remote_commit: true), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok), response.parsed_body.to_json
+    result = response.parsed_body.fetch('payload')
+    inbox = Inbox.find(result.dig('ui_config', 'inbox_id'))
+    connection = inbox.telephony_number_binding.provider_connection
+    expect(result).to include('operation' => 'create', 'status' => 'succeeded', 'local_commit' => true, 'remote_commit' => true)
+    expect(connection.username).to eq('shared-sipuni-login')
+    expect(connection.credentials_ref).to eq('cred-shared-sipuni')
+    expect(connection.password_secret_ref).to eq('cred-shared-sipuni')
   end
 
   it 'runs approved remote provision without an env feature flag' do

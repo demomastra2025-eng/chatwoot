@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'cgi'
+
 class Telephony::VirtualPbx::ProvisioningService
   ALLOWED_PROVIDER_KINDS = %w[asterisk_analog sipuni].freeze
   DEFAULT_ROUTE_MODE = 'operator'
@@ -140,11 +142,23 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def create_channel(payload, dry_run: true, remote_commit: false, include_diagnostics: false)
     normalized = normalize_payload(payload)
+    normalized = with_remote_shared_sipuni_credentials(normalized) if remote_commit_requested?(remote_commit)
     errors = validation_errors(normalized, require_profiles: normalized[:profiles_supplied])
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'create', normalized_payload: normalized, errors: errors, existing_config: nil,
                              steps: create_steps(normalized), include_diagnostics: include_diagnostics)
+    end
+
+    preflight_plan = remote_plan_builder.build(operation: 'create', desired_state: desired_state_for_payload(normalized, nil))
+    if remote_commit_requested?(remote_commit) && remote_plan_blocked?(preflight_plan)
+      return remote_plan_blocked_payload(
+        operation: 'create',
+        normalized_payload: normalized,
+        plan: preflight_plan,
+        steps: create_steps(normalized),
+        include_diagnostics: include_diagnostics
+      )
     end
 
     mutation_payload(
@@ -316,8 +330,16 @@ class Telephony::VirtualPbx::ProvisioningService
         runtime_app_ref: first_present(resources[:runtime_app_ref], refs[:runtime_app_ref], resources[:app_ref], refs[:app_ref])
       }.compact,
       connection: (normalized_payload[:connection] || {}).merge(
-        credentials_ref: refs[:credentials_ref] || provider_connection[:credentials_ref] || provider_connection[:fonoster_credentials_ref],
-        password_configured: normalized_payload.dig(:connection, :password).present? || provider_connection[:password_configured]
+        credentials_ref: first_present(
+          normalized_payload.dig(:connection, :credentials_ref),
+          normalized_payload.dig(:connection, :fonoster_credentials_ref),
+          refs[:credentials_ref],
+          provider_connection[:credentials_ref],
+          provider_connection[:fonoster_credentials_ref]
+        ),
+        password_configured: normalized_payload.dig(:connection, :password).present? ||
+          ActiveModel::Type::Boolean.new.cast(normalized_payload.dig(:connection, :password_configured)) ||
+          provider_connection[:password_configured]
       ).compact,
       routing: normalized_payload[:routing] || config[:routing] || {},
       profiles: normalized_payload[:profiles] || config[:profiles] || [],
@@ -368,6 +390,48 @@ class Telephony::VirtualPbx::ProvisioningService
         generated_refs: generated_refs_for(normalized_payload, existing_config),
         bridge_operations: bridge_operations_for(operation, normalized_payload, existing_config: existing_config),
         existing_config: existing_config
+      }.compact
+    end
+
+    payload
+  end
+
+  def remote_plan_blocked_payload(operation:, normalized_payload:, plan:, steps:, include_diagnostics: false)
+    blocked_operations = Array.wrap(plan[:operations] || plan['operations']).map(&:with_indifferent_access).select do |operation_payload|
+      operation_payload[:risk].to_s == 'blocked'
+    end
+    errors = blocked_operations.map do |operation_payload|
+      error(
+        operation_payload[:conflict].presence || operation_payload[:key].presence || 'remote_plan_blocked',
+        operation_payload[:description].presence || 'Remote provisioning plan is blocked'
+      )
+    end
+
+    payload = {
+      operation: operation,
+      dry_run: false,
+      valid: false,
+      status: 'blocked',
+      local_commit: false,
+      remote_commit: false,
+      mutation_allowed: false,
+      mutation_reason: 'remote_plan_blocked_before_local_commit',
+      remote_mutation_allowed: false,
+      remote_mutation_reason: 'REMOTE_PLAN_BLOCKED',
+      account_id: account.id,
+      requested_by_id: current_user&.id,
+      provisioning_plan: product_plan(plan),
+      steps: steps,
+      errors: errors,
+      warnings: []
+    }.compact
+
+    if include_diagnostics
+      payload[:diagnostics] = {
+        payload: Telephony::VirtualPbx::ConfigBuilder.sanitize(normalized_payload),
+        provider_template: provider_template_for(normalized_payload, nil),
+        generated_refs: generated_refs_for(normalized_payload, nil),
+        bridge_operations: bridge_operations_for(operation, normalized_payload)
       }.compact
     end
 
@@ -565,6 +629,65 @@ class Telephony::VirtualPbx::ProvisioningService
       desired_profile[:sip_username] = profile[:sip_username] if profile.key?(:sip_username)
       desired_profile[:sip_password] = profile[:sip_password]
     end
+  end
+
+  def with_remote_shared_sipuni_credentials(payload)
+    attrs = payload.deep_dup
+    connection = (attrs[:connection] || {}).with_indifferent_access
+    return attrs unless attrs[:provider_kind].to_s == 'sipuni'
+    return attrs if connection[:username].present? || connection[:password].present? || connection[:credentials_ref].present? ||
+                    connection[:fonoster_credentials_ref].present?
+
+    credential = remote_shared_sipuni_trunk_credential
+    return attrs if credential.blank?
+
+    attrs[:connection] = connection.merge(
+      username: credential[:username],
+      credentials_ref: credential[:ref],
+      fonoster_credentials_ref: credential[:ref],
+      password_configured: true
+    ).compact
+    attrs
+  end
+
+  def remote_shared_sipuni_trunk_credential
+    trunk_ref = sipuni_trunk_ref
+    trunk = remote_bridge_get("/telephony/trunks/#{CGI.escape(trunk_ref)}")
+    list_item = remote_shared_sipuni_trunk_from_list(trunk_ref)
+    outbound_credentials = (list_item&.dig(:outboundCredentials) || list_item&.dig('outboundCredentials') || {}).with_indifferent_access
+    credential_ref = first_present(
+      trunk&.with_indifferent_access&.dig(:outboundCredentialsRef),
+      outbound_credentials[:ref]
+    )
+    username = outbound_credentials[:username].presence
+    username ||= remote_shared_credential_username(credential_ref)
+    return if credential_ref.blank? || username.blank?
+
+    { ref: credential_ref, username: username }
+  end
+
+  def remote_shared_sipuni_trunk_from_list(trunk_ref)
+    response = remote_bridge_get('/telephony/trunks')
+    Array.wrap(response&.with_indifferent_access&.dig(:items)).find do |attrs|
+      attrs.with_indifferent_access[:ref].to_s == trunk_ref.to_s
+    end
+  end
+
+  def remote_shared_credential_username(credential_ref)
+    return if credential_ref.blank?
+
+    remote_bridge_get("/telephony/credentials/#{CGI.escape(credential_ref)}")&.with_indifferent_access&.dig(:username)
+  end
+
+  def remote_bridge_get(path)
+    effective_bridge_client.get(path)
+  rescue Telephony::Error => e
+    Rails.logger.warn("[VIRTUAL_PBX] remote shared Sipuni credential adoption skipped code=#{e.code} status=#{e.status}")
+    nil
+  end
+
+  def effective_bridge_client
+    bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def normalize_payload(payload, fallback: nil)
@@ -955,6 +1078,7 @@ class Telephony::VirtualPbx::ProvisioningService
       provider_kind: payload[:provider_kind],
       name: connection_name
     )
+    connection_credentials_ref = provider_connection_credentials_ref(payload, refs)
     connection.assign_attributes(
       provider_kind: payload[:provider_kind],
       name: connection_name,
@@ -962,8 +1086,13 @@ class Telephony::VirtualPbx::ProvisioningService
       port: payload.dig(:connection, :port),
       transport: payload.dig(:connection, :transport),
       username: payload.dig(:connection, :username),
-      password_secret_ref: payload.dig(:connection, :password).present? ? refs[:credentials_ref] : connection.password_secret_ref,
-      credentials_ref: refs[:credentials_ref],
+      password_secret_ref: if provider_connection_password_configured?(payload)
+                             connection_credentials_ref
+                           else
+                             connection.password_secret_ref
+                           end,
+      credentials_ref: connection_credentials_ref,
+      fonoster_credentials_ref: payload.dig(:connection, :fonoster_credentials_ref).presence || connection.fonoster_credentials_ref,
       fonoster_trunk_ref: refs[:trunk_ref],
       send_register: ActiveModel::Type::Boolean.new.cast(payload.dig(:connection, :send_register)),
       status: 'active',
@@ -975,6 +1104,19 @@ class Telephony::VirtualPbx::ProvisioningService
     connection.created_by ||= current_user if connection.new_record?
     connection.save!
     connection
+  end
+
+  def provider_connection_credentials_ref(payload, refs)
+    first_present(
+      payload.dig(:connection, :credentials_ref),
+      payload.dig(:connection, :fonoster_credentials_ref),
+      refs[:credentials_ref]
+    )
+  end
+
+  def provider_connection_password_configured?(payload)
+    payload.dig(:connection, :password).present? ||
+      ActiveModel::Type::Boolean.new.cast(payload.dig(:connection, :password_configured))
   end
 
   def upsert_number_binding!(inbox, channel, payload, provider_connection, refs: generated_refs(payload))
@@ -1526,6 +1668,12 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def remote_result_succeeded?(remote_result)
     remote_result.present? && remote_result[:status].to_s == 'succeeded' && Array.wrap(remote_result[:errors]).empty?
+  end
+
+  def remote_plan_blocked?(plan)
+    Array.wrap(plan[:operations] || plan['operations']).any? do |operation_payload|
+      operation_payload.with_indifferent_access[:risk].to_s == 'blocked'
+    end
   end
 
   def step(code, description, **metadata)

@@ -265,6 +265,34 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('diagnostics', 'payload', 'profiles')).to eq([])
   end
 
+  it 'blocks remote create without shared Sipuni credentials before local records are committed' do
+    payload = valid_create_payload.deep_dup
+    payload[:connection].delete(:username)
+    payload[:connection].delete(:password)
+    counts_before = local_record_counts
+    bridge_client = instance_double(Telephony::BridgeClient)
+    allow(Telephony::BridgeClient).to receive(:new).and_return(bridge_client)
+    allow(bridge_client).to receive(:get).with('/telephony/trunks/trunk-sipuni-onelink-out').and_return({})
+    allow(bridge_client).to receive(:get).with('/telephony/trunks').and_return({ 'items' => [] })
+
+    post base_path, params: payload.merge(dry_run: false, remote_commit: true), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include(
+      'operation' => 'create',
+      'dry_run' => false,
+      'valid' => false,
+      'status' => 'blocked',
+      'local_commit' => false,
+      'remote_commit' => false,
+      'mutation_reason' => 'remote_plan_blocked_before_local_commit'
+    )
+    expect(body.fetch('errors').map { |error| error['code'] }).to include('missing_sipuni_gateway_credentials')
+    expect(body.dig('provisioning_plan', 'operations').map { |operation| operation['key'] }).to include('missing_sipuni_gateway_credentials')
+    expect(local_record_counts).to eq(counts_before)
+  end
+
   it 'rejects explicitly supplied invalid SIP profile rows during create dry-run' do
     other_account = create(:account)
     outsider = create(:user, account: other_account, role: :agent)
@@ -378,23 +406,17 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(Telephony::ProvisioningRun.count).to eq(0)
   end
 
-  it 'creates a Sipuni channel without shared provider credentials before employee SIP assignment' do
-    provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
-    captured_args = nil
-    allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
-    allow(provisioner).to receive(:execute) do |args|
-      captured_args = args
-      {
-        status: 'succeeded',
-        remote_commit: true,
-        provisioning_run: { status: 'succeeded' },
-        executed_operations: []
-      }
-    end
+  it 'blocks remote Sipuni create without shared provider credentials before local records are committed' do
     payload = valid_create_payload.deep_dup
     payload.delete(:provider_account_number)
     payload[:connection].delete(:username)
     payload[:connection].delete(:password)
+    counts_before = local_record_counts
+    bridge_client = instance_double(Telephony::BridgeClient)
+    allow(Telephony::BridgeClient).to receive(:new).and_return(bridge_client)
+    allow(bridge_client).to receive(:get).with('/telephony/trunks/trunk-sipuni-onelink-out').and_return({})
+    allow(bridge_client).to receive(:get).with('/telephony/trunks').and_return({ 'items' => [] })
+    expect(Telephony::VirtualPbx::RemoteProvisioner).not_to receive(:new)
 
     post base_path, params: payload.merge(dry_run: false, remote_commit: true), headers: headers, as: :json
 
@@ -403,20 +425,31 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body).to include(
       'operation' => 'create',
       'dry_run' => false,
-      'local_commit' => true,
-      'status' => 'succeeded'
+      'local_commit' => false,
+      'status' => 'blocked'
     )
-    expect(captured_args.dig(:desired_state, :connection, :username)).to be_nil
-    expect(captured_args.dig(:desired_state, :profiles)).to eq([])
-    expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).not_to include(
-      'upsert_connection_credentials',
-      'upsert_sipuni_gateway'
-    )
+    expect(body.fetch('errors').map { |error| error['code'] }).to include('missing_sipuni_gateway_credentials')
+    expect(local_record_counts).to eq(counts_before)
   end
 
-  it 'keeps shared Sipuni connection username explicit instead of deriving it from the provider number' do
+  it 'adopts an existing shared Sipuni connection username instead of deriving it from the provider number' do
     provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
     captured_args = nil
+    bridge_client = instance_double(Telephony::BridgeClient)
+    allow(Telephony::BridgeClient).to receive(:new).and_return(bridge_client)
+    allow(bridge_client).to receive(:get).with('/telephony/trunks/trunk-sipuni-onelink-out').and_return(
+      { 'ref' => 'trunk-sipuni-onelink-out', 'outboundCredentialsRef' => 'cred-shared-sipuni' }
+    )
+    allow(bridge_client).to receive(:get).with('/telephony/trunks').and_return(
+      {
+        'items' => [
+          {
+            'ref' => 'trunk-sipuni-onelink-out',
+            'outboundCredentials' => { 'ref' => 'cred-shared-sipuni', 'username' => 'shared-sipuni-login' }
+          }
+        ]
+      }
+    )
     allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
     allow(provisioner).to receive(:execute) do |args|
       captured_args = args
@@ -434,8 +467,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     post base_path, params: payload.merge(dry_run: false, remote_commit: true), headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(captured_args.dig(:desired_state, :connection, :username)).to be_nil
+    expect(captured_args.dig(:desired_state, :connection, :username)).to eq('shared-sipuni-login')
+    expect(captured_args.dig(:desired_state, :connection, :credentials_ref)).to eq('cred-shared-sipuni')
     expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).not_to include('upsert_connection_credentials')
+    expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).to include('upsert_sipuni_gateway')
   end
 
   it 'passes transient employee SIP passwords into remote provisioning during settings update' do
