@@ -711,6 +711,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   def route_payload(state)
     refs = state[:refs] || {}
     routing = state[:routing] || {}
+    operator_targets = provider_managed_operator_targets(state)
     {
       mode: routing[:bridge_mode] || routing[:mode] || 'operator',
       app_ref: routing[:app_ref] || refs[:runtime_app_ref] || refs[:app_ref],
@@ -718,11 +719,44 @@ class Telephony::VirtualPbx::RemotePlanBuilder
         number_ref: refs[:number_ref],
         provider_kind: state[:provider_kind],
         operator_distribution_mode: routing[:operator_distribution_mode],
+        routing_controller: 'onelink_media_bridge',
+        media_anchor: 'onelink',
+        extension_mode: operator_targets.present? ? 'provider_managed' : nil,
+        provider_managed_operator_targets: operator_targets.presence,
         display_phone_number: state.dig(:phone_numbers, :display_phone_number),
         provider_account_number: state.dig(:phone_numbers, :provider_account_number),
         ingress_number: state.dig(:phone_numbers, :ingress_number)
       ).compact
     }.compact
+  end
+
+  def provider_managed_operator_targets(state)
+    Array.wrap(state[:profiles]).map(&:with_indifferent_access).filter_map do |attrs|
+      next unless provider_managed_extension_profile?(state, attrs)
+      next unless ActiveModel::Type::Boolean.new.cast(attrs.fetch(:enabled, true))
+
+      agent_aor = provider_managed_agent_aor(attrs, state)
+      next if agent_aor.blank?
+
+      {
+        user_id: attrs[:user_id],
+        telephony_sip_profile_id: attrs[:id],
+        internal_extension: attrs[:internal_extension],
+        sip_username: attrs[:sip_username],
+        agent_aor: agent_aor,
+        availability_mode: attrs[:availability_mode]
+      }.compact
+    end
+  end
+
+  def provider_managed_agent_aor(attrs, state)
+    return attrs[:agent_aor] if attrs[:agent_aor].present?
+
+    extension = attrs[:internal_extension].presence || attrs[:sip_username].presence
+    host = attrs[:sip_host].presence || state.dig(:connection, :host)
+    return if extension.blank? || host.blank?
+
+    "sip:#{extension}@#{host}"
   end
 
   def ownership_metadata(state)

@@ -101,6 +101,58 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('agent_aor')
   end
 
+  it 'routes provider-managed Sipuni SIP profiles without browser registration' do
+    agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: voice_inbox, user: agent)
+    number_binding.update!(
+      number_ref: 'sipuni-internal-asterisk-provider-managed',
+      metadata: { provider_kind: 'sipuni', source: 'sipuni_internal_asterisk_gateway' }
+    )
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: agent,
+      availability_mode: 'external_extension',
+      status: 'active',
+      internal_extension: '501',
+      agent_ref: 'profile-sipuni-provider-501',
+      fonoster_agent_ref: 'fonoster-profile-sipuni-provider-501',
+      agent_aor: 'sip:501@ats01.kz.sipuni.com'
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      settings: { 'operator_distribution_mode' => Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST },
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-sipuni-provider-extension',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****5001'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'agent_aor' => 'sip:501@ats01.kz.sipuni.com',
+      'reason' => 'operator_route',
+      'number_ref' => number_binding.number_ref
+    )
+    expect(response.parsed_body.dig('operator_candidates', 0)).to include(
+      'source' => 'sip_profile',
+      'internal_extension' => '501',
+      'availability_mode' => 'external_extension'
+    )
+  end
+
   it 'resolves tel URL target numbers before routing inbound calls' do
     agent_binding = create(
       :telephony_agent_binding,

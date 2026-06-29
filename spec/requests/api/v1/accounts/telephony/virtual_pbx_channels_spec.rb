@@ -250,6 +250,36 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.fetch('errors')).to eq([])
   end
 
+  it 'defaults Sipuni employee SIP profiles to provider-managed extensions without browser-agent provisioning' do
+    payload = valid_create_payload.deep_dup.merge(
+      routing: { operator_distribution_mode: 'broadcast' },
+      profiles: [
+        {
+          user_id: agent.id,
+          internal_extension: '501',
+          sip_username: 'sipuni-manager-501',
+          sip_password: 'do-not-return-manager-secret',
+          enabled: true
+        }
+      ]
+    )
+
+    post base_path, params: payload.merge(include_diagnostics: true), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
+    expect(body.dig('diagnostics', 'payload', 'profiles').first).to include(
+      'internal_extension' => '501',
+      'user_id' => agent.id,
+      'availability_mode' => 'external_extension'
+    )
+    operation_codes = body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }
+    expect(operation_codes).to include('upsert_number', 'update_number_route')
+    expect(operation_codes).not_to include('upsert_agent', 'upsert_agent_credentials')
+    expect(body.to_json).not_to include('do-not-return-manager-secret')
+  end
+
   it 'accepts local-only create dry-run without shared provider password' do
     payload = valid_create_payload.deep_dup
     payload[:connection].delete(:username)
@@ -501,6 +531,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
               internal_extension: '207',
               sip_username: 'manager-207-login',
               sip_password: 'raw-profile-password',
+              availability_mode: 'browser_webphone',
               enabled: true
             }
           ]
@@ -709,7 +740,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(show_payload.to_json).not_to include('do-not-return-this-secret')
   end
 
-  it 'creates supplied Sipuni employee profiles as browser webphone agents during channel creation' do
+  it 'creates supplied Sipuni employee profiles as provider-managed extensions during channel creation' do
     post base_path,
          params: valid_create_payload.merge(
            dry_run: false,
@@ -736,9 +767,9 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(profile).to have_attributes(
       internal_extension: '207',
       sip_username: 'manager-207-login',
-      sip_host: 'operator.cloud.vconsult.kz',
-      agent_aor: 'sip:207@operator.cloud.vconsult.kz',
-      availability_mode: 'browser_webphone'
+      sip_host: 'ats01.kz.sipuni.com',
+      agent_aor: 'sip:207@ats01.kz.sipuni.com',
+      availability_mode: 'external_extension'
     )
     expect(response.parsed_body.to_json).not_to include('do-not-return-this-profile-secret')
   end
@@ -1064,6 +1095,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
                internal_extension: '504',
                sip_username: '056124100014',
                sip_password: 'do-not-return-this-profile-secret',
+               availability_mode: 'browser_webphone',
                enabled: true
              }
            ],
@@ -1098,6 +1130,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
               internal_extension: '505',
               sip_username: '056124100015',
               sip_password: 'do-not-return-second-profile-secret',
+              availability_mode: 'browser_webphone',
               enabled: true
             }
           ]

@@ -165,6 +165,40 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['calling_supported']).to be(false)
   end
 
+  it 'returns an unsupported payload for provider-managed Sipuni extensions' do
+    sipuni_channel = create(
+      :channel_voice,
+      :fonoster,
+      account: account,
+      phone_number: '+15550129999',
+      provider_config: { provider_kind: 'sipuni', number_ref: 'sipuni-number-ref' }
+    )
+    sipuni_inbox = sipuni_channel.inbox
+    create(:inbox_member, inbox: sipuni_inbox, user: administrator)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: sipuni_inbox,
+      user: administrator,
+      internal_extension: '501',
+      availability_mode: 'external_extension',
+      status: 'active',
+      agent_aor: 'sip:501@ats01.kz.sipuni.com'
+    )
+
+    post path,
+         params: { inbox_id: sipuni_inbox.id },
+         headers: headers,
+         as: :json
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['reason']).to eq('provider_managed_external_extension')
+    expect(payload['browser_join_supported']).to be(false)
+    expect(payload['calling_supported']).to be(false)
+    expect(payload['registered_for_routing']).to be(true)
+  end
+
   it 'uses the latest browser SIP profile for no-inbox auto webphone bootstrap' do
     older_voice_channel = create(
       :channel_voice,

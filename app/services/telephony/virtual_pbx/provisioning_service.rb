@@ -820,9 +820,7 @@ class Telephony::VirtualPbx::ProvisioningService
     profile.merge(availability_mode: default_profile_availability_mode(payload[:provider_kind]))
   end
 
-  def default_profile_availability_mode(provider_kind)
-    return 'browser_webphone' if provider_kind.to_s == 'sipuni'
-
+  def default_profile_availability_mode(_provider_kind)
     'external_extension'
   end
 

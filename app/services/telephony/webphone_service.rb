@@ -1,7 +1,7 @@
 require 'base64'
 
 class Telephony::WebphoneService
-  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog].freeze
+  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
 
   def initialize(account:, bridge_client: nil)

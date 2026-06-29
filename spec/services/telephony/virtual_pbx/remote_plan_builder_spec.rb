@@ -556,6 +556,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     }
 
     plan = described_class.new(account: account).build(operation: 'update', desired_state: desired_state)
+    route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
 
     expect(plan.fetch(:operations).map { |operation| operation[:key] }).to include(
       'upsert_number', 'update_number_route'
@@ -564,6 +565,18 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
       'upsert_sipuni_gateway',
       'upsert_agent_credentials',
       'upsert_agent'
+    )
+    expect(route_operation.dig(:payload, :metadata, :extension_mode)).to eq('provider_managed')
+    expect(route_operation.dig(:payload, :metadata, :media_anchor)).to eq('onelink')
+    expect(route_operation.dig(:payload, :metadata, :routing_controller)).to eq('onelink_media_bridge')
+    expect(route_operation.dig(:payload, :metadata, :provider_managed_operator_targets)).to contain_exactly(
+      include(
+        user_id: admin.id,
+        internal_extension: '504',
+        sip_username: '015856100014',
+        agent_aor: 'sip:504@ats01.kz.sipuni.com',
+        availability_mode: 'external_extension'
+      )
     )
     expect(plan.to_json).not_to include('do-not-store-this-password')
   end
