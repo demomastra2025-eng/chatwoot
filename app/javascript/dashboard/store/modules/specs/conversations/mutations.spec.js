@@ -994,6 +994,57 @@ describe('#mutations', () => {
       ]);
     });
 
+    it('replaces a stale pending communication thread message when fetched server message has no echo_id', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 321,
+            is_communication_thread: true,
+            messages: [
+              {
+                id: 'temp-local-id',
+                echo_id: 'temp-local-id',
+                status: 'progress',
+                message_type: 1,
+                conversation_id: 22,
+                content: 'Здравствуйте',
+                created_at: 100,
+              },
+            ],
+            channels: [],
+          },
+        ],
+      };
+
+      mutations[types.SET_PREVIOUS_CONVERSATIONS](state, {
+        id: 321,
+        conversationType: 'communication_thread',
+        data: [
+          {
+            id: 393095,
+            status: 'delivered',
+            message_type: 1,
+            conversation_id: 22,
+            content: 'Здравствуйте',
+            created_at: 104,
+            source_id: 'wamid.example',
+          },
+        ],
+      });
+
+      expect(state.allConversations[0].messages).toEqual([
+        {
+          id: 393095,
+          status: 'delivered',
+          message_type: 1,
+          conversation_id: 22,
+          content: 'Здравствуйте',
+          created_at: 104,
+          source_id: 'wamid.example',
+        },
+      ]);
+    });
+
     it('updates the typed communication thread when a same-id conversation is present first', () => {
       const conversation = { id: 3, messages: [{ id: 'conversation-old' }] };
       const thread = {

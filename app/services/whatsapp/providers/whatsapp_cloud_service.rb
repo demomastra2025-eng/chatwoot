@@ -71,8 +71,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     templates = fetch_templates
     return false if templates.nil?
 
-    cache_attributes = { message_templates: templates, message_templates_last_updated: Time.current.utc }
-    whatsapp_channel.update_columns(cache_attributes) # rubocop:disable Rails/SkipsModelValidations
+    whatsapp_channel.update_message_templates_cache!(templates)
   end
 
   def fetch_templates = fetch_whatsapp_templates("#{business_account_path}/message_templates")

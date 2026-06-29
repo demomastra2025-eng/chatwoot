@@ -163,8 +163,7 @@ class Whatsapp::TemplateManagementService
   end
 
   def update_local_cache!(templates)
-    cache_attributes = { message_templates: templates, message_templates_last_updated: Time.current.utc }
-    whatsapp_channel.update_columns(cache_attributes) # rubocop:disable Rails/SkipsModelValidations
+    whatsapp_channel.update_message_templates_cache!(templates)
   end
 
   def enqueue_sync = Channels::Whatsapp::TemplatesSyncJob.perform_later(whatsapp_channel)

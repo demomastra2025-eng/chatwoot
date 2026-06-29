@@ -72,6 +72,20 @@ class Channel::Whatsapp < ApplicationRecord
     # rubocop:enable Rails/SkipsModelValidations
   end
 
+  def update_message_templates_cache!(templates)
+    # Provider template sync already validated the upstream payload. Avoid running
+    # provider validations again, but still invalidate the inbox cache observed by
+    # active browser sessions.
+    # rubocop:disable Rails/SkipsModelValidations
+    updated = update_columns(
+      message_templates: templates,
+      message_templates_last_updated: Time.current.utc
+    )
+    # rubocop:enable Rails/SkipsModelValidations
+    inbox&.update_account_cache if updated
+    updated
+  end
+
   delegate :send_message, to: :provider_service
   delegate :send_template, to: :provider_service
   delegate :sync_templates, to: :provider_service

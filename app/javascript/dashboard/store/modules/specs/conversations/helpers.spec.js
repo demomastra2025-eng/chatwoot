@@ -56,6 +56,84 @@ describe('#findPendingMessageIndex', () => {
     const message = { echo_id: 2 };
     expect(findPendingMessageIndex(chat, message)).toEqual(-1);
   });
+
+  it('matches a stale outgoing pending message to an accepted server message without echo_id', () => {
+    const chat = {
+      messages: [
+        {
+          id: 'temp-1',
+          status: 'progress',
+          message_type: 1,
+          conversation_id: 22,
+          content: 'Здравствуйте',
+          created_at: 100,
+        },
+      ],
+    };
+    const message = {
+      id: 393095,
+      status: 'delivered',
+      message_type: 1,
+      conversation_id: 22,
+      content: 'Здравствуйте',
+      created_at: 104,
+      source_id: 'wamid.example',
+    };
+
+    expect(findPendingMessageIndex(chat, message)).toEqual(0);
+  });
+
+  it('does not match a stale pending message when content differs', () => {
+    const chat = {
+      messages: [
+        {
+          id: 'temp-1',
+          status: 'progress',
+          message_type: 1,
+          conversation_id: 22,
+          content: 'Первое сообщение',
+          created_at: 100,
+        },
+      ],
+    };
+    const message = {
+      id: 393095,
+      status: 'delivered',
+      message_type: 1,
+      conversation_id: 22,
+      content: 'Другое сообщение',
+      created_at: 104,
+      source_id: 'wamid.example',
+    };
+
+    expect(findPendingMessageIndex(chat, message)).toEqual(-1);
+  });
+
+  it('does not match a stale pending message from another child conversation', () => {
+    const chat = {
+      messages: [
+        {
+          id: 'temp-1',
+          status: 'progress',
+          message_type: 1,
+          conversation_id: 22,
+          content: 'Здравствуйте',
+          created_at: 100,
+        },
+      ],
+    };
+    const message = {
+      id: 393095,
+      status: 'delivered',
+      message_type: 1,
+      conversation_id: 23,
+      content: 'Здравствуйте',
+      created_at: 104,
+      source_id: 'wamid.example',
+    };
+
+    expect(findPendingMessageIndex(chat, message)).toEqual(-1);
+  });
 });
 
 describe('#applyPageFilters', () => {

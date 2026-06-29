@@ -1,13 +1,85 @@
 import {
   CONVERSATION_PRIORITY_ORDER,
+  MESSAGE_STATUS,
   MESSAGE_TYPE,
 } from 'shared/constants/messages';
 
+const PENDING_MESSAGE_MATCH_WINDOW_SECONDS = 5 * 60;
+const ACCEPTED_OUTGOING_STATUSES = new Set([
+  MESSAGE_STATUS.SENT,
+  MESSAGE_STATUS.DELIVERED,
+  MESSAGE_STATUS.READ,
+]);
+
+const hasAttachments = message =>
+  Array.isArray(message?.attachments) && message.attachments.length > 0;
+
+const timestampInSeconds = value => {
+  if (value === undefined || value === null || value === '') return null;
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) {
+    return numericValue > 100000000000
+      ? Math.floor(numericValue / 1000)
+      : numericValue;
+  }
+
+  const parsedValue = Date.parse(value);
+  return Number.isNaN(parsedValue) ? null : Math.floor(parsedValue / 1000);
+};
+
+const timestampsAreClose = (leftMessage, rightMessage) => {
+  const leftTimestamp = timestampInSeconds(leftMessage?.created_at);
+  const rightTimestamp = timestampInSeconds(rightMessage?.created_at);
+  if (leftTimestamp === null || rightTimestamp === null) return false;
+
+  return (
+    Math.abs(leftTimestamp - rightTimestamp) <=
+    PENDING_MESSAGE_MATCH_WINDOW_SECONDS
+  );
+};
+
+const sameConversation = (leftMessage, rightMessage) => {
+  if (!leftMessage?.conversation_id || !rightMessage?.conversation_id) {
+    return false;
+  }
+
+  return (
+    String(leftMessage.conversation_id) === String(rightMessage.conversation_id)
+  );
+};
+
+const normalizedContent = message => String(message?.content || '').trim();
+
+const sameNonEmptyContent = (leftMessage, rightMessage) => {
+  const leftContent = normalizedContent(leftMessage);
+  if (!leftContent) return false;
+
+  return leftContent === normalizedContent(rightMessage);
+};
+
+const isOutgoingTextMessage = message =>
+  message?.message_type === MESSAGE_TYPE.OUTGOING && !hasAttachments(message);
+
+export const isStalePendingMessageMatch = (pendingMessage, serverMessage) => {
+  if (pendingMessage?.status !== MESSAGE_STATUS.PROGRESS) return false;
+  if (!ACCEPTED_OUTGOING_STATUSES.has(serverMessage?.status)) return false;
+  if (!isOutgoingTextMessage(pendingMessage)) return false;
+  if (!isOutgoingTextMessage(serverMessage)) return false;
+  if (!sameConversation(pendingMessage, serverMessage)) return false;
+  if (!sameNonEmptyContent(pendingMessage, serverMessage)) return false;
+
+  return timestampsAreClose(pendingMessage, serverMessage);
+};
+
 export const findPendingMessageIndex = (chat, message) => {
   const { echo_id: tempMessageId } = message;
-  return chat.messages.findIndex(
+  const identityIndex = chat.messages.findIndex(
     m => m.id === message.id || m.id === tempMessageId
   );
+  if (identityIndex !== -1) return identityIndex;
+
+  return chat.messages.findIndex(m => isStalePendingMessageMatch(m, message));
 };
 
 export const filterByStatus = (chatStatus, filterStatus) =>

@@ -1035,13 +1035,10 @@ describe('#addMentions', () => {
         },
       ],
       [
-        'SET_MISSING_MESSAGES',
+        types.SET_PREVIOUS_CONVERSATIONS,
         {
           id: 1,
-          data: [
-            { id: 1, content: 'Hello' },
-            { id: 2, content: 'Welcome' },
-          ],
+          data: [{ id: 2, content: 'Welcome' }],
         },
       ],
       [

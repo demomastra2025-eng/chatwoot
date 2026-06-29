@@ -189,9 +189,13 @@ export default {
       );
     },
     activeReplyChannel() {
-      return getCommunicationReplyChannel(
-        this.currentChat,
-        this.selectedReplyConversationId
+      return (
+        getCommunicationReplyChannel(
+          this.currentChat,
+          this.selectedReplyConversationId
+        ) ||
+        this.currentChat?.active_reply_channel ||
+        null
       );
     },
     selectedChannelCanReply() {
@@ -253,7 +257,9 @@ export default {
     },
     inboxId() {
       return this.isCommunicationThreadConversation
-        ? this.activeReplyChannel?.inbox_id
+        ? this.activeReplyChannel?.inbox_id ||
+            this.currentChat?.active_reply_channel_inbox_id ||
+            this.currentChat?.inbox_id
         : this.currentChat.inbox_id;
     },
     inbox() {

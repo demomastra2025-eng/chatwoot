@@ -147,6 +147,23 @@ RSpec.describe Channel::Whatsapp do
     end
   end
 
+  describe '#update_message_templates_cache!' do
+    let(:channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false) }
+
+    it 'updates templates and invalidates the inbox cache key' do
+      inbox = channel.inbox
+      allow(inbox).to receive(:update_account_cache)
+      allow(channel).to receive(:inbox).and_return(inbox)
+
+      result = channel.update_message_templates_cache!([{ 'name' => 'appointment_confirmation' }])
+
+      expect(result).to be(true)
+      expect(channel.reload.message_templates).to eq([{ 'name' => 'appointment_confirmation' }])
+      expect(channel.message_templates_last_updated).to be_present
+      expect(inbox).to have_received(:update_account_cache)
+    end
+  end
+
   describe '#record_provider_configuration_error!' do
     let(:channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false) }
 

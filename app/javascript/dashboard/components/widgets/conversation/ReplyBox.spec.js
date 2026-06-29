@@ -297,6 +297,39 @@ describe('ReplyBox', () => {
     expect(ReplyBox.computed.isEditorDisabled.call(context)).toBe(false);
   });
 
+  it('falls back to the cached active reply channel when thread channels are not hydrated yet', () => {
+    const activeReplyChannel = {
+      conversation_id: 22,
+      inbox_id: 154,
+      channel: 'Channel::Whatsapp',
+    };
+    const context = {
+      currentChat: {
+        is_communication_thread: true,
+        channels: [],
+        active_reply_channel: activeReplyChannel,
+      },
+      selectedReplyConversationId: null,
+    };
+
+    expect(ReplyBox.computed.activeReplyChannel.call(context)).toEqual(
+      activeReplyChannel
+    );
+  });
+
+  it('uses cached thread inbox id for templates when active reply channel is not available', () => {
+    expect(
+      ReplyBox.computed.inboxId.call({
+        isCommunicationThreadConversation: true,
+        activeReplyChannel: null,
+        currentChat: {
+          active_reply_channel_inbox_id: 154,
+          inbox_id: 155,
+        },
+      })
+    ).toBe(154);
+  });
+
   it('keeps reply mode when a selected communication-thread voice channel changes', () => {
     const context = {
       isOnPrivateNote: false,

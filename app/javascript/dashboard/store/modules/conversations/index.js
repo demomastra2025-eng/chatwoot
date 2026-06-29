@@ -1,7 +1,7 @@
 import types from '../../mutation-types';
 import getters, { getSelectedChatConversation } from './getters';
 import actions from './actions';
-import { findPendingMessageIndex } from './helpers';
+import { findPendingMessageIndex, isStalePendingMessageMatch } from './helpers';
 import { MESSAGE_STATUS, MESSAGE_TYPE } from 'shared/constants/messages';
 import wootConstants from 'dashboard/constants/globals';
 import { BUS_EVENTS } from '../../../../shared/constants/busEvents';
@@ -241,9 +241,19 @@ const mergeMessagesById = (existingMessages = [], incomingMessages = []) => {
       return;
     }
 
-    const existingIndex = messageLookupKeys(message)
+    const identityIndex = messageLookupKeys(message)
       .map(key => indexByIdentity.get(key))
       .find(index => index !== undefined);
+    const pendingIndex =
+      identityIndex === undefined
+        ? mergedMessages.findIndex(existingMessage =>
+            isStalePendingMessageMatch(existingMessage, message)
+          )
+        : -1;
+    const existingIndex =
+      identityIndex !== undefined || pendingIndex === -1
+        ? identityIndex
+        : pendingIndex;
 
     if (existingIndex === undefined) {
       registerMessageIdentity(indexByIdentity, message, mergedMessages.length);
@@ -251,10 +261,13 @@ const mergeMessagesById = (existingMessages = [], incomingMessages = []) => {
       return;
     }
 
-    mergedMessages[existingIndex] = {
-      ...mergedMessages[existingIndex],
-      ...message,
-    };
+    mergedMessages[existingIndex] =
+      pendingIndex === existingIndex && identityIndex === undefined
+        ? message
+        : {
+            ...mergedMessages[existingIndex],
+            ...message,
+          };
     registerMessageIdentity(
       indexByIdentity,
       mergedMessages[existingIndex],

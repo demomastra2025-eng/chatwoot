@@ -586,21 +586,17 @@ const actions = {
       if (selectedChat.is_communication_thread) {
         selectedChat.channels = meta.channels || selectedChat.channels || [];
       }
-      // Find the messages that are not already present in the store
+      // Merge fresh messages through the mutation path so local pending echoes
+      // are reconciled with server-delivered messages consistently.
       const missingMessages = payload.filter(
         message => !messages.find(item => item.id === message.id)
       );
-      selectedChat.messages.push(...missingMessages);
-      // Sort the messages by created_at
-      const sortedMessages = selectedChat.messages.sort((a, b) => {
-        return Number(a.created_at || 0) - Number(b.created_at || 0);
-      });
       commit(
-        types.SET_MISSING_MESSAGES,
+        types.SET_PREVIOUS_CONVERSATIONS,
         withConversationType(
           {
             id: conversationId,
-            data: sortedMessages,
+            data: missingMessages,
           },
           conversationType
         )
