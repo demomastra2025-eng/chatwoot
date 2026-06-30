@@ -156,6 +156,19 @@ describe Whatsapp::SendOnWhatsappService do
         expect(WebMock).not_to have_requested(:post, 'https://waba.360dialog.io/v1/messages')
       end
 
+      it 'marks blank session replies without attachments as failed before calling WhatsApp' do
+        create(:message, message_type: :incoming, content: 'test',
+                         conversation: conversation, account: conversation.account)
+        message = create(:message, message_type: :outgoing, content: '',
+                                   conversation: conversation, account: conversation.account)
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.status).to eq('failed')
+        expect(message.external_error).to eq(described_class::BLANK_SESSION_MESSAGE_ERROR)
+        expect(WebMock).not_to have_requested(:post, 'https://waba.360dialog.io/v1/messages')
+      end
+
       it 'marks message as failed when template name is blank' do
         processor = instance_double(Whatsapp::TemplateProcessorService)
         allow(Whatsapp::TemplateProcessorService).to receive(:new).and_return(processor)

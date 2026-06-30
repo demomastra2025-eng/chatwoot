@@ -85,6 +85,52 @@ describe('ReplyBox', () => {
     ).toBe(false);
   });
 
+  it('keeps recorded-audio send disabled until the audio is attached', () => {
+    expect(
+      ReplyBox.computed.isReplyButtonDisabled.call({
+        isCommunicationCallReplyAction: false,
+        isEditorDisabled: false,
+        isATwitterInbox: false,
+        hasAttachments: false,
+        hasRecordedAudio: true,
+        isMessageEmpty: true,
+        isEditingMessageUnchanged: false,
+        message: '',
+        maxLength: 1000,
+      })
+    ).toBe(true);
+
+    expect(
+      ReplyBox.computed.isReplyButtonDisabled.call({
+        isCommunicationCallReplyAction: false,
+        isEditorDisabled: false,
+        isATwitterInbox: false,
+        hasAttachments: 1,
+        hasRecordedAudio: true,
+        isMessageEmpty: true,
+        isEditingMessageUnchanged: false,
+        message: '',
+        maxLength: 1000,
+      })
+    ).toBe(false);
+  });
+
+  it('does not build an empty WhatsApp text payload when there are no attachments', () => {
+    const context = {
+      attachedFiles: [],
+      isAnInstagramChannel: false,
+      isATiktokChannel: false,
+      message: '',
+      conversationId: 42,
+      sender: { name: 'Agent' },
+      setReplyToInPayload: payload => payload,
+    };
+
+    expect(
+      ReplyBox.methods.getMultipleMessagesPayload.call(context, '')
+    ).toEqual([]);
+  });
+
   it('keeps the text editor enabled for direct voice-channel conversations', () => {
     expect(
       ReplyBox.computed.isEditorDisabled.call({

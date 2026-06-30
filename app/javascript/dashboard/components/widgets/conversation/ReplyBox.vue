@@ -289,7 +289,7 @@ export default {
       if (this.isCommunicationCallReplyAction) return true;
       if (this.isEditorDisabled) return true;
       if (this.isATwitterInbox) return true;
-      if (this.hasAttachments || this.hasRecordedAudio) return false;
+      if (this.hasAttachments) return false;
 
       return (
         this.isMessageEmpty ||
@@ -1302,6 +1302,7 @@ export default {
     },
     getMultipleMessagesPayload(message) {
       const multipleMessagePayload = [];
+      const hasMessage = !!trimContent(message || '');
 
       if (this.attachedFiles && this.attachedFiles.length) {
         let caption =
@@ -1333,10 +1334,10 @@ export default {
       // For Instagram and TikTok, text must always be sent as a separate message (no captions on attachments).
       // For WhatsApp, we only need a text message if there are no attachments.
       if (
-        ((this.isAnInstagramChannel || this.isATiktokChannel) &&
-          this.message) ||
+        ((this.isAnInstagramChannel || this.isATiktokChannel) && hasMessage) ||
         (!(this.isAnInstagramChannel || this.isATiktokChannel) &&
-          hasNoAttachments)
+          hasNoAttachments &&
+          hasMessage)
       ) {
         let messagePayload = {
           conversationId: this.conversationId,

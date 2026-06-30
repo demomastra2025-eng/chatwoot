@@ -663,6 +663,26 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
+    it 'rejects an empty official WhatsApp public outbound without attachments or template params' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming')
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: '', conversation_id: conversation.display_id },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to include(Messages::MessageBuilder::BLANK_WHATSAPP_OUTBOUND_ERROR)
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
     it 'keeps reauthorization as a warning while sending through a linked child conversation', :aggregate_failures do
       stub_request(:post, /graph.facebook.com/)
       facebook_channel = create(:channel_facebook_page, account: account)

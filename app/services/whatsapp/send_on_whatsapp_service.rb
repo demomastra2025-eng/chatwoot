@@ -1,5 +1,6 @@
 class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
   MISSING_PHONE_RECIPIENT_ERROR = 'WhatsApp recipient phone number is missing; refusing to send to BSUID'.freeze
+  BLANK_SESSION_MESSAGE_ERROR = Messages::MessageBuilder::BLANK_WHATSAPP_OUTBOUND_ERROR
 
   private
 
@@ -39,6 +40,7 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
 
   def send_session_message
     return fail_missing_recipient! if recipient_source_id.blank?
+    return fail_blank_session_message! if blank_session_message?
 
     message_id = channel.send_message(recipient_source_id, message)
     message.update!(source_id: message_id) if message_id.present?
@@ -109,6 +111,15 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
 
   def transient_whatsapp_cloud_retry_scheduled?
     channel.provider == 'whatsapp_cloud' && Whatsapp::Providers::WhatsappCloudService.transient_send_retry_scheduled?(message.reload)
+  end
+
+  def blank_session_message?
+    message.outgoing_content.blank? && message.attachments.blank?
+  end
+
+  def fail_blank_session_message!
+    message.update!(status: :failed, external_error: BLANK_SESSION_MESSAGE_ERROR)
+    update_campaign_delivery(status: :failed, error_message: BLANK_SESSION_MESSAGE_ERROR)
   end
 
   def fail_missing_recipient!

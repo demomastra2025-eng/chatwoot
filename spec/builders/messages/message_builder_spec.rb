@@ -21,6 +21,38 @@ describe Messages::MessageBuilder do
       expect(message.content).to eq params[:content]
     end
 
+    context 'when official WhatsApp public outbound content is blank' do
+      let(:whatsapp_channel) { create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false) }
+      let(:inbox) { whatsapp_channel.inbox }
+      let(:conversation) { create(:conversation, inbox: inbox, account: account) }
+      let(:params) { ActionController::Parameters.new({ content: '' }) }
+
+      it 'raises before creating an empty message without attachments or template params' do
+        expect { message_builder }.to raise_error(ArgumentError, described_class::BLANK_WHATSAPP_OUTBOUND_ERROR)
+        expect(conversation.messages.outgoing).to be_empty
+      end
+
+      context 'when an attachment is present' do
+        before do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: 'incoming')
+        end
+
+        let(:params) do
+          ActionController::Parameters.new({
+                                             content: '',
+                                             attachments: [Rack::Test::UploadedFile.new('spec/assets/avatar.png', 'image/png')]
+                                           })
+        end
+
+        it 'allows attachment-only outbound messages' do
+          message = message_builder
+
+          expect(message.content).to eq('')
+          expect(message.attachments.first.file_type).to eq('image')
+        end
+      end
+    end
+
     context 'when campaign_id and template_params are both provided' do
       let(:params) do
         ActionController::Parameters.new({

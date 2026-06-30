@@ -3,6 +3,8 @@ class Messages::MessageBuilder
   include ::EmailHelper
   include ::DataHelper
 
+  BLANK_WHATSAPP_OUTBOUND_ERROR = 'WhatsApp message content, attachment, or template is required'.freeze
+
   attr_reader :message
 
   def initialize(user, conversation, params)
@@ -21,6 +23,7 @@ class Messages::MessageBuilder
   end
 
   def perform
+    validate_whatsapp_outbound_content!
     validate_delivery_policy!
     @message = @conversation.messages.build(message_params)
     @message.preserve_waiting_since = preserve_waiting_since?
@@ -116,6 +119,25 @@ class Messages::MessageBuilder
       attachments: @attachments,
       private_note: @private
     )
+  end
+
+  def validate_whatsapp_outbound_content!
+    return unless whatsapp_public_outgoing?
+    return if deliverable_content_present?
+
+    raise ArgumentError, BLANK_WHATSAPP_OUTBOUND_ERROR
+  end
+
+  def whatsapp_public_outgoing?
+    message_type == 'outgoing' && !@private && @conversation.inbox&.channel.is_a?(Channel::Whatsapp)
+  end
+
+  def deliverable_content_present?
+    @params[:content].present? || attachments_present? || template_params.present?
+  end
+
+  def attachments_present?
+    Array(@attachments).compact_blank.present?
   end
 
   def sender
