@@ -113,6 +113,59 @@ describe ActionCableListener do
       )
     end
 
+    it 'hydrates missing communication thread metadata before dashboard message payloads' do
+      account.enable_features!('communication_threads')
+      conversation.reload.communication_thread&.destroy!
+      conversation.association(:communication_thread_conversation).reset
+      conversation.association(:communication_thread).reset
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      communication_thread = conversation.reload.communication_thread
+      dashboard_payload = hash_including(
+        account_id: account.id,
+        id: message.id,
+        communication_thread_id: communication_thread.display_id,
+        conversation_id: conversation.display_id,
+        inbox_id: inbox.id,
+        channel: inbox.channel_type
+      )
+      customer_payload_without_thread = satisfy do |payload|
+        payload[:id] == message.id &&
+          payload[:account_id] == account.id &&
+          payload[:communication_thread_id].blank?
+      end
+      thread_payload = hash_including(
+        id: communication_thread.display_id,
+        communication_thread_id: communication_thread.display_id,
+        source_event: 'message.created',
+        message: hash_including(
+          id: message.id,
+          communication_thread_id: communication_thread.display_id,
+          conversation_id: conversation.display_id,
+          inbox_id: inbox.id,
+          channel: inbox.channel_type
+        )
+      )
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        'message.created',
+        dashboard_payload
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(conversation.contact_inbox.pubsub_token),
+        'message.created',
+        customer_payload_without_thread
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        thread_payload
+      )
+    end
+
     it 'broadcasts assignee and team in communication thread meta' do
       account.enable_features!('communication_threads')
       communication_thread = conversation.refresh_communication_thread!
@@ -187,6 +240,58 @@ describe ActionCableListener do
         anything
       )
       expect(communication_thread.communication_thread_conversations.count).to eq(2)
+    end
+  end
+
+  describe '#message_updated' do
+    let(:event_name) { :'message.updated' }
+    let!(:message) do
+      create(:message, message_type: 'incoming', account: account, inbox: inbox, conversation: conversation, sender: conversation.contact)
+    end
+    let!(:event) do
+      Events::Base.new(event_name, Time.zone.now, message: message, previous_changes: { content: %w[old new] })
+    end
+
+    it 'keeps communication thread metadata dashboard-only on message updates' do
+      account.enable_features!('communication_threads')
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_updated(event)
+
+      communication_thread = conversation.reload.communication_thread
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        'message.updated',
+        hash_including(
+          id: message.id,
+          communication_thread_id: communication_thread.display_id,
+          previous_changes: { content: %w[old new] }
+        )
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(conversation.contact_inbox.pubsub_token),
+        'message.updated',
+        satisfy do |payload|
+          payload[:id] == message.id &&
+            payload[:previous_changes] == { content: %w[old new] } &&
+            payload[:communication_thread_id].blank? &&
+            payload[:inbox_name].blank? &&
+            payload[:channel].blank? &&
+            payload[:medium].blank? &&
+            payload[:contact_inbox_id].blank?
+        end
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(
+          source_event: 'message.updated',
+          message: hash_including(
+            id: message.id,
+            communication_thread_id: communication_thread.display_id
+          )
+        )
+      )
     end
   end
 

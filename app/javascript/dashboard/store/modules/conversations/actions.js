@@ -247,14 +247,26 @@ const hasFullCommunicationThreadPayload = payload => {
 };
 
 const buildCommunicationThreadRealtimePatch = payload => {
-  const threadId = payload.communication_thread_id || payload.id;
+  const threadPayload = { ...(payload || {}) };
+  delete threadPayload.message;
+  delete threadPayload.messages;
+
+  const threadId = threadPayload.communication_thread_id || threadPayload.id;
   return {
-    ...payload,
+    ...threadPayload,
     id: threadId,
     display_id: threadId,
     communication_thread_id: threadId,
     is_communication_thread: true,
   };
+};
+
+const communicationThreadRealtimeMessages = payload => {
+  const messages = [];
+  if (payload?.message) messages.push(payload.message);
+  if (Array.isArray(payload?.messages)) messages.push(...payload.messages);
+
+  return messages.filter(Boolean);
 };
 
 const commitCommunicationThreadUpdate = (
@@ -1014,6 +1026,12 @@ const actions = {
       payload,
       { realtime: true }
     );
+    communicationThreadRealtimeMessages(payload).forEach(message => {
+      commit(types.ADD_MESSAGE_TO_CHAT, {
+        chatId: communicationThread.id,
+        message,
+      });
+    });
     const sender = payload?.meta?.sender;
     if (sender?.id) {
       dispatch('contacts/setContact', sender);

@@ -166,6 +166,39 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#ADD_MESSAGE_TO_CHAT', () => {
+    it('does not duplicate the same realtime message when native and thread events both arrive', () => {
+      const message = {
+        id: 99,
+        conversation_id: 11,
+        communication_thread_id: 7,
+        inbox_id: 101,
+        message_type: 0,
+        created_at: 1710000001,
+      };
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11],
+            channels: [{ conversation_id: 11, inbox_id: 101 }],
+            messages: [],
+          },
+        ],
+        attachments: {},
+      };
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, { chatId: 7, message });
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, { chatId: 7, message });
+
+      expect(state.allConversations[0].messages).toHaveLength(1);
+      expect(state.allConversations[0].messages[0]).toEqual(message);
+    });
+  });
+
   describe('#DELETE_COMMUNICATION_THREAD_CONVERSATIONS', () => {
     it('removes only the selected child channels from a communication thread', () => {
       const state = {

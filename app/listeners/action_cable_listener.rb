@@ -42,6 +42,7 @@ class ActionCableListener < BaseListener
 
   def message_created(event)
     message, account = extract_message_and_account(event)
+    ensure_communication_thread_for_message_broadcast(message)
     conversation = message.conversation
     dashboard_tokens = user_tokens(account, conversation.inbox.members)
     customer_tokens = contact_tokens(conversation.contact_inbox, message)
@@ -53,6 +54,7 @@ class ActionCableListener < BaseListener
 
   def message_updated(event)
     message, account = extract_message_and_account(event)
+    ensure_communication_thread_for_message_broadcast(message)
     conversation = message.conversation
     dashboard_tokens = user_tokens(account, conversation.inbox.members)
     customer_tokens = contact_tokens(conversation.contact_inbox, message)
@@ -238,6 +240,31 @@ class ActionCableListener < BaseListener
     Rails.logger.warn("[CommunicationThreads] realtime refresh skipped conversation=#{conversation&.id}: #{e.class}: #{e.message}")
   end
 
+  def ensure_communication_thread_for_message_broadcast(message)
+    conversation = message_communication_thread_conversation(message)
+    return if conversation.blank?
+
+    communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
+    reset_communication_thread_associations(conversation) if communication_thread.present?
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
+    Rails.logger.warn("[CommunicationThreads] message payload refresh skipped message=#{message&.id}: #{e.class}: #{e.message}")
+  end
+
+  def message_communication_thread_conversation(message)
+    return if message.blank?
+
+    conversation = message.conversation
+    return if conversation.blank?
+    return unless conversation.account.feature_enabled?(COMMUNICATION_THREAD_FEATURE)
+
+    conversation
+  end
+
+  def reset_communication_thread_associations(conversation)
+    conversation.association(:communication_thread_conversation).reset
+    conversation.association(:communication_thread).reset
+  end
+
   def broadcast_communication_thread_dashboard_updates(account, communication_thread, links, source_conversation, source_event, message)
     communication_thread_dashboard_users(account, links).each do |user|
       visible_links = communication_thread_visible_links_for(account, user, links)
@@ -293,7 +320,15 @@ class ActionCableListener < BaseListener
       last_activity_at: communication_thread.last_activity_at.to_i,
       timestamp: communication_thread.last_activity_at.to_i,
       updated_at: communication_thread.updated_at.to_f
-    }
+    }.tap do |payload|
+      payload[:message] = communication_thread_message_payload(message, communication_thread) if message.present?
+    end
+  end
+
+  def communication_thread_message_payload(message, communication_thread)
+    message.push_event_data.merge(
+      communication_thread_id: communication_thread.display_id
+    )
   end
 
   def communication_thread_medium(inbox)

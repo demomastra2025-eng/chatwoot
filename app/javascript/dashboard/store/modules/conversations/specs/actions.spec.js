@@ -48,6 +48,46 @@ describe('conversation actions', () => {
         name: 'Customer',
       });
     });
+    it('commits realtime thread messages so aggregate windows do not depend only on child-channel message.created', () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      const message = {
+        id: 99,
+        conversation_id: 11,
+        communication_thread_id: 7,
+        inbox_id: 101,
+        inbox_name: 'WhatsApp',
+        channel: 'Channel::Whatsapp',
+        message_type: 0,
+        created_at: 1710000001,
+      };
+      const payload = {
+        id: 7,
+        communication_thread_id: 7,
+        is_communication_thread: true,
+        source_event: 'message.created',
+        meta: { sender: { id: 42, name: 'Customer' } },
+        channels: [{ conversation_id: 11, inbox_id: 101 }],
+        message,
+        updated_at: 1710000001.25,
+      };
+
+      actions.updateCommunicationThreadRealtime({ commit, dispatch }, payload);
+
+      expect(commit).toHaveBeenCalledWith(
+        types.UPDATE_CONVERSATION,
+        expect.objectContaining({ id: 7, is_communication_thread: true })
+      );
+      const [, threadPatch] = commit.mock.calls.find(
+        ([type]) => type === types.UPDATE_CONVERSATION
+      );
+      expect(threadPatch).not.toHaveProperty('message');
+      expect(threadPatch).not.toHaveProperty('messages');
+      expect(commit).toHaveBeenCalledWith(types.ADD_MESSAGE_TO_CHAT, {
+        chatId: 7,
+        message,
+      });
+    });
   });
 
   describe('#markCommunicationThreadRead', () => {
