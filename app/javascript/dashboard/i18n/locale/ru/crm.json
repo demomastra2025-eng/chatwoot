@@ -170,6 +170,17 @@
       "NEW_DEAL": "Новая сделка",
       "SIDEBAR_DESCRIPTION": "Откройте любую сделку контакта и редактируйте её прямо в диалоге.",
       "SIDEBAR_TITLE": "Сделки",
+      "META_AD_REFERRAL": {
+        "AD_ID": "ID рекламы",
+        "CTWA_CLID": "CTWA клик",
+        "PROVIDER_FACEBOOK": "Messenger",
+        "PROVIDER_INSTAGRAM": "Instagram",
+        "PROVIDER_META": "Meta Ads",
+        "PROVIDER_WHATSAPP": "WhatsApp",
+        "SOURCE_ID": "ID источника",
+        "SOURCE_URL": "URL источника",
+        "TITLE": "Источник Meta Ads"
+      },
       "PREFILL": {
         "COMMUNICATION_THREAD_GENERIC": "Сделка из ветки коммуникаций #{threadId}",
         "CONVERSATION_GENERIC": "Сделка из диалога #{conversationId}",

@@ -32,6 +32,59 @@ describe Messages::Facebook::MessageBuilder do
       expect(message.content).to eq('facebook message')
     end
 
+    it 'persists Meta ads referral for Facebook messages' do
+      allow(Koala::Facebook::API).to receive(:new).and_return(fb_object)
+      allow(fb_object).to receive(:get_object).and_return(
+        {
+          first_name: 'Jane',
+          last_name: 'Dae',
+          account_id: facebook_channel.inbox.account_id,
+          profile_pic: 'https://chatwoot-assets.local/sample.png'
+        }.with_indifferent_access
+      )
+      referral_message = {
+        messaging: {
+          sender: { id: '3383290475046708' },
+          recipient: { id: facebook_channel.page_id },
+          timestamp: 1_772_452_164_516,
+          message: {
+            mid: 'm_fb_referral_1',
+            text: 'facebook message',
+            referral: {
+              ad_id: 'fb-ad-1',
+              source: 'ADS',
+              type: 'OPEN_THREAD',
+              ads_context_data: {
+                ad_title: 'Facebook launch ad',
+                photo_url: 'https://fbcdn.example/fb-ad.jpg',
+                post_id: 'fb-post-1'
+              }
+            }
+          }
+        }
+      }.to_json
+      parser = Integrations::Facebook::MessageParser.new(referral_message)
+
+      described_class.new(parser, facebook_channel.inbox).perform
+
+      message = facebook_channel.inbox.messages.find_by!(source_id: 'm_fb_referral_1')
+      referral = MetaAdReferral.find_by!(message: message)
+
+      expect(message.content_attributes['meta_referral']).to include(
+        'provider' => 'facebook',
+        'attribution_type' => 'click_to_messenger_ad',
+        'ad_id' => 'fb-ad-1',
+        'headline' => 'Facebook launch ad'
+      )
+      expect(referral).to have_attributes(
+        provider: 'facebook',
+        provider_message_id: 'm_fb_referral_1',
+        ad_id: 'fb-ad-1',
+        headline: 'Facebook launch ad'
+      )
+      expect(message.conversation.additional_attributes.dig('meta_ad_referral', 'ad_id')).to eq('fb-ad-1')
+    end
+
     it 'keeps the inbound message when profile lookup requires reauthorization' do
       allow(Koala::Facebook::API).to receive(:new).and_return(fb_object)
       allow(fb_object).to receive(:get_object).and_raise(Koala::Facebook::AuthenticationError.new(500, 'Error validating access token'))

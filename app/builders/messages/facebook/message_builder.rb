@@ -47,6 +47,8 @@ class Messages::Facebook::MessageBuilder < Messages::Messenger::MessageBuilder
     @attachments.each do |attachment|
       process_attachment(attachment)
     end
+
+    record_meta_ad_referral
   end
 
   def conversation
@@ -102,9 +104,7 @@ class Messages::Facebook::MessageBuilder < Messages::Messenger::MessageBuilder
   end
 
   def message_params
-    content_attributes = {
-      in_reply_to_external_id: response.in_reply_to_external_id
-    }
+    content_attributes = message_content_attributes
     content_attributes[:external_echo] = true if @outgoing_echo
 
     {
@@ -117,6 +117,23 @@ class Messages::Facebook::MessageBuilder < Messages::Messenger::MessageBuilder
       content_attributes: content_attributes,
       sender: @outgoing_echo ? nil : @contact_inbox.contact
     }
+  end
+
+  def message_content_attributes
+    attributes = { in_reply_to_external_id: response.in_reply_to_external_id }
+    raw_messaging = response.respond_to?(:raw_messaging) ? response.raw_messaging : nil
+    meta_referral = Meta::AdReferralNormalizer.from_messenger_payload(raw_messaging, provider: 'facebook')
+    attributes[:meta_referral] = meta_referral if meta_referral.present?
+    attributes
+  end
+
+  def record_meta_ad_referral
+    meta_referral = @message&.content_attributes.to_h.with_indifferent_access[:meta_referral]
+    return if meta_referral.blank?
+
+    Meta::AdReferralRecorder.new(message: @message, payload: meta_referral).perform
+  rescue StandardError => e
+    Rails.logger.warn("[MetaAdReferral] Facebook referral persistence failed: #{e.class}: #{e.message}")
   end
 
   def process_contact_params_result(result)

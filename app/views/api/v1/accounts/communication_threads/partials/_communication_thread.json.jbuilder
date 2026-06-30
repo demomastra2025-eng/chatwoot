@@ -16,12 +16,17 @@ thread_assignee_last_seen_at =
 thread_pinned = linked_conversations.any? do |conversation|
   ActiveModel::Type::Boolean.new.cast(conversation.custom_attributes&.dig('pinned'))
 end
+meta_ad_referral = (@meta_ad_referrals_by_communication_thread_id || {})[communication_thread.id]
 
 json.meta do
   json.sender do
-    json.partial! 'api/v1/models/contact', formats: [:json], resource: communication_thread.contact
+    json.partial! 'api/v1/models/contact',
+                  formats: [:json],
+                  resource: communication_thread.contact,
+                  excluded_additional_attribute_keys: ['last_meta_ad_referral']
   end
   json.channel 'CommunicationThread'
+  json.meta_ad_referral meta_ad_referral.summary if meta_ad_referral.present?
   if communication_thread.assignee.present?
     json.assignee do
       json.partial! 'api/v1/models/agent', formats: [:json], resource: communication_thread.assignee

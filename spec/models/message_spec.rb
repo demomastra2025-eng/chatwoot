@@ -16,6 +16,10 @@ RSpec.describe Message do
     it { is_expected.to validate_presence_of(:account_id) }
   end
 
+  describe 'associations' do
+    it { is_expected.to have_one(:meta_ad_referral).dependent(:nullify) }
+  end
+
   describe 'length validations' do
     let!(:message) { create(:message) }
 

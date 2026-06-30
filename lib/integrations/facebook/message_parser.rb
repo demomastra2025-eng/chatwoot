@@ -67,6 +67,10 @@ class Integrations::Facebook::MessageParser
   def in_reply_to_external_id
     @messaging.dig('message', 'reply_to', 'mid')
   end
+
+  def raw_messaging
+    @messaging
+  end
 end
 
 # Sample Response

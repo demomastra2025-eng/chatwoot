@@ -4,6 +4,7 @@ import {
   buildCrmDealLookupParams,
   buildCrmDealSourceContext,
   mergeUniqueCrmDeals,
+  resolveMetaAdReferral,
   selectBestCrmDealForContext,
   sortCrmDealsForContext,
 } from './crmConversationDealContext';
@@ -54,6 +55,50 @@ describe('crmConversationDealContext', () => {
     expect(
       buildCrmDealLookupParams(buildCrmDealSourceContext({ id: 9 }))
     ).toEqual({ originating_conversation_id: 9 });
+  });
+
+  it('carries Meta ads referral context from conversation additional attributes', () => {
+    const chat = {
+      id: 11963,
+      display_id: 185,
+      additional_attributes: {
+        meta_ad_referral: {
+          provider: 'whatsapp',
+          ctwa_clid: 'ARaD-ctwa-click-id-123',
+          headline: 'Premium consultation',
+        },
+      },
+      meta: { sender: { id: 77, name: 'Aruzhan' } },
+    };
+
+    expect(resolveMetaAdReferral(chat)).toMatchObject({
+      provider: 'whatsapp',
+      ctwa_clid: 'ARaD-ctwa-click-id-123',
+    });
+    expect(buildCrmDealSourceContext(chat).metaAdReferral).toMatchObject({
+      headline: 'Premium consultation',
+    });
+  });
+
+  it('carries Meta ads referral context from communication-thread meta payload', () => {
+    const chat = {
+      id: 41,
+      is_communication_thread: true,
+      meta: {
+        sender: { id: 77, name: 'Aruzhan' },
+        meta_ad_referral: {
+          provider: 'facebook',
+          ad_id: 'fb-ad-1',
+          headline: 'Facebook launch ad',
+        },
+      },
+    };
+
+    expect(buildCrmDealSourceContext(chat).metaAdReferral).toMatchObject({
+      provider: 'facebook',
+      ad_id: 'fb-ad-1',
+      headline: 'Facebook launch ad',
+    });
   });
 
   it('selects the best deal by contact while preferring the current source and open deals', () => {

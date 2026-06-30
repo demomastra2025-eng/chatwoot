@@ -88,6 +88,53 @@ const forms = reactive({});
 const currentDealSourceContext = computed(() =>
   buildCrmDealSourceContext(props.currentChat)
 );
+const metaAdReferral = computed(
+  () => currentDealSourceContext.value.metaAdReferral || {}
+);
+const metaAdReferralValue = (camelKey, snakeKey = camelKey) =>
+  metaAdReferral.value?.[camelKey] || metaAdReferral.value?.[snakeKey] || '';
+const hasMetaAdReferral = computed(
+  () =>
+    !!(
+      metaAdReferralValue('ctwaClid', 'ctwa_clid') ||
+      metaAdReferralValue('adId', 'ad_id') ||
+      metaAdReferralValue('sourceId', 'source_id') ||
+      metaAdReferral.value?.headline
+    )
+);
+const metaAdReferralProviderLabel = computed(() => {
+  const provider = metaAdReferral.value?.provider;
+  if (provider === 'whatsapp') {
+    return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_WHATSAPP');
+  }
+  if (provider === 'instagram') {
+    return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_INSTAGRAM');
+  }
+  if (provider === 'facebook') {
+    return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_FACEBOOK');
+  }
+  return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_META');
+});
+const metaAdReferralRows = computed(() =>
+  [
+    {
+      label: t('CRM.DEALS.META_AD_REFERRAL.CTWA_CLID'),
+      value: metaAdReferralValue('ctwaClid', 'ctwa_clid'),
+    },
+    {
+      label: t('CRM.DEALS.META_AD_REFERRAL.AD_ID'),
+      value: metaAdReferralValue('adId', 'ad_id'),
+    },
+    {
+      label: t('CRM.DEALS.META_AD_REFERRAL.SOURCE_ID'),
+      value: metaAdReferralValue('sourceId', 'source_id'),
+    },
+    {
+      label: t('CRM.DEALS.META_AD_REFERRAL.SOURCE_URL'),
+      value: metaAdReferralValue('sourceUrl', 'source_url'),
+    },
+  ].filter(row => row.value)
+);
 const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
   return Number.isFinite(userId) && userId > 0 ? userId : '';
@@ -722,6 +769,43 @@ watch(dealFieldDefinitions, definitions => {
       </div>
 
       <div v-else class="border-t border-n-weak">
+        <div
+          v-if="hasMetaAdReferral"
+          class="m-3 rounded-lg border border-blue-500/30 bg-blue-50 p-3 text-xs text-blue-950 dark:bg-blue-950/30 dark:text-blue-100"
+          data-test-id="crm-meta-ad-referral"
+        >
+          <div class="mb-1 flex items-center gap-2 font-medium">
+            <span class="i-lucide-megaphone size-4" />
+            <span>{{ $t('CRM.DEALS.META_AD_REFERRAL.TITLE') }}</span>
+            <span
+              class="rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 dark:bg-blue-900 dark:text-blue-100"
+            >
+              {{ metaAdReferralProviderLabel }}
+            </span>
+          </div>
+          <div v-if="metaAdReferral.headline" class="font-medium">
+            {{ metaAdReferral.headline }}
+          </div>
+          <div
+            v-if="metaAdReferral.body"
+            class="mt-0.5 text-blue-800 dark:text-blue-200"
+          >
+            {{ metaAdReferral.body }}
+          </div>
+          <dl v-if="metaAdReferralRows.length" class="mt-2 grid gap-1">
+            <div
+              v-for="row in metaAdReferralRows"
+              :key="row.label"
+              class="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-2"
+            >
+              <dt class="text-blue-700 dark:text-blue-200">{{ row.label }}</dt>
+              <dd class="truncate font-mono text-[11px]" :title="row.value">
+                {{ row.value }}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
         <section
           v-for="item in accordionItems"
           :key="item.key"

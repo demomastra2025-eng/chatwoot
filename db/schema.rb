@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1698,6 +1698,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
     t.bigint "contact_id"
     t.bigint "contact_inbox_id"
     t.bigint "conversation_id"
+    t.bigint "crm_deal_id"
     t.string "source_kind", null: false
     t.string "status", default: "received", null: false
     t.string "external_ref"
@@ -1709,13 +1710,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
     t.datetime "processed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "lead_form_id", "external_ref"], name: "idx_on_account_id_lead_form_id_external_ref_9960822a16", unique: true, where: "(external_ref IS NOT NULL)"
-    t.index ["account_id", "lead_form_id", "idempotency_key"], name: "idx_on_account_id_lead_form_id_idempotency_key_8efec97c53", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "external_ref"], name: "index_lead_submissions_on_account_id_and_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
+    t.index ["account_id", "idempotency_key"], name: "index_lead_submissions_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "source_kind", "created_at"], name: "idx_on_account_id_source_kind_created_at_6919889fce"
     t.index ["account_id"], name: "index_lead_submissions_on_account_id"
     t.index ["contact_id"], name: "index_lead_submissions_on_contact_id"
     t.index ["contact_inbox_id"], name: "index_lead_submissions_on_contact_inbox_id"
     t.index ["conversation_id"], name: "index_lead_submissions_on_conversation_id"
+    t.index ["crm_deal_id"], name: "index_lead_submissions_on_crm_deal_id"
     t.index ["field_values"], name: "index_lead_submissions_on_field_values", using: :gin
     t.index ["inbox_id"], name: "index_lead_submissions_on_inbox_id"
     t.index ["lead_form_id"], name: "index_lead_submissions_on_lead_form_id"
@@ -1796,7 +1798,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
     t.index ["account_id", "created_at"], name: "index_llm_eval_runs_on_account_id_and_created_at"
     t.index ["account_id", "status"], name: "index_llm_eval_runs_on_account_id_and_status"
     t.index ["account_id"], name: "index_llm_eval_runs_on_account_id"
-    t.index ["account_id"], name: "index_llm_eval_runs_one_active_live_per_account", unique: true, where: "(((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))"
+    t.index ["account_id"], name: "index_llm_eval_runs_one_active_live_per_account", unique: true, where: "(((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))"
     t.index ["user_id"], name: "index_llm_eval_runs_on_user_id"
   end
 
@@ -2021,6 +2023,51 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
     t.index ["inbox_id"], name: "index_messages_on_inbox_id"
     t.index ["sender_type", "sender_id"], name: "index_messages_on_sender_type_and_sender_id"
     t.index ["source_id"], name: "index_messages_on_source_id"
+  end
+
+  create_table "meta_ad_referrals", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "contact_id"
+    t.bigint "conversation_id"
+    t.bigint "communication_thread_id"
+    t.bigint "message_id"
+    t.string "provider", null: false
+    t.string "provider_message_id", null: false
+    t.string "attribution_type"
+    t.string "source"
+    t.string "source_type"
+    t.string "source_id"
+    t.text "source_url"
+    t.string "ad_id"
+    t.string "ctwa_clid"
+    t.string "ref"
+    t.string "referral_type"
+    t.string "headline"
+    t.text "body"
+    t.string "media_type"
+    t.text "image_url"
+    t.text "video_url"
+    t.text "thumbnail_url"
+    t.string "post_id"
+    t.string "product_id"
+    t.string "flow_id"
+    t.jsonb "raw_referral", default: {}, null: false
+    t.datetime "received_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "ad_id"], name: "idx_meta_ad_referrals_account_ad", where: "(ad_id IS NOT NULL)"
+    t.index ["account_id", "communication_thread_id"], name: "idx_meta_ad_referrals_account_thread"
+    t.index ["account_id", "conversation_id"], name: "idx_meta_ad_referrals_account_conversation"
+    t.index ["account_id", "ctwa_clid"], name: "idx_meta_ad_referrals_account_ctwa", where: "(ctwa_clid IS NOT NULL)"
+    t.index ["account_id", "source_id"], name: "idx_meta_ad_referrals_account_source", where: "(source_id IS NOT NULL)"
+    t.index ["account_id"], name: "index_meta_ad_referrals_on_account_id"
+    t.index ["communication_thread_id"], name: "index_meta_ad_referrals_on_communication_thread_id"
+    t.index ["contact_id"], name: "index_meta_ad_referrals_on_contact_id"
+    t.index ["conversation_id"], name: "index_meta_ad_referrals_on_conversation_id"
+    t.index ["inbox_id"], name: "index_meta_ad_referrals_on_inbox_id"
+    t.index ["message_id"], name: "index_meta_ad_referrals_on_message_id"
+    t.index ["provider", "inbox_id", "provider_message_id"], name: "idx_meta_ad_referrals_provider_message", unique: true
   end
 
   create_table "notes", force: :cascade do |t|
@@ -3052,6 +3099,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
   add_foreign_key "lead_submissions", "contact_inboxes"
   add_foreign_key "lead_submissions", "contacts"
   add_foreign_key "lead_submissions", "conversations"
+  add_foreign_key "lead_submissions", "crm_deals"
   add_foreign_key "lead_submissions", "inboxes"
   add_foreign_key "lead_submissions", "lead_forms"
   add_foreign_key "llm_eval_runs", "accounts"
@@ -3060,6 +3108,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
   add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
+  add_foreign_key "meta_ad_referrals", "accounts", on_delete: :cascade
+  add_foreign_key "meta_ad_referrals", "communication_threads", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "contacts", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "conversations", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "inboxes", on_delete: :cascade
+  add_foreign_key "meta_ad_referrals", "messages", on_delete: :nullify
   add_foreign_key "reminder_groups", "accounts"
   add_foreign_key "reminder_groups", "captain_assistants", column: "assistant_id"
   add_foreign_key "reminder_groups", "users", column: "creator_id"

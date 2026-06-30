@@ -67,6 +67,58 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(thread_payload[:channels].pluck(:conversation_id)).to contain_exactly(first_conversation.display_id, second_conversation.display_id)
     end
 
+    it 'exposes the latest Meta ads referral for communication-thread CRM context' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread || conversation.refresh_communication_thread!
+      create(
+        :message,
+        account: account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        created_at: 10.minutes.ago
+      )
+      create(
+        :meta_ad_referral,
+        account: account,
+        inbox: conversation.inbox,
+        contact: conversation.contact,
+        conversation: conversation,
+        communication_thread: thread,
+        provider: 'whatsapp',
+        provider_message_id: 'older-referral',
+        ad_id: 'old-ad',
+        headline: 'Old ad',
+        received_at: 2.hours.ago
+      )
+      create(
+        :meta_ad_referral,
+        account: account,
+        inbox: conversation.inbox,
+        contact: conversation.contact,
+        conversation: conversation,
+        communication_thread: thread,
+        provider: 'whatsapp',
+        provider_message_id: 'newer-referral',
+        ad_id: 'new-ad',
+        headline: 'Newest Meta ad',
+        received_at: 1.hour.ago
+      )
+
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).find do |payload|
+        payload[:id] == thread.display_id
+      end
+      expect(thread_payload.dig(:meta, :meta_ad_referral)).to include(
+        provider: 'whatsapp',
+        ad_id: 'new-ad',
+        headline: 'Newest Meta ad',
+        communication_thread_id: thread.display_id
+      )
+    end
+
     it 'does not expose inaccessible channel links inside an accessible thread' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact)
@@ -79,6 +131,62 @@ RSpec.describe 'Communication Threads API', type: :request do
       thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
       expect(thread_payload[:channels].pluck(:conversation_id)).to eq([accessible_conversation.display_id])
       expect(thread_payload[:channels].pluck(:conversation_id)).not_to include(inaccessible_conversation.display_id)
+    end
+
+    it 'does not expose Meta ads referral metadata from inaccessible channel links' do
+      contact = create(:contact, :with_email, account: account)
+      accessible_conversation = create(:conversation, account: account, contact: contact)
+      inaccessible_conversation = create(:conversation, account: account, contact: contact)
+      create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      thread = accessible_conversation.reload.communication_thread
+      contact.update!(
+        additional_attributes: {
+          segment: 'vip',
+          last_meta_ad_referral: { ad_id: 'hidden-ad', headline: 'Hidden ad' }
+        }
+      )
+
+      create(
+        :meta_ad_referral,
+        account: account,
+        inbox: accessible_conversation.inbox,
+        contact: contact,
+        conversation: accessible_conversation,
+        communication_thread: thread,
+        provider: 'whatsapp',
+        provider_message_id: 'visible-referral',
+        ad_id: 'visible-ad',
+        headline: 'Visible ad',
+        received_at: 2.hours.ago
+      )
+      create(
+        :meta_ad_referral,
+        account: account,
+        inbox: inaccessible_conversation.inbox,
+        contact: contact,
+        conversation: inaccessible_conversation,
+        communication_thread: thread,
+        provider: 'whatsapp',
+        provider_message_id: 'hidden-referral',
+        ad_id: 'hidden-ad',
+        headline: 'Hidden ad',
+        received_at: 1.hour.ago
+      )
+
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
+      expect(thread_payload.dig(:meta, :meta_ad_referral)).to include(
+        ad_id: 'visible-ad',
+        headline: 'Visible ad'
+      )
+      expect(thread_payload.dig(:meta, :meta_ad_referral)).not_to include(
+        ad_id: 'hidden-ad',
+        headline: 'Hidden ad'
+      )
+      expect(thread_payload.dig(:meta, :sender, :additional_attributes)).to include(segment: 'vip')
+      expect(thread_payload.dig(:meta, :sender, :additional_attributes)).not_to have_key(:last_meta_ad_referral)
     end
 
     it 'does not sort accessible threads by messages from inaccessible channel links' do

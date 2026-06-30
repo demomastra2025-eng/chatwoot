@@ -170,6 +170,17 @@
       "NEW_DEAL": "New deal",
       "SIDEBAR_DESCRIPTION": "Open any contact deal and edit it inline without leaving the conversation.",
       "SIDEBAR_TITLE": "Deals",
+      "META_AD_REFERRAL": {
+        "AD_ID": "Ad ID",
+        "CTWA_CLID": "CTWA click",
+        "PROVIDER_FACEBOOK": "Messenger",
+        "PROVIDER_INSTAGRAM": "Instagram",
+        "PROVIDER_META": "Meta Ads",
+        "PROVIDER_WHATSAPP": "WhatsApp",
+        "SOURCE_ID": "Source ID",
+        "SOURCE_URL": "Source URL",
+        "TITLE": "Meta Ads source"
+      },
       "PREFILL": {
         "COMMUNICATION_THREAD_GENERIC": "Opportunity from communication thread #{threadId}",
         "CONVERSATION_GENERIC": "Opportunity from conversation #{conversationId}",

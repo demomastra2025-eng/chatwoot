@@ -12,6 +12,26 @@ const formatReferenceDisplayId = referenceId => {
   return referenceId ? `#${referenceId}` : '';
 };
 
+const resolveAdditionalAttributes = chat =>
+  chat?.additional_attributes ||
+  chat?.additionalAttributes ||
+  chat?.meta?.additional_attributes ||
+  chat?.meta?.additionalAttributes ||
+  {};
+
+export const resolveMetaAdReferral = chat => {
+  const additionalAttributes = resolveAdditionalAttributes(chat);
+  return (
+    additionalAttributes?.meta_ad_referral ||
+    additionalAttributes?.metaAdReferral ||
+    chat?.meta_ad_referral ||
+    chat?.metaAdReferral ||
+    chat?.meta?.meta_ad_referral ||
+    chat?.meta?.metaAdReferral ||
+    null
+  );
+};
+
 export const resolveChatContact = chat => {
   const sender = chat?.meta?.sender;
   if (sender?.id) return sender;
@@ -32,6 +52,7 @@ export const buildCrmDealSourceContext = chat => {
   return {
     contact,
     contactId,
+    metaAdReferral: resolveMetaAdReferral(chat),
     sourceType: communicationThread ? 'communication_thread' : 'conversation',
     originatingConversationDisplayId: communicationThread
       ? ''

@@ -71,6 +71,61 @@ const isAiVoiceTranscriptTurn = computed(
   () => contentAttributes.value?.data?.type === 'ai_voice_transcript_turn'
 );
 
+const metaReferral = computed(
+  () =>
+    contentAttributes.value?.metaReferral ||
+    contentAttributes.value?.meta_referral ||
+    {}
+);
+
+const hasMetaAdReferral = computed(() => {
+  const referral = metaReferral.value;
+  return !!(
+    referral?.ctwaClid ||
+    referral?.ctwa_clid ||
+    referral?.adId ||
+    referral?.ad_id ||
+    referral?.sourceId ||
+    referral?.source_id ||
+    referral?.headline
+  );
+});
+
+const metaAdReferralLabel = computed(() => {
+  const provider = metaReferral.value?.provider;
+  const prefix = t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_META');
+  if (provider === 'whatsapp') {
+    return `${prefix} → ${t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_WHATSAPP')}`;
+  }
+  if (provider === 'instagram') {
+    return `${prefix} → ${t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_INSTAGRAM')}`;
+  }
+  if (provider === 'facebook') {
+    return `${prefix} → ${t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_FACEBOOK')}`;
+  }
+  return prefix;
+});
+
+const metaAdReferralTitle = computed(() => {
+  const referral = metaReferral.value;
+  return [
+    referral.headline,
+    referral.body,
+    referral.ctwaClid || referral.ctwa_clid
+      ? `ctwa_clid: ${referral.ctwaClid || referral.ctwa_clid}`
+      : '',
+    referral.adId || referral.ad_id
+      ? `ad_id: ${referral.adId || referral.ad_id}`
+      : '',
+    referral.sourceId || referral.source_id
+      ? `source_id: ${referral.sourceId || referral.source_id}`
+      : '',
+    referral.sourceUrl || referral.source_url,
+  ]
+    .filter(Boolean)
+    .join('\n');
+});
+
 const showStatusIndicator = computed(() => {
   if (isPrivate.value) return false;
   if (isAiVoiceTranscriptTurn.value) return false;
@@ -206,6 +261,9 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
 
 <template>
   <div class="message-meta-root text-xs flex items-center gap-1.5">
+    <span v-if="hasMetaAdReferral" :title="metaAdReferralTitle">
+      <Label :label="metaAdReferralLabel" color="blue" compact />
+    </span>
     <Label
       v-if="isCampaignMessage"
       :label="t('CAMPAIGN.BADGE.BROADCAST')"

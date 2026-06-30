@@ -133,6 +133,32 @@ describe('MessageMeta', () => {
     expect(wrapper.text()).toContain('edited');
   });
 
+  it('shows Meta Ads attribution for Click-to-WhatsApp referral messages', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.SENT),
+      messageType: ref(MESSAGE_TYPES.INCOMING),
+      contentAttributes: ref({
+        metaReferral: {
+          provider: 'whatsapp',
+          headline: 'Premium consultation',
+          body: 'Book a visit today',
+          ctwaClid: 'ARaD-ctwa-click-id-123',
+          sourceId: '23877210000123456',
+          sourceUrl: 'https://fb.me/1AbCdEf',
+        },
+      }),
+      orientation: ref('left'),
+    });
+
+    const wrapper = mountComponent();
+    const metaAdsLabel = wrapper.findComponent({ name: 'Label' });
+
+    expect(metaAdsLabel.props('label')).toBe('Meta Ads → WhatsApp');
+    expect(
+      wrapper.find('[title*="ctwa_clid: ARaD-ctwa-click-id-123"]').exists()
+    ).toBe(true);
+  });
+
   it('shows a humanized subagent name when agentName is present', () => {
     useMessageContextMock.mockReturnValue({
       ...baseMessageContext(MESSAGE_STATUS.READ),

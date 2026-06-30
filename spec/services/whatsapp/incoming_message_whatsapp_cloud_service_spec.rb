@@ -205,6 +205,75 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       end
     end
 
+    context 'when Click-to-WhatsApp Ads referral is present' do
+      let(:ctwa_params) do
+        {
+          phone_number: whatsapp_channel.phone_number,
+          object: 'whatsapp_business_account',
+          entry: [{
+            changes: [{
+              value: {
+                contacts: [{ profile: { name: 'Meta Ads Lead' }, wa_id: '77010002030' }],
+                messages: [{
+                  from: '77010002030',
+                  id: 'wamid.CTWA_MESSAGE_ID',
+                  timestamp: '1770407829',
+                  text: { body: 'Interested in the offer' },
+                  type: 'text',
+                  referral: {
+                    source_url: 'https://fb.me/1AbCdEf',
+                    source_type: 'ad',
+                    source_id: '23877210000123456',
+                    headline: 'Premium consultation',
+                    body: 'Book a visit today',
+                    media_type: 'image',
+                    image_url: 'https://lookaside.fbsbx.com/image.jpg',
+                    thumbnail_url: 'https://lookaside.fbsbx.com/thumb.jpg',
+                    ctwa_clid: 'ARaD-ctwa-click-id-123'
+                  }
+                }]
+              }
+            }]
+          }]
+        }.with_indifferent_access
+      end
+
+      it 'persists the normalized referral on the message, conversation, and source table' do
+        described_class.new(inbox: whatsapp_channel.inbox, params: ctwa_params).perform
+
+        message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.CTWA_MESSAGE_ID')
+        referral_payload = message.content_attributes['meta_referral']
+        referral = MetaAdReferral.find_by!(message: message)
+
+        expect(referral_payload).to include(
+          'provider' => 'whatsapp',
+          'attribution_type' => 'click_to_whatsapp_ad',
+          'ctwa_clid' => 'ARaD-ctwa-click-id-123',
+          'source_id' => '23877210000123456',
+          'source_url' => 'https://fb.me/1AbCdEf',
+          'headline' => 'Premium consultation'
+        )
+        expect(referral).to have_attributes(
+          provider: 'whatsapp',
+          attribution_type: 'click_to_whatsapp_ad',
+          provider_message_id: 'wamid.CTWA_MESSAGE_ID',
+          ctwa_clid: 'ARaD-ctwa-click-id-123',
+          source_id: '23877210000123456',
+          ad_id: '23877210000123456'
+        )
+        expect(referral.raw_referral['ctwa_clid']).to eq('ARaD-ctwa-click-id-123')
+        expect(message.conversation.additional_attributes.dig('meta_ad_referral', 'ctwa_clid')).to eq('ARaD-ctwa-click-id-123')
+        expect(message.conversation.contact.additional_attributes).not_to have_key('last_meta_ad_referral')
+      end
+
+      it 'is idempotent for duplicate provider message ids' do
+        described_class.new(inbox: whatsapp_channel.inbox, params: ctwa_params).perform
+        described_class.new(inbox: whatsapp_channel.inbox, params: ctwa_params).perform
+
+        expect(MetaAdReferral.where(provider_message_id: 'wamid.CTWA_MESSAGE_ID').count).to eq(1)
+      end
+    end
+
     context 'when invalid params' do
       it 'will not throw error' do
         described_class.new(inbox: whatsapp_channel.inbox, params: { phone_number: whatsapp_channel.phone_number,

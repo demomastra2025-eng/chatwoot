@@ -33,6 +33,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @communication_threads_count = result[:count]
     preload_accessible_links(@communication_threads)
     preload_crm_deal_stages(@communication_threads)
+    preload_meta_ad_referrals(@communication_threads)
   end
 
   def meta
@@ -47,6 +48,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @communication_threads_count = result[:count]
     preload_accessible_links(@communication_threads)
     preload_crm_deal_stages(@communication_threads)
+    preload_meta_ad_referrals(@communication_threads)
     render :index
   rescue CustomExceptions::CustomFilter::InvalidAttribute,
          CustomExceptions::CustomFilter::InvalidOperator,
@@ -58,6 +60,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def show
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
+    preload_meta_ad_referrals([@communication_thread])
   end
 
   def update
@@ -70,6 +73,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
+    preload_meta_ad_referrals([@communication_thread])
     render :show
   end
 
@@ -141,6 +145,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
+    preload_meta_ad_referrals([@communication_thread])
     render :message
   end
 
@@ -153,6 +158,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
+    preload_meta_ad_referrals([@communication_thread])
     render :show
   end
 
@@ -163,6 +169,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
+    preload_meta_ad_referrals([@communication_thread])
     render :show
   end
 
@@ -387,6 +394,24 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def preload_crm_deal_stages(communication_threads)
     @crm_deal_stages_by_communication_thread_id =
       Crm::DealDialogStageContextBuilder.new(account: Current.account).for_communication_threads(communication_threads)
+  end
+
+  def preload_meta_ad_referrals(communication_threads)
+    thread_ids = communication_threads.map(&:id)
+    accessible_conversation_ids = (@accessible_links_by_thread_id || {}).values.flatten.map(&:conversation_id).compact
+    @meta_ad_referrals_by_communication_thread_id = if thread_ids.empty? || accessible_conversation_ids.empty?
+                                                      {}
+                                                    else
+                                                      MetaAdReferral
+                                                        .where(
+                                                          account_id: Current.account.id,
+                                                          communication_thread_id: thread_ids,
+                                                          conversation_id: accessible_conversation_ids
+                                                        )
+                                                        .select('DISTINCT ON (communication_thread_id) meta_ad_referrals.*')
+                                                        .reorder(Arel.sql('communication_thread_id, received_at DESC, id DESC'))
+                                                        .index_by(&:communication_thread_id)
+                                                    end
   end
 
   def preload_last_public_messages_by_thread

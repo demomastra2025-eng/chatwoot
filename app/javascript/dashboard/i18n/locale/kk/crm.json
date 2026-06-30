@@ -151,6 +151,17 @@
       "NEW_DEAL": "Жаңа мәміле",
       "SIDEBAR_DESCRIPTION": "Контакт мәмілесін ашып, оны диалогтан шықпай өңдеңіз.",
       "SIDEBAR_TITLE": "Мәмілелер",
+      "META_AD_REFERRAL": {
+        "AD_ID": "Жарнама ID",
+        "CTWA_CLID": "CTWA клик",
+        "PROVIDER_FACEBOOK": "Messenger",
+        "PROVIDER_INSTAGRAM": "Instagram",
+        "PROVIDER_META": "Meta Ads",
+        "PROVIDER_WHATSAPP": "WhatsApp",
+        "SOURCE_ID": "Дереккөз ID",
+        "SOURCE_URL": "Дереккөз URL",
+        "TITLE": "Meta Ads дереккөзі"
+      },
       "PREFILL": {
         "COMMUNICATION_THREAD_GENERIC": "Коммуникация тармағынан мәміле #{threadId}",
         "CONVERSATION_GENERIC": "Диалогтан мәміле #{conversationId}",

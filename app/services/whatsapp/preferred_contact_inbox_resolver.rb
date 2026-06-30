@@ -17,7 +17,6 @@ class Whatsapp::PreferredContactInboxResolver
     return if fallback_contact_inbox.blank?
     return unless fallback_contact_inbox.contact_id == contact.id
     return unless fallback_contact_inbox.inbox_id == inbox.id
-    return if Whatsapp::ContactIdentityResolver.phone_source_id(fallback_contact_inbox.source_id).blank?
 
     fallback_contact_inbox
   end

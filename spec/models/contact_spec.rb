@@ -22,6 +22,7 @@ RSpec.describe Contact do
     it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
     it { is_expected.to have_many(:communication_threads).dependent(:destroy) }
     it { is_expected.to have_many(:conversations).dependent(:destroy_async) }
+    it { is_expected.to have_many(:meta_ad_referrals).dependent(:nullify) }
     it { is_expected.to have_many(:crm_deals).through(:crm_deal_contacts) }
   end
 

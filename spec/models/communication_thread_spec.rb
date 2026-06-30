@@ -10,6 +10,7 @@ RSpec.describe CommunicationThread do
     it { is_expected.to belong_to(:team).optional }
     it { is_expected.to have_many(:communication_thread_conversations).dependent(:destroy) }
     it { is_expected.to have_many(:conversations).through(:communication_thread_conversations) }
+    it { is_expected.to have_many(:meta_ad_referrals).dependent(:nullify) }
   end
 
   describe 'validations' do

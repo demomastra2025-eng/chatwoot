@@ -43,6 +43,7 @@ class CommunicationThread < ApplicationRecord
 
   has_many :communication_thread_conversations, dependent: :destroy
   has_many :conversations, through: :communication_thread_conversations
+  has_many :meta_ad_referrals, dependent: :nullify
 
   before_validation :ensure_display_id, on: :create
 

@@ -41,7 +41,7 @@ module Whatsapp::IncomingMessageServiceHelpers
     unsupported_message = unsupported_whatsapp_message?(message)
     unavailable_error = unavailable_whatsapp_error(message)
 
-    {
+    attributes = {
       whatsapp_message_type: message[:type],
       interactive_reply_type: message.dig(:interactive, :type),
       interactive_reply_id: interactive_button_reply&.[](:id) || interactive_list_reply&.[](:id),
@@ -53,6 +53,10 @@ module Whatsapp::IncomingMessageServiceHelpers
       whatsapp_error_code: unavailable_error&.[](:code),
       whatsapp_error_title: unavailable_error&.[](:title)
     }.compact
+
+    meta_referral = Meta::AdReferralNormalizer.from_whatsapp_message(message)
+    attributes[:meta_referral] = meta_referral if meta_referral.present?
+    attributes
   end
 
   def file_content_type(file_type)

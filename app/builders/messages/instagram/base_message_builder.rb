@@ -104,6 +104,8 @@ class Messages::Instagram::BaseMessageBuilder < Messages::Messenger::MessageBuil
     attachments.each do |attachment|
       process_attachment(attachment)
     end
+
+    record_meta_ad_referral
   end
 
   def save_story_id
@@ -160,14 +162,28 @@ class Messages::Instagram::BaseMessageBuilder < Messages::Messenger::MessageBuil
       source_id: message_identifier,
       content: message_content,
       sender: @outgoing_echo ? nil : contact,
-      content_attributes: {
-        in_reply_to_external_id: message_reply_attributes
-      }
+      content_attributes: message_content_attributes
     }
 
     params[:content_attributes][:external_echo] = true if @outgoing_echo
     params[:content_attributes][:is_unsupported] = true if message_is_unsupported?
     params
+  end
+
+  def message_content_attributes
+    attributes = { in_reply_to_external_id: message_reply_attributes }
+    meta_referral = Meta::AdReferralNormalizer.from_messenger_payload(@messaging, provider: 'instagram')
+    attributes[:meta_referral] = meta_referral if meta_referral.present?
+    attributes
+  end
+
+  def record_meta_ad_referral
+    meta_referral = @message&.content_attributes.to_h.with_indifferent_access[:meta_referral]
+    return if meta_referral.blank?
+
+    Meta::AdReferralRecorder.new(message: @message, payload: meta_referral).perform
+  rescue StandardError => e
+    Rails.logger.warn("[MetaAdReferral] Instagram referral persistence failed: #{e.class}: #{e.message}")
   end
 
   def message_already_exists?

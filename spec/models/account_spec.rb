@@ -8,6 +8,7 @@ RSpec.describe Account do
   it { is_expected.to have_many(:inboxes).dependent(:destroy_async) }
   it { is_expected.to have_many(:conversations).dependent(:destroy_async) }
   it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
+  it { is_expected.to have_many(:meta_ad_referrals).dependent(:delete_all) }
   it { is_expected.to have_many(:contacts).dependent(:destroy_async) }
   it { is_expected.to have_many(:canned_responses).dependent(:destroy_async) }
   it { is_expected.to have_many(:facebook_pages).class_name('::Channel::FacebookPage').dependent(:destroy_async) }

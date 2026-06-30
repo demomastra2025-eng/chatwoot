@@ -1,4 +1,10 @@
-json.additional_attributes resource.additional_attributes
+json.additional_attributes(
+  if defined?(excluded_additional_attribute_keys) && excluded_additional_attribute_keys.present?
+    resource.additional_attributes.to_h.except(*Array(excluded_additional_attribute_keys).map(&:to_s))
+  else
+    resource.additional_attributes
+  end
+)
 json.availability_status resource.availability_status
 json.email resource.email
 json.id resource.id

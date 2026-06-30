@@ -114,6 +114,7 @@ class Account < ApplicationRecord
   has_many :llm_event_annotations, dependent: :destroy_async
   has_many :mentions, dependent: :destroy_async
   has_many :messages, dependent: :destroy_async
+  has_many :meta_ad_referrals, dependent: :delete_all
   has_many :notes, dependent: :destroy_async
   has_many :notification_settings, dependent: :destroy_async
   has_many :notifications, dependent: :destroy_async

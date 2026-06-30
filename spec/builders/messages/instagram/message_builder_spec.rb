@@ -56,6 +56,40 @@ describe Messages::Instagram::MessageBuilder do
       expect(message.content).to eq('This is the first message from the customer')
     end
 
+    it 'persists Meta ads referral for Instagram direct messages' do
+      messaging = dm_params[:entry][0]['messaging'][0]
+      messaging[:message][:referral] = {
+        ad_id: 'ig-ad-1',
+        source: 'ADS',
+        type: 'OPEN_THREAD',
+        ads_context_data: {
+          ad_title: 'Instagram launch ad',
+          photo_url: 'https://fbcdn.example/ig-ad.jpg',
+          post_id: 'ig-post-1'
+        }
+      }
+      create_instagram_contact_for_sender(messaging['sender']['id'], instagram_inbox)
+
+      described_class.new(messaging, instagram_inbox).perform
+
+      message = instagram_inbox.messages.first
+      referral = MetaAdReferral.find_by!(message: message)
+
+      expect(message.content_attributes['meta_referral']).to include(
+        'provider' => 'instagram',
+        'attribution_type' => 'click_to_direct_ad',
+        'ad_id' => 'ig-ad-1',
+        'headline' => 'Instagram launch ad'
+      )
+      expect(referral).to have_attributes(
+        provider: 'instagram',
+        provider_message_id: 'message-id-1',
+        ad_id: 'ig-ad-1',
+        headline: 'Instagram launch ad'
+      )
+      expect(message.conversation.additional_attributes.dig('meta_ad_referral', 'ad_id')).to eq('ig-ad-1')
+    end
+
     it 'discard echo message already sent by chatwoot' do
       messaging = dm_params[:entry][0]['messaging'][0]
       contact = create_instagram_contact_for_sender(messaging['sender']['id'], instagram_inbox)

@@ -84,6 +84,7 @@ class Contact < ApplicationRecord
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :inboxes, through: :contact_inboxes
   has_many :messages, as: :sender, dependent: :destroy_async
+  has_many :meta_ad_referrals, dependent: :nullify
   has_many :notes, dependent: :destroy_async
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
   before_validation :prepare_contact_attributes, :normalize_phone_number

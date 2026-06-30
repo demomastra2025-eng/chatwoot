@@ -288,5 +288,16 @@ class Whatsapp::IncomingMessageBaseService
     )
   end
 
-  def after_message_persisted(_message); end
+  def after_message_persisted(message)
+    record_meta_ad_referral(message)
+  end
+
+  def record_meta_ad_referral(message)
+    meta_referral = message&.content_attributes.to_h.with_indifferent_access[:meta_referral]
+    return if meta_referral.blank?
+
+    Meta::AdReferralRecorder.new(message: message, payload: meta_referral).perform
+  rescue StandardError => e
+    Rails.logger.warn("[MetaAdReferral] WhatsApp referral persistence failed: #{e.class}: #{e.message}")
+  end
 end
