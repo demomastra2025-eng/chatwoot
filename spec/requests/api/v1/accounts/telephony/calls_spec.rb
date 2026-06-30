@@ -283,7 +283,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     )
     allow(SafeFetch).to receive(:resolve_public_ip!).and_return('93.184.216.34')
     stub_request(:get, external_url)
-      .with(headers: { 'User-Agent' => 'OneLink-RecordingPlayback/1.0' })
+      .with(headers: { 'User-Agent' => 'OneLink-RecordingPlayback/1.0', 'Range' => 'bytes=0-24575' })
       .to_return(status: 200, body: "RIFF\x24\x00\x00\x00WAVEfmt ", headers: { 'Content-Type' => 'audio/wav' })
 
     get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: headers
@@ -308,7 +308,43 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.media_type).to eq('audio/wav')
     expect(response.body).to start_with('RIFF')
-    expect(a_request(:get, external_url)).to have_been_made.once
+    expect(a_request(:get, external_url).with(headers: { 'Range' => 'bytes=0-24575' })).to have_been_made.once
+  ensure
+    FileUtils.rm_f(Rails.root.join('storage', cached_storage_key)) if defined?(cached_storage_key) && cached_storage_key.present?
+  end
+
+  it 'proxies slow Sipuni recordings with small byte ranges before caching them' do
+    external_url = 'https://sipuni.com/api/crm/record?id=1782816261.483833&hash=recording-signature&user=015856'
+    call_session = create_recorded_call_session(
+      'sipuni-range-recording-call',
+      recording_metadata.merge('storage_key' => nil, 'recording_ref' => external_url, 'recording_url' => external_url),
+      recording_ref: external_url,
+      provider: 'sipuni'
+    )
+    first_chunk = 'a' * Telephony::ExternalRecordingPlaybackProxy::RANGE_CHUNK_BYTES
+    last_chunk = 'b' * 4096
+    allow(SafeFetch).to receive(:resolve_public_ip!).and_return('93.184.216.34')
+    stub_request(:get, external_url)
+      .with(headers: { 'User-Agent' => 'OneLink-RecordingPlayback/1.0', 'Range' => 'bytes=0-24575' })
+      .to_return(status: 206, body: first_chunk, headers: { 'Content-Type' => 'audio/mpeg' })
+    stub_request(:get, external_url)
+      .with(headers: { 'User-Agent' => 'OneLink-RecordingPlayback/1.0', 'Range' => 'bytes=24576-49151' })
+      .to_return(status: 206, body: last_chunk, headers: { 'Content-Type' => 'audio/mpeg' })
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: headers
+    signed_recording_url = response.parsed_body.dig('payload', 'recording_url')
+
+    get signed_recording_url
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq('audio/mpeg')
+    expect(response.body).to eq(first_chunk + last_chunk)
+
+    cached_storage_key = call_session.reload.metadata.dig('recording', 'storage_key')
+    expect(cached_storage_key).to start_with("voice-recordings/sipuni/#{account.id}/#{call_session.id}/")
+    expect(call_session.metadata.dig('recording', 'byte_size')).to eq(first_chunk.bytesize + last_chunk.bytesize)
+    expect(a_request(:get, external_url).with(headers: { 'Range' => 'bytes=0-24575' })).to have_been_made.once
+    expect(a_request(:get, external_url).with(headers: { 'Range' => 'bytes=24576-49151' })).to have_been_made.once
   ensure
     FileUtils.rm_f(Rails.root.join('storage', cached_storage_key)) if defined?(cached_storage_key) && cached_storage_key.present?
   end

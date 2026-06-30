@@ -87,6 +87,26 @@ const selectedChatContactId = () => {
   );
 };
 
+const currentCommunicationThreadId = () =>
+  route.params?.communication_thread_id || route.params?.communicationThreadId;
+
+const selectedChatCommunicationThreadId = () => {
+  const selectedChat = store.getters.getSelectedChat;
+  return (
+    selectedChat?.communication_thread_id ||
+    selectedChat?.communicationThreadId ||
+    selectedChat?.communication_thread?.display_id ||
+    selectedChat?.communicationThread?.displayId ||
+    selectedChat?.communication_thread?.id ||
+    selectedChat?.communicationThread?.id ||
+    null
+  );
+};
+
+const isCommunicationThreadRoute = () =>
+  route.name === 'communication_thread_conversation' ||
+  Boolean(currentCommunicationThreadId());
+
 const navigateToConversation = response => {
   if (sameValue(selectedChatContactId(), props.contactId)) return;
 
@@ -97,8 +117,8 @@ const navigateToConversation = response => {
   if (conversationId && accountId) {
     if (communicationThreadId) {
       if (
-        String(route.params?.communication_thread_id) ===
-        String(communicationThreadId)
+        sameValue(currentCommunicationThreadId(), communicationThreadId) ||
+        sameValue(selectedChatCommunicationThreadId(), communicationThreadId)
       ) {
         return;
       }
@@ -113,6 +133,8 @@ const navigateToConversation = response => {
       router.push({ path });
       return;
     }
+
+    if (isCommunicationThreadRoute()) return;
 
     if (
       String(route.params?.conversation_id || route.params?.conversationId) ===

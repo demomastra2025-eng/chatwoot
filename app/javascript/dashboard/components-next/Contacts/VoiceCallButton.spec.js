@@ -9,6 +9,7 @@ const {
   alertMock,
   initializeDeviceMock,
   prewarmMicrophoneMock,
+  routeMock,
   routeParamsMock,
   routerPushMock,
   stopMicrophonePrewarmMock,
@@ -17,6 +18,7 @@ const {
   alertMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
   prewarmMicrophoneMock: vi.fn(),
+  routeMock: { name: undefined, params: { accountId: 530 } },
   routeParamsMock: { accountId: 530 },
   routerPushMock: vi.fn(),
   stopMicrophonePrewarmMock: vi.fn(),
@@ -27,7 +29,7 @@ const {
 }));
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: routeParamsMock }),
+  useRoute: () => routeMock,
   useRouter: () => ({ push: routerPushMock }),
 }));
 
@@ -117,6 +119,8 @@ describe('VoiceCallButton', () => {
       delete routeParamsMock[key];
     });
     routeParamsMock.accountId = 530;
+    routeMock.name = undefined;
+    routeMock.params = routeParamsMock;
     initializeDeviceMock.mockResolvedValue({
       provider: 'fonoster',
       callingSupported: true,
@@ -361,6 +365,37 @@ describe('VoiceCallButton', () => {
     expect(routerPushMock).toHaveBeenCalledWith({
       path: '/app/accounts/530/communication_threads/72?assignee_type=all',
     });
+  });
+
+  it('does not downgrade from a communication thread to a concrete inbox conversation', async () => {
+    routeMock.name = 'communication_thread_conversation';
+    routeParamsMock.communication_thread_id = 25;
+    const dispatch = vi.fn().mockResolvedValue({
+      call_sid: 'call-ref-thread',
+      conversation_id: 724,
+    });
+    const { wrapper } = mountComponent({ dispatch });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('does not navigate when the initiated call returns the current communication thread', async () => {
+    routeMock.name = 'communication_thread_conversation';
+    routeParamsMock.communication_thread_id = 25;
+    const dispatch = vi.fn().mockResolvedValue({
+      call_sid: 'call-ref-thread',
+      conversation_id: 724,
+      communication_thread_id: 25,
+    });
+    const { wrapper } = mountComponent({ dispatch });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(routerPushMock).not.toHaveBeenCalled();
   });
 
   it('does not start a call when disabled', async () => {

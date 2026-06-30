@@ -18,6 +18,8 @@ const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 20_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
 const WEBPHONE_MICROPHONE_PREWARM_TTL_MS = 90_000;
+const WEBPHONE_MICROPHONE_PREWARM_CANCEL_WAIT_MS = 500;
+const WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS = 150;
 const WEBPHONE_OUTBOUND_SETUP_TIMEOUT_MS = 45_000;
 
 const screenSharingExtension = {
@@ -142,6 +144,11 @@ const stopMediaStream = stream => {
 
   stream.getTracks().forEach(track => track.stop());
 };
+
+const wait = ms =>
+  new Promise(resolve => {
+    window.setTimeout(resolve, ms);
+  });
 
 const hasLiveAudioTrack = stream => {
   if (!stream || typeof stream.getAudioTracks !== 'function') return false;
@@ -662,12 +669,12 @@ class JanusSipuniVoiceClient extends EventTarget {
     return this.acceptIncomingCall(incomingCall);
   }
 
-  startOutboundCall(toNumber) {
+  async startOutboundCall(toNumber) {
     const sip = this.sessionConfig.sip;
     const uri = JanusSipuniVoiceClient.dialUri(toNumber, sip.host);
     if (!uri) return Promise.resolve(null);
 
-    this.stopMicrophonePrewarm();
+    await this.releaseMicrophonePrewarm({ settle: true });
     this.hasActiveCall = true;
     this.currentCallDirection = 'outbound';
     return new Promise((resolve, reject) => {
@@ -695,8 +702,8 @@ class JanusSipuniVoiceClient extends EventTarget {
     });
   }
 
-  acceptIncomingCall(incomingCall) {
-    this.stopMicrophonePrewarm();
+  async acceptIncomingCall(incomingCall) {
+    await this.releaseMicrophonePrewarm({ settle: true });
     const method = incomingCall.offerless
       ? this.sipHandle.createOffer.bind(this.sipHandle)
       : this.sipHandle.createAnswer.bind(this.sipHandle);
@@ -868,6 +875,26 @@ class JanusSipuniVoiceClient extends EventTarget {
     stopMediaStream(this.microphonePrewarmStream);
     this.microphonePrewarmStream = null;
     this.microphonePrewarmPromise = null;
+    return { provider: 'sipuni', stopped: true };
+  }
+
+  async releaseMicrophonePrewarm({ settle = false } = {}) {
+    const pendingPrewarm = this.microphonePrewarmPromise;
+    const hadPrewarmedTrack = hasLiveAudioTrack(this.microphonePrewarmStream);
+
+    this.stopMicrophonePrewarm();
+
+    if (pendingPrewarm) {
+      await Promise.race([
+        pendingPrewarm.catch(() => null),
+        wait(WEBPHONE_MICROPHONE_PREWARM_CANCEL_WAIT_MS),
+      ]);
+    }
+
+    if (settle && (hadPrewarmedTrack || pendingPrewarm)) {
+      await wait(WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS);
+    }
+
     return { provider: 'sipuni', stopped: true };
   }
 
