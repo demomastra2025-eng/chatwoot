@@ -71,6 +71,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    conversationType: {
+      type: String,
+      default: 'conversation',
+    },
   },
   emits: [
     'updateConversation',
@@ -246,7 +250,10 @@ export default {
       this.$emit('updateConversation', status, snoozedUntil);
     },
     async snoozeConversation() {
-      await this.$store.dispatch('setContextMenuChatId', this.chatId);
+      await this.$store.dispatch('setContextMenuChatId', {
+        id: this.chatId,
+        conversationType: this.conversationType,
+      });
       const ninja = document.querySelector('ninja-keys');
       ninja.open({ parent: 'snooze_conversation' });
     },

@@ -12,7 +12,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     :update_labels,
     :destroy_conversations,
     :create_message,
-    :update_last_seen
+    :update_last_seen,
+    :unread
   ].freeze
 
   rescue_from CommunicationThreadFinder::InvalidParameter, with: :render_communication_thread_parameter_error
@@ -155,6 +156,16 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     render :show
   end
 
+  def unread
+    @communication_thread = CommunicationThreads::MarkUnreadService.new(
+      communication_thread: @communication_thread,
+      accessible_links: accessible_links_for(@communication_thread)
+    ).perform
+    preload_accessible_links([@communication_thread], include_unlinked: true)
+    preload_crm_deal_stages([@communication_thread])
+    render :show
+  end
+
   private
 
   def communication_thread
@@ -182,7 +193,17 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def permitted_update_params
-    params.permit(:status, :priority, :assignee_id, :assignee_type, :team_id, :snoozed_until, :status_reason)
+    params.permit(
+      :status,
+      :priority,
+      :assignee_id,
+      :assignee_type,
+      :team_id,
+      :snoozed_until,
+      :status_reason,
+      custom_attributes: {},
+      destroy_custom_attributes: []
+    )
   end
 
   def attachment_params

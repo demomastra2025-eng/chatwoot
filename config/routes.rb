@@ -301,6 +301,7 @@ Rails.application.routes.draw do
               post :labels, action: :update_labels
               delete :conversations, action: :destroy_conversations
               post :update_last_seen
+              post :unread
             end
           end
 

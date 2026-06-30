@@ -255,6 +255,10 @@ const getters = {
     return _state.contextMenuChatId;
   },
 
+  getContextMenuChatType: _state => {
+    return _state.contextMenuChatType;
+  },
+
   getCopilotAssistant: _state => {
     return _state.copilotAssistant;
   },

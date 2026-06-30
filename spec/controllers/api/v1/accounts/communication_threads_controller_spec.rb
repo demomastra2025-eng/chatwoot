@@ -633,6 +633,40 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
   end
 
+  describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/unread' do
+    it 'marks accessible linked conversations as unread and refreshes the thread unread count' do
+      contact = create(:contact, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact, agent_last_seen_at: Time.current)
+      second_inbox = create(:inbox, account: account)
+      second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
+      second_conversation = create(
+        :conversation,
+        account: account,
+        contact: contact,
+        inbox: second_inbox,
+        contact_inbox: second_contact_inbox,
+        agent_last_seen_at: Time.current
+      )
+      create(:message, account: account, conversation: first_conversation, inbox: first_conversation.inbox, created_at: 2.minutes.ago)
+      create(:message, account: account, conversation: second_conversation, inbox: second_inbox, created_at: 1.minute.ago)
+      create(:inbox_member, user: agent, inbox: first_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: second_inbox)
+      thread = first_conversation.reload.communication_thread
+
+      expect(thread.reload.unread_count).to eq(0)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/unread",
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(first_conversation.reload.unread_incoming_messages_count).to eq(1)
+      expect(second_conversation.reload.unread_incoming_messages_count).to eq(1)
+      expect(thread.reload.unread_count).to eq(2)
+      expect(response.parsed_body['unread_count']).to eq(2)
+    end
+  end
+
   describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/messages' do
     it 'sends through an existing linked child conversation', :aggregate_failures do
       conversation = create(:conversation, account: account)
@@ -1147,6 +1181,37 @@ RSpec.describe 'Communication Threads API', type: :request do
       body = JSON.parse(response.body, symbolize_names: true)
       expect(body).to include(status: 'pending', priority: 'urgent', assignee_id: assignee.id, team_id: team.id)
       expect(conversation.reload).to have_attributes(status: 'pending', priority: 'urgent', assignee_id: assignee.id, team_id: team.id)
+    end
+
+    it 'pins and unpins the thread by syncing child conversation custom attributes', :aggregate_failures do
+      contact = create(:contact, :with_email, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact)
+      second_inbox = create(:inbox, account: account)
+      second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
+      second_conversation = create(:conversation, account: account, contact: contact, inbox: second_inbox, contact_inbox: second_contact_inbox)
+      create(:inbox_member, user: agent, inbox: first_conversation.inbox)
+      create(:inbox_member, user: agent, inbox: second_inbox)
+      thread = first_conversation.reload.communication_thread
+
+      patch "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}",
+            params: { custom_attributes: { pinned: true } },
+            headers: headers,
+            as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('custom_attributes', 'pinned')).to be(true)
+      expect(first_conversation.reload.custom_attributes['pinned']).to be(true)
+      expect(second_conversation.reload.custom_attributes['pinned']).to be(true)
+
+      patch "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}",
+            params: { destroy_custom_attributes: ['pinned'] },
+            headers: headers,
+            as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['custom_attributes']).not_to have_key('pinned')
+      expect(first_conversation.reload.custom_attributes).not_to have_key('pinned')
+      expect(second_conversation.reload.custom_attributes).not_to have_key('pinned')
     end
 
     it 'rejects updates when the agent cannot access every linked channel' do

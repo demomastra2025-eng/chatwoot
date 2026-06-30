@@ -551,7 +551,7 @@ describe('#actions', () => {
   });
 
   describe('#markCommunicationThreadRead', () => {
-    it('updates the thread payload and unread count if API is successful', async () => {
+    it('updates only unread state if API is successful', async () => {
       const localCommit = vi.fn();
       const localDispatch = vi.fn();
       axios.post.mockResolvedValue({
@@ -570,21 +570,7 @@ describe('#actions', () => {
         { id: 7 }
       );
 
-      expect(localCommit).toHaveBeenCalledWith(
-        types.UPDATE_CONVERSATION,
-        expect.objectContaining({
-          id: 7,
-          is_communication_thread: true,
-          agent_last_seen_at: 123,
-          unread_count: 0,
-          channels: [
-            expect.objectContaining({
-              conversation_id: 11,
-              agent_last_seen_at: 123,
-            }),
-          ],
-        })
-      );
+      expect(localCommit).toHaveBeenCalledTimes(1);
       expect(localCommit).toHaveBeenCalledWith(
         types.UPDATE_MESSAGE_UNREAD_COUNT,
         {
@@ -592,6 +578,7 @@ describe('#actions', () => {
           lastSeen: 123,
           unreadCount: 0,
           conversationType: 'communication_thread',
+          channels: [{ conversation_id: 11, agent_last_seen_at: 123 }],
         }
       );
       expect(localDispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');

@@ -1332,6 +1332,9 @@ async function markAsUnread(conversationId) {
   try {
     await store.dispatch('markMessagesUnread', {
       id: conversationId,
+      conversationType: props.communicationThreadMode
+        ? 'communication_thread'
+        : 'conversation',
     });
     redirectToConversationList();
   } catch (error) {
@@ -1340,6 +1343,13 @@ async function markAsUnread(conversationId) {
 }
 async function markAsRead(conversationId) {
   try {
+    if (props.communicationThreadMode) {
+      await store.dispatch('markCommunicationThreadRead', {
+        id: conversationId,
+      });
+      return;
+    }
+
     await store.dispatch('markMessagesRead', {
       id: conversationId,
     });
@@ -1371,6 +1381,9 @@ async function toggleConversationStatus(
     status,
     snoozedUntil,
     statusReason,
+    conversationType: props.communicationThreadMode
+      ? 'communication_thread'
+      : 'conversation',
   };
 
   if (customAttributes) {

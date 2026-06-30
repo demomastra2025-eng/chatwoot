@@ -212,6 +212,21 @@ const getCommunicationThreadById = (state, conversationId) => {
   );
 };
 
+const getCommunicationThreadTarget = (
+  state,
+  conversationId,
+  conversationType = null
+) => {
+  if (conversationType === 'communication_thread') {
+    return findChatByIdAndType(state, conversationId, 'communication_thread');
+  }
+  if (conversationType === 'conversation') {
+    return null;
+  }
+
+  return getCommunicationThreadById(state, conversationId);
+};
+
 const resolveAttachmentTarget = (state, payload) => {
   const conversationState = state || {};
   const hasPayloadObject = payload && typeof payload === 'object';
@@ -754,12 +769,14 @@ const actions = {
       snoozedUntil = null,
       customAttributes = null,
       statusReason = null,
+      conversationType = null,
     }
   ) => {
     try {
-      const communicationThread = getCommunicationThreadById(
+      const communicationThread = getCommunicationThreadTarget(
         state,
-        conversationId
+        conversationId,
+        conversationType
       );
       if (communicationThread) {
         const response = await CommunicationThreadApi.update(conversationId, {
@@ -1121,7 +1138,37 @@ const actions = {
     });
   },
 
-  setConversationPinned: async ({ dispatch }, { conversationId, pinned }) => {
+  setCommunicationThreadPinned: async (
+    { commit },
+    { conversationId, pinned }
+  ) => {
+    const payload = pinned
+      ? { custom_attributes: { pinned: true } }
+      : { destroy_custom_attributes: ['pinned'] };
+    const response = await CommunicationThreadApi.update(
+      conversationId,
+      payload
+    );
+    commitCommunicationThreadUpdate(commit, response.data);
+  },
+
+  setConversationPinned: async (
+    { dispatch, state },
+    { conversationId, pinned, conversationType = null }
+  ) => {
+    const communicationThread = getCommunicationThreadTarget(
+      state,
+      conversationId,
+      conversationType
+    );
+    if (communicationThread) {
+      await dispatch('setCommunicationThreadPinned', {
+        conversationId,
+        pinned,
+      });
+      return;
+    }
+
     if (pinned) {
       await dispatch('updateCustomAttributes', {
         conversationId,

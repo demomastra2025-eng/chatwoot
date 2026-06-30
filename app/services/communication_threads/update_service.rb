@@ -33,6 +33,7 @@ class CommunicationThreads::UpdateService
     assign_priority!(conversation)
     assign_agent!(conversation)
     assign_team!(conversation)
+    assign_custom_attributes!(conversation)
     conversation.save! if conversation.changed?
   end
 
@@ -75,6 +76,26 @@ class CommunicationThreads::UpdateService
     return unless params.key?(:team_id)
 
     conversation.team = current_account.teams.find_by(id: params[:team_id])
+  end
+
+  def assign_custom_attributes!(conversation)
+    return unless params.key?(:custom_attributes) || params.key?(:destroy_custom_attributes)
+
+    custom_attributes = conversation.custom_attributes || {}
+    if params.key?(:custom_attributes)
+      custom_attributes = CustomAttributes::MutationService.merge(
+        custom_attributes,
+        params[:custom_attributes]
+      )
+    end
+    if params.key?(:destroy_custom_attributes)
+      custom_attributes = CustomAttributes::MutationService.destroy(
+        custom_attributes,
+        params[:destroy_custom_attributes]
+      )
+    end
+
+    conversation.custom_attributes = custom_attributes
   end
 
   def human_assignee

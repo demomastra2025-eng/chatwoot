@@ -10,6 +10,7 @@ import { CMD_SNOOZE_CONVERSATION } from 'dashboard/helper/commandbar/events';
 import wootConstants from 'dashboard/constants/globals';
 import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
 import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 
 const store = useStore();
 const getters = useStoreGetters();
@@ -19,6 +20,29 @@ const statusReasonDialogRef = ref(null);
 
 const selectedChat = computed(() => getters.getSelectedChat.value);
 const contextMenuChatId = computed(() => getters.getContextMenuChatId.value);
+const contextMenuChatType = computed(
+  () => getters.getContextMenuChatType.value
+);
+const contextMenuChat = computed(() => {
+  if (!contextMenuChatId.value) return null;
+
+  if (contextMenuChatType.value) {
+    return getters.getConversationById.value(
+      contextMenuChatId.value,
+      contextMenuChatType.value
+    );
+  }
+
+  return getters.getConversationById.value(contextMenuChatId.value);
+});
+const targetChat = computed(() =>
+  contextMenuChatId.value ? contextMenuChat.value : selectedChat.value
+);
+const targetConversationType = computed(() =>
+  isCommunicationThread(targetChat.value)
+    ? 'communication_thread'
+    : 'conversation'
+);
 
 const resolveStatusReason = async status => {
   const result = await statusReasonDialogRef.value?.open({ status });
@@ -34,10 +58,11 @@ const toggleStatus = async (status, snoozedUntil) => {
   if (cancelled) return;
 
   await store.dispatch('toggleStatus', {
-    conversationId: selectedChat.value?.id || contextMenuChatId.value,
+    conversationId: targetChat.value?.id,
     status,
     snoozedUntil,
     statusReason,
+    conversationType: targetConversationType.value,
   });
   store.dispatch('setContextMenuChatId', null);
   useAlert(t('CONVERSATION.CHANGE_STATUS'));

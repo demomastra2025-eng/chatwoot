@@ -519,6 +519,15 @@ describe('#getters', () => {
     });
   });
 
+  describe('#getContextMenuChatType', () => {
+    it('returns the context menu chat type', () => {
+      const state = { contextMenuChatType: 'communication_thread' };
+      expect(getters.getContextMenuChatType(state)).toEqual(
+        'communication_thread'
+      );
+    });
+  });
+
   describe('#getChatListFilters', () => {
     it('get chat list filters', () => {
       const conversationFilters = {

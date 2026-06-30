@@ -118,11 +118,42 @@ describe('conversation actions', () => {
         lastSeen: 1712345678,
         unreadCount: 0,
         conversationType: 'communication_thread',
+        channels: [{ conversation_id: 11, inbox_id: 101 }],
       });
       expect(commit).not.toHaveBeenCalledWith(
         types.UPDATE_CONVERSATION,
         expect.anything()
       );
+      expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
+    });
+  });
+
+  describe('#markMessagesUnread', () => {
+    it('uses the communication-thread unread endpoint when explicitly targeting a thread', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      vi.spyOn(CommunicationThreadApi, 'markMessagesUnread').mockResolvedValue({
+        data: {
+          id: 7,
+          agent_last_seen_at: 1712345600,
+          unread_count: 2,
+        },
+      });
+
+      await actions.markMessagesUnread(
+        { commit, dispatch, state: { allConversations: [] } },
+        { id: 7, conversationType: 'communication_thread' }
+      );
+
+      expect(CommunicationThreadApi.markMessagesUnread).toHaveBeenCalledWith({
+        id: 7,
+      });
+      expect(commit).toHaveBeenCalledWith(types.UPDATE_MESSAGE_UNREAD_COUNT, {
+        id: 7,
+        lastSeen: 1712345600,
+        unreadCount: 2,
+        conversationType: 'communication_thread',
+      });
       expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
     });
   });
@@ -157,6 +188,39 @@ describe('conversation actions', () => {
         'conversationStats/get',
         { communicationThreadMode: true },
         { root: true }
+      );
+    });
+  });
+
+  describe('#setCommunicationThreadPinned', () => {
+    it('updates thread pin state through the communication-thread update endpoint', async () => {
+      const commit = vi.fn();
+      vi.spyOn(CommunicationThreadApi, 'update').mockResolvedValue({
+        data: {
+          id: 7,
+          is_communication_thread: true,
+          custom_attributes: { pinned: true },
+          channels: [],
+          messages: [],
+          meta: { sender: { id: 42 } },
+        },
+      });
+
+      await actions.setCommunicationThreadPinned(
+        { commit },
+        { conversationId: 7, pinned: true }
+      );
+
+      expect(CommunicationThreadApi.update).toHaveBeenCalledWith(7, {
+        custom_attributes: { pinned: true },
+      });
+      expect(commit).toHaveBeenCalledWith(
+        types.UPDATE_CONVERSATION,
+        expect.objectContaining({
+          id: 7,
+          is_communication_thread: true,
+          custom_attributes: { pinned: true },
+        })
       );
     });
   });

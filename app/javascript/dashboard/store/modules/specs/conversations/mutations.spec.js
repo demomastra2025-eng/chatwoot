@@ -38,6 +38,41 @@ describe('#mutations', () => {
       mutations[types.UPDATE_MESSAGE_UNREAD_COUNT](state, { id: 1, lastSeen });
       expect(state.allConversations).toEqual([]);
     });
+    it('updates communication thread channel unread metadata', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            channels: [
+              { conversation_id: 11, agent_last_seen_at: 1, unread_count: 3 },
+              { conversation_id: 12, agent_last_seen_at: 1, unread_count: 4 },
+            ],
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_MESSAGE_UNREAD_COUNT](state, {
+        id: 7,
+        lastSeen: 123,
+        unreadCount: 1,
+        conversationType: 'communication_thread',
+        channels: [
+          { conversation_id: 11, agent_last_seen_at: 123, unread_count: 0 },
+        ],
+      });
+
+      expect(state.allConversations[0]).toEqual({
+        id: 7,
+        is_communication_thread: true,
+        agent_last_seen_at: 123,
+        unread_count: 1,
+        channels: [
+          { conversation_id: 11, agent_last_seen_at: 123, unread_count: 0 },
+          { conversation_id: 12, agent_last_seen_at: 1, unread_count: 4 },
+        ],
+      });
+    });
   });
 
   describe('#CLEAR_CURRENT_CHAT_WINDOW', () => {
@@ -742,9 +777,23 @@ describe('#mutations', () => {
 
   describe('#SET_CONTEXT_MENU_CHAT_ID', () => {
     it('sets the context menu chat id', () => {
-      const state = { contextMenuChatId: 1 };
+      const state = {
+        contextMenuChatId: 1,
+        contextMenuChatType: 'conversation',
+      };
       mutations[types.SET_CONTEXT_MENU_CHAT_ID](state, 2);
       expect(state.contextMenuChatId).toEqual(2);
+      expect(state.contextMenuChatType).toBeNull();
+    });
+
+    it('sets the context menu chat type from object payload', () => {
+      const state = { contextMenuChatId: 1, contextMenuChatType: null };
+      mutations[types.SET_CONTEXT_MENU_CHAT_ID](state, {
+        id: 2,
+        conversationType: 'communication_thread',
+      });
+      expect(state.contextMenuChatId).toEqual(2);
+      expect(state.contextMenuChatType).toEqual('communication_thread');
     });
   });
 

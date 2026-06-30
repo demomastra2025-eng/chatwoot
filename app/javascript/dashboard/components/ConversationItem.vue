@@ -77,11 +77,15 @@ export default {
     :allowed-context-menu-options="
       communicationThreadMode
         ? [
+            'mark-as-read',
+            'mark-as-unread',
             'priority',
             'status',
+            'snooze',
             'agent',
             'team',
             'label',
+            'pin',
             'delete',
             'open-new-tab',
             'copy-link',

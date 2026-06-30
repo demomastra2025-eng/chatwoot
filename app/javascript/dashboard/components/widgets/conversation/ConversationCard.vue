@@ -407,6 +407,9 @@ const togglePinnedConversation = async nextPinnedState => {
     await store.dispatch('setConversationPinned', {
       conversationId: props.chat.id,
       pinned: nextPinnedState,
+      conversationType: isCommunicationThreadChat.value
+        ? 'communication_thread'
+        : 'conversation',
     });
   } catch (error) {
     useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.PIN_UPDATE_ERROR'));
@@ -608,6 +611,9 @@ const togglePinnedConversation = async nextPinnedState => {
         :conversation-url="conversationPath"
         :allowed-options="allowedContextMenuOptions"
         :is-pinned="isPinned"
+        :conversation-type="
+          isCommunicationThreadChat ? 'communication_thread' : 'conversation'
+        "
         @update-conversation="onUpdateConversation"
         @assign-agent="onAssignAgent"
         @assign-label="onAssignLabel"

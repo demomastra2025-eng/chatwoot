@@ -56,13 +56,21 @@ describe('ConversationItem', () => {
     ).toBe(true);
   });
 
-  it('allows communication thread cards to expose the delete context-menu action', () => {
+  it('allows communication thread cards to expose thread context-menu actions', () => {
     const wrapper = mountComponent();
 
     expect(
       wrapper
         .findComponent(ConversationCardStub)
         .props('allowedContextMenuOptions')
-    ).toContain('delete');
+    ).toEqual(
+      expect.arrayContaining([
+        'mark-as-read',
+        'mark-as-unread',
+        'snooze',
+        'pin',
+        'delete',
+      ])
+    );
   });
 });

@@ -29,6 +29,7 @@ const state = {
   selectedChatType: null,
   appliedFilters: [],
   contextMenuChatId: null,
+  contextMenuChatType: null,
   conversationParticipants: [],
   conversationLastSeen: null,
   syncConversationsMessages: {},
@@ -720,12 +721,27 @@ export const mutations = {
 
   [types.UPDATE_MESSAGE_UNREAD_COUNT](
     _state,
-    { id, lastSeen, unreadCount = 0, conversationType = 'conversation' }
+    {
+      id,
+      lastSeen,
+      unreadCount = 0,
+      conversationType = 'conversation',
+      channels = [],
+    }
   ) {
     const chat = getConversationById(_state)(id, conversationType);
     if (chat) {
       chat.agent_last_seen_at = lastSeen;
       chat.unread_count = unreadCount;
+      if (Array.isArray(chat.channels) && channels.length) {
+        chat.channels = chat.channels.map(channel => {
+          const updatedChannel = channels.find(
+            item =>
+              String(item.conversation_id) === String(channel.conversation_id)
+          );
+          return updatedChannel ? { ...channel, ...updatedChannel } : channel;
+        });
+      }
     }
   },
   [types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS](_state, counts) {
@@ -863,8 +879,12 @@ export const mutations = {
     ] = messageId;
   },
 
-  [types.SET_CONTEXT_MENU_CHAT_ID](_state, chatId) {
-    _state.contextMenuChatId = chatId;
+  [types.SET_CONTEXT_MENU_CHAT_ID](_state, payload) {
+    const hasPayloadObject = payload && typeof payload === 'object';
+    _state.contextMenuChatId = hasPayloadObject ? payload.id : payload;
+    _state.contextMenuChatType = hasPayloadObject
+      ? payload.conversationType || null
+      : null;
   },
 
   [types.SET_CHAT_LIST_FILTERS](_state, data) {
