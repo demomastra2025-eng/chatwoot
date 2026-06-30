@@ -58,7 +58,7 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
   end
 
   def twilio_conference_inbox?
-    @voice_inbox.channel.is_a?(Channel::Voice) && @voice_inbox.channel.provider != 'fonoster'
+    @voice_inbox.channel.is_a?(Channel::Voice) && @voice_inbox.channel.provider == 'twilio'
   end
 
   def fetch_conversation_by_display_id

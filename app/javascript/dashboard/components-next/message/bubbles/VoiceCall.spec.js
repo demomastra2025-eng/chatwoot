@@ -1,14 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { computed, h, ref } from 'vue';
 
 import { messageTimestamp } from 'shared/helpers/timeHelper';
 import { MESSAGE_TYPES, MESSAGE_VARIANTS, ORIENTATION } from '../constants';
 import { provideMessageContext } from '../provider.js';
 
-const { routerPushMock, acceptWhatsappCallByIdMock } = vi.hoisted(() => ({
+const {
+  routerPushMock,
+  acceptWhatsappCallByIdMock,
+  routeMock,
+  showTelephonyCallMock,
+} = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
   acceptWhatsappCallByIdMock: vi.fn(),
+  routeMock: { params: { accountId: '1' } },
+  showTelephonyCallMock: vi.fn(),
 }));
 
 vi.mock('next/message/chips/Audio.vue', () => ({
@@ -25,10 +32,17 @@ vi.mock('next/message/chips/Audio.vue', () => ({
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPushMock }),
+  useRoute: () => routeMock,
 }));
 
 vi.mock('dashboard/composables/useWhatsappCallSession', () => ({
   acceptWhatsappCallById: acceptWhatsappCallByIdMock,
+}));
+
+vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
+  default: {
+    showTelephonyCall: showTelephonyCallMock,
+  },
 }));
 
 import VoiceCall from './VoiceCall.vue';
@@ -105,6 +119,7 @@ const buildWrapper = contextOverrides => {
 describe('VoiceCall bubble', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    showTelephonyCallMock.mockResolvedValue({});
   });
 
   it('renders the saved call time', () => {
@@ -552,6 +567,106 @@ describe('VoiceCall bubble', () => {
       '/api/v1/accounts/1/telephony/calls/call-3/recording?recording_token=signed-token'
     );
     expect(recording.attributes('data-extension')).toBe('wav');
+  });
+
+  it('resolves legacy Sipuni recording URLs through a signed playback URL', async () => {
+    showTelephonyCallMock.mockResolvedValue({
+      recording_url:
+        '/api/v1/accounts/1/telephony/calls/sipuni%3A1782815396.482964/recording?recording_token=signed-token',
+    });
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          provider: 'sipuni',
+          callSid: 'sipuni:1782815396.482964',
+          recordingUrl:
+            'https://sipuni.com/api/crm/record?id=1782815396.482964&hash=signature&user=015856',
+        },
+      }),
+    });
+
+    expect(wrapper.find('[data-testid="voice-call-recording"]').exists()).toBe(
+      false
+    );
+    expect(showTelephonyCallMock).toHaveBeenCalledWith(
+      'sipuni:1782815396.482964'
+    );
+
+    await flushPromises();
+
+    const recording = wrapper.find('[data-testid="voice-call-recording"]');
+    expect(recording.exists()).toBe(true);
+    expect(recording.attributes('data-url')).toBe(
+      '/api/v1/accounts/1/telephony/calls/sipuni%3A1782815396.482964/recording?recording_token=signed-token'
+    );
+    expect(recording.attributes('data-extension')).toBe('wav');
+  });
+
+  it('prefixes legacy bare Sipuni call ids before resolving the signed playback URL', async () => {
+    showTelephonyCallMock.mockResolvedValue({
+      recording_url:
+        '/api/v1/accounts/1/telephony/calls/sipuni%3A1782815396.482964/recording?recording_token=signed-token',
+    });
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          provider: 'sipuni',
+          callId: '1782815396.482964',
+          recordingUrl:
+            'https://sipuni.com/api/crm/record?id=1782815396.482964&hash=signature&user=015856',
+        },
+      }),
+    });
+
+    expect(showTelephonyCallMock).toHaveBeenCalledWith(
+      'sipuni:1782815396.482964'
+    );
+
+    await flushPromises();
+
+    expect(
+      wrapper
+        .find('[data-testid="voice-call-recording"]')
+        .attributes('data-url')
+    ).toBe(
+      '/api/v1/accounts/1/telephony/calls/sipuni%3A1782815396.482964/recording?recording_token=signed-token'
+    );
+  });
+
+  it('resolves legacy unsigned internal Sipuni playback URLs before rendering audio', async () => {
+    showTelephonyCallMock.mockResolvedValue({
+      recording_url:
+        '/api/v1/accounts/1/telephony/calls/sipuni%3A1782812657.480288/recording?recording_token=signed-token',
+    });
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          provider: 'sipuni',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/sipuni%3A1782812657.480288/recording',
+        },
+      }),
+    });
+
+    expect(wrapper.find('[data-testid="voice-call-recording"]').exists()).toBe(
+      false
+    );
+    expect(showTelephonyCallMock).toHaveBeenCalledWith(
+      'sipuni:1782812657.480288'
+    );
+
+    await flushPromises();
+
+    expect(
+      wrapper
+        .find('[data-testid="voice-call-recording"]')
+        .attributes('data-url')
+    ).toBe(
+      '/api/v1/accounts/1/telephony/calls/sipuni%3A1782812657.480288/recording?recording_token=signed-token'
+    );
   });
 
   it('routes WhatsApp accept from bubble by conversation display id', async () => {

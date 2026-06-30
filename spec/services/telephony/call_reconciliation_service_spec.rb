@@ -128,7 +128,7 @@ RSpec.describe Telephony::CallReconciliationService do
         phone_number: '+77172705175'
       )
       voice_inbox = voice_channel.inbox
-      contact = create(:contact, account: account, phone_number: '+77066318623')
+      contact = create(:contact, account: account, phone_number: '+77070001002')
       contact_inbox = create(
         :contact_inbox,
         contact: contact,
@@ -256,7 +256,7 @@ RSpec.describe Telephony::CallReconciliationService do
       expect(call_session.reload).to have_attributes(
         status: 'no_answer',
         end_reason: 'bridge_unknown_terminal',
-        duration_seconds: 90
+        duration_seconds: 0
       )
     end
 
@@ -289,7 +289,7 @@ RSpec.describe Telephony::CallReconciliationService do
     it 'syncs the conversation and voice bubble when reconciliation finalizes an outbound call' do
       voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77172705175')
       voice_inbox = voice_channel.inbox
-      contact = create(:contact, account: account, phone_number: '+77066318623')
+      contact = create(:contact, account: account, phone_number: '+77070001002')
       contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
       conversation = create(
         :conversation,
@@ -391,6 +391,256 @@ RSpec.describe Telephony::CallReconciliationService do
         'missing_from_bridge' => true,
         'route_action' => 'operator',
         'target_status' => 'no_answer'
+      )
+    end
+
+    it 'fails stale local Sipuni outbound calls that never receive a provider event' do
+      provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
+      voice_channel = create(
+        :channel_voice,
+        account: account,
+        provider: 'sipuni',
+        phone_number: '+77070001001',
+        provider_config: {
+          provider_kind: 'sipuni',
+          provider_connection_id: provider_connection.id,
+          number_ref: 'sipuni-main-line'
+        }
+      )
+      voice_inbox = voice_channel.inbox
+      number_binding = Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
+      contact = create(:contact, account: account, phone_number: '+77070001002')
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        additional_attributes: {
+          'call_status' => 'created',
+          'call_direction' => 'outbound',
+          'sipuni_call_ref' => 'sipuni:local:stale-outbound-1'
+        }
+      )
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: contact,
+        inbox: voice_inbox,
+        number_binding: number_binding,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:local:stale-outbound-1',
+        provider_call_sid: nil,
+        status: 'created',
+        direction: 'outbound',
+        from_number: voice_channel.phone_number,
+        to_number: contact.phone_number,
+        started_at: now - 2.minutes,
+        last_event_at: now - 2.minutes,
+        metadata: {
+          'sipuni_call_ref' => 'sipuni:local:stale-outbound-1',
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'sipuni',
+            'route_action' => 'operator',
+            'direction' => 'outbound',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+      message = conversation.messages.create!(
+        account: account,
+        inbox: voice_inbox,
+        message_type: :outgoing,
+        content_type: :voice_call,
+        content: 'Voice Call',
+        source_id: call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'call_sid' => call_session.external_call_ref,
+            'status' => 'created',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+
+      with_modified_env('TELEPHONY_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS' => '30') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      aggregate_failures do
+        expect(call_session.reload).to have_attributes(
+          status: 'failed',
+          ended_at: now,
+          ended_by: 'sipuni_local_outbound_reconciliation',
+          end_reason: 'sipuni_provider_event_missing',
+          duration_seconds: 0
+        )
+        expect(call_session.metadata['sipuni_reconciliation']).to include(
+          'local_outbound_missing_provider_event' => true,
+          'target_status' => 'failed'
+        )
+        expect(message.reload.content_attributes.dig('data', 'status')).to eq('failed')
+        expect(conversation.reload.additional_attributes).to include(
+          'call_status' => 'failed',
+          'call_direction' => 'outbound',
+          'sipuni_call_ref' => call_session.external_call_ref
+        )
+      end
+    end
+
+    it 'closes stale Sipuni provider inbound ringing calls and syncs the voice bubble' do
+      provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
+      voice_channel = create(
+        :channel_voice,
+        account: account,
+        provider: 'sipuni',
+        phone_number: '+77070001001',
+        provider_config: {
+          provider_kind: 'sipuni',
+          provider_connection_id: provider_connection.id,
+          number_ref: 'sipuni-main-line'
+        }
+      )
+      voice_inbox = voice_channel.inbox
+      number_binding = Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
+      contact = create(:contact, account: account, phone_number: '+77070001002')
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        additional_attributes: {
+          'call_status' => 'ringing',
+          'call_direction' => 'inbound',
+          'sipuni_call_ref' => 'sipuni:1782827000.500001'
+        }
+      )
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: contact,
+        inbox: voice_inbox,
+        number_binding: number_binding,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:1782827000.500001',
+        provider_call_sid: '1782827000.500001',
+        status: 'ringing',
+        direction: 'inbound',
+        from_number: contact.phone_number,
+        to_number: voice_channel.phone_number,
+        started_at: now - 10.minutes,
+        last_event_at: now - 10.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'sipuni_http_api',
+            'provider' => 'sipuni',
+            'route_action' => 'operator',
+            'operator_internal_extension' => '502'
+          }
+        }
+      )
+      message = conversation.messages.create!(
+        account: account,
+        inbox: voice_inbox,
+        message_type: :incoming,
+        content_type: :voice_call,
+        content: 'Voice Call',
+        source_id: call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'call_sid' => call_session.external_call_ref,
+            'status' => 'ringing',
+            'call_direction' => 'inbound'
+          }
+        }
+      )
+
+      with_modified_env('TELEPHONY_SIPUNI_PROVIDER_RINGING_STALE_AFTER_SECONDS' => '120') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      aggregate_failures do
+        expect(call_session.reload).to have_attributes(
+          status: 'no_answer',
+          ended_at: now,
+          ended_by: 'sipuni_provider_reconciliation',
+          end_reason: 'sipuni_provider_missing_operator_no_answer',
+          duration_seconds: 0
+        )
+        expect(call_session.metadata['sipuni_reconciliation']).to include(
+          'provider_terminal_missing' => true,
+          'provider_call_sid' => '1782827000.500001',
+          'target_status' => 'no_answer',
+          'previous_status' => 'ringing'
+        )
+        expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
+        expect(conversation.reload.additional_attributes).to include(
+          'call_status' => 'no_answer',
+          'call_direction' => 'inbound',
+          'sipuni_call_ref' => call_session.external_call_ref
+        )
+      end
+    end
+
+    it 'does not close fresh Sipuni provider in-progress calls' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:1782827000.500002',
+        provider_call_sid: '1782827000.500002',
+        status: 'in_progress',
+        direction: 'inbound',
+        started_at: now - 30.minutes,
+        answered_at: now - 29.minutes,
+        last_event_at: now - 30.minutes
+      )
+
+      with_modified_env('TELEPHONY_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER_SECONDS' => '7200') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 0, missing: 0, updated: 0, errors: 0)
+      end
+
+      expect(call_session.reload.status).to eq('in_progress')
+    end
+
+    it 'closes very stale Sipuni provider in-progress calls as completed' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:1782827000.500003',
+        provider_call_sid: '1782827000.500003',
+        status: 'in_progress',
+        direction: 'inbound',
+        started_at: now - 5.hours,
+        answered_at: now - 4.hours - 30.minutes,
+        last_event_at: now - 4.hours - 30.minutes
+      )
+
+      with_modified_env('TELEPHONY_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER_SECONDS' => '3600') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: now,
+        ended_by: 'sipuni_provider_reconciliation',
+        end_reason: 'sipuni_provider_missing_completed_call',
+        duration_seconds: 16_200
       )
     end
 

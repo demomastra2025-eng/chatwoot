@@ -153,7 +153,7 @@ export default {
       );
     },
     isVirtualPbxSipCredentialsVisible() {
-      return this.virtualPbxProviderKind === 'sipuni';
+      return ['sipuni', 'binotel'].includes(this.virtualPbxProviderKind);
     },
     isVirtualPbxAsteriskAnalog() {
       return this.virtualPbxProviderKind === 'asterisk_analog';
@@ -167,6 +167,12 @@ export default {
           value: 'sipuni',
           label: this.$t(
             'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.SIPUNI'
+          ),
+        },
+        {
+          value: 'binotel',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.BINOTEL'
           ),
         },
         {

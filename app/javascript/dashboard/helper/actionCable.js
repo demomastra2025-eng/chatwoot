@@ -80,6 +80,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'copilot.message.created': this.onCopilotMessageCreated,
       'auth.session_replaced': this.onSessionReplaced,
       'voice_call.incoming': this.onVoiceCallIncoming,
+      'voice_call.status_changed': this.onVoiceCallStatusChanged,
       'voice_call.claimed': this.onVoiceCallClaimed,
       'whatsapp_call.incoming': this.onWhatsappCallIncoming,
       'whatsapp_call.accepted': this.onWhatsappCallAccepted,
@@ -380,6 +381,43 @@ class ActionCableConnector extends BaseActionCableConnector {
       fromNumber: data.from_number || data.fromNumber,
       toNumber: data.to_number || data.toNumber,
       operatorClaim: data.operator_claim || data.operatorClaim || null,
+      operatorCandidates:
+        data.operator_candidates || data.operatorCandidates || null,
+      operatorInternalExtension:
+        data.operator_internal_extension || data.operatorInternalExtension,
+    });
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onVoiceCallStatusChanged = data => {
+    const callsStore = useCallsStore();
+    callsStore.handleCallStatusChanged({
+      callSid: data.call_sid || data.callSid || data.call_ref,
+      accountId: data.account_id || data.accountId,
+      status: data.status,
+      callDirection: data.call_direction || data.direction,
+      conversationId: data.conversation_id || data.conversation_display_id,
+      conversationDisplayId:
+        data.conversation_display_id || data.conversation_id,
+      conversationDbId: data.conversation_db_id || data.conversationDbId,
+      inboxId: data.inbox_id,
+      numberRef: data.number_ref || data.numberRef,
+      logicalCallKey:
+        data.logical_call_key ||
+        data.logicalCallKey ||
+        data.call_group_key ||
+        data.callGroupKey,
+      provider: data.provider || 'fonoster',
+      contactId: data.contact_id || data.contactId,
+      senderId: data.sender_id,
+      caller: data.caller,
+      fromNumber: data.from_number || data.fromNumber,
+      toNumber: data.to_number || data.toNumber,
+      operatorClaim: data.operator_claim || data.operatorClaim || null,
+      operatorCandidates:
+        data.operator_candidates || data.operatorCandidates || null,
+      operatorInternalExtension:
+        data.operator_internal_extension || data.operatorInternalExtension,
     });
   };
 

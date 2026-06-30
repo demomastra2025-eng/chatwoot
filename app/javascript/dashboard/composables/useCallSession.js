@@ -22,7 +22,8 @@ const TERMINAL_CLAIM_FAILURE_STATUSES = new Set([
   'missed',
   'ended',
 ]);
-const BROWSER_CALLING_PROVIDERS = new Set(['fonoster', 'twilio']);
+const BROWSER_CALLING_PROVIDERS = new Set(['fonoster', 'sipuni', 'twilio']);
+const NATIVE_BROWSER_SIP_PROVIDERS = new Set(['fonoster', 'sipuni']);
 
 const positiveNumber = value => {
   const numericValue = Number(value);
@@ -143,7 +144,7 @@ export function useCallSession() {
   const incomingVoiceInboxId = computed(() => {
     const call = incomingCalls.value.find(item => {
       return (
-        ['fonoster', 'twilio'].includes(item?.provider) &&
+        ['fonoster', 'sipuni', 'twilio'].includes(item?.provider) &&
         Number.isFinite(Number(item?.inboxId)) &&
         Number(item.inboxId) > 0
       );
@@ -151,6 +152,31 @@ export function useCallSession() {
 
     return call ? Number(call.inboxId) : null;
   });
+  const browserSipProviderForInboxId = inboxId => {
+    const inbox = store.getters?.['inboxes/getInbox']?.(inboxId);
+    const provider = (inbox?.provider || inbox?.channel?.provider)
+      ?.toString()
+      .toLowerCase();
+    return NATIVE_BROWSER_SIP_PROVIDERS.has(provider) ? provider : null;
+  };
+  const incomingCallProviderForInboxId = inboxId => {
+    const call = incomingCalls.value.find(item => {
+      return String(item?.inboxId) === String(inboxId);
+    });
+    return call?.provider || null;
+  };
+  const shouldUseNativeWebphoneToken = ({ inboxId, provider }) => {
+    return (
+      NATIVE_BROWSER_SIP_PROVIDERS.has(provider) ||
+      Boolean(browserSipProviderForInboxId(inboxId))
+    );
+  };
+  const initializeWebphoneDevice = (inboxId, { provider = null } = {}) => {
+    const native = shouldUseNativeWebphoneToken({ inboxId, provider });
+    return native
+      ? WebphoneClient.initializeDevice(inboxId, { native: true })
+      : WebphoneClient.initializeDevice(inboxId);
+  };
 
   watch(
     hasActiveCall,
@@ -224,16 +250,16 @@ export function useCallSession() {
 
   const releaseUnsupportedFonosterJoin = async (
     callSid,
-    { includeReason = false } = {}
+    { includeReason = false, provider = 'fonoster' } = {}
   ) => {
     await releaseFonosterIncomingCall(callSid, {
       status: 'no_answer',
       reason: 'browser_webphone_not_ready',
     });
-    callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
+    callsStore.markBrowserJoinUnsupported(callSid, provider);
     callsStore.dismissCall(callSid);
     return {
-      provider: 'fonoster',
+      provider,
       joinSupported: false,
       ...(includeReason ? { reason: 'browser_webphone_not_ready' } : {}),
     };
@@ -279,27 +305,48 @@ export function useCallSession() {
     ]);
   };
 
-  const findDisconnectedFonosterCall = event => {
+  const findDisconnectedBrowserSipCall = event => {
     const detail = event?.detail || {};
     const callRef = detail.callRef || detail.callSid;
+    const provider = detail.provider;
 
     if (callRef) {
       const call = callsStore.calls.find(
         item =>
-          item.provider === 'fonoster' &&
-          String(item.callSid) === String(callRef)
+          item.provider === provider && String(item.callSid) === String(callRef)
       );
       if (call) return call;
     }
 
-    if (resolveCallProvider(callsStore.activeCall) === 'fonoster') {
+    if (resolveCallProvider(callsStore.activeCall) === provider) {
       return callsStore.activeCall;
     }
 
     return null;
   };
 
-  const handleFonosterClientDisconnect = async call => {
+  const browserSipDisconnectRelease = (call, detail = {}) => {
+    if (call?.isActive) {
+      return {
+        status: 'completed',
+        reason: detail.reason || 'remote_hangup',
+      };
+    }
+
+    if (isOutboundCallDirection(call?.callDirection)) {
+      return {
+        status: 'failed',
+        reason: detail.reason || 'sip_outbound_disconnected',
+      };
+    }
+
+    return {
+      status: 'no_answer',
+      reason: detail.reason || 'remote_hangup',
+    };
+  };
+
+  const handleBrowserSipClientDisconnect = async (call, detail = {}) => {
     if (!call?.callSid) {
       await callsStore.clearActiveCall();
       return;
@@ -312,24 +359,24 @@ export function useCallSession() {
     }
 
     await runOnceForCall(endingCallSids, call.callSid, async () => {
+      const release = browserSipDisconnectRelease(call, detail);
       await releaseFonosterIncomingCall(call.callSid, {
-        status: 'completed',
-        reason: 'remote_hangup',
+        status: release.status,
+        reason: release.reason,
       });
     });
   };
 
   const handleClientDisconnect = async event => {
     const detailProvider = event?.detail?.provider;
-    const call =
-      detailProvider === 'fonoster'
-        ? findDisconnectedFonosterCall(event)
-        : callsStore.activeCall;
+    const call = NATIVE_BROWSER_SIP_PROVIDERS.has(detailProvider)
+      ? findDisconnectedBrowserSipCall(event)
+      : callsStore.activeCall;
 
-    if (detailProvider === 'fonoster' && !call) return;
+    if (NATIVE_BROWSER_SIP_PROVIDERS.has(detailProvider) && !call) return;
 
-    if (resolveCallProvider(call) === 'fonoster') {
-      await handleFonosterClientDisconnect(call);
+    if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolveCallProvider(call))) {
+      await handleBrowserSipClientDisconnect(call, event?.detail || {});
       return;
     }
 
@@ -350,7 +397,9 @@ export function useCallSession() {
   ) => {
     try {
       if (inboxId) {
-        await WebphoneClient.initializeDevice(inboxId);
+        await initializeWebphoneDevice(inboxId, {
+          provider: incomingCallProviderForInboxId(inboxId),
+        });
       } else if (routeInboxId.value || routeCommunicationThreadId.value) {
         return;
       } else {
@@ -409,7 +458,7 @@ export function useCallSession() {
   });
 
   const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
-    if (provider === 'fonoster') {
+    if (NATIVE_BROWSER_SIP_PROVIDERS.has(provider)) {
       return runOnceForCall(endingCallSids, callSid, async () => {
         const releaseResult = releaseFonosterIncomingCall(callSid, {
           status: 'completed',
@@ -421,7 +470,7 @@ export function useCallSession() {
           await WebphoneClient.endClientCall(provider);
         } catch (error) {
           // eslint-disable-next-line no-console
-          console.warn('Failed to end Fonoster browser call:', error);
+          console.warn('Failed to end browser SIP call:', error);
         }
 
         durationTimer.stop();
@@ -469,12 +518,15 @@ export function useCallSession() {
     callSid,
     provider,
     callDirection,
+    toNumber,
   }) => {
     if (isJoining.value) return null;
 
     isJoining.value = true;
     try {
-      const webphoneSession = await WebphoneClient.initializeDevice(inboxId);
+      const webphoneSession = await initializeWebphoneDevice(inboxId, {
+        provider,
+      });
       if (!webphoneSession) return null;
 
       if (!webphoneSession.callingSupported) {
@@ -490,14 +542,14 @@ export function useCallSession() {
 
       const resolvedProvider = webphoneSession.provider || provider;
 
-      if (resolvedProvider === 'fonoster') {
+      if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)) {
         const isOutbound = isOutboundCallDirection(callDirection);
 
         if (!isOutbound) {
           const claimResult = await claimFonosterIncomingCall(callSid);
           if (!claimResult.claimed) {
             const reason = claimResult.reason || claimResult.code;
-            callsStore.markBrowserJoinUnsupported(callSid, 'fonoster', {
+            callsStore.markBrowserJoinUnsupported(callSid, resolvedProvider, {
               reason,
               operatorClaim: operatorClaimFromDetails(claimResult.details),
             });
@@ -505,7 +557,7 @@ export function useCallSession() {
               callsStore.dismissCall(callSid);
             }
             return {
-              provider: 'fonoster',
+              provider: resolvedProvider,
               joinSupported: false,
               reason,
             };
@@ -515,16 +567,18 @@ export function useCallSession() {
         let joinResult = null;
         try {
           joinResult = await WebphoneClient.joinClientCall({
-            provider: 'fonoster',
+            provider: resolvedProvider,
             conversationId,
             callRef: callSid,
             callDirection,
+            toNumber,
           });
         } catch (error) {
           // eslint-disable-next-line no-console
-          console.warn('Failed to answer Fonoster browser call:', error);
+          console.warn('Failed to answer browser SIP call:', error);
           return releaseUnsupportedFonosterJoin(callSid, {
             includeReason: true,
+            provider: resolvedProvider,
           });
         }
 
@@ -532,27 +586,29 @@ export function useCallSession() {
           if (isOutbound) {
             if (!hasTrackedCall(callSid)) {
               return {
-                provider: 'fonoster',
+                provider: resolvedProvider,
                 joinSupported: false,
                 reason: 'call_closed',
                 callSid,
               };
             }
 
-            return failFonosterOutboundWithoutInvite(callSid);
+            if (resolvedProvider === 'fonoster') {
+              return failFonosterOutboundWithoutInvite(callSid);
+            }
           }
 
           return {
-            provider: 'fonoster',
+            provider: resolvedProvider,
             joinSupported: false,
             reason: 'sip_invite_not_received',
           };
         }
 
         if (isOutbound) {
-          callsStore.markBrowserJoined(callSid, 'fonoster');
+          callsStore.markBrowserJoined(callSid, resolvedProvider);
           return {
-            provider: 'fonoster',
+            provider: resolvedProvider,
             joinSupported: true,
             waitingForAnswer: true,
           };
@@ -561,7 +617,7 @@ export function useCallSession() {
         callsStore.setCallActive(callSid);
 
         return {
-          provider: 'fonoster',
+          provider: resolvedProvider,
           joinSupported: true,
         };
       }
@@ -611,7 +667,7 @@ export function useCallSession() {
   const rejectIncomingCall = async call => {
     const provider = resolveCallProvider(call);
 
-    if (provider === 'fonoster') {
+    if (NATIVE_BROWSER_SIP_PROVIDERS.has(provider)) {
       if (isOutboundCallDirection(call?.callDirection)) {
         return cancelFonosterOutboundCall(call);
       }
@@ -624,7 +680,7 @@ export function useCallSession() {
             await WebphoneClient.rejectIncomingCall(provider);
           } catch (error) {
             // eslint-disable-next-line no-console
-            console.warn('Failed to decline Fonoster browser call:', error);
+            console.warn('Failed to decline browser SIP call:', error);
           }
 
           return releaseFonosterIncomingCall(call?.callSid, {

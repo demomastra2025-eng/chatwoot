@@ -1,7 +1,8 @@
 require 'base64'
+require 'uri'
 
 class Telephony::WebphoneService
-  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni].freeze
+  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni binotel].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
 
   def initialize(account:, bridge_client: nil)
@@ -13,6 +14,7 @@ class Telephony::WebphoneService
     operator_identity = operator_identity_for(user: user, inbox: inbox)
     return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
     return unsupported_provider_extension_payload(inbox, operator_identity) if provider_managed_external_extension?(inbox, operator_identity)
+    return sipuni_webphone_payload(inbox, operator_identity) if sipuni_webphone?(inbox, operator_identity)
 
     response = bridge_client.post('/telephony/webphone/token', token_request_payload(user, inbox, operator_identity))
 
@@ -98,6 +100,167 @@ class Telephony::WebphoneService
     PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS.include?(provider_kind_for(inbox))
   end
 
+  def sipuni_webphone?(inbox, operator_identity)
+    profile = operator_identity&.sip_profile
+    return false if profile.blank?
+    return false unless profile.availability_mode == 'browser_webphone'
+
+    return inbox.channel.provider == 'sipuni' if inbox.present?
+
+    profile.inbox&.channel&.provider == 'sipuni'
+  end
+
+  def sipuni_webphone_payload(inbox, operator_identity)
+    profile = operator_identity.sip_profile
+    credentials = sipuni_credentials_for(profile)
+    janus_server = sipuni_janus_server_url
+    missing = []
+    missing << 'janus_server' if janus_server.blank?
+    missing << 'sip_username' if credentials[:username].blank?
+    missing << 'sip_password' if credentials[:password].blank?
+    missing << 'sip_host' if credentials[:host].blank?
+    supported = missing.blank? && operator_identity.enabled? && operator_identity.browser_join_supported?
+
+    payload = {
+      provider: 'sipuni',
+      calling_supported: supported,
+      callingSupported: supported,
+      browser_join_supported: operator_identity.browser_join_supported?,
+      browserJoinSupported: operator_identity.browser_join_supported?,
+      registered: profile.registered_for_routing?,
+      registered_for_routing: profile.registered_for_routing?,
+      janus_server: janus_server,
+      janusServer: janus_server,
+      ice_servers: sipuni_ice_servers,
+      iceServers: sipuni_ice_servers,
+      agent_ref: operator_identity.agent_ref,
+      agent_aor: operator_identity.agent_aor,
+      internal_extension: profile.internal_extension,
+      internalExtension: profile.internal_extension,
+      external_number: inbox&.channel&.phone_number,
+      externalNumber: inbox&.channel&.phone_number,
+      reason: supported ? nil : sipuni_unsupported_reason(missing),
+      sip: sipuni_sip_contract(credentials, profile)
+    }.compact
+
+    payload.merge(sipuni_flat_contract(payload[:sip]))
+  end
+
+  def sipuni_credentials_for(profile)
+    provider_connection = profile.provider_connection
+    host = provider_connection&.host.presence || profile.sip_host.presence
+    port = provider_connection&.port.presence || 5060
+    transport = provider_connection&.transport.presence || 'udp'
+    username = profile.sip_username.presence || provider_connection&.username
+
+    {
+      username: username,
+      password: profile.sip_password,
+      host: host,
+      port: port,
+      transport: transport
+    }
+  end
+
+  def sipuni_sip_contract(credentials, profile)
+    host = credentials[:host]
+    username = credentials[:username]
+    uri = sip_uri(username, host)
+    proxy = sip_proxy_uri(host, credentials[:port], credentials[:transport])
+
+    {
+      username: username,
+      auth_username: username,
+      authUsername: username,
+      password: credentials[:password],
+      host: host,
+      port: credentials[:port],
+      transport: credentials[:transport],
+      uri: uri,
+      proxy: proxy,
+      internal_extension: profile.internal_extension,
+      internalExtension: profile.internal_extension,
+      display_name: profile.user&.name,
+      displayName: profile.user&.name
+    }.compact
+  end
+
+  def sipuni_flat_contract(sip)
+    return {} if sip.blank?
+
+    {
+      sipUsername: sip[:username],
+      sip_username: sip[:username],
+      sipPassword: sip[:password],
+      sip_password: sip[:password],
+      sipHost: sip[:host],
+      sip_host: sip[:host],
+      sipPort: sip[:port],
+      sip_port: sip[:port],
+      sipTransport: sip[:transport],
+      sip_transport: sip[:transport],
+      sipUri: sip[:uri],
+      sip_uri: sip[:uri],
+      sipProxy: sip[:proxy],
+      sip_proxy: sip[:proxy]
+    }.compact
+  end
+
+  def sip_uri(username, host)
+    return if username.blank? || host.blank?
+
+    "sip:#{username}@#{host}"
+  end
+
+  def sip_proxy_uri(host, port, transport)
+    return if host.blank?
+
+    uri = "sip:#{host}"
+    uri = "#{uri}:#{port}" if port.present?
+    transport = transport.to_s.downcase
+    uri = "#{uri};transport=#{transport}" if transport.in?(%w[tcp tls])
+    uri
+  end
+
+  def sipuni_janus_server_url
+    explicit = ENV.fetch('TELEPHONY_JANUS_WS_URL', '').presence ||
+               ENV.fetch('JANUS_PUBLIC_WS_URL', '').presence
+    return explicit if explicit.present?
+
+    frontend_url = ENV.fetch('FRONTEND_URL', '').presence
+    return if frontend_url.blank?
+
+    uri = URI.parse(frontend_url)
+    scheme = uri.scheme == 'http' ? 'ws' : 'wss'
+    "#{scheme}://#{uri.host}#{":#{uri.port}" if uri.port && ![80, 443].include?(uri.port)}/janus-sipuni"
+  rescue URI::InvalidURIError
+    nil
+  end
+
+  def sipuni_ice_servers
+    raw = ENV.fetch('TELEPHONY_JANUS_ICE_SERVERS_JSON', '').presence
+    return [] if raw.blank?
+
+    raw = raw.to_s.strip
+    raw = raw[1...-1] if quoted_json_env_value?(raw)
+    value = JSON.parse(raw)
+    value.is_a?(Array) ? value : []
+  rescue JSON::ParserError
+    []
+  end
+
+  def quoted_json_env_value?(value)
+    value.length >= 2 &&
+      ((value.start_with?("'") && value.end_with?("'")) ||
+        (value.start_with?('"') && value.end_with?('"')))
+  end
+
+  def sipuni_unsupported_reason(missing)
+    return 'sipuni_webphone_not_configured' if missing.blank?
+
+    "#{missing.join('_')}_missing"
+  end
+
   def provider_kind_for(inbox)
     channel = inbox&.channel
     config = if channel.respond_to?(:provider_config_hash)
@@ -138,7 +301,8 @@ class Telephony::WebphoneService
     return false if operator_identity&.agent_aor.blank?
 
     provider = response_value(response, 'provider').presence || operator_identity.provider
-    provider == 'fonoster' && (operator_identity.sip_profile.present? || bridge_identity_needs_binding_fallback?(response))
+    provider == 'fonoster' &&
+      (operator_identity.sip_profile.present? || bridge_identity_needs_binding_fallback?(response))
   end
 
   def operator_identity_for(user:, inbox:)

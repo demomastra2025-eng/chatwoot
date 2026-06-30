@@ -1,7 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useMessageContext } from '../provider.js';
 import {
   MESSAGE_TYPES,
@@ -12,6 +12,7 @@ import { useAlert } from 'dashboard/composables';
 import { acceptWhatsappCallById } from 'dashboard/composables/useWhatsappCallSession';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
+import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import BaseBubble from 'next/message/bubbles/Base.vue';
@@ -60,6 +61,7 @@ const UNANSWERED_STATUSES = [
   VOICE_CALL_STATUS.NO_ANSWER,
 ];
 
+const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
 const { contentAttributes, messageType, createdAt } = useMessageContext();
@@ -130,13 +132,16 @@ const operatorClaim = computed(
     meta.value?.operator_claim ||
     {}
 );
-const recordingUrl = computed(
+const rawRecordingUrl = computed(
   () =>
     data.value?.recordingUrl ||
     data.value?.recording_url ||
     data.value?.recording?.recordingUrl ||
     data.value?.recording?.recording_url
 );
+const signedRecordingUrl = ref('');
+const signedRecordingCallRef = ref('');
+const accountId = computed(() => route.params?.accountId?.toString?.() || '');
 const transcript = computed(() => data.value?.transcript);
 const transcriptItems = computed(() => data.value?.transcriptItems || []);
 const aiVoice = computed(() => data.value?.aiVoice || {});
@@ -153,6 +158,150 @@ const callRefs = computed(() =>
   ]
     .map(value => value?.toString?.().trim())
     .filter(Boolean)
+);
+
+const isSipuniRecordingUrl = url => {
+  if (!url) return false;
+
+  try {
+    const parsed = new URL(
+      url,
+      typeof window === 'undefined'
+        ? 'http://localhost'
+        : window.location.origin
+    );
+    return (
+      ['sipuni.com', 'www.sipuni.com'].includes(parsed.hostname) &&
+      parsed.pathname === '/api/crm/record'
+    );
+  } catch {
+    return false;
+  }
+};
+
+const parsedRecordingUrl = url => {
+  if (!url) return null;
+
+  try {
+    return new URL(
+      url,
+      typeof window === 'undefined'
+        ? 'http://localhost'
+        : window.location.origin
+    );
+  } catch {
+    return null;
+  }
+};
+
+const recordingProxyCallRefFromUrl = url => {
+  const parsed = parsedRecordingUrl(url);
+  const match = parsed?.pathname?.match(
+    /\/telephony\/calls\/([^/]+)\/recording\/?$/
+  );
+  if (!match) return '';
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+};
+
+const isUnsignedRecordingProxyUrl = url => {
+  const parsed = parsedRecordingUrl(url);
+  if (!parsed) return false;
+
+  return (
+    recordingProxyCallRefFromUrl(url).startsWith('sipuni:') &&
+    !parsed.searchParams.has('recording_token')
+  );
+};
+
+const recordingProxyCallRef = computed(() => {
+  const candidates = [
+    data.value?.callSid,
+    data.value?.callRef,
+    data.value?.runtimeCallRef,
+    data.value?.bridgeCallRef,
+    callId.value,
+  ]
+    .map(value => value?.toString?.().trim())
+    .filter(Boolean);
+
+  const prefixedRef = candidates.find(value => value.startsWith('sipuni:'));
+  if (prefixedRef) return prefixedRef;
+
+  const fallbackRef = candidates[0];
+  if (!fallbackRef) return recordingProxyCallRefFromUrl(rawRecordingUrl.value);
+
+  return data.value?.provider === 'sipuni'
+    ? `sipuni:${fallbackRef}`
+    : fallbackRef;
+});
+
+const shouldResolveSignedSipuniRecordingUrl = computed(() => {
+  if (
+    !isSipuniRecordingUrl(rawRecordingUrl.value) &&
+    !isUnsignedRecordingProxyUrl(rawRecordingUrl.value)
+  ) {
+    return false;
+  }
+  if (!accountId.value || !recordingProxyCallRef.value) return false;
+
+  const token = 'recording_token=';
+  return !rawRecordingUrl.value.includes(token);
+});
+
+const recordingUrl = computed(() => {
+  if (
+    !isSipuniRecordingUrl(rawRecordingUrl.value) &&
+    !isUnsignedRecordingProxyUrl(rawRecordingUrl.value)
+  ) {
+    return rawRecordingUrl.value;
+  }
+  if (shouldResolveSignedSipuniRecordingUrl.value) {
+    return signedRecordingCallRef.value === recordingProxyCallRef.value
+      ? signedRecordingUrl.value
+      : '';
+  }
+  if (!accountId.value || !recordingProxyCallRef.value) {
+    return rawRecordingUrl.value;
+  }
+
+  return `/api/v1/accounts/${accountId.value}/telephony/calls/${encodeURIComponent(recordingProxyCallRef.value)}/recording`;
+});
+
+watch(
+  () => [
+    shouldResolveSignedSipuniRecordingUrl.value,
+    recordingProxyCallRef.value,
+  ],
+  async ([shouldResolve, callRef]) => {
+    if (!shouldResolve || !callRef) {
+      signedRecordingUrl.value = '';
+      signedRecordingCallRef.value = '';
+      return;
+    }
+    if (signedRecordingCallRef.value === callRef && signedRecordingUrl.value) {
+      return;
+    }
+
+    signedRecordingUrl.value = '';
+    signedRecordingCallRef.value = callRef;
+    try {
+      const call = await VoiceAPI.showTelephonyCall(callRef);
+      const nextUrl = call?.recording_url || call?.recordingUrl;
+      if (signedRecordingCallRef.value === callRef) {
+        signedRecordingUrl.value = nextUrl || '';
+      }
+    } catch {
+      if (signedRecordingCallRef.value === callRef) {
+        signedRecordingUrl.value = '';
+      }
+    }
+  },
+  { immediate: true }
 );
 const tools = computed(() => {
   const rawTools = Array.isArray(data.value?.tools) ? data.value.tools : [];
@@ -280,8 +429,13 @@ const recordingExtension = computed(() => {
   }
 
   const path = recordingUrl.value?.split('?')[0] || '';
-  const extension = path.split('.').pop();
-  return extension && extension !== path ? extension.toLowerCase() : 'wav';
+  const filename = path.split('/').pop() || '';
+  if (!filename.includes('.')) return 'wav';
+
+  const extension = filename.split('.').pop();
+  return extension && /^[a-z0-9]+$/i.test(extension)
+    ? extension.toLowerCase()
+    : 'wav';
 });
 
 const transcriptFallback = computed(() => {

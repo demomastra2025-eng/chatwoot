@@ -14,6 +14,7 @@ class Telephony::OperatorCallRejectService
     @reason = reason.presence || default_reason
     @bridge_client = Telephony::BridgeClient.new(account_id: account.id)
     @bridge_termination_error = nil
+    @sipuni_termination_error = nil
   end
 
   def perform
@@ -34,7 +35,7 @@ class Telephony::OperatorCallRejectService
       end
     end
 
-    request_bridge_termination! if should_terminate_remote
+    request_provider_termination! if should_terminate_remote
 
     if needs_ingestion
       ingested_session = Telephony::EventsIngestionService.new(payload: reject_event_payload).perform
@@ -46,7 +47,7 @@ class Telephony::OperatorCallRejectService
 
   private
 
-  attr_reader :account, :bridge_client, :bridge_termination_error, :user, :call_ref, :reason, :status
+  attr_reader :account, :bridge_client, :bridge_termination_error, :sipuni_termination_error, :user, :call_ref, :reason, :status
 
   def call_session
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
@@ -80,6 +81,9 @@ class Telephony::OperatorCallRejectService
   end
 
   def operator_agent_ref
+    return operator_agent_binding.agent_ref if operator_agent_binding
+    return sip_profile.agent_ref if call_session.provider == 'sipuni'
+
     operator_agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
   end
 
@@ -133,7 +137,7 @@ class Telephony::OperatorCallRejectService
 
   def outbound_originated_from_chatwoot?
     metadata = call_session.metadata.to_h.deep_stringify_keys
-    return true if metadata['bridge_response'].present? || metadata['fonoster_call_ref'].present?
+    return true if metadata['bridge_response'].present? || metadata['fonoster_call_ref'].present? || metadata['sipuni_call_ref'].present?
     return true if outbound_route_metadata?
     return true if outbound_conversation_metadata?
 
@@ -150,7 +154,7 @@ class Telephony::OperatorCallRejectService
   def outbound_conversation_metadata?
     attrs = (call_session.conversation&.additional_attributes || {}).deep_stringify_keys
     attrs['call_direction'].to_s == 'outbound' &&
-      attrs['fonoster_call_ref'].to_s == call_session.external_call_ref.to_s
+      [attrs['fonoster_call_ref'].to_s, attrs['sipuni_call_ref'].to_s].include?(call_session.external_call_ref.to_s)
   end
 
   def outbound_release_allowed?
@@ -303,6 +307,36 @@ class Telephony::OperatorCallRejectService
     nil
   end
 
+  def request_provider_termination!
+    return request_sipuni_hangup! if sipuni_hangup_required?
+
+    request_bridge_termination! if bridge_termination_required?
+  end
+
+  def request_sipuni_hangup!
+    Telephony::Sipuni::ApiClient.new.hangup(call_id: sipuni_provider_call_id)
+  rescue Telephony::Error => e
+    @sipuni_termination_error = e.code
+    Rails.logger.warn(
+      'TELEPHONY_OPERATOR_REJECT_SIPUNI_HANGUP_FAILED ' \
+      "account_id=#{account.id} call_ref=#{call_ref} provider_call_sid=#{sipuni_provider_call_id} " \
+      "error_code=#{e.code} message=#{e.message}"
+    )
+    nil
+  end
+
+  def sipuni_hangup_required?
+    call_session.provider == 'sipuni' && sipuni_provider_call_id.present?
+  end
+
+  def sipuni_provider_call_id
+    call_session.provider_call_sid.presence || call_session.external_call_ref.to_s.match(/\Asipuni:(?!local:)(.+)\z/)&.[](1)
+  end
+
+  def bridge_termination_required?
+    call_session.provider != 'sipuni'
+  end
+
   def bridge_reason
     return 'operator_declined' if status == 'rejected' && reason == 'operator_rejected_from_browser'
 
@@ -344,7 +378,8 @@ class Telephony::OperatorCallRejectService
       webphone_action: 'operator_release',
       release_status: status,
       release_reason: reason,
-      bridge_termination_error: bridge_termination_error
+      bridge_termination_error: bridge_termination_error,
+      sipuni_termination_error: sipuni_termination_error
     }.compact
   end
 

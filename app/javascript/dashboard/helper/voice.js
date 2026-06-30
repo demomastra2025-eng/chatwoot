@@ -129,6 +129,16 @@ function extractCallData(message) {
         contentMeta?.operator_claim ||
         contentMeta?.operatorClaim
     ),
+    operatorCandidates:
+      contentData.operator_candidates ||
+      contentData.operatorCandidates ||
+      contentMeta?.operator_candidates ||
+      contentMeta?.operatorCandidates,
+    operatorInternalExtension:
+      contentData.operator_internal_extension ||
+      contentData.operatorInternalExtension ||
+      contentMeta?.operator_internal_extension ||
+      contentMeta?.operatorInternalExtension,
   };
 }
 
@@ -154,6 +164,8 @@ export function handleVoiceCallCreated(message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    operatorCandidates,
+    operatorInternalExtension,
     accountId,
     conversationDbId,
     conversationDisplayId,
@@ -180,6 +192,8 @@ export function handleVoiceCallCreated(message, currentUserId) {
       toNumber,
       caller,
       operatorClaim,
+      operatorCandidates,
+      operatorInternalExtension,
       accountId,
       conversationDbId,
       conversationDisplayId,
@@ -206,6 +220,8 @@ export function handleVoiceCallCreated(message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    operatorCandidates,
+    operatorInternalExtension,
     accountId,
     conversationDbId,
     conversationDisplayId,
@@ -233,6 +249,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    operatorCandidates,
+    operatorInternalExtension,
     accountId,
     conversationDbId,
     conversationDisplayId,
@@ -266,6 +284,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     toNumber,
     caller,
     operatorClaim,
+    operatorCandidates,
+    operatorInternalExtension,
     accountId,
     conversationDbId,
     conversationDisplayId,
@@ -294,6 +314,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       toNumber,
       caller,
       operatorClaim,
+      operatorCandidates,
+      operatorInternalExtension,
       accountId,
       conversationDbId,
       conversationDisplayId,

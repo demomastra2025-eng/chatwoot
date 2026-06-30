@@ -402,6 +402,8 @@
         "PROVIDERS": {
           "KAZAKHSTAN": "Виртуальная АТС",
           "KAZAKHSTAN_DESC": "Используйте OneLink Виртуальная АТС для номеров Казахстана.",
+          "SIPUNI": "Sipuni",
+          "SIPUNI_DESC": "Подключите Sipuni как отдельный SIP-провайдер через браузерный вебфон.",
           "TWILIO": "Twilio",
           "TWILIO_DESC": "Подключите номера Twilio и браузерные звонки."
         },
@@ -468,6 +470,7 @@
           "PROVIDER_KIND": {
             "LABEL": "Провайдер SIP trunk",
             "SIPUNI": "Sipuni",
+            "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk аналоговый"
           },
           "PROVIDER_ACCOUNT_NUMBER": {

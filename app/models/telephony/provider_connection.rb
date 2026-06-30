@@ -51,7 +51,7 @@
 class Telephony::ProviderConnection < ApplicationRecord
   self.table_name = 'telephony_provider_connections'
 
-  PROVIDER_KINDS = %w[asterisk_analog sipuni].freeze
+  PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
   STATUSES = %w[draft active disabled deleting failed].freeze
   OWNERSHIP_STATUSES = %w[local managed legacy_reference read_only deleting].freeze
   MANAGED_BY_ONELINK = 'onelink'
@@ -85,7 +85,7 @@ class Telephony::ProviderConnection < ApplicationRecord
   end
 
   def to_virtual_pbx_h
-    {
+    payload = {
       id: id,
       provider_kind: provider_kind,
       name: name,
@@ -97,18 +97,23 @@ class Telephony::ProviderConnection < ApplicationRecord
       status: status,
       managed_by: managed_by,
       ownership_status: ownership_status,
-      fonoster_trunk_ref: fonoster_trunk_ref,
       credentials_ref: credentials_ref,
       password_configured: password_secret_ref.present?,
-      fonoster_credentials_ref: fonoster_credentials_ref,
-      fonoster_acl_ref: fonoster_acl_ref,
       last_synced_at: last_synced_at,
       provisioning_status: telephony_attribute(:provisioning_status),
       last_reconciled_at: telephony_attribute(:last_reconciled_at),
       remote_drift_detected_at: telephony_attribute(:remote_drift_detected_at),
       remote_drift_summary: telephony_attribute(:remote_drift_summary),
       metadata: metadata
-    }.compact
+    }
+    unless provider_kind == 'sipuni'
+      payload.merge!(
+        fonoster_trunk_ref: fonoster_trunk_ref,
+        fonoster_credentials_ref: fonoster_credentials_ref,
+        fonoster_acl_ref: fonoster_acl_ref
+      )
+    end
+    payload.compact
   end
 
   def telephony_attribute(attr_name)

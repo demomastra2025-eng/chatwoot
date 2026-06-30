@@ -247,6 +247,10 @@ describe('ActionCableConnector - Copilot Tests', () => {
           from_number: 'client-party',
           to_number: 'support-line',
           operator_claim: { user_id: 9, user_name: 'Ayan' },
+          operator_candidates: [
+            { user_id: 9, name: 'Ayan', internal_extension: '502' },
+          ],
+          operator_internal_extension: '502',
         },
       });
 
@@ -265,6 +269,40 @@ describe('ActionCableConnector - Copilot Tests', () => {
         fromNumber: 'client-party',
         toNumber: 'support-line',
         operatorClaim: { user_id: 9, user_name: 'Ayan' },
+        operatorCandidates: [
+          { user_id: 9, name: 'Ayan', internal_extension: '502' },
+        ],
+        operatorInternalExtension: '502',
+      });
+    });
+
+    it('removes native voice calls from lightweight terminal status events', async () => {
+      const callsStore = useCallsStore();
+
+      callsStore.addCall({
+        callSid: 'sipuni:provider-call-1',
+        status: 'ringing',
+        callDirection: 'inbound',
+        provider: 'sipuni',
+        conversationId: 627,
+        logicalCallKey: 'sipuni:provider-call-1',
+      });
+
+      actionCable.onReceived({
+        event: 'voice_call.status_changed',
+        data: {
+          account_id: 1,
+          call_sid: 'sipuni:provider-call-1',
+          status: 'completed',
+          provider: 'sipuni',
+          call_direction: 'inbound',
+          conversation_id: 627,
+          logical_call_key: 'sipuni:provider-call-1',
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(callsStore.calls).toEqual([]);
       });
     });
 

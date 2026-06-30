@@ -273,6 +273,46 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(response).to redirect_to(external_url)
   end
 
+  it 'returns and proxies a Sipuni external recording through a same-origin signed URL' do
+    external_url = 'https://sipuni.com/api/crm/record?id=1782816260.483832&hash=recording-signature&user=015856'
+    call_session = create_recorded_call_session(
+      'sipuni-recording-call',
+      recording_metadata.merge('storage_key' => nil, 'recording_ref' => external_url, 'recording_url' => external_url),
+      recording_ref: external_url,
+      provider: 'sipuni'
+    )
+    allow(SafeFetch).to receive(:resolve_public_ip!).and_return('93.184.216.34')
+    stub_request(:get, external_url)
+      .with(headers: { 'User-Agent' => 'OneLink-RecordingPlayback/1.0' })
+      .to_return(status: 200, body: "RIFF\x24\x00\x00\x00WAVEfmt ", headers: { 'Content-Type' => 'audio/wav' })
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    signed_recording_url = response.parsed_body.dig('payload', 'recording_url')
+    expect(signed_recording_url).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording?")
+    expect(signed_recording_url).to include('recording_token=')
+
+    get signed_recording_url
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq('audio/wav')
+    expect(response.body).to start_with('RIFF')
+
+    cached_storage_key = call_session.reload.metadata.dig('recording', 'storage_key')
+    expect(cached_storage_key).to start_with("voice-recordings/sipuni/#{account.id}/#{call_session.id}/")
+    expect(File.binread(Rails.root.join('storage', cached_storage_key))).to start_with('RIFF')
+
+    get signed_recording_url
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq('audio/wav')
+    expect(response.body).to start_with('RIFF')
+    expect(a_request(:get, external_url)).to have_been_made.once
+  ensure
+    FileUtils.rm_f(Rails.root.join('storage', cached_storage_key)) if defined?(cached_storage_key) && cached_storage_key.present?
+  end
+
   it 'does not expose another account recording for the same call ref' do
     other_account = create(:account)
     create(:telephony_call_session, account: other_account, external_call_ref: 'other-recording-call', metadata: recording_metadata)
@@ -311,11 +351,12 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.rm_f(outside_path) if defined?(outside_path) && outside_path.present?
   end
 
-  def create_recorded_call_session(call_ref, metadata = recording_metadata, recording_ref: metadata['storage_key'])
+  def create_recorded_call_session(call_ref, metadata = recording_metadata, recording_ref: metadata['storage_key'], provider: 'fonoster')
     conversation = create(:conversation, account: account, inbox: voice_inbox, contact: contact)
     create(
       :telephony_call_session,
       account: account,
+      provider: provider,
       conversation: conversation,
       inbox: voice_inbox,
       contact: contact,

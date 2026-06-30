@@ -279,6 +279,9 @@ class Telephony::OperatorCallClaimService
   end
 
   def operator_agent_ref
+    return operator_agent_binding.agent_ref if operator_agent_binding
+    return sip_profile.agent_ref if call_session.provider == 'sipuni'
+
     operator_agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
   end
 

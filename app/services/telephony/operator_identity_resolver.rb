@@ -11,6 +11,9 @@ class Telephony::OperatorIdentityResolver
     end
 
     def agent_ref
+      return agent_binding.agent_ref if agent_binding
+      return sip_profile.agent_ref if sip_profile&.inbox&.channel&.provider == 'sipuni'
+
       agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
     end
 
@@ -19,7 +22,10 @@ class Telephony::OperatorIdentityResolver
     end
 
     def provider
-      agent_binding&.provider || 'fonoster'
+      agent_binding&.provider ||
+        sip_profile&.inbox&.channel&.provider ||
+        sip_profile&.provider_connection&.provider_kind ||
+        'fonoster'
     end
 
     def enabled?
@@ -37,8 +43,6 @@ class Telephony::OperatorIdentityResolver
         operator_identity_source: source.to_s,
         operator_agent_ref: agent_ref,
         operatorAgentRef: agent_ref,
-        fonoster_agent_ref: agent_ref,
-        fonosterAgentRef: agent_ref,
         operator_agent_aor: agent_aor,
         operatorAgentAor: agent_aor,
         agent_aor: agent_aor,
@@ -52,6 +56,10 @@ class Telephony::OperatorIdentityResolver
           operator_identity_availability_mode: sip_profile.availability_mode,
           internal_extension: sip_profile.internal_extension
         )
+      end
+      unless provider == 'sipuni'
+        attrs[:fonoster_agent_ref] = agent_ref
+        attrs[:fonosterAgentRef] = agent_ref
       end
 
       attrs.compact

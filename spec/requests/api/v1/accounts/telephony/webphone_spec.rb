@@ -165,6 +165,86 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['calling_supported']).to be(false)
   end
 
+  it 'returns a Janus SIP webphone contract for native Sipuni browser profiles' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'sipuni',
+      host: 'ats01.kz.sipuni.com',
+      port: 5060,
+      transport: 'udp',
+      username: '990001000021'
+    )
+    sipuni_channel = create(
+      :channel_voice,
+      account: account,
+      provider: 'sipuni',
+      phone_number: '+15551231999',
+      provider_config: {
+        provider_kind: 'sipuni',
+        provider_connection_id: provider_connection.id,
+        number_ref: 'sipuni-browser-number-ref',
+        routing_mode: 'operator',
+        operator_distribution_mode: 'broadcast'
+      }
+    )
+    sipuni_inbox = sipuni_channel.inbox
+    create(:inbox_member, inbox: sipuni_inbox, user: administrator)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: sipuni_inbox,
+      user: administrator,
+      internal_extension: '501',
+      provider_connection: provider_connection,
+      sip_username: '990001000021',
+      sip_password: 'test-sip-password',
+      sip_host: 'operator.cloud.vconsult.kz',
+      agent_ref: 'local-profile-501',
+      fonoster_agent_ref: nil,
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_aor: 'sip:990001000021@ats01.kz.sipuni.com',
+      metadata: {
+        registration_state: 'registered',
+        registered: true,
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+
+    with_modified_env(
+      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      TELEPHONY_JANUS_ICE_SERVERS_JSON: "'[{\"urls\":\"stun:stun.l.google.com:19302\"}]'"
+    ) do
+      post path,
+           params: { inbox_id: sipuni_inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['provider']).to eq('sipuni')
+    expect(payload['janus_server']).to eq('wss://dev.one-link.kz/janus-sipuni')
+    expect(payload['sip']).to include(
+      'username' => '990001000021',
+      'auth_username' => '990001000021',
+      'password' => 'test-sip-password',
+      'host' => 'ats01.kz.sipuni.com',
+      'port' => 5060,
+      'transport' => 'udp',
+      'uri' => 'sip:990001000021@ats01.kz.sipuni.com',
+      'proxy' => 'sip:ats01.kz.sipuni.com:5060',
+      'internal_extension' => '501'
+    )
+    expect(payload['sipUsername']).to eq('990001000021')
+    expect(payload['sipPassword']).to eq('test-sip-password')
+    expect(payload['ice_servers']).to eq([{ 'urls' => 'stun:stun.l.google.com:19302' }])
+    expect(payload['browser_join_supported']).to be(true)
+    expect(payload['calling_supported']).to be(true)
+    expect(payload['registered_for_routing']).to be(true)
+  end
+
   it 'returns an unsupported payload for provider-managed Sipuni extensions' do
     sipuni_channel = create(
       :channel_voice,
@@ -188,6 +268,40 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
     post path,
          params: { inbox_id: sipuni_inbox.id },
+         headers: headers,
+         as: :json
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['reason']).to eq('provider_managed_external_extension')
+    expect(payload['browser_join_supported']).to be(false)
+    expect(payload['calling_supported']).to be(false)
+    expect(payload['registered_for_routing']).to be(true)
+  end
+
+  it 'returns an unsupported payload for provider-managed Binotel extensions' do
+    binotel_channel = create(
+      :channel_voice,
+      :fonoster,
+      account: account,
+      phone_number: '+15550001755',
+      provider_config: { provider_kind: 'binotel', number_ref: 'binotel-number-ref' }
+    )
+    binotel_inbox = binotel_channel.inbox
+    create(:inbox_member, inbox: binotel_inbox, user: administrator)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: binotel_inbox,
+      user: administrator,
+      internal_extension: '207',
+      availability_mode: 'external_extension',
+      status: 'active',
+      agent_aor: 'sip:207@sip53.binotel.example'
+    )
+
+    post path,
+         params: { inbox_id: binotel_inbox.id },
          headers: headers,
          as: :json
 
@@ -959,6 +1073,149 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       ended_by: "user:#{administrator.id}",
       end_reason: 'operator_declined'
     )
+  end
+
+  it 'hangs up a native Sipuni provider call through the Sipuni API when the operator releases it' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '505',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'sipuni-profile-505',
+      agent_aor: 'sip:505@ats01.kz.sipuni.com',
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    call_id = '1234567890.54321'
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      conversation: create(:conversation, account: account, inbox: voice_inbox),
+      number_binding: Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id),
+      provider: 'sipuni',
+      provider_call_sid: call_id,
+      external_call_ref: "sipuni:#{call_id}",
+      status: 'in_progress',
+      direction: 'inbound',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'sip_profile_id' => profile.id
+        }
+      }
+    )
+    sipuni_user = '015856'
+    sipuni_secret = 'sipuni-secret'
+    expected_hash = Digest::MD5.hexdigest([call_id, sipuni_user, sipuni_secret].join('+'))
+
+    with_modified_env(
+      SIPUNI_INTEGRATION_USER: sipuni_user,
+      SIPUNI_INTEGRATION_SECRET: sipuni_secret,
+      SIPUNI_API_BASE_URL: 'https://sipuni.com'
+    ) do
+      hangup_request = stub_request(:post, 'https://sipuni.com/api/events/call/hangup')
+                       .with(
+                         body: hash_including(
+                           'user' => sipuni_user,
+                           'callId' => call_id,
+                           'hash' => expected_hash
+                         )
+                       )
+                       .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+           headers: headers,
+           as: :json
+
+      expect(hangup_request).to have_been_requested
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
+    expect(call_session.reload).to have_attributes(
+      status: 'completed',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'operator_hangup'
+    )
+  end
+
+  it 'still releases the local Sipuni call when the Sipuni hangup API fails' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '506',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'sipuni-profile-506',
+      agent_aor: 'sip:506@ats01.kz.sipuni.com',
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    call_id = '1234567890.54322'
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      conversation: create(:conversation, account: account, inbox: voice_inbox),
+      number_binding: Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id),
+      provider: 'sipuni',
+      provider_call_sid: call_id,
+      external_call_ref: "sipuni:#{call_id}",
+      status: 'ringing',
+      direction: 'inbound',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref]
+        }
+      }
+    )
+
+    with_modified_env(
+      SIPUNI_INTEGRATION_USER: '015856',
+      SIPUNI_INTEGRATION_SECRET: 'sipuni-secret',
+      SIPUNI_API_BASE_URL: 'https://sipuni.com'
+    ) do
+      stub_request(:post, 'https://sipuni.com/api/events/call/hangup')
+        .to_return(status: 502, body: { error: 'sipuni unavailable' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'rejected', reason: 'operator_declined' },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('rejected')
+    expect(call_session.reload).to have_attributes(
+      status: 'rejected',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'operator_declined'
+    )
+    expect(call_session.metadata.dig('last_payload', 'metadata', 'sipuni_termination_error')).to eq('SIPUNI_REQUEST_FAILED')
   end
 
   it 'still releases the local operator call when bridge termination fails' do

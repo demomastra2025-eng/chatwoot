@@ -46,7 +46,11 @@ const relatedCallSids = callData =>
     .filter(isPresent)
     .map(value => String(value));
 
-const isFonosterCall = call => call?.provider === 'fonoster';
+const NATIVE_BROWSER_SIP_PROVIDERS = new Set(['fonoster', 'sipuni']);
+const TERMINAL_CALL_SUPPRESSION_MS = 5 * 60 * 1000;
+
+const isNativeBrowserSipCall = call =>
+  NATIVE_BROWSER_SIP_PROVIDERS.has(call?.provider);
 
 const isInboundCall = call => {
   const direction = call?.callDirection || call?.direction;
@@ -58,7 +62,11 @@ const sameFonosterConversation = (
   callData,
   { allowCallSidMismatch = false } = {}
 ) => {
-  if (call?.provider !== 'fonoster' || callData?.provider !== 'fonoster') {
+  if (
+    !isNativeBrowserSipCall(call) ||
+    !isNativeBrowserSipCall(callData) ||
+    call?.provider !== callData?.provider
+  ) {
     return false;
   }
 
@@ -81,14 +89,20 @@ const sameFonosterConversation = (
 };
 
 const sameFonosterInboundBranch = (call, callData) => {
-  if (!isFonosterCall(call) || !isFonosterCall(callData)) return false;
+  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
+    return false;
+  }
+  if (call?.provider !== callData?.provider) return false;
   if (!isInboundCall(call) || !isInboundCall(callData)) return false;
 
   return sameValue(callLogicalKey(call), callLogicalKey(callData));
 };
 
 const sameFonosterInboundConversation = (call, callData) => {
-  if (!isFonosterCall(call) || !isFonosterCall(callData)) return false;
+  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
+    return false;
+  }
+  if (call?.provider !== callData?.provider) return false;
   if (!isInboundCall(call) || !isInboundCall(callData)) return false;
   if (hasLogicalCallKey(call) || hasLogicalCallKey(callData)) return false;
 
@@ -99,6 +113,24 @@ const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData?.callSid) ||
   sameFonosterInboundBranch(call, callData) ||
   sameFonosterConversation(call, callData, { allowCallSidMismatch: true });
+
+const terminalSuppressionKeys = call => {
+  const provider = call?.provider;
+  const callSid = call?.callSid || call?.call_sid || call?.call_ref;
+  const logicalKey = callLogicalKey(call);
+  return [
+    isPresent(callSid) ? `sid:${callSid}` : null,
+    isPresent(callSid) && isPresent(provider)
+      ? `sid:${provider}:${callSid}`
+      : null,
+    isPresent(logicalKey) ? `logical:${logicalKey}` : null,
+    isPresent(logicalKey) && isPresent(provider)
+      ? `logical:${provider}:${logicalKey}`
+      : null,
+  ].filter(Boolean);
+};
+
+const nonTerminalCallStatus = status => !TERMINAL_STATUSES.includes(status);
 
 const isRelatedFonosterInbound = (call, targetCall) =>
   sameFonosterInboundBranch(call, targetCall) ||
@@ -155,6 +187,8 @@ const buildCallState = (callData, existingCall = null) => {
     toNumber: displayValue('toNumber'),
     caller: displayValue('caller'),
     operatorClaim: displayValue('operatorClaim'),
+    operatorCandidates: displayValue('operatorCandidates'),
+    operatorInternalExtension: displayValue('operatorInternalExtension'),
     browserJoinUnsupportedReason: displayValue('browserJoinUnsupportedReason'),
     isActive: isSameProviderCall ? existingCall?.isActive || false : false,
     browserJoined: isSameProviderCall
@@ -186,6 +220,7 @@ const endClientCall = async provider => {
 export const useCallsStore = defineStore('calls', {
   state: () => ({
     calls: [],
+    terminalCallKeys: {},
   }),
 
   getters: {
@@ -211,6 +246,8 @@ export const useCallsStore = defineStore('calls', {
       toNumber,
       caller,
       operatorClaim,
+      operatorCandidates,
+      operatorInternalExtension,
       accountId,
       conversationDbId,
       conversationDisplayId,
@@ -218,16 +255,6 @@ export const useCallsStore = defineStore('calls', {
       logicalCallKey,
       numberRef,
     }) {
-      if (TERMINAL_STATUSES.includes(status)) {
-        this.removeCall(callSid, {
-          conversationId,
-          provider,
-          callDirection,
-          logicalCallKey,
-        });
-        return;
-      }
-
       const callData = {
         callSid,
         accountId,
@@ -244,6 +271,20 @@ export const useCallsStore = defineStore('calls', {
         fromNumber,
         toNumber,
       };
+
+      if (TERMINAL_STATUSES.includes(status)) {
+        this.rememberTerminalCall(callData);
+        this.removeCall(callSid, {
+          conversationId,
+          provider,
+          callDirection,
+          logicalCallKey,
+        });
+        return;
+      }
+
+      if (this.isRecentlyTerminalCall(callData)) return;
+
       const call = this.calls.find(
         item => sameCallSid(item, callSid) || sameLiveCall(item, callData)
       );
@@ -272,12 +313,14 @@ export const useCallsStore = defineStore('calls', {
           toNumber,
           caller,
           operatorClaim,
+          operatorCandidates,
+          operatorInternalExtension,
         });
       }
 
       if (status === 'in_progress') {
         if (
-          resolvedProvider === 'fonoster' &&
+          NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider) &&
           resolvedCallDirection === 'outbound'
         ) {
           if (!call) {
@@ -302,12 +345,14 @@ export const useCallsStore = defineStore('calls', {
               toNumber,
               caller,
               operatorClaim,
+              operatorCandidates,
+              operatorInternalExtension,
             });
           }
           this.setCallActive(call?.callSid || callSid);
           return;
         }
-        if (resolvedProvider === 'fonoster') {
+        if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)) {
           this.dismissRelatedFonosterIncomingCalls({
             ...callData,
             provider: resolvedProvider,
@@ -320,6 +365,12 @@ export const useCallsStore = defineStore('calls', {
 
     addCall(callData) {
       if (!callData?.callSid) return;
+      if (
+        nonTerminalCallStatus(callData?.status) &&
+        this.isRecentlyTerminalCall(callData)
+      ) {
+        return;
+      }
 
       const existingCallIndex = this.calls.findIndex(call =>
         sameLiveCall(call, callData)
@@ -359,6 +410,37 @@ export const useCallsStore = defineStore('calls', {
       }
 
       this.calls.push(buildCallState(callData));
+    },
+
+    pruneTerminalCallKeys() {
+      const now = Date.now();
+      this.terminalCallKeys = Object.entries(this.terminalCallKeys).reduce(
+        (keys, [key, expiresAt]) => {
+          if (expiresAt > now) keys[key] = expiresAt;
+          return keys;
+        },
+        {}
+      );
+    },
+
+    rememberTerminalCall(callData) {
+      const keys = terminalSuppressionKeys(callData);
+      if (!keys.length) return;
+
+      this.pruneTerminalCallKeys();
+      const expiresAt = Date.now() + TERMINAL_CALL_SUPPRESSION_MS;
+      keys.forEach(key => {
+        this.terminalCallKeys[key] = expiresAt;
+      });
+    },
+
+    isRecentlyTerminalCall(callData) {
+      const keys = terminalSuppressionKeys(callData);
+      if (!keys.length) return false;
+
+      this.pruneTerminalCallKeys();
+      const now = Date.now();
+      return keys.some(key => (this.terminalCallKeys[key] || 0) > now);
     },
 
     markBrowserJoinUnsupported(callSid, provider, details = {}) {

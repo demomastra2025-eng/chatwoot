@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Telephony::VirtualPbx::Reconciler
+  PROVIDER_OWNED_ROUTING_KINDS = %w[sipuni binotel].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
 
   def initialize(account:, resource_client: nil)
@@ -116,7 +117,7 @@ class Telephony::VirtualPbx::Reconciler
     provider_kind = state[:provider_kind].to_s
     availability_mode = attrs[:availability_mode].to_s
 
-    return true if provider_kind == 'sipuni' && PROVIDER_EXTENSION_MODES.include?(availability_mode)
+    return true if provider_kind.in?(PROVIDER_OWNED_ROUTING_KINDS) && PROVIDER_EXTENSION_MODES.include?(availability_mode)
     return true if provider_kind == 'asterisk_analog' && PROVIDER_EXTENSION_MODES.include?(availability_mode)
 
     false

@@ -153,7 +153,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(initializeDeviceMock).toHaveBeenCalledWith(4696);
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4696, { native: true });
     expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
   });
 
@@ -225,7 +225,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(initializeDeviceMock).toHaveBeenCalledWith(4698);
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4698, { native: true });
   });
 
   it('always asks the backend to reject Fonoster calls after the local SIP decline attempt', async () => {
@@ -403,8 +403,8 @@ describe('useCallSession', () => {
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-pending-outbound-disconnect',
       {
-        reason: 'remote_hangup',
-        status: 'completed',
+        reason: 'sip_outbound_disconnected',
+        status: 'failed',
       }
     );
     expect(callsStore.calls).toEqual([]);

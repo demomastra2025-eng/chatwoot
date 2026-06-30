@@ -38,10 +38,49 @@ const visibleCalls = computed(() =>
 
 const firstPresent = values => values.find(value => Boolean(value));
 
+const displayNameFrom = value => {
+  if (!value) return '';
+  if (typeof value === 'string') return value.trim();
+
+  return (
+    value.name ||
+    value.displayName ||
+    value.display_name ||
+    value.userName ||
+    value.user_name ||
+    value.user?.name ||
+    value.user?.displayName ||
+    value.user?.display_name ||
+    ''
+  );
+};
+
 const getConversationAttributes = conversation =>
   conversation?.additional_attributes ||
   conversation?.additionalAttributes ||
   {};
+
+const getCommunicationThreadId = (call, conversation) =>
+  firstPresent([
+    call?.communicationThreadId,
+    call?.communication_thread_id,
+    conversation?.communication_thread_id,
+    conversation?.communicationThreadId,
+    conversation?.meta?.communication_thread_id,
+    conversation?.meta?.communicationThreadId,
+    getConversationAttributes(conversation).communication_thread_id,
+    getConversationAttributes(conversation).communicationThreadId,
+  ]);
+
+const communicationThreadQuery = () => {
+  const currentQuery = router.currentRoute.value.query || {};
+  return {
+    ...currentQuery,
+    status: currentQuery.status || 'open',
+    assignee_type:
+      currentQuery.assignee_type || currentQuery.assigneeType || 'all',
+  };
+};
 
 const getCallInfo = call => {
   const conversation = store.getters.getConversationById(call?.conversationId);
@@ -98,6 +137,72 @@ const getDirectionLabel = call => {
   }
 
   return t('CONVERSATION.VOICE_WIDGET.INBOUND_DIRECTION');
+};
+
+const getOperatorCandidates = call => {
+  const candidates = call?.operatorCandidates || call?.operator_candidates;
+  return Array.isArray(candidates) ? candidates : [];
+};
+
+const getPrimaryOperatorCandidate = call =>
+  getOperatorCandidates(call)[0] || {};
+
+const getOperatorName = call => {
+  const candidate = getPrimaryOperatorCandidate(call);
+  return firstPresent([
+    displayNameFrom(call?.operatorClaim),
+    displayNameFrom(call?.operator_claim),
+    displayNameFrom(candidate),
+  ]);
+};
+
+const getOperatorExtension = call => {
+  const candidate = getPrimaryOperatorCandidate(call);
+  const claim = call?.operatorClaim || call?.operator_claim || {};
+
+  return firstPresent([
+    call?.operatorInternalExtension,
+    call?.operator_internal_extension,
+    claim.internalExtension,
+    claim.internal_extension,
+    candidate.internalExtension,
+    candidate.internal_extension,
+  ]);
+};
+
+const getOperatorParty = call => {
+  const name = getOperatorName(call);
+  const extension = getOperatorExtension(call);
+
+  if (name && extension) {
+    return t('CONVERSATION.VOICE_WIDGET.OPERATOR_WITH_EXTENSION', {
+      name,
+      extension,
+    });
+  }
+  if (name) return name;
+  if (extension) {
+    return t('CONVERSATION.VOICE_WIDGET.OPERATOR_EXTENSION', {
+      extension,
+    });
+  }
+
+  return '';
+};
+
+const getOperatorText = call => {
+  const name = getOperatorName(call);
+  const extension = getOperatorExtension(call);
+  const party =
+    name && extension
+      ? t('CONVERSATION.VOICE_WIDGET.OPERATOR_WITH_EXTENSION', {
+          name,
+          extension,
+        })
+      : getOperatorParty(call);
+  if (!party) return '';
+
+  return t('CONVERSATION.VOICE_WIDGET.OPERATOR_LABEL', { name: party });
 };
 
 const getCallParties = call => {
@@ -173,9 +278,10 @@ const getCallStageText = call => {
 
 const getCallSecondaryText = call => {
   const typeText = getCallTypeText(call);
+  const operatorText = getOperatorText(call);
   const stageText = getCallStageText(call);
 
-  return stageText ? `${typeText} · ${stageText}` : typeText;
+  return [typeText, operatorText, stageText].filter(Boolean).join(' · ');
 };
 
 const idleCallDuration = '00:00';
@@ -184,8 +290,31 @@ const openConversation = call => {
   if (!call?.conversationId) return;
 
   const { conversation } = getCallInfo(call);
-  const inboxId = call.inboxId || conversation?.inbox_id;
+  const communicationThreadId = getCommunicationThreadId(call, conversation);
   const accountId = router.currentRoute.value.params?.accountId;
+
+  if (communicationThreadId && accountId) {
+    const currentParams = router.currentRoute.value.params || {};
+    if (
+      router.currentRoute.value.name === 'communication_thread_conversation' &&
+      String(currentParams.communication_thread_id) ===
+        String(communicationThreadId)
+    ) {
+      return;
+    }
+
+    router.push({
+      name: 'communication_thread_conversation',
+      params: {
+        accountId,
+        communication_thread_id: communicationThreadId,
+      },
+      query: communicationThreadQuery(),
+    });
+    return;
+  }
+
+  const inboxId = call.inboxId || conversation?.inbox_id;
   const routeName = inboxId
     ? 'conversation_through_inbox'
     : 'inbox_conversation';
@@ -262,6 +391,7 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
     callSid: call.callSid,
     provider: call.provider || getCallInfo(call).provider,
     callDirection: call.callDirection,
+    toNumber: call.toNumber,
   });
 
   if (result?.joinSupported === false) {
@@ -297,14 +427,14 @@ watch(
   <div class="contents">
     <template v-if="incomingCalls.length || hasActiveCall">
       <div
-        class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[340px] max-w-[calc(100vw-2rem)]"
+        class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[320px] sm:w-[340px] max-w-[calc(100vw-2rem)]"
       >
         <div
           v-for="call in visibleCalls"
           :key="call.callSid"
-          class="flex gap-1 p-3 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
+          class="flex gap-2 p-2.5 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
         >
-          <div class="flex flex-col items-center w-14 shrink-0 gap-1.5">
+          <div class="flex flex-col items-center w-11 shrink-0 gap-1">
             <span
               class="inline-flex rounded-full"
               :class="{
@@ -315,12 +445,12 @@ watch(
               <Avatar
                 :src="getCallInfo(call).avatar"
                 :name="getCallInfo(call).contactName"
-                :size="40"
+                :size="36"
                 rounded-full
               />
             </span>
             <span
-              class="font-mono leading-4 tabular-nums text-[13px] font-medium text-n-teal-9"
+              class="font-mono leading-4 tabular-nums text-xs font-medium text-n-teal-9"
             >
               {{
                 callIsActive(call) ? formattedCallDuration : idleCallDuration
@@ -328,7 +458,7 @@ watch(
             </span>
           </div>
           <div class="flex-1 min-w-0">
-            <div class="flex items-start gap-2 min-w-0">
+            <div class="relative flex items-start gap-1.5 min-w-0">
               <i
                 class="mt-0.5 text-[14px] shrink-0"
                 :class="[
@@ -337,18 +467,25 @@ watch(
                 ]"
               />
               <p
-                class="min-w-0 flex-1 inline-flex items-center text-sm font-medium mb-0"
+                class="min-w-0 flex flex-1 items-center text-sm font-medium mb-0 ltr:pr-4 rtl:pl-4"
+                :title="`${getCallRouteParts(call).from} ${$t('CONVERSATION.VOICE_WIDGET.ROUTE_SEPARATOR')} ${getCallRouteParts(call).to}`"
               >
-                <span class="truncate">{{ getCallRouteParts(call).from }}</span>
-                <span class="mx-1 text-[10px] font-normal text-n-slate-11">
+                <span class="min-w-0 truncate">
+                  {{ getCallRouteParts(call).from }}
+                </span>
+                <span
+                  class="mx-0.5 shrink-0 text-[10px] font-normal text-n-slate-11"
+                >
                   {{ $t('CONVERSATION.VOICE_WIDGET.ROUTE_SEPARATOR') }}
                 </span>
-                <span class="truncate">{{ getCallRouteParts(call).to }}</span>
+                <span class="min-w-0 truncate">
+                  {{ getCallRouteParts(call).to }}
+                </span>
               </p>
               <button
                 v-if="!callIsActive(call)"
                 type="button"
-                class="flex justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors shrink-0"
+                class="absolute top-0 ltr:right-0 rtl:left-0 inline-flex size-4 p-0 justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded transition-colors"
                 :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
                 @click="dismissCall(call.callSid)"
@@ -361,16 +498,16 @@ watch(
               {{ getCallSecondaryText(call) }}
             </p>
 
-            <div class="flex items-center gap-3 mt-2.5">
+            <div class="flex items-center gap-2 mt-2">
               <button
                 v-if="callIsActive(call)"
                 type="button"
-                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
                 :title="$t('CONVERSATION.VOICE_WIDGET.END_CALL')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.END_CALL')"
                 @click="handleEndCall"
               >
-                <i class="text-lg i-ph-phone-x-bold" />
+                <i class="text-base i-ph-phone-x-bold" />
               </button>
               <button
                 v-if="
@@ -379,31 +516,31 @@ watch(
                   browserJoinSupportedForCall(call)
                 "
                 type="button"
-                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-teal-9 text-white hover:bg-n-teal-10 shadow-sm"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-teal-9 text-white hover:bg-n-teal-10 shadow-sm"
                 :title="$t('CONVERSATION.VOICE_WIDGET.CALL')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.CALL')"
                 @click="handleJoinCall(call)"
               >
-                <i class="text-lg i-ph-phone-bold" />
+                <i class="text-base i-ph-phone-bold" />
               </button>
               <button
                 v-if="!callIsActive(call)"
                 type="button"
-                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
                 :title="$t('CONVERSATION.VOICE_WIDGET.REJECT_CALL')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.REJECT_CALL')"
                 @click="rejectIncomingCall(call)"
               >
-                <i class="text-lg i-ph-phone-x-bold" />
+                <i class="text-base i-ph-phone-x-bold" />
               </button>
               <button
                 type="button"
-                class="inline-flex items-center justify-center w-11 h-11 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1"
                 :title="$t('CONVERSATION.VOICE_WIDGET.OPEN_CHAT')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.OPEN_CHAT')"
                 @click="openConversation(call)"
               >
-                <i class="text-lg i-ph-chat-circle-bold" />
+                <i class="text-base i-ph-chat-circle-bold" />
               </button>
             </div>
           </div>

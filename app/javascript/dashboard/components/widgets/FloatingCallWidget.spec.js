@@ -20,6 +20,11 @@ const storeGetters = vi.hoisted(() => ({
   getAgentById: vi.fn(),
 }));
 
+const routerMock = vi.hoisted(() => ({
+  currentRoute: null,
+  push: vi.fn(),
+}));
+
 const t = (key, params = {}) => {
   const translations = {
     'CONVERSATION.VOICE_WIDGET.INCOMING_CALL': 'Incoming call',
@@ -31,6 +36,9 @@ const t = (key, params = {}) => {
     'CONVERSATION.VOICE_WIDGET.INBOUND_DIRECTION': 'Inbound',
     'CONVERSATION.VOICE_WIDGET.OUTBOUND_DIRECTION': 'Outbound',
     'CONVERSATION.VOICE_WIDGET.ROUTE_SEPARATOR': '→',
+    'CONVERSATION.VOICE_WIDGET.OPERATOR_EXTENSION': `ext. ${params.extension}`,
+    'CONVERSATION.VOICE_WIDGET.OPERATOR_LABEL': `Manager: ${params.name}`,
+    'CONVERSATION.VOICE_WIDGET.OPERATOR_WITH_EXTENSION': `${params.name} (${params.extension})`,
     'CONVERSATION.VOICE_WIDGET.CALL_ROUTE': `${params.from} → ${params.to}`,
     'CONVERSATION.VOICE_WIDGET.CALL_DIRECTION_ROUTE': `${params.direction} · ${params.route}`,
     'CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER':
@@ -58,11 +66,13 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('vue-router', async () => {
   const { ref } = await vi.importActual('vue');
+  routerMock.currentRoute = ref({
+    params: { accountId: 1 },
+    query: {},
+    name: 'conversation',
+  });
   return {
-    useRouter: () => ({
-      currentRoute: ref({ params: { accountId: 1 }, name: 'conversation' }),
-      push: vi.fn(),
-    }),
+    useRouter: () => routerMock,
   };
 });
 
@@ -138,6 +148,12 @@ describe('FloatingCallWidget', () => {
     mockSession.endCall.mockReset();
     mockSession.rejectIncomingCall.mockReset();
     mockSession.dismissCall.mockReset();
+    routerMock.currentRoute.value = {
+      params: { accountId: 1 },
+      query: {},
+      name: 'conversation',
+    };
+    routerMock.push.mockReset();
     storeGetters.getConversationById.mockReset();
     storeGetters.getInbox.mockReset();
     storeGetters.getAgentById.mockReset();
@@ -171,11 +187,84 @@ describe('FloatingCallWidget', () => {
 
     expect(wrapper.text()).toContain('Handled outside the browser');
     expect(wrapper.text()).toContain('client-party→support-line');
+    expect(wrapper.text()).toContain('Manager: Ayan');
     expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(true);
     expect(wrapper.find('[aria-label="Chat"]').exists()).toBe(true);
 
     await wrapper.get('[aria-label="Close"]').trigger('click');
 
     expect(mockSession.dismissCall).toHaveBeenCalledWith('call-claimed-1');
+  });
+
+  it('opens a communication thread instead of the underlying voice inbox conversation', async () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:1782820473.488058',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      communication_thread_id: 72,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await wrapper.get('[aria-label="Chat"]').trigger('click');
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'communication_thread_conversation',
+      params: {
+        accountId: 1,
+        communication_thread_id: 72,
+      },
+      query: {
+        assignee_type: 'all',
+        status: 'open',
+      },
+    });
+  });
+
+  it('keeps numbers in the route and shows the Sipuni manager on the second line', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:1782820473.488058',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+        operatorCandidates: [
+          { user_id: 179, name: 'John', internal_extension: '502' },
+        ],
+        operatorInternalExtension: '502',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('+77070001002→+77070001001');
+    expect(wrapper.text()).toContain('Manager: John (502)');
   });
 });

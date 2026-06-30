@@ -68,6 +68,7 @@ const mountComponent = ({
   inboxes = [voiceInbox()],
   dispatch,
   props = {},
+  selectedChat = null,
 } = {}) => {
   const dispatchMock =
     dispatch ||
@@ -79,6 +80,7 @@ const mountComponent = ({
   storeMock.getters = {
     'inboxes/getInboxes': inboxes,
     'contacts/getUIFlags': { isInitiatingCall: false },
+    getSelectedChat: selectedChat,
   };
   storeMock.dispatch = dispatchMock;
 
@@ -152,6 +154,22 @@ describe('VoiceCallButton', () => {
       return {
         call_sid: 'call-ref-1',
         conversation_id: 627,
+        call_session: {
+          from_number: '+77070001001',
+          to_number: '+77070001002',
+          metadata: {
+            metadata: {
+              operator_internal_extension: '502',
+              operator_candidates: [
+                {
+                  user_id: 177,
+                  name: 'Ayan',
+                  internal_extension: '502',
+                },
+              ],
+            },
+          },
+        },
       };
     });
     const { wrapper } = mountComponent({ dispatch });
@@ -159,7 +177,7 @@ describe('VoiceCallButton', () => {
     await wrapper.find('button').trigger('click');
     await flushPromises();
 
-    expect(initializeDeviceMock).toHaveBeenCalledWith(4593);
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4593, { native: true });
     expect(prewarmMicrophoneMock).toHaveBeenCalledWith('fonoster');
     expect(dispatch).toHaveBeenCalledWith('contacts/initiateCall', {
       contactId: 2179,
@@ -173,8 +191,32 @@ describe('VoiceCallButton', () => {
         inboxId: 4593,
         provider: 'fonoster',
         callDirection: 'outbound',
+        fromNumber: '+77070001001',
+        toNumber: '+77070001002',
+        operatorCandidates: [
+          {
+            user_id: 177,
+            name: 'Ayan',
+            internal_extension: '502',
+          },
+        ],
+        operatorInternalExtension: '502',
       }),
     ]);
+  });
+
+  it('does not navigate when the current chat already belongs to the contact', async () => {
+    const { wrapper } = mountComponent({
+      selectedChat: {
+        id: 25,
+        contact_id: 2179,
+      },
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(routerPushMock).not.toHaveBeenCalled();
   });
 
   it('does not initiate a Fonoster outbound call when the webphone is unavailable', async () => {
@@ -303,6 +345,22 @@ describe('VoiceCallButton', () => {
     await flushPromises();
 
     expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('navigates outbound calls to the communication thread when the API returns it', async () => {
+    const dispatch = vi.fn().mockResolvedValue({
+      call_sid: 'call-ref-thread',
+      conversation_id: 627,
+      communication_thread_id: 72,
+    });
+    const { wrapper } = mountComponent({ dispatch });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(routerPushMock).toHaveBeenCalledWith({
+      path: '/app/accounts/530/communication_threads/72?assignee_type=all',
+    });
   });
 
   it('does not start a call when disabled', async () => {

@@ -105,6 +105,56 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'broadcasts lightweight realtime status updates without waiting for message broadcasts' do
+      operator = create(:user, account: account)
+      create(:inbox_member, inbox: existing_call_session.inbox, user: operator)
+      allow(ActionCable.server).to receive(:broadcast)
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-direct-terminal-status-1',
+          event: 'session_completed',
+          status: 'completed'
+        )
+      ).perform
+
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        operator.pubsub_token,
+        hash_including(
+          event: 'voice_call.status_changed',
+          data: hash_including(
+            callSid: 'call-retry-1',
+            status: 'completed',
+            provider: existing_call_session.provider,
+            inbox_id: existing_call_session.inbox_id
+          )
+        )
+      )
+    end
+
+    it 'does not rebroadcast a realtime status update for an already processed event' do
+      operator = create(:user, account: account)
+      create(:inbox_member, inbox: existing_call_session.inbox, user: operator)
+      allow(ActionCable.server).to receive(:broadcast)
+
+      duplicate_payload = payload.merge(
+        event_key: 'evt-direct-terminal-status-duplicate-1',
+        event: 'session_completed',
+        status: 'completed'
+      )
+
+      described_class.new(payload: duplicate_payload).perform
+      described_class.new(payload: duplicate_payload).perform
+
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        operator.pubsub_token,
+        hash_including(
+          event: 'voice_call.status_changed',
+          data: hash_including(callSid: 'call-retry-1', status: 'completed')
+        )
+      ).once
+    end
+
     it 'projects the logical call key into voice call message data and meta' do
       existing_call_session.update!(
         provider: 'fonoster',
@@ -274,8 +324,8 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'inbound',
         external_call_ref: 'missed-fanout-505',
         status: 'missed',
-        from_number: '+77066318623',
-        to_number: '+77072890808',
+        from_number: '+77070001002',
+        to_number: '+77070001001',
         started_at: started_at,
         ended_at: started_at + 30.seconds,
         metadata: {
@@ -299,8 +349,8 @@ RSpec.describe Telephony::EventsIngestionService do
             'status' => 'missed',
             'call_sid' => 'missed-fanout-505',
             'call_direction' => 'inbound',
-            'from_number' => '+77066318623',
-            'to_number' => '+77072890808',
+            'from_number' => '+77070001002',
+            'to_number' => '+77070001001',
             'logical_call_key' => logical_key,
             'call_group_key' => logical_key
           }
@@ -317,8 +367,8 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'inbound',
         external_call_ref: 'missed-fanout-504',
         status: 'ringing',
-        from_number: '+77066318623',
-        to_number: '+77072890808',
+        from_number: '+77070001002',
+        to_number: '+77070001001',
         started_at: started_at + 1.second,
         metadata: {
           'metadata' => {
@@ -364,8 +414,8 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'inbound',
         external_call_ref: 'answered-context-ref',
         status: 'completed',
-        from_number: '+77066318623',
-        to_number: '+77072890808',
+        from_number: '+77070001002',
+        to_number: '+77070001001',
         started_at: Time.current
       )
       parent_message = create(
@@ -382,8 +432,8 @@ RSpec.describe Telephony::EventsIngestionService do
             'status' => 'completed',
             'call_sid' => 'answered-context-ref',
             'call_direction' => 'inbound',
-            'from_number' => '+77066318623',
-            'to_number' => '+77072890808',
+            'from_number' => '+77070001002',
+            'to_number' => '+77070001001',
             'logical_call_key' => 'fonoster-inbound:bucket-before'
           }
         }
@@ -399,8 +449,8 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'inbound',
         external_call_ref: 'missed-context-ref',
         status: 'ringing',
-        from_number: '+77066318623',
-        to_number: '+77072890808',
+        from_number: '+77070001002',
+        to_number: '+77070001001',
         started_at: parent_session.started_at + 3.seconds,
         metadata: {
           'metadata' => {
@@ -434,8 +484,8 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'inbound',
         external_call_ref: 'answered-state-ref',
         status: 'completed',
-        from_number: '+77066318623',
-        to_number: '+77072890808',
+        from_number: '+77070001002',
+        to_number: '+77070001001',
         started_at: Time.current,
         answered_at: 3.seconds.from_now,
         metadata: {
@@ -461,8 +511,8 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'inbound',
         external_call_ref: 'missed-state-ref',
         status: 'no_answer',
-        from_number: '+77066318623',
-        to_number: '+77072890808',
+        from_number: '+77070001002',
+        to_number: '+77070001001',
         started_at: answered_session.started_at + 1.second,
         metadata: {
           'metadata' => {
@@ -477,8 +527,8 @@ RSpec.describe Telephony::EventsIngestionService do
           'fonoster_call_ref' => answered_session.external_call_ref,
           'call_status' => 'completed',
           'call_direction' => 'inbound',
-          'from_number' => '+77066318623',
-          'to_number' => '+77072890808'
+          'from_number' => '+77070001002',
+          'to_number' => '+77070001001'
         }
       )
 
@@ -560,8 +610,8 @@ RSpec.describe Telephony::EventsIngestionService do
       phone_attrs = {
         'provider' => 'fonoster',
         'call_direction' => 'inbound',
-        'from_number' => '+77066318623',
-        'to_number' => '+77072890808'
+        'from_number' => '+77070001002',
+        'to_number' => '+77070001001'
       }
       rejected_message = create(
         :message,
@@ -816,11 +866,11 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'outbound',
         status: 'ringing',
         from_number: '+77172705175',
-        to_number: '+77066318623',
+        to_number: '+77070001002',
         metadata: {
           'bridge_response' => {
             'from' => '9098',
-            'to' => '+77066318623',
+            'to' => '+77070001002',
             'providerTo' => 'sip:1001@operator.cloud.vconsult.kz'
           },
           'fonoster_call_ref' => existing_call_session.external_call_ref
@@ -838,7 +888,7 @@ RSpec.describe Telephony::EventsIngestionService do
           to_number: '9098',
           from_number: '9098',
           metadata: {
-            outbound_target_number: '+77066318623'
+            outbound_target_number: '+77070001002'
           }
         )
       ).perform
@@ -846,10 +896,10 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.reload).to have_attributes(
         direction: 'outbound',
         from_number: '+77172705175',
-        to_number: '+77066318623'
+        to_number: '+77070001002'
       )
       expect(result.conversation.reload.additional_attributes).to include(
-        'to_number' => '+77066318623'
+        'to_number' => '+77070001002'
       )
     end
 
@@ -862,11 +912,11 @@ RSpec.describe Telephony::EventsIngestionService do
         status: 'ringing',
         started_at: started_at,
         last_event_at: started_at,
-        to_number: '+77066318623',
+        to_number: '+77070001002',
         metadata: {
           'bridge_response' => {
             'from' => '9098',
-            'to' => '+77066318623'
+            'to' => '+77070001002'
           },
           'fonoster_call_ref' => existing_call_session.external_call_ref
         },
@@ -920,7 +970,7 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.conversation.reload.additional_attributes).to include(
         'call_status' => 'no_answer',
         'fonoster_call_ref' => existing_call_session.external_call_ref,
-        'to_number' => '+77066318623'
+        'to_number' => '+77070001002'
       )
     end
 
@@ -934,7 +984,7 @@ RSpec.describe Telephony::EventsIngestionService do
         status: 'ringing',
         started_at: started_at,
         last_event_at: started_at,
-        to_number: '+77066318623'
+        to_number: '+77070001002'
       )
 
       result = described_class.new(
@@ -980,7 +1030,7 @@ RSpec.describe Telephony::EventsIngestionService do
         end_reason: 'operator_hangup',
         duration_seconds: 30,
         last_event_at: later_event_at,
-        to_number: '+77066318623'
+        to_number: '+77070001002'
       )
 
       result = described_class.new(
@@ -1029,7 +1079,7 @@ RSpec.describe Telephony::EventsIngestionService do
         end_reason: 'remote_hangup',
         duration_seconds: 30,
         last_event_at: later_event_at,
-        to_number: '+77066318623'
+        to_number: '+77070001002'
       )
 
       result = described_class.new(
@@ -1072,7 +1122,7 @@ RSpec.describe Telephony::EventsIngestionService do
         status: 'ringing',
         started_at: started_at,
         last_event_at: started_at,
-        to_number: '+77066318623'
+        to_number: '+77070001002'
       )
 
       described_class.new(
@@ -2299,7 +2349,7 @@ RSpec.describe Telephony::EventsIngestionService do
     it 'attaches an outbound recording to the existing call session when a technical ingress belongs to another channel' do
       other_account = create(:account)
       create(:telephony_number_binding, account: other_account, phone_number: '9098', ingress_number: '9098')
-      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77072890808')
+      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77070001001')
       voice_inbox = voice_channel.inbox
       number_binding = Telephony::NumberBinding.find_by!(account: account, inbox: voice_inbox)
       answered_at = Time.zone.parse(45.seconds.ago.iso8601)
@@ -2310,8 +2360,8 @@ RSpec.describe Telephony::EventsIngestionService do
         status: 'completed',
         inbox: voice_inbox,
         number_binding: number_binding,
-        from_number: '+77072890808',
-        to_number: '+77066318623',
+        from_number: '+77070001001',
+        to_number: '+77070001002',
         answered_at: answered_at,
         ended_at: ended_at,
         duration_seconds: 12
@@ -2686,6 +2736,100 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.latest_voice_message.content_attributes.dig('data', 'recording_url')).to eq(
         'https://cloud.vconsult.kz/api/recordings/call-retry-1.wav'
       )
+    end
+
+    it 'keeps Sipuni recordings behind the signed same-origin playback route' do
+      external_url = 'https://sipuni.com/api/crm/record?id=1782816260.483832&hash=recording-signature&user=015856'
+      existing_call_session.update!(provider: 'sipuni', status: 'completed', ended_at: 1.minute.ago)
+
+      result = described_class.new(
+        payload: {
+          event_key: 'evt-sipuni-recording-ready',
+          provider: 'sipuni',
+          callRef: 'call-retry-1',
+          event: 'recording_ready',
+          recordingUrl: external_url
+        }
+      ).perform
+
+      recording_url = result.latest_voice_message.content_attributes.dig('data', 'recording_url')
+
+      expect(result.reload.recording_ref).to eq(external_url)
+      expect(result.metadata.dig('recording', 'recording_url')).to eq(external_url)
+      expect(recording_url).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording?")
+      expect(recording_url).to include('recording_token=')
+      expect(result.latest_voice_message.content_attributes.dig('data', 'recording', 'recording_url')).to eq(recording_url)
+    end
+
+    it 'stores a late Sipuni terminal recording after the webphone already closed the call' do
+      external_url = 'https://sipuni.com/api/crm/record?id=1782820473.488058&hash=recording-signature&user=015856'
+      ended_at = Time.zone.parse(10.seconds.ago.iso8601)
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
+        status: 'completed',
+        ended_at: ended_at,
+        last_event_at: ended_at
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed', 'call_sid' => 'call-retry-1' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'sipuni:call-retry-1:2:ANSWER:recording',
+          provider: 'sipuni',
+          event: 'session_completed',
+          status: 'completed',
+          ended_at: (ended_at + 1.second).iso8601,
+          recording_url: external_url
+        )
+      ).perform
+
+      data = message.reload.content_attributes.fetch('data')
+
+      expect(result.reload.recording_ref).to eq(external_url)
+      expect(result.metadata.dig('last_payload', 'recording_url')).to eq(external_url)
+      expect(data['recording_url']).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording?")
+      expect(data['recording_url']).to include('recording_token=')
+      expect(data.dig('recording', 'recording_url')).to eq(data['recording_url'])
+    end
+
+    it 'reuses a local outbound Sipuni call session when provider call id arrives later' do
+      local_call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:local:outbound-1',
+        provider_call_sid: '1782816207.483780',
+        direction: 'outbound',
+        status: 'in_progress',
+        to_number: '+77070001002'
+      )
+
+      result = described_class.new(
+        payload: {
+          event_key: 'evt-sipuni-provider-call-id-completed',
+          account_id: account.id,
+          provider: 'sipuni',
+          call_ref: 'sipuni:1782816207.483780',
+          provider_call_sid: '1782816207.483780',
+          event: 'session_completed',
+          status: 'completed',
+          answered_at: 10.seconds.ago.iso8601
+        }
+      ).perform
+
+      expect(result).to eq(local_call_session)
+      expect(result.reload).to have_attributes(status: 'completed')
+      expect(account.telephony_call_sessions.where(provider_call_sid: '1782816207.483780').count).to eq(1)
+      expect(account.telephony_call_sessions.find_by(external_call_ref: 'sipuni:1782816207.483780')).to be_nil
     end
 
     it 'does not resolve ambiguous bridge event ownership from call_ref alone' do

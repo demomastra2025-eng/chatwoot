@@ -156,8 +156,8 @@ describe('useCallsStore', () => {
       conversationId: 612,
       inboxId: 158,
       logicalCallKey: 'fonoster-inbound:shared-key',
-      fromNumber: '+77066318623',
-      toNumber: '+77072890808',
+      fromNumber: '+77070001002',
+      toNumber: '+77070001001',
     });
 
     store.addCall({
@@ -167,8 +167,8 @@ describe('useCallsStore', () => {
       conversationId: 612,
       inboxId: 158,
       logicalCallKey: 'fonoster-inbound:shared-key',
-      fromNumber: '+77066318623',
-      toNumber: '+77072890808',
+      fromNumber: '+77070001002',
+      toNumber: '+77070001001',
     });
 
     expect(store.calls).toEqual([
@@ -479,6 +479,34 @@ describe('useCallsStore', () => {
     ].forEach(status => {
       store.addCall({ callSid: `call-${status}` });
       store.handleCallStatusChanged({ callSid: `call-${status}`, status });
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
+  it('does not re-add a Sipuni call when a delayed non-terminal event arrives after completion', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'sipuni:1782820473.488058',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni:1782820473.488058',
+    });
+    store.handleCallStatusChanged({
+      callSid: 'sipuni:1782820473.488058',
+      status: 'completed',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni:1782820473.488058',
+    });
+    store.handleCallStatusChanged({
+      callSid: 'sipuni:1782820473.488058',
+      status: 'in_progress',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 724,
+      logicalCallKey: 'sipuni:1782820473.488058',
     });
 
     expect(store.calls).toEqual([]);

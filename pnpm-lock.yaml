@@ -151,6 +151,9 @@ importers:
       idb:
         specifier: ^8.0.0
         version: 8.0.0
+      janus-gateway:
+        specifier: ^1.4.1
+        version: 1.4.1
       js-cookie:
         specifier: ^3.0.5
         version: 3.0.5
@@ -268,6 +271,9 @@ importers:
       wavesurfer.js:
         specifier: 7.8.6
         version: 7.8.6
+      webrtc-adapter:
+        specifier: 9.0.3
+        version: 9.0.3
     devDependencies:
       '@egoist/tailwindcss-icons':
         specifier: ^1.9.2
@@ -3062,6 +3068,9 @@ packages:
   jackspeak@3.4.3:
     resolution: {integrity: sha512-OGlZQpz2yfahA/Rd1Y8Cd9SIEsqvXkLVoSw/cgwhnhFMDbsQFeZYoJJ7bIZBS9BcamUW96asq/npPWugM+RQBw==}
 
+  janus-gateway@1.4.1:
+    resolution: {integrity: sha512-vRJBtxFEukpn5mjgw6y40CDRYwcpUxl6FvZywp3MsYx4FcPAfqtwD+JTDPM3KiiyRnGL7BleuQNnTQZXD70k8A==}
+
   jiti@1.21.6:
     resolution: {integrity: sha512-2yTgeWTWzMWkHu6Jp9NKgePDaYHbntiwvYuuJLbbN9vl7DC9DvXKOB2BC3ZZ92D3cvV/aflH0osDfwpHepQ53w==}
     hasBin: true
@@ -4824,8 +4833,8 @@ packages:
     resolution: {integrity: sha512-n4W4YFyz5JzOfQeA8oN7dUYpR+MBP3PIUsn2jLjWXwK5ASUzt0Jc/A5sAUZoCYFJRGF0FBKJ+1JjN43rNdsQzA==}
     engines: {node: '>=20'}
 
-  webrtc-adapter@9.0.1:
-    resolution: {integrity: sha512-1AQO+d4ElfVSXyzNVTOewgGT/tAomwwztX/6e3totvyyzXPvXIIuUUjAmyZGbKBKbZOXauuJooZm3g6IuFuiNQ==}
+  webrtc-adapter@9.0.3:
+    resolution: {integrity: sha512-5fALBcroIl31OeXAdd1YUntxiZl1eHlZZWzNg3U4Fn+J9/cGL3eT80YlrsWGvj2ojuz1rZr2OXkgCzIxAZ7vRQ==}
     engines: {node: '>=6.0.0', npm: '>=3.10.0'}
 
   whatwg-encoding@2.0.0:
@@ -8034,6 +8043,10 @@ snapshots:
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
 
+  janus-gateway@1.4.1:
+    dependencies:
+      webrtc-adapter: 9.0.3
+
   jiti@1.21.6: {}
 
   jiti@1.21.7: {}
@@ -9803,7 +9816,7 @@ snapshots:
       recordrtc: 5.6.2
       video.js: 7.21.1
       videojs-wavesurfer: 3.8.0
-      webrtc-adapter: 9.0.1
+      webrtc-adapter: 9.0.3
 
   videojs-vtt.js@0.15.5:
     dependencies:
@@ -10006,7 +10019,7 @@ snapshots:
 
   webidl-conversions@8.0.0: {}
 
-  webrtc-adapter@9.0.1:
+  webrtc-adapter@9.0.3:
     dependencies:
       sdp: 3.2.0
 

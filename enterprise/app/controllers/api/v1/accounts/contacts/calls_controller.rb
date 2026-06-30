@@ -13,16 +13,7 @@ class Api::V1::Accounts::Contacts::CallsController < Api::V1::Accounts::BaseCont
       contact: contact
     )
 
-    conversation = result[:conversation]
-
-    render json: {
-      conversation_id: conversation.display_id,
-      inbox_id: voice_inbox.id,
-      call_sid: result[:call_sid],
-      conference_sid: conversation.additional_attributes['conference_sid'],
-      browser_join_supported: result[:browser_join_supported],
-      call_session: result[:call_session]&.to_telephony_h
-    }
+    render json: outbound_call_payload(result)
   rescue Telephony::Error, ArgumentError => e
     render json: {
       message: e.message,
@@ -41,5 +32,20 @@ class Api::V1::Accounts::Contacts::CallsController < Api::V1::Accounts::BaseCont
       account_id: Current.account.id,
       channel_type: 'Channel::Voice'
     ).find(params.require(:inbox_id))
+  end
+
+  def outbound_call_payload(result)
+    conversation = result[:conversation]
+    communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
+
+    {
+      conversation_id: conversation.display_id,
+      communication_thread_id: communication_thread&.display_id,
+      inbox_id: voice_inbox.id,
+      call_sid: result[:call_sid],
+      conference_sid: conversation.additional_attributes['conference_sid'],
+      browser_join_supported: result[:browser_join_supported],
+      call_session: result[:call_session]&.to_telephony_h
+    }
   end
 end

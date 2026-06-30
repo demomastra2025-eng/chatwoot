@@ -57,6 +57,7 @@ const formatProvider = provider => {
   if (normalizedProvider === 'telegram_personal') return 'Telegram Personal';
   if (normalizedProvider === 'fonoster') return 'Fonoster';
   if (normalizedProvider === 'sipuni') return 'Sipuni';
+  if (normalizedProvider === 'binotel') return 'Binotel';
   if (normalizedProvider === 'twilio') return 'Twilio';
   if (normalizedProvider === 'google') return 'Google';
   if (normalizedProvider === 'microsoft') return 'Microsoft';

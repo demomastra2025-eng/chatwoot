@@ -25,16 +25,11 @@ class Telephony::VirtualPbx::DesiredStateBuilder
       provider_kind: config[:provider_kind],
       managed_by: MANAGED_BY_ONELINK,
       name: config[:name],
-      phone_numbers: {
-        display_phone_number: phone_numbers[:display_phone_number],
-        provider_account_number: phone_numbers[:provider_account_number],
-        ingress_number: phone_numbers[:ingress_number],
-        fonoster_tel_url: phone_numbers[:fonoster_tel_url]
-      }.compact,
-      refs: refs_payload(resources, provider_connection),
-      connection: connection_payload(provider_connection),
-      routing: routing_payload(routing, binding),
-      profiles: profiles_payload(config[:profiles]),
+      phone_numbers: phone_numbers_payload(phone_numbers, config[:provider_kind]),
+      refs: refs_payload(resources, provider_connection, config[:provider_kind]),
+      connection: connection_payload(provider_connection, config[:provider_kind]),
+      routing: routing_payload(routing, binding, config[:provider_kind]),
+      profiles: profiles_payload(config[:profiles], config[:provider_kind]),
       ownership: ownership_payload(config, binding),
       resources: {
         number_binding_id: resources[:number_binding_id],
@@ -47,20 +42,36 @@ class Telephony::VirtualPbx::DesiredStateBuilder
 
   attr_reader :account, :config_builder
 
-  def refs_payload(resources, provider_connection)
-    {
-      number_ref: resources[:number_ref],
-      trunk_ref: resources[:trunk_ref] || provider_connection&.fonoster_trunk_ref,
-      credentials_ref: provider_connection&.credentials_ref || provider_connection&.fonoster_credentials_ref,
-      app_ref: resources[:app_ref],
-      runtime_app_ref: resources[:runtime_app_ref]
-    }.compact
+  def phone_numbers_payload(phone_numbers, provider_kind)
+    payload = {
+      display_phone_number: phone_numbers[:display_phone_number],
+      provider_account_number: phone_numbers[:provider_account_number],
+      ingress_number: phone_numbers[:ingress_number]
+    }
+    payload[:fonoster_tel_url] = phone_numbers[:fonoster_tel_url] unless local_native_provider_kind?(provider_kind)
+    payload.compact
   end
 
-  def connection_payload(provider_connection)
+  def refs_payload(resources, provider_connection, provider_kind)
+    payload = {
+      number_ref: resources[:number_ref],
+      credentials_ref: provider_connection&.credentials_ref
+    }
+    unless local_native_provider_kind?(provider_kind)
+      payload.merge!(
+        trunk_ref: resources[:trunk_ref] || provider_connection&.fonoster_trunk_ref,
+        credentials_ref: provider_connection&.credentials_ref || provider_connection&.fonoster_credentials_ref,
+        app_ref: resources[:app_ref],
+        runtime_app_ref: resources[:runtime_app_ref]
+      )
+    end
+    payload.compact
+  end
+
+  def connection_payload(provider_connection, provider_kind)
     return {} if provider_connection.blank?
 
-    {
+    payload = {
       provider_kind: provider_connection.provider_kind,
       name: provider_connection.name,
       host: provider_connection.host,
@@ -68,19 +79,20 @@ class Telephony::VirtualPbx::DesiredStateBuilder
       transport: provider_connection.transport,
       username: provider_connection.username,
       send_register: provider_connection.send_register,
-      credentials_ref: provider_connection.credentials_ref || provider_connection.fonoster_credentials_ref,
-      fonoster_credentials_ref: provider_connection.fonoster_credentials_ref,
+      credentials_ref: provider_connection.credentials_ref,
       password_configured: provider_connection.password_secret_ref.present?
-    }.compact
+    }
+    payload[:fonoster_credentials_ref] = provider_connection.fonoster_credentials_ref unless local_native_provider_kind?(provider_kind)
+    payload.compact
   end
 
-  def routing_payload(routing, binding)
+  def routing_payload(routing, binding, provider_kind)
     {
       mode: routing[:mode],
       bridge_mode: routing[:bridge_mode],
       fallback_mode: routing[:fallback_mode],
       operator_distribution_mode: routing[:operator_distribution_mode],
-      app_ref: binding&.app_ref_for_policy(binding&.routing_policy),
+      app_ref: local_native_provider_kind?(provider_kind) ? nil : binding&.app_ref_for_policy(binding&.routing_policy),
       operator_agent_ref: routing[:operator_agent_ref],
       operator_agent_aor: routing[:operator_agent_aor],
       operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?,
@@ -89,10 +101,10 @@ class Telephony::VirtualPbx::DesiredStateBuilder
     }.compact
   end
 
-  def profiles_payload(profiles)
+  def profiles_payload(profiles, provider_kind)
     Array.wrap(profiles).map do |profile|
       attrs = profile.with_indifferent_access
-      {
+      payload = {
         id: attrs[:id],
         user_id: attrs[:user_id],
         user_name: attrs[:user_name],
@@ -101,17 +113,24 @@ class Telephony::VirtualPbx::DesiredStateBuilder
         sip_username: attrs[:sip_username],
         sip_host: attrs[:sip_host],
         credentials_ref: attrs[:credentials_ref],
-        fonoster_credentials_ref: attrs[:fonoster_credentials_ref],
         local_agent_ref: attrs[:agent_ref],
-        agent_ref: attrs[:fonoster_agent_ref].presence || attrs[:agent_ref],
-        fonoster_agent_ref: attrs[:fonoster_agent_ref],
+        agent_ref: local_native_provider_kind?(provider_kind) ? attrs[:agent_ref] : attrs[:fonoster_agent_ref].presence || attrs[:agent_ref],
         agent_aor: attrs[:agent_aor],
         availability_mode: attrs[:availability_mode],
         status: attrs[:status],
         access_configured: attrs[:sip_password_configured] || attrs[:credentials_ref].present?,
         enabled: attrs[:enabled]
-      }.compact
+      }
+      unless local_native_provider_kind?(provider_kind)
+        payload[:fonoster_credentials_ref] = attrs[:fonoster_credentials_ref]
+        payload[:fonoster_agent_ref] = attrs[:fonoster_agent_ref]
+      end
+      payload.compact
     end
+  end
+
+  def local_native_provider_kind?(provider_kind)
+    provider_kind.to_s == 'sipuni'
   end
 
   def ownership_payload(config, binding)

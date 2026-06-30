@@ -68,9 +68,52 @@ const isCallButtonBusy = computed(
   () => props.disabled || isPreparingCall.value || isInitiatingCall.value
 );
 
-const navigateToConversation = conversationId => {
+const sameValue = (left, right) =>
+  left !== undefined &&
+  left !== null &&
+  right !== undefined &&
+  right !== null &&
+  String(left) === String(right);
+
+const selectedChatContactId = () => {
+  const selectedChat = store.getters.getSelectedChat;
+  return (
+    selectedChat?.contact_id ||
+    selectedChat?.contactId ||
+    selectedChat?.meta?.sender?.id ||
+    selectedChat?.meta?.sender?.contact_id ||
+    selectedChat?.meta?.sender?.contactId ||
+    null
+  );
+};
+
+const navigateToConversation = response => {
+  if (sameValue(selectedChatContactId(), props.contactId)) return;
+
   const accountId = route.params.accountId;
+  const conversationId = response?.conversation_id || response;
+  const communicationThreadId =
+    response?.communication_thread_id || response?.communicationThreadId;
   if (conversationId && accountId) {
+    if (communicationThreadId) {
+      if (
+        String(route.params?.communication_thread_id) ===
+        String(communicationThreadId)
+      ) {
+        return;
+      }
+
+      const path = frontendURL(
+        conversationUrl({
+          accountId,
+          id: communicationThreadId,
+          communicationThread: true,
+        })
+      );
+      router.push({ path });
+      return;
+    }
+
     if (
       String(route.params?.conversation_id || route.params?.conversationId) ===
       String(conversationId)
@@ -88,39 +131,67 @@ const navigateToConversation = conversationId => {
   }
 };
 
-const isFonosterInbox = inbox => inbox?.provider === 'fonoster';
+const BROWSER_SIP_PROVIDERS = new Set(['fonoster', 'sipuni']);
 
-const prepareFonosterWebphone = async inbox => {
-  if (!isFonosterInbox(inbox)) return true;
+const isBrowserSipInbox = inbox => BROWSER_SIP_PROVIDERS.has(inbox?.provider);
 
-  const microphonePrewarm = WebphoneClient.prewarmMicrophone('fonoster').catch(
+const callSessionRouteMetadata = callSession => {
+  const metadata = callSession?.metadata || {};
+  return metadata.metadata || metadata.route_metadata || {};
+};
+
+const callSessionOperatorCandidates = callSession => {
+  const routeMetadata = callSessionRouteMetadata(callSession);
+  const candidates =
+    routeMetadata.operator_candidates || callSession?.operator_candidates;
+  return Array.isArray(candidates) ? candidates : null;
+};
+
+const callSessionOperatorInternalExtension = callSession => {
+  const routeMetadata = callSessionRouteMetadata(callSession);
+  return (
+    routeMetadata.operator_internal_extension ||
+    callSession?.operator_internal_extension ||
+    routeMetadata.internal_extension ||
+    callSession?.metadata?.operator_identity?.internal_extension ||
+    null
+  );
+};
+
+const prepareBrowserSipWebphone = async inbox => {
+  if (!isBrowserSipInbox(inbox)) return true;
+
+  const provider = inbox.provider;
+  const microphonePrewarm = WebphoneClient.prewarmMicrophone(provider).catch(
     error => ({
-      provider: 'fonoster',
+      provider,
       prewarmed: false,
       reason: error?.name || 'microphone_unavailable',
     })
   );
   try {
-    const session = await WebphoneClient.initializeDevice(inbox.id);
+    const session = await WebphoneClient.initializeDevice(inbox.id, {
+      native: true,
+    });
     const microphone = await microphonePrewarm;
     const browserJoinSupported =
       session?.browserJoinSupported ?? session?.browser_join_supported;
     if (browserJoinSupported === false) {
-      WebphoneClient.stopMicrophonePrewarm('fonoster');
+      WebphoneClient.stopMicrophonePrewarm(provider);
       return true;
     }
 
     const ready =
-      session?.provider === 'fonoster' &&
+      session?.provider === provider &&
       session?.callingSupported !== false &&
       session?.registered !== false &&
       microphone?.prewarmed !== false;
-    if (!ready) WebphoneClient.stopMicrophonePrewarm('fonoster');
+    if (!ready) WebphoneClient.stopMicrophonePrewarm(provider);
     return ready;
   } catch (error) {
-    WebphoneClient.stopMicrophonePrewarm('fonoster');
+    WebphoneClient.stopMicrophonePrewarm(provider);
     // eslint-disable-next-line no-console
-    console.warn('Failed to prepare Fonoster webphone:', error);
+    console.warn('Failed to prepare browser SIP webphone:', error);
     return false;
   }
 };
@@ -130,7 +201,7 @@ const startCall = async inbox => {
 
   isPreparingCall.value = true;
   try {
-    const webphoneReady = await prepareFonosterWebphone(inbox);
+    const webphoneReady = await prepareBrowserSipWebphone(inbox);
     if (!webphoneReady) {
       useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'));
       return;
@@ -141,6 +212,7 @@ const startCall = async inbox => {
       inboxId: inbox.id,
     });
     const { call_sid: callSid, conversation_id: conversationId } = response;
+    const callSession = response?.call_session || response?.callSession || {};
     const browserJoinSupported =
       response?.browser_join_supported ?? response?.browserJoinSupported;
 
@@ -155,13 +227,19 @@ const startCall = async inbox => {
       provider: inbox.provider,
       callDirection: 'outbound',
       browserJoinSupported,
+      fromNumber:
+        callSession.from_number || callSession.fromNumber || inbox.phone_number,
+      toNumber: callSession.to_number || callSession.toNumber || props.phone,
+      operatorCandidates: callSessionOperatorCandidates(callSession),
+      operatorInternalExtension:
+        callSessionOperatorInternalExtension(callSession),
     });
 
     useAlert(t('CONTACT_PANEL.CALL_INITIATED'));
-    navigateToConversation(response?.conversation_id);
+    navigateToConversation(response);
   } catch (error) {
-    if (isFonosterInbox(inbox)) {
-      WebphoneClient.stopMicrophonePrewarm('fonoster');
+    if (isBrowserSipInbox(inbox)) {
+      WebphoneClient.stopMicrophonePrewarm(inbox.provider);
     }
     const apiError = error?.message;
     useAlert(apiError || t('CONTACT_PANEL.CALL_FAILED'));

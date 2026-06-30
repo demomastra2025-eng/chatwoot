@@ -113,7 +113,7 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     end
   end
 
-  it 'marks managed Sipuni channels without shared trunk credentials as not ready' do
+  it 'marks managed Sipuni channels that request registration without SIP device credentials as not ready' do
     result = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator).create_channel(
       {
         provider_kind: 'sipuni',
@@ -129,10 +129,10 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     payload = described_class.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
 
     expect(payload[:ready]).to be(false)
-    expect(payload.fetch(:warnings).map { |warning| warning[:code] }).to include('missing_shared_sipuni_trunk_credentials')
+    expect(payload.fetch(:warnings).map { |warning| warning[:code] }).to include('missing_provider_sip_device_credentials')
   end
 
-  it 'marks managed Sipuni channels using an employee SIP profile as shared trunk credentials as not ready' do
+  it 'allows managed Sipuni channels to use the provider SIP device login even when it matches an employee SIP profile' do
     service = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator)
     result = service.create_channel(
       {
@@ -169,8 +169,12 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
 
     payload = described_class.new(account: account).for_inbox(inbox.id)
 
-    expect(payload[:ready]).to be(false)
-    expect(payload.fetch(:warnings).map { |warning| warning[:code] }).to include('shared_sipuni_trunk_uses_employee_profile')
+    expect(payload[:ready]).to be(true)
+    expect(payload.fetch(:warnings).map { |warning| warning[:code] }).not_to include(
+      'shared_sipuni_trunk_uses_employee_profile',
+      'missing_shared_sipuni_trunk_credentials',
+      'missing_provider_sip_device_credentials'
+    )
     expect(payload.to_json).not_to include('do-not-return-this-secret')
   end
 

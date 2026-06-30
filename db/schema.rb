@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_29_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_06_30_133000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2824,9 +2824,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_29_120000) do
     t.datetime "last_synced_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.text "sip_password"
     t.index ["account_id", "agent_aor"], name: "idx_tel_sip_profiles_account_agent_aor", unique: true, where: "(agent_aor IS NOT NULL)"
     t.index ["account_id", "agent_ref"], name: "idx_tel_sip_profiles_account_agent_ref", unique: true, where: "(agent_ref IS NOT NULL)"
-    t.index ["account_id", "inbox_id", "user_id", "internal_extension"], name: "idx_tel_sip_profiles_account_inbox_user_ext", unique: true
+    t.index ["account_id", "inbox_id", "internal_extension"], name: "idx_tel_sip_profiles_account_inbox_ext", unique: true
     t.index ["account_id", "provider_connection_id"], name: "idx_tel_sip_profiles_account_provider_connection"
     t.index ["account_id"], name: "index_telephony_sip_profiles_on_account_id"
     t.index ["inbox_id"], name: "index_telephony_sip_profiles_on_inbox_id"

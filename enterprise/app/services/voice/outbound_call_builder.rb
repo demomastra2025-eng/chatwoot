@@ -53,11 +53,11 @@ class Voice::OutboundCallBuilder
   end
 
   def find_or_create_conversation!(contact_inbox)
-    reusable_fonoster_conversation || create_conversation!(contact_inbox)
+    reusable_native_telephony_conversation || create_conversation!(contact_inbox)
   end
 
-  def reusable_fonoster_conversation
-    return unless fonoster_provider?
+  def reusable_native_telephony_conversation
+    return unless native_telephony_provider?
 
     account.conversations
            .where(inbox_id: inbox.id, contact_id: contact.id)
@@ -69,8 +69,16 @@ class Voice::OutboundCallBuilder
     inbox.channel.provider == 'fonoster'
   end
 
+  def sipuni_provider?
+    inbox.channel.provider == 'sipuni'
+  end
+
+  def native_telephony_provider?
+    fonoster_provider? || sipuni_provider?
+  end
+
   def initiate_call!(conversation)
-    if fonoster_provider?
+    if native_telephony_provider?
       result = Telephony::CallsService.new(account: account).create_outbound!(
         inbox: inbox,
         contact: contact,
@@ -109,13 +117,14 @@ class Voice::OutboundCallBuilder
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     attrs['meta']['initiated_at'] = timestamp
     attrs['fonoster_call_ref'] = call_sid if fonoster_provider?
+    attrs['sipuni_call_ref'] = call_sid if sipuni_provider?
 
     update_attrs = {
       additional_attributes: attrs,
       last_activity_at: current_time
     }
-    update_attrs[:identifier] = call_sid unless fonoster_provider? && conversation.identifier.present?
-    update_attrs[:status] = :open if fonoster_provider?
+    update_attrs[:identifier] = call_sid unless native_telephony_provider? && conversation.identifier.present?
+    update_attrs[:status] = :open if native_telephony_provider?
 
     conversation.update!(update_attrs)
   end
@@ -145,8 +154,10 @@ class Voice::OutboundCallBuilder
   end
 
   def reset_reused_fonoster_call_state!(attrs, call_sid)
-    return unless fonoster_provider?
-    return if attrs['fonoster_call_ref'].present? && attrs['fonoster_call_ref'] == call_sid
+    return unless native_telephony_provider?
+
+    provider_call_ref_key = fonoster_provider? ? 'fonoster_call_ref' : 'sipuni_call_ref'
+    return if attrs[provider_call_ref_key].present? && attrs[provider_call_ref_key] == call_sid
 
     %w[
       call_started_at

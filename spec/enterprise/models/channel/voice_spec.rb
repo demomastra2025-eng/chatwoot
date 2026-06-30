@@ -62,19 +62,29 @@ RSpec.describe Channel::Voice do
       expect(channel).to be_valid
     end
 
-    it 'rejects the legacy direct Sipuni provider' do
+    it 'accepts native Sipuni provider config' do
+      account = create(:account)
+      provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
       sipuni_channel = build(
         :channel_voice,
-        account: create(:account),
+        account: account,
         provider: 'sipuni',
         provider_config: {
-          account_number: '123456',
-          default_internal_number: '100'
+          number_ref: 'sipuni-main-line',
+          provider_connection_id: provider_connection.id,
+          routing_mode: 'operator'
         }
       )
 
+      expect(sipuni_channel).to be_valid
+    end
+
+    it 'requires native Sipuni routing config' do
+      sipuni_channel = build(:channel_voice, provider: 'sipuni', provider_config: { routing_mode: 'operator' })
+
       expect(sipuni_channel).not_to be_valid
-      expect(sipuni_channel.errors.details[:provider]).to include(a_hash_including(error: :inclusion))
+      expect(sipuni_channel.errors[:provider_config]).to include('number_ref is required for Sipuni provider')
+      expect(sipuni_channel.errors[:provider_config]).to include('provider_connection_id is required for Sipuni provider')
     end
   end
 

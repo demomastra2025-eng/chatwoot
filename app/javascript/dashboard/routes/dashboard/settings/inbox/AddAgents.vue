@@ -95,12 +95,12 @@ export default {
       );
     },
     isVirtualPbxProfileAssignmentInbox() {
-      return ['sipuni', 'asterisk_analog'].includes(
+      return ['sipuni', 'binotel', 'asterisk_analog'].includes(
         this.virtualPbxProviderKind
       );
     },
     isVirtualPbxSipCredentialsVisible() {
-      return this.virtualPbxProviderKind === 'sipuni';
+      return ['sipuni', 'binotel'].includes(this.virtualPbxProviderKind);
     },
     submitButtonLabel() {
       if (this.isVirtualPbxProfileAssignmentInbox) {
@@ -293,7 +293,10 @@ export default {
             source: 'virtual_pbx_agents_step',
           },
         },
-        { dryRun: false, remoteCommit: true }
+        {
+          dryRun: false,
+          remoteCommit: this.virtualPbxProviderKind !== 'sipuni',
+        }
       );
       const errors = response?.payload?.errors || [];
       if (errors.length) throw new Error(this.formatVirtualPbxErrors(errors));

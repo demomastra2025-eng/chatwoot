@@ -41,6 +41,14 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data.payload || r.data);
   }
 
+  getNativeWebphoneToken(inboxId = null) {
+    return axios
+      .post(`${this.baseUrl()}/telephony/webphone/token`, {
+        ...(inboxId ? { inbox_id: inboxId } : {}),
+      })
+      .then(r => r.data.payload || r.data);
+  }
+
   updateWebphonePresence(registered, { inboxId = null } = {}) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/presence`, {
@@ -63,6 +71,12 @@ class VoiceAPI extends ApiClient {
         status,
         reason,
       })
+      .then(r => r.data.payload || r.data);
+  }
+
+  showTelephonyCall(callRef) {
+    return axios
+      .get(`${this.baseUrl()}/telephony/calls/${encodeURIComponent(callRef)}`)
       .then(r => r.data.payload || r.data);
   }
 

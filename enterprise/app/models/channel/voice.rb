@@ -24,7 +24,7 @@ class Channel::Voice < ApplicationRecord
   CURRENT_FONOSTER_OPERATOR_AGENT_AOR = 'sip:1001@operator.cloud.vconsult.kz'.freeze
   STALE_FONOSTER_OPERATOR_AGENT_AORS = ['sip:1001@company.example'].freeze
 
-  PROVIDERS = %w[twilio fonoster].freeze
+  PROVIDERS = %w[twilio fonoster sipuni].freeze
 
   validates :phone_number, presence: true, uniqueness: true
   validates :provider, presence: true, inclusion: { in: PROVIDERS }
@@ -36,7 +36,7 @@ class Channel::Voice < ApplicationRecord
   # Provider-specific configs stored in JSON
   validate :validate_provider_config
   before_validation :provision_twilio_on_create, on: :create, if: :twilio?
-  after_commit :sync_fonoster_binding, on: %i[create update], if: :fonoster?
+  after_commit :sync_telephony_binding, on: %i[create update], if: :native_telephony_provider?
 
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
 
@@ -93,6 +93,8 @@ class Channel::Voice < ApplicationRecord
       validate_twilio_config
     when 'fonoster'
       validate_fonoster_config
+    when 'sipuni'
+      validate_sipuni_config
     end
   end
 
@@ -127,6 +129,19 @@ class Channel::Voice < ApplicationRecord
     return if config[:operator_agent_aor].present? || config[:operator_agent_ref].present?
 
     errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when targeted operator routing is selected')
+  end
+
+  def validate_sipuni_config
+    config = provider_config.with_indifferent_access
+    routing_mode = config[:routing_mode].to_s.presence || 'operator'
+    operator_distribution_mode = Telephony::RoutingPolicy.normalized_operator_distribution_mode(config[:operator_distribution_mode])
+    config[:provider_kind] = 'sipuni'
+    config[:operator_distribution_mode] = operator_distribution_mode
+    self.provider_config = config
+
+    errors.add(:provider_config, 'number_ref is required for Sipuni provider') if config[:number_ref].blank?
+    errors.add(:provider_config, 'provider_connection_id is required for Sipuni provider') if config[:provider_connection_id].blank?
+    errors.add(:provider_config, 'routing_mode must be one of operator, app, ai, reject') unless routing_mode.in?(%w[operator app ai reject])
   end
 
   def normalized_fonoster_operator_agent_aor(value)
@@ -168,10 +183,14 @@ class Channel::Voice < ApplicationRecord
     errors.add(:base, "Twilio setup failed: #{e.message}")
   end
 
-  def sync_fonoster_binding
+  def native_telephony_provider?
+    provider.in?(%w[fonoster sipuni])
+  end
+
+  def sync_telephony_binding
     Telephony::NumberBinding.sync_from_voice_channel!(self)
   rescue StandardError => e
-    Rails.logger.error("FONOSTER_VOICE_BINDING_SYNC_ERROR channel_id=#{id} account_id=#{account_id} message=#{e.message}")
+    Rails.logger.error("VOICE_BINDING_SYNC_ERROR provider=#{provider} channel_id=#{id} account_id=#{account_id} message=#{e.message}")
     raise
   end
 

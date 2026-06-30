@@ -22,6 +22,11 @@ class Telephony::EventsIngestionService
     operator_cancelled
     operator_canceled
   ].freeze
+  RECONCILIATION_EVENT_SOURCES = %w[
+    bridge_reconciliation
+    sipuni_local_outbound_reconciliation
+    sipuni_provider_reconciliation
+  ].freeze
 
   EVENT_STATUS_MAP = {
     'created' => 'created',
@@ -123,7 +128,7 @@ class Telephony::EventsIngestionService
 
     event.update(status: 'failed', error_message: e.message)
     Rails.logger.error(
-      "FONOSTER_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
+      "TELEPHONY_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
       "event_type=#{event.event_type} call_ref=#{call_ref} error_class=#{e.class.name} message=#{e.message}"
     )
     event.call_session
@@ -190,6 +195,8 @@ class Telephony::EventsIngestionService
       end
     end
 
+    broadcast_realtime_call_status!(call_session) if call_session.present? && realtime_status_event?
+
     if call_session.present? && terminal_late_terminal_event
       reconcile_stale_terminal_voice_message!(call_session, account, event)
     elsif call_session.present? && !immutable_ai_finalized_late_event && !terminal_late_non_terminal_event
@@ -214,6 +221,7 @@ class Telephony::EventsIngestionService
 
   def terminal_late_terminal_event?(call_session)
     return false if post_finalize_recording_event?
+    return false if terminal_recording_update_event?
     return false if webphone_release_event?
     return false if bridge_reconciliation_event?
     return false unless call_session.terminal?
@@ -230,14 +238,20 @@ class Telephony::EventsIngestionService
     resolved_event_type.in?(%w[recording_ready recording_incomplete]) || recording_error_event?
   end
 
+  def terminal_recording_update_event?
+    terminal_status?(resolved_status) &&
+      recording_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl').present?
+  end
+
   def webphone_release_event?
     event_key.to_s.start_with?('webphone:') ||
       metadata_value('webphone_action').to_s == 'operator_release'
   end
 
   def bridge_reconciliation_event?
-    event_key.to_s.start_with?('bridge_reconciliation:') ||
-      metadata_value('source').to_s == 'bridge_reconciliation'
+    source = metadata_value('source').to_s
+    RECONCILIATION_EVENT_SOURCES.any? { |candidate| event_key.to_s.start_with?("#{candidate}:") } ||
+      RECONCILIATION_EVENT_SOURCES.include?(source)
   end
 
   def run_side_effects!(call_session, account, event, linked_runtime_call_sessions: [])
@@ -251,10 +265,94 @@ class Telephony::EventsIngestionService
   rescue StandardError => e
     event.update(status: 'failed', error_message: e.message)
     Rails.logger.error(
-      "FONOSTER_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
+      "TELEPHONY_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
       "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
     )
     call_session
+  end
+
+  def realtime_status_event?
+    resolved_status.present?
+  end
+
+  def broadcast_realtime_call_status!(call_session)
+    tokens = realtime_call_status_pubsub_tokens(call_session)
+    return if tokens.blank?
+
+    event = {
+      event: 'voice_call.status_changed',
+      data: realtime_call_status_payload(call_session)
+    }
+
+    tokens.each { |token| ActionCable.server.broadcast(token, event) }
+  rescue StandardError => e
+    Rails.logger.warn(
+      'TELEPHONY_REALTIME_CALL_STATUS_BROADCAST_FAILED ' \
+      "call_ref=#{call_session&.external_call_ref} account_id=#{call_session&.account_id} error=#{e.class.name}: #{e.message}"
+    )
+  end
+
+  def realtime_call_status_pubsub_tokens(call_session)
+    user_ids = realtime_call_status_user_ids(call_session)
+    tokens = []
+    tokens += call_session.inbox.members.filter_map(&:pubsub_token) if call_session.inbox.present?
+    tokens += call_session.account.users.where(id: user_ids).filter_map(&:pubsub_token) if user_ids.present?
+    tokens.uniq
+  end
+
+  def realtime_call_status_user_ids(call_session)
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+    candidates = route_metadata['operator_candidates'].is_a?(Array) ? route_metadata['operator_candidates'] : []
+
+    [
+      call_session.agent_binding&.user_id,
+      metadata.dig('operator_claim', 'user_id'),
+      route_metadata['operator_candidate_user_ids'],
+      candidates.filter_map { |candidate| candidate['user_id'] }
+    ].flatten.compact.map(&:to_i).uniq
+  end
+
+  def realtime_call_status_payload(call_session)
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+    contact = call_session.contact
+
+    {
+      account_id: call_session.account_id,
+      call_sid: call_session.external_call_ref,
+      callSid: call_session.external_call_ref,
+      call_ref: call_session.external_call_ref,
+      provider: call_session.provider,
+      status: call_session.canonical_status,
+      call_direction: call_session.direction,
+      direction: call_session.direction,
+      conversation_id: call_session.conversation&.display_id,
+      conversation_display_id: call_session.conversation&.display_id,
+      conversation_db_id: call_session.conversation_id,
+      inbox_id: call_session.inbox_id,
+      number_ref: call_session.number_binding&.number_ref,
+      logical_call_key: session_logical_call_key(call_session),
+      logicalCallKey: session_logical_call_key(call_session),
+      contact_id: call_session.contact_id,
+      sender_id: call_session.contact_id,
+      from_number: call_session.from_number,
+      to_number: call_session.to_number,
+      caller: realtime_call_status_caller_payload(contact, call_session),
+      operator_claim: metadata['operator_claim'],
+      operator_candidates: route_metadata['operator_candidates'],
+      operator_internal_extension: route_metadata['operator_internal_extension']
+    }.compact
+  end
+
+  def realtime_call_status_caller_payload(contact, call_session)
+    return if contact.blank? && call_session.from_number.blank?
+
+    {
+      id: contact&.id,
+      name: contact&.name,
+      phone_number: contact&.phone_number || call_session.from_number
+    }.compact
   end
 
   def reconcile_stale_terminal_voice_message!(call_session, account, event)
@@ -268,7 +366,7 @@ class Telephony::EventsIngestionService
   rescue StandardError => e
     event.update(status: 'failed', error_message: e.message)
     Rails.logger.error(
-      "FONOSTER_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
+      "TELEPHONY_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
       "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
     )
     call_session
@@ -325,6 +423,11 @@ class Telephony::EventsIngestionService
   def resolve_call_session!(account)
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if call_ref.blank?
 
+    if provider_call_sid.present?
+      existing_by_provider_sid = account.telephony_call_sessions.find_by(provider_call_sid: provider_call_sid)
+      return existing_by_provider_sid if existing_by_provider_sid.present?
+    end
+
     account.telephony_call_sessions.find_by(external_call_ref: call_ref) ||
       account.telephony_call_sessions.create_or_find_by!(external_call_ref: call_ref)
   rescue ActiveRecord::RecordInvalid => e
@@ -334,6 +437,11 @@ class Telephony::EventsIngestionService
   end
 
   def uniquely_resolved_call_session
+    if provider_call_sid.present?
+      sessions = Telephony::CallSession.where(provider_call_sid: provider_call_sid).limit(2).to_a
+      return sessions.first if sessions.one?
+    end
+
     return if call_ref.blank?
 
     sessions = Telephony::CallSession.where(external_call_ref: call_ref).limit(2).to_a
@@ -721,6 +829,9 @@ class Telephony::EventsIngestionService
       return current_duration unless recomputable_completed_duration?(status, current_duration, answered_at, ended_at)
     end
 
+    reconciliation_duration = reconciliation_terminal_duration_seconds(status, answered_at, ended_at)
+    return reconciliation_duration if reconciliation_duration.present?
+
     return [ended_at.to_i - started_at.to_i, 0].max if unanswered_terminal_status?(status) && started_at.present? && ended_at.present?
 
     explicit_duration = resolved_duration
@@ -743,6 +854,17 @@ class Telephony::EventsIngestionService
     return if duration_start.blank? || ended_at.blank?
 
     [ended_at.to_i - duration_start.to_i, 0].max
+  end
+
+  def reconciliation_terminal_duration_seconds(status, answered_at, ended_at)
+    return unless bridge_reconciliation_event?
+    return unless terminal_status?(status)
+
+    explicit_duration = resolved_duration
+    return explicit_duration if explicit_duration.present?
+    return completed_duration_seconds(answered_at, ended_at) if status == 'completed'
+
+    0
   end
 
   def recomputable_completed_duration?(status, duration, answered_at, ended_at)
@@ -1471,6 +1593,7 @@ class Telephony::EventsIngestionService
       'operator_candidate_user_ids',
       'operator_candidate_agent_refs',
       'operator_candidate_agent_aors',
+      'operator_internal_extension',
       'logical_call_key',
       'call_group_key'
     )
@@ -1736,7 +1859,9 @@ class Telephony::EventsIngestionService
   end
 
   def resolve_number_binding(account = nil, call_session = nil)
-    if post_finalize_recording_event? && call_session&.number_binding.present? && (account.blank? || call_session.number_binding.account_id == account.id)
+    if post_finalize_recording_event? &&
+       call_session&.number_binding.present? &&
+       (account.blank? || call_session.number_binding.account_id == account.id)
       return call_session.number_binding
     end
 
@@ -1883,13 +2008,21 @@ class Telephony::EventsIngestionService
   def presentation_recording_metadata(call_session)
     return {} if outbound_without_customer_answer?(call_session)
 
-    call_recording_metadata(call_session).deep_dup
+    metadata = call_recording_metadata(call_session).deep_dup
+    return metadata if metadata.blank?
+
+    playable_url = recording_url(call_session)
+    metadata['recording_url'] = playable_url if playable_url.present?
+    metadata
   end
 
   def recording_url(call_session)
     return if outbound_without_customer_answer?(call_session)
 
-    external_recording_url(call_session) || internal_recording_url(call_session)
+    external_url = external_recording_url(call_session)
+    return internal_recording_url(call_session) if Telephony::ExternalRecordingPlaybackPolicy.proxy?(external_url)
+
+    external_url || internal_recording_url(call_session)
   end
 
   def outbound_without_customer_answer?(call_session)
@@ -2038,10 +2171,19 @@ class Telephony::EventsIngestionService
 
   def persist_call_session!(account, call_session)
     save_call_session!(call_session, yield(call_session))
-  rescue ActiveRecord::RecordInvalid => e
-    raise unless uniqueness_conflict?(e.record, :external_call_ref)
+  rescue ActiveRecord::RecordNotUnique
+    raise if provider_call_sid.blank?
 
-    existing_call_session = account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+    existing_call_session = account.telephony_call_sessions.find_by!(provider_call_sid: provider_call_sid)
+    save_call_session!(existing_call_session, yield(existing_call_session))
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless uniqueness_conflict?(e.record, :external_call_ref) || uniqueness_conflict?(e.record, :provider_call_sid)
+
+    existing_call_session = if uniqueness_conflict?(e.record, :provider_call_sid) && provider_call_sid.present?
+                              account.telephony_call_sessions.find_by!(provider_call_sid: provider_call_sid)
+                            else
+                              account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+                            end
     save_call_session!(existing_call_session, yield(existing_call_session))
   end
 
@@ -2066,6 +2208,10 @@ class Telephony::EventsIngestionService
 
   def call_ref
     bridge_call_ref || payload_value('call_ref', 'callRef', 'provider_call_id', 'providerCallId', 'call_sid', 'callSid', 'ref')
+  end
+
+  def provider_call_sid
+    payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id', 'providerCallId')
   end
 
   def bridge_call_ref

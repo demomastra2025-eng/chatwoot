@@ -3,6 +3,15 @@ class Telephony::CallReconciliationService
   DEFAULT_MAX_PAGES = 3
   DEFAULT_STALE_AFTER = 30.seconds
   DEFAULT_MISSING_AFTER = 5.minutes
+  DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
+  DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER = 5.minutes
+  DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER = 4.hours
+
+  SOURCE_BRIDGE_RECONCILIATION = 'bridge_reconciliation'
+  SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION = 'sipuni_local_outbound_reconciliation'
+  SOURCE_SIPUNI_PROVIDER_RECONCILIATION = 'sipuni_provider_reconciliation'
+
+  SIPUNI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
 
   BRIDGE_STATUS_MAP = {
     'queued' => 'created',
@@ -45,6 +54,18 @@ class Telephony::CallReconciliationService
     @max_pages = positive_integer(max_pages || ENV.fetch('TELEPHONY_RECONCILE_MAX_PAGES', DEFAULT_MAX_PAGES))
     @stale_after = stale_after || ENV.fetch('TELEPHONY_RECONCILE_STALE_AFTER_SECONDS', DEFAULT_STALE_AFTER.to_i).to_i.seconds
     @missing_after = ENV.fetch('TELEPHONY_RECONCILE_MISSING_AFTER_SECONDS', DEFAULT_MISSING_AFTER.to_i).to_i.seconds
+    @sipuni_local_outbound_missing_after = ENV.fetch(
+      'TELEPHONY_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS',
+      DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER.to_i
+    ).to_i.seconds
+    @sipuni_provider_ringing_stale_after = ENV.fetch(
+      'TELEPHONY_SIPUNI_PROVIDER_RINGING_STALE_AFTER_SECONDS',
+      DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER.to_i
+    ).to_i.seconds
+    @sipuni_provider_in_progress_stale_after = ENV.fetch(
+      'TELEPHONY_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER_SECONDS',
+      DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER.to_i
+    ).to_i.seconds
   end
 
   def perform
@@ -70,12 +91,17 @@ class Telephony::CallReconciliationService
       log_reconciliation_error(account, e)
     end
 
+    reconcile_missing_sipuni_local_outbound_sessions!(result)
+    reconcile_missing_sipuni_provider_sessions!(result)
+
     result
   end
 
   private
 
-  attr_reader :account, :bridge_client, :max_pages, :missing_after, :now, :page_size, :stale_after
+  attr_reader :account, :bridge_client, :max_pages, :missing_after, :now, :page_size,
+              :sipuni_local_outbound_missing_after, :sipuni_provider_in_progress_stale_after,
+              :sipuni_provider_ringing_stale_after, :stale_after
 
   def grouped_active_sessions
     sessions = active_candidate_scope.includes(:account).to_a
@@ -86,6 +112,34 @@ class Telephony::CallReconciliationService
     scope = Telephony::CallSession.active.where(provider: 'fonoster')
     scope = scope.where(account_id: account.id) if account.present?
     scope.where('COALESCE(last_event_at, started_at, updated_at, created_at) <= ?', now - stale_after)
+  end
+
+  def sipuni_local_outbound_missing_scope
+    scope = Telephony::CallSession.active
+                                  .where(provider: 'sipuni', direction: 'outbound', provider_call_sid: nil)
+                                  .where("external_call_ref LIKE 'sipuni:local:%'")
+    scope = scope.where(account_id: account.id) if account.present?
+    scope.where(
+      'COALESCE(last_event_at, started_at, updated_at, created_at) <= ?',
+      now - sipuni_local_outbound_missing_after
+    )
+  end
+
+  def sipuni_provider_missing_scope
+    scope = Telephony::CallSession.active
+                                  .where(provider: 'sipuni')
+                                  .where.not(provider_call_sid: nil)
+    scope = scope.where(account_id: account.id) if account.present?
+
+    reference_sql = 'COALESCE(last_event_at, started_at, updated_at, created_at)'
+    scope.where(
+      "(status IN (:pre_answer_statuses) AND #{reference_sql} <= :pre_answer_before) OR " \
+      "(status = :in_progress_status AND #{reference_sql} <= :in_progress_before)",
+      pre_answer_statuses: SIPUNI_PRE_ANSWER_STATUSES,
+      pre_answer_before: now - sipuni_provider_ringing_stale_after,
+      in_progress_status: 'in_progress',
+      in_progress_before: now - sipuni_provider_in_progress_stale_after
+    )
   end
 
   def fetch_bridge_items(account, sessions)
@@ -146,21 +200,78 @@ class Telephony::CallReconciliationService
     session.update!(
       status: target_status,
       ended_at: ended_at,
-      ended_by: 'bridge_reconciliation',
+      ended_by: SOURCE_BRIDGE_RECONCILIATION,
       end_reason: missing_end_reason(session, target_status),
-      duration_seconds: missing_duration_seconds(session, ended_at),
+      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
       last_event_at: ended_at,
       metadata: missing_metadata(session, target_status),
       legs: append_missing_leg_snapshot(session, target_status)
     )
-    sync_reconciled_session!(session, target_status)
+    sync_reconciled_session!(session, target_status, source: SOURCE_BRIDGE_RECONCILIATION)
     true
   end
 
-  def sync_reconciled_session!(session, status)
+  def reconcile_missing_sipuni_local_outbound_sessions!(result)
+    sipuni_local_outbound_missing_scope.find_each do |session|
+      result[:checked] += 1
+      result[:missing] += 1
+      result[:updated] += 1 if reconcile_missing_sipuni_local_outbound_session(session)
+    end
+  end
+
+  def reconcile_missing_sipuni_provider_sessions!(result)
+    sipuni_provider_missing_scope.find_each do |session|
+      result[:checked] += 1
+      result[:missing] += 1
+      result[:updated] += 1 if reconcile_missing_sipuni_provider_session(session)
+    end
+  end
+
+  def reconcile_missing_sipuni_local_outbound_session(session)
+    return false if session.terminal?
+    return false if session.provider_call_sid.present?
+
+    ended_at = now
+    target_status = 'failed'
+    session.update!(
+      status: target_status,
+      ended_at: ended_at,
+      ended_by: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION,
+      end_reason: 'sipuni_provider_event_missing',
+      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
+      last_event_at: ended_at,
+      metadata: missing_sipuni_local_outbound_metadata(session, target_status),
+      legs: append_missing_sipuni_local_outbound_leg_snapshot(session, target_status)
+    )
+    sync_reconciled_session!(session, target_status, source: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION)
+    true
+  end
+
+  def reconcile_missing_sipuni_provider_session(session)
+    return false if session.terminal?
+    return false if session.provider_call_sid.blank?
+
+    ended_at = now
+    previous_status = session.canonical_status
+    target_status = missing_sipuni_provider_status(session)
+    session.update!(
+      status: target_status,
+      ended_at: ended_at,
+      ended_by: SOURCE_SIPUNI_PROVIDER_RECONCILIATION,
+      end_reason: missing_sipuni_provider_end_reason(session, target_status),
+      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
+      last_event_at: ended_at,
+      metadata: missing_sipuni_provider_metadata(session, target_status, previous_status),
+      legs: append_missing_sipuni_provider_leg_snapshot(session, target_status, previous_status)
+    )
+    sync_reconciled_session!(session, target_status, source: SOURCE_SIPUNI_PROVIDER_RECONCILIATION)
+    true
+  end
+
+  def sync_reconciled_session!(session, status, source: SOURCE_BRIDGE_RECONCILIATION)
     return unless Telephony::CallSession::TERMINAL_STATUSES.include?(status)
 
-    Telephony::EventsIngestionService.new(payload: reconciliation_event_payload(session, status)).perform
+    Telephony::EventsIngestionService.new(payload: reconciliation_event_payload(session, status, source: source)).perform
   rescue StandardError => e
     Rails.logger.warn(
       event: 'telephony_call_reconciliation_side_effect_failed',
@@ -172,12 +283,12 @@ class Telephony::CallReconciliationService
     )
   end
 
-  def reconciliation_event_payload(session, status)
+  def reconciliation_event_payload(session, status, source:)
     {
       account_id: session.account_id,
       inbox_id: session.inbox_id,
       call_ref: session.external_call_ref,
-      event_key: reconciliation_event_key(session, status),
+      event_key: reconciliation_event_key(session, status, source: source),
       event: reconciliation_event_type(status),
       status: status,
       direction: session.direction,
@@ -190,14 +301,14 @@ class Telephony::CallReconciliationService
       end_reason: session.end_reason,
       duration: session.duration_seconds,
       metadata: {
-        source: 'bridge_reconciliation'
+        source: source
       }
     }.compact
   end
 
-  def reconciliation_event_key(session, status)
+  def reconciliation_event_key(session, status, source:)
     ended_key = (session.ended_at || now).to_i
-    "bridge_reconciliation:#{session.account_id}:#{session.external_call_ref}:#{status}:#{ended_key}"
+    "#{source}:#{session.account_id}:#{session.external_call_ref}:#{status}:#{ended_key}"
   end
 
   def reconciliation_event_type(status)
@@ -388,8 +499,9 @@ class Telephony::CallReconciliationService
     'bridge_missing_call'
   end
 
-  def missing_duration_seconds(session, ended_at)
+  def missing_duration_seconds(session, ended_at, target_status = nil)
     return session.duration_seconds if session.duration_seconds.present?
+    return 0 if target_status.present? && target_status != 'completed' && !customer_answered_session?(session)
 
     started_at = session.answered_at || session.started_at || session.created_at
     return unless started_at.present? && ended_at.present?
@@ -409,6 +521,30 @@ class Telephony::CallReconciliationService
     metadata
   end
 
+  def missing_sipuni_local_outbound_metadata(session, target_status)
+    metadata = session.metadata.to_h.deep_dup
+    metadata['sipuni_reconciliation'] = {
+      'target_status' => target_status,
+      'local_outbound_missing_provider_event' => true,
+      'reconciled_at' => now.iso8601
+    }
+    metadata
+  end
+
+  def missing_sipuni_provider_metadata(session, target_status, previous_status)
+    metadata = session.metadata.to_h.deep_dup
+    metadata['sipuni_reconciliation'] = {
+      'target_status' => target_status,
+      'previous_status' => previous_status,
+      'provider_terminal_missing' => true,
+      'provider_call_sid' => session.provider_call_sid,
+      'route_action' => route_action(session),
+      'route_reason' => route_reason(session),
+      'reconciled_at' => now.iso8601
+    }.compact
+    metadata
+  end
+
   def append_missing_leg_snapshot(session, status)
     legs = Array(session.legs).map { |leg| leg.respond_to?(:to_h) ? leg.to_h : leg }
     legs << {
@@ -419,6 +555,46 @@ class Telephony::CallReconciliationService
       'occurred_at' => now.iso8601
     }.compact
     legs.last(20)
+  end
+
+  def append_missing_sipuni_local_outbound_leg_snapshot(session, status)
+    legs = Array(session.legs).map { |leg| leg.respond_to?(:to_h) ? leg.to_h : leg }
+    legs << {
+      'source' => SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION,
+      'status' => status,
+      'local_outbound_missing_provider_event' => true,
+      'occurred_at' => now.iso8601
+    }
+    legs.last(20)
+  end
+
+  def append_missing_sipuni_provider_leg_snapshot(session, status, previous_status)
+    legs = Array(session.legs).map { |leg| leg.respond_to?(:to_h) ? leg.to_h : leg }
+    legs << {
+      'source' => SOURCE_SIPUNI_PROVIDER_RECONCILIATION,
+      'status' => status,
+      'previous_status' => previous_status,
+      'provider_terminal_missing' => true,
+      'provider_call_sid' => session.provider_call_sid,
+      'occurred_at' => now.iso8601
+    }
+    legs.last(20)
+  end
+
+  def missing_sipuni_provider_status(session)
+    return 'completed' if session.canonical_status == 'in_progress'
+    return 'no_answer' if session.direction == 'outbound'
+    return 'no_answer' if route_action(session) == 'operator'
+
+    'missed'
+  end
+
+  def missing_sipuni_provider_end_reason(session, target_status)
+    return 'sipuni_provider_missing_completed_call' if target_status == 'completed'
+    return 'sipuni_provider_missing_operator_no_answer' if target_status == 'no_answer' && route_action(session) == 'operator'
+    return 'sipuni_provider_missing_outbound_no_answer' if target_status == 'no_answer'
+
+    'sipuni_provider_terminal_missing'
   end
 
   def route_action(session)

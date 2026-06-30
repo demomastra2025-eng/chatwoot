@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   getWebphoneTokenMock,
+  getNativeWebphoneTokenMock,
   twilioInitializeMock,
   fonosterInitializeMock,
   fonosterPrewarmMock,
@@ -9,6 +10,7 @@ const {
   fonosterDestroyMock,
 } = vi.hoisted(() => ({
   getWebphoneTokenMock: vi.fn(),
+  getNativeWebphoneTokenMock: vi.fn(),
   twilioInitializeMock: vi.fn(),
   fonosterInitializeMock: vi.fn(),
   fonosterPrewarmMock: vi.fn(),
@@ -19,6 +21,7 @@ const {
 vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
   default: {
     getWebphoneToken: getWebphoneTokenMock,
+    getNativeWebphoneToken: getNativeWebphoneTokenMock,
   },
 }));
 
@@ -50,6 +53,7 @@ import WebphoneClient from './webphoneClient';
 describe('webphoneClient', () => {
   beforeEach(() => {
     getWebphoneTokenMock.mockReset();
+    getNativeWebphoneTokenMock.mockReset();
     twilioInitializeMock.mockReset();
     fonosterInitializeMock.mockReset();
     fonosterPrewarmMock.mockReset();
@@ -146,6 +150,48 @@ describe('webphoneClient', () => {
       })
     );
     expect(WebphoneClient.activeProvider).toBe('twilio');
+  });
+
+  it('uses the native webphone token endpoint for native SIP inbox initialization', async () => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      provider: 'sipuni',
+      calling_supported: true,
+      janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+      sip: {
+        username: 'sip-agent',
+        password: 'sip-secret',
+        host: 'ats01.kz.sipuni.com',
+      },
+    });
+    const sipuniInitializeMock = vi
+      .spyOn(WebphoneClient.clients.sipuni, 'initializeDevice')
+      .mockResolvedValue({
+        provider: 'sipuni',
+        callingSupported: true,
+        registered: true,
+      });
+
+    try {
+      const response = await WebphoneClient.initializeDevice(4083, {
+        native: true,
+      });
+
+      expect(getWebphoneTokenMock).not.toHaveBeenCalled();
+      expect(getNativeWebphoneTokenMock).toHaveBeenCalledWith(4083);
+      expect(sipuniInitializeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'sipuni' }),
+        { inboxId: 4083 }
+      );
+      expect(response).toEqual(
+        expect.objectContaining({
+          provider: 'sipuni',
+          callingSupported: true,
+          registered: true,
+        })
+      );
+    } finally {
+      sipuniInitializeMock.mockRestore();
+    }
   });
 
   it('refreshes fonoster webphone token before expiry and keeps the inbox scope', async () => {

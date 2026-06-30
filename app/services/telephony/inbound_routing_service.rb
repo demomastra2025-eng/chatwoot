@@ -15,6 +15,9 @@ class Telephony::InboundRoutingService
     end
 
     def agent_ref
+      return agent_binding.agent_ref if agent_binding
+      return sip_profile.agent_ref if native_sipuni_profile?
+
       agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
     end
 
@@ -42,6 +45,11 @@ class Telephony::InboundRoutingService
 
     def source_name
       source.to_s
+    end
+
+    def native_sipuni_profile?
+      sip_profile&.inbox&.channel&.provider.to_s == 'sipuni' ||
+        sip_profile&.provider_connection&.provider_kind.to_s == 'sipuni'
     end
   end
 
@@ -148,8 +156,8 @@ class Telephony::InboundRoutingService
     return if call_ref.blank? || caller_number.blank?
     return if diagnostic_route_probe?
 
-    call_session = ensure_fast_incoming_call_session!(decision)
-    return if call_session.blank? || call_session.terminal?
+    call_session, should_broadcast = ensure_fast_incoming_call_session!(decision)
+    return if call_session.blank? || call_session.terminal? || !should_broadcast
 
     tokens = fast_incoming_call_pubsub_tokens
     return if tokens.blank?
@@ -172,27 +180,44 @@ class Telephony::InboundRoutingService
   end
 
   def ensure_fast_incoming_call_session!(decision)
-    call_session = number_binding.account.telephony_call_sessions.create_or_find_by!(
-      external_call_ref: call_ref
-    ) do |record|
-      record.provider = number_binding.provider.presence || 'fonoster'
-      record.status = 'ringing'
-      record.direction = 'inbound'
-      record.started_at = Time.current
-      record.last_event_at = Time.current
-      record.legs = []
-      record.metadata = {}
-    end
+    call_session = find_or_create_fast_incoming_call_session!
+    should_broadcast = false
 
     call_session.with_lock do
       call_session.reload
       unless call_session.terminal?
+        should_broadcast = !fast_incoming_broadcast_sent?(call_session)
         call_session.assign_attributes(fast_incoming_call_session_attributes(decision, call_session))
         call_session.save! if call_session.changed?
       end
     end
 
-    call_session
+    [call_session, should_broadcast]
+  end
+
+  def fast_incoming_broadcast_sent?(call_session)
+    metadata = (call_session.metadata || {}).deep_stringify_keys
+    metadata.dig('fast_incoming_broadcast', 'event_key') == route_lifecycle_event_key
+  end
+
+  def find_or_create_fast_incoming_call_session!
+    existing = number_binding.account.telephony_call_sessions.find_by(external_call_ref: call_ref)
+    return existing if existing.present?
+
+    number_binding.account.telephony_call_sessions.create!(
+      external_call_ref: call_ref,
+      provider: number_binding.provider.presence || 'fonoster',
+      status: 'ringing',
+      direction: 'inbound',
+      started_at: Time.current,
+      last_event_at: Time.current,
+      legs: [],
+      metadata: {}
+    )
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless e.record&.errors&.of_kind?(:external_call_ref, :taken)
+
+    number_binding.account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
   end
 
   def fast_incoming_call_session_attributes(decision, call_session)
@@ -257,6 +282,8 @@ class Telephony::InboundRoutingService
       caller: fast_incoming_call_caller_payload(contact),
       operator_pool: decision[:operator_pool] || decision['operator_pool'],
       operator_pool_size: decision[:operator_pool_size] || decision['operator_pool_size'],
+      operator_candidates: decision[:operator_candidates] || decision['operator_candidates'],
+      operator_internal_extension: primary_operator_candidate&.sip_profile&.internal_extension,
       created_at: Time.current.to_i
     }.compact
   end

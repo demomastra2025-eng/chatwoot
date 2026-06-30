@@ -402,6 +402,8 @@
         "PROVIDERS": {
           "KAZAKHSTAN": "Fonoster",
           "KAZAKHSTAN_DESC": "Use Fonoster for Kazakhstan numbers and telephony bridge routing.",
+          "SIPUNI": "Sipuni",
+          "SIPUNI_DESC": "Connect Sipuni as a separate SIP provider through the browser webphone.",
           "TWILIO": "Twilio",
           "TWILIO_DESC": "Connect Twilio phone numbers and browser calling."
         },
@@ -468,6 +470,7 @@
           "PROVIDER_KIND": {
             "LABEL": "Virtual PBX provider",
             "SIPUNI": "Sipuni / internal Asterisk",
+            "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk analog"
           },
           "PROVIDER_ACCOUNT_NUMBER": {

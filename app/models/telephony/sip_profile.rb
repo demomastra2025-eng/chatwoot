@@ -18,6 +18,7 @@
 #  metadata                 :jsonb            not null
 #  ownership_status         :string           default("local"), not null
 #  password_secret_ref      :string
+#  sip_password             :text
 #  sip_host                 :string
 #  sip_username             :string
 #  status                   :string           default("draft"), not null
@@ -32,7 +33,7 @@
 #
 #  idx_tel_sip_profiles_account_agent_aor                  (account_id,agent_aor) UNIQUE WHERE (agent_aor IS NOT NULL)
 #  idx_tel_sip_profiles_account_agent_ref                  (account_id,agent_ref) UNIQUE WHERE (agent_ref IS NOT NULL)
-#  idx_tel_sip_profiles_account_inbox_user_ext             (account_id,inbox_id,user_id,internal_extension) UNIQUE
+#  idx_tel_sip_profiles_account_inbox_ext                  (account_id,inbox_id,internal_extension) UNIQUE
 #  idx_tel_sip_profiles_account_provider_connection        (account_id,provider_connection_id)
 #  index_telephony_sip_profiles_on_account_id              (account_id)
 #  index_telephony_sip_profiles_on_inbox_id                (inbox_id)
@@ -49,6 +50,8 @@
 class Telephony::SipProfile < ApplicationRecord
   self.table_name = 'telephony_sip_profiles'
 
+  encrypts :sip_password if Chatwoot.encryption_configured?
+
   AVAILABILITY_MODES = %w[browser_webphone external_extension provider_extension].freeze
   STATUSES = %w[draft active disabled deleting failed].freeze
   OWNERSHIP_STATUSES = %w[local managed legacy_reference read_only deleting].freeze
@@ -64,7 +67,7 @@ class Telephony::SipProfile < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :managed_by, presence: true
   validates :ownership_status, presence: true, inclusion: { in: OWNERSHIP_STATUSES }
-  validates :internal_extension, uniqueness: { scope: %i[account_id inbox_id user_id] }
+  validates :internal_extension, uniqueness: { scope: %i[account_id inbox_id] }
   validates :agent_ref, uniqueness: { scope: :account_id, allow_blank: true }
   validates :agent_aor, uniqueness: { scope: :account_id, allow_blank: true }
   validate :ensure_associations_belong_to_account
@@ -84,7 +87,7 @@ class Telephony::SipProfile < ApplicationRecord
   end
 
   def to_telephony_h
-    {
+    payload = {
       id: id,
       inbox_id: inbox_id,
       user_id: user_id,
@@ -92,13 +95,11 @@ class Telephony::SipProfile < ApplicationRecord
       provider_connection_id: provider_connection_id,
       internal_extension: internal_extension,
       sip_username: sip_username,
-      sip_password_configured: password_secret_ref.present?,
+      sip_password_configured: sip_password_configured?,
       sip_host: sip_host,
       agent_ref: agent_ref,
       agent_aor: agent_aor,
-      fonoster_agent_ref: fonoster_agent_ref,
       credentials_ref: credentials_ref,
-      fonoster_credentials_ref: fonoster_credentials_ref,
       enabled: enabled,
       availability_mode: availability_mode,
       status: status,
@@ -110,7 +111,12 @@ class Telephony::SipProfile < ApplicationRecord
       ownership_status: ownership_status,
       last_synced_at: last_synced_at,
       metadata: metadata
-    }.compact
+    }
+    unless native_sipuni_profile?
+      payload[:fonoster_agent_ref] = fonoster_agent_ref
+      payload[:fonoster_credentials_ref] = fonoster_credentials_ref
+    end
+    payload.compact
   end
 
   def update_browser_registration!(registered:, occurred_at: Time.current)
@@ -151,9 +157,16 @@ class Telephony::SipProfile < ApplicationRecord
 
   private
 
+  def native_sipuni_profile?
+    inbox&.channel&.provider.to_s == 'sipuni' ||
+      provider_connection&.provider_kind.to_s == 'sipuni' ||
+      metadata_value('provider_kind') == 'sipuni'
+  end
+
   def normalize_values
     self.internal_extension = internal_extension.to_s.strip.presence
     self.sip_username = sip_username.to_s.strip.presence
+    self.sip_password = sip_password.to_s.presence
     self.sip_host = sip_host.to_s.strip.downcase.presence
     self.agent_aor = agent_aor.to_s.strip.presence
     self.availability_mode = availability_mode.to_s.strip.downcase.presence || 'external_extension'
@@ -222,4 +235,10 @@ class Telephony::SipProfile < ApplicationRecord
   def truthy_metadata?(*keys)
     keys.any? { |key| ActiveModel::Type::Boolean.new.cast(metadata_value(key)) }
   end
+
+  def sip_password_configured?
+    sip_password.present? || password_secret_ref.present?
+  end
+
+  public :sip_password_configured?
 end

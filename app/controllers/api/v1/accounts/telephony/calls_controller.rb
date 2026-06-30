@@ -1,3 +1,7 @@
+require 'safe_fetch'
+require 'digest'
+require 'fileutils'
+
 class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telephony::BaseController
   skip_before_action :authenticate_user!, :ensure_active_auth_session!, only: [:recording], raise: false
 
@@ -27,21 +31,23 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   def recording
     authorize_recording_access!
 
+    path = recording_file_path
+    if path.present?
+      send_local_recording_file(path)
+      return
+    end
+
     if external_recording_url.present?
+      if proxy_external_recording?
+        proxy_external_recording!
+        return
+      end
+
       redirect_to external_recording_url, allow_other_host: true
       return
     end
 
-    path = recording_file_path
-    raise ActiveRecord::RecordNotFound, 'Recording could not be found' if path.blank?
-
-    send_file(
-      path,
-      type: recording_content_type,
-      disposition: 'inline',
-      filename: File.basename(path),
-      x_sendfile: true
-    )
+    raise ActiveRecord::RecordNotFound, 'Recording could not be found'
   end
 
   def outbound
@@ -60,6 +66,7 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
 
     render json: {
       conversation_id: result[:conversation].display_id,
+      communication_thread_id: communication_thread_id_for(result[:conversation]),
       inbox_id: inbox.id,
       call_sid: result[:call_sid],
       conference_sid: result[:conversation].additional_attributes['conference_sid'],
@@ -95,6 +102,8 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def recording_url_for_call_session
+    return signed_recording_url_for_call_session if proxy_external_recording?
+
     external_recording_url || signed_recording_url_for_call_session
   end
 
@@ -166,11 +175,13 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def valid_signed_recording_request?
-    Telephony::CallRecordingPlaybackUrl.valid?(
-      token: params[Telephony::CallRecordingPlaybackUrl::TOKEN_PARAM],
-      call_session: @call_session,
-      storage_key: recording_storage_key
-    )
+    recording_token_storage_candidates.any? do |storage_key|
+      Telephony::CallRecordingPlaybackUrl.valid?(
+        token: params[Telephony::CallRecordingPlaybackUrl::TOKEN_PARAM],
+        call_session: @call_session,
+        storage_key: storage_key
+      )
+    end
   end
 
   def recording_content_type
@@ -180,14 +191,123 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     'audio/wav'
   end
 
+  def proxy_external_recording?
+    Telephony::ExternalRecordingPlaybackPolicy.proxy?(external_recording_url)
+  end
+
+  def proxy_external_recording!
+    result = Telephony::ExternalRecordingPlaybackProxy.fetch(
+      url: external_recording_url,
+      fallback_content_type: recording_content_type,
+      fallback_filename: proxy_recording_filename
+    )
+    cache_external_recording!(result)
+    send_data(result.data, type: result.content_type, disposition: 'inline', filename: result.filename)
+  rescue SafeFetch::Error => e
+    Rails.logger.warn(
+      "TELEPHONY_EXTERNAL_RECORDING_PROXY_FAILED account_id=#{@call_session.account_id} " \
+      "call_session_id=#{@call_session.id} provider=#{@call_session.provider} error_class=#{e.class.name} message=#{e.message}"
+    )
+    head :bad_gateway
+  end
+
+  def send_local_recording_file(path)
+    send_file(
+      path,
+      type: recording_content_type,
+      disposition: 'inline',
+      filename: File.basename(path),
+      x_sendfile: true
+    )
+  end
+
+  def cache_external_recording!(result)
+    return unless cache_external_recordings?
+
+    storage_key = external_recording_cache_storage_key(result)
+    path = Rails.root.join('storage', storage_key).cleanpath
+    FileUtils.mkdir_p(path.dirname)
+    File.binwrite(path, result.data)
+    update_cached_recording_metadata!(result, storage_key)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "TELEPHONY_EXTERNAL_RECORDING_CACHE_FAILED account_id=#{@call_session.account_id} " \
+      "call_session_id=#{@call_session.id} provider=#{@call_session.provider} error_class=#{e.class.name} message=#{e.message}"
+    )
+  end
+
+  def cache_external_recordings?
+    ENV.fetch('TELEPHONY_EXTERNAL_RECORDING_CACHE_ENABLED', 'true') != 'false'
+  end
+
+  def external_recording_cache_storage_key(result)
+    digest = Digest::SHA256.hexdigest(external_recording_url)
+    "voice-recordings/#{@call_session.provider}/#{@call_session.account_id}/#{@call_session.id}/#{digest}#{recording_extension(result)}"
+  end
+
+  def recording_extension(result)
+    content_type = result.content_type.to_s
+    return '.mp3' if content_type.include?('mpeg')
+    return '.ogg' if content_type.include?('ogg')
+    return '.webm' if content_type.include?('webm')
+    return '.m4a' if content_type.include?('mp4') || content_type.include?('m4a')
+
+    filename_extension = File.extname(result.filename.to_s)
+    return filename_extension if filename_extension.match?(/\A\.[a-z0-9]{2,5}\z/i)
+
+    '.wav'
+  end
+
+  def update_cached_recording_metadata!(result, storage_key)
+    metadata = @call_session.metadata.to_h.deep_dup
+    recording = recording_metadata.deep_dup
+    recording['recording_ref'] ||= external_recording_url
+    recording['recording_url'] ||= external_recording_url
+    recording['external_recording_url'] ||= external_recording_url
+    recording['storage_key'] = storage_key
+    recording['content_type'] = result.content_type if result.content_type.to_s.start_with?('audio/')
+    recording['byte_size'] = result.data.bytesize
+    recording['cached_at'] = Time.current.iso8601
+    recording['cache_source'] = 'external_recording_proxy'
+    metadata['recording'] = recording.compact
+
+    @call_session.update!(recording_ref: storage_key, metadata: metadata)
+  end
+
+  def proxy_recording_filename
+    basename = URI.parse(external_recording_url).path.split('/').last.presence
+    return basename if basename.present? && basename.include?('.')
+
+    "call-recording-#{@call_session.id}.wav"
+  rescue URI::InvalidURIError
+    "call-recording-#{@call_session.id}.wav"
+  end
+
   def recording_metadata
     metadata = @call_session.metadata
     recording = metadata.is_a?(Hash) ? metadata['recording'] : nil
     recording.is_a?(Hash) ? recording : {}
   end
 
+  def recording_token_storage_candidates
+    [
+      recording_storage_key,
+      external_recording_url,
+      recording_metadata['recording_ref'],
+      recording_metadata['recording_url'],
+      @call_session.recording_ref
+    ].compact_blank.map(&:to_s).uniq
+  end
+
   def calls_service
     @calls_service ||= Telephony::CallsService.new(account: Current.account)
+  end
+
+  def communication_thread_id_for(conversation)
+    return unless conversation.account&.feature_enabled?('communication_threads')
+
+    communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
+    communication_thread&.display_id
   end
 
   def limit_param

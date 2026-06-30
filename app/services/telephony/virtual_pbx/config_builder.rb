@@ -22,6 +22,14 @@ class Telephony::VirtualPbx::ConfigBuilder
       default_route_mode: 'operator',
       default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
     },
+    'binotel' => {
+      label: 'Binotel',
+      default_transport: 'udp',
+      default_port: 5060,
+      allows_display_ingress_split: true,
+      default_route_mode: 'operator',
+      default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
+    },
     DEFAULT_PROVIDER_KIND => {
       label: 'Fonoster',
       default_transport: 'udp',
@@ -43,8 +51,8 @@ class Telephony::VirtualPbx::ConfigBuilder
       raise Telephony::Error.new(code: 'NOT_VOICE_CHANNEL', message: 'Inbox is not a voice channel',
                                  status: :unprocessable_content)
     end
-    unless channel.provider == 'fonoster'
-      raise Telephony::Error.new(code: 'UNSUPPORTED_PROVIDER', message: 'Only Fonoster voice channels can be reconciled as Virtual PBX channels',
+    unless channel.provider.in?(%w[fonoster sipuni])
+      raise Telephony::Error.new(code: 'UNSUPPORTED_PROVIDER', message: 'Only native voice channels can be reconciled as Virtual PBX channels',
                                  status: :unprocessable_content)
     end
 
@@ -257,6 +265,8 @@ class Telephony::VirtualPbx::ConfigBuilder
         metadata[:provider_account_number],
         provider_config[:sipuni_account_number],
         metadata[:sipuni_account_number],
+        provider_config[:binotel_account_number],
+        metadata[:binotel_account_number],
         provider_config[:account_number],
         metadata[:account_number]
       )
@@ -277,6 +287,8 @@ class Telephony::VirtualPbx::ConfigBuilder
         metadata[:ingress_number],
         provider_config[:sipuni_ingress_number],
         metadata[:sipuni_ingress_number],
+        provider_config[:binotel_ingress_number],
+        metadata[:binotel_ingress_number],
         tel_url_number(fonoster_tel_url),
         binding&.phone_number,
         provider_account_number,
@@ -284,30 +296,32 @@ class Telephony::VirtualPbx::ConfigBuilder
       )
     )
 
-    {
+    phone_payload = {
       provider_kind: provider_kind,
       display_phone_number: display_phone_number,
       provider_account_number: provider_account_number,
       ingress_number: ingress_number,
-      fonoster_tel_url: fonoster_tel_url.presence || tel_url_for(ingress_number),
       display_matches_ingress: display_phone_number.present? && ingress_number.present? && display_phone_number == ingress_number,
       binding_represents_ingress: binding&.phone_number.present? && ingress_number.present? && binding.phone_number == ingress_number,
       legacy_channel_phone_differs_from_binding: channel.phone_number.present? && binding&.phone_number.present? &&
-        channel.phone_number != binding.phone_number,
+                                                 channel.phone_number != binding.phone_number,
       split_allowed: template_for(provider_kind)[:allows_display_ingress_split]
-    }.compact
+    }
+    phone_payload[:fonoster_tel_url] = fonoster_tel_url.presence || tel_url_for(ingress_number) unless native_sipuni_channel?(channel)
+    phone_payload.compact
   end
 
   def resources_payload(channel:, binding:, policy:)
+    native_sipuni = native_sipuni_channel?(channel)
     {
       inbox_id: channel.inbox&.id,
       channel_id: channel.id,
       number_binding_id: binding&.id,
       routing_policy_id: policy&.id,
       number_ref: binding&.number_ref,
-      app_ref: binding&.configured_app_ref,
-      runtime_app_ref: binding&.runtime_app_ref,
-      trunk_ref: binding&.trunk_ref,
+      app_ref: native_sipuni ? nil : binding&.configured_app_ref,
+      runtime_app_ref: native_sipuni ? nil : binding&.runtime_app_ref,
+      trunk_ref: native_sipuni ? nil : binding&.trunk_ref,
       provider_connection: binding&.provider_connection&.to_virtual_pbx_h,
       last_synced_at: binding&.last_synced_at,
       provisioning_status: telephony_attribute(binding, :provisioning_status),
@@ -320,10 +334,11 @@ class Telephony::VirtualPbx::ConfigBuilder
   def routing_payload(binding:, policy:)
     return {} if binding.blank? && policy.blank?
 
+    native_sipuni = binding&.provider.to_s == 'sipuni'
     {
       mode: policy&.mode,
       bridge_mode: policy&.bridge_mode,
-      effective_app_ref: binding&.app_ref_for_policy(policy),
+      effective_app_ref: native_sipuni ? nil : binding&.app_ref_for_policy(policy),
       operator_agent_ref: policy&.operator_agent_ref,
       operator_agent_aor: policy&.resolved_operator_agent_aor,
       operator_distribution_mode: policy&.operator_distribution_mode,
@@ -371,55 +386,40 @@ class Telephony::VirtualPbx::ConfigBuilder
                             severity: 'blocking')
       end
       warnings << split_phone_warning(parts)
-      warnings << sipuni_trunk_credentials_warning(channel: channel, binding: binding, parts: parts)
+      warnings << provider_managed_gateway_credentials_warning(channel: channel, binding: binding, parts: parts)
       warnings << legacy_ownership_warning(channel: channel, binding: binding)
     end.compact
   end
 
-  def sipuni_trunk_credentials_warning(channel:, binding:, parts:)
-    return unless parts[:provider_kind] == 'sipuni'
+  def provider_managed_gateway_credentials_warning(channel:, binding:, parts:)
+    provider_kind = parts[:provider_kind].to_s
+    return unless provider_kind.in?(%w[sipuni binotel])
     return unless ownership_payload(channel: channel, binding: binding)[:managed]
 
-    if shared_sipuni_trunk_uses_employee_profile?(binding)
-      return warning(
-        'shared_sipuni_trunk_uses_employee_profile',
-        'Shared Sipuni trunk credentials point to an employee SIP profile; configure a separate trunk login before remote gateway sync',
-        severity: 'blocking'
-      )
-    end
-    return if shared_sipuni_trunk_credentials_configured?(binding)
+    connection = binding&.provider_connection
+    return if connection.blank? || !connection.send_register?
+    return if provider_sip_device_credentials_configured?(connection)
 
     warning(
-      'missing_shared_sipuni_trunk_credentials',
-      'Shared Sipuni trunk credentials are missing; configure a OneLink SIP trunk login before remote gateway sync',
+      'missing_provider_sip_device_credentials',
+      'OneLink SIP device credentials are missing; configure SIP login and password before remote sync',
       severity: 'blocking'
     )
   end
 
-  def shared_sipuni_trunk_credentials_configured?(binding)
-    connection = binding&.provider_connection
-    return false if connection.blank?
-
-    shared_sipuni_trunk_credentials_present?(connection)
-  end
-
-  def shared_sipuni_trunk_credentials_present?(connection)
+  def provider_sip_device_credentials_configured?(connection)
     connection.username.present? && (
       connection.password_secret_ref.present? ||
-      connection.fonoster_credentials_ref.present?
+      (!native_sipuni_connection?(connection) && connection.fonoster_credentials_ref.present?)
     )
   end
 
-  def shared_sipuni_trunk_uses_employee_profile?(binding)
-    connection = binding&.provider_connection
-    return false if connection.blank? || !shared_sipuni_trunk_credentials_present?(connection)
+  def native_sipuni_channel?(channel)
+    channel&.provider.to_s == 'sipuni'
+  end
 
-    username = normalized_sip_identity(connection.username)
-    return false if username.blank? || binding&.inbox_id.blank?
-
-    account.telephony_sip_profiles.where(inbox_id: binding.inbox_id).filter_map do |profile|
-      normalized_sip_identity(profile.sip_username)
-    end.include?(username)
+  def native_sipuni_connection?(connection)
+    connection&.provider_kind.to_s == 'sipuni'
   end
 
   def normalized_sip_identity(value)
@@ -470,6 +470,7 @@ class Telephony::VirtualPbx::ConfigBuilder
   def normalize_provider_kind(value)
     key = value.to_s.tr('-', '_').strip.downcase
     return 'asterisk_analog' if key.in?(%w[asterisk asterisk_analog analog asteriskanalog])
+    return 'binotel' if key.include?('binotel')
     return 'sipuni' if key.include?('sipuni')
 
     PROVIDER_TEMPLATES.key?(key) ? key : DEFAULT_PROVIDER_KIND
@@ -486,6 +487,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       provider_config[:account_number]
     ].compact.join(' ').downcase
 
+    return 'binotel' if values.include?('binotel')
     return 'sipuni' if values.include?('sipuni')
     return 'asterisk_analog' if values.include?('asterisk') || values.include?('analog')
 

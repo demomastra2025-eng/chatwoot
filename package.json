@@ -80,6 +80,7 @@
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "idb": "^8.0.0",
+    "janus-gateway": "^1.4.1",
     "js-cookie": "^3.0.5",
     "json-logic-js": "^2.0.5",
     "lettersanitizer": "^1.0.6",
@@ -118,7 +119,8 @@
     "vuedraggable": "^4.1.0",
     "vuex": "~4.1.0",
     "vuex-router-sync": "6.0.0-rc.1",
-    "wavesurfer.js": "7.8.6"
+    "wavesurfer.js": "7.8.6",
+    "webrtc-adapter": "9.0.3"
   },
   "devDependencies": {
     "@egoist/tailwindcss-icons": "^1.9.2",
