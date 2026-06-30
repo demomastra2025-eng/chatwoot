@@ -349,6 +349,41 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.rm_f(Rails.root.join('storage', cached_storage_key)) if defined?(cached_storage_key) && cached_storage_key.present?
   end
 
+  it 'retries a not-yet-ready Sipuni recording range before caching it' do
+    external_url = 'https://sipuni.com/api/crm/record?id=1782837791.495454&hash=recording-signature&user=015856'
+    call_session = create_recorded_call_session(
+      'sipuni-delayed-recording-call',
+      recording_metadata.merge('storage_key' => nil, 'recording_ref' => external_url, 'recording_url' => external_url),
+      recording_ref: external_url,
+      provider: 'sipuni'
+    )
+    allow(SafeFetch).to receive(:resolve_public_ip!).and_return('93.184.216.34')
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch)
+      .with('TELEPHONY_EXTERNAL_RECORDING_RANGE_RETRY_DELAY_SECONDS', anything)
+      .and_return('0.001')
+    stub_request(:get, external_url)
+      .with(headers: { 'User-Agent' => 'OneLink-RecordingPlayback/1.0', 'Range' => 'bytes=0-24575' })
+      .to_timeout
+      .then
+      .to_return(status: 200, body: "ID3\x04incoming", headers: { 'Content-Type' => 'audio/mpeg' })
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: headers
+    signed_recording_url = response.parsed_body.dig('payload', 'recording_url')
+
+    get signed_recording_url
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq('audio/mpeg')
+    expect(response.body).to start_with('ID3')
+
+    cached_storage_key = call_session.reload.metadata.dig('recording', 'storage_key')
+    expect(cached_storage_key).to start_with("voice-recordings/sipuni/#{account.id}/#{call_session.id}/")
+    expect(a_request(:get, external_url).with(headers: { 'Range' => 'bytes=0-24575' })).to have_been_made.twice
+  ensure
+    FileUtils.rm_f(Rails.root.join('storage', cached_storage_key)) if defined?(cached_storage_key) && cached_storage_key.present?
+  end
+
   it 'does not expose another account recording for the same call ref' do
     other_account = create(:account)
     create(:telephony_call_session, account: other_account, external_call_ref: 'other-recording-call', metadata: recording_metadata)

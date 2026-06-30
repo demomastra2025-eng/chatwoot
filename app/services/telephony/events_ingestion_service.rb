@@ -3,6 +3,13 @@ require 'json'
 
 class Telephony::EventsIngestionService
   CALL_SESSION_CONFLICT_RETRIES = 2
+  SIDE_EFFECT_CONFLICT_RETRIES = 2
+  RETRYABLE_DATABASE_ERRORS = [
+    ActiveRecord::Deadlocked,
+    ActiveRecord::LockWaitTimeout,
+    ActiveRecord::RecordNotUnique,
+    ActiveRecord::SerializationFailure
+  ].freeze
   MISSED_INBOUND_TERMINAL_REASONS = %w[
     voice_stream_ended_before_operator_answer
   ].freeze
@@ -151,6 +158,12 @@ class Telephony::EventsIngestionService
       return event.call_session if event.processed? && event.call_session.present?
 
       retry
+    rescue *RETRYABLE_DATABASE_ERRORS
+      raise if retries >= CALL_SESSION_CONFLICT_RETRIES
+
+      retries += 1
+      event.reload
+      retry
     end
   end
 
@@ -255,20 +268,36 @@ class Telephony::EventsIngestionService
   end
 
   def run_side_effects!(call_session, account, event, linked_runtime_call_sessions: [])
-    call_session.reload
-    ensure_conversation!(call_session, account)
-    call_session.reload
-    apply_call_status!(call_session) unless suppress_fonoster_conversation_update?(call_session)
-    sync_voice_message!(call_session)
-    linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
-    enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
-  rescue StandardError => e
-    event.update(status: 'failed', error_message: e.message)
-    Rails.logger.error(
-      "TELEPHONY_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
-      "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
-    )
-    call_session
+    retries = 0
+
+    begin
+      call_session.reload
+      ensure_conversation!(call_session, account)
+      call_session.reload
+      apply_call_status!(call_session) unless suppress_fonoster_conversation_update?(call_session)
+      sync_voice_message!(call_session)
+      linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
+      enqueue_external_recording_cache(call_session)
+      enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
+    rescue *RETRYABLE_DATABASE_ERRORS => e
+      retries += 1
+      raise if retries > SIDE_EFFECT_CONFLICT_RETRIES
+
+      Rails.logger.warn(
+        "TELEPHONY_VOICE_EVENT_SIDE_EFFECT_RETRY event_id=#{event.id} account_id=#{event.account_id} " \
+        "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} retry=#{retries} " \
+        "error_class=#{e.class.name} message=#{e.message}"
+      )
+      sleep(0.05 * retries) unless Rails.env.test?
+      retry
+    rescue StandardError => e
+      event.update(status: 'failed', error_message: e.message)
+      Rails.logger.error(
+        "TELEPHONY_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
+        "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
+      )
+      call_session
+    end
   end
 
   def realtime_status_event?
@@ -1268,6 +1297,10 @@ class Telephony::EventsIngestionService
       data['data']['from_number'] ||= call_session.from_number
       data['data']['to_number'] ||= call_session.to_number
     end
+    if (communication_thread_id = communication_thread_id_for(call_session)).present?
+      data['data']['communication_thread_id'] = communication_thread_id
+      data['data']['communicationThreadId'] = communication_thread_id
+    end
     data['data']['provider'] ||= call_session.provider
     data['data']['inbox_id'] ||= call_session.inbox_id
     existing_ai_voice = data['data']['ai_voice'].is_a?(Hash) ? data['data']['ai_voice'] : {}
@@ -1574,6 +1607,13 @@ class Telephony::EventsIngestionService
 
   def voice_message_type(call_session)
     call_session.direction == 'outbound' ? :outgoing : :incoming
+  end
+
+  def communication_thread_id_for(call_session)
+    conversation = call_session.conversation
+    return unless conversation&.account&.feature_enabled?('communication_threads')
+
+    (conversation.communication_thread || conversation.refresh_communication_thread!)&.display_id
   end
 
   def voice_message_sender(call_session, conversation)
@@ -1964,13 +2004,35 @@ class Telephony::EventsIngestionService
     base['last_payload'] = payload
     if metadata.present?
       existing_metadata = base['metadata'].is_a?(Hash) ? base['metadata'].deep_dup : {}
-      base['metadata'] = existing_metadata.deep_merge(metadata)
+      base['metadata'] = existing_metadata.deep_merge(metadata_for_merge(existing_metadata))
     end
     if recording_event_metadata.present?
       existing_recording_metadata = base['recording'].is_a?(Hash) ? base['recording'].deep_dup : {}
       base['recording'] = existing_recording_metadata.deep_merge(recording_event_metadata)
     end
     base.compact
+  end
+
+  def metadata_for_merge(existing_metadata)
+    incoming_metadata = metadata.deep_stringify_keys
+    preserve_sipuni_operator_leg_metadata(existing_metadata.deep_stringify_keys, incoming_metadata)
+  end
+
+  def preserve_sipuni_operator_leg_metadata(existing_metadata, incoming_metadata)
+    return incoming_metadata unless sipuni_operator_leg_value?(existing_metadata, true)
+    return incoming_metadata unless sipuni_operator_leg_value?(incoming_metadata, false) ||
+                                    incoming_metadata['sipuni_leg_kind'].to_s == 'external'
+
+    incoming_metadata.merge(
+      'sipuni_operator_leg' => true,
+      'sipuni_leg_kind' => 'operator'
+    )
+  end
+
+  def sipuni_operator_leg_value?(metadata, expected)
+    return false unless metadata.key?('sipuni_operator_leg')
+
+    ActiveModel::Type::Boolean.new.cast(metadata['sipuni_operator_leg']) == expected
   end
 
   def logical_call_key(call_session = nil)
@@ -2041,6 +2103,18 @@ class Telephony::EventsIngestionService
     return if candidate.blank?
 
     candidate.to_s if http_url?(candidate)
+  end
+
+  def enqueue_external_recording_cache(call_session)
+    return unless call_session.terminal?
+    return unless Telephony::ExternalRecordingPlaybackPolicy.proxy?(external_recording_url(call_session))
+
+    Telephony::ExternalRecordingCacheJob.perform_later(call_session.id)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "TELEPHONY_EXTERNAL_RECORDING_CACHE_ENQUEUE_FAILED account_id=#{call_session.account_id} " \
+      "call_session_id=#{call_session.id} provider=#{call_session.provider} error_class=#{e.class.name} message=#{e.message}"
+    )
   end
 
   def http_url?(value)

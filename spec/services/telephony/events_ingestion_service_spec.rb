@@ -155,6 +155,56 @@ RSpec.describe Telephony::EventsIngestionService do
       ).once
     end
 
+    it 'retries transient database conflicts while syncing the voice call side effects' do
+      service = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-side-effect-deadlock-retry-1',
+          event: 'session_started',
+          status: 'ringing'
+        )
+      )
+      sync_attempts = 0
+
+      allow(service).to receive(:sync_voice_message!).and_wrap_original do |original, call_session|
+        sync_attempts += 1
+        raise ActiveRecord::Deadlocked if sync_attempts == 1
+
+        original.call(call_session)
+      end
+
+      result = service.perform
+
+      expect(sync_attempts).to eq(2)
+      expect(result.reload.status).to eq('ringing')
+      expect(result.voice_message_for_current_call.content_attributes.dig('data', 'status')).to eq('ringing')
+      expect(account.telephony_events.find_by!(event_key: 'evt-side-effect-deadlock-retry-1')).to be_processed
+    end
+
+    it 'retries voice message uniqueness races while syncing side effects' do
+      service = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-side-effect-record-not-unique-retry-1',
+          event: 'session_started',
+          status: 'ringing'
+        )
+      )
+      sync_attempts = 0
+
+      allow(service).to receive(:sync_voice_message!).and_wrap_original do |original, call_session|
+        sync_attempts += 1
+        raise ActiveRecord::RecordNotUnique if sync_attempts == 1
+
+        original.call(call_session)
+      end
+
+      result = service.perform
+
+      expect(sync_attempts).to eq(2)
+      expect(result.reload.status).to eq('ringing')
+      expect(result.voice_message_for_current_call.content_attributes.dig('data', 'status')).to eq('ringing')
+      expect(account.telephony_events.find_by!(event_key: 'evt-side-effect-record-not-unique-retry-1')).to be_processed
+    end
+
     it 'projects the logical call key into voice call message data and meta' do
       existing_call_session.update!(
         provider: 'fonoster',
@@ -2742,15 +2792,18 @@ RSpec.describe Telephony::EventsIngestionService do
       external_url = 'https://sipuni.com/api/crm/record?id=1782816260.483832&hash=recording-signature&user=015856'
       existing_call_session.update!(provider: 'sipuni', status: 'completed', ended_at: 1.minute.ago)
 
-      result = described_class.new(
-        payload: {
-          event_key: 'evt-sipuni-recording-ready',
-          provider: 'sipuni',
-          callRef: 'call-retry-1',
-          event: 'recording_ready',
-          recordingUrl: external_url
-        }
-      ).perform
+      result = nil
+      expect do
+        result = described_class.new(
+          payload: {
+            event_key: 'evt-sipuni-recording-ready',
+            provider: 'sipuni',
+            callRef: 'call-retry-1',
+            event: 'recording_ready',
+            recordingUrl: external_url
+          }
+        ).perform
+      end.to have_enqueued_job(Telephony::ExternalRecordingCacheJob).with(existing_call_session.id)
 
       recording_url = result.latest_voice_message.content_attributes.dig('data', 'recording_url')
 
@@ -2781,7 +2834,7 @@ RSpec.describe Telephony::EventsIngestionService do
         content_attributes: { 'data' => { 'status' => 'completed', 'call_sid' => 'call-retry-1' } }
       )
 
-      result = described_class.new(
+      service = described_class.new(
         payload: payload.merge(
           event_key: 'sipuni:call-retry-1:2:ANSWER:recording',
           provider: 'sipuni',
@@ -2790,7 +2843,10 @@ RSpec.describe Telephony::EventsIngestionService do
           ended_at: (ended_at + 1.second).iso8601,
           recording_url: external_url
         )
-      ).perform
+      )
+
+      result = nil
+      expect { result = service.perform }.to have_enqueued_job(Telephony::ExternalRecordingCacheJob).with(existing_call_session.id)
 
       data = message.reload.content_attributes.fetch('data')
 
@@ -2799,6 +2855,40 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(data['recording_url']).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording?")
       expect(data['recording_url']).to include('recording_token=')
       expect(data.dig('recording', 'recording_url')).to eq(data['recording_url'])
+    end
+
+    it 'keeps Sipuni operator leg metadata when a later external summary event arrives' do
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
+        status: 'in_progress',
+        metadata: {
+          'metadata' => {
+            'sipuni_operator_leg' => 'true',
+            'sipuni_leg_kind' => 'operator',
+            'operator_candidate_sip_profile_ids' => [39],
+            'operator_candidate_user_ids' => [179]
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'sipuni:call-retry-1:2:ANSWER:summary',
+          provider: 'sipuni',
+          event: 'session_completed',
+          status: 'completed',
+          metadata: {
+            sipuni_operator_leg: 'false',
+            sipuni_leg_kind: 'external',
+            sipuni_status: 'ANSWER'
+          }
+        )
+      ).perform
+
+      expect(result.reload.metadata.dig('metadata', 'sipuni_operator_leg')).to be(true)
+      expect(result.metadata.dig('metadata', 'sipuni_leg_kind')).to eq('operator')
+      expect(result.metadata.dig('metadata', 'sipuni_status')).to eq('ANSWER')
     end
 
     it 'reuses a local outbound Sipuni call session when provider call id arrives later' do

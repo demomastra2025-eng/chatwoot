@@ -587,6 +587,95 @@ describe('useCallSession', () => {
     ]);
   });
 
+  it('stores the communication thread returned by an incoming call claim', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-claim-thread',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 724,
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: true,
+    });
+    VoiceAPI.claimIncomingCall.mockResolvedValue({
+      claimed: true,
+      status: 'connecting',
+      communication_thread_id: 25,
+    });
+    joinClientCallMock.mockResolvedValue({
+      provider: 'sipuni',
+      answered: true,
+    });
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 724,
+      inboxId: 4769,
+      callSid: 'call-claim-thread',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+    });
+
+    expect(callsStore.calls).toMatchObject([
+      {
+        callSid: 'call-claim-thread',
+        communicationThreadId: 25,
+      },
+    ]);
+    expect(result).toMatchObject({
+      provider: 'sipuni',
+      joinSupported: true,
+      communicationThreadId: 25,
+    });
+  });
+
+  it('returns the claimed communication thread when the SIP invite is not available yet', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-claim-thread-waiting-for-invite',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 724,
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: true,
+    });
+    VoiceAPI.claimIncomingCall.mockResolvedValue({
+      claimed: true,
+      status: 'connecting',
+      communication_thread_id: 25,
+    });
+    joinClientCallMock.mockResolvedValue(null);
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 724,
+      inboxId: 4769,
+      callSid: 'call-claim-thread-waiting-for-invite',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+    });
+
+    expect(callsStore.calls).toMatchObject([
+      {
+        callSid: 'call-claim-thread-waiting-for-invite',
+        communicationThreadId: 25,
+      },
+    ]);
+    expect(result).toEqual({
+      provider: 'sipuni',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      communicationThreadId: 25,
+    });
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+  });
+
   it('releases the backend call when the browser SIP answer fails after claim', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
@@ -825,6 +914,53 @@ describe('useCallSession', () => {
       {
         callSid: 'call-operator-not-registered',
         browserJoinSupported: false,
+      },
+    ]);
+  });
+
+  it('keeps a Sipuni incoming call retryable when claim is attempted before the operator leg is ready', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni-pre-operator-call',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 4769,
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: true,
+    });
+    VoiceAPI.claimIncomingCall.mockRejectedValue({
+      response: {
+        status: 403,
+        data: {
+          code: 'OPERATOR_NOT_CANDIDATE',
+          details: { reason: 'sipuni_operator_leg_not_ready' },
+        },
+      },
+    });
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      callSid: 'sipuni-pre-operator-call',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 4769,
+    });
+
+    expect(result).toEqual({
+      provider: 'sipuni',
+      joinSupported: false,
+      retryable: true,
+      reason: 'sipuni_operator_leg_not_ready',
+    });
+    expect(joinClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toMatchObject([
+      {
+        callSid: 'sipuni-pre-operator-call',
+        browserJoinSupported: null,
       },
     ]);
   });

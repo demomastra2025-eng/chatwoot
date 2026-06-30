@@ -135,6 +135,84 @@ RSpec.describe 'Sipuni events webhook', type: :request do
     )
   end
 
+  it 'waits for the Sipuni internal operator leg before broadcasting an answerable incoming call' do
+    broadcasts = []
+    allow(ActionCable.server).to receive(:broadcast) do |pubsub_token, event|
+      broadcasts << [pubsub_token, event]
+    end
+
+    with_modified_env(
+      SIPUNI_WEBHOOK_TOKEN: token,
+      SIPUNI_EXTERNAL_NUMBER: '+77070001001',
+      SIPUNI_INTERNAL_NUMBER: '505'
+    ) do
+      perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+        post "/sipuni/events/#{token}",
+             params: {
+               event: '1',
+               call_id: 'sipuni-greeting-then-operator',
+               src_num: '77070001002',
+               src_type: '1',
+               short_src_num: '77070001002',
+               dst_num: '77070001001_id244276',
+               dst_type: '1',
+               short_dst_num: '77070001001_id244276',
+               timestamp: 1_782_846_643,
+               user_id: '015856',
+               channel: 'SIP/013997 77003470027-00041b4b'
+             }
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(broadcasts.filter { |_token, event| event[:event] == 'voice_call.incoming' }).to be_empty
+
+      call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'sipuni:sipuni-greeting-then-operator')
+      expect(call_session.metadata.dig('metadata', 'sipuni_operator_leg')).to be(false)
+      expect(call_session.metadata.dig('metadata', 'sipuni_leg_kind')).to eq('external')
+
+      perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+        post "/sipuni/events/#{token}",
+             params: {
+               event: '1',
+               call_id: 'sipuni-greeting-then-operator',
+               src_num: '77070001002',
+               src_type: '1',
+               short_src_num: '77070001002',
+               dst_num: '015856505',
+               dst_type: '2',
+               short_dst_num: '505',
+               timestamp: 1_782_846_659,
+               user_id: '015856',
+               is_inner_call: '1',
+               channel: 'SIP/015856100021-00041b4c',
+               pbxdstnum: '100021'
+             }
+      end
+    end
+
+    incoming_broadcasts = broadcasts.filter { |_token, event| event[:event] == 'voice_call.incoming' }
+    expect(incoming_broadcasts.size).to eq(1)
+    pubsub_token, event = incoming_broadcasts.first
+    expect(pubsub_token).to eq(operator.pubsub_token)
+    expect(event).to include(event: 'voice_call.incoming')
+    expect(event[:data]).to include(
+      provider: 'sipuni',
+      callSid: 'sipuni:sipuni-greeting-then-operator',
+      operator_internal_extension: '505'
+    )
+    expect(event.dig(:data, :operator_candidates)).to include(
+      hash_including(
+        user_id: operator.id,
+        internal_extension: '505'
+      )
+    )
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'sipuni:sipuni-greeting-then-operator')
+    expect(call_session.metadata.dig('metadata', 'sipuni_operator_leg')).to be(true)
+    expect(call_session.metadata.dig('metadata', 'sipuni_leg_kind')).to eq('operator')
+    expect(call_session.metadata.dig('metadata', 'operator_candidate_sip_profile_ids')).to be_present
+  end
+
   it 'deduplicates repeated Sipuni lifecycle events with different timestamps' do
     allow(ActionCable.server).to receive(:broadcast).and_call_original
 

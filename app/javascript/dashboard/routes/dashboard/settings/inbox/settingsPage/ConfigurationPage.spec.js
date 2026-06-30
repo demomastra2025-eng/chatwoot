@@ -96,10 +96,10 @@ const statusPayload = {
   },
 };
 
-const buildWrapper = () =>
+const buildWrapper = ({ inbox = baseInbox } = {}) =>
   shallowMount(ConfigurationPage, {
     props: {
-      inbox: baseInbox,
+      inbox,
     },
     global: {
       mocks: {
@@ -253,7 +253,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('renders Sipuni settings with host only and without default SIP internals', async () => {
+  it('renders Sipuni settings as employee SIP assignments without technical provider fields', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
 
@@ -261,18 +261,18 @@ describe('ConfigurationPage Virtual PBX management', () => {
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
     );
     expect(wrapper.text()).toContain(
-      'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.LABEL'
-    );
-    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
     );
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
     );
     expect(wrapper.text()).not.toContain(
@@ -294,6 +294,24 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(wrapper.text()).not.toContain('3100000');
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.DELETE_BUTTON'
+    );
+  });
+
+  it('treats a native Sipuni voice inbox as Virtual PBX settings', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'sipuni',
+      },
+    });
+    await flushPromises();
+
+    expect(getVirtualPbxStatusMock).toHaveBeenCalledWith(42);
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_TITLE'
     );
   });
 

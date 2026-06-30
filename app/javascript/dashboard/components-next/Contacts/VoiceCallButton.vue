@@ -233,7 +233,11 @@ const startCall = async inbox => {
       contactId: props.contactId,
       inboxId: inbox.id,
     });
-    const { call_sid: callSid, conversation_id: conversationId } = response;
+    const {
+      call_sid: callSid,
+      conversation_id: conversationId,
+      communication_thread_id: communicationThreadId,
+    } = response;
     const callSession = response?.call_session || response?.callSession || {};
     const browserJoinSupported =
       response?.browser_join_supported ?? response?.browserJoinSupported;
@@ -245,6 +249,8 @@ const startCall = async inbox => {
       status: 'created',
       callEvent: 'created',
       conversationId,
+      communicationThreadId:
+        communicationThreadId || response?.communicationThreadId,
       inboxId: inbox.id,
       provider: inbox.provider,
       callDirection: 'outbound',

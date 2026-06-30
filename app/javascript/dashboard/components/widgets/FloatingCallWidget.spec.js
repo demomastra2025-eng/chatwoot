@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSession = vi.hoisted(() => ({
@@ -18,6 +18,7 @@ const storeGetters = vi.hoisted(() => ({
   getConversationById: vi.fn(),
   getInbox: vi.fn(),
   getAgentById: vi.fn(),
+  getSelectedChat: null,
 }));
 
 const routerMock = vi.hoisted(() => ({
@@ -82,6 +83,7 @@ vi.mock('vuex', () => ({
       getConversationById: storeGetters.getConversationById,
       'inboxes/getInbox': storeGetters.getInbox,
       'agents/getAgentById': storeGetters.getAgentById,
+      getSelectedChat: storeGetters.getSelectedChat,
     },
   }),
 }));
@@ -157,6 +159,7 @@ describe('FloatingCallWidget', () => {
     storeGetters.getConversationById.mockReset();
     storeGetters.getInbox.mockReset();
     storeGetters.getAgentById.mockReset();
+    storeGetters.getSelectedChat = null;
   });
 
   it('shows outside-browser operator, direction, route, and close action', async () => {
@@ -187,7 +190,8 @@ describe('FloatingCallWidget', () => {
 
     expect(wrapper.text()).toContain('Handled outside the browser');
     expect(wrapper.text()).toContain('client-party→support-line');
-    expect(wrapper.text()).toContain('Manager: Ayan');
+    expect(wrapper.text()).toContain('Ayan');
+    expect(wrapper.text()).not.toContain('Manager: Ayan');
     expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(true);
     expect(wrapper.find('[aria-label="Chat"]').exists()).toBe(true);
 
@@ -236,6 +240,172 @@ describe('FloatingCallWidget', () => {
     });
   });
 
+  it('shows all simultaneous incoming calls when there is no active call', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:incoming-1',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+      },
+      {
+        callSid: 'sipuni:incoming-2',
+        conversationId: 725,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+77070001003',
+        toNumber: '+77070001001',
+      },
+    ];
+    storeGetters.getConversationById.mockImplementation(id => ({
+      inbox_id: 4769,
+      meta: { sender: { name: `Client ${id}` } },
+    }));
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('+77070001002→+77070001001');
+    expect(wrapper.text()).toContain('+77070001003→+77070001001');
+  });
+
+  it('opens the communication thread returned by claim after answering a call', async () => {
+    mockSession.joinCall.mockResolvedValue({
+      joinSupported: true,
+      communicationThreadId: 72,
+    });
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:1782820473.488058',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await wrapper.get('[aria-label="Call"]').trigger('click');
+    await flushPromises();
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'communication_thread_conversation',
+      params: {
+        accountId: 1,
+        communication_thread_id: 72,
+      },
+      query: {
+        assignee_type: 'all',
+        status: 'open',
+      },
+    });
+  });
+
+  it('opens the communication thread returned by claim when browser join falls back', async () => {
+    mockSession.joinCall.mockResolvedValue({
+      joinSupported: false,
+      communicationThreadId: 72,
+      reason: 'sip_invite_not_received',
+    });
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:1782820473.488058',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await wrapper.get('[aria-label="Call"]').trigger('click');
+    await flushPromises();
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'communication_thread_conversation',
+      params: {
+        accountId: 1,
+        communication_thread_id: 72,
+      },
+      query: {
+        assignee_type: 'all',
+        status: 'open',
+      },
+    });
+    expect(routerMock.push).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'conversation_through_inbox',
+      })
+    );
+  });
+
+  it('keeps a retryable incoming claim on the current page', async () => {
+    mockSession.joinCall.mockResolvedValue({
+      joinSupported: false,
+      retryable: true,
+      reason: 'sipuni_operator_leg_not_ready',
+    });
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:1782820473.488058',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await wrapper.get('[aria-label="Call"]').trigger('click');
+    await flushPromises();
+
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
   it('keeps numbers in the route and shows the Sipuni manager on the second line', () => {
     mockSession.incomingCalls = [
       {
@@ -265,6 +435,45 @@ describe('FloatingCallWidget', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.text()).toContain('+77070001002→+77070001001');
-    expect(wrapper.text()).toContain('Manager: John (502)');
+    expect(wrapper.text()).toContain('John (502)');
+    expect(wrapper.text()).not.toContain('Manager: John (502)');
+  });
+
+  it('does not leave the current concrete conversation for the same contact', async () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:1782820473.488058',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        contactId: 2179,
+      },
+    ];
+    storeGetters.getSelectedChat = {
+      id: 724,
+      contact_id: 2179,
+    };
+    routerMock.currentRoute.value = {
+      params: { accountId: 1, inbox_id: 4769, conversation_id: 724 },
+      query: { status: 'open', assignee_type: 'all' },
+      name: 'conversation_through_inbox',
+    };
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      contact_id: 2179,
+      meta: { sender: { id: 2179, name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await wrapper.get('[aria-label="Chat"]').trigger('click');
+
+    expect(routerMock.push).not.toHaveBeenCalled();
   });
 });

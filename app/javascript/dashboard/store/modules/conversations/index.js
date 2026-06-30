@@ -817,7 +817,7 @@ export const mutations = {
 
   [types.UPDATE_MESSAGE_CALL_STATUS](
     _state,
-    { conversationId, callSid, callStatus }
+    { conversationId, callSid, callStatus, callData }
   ) {
     const chat = getConversationById(_state)(conversationId, 'conversation');
     if (!chat) return;
@@ -838,8 +838,11 @@ export const mutations = {
     if (!lastCall) return;
 
     lastCall.content_attributes ??= {};
+    const incomingData =
+      callData && typeof callData === 'object' ? callData : {};
     lastCall.content_attributes.data = {
       ...lastCall.content_attributes.data,
+      ...incomingData,
       status: callStatus,
     };
   },

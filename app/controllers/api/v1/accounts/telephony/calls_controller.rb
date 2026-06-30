@@ -1,6 +1,4 @@
 require 'safe_fetch'
-require 'digest'
-require 'fileutils'
 
 class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telephony::BaseController
   skip_before_action :authenticate_user!, :ensure_active_auth_session!, only: [:recording], raise: false
@@ -201,7 +199,12 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
       fallback_content_type: recording_content_type,
       fallback_filename: proxy_recording_filename
     )
-    cache_external_recording!(result)
+    Telephony::ExternalRecordingCacheService.cache(
+      call_session: @call_session,
+      external_recording_url: external_recording_url,
+      result: result,
+      source: 'external_recording_proxy'
+    )
     send_data(result.data, type: result.content_type, disposition: 'inline', filename: result.filename)
   rescue SafeFetch::Error => e
     Rails.logger.warn(
@@ -219,59 +222,6 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
       filename: File.basename(path),
       x_sendfile: true
     )
-  end
-
-  def cache_external_recording!(result)
-    return unless cache_external_recordings?
-
-    storage_key = external_recording_cache_storage_key(result)
-    path = Rails.root.join('storage', storage_key).cleanpath
-    FileUtils.mkdir_p(path.dirname)
-    File.binwrite(path, result.data)
-    update_cached_recording_metadata!(result, storage_key)
-  rescue StandardError => e
-    Rails.logger.warn(
-      "TELEPHONY_EXTERNAL_RECORDING_CACHE_FAILED account_id=#{@call_session.account_id} " \
-      "call_session_id=#{@call_session.id} provider=#{@call_session.provider} error_class=#{e.class.name} message=#{e.message}"
-    )
-  end
-
-  def cache_external_recordings?
-    ENV.fetch('TELEPHONY_EXTERNAL_RECORDING_CACHE_ENABLED', 'true') != 'false'
-  end
-
-  def external_recording_cache_storage_key(result)
-    digest = Digest::SHA256.hexdigest(external_recording_url)
-    "voice-recordings/#{@call_session.provider}/#{@call_session.account_id}/#{@call_session.id}/#{digest}#{recording_extension(result)}"
-  end
-
-  def recording_extension(result)
-    content_type = result.content_type.to_s
-    return '.mp3' if content_type.include?('mpeg')
-    return '.ogg' if content_type.include?('ogg')
-    return '.webm' if content_type.include?('webm')
-    return '.m4a' if content_type.include?('mp4') || content_type.include?('m4a')
-
-    filename_extension = File.extname(result.filename.to_s)
-    return filename_extension if filename_extension.match?(/\A\.[a-z0-9]{2,5}\z/i)
-
-    '.wav'
-  end
-
-  def update_cached_recording_metadata!(result, storage_key)
-    metadata = @call_session.metadata.to_h.deep_dup
-    recording = recording_metadata.deep_dup
-    recording['recording_ref'] ||= external_recording_url
-    recording['recording_url'] ||= external_recording_url
-    recording['external_recording_url'] ||= external_recording_url
-    recording['storage_key'] = storage_key
-    recording['content_type'] = result.content_type if result.content_type.to_s.start_with?('audio/')
-    recording['byte_size'] = result.data.bytesize
-    recording['cached_at'] = Time.current.iso8601
-    recording['cache_source'] = 'external_recording_proxy'
-    metadata['recording'] = recording.compact
-
-    @call_session.update!(recording_ref: storage_key, metadata: metadata)
   end
 
   def proxy_recording_filename

@@ -367,6 +367,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       conversationDisplayId:
         data.conversation_display_id || data.conversation_id,
       conversationDbId: data.conversation_db_id || data.conversationDbId,
+      communicationThreadId:
+        data.communication_thread_id || data.communicationThreadId,
       inboxId: data.inbox_id,
       numberRef: data.number_ref || data.numberRef,
       logicalCallKey:
@@ -400,6 +402,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       conversationDisplayId:
         data.conversation_display_id || data.conversation_id,
       conversationDbId: data.conversation_db_id || data.conversationDbId,
+      communicationThreadId:
+        data.communication_thread_id || data.communicationThreadId,
       inboxId: data.inbox_id,
       numberRef: data.number_ref || data.numberRef,
       logicalCallKey:

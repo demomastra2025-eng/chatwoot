@@ -100,7 +100,7 @@ export default {
     isVirtualPbxVoiceInbox() {
       return (
         this.inbox.channel_type === 'Channel::Voice' &&
-        this.inbox.provider === 'fonoster'
+        ['fonoster', 'sipuni'].includes(this.inbox.provider)
       );
     },
     virtualPbxLoadKey() {
@@ -154,6 +154,30 @@ export default {
     },
     isVirtualPbxSipCredentialsVisible() {
       return ['sipuni', 'binotel'].includes(this.virtualPbxProviderKind);
+    },
+    isVirtualPbxSipuni() {
+      return this.virtualPbxProviderKind === 'sipuni';
+    },
+    showVirtualPbxTechnicalSettings() {
+      return !this.isVirtualPbxSipuni;
+    },
+    virtualPbxManagementLabel() {
+      if (this.isVirtualPbxSipuni) {
+        return this.$t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
+        );
+      }
+
+      return this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_TITLE');
+    },
+    virtualPbxManagementHelpText() {
+      if (this.isVirtualPbxSipuni) {
+        return this.$t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.HINT'
+        );
+      }
+
+      return this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_SUBTITLE');
     },
     isVirtualPbxAsteriskAnalog() {
       return this.virtualPbxProviderKind === 'asterisk_analog';
@@ -634,7 +658,10 @@ export default {
     },
     validateVirtualPbxForm() {
       const form = this.virtualPbxForm;
-      if (!form.channelName.trim() || !form.displayPhoneNumber.trim()) {
+      if (
+        this.showVirtualPbxTechnicalSettings &&
+        (!form.channelName.trim() || !form.displayPhoneNumber.trim())
+      ) {
         useAlert(this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.REQUIRED_FIELDS'));
         return false;
       }
@@ -647,6 +674,8 @@ export default {
     },
     validateVirtualPbxConnection() {
       const form = this.virtualPbxForm;
+      if (!this.showVirtualPbxTechnicalSettings) return true;
+
       if (!form.connectionHost.trim()) {
         useAlert(
           this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.REQUIRED')
@@ -935,8 +964,8 @@ export default {
         <FonosterReadiness :key="fonosterReadinessKey" :inbox="inbox" />
       </SettingsFieldSection>
       <SettingsFieldSection
-        :label="$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_TITLE')"
-        :help-text="$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_SUBTITLE')"
+        :label="virtualPbxManagementLabel"
+        :help-text="virtualPbxManagementHelpText"
       >
         <div v-if="isLoadingVirtualPbxStatus" class="text-sm text-n-slate-11">
           {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.LOADING') }}
@@ -982,7 +1011,10 @@ export default {
             </ul>
           </div>
 
-          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+          <label
+            v-if="showVirtualPbxTechnicalSettings"
+            class="flex flex-col gap-1 text-sm text-n-slate-12"
+          >
             {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.LABEL') }}
             <input
               v-model="virtualPbxForm.channelName"
@@ -992,7 +1024,10 @@ export default {
             />
           </label>
 
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div
+            v-if="showVirtualPbxTechnicalSettings"
+            class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          >
             <label class="flex flex-col gap-1 text-sm text-n-slate-12">
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
               <select
@@ -1020,7 +1055,10 @@ export default {
             </label>
           </div>
 
-          <div class="rounded-xl border border-n-weak p-4">
+          <div
+            v-if="showVirtualPbxTechnicalSettings"
+            class="rounded-xl border border-n-weak p-4"
+          >
             <label class="flex flex-col gap-1 text-sm text-n-slate-12">
               {{
                 $t('INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_DISTRIBUTION.LABEL')
@@ -1041,7 +1079,10 @@ export default {
             </label>
           </div>
 
-          <div class="rounded-xl border border-n-weak p-4">
+          <div
+            v-if="showVirtualPbxTechnicalSettings"
+            class="rounded-xl border border-n-weak p-4"
+          >
             <div class="mb-3 space-y-1">
               <h3 class="text-sm font-medium text-n-slate-12">
                 {{
@@ -1112,7 +1153,11 @@ export default {
             </div>
           </div>
 
-          <div class="rounded-xl border border-n-weak p-4">
+          <div
+            :class="
+              isVirtualPbxSipuni ? '' : 'rounded-xl border border-n-weak p-4'
+            "
+          >
             <div class="mb-3 space-y-1">
               <h3 class="text-sm font-medium text-n-slate-12">
                 {{

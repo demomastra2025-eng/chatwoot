@@ -33,7 +33,7 @@ const isOutboundCall = call => call?.callDirection === 'outbound';
 const visibleCalls = computed(() =>
   hasActiveCall.value
     ? [activeCall.value, ...incomingCalls.value].filter(Boolean)
-    : incomingCalls.value.slice(0, 1)
+    : incomingCalls.value
 );
 
 const firstPresent = values => values.find(value => Boolean(value));
@@ -71,6 +71,91 @@ const getCommunicationThreadId = (call, conversation) =>
     getConversationAttributes(conversation).communication_thread_id,
     getConversationAttributes(conversation).communicationThreadId,
   ]);
+
+const concreteConversationRouteNames = new Set([
+  'conversation',
+  'inbox_conversation',
+  'conversation_through_inbox',
+]);
+
+const getContactIdFromConversation = conversation =>
+  firstPresent([
+    conversation?.contact_id,
+    conversation?.contactId,
+    conversation?.meta?.sender?.id,
+    conversation?.meta?.sender?.contact_id,
+    conversation?.meta?.sender?.contactId,
+  ]);
+
+const getCallContactId = (call, conversation) =>
+  firstPresent([
+    call?.contactId,
+    call?.contact_id,
+    call?.caller?.id,
+    call?.caller?.contact_id,
+    call?.caller?.contactId,
+    getContactIdFromConversation(conversation),
+  ]);
+
+const getSelectedChatContactId = () => {
+  const selectedChat = store.getters.getSelectedChat;
+  return getContactIdFromConversation(selectedChat);
+};
+
+const isCurrentConcreteConversationForCall = (call, conversation) => {
+  const currentRoute = router.currentRoute.value;
+  const currentParams = currentRoute.params || {};
+  const currentConversationId =
+    currentParams.conversation_id || currentParams.conversationId;
+  if (
+    currentConversationId &&
+    call?.conversationId &&
+    String(currentConversationId) === String(call.conversationId)
+  ) {
+    return true;
+  }
+
+  const routeName = currentRoute.name;
+  const isConcreteRoute =
+    concreteConversationRouteNames.has(routeName) ||
+    (currentConversationId &&
+      routeName !== 'communication_thread_conversation');
+  if (!isConcreteRoute) return false;
+
+  const contactId = getCallContactId(call, conversation);
+  const selectedChatContactId = getSelectedChatContactId();
+  return (
+    contactId &&
+    selectedChatContactId &&
+    String(contactId) === String(selectedChatContactId)
+  );
+};
+
+const isCurrentCommunicationThreadForCall = (call, conversation) => {
+  if (router.currentRoute.value.name !== 'communication_thread_conversation') {
+    return false;
+  }
+
+  const communicationThreadId = getCommunicationThreadId(call, conversation);
+  const currentThreadId =
+    router.currentRoute.value.params?.communication_thread_id ||
+    router.currentRoute.value.params?.communicationThreadId;
+  if (
+    communicationThreadId &&
+    currentThreadId &&
+    String(communicationThreadId) === String(currentThreadId)
+  ) {
+    return true;
+  }
+
+  const contactId = getCallContactId(call, conversation);
+  const selectedChatContactId = getSelectedChatContactId();
+  return (
+    contactId &&
+    selectedChatContactId &&
+    String(contactId) === String(selectedChatContactId)
+  );
+};
 
 const communicationThreadQuery = () => {
   const currentQuery = router.currentRoute.value.query || {};
@@ -200,9 +285,7 @@ const getOperatorText = call => {
           extension,
         })
       : getOperatorParty(call);
-  if (!party) return '';
-
-  return t('CONVERSATION.VOICE_WIDGET.OPERATOR_LABEL', { name: party });
+  return party || '';
 };
 
 const getCallParties = call => {
@@ -295,10 +378,12 @@ const openConversation = call => {
 
   if (communicationThreadId && accountId) {
     const currentParams = router.currentRoute.value.params || {};
+    const currentThreadId =
+      currentParams.communication_thread_id ||
+      currentParams.communicationThreadId;
     if (
       router.currentRoute.value.name === 'communication_thread_conversation' &&
-      String(currentParams.communication_thread_id) ===
-        String(communicationThreadId)
+      String(currentThreadId) === String(communicationThreadId)
     ) {
       return;
     }
@@ -311,6 +396,13 @@ const openConversation = call => {
       },
       query: communicationThreadQuery(),
     });
+    return;
+  }
+
+  if (
+    isCurrentConcreteConversationForCall(call, conversation) ||
+    isCurrentCommunicationThreadForCall(call, conversation)
+  ) {
     return;
   }
 
@@ -394,15 +486,29 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
     toNumber: call.toNumber,
   });
 
+  const callWithCommunicationThread = result
+    ? {
+        ...call,
+        communicationThreadId:
+          result.communicationThreadId ||
+          result.communication_thread_id ||
+          call.communicationThreadId ||
+          call.communication_thread_id,
+      }
+    : call;
+
   if (result?.joinSupported === false) {
     if (isOutboundCall(call)) return;
+    if (result.retryable) return;
 
-    handleBrowserJoinUnavailable(call, { notify: notifyOnUnavailable });
+    handleBrowserJoinUnavailable(callWithCommunicationThread, {
+      notify: notifyOnUnavailable,
+    });
     return;
   }
 
   if (result) {
-    openConversation(call);
+    openConversation(callWithCommunicationThread);
   }
 };
 

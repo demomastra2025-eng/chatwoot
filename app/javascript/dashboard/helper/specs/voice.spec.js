@@ -143,16 +143,22 @@ describe('voice helper', () => {
 
     const callsStore = useCallsStore();
 
-    expect(commit).toHaveBeenCalledWith('UPDATE_CONVERSATION_CALL_STATUS', {
-      callSid: 'call-456',
-      callStatus: 'ringing',
-      conversationId: 33,
-    });
-    expect(commit).toHaveBeenCalledWith('UPDATE_MESSAGE_CALL_STATUS', {
-      callSid: 'call-456',
-      callStatus: 'ringing',
-      conversationId: 33,
-    });
+    expect(commit).toHaveBeenCalledWith(
+      'UPDATE_CONVERSATION_CALL_STATUS',
+      expect.objectContaining({
+        callSid: 'call-456',
+        callStatus: 'ringing',
+        conversationId: 33,
+      })
+    );
+    expect(commit).toHaveBeenCalledWith(
+      'UPDATE_MESSAGE_CALL_STATUS',
+      expect.objectContaining({
+        callSid: 'call-456',
+        callStatus: 'ringing',
+        conversationId: 33,
+      })
+    );
     expect(callsStore.calls[0]).toEqual(
       expect.objectContaining({
         callEvent: 'dial_status',

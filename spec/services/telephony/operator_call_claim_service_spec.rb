@@ -93,6 +93,28 @@ RSpec.describe Telephony::OperatorCallClaimService do
     )
   end
 
+  it 'includes the communication thread in the claim response and realtime event' do
+    account.enable_features!('communication_threads')
+    communication_thread = call_session.conversation.refresh_communication_thread!
+    broadcasts = []
+    allow(ActionCable.server).to receive(:broadcast) do |_token, event|
+      broadcasts << event
+    end
+
+    payload = described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+
+    expect(payload[:communication_thread_id]).to eq(communication_thread.display_id)
+    expect(broadcasts).to include(
+      include(
+        event: 'voice_call.claimed',
+        data: include(
+          communication_thread_id: communication_thread.display_id,
+          communicationThreadId: communication_thread.display_id
+        )
+      )
+    )
+  end
+
   it 'does not mark another Fonoster call with a different logical key as related by conversation fallback' do
     call_session.update!(
       from_number: '+77011110101',
@@ -222,6 +244,73 @@ RSpec.describe Telephony::OperatorCallClaimService do
       user_id: winner_user.id
     )
     expect(call_session.reload.metadata.dig('operator_claim', 'sip_profile_id')).to eq(profile.id)
+  end
+
+  it 'rejects Sipuni claims before the internal operator leg is received' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'sipuni',
+      host: 'ats01.kz.sipuni.com',
+      username: '015856'
+    )
+    voice_channel = create(
+      :channel_voice,
+      account: account,
+      provider: 'sipuni',
+      phone_number: '+77070001001',
+      provider_config: {
+        provider_kind: 'sipuni',
+        provider_connection_id: provider_connection.id,
+        number_ref: 'sipuni-claim-test-line',
+        routing_mode: 'operator'
+      }
+    )
+    voice_inbox = voice_channel.inbox
+    create(:inbox_member, inbox: voice_inbox, user: winner_user)
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: winner_user,
+      provider_connection: provider_connection,
+      internal_extension: '505',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'profile-local-505',
+      fonoster_agent_ref: nil,
+      agent_aor: 'sip:015856100021@ats01.kz.sipuni.com',
+      last_synced_at: Time.current,
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    call_session.update!(
+      provider: 'sipuni',
+      inbox: voice_inbox,
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'sipuni_operator_leg' => false,
+          'sipuni_leg_kind' => 'external',
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [winner_user.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref],
+          'operator_candidate_agent_aors' => [profile.agent_aor],
+          'operator_candidate_sources' => ['sip_profile']
+        }
+      }
+    )
+
+    expect do
+      described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+    end.to raise_error(Telephony::Error) { |error|
+      expect(error.code).to eq('OPERATOR_NOT_CANDIDATE')
+      expect(error.details[:reason]).to eq('sipuni_operator_leg_not_ready')
+    }
+    expect(call_session.reload.metadata['operator_claim']).to be_blank
   end
 
   it 'rejects a later claim after first-answer-wins selected another operator' do

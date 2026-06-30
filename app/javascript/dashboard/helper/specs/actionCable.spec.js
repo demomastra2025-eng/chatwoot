@@ -242,6 +242,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
           conversation_id: 627,
           conversation_display_id: 627,
           conversation_db_id: 93627,
+          communication_thread_id: 72,
           contact_id: 8123,
           caller: { phone_number: '+770****8623' },
           from_number: 'client-party',
@@ -264,6 +265,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
         logicalCallKey: 'fonoster-inbound:shared-key',
         conversationId: 627,
         conversationDbId: 93627,
+        communicationThreadId: 72,
         contactId: 8123,
         caller: { phone_number: '+770****8623' },
         fromNumber: 'client-party',
@@ -273,6 +275,36 @@ describe('ActionCableConnector - Copilot Tests', () => {
           { user_id: 9, name: 'Ayan', internal_extension: '502' },
         ],
         operatorInternalExtension: '502',
+      });
+    });
+
+    it('keeps communication thread ids from native voice status updates', () => {
+      const callsStore = useCallsStore();
+
+      callsStore.addCall({
+        callSid: 'sipuni:provider-call-thread-1',
+        status: 'ringing',
+        callDirection: 'inbound',
+        provider: 'sipuni',
+        conversationId: 627,
+      });
+
+      actionCable.onReceived({
+        event: 'voice_call.status_changed',
+        data: {
+          account_id: 1,
+          call_sid: 'sipuni:provider-call-thread-1',
+          status: 'ringing',
+          provider: 'sipuni',
+          call_direction: 'inbound',
+          conversation_id: 627,
+          communication_thread_id: 72,
+        },
+      });
+
+      expect(callsStore.incomingCalls[0]).toMatchObject({
+        callSid: 'sipuni:provider-call-thread-1',
+        communicationThreadId: 72,
       });
     });
 

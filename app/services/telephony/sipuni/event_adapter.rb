@@ -54,6 +54,7 @@ class Telephony::Sipuni::EventAdapter
       ended_at: terminal_event? ? sipuni_time('timestamp') : nil,
       end_reason: terminal_event? ? sipuni_status.presence || status : nil,
       recording_url: raw_value('call_record_link', 'recording_link', 'recording_url'),
+      operator_leg: operator_leg?,
       metadata: metadata
     }.compact
   end
@@ -133,6 +134,8 @@ class Telephony::Sipuni::EventAdapter
       sipuni_call_id: call_id,
       sipuni_event: event_code,
       sipuni_status: sipuni_status,
+      sipuni_leg_kind: sipuni_leg_kind,
+      sipuni_operator_leg: operator_leg?,
       operator_internal_extension: internal_extension_for_candidates,
       outbound_target_number: outbound_target_number,
       raw_sipuni_payload: raw
@@ -168,6 +171,7 @@ class Telephony::Sipuni::EventAdapter
 
   def candidate_profiles
     return Telephony::SipProfile.none if number_binding.blank? || number_binding.inbox.blank?
+    return Telephony::SipProfile.none if inbound? && !operator_leg?
 
     scope = number_binding.inbox.telephony_sip_profiles.enabled.includes(:user).where.not(status: %w[disabled deleting failed])
     matching_extension = internal_extension_for_candidates
@@ -179,6 +183,22 @@ class Telephony::Sipuni::EventAdapter
     directional_internal_extension_candidates.find do |value|
       internal_extension?(value) || internal_extension_candidate?(value)
     end
+  end
+
+  def operator_leg?
+    return false unless inbound?
+
+    internal_extension_for_candidates.present? && (
+      truthy_raw_value?('is_inner_call', 'isInnerCall') ||
+      internal_type?(raw_value('dst_type', 'dstType')) ||
+      sip_username_from_channel.present?
+    )
+  end
+
+  def sipuni_leg_kind
+    return 'outbound' if outbound?
+
+    operator_leg? ? 'operator' : 'external'
   end
 
   def account
@@ -530,5 +550,9 @@ class Telephony::Sipuni::EventAdapter
 
   def raw_value(*keys)
     keys.lazy.map { |key| raw[key.to_s] || raw[key.to_sym] }.find(&:present?)
+  end
+
+  def truthy_raw_value?(*keys)
+    ActiveModel::Type::Boolean.new.cast(raw_value(*keys))
   end
 end

@@ -398,6 +398,72 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
   });
 
+  it('ends an active Sipuni browser client when another operator claims the call', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'sipuni:operator-504-ref',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 612,
+      communicationThreadId: 72,
+      logicalCallKey: 'sipuni-inbound:shared-key',
+    });
+    store.setCallActive('sipuni:operator-504-ref');
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'sipuni:operator-505-ref',
+        provider: 'sipuni',
+        call_direction: 'inbound',
+        conversation_id: 612,
+        communication_thread_id: 72,
+        logical_call_key: 'sipuni-inbound:shared-key',
+        related_call_sids: [
+          'sipuni:operator-504-ref',
+          'sipuni:operator-505-ref',
+        ],
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([]);
+    expect(endClientCallMock).toHaveBeenCalledWith('sipuni');
+  });
+
+  it('does not match an unrelated call when a communication thread id equals another conversation id', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'sipuni:unrelated-call',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 72,
+    });
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'sipuni:claimed-call',
+        provider: 'sipuni',
+        call_direction: 'inbound',
+        conversation_id: 612,
+        communication_thread_id: 72,
+        related_call_sids: ['sipuni:claimed-call'],
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni:unrelated-call',
+        conversationId: 72,
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
   it('does not remove a different Fonoster inbound call with another logical key in the same conversation', async () => {
     const store = useCallsStore();
 

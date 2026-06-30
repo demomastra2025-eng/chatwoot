@@ -58,6 +58,13 @@ function extractCallData(message) {
       contentData.conversationDisplayId ||
       contentMeta?.conversation_display_id ||
       contentMeta?.conversationDisplayId,
+    communicationThreadId:
+      message?.communication_thread_id ||
+      message?.communicationThreadId ||
+      contentData.communication_thread_id ||
+      contentData.communicationThreadId ||
+      contentMeta?.communication_thread_id ||
+      contentMeta?.communicationThreadId,
     conversationDbId:
       contentData.conversation_db_id ||
       contentData.conversationDbId ||
@@ -169,6 +176,7 @@ export function handleVoiceCallCreated(message, currentUserId) {
     accountId,
     conversationDbId,
     conversationDisplayId,
+    communicationThreadId,
     contactId,
     logicalCallKey,
     numberRef,
@@ -197,6 +205,7 @@ export function handleVoiceCallCreated(message, currentUserId) {
       accountId,
       conversationDbId,
       conversationDisplayId,
+      communicationThreadId,
       contactId,
       logicalCallKey,
       numberRef,
@@ -225,6 +234,7 @@ export function handleVoiceCallCreated(message, currentUserId) {
     accountId,
     conversationDbId,
     conversationDisplayId,
+    communicationThreadId,
     contactId,
     logicalCallKey,
     numberRef,
@@ -254,13 +264,19 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     accountId,
     conversationDbId,
     conversationDisplayId,
+    communicationThreadId,
     contactId,
     logicalCallKey,
     numberRef,
   } = extractCallData(message);
 
   // Vuex message/conversation status updates apply to all call sources.
-  const callInfo = { conversationId, callSid, callStatus: status };
+  const callInfo = {
+    conversationId,
+    callSid,
+    callStatus: status,
+    callData: getContentData(message),
+  };
   commit(types.UPDATE_CONVERSATION_CALL_STATUS, callInfo);
   commit(types.UPDATE_MESSAGE_CALL_STATUS, callInfo);
 
@@ -289,6 +305,7 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     accountId,
     conversationDbId,
     conversationDisplayId,
+    communicationThreadId,
     contactId,
     logicalCallKey,
     numberRef,
@@ -319,6 +336,7 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       accountId,
       conversationDbId,
       conversationDisplayId,
+      communicationThreadId,
       contactId,
       logicalCallKey,
       numberRef,

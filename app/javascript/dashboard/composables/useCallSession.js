@@ -22,6 +22,9 @@ const TERMINAL_CLAIM_FAILURE_STATUSES = new Set([
   'missed',
   'ended',
 ]);
+const RETRYABLE_CLAIM_FAILURE_REASONS = new Set([
+  'sipuni_operator_leg_not_ready',
+]);
 const BROWSER_CALLING_PROVIDERS = new Set(['fonoster', 'sipuni', 'twilio']);
 const NATIVE_BROWSER_SIP_PROVIDERS = new Set(['fonoster', 'sipuni']);
 
@@ -216,10 +219,20 @@ export function useCallSession() {
     return TERMINAL_CLAIM_FAILURE_STATUSES.has(normalizedStatus);
   };
 
+  const shouldRetryClaimFailure = claimResult => {
+    const reason = claimResult?.reason || claimResult?.code;
+    return RETRYABLE_CLAIM_FAILURE_REASONS.has(reason);
+  };
+
   const claimFonosterIncomingCall = async callSid => {
     try {
-      await VoiceAPI.claimIncomingCall(callSid);
-      return { claimed: true };
+      const payload = await VoiceAPI.claimIncomingCall(callSid);
+      return {
+        ...payload,
+        claimed: true,
+        communicationThreadId:
+          payload?.communication_thread_id || payload?.communicationThreadId,
+      };
     } catch (error) {
       const payload = claimErrorPayload(error);
       // eslint-disable-next-line no-console
@@ -544,11 +557,20 @@ export function useCallSession() {
 
       if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)) {
         const isOutbound = isOutboundCallDirection(callDirection);
+        let communicationThreadId = null;
 
         if (!isOutbound) {
           const claimResult = await claimFonosterIncomingCall(callSid);
           if (!claimResult.claimed) {
             const reason = claimResult.reason || claimResult.code;
+            if (shouldRetryClaimFailure(claimResult)) {
+              return {
+                provider: resolvedProvider,
+                joinSupported: false,
+                retryable: true,
+                reason,
+              };
+            }
             callsStore.markBrowserJoinUnsupported(callSid, resolvedProvider, {
               reason,
               operatorClaim: operatorClaimFromDetails(claimResult.details),
@@ -560,7 +582,20 @@ export function useCallSession() {
               provider: resolvedProvider,
               joinSupported: false,
               reason,
+              ...(communicationThreadId ? { communicationThreadId } : {}),
             };
+          }
+          communicationThreadId = claimResult.communicationThreadId;
+          if (communicationThreadId) {
+            callsStore.addCall({
+              callSid,
+              status: claimResult.status,
+              conversationId,
+              communicationThreadId,
+              inboxId,
+              provider: resolvedProvider,
+              callDirection,
+            });
           }
         }
 
@@ -576,10 +611,14 @@ export function useCallSession() {
         } catch (error) {
           // eslint-disable-next-line no-console
           console.warn('Failed to answer browser SIP call:', error);
-          return releaseUnsupportedFonosterJoin(callSid, {
+          const releaseResult = await releaseUnsupportedFonosterJoin(callSid, {
             includeReason: true,
             provider: resolvedProvider,
           });
+          return {
+            ...releaseResult,
+            ...(communicationThreadId ? { communicationThreadId } : {}),
+          };
         }
 
         if (!joinResult) {
@@ -602,6 +641,7 @@ export function useCallSession() {
             provider: resolvedProvider,
             joinSupported: false,
             reason: 'sip_invite_not_received',
+            ...(communicationThreadId ? { communicationThreadId } : {}),
           };
         }
 
@@ -619,6 +659,7 @@ export function useCallSession() {
         return {
           provider: resolvedProvider,
           joinSupported: true,
+          communicationThreadId,
         };
       }
 
@@ -654,6 +695,9 @@ export function useCallSession() {
         provider: joinResponse?.provider || webphoneSession.provider,
         conferenceSid: joinResponse?.conference_sid,
         joinSupported: true,
+        communicationThreadId:
+          joinResponse?.communication_thread_id ||
+          joinResponse?.communicationThreadId,
       };
     } catch (error) {
       // eslint-disable-next-line no-console

@@ -165,6 +165,7 @@ class Telephony::CallSession < ApplicationRecord
       transcript_ref: transcript_ref,
       summary: summary,
       conversation_id: conversation&.display_id,
+      communication_thread_id: communication_thread_display_id,
       conversation_db_id: conversation_id,
       contact_id: contact_id,
       contact_name: contact&.name,
@@ -179,6 +180,12 @@ class Telephony::CallSession < ApplicationRecord
   end
 
   private
+
+  def communication_thread_display_id
+    return unless conversation&.account&.feature_enabled?('communication_threads')
+
+    conversation.communication_thread&.display_id
+  end
 
   def single_legacy_voice_message
     voice_messages = conversation&.messages&.voice_calls&.order(created_at: :desc, id: :desc)

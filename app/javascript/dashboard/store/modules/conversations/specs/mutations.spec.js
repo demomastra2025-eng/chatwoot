@@ -507,6 +507,59 @@ describe('#mutations', () => {
       });
     });
 
+    it('merges terminal voice call data so recordings appear without a reload', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            messages: [
+              {
+                id: 1,
+                source_id: 'voice_call:sipuni:call-1',
+                content_type: 'voice_call',
+                content_attributes: {
+                  data: {
+                    call_sid: 'sipuni:call-1',
+                    status: 'ringing',
+                    provider: 'sipuni',
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_MESSAGE_CALL_STATUS](state, {
+        conversationId: 1,
+        callSid: 'sipuni:call-1',
+        callStatus: 'completed',
+        callData: {
+          status: 'completed',
+          duration: 6,
+          recording_url:
+            '/api/v1/accounts/530/telephony/calls/sipuni%3Acall-1/recording?recording_token=token',
+          recording: {
+            content_type: 'audio/mpeg',
+          },
+        },
+      });
+
+      expect(
+        state.allConversations[0].messages[0].content_attributes.data
+      ).toEqual({
+        call_sid: 'sipuni:call-1',
+        status: 'completed',
+        provider: 'sipuni',
+        duration: 6,
+        recording_url:
+          '/api/v1/accounts/530/telephony/calls/sipuni%3Acall-1/recording?recording_token=token',
+        recording: {
+          content_type: 'audio/mpeg',
+        },
+      });
+    });
+
     it('handles empty messages array', () => {
       const state = {
         allConversations: [{ id: 1, messages: [] }],

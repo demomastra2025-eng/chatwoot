@@ -155,6 +155,7 @@ class Telephony::InboundRoutingService
     return if number_binding.blank?
     return if call_ref.blank? || caller_number.blank?
     return if diagnostic_route_probe?
+    return if sipuni_pre_operator_leg?
 
     call_session, should_broadcast = ensure_fast_incoming_call_session!(decision)
     return if call_session.blank? || call_session.terminal? || !should_broadcast
@@ -324,6 +325,7 @@ class Telephony::InboundRoutingService
       call_group_key: logical_call_key,
       logical_call_group_ref: logical_call_group_ref
     }
+    metadata.merge!(sipuni_leg_metadata)
 
     metadata.merge!(target_route_metadata) if target_operator_requested?
     metadata.merge!(operator_route_metadata(decision)) if operator_decision?(decision)
@@ -1062,6 +1064,60 @@ class Telephony::InboundRoutingService
     keys.each do |key|
       value = metadata_payload[key.to_s] || metadata_payload[key.to_sym]
       return value if value.present?
+    end
+
+    nil
+  end
+
+  def sipuni_leg_metadata
+    return {} unless sipuni_provider?
+    return {} unless sipuni_operator_leg_known?
+
+    {
+      sipuni_operator_leg: sipuni_operator_leg?,
+      sipuni_leg_kind: sipuni_operator_leg? ? 'operator' : 'external'
+    }
+  end
+
+  def sipuni_pre_operator_leg?
+    sipuni_provider? && sipuni_operator_leg_known? && !sipuni_operator_leg?
+  end
+
+  def sipuni_provider?
+    payload_value('provider').to_s == 'sipuni' || number_binding&.provider.to_s == 'sipuni'
+  end
+
+  def sipuni_operator_leg_known?
+    raw_payload_key?('operator_leg', 'operatorLeg') || raw_metadata_key?('sipuni_operator_leg', 'sipuniOperatorLeg')
+  end
+
+  def sipuni_operator_leg?
+    value = raw_payload_value('operator_leg', 'operatorLeg')
+    value = raw_metadata_value('sipuni_operator_leg', 'sipuniOperatorLeg') if value.nil?
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def raw_metadata_key?(*keys)
+    keys.any? { |key| metadata_payload.key?(key.to_s) || metadata_payload.key?(key.to_sym) }
+  end
+
+  def raw_metadata_value(*keys)
+    keys.each do |key|
+      return metadata_payload[key.to_s] if metadata_payload.key?(key.to_s)
+      return metadata_payload[key.to_sym] if metadata_payload.key?(key.to_sym)
+    end
+
+    nil
+  end
+
+  def raw_payload_key?(*keys)
+    keys.any? { |key| payload.key?(key.to_s) || payload.key?(key.to_sym) }
+  end
+
+  def raw_payload_value(*keys)
+    keys.each do |key|
+      return payload[key.to_s] if payload.key?(key.to_s)
+      return payload[key.to_sym] if payload.key?(key.to_sym)
     end
 
     nil

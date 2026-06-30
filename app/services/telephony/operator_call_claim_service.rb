@@ -65,6 +65,7 @@ class Telephony::OperatorCallClaimService
 
   def candidate_user?
     return false unless operator_route?
+    return false unless sipuni_operator_leg_claimable?
     return false unless operator_identity_enabled?
     return false unless operator_identity_registered_for_routing?
     return false unless inbox_member?
@@ -207,6 +208,7 @@ class Telephony::OperatorCallClaimService
 
   def not_candidate_reason
     return 'call_not_operator_route' unless operator_route?
+    return 'sipuni_operator_leg_not_ready' unless sipuni_operator_leg_claimable?
     return 'operator_identity_missing' if operator_identity.blank?
     return 'operator_identity_disabled' unless operator_identity_enabled?
     return 'operator_not_registered' unless operator_identity_registered_for_routing?
@@ -217,6 +219,18 @@ class Telephony::OperatorCallClaimService
     return 'operator_user_not_in_candidate_pool' unless candidate_user_id?
 
     'operator_not_candidate'
+  end
+
+  def sipuni_operator_leg_claimable?
+    return true unless call_session.provider == 'sipuni' && call_session.direction == 'inbound'
+    return true if route_metadata['sipuni_operator_leg'] == true
+    return true if route_metadata['sipuni_operator_leg'].to_s == 'true'
+    return true if route_metadata['sipuni_leg_kind'].to_s == 'operator'
+    return false if route_metadata['sipuni_operator_leg'] == false
+    return false if route_metadata['sipuni_operator_leg'].to_s == 'false'
+    return false if route_metadata['sipuni_leg_kind'].to_s == 'external'
+
+    true
   end
 
   def registration_details
@@ -269,6 +283,7 @@ class Telephony::OperatorCallClaimService
       call_ref: call_session.external_call_ref,
       status: call_session.status,
       claimed: true,
+      communication_thread_id: communication_thread_display_id,
       agent_ref: operator_agent_ref,
       agent_aor: operator_agent_aor,
       agent_binding_id: operator_agent_binding&.id,
@@ -411,6 +426,8 @@ class Telephony::OperatorCallClaimService
       direction: call_session.direction,
       conversation_id: call_session.conversation&.display_id,
       conversation_display_id: call_session.conversation&.display_id,
+      communication_thread_id: communication_thread_display_id,
+      communicationThreadId: communication_thread_display_id,
       conversation_db_id: call_session.conversation_id,
       inbox_id: call_session.inbox_id,
       from_number: call_session.from_number,
@@ -423,5 +440,12 @@ class Telephony::OperatorCallClaimService
       claimedByUserId: user.id,
       operator_claim: claim_payload
     }.compact
+  end
+
+  def communication_thread_display_id
+    conversation = call_session.conversation
+    return unless conversation&.account&.feature_enabled?('communication_threads')
+
+    (conversation.communication_thread || conversation.refresh_communication_thread!)&.display_id
   end
 end

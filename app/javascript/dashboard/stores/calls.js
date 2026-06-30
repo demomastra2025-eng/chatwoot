@@ -17,17 +17,27 @@ const callLogicalKey = call =>
 
 const hasLogicalCallKey = call => isPresent(callLogicalKey(call));
 
+const scopedCallKeys = entries =>
+  entries.flatMap(([scope, ...values]) =>
+    values.filter(isPresent).map(value => `${scope}:${String(value)}`)
+  );
+
 const callConversationKeys = call =>
-  [
-    call?.conversationId,
-    call?.conversationDisplayId,
-    call?.conversationDbId,
-    call?.conversation_id,
-    call?.conversation_display_id,
-    call?.conversation_db_id,
-  ]
-    .filter(isPresent)
-    .map(value => String(value));
+  scopedCallKeys([
+    [
+      'conversation',
+      call?.conversationId,
+      call?.conversationDisplayId,
+      call?.conversation_id,
+      call?.conversation_display_id,
+    ],
+    [
+      'communication_thread',
+      call?.communicationThreadId,
+      call?.communication_thread_id,
+    ],
+    ['conversation_db', call?.conversationDbId, call?.conversation_db_id],
+  ]);
 
 const hasSharedConversationKey = (call, callData) => {
   const callKeys = callConversationKeys(call);
@@ -180,6 +190,7 @@ const buildCallState = (callData, existingCall = null) => {
     accountId: displayValue('accountId'),
     conversationDbId: displayValue('conversationDbId'),
     conversationDisplayId: displayValue('conversationDisplayId'),
+    communicationThreadId: displayValue('communicationThreadId'),
     contactId: displayValue('contactId'),
     logicalCallKey: displayValue('logicalCallKey'),
     numberRef: displayValue('numberRef'),
@@ -251,6 +262,7 @@ export const useCallsStore = defineStore('calls', {
       accountId,
       conversationDbId,
       conversationDisplayId,
+      communicationThreadId,
       contactId,
       logicalCallKey,
       numberRef,
@@ -261,6 +273,7 @@ export const useCallsStore = defineStore('calls', {
         conversationId,
         conversationDbId,
         conversationDisplayId,
+        communicationThreadId,
         inboxId,
         provider,
         callDirection,
@@ -299,6 +312,7 @@ export const useCallsStore = defineStore('calls', {
           conversationId,
           conversationDbId,
           conversationDisplayId,
+          communicationThreadId,
           inboxId,
           provider: resolvedProvider,
           callDirection: resolvedCallDirection,
@@ -331,6 +345,7 @@ export const useCallsStore = defineStore('calls', {
               conversationId,
               conversationDbId,
               conversationDisplayId,
+              communicationThreadId,
               inboxId,
               provider: resolvedProvider,
               callDirection: resolvedCallDirection,
@@ -535,6 +550,8 @@ export const useCallsStore = defineStore('calls', {
         conversationDisplayId:
           data?.conversation_display_id || data?.conversation_id,
         conversationDbId: data?.conversation_db_id || data?.conversationDbId,
+        communicationThreadId:
+          data?.communication_thread_id || data?.communicationThreadId,
         logicalCallKey:
           data?.logical_call_key ||
           data?.logicalCallKey ||
@@ -562,10 +579,15 @@ export const useCallsStore = defineStore('calls', {
 
       const removedBrowserCalls = removedCalls.filter(
         call =>
-          call.provider === 'fonoster' && (call.isActive || call.browserJoined)
+          NATIVE_BROWSER_SIP_PROVIDERS.has(call.provider) &&
+          (call.isActive || call.browserJoined)
       );
       if (removedBrowserCalls.length) {
-        await endClientCall('fonoster');
+        await Promise.all(
+          [...new Set(removedBrowserCalls.map(call => call.provider))].map(
+            provider => endClientCall(provider)
+          )
+        );
       }
     },
 

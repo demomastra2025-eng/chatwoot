@@ -8,6 +8,8 @@ class Telephony::ExternalRecordingPlaybackProxy
   DEFAULT_OPEN_TIMEOUT = 3
   DEFAULT_READ_TIMEOUT = 12
   DEFAULT_RANGE_READ_TIMEOUT = 4
+  DEFAULT_RANGE_RETRY_ATTEMPTS = 3
+  DEFAULT_RANGE_RETRY_DELAY_SECONDS = 1.5
 
   Result = Data.define(:data, :content_type, :filename)
 
@@ -42,6 +44,20 @@ class Telephony::ExternalRecordingPlaybackProxy
   end
 
   def fetch_range_chunks
+    attempts = 0
+
+    begin
+      attempts += 1
+      return fetch_range_chunks_once
+    rescue SafeFetch::FetchError => e
+      raise unless retryable_range_fetch_error?(e, attempts)
+
+      sleep range_retry_delay_seconds
+      retry
+    end
+  end
+
+  def fetch_range_chunks_once
     data = String.new(capacity: RANGE_CHUNK_BYTES, encoding: Encoding::BINARY)
     content_type = populate_range_buffer!(data)
     range_result(data, content_type)
@@ -93,6 +109,15 @@ class Telephony::ExternalRecordingPlaybackProxy
     !data.empty? && error.message.start_with?('416 ')
   end
 
+  def retryable_range_fetch_error?(error, attempts)
+    return false if attempts >= range_retry_attempts
+
+    message = error.message.to_s
+    message.include?('Net::ReadTimeout') ||
+      message.include?('execution expired') ||
+      message.include?('empty recording response')
+  end
+
   def fetch_range_chunk(offset)
     range_end = offset + RANGE_CHUNK_BYTES - 1
 
@@ -137,5 +162,15 @@ class Telephony::ExternalRecordingPlaybackProxy
   def timeout_value(env_key, default)
     value = ENV.fetch(env_key, default).to_i
     value.positive? ? value : default
+  end
+
+  def range_retry_attempts
+    value = ENV.fetch('TELEPHONY_EXTERNAL_RECORDING_RANGE_RETRY_ATTEMPTS', DEFAULT_RANGE_RETRY_ATTEMPTS).to_i
+    value.positive? ? value : DEFAULT_RANGE_RETRY_ATTEMPTS
+  end
+
+  def range_retry_delay_seconds
+    value = ENV.fetch('TELEPHONY_EXTERNAL_RECORDING_RANGE_RETRY_DELAY_SECONDS', DEFAULT_RANGE_RETRY_DELAY_SECONDS).to_f
+    value.positive? ? value : DEFAULT_RANGE_RETRY_DELAY_SECONDS
   end
 end
