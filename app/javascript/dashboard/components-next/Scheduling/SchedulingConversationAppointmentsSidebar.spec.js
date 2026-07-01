@@ -156,9 +156,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     const html = wrapper.html();
     expect(html).toContain('i-lucide-calendar-plus');
-    expect(html).toContain('text-n-amber-11');
-    expect(html).toContain('appointment-status-dashed-rail');
-    expect(html).toContain('rounded-full');
+    expect(html).not.toContain('appointment-status-dashed-rail');
     expect(
       wrapper.find('#scheduling-conversation-appointment-status').exists()
     ).toBe(true);
@@ -174,7 +172,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(
       wrapper.vm.statusOptions.find(option => option.value === 'completed')
     ).toMatchObject({
+      iconClass: '',
       label: 'SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.completed',
+      labelClass: '',
     });
     expect(
       wrapper.vm.statusOptions.find(option => option.value === 'confirmed')
@@ -191,20 +191,24 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
   });
 
-  it('renders appointment status as a colored icon before the title with a dashed status rail', async () => {
+  it('renders appointment status as a colored icon before the title without a dashed status rail', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
     const html = wrapper.html();
     expect(html).toContain('i-lucide-badge-check');
     expect(html).toContain('text-n-blue-11');
-    expect(html).toContain('appointment-status-dashed-rail');
-    expect(html).toContain('rounded-full');
-    expect(html.indexOf('appointment-status-dashed-rail')).toBeLessThan(
-      html.indexOf('i-lucide-badge-check')
-    );
+    expect(html).not.toContain('appointment-status-dashed-rail');
     expect(html.indexOf('i-lucide-badge-check')).toBeLessThan(
       html.indexOf('Айша')
+    );
+    expect(
+      wrapper.vm.statusOptions.find(option => option.value === 'completed')
+    ).toMatchObject(
+      expect.objectContaining({
+        iconClass: '',
+        labelClass: '',
+      })
     );
   });
 

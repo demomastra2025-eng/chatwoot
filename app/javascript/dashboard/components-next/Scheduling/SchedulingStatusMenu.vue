@@ -47,10 +47,10 @@ const buttonColor = computed(() => {
 
   const colorMap = {
     cancelled: 'ruby',
-    completed: 'teal',
+    completed: 'slate',
     confirmed: 'blue',
-    no_show: 'amber',
-    scheduled: 'slate',
+    no_show: 'ruby',
+    scheduled: 'amber',
   };
 
   return colorMap[props.modelValue] || colorMap.scheduled;

@@ -30,10 +30,10 @@ const { t } = useI18n();
 const statusClass = computed(() => {
   const classMap = {
     cancelled: 'bg-n-ruby-4 text-n-ruby-11',
-    completed: 'bg-n-teal-4 text-n-teal-11',
+    completed: 'bg-n-slate-4 text-n-slate-11',
     confirmed: 'bg-n-blue-4 text-n-blue-11',
-    no_show: 'bg-n-amber-4 text-n-amber-11',
-    scheduled: 'bg-n-slate-4 text-n-slate-11',
+    no_show: 'bg-n-ruby-4 text-n-ruby-11',
+    scheduled: 'bg-n-amber-4 text-n-amber-11',
   };
 
   return classMap[props.appointment.status] || classMap.scheduled;
@@ -127,7 +127,8 @@ const backgroundStyle = computed(() => ({
         class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-n-slate-11"
       >
         <span
-          :class="[appointmentStatusIcon, 'size-3 shrink-0']"
+          class="size-3 shrink-0"
+          :class="appointmentStatusIcon"
           aria-hidden="true"
         />
         {{ appointmentStatusLabel }}

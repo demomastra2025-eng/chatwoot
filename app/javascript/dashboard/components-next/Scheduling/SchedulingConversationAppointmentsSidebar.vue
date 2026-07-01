@@ -31,7 +31,6 @@ import {
 import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_ICON_CLASSES,
-  APPOINTMENT_STATUS_RAIL_CLASSES,
   APPOINTMENT_STATUS_VALUES,
 } from 'dashboard/routes/dashboard/scheduling/constants';
 
@@ -246,14 +245,8 @@ const isAppointmentOpen = appointment =>
   openAppointmentKeys.value.includes(appointmentKey(appointment));
 
 const statusIconClass = appointment =>
-  APPOINTMENT_STATUS_ICON_CLASSES[appointment.status] ||
+  APPOINTMENT_STATUS_ICON_CLASSES[appointment.status] ??
   APPOINTMENT_STATUS_ICON_CLASSES.scheduled;
-
-const statusAccentClass = status =>
-  APPOINTMENT_STATUS_RAIL_CLASSES[status] || 'text-n-slate-9';
-
-const appointmentStatusAccentClass = appointment =>
-  statusAccentClass(appointment.status);
 
 const statusIcon = appointment =>
   APPOINTMENT_STATUS_ICONS[appointment.status] ||
@@ -756,10 +749,6 @@ watch(
             @click="openAppointmentKeys = [NEW_APPOINTMENT_KEY]"
           >
             <span
-              class="appointment-status-dashed-rail shrink-0 self-stretch rounded-full"
-              :class="statusAccentClass(createForm.status)"
-            />
-            <span
               class="flex min-w-0 flex-1 items-start justify-between gap-3 px-3 py-2.5"
             >
               <span class="flex min-w-0 items-start gap-2">
@@ -1008,10 +997,6 @@ watch(
             class="flex w-full p-0 text-left hover:bg-n-alpha-1 rtl:text-right"
             @click="toggleAppointment(appointment)"
           >
-            <span
-              class="appointment-status-dashed-rail shrink-0 self-stretch rounded-full"
-              :class="appointmentStatusAccentClass(appointment)"
-            />
             <span
               class="flex min-w-0 flex-1 items-start justify-between gap-3 px-3 py-2.5"
             >
@@ -1325,21 +1310,6 @@ watch(
 </template>
 
 <style scoped>
-.appointment-status-dashed-rail {
-  width: 0.125rem;
-  margin-block: 0.25rem;
-  border-radius: 9999px;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    currentColor 0,
-    currentColor 0.5rem,
-    transparent 0.5rem,
-    transparent 0.75rem
-  );
-  background-position: center;
-  background-repeat: repeat-y;
-}
-
 .scheduling-appointment-drawer-form {
   @apply grid gap-3;
 }
