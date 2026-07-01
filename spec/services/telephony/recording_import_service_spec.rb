@@ -98,6 +98,31 @@ RSpec.describe Telephony::RecordingImportService do
     expect(legacy_data['recording']).to be_blank
   end
 
+  it 'stores Janus server recordings under the Janus recording namespace', :aggregate_failures do
+    janus_url = 'https://janus-recordings.example.test/recordings/operator-direct-import-1.wav'
+    stub_request(:get, janus_url).to_return(status: 200, body: recording_body, headers: { 'Content-Type' => 'audio/wav' })
+
+    with_modified_env(TELEPHONY_RECORDING_IMPORT_ALLOWED_HOSTS: 'janus-recordings.example.test') do
+      result = described_class.new(
+        payload: payload.merge(
+          'download_url' => janus_url,
+          'recorded_by' => 'janus',
+          'layout' => 'dual_channel',
+          'mode' => 'operator'
+        )
+      ).perform
+
+      call_session.reload
+      expect(result).to include(status: 'ok', message_id: exact_message.id)
+      expect(call_session.recording_ref).to start_with('voice-recordings/janus/')
+      expect(call_session.metadata.dig('recording', 'source')).to eq('janus_import')
+      expect(call_session.metadata.dig('recording', 'recorded_by')).to eq('janus')
+      expect(call_session.metadata.dig('recording_import', 'source')).to eq('janus_download_url')
+      expect(call_session.metadata.dig('recording_import', 'recorded_by')).to eq('janus')
+      expect(File.binread(Rails.root.join('storage', call_session.recording_ref))).to eq(recording_body)
+    end
+  end
+
   it 'rejects checksum mismatches without storing a file or updating the dialog' do
     expect do
       described_class.new(payload: payload.merge('sha256' => 'b' * 64)).perform

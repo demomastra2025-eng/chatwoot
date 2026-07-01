@@ -1297,6 +1297,41 @@ RSpec.describe 'Inboxes API', type: :request do
         )
       end
 
+      it 'merges provider config when updating a voice inbox webhook token' do
+        provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
+        voice_channel = create(
+          :channel_voice,
+          account: account,
+          provider: 'sipuni',
+          provider_config: {
+            provider_kind: 'sipuni',
+            provider_connection_id: provider_connection.id,
+            number_ref: 'sipuni-number-ref',
+            routing_mode: 'operator',
+            operator_distribution_mode: 'broadcast'
+          }
+        )
+        voice_inbox = voice_channel.inbox
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: {
+                channel: {
+                  provider_config: {
+                    sipuni_events_webhook_token: 'new-webhook-token'
+                  }
+                }
+              },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(voice_channel.reload.provider_config).to include(
+          'provider_connection_id' => provider_connection.id,
+          'number_ref' => 'sipuni-number-ref',
+          'sipuni_events_webhook_token' => 'new-webhook-token'
+        )
+      end
+
       it 'rejects runtime identity updates for whatsapp web inboxes' do
         with_modified_env(
           'EVOLUTION_API_URL' => 'https://evolution.example.com',

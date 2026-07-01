@@ -202,6 +202,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         provider_kind: 'sipuni',
         provider_connection_id: provider_connection.id,
         number_ref: 'sipuni-browser-number-ref',
+        sipuni_events_webhook_token: 'sipuni-webhook-token',
         routing_mode: 'operator',
         operator_distribution_mode: 'broadcast'
       }
@@ -261,6 +262,67 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['browser_join_supported']).to be(true)
     expect(payload['calling_supported']).to be(true)
     expect(payload['registered_for_routing']).to be(true)
+    expect(payload['recording_strategy']).to eq('provider_api')
+    expect(payload['recording_fallback_strategy']).to eq('browser_fallback')
+  end
+
+  it 'falls back to browser recording for native Sipuni browser profiles without webhook/API recording' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'sipuni',
+      host: 'ats01.kz.sipuni.com',
+      port: 5060,
+      transport: 'udp',
+      username: '990001000022'
+    )
+    sipuni_channel = create(
+      :channel_voice,
+      account: account,
+      provider: 'sipuni',
+      phone_number: '+15551232000',
+      provider_config: {
+        provider_kind: 'sipuni',
+        provider_connection_id: provider_connection.id,
+        number_ref: 'sipuni-browser-number-no-webhook',
+        routing_mode: 'operator',
+        operator_distribution_mode: 'broadcast'
+      }
+    )
+    sipuni_inbox = sipuni_channel.inbox
+    create(:inbox_member, inbox: sipuni_inbox, user: administrator)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: sipuni_inbox,
+      user: administrator,
+      internal_extension: '502',
+      provider_connection: provider_connection,
+      sip_username: '990001000022',
+      sip_password: 'test-sip-password',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_aor: 'sip:990001000022@ats01.kz.sipuni.com'
+    )
+
+    with_modified_env(
+      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      SIPUNI_WEBHOOK_TOKEN: nil,
+      TELEPHONY_SIPUNI_WEBHOOK_TOKEN: nil,
+      SIPUNI_INTEGRATION_USER: nil,
+      SIPUNI_INTEGRATION_SECRET: nil
+    ) do
+      post path,
+           params: { inbox_id: sipuni_inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['provider']).to eq('sipuni')
+    expect(payload['recording_strategy']).to eq('browser_fallback')
+    expect(payload['recording_fallback_strategy']).to be_nil
   end
 
   it 'returns a Janus SIP webphone contract for native Binotel browser profiles' do
@@ -335,13 +397,62 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
     expect(payload['calling_supported']).to be(true)
     expect(payload['registered_for_routing']).to be(true)
+    expect(payload['recording_strategy']).to eq('browser_fallback')
+  end
+
+  it 'returns a Janus server recording contract when native SIP server recording is enabled' do
+    sipuni_profile, _binotel_profile, asterisk_profile = create_native_janus_browser_profiles
+
+    with_modified_env(
+      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      TELEPHONY_JANUS_SERVER_RECORDING_ENABLED: 'true',
+      TELEPHONY_SIPUNI_JANUS_SERVER_RECORDING_ENABLED: 'true',
+      TELEPHONY_BINOTEL_JANUS_SERVER_RECORDING_ENABLED: 'true',
+      TELEPHONY_ASTERISK_ANALOG_JANUS_SERVER_RECORDING_ENABLED: 'true',
+      TELEPHONY_JANUS_RECORDING_FILENAME_PREFIX: 'janus-prod'
+    ) do
+      post path,
+           params: { inbox_id: asterisk_profile.inbox_id },
+           headers: headers,
+           as: :json
+
+      payload = response.parsed_body.fetch('payload')
+      expect(response).to have_http_status(:ok)
+      expect(payload['provider']).to eq('asterisk_analog')
+      expect(payload['recording_strategy']).to eq('janus_server')
+      expect(payload['recording_fallback_strategy']).to eq('browser_fallback')
+      expect(payload['janus_recording']).to include(
+        'enabled' => true,
+        'recorder' => 'janus_sip',
+        'audio' => true,
+        'peer_audio' => true,
+        'recorded_by' => 'janus',
+        'layout' => 'dual_channel'
+      )
+      expect(payload.dig('janus_recording', 'filename_prefix')).to eq(
+        "janus-prod_asterisk_analog_account_#{account.id}_profile_#{asterisk_profile.id}"
+      )
+
+      post path,
+           params: { inbox_id: sipuni_profile.inbox_id },
+           headers: headers,
+           as: :json
+
+      sipuni_payload = response.parsed_body.fetch('payload')
+      expect(sipuni_payload['provider']).to eq('sipuni')
+      expect(sipuni_payload['recording_strategy']).to eq('janus_server')
+      expect(sipuni_payload['recording_fallback_strategy']).to eq('browser_fallback')
+      expect(sipuni_payload.dig('janus_recording', 'directory')).to eq('/recordings/incoming')
+    end
   end
 
   it 'returns all native Janus SIP browser profiles for no-inbox bootstrap' do
     profiles = create_native_janus_browser_profiles
 
     with_modified_env(
-      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
+      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      SIPUNI_WEBHOOK_TOKEN: nil,
+      TELEPHONY_SIPUNI_WEBHOOK_TOKEN: nil
     ) do
       post path, headers: headers, as: :json
     end
@@ -354,6 +465,14 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(sessions.pluck('sip_profile_id')).to match_array(profiles.map(&:id))
     expect(sessions.map { |session| session.dig('sip', 'username') }).to match_array(profiles.map(&:sip_username))
     expect(sessions).to all(include('janus_server' => 'wss://dev.one-link.kz/janus-sipuni'))
+    recording_strategies =
+      sessions.index_by { |session| session['provider'] }
+              .transform_values { |session| session['recording_strategy'] }
+    expect(recording_strategies).to include(
+      'sipuni' => 'browser_fallback',
+      'binotel' => 'browser_fallback',
+      'asterisk_analog' => 'browser_fallback'
+    )
   end
 
   it 'includes the legacy Fonoster binding alongside native Janus SIP profiles for no-inbox bootstrap' do

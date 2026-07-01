@@ -436,6 +436,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def normalized_channel_update_params(channel_attributes)
     channel_params = permitted_params(channel_attributes)[:channel]
     return normalized_telegram_personal_channel_params(channel_params) if @inbox.channel.is_a?(Channel::TelegramPersonal)
+    return normalized_voice_channel_params(channel_params) if defined?(Channel::Voice) && @inbox.channel.is_a?(Channel::Voice)
     return channel_params unless @inbox.channel.is_a?(Channel::Whatsapp)
 
     enriched_whatsapp_cloud_channel_attributes(channel_params, existing_channel: @inbox.channel)
@@ -446,6 +447,15 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     return attrs unless attrs.key?(:runtime_state)
 
     attrs[:runtime_state] = @inbox.channel.runtime_state_payload.merge(attrs[:runtime_state].to_h)
+    attrs
+  end
+
+  def normalized_voice_channel_params(channel_params)
+    attrs = channel_params.to_h.with_indifferent_access
+    return attrs if attrs[:provider_config].blank?
+
+    provider_config = @inbox.channel.provider_config.to_h.deep_stringify_keys
+    attrs[:provider_config] = provider_config.deep_merge(attrs[:provider_config].to_h.deep_stringify_keys)
     attrs
   end
 

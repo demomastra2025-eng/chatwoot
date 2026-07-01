@@ -198,6 +198,141 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
   end
 
+  it 'stores a browser SIP recording upload and exposes it through the telephony recording route' do
+    call_session = create_recorded_call_session(
+      'asterisk_analog:local:recording-upload-1',
+      {},
+      recording_ref: nil,
+      provider: 'asterisk_analog'
+    )
+    call_session.update!(status: 'completed', direction: 'outbound', ended_at: Time.current, duration_seconds: 3)
+    mark_call_session_owned_by(call_session, administrator)
+    recording_body = 'webm-audio-from-browser'
+    upload_file = Tempfile.new(['janus-recording', '.webm'])
+    upload_file.binmode
+    upload_file.write(recording_body)
+    upload_file.rewind
+
+    post "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_session.external_call_ref)}/upload_recording",
+         params: {
+           recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/webm', true),
+           duration_ms: 3100
+         },
+         headers: headers
+
+    expect(response).to have_http_status(:created)
+
+    storage_key = call_session.reload.metadata.dig('recording', 'storage_key')
+    recording_path = Rails.root.join('storage', storage_key)
+    expect(storage_key).to start_with("voice-recordings/asterisk_analog/#{account.id}/#{call_session.id}/")
+    expect(call_session).to have_attributes(recording_ref: storage_key)
+    expect(call_session.metadata['recording']).to include(
+      'content_type' => 'audio/webm',
+      'sha256' => Digest::SHA256.hexdigest(recording_body),
+      'writer' => 'browser_janus_media_recorder'
+    )
+    expect(File.binread(recording_path)).to eq(recording_body)
+
+    voice_message = call_session.voice_message_for_current_call
+    signed_recording_url = voice_message.content_attributes.dig('data', 'recording_url')
+    recording_url_prefix =
+      "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording?"
+    expect(signed_recording_url).to start_with(recording_url_prefix)
+
+    get signed_recording_url
+
+    expect([response.status, response.media_type, response.body]).to eq([200, 'audio/webm', recording_body])
+  ensure
+    upload_file&.close
+    upload_file&.unlink
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+  end
+
+  it 'rejects browser SIP recording uploads from another inbox-visible user' do
+    call_session = create_recorded_call_session(
+      'asterisk_analog:local:recording-upload-other-user',
+      {},
+      recording_ref: nil,
+      provider: 'asterisk_analog'
+    )
+    mark_call_session_owned_by(call_session, administrator)
+    other_agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, user: other_agent, inbox: voice_inbox)
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    metadata['metadata']['operator_candidate_user_ids'] = [other_agent.id]
+    call_session.update!(metadata: metadata)
+    upload_file = Tempfile.new(['janus-recording-other-user', '.webm'])
+    upload_file.binmode
+    upload_file.write('other-user-audio')
+    upload_file.rewind
+
+    post "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_session.external_call_ref)}/upload_recording",
+         params: { recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/webm', true) },
+         headers: other_agent.create_new_auth_token
+
+    expect(response).to have_http_status(:not_found)
+    expect(call_session.reload.recording_ref).to be_nil
+  ensure
+    upload_file&.close
+    upload_file&.unlink
+  end
+
+  it 'stores a browser SIP recording upload for Sipuni calls when provider recording is unavailable' do
+    call_session = create_recorded_call_session(
+      'sipuni:local:recording-upload-1',
+      {},
+      recording_ref: nil,
+      provider: 'sipuni'
+    )
+    mark_call_session_owned_by(call_session, administrator)
+    upload_file = Tempfile.new(['sipuni-recording', '.webm'])
+    upload_file.binmode
+    upload_file.write('duplicate-sipuni-audio')
+    upload_file.rewind
+
+    post "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_session.external_call_ref)}/upload_recording",
+         params: { recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/webm', true) },
+         headers: headers
+
+    expect(response).to have_http_status(:created)
+    storage_key = call_session.reload.metadata.dig('recording', 'storage_key')
+    expect(storage_key).to start_with("voice-recordings/sipuni/#{account.id}/#{call_session.id}/")
+    expect(call_session.recording_ref).to eq(storage_key)
+    expect(call_session.metadata['recording']).to include(
+      'content_type' => 'audio/webm',
+      'writer' => 'browser_janus_media_recorder'
+    )
+  ensure
+    upload_file&.close
+    upload_file&.unlink
+    FileUtils.rm_f(Rails.root.join('storage', storage_key)) if defined?(storage_key) && storage_key.present?
+  end
+
+  it 'does not accept browser recording uploads with an explicit non-audio content type' do
+    call_session = create_recorded_call_session(
+      'binotel:local:recording-upload-unsupported-mime',
+      {},
+      recording_ref: nil,
+      provider: 'binotel'
+    )
+    mark_call_session_owned_by(call_session, administrator)
+    upload_file = Tempfile.new(['not-audio-recording', '.webm'])
+    upload_file.binmode
+    upload_file.write('not-audio')
+    upload_file.rewind
+
+    post "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_session.external_call_ref)}/upload_recording",
+         params: { recording: Rack::Test::UploadedFile.new(upload_file.path, 'application/x-msdownload', true) },
+         headers: headers
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('RECORDING_CONTENT_TYPE_UNSUPPORTED')
+    expect(call_session.reload.recording_ref).to be_nil
+  ensure
+    upload_file&.close
+    upload_file&.unlink
+  end
+
   it 'streams a signed WhatsApp runtime recording when the call ref contains dots and padding' do
     call_ref = 'whatsapp:wacid.IhggMDBENkUxMUQ3QTNGMzZGMjE0QjVBMTA0QUYwNzM0MjUcGAs3NzA4MDA4NzQyMRUCABUIAA=='
     storage_key = 'voice-recordings/1/whatsapp-wacid-safe/recording.wav'
@@ -436,6 +571,13 @@ RSpec.describe 'Telephony Calls API', type: :request do
       recording_ref: recording_ref,
       metadata: { 'recording' => metadata }
     )
+  end
+
+  def mark_call_session_owned_by(call_session, user)
+    metadata = call_session.metadata.to_h.deep_dup.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+    metadata['metadata'] = route_metadata.merge('chatwoot_user_id' => user.id)
+    call_session.update!(metadata: metadata)
   end
 
   def recording_metadata

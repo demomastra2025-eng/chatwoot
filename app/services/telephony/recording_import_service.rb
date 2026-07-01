@@ -20,7 +20,7 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
     validate!
     return duplicate_response if recording_already_stored?
 
-    Tempfile.create(['fonoster-recording-import', '.wav'], binmode: true) do |file|
+    Tempfile.create(["#{recording_source}-recording-import", '.wav'], binmode: true) do |file|
       actual = download_recording!(file)
       verify_recording!(actual)
       storage_key = persist_recording!(file)
@@ -130,10 +130,15 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
       metadata['recording_import'] = import.merge(
         'status' => 'stored',
         'stored_at' => Time.current.iso8601,
+        'source' => recording_import_source,
+        'download_host' => parsed_download_url.host,
+        'recorded_by' => payload_value('recorded_by', 'recordedBy'),
+        'layout' => payload_value('layout'),
+        'mode' => payload_value('mode'),
         'storage_key' => storage_key,
         'sha256' => sha256,
         'event_key' => event_key
-      )
+      ).compact
       call_session.update!(metadata: metadata)
     end
   end
@@ -162,7 +167,7 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
       'sha256' => sha256,
       'metadata' => {
         'recording_import' => {
-          'source' => 'fonoster_download_url',
+          'source' => recording_import_source,
           'event_key' => event_key,
           'download_host' => parsed_download_url.host,
           'recorded_by' => payload_value('recorded_by', 'recordedBy'),
@@ -171,6 +176,10 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
         }.compact
       }
     }.compact
+  end
+
+  def recording_import_source
+    "#{recording_source}_download_url"
   end
 
   def duplicate_response
@@ -202,7 +211,12 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
   end
 
   def storage_key
-    @storage_key ||= "voice-recordings/fonoster/#{account_id}/#{sanitized_call_ref}/#{sha256}.wav"
+    @storage_key ||= "voice-recordings/#{recording_source}/#{account_id}/#{sanitized_call_ref}/#{sha256}.wav"
+  end
+
+  def recording_source
+    source = payload_value('recorded_by', 'recordedBy').to_s.presence || 'provider'
+    source.gsub(/[^a-zA-Z0-9._-]/, '_')
   end
 
   def storage_path

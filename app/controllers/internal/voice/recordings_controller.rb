@@ -8,6 +8,15 @@ class Internal::Voice::RecordingsController < Internal::Voice::Ai::BaseControlle
     render json: result, status: :accepted
   end
 
+  def stored
+    result = Telephony::StoredRecordingReadyService.new(
+      payload: request_payload,
+      headers: request_event_headers
+    ).perform
+
+    render json: result, status: :accepted
+  end
+
   private
 
   # Fonoster/bridge delivers operator recordings after the call; AI runtime recordings still use

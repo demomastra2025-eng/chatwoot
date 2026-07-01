@@ -5,6 +5,9 @@ class Telephony::WebphoneService
   PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni binotel].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
   JANUS_SIP_WEBPHONE_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  JANUS_SIP_PROVIDER_RECORDING_API_PROVIDERS = %w[sipuni].freeze
+  JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  JANUS_SIP_SERVER_RECORDING_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
   BROWSER_SIP_INCOMING_SOURCE = 'browser_janus_sip'.freeze
 
   def initialize(account:, bridge_client: nil)
@@ -218,7 +221,116 @@ class Telephony::WebphoneService
       iceServers: sipuni_ice_servers,
       agent_ref: operator_identity.agent_ref,
       agent_aor: operator_identity.agent_aor
+    }.merge(janus_sip_recording_contract(provider, profile)).compact
+  end
+
+  def janus_sip_recording_contract(provider, profile)
+    recording_strategy = janus_sip_recording_strategy(provider, profile)
+    recording_fallback_strategy = janus_sip_recording_fallback_strategy(provider, recording_strategy)
+    recording_payload = janus_sip_recording_payload(provider, profile, recording_strategy)
+
+    {
+      recording_strategy: recording_strategy,
+      recordingStrategy: recording_strategy,
+      recording_fallback_strategy: recording_fallback_strategy,
+      recordingFallbackStrategy: recording_fallback_strategy,
+      janus_recording: recording_payload,
+      janusRecording: recording_payload
     }
+  end
+
+  def janus_sip_recording_strategy(provider, profile)
+    provider = provider.to_s
+    return 'janus_server' if provider.in?(JANUS_SIP_SERVER_RECORDING_PROVIDERS) && janus_sip_server_recording_enabled?(provider)
+    return 'provider_api' if provider.in?(JANUS_SIP_PROVIDER_RECORDING_API_PROVIDERS) && provider_recording_api_configured?(provider, profile)
+    return 'browser_fallback' if provider.in?(JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS)
+
+    nil
+  end
+
+  def janus_sip_recording_fallback_strategy(provider, recording_strategy)
+    return unless recording_strategy.in?(%w[janus_server provider_api])
+    return 'browser_fallback' if provider.to_s.in?(JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS)
+
+    nil
+  end
+
+  def janus_sip_recording_payload(provider, profile, recording_strategy)
+    return unless recording_strategy == 'janus_server'
+
+    filename_prefix = janus_sip_recording_filename_prefix(provider, profile)
+    {
+      enabled: true,
+      recorder: 'janus_sip',
+      audio: true,
+      peer_audio: true,
+      peerAudio: true,
+      filename_prefix: filename_prefix,
+      filenamePrefix: filename_prefix,
+      fallback_strategy: 'browser_fallback',
+      fallbackStrategy: 'browser_fallback',
+      recorded_by: 'janus',
+      recordedBy: 'janus',
+      mode: 'operator',
+      layout: 'dual_channel'
+    }.merge(janus_sip_recording_destination_payload)
+  end
+
+  def janus_sip_recording_destination_payload
+    {
+      directory: janus_sip_recording_directory,
+      recordingDirectory: janus_sip_recording_directory,
+      environment: janus_sip_recording_environment
+    }
+  end
+
+  def provider_recording_api_configured?(provider, profile)
+    return false unless provider.to_s == 'sipuni'
+
+    sipuni_webhook_configured?(profile)
+  end
+
+  def sipuni_webhook_configured?(profile)
+    config = voice_channel_config(profile&.inbox&.channel)
+    config[:sipuni_events_webhook_token].present? ||
+      config[:sipuni_webhook_token].present? ||
+      ENV.fetch('SIPUNI_WEBHOOK_TOKEN', '').presence.present? ||
+      ENV.fetch('TELEPHONY_SIPUNI_WEBHOOK_TOKEN', '').presence.present?
+  end
+
+  def voice_channel_config(channel)
+    return {} if channel.blank?
+
+    config = if channel.respond_to?(:provider_config_hash)
+               channel.provider_config_hash
+             else
+               channel.provider_config
+             end
+    config.to_h.with_indifferent_access
+  end
+
+  def janus_sip_recording_filename_prefix(provider, profile)
+    base = ENV.fetch('TELEPHONY_JANUS_RECORDING_FILENAME_PREFIX', 'onelink_janus_sip')
+    [base, provider, "account_#{account.id}", "profile_#{profile.id}"]
+      .join('_')
+      .gsub(/[^a-zA-Z0-9._-]/, '_')
+  end
+
+  def janus_sip_recording_directory
+    ENV.fetch('TELEPHONY_JANUS_RECORDING_DIR', '/recordings/incoming').presence
+  end
+
+  def janus_sip_recording_environment
+    ENV.fetch('TELEPHONY_JANUS_RECORDING_ENVIRONMENT', Rails.env).presence
+  end
+
+  def janus_sip_server_recording_enabled?(provider)
+    provider_key = provider.to_s.upcase
+    value = ENV.fetch(
+      "TELEPHONY_#{provider_key}_JANUS_SERVER_RECORDING_ENABLED",
+      ENV.fetch('TELEPHONY_JANUS_SERVER_RECORDING_ENABLED', 'false')
+    )
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def janus_sip_session_payload(profile)
@@ -229,6 +341,8 @@ class Telephony::WebphoneService
       sessionKey: session_key,
       sip_profile_id: profile.id,
       sipProfileId: profile.id,
+      account_id: account.id,
+      accountId: account.id,
       inbox_id: profile.inbox_id,
       inboxId: profile.inbox_id,
       provider_connection_id: profile.provider_connection_id,

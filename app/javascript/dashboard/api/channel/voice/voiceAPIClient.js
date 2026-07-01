@@ -86,6 +86,24 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data.payload || r.data);
   }
 
+  uploadWebphoneRecording(callRef, blob, metadata = {}) {
+    const formData = new FormData();
+    formData.append('recording', blob, `call-${Date.now()}.webm`);
+    Object.entries(metadata).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') return;
+
+      formData.append(key, value);
+    });
+
+    return axios
+      .post(
+        `${this.baseUrl()}/telephony/calls/${encodeURIComponent(callRef)}/upload_recording`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      )
+      .then(r => r.data.payload || r.data);
+  }
+
   getToken(inboxId) {
     return this.getWebphoneToken(inboxId);
   }

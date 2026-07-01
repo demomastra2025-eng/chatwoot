@@ -115,6 +115,109 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
     expect(call_session.metadata.dig('recording_import', 'mode')).to eq('operator')
   end
 
+  it 'accepts Janus server recording imports through the internal recording pipeline' do
+    expect(Telephony::RecordingImportJob).to receive(:perform_later).once
+
+    janus_payload = payload.merge(
+      download_url: 'https://janus-recordings.example.test/recordings/operator-direct-call-1.wav',
+      recorded_by: 'janus',
+      layout: 'dual_channel',
+      mode: 'operator',
+      media_session_ref: 'janus-sip-profile-9098'
+    )
+
+    with_modified_env(
+      ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret',
+      TELEPHONY_RECORDING_IMPORT_ALLOWED_HOSTS: 'janus-recordings.example.test'
+    ) do
+      post '/internal/voice/recordings/ready',
+           params: janus_payload,
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:accepted)
+    expect(response.parsed_body).to include(
+      'status' => 'accepted',
+      'duplicate' => false,
+      'call_ref' => call_ref
+    )
+    expect(call_session.reload.metadata.dig('recording_import', 'recorded_by')).to eq('janus')
+    expect(call_session.metadata.dig('recording_import', 'layout')).to eq('dual_channel')
+  end
+
+  it 'accepts already stored Janus recordings without requiring a public download URL' do
+    recording_body = "RIFF\x24\x00\x00\x00WAVEfmt janus audio".b
+    stored_sha256 = Digest::SHA256.hexdigest(recording_body)
+    storage_key = "voice-recordings/janus/#{account.id}/#{call_ref}/#{stored_sha256}.wav"
+    recording_path = Rails.root.join('storage', storage_key)
+    FileUtils.mkdir_p(recording_path.dirname)
+    File.binwrite(recording_path, recording_body)
+
+    stored_payload = {
+      call_ref: call_ref,
+      account_id: account.id,
+      storage_key: storage_key,
+      size_bytes: recording_body.bytesize,
+      duration_sec: 9,
+      sha256: stored_sha256,
+      recorded_by: 'janus',
+      layout: 'mixed_mono',
+      mode: 'operator',
+      content_type: 'audio/wav',
+      writer: 'janus_recording_postprocessor'
+    }
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/recordings/stored',
+           params: stored_payload,
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:accepted)
+    expect(response.parsed_body).to include(
+      'status' => 'ok',
+      'call_ref' => call_ref,
+      'recording_ref' => storage_key
+    )
+    expect(call_session.reload.recording_ref).to eq(storage_key)
+    expect(call_session.metadata['recording']).to include(
+      'storage_key' => storage_key,
+      'sha256' => stored_sha256,
+      'recorded_by' => 'janus',
+      'writer' => 'janus_recording_postprocessor'
+    )
+  ensure
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+  end
+
+  it 'rejects stored recording storage keys that clean outside the storage root' do
+    stored_payload = {
+      call_ref: call_ref,
+      account_id: account.id,
+      storage_key: 'voice-recordings/../../tmp/recording-secret.wav',
+      size_bytes: 12,
+      duration_sec: 9,
+      sha256: 'b' * 64,
+      recorded_by: 'janus',
+      layout: 'mixed_mono',
+      mode: 'operator',
+      content_type: 'audio/wav'
+    }
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/recordings/stored',
+           params: stored_payload,
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body).to include('error' => 'INVALID_STORAGE_KEY')
+    expect(call_session.reload.recording_ref).to be_nil
+  end
+
   it 'rejects requests without internal voice or bridge auth' do
     post '/internal/voice/recordings/ready', params: payload, as: :json
 

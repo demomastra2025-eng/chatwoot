@@ -2149,7 +2149,7 @@ class Telephony::EventsIngestionService
 
   def recording_ready_base_metadata(import_metadata)
     {
-      'source' => import_metadata.present? ? 'fonoster_import' : 'onelink_runtime',
+      'source' => recording_ready_source(import_metadata),
       'ready_at' => (resolved_occurred_at || Time.current).iso8601,
       'recorded_by' => import_metadata['recorded_by'] || recording_payload_value('recorded_by', 'recordedBy'),
       'layout' => import_metadata['layout'] || recording_payload_value('layout'),
@@ -2157,6 +2157,16 @@ class Telephony::EventsIngestionService
       'download_host' => import_metadata['download_host'],
       'import_event_key' => import_metadata['event_key']
     }
+  end
+
+  def recording_ready_source(import_metadata)
+    return 'onelink_runtime' if import_metadata.blank?
+
+    recorded_by = import_metadata['recorded_by'].presence ||
+                  import_metadata['source'].to_s.delete_suffix('_download_url').presence
+    return "#{recorded_by}_import" if recorded_by.present?
+
+    'provider_import'
   end
 
   def recording_ready_payload_metadata

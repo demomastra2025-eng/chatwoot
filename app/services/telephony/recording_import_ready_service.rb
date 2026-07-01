@@ -1,6 +1,6 @@
 class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLength
   SUPPORTED_OPERATOR_MODES = %w[operator operator_direct_bridge operator_bridge inbound_operator outbound_operator].freeze
-  REQUIRED_RECORDED_BY = 'fonoster'.freeze
+  SUPPORTED_RECORDED_BY = %w[fonoster janus].freeze
   SUPPORTED_LAYOUTS = %w[mixed_mono mono mixed_stereo stereo dual_channel].freeze
   DEFAULT_BLOCKED_APP_REFS = %w[f2498e07-2bb5-45a1-8c8c-6fecdb4c791a].freeze
 
@@ -42,7 +42,7 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
 
     raise_error!('SOURCE_ID_MISMATCH', 'source_id must be voice_call:<call_ref>') if raw_source_id.present? && raw_source_id != expected_source_id
     raise_error!('UNSUPPORTED_RECORDING_MODE', 'Only operator recording import is accepted') unless operator_mode?
-    raise_error!('UNSUPPORTED_RECORDED_BY', 'recorded_by must be fonoster') unless recorded_by == REQUIRED_RECORDED_BY
+    raise_error!('UNSUPPORTED_RECORDED_BY', 'recorded_by is not supported') unless supported_recorded_by?
     raise_error!('UNSUPPORTED_RECORDING_LAYOUT', 'layout is not supported') unless supported_layout?
     if ai_app_ref? || ai_mode?
       raise_error!('AI_RECORDING_IMPORT_REJECTED', 'AI recordings must be written by OneLink runtime, not imported from Fonoster')
@@ -221,6 +221,10 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
 
   def recorded_by
     payload_value('recorded_by', 'recordedBy').to_s
+  end
+
+  def supported_recorded_by?
+    SUPPORTED_RECORDED_BY.include?(recorded_by)
   end
 
   def layout

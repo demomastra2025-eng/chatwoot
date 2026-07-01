@@ -463,6 +463,7 @@ Rails.application.routes.draw do
             resources :calls, only: [:index, :show], param: :call_ref, constraints: { call_ref: %r{[^/]+} } do
               member do
                 get :recording
+                post :upload_recording
               end
 
               collection do
@@ -920,6 +921,7 @@ Rails.application.routes.draw do
   post 'internal/voice/ai/event', to: 'internal/voice/ai/events#create'
   post 'internal/voice/ai/finalize', to: 'internal/voice/ai/finalizations#create'
   post 'internal/voice/recordings/ready', to: 'internal/voice/recordings#ready'
+  post 'internal/voice/recordings/stored', to: 'internal/voice/recordings#stored'
 
   get 'microsoft/callback', to: 'microsoft/callbacks#show'
   get 'google/callback', to: 'google/callbacks#show'

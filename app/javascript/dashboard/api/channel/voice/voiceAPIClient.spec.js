@@ -66,4 +66,29 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
       }
     );
   });
+
+  it('uploads browser webphone recordings under the account-scoped telephony call', async () => {
+    const blob = new Blob(['recorded-audio'], { type: 'audio/webm' });
+
+    await voiceAPIClient.uploadWebphoneRecording(
+      'asterisk_analog:local:call-1',
+      blob,
+      {
+        provider: 'asterisk_analog',
+        direction: 'outbound',
+        duration_ms: 1200,
+      }
+    );
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/530/telephony/calls/asterisk_analog%3Alocal%3Acall-1/upload_recording',
+      expect.any(FormData),
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    const formData = axiosMock.post.mock.calls.at(-1)[1];
+    expect(formData.get('recording')).toBeInstanceOf(File);
+    expect(formData.get('provider')).toBe('asterisk_analog');
+    expect(formData.get('direction')).toBe('outbound');
+    expect(formData.get('duration_ms')).toBe('1200');
+  });
 });

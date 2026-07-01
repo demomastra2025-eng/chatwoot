@@ -3,7 +3,7 @@ require 'safe_fetch'
 class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telephony::BaseController
   skip_before_action :authenticate_user!, :ensure_active_auth_session!, only: [:recording], raise: false
 
-  before_action :set_call_session, only: [:show, :recording]
+  before_action :set_call_session, only: [:show, :recording, :upload_recording]
   before_action :authenticate_recording_request!, only: [:recording]
 
   def index
@@ -46,6 +46,22 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     end
 
     raise ActiveRecord::RecordNotFound, 'Recording could not be found'
+  end
+
+  def upload_recording
+    authorize_recording_upload!
+
+    result = Telephony::BrowserRecordingUploadService.perform!(
+      call_session: @call_session,
+      recording: params[:recording],
+      duration_ms: params[:duration_ms],
+      duration_seconds: params[:duration_seconds]
+    )
+    @call_session = result.call_session.reload
+    payload = @call_session.to_telephony_h
+    payload[:recording_url] = recording_url_for_call_session if recording_available?
+
+    render_payload(payload, status: :created)
   end
 
   def outbound
@@ -93,6 +109,77 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     end
 
     raise ActiveRecord::RecordNotFound, 'Recording could not be found'
+  end
+
+  def authorize_recording_upload!
+    authorize_recording_access!
+    return if recording_upload_owned_by_current_user?
+
+    raise ActiveRecord::RecordNotFound, 'Recording could not be found'
+  end
+
+  def recording_upload_owned_by_current_user?
+    return false if Current.user.blank?
+    return true if @call_session.agent_binding&.user_id == Current.user.id
+    return true if recording_upload_user_ids.include?(Current.user.id)
+    return true if recording_upload_owned_sip_profile?
+
+    false
+  end
+
+  def recording_upload_owned_sip_profile?
+    sip_profile_ids = recording_upload_sip_profile_ids
+    return false if sip_profile_ids.blank?
+
+    Current.account.telephony_sip_profiles
+           .exists?(id: sip_profile_ids, user_id: Current.user.id)
+  end
+
+  def recording_upload_user_ids
+    route_metadata = call_session_route_metadata
+    operator_claim = call_session_hash_metadata('operator_claim')
+    operator_identity = call_session_hash_metadata('operator_identity')
+    values = [
+      operator_claim['user_id'],
+      operator_claim['chatwoot_user_id'],
+      operator_identity['user_id'],
+      operator_identity['chatwoot_user_id'],
+      route_metadata['chatwoot_user_id'],
+      route_metadata['onelink_user_id'],
+      route_metadata['target_user_id'],
+      route_metadata['user_id']
+    ]
+
+    values.filter_map { |value| value.presence&.to_i }.uniq
+  end
+
+  def recording_upload_sip_profile_ids
+    route_metadata = call_session_route_metadata
+    operator_claim = call_session_hash_metadata('operator_claim')
+    operator_identity = call_session_hash_metadata('operator_identity')
+    values = [
+      operator_claim['sip_profile_id'],
+      operator_identity['sip_profile_id'],
+      operator_identity['telephony_sip_profile_id'],
+      route_metadata['sip_profile_id'],
+      route_metadata['telephony_sip_profile_id'],
+      route_metadata['target_sip_profile_id']
+    ]
+
+    values.filter_map { |value| value.presence&.to_i }.uniq
+  end
+
+  def call_session_route_metadata
+    call_session_hash_metadata('metadata')
+  end
+
+  def call_session_hash_metadata(key)
+    value = call_session_metadata[key]
+    value.is_a?(Hash) ? value.deep_stringify_keys : {}
+  end
+
+  def call_session_metadata
+    @call_session.metadata.to_h.deep_stringify_keys
   end
 
   def recording_available?
