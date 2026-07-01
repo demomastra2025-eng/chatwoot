@@ -743,6 +743,58 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('keeps a claimed Sipuni call visible when releasing a missing SIP invite fails', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-release-missing-invite-failed',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 724,
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: true,
+    });
+    VoiceAPI.claimIncomingCall.mockResolvedValue({
+      claimed: true,
+      status: 'connecting',
+      communication_thread_id: 25,
+    });
+    joinClientCallMock.mockResolvedValue(null);
+    rejectBackendCallMock.mockRejectedValue(new Error('backend unavailable'));
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 724,
+      inboxId: 4769,
+      callSid: 'call-release-missing-invite-failed',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'sipuni',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      communicationThreadId: 25,
+    });
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-release-missing-invite-failed',
+      {
+        reason: 'sip_invite_not_received',
+        status: 'no_answer',
+      }
+    );
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'call-release-missing-invite-failed',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'sip_invite_not_received',
+      }),
+    ]);
+  });
+
   it('releases the backend call when the browser SIP answer fails after claim', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

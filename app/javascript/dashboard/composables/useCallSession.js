@@ -311,14 +311,16 @@ export function useCallSession() {
     callSid,
     { provider, communicationThreadId = null } = {}
   ) => {
-    await releaseFonosterIncomingCall(callSid, {
+    const releaseResult = await releaseFonosterIncomingCall(callSid, {
       status: 'no_answer',
       reason: 'sip_invite_not_received',
     });
     callsStore.markBrowserJoinUnsupported(callSid, provider, {
       reason: 'sip_invite_not_received',
     });
-    callsStore.dismissCall(callSid);
+    if (releaseResult) {
+      callsStore.dismissCall(callSid);
+    }
 
     return {
       provider,
