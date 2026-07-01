@@ -121,14 +121,17 @@ class Crm::DealDialogStageContextBuilder
     contexts.transform_values do |stage_contexts|
       stage_contexts.values
                     .sort_by { |context| stage_sort_key(context) }
-                    .map { |context| stage_payload(context[:stage]) }
+                    .map { |context| stage_payload(context[:stage], context[:pipeline]) }
     end
   end
 
-  def stage_payload(stage)
+  def stage_payload(stage, pipeline)
+    resolved_pipeline = pipeline || stage.pipeline
+
     {
       id: stage.id,
       pipeline_id: stage.pipeline_id,
+      pipeline_name: resolved_pipeline&.name,
       name: stage.name,
       color: stage.color
     }

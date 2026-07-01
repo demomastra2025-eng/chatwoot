@@ -35,6 +35,40 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:messages].first[:id]).to eq(message.id)
       end
 
+      it 'returns latest customer and reply timestamps' do
+        incoming_message = create(
+          :message,
+          conversation: conversation,
+          account: account,
+          message_type: :incoming,
+          created_at: Time.zone.parse('2026-01-01 10:00:00 UTC')
+        )
+        outgoing_message = create(
+          :message,
+          conversation: conversation,
+          account: account,
+          message_type: :outgoing,
+          created_at: Time.zone.parse('2026-01-01 11:00:00 UTC')
+        )
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          message_type: :incoming,
+          private: true,
+          created_at: Time.zone.parse('2026-01-01 12:00:00 UTC')
+        )
+
+        get "/api/v1/accounts/#{account.id}/conversations",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
+        expect(payload[:last_incoming_message_at]).to eq(incoming_message.created_at.to_i)
+        expect(payload[:last_outgoing_message_at]).to eq(outgoing_message.created_at.to_i)
+      end
+
       it 'returns CRM deal stage accents for linked deals' do
         account.enable_features!('crm_deals')
         pipeline = create(:crm_pipeline, account: account)
@@ -52,6 +86,26 @@ RSpec.describe 'Conversations API', type: :request do
         stages = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first[:crm_deal_stages]
         expect(stages.pluck(:id)).to eq([first_stage.id, second_stage.id])
         expect(stages.pluck(:color)).to eq(%w[#22C55E #3B82F6])
+        expect(stages.pluck(:pipeline_name)).to eq([pipeline.name, pipeline.name])
+      end
+
+      it 'returns scheduling appointment status accents for linked appointments' do
+        account.enable_features!('scheduling')
+        create_sidebar_appointment(conversation, status: 'confirmed')
+        create_sidebar_appointment(conversation, status: 'completed')
+
+        get "/api/v1/accounts/#{account.id}/conversations",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        statuses = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first[:scheduling_appointment_statuses]
+        expect(statuses).to eq(
+          [
+            { status: 'confirmed', count: 1 },
+            { status: 'completed', count: 1 }
+          ]
+        )
       end
 
       it 'returns full unread counts for public incoming messages' do
@@ -419,7 +473,7 @@ RSpec.describe 'Conversations API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(JSON.parse(response.body, symbolize_names: true)[:crm_deal_stages]).to include(
-          a_hash_including(id: stage.id, color: '#22C55E')
+          a_hash_including(id: stage.id, color: '#22C55E', pipeline_name: pipeline.name)
         )
       end
 

@@ -138,6 +138,37 @@ const mergeUniqueIds = (...idLists) => {
   });
 };
 
+const messageTimestamp = message => {
+  const timestamp = Number(message?.created_at || 0);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+};
+
+const updateDirectionalMessageTimestamp = (chat, message) => {
+  if (!chat || message?.private) return;
+
+  const timestamp = messageTimestamp(message);
+  if (!timestamp) return;
+
+  if (Number(message.message_type) === MESSAGE_TYPE.INCOMING) {
+    chat.last_incoming_message_at = Math.max(
+      Number(chat.last_incoming_message_at || 0),
+      timestamp
+    );
+    return;
+  }
+
+  if (
+    [MESSAGE_TYPE.OUTGOING, MESSAGE_TYPE.TEMPLATE].includes(
+      Number(message.message_type)
+    )
+  ) {
+    chat.last_outgoing_message_at = Math.max(
+      Number(chat.last_outgoing_message_at || 0),
+      timestamp
+    );
+  }
+};
+
 const communicationThreadUpdatesWithRealtimeChannel = (
   selectedConversation,
   updates
@@ -497,6 +528,7 @@ export const mutations = {
     if (!chat) return;
 
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
+    updateDirectionalMessageTimestamp(chat, message);
     if (pendingMessageIndex !== -1) {
       chat.messages[pendingMessageIndex] = message;
     } else {
@@ -520,6 +552,7 @@ export const mutations = {
 
     chat.messages ||= [];
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
+    updateDirectionalMessageTimestamp(chat, message);
     if (pendingMessageIndex !== -1) {
       chat.messages[pendingMessageIndex] = message;
     } else if (!chat.messages.some(item => item.id === message.id)) {

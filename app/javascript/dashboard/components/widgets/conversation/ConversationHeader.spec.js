@@ -1,14 +1,23 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
+import chatlistRu from 'dashboard/i18n/locale/ru/chatlist.json';
+import conversationRu from 'dashboard/i18n/locale/ru/conversation.json';
+import schedulingRu from 'dashboard/i18n/locale/ru/scheduling.json';
 import ConversationHeader from './ConversationHeader.vue';
 
-const translate = key =>
-  ({
-    'CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS': 'Все каналы',
-    'CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER': 'Неизвестный',
-    'CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.open.TEXT': 'Открыт',
-  })[key] || key;
+const translationMessages = {
+  ...chatlistRu,
+  ...conversationRu,
+  ...schedulingRu,
+};
+
+const resolveTranslation = key =>
+  key
+    .split('.')
+    .reduce((value, segment) => value?.[segment], translationMessages);
+
+const translate = key => resolveTranslation(key) || key;
 
 vi.mock('../BackButton.vue', () => ({
   default: { template: '<div data-test-id="back-button" />' },
@@ -148,5 +157,69 @@ describe('ConversationHeader', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.find('[data-test-id="more-actions"]').exists()).toBe(true);
+  });
+
+  it('places the dialog status on the first line after the contact name', () => {
+    const wrapper = mountComponent();
+
+    const titleRow = wrapper.find(
+      '[data-test-id="conversation-header-title-row"]'
+    );
+    const identityRow = wrapper.find(
+      '[data-test-id="conversation-header-identity-row"]'
+    );
+
+    expect(titleRow.text()).toContain('Аружан');
+    expect(titleRow.text()).toContain('Открыт');
+    expect(identityRow.text()).not.toContain('Открыт');
+  });
+
+  it('renders pipeline stages and appointment statuses on one line with sidebar styling', () => {
+    const wrapper = mountComponent({
+      chat: {
+        id: 7,
+        is_communication_thread: true,
+        meta: { sender: { id: 1, name: 'Аружан' } },
+        channels: [],
+        crm_deal_stages: [
+          {
+            id: 10,
+            pipeline_id: 5,
+            pipeline_name: 'Основная',
+            name: 'New',
+            color: '#22C55E',
+          },
+        ],
+        scheduling_appointment_statuses: [{ status: 'scheduled', count: 1 }],
+      },
+    });
+
+    const contextRow = wrapper.find(
+      '[data-test-id="conversation-header-context-row"]'
+    );
+    const stages = wrapper.find(
+      '[data-test-id="conversation-header-crm-stages"]'
+    );
+    const statuses = wrapper.find(
+      '[data-test-id="conversation-header-appointment-statuses"]'
+    );
+
+    expect(contextRow.exists()).toBe(true);
+    expect(contextRow.classes()).toContain('gap-6');
+    expect(contextRow.text()).not.toContain('CONVERSATION.HEADER');
+    expect(contextRow.html()).not.toContain('font-medium text-n-slate-10');
+    expect(
+      wrapper.find('[data-test-id="conversation-header-identity-row"]').exists()
+    ).toBe(false);
+    expect(stages.text()).toContain('Основная:');
+    expect(stages.text()).toContain('New');
+    expect(stages.text()).not.toContain('Этапы');
+    expect(stages.html()).toContain('rounded-full');
+    expect(stages.html()).toContain('background-color: rgb(34, 197, 94)');
+    expect(statuses.text()).toContain('Запись:');
+    expect(statuses.text()).toContain('Назначен');
+    expect(statuses.text()).not.toContain('Статусы');
+    expect(statuses.html()).toContain('i-lucide-clock-3');
+    expect(statuses.html()).toContain('text-n-slate-11');
   });
 });

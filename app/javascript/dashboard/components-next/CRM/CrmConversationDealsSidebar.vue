@@ -817,7 +817,7 @@ watch(dealFieldDefinitions, definitions => {
             @click="toggleDeal(item.key)"
           >
             <span
-              class="w-1 shrink-0 self-stretch"
+              class="my-0.5 w-1 shrink-0 self-stretch rounded-full"
               :style="{ backgroundColor: stageColorForItem(item) }"
             />
             <span

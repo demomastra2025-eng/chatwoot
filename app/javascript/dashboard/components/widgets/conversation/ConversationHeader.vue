@@ -17,6 +17,10 @@ import {
   getUniqueCommunicationChannels,
   isCommunicationThread,
 } from 'dashboard/helper/communicationThreadHelper';
+import {
+  APPOINTMENT_STATUS_ICON_CLASSES,
+  APPOINTMENT_STATUS_ICONS,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   chat: {
@@ -57,6 +61,8 @@ const compactUniqueValues = values => {
       return true;
     });
 };
+
+const labelWithColon = value => `${String(value || '').trim()}:`;
 
 const backButtonUrl = computed(() => {
   const {
@@ -107,6 +113,92 @@ const contactDisplayName = computed(() => {
     t('CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER')
   );
 });
+
+const defaultCrmPipelineName = computed(() =>
+  t('CONVERSATION.HEADER.PIPELINE')
+);
+
+const crmDealStages = computed(() => {
+  const stages = props.chat.crm_deal_stages || props.chat.crmDealStages || [];
+  return Array.isArray(stages)
+    ? stages
+        .filter(stage => stage?.color)
+        .map(stage => {
+          const pipelineName = String(
+            stage.pipeline_name || stage.pipelineName || ''
+          ).trim();
+
+          return {
+            id: stage.id,
+            pipelineId: stage.pipeline_id || stage.pipelineId,
+            pipelineName: pipelineName || defaultCrmPipelineName.value,
+            name: stage.name,
+            color: stage.color,
+          };
+        })
+    : [];
+});
+
+const crmDealStageGroups = computed(() => {
+  const groups = [];
+  const groupsByPipeline = new Map();
+
+  crmDealStages.value.forEach(stage => {
+    const groupKey = `${stage.pipelineId || ''}:${stage.pipelineName}`;
+    if (!groupsByPipeline.has(groupKey)) {
+      const group = {
+        key: groupKey,
+        pipelineName: stage.pipelineName,
+        stages: [],
+      };
+      groupsByPipeline.set(groupKey, group);
+      groups.push(group);
+    }
+
+    groupsByPipeline.get(groupKey).stages.push(stage);
+  });
+
+  return groups;
+});
+
+const schedulingAppointmentStatuses = computed(() => {
+  const statuses =
+    props.chat.scheduling_appointment_statuses ||
+    props.chat.schedulingAppointmentStatuses ||
+    [];
+
+  return Array.isArray(statuses)
+    ? statuses
+        .map(statusContext => ({
+          status: statusContext.status,
+          count: Number(statusContext.count || 0),
+        }))
+        .filter(statusContext => statusContext.status)
+    : [];
+});
+
+const hasHeaderContext = computed(
+  () =>
+    crmDealStageGroups.value.length ||
+    schedulingAppointmentStatuses.value.length
+);
+
+const appointmentStatusClass = status =>
+  APPOINTMENT_STATUS_ICON_CLASSES[status] || 'text-n-slate-11';
+
+const appointmentStatusIcon = status =>
+  APPOINTMENT_STATUS_ICONS[status] || APPOINTMENT_STATUS_ICONS.scheduled;
+
+const appointmentStatusLabels = computed(() => ({
+  cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
+  completed: t('SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.completed'),
+  confirmed: t('SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.confirmed'),
+  no_show: t('SCHEDULING.APPOINTMENT_STATUS.no_show'),
+  scheduled: t('SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.scheduled'),
+}));
+
+const appointmentStatusLabel = status =>
+  appointmentStatusLabels.value[status] || status;
 
 const communicationContactIdentityLabels = computed(() => {
   const contact = currentContact.value || props.chat.meta?.sender || {};
@@ -232,11 +324,20 @@ const statusMeta = computed(() => {
       <div
         class="flex flex-col items-start min-w-0 ml-2 overflow-hidden rtl:ml-0 rtl:mr-2"
       >
-        <div class="flex flex-row items-center max-w-full gap-1 p-0 m-0">
+        <div
+          data-test-id="conversation-header-title-row"
+          class="flex flex-row items-center max-w-full gap-1 p-0 m-0"
+        >
           <span
-            class="text-sm font-medium truncate leading-tight text-n-slate-12"
+            class="min-w-0 truncate text-sm font-medium leading-tight text-n-slate-12"
           >
             {{ contactDisplayName }}
+          </span>
+          <span
+            class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap"
+            :class="statusMeta.className"
+          >
+            {{ statusMeta.label }}
           </span>
           <fluent-icon
             v-if="!isHMACVerified"
@@ -245,9 +346,76 @@ const statusMeta = computed(() => {
             class="text-n-amber-10 my-0 mx-0 min-w-[14px] flex-shrink-0"
             icon="warning"
           />
+          <span v-if="isSnoozed" class="font-medium text-xs text-n-amber-10">
+            {{ snoozedDisplayText }}
+          </span>
         </div>
 
         <div
+          v-if="hasHeaderContext"
+          data-test-id="conversation-header-context-row"
+          class="flex max-w-full items-center gap-6 overflow-hidden text-xs leading-5 conversation--header--actions text-ellipsis whitespace-nowrap"
+        >
+          <span
+            v-if="crmDealStageGroups.length"
+            data-test-id="conversation-header-crm-stages"
+            class="inline-flex min-w-0 items-center gap-3 text-n-slate-11"
+          >
+            <span
+              v-for="group in crmDealStageGroups"
+              :key="group.key"
+              class="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap"
+            >
+              <span class="shrink-0 text-n-slate-11">
+                {{ labelWithColon(group.pipelineName) }}
+              </span>
+              <span
+                v-for="stage in group.stages"
+                :key="stage.id"
+                class="inline-flex min-w-0 items-center gap-1.5"
+              >
+                <span
+                  class="h-4 w-0.5 shrink-0 rounded-full"
+                  :style="{ backgroundColor: stage.color }"
+                />
+                <span class="truncate text-n-slate-11">{{ stage.name }}</span>
+              </span>
+            </span>
+          </span>
+          <span
+            v-if="schedulingAppointmentStatuses.length"
+            data-test-id="conversation-header-appointment-statuses"
+            class="inline-flex min-w-0 items-center gap-1.5 text-n-slate-11 whitespace-nowrap"
+          >
+            <span class="shrink-0 text-n-slate-11">
+              {{ labelWithColon($t('CONVERSATION.HEADER.APPOINTMENT')) }}
+            </span>
+            <span
+              v-for="statusContext in schedulingAppointmentStatuses"
+              :key="statusContext.status"
+              class="inline-flex min-w-0 items-center gap-1"
+              :class="appointmentStatusClass(statusContext.status)"
+            >
+              <span
+                class="mt-px size-3.5 shrink-0"
+                :class="appointmentStatusIcon(statusContext.status)"
+              />
+              <span class="truncate">
+                {{ appointmentStatusLabel(statusContext.status) }}
+              </span>
+              <span
+                v-if="statusContext.count > 1"
+                class="shrink-0 tabular-nums"
+              >
+                {{ statusContext.count }}
+              </span>
+            </span>
+          </span>
+        </div>
+
+        <div
+          v-else
+          data-test-id="conversation-header-identity-row"
           class="flex items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
         >
           <template v-if="visibleContactIdentities.length">
@@ -265,15 +433,6 @@ const statusMeta = computed(() => {
               {{ `+${hiddenCommunicationContactIdentityCount}` }}
             </span>
           </template>
-          <span
-            class="inline-flex items-center px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
-            :class="statusMeta.className"
-          >
-            {{ statusMeta.label }}
-          </span>
-          <span v-if="isSnoozed" class="font-medium text-n-amber-10">
-            {{ snoozedDisplayText }}
-          </span>
         </div>
       </div>
     </div>

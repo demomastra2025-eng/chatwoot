@@ -389,6 +389,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     end
     preload_last_public_messages_by_thread
     preload_last_non_activity_messages_by_thread
+    preload_directional_message_timestamps_by_thread
+    preload_scheduling_appointment_statuses(communication_threads)
   end
 
   def preload_crm_deal_stages(communication_threads)
@@ -396,9 +398,14 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       Crm::DealDialogStageContextBuilder.new(account: Current.account).for_communication_threads(communication_threads)
   end
 
+  def preload_scheduling_appointment_statuses(communication_threads)
+    @scheduling_appointment_statuses_by_communication_thread_id =
+      Scheduling::AppointmentDialogStatusContextBuilder.new(account: Current.account).for_communication_threads(communication_threads)
+  end
+
   def preload_meta_ad_referrals(communication_threads)
     thread_ids = communication_threads.map(&:id)
-    accessible_conversation_ids = (@accessible_links_by_thread_id || {}).values.flatten.map(&:conversation_id).compact
+    accessible_conversation_ids = (@accessible_links_by_thread_id || {}).values.flatten.filter_map(&:conversation_id)
     @meta_ad_referrals_by_communication_thread_id = if thread_ids.empty? || accessible_conversation_ids.empty?
                                                       {}
                                                     else
@@ -420,6 +427,13 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def preload_last_non_activity_messages_by_thread
     @last_non_activity_messages_by_thread_id = preload_last_messages_by_thread(non_activity: true)
+  end
+
+  def preload_directional_message_timestamps_by_thread
+    preloader =
+      Conversations::DirectionalMessageTimestampPreloader.new(account: Current.account)
+    @last_message_activity_by_thread_id =
+      preloader.for_communication_threads(@accessible_links_by_thread_id)
   end
 
   def preload_last_messages_by_thread(non_activity: false)

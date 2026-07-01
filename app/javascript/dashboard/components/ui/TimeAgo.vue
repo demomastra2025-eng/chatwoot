@@ -25,6 +25,10 @@ export default {
       type: [String, Date, Number],
       default: '',
     },
+    secondaryActivityTimestamp: {
+      type: [String, Date, Number],
+      default: '',
+    },
     createdAtTimestamp: {
       type: [String, Date, Number],
       default: '',
@@ -33,11 +37,20 @@ export default {
       type: [String, Number],
       default: '',
     },
+    tooltipTextOverride: {
+      type: String,
+      default: '',
+    },
+    secondaryTooltipTextOverride: {
+      type: String,
+      default: '',
+    },
   },
   data() {
     return {
       lastActivityAtTimeAgo: dynamicTime(this.lastActivityTimestamp),
       createdAtTimeAgo: dynamicTime(this.createdAtTimestamp),
+      refreshTick: Date.now(),
       timer: null,
     };
   },
@@ -46,9 +59,18 @@ export default {
       return this.displayMode === 'compact_elapsed';
     },
     displayText() {
-      return this.isCompactElapsed
-        ? this.compactElapsedTime(this.lastActivityTimestamp)
-        : `${this.createdAtTime} • ${this.lastActivityTime}`;
+      if (!this.isCompactElapsed) {
+        return `${this.createdAtTime} • ${this.lastActivityTime}`;
+      }
+
+      const currentTime = this.refreshTick;
+      return this.secondaryActivityTimestamp
+        ? this.compactElapsedPair(
+            this.lastActivityTimestamp,
+            this.secondaryActivityTimestamp,
+            currentTime
+          )
+        : this.compactElapsedTime(this.lastActivityTimestamp, currentTime);
     },
     rootClass() {
       return this.isCompactElapsed
@@ -85,6 +107,27 @@ export default {
           )} ${dateFormat(this.lastActivityTimestamp)}`;
     },
     tooltipText() {
+      if (this.tooltipTextOverride || this.secondaryTooltipTextOverride) {
+        const tooltipLines = [];
+        if (
+          this.tooltipTextOverride &&
+          Number(this.lastActivityTimestamp) > 0
+        ) {
+          tooltipLines.push(
+            `${this.tooltipTextOverride}: ${dateFormat(this.lastActivityTimestamp)}`
+          );
+        }
+        if (
+          this.secondaryTooltipTextOverride &&
+          Number(this.secondaryActivityTimestamp) > 0
+        ) {
+          tooltipLines.push(
+            `${this.secondaryTooltipTextOverride}: ${dateFormat(this.secondaryActivityTimestamp)}`
+          );
+        }
+        return tooltipLines.join('\n');
+      }
+
       return `${this.createdAt}
               ${this.lastActivity}`;
     },
@@ -93,6 +136,9 @@ export default {
     lastActivityTimestamp() {
       this.lastActivityAtTimeAgo = dynamicTime(this.lastActivityTimestamp);
     },
+    secondaryActivityTimestamp() {
+      this.refreshTick = Date.now();
+    },
     createdAtTimestamp() {
       this.createdAtTimeAgo = dynamicTime(this.createdAtTimestamp);
     },
@@ -100,6 +146,7 @@ export default {
       // Reset display values and timer when the row is recycled to a different conversation.
       this.lastActivityAtTimeAgo = dynamicTime(this.lastActivityTimestamp);
       this.createdAtTimeAgo = dynamicTime(this.createdAtTimestamp);
+      this.refreshTick = Date.now();
       if (this.isAutoRefreshEnabled) {
         clearTimeout(this.timer);
         this.createTimer();
@@ -119,11 +166,23 @@ export default {
       this.timer = setTimeout(() => {
         this.lastActivityAtTimeAgo = dynamicTime(this.lastActivityTimestamp);
         this.createdAtTimeAgo = dynamicTime(this.createdAtTimestamp);
+        this.refreshTick = Date.now();
         this.createTimer();
       }, this.refreshTime());
     },
     refreshTime() {
-      const timeDiff = Date.now() - this.lastActivityTimestamp * 1000;
+      const timestamps = [
+        this.lastActivityTimestamp,
+        this.secondaryActivityTimestamp,
+      ]
+        .map(Number)
+        .filter(timestamp => timestamp > 0);
+      const mostRecentTimestamp = Math.max(...timestamps);
+      const timestampInMs =
+        mostRecentTimestamp > 1e12
+          ? mostRecentTimestamp
+          : mostRecentTimestamp * 1000;
+      const timeDiff = Date.now() - timestampInMs;
       if (timeDiff > DAY_IN_MILLI_SECONDS) {
         return DAY_IN_MILLI_SECONDS;
       }
@@ -133,7 +192,7 @@ export default {
 
       return MINUTE_IN_MILLI_SECONDS;
     },
-    compactElapsedTime(timestamp) {
+    compactElapsedTime(timestamp, currentTime = Date.now()) {
       const numericTimestamp = Number(timestamp);
       if (!numericTimestamp) return '';
 
@@ -141,7 +200,7 @@ export default {
         numericTimestamp > 1e12 ? numericTimestamp : numericTimestamp * 1000;
       const elapsedSeconds = Math.max(
         0,
-        Math.floor((Date.now() - timestampInMs) / 1000)
+        Math.floor((currentTime - timestampInMs) / 1000)
       );
       const days = Math.floor(elapsedSeconds / 86400);
       const hours = Math.floor((elapsedSeconds % 86400) / 3600);
@@ -155,6 +214,38 @@ export default {
         return `${hours}ч-${minutes}м`;
       }
       return `${minutes}м-${seconds}с`;
+    },
+    compactElapsedSingleUnit(timestamp, currentTime = Date.now()) {
+      const numericTimestamp = Number(timestamp);
+      if (!numericTimestamp) return '';
+
+      const timestampInMs =
+        numericTimestamp > 1e12 ? numericTimestamp : numericTimestamp * 1000;
+      const elapsedSeconds = Math.max(
+        0,
+        Math.floor((currentTime - timestampInMs) / 1000)
+      );
+      const days = Math.floor(elapsedSeconds / 86400);
+      const hours = Math.floor((elapsedSeconds % 86400) / 3600);
+      const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+      const seconds = elapsedSeconds % 60;
+
+      if (days > 0) return `${days}д`;
+      if (hours > 0) return `${hours}ч`;
+      if (minutes > 0) return `${minutes}м`;
+      return `${seconds}с`;
+    },
+    compactElapsedPair(
+      primaryTimestamp,
+      secondaryTimestamp,
+      currentTime = Date.now()
+    ) {
+      return [
+        this.compactElapsedSingleUnit(primaryTimestamp, currentTime),
+        this.compactElapsedSingleUnit(secondaryTimestamp, currentTime),
+      ]
+        .filter(Boolean)
+        .join('-');
     },
   },
 };

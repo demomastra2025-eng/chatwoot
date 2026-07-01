@@ -13,5 +13,7 @@ class Api::V1::Accounts::Contacts::ConversationsController < Api::V1::Accounts::
     ).perform
 
     @conversations = conversations.order(last_activity_at: :desc).limit(20)
+    @last_message_activity_by_conversation_id =
+      Conversations::DirectionalMessageTimestampPreloader.new(account: Current.account).for_conversations(@conversations)
   end
 end

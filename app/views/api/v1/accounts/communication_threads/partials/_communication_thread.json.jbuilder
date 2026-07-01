@@ -17,6 +17,7 @@ thread_pinned = linked_conversations.any? do |conversation|
   ActiveModel::Type::Boolean.new.cast(conversation.custom_attributes&.dig('pinned'))
 end
 meta_ad_referral = (@meta_ad_referrals_by_communication_thread_id || {})[communication_thread.id]
+directional_message_timestamps = (@last_message_activity_by_thread_id || {}).fetch(communication_thread.id, {})
 
 json.meta do
   json.sender do
@@ -55,11 +56,14 @@ end
 json.labels Labels::UnifiedAssignmentService.union_for(contact: communication_thread.contact, conversations: linked_conversations)
 json.custom_attributes(thread_pinned ? { pinned: true } : {})
 json.crm_deal_stages((local_assigns[:crm_deal_stages_by_communication_thread_id] || {}).fetch(communication_thread.id, []))
+json.scheduling_appointment_statuses((local_assigns[:scheduling_appointment_statuses_by_communication_thread_id] || {}).fetch(communication_thread.id, []))
 json.status communication_thread.status
 json.created_at communication_thread.created_at.to_i
 json.updated_at communication_thread.updated_at.to_f
 json.timestamp communication_thread.last_activity_at.to_i
 json.last_activity_at communication_thread.last_activity_at.to_i
+json.last_incoming_message_at directional_message_timestamps[:incoming]&.to_i
+json.last_outgoing_message_at directional_message_timestamps[:outgoing]&.to_i
 json.agent_last_seen_at thread_agent_last_seen_at
 json.assignee_last_seen_at thread_assignee_last_seen_at
 json.unread_count communication_thread.unread_count

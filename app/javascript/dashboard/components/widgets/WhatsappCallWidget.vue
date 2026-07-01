@@ -1,5 +1,5 @@
 <script setup>
-import { watch, onUnmounted, onMounted } from 'vue';
+import { computed, ref, watch, onUnmounted, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useWhatsappCallSession } from 'dashboard/composables/useWhatsappCallSession';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
@@ -14,7 +14,6 @@ const {
   activeCall,
   incomingCalls,
   hasActiveCall,
-  hasIncomingCall,
   isAccepting,
   isMuted,
   isOutboundRinging,
@@ -28,6 +27,25 @@ const {
   dismissIncomingCall,
   startDurationTimer,
 } = useWhatsappCallSession();
+
+const hiddenCallIds = ref(new Set());
+const callIdFor = call =>
+  call?.callId || call?.id ? String(call.callId || call.id) : '';
+const trackedCallIds = computed(() =>
+  [callIdFor(activeCall.value), ...incomingCalls.value.map(callIdFor)].filter(
+    Boolean
+  )
+);
+const isCallHidden = call => {
+  const callId = callIdFor(call);
+  return callId && hiddenCallIds.value.has(callId);
+};
+const visibleIncomingCalls = computed(() =>
+  incomingCalls.value.filter(call => !isCallHidden(call))
+);
+const showActiveCall = computed(
+  () => hasActiveCall.value && !isCallHidden(activeCall.value)
+);
 
 // In server-relay mode, the timer starts when the Peer B WebRTC handshake
 // completes (not when the agent clicks accept). Listen for this event.
@@ -89,6 +107,21 @@ const handleEndCall = async () => {
   await endActiveCall();
 };
 
+const hideCall = call => {
+  const callId = callIdFor(call);
+  if (!callId) return;
+
+  hiddenCallIds.value = new Set([...hiddenCallIds.value, callId]);
+};
+
+const handleCloseIncomingCall = call => {
+  hideCall(call);
+};
+
+const handleCloseActiveCall = () => {
+  hideCall(activeCall.value);
+};
+
 // Start auto-reject timers for each newly added incoming call
 watch(
   incomingCalls,
@@ -97,6 +130,16 @@ watch(
   },
   { immediate: true, deep: true }
 );
+
+watch(trackedCallIds, callIds => {
+  const activeCallIds = new Set(callIds);
+  const nextHiddenCallIds = new Set(
+    [...hiddenCallIds.value].filter(callId => activeCallIds.has(callId))
+  );
+  if (nextHiddenCallIds.size !== hiddenCallIds.value.size) {
+    hiddenCallIds.value = nextHiddenCallIds;
+  }
+});
 
 onUnmounted(() => {
   autoRejectTimers.forEach(timer => clearTimeout(timer));
@@ -108,7 +151,11 @@ onUnmounted(() => {
 
 <template>
   <div
-    v-if="hasIncomingCall || hasActiveCall"
+    v-show="
+      callError ||
+      (!hasActiveCall && visibleIncomingCalls.length) ||
+      showActiveCall
+    "
     class="fixed ltr:right-4 rtl:left-4 bottom-20 z-50 flex flex-col gap-2 w-72"
   >
     <!-- Error banner -->
@@ -120,12 +167,21 @@ onUnmounted(() => {
     </div>
 
     <!-- Incoming calls (shown when there's no active call yet) -->
-    <template v-if="!hasActiveCall">
+    <template v-if="!hasActiveCall && visibleIncomingCalls.length">
       <div
-        v-for="call in incomingCalls"
+        v-for="call in visibleIncomingCalls"
         :key="call.callId"
-        class="flex items-center gap-3 p-4 bg-n-solid-2 rounded-xl shadow-xl outline outline-1 outline-n-strong"
+        class="relative flex items-center gap-3 p-4 ltr:pr-12 rtl:pl-12 bg-n-solid-2 rounded-xl shadow-xl outline outline-1 outline-n-strong"
       >
+        <button
+          type="button"
+          class="absolute top-2 ltr:right-2 rtl:left-2 inline-flex size-7 p-0 justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors"
+          :title="t('WHATSAPP_CALL.CLOSE')"
+          :aria-label="t('WHATSAPP_CALL.CLOSE')"
+          @click="handleCloseIncomingCall(call)"
+        >
+          <i class="text-base i-lucide-x" />
+        </button>
         <div
           class="animate-pulse ring-2 ring-n-teal-9 rounded-full inline-flex"
         >
@@ -174,9 +230,18 @@ onUnmounted(() => {
 
     <!-- Active call widget -->
     <div
-      v-if="hasActiveCall"
-      class="flex items-center gap-3 p-4 bg-n-solid-2 rounded-xl shadow-xl outline outline-1 outline-n-strong"
+      v-if="showActiveCall"
+      class="relative flex items-center gap-3 p-4 ltr:pr-12 rtl:pl-12 bg-n-solid-2 rounded-xl shadow-xl outline outline-1 outline-n-strong"
     >
+      <button
+        type="button"
+        class="absolute top-2 ltr:right-2 rtl:left-2 inline-flex size-7 p-0 justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors"
+        :title="t('WHATSAPP_CALL.CLOSE')"
+        :aria-label="t('WHATSAPP_CALL.CLOSE')"
+        @click="handleCloseActiveCall"
+      >
+        <i class="text-base i-lucide-x" />
+      </button>
       <div
         class="ring-2 ring-n-teal-9 rounded-full inline-flex"
         :class="{ 'animate-pulse': isOutboundRinging }"

@@ -57,7 +57,9 @@
       "LAST_ACTIVITY": {
         "NOT_ACTIVE": "Последние действия:",
         "ACTIVE": "Последние действия"
-      }
+      },
+      "LAST_INCOMING": "Последнее от клиента",
+      "LAST_OUTGOING": "Последний ответ"
     },
     "SORT_ORDER_ITEMS": {
       "last_activity_at_asc": {

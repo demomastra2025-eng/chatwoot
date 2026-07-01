@@ -338,6 +338,36 @@ describe('#mutations', () => {
       ]);
       expect(emitter.emit).not.toHaveBeenCalled();
     });
+
+    it('updates directional activity timestamps from realtime conversation messages', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            messages: [],
+            last_incoming_message_at: 100,
+            last_outgoing_message_at: 200,
+          },
+        ],
+        selectedChatId: -1,
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 10,
+        conversation_id: 1,
+        message_type: 0,
+        created_at: 300,
+      });
+      mutations[types.ADD_MESSAGE](state, {
+        id: 11,
+        conversation_id: 1,
+        message_type: 1,
+        created_at: 400,
+      });
+
+      expect(state.allConversations[0].last_incoming_message_at).toBe(300);
+      expect(state.allConversations[0].last_outgoing_message_at).toBe(400);
+    });
   });
 
   describe('#ADD_MESSAGE_TO_CHAT', () => {
@@ -387,6 +417,7 @@ describe('#mutations', () => {
 
       const thread = state.allConversations[0];
       expect(thread.meta.sender).toEqual({ id: 42, name: 'Customer' });
+      expect(thread.last_incoming_message_at).toBe(200);
       expect(thread.can_reply).toBe(true);
       expect(thread.inbox_id).toBe(4674);
       expect(thread.active_reply_channel).toMatchObject({

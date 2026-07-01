@@ -59,4 +59,42 @@ describe('TimeAgo', () => {
 
     expect(wrapper.text()).toBe('40м-5с');
   });
+
+  it('formats compact elapsed pair as customer-reply single units', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 2, 14, 0, 0)));
+
+    const wrapper = mountComponent({
+      displayMode: 'compact_elapsed',
+      lastActivityTimestamp: Date.UTC(2026, 0, 1, 0, 0, 0) / 1000,
+      secondaryActivityTimestamp: Date.UTC(2026, 0, 2, 0, 0, 0) / 1000,
+    });
+
+    expect(wrapper.text()).toBe('1д-14ч');
+  });
+
+  it('formats a compact elapsed pair with only the manager-side timestamp', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 2, 14, 0, 0)));
+
+    const wrapper = mountComponent({
+      displayMode: 'compact_elapsed',
+      lastActivityTimestamp: 0,
+      secondaryActivityTimestamp: Date.UTC(2026, 0, 2, 0, 0, 0) / 1000,
+      tooltipTextOverride: 'Последнее от клиента',
+      secondaryTooltipTextOverride: 'Последняя реакция менеджера',
+    });
+
+    expect(wrapper.text()).toBe('14ч');
+    expect(wrapper.vm.tooltipText).toContain('Последняя реакция менеджера:');
+    expect(wrapper.vm.tooltipText).not.toContain('Последнее от клиента:');
+  });
+
+  it('uses an explicit tooltip text when provided', () => {
+    const wrapper = mountComponent({
+      displayMode: 'compact_elapsed',
+      lastActivityTimestamp: Date.UTC(2026, 0, 1, 0, 0, 0) / 1000,
+      tooltipTextOverride: 'Последнее от клиента',
+    });
+
+    expect(wrapper.vm.tooltipText).toContain('Последнее от клиента:');
+  });
 });

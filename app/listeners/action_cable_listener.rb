@@ -293,6 +293,8 @@ class ActionCableListener < BaseListener
 
   def communication_thread_realtime_payload(communication_thread, links, source_conversation, source_event, message)
     channels = communication_thread_channel_payloads(communication_thread, links)
+    directional_message_timestamps = communication_thread_directional_message_timestamps(communication_thread, links)
+    appointment_statuses = communication_thread_scheduling_appointment_statuses(communication_thread)
 
     {
       id: communication_thread.display_id,
@@ -316,8 +318,11 @@ class ActionCableListener < BaseListener
       assignee_id: communication_thread.assignee_id,
       team_id: communication_thread.team_id,
       labels: communication_thread_label_list(links),
+      scheduling_appointment_statuses: appointment_statuses,
       unread_count: communication_thread.unread_count,
       last_activity_at: communication_thread.last_activity_at.to_i,
+      last_incoming_message_at: directional_message_timestamps[:incoming]&.to_i,
+      last_outgoing_message_at: directional_message_timestamps[:outgoing]&.to_i,
       timestamp: communication_thread.last_activity_at.to_i,
       updated_at: communication_thread.updated_at.to_f
     }.tap do |payload|
@@ -351,6 +356,20 @@ class ActionCableListener < BaseListener
       contact: communication_thread.contact,
       deduplicate_linked: false
     ).perform
+  end
+
+  def communication_thread_directional_message_timestamps(communication_thread, links)
+    Conversations::DirectionalMessageTimestampPreloader
+      .new(account: communication_thread.account)
+      .for_communication_threads(communication_thread.id => links)
+      .fetch(communication_thread.id, {})
+  end
+
+  def communication_thread_scheduling_appointment_statuses(communication_thread)
+    Scheduling::AppointmentDialogStatusContextBuilder
+      .new(account: communication_thread.account)
+      .for_communication_threads([communication_thread])
+      .fetch(communication_thread.id, [])
   end
 
   def communication_thread_channel_replyable?(channel)

@@ -113,6 +113,52 @@ describe ActionCableListener do
       )
     end
 
+    it 'broadcasts directional message timestamps in communication thread updates' do
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.refresh_communication_thread!
+      allow(Rails.configuration.dispatcher).to receive(:dispatch)
+      incoming_message = create(
+        :message,
+        account: account,
+        inbox: inbox,
+        conversation: conversation,
+        message_type: :incoming,
+        created_at: 1.hour.ago
+      )
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(
+          id: communication_thread.display_id,
+          last_incoming_message_at: incoming_message.created_at.to_i,
+          last_outgoing_message_at: message.created_at.to_i
+        )
+      )
+    end
+
+    it 'broadcasts scheduling appointment statuses in communication thread updates' do
+      account.enable_features!('communication_threads')
+      account.enable_features!('scheduling')
+      communication_thread = conversation.refresh_communication_thread!
+      create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation, status: 'confirmed')
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(
+          id: communication_thread.display_id,
+          scheduling_appointment_statuses: [{ status: 'confirmed', count: 1 }]
+        )
+      )
+    end
+
     it 'hydrates missing communication thread metadata before dashboard message payloads' do
       account.enable_features!('communication_threads')
       conversation.reload.communication_thread&.destroy!

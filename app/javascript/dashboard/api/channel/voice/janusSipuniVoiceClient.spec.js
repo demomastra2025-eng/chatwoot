@@ -36,6 +36,9 @@ vi.mock('janus-gateway', () => {
         send: pluginSendMock,
         detach: pluginDetachMock,
         hangup: vi.fn(),
+        createOffer: ({ success } = {}) => {
+          success?.({ type: 'offer', sdp: 'mock-sdp' });
+        },
       });
     }
 
@@ -87,6 +90,17 @@ const binotelSession = {
     password: 'test-binotel-password',
     host: 'sip53.binotel.com',
     internalExtension: '901',
+  },
+};
+
+const asteriskAnalogSession = {
+  ...sipuniSession,
+  provider: 'asterisk_analog',
+  sip: {
+    username: '9098',
+    password: 'test-asterisk-password',
+    host: '10.77.0.2',
+    internalExtension: '9098',
   },
 };
 
@@ -156,5 +170,45 @@ describe('janusSipuniVoiceClient', () => {
     expect(updatePresenceMock).toHaveBeenLastCalledWith(true, {
       inboxId: 4769,
     });
+  });
+
+  it('keeps E.164 outbound dial URIs for regular SIP providers', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+
+    await JanusSipuniVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      toNumber: '+77066318623',
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'call',
+          uri: 'sip:+77066318623@ats01.kz.sipuni.com',
+        }),
+      })
+    );
+  });
+
+  it('sends Asterisk analog outbound calls in the PBX dialplan format', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(asteriskAnalogSession, {
+      inboxId: 4771,
+    });
+
+    await JanusSipuniVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      toNumber: '+77066318623',
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'call',
+          uri: 'sip:77066318623@10.77.0.2',
+        }),
+      })
+    );
   });
 });

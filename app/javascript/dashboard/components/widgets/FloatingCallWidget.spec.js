@@ -56,6 +56,7 @@ const t = (key, params = {}) => {
     'CONVERSATION.VOICE_WIDGET.CALL': 'Call',
     'CONVERSATION.VOICE_WIDGET.OPEN_CHAT': 'Chat',
     'CONVERSATION.VOICE_WIDGET.CLOSE': 'Close',
+    'CONVERSATION.VOICE_WIDGET.END_CALL': 'End call',
   };
 
   return translations[key] || key;
@@ -197,7 +198,8 @@ describe('FloatingCallWidget', () => {
 
     await wrapper.get('[aria-label="Close"]').trigger('click');
 
-    expect(mockSession.dismissCall).toHaveBeenCalledWith('call-claimed-1');
+    expect(mockSession.dismissCall).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('Handled outside the browser');
   });
 
   it('opens a communication thread instead of the underlying voice inbox conversation', async () => {
@@ -275,6 +277,68 @@ describe('FloatingCallWidget', () => {
 
     expect(wrapper.text()).toContain('+77070001002→+77070001001');
     expect(wrapper.text()).toContain('+77070001003→+77070001001');
+  });
+
+  it('hides the active call card without ending the call', async () => {
+    mockSession.hasActiveCall = true;
+    mockSession.activeCall = {
+      callSid: 'active-call-1',
+      conversationId: 724,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      fromNumber: '+77070001002',
+      toNumber: '+77070001001',
+    };
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await wrapper.get('[aria-label="Close"]').trigger('click');
+
+    expect(mockSession.endCall).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('+77070001002→+77070001001');
+  });
+
+  it('ends the active call from the hang up control', async () => {
+    mockSession.hasActiveCall = true;
+    mockSession.activeCall = {
+      callSid: 'active-call-1',
+      conversationId: 724,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      fromNumber: '+77070001002',
+      toNumber: '+77070001001',
+    };
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await wrapper.get('[aria-label="End call"]').trigger('click');
+
+    expect(mockSession.endCall).toHaveBeenCalledWith({
+      conversationId: 724,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callSid: 'active-call-1',
+    });
   });
 
   it('opens the communication thread returned by claim after answering a call', async () => {

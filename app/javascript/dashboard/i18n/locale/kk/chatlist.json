@@ -57,7 +57,9 @@
       "LAST_ACTIVITY": {
         "NOT_ACTIVE": "Last activity:",
         "ACTIVE": "Last activity"
-      }
+      },
+      "LAST_INCOMING": "Клиенттің соңғы хабарламасы",
+      "LAST_OUTGOING": "Соңғы жауап"
     },
     "SORT_ORDER_ITEMS": {
       "last_activity_at_asc": {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { useStore } from 'vuex';
@@ -25,15 +25,26 @@ const {
   joinCall,
   endCall: endCallSession,
   rejectIncomingCall,
-  dismissCall,
   formattedCallDuration,
 } = useCallSession();
 
 const isOutboundCall = call => call?.callDirection === 'outbound';
+const hiddenCallSids = ref(new Set());
+const callSidFor = call => (call?.callSid ? String(call.callSid) : '');
+const trackedCallSids = computed(() =>
+  [callSidFor(activeCall.value), ...incomingCalls.value.map(callSidFor)].filter(
+    Boolean
+  )
+);
+const isCallHidden = call => {
+  const callSid = callSidFor(call);
+  return callSid && hiddenCallSids.value.has(callSid);
+};
 const visibleCalls = computed(() =>
-  hasActiveCall.value
+  (hasActiveCall.value
     ? [activeCall.value, ...incomingCalls.value].filter(Boolean)
     : incomingCalls.value
+  ).filter(call => !isCallHidden(call))
 );
 
 const firstPresent = values => values.find(value => Boolean(value));
@@ -460,6 +471,17 @@ const handleEndCall = async () => {
   });
 };
 
+const hideCall = call => {
+  const callSid = callSidFor(call);
+  if (!callSid) return;
+
+  hiddenCallSids.value = new Set([...hiddenCallSids.value, callSid]);
+};
+
+const handleCloseCall = call => {
+  hideCall(call);
+};
+
 const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   const { conversation } = getCallInfo(call);
   if (!call || isJoining.value) return;
@@ -527,19 +549,38 @@ watch(
   },
   { immediate: true }
 );
+
+watch(trackedCallSids, callSids => {
+  const activeCallSids = new Set(callSids);
+  const nextHiddenCallSids = new Set(
+    [...hiddenCallSids.value].filter(callSid => activeCallSids.has(callSid))
+  );
+  if (nextHiddenCallSids.size !== hiddenCallSids.value.size) {
+    hiddenCallSids.value = nextHiddenCallSids;
+  }
+});
 </script>
 
 <template>
   <div class="contents">
-    <template v-if="incomingCalls.length || hasActiveCall">
+    <template v-if="visibleCalls.length">
       <div
         class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[320px] sm:w-[340px] max-w-[calc(100vw-2rem)]"
       >
         <div
           v-for="call in visibleCalls"
           :key="call.callSid"
-          class="flex gap-2 p-2.5 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
+          class="relative flex gap-2 p-2.5 ltr:pr-10 rtl:pl-10 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
         >
+          <button
+            type="button"
+            class="absolute top-2 ltr:right-2 rtl:left-2 inline-flex size-7 p-0 justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors"
+            :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
+            :aria-label="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
+            @click="handleCloseCall(call)"
+          >
+            <i class="text-base i-lucide-x" />
+          </button>
           <div class="flex flex-col items-center w-11 shrink-0 gap-1">
             <span
               class="inline-flex rounded-full"
@@ -573,7 +614,7 @@ watch(
                 ]"
               />
               <p
-                class="min-w-0 flex flex-1 items-center text-sm font-medium mb-0 ltr:pr-4 rtl:pl-4"
+                class="min-w-0 flex flex-1 items-center text-sm font-medium mb-0"
                 :title="`${getCallRouteParts(call).from} ${$t('CONVERSATION.VOICE_WIDGET.ROUTE_SEPARATOR')} ${getCallRouteParts(call).to}`"
               >
                 <span class="min-w-0 truncate">
@@ -588,16 +629,6 @@ watch(
                   {{ getCallRouteParts(call).to }}
                 </span>
               </p>
-              <button
-                v-if="!callIsActive(call)"
-                type="button"
-                class="absolute top-0 ltr:right-0 rtl:left-0 inline-flex size-4 p-0 justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded transition-colors"
-                :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
-                :aria-label="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
-                @click="dismissCall(call.callSid)"
-              >
-                <i class="text-sm i-lucide-x" />
-              </button>
             </div>
 
             <p class="mt-0.5 text-xs text-n-slate-11 truncate mb-0">

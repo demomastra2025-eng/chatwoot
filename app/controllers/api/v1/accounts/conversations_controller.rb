@@ -15,6 +15,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     @conversations = result[:conversations]
     @conversations_count = result[:count]
     preload_crm_deal_stages(@conversations)
+    preload_scheduling_appointment_statuses(@conversations)
+    preload_directional_message_timestamps(@conversations)
   end
 
   def meta
@@ -53,6 +55,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
 
   def show
     preload_crm_deal_stages([@conversation])
+    preload_scheduling_appointment_statuses([@conversation])
+    preload_directional_message_timestamps([@conversation])
   end
 
   def create
@@ -61,11 +65,15 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
       Messages::MessageBuilder.new(Current.user, @conversation, params[:message]).perform if params[:message].present?
     end
     preload_crm_deal_stages([@conversation])
+    preload_scheduling_appointment_statuses([@conversation])
+    preload_directional_message_timestamps([@conversation])
   end
 
   def update
     @conversation.update!(permitted_update_params)
     preload_crm_deal_stages([@conversation])
+    preload_scheduling_appointment_statuses([@conversation])
+    preload_directional_message_timestamps([@conversation])
   end
 
   def filter
@@ -73,6 +81,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     @conversations = result[:conversations]
     @conversations_count = result[:count]
     preload_crm_deal_stages(@conversations)
+    preload_scheduling_appointment_statuses(@conversations)
+    preload_directional_message_timestamps(@conversations)
   rescue CustomExceptions::CustomFilter::InvalidAttribute,
          CustomExceptions::CustomFilter::InvalidOperator,
          CustomExceptions::CustomFilter::InvalidQueryOperator,
@@ -140,6 +150,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     ).perform
     @conversation.reload
     preload_crm_deal_stages([@conversation])
+    preload_scheduling_appointment_statuses([@conversation])
+    preload_directional_message_timestamps([@conversation])
     render :update_last_seen
   end
 
@@ -261,6 +273,16 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   def preload_crm_deal_stages(conversations)
     @crm_deal_stages_by_conversation_id =
       Crm::DealDialogStageContextBuilder.new(account: Current.account).for_conversations(conversations)
+  end
+
+  def preload_scheduling_appointment_statuses(conversations)
+    @scheduling_appointment_statuses_by_conversation_id =
+      Scheduling::AppointmentDialogStatusContextBuilder.new(account: Current.account).for_conversations(conversations)
+  end
+
+  def preload_directional_message_timestamps(conversations)
+    @last_message_activity_by_conversation_id =
+      Conversations::DirectionalMessageTimestampPreloader.new(account: Current.account).for_conversations(conversations)
   end
 
   def assignee?

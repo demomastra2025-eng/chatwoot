@@ -122,6 +122,8 @@
       "OPEN": "Открыть",
       "CLOSE": "Закрыть",
       "DETAILS": "подробности",
+      "PIPELINE": "Воронка",
+      "APPOINTMENT": "Запись",
       "SNOOZED_UNTIL": "Отложить до",
       "SNOOZED_UNTIL_TOMORROW": "Отложено до завтра",
       "SNOOZED_UNTIL_NEXT_WEEK": "Отложено до следующей недели",

@@ -4,6 +4,7 @@
     "OUTGOING_WHATSAPP_CALL": "Outgoing WhatsApp Call",
     "ACCEPT": "Accept",
     "REJECT": "Reject",
+    "CLOSE": "Close",
     "HANG_UP": "Hang Up",
     "MUTE": "Mute",
     "UNMUTE": "Unmute",

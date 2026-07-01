@@ -52,7 +52,20 @@ RSpec.describe 'Communication Threads API', type: :request do
       second_inbox = create(:inbox, account: account)
       second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
       second_conversation = create(:conversation, account: account, contact: contact, inbox: second_inbox, contact_inbox: second_contact_inbox)
-      message = create(:message, account: account, conversation: second_conversation, content: 'Latest from another channel')
+      outgoing_message = create(
+        :message,
+        account: account,
+        conversation: first_conversation,
+        message_type: :outgoing,
+        created_at: Time.zone.parse('2026-01-01 09:00:00 UTC')
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: second_conversation,
+        content: 'Latest from another channel',
+        created_at: Time.zone.parse('2026-01-01 10:00:00 UTC')
+      )
       create(:inbox_member, user: agent, inbox: first_conversation.inbox)
       create(:inbox_member, user: agent, inbox: second_inbox)
 
@@ -64,7 +77,32 @@ RSpec.describe 'Communication Threads API', type: :request do
       thread_payload = body[:data][:payload].first
       expect(thread_payload[:id]).to eq(first_conversation.reload.communication_thread.display_id)
       expect(thread_payload[:messages].first[:id]).to eq(message.id)
+      expect(thread_payload[:last_incoming_message_at]).to eq(message.created_at.to_i)
+      expect(thread_payload[:last_outgoing_message_at]).to eq(outgoing_message.created_at.to_i)
       expect(thread_payload[:channels].pluck(:conversation_id)).to contain_exactly(first_conversation.display_id, second_conversation.display_id)
+    end
+
+    it 'returns scheduling appointment status accents for thread-linked appointments' do
+      account.enable_features!('scheduling')
+      contact = create(:contact, :with_email, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread || conversation.refresh_communication_thread!
+      create(:scheduling_appointment, account: account, contact: contact, conversation: conversation, status: 'confirmed')
+      create(:scheduling_appointment, account: account, contact: contact, status: 'completed')
+
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).find do |payload|
+        payload[:id] == thread.display_id
+      end
+      expect(thread_payload[:scheduling_appointment_statuses]).to eq(
+        [
+          { status: 'confirmed', count: 1 },
+          { status: 'completed', count: 1 }
+        ]
+      )
     end
 
     it 'exposes the latest Meta ads referral for communication-thread CRM context' do
@@ -344,6 +382,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       stages = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first[:crm_deal_stages]
       expect(stages.pluck(:id)).to eq([first_stage.id, second_stage.id])
       expect(stages.pluck(:color)).to eq(%w[#22C55E #3B82F6])
+      expect(stages.pluck(:pipeline_name)).to eq([pipeline.name, pipeline.name])
     end
 
     it 'filters by child conversation status and prefers the matching channel payload' do
@@ -639,7 +678,7 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(JSON.parse(response.body, symbolize_names: true)[:crm_deal_stages]).to include(
-        a_hash_including(id: stage.id, color: '#3B82F6')
+        a_hash_including(id: stage.id, color: '#3B82F6', pipeline_name: pipeline.name)
       )
     end
   end

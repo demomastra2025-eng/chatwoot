@@ -268,10 +268,20 @@ export class JanusSipuniVoiceClient extends EventTarget {
     return `sip:${username}@${host}`;
   }
 
-  static dialUri(toNumber, host) {
+  static dialTarget(toNumber, { provider = null } = {}) {
     const target = String(toNumber || '')
       .replace(/^tel:/i, '')
       .replace(/[^\d+]/g, '');
+
+    if (provider === 'asterisk_analog') {
+      return target.replace(/^\+/, '');
+    }
+
+    return target;
+  }
+
+  static dialUri(toNumber, host, { provider = null } = {}) {
+    const target = JanusSipuniVoiceClient.dialTarget(toNumber, { provider });
     if (!target || !host) return null;
     return `sip:${target}@${host}`;
   }
@@ -709,7 +719,9 @@ export class JanusSipuniVoiceClient extends EventTarget {
 
   async startOutboundCall(toNumber) {
     const sip = this.sessionConfig.sip;
-    const uri = JanusSipuniVoiceClient.dialUri(toNumber, sip.host);
+    const uri = JanusSipuniVoiceClient.dialUri(toNumber, sip.host, {
+      provider: this.currentProvider(),
+    });
     if (!uri) return Promise.resolve(null);
 
     await this.releaseMicrophonePrewarm({ settle: true });

@@ -40,6 +40,7 @@ end
 
 json.id conversation.display_id
 conversation_public_messages = conversation.messages.where(account_id: conversation.account_id, private: false)
+directional_message_timestamps = (@last_message_activity_by_conversation_id || {}).fetch(conversation.id, {})
 
 if conversation_public_messages.last.blank?
   json.messages []
@@ -68,6 +69,7 @@ json.custom_attributes conversation.custom_attributes
 json.inbox_id conversation.inbox_id
 json.labels Labels::UnifiedAssignmentService.union_for(contact: conversation.contact, conversations: [conversation])
 json.crm_deal_stages((local_assigns[:crm_deal_stages_by_conversation_id] || {}).fetch(conversation.id, []))
+json.scheduling_appointment_statuses((local_assigns[:scheduling_appointment_statuses_by_conversation_id] || {}).fetch(conversation.id, []))
 json.muted conversation.muted?
 json.snoozed_until conversation.snoozed_until
 json.status conversation.status
@@ -76,6 +78,8 @@ json.updated_at conversation.updated_at.to_f
 json.timestamp conversation.last_activity_at.to_i
 json.first_reply_created_at conversation.first_reply_created_at.to_i
 json.unread_count conversation.unread_incoming_messages_count
+json.last_incoming_message_at directional_message_timestamps[:incoming]&.to_i
+json.last_outgoing_message_at directional_message_timestamps[:outgoing]&.to_i
 json.last_non_activity_message conversation_public_messages.non_activity_messages.first.try(:push_event_data)
 json.last_activity_at conversation.last_activity_at.to_i
 json.priority conversation.priority

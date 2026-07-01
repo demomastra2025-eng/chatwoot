@@ -154,6 +154,11 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     await header.vm.$emit('click', 'new_appointment');
 
+    const html = wrapper.html();
+    expect(html).toContain('i-lucide-calendar-plus');
+    expect(html).toContain('text-n-slate-11');
+    expect(html).toContain('appointment-status-dashed-rail');
+    expect(html).toContain('rounded-full');
     expect(
       wrapper.find('#scheduling-conversation-appointment-status').exists()
     ).toBe(true);
@@ -186,17 +191,21 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
   });
 
-  it('renders appointment status as a colored icon before the title', async () => {
+  it('renders appointment status as a colored icon before the title with a dashed status rail', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
     const html = wrapper.html();
     expect(html).toContain('i-lucide-badge-check');
     expect(html).toContain('text-n-amber-11');
+    expect(html).toContain('appointment-status-dashed-rail');
+    expect(html).toContain('rounded-full');
+    expect(html.indexOf('appointment-status-dashed-rail')).toBeLessThan(
+      html.indexOf('i-lucide-badge-check')
+    );
     expect(html.indexOf('i-lucide-badge-check')).toBeLessThan(
       html.indexOf('Айша')
     );
-    expect(html).not.toContain('w-1 shrink-0 self-stretch');
   });
 
   it('opens an existing appointment as an edit form immediately', async () => {
