@@ -479,7 +479,7 @@ describe ConversationFinder do
         expect(result[:conversations].map(&:id)).not_to include(no_appointment_conversation.id)
       end
 
-      it 'keeps appointment status counts as appointment records scoped by dialog context' do
+      it 'keeps appointment status counts as dialog counts scoped by dialog context' do
         confirmed_conversation = create(
           :conversation,
           account: account,
@@ -534,7 +534,8 @@ describe ConversationFinder do
         result = conversation_finder.perform
 
         expect(result[:count].dig(:unread_counts, :appointment_statuses)).to include(
-          'confirmed' => 2,
+          'any' => 2,
+          'confirmed' => 1,
           'scheduled' => 1
         )
       end

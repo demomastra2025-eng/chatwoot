@@ -276,12 +276,15 @@ const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
 const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
 const appointmentStatusCount = status =>
   getSidebarUnreadCount('appointment_statuses', status);
-const appointmentStatusTotalCount = computed(() =>
-  APPOINTMENT_STATUS_VALUES.reduce(
+const appointmentStatusTotalCount = computed(() => {
+  const anyCount = appointmentStatusCount(APPOINTMENT_STATUS_ANY);
+  if (anyCount > 0) return anyCount;
+
+  return APPOINTMENT_STATUS_VALUES.reduce(
     (total, status) => total + appointmentStatusCount(status),
     0
-  )
-);
+  );
+});
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
 const conversationAssigneeTypes = [

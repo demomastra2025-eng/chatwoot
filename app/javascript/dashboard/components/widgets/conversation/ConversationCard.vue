@@ -21,7 +21,11 @@ import SLACardLabel from './components/SLACardLabel.vue';
 import ContextMenu from 'dashboard/components/ui/ContextMenu.vue';
 import VoiceCallStatus from './VoiceCallStatus.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
-import { APPOINTMENT_STATUS_ICON_CLASSES } from 'dashboard/routes/dashboard/scheduling/constants';
+import {
+  APPOINTMENT_STATUS_ICON_CLASSES,
+  APPOINTMENT_STATUS_ICONS,
+  APPOINTMENT_STATUS_STICKER_CLASSES,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   activeLabel: { type: String, default: '' },
@@ -195,9 +199,7 @@ const schedulingAppointmentStatuses = computed(() => {
     : [];
 });
 
-const hasCardAccents = computed(
-  () => crmDealStages.value.length || schedulingAppointmentStatuses.value.length
-);
+const hasCardAccents = computed(() => crmDealStages.value.length);
 
 const cardMatchesListMode = computed(
   () =>
@@ -266,9 +268,6 @@ const hasDirectionalMessageTime = computed(() =>
   Boolean(lastIncomingMessageAt.value || lastOutgoingMessageAt.value)
 );
 
-const appointmentStatusAccentClass = status =>
-  APPOINTMENT_STATUS_ICON_CLASSES[status] || 'text-n-slate-11';
-
 const appointmentStatusLabels = computed(() => ({
   cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
   completed: t('SCHEDULING.APPOINTMENT_STATUS.completed'),
@@ -282,6 +281,34 @@ const appointmentStatusTitle = statusContext => {
     appointmentStatusLabels.value[statusContext.status] || statusContext.status;
   return statusContext.count > 1 ? `${label} · ${statusContext.count}` : label;
 };
+
+const primaryAppointmentStatus = computed(
+  () => schedulingAppointmentStatuses.value[0] || null
+);
+
+const appointmentStatusStickerIcon = computed(
+  () =>
+    APPOINTMENT_STATUS_ICONS[primaryAppointmentStatus.value?.status] ||
+    APPOINTMENT_STATUS_ICONS.scheduled
+);
+
+const appointmentStatusStickerIconClass = computed(
+  () =>
+    APPOINTMENT_STATUS_ICON_CLASSES[primaryAppointmentStatus.value?.status] ||
+    'text-n-slate-11'
+);
+
+const appointmentStatusStickerClass = computed(() => {
+  const status = primaryAppointmentStatus.value?.status;
+  return (
+    APPOINTMENT_STATUS_STICKER_CLASSES[status] ||
+    'border-n-slate-4 bg-n-slate-2 text-n-slate-11 dark:border-n-slate-6 dark:bg-n-slate-3'
+  );
+});
+
+const appointmentStatusStickerTitle = computed(() =>
+  schedulingAppointmentStatuses.value.map(appointmentStatusTitle).join(' / ')
+);
 
 const isLastMessageActivity = computed(
   () => Number(lastMessageType.value) === MESSAGE_TYPES.ACTIVITY
@@ -660,19 +687,6 @@ const togglePinnedConversation = async nextPinnedState => {
           :style="{ backgroundColor: stage.color }"
         />
       </span>
-      <span
-        v-if="schedulingAppointmentStatuses.length"
-        data-test-id="conversation-appointment-status-accents"
-        class="flex"
-      >
-        <span
-          v-for="statusContext in schedulingAppointmentStatuses"
-          :key="statusContext.status"
-          class="appointment-status-dashed-rail rounded-full"
-          :class="appointmentStatusAccentClass(statusContext.status)"
-          :title="appointmentStatusTitle(statusContext)"
-        />
-      </span>
     </span>
     <div
       class="relative flex w-10 flex-shrink-0 flex-col items-center"
@@ -704,6 +718,23 @@ const togglePinnedConversation = async nextPinnedState => {
           </label>
         </template>
       </Avatar>
+      <span
+        v-if="!hideThumbnail && primaryAppointmentStatus"
+        data-test-id="conversation-appointment-status-sticker"
+        class="absolute right-0 top-2 z-20 inline-flex size-4 items-center justify-center rounded-full border shadow-sm"
+        :class="appointmentStatusStickerClass"
+        :title="appointmentStatusStickerTitle"
+      >
+        <i
+          class="size-2.5"
+          :class="[
+            appointmentStatusStickerIcon,
+            appointmentStatusStickerIconClass,
+          ]"
+          aria-hidden="true"
+        />
+        <span class="sr-only">{{ appointmentStatusStickerTitle }}</span>
+      </span>
       <TimeAgo
         v-if="!hideThumbnail && hasDirectionalMessageTime"
         data-test-id="conversation-directional-message-times"
@@ -863,20 +894,3 @@ const togglePinnedConversation = async nextPinnedState => {
     </ContextMenu>
   </div>
 </template>
-
-<style scoped>
-.appointment-status-dashed-rail {
-  width: 0.125rem;
-  margin-block: 0.25rem;
-  border-radius: 9999px;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    currentColor 0,
-    currentColor 0.5rem,
-    transparent 0.5rem,
-    transparent 0.75rem
-  );
-  background-position: center;
-  background-repeat: repeat-y;
-}
-</style>

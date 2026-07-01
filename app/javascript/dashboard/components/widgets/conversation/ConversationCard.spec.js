@@ -329,7 +329,7 @@ describe('ConversationCard', () => {
     ).toBe(false);
   });
 
-  it('renders scheduling appointment status accents as dashed lines beside CRM accents', () => {
+  it('renders scheduling appointment status as a sticker over the avatar instead of a dashed rail', () => {
     const wrapper = mountComponent({
       chat: {
         ...baseChat,
@@ -341,20 +341,59 @@ describe('ConversationCard', () => {
       },
     });
 
-    const appointmentAccents = wrapper.find(
-      '[data-test-id="conversation-appointment-status-accents"]'
+    const appointmentSticker = wrapper.find(
+      '[data-test-id="conversation-appointment-status-sticker"]'
     );
-    const stripes = appointmentAccents.findAll('span');
 
-    expect(appointmentAccents.exists()).toBe(true);
-    expect(stripes).toHaveLength(2);
-    expect(stripes[0].classes()).toContain('appointment-status-dashed-rail');
-    expect(stripes[0].classes()).toContain('rounded-full');
-    expect(stripes[0].classes()).toContain('text-n-amber-11');
-    expect(stripes[0].attributes('title')).toBe(
-      'SCHEDULING.APPOINTMENT_STATUS.confirmed · 2'
+    expect(
+      wrapper.find('[data-test-id="conversation-card-accents"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .find('[data-test-id="conversation-appointment-status-accents"]')
+        .exists()
+    ).toBe(false);
+    expect(wrapper.find('.appointment-status-dashed-rail').exists()).toBe(
+      false
     );
-    expect(stripes[1].classes()).toContain('text-n-teal-11');
+    expect(appointmentSticker.exists()).toBe(true);
+    expect(appointmentSticker.element.parentElement).toBe(
+      wrapper.findComponent({ name: 'Avatar' }).element.parentElement
+    );
+    expect(appointmentSticker.classes()).toEqual(
+      expect.arrayContaining([
+        'absolute',
+        'right-0',
+        'top-2',
+        'rounded-full',
+        'bg-n-blue-3',
+        'text-n-blue-11',
+      ])
+    );
+    expect(appointmentSticker.attributes('title')).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.confirmed · 2 / SCHEDULING.APPOINTMENT_STATUS.completed'
+    );
+    expect(appointmentSticker.find('.i-lucide-badge-check').exists()).toBe(
+      true
+    );
+  });
+
+  it('does not render left card accents for appointment-only cards', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        scheduling_appointment_statuses: [{ status: 'scheduled', count: 1 }],
+      },
+    });
+
+    expect(
+      wrapper.find('[data-test-id="conversation-card-accents"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper
+        .find('[data-test-id="conversation-appointment-status-sticker"]')
+        .exists()
+    ).toBe(true);
   });
 
   it('renders the combined customer/reply activity time under the avatar and compact inbox name inline with the contact', () => {

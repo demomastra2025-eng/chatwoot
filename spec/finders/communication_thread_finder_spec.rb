@@ -145,7 +145,7 @@ RSpec.describe CommunicationThreadFinder do
       expect(result[:communication_threads].map(&:id)).not_to include(no_appointment_thread.id)
     end
 
-    it 'keeps appointment status counts as appointment records scoped by thread context' do
+    it 'keeps appointment status counts as dialog counts scoped by thread context' do
       _confirmed_thread, confirmed_conversation = create_thread_with_conversation(unread_count: 1)
       _scheduled_thread, scheduled_conversation = create_thread_with_conversation(unread_count: 1)
       _read_thread, read_conversation = create_thread_with_conversation(unread_count: 0)
@@ -183,7 +183,8 @@ RSpec.describe CommunicationThreadFinder do
       result = finder.perform
 
       expect(result[:count].dig(:unread_counts, :appointment_statuses)).to include(
-        'confirmed' => 2,
+        'any' => 2,
+        'confirmed' => 1,
         'scheduled' => 1
       )
     end

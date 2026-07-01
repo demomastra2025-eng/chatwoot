@@ -31,6 +31,7 @@ import {
 import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_ICON_CLASSES,
+  APPOINTMENT_STATUS_RAIL_CLASSES,
   APPOINTMENT_STATUS_VALUES,
 } from 'dashboard/routes/dashboard/scheduling/constants';
 
@@ -249,7 +250,7 @@ const statusIconClass = appointment =>
   APPOINTMENT_STATUS_ICON_CLASSES.scheduled;
 
 const statusAccentClass = status =>
-  APPOINTMENT_STATUS_ICON_CLASSES[status] || 'text-n-slate-11';
+  APPOINTMENT_STATUS_RAIL_CLASSES[status] || 'text-n-slate-9';
 
 const appointmentStatusAccentClass = appointment =>
   statusAccentClass(appointment.status);

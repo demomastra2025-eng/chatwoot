@@ -29,27 +29,44 @@ export const APPOINTMENT_STATUS_ICONS = {
 };
 
 export const APPOINTMENT_STATUS_ICON_CLASSES = {
-  scheduled: '',
-  confirmed: 'text-n-amber-11',
+  scheduled: 'text-n-amber-11',
+  confirmed: 'text-n-blue-11',
   completed: 'text-n-teal-11',
+  cancelled: 'text-n-ruby-11',
+  no_show: 'text-n-ruby-11',
+};
+
+export const APPOINTMENT_STATUS_RAIL_CLASSES = {
+  scheduled: 'text-n-amber-11',
+  confirmed: 'text-n-blue-11',
+  completed: 'text-n-slate-9',
   cancelled: 'text-n-ruby-11',
   no_show: 'text-n-ruby-11',
 };
 
 export const APPOINTMENT_STATUS_ACCENT_CLASSES = {
   scheduled: 'bg-n-amber-9',
-  confirmed: 'bg-n-amber-9',
-  completed: 'bg-n-teal-9',
+  confirmed: 'bg-n-blue-9',
+  completed: 'bg-n-slate-7',
   cancelled: 'bg-n-ruby-9',
   no_show: 'bg-n-ruby-9',
 };
 
 export const APPOINTMENT_STATUS_PILL_CLASSES = {
   scheduled: 'bg-n-amber-3 text-n-amber-11 ring-n-amber-4/60',
-  confirmed: 'bg-n-amber-3 text-n-amber-11 ring-n-amber-4/60',
-  completed: 'bg-n-teal-3 text-n-teal-11 ring-n-teal-4/60',
+  confirmed: 'bg-n-blue-3 text-n-blue-11 ring-n-blue-4/60',
+  completed: 'bg-n-slate-2 text-n-teal-11 ring-n-slate-4/60',
   cancelled: 'bg-n-ruby-3 text-n-ruby-11 ring-n-ruby-4/60',
   no_show: 'bg-n-ruby-3 text-n-ruby-11 ring-n-ruby-4/60',
+};
+
+export const APPOINTMENT_STATUS_STICKER_CLASSES = {
+  scheduled: 'border-n-amber-4 bg-n-amber-3 text-n-amber-11',
+  confirmed: 'border-n-blue-4 bg-n-blue-3 text-n-blue-11',
+  completed:
+    'border-n-slate-4 bg-n-slate-2 text-n-teal-11 dark:border-n-slate-6 dark:bg-n-slate-3',
+  cancelled: 'border-n-ruby-4 bg-n-ruby-3 text-n-ruby-11',
+  no_show: 'border-n-ruby-4 bg-n-ruby-3 text-n-ruby-11',
 };
 
 export const PAYMENT_STATUS_VALUES = [

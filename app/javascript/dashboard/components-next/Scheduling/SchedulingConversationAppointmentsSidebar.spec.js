@@ -156,7 +156,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     const html = wrapper.html();
     expect(html).toContain('i-lucide-calendar-plus');
-    expect(html).toContain('text-n-slate-11');
+    expect(html).toContain('text-n-amber-11');
     expect(html).toContain('appointment-status-dashed-rail');
     expect(html).toContain('rounded-full');
     expect(
@@ -179,15 +179,15 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(
       wrapper.vm.statusOptions.find(option => option.value === 'confirmed')
     ).toMatchObject({
-      iconClass: 'text-n-amber-11',
+      iconClass: 'text-n-blue-11',
       label: 'SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.confirmed',
-      labelClass: 'text-n-amber-11',
+      labelClass: 'text-n-blue-11',
     });
     expect(
       wrapper.vm.statusOptions.find(option => option.value === 'scheduled')
     ).toMatchObject({
-      iconClass: '',
-      labelClass: '',
+      iconClass: 'text-n-amber-11',
+      labelClass: 'text-n-amber-11',
     });
   });
 
@@ -197,7 +197,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     const html = wrapper.html();
     expect(html).toContain('i-lucide-badge-check');
-    expect(html).toContain('text-n-amber-11');
+    expect(html).toContain('text-n-blue-11');
     expect(html).toContain('appointment-status-dashed-rail');
     expect(html).toContain('rounded-full');
     expect(html.indexOf('appointment-status-dashed-rail')).toBeLessThan(

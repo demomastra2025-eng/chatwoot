@@ -183,7 +183,7 @@ RSpec.describe 'Conversations API', type: :request do
           labels: { vip: 2 },
           pipelines: { pipeline.id.to_s.to_sym => 1 },
           stages: { stage.id.to_s.to_sym => 1 },
-          appointment_statuses: { confirmed: 2, scheduled: 1 }
+          appointment_statuses: { any: 2, confirmed: 1, scheduled: 1 }
         )
       end
 

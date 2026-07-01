@@ -220,6 +220,6 @@ describe('ConversationHeader', () => {
     expect(statuses.text()).toContain('Назначен');
     expect(statuses.text()).not.toContain('Статусы');
     expect(statuses.html()).toContain('i-lucide-clock-3');
-    expect(statuses.html()).toContain('text-n-slate-11');
+    expect(statuses.html()).toContain('text-n-amber-11');
   });
 });
