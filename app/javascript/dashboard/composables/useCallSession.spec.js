@@ -257,7 +257,7 @@ describe('useCallSession', () => {
     ]);
   });
 
-  it('does not request an unscoped webphone token while a communication thread is loading', async () => {
+  it('bootstraps unscoped browser calling while a communication thread is loading', async () => {
     routeMock.params = { communication_thread_id: '1' };
     selectedChatMock.value = {};
 
@@ -265,7 +265,7 @@ describe('useCallSession', () => {
     await Promise.resolve();
 
     expect(initializeDeviceMock).not.toHaveBeenCalled();
-    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
   });
 
   it('bootstraps browser calling for an incoming Fonoster call inbox before answer', async () => {
@@ -622,7 +622,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('keeps an inbound Fonoster call alive when no SIP incoming call is available to answer yet', async () => {
+  it('releases a claimed inbound Fonoster call when no SIP incoming call is available to answer', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-no-sip-answer',
@@ -646,13 +646,11 @@ describe('useCallSession', () => {
     expect(VoiceAPI.claimIncomingCall).toHaveBeenCalledWith(
       'call-no-sip-answer'
     );
-    expect(rejectBackendCallMock).not.toHaveBeenCalled();
-    expect(callsStore.calls).toMatchObject([
-      {
-        callSid: 'call-no-sip-answer',
-        browserJoinSupported: null,
-      },
-    ]);
+    expect(rejectBackendCallMock).toHaveBeenCalledWith('call-no-sip-answer', {
+      reason: 'sip_invite_not_received',
+      status: 'no_answer',
+    });
+    expect(callsStore.calls).toEqual([]);
   });
 
   it('stores the communication thread returned by an incoming call claim', async () => {
@@ -700,7 +698,7 @@ describe('useCallSession', () => {
     });
   });
 
-  it('returns the claimed communication thread when the SIP invite is not available yet', async () => {
+  it('releases a claimed Sipuni communication thread call when the SIP invite is not available', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-claim-thread-waiting-for-invite',
@@ -729,19 +727,20 @@ describe('useCallSession', () => {
       callDirection: 'inbound',
     });
 
-    expect(callsStore.calls).toMatchObject([
-      {
-        callSid: 'call-claim-thread-waiting-for-invite',
-        communicationThreadId: 25,
-      },
-    ]);
     expect(result).toEqual({
       provider: 'sipuni',
       joinSupported: false,
       reason: 'sip_invite_not_received',
       communicationThreadId: 25,
     });
-    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-claim-thread-waiting-for-invite',
+      {
+        reason: 'sip_invite_not_received',
+        status: 'no_answer',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
   });
 
   it('releases the backend call when the browser SIP answer fails after claim', async () => {
@@ -785,7 +784,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('keeps a registered Fonoster call alive when the delayed SIP INVITE is not yet available', async () => {
+  it('releases a registered Fonoster call when the delayed SIP INVITE never arrives', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-registered-waiting-for-invite',
@@ -814,13 +813,14 @@ describe('useCallSession', () => {
     expect(VoiceAPI.claimIncomingCall).toHaveBeenCalledWith(
       'call-registered-waiting-for-invite'
     );
-    expect(rejectBackendCallMock).not.toHaveBeenCalled();
-    expect(callsStore.calls).toMatchObject([
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-registered-waiting-for-invite',
       {
-        callSid: 'call-registered-waiting-for-invite',
-        browserJoinSupported: null,
-      },
-    ]);
+        reason: 'sip_invite_not_received',
+        status: 'no_answer',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
   });
 
   it('joins outbound Fonoster calls in the browser without claiming an incoming call first', async () => {
@@ -898,6 +898,44 @@ describe('useCallSession', () => {
       }
     );
     expect(callsStore.calls).toEqual([]);
+  });
+
+  it('does not use the inbound release endpoint for outbound non-Fonoster SIP calls without an invite', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni-outbound-no-invite',
+      provider: 'sipuni',
+      callDirection: 'outbound',
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: true,
+    });
+    joinClientCallMock.mockResolvedValue(null);
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 6,
+      inboxId: 4769,
+      callSid: 'sipuni-outbound-no-invite',
+      provider: 'sipuni',
+      callDirection: 'outbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'sipuni',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+    });
+    expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni-outbound-no-invite',
+        isActive: false,
+      }),
+    ]);
   });
 
   it('does not release an outbound Fonoster call again when it was already closed while waiting for SIP INVITE', async () => {

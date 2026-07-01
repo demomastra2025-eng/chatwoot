@@ -307,6 +307,27 @@ export function useCallSession() {
     };
   };
 
+  const releaseClaimedNativeBrowserSipCallWithoutInvite = async (
+    callSid,
+    { provider, communicationThreadId = null } = {}
+  ) => {
+    await releaseFonosterIncomingCall(callSid, {
+      status: 'no_answer',
+      reason: 'sip_invite_not_received',
+    });
+    callsStore.markBrowserJoinUnsupported(callSid, provider, {
+      reason: 'sip_invite_not_received',
+    });
+    callsStore.dismissCall(callSid);
+
+    return {
+      provider,
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      ...(communicationThreadId ? { communicationThreadId } : {}),
+    };
+  };
+
   const failFonosterOutboundWithoutInvite = async callSid => {
     await releaseFonosterIncomingCall(callSid, {
       status: 'failed',
@@ -488,10 +509,6 @@ export function useCallSession() {
       incomingVoiceInboxId.value
   ) => {
     try {
-      if (routeCommunicationThreadId.value && !inboxId) {
-        return;
-      }
-
       await WebphoneClient.bootstrapIncomingSupport();
 
       if (inboxId) {
@@ -745,14 +762,18 @@ export function useCallSession() {
             if (resolvedProvider === 'fonoster') {
               return failFonosterOutboundWithoutInvite(callSid);
             }
+
+            return {
+              provider: resolvedProvider,
+              joinSupported: false,
+              reason: 'sip_invite_not_received',
+            };
           }
 
-          return {
+          return releaseClaimedNativeBrowserSipCallWithoutInvite(callSid, {
             provider: resolvedProvider,
-            joinSupported: false,
-            reason: 'sip_invite_not_received',
-            ...(communicationThreadId ? { communicationThreadId } : {}),
-          };
+            communicationThreadId,
+          });
         }
 
         if (isOutbound) {
