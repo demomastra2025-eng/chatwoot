@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { shallowMount } from '@vue/test-utils';
 
 import ConversationCard from './ConversationCard.vue';
@@ -32,6 +32,7 @@ const baseChat = {
   id: 630,
   inbox_id: 4593,
   timestamp: 1710000000,
+  last_incoming_message_at: 1710000000,
   created_at: 1709990000,
   unread_count: 0,
   labels: [],
@@ -68,7 +69,16 @@ const mountComponent = props =>
     },
   });
 
+const findTimeAgoByTestId = (wrapper, testId) =>
+  wrapper
+    .findAllComponents({ name: 'TimeAgo' })
+    .find(component => component.attributes('data-test-id') === testId);
+
 describe('ConversationCard', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     window.history.replaceState({}, '', '/');
     mocks.routerPush.mockClear();
@@ -212,6 +222,43 @@ describe('ConversationCard', () => {
     );
   });
 
+  it('opens the existing context menu as a mobile sheet on long press', async () => {
+    vi.useFakeTimers();
+    const wrapper = mountComponent({ enableContextMenu: true });
+
+    await wrapper.trigger('touchstart', {
+      touches: [{ clientX: 48, clientY: 96 }],
+    });
+    vi.advanceTimersByTime(550);
+    await wrapper.vm.$nextTick();
+
+    const contextMenu = wrapper.findComponent({ name: 'ContextMenu' });
+
+    expect(contextMenu.exists()).toBe(true);
+    expect(contextMenu.props()).toMatchObject({ x: 48, y: 96, mobile: true });
+
+    await wrapper.trigger('touchend');
+    await wrapper.trigger('click');
+
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+  });
+
+  it('cancels mobile long press when the user scrolls the chat list', async () => {
+    vi.useFakeTimers();
+    const wrapper = mountComponent({ enableContextMenu: true });
+
+    await wrapper.trigger('touchstart', {
+      touches: [{ clientX: 48, clientY: 96 }],
+    });
+    await wrapper.trigger('touchmove', {
+      touches: [{ clientX: 48, clientY: 120 }],
+    });
+    vi.advanceTimersByTime(550);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findComponent({ name: 'ContextMenu' }).exists()).toBe(false);
+  });
+
   it('keeps the unread badge as the unread message count', () => {
     const wrapper = mountComponent({
       chat: {
@@ -254,18 +301,23 @@ describe('ConversationCard', () => {
       },
     });
 
+    const cardAccents = wrapper.find(
+      '[data-test-id="conversation-card-accents"]'
+    );
     const accents = wrapper.find(
       '[data-test-id="conversation-crm-stage-accents"]'
     );
     const stripes = accents.findAll('span');
 
+    expect(cardAccents.exists()).toBe(true);
+    expect(cardAccents.element.parentElement).toBe(wrapper.element);
+    expect(cardAccents.classes()).toContain('absolute');
+    expect(cardAccents.classes()).toContain('left-0');
+    expect(cardAccents.classes()).toContain('top-0');
+    expect(cardAccents.classes()).toContain('bottom-0');
     expect(accents.exists()).toBe(true);
-    expect(accents.element.parentElement).toBe(wrapper.element);
-    expect(accents.classes()).toContain('absolute');
-    expect(accents.classes()).toContain('left-0');
-    expect(accents.classes()).toContain('top-0');
-    expect(accents.classes()).toContain('bottom-0');
     expect(stripes).toHaveLength(2);
+    expect(stripes[0].classes()).toContain('rounded-full');
     expect(stripes[0].attributes('style')).toContain(
       'background-color: rgb(34, 197, 94)'
     );
@@ -277,15 +329,88 @@ describe('ConversationCard', () => {
     ).toBe(false);
   });
 
-  it('renders compact time under the avatar and compact inbox name inline with the contact', () => {
+  it('renders scheduling appointment status accents as dashed lines beside CRM accents', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        crm_deal_stages: [{ id: 10, name: 'New', color: '#22C55E' }],
+        scheduling_appointment_statuses: [
+          { status: 'confirmed', count: 2 },
+          { status: 'completed', count: 1 },
+        ],
+      },
+    });
+
+    const appointmentAccents = wrapper.find(
+      '[data-test-id="conversation-appointment-status-accents"]'
+    );
+    const stripes = appointmentAccents.findAll('span');
+
+    expect(appointmentAccents.exists()).toBe(true);
+    expect(stripes).toHaveLength(2);
+    expect(stripes[0].classes()).toContain('appointment-status-dashed-rail');
+    expect(stripes[0].classes()).toContain('rounded-full');
+    expect(stripes[0].classes()).toContain('text-n-amber-11');
+    expect(stripes[0].attributes('title')).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.confirmed · 2'
+    );
+    expect(stripes[1].classes()).toContain('text-n-teal-11');
+  });
+
+  it('renders the combined customer/reply activity time under the avatar and compact inbox name inline with the contact', () => {
     const wrapper = mountComponent();
-    const timeAgo = wrapper.findComponent({ name: 'TimeAgo' });
+    const timeAgo = findTimeAgoByTestId(
+      wrapper,
+      'conversation-directional-message-times'
+    );
     const inboxName = wrapper.findComponent({ name: 'InboxName' });
 
     expect(timeAgo.exists()).toBe(true);
-    expect(timeAgo.props('displayMode')).toBe('compact_elapsed');
+    expect(timeAgo.props('lastActivityTimestamp')).toBe(1710000000);
+    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(0);
     expect(inboxName.exists()).toBe(true);
     expect(inboxName.props('compact')).toBe(true);
+  });
+
+  it('keeps both side activity times in one timer under the avatar', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        last_incoming_message_at: 1710000000,
+        last_outgoing_message_at: 1710003600,
+      },
+    });
+
+    const timeAgo = findTimeAgoByTestId(
+      wrapper,
+      'conversation-directional-message-times'
+    );
+
+    expect(timeAgo.exists()).toBe(true);
+    expect(timeAgo.props('lastActivityTimestamp')).toBe(1710000000);
+    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(1710003600);
+    expect(
+      findTimeAgoByTestId(wrapper, 'conversation-last-outgoing-time')
+    ).toBe(undefined);
+  });
+
+  it('shows the manager/SLA attempt timer when only outgoing activity exists', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        last_incoming_message_at: null,
+        last_outgoing_message_at: 1710003600,
+      },
+    });
+
+    const timeAgo = findTimeAgoByTestId(
+      wrapper,
+      'conversation-directional-message-times'
+    );
+
+    expect(timeAgo.exists()).toBe(true);
+    expect(timeAgo.props('lastActivityTimestamp')).toBe(0);
+    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(1710003600);
   });
 
   it('keeps the inbox name visible inside a specific inbox route', () => {

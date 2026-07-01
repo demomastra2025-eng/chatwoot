@@ -75,6 +75,10 @@ export default {
       type: String,
       default: 'conversation',
     },
+    mobile: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: [
     'updateConversation',
@@ -310,7 +314,8 @@ export default {
 
 <template>
   <div
-    class="p-1 rounded-md shadow-xl bg-n-alpha-3/50 backdrop-blur-[100px] outline-1 outline outline-n-weak/50"
+    class="conversation-card-context-menu p-1 rounded-md shadow-xl bg-n-alpha-3/50 backdrop-blur-[100px] outline-1 outline outline-n-weak/50"
+    :class="{ 'conversation-card-context-menu--mobile': mobile }"
   >
     <template v-if="isAllowed([MENU.MARK_AS_READ, MENU.MARK_AS_UNREAD])">
       <MenuItem
@@ -351,6 +356,7 @@ export default {
       <MenuItemWithSubmenu
         v-if="isAllowed([MENU.PRIORITY])"
         :option="priorityConfig"
+        :mobile="mobile"
       >
         <MenuItem
           v-for="(option, i) in priorityConfig.options"
@@ -363,6 +369,7 @@ export default {
         v-if="isAllowed([MENU.LABEL])"
         :option="labelMenuConfig"
         :sub-menu-available="!!labels.length"
+        :mobile="mobile"
       >
         <MenuItem
           v-for="label in labels"
@@ -384,6 +391,7 @@ export default {
         v-if="isAllowed([MENU.AGENT])"
         :option="agentMenuConfig"
         :sub-menu-available="!!assignableAgents.length"
+        :mobile="mobile"
       >
         <AgentLoadingPlaceholder v-if="assignableAgentsUiFlags.isFetching" />
         <template v-else>
@@ -400,6 +408,7 @@ export default {
         v-if="isAllowed([MENU.TEAM])"
         :option="teamMenuConfig"
         :sub-menu-available="!!teams.length"
+        :mobile="mobile"
       >
         <MenuItem
           v-for="team in teams"
@@ -444,3 +453,16 @@ export default {
     </template>
   </div>
 </template>
+
+<style scoped lang="scss">
+.conversation-card-context-menu--mobile {
+  @apply w-full rounded-xl bg-transparent shadow-none outline-none;
+  backdrop-filter: none;
+
+  :deep(.menu),
+  :deep(.menu-with-submenu) {
+    width: 100%;
+    min-width: 0;
+  }
+}
+</style>

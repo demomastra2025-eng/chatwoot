@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, defineAsyncComponent } from 'vue';
+import { computed, ref, watch, defineAsyncComponent, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
@@ -21,6 +21,7 @@ import SLACardLabel from './components/SLACardLabel.vue';
 import ContextMenu from 'dashboard/components/ui/ContextMenu.vue';
 import VoiceCallStatus from './VoiceCallStatus.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import { APPOINTMENT_STATUS_ICON_CLASSES } from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   activeLabel: { type: String, default: '' },
@@ -68,22 +69,62 @@ const hovered = ref(false);
 const showContextMenu = ref(false);
 const contextMenu = ref({ x: null, y: null });
 const isUpdatingPin = ref(false);
+const isTouchContextMenu = ref(false);
+const longPressTimer = ref(null);
+const suppressNextClick = ref(false);
+const suppressClickResetTimer = ref(null);
+const touchStartPoint = ref(null);
 const INLINE_META_MAX_LENGTH = 12;
 const INBOX_NAME_MAX_LENGTH = 15;
+const LONG_PRESS_MS = 550;
+const LONG_PRESS_MOVE_TOLERANCE = 10;
+const OUTGOING_SIDE_MESSAGE_TYPES = [
+  MESSAGE_TYPES.OUTGOING,
+  MESSAGE_TYPES.TEMPLATE,
+];
+
+const clearLongPressTimer = () => {
+  if (!longPressTimer.value) return;
+
+  window.clearTimeout(longPressTimer.value);
+  longPressTimer.value = null;
+};
+
+const clearSuppressClickResetTimer = () => {
+  if (!suppressClickResetTimer.value) return;
+
+  window.clearTimeout(suppressClickResetTimer.value);
+  suppressClickResetTimer.value = null;
+};
+
+const scheduleSuppressClickReset = () => {
+  clearSuppressClickResetTimer();
+  suppressClickResetTimer.value = window.setTimeout(() => {
+    suppressNextClick.value = false;
+    suppressClickResetTimer.value = null;
+  }, 350);
+};
 
 // Reset UI state when conversation changes at same index (no :key, instance reused on reorder)
 // This prevents context menu/hover state from leaking to a different conversation
 // Emit contextMenuToggle(false) to sync parent state if menu was open during recycling
 const resetState = () => {
+  clearLongPressTimer();
+  clearSuppressClickResetTimer();
   if (showContextMenu.value) {
     emit('contextMenuToggle', false);
   }
   hovered.value = false;
   showContextMenu.value = false;
+  isTouchContextMenu.value = false;
+  suppressNextClick.value = false;
+  touchStartPoint.value = null;
   contextMenu.value = { x: null, y: null };
 };
 
 watch(() => props.chat.id, resetState);
+
+onUnmounted(resetState);
 
 const currentChat = useMapGetter('getSelectedChat');
 const inboxesList = useMapGetter('inboxes/getInboxes');
@@ -112,6 +153,17 @@ const truncateInlineMetaText = value => {
     : text;
 };
 
+const timestampValue = value => {
+  const timestamp = Number(value || 0);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+};
+
+const messageCreatedAt = message =>
+  timestampValue(message?.created_at ?? message?.createdAt);
+
+const isOutgoingSideMessageType = messageType =>
+  OUTGOING_SIDE_MESSAGE_TYPES.includes(Number(messageType));
+
 const contactDisplayName = computed(() =>
   truncateInlineMetaText(currentContact.value.name)
 );
@@ -127,6 +179,25 @@ const crmDealStages = computed(() => {
         }))
     : [];
 });
+
+const schedulingAppointmentStatuses = computed(() => {
+  const statuses =
+    props.chat.scheduling_appointment_statuses ||
+    props.chat.schedulingAppointmentStatuses ||
+    [];
+  return Array.isArray(statuses)
+    ? statuses
+        .map(statusContext => ({
+          count: Number(statusContext.count || 0),
+          status: String(statusContext.status || statusContext).trim(),
+        }))
+        .filter(statusContext => statusContext.status)
+    : [];
+});
+
+const hasCardAccents = computed(
+  () => crmDealStages.value.length || schedulingAppointmentStatuses.value.length
+);
 
 const cardMatchesListMode = computed(
   () =>
@@ -160,6 +231,57 @@ const lastMessageType = computed(
     lastMessageInChat.value?.message_type ??
     lastMessageInChat.value?.messageType
 );
+
+const lastIncomingMessageAt = computed(() => {
+  const explicitTimestamp = timestampValue(
+    props.chat.last_incoming_message_at ?? props.chat.lastIncomingMessageAt
+  );
+  if (explicitTimestamp) return explicitTimestamp;
+
+  return Number(lastMessageType.value) === MESSAGE_TYPES.INCOMING
+    ? messageCreatedAt(lastMessageInChat.value)
+    : 0;
+});
+
+const lastOutgoingMessageAt = computed(() => {
+  const explicitTimestamp = timestampValue(
+    props.chat.last_outgoing_message_at ?? props.chat.lastOutgoingMessageAt
+  );
+  if (explicitTimestamp) return explicitTimestamp;
+
+  return isOutgoingSideMessageType(lastMessageType.value)
+    ? messageCreatedAt(lastMessageInChat.value)
+    : 0;
+});
+
+const incomingActivityTooltip = computed(() =>
+  t('CHAT_LIST.CHAT_TIME_STAMP.LAST_INCOMING')
+);
+
+const outgoingActivityTooltip = computed(() =>
+  t('CHAT_LIST.CHAT_TIME_STAMP.LAST_OUTGOING')
+);
+
+const hasDirectionalMessageTime = computed(() =>
+  Boolean(lastIncomingMessageAt.value || lastOutgoingMessageAt.value)
+);
+
+const appointmentStatusAccentClass = status =>
+  APPOINTMENT_STATUS_ICON_CLASSES[status] || 'text-n-slate-11';
+
+const appointmentStatusLabels = computed(() => ({
+  cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
+  completed: t('SCHEDULING.APPOINTMENT_STATUS.completed'),
+  confirmed: t('SCHEDULING.APPOINTMENT_STATUS.confirmed'),
+  no_show: t('SCHEDULING.APPOINTMENT_STATUS.no_show'),
+  scheduled: t('SCHEDULING.APPOINTMENT_STATUS.scheduled'),
+}));
+
+const appointmentStatusTitle = statusContext => {
+  const label =
+    appointmentStatusLabels.value[statusContext.status] || statusContext.status;
+  return statusContext.count > 1 ? `${label} · ${statusContext.count}` : label;
+};
 
 const isLastMessageActivity = computed(
   () => Number(lastMessageType.value) === MESSAGE_TYPES.ACTIVITY
@@ -301,6 +423,13 @@ const conversationPath = computed(() => {
 });
 
 const onCardClick = e => {
+  if (suppressNextClick.value) {
+    e.preventDefault();
+    e.stopPropagation();
+    suppressNextClick.value = false;
+    return;
+  }
+
   const path = conversationPath.value;
   if (!path) return;
 
@@ -337,18 +466,94 @@ const onSelectConversation = checked => {
   }
 };
 
+const isInteractiveTarget = target =>
+  Boolean(
+    target?.closest?.(
+      'a, button, input, select, textarea, label, [role="button"], [data-skip-long-press]'
+    )
+  );
+
+const openContextMenuAt = ({ x, y, touch = false }) => {
+  if (!props.enableContextMenu) return;
+
+  emit('contextMenuToggle', true);
+  contextMenu.value.x = x;
+  contextMenu.value.y = y;
+  isTouchContextMenu.value = touch;
+  showContextMenu.value = true;
+};
+
 const openContextMenu = e => {
   if (!props.enableContextMenu) return;
+
   e.preventDefault();
-  emit('contextMenuToggle', true);
-  contextMenu.value.x = e.pageX || e.clientX;
-  contextMenu.value.y = e.pageY || e.clientY;
-  showContextMenu.value = true;
+  const touchTriggeredContextMenu = Boolean(
+    isTouchContextMenu.value ||
+      e.pointerType === 'touch' ||
+      e.sourceCapabilities?.firesTouchEvents
+  );
+  openContextMenuAt({
+    x: e.clientX ?? e.pageX ?? 0,
+    y: e.clientY ?? e.pageY ?? 0,
+    touch: touchTriggeredContextMenu,
+  });
+};
+
+const onTouchStart = event => {
+  if (
+    !props.enableContextMenu ||
+    event.touches.length !== 1 ||
+    isInteractiveTarget(event.target)
+  ) {
+    return;
+  }
+
+  const touch = event.touches[0];
+  touchStartPoint.value = {
+    x: touch.clientX,
+    y: touch.clientY,
+  };
+  clearLongPressTimer();
+  longPressTimer.value = window.setTimeout(() => {
+    suppressNextClick.value = true;
+    openContextMenuAt({ x: touch.clientX, y: touch.clientY, touch: true });
+  }, LONG_PRESS_MS);
+};
+
+const onTouchMove = event => {
+  if (!touchStartPoint.value || event.touches.length !== 1) return;
+
+  const touch = event.touches[0];
+  const deltaX = Math.abs(touch.clientX - touchStartPoint.value.x);
+  const deltaY = Math.abs(touch.clientY - touchStartPoint.value.y);
+
+  if (
+    deltaX > LONG_PRESS_MOVE_TOLERANCE ||
+    deltaY > LONG_PRESS_MOVE_TOLERANCE
+  ) {
+    clearLongPressTimer();
+  }
+};
+
+const onTouchEnd = event => {
+  clearLongPressTimer();
+  touchStartPoint.value = null;
+
+  if (suppressNextClick.value) {
+    event.preventDefault();
+    scheduleSuppressClickReset();
+  }
+};
+
+const onTouchCancel = () => {
+  clearLongPressTimer();
+  touchStartPoint.value = null;
 };
 
 const closeContextMenu = () => {
   emit('contextMenuToggle', false);
   showContextMenu.value = false;
+  isTouchContextMenu.value = false;
   contextMenu.value.x = null;
   contextMenu.value.y = null;
 };
@@ -431,20 +636,43 @@ const togglePinnedConversation = async nextPinnedState => {
     }"
     @click="onCardClick"
     @contextmenu="openContextMenu($event)"
+    @touchstart="onTouchStart"
+    @touchmove="onTouchMove"
+    @touchend="onTouchEnd"
+    @touchcancel="onTouchCancel"
   >
     <span
-      v-if="crmDealStages.length"
-      data-test-id="conversation-crm-stage-accents"
+      v-if="hasCardAccents"
+      data-test-id="conversation-card-accents"
       class="absolute bottom-0 left-0 top-0 z-[1] flex"
       aria-hidden="true"
     >
       <span
-        v-for="stage in crmDealStages"
-        :key="stage.id"
-        class="w-0.5"
-        :title="stage.name"
-        :style="{ backgroundColor: stage.color }"
-      />
+        v-if="crmDealStages.length"
+        data-test-id="conversation-crm-stage-accents"
+        class="flex"
+      >
+        <span
+          v-for="stage in crmDealStages"
+          :key="stage.id"
+          class="my-0.5 w-0.5 rounded-full"
+          :title="stage.name"
+          :style="{ backgroundColor: stage.color }"
+        />
+      </span>
+      <span
+        v-if="schedulingAppointmentStatuses.length"
+        data-test-id="conversation-appointment-status-accents"
+        class="flex"
+      >
+        <span
+          v-for="statusContext in schedulingAppointmentStatuses"
+          :key="statusContext.status"
+          class="appointment-status-dashed-rail rounded-full"
+          :class="appointmentStatusAccentClass(statusContext.status)"
+          :title="appointmentStatusTitle(statusContext)"
+        />
+      </span>
     </span>
     <div
       class="relative flex w-10 flex-shrink-0 flex-col items-center"
@@ -477,12 +705,16 @@ const togglePinnedConversation = async nextPinnedState => {
         </template>
       </Avatar>
       <TimeAgo
-        v-if="!hideThumbnail"
+        v-if="!hideThumbnail && hasDirectionalMessageTime"
+        data-test-id="conversation-directional-message-times"
         display-mode="compact_elapsed"
-        class="mt-1 max-w-10"
-        :last-activity-timestamp="chat.timestamp"
+        class="mt-1 max-w-14 whitespace-nowrap"
+        :last-activity-timestamp="lastIncomingMessageAt"
+        :secondary-activity-timestamp="lastOutgoingMessageAt"
         :created-at-timestamp="chat.created_at"
-        :conversation-id="chat.id"
+        :conversation-id="`${chat.id}-directional-${lastIncomingMessageAt}-${lastOutgoingMessageAt}`"
+        :tooltip-text-override="incomingActivityTooltip"
+        :secondary-tooltip-text-override="outgoingActivityTooltip"
       />
     </div>
     <div
@@ -507,7 +739,7 @@ const togglePinnedConversation = async nextPinnedState => {
           :inbox="inbox"
           compact
           :max-length="INBOX_NAME_MAX_LENGTH"
-          class="max-w-24 flex-shrink min-w-0"
+          class="max-w-26 flex-shrink min-w-0"
         />
         <span
           v-if="showAssignee && assignee.name"
@@ -599,6 +831,7 @@ const togglePinnedConversation = async nextPinnedState => {
       v-if="showContextMenu"
       :x="contextMenu.x"
       :y="contextMenu.y"
+      :mobile="isTouchContextMenu"
       @close="closeContextMenu"
     >
       <ConversationContextMenu
@@ -611,6 +844,7 @@ const togglePinnedConversation = async nextPinnedState => {
         :conversation-url="conversationPath"
         :allowed-options="allowedContextMenuOptions"
         :is-pinned="isPinned"
+        :mobile="isTouchContextMenu"
         :conversation-type="
           isCommunicationThreadChat ? 'communication_thread' : 'conversation'
         "
@@ -629,3 +863,20 @@ const togglePinnedConversation = async nextPinnedState => {
     </ContextMenu>
   </div>
 </template>
+
+<style scoped>
+.appointment-status-dashed-rail {
+  width: 0.125rem;
+  margin-block: 0.25rem;
+  border-radius: 9999px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    currentColor 0,
+    currentColor 0.5rem,
+    transparent 0.5rem,
+    transparent 0.75rem
+  );
+  background-position: center;
+  background-repeat: repeat-y;
+}
+</style>

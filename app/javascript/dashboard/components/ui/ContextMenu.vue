@@ -14,6 +14,7 @@ import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirecti
 const props = defineProps({
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
+  mobile: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['close']);
@@ -85,11 +86,29 @@ onUnmounted(() => {
 <template>
   <TeleportWithDirection to="body">
     <div
+      v-if="mobile"
+      data-test-id="mobile-context-menu-backdrop"
+      class="fixed inset-0 z-[9999] cursor-default bg-n-alpha-black1 backdrop-blur-[2px]"
+      @click.self="handleClose"
+    >
+      <div
+        ref="menuRef"
+        data-test-id="mobile-context-menu-sheet"
+        class="fixed inset-x-3 bottom-3 max-h-[80dvh] overflow-y-auto rounded-2xl bg-n-solid-1 p-2 shadow-2xl outline outline-1 outline-n-weak"
+        tabindex="0"
+        @keydown.esc="handleClose"
+      >
+        <slot />
+      </div>
+    </div>
+    <div
+      v-else
       ref="menuRef"
       class="fixed outline-none z-[9999] cursor-pointer"
       :style="position"
       tabindex="0"
       @blur="handleClose"
+      @keydown.esc="handleClose"
     >
       <slot />
     </div>
