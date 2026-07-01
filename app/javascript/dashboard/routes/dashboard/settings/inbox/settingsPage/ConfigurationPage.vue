@@ -15,6 +15,7 @@ import FonosterReadiness from '../components/FonosterReadiness.vue';
 import FonosterRoutingForm from '../components/FonosterRoutingForm.vue';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
+import { copyTextToClipboard } from 'shared/helpers/clipboard';
 
 export default {
   components: {
@@ -897,6 +898,20 @@ export default {
         .toString(36)
         .slice(2)}`;
     },
+    async copySipuniWebhookUrl() {
+      if (!this.sipuniWebhookUrl) return;
+
+      try {
+        await copyTextToClipboard(this.sipuniWebhookUrl);
+        useAlert(
+          this.$t(
+            'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_COPY_SUCCESS'
+          )
+        );
+      } catch {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      }
+    },
     async updateSipuniWebhookToken() {
       const token = this.sipuniWebhookToken.trim();
       if (!token) {
@@ -1060,9 +1075,11 @@ export default {
             {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN') }}
             <input
               v-model="sipuniWebhookToken"
-              class="rounded-lg border border-n-weak py-2 text-sm"
-              type="password"
-              autocomplete="new-password"
+              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
               :placeholder="
                 $t(
                   'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN_PLACEHOLDER'
@@ -1076,6 +1093,13 @@ export default {
               {{
                 $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_GENERATE')
               }}
+            </NextButton>
+            <NextButton
+              type="button"
+              :disabled="!sipuniWebhookUrl"
+              @click="copySipuniWebhookUrl"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_COPY') }}
             </NextButton>
             <NextButton
               type="button"

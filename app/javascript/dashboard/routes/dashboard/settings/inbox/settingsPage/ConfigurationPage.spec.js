@@ -10,6 +10,7 @@ const reconcileVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const getVirtualPbxProvisioningRunsMock = vi.hoisted(() => vi.fn());
 const updateVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const storeDispatchMock = vi.hoisted(() => vi.fn());
+const copyTextToClipboardMock = vi.hoisted(() => vi.fn());
 
 vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
@@ -24,6 +25,10 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
     getVirtualPbxProvisioningRuns: getVirtualPbxProvisioningRunsMock,
     updateVirtualPbxChannel: updateVirtualPbxChannelMock,
   },
+}));
+
+vi.mock('shared/helpers/clipboard', () => ({
+  copyTextToClipboard: copyTextToClipboardMock,
 }));
 
 const virtualPbxDisplayNumber = '+10000000000';
@@ -143,6 +148,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     getVirtualPbxProvisioningRunsMock.mockReset();
     updateVirtualPbxChannelMock.mockReset();
     storeDispatchMock.mockReset();
+    copyTextToClipboardMock.mockReset();
     getVirtualPbxStatusMock.mockResolvedValue(statusPayload);
     getVirtualPbxProvisioningPlanMock.mockResolvedValue({
       payload: {
@@ -292,6 +298,28 @@ describe('ConfigurationPage Virtual PBX management', () => {
     });
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SUCCESS'
+    );
+  });
+
+  it('copies the Sipuni webhook URL for provider setup', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'sipuni',
+        provider_config: {
+          sipuni_events_webhook_token: 'saved-token',
+        },
+      },
+    });
+    await flushPromises();
+
+    await wrapper.vm.copySipuniWebhookUrl();
+
+    expect(copyTextToClipboardMock).toHaveBeenCalledWith(
+      'https://dev.one-link.kz/sipuni/events/saved-token'
+    );
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_COPY_SUCCESS'
     );
   });
 
