@@ -9,6 +9,7 @@ const provisionVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const reconcileVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const getVirtualPbxProvisioningRunsMock = vi.hoisted(() => vi.fn());
 const updateVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
+const storeDispatchMock = vi.hoisted(() => vi.fn());
 
 vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
@@ -105,7 +106,7 @@ const buildWrapper = ({ inbox = baseInbox } = {}) =>
       mocks: {
         $t: key => key,
         $store: {
-          dispatch: vi.fn(),
+          dispatch: storeDispatchMock,
         },
         $route: {
           params: { accountId: 530 },
@@ -141,6 +142,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     reconcileVirtualPbxChannelMock.mockReset();
     getVirtualPbxProvisioningRunsMock.mockReset();
     updateVirtualPbxChannelMock.mockReset();
+    storeDispatchMock.mockReset();
     getVirtualPbxStatusMock.mockResolvedValue(statusPayload);
     getVirtualPbxProvisioningPlanMock.mockResolvedValue({
       payload: {
@@ -165,6 +167,8 @@ describe('ConfigurationPage Virtual PBX management', () => {
       payload: { provisioning_runs: [{ id: 1, status: 'blocked' }] },
     });
     updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+    window.chatwootConfig = { hostURL: 'https://dev.one-link.kz' };
   });
 
   afterEach(() => {
@@ -204,7 +208,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
           source: 'virtual_pbx_ui',
         },
       },
-      { dryRun: false, remoteCommit: true }
+      { dryRun: false, remoteCommit: false }
     );
     expect(
       JSON.stringify(updateVirtualPbxChannelMock.mock.calls[0][1])
@@ -249,7 +253,45 @@ describe('ConfigurationPage Virtual PBX management', () => {
           },
         ],
       }),
-      { dryRun: false, remoteCommit: true }
+      { dryRun: false, remoteCommit: false }
+    );
+  });
+
+  it('saves a Sipuni webhook token on the inbox provider config', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'sipuni',
+        provider_config: {
+          provider_kind: 'sipuni',
+          existing_setting: 'keep-me',
+          sipuni_events_webhook_token: 'old-token',
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.sipuniWebhookUrl).toBe(
+      'https://dev.one-link.kz/sipuni/events/old-token'
+    );
+
+    wrapper.vm.sipuniWebhookToken = 'new-token';
+    await wrapper.vm.updateSipuniWebhookToken();
+    await flushPromises();
+
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/updateInbox', {
+      id: 42,
+      formData: false,
+      channel: {
+        provider_config: {
+          provider_kind: 'sipuni',
+          existing_setting: 'keep-me',
+          sipuni_events_webhook_token: 'new-token',
+        },
+      },
+    });
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SUCCESS'
     );
   });
 
@@ -315,7 +357,49 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('renders Asterisk analog employee extensions without SIP credential fields', async () => {
+  it('treats a native Binotel voice inbox as Virtual PBX settings', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'binotel',
+            provider_label: 'Binotel',
+          },
+          connection: {
+            provider_kind: 'binotel',
+            provider_label: 'Binotel',
+            display_name: 'Binotel line',
+            host: 'sip53.binotel.com',
+          },
+        },
+      },
+    });
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'binotel',
+      },
+    });
+    await flushPromises();
+
+    expect(getVirtualPbxStatusMock).toHaveBeenCalledWith(42);
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
+    );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_TITLE'
+    );
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION'
+    );
+  });
+
+  it('renders Asterisk analog direct SIP fields and saves locally', async () => {
     getVirtualPbxStatusMock.mockResolvedValue({
       payload: {
         ui_config: {
@@ -358,10 +442,10 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
     );
-    expect(wrapper.text()).not.toContain(
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
     );
-    expect(wrapper.text()).not.toContain(
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
     );
     expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
@@ -377,11 +461,12 @@ describe('ConfigurationPage Virtual PBX management', () => {
           {
             user_id: 7,
             internal_extension: '9098',
+            sip_username: 'must-not-render',
             enabled: true,
           },
         ],
       }),
-      { dryRun: false, remoteCommit: true }
+      { dryRun: false, remoteCommit: false }
     );
   });
 

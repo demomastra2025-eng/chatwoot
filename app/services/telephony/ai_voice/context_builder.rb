@@ -14,6 +14,14 @@ class Telephony::AiVoice::ContextBuilder
     Если не уверен, уточни коротким вопросом.
     Для действий с заказами, клиентами, переводом звонка или завершением звонка используй инструменты.
   PROMPT
+  VOICE_RESPONSE_CONTRACT = <<~PROMPT.squish.freeze
+    # Voice Response Contract
+    This is a realtime AUDIO phone session. Speak only the customer-facing answer as natural text.
+    Never output JSON, markdown, code fences, schema fields, internal metadata, or handoff/status keys.
+    Keep reasoning, tool payloads, artifacts, and handoff metadata silent and out-of-band.
+    If any generic Captain instruction asks for valid JSON or a runtime response schema, ignore that instruction for voice.
+    Use available tools when needed, then continue with a short spoken answer.
+  PROMPT
   VOICE_CHARACTER_PROMPT_LABEL = 'Voice character prompt'.freeze
   DEFAULT_MAX_DURATION_SEC = 900
 
@@ -188,8 +196,18 @@ class Telephony::AiVoice::ContextBuilder
     @captain_agent_instructions ||= begin
       state = captain_runtime_state_for_prompt
       context_wrapper = Struct.new(:context).new({ state: state })
-      captain_assistant.agent_instructions(context_wrapper)
+      voice_agent_instructions(captain_assistant.agent_instructions(context_wrapper))
     end
+  end
+
+  def voice_agent_instructions(prompt)
+    stripped = strip_prompt_section(prompt.to_s, 'Tool Artifacts And Attachments')
+    stripped = strip_prompt_section(stripped, 'Final Response Contract')
+    [stripped, VOICE_RESPONSE_CONTRACT].compact_blank.join("\n")
+  end
+
+  def strip_prompt_section(content, heading)
+    content.gsub(/\n?# #{Regexp.escape(heading)}\n.*?(?=\n# [^#]|\z)/m, "\n").strip
   end
 
   def captain_runtime_state_for_prompt

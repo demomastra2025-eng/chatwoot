@@ -1,4 +1,6 @@
 class Telephony::OperatorCallRejectService
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+
   TERMINAL_STATUS_EVENT_TYPES = {
     'rejected' => 'rejected', 'completed' => 'session_completed',
     'no_answer' => 'operator_no_answer',
@@ -82,7 +84,7 @@ class Telephony::OperatorCallRejectService
 
   def operator_agent_ref
     return operator_agent_binding.agent_ref if operator_agent_binding
-    return sip_profile.agent_ref if call_session.provider == 'sipuni'
+    return sip_profile.agent_ref if provider_owned_sip_provider?
 
     operator_agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
   end
@@ -334,7 +336,11 @@ class Telephony::OperatorCallRejectService
   end
 
   def bridge_termination_required?
-    call_session.provider != 'sipuni'
+    !provider_owned_sip_provider?
+  end
+
+  def provider_owned_sip_provider?
+    call_session.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def bridge_reason

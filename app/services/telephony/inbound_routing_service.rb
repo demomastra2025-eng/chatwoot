@@ -4,6 +4,7 @@ class Telephony::InboundRoutingService
   DEFAULT_REJECT_MESSAGE = 'We are unable to connect your call right now.'.freeze
   OPERATOR_CANDIDATE_LIMIT = 20
   DUPLICATE_BROADCAST_BRANCH_WINDOW = 5.seconds
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
 
   OperatorCandidate = Struct.new(:source, :agent_binding, :sip_profile, keyword_init: true) do
     def agent_binding_id
@@ -16,7 +17,7 @@ class Telephony::InboundRoutingService
 
     def agent_ref
       return agent_binding.agent_ref if agent_binding
-      return sip_profile.agent_ref if native_sipuni_profile?
+      return sip_profile.agent_ref if provider_owned_sip_profile?
 
       agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
     end
@@ -47,9 +48,11 @@ class Telephony::InboundRoutingService
       source.to_s
     end
 
-    def native_sipuni_profile?
-      sip_profile&.inbox&.channel&.provider.to_s == 'sipuni' ||
-        sip_profile&.provider_connection&.provider_kind.to_s == 'sipuni'
+    def provider_owned_sip_profile?
+      channel_provider = sip_profile&.inbox&.channel&.provider.to_s
+      return channel_provider.in?(Telephony::InboundRoutingService::PROVIDER_OWNED_SIP_PROVIDERS) if channel_provider.present?
+
+      sip_profile&.provider_connection&.provider_kind.to_s.in?(Telephony::InboundRoutingService::PROVIDER_OWNED_SIP_PROVIDERS)
     end
   end
 

@@ -169,7 +169,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq("sipuni-sip-device-acct-#{account.id}-ats01-kz-sipuni-com-056124100014")
   end
 
-  it 'keeps Asterisk analog employee extensions out of channel provider numbers and remote agent upserts' do
+  it 'keeps Asterisk analog direct SIP channels local-only during create dry-run' do
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
       channel_name: 'Analog external line',
@@ -197,22 +197,19 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body).to include('operation' => 'create', 'dry_run' => true, 'valid' => true)
     expect(body.dig('diagnostics', 'payload', 'provider_account_number')).to eq('+17770005175')
     expect(body.dig('diagnostics', 'payload', 'ingress_number')).to eq('+17770005175')
-    expect(body.dig('diagnostics', 'payload', 'fonoster_tel_url')).to eq('tel:+17770005175')
+    expect(body.dig('diagnostics', 'payload', 'fonoster_tel_url')).to be_nil
     expect(body.dig('diagnostics', 'payload', 'profiles').first).to include(
       'internal_extension' => '9098',
       'user_id' => agent.id,
-      'availability_mode' => 'external_extension'
+      'availability_mode' => 'browser_webphone'
     )
     expect(body.dig('diagnostics', 'payload', 'connection', 'host')).to eq('10.77.0.5')
     expect(body.dig('diagnostics', 'payload', 'connection', 'send_register')).to be(false)
-    expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq("asterisk-analog-#{account.id}-17770005175")
-    expect(body.dig('diagnostics', 'generated_refs', 'trunk_ref')).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
-    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).to include(
-      'upsert_trunk', 'upsert_number', 'update_number_route'
+    expect(body.dig('diagnostics', 'generated_refs', 'number_ref')).to eq(
+      "asterisk-analog-sip-device-acct-#{account.id}-10-77-0-5-17770005175"
     )
-    expect(body.dig('diagnostics', 'bridge_operations').map { |operation| operation['code'] }).not_to include(
-      'upsert_agent', 'upsert_agent_credentials'
-    )
+    expect(body.dig('diagnostics', 'generated_refs')).not_to include('trunk_ref')
+    expect(body.dig('diagnostics', 'bridge_operations')).to eq([])
     expect(body.to_json).not_to include('tel:9098')
   end
 
@@ -285,7 +282,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.to_json).not_to include('do-not-return-manager-secret')
   end
 
-  it 'accepts Binotel provider-managed SIP profile dry-runs with isolated bridge refs' do
+  it 'accepts Binotel provider-managed SIP profile dry-runs without bridge refs' do
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'binotel',
       channel_name: 'Binotel external line',
@@ -323,27 +320,16 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       'availability_mode' => 'external_extension'
     )
     expect(body.dig('diagnostics', 'generated_refs')).to include(
-      'number_ref' => "binotel-sip-device-acct-#{account.id}-sip53-binotel-example-binotel-account-9001",
-      'trunk_ref' => "trunk-binotel-acct-#{account.id}-sip53-binotel-example-binotel-1755"
+      'number_ref' => "binotel-sip-device-acct-#{account.id}-sip53-binotel-example-binotel-account-9001"
     )
-    expect(operation_codes).to include('upsert_trunk', 'upsert_number', 'update_number_route')
+    expect(body.dig('diagnostics', 'generated_refs')).not_to include('trunk_ref')
+    expect(operation_codes).to eq([])
     expect(operation_codes).not_to include('upsert_sipuni_gateway', 'upsert_agent', 'upsert_agent_credentials')
     expect(body.to_json).not_to include('do-not-return-binotel-secret')
   end
 
-  it 'allows Binotel host-only remote create without a gateway credentials blocker' do
-    provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
-    captured_args = nil
-    allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
-    allow(provisioner).to receive(:execute) do |args|
-      captured_args = args
-      {
-        status: 'succeeded',
-        remote_commit: true,
-        provisioning_run: { status: 'succeeded' },
-        executed_operations: []
-      }
-    end
+  it 'creates Binotel host-only channels as local native voice channels' do
+    expect(Telephony::VirtualPbx::RemoteProvisioner).not_to receive(:new)
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'binotel',
       channel_name: '+77000781755',
@@ -365,20 +351,29 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
-    operation_keys = captured_args.dig(:plan, :operations).map { |operation| operation[:key] }
 
     expect(body).to include(
       'operation' => 'create',
       'dry_run' => false,
       'valid' => true,
       'local_commit' => true,
-      'remote_commit' => true,
-      'status' => 'succeeded'
+      'remote_commit' => false,
+      'status' => 'local_committed'
     )
-    expect(captured_args.dig(:desired_state, :provider_kind)).to eq('binotel')
-    expect(captured_args.dig(:desired_state, :connection, :send_register)).to be(false)
-    expect(operation_keys).to include('upsert_trunk', 'upsert_number', 'update_number_route')
-    expect(operation_keys).not_to include('missing_sipuni_gateway_credentials', 'upsert_sipuni_gateway')
+    inbox = Inbox.find(body.dig('ui_config', 'inbox_id'))
+    expect(inbox.channel.provider).to eq('binotel')
+    expect(inbox.channel.provider_config_hash.with_indifferent_access).to include(
+      provider_kind: 'binotel',
+      number_ref: "binotel-sip-device-acct-#{account.id}-sip53-binotel-com-77000781755"
+    )
+    expect(inbox.telephony_number_binding).to have_attributes(
+      provider: 'binotel',
+      app_ref: nil,
+      trunk_ref: nil,
+      fonoster_tel_url: nil
+    )
+    expect(body.dig('provisioning_plan', 'operations')).to eq([])
+    expect(body.dig('provisioning_plan', 'items')).to all(include('status' => 'ready'))
   end
 
   it 'accepts local-only create dry-run without shared provider password' do
@@ -485,17 +480,14 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     connection_names = account.telephony_provider_connections.order(:name).pluck(:name)
     expect(connection_names).to contain_exactly(
-      "trunk-asterisk-analog-acct-#{account.id}-analog-1001",
-      "trunk-asterisk-analog-acct-#{account.id}-analog-1002"
+      "asterisk-analog-sip-device-acct-#{account.id}-10-77-0-5-analog-1001",
+      "asterisk-analog-sip-device-acct-#{account.id}-10-88-0-5-analog-1002"
     )
     expect(account.telephony_provider_connections.order(:name).pluck(:host, :port, :transport)).to eq([
                                                                                                         ['10.77.0.5', 5070, 'tcp'],
                                                                                                         ['10.88.0.5', 5060, 'udp']
                                                                                                       ])
-    expect(account.telephony_number_bindings.order(:ingress_number).pluck(:trunk_ref)).to eq([
-                                                                                               "trunk-asterisk-analog-acct-#{account.id}-analog-1001",
-                                                                                               "trunk-asterisk-analog-acct-#{account.id}-analog-1002"
-                                                                                             ])
+    expect(account.telephony_number_bindings.order(:ingress_number).pluck(:trunk_ref)).to eq([nil, nil])
   end
 
   it 'does not store OneLink bridge refs in local Sipuni channel configuration' do
@@ -519,6 +511,91 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(number_binding.runtime_app_ref).to be_nil
     expect(number_binding.trunk_ref).to be_nil
     expect(number_binding.fonoster_tel_url).to be_nil
+  end
+
+  it 'clears bridge refs when a legacy Fonoster Binotel channel is updated to native Binotel' do
+    voice_channel = create(
+      :channel_voice,
+      :fonoster,
+      account: account,
+      phone_number: '+17770005555',
+      provider_config: {
+        provider_kind: 'binotel',
+        number_ref: 'legacy-binotel-number-ref',
+        app_ref: 'legacy-app-ref',
+        runtime_app_ref: 'legacy-runtime-app-ref',
+        trunk_ref: 'legacy-trunk-ref',
+        fonoster_tel_url: 'tel:+17770005555',
+        fonoster_number_ref: 'legacy-fonoster-number-ref',
+        operator_agent_ref: 'legacy-operator-agent-ref',
+        display_phone_number: '+17770005555',
+        provider_account_number: '+17770005555',
+        ingress_number: '+17770005555',
+        routing_mode: 'operator',
+        fallback_mode: 'reject',
+        managed_by: 'onelink',
+        ownership_status: 'local'
+      }
+    )
+    voice_channel.inbox.inbox_members.find_or_create_by!(user_id: agent.id)
+
+    expect(Telephony::VirtualPbx::RemoteProvisioner).not_to receive(:new)
+
+    put "#{base_path}/#{voice_channel.inbox.id}",
+        params: {
+          dry_run: false,
+          remote_commit: true,
+          provider_kind: 'binotel',
+          channel_name: '+17770005555',
+          display_phone_number: '+17770005555',
+          provider_account_number: '+17770005555',
+          ingress_number: '+17770005555',
+          connection: { host: 'sip53.binotel.com' },
+          routing: {
+            mode: 'operator',
+            fallback_mode: 'reject',
+            operator_distribution_mode: 'broadcast'
+          },
+          profiles: [
+            {
+              user_id: agent.id,
+              internal_extension: '901',
+              sip_username: 'pq4dyw5f',
+              sip_password: 'do-not-return-binotel-profile-secret',
+              availability_mode: 'browser_webphone',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('status' => 'local_committed', 'remote_commit' => false)
+    expect(body.dig('provisioning_plan', 'operations')).to eq([])
+
+    inbox = voice_channel.inbox.reload
+    provider_config = inbox.channel.provider_config_hash.with_indifferent_access
+    provider_connection = inbox.telephony_number_binding.provider_connection
+    profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
+
+    expect(inbox.channel.provider).to eq('binotel')
+    expect(provider_config.values_at(:app_ref, :runtime_app_ref, :trunk_ref, :fonoster_tel_url, :fonoster_number_ref,
+                                     :operator_agent_ref)).to all(be_nil)
+    expect(provider_connection).to have_attributes(fonoster_trunk_ref: nil, fonoster_credentials_ref: nil)
+    expect(inbox.telephony_number_binding).to have_attributes(
+      app_ref: nil,
+      runtime_app_ref: nil,
+      trunk_ref: nil,
+      fonoster_tel_url: nil
+    )
+    expect(profile).to have_attributes(
+      fonoster_agent_ref: nil,
+      fonoster_credentials_ref: nil,
+      sip_host: 'sip53.binotel.com'
+    )
+    expect(body.to_json).not_to include('do-not-return-binotel-profile-secret')
   end
 
   it 'keeps remote mutation disabled by default for non-dry-run saves' do
@@ -630,7 +707,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(response.parsed_body.to_json).not_to include('raw-profile-password')
   end
 
-  it 'defaults Asterisk analog employee profiles to provider-managed external extensions without SIP credentials' do
+  it 'defaults Asterisk analog employee profiles to browser webphone and skips remote provisioning' do
     create_payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
       channel_name: 'Analog line 9098',
@@ -646,18 +723,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     Inbox.find(inbox_id).inbox_members.find_or_create_by!(user_id: agent.id)
 
-    provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
-    captured_args = nil
-    allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
-    allow(provisioner).to receive(:execute) do |args|
-      captured_args = args
-      {
-        status: 'succeeded',
-        remote_commit: true,
-        provisioning_run: { status: 'succeeded' },
-        executed_operations: []
-      }
-    end
+    expect(Telephony::VirtualPbx::RemoteProvisioner).not_to receive(:new)
 
     put "#{base_path}/#{inbox_id}",
         params: {
@@ -680,23 +746,23 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
         as: :json
 
     expect(response).to have_http_status(:ok)
-    desired_profile = captured_args.dig(:desired_state, :profiles).first
-    expect(desired_profile).to include(
+    body = response.parsed_body.fetch('payload')
+    profile = Inbox.find(inbox_id).telephony_sip_profiles.find_by!(user_id: agent.id)
+
+    expect(body).to include('remote_commit' => false, 'status' => 'local_committed')
+    expect(body.dig('provisioning_plan', 'operations')).to eq([])
+    expect(profile).to have_attributes(
       internal_extension: '9098',
       agent_aor: 'sip:9098@10.77.0.5',
-      availability_mode: 'external_extension'
+      availability_mode: 'browser_webphone',
+      sip_username: nil,
+      fonoster_agent_ref: nil,
+      fonoster_credentials_ref: nil
     )
-    expect(captured_args.dig(:desired_state, :connection)).to include(
+    expect(profile.provider_connection).to have_attributes(
       host: '10.77.0.5',
       port: 5070,
       transport: 'tcp'
-    )
-    expect(desired_profile).not_to include(:sip_username, :sip_password, :credentials_ref)
-    expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).to include(
-      'upsert_trunk', 'upsert_number', 'update_number_route'
-    )
-    expect(captured_args.dig(:plan, :operations).map { |operation| operation[:key] }).not_to include(
-      'upsert_agent', 'upsert_agent_credentials'
     )
   end
 

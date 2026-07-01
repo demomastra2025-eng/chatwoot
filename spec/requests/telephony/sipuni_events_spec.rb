@@ -290,6 +290,38 @@ RSpec.describe 'Sipuni events webhook', type: :request do
     )
   end
 
+  it 'authenticates a Sipuni webhook token stored on the voice channel' do
+    voice_channel.update!(
+      provider_config: voice_channel.provider_config.merge(
+        'sipuni_events_webhook_token' => token
+      )
+    )
+
+    perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+      post "/sipuni/events/#{token}",
+           params: {
+             event: '1',
+             call_id: 'sipuni-channel-token-call',
+             src_num: '77070001002',
+             src_type: '1',
+             dst_num: '77070001001',
+             dst_type: '2',
+             short_dst_num: '505',
+             timestamp: Time.current.to_i
+           }
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('success' => true, 'status' => 'accepted')
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'sipuni:sipuni-channel-token-call')
+    expect(call_session).to have_attributes(
+      provider: 'sipuni',
+      inbox_id: voice_inbox.id,
+      number_binding_id: number_binding.id
+    )
+  end
+
   it 'processes terminal Sipuni events inline so the call UI closes without queue latency' do
     started_at = Time.current.to_i - 30
 

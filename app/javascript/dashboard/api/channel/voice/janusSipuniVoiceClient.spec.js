@@ -79,6 +79,17 @@ const sipuniSession = {
   },
 };
 
+const binotelSession = {
+  ...sipuniSession,
+  provider: 'binotel',
+  sip: {
+    username: 'pq4dyw5f',
+    password: 'test-binotel-password',
+    host: 'sip53.binotel.com',
+    internalExtension: '901',
+  },
+};
+
 describe('janusSipuniVoiceClient', () => {
   beforeEach(async () => {
     audioPlaySpy = vi
@@ -124,5 +135,26 @@ describe('janusSipuniVoiceClient', () => {
     ]);
     expect(janusDestroyMock).toHaveBeenCalledTimes(1);
     expect(pluginDetachMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Binotel as the active provider for Janus SIP sessions', async () => {
+    const state = await JanusSipuniVoiceClient.initializeDevice(
+      binotelSession,
+      {
+        inboxId: 4769,
+      }
+    );
+
+    expect(state).toEqual(
+      expect.objectContaining({
+        provider: 'binotel',
+        callingSupported: true,
+        registered: true,
+        internalExtension: '901',
+      })
+    );
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(true, {
+      inboxId: 4769,
+    });
   });
 });

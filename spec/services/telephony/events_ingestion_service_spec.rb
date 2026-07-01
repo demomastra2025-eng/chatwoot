@@ -77,6 +77,31 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(message).to eq(existing_message)
     end
 
+    it 'normalizes caller_hung_up finalize status into the exact voice bubble canonical status' do
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'in_progress', 'call_sid' => 'call-retry-1' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-finalize-caller-hung-up-1',
+          event: 'finalize',
+          event_type: 'finalize',
+          status: 'caller_hung_up',
+          reason: 'caller_hangup'
+        )
+      ).perform
+
+      expect(result.reload.status).to eq('cancelled')
+      expect(message.reload.content_attributes.dig('data', 'status')).to eq('cancelled')
+    end
+
     it 'stores native answered audit fields using canonical lifecycle status' do
       occurred_at = Time.zone.parse(1.minute.ago.iso8601)
 
@@ -2394,6 +2419,59 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(message.content_attributes.dig('data', 'status')).to eq('completed')
       expect(legacy_message.reload.content_attributes.dig('data', 'recording')).to be_blank
       expect(legacy_message.content_attributes.dig('data', 'recording_ref')).to be_blank
+    end
+
+    it 'keeps playable recording metadata while flagging missing voice-agent outbound audio as degraded' do
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-recording-ready-degraded-outbound-1',
+          event: 'recording_ready',
+          occurred_at: Time.current.iso8601,
+          payload: {
+            recording_ref: 'recordings/accounts/1/calls/call-retry-1.wav',
+            storage_key: 'voice-recordings/1/call-retry-1.wav',
+            byte_size: 12_345,
+            content_type: 'audio/wav',
+            duration_ms: 30_000,
+            recorded_by: 'onelink-ai-voice',
+            mode: 'ai_voice',
+            layout: 'dual_channel_stereo',
+            channel_layout: { left: 'caller', right: 'voice_agent' },
+            inbound_bytes: 4096,
+            outbound_bytes: 0,
+            recording_status: 'degraded',
+            degraded: true,
+            missing_direction: 'outbound',
+            reason: 'voice_agent_audio_missing'
+          }
+        )
+      ).perform
+
+      expect(result.reload.metadata['recording']).to include(
+        'storage_key' => 'voice-recordings/1/call-retry-1.wav',
+        'inbound_bytes' => 4096,
+        'outbound_bytes' => 0,
+        'recording_status' => 'degraded',
+        'degraded' => true,
+        'missing_direction' => 'outbound',
+        'reason' => 'voice_agent_audio_missing'
+      )
+      expect(message.reload.content_attributes.dig('data', 'recording')).to include(
+        'recording_status' => 'degraded',
+        'degraded' => true,
+        'missing_direction' => 'outbound'
+      )
+      expect(message.content_attributes.dig('data', 'recording_url')).to be_present
     end
 
     it 'attaches an outbound recording to the existing call session when a technical ingress belongs to another channel' do

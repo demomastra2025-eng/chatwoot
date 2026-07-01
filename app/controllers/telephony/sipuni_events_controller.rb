@@ -24,11 +24,21 @@ class Telephony::SipuniEventsController < ActionController::API
 
   private
 
+  attr_reader :sipuni_channel
+
   def request_payload
-    params.to_unsafe_h.except('controller', 'action', 'token').merge(
+    payload = params.to_unsafe_h.except('controller', 'action', 'token').merge(
       'received_at' => Time.current.iso8601,
       'request_id' => request.request_id
     )
+
+    return payload if sipuni_channel.blank?
+
+    config = sipuni_channel.provider_config_hash.with_indifferent_access
+    payload['chatwoot_account_id'] ||= sipuni_channel.account_id
+    payload['chatwoot_inbox_id'] ||= sipuni_channel.inbox&.id
+    payload['number_ref'] ||= config[:number_ref]
+    payload
   end
 
   def fast_incoming_start_event?(payload)
@@ -74,18 +84,59 @@ class Telephony::SipuniEventsController < ActionController::API
   end
 
   def authenticate_token!
-    if expected_token.blank?
+    token = params[:token].to_s
+    if token.blank?
+      render json: { success: false, error: 'unauthorized' }, status: :unauthorized
+      return
+    end
+
+    return if token_matches?(token, legacy_expected_token)
+
+    @sipuni_channel = sipuni_channel_for_token(token)
+    return if @sipuni_channel.present?
+
+    if legacy_expected_token.blank? && !channel_tokens_configured?
       render json: { success: false, error: 'webhook_token_not_configured' }, status: :service_unavailable
       return
     end
 
-    return if ActiveSupport::SecurityUtils.secure_compare(params[:token].to_s, expected_token)
-
     render json: { success: false, error: 'unauthorized' }, status: :unauthorized
   end
 
-  def expected_token
+  def legacy_expected_token
     ENV.fetch('SIPUNI_WEBHOOK_TOKEN', '').presence ||
       ENV.fetch('TELEPHONY_SIPUNI_WEBHOOK_TOKEN', '').presence
+  end
+
+  def token_matches?(token, expected_token)
+    return false if token.blank? || expected_token.blank?
+    return false unless token.bytesize == expected_token.bytesize
+
+    ActiveSupport::SecurityUtils.secure_compare(token, expected_token)
+  end
+
+  def sipuni_channel_for_token(token)
+    channels = Channel::Voice
+               .where(provider: 'sipuni')
+               .where(
+                 "provider_config ->> 'sipuni_events_webhook_token' = :token OR " \
+                 "provider_config ->> 'sipuni_webhook_token' = :token",
+                 token: token
+               )
+               .limit(2)
+               .to_a
+    return unless channels.one?
+
+    channels.first
+  end
+
+  def channel_tokens_configured?
+    Channel::Voice
+      .where(provider: 'sipuni')
+      .where(
+        "NULLIF(provider_config ->> 'sipuni_events_webhook_token', '') IS NOT NULL OR " \
+        "NULLIF(provider_config ->> 'sipuni_webhook_token', '') IS NOT NULL"
+      )
+      .exists?
   end
 end

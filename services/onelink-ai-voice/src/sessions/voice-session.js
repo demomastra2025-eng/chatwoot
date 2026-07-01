@@ -1,4 +1,5 @@
 const { TranscriptBuffer } = require('../transcripts/transcript-buffer');
+const { normalizeAiResponseText } = require('../transcripts/ai-response-normalizer');
 const { ToolExecutor } = require('../tools/tool-executor');
 const { safeReason } = require('../utils/timeout');
 const { randomUUID } = require('node:crypto');
@@ -65,7 +66,10 @@ class VoiceSession {
   }
 
   recordAiTranscript(text, options = {}) {
-    return this.recordTranscript({ speaker: 'ai', text, ...options });
+    const normalized = normalizeAiResponseText(text);
+    if (!normalized) return null;
+
+    return this.recordTranscript({ speaker: 'ai', ...options, ...normalized });
   }
 
   recordTranscript(item) {

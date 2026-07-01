@@ -79,6 +79,7 @@ class Telephony::CallSession < ApplicationRecord
     'operator_timeout' => 'no_answer',
     'operator_failed' => 'failed',
     'caller_hangup' => 'cancelled',
+    'caller_hung_up' => 'cancelled',
     'timeout' => 'no_answer',
     'session_completed' => 'completed',
     'session_failed' => 'failed',

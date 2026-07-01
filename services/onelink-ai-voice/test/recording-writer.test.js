@@ -35,6 +35,8 @@ test('RecordingWriter stores a playable OneLink-owned stereo WAV and emits recor
     assert.equal(result.sample_rate, 8000);
     assert.equal(result.inbound_bytes, 4);
     assert.equal(result.outbound_bytes, 2);
+    assert.equal(result.recording_status, 'ready');
+    assert.equal(result.degraded, false);
     assert.equal(events.length, 1);
     assert.equal(events[0].event_type, 'recording_ready');
     assert.equal(events[0].call_ref, 'call-rec-1');
@@ -55,6 +57,63 @@ test('RecordingWriter stores a playable OneLink-owned stereo WAV and emits recor
     assert.equal(stored.subarray(36, 40).toString('ascii'), 'data');
     assert.equal(stored.readUInt32LE(40), 12);
     assert.deepEqual(stereoSamples(stored.subarray(44)), [1000, 0, -1000, 0, 0, 2000]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('RecordingWriter marks the recording degraded when the voice-agent outbound channel is empty', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'onelink-recording-'));
+  const events = [];
+  const writer = new RecordingWriter({
+    client: { sendEvent: async payload => { events.push(payload); return { status: 'ok' }; } },
+    rootDir: dir,
+    callRef: 'call-rec-missing-outbound',
+    accountId: 42,
+    startedAt: new Date('2026-05-15T10:00:00.000Z')
+  });
+
+  try {
+    await writer.writeInbound(pcm16([1000, -1000]));
+    const result = await writer.close({ endedAt: new Date('2026-05-15T10:00:01.000Z') });
+
+    assert.equal(result.inbound_bytes, 4);
+    assert.equal(result.outbound_bytes, 0);
+    assert.equal(result.recording_status, 'degraded');
+    assert.equal(result.degraded, true);
+    assert.equal(result.missing_direction, 'outbound');
+    assert.equal(result.reason, 'voice_agent_audio_missing');
+    assert.equal(events[0].event_type, 'recording_ready');
+    assert.equal(events[0].payload.recording_status, 'degraded');
+    assert.equal(events[0].payload.missing_direction, 'outbound');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('RecordingWriter marks a zero-byte recording degraded instead of ready', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'onelink-recording-'));
+  const events = [];
+  const writer = new RecordingWriter({
+    client: { sendEvent: async payload => { events.push(payload); return { status: 'ok' }; } },
+    rootDir: dir,
+    callRef: 'call-rec-empty',
+    accountId: 42,
+    startedAt: new Date('2026-05-15T10:00:00.000Z')
+  });
+
+  try {
+    await writer.start({ sampleRate: 8000 });
+    const result = await writer.close({ endedAt: new Date('2026-05-15T10:00:01.000Z') });
+
+    assert.equal(result.inbound_bytes, 0);
+    assert.equal(result.outbound_bytes, 0);
+    assert.equal(result.recording_status, 'degraded');
+    assert.equal(result.degraded, true);
+    assert.equal(result.missing_direction, 'both');
+    assert.equal(result.reason, 'empty_recording');
+    assert.equal(events[0].payload.recording_status, 'degraded');
+    assert.equal(events[0].payload.reason, 'empty_recording');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

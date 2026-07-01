@@ -1,4 +1,6 @@
 class Telephony::CallsService
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+
   BRIDGE_STATUS_MAP = {
     'queued' => 'created',
     'initiated' => 'created',
@@ -30,7 +32,9 @@ class Telephony::CallsService
     number_binding = ensure_number_binding!(inbox)
     operator_identity = operator_identity_for(inbox, user)
     agent_binding = operator_identity&.agent_binding
-    return create_sipuni_outbound!(number_binding, inbox, contact, user, conversation, operator_identity) if sipuni_inbox?(inbox)
+    if provider_owned_sip_inbox?(inbox)
+      return create_provider_owned_sip_outbound!(number_binding, inbox, contact, user, conversation, operator_identity)
+    end
 
     response = bridge_client.post(
       '/telephony/calls/outbound',
@@ -129,10 +133,11 @@ class Telephony::CallsService
     }.compact
   end
 
-  def create_sipuni_outbound!(number_binding, inbox, contact, user, conversation, operator_identity)
-    call_ref = "sipuni:local:#{SecureRandom.uuid}"
+  def create_provider_owned_sip_outbound!(number_binding, inbox, contact, user, conversation, operator_identity)
+    provider = inbox.channel.provider
+    call_ref = "#{provider}:local:#{SecureRandom.uuid}"
     from_number = number_binding.phone_number || inbox.channel&.phone_number
-    metadata = sipuni_outbound_metadata(number_binding, inbox, contact, user, conversation, operator_identity, call_ref)
+    metadata = provider_owned_sip_outbound_metadata(number_binding, inbox, contact, user, conversation, operator_identity, call_ref)
 
     call_session = account.telephony_call_sessions.find_or_initialize_by(external_call_ref: call_ref)
     call_session.assign_attributes(
@@ -141,7 +146,7 @@ class Telephony::CallsService
       inbox: inbox,
       number_binding: number_binding,
       agent_binding: operator_identity&.agent_binding,
-      provider: 'sipuni',
+      provider: provider,
       status: 'created',
       direction: 'outbound',
       from_number: from_number,
@@ -157,7 +162,7 @@ class Telephony::CallsService
       status: call_session.status,
       browser_join_supported: browser_join_supported?(operator_identity),
       response: {
-        'provider' => 'sipuni',
+        'provider' => provider,
         'call_ref' => call_ref,
         'status' => call_session.status,
         'browser_join_supported' => browser_join_supported?(operator_identity)
@@ -166,16 +171,17 @@ class Telephony::CallsService
     }
   end
 
-  def sipuni_outbound_metadata(number_binding, inbox, contact, user, conversation, operator_identity, call_ref)
+  def provider_owned_sip_outbound_metadata(number_binding, inbox, contact, user, conversation, operator_identity, call_ref)
+    provider = inbox.channel.provider
     operator_metadata = operator_identity_metadata(operator_identity)
-    operator_route_metadata = sipuni_operator_route_metadata(operator_identity)
+    operator_route_metadata = provider_owned_sip_operator_route_metadata(operator_identity)
     {
-      'sipuni_call_ref' => call_ref,
+      "#{provider}_call_ref" => call_ref,
       'browser_join_supported' => browser_join_supported?(operator_identity),
       'operator_identity' => operator_metadata,
       'metadata' => {
         'source' => 'onelink_browser_janus_sip',
-        'provider' => 'sipuni',
+        'provider' => provider,
         'route_action' => 'operator',
         'direction' => 'outbound',
         'call_direction' => 'outbound',
@@ -191,7 +197,7 @@ class Telephony::CallsService
     }.compact
   end
 
-  def sipuni_operator_route_metadata(operator_identity)
+  def provider_owned_sip_operator_route_metadata(operator_identity)
     profile = operator_identity&.sip_profile
     return {} if profile.blank?
 
@@ -219,8 +225,8 @@ class Telephony::CallsService
     }.compact
   end
 
-  def sipuni_inbox?(inbox)
-    inbox&.channel&.provider == 'sipuni'
+  def provider_owned_sip_inbox?(inbox)
+    inbox&.channel&.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def operator_identity_for(inbox, user)

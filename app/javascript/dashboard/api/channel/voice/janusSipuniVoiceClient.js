@@ -161,7 +161,7 @@ const getMediaDevices = () => {
   return navigator.mediaDevices || null;
 };
 
-class JanusSipuniVoiceClient extends EventTarget {
+export class JanusSipuniVoiceClient extends EventTarget {
   constructor() {
     super();
     this.janus = null;
@@ -172,6 +172,8 @@ class JanusSipuniVoiceClient extends EventTarget {
     this.localTracks = {};
     this.sessionConfig = null;
     this.sessionSignature = null;
+    this.sessionKey = null;
+    this.sipProfileId = null;
     this.inboxId = null;
     this.initialized = false;
     this.registered = false;
@@ -195,13 +197,21 @@ class JanusSipuniVoiceClient extends EventTarget {
     const sip = sessionConfig.sip || {};
     return {
       ...sessionConfig,
-      provider: 'sipuni',
+      provider: sessionConfig.provider || 'sipuni',
       callingSupported:
         sessionConfig.callingSupported ??
         sessionConfig.calling_supported ??
         true,
       janusServer: sessionConfig.janusServer || sessionConfig.janus_server,
       iceServers: sessionConfig.iceServers || sessionConfig.ice_servers || [],
+      sessionKey:
+        sessionConfig.sessionKey ||
+        sessionConfig.session_key ||
+        sessionConfig.webphoneSessionKey ||
+        sessionConfig.webphone_session_key,
+      sipProfileId:
+        sessionConfig.sipProfileId || sessionConfig.sip_profile_id || null,
+      inboxId: sessionConfig.inboxId || sessionConfig.inbox_id || null,
       sip: {
         username:
           sip.username ||
@@ -282,11 +292,18 @@ class JanusSipuniVoiceClient extends EventTarget {
     return JanusSipuniVoiceClient.initPromise;
   }
 
+  currentProvider() {
+    return this.sessionConfig?.provider || 'sipuni';
+  }
+
   sessionState(sessionConfig = this.sessionConfig) {
     const normalized =
       JanusSipuniVoiceClient.normalizeSessionConfig(sessionConfig);
     return {
-      provider: 'sipuni',
+      provider: normalized.provider,
+      sessionKey: normalized.sessionKey,
+      sipProfileId: normalized.sipProfileId,
+      inboxId: this.inboxId || normalized.inboxId,
       callingSupported: normalized.callingSupported !== false,
       registered: this.registered,
       pendingIncomingCall: Boolean(this.pendingIncomingCall),
@@ -297,13 +314,16 @@ class JanusSipuniVoiceClient extends EventTarget {
   async initializeDevice(sessionConfig, { inboxId = null } = {}) {
     const normalized =
       JanusSipuniVoiceClient.normalizeSessionConfig(sessionConfig);
+    const resolvedInboxId = inboxId || normalized.inboxId || null;
 
     if (!normalized.callingSupported) {
       await this.destroyDevice({
         preserveMicrophonePrewarm: true,
       });
       this.sessionConfig = normalized;
-      this.inboxId = inboxId;
+      this.sessionKey = normalized.sessionKey;
+      this.sipProfileId = normalized.sipProfileId;
+      this.inboxId = resolvedInboxId;
       return this.sessionState(normalized);
     }
 
@@ -312,10 +332,10 @@ class JanusSipuniVoiceClient extends EventTarget {
         preserveMicrophonePrewarm: true,
       });
       this.sessionConfig = normalized;
-      this.inboxId = inboxId;
-      throw new Error(
-        'Browser calling is not configured for this Sipuni agent'
-      );
+      this.sessionKey = normalized.sessionKey;
+      this.sipProfileId = normalized.sipProfileId;
+      this.inboxId = resolvedInboxId;
+      throw new Error('Browser calling is not configured for this SIP agent');
     }
 
     const signature = JSON.stringify({
@@ -324,13 +344,17 @@ class JanusSipuniVoiceClient extends EventTarget {
       username: normalized.sip.username,
       host: normalized.sip.host,
       proxy: normalized.sip.proxy,
-      inboxId,
+      inboxId: resolvedInboxId,
+      sessionKey: normalized.sessionKey,
+      sipProfileId: normalized.sipProfileId,
       internalExtension: normalized.sip.internalExtension,
     });
 
     if (this.initialized && this.sessionSignature === signature) {
       this.sessionConfig = normalized;
-      this.inboxId = inboxId;
+      this.sessionKey = normalized.sessionKey;
+      this.sipProfileId = normalized.sipProfileId;
+      this.inboxId = resolvedInboxId;
       await this.ensureRegistered();
       return this.sessionState(normalized);
     }
@@ -340,7 +364,9 @@ class JanusSipuniVoiceClient extends EventTarget {
     });
 
     this.sessionConfig = normalized;
-    this.inboxId = inboxId;
+    this.sessionKey = normalized.sessionKey;
+    this.sipProfileId = normalized.sipProfileId;
+    this.inboxId = resolvedInboxId;
     this.sessionSignature = signature;
     this.remoteAudioElement = this.ensureRemoteAudioElement();
     await JanusSipuniVoiceClient.initJanus();
@@ -368,7 +394,7 @@ class JanusSipuniVoiceClient extends EventTarget {
     return new Promise((resolve, reject) => {
       this.janus.attach({
         plugin: 'janus.plugin.sip',
-        opaqueId: `sipuni-${Date.now()}`,
+        opaqueId: `janus-sip-${Date.now()}`,
         success: pluginHandle => resolve(pluginHandle),
         error: error => reject(error),
         onmessage: (msg, jsep) => this.handleSipMessage(msg, jsep),
@@ -437,14 +463,16 @@ class JanusSipuniVoiceClient extends EventTarget {
       this.registrationReject?.(
         new Error(`${result.code || ''} ${result.reason || ''}`.trim())
       );
-      this.dispatchEvent(createCallUnregisteredEvent({ provider: 'sipuni' }));
+      this.dispatchEvent(
+        createCallUnregisteredEvent(this.sessionEventDetail())
+      );
       return;
     }
 
     if (event === 'registered') {
       this.markRegistered();
       this.registrationResolve?.(this.sessionState());
-      this.dispatchEvent(createCallRegisteredEvent({ provider: 'sipuni' }));
+      this.dispatchEvent(createCallRegisteredEvent(this.sessionEventDetail()));
       return;
     }
 
@@ -459,7 +487,7 @@ class JanusSipuniVoiceClient extends EventTarget {
       this.currentCallDirection = 'inbound';
       this.dispatchEvent(
         createCallIncomingEvent({
-          provider: 'sipuni',
+          ...this.sessionEventDetail(),
           callRef: this.currentCallRef,
           from: result.username || result.displayname,
         })
@@ -608,9 +636,19 @@ class JanusSipuniVoiceClient extends EventTarget {
 
   callEventDetail() {
     return {
-      provider: 'sipuni',
+      ...this.sessionEventDetail(),
       callRef: this.currentCallRef,
       callDirection: this.currentCallDirection,
+    };
+  }
+
+  sessionEventDetail() {
+    return {
+      provider: this.currentProvider(),
+      sessionKey: this.sessionKey,
+      sipProfileId: this.sipProfileId,
+      inboxId: this.inboxId,
+      internalExtension: this.sessionConfig?.sip?.internalExtension,
     };
   }
 
@@ -690,7 +728,7 @@ class JanusSipuniVoiceClient extends EventTarget {
             jsep,
           });
           this.scheduleOutboundSetupTimeout();
-          resolve({ provider: 'sipuni', calling: true, uri });
+          resolve({ ...this.sessionEventDetail(), calling: true, uri });
         },
         error: error => {
           this.hasActiveCall = false;
@@ -719,7 +757,7 @@ class JanusSipuniVoiceClient extends EventTarget {
           });
           this.pendingIncomingCall = null;
           this.hasActiveCall = true;
-          resolve({ provider: 'sipuni', answered: true });
+          resolve({ ...this.sessionEventDetail(), answered: true });
         },
         error: reject,
       });
@@ -757,7 +795,7 @@ class JanusSipuniVoiceClient extends EventTarget {
     this.remoteTracks = {};
     this.rebuildRemoteStream();
     this.resetCurrentCall();
-    return { provider: 'sipuni', declined: true };
+    return { ...this.sessionEventDetail(), declined: true };
   }
 
   async endClientCall() {
@@ -785,7 +823,7 @@ class JanusSipuniVoiceClient extends EventTarget {
     this.remoteTracks = {};
     this.rebuildRemoteStream();
     this.resetCurrentCall();
-    return hadCall ? { provider: 'sipuni', ended: true } : null;
+    return hadCall ? { ...this.sessionEventDetail(), ended: true } : null;
   }
 
   scheduleOutboundSetupTimeout() {
@@ -828,7 +866,11 @@ class JanusSipuniVoiceClient extends EventTarget {
   async prewarmMicrophone({ ttlMs = WEBPHONE_MICROPHONE_PREWARM_TTL_MS } = {}) {
     if (hasLiveAudioTrack(this.microphonePrewarmStream)) {
       this.scheduleMicrophonePrewarmCleanup(ttlMs);
-      return { provider: 'sipuni', prewarmed: true, reused: true };
+      return {
+        ...this.sessionEventDetail(),
+        prewarmed: true,
+        reused: true,
+      };
     }
 
     if (this.microphonePrewarmPromise) return this.microphonePrewarmPromise;
@@ -836,7 +878,7 @@ class JanusSipuniVoiceClient extends EventTarget {
     const mediaDevices = getMediaDevices();
     if (typeof mediaDevices?.getUserMedia !== 'function') {
       return {
-        provider: 'sipuni',
+        ...this.sessionEventDetail(),
         prewarmed: false,
         reason: 'media_devices_unavailable',
       };
@@ -848,15 +890,19 @@ class JanusSipuniVoiceClient extends EventTarget {
       .then(stream => {
         if (generation !== this.microphonePrewarmGeneration) {
           stopMediaStream(stream);
-          return { provider: 'sipuni', prewarmed: false, reason: 'cancelled' };
+          return {
+            ...this.sessionEventDetail(),
+            prewarmed: false,
+            reason: 'cancelled',
+          };
         }
 
         this.microphonePrewarmStream = stream;
         this.scheduleMicrophonePrewarmCleanup(ttlMs);
-        return { provider: 'sipuni', prewarmed: true };
+        return { ...this.sessionEventDetail(), prewarmed: true };
       })
       .catch(error => ({
-        provider: 'sipuni',
+        ...this.sessionEventDetail(),
         prewarmed: false,
         reason: error?.name || 'microphone_unavailable',
       }))
@@ -875,7 +921,7 @@ class JanusSipuniVoiceClient extends EventTarget {
     stopMediaStream(this.microphonePrewarmStream);
     this.microphonePrewarmStream = null;
     this.microphonePrewarmPromise = null;
-    return { provider: 'sipuni', stopped: true };
+    return { ...this.sessionEventDetail(), stopped: true };
   }
 
   async releaseMicrophonePrewarm({ settle = false } = {}) {
@@ -895,7 +941,7 @@ class JanusSipuniVoiceClient extends EventTarget {
       await wait(WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS);
     }
 
-    return { provider: 'sipuni', stopped: true };
+    return { ...this.sessionEventDetail(), stopped: true };
   }
 
   reportPresence(registered) {
@@ -954,6 +1000,8 @@ class JanusSipuniVoiceClient extends EventTarget {
     if (!preserveSessionConfig) {
       this.sessionConfig = null;
       this.sessionSignature = null;
+      this.sessionKey = null;
+      this.sipProfileId = null;
       this.inboxId = null;
     }
 
@@ -974,5 +1022,7 @@ class JanusSipuniVoiceClient extends EventTarget {
 }
 
 JanusSipuniVoiceClient.initPromise = null;
+
+export const createJanusSipuniVoiceClient = () => new JanusSipuniVoiceClient();
 
 export default new JanusSipuniVoiceClient();

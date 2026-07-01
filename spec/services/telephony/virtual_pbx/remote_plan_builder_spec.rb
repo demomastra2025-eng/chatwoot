@@ -97,7 +97,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     expect(operation_keys).to eq([])
   end
 
-  it 'builds Asterisk analog over a channel-owned configurable Asterisk trunk and keeps employee extension in profiles' do
+  it 'keeps Asterisk analog direct SIP channels local-only and keeps employee extension in profiles' do
     payload = base_payload.deep_dup.merge(
       provider_kind: 'asterisk_analog',
       channel_name: 'Analog external line',
@@ -122,32 +122,17 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
 
     plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
     operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
-    trunk_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_trunk' }
-    number_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_number' }
-    route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
 
     expect(state.dig(:phone_numbers, :provider_account_number)).to eq('+17770005175')
     expect(state.dig(:phone_numbers, :ingress_number)).to eq('+17770005175')
     expect(state.dig(:profiles).first[:internal_extension]).to eq('9098')
     expect(state.dig(:profiles).first[:agent_aor]).to eq('sip:9098@10.77.0.5')
-    expect(state.dig(:profiles).first[:availability_mode]).to eq('external_extension')
-    expect(state.dig(:refs, :number_ref)).to eq("asterisk-analog-#{account.id}-17770005175")
-    expect(state.dig(:refs, :trunk_ref)).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
+    expect(state.dig(:profiles).first[:availability_mode]).to eq('browser_webphone')
+    expect(state.dig(:refs, :number_ref)).to eq("asterisk-analog-sip-device-acct-#{account.id}-10-77-0-5-17770005175")
+    expect(state.dig(:refs, :trunk_ref)).to be_nil
     expect(state.dig(:connection, :host)).to eq('10.77.0.5')
     expect(state.dig(:connection, :send_register)).to be(false)
-    expect(operation_keys).to include('upsert_trunk', 'upsert_number', 'update_number_route')
-    expect(operation_keys).not_to include('upsert_sipuni_gateway', 'upsert_agent', 'upsert_agent_credentials')
-    expect(trunk_operation.dig(:payload, :sendRegister)).to be(false)
-    expect(trunk_operation.dig(:payload)).not_to have_key(:outboundCredentialsRef)
-    expect(trunk_operation.dig(:payload, :uris)).to contain_exactly(
-      include(host: '10.77.0.5', port: 5070, transport: 'TCP')
-    )
-    expect(trunk_operation.dig(:payload, :uris).first).not_to have_key(:user)
-    expect(number_operation.dig(:payload, :telUrl)).to eq('tel:+17770005175')
-    expect(number_operation.dig(:payload, :trunkRef)).to eq("trunk-asterisk-analog-acct-#{account.id}-17770005175")
-    expect(number_operation.dig(:payload, :metadata, :provider_kind)).to eq('asterisk_analog')
-    expect(route_operation.dig(:payload, :metadata, :provider_kind)).to eq('asterisk_analog')
-    expect(route_operation.dig(:payload, :metadata, :ingress_number)).to eq('+17770005175')
+    expect(operation_keys).to eq([])
   end
 
   it 'keeps native Sipuni updates local-only in the remote plan' do
@@ -594,7 +579,7 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     expect(plan.to_json).not_to include('do-not-store-this-password')
   end
 
-  it 'builds Binotel as an isolated provider-owned SIP device with OneLink media anchoring' do
+  it 'keeps Binotel as a local native SIP device without remote bridge operations' do
     payload = base_payload.deep_dup.merge(
       provider_kind: 'binotel',
       channel_name: 'Binotel external line',
@@ -620,39 +605,25 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
     result = service.create_channel(payload, dry_run: false)
     state = Telephony::VirtualPbx::DesiredStateBuilder.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
     expected_number_suffix = "acct-#{account.id}-sip53-binotel-example-binotel-account-9001"
-    expected_trunk_suffix = "acct-#{account.id}-sip53-binotel-example-binotel-1755"
 
     plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
     operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
-    trunk_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_trunk' }
-    route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
 
     expect(state.dig(:provider_kind)).to eq('binotel')
     expect(state.dig(:refs, :number_ref)).to eq("binotel-sip-device-#{expected_number_suffix}")
-    expect(state.dig(:refs, :trunk_ref)).to eq("trunk-binotel-#{expected_trunk_suffix}")
+    expect(state.dig(:refs, :trunk_ref)).to be_nil
     expect(state.dig(:connection, :send_register)).to be(true)
-    expect(operation_keys).to include('upsert_trunk', 'upsert_number', 'update_number_route')
+    expect(operation_keys).to eq([])
     expect(operation_keys).not_to include('upsert_sipuni_gateway', 'upsert_agent', 'upsert_agent_credentials')
-    expect(trunk_operation.dig(:payload, :outboundCredentialsRef)).to eq("cred-binotel-#{expected_trunk_suffix}")
-    expect(trunk_operation.dig(:payload, :uris)).to contain_exactly(
-      include(host: 'sip53.binotel.example', port: 5060, transport: 'UDP', user: 'binotel-trunk-9001')
-    )
-    expect(route_operation.dig(:payload, :metadata)).to include(
-      provider_kind: 'binotel',
-      media_anchor: 'onelink',
-      routing_controller: 'provider',
-      provider_routing_owner: 'binotel',
-      onelink_role: 'sip_device',
-      routeMode: 'provider_owned_sip_device',
-      extension_mode: 'provider_managed'
-    )
-    expect(route_operation.dig(:payload, :metadata, :provider_managed_operator_targets)).to contain_exactly(
-      include(internal_extension: '207', agent_aor: 'sip:207@sip53.binotel.example', availability_mode: 'external_extension')
+    expect(state.dig(:profiles).first).to include(
+      internal_extension: '207',
+      agent_aor: 'sip:207@sip53.binotel.example',
+      availability_mode: 'external_extension'
     )
     expect(plan.to_json).not_to include('do-not-store-binotel-password')
   end
 
-  it 'builds Binotel host-only remote sync without requiring SIP device credentials' do
+  it 'keeps Binotel host-only channels local without requiring SIP device credentials' do
     payload = base_payload.deep_dup.merge(
       provider_kind: 'binotel',
       channel_name: 'Binotel host-only line',
@@ -670,27 +641,12 @@ RSpec.describe Telephony::VirtualPbx::RemotePlanBuilder do
 
     plan = described_class.new(account: account).build(operation: 'create', desired_state: state)
     operation_keys = plan.fetch(:operations).map { |operation| operation[:key] }
-    trunk_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'upsert_trunk' }
-    route_operation = plan.fetch(:operations).find { |operation| operation[:key] == 'update_number_route' }
 
     expect(plan).to include(status: 'dry_run_valid')
     expect(state.dig(:connection, :send_register)).to be(false)
-    expect(operation_keys).to include('upsert_trunk', 'upsert_number', 'update_number_route')
+    expect(state.dig(:refs, :trunk_ref)).to be_nil
+    expect(operation_keys).to eq([])
     expect(operation_keys).not_to include('missing_sipuni_gateway_credentials', 'upsert_sipuni_gateway')
-    expect(trunk_operation.dig(:payload, :sendRegister)).to be(false)
-    expect(trunk_operation.dig(:payload)).not_to have_key(:outboundCredentialsRef)
-    expect(trunk_operation.dig(:payload, :uris)).to contain_exactly(
-      include(host: 'sip53.binotel.example', port: 5060, transport: 'UDP', user: '+17770001755')
-    )
-    expect(route_operation.dig(:payload, :metadata)).to include(
-      provider_kind: 'binotel',
-      media_anchor: 'onelink',
-      routing_controller: 'provider',
-      provider_routing_owner: 'binotel',
-      onelink_role: 'sip_device',
-      routeMode: 'provider_owned_sip_device',
-      extension_mode: 'sip_device'
-    )
   end
 
   it 'plans employee SIP credential cleanup when deleting a managed inbox' do

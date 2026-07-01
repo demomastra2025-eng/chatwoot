@@ -79,6 +79,23 @@ RSpec.describe Channel::Voice do
       expect(sipuni_channel).to be_valid
     end
 
+    it 'accepts native Binotel provider config' do
+      account = create(:account)
+      provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'binotel')
+      binotel_channel = build(
+        :channel_voice,
+        account: account,
+        provider: 'binotel',
+        provider_config: {
+          number_ref: 'binotel-main-line',
+          provider_connection_id: provider_connection.id,
+          routing_mode: 'operator'
+        }
+      )
+
+      expect(binotel_channel).to be_valid
+    end
+
     it 'requires native Sipuni routing config' do
       sipuni_channel = build(:channel_voice, provider: 'sipuni', provider_config: { routing_mode: 'operator' })
 

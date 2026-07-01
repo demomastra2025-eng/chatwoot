@@ -493,6 +493,7 @@ Rails.application.routes.draw do
             post 'ai/toggle', to: 'routing#toggle_ai'
             post 'webphone/token', to: 'webphone#create'
             post 'webphone/presence', to: 'webphone#presence'
+            post 'webphone/incoming', to: 'webphone#incoming'
             post 'webphone/claim', to: 'webphone#claim'
             post 'webphone/reject', to: 'webphone#reject'
           end

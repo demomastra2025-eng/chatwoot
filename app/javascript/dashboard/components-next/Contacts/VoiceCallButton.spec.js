@@ -182,7 +182,9 @@ describe('VoiceCallButton', () => {
     await flushPromises();
 
     expect(initializeDeviceMock).toHaveBeenCalledWith(4593, { native: true });
-    expect(prewarmMicrophoneMock).toHaveBeenCalledWith('fonoster');
+    expect(prewarmMicrophoneMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+    );
     expect(dispatch).toHaveBeenCalledWith('contacts/initiateCall', {
       contactId: 2179,
       inboxId: 4593,
@@ -207,6 +209,49 @@ describe('VoiceCallButton', () => {
         operatorInternalExtension: '502',
       }),
     ]);
+  });
+
+  it('prewarms the microphone again after native SIP initialization when the scoped client was not ready yet', async () => {
+    prewarmMicrophoneMock.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      provider: 'asterisk_analog',
+      prewarmed: true,
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'asterisk_analog',
+      sessionKey: 'sip_profile:41',
+      sipProfileId: 41,
+      callingSupported: true,
+      registered: true,
+    });
+    const dispatch = vi.fn().mockResolvedValue({
+      call_sid: 'call-ref-asterisk',
+      conversation_id: 727,
+    });
+    const { wrapper } = mountComponent({
+      inboxes: [voiceInbox({ provider: 'asterisk_analog' })],
+      dispatch,
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(prewarmMicrophoneMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ provider: 'asterisk_analog', inboxId: 4593 })
+    );
+    expect(prewarmMicrophoneMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        provider: 'asterisk_analog',
+        inboxId: 4593,
+        sessionKey: 'sip_profile:41',
+        sipProfileId: 41,
+      })
+    );
+    expect(dispatch).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 2179,
+      inboxId: 4593,
+    });
   });
 
   it('does not navigate when the current chat already belongs to the contact', async () => {
@@ -235,7 +280,9 @@ describe('VoiceCallButton', () => {
     await flushPromises();
 
     expect(dispatchMock).not.toHaveBeenCalled();
-    expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith('fonoster');
+    expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+    );
     expect(alertMock).toHaveBeenCalledWith(
       'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
     );
@@ -253,7 +300,9 @@ describe('VoiceCallButton', () => {
     await flushPromises();
 
     expect(dispatchMock).not.toHaveBeenCalled();
-    expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith('fonoster');
+    expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+    );
     expect(alertMock).toHaveBeenCalledWith(
       'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
     );
@@ -285,7 +334,9 @@ describe('VoiceCallButton', () => {
       contactId: 2179,
       inboxId: 4593,
     });
-    expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith('fonoster');
+    expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+    );
     expect(useCallsStore().calls).toEqual([
       expect.objectContaining({
         callSid: 'call-ref-external',

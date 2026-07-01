@@ -174,12 +174,23 @@ class SessionRegistry {
 function normalizeTranscriptItem(item = {}) {
   const text = String(item.text || '').trim();
   if (!text) return null;
-  return {
+  return compactPayload({
     speaker: ['caller', 'ai', 'operator', 'system'].includes(item.speaker) ? item.speaker : 'system',
     text,
     final: Boolean(item.final),
-    at: item.at || item.occurred_at || item.occurredAt || new Date().toISOString()
-  };
+    at: item.at || item.occurred_at || item.occurredAt || new Date().toISOString(),
+    raw_text: item.raw_text || item.rawText,
+    reasoning: item.reasoning,
+    artifact_ids: item.artifact_ids || item.artifactIds,
+    handoff_message: item.handoff_message || item.handoffMessage,
+    handoff_reason: item.handoff_reason || item.handoffReason,
+    handoff_status_reason: item.handoff_status_reason || item.handoffStatusReason,
+    normalized_from: item.normalized_from || item.normalizedFrom
+  });
+}
+
+function compactPayload(payload = {}) {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
 function transcriptKey(item) {

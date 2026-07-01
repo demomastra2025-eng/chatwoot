@@ -127,7 +127,7 @@ class RecordingWriter {
     const fileStat = await stat(this.path);
     const ended = endedAt instanceof Date ? endedAt : new Date(endedAt);
     this.digest ||= await sha256File(this.path);
-    return {
+    return compact({
       recording_ref: this.storageKey,
       storage_key: this.storageKey,
       byte_size: fileStat.size,
@@ -148,8 +148,9 @@ class RecordingWriter {
       channel_layout: {
         left: 'caller',
         right: 'voice_agent'
-      }
-    };
+      },
+      ...recordingHealthPayload({ inboundBytes: this.inboundBytes, outboundBytes: this.outboundBytes })
+    });
   }
 
   eventPayload(eventType, eventPayload, eventKey = null) {
@@ -289,6 +290,37 @@ function sanitizeError(error) {
 
 function retryableError(code) {
   return ['recording_writer_failed', 'recording_write_failed', 'recording_close_failed'].includes(code);
+}
+
+function recordingHealthPayload({ inboundBytes = 0, outboundBytes = 0 } = {}) {
+  if (inboundBytes <= 0 && outboundBytes <= 0) {
+    return {
+      recording_status: 'degraded',
+      degraded: true,
+      missing_direction: 'both',
+      reason: 'empty_recording'
+    };
+  }
+
+  if (inboundBytes > 0 && outboundBytes <= 0) {
+    return {
+      recording_status: 'degraded',
+      degraded: true,
+      missing_direction: 'outbound',
+      reason: 'voice_agent_audio_missing'
+    };
+  }
+
+  if (outboundBytes > 0 && inboundBytes <= 0) {
+    return {
+      recording_status: 'degraded',
+      degraded: true,
+      missing_direction: 'inbound',
+      reason: 'caller_audio_missing'
+    };
+  }
+
+  return { recording_status: 'ready', degraded: false };
 }
 
 function positiveInteger(value, fallback) {

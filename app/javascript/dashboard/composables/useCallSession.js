@@ -25,8 +25,23 @@ const TERMINAL_CLAIM_FAILURE_STATUSES = new Set([
 const RETRYABLE_CLAIM_FAILURE_REASONS = new Set([
   'sipuni_operator_leg_not_ready',
 ]);
-const BROWSER_CALLING_PROVIDERS = new Set(['fonoster', 'sipuni', 'twilio']);
-const NATIVE_BROWSER_SIP_PROVIDERS = new Set(['fonoster', 'sipuni']);
+const BROWSER_CALLING_PROVIDERS = new Set([
+  'fonoster',
+  'asterisk_analog',
+  'sipuni',
+  'binotel',
+  'twilio',
+]);
+const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
+  'fonoster',
+  'asterisk_analog',
+  'sipuni',
+  'binotel',
+]);
+const BROWSER_SIP_INCOMING_REPORT_PROVIDERS = new Set([
+  'asterisk_analog',
+  'binotel',
+]);
 
 const positiveNumber = value => {
   const numericValue = Number(value);
@@ -78,6 +93,18 @@ export function useCallSession() {
   const incomingCalls = computed(() => callsStore.incomingCalls);
   const hasActiveCall = computed(() => callsStore.hasActiveCall);
   const resolveCallProvider = call => call?.provider || null;
+  const sipProfileIdForCall = call =>
+    call?.sipProfileId ||
+    call?.sip_profile_id ||
+    call?.operatorClaim?.sip_profile_id ||
+    call?.operatorClaim?.sipProfileId ||
+    call?.operatorCandidates?.[0]?.sip_profile_id ||
+    call?.operatorCandidates?.[0]?.sipProfileId;
+  const webphoneCallScope = call => ({
+    provider: resolveCallProvider(call),
+    inboxId: call?.inboxId || call?.inbox_id,
+    sipProfileId: sipProfileIdForCall(call),
+  });
   const isOutboundCallDirection = callDirection => callDirection === 'outbound';
   const routeInboxId = computed(() => {
     const value = route.params?.inbox_id || route.params?.inboxId;
@@ -147,7 +174,9 @@ export function useCallSession() {
   const incomingVoiceInboxId = computed(() => {
     const call = incomingCalls.value.find(item => {
       return (
-        ['fonoster', 'sipuni', 'twilio'].includes(item?.provider) &&
+        ['fonoster', 'asterisk_analog', 'sipuni', 'binotel', 'twilio'].includes(
+          item?.provider
+        ) &&
         Number.isFinite(Number(item?.inboxId)) &&
         Number(item.inboxId) > 0
       );
@@ -396,6 +425,56 @@ export function useCallSession() {
     await callsStore.clearActiveCall();
   };
 
+  const handleClientIncoming = async event => {
+    const detail = event?.detail || {};
+    const provider = detail.provider;
+    if (!BROWSER_SIP_INCOMING_REPORT_PROVIDERS.has(provider)) return;
+    if (!detail.callRef && !detail.callSid) return;
+
+    try {
+      const call = await VoiceAPI.reportBrowserSipIncoming({
+        provider,
+        inbox_id: detail.inboxId || detail.inbox_id,
+        call_ref: detail.callRef || detail.callSid,
+        from: detail.from || detail.fromNumber || detail.from_number,
+        session_key: detail.sessionKey || detail.session_key,
+        sip_profile_id: detail.sipProfileId || detail.sip_profile_id,
+        internal_extension:
+          detail.internalExtension || detail.internal_extension,
+      });
+      callsStore.addCall({
+        callSid: call.callSid || call.call_sid || call.call_ref,
+        status: call.status || 'ringing',
+        conversationId: call.conversation_id,
+        conversationDbId: call.conversation_db_id,
+        conversationDisplayId: call.conversation_display_id,
+        communicationThreadId:
+          call.communication_thread_id || call.communicationThreadId,
+        inboxId: call.inboxId || call.inbox_id || detail.inboxId,
+        provider: call.provider || provider,
+        callDirection: call.call_direction || call.direction || 'inbound',
+        contactId: call.contact_id,
+        senderId: call.sender_id,
+        fromNumber: call.from_number || call.fromNumber || detail.from,
+        toNumber: call.to_number || call.toNumber,
+        caller: call.caller,
+        operatorCandidates: call.operator_candidates || call.operatorCandidates,
+        operatorInternalExtension:
+          call.operator_internal_extension ||
+          call.operatorInternalExtension ||
+          detail.internalExtension ||
+          detail.internal_extension,
+        sipProfileId:
+          call.sipProfileId || call.sip_profile_id || detail.sipProfileId,
+        browserJoinSupported:
+          call.browserJoinSupported ?? call.browser_join_supported ?? true,
+      });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to report browser SIP incoming call:', error);
+    }
+  };
+
   function clearBootstrapRetry() {
     if (!bootstrapRetryTimer) return;
 
@@ -409,14 +488,20 @@ export function useCallSession() {
       incomingVoiceInboxId.value
   ) => {
     try {
+      if (routeCommunicationThreadId.value && !inboxId) {
+        return;
+      }
+
+      await WebphoneClient.bootstrapIncomingSupport();
+
       if (inboxId) {
         await initializeWebphoneDevice(inboxId, {
           provider: incomingCallProviderForInboxId(inboxId),
         });
-      } else if (routeInboxId.value || routeCommunicationThreadId.value) {
-        return;
-      } else {
-        await WebphoneClient.bootstrapIncomingSupport();
+      } else if (routeInboxId.value) {
+        await WebphoneClient.initializeDevice(routeInboxId.value, {
+          native: true,
+        });
       }
       clearBootstrapRetry();
     } catch (error) {
@@ -434,6 +519,13 @@ export function useCallSession() {
     if (!inboxId || String(inboxId) === String(previousInboxId)) return;
 
     bootstrapIncomingSupport(inboxId);
+  });
+
+  watch(routeInboxId, (inboxId, previousInboxId) => {
+    if (!inboxId || String(inboxId) === String(previousInboxId)) return;
+    if (routeVoiceInboxId.value) return;
+
+    bootstrapIncomingSupport();
   });
 
   watch(routeCommunicationThreadVoiceInboxId, (inboxId, previousInboxId) => {
@@ -457,6 +549,7 @@ export function useCallSession() {
       'call:disconnected',
       handleClientDisconnect
     );
+    WebphoneClient.addEventListener('call:incoming', handleClientIncoming);
 
     bootstrapIncomingSupport();
   });
@@ -468,6 +561,7 @@ export function useCallSession() {
       'call:disconnected',
       handleClientDisconnect
     );
+    WebphoneClient.removeEventListener('call:incoming', handleClientIncoming);
   });
 
   const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
@@ -480,7 +574,10 @@ export function useCallSession() {
 
         await waitForFonosterOperatorReleaseHeadStart(releaseResult);
         try {
-          await WebphoneClient.endClientCall(provider);
+          await WebphoneClient.endClientCall({
+            provider,
+            inboxId,
+          });
         } catch (error) {
           // eslint-disable-next-line no-console
           console.warn('Failed to end browser SIP call:', error);
@@ -512,7 +609,7 @@ export function useCallSession() {
 
       await waitForFonosterOperatorReleaseHeadStart(releaseResult);
       try {
-        await WebphoneClient.endClientCall(call?.provider || 'fonoster');
+        await WebphoneClient.endClientCall(webphoneCallScope(call));
       } catch (error) {
         // eslint-disable-next-line no-console
         console.warn('Failed to cancel Fonoster browser call:', error);
@@ -558,9 +655,19 @@ export function useCallSession() {
       if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)) {
         const isOutbound = isOutboundCallDirection(callDirection);
         let communicationThreadId = null;
+        let operatorSipProfileId =
+          webphoneSession.sipProfileId || webphoneSession.sip_profile_id;
 
         if (!isOutbound) {
           const claimResult = await claimFonosterIncomingCall(callSid);
+          operatorSipProfileId =
+            operatorSipProfileId ||
+            sipProfileIdForCall({
+              operatorClaim: operatorClaimFromDetails(claimResult.details),
+              operatorCandidates:
+                claimResult?.operator_candidates ||
+                claimResult?.operatorCandidates,
+            });
           if (!claimResult.claimed) {
             const reason = claimResult.reason || claimResult.code;
             if (shouldRetryClaimFailure(claimResult)) {
@@ -595,6 +702,7 @@ export function useCallSession() {
               inboxId,
               provider: resolvedProvider,
               callDirection,
+              sipProfileId: operatorSipProfileId,
             });
           }
         }
@@ -603,6 +711,8 @@ export function useCallSession() {
         try {
           joinResult = await WebphoneClient.joinClientCall({
             provider: resolvedProvider,
+            inboxId,
+            sipProfileId: operatorSipProfileId,
             conversationId,
             callRef: callSid,
             callDirection,
@@ -721,7 +831,7 @@ export function useCallSession() {
         call?.callSid,
         async () => {
           try {
-            await WebphoneClient.rejectIncomingCall(provider);
+            await WebphoneClient.rejectIncomingCall(webphoneCallScope(call));
           } catch (error) {
             // eslint-disable-next-line no-console
             console.warn('Failed to decline browser SIP call:', error);
@@ -759,6 +869,8 @@ export function useCallSession() {
 
     return WebphoneClient.supportsBrowserCalling(provider, {
       callDirection: call?.callDirection,
+      inboxId: call?.inboxId || call?.inbox_id,
+      sipProfileId: sipProfileIdForCall(call),
     });
   };
 

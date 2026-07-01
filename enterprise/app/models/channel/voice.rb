@@ -24,7 +24,8 @@ class Channel::Voice < ApplicationRecord
   CURRENT_FONOSTER_OPERATOR_AGENT_AOR = 'sip:1001@operator.cloud.vconsult.kz'.freeze
   STALE_FONOSTER_OPERATOR_AGENT_AORS = ['sip:1001@company.example'].freeze
 
-  PROVIDERS = %w[twilio fonoster sipuni].freeze
+  PROVIDERS = %w[twilio fonoster asterisk_analog sipuni binotel].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
 
   validates :phone_number, presence: true, uniqueness: true
   validates :provider, presence: true, inclusion: { in: PROVIDERS }
@@ -93,8 +94,8 @@ class Channel::Voice < ApplicationRecord
       validate_twilio_config
     when 'fonoster'
       validate_fonoster_config
-    when 'sipuni'
-      validate_sipuni_config
+    when 'asterisk_analog', 'sipuni', 'binotel'
+      validate_provider_owned_sip_config
     end
   end
 
@@ -131,16 +132,17 @@ class Channel::Voice < ApplicationRecord
     errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when targeted operator routing is selected')
   end
 
-  def validate_sipuni_config
+  def validate_provider_owned_sip_config
     config = provider_config.with_indifferent_access
     routing_mode = config[:routing_mode].to_s.presence || 'operator'
     operator_distribution_mode = Telephony::RoutingPolicy.normalized_operator_distribution_mode(config[:operator_distribution_mode])
-    config[:provider_kind] = 'sipuni'
+    config[:provider_kind] = provider
     config[:operator_distribution_mode] = operator_distribution_mode
     self.provider_config = config
+    provider_label = provider.to_s.titleize
 
-    errors.add(:provider_config, 'number_ref is required for Sipuni provider') if config[:number_ref].blank?
-    errors.add(:provider_config, 'provider_connection_id is required for Sipuni provider') if config[:provider_connection_id].blank?
+    errors.add(:provider_config, "number_ref is required for #{provider_label} provider") if config[:number_ref].blank?
+    errors.add(:provider_config, "provider_connection_id is required for #{provider_label} provider") if config[:provider_connection_id].blank?
     errors.add(:provider_config, 'routing_mode must be one of operator, app, ai, reject') unless routing_mode.in?(%w[operator app ai reject])
   end
 
@@ -184,7 +186,7 @@ class Channel::Voice < ApplicationRecord
   end
 
   def native_telephony_provider?
-    provider.in?(%w[fonoster sipuni])
+    provider == 'fonoster' || provider.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def sync_telephony_binding

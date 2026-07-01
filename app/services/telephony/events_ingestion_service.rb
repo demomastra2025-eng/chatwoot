@@ -1284,7 +1284,7 @@ class Telephony::EventsIngestionService
     if (accepted_by = accepted_by_from_operator_claim(call_session, voice_meta['operator_claim'])).present?
       data['data']['accepted_by'] = accepted_by
     end
-    data['data']['status'] = call_session.status
+    data['data']['status'] = call_session.canonical_status
     if (logical_key = logical_call_key(call_session)).present?
       data['data']['logical_call_key'] = logical_key
       data['data']['logicalCallKey'] = logical_key
@@ -2180,8 +2180,19 @@ class Telephony::EventsIngestionService
       'channels' => recording_payload_value('channels')&.to_i,
       'channel_layout' => recording_payload_value('channel_layout', 'channelLayout'),
       'inbound_bytes' => recording_payload_value('inbound_bytes', 'inboundBytes')&.to_i,
-      'outbound_bytes' => recording_payload_value('outbound_bytes', 'outboundBytes')&.to_i
+      'outbound_bytes' => recording_payload_value('outbound_bytes', 'outboundBytes')&.to_i,
+      'recording_status' => recording_payload_value('recording_status', 'recordingStatus'),
+      'degraded' => recording_ready_degraded?,
+      'missing_direction' => recording_payload_value('missing_direction', 'missingDirection'),
+      'reason' => recording_payload_value('reason')
     }
+  end
+
+  def recording_ready_degraded?
+    value = recording_payload_value('degraded', 'recording_degraded', 'recordingDegraded')
+    return if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def recording_error_metadata

@@ -100,7 +100,7 @@ class Telephony::AiVoice::ConversationTimelineService
       sender: transcript_sender(speaker),
       content_attributes: transcript_content_attributes(turn, index)
     )
-    message.additional_attributes = ai_additional_attributes(message) if speaker == 'ai'
+    message.additional_attributes = ai_additional_attributes(message, turn) if speaker == 'ai'
     message.created_at ||= turn_started_at(turn)
     message.skip_send_reply = true if speaker == 'ai'
     message.save!
@@ -139,7 +139,8 @@ class Telephony::AiVoice::ConversationTimelineService
     return if message.blank?
 
     attrs = (message.additional_attributes || {}).deep_dup
-    attrs['captain_trace'] = trace
+    existing_trace = attrs['captain_trace'].is_a?(Hash) ? attrs['captain_trace'] : {}
+    attrs['captain_trace'] = existing_trace.merge(trace)
     message.update!(additional_attributes: attrs)
   end
 
@@ -150,9 +151,10 @@ class Telephony::AiVoice::ConversationTimelineService
                 .first
   end
 
-  def ai_additional_attributes(message)
+  def ai_additional_attributes(message, turn)
     attrs = (message.additional_attributes || {}).deep_dup
-    trace = captain_trace_payload
+    attrs.delete('captain_trace')
+    trace = turn_trace_payload(turn)
     attrs['captain_trace'] = trace if trace.present?
     attrs
   end
@@ -173,7 +175,7 @@ class Telephony::AiVoice::ConversationTimelineService
 
   def final_transcript_items
     transcript = call_session.metadata.to_h.dig('ai_voice', 'transcript') || {}
-    Array.wrap(transcript['final_items'])
+    Array.wrap(transcript['final_items']).map { |item| Telephony::AiVoice::TranscriptItemNormalizer.call(item) }
   end
 
   def turn_content(turn)
@@ -197,7 +199,7 @@ class Telephony::AiVoice::ConversationTimelineService
         speaker: turn['speaker'],
         turn_index: index,
         final: true,
-        items: turn['items']
+        items: turn['items'].map { |item| Telephony::AiVoice::TranscriptItemNormalizer.presentation_item(item) }
       }
     }
   end
@@ -250,6 +252,19 @@ class Telephony::AiVoice::ConversationTimelineService
     return if steps.blank?
 
     Captain::ToolTraceBuilder.payload(steps.last(20))
+  end
+
+  def turn_trace_payload(turn)
+    reasoning = turn_reasoning_payload(turn)
+    return if reasoning.blank?
+
+    Captain::ToolTraceBuilder.payload(nil, reasoning: reasoning)
+  end
+
+  def turn_reasoning_payload(turn)
+    Array.wrap(turn['items']).filter_map do |item|
+      item['reasoning'].to_s.strip.presence
+    end.uniq.join("\n").presence
   end
 
   def tool_trace_step(event, index)

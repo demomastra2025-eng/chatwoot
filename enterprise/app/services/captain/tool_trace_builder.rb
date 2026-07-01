@@ -65,6 +65,10 @@ class Captain::ToolTraceBuilder
     }.merge(reasoning_payload).compact
   end
 
+  def self.sanitize_payload(value)
+    safe_payload(value)
+  end
+
   def self.tool_calls(steps)
     groups = []
     groups_by_call_id = {}

@@ -245,6 +245,206 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['registered_for_routing']).to be(true)
   end
 
+  it 'returns a Janus SIP webphone contract for native Binotel browser profiles' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'binotel',
+      host: 'sip53.binotel.com',
+      port: 5060,
+      transport: 'udp',
+      username: 'pq4dyw5f'
+    )
+    binotel_channel = create(
+      :channel_voice,
+      account: account,
+      provider: 'binotel',
+      phone_number: '+15550001755',
+      provider_config: {
+        provider_kind: 'binotel',
+        provider_connection_id: provider_connection.id,
+        number_ref: 'binotel-browser-number-ref',
+        routing_mode: 'operator',
+        operator_distribution_mode: 'broadcast'
+      }
+    )
+    binotel_inbox = binotel_channel.inbox
+    create(:inbox_member, inbox: binotel_inbox, user: administrator)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: binotel_inbox,
+      user: administrator,
+      internal_extension: '901',
+      provider_connection: provider_connection,
+      sip_username: 'pq4dyw5f',
+      sip_password: 'test-binotel-password',
+      agent_ref: 'local-binotel-profile-901',
+      fonoster_agent_ref: nil,
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_aor: 'sip:pq4dyw5f@sip53.binotel.com',
+      metadata: {
+        registration_state: 'registered',
+        registered: true,
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+
+    with_modified_env(
+      TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
+    ) do
+      post path,
+           params: { inbox_id: binotel_inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['provider']).to eq('binotel')
+    expect(payload['janus_server']).to eq('wss://dev.one-link.kz/janus-sipuni')
+    expect(payload['sip']).to include(
+      'username' => 'pq4dyw5f',
+      'auth_username' => 'pq4dyw5f',
+      'password' => 'test-binotel-password',
+      'host' => 'sip53.binotel.com',
+      'port' => 5060,
+      'transport' => 'udp',
+      'uri' => 'sip:pq4dyw5f@sip53.binotel.com',
+      'proxy' => 'sip:sip53.binotel.com:5060',
+      'internal_extension' => '901'
+    )
+    expect(payload['calling_supported']).to be(true)
+    expect(payload['registered_for_routing']).to be(true)
+  end
+
+  it 'returns all native Janus SIP browser profiles for no-inbox bootstrap' do
+    profiles = create_native_janus_browser_profiles
+
+    with_modified_env(
+      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
+    ) do
+      post path, headers: headers, as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    sessions = payload.fetch('sessions')
+    expect(response).to have_http_status(:ok)
+    expect(payload['multi_session']).to be(true)
+    expect(sessions.pluck('provider')).to match_array(%w[sipuni binotel asterisk_analog])
+    expect(sessions.pluck('sip_profile_id')).to match_array(profiles.map(&:id))
+    expect(sessions.map { |session| session.dig('sip', 'username') }).to match_array(profiles.map(&:sip_username))
+    expect(sessions).to all(include('janus_server' => 'wss://dev.one-link.kz/janus-sipuni'))
+  end
+
+  it 'includes the legacy Fonoster binding alongside native Janus SIP profiles for no-inbox bootstrap' do
+    create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'fonoster',
+      agent_ref: 'fonoster-agent-42',
+      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+    )
+    profiles = create_native_janus_browser_profiles
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
+      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
+    ) do
+      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+        .with(
+          body: hash_including(
+            agent_ref: 'fonoster-agent-42',
+            agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+          ),
+          headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+        )
+        .to_return(
+          status: 200,
+          body: {
+            token: 'test-token',
+            username: '1001',
+            domain: 'operator.cloud.vconsult.kz',
+            displayName: 'Legacy Browser Agent',
+            signalingServer: 'wss://bridge.example/ws',
+            targetAor: 'sip:1001@operator.cloud.vconsult.kz'
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      post path, headers: headers, as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    sessions = payload.fetch('sessions')
+    expect(response).to have_http_status(:ok)
+    expect(payload['multi_session']).to be(true)
+    expect(sessions.pluck('provider')).to match_array(%w[fonoster sipuni binotel asterisk_analog])
+    expect(sessions.pluck('sip_profile_id').compact).to match_array(profiles.map(&:id))
+    expect(sessions.find { |session| session['provider'] == 'fonoster' }).to include(
+      'username' => '1001',
+      'targetAor' => 'sip:1001@operator.cloud.vconsult.kz'
+    )
+  end
+
+  it 'creates an operator call session from a native Janus SIP incoming event' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
+    raw_call_ref = 'janus-binotel-incoming-1'
+    expected_call_ref = "binotel:janus:#{binotel_profile.id}:#{raw_call_ref}"
+
+    post incoming_path,
+         params: {
+           inbox_id: binotel_profile.inbox_id,
+           provider: 'binotel',
+           call_ref: raw_call_ref,
+           from: 'sip:+77475318623@sip53.binotel.com',
+           session_key: "sip_profile:#{binotel_profile.id}",
+           sip_profile_id: binotel_profile.id,
+           internal_extension: binotel_profile.internal_extension
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: expected_call_ref)
+    route_metadata = call_session.metadata.fetch('metadata')
+
+    expect(payload).to include(
+      'call_sid' => expected_call_ref,
+      'callSid' => expected_call_ref,
+      'provider' => 'binotel',
+      'status' => 'ringing',
+      'direction' => 'inbound',
+      'inbox_id' => binotel_profile.inbox_id,
+      'from_number' => '+77475318623',
+      'operator_internal_extension' => binotel_profile.internal_extension,
+      'sip_profile_id' => binotel_profile.id,
+      'browser_join_supported' => true,
+      'route_action' => 'operator'
+    )
+    expect(call_session).to have_attributes(
+      account_id: account.id,
+      inbox_id: binotel_profile.inbox_id,
+      provider: 'binotel',
+      status: 'ringing',
+      direction: 'inbound',
+      from_number: '+77475318623'
+    )
+    expect(route_metadata).to include(
+      'source' => 'browser_janus_sip',
+      'target_sip_profile_id' => binotel_profile.id,
+      'target_user_id' => administrator.id,
+      'operator_candidate_sip_profile_ids' => include(binotel_profile.id),
+      'operator_candidate_user_ids' => include(administrator.id)
+    )
+    expect(binotel_profile.reload.registered_for_routing?).to be(true)
+  end
+
   it 'returns an unsupported payload for provider-managed Sipuni extensions' do
     sipuni_channel = create(
       :channel_voice,
@@ -1674,5 +1874,62 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     header = Base64.urlsafe_encode64({ alg: 'none', typ: 'JWT' }.to_json, padding: false)
     payload = Base64.urlsafe_encode64(claims.to_json, padding: false)
     "#{header}.#{payload}.signature"
+  end
+
+  def create_native_janus_browser_profiles
+    [
+      { provider: 'sipuni', host: 'ats01.kz.sipuni.com', phone_number: '+15551230001', extension: '505', username: '015856100021',
+        password: 'sipuni-secret' },
+      { provider: 'binotel', host: 'sip53.binotel.com', phone_number: '+15551230002', extension: '901', username: 'pq4dyw5f',
+        password: 'binotel-secret' },
+      { provider: 'asterisk_analog', host: '10.77.0.2', phone_number: '+15551230003', extension: '9098', username: '9098',
+        password: 'asterisk-secret' }
+    ].map { |attributes| create_native_janus_browser_profile(attributes) }
+  end
+
+  def create_native_janus_browser_profile(attributes)
+    connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: attributes.fetch(:provider),
+      host: attributes.fetch(:host),
+      port: 5060,
+      transport: 'udp'
+    )
+    channel = create_native_janus_voice_channel(attributes, connection)
+    create(:inbox_member, inbox: channel.inbox, user: administrator)
+    create_native_janus_sip_profile(attributes, connection, channel.inbox)
+  end
+
+  def create_native_janus_voice_channel(attributes, connection)
+    create(
+      :channel_voice,
+      account: account,
+      provider: attributes.fetch(:provider),
+      phone_number: attributes.fetch(:phone_number),
+      provider_config: {
+        provider_kind: attributes.fetch(:provider),
+        number_ref: "#{attributes.fetch(:provider)}-number-ref-#{attributes.fetch(:extension)}",
+        provider_connection_id: connection.id,
+        routing_mode: 'operator'
+      }
+    )
+  end
+
+  def create_native_janus_sip_profile(attributes, connection, inbox)
+    create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: inbox,
+      user: administrator,
+      provider_connection: connection,
+      internal_extension: attributes.fetch(:extension),
+      sip_username: attributes.fetch(:username),
+      sip_password: attributes.fetch(:password),
+      agent_ref: "local-profile-#{attributes.fetch(:provider)}-#{attributes.fetch(:extension)}",
+      agent_aor: "sip:#{attributes.fetch(:username)}@#{connection.host}",
+      availability_mode: 'browser_webphone',
+      status: 'active'
+    )
   end
 end

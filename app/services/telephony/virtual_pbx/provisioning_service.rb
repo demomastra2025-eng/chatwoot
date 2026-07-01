@@ -12,8 +12,17 @@ class Telephony::VirtualPbx::ProvisioningService
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
   DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
-  PROVIDER_OWNED_ROUTING_KINDS = %w[sipuni binotel].freeze
+  PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
+  BRIDGE_PROVIDER_CONFIG_KEYS = %i[
+    app_ref
+    runtime_app_ref
+    trunk_ref
+    fonoster_tel_url
+    fonoster_number_ref
+    operator_agent_ref
+  ].freeze
 
   def initialize(account:, current_user:, bridge_client: nil)
     @account = account
@@ -289,18 +298,20 @@ class Telephony::VirtualPbx::ProvisioningService
         attrs.slice(:key, :description, :risk, :owned, :shared, :conflict)
       end
       copy[:operations] = operations
-      copy[:items] = product_plan_items
+      copy[:items] = product_plan_items(operations)
       copy.delete(:conflicts) if copy[:conflicts].blank?
     end
   end
 
-  def product_plan_items
+  def product_plan_items(operations)
+    remote_status = operations.blank? ? 'ready' : 'requires_remote_commit'
+
     [
       { code: 'validate_settings', status: 'ready' },
       { code: 'save_channel', status: 'ready' },
-      { code: 'connect_number', status: 'requires_remote_commit' },
-      { code: 'configure_routing', status: 'requires_remote_commit' },
-      { code: 'remote_sync', status: 'requires_remote_commit' }
+      { code: 'connect_number', status: remote_status },
+      { code: 'configure_routing', status: remote_status },
+      { code: 'remote_sync', status: remote_status }
     ]
   end
 
@@ -794,8 +805,8 @@ class Telephony::VirtualPbx::ProvisioningService
     profile.merge(availability_mode: default_profile_availability_mode(payload[:provider_kind]))
   end
 
-  def default_profile_availability_mode(_provider_kind)
-    return 'browser_webphone' if _provider_kind.to_s == 'sipuni'
+  def default_profile_availability_mode(provider_kind)
+    return 'browser_webphone' if local_native_provider_kind?(provider_kind)
 
     'external_extension'
   end
@@ -1215,7 +1226,9 @@ class Telephony::VirtualPbx::ProvisioningService
       source: payload.dig(:metadata, 'source') || payload[:provider_kind]
     )
 
-    unless local_native_provider_kind?(payload[:provider_kind])
+    if local_native_provider_kind?(payload[:provider_kind])
+      config.except!(*BRIDGE_PROVIDER_CONFIG_KEYS)
+    else
       config.merge!(
         app_ref: runtime_app_ref,
         runtime_app_ref: runtime_app_ref,
@@ -1234,7 +1247,10 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def voice_provider_for(provider_kind)
-    provider_kind.to_s == 'sipuni' ? 'sipuni' : 'fonoster'
+    provider_kind = provider_kind.to_s
+    return provider_kind if local_native_provider_kind?(provider_kind)
+
+    'fonoster'
   end
 
   def operator_agent_aor_for(payload)
@@ -1392,23 +1408,26 @@ class Telephony::VirtualPbx::ProvisioningService
     ingress_number = payload[:ingress_number]
     safe_ingress = remote_ref_suffix(ingress_number)
     runtime_app_ref = default_runtime_app_ref
+    number_scope = payload[:provider_account_number].presence || safe_ingress
     number_ref = if provider_kind.in?(PROVIDER_OWNED_ROUTING_KINDS)
-                   "#{provider_ref_key(provider_kind)}-sip-device-#{remote_ref_scope_suffix(payload,
-                                                                                            payload[:provider_account_number].presence || safe_ingress)}"
+                   "#{provider_ref_key(provider_kind)}-sip-device-#{remote_ref_scope_suffix(payload, number_scope)}"
                  else
                    "asterisk-analog-#{account.id}-#{safe_ingress}"
                  end
 
     profiles = Array.wrap(payload[:profiles])
-    {
+    refs = {
       number_ref: number_ref,
-      trunk_ref: trunk_ref_for(payload, provider_kind, safe_ingress),
       credentials_ref: generated_credentials_ref(payload, provider_kind, safe_ingress),
-      app_ref: runtime_app_ref,
-      runtime_app_ref: runtime_app_ref,
       profile_refs: profiles.map { |profile| "profile-#{account.id}-#{profile[:user_id]}-#{profile[:internal_extension]}" },
       profile_secret_refs: profiles.map { |profile| "cred-profile-#{account.id}-#{profile[:user_id]}-#{profile[:internal_extension]}" }
-    }.compact
+    }
+    unless local_native_provider_kind?(provider_kind)
+      refs[:trunk_ref] = trunk_ref_for(payload, provider_kind, safe_ingress)
+      refs[:app_ref] = runtime_app_ref
+      refs[:runtime_app_ref] = runtime_app_ref
+    end
+    refs.compact
   end
 
   def trunk_ref_for(payload, provider_kind, safe_ingress)
@@ -1651,7 +1670,7 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def local_native_provider_kind?(provider_kind)
-    provider_kind.to_s == 'sipuni'
+    provider_kind.to_s.in?(LOCAL_NATIVE_PROVIDER_KINDS)
   end
 
   def remote_result_succeeded?(remote_result)

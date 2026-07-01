@@ -56,7 +56,12 @@ const relatedCallSids = callData =>
     .filter(isPresent)
     .map(value => String(value));
 
-const NATIVE_BROWSER_SIP_PROVIDERS = new Set(['fonoster', 'sipuni']);
+const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
+  'fonoster',
+  'asterisk_analog',
+  'sipuni',
+  'binotel',
+]);
 const TERMINAL_CALL_SUPPRESSION_MS = 5 * 60 * 1000;
 
 const isNativeBrowserSipCall = call =>
@@ -219,10 +224,10 @@ const loadWebphoneClient = async () => {
   return WebphoneClient;
 };
 
-const endClientCall = async provider => {
+const endClientCall = async callOrProvider => {
   try {
     const WebphoneClient = await loadWebphoneClient();
-    await WebphoneClient.endClientCall(provider);
+    await WebphoneClient.endClientCall(callOrProvider);
   } catch {
     // Browser-side cleanup is best effort; call state is already removed.
   }
@@ -414,7 +419,7 @@ export const useCallsStore = defineStore('calls', {
           if (!sameLiveCall(call, mergedCall)) calls.push(call);
           return calls;
         }, []);
-        if (replacedActiveCall) endClientCall(existingCall.provider);
+        if (replacedActiveCall) endClientCall(existingCall);
         return;
       }
 
@@ -508,7 +513,7 @@ export const useCallsStore = defineStore('calls', {
       this.calls = this.calls.filter(c => !matchesTarget(c));
 
       if (callToRemove?.isActive) {
-        await endClientCall(callToRemove.provider);
+        await endClientCall(callToRemove);
       }
     },
 
@@ -528,7 +533,7 @@ export const useCallsStore = defineStore('calls', {
       this.calls = this.calls.filter(call => !call.isActive);
 
       if (activeCall) {
-        await endClientCall(activeCall.provider);
+        await endClientCall(activeCall);
       }
     },
 
@@ -583,11 +588,7 @@ export const useCallsStore = defineStore('calls', {
           (call.isActive || call.browserJoined)
       );
       if (removedBrowserCalls.length) {
-        await Promise.all(
-          [...new Set(removedBrowserCalls.map(call => call.provider))].map(
-            provider => endClientCall(provider)
-          )
-        );
+        await Promise.all(removedBrowserCalls.map(call => endClientCall(call)));
       }
     },
 

@@ -4,6 +4,7 @@ class Telephony::VirtualPbx::ConfigBuilder
   DEFAULT_PROVIDER_KIND = 'fonoster'
   MANAGED_BY_ONELINK = 'onelink'
   SECRET_KEY_PATTERN = /(password|secret|token|api[_-]?key|credential|auth)/i
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
 
   PROVIDER_TEMPLATES = {
     'asterisk_analog' => {
@@ -51,7 +52,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       raise Telephony::Error.new(code: 'NOT_VOICE_CHANNEL', message: 'Inbox is not a voice channel',
                                  status: :unprocessable_content)
     end
-    unless channel.provider.in?(%w[fonoster sipuni])
+    unless channel.provider.in?(%w[fonoster asterisk_analog sipuni binotel])
       raise Telephony::Error.new(code: 'UNSUPPORTED_PROVIDER', message: 'Only native voice channels can be reconciled as Virtual PBX channels',
                                  status: :unprocessable_content)
     end
@@ -307,21 +308,21 @@ class Telephony::VirtualPbx::ConfigBuilder
                                                  channel.phone_number != binding.phone_number,
       split_allowed: template_for(provider_kind)[:allows_display_ingress_split]
     }
-    phone_payload[:fonoster_tel_url] = fonoster_tel_url.presence || tel_url_for(ingress_number) unless native_sipuni_channel?(channel)
+    phone_payload[:fonoster_tel_url] = fonoster_tel_url.presence || tel_url_for(ingress_number) unless provider_owned_sip_channel?(channel)
     phone_payload.compact
   end
 
   def resources_payload(channel:, binding:, policy:)
-    native_sipuni = native_sipuni_channel?(channel)
+    provider_owned_sip = provider_owned_sip_channel?(channel)
     {
       inbox_id: channel.inbox&.id,
       channel_id: channel.id,
       number_binding_id: binding&.id,
       routing_policy_id: policy&.id,
       number_ref: binding&.number_ref,
-      app_ref: native_sipuni ? nil : binding&.configured_app_ref,
-      runtime_app_ref: native_sipuni ? nil : binding&.runtime_app_ref,
-      trunk_ref: native_sipuni ? nil : binding&.trunk_ref,
+      app_ref: provider_owned_sip ? nil : binding&.configured_app_ref,
+      runtime_app_ref: provider_owned_sip ? nil : binding&.runtime_app_ref,
+      trunk_ref: provider_owned_sip ? nil : binding&.trunk_ref,
       provider_connection: binding&.provider_connection&.to_virtual_pbx_h,
       last_synced_at: binding&.last_synced_at,
       provisioning_status: telephony_attribute(binding, :provisioning_status),
@@ -334,11 +335,11 @@ class Telephony::VirtualPbx::ConfigBuilder
   def routing_payload(binding:, policy:)
     return {} if binding.blank? && policy.blank?
 
-    native_sipuni = binding&.provider.to_s == 'sipuni'
+    provider_owned_sip = provider_owned_sip_provider?(binding&.provider)
     {
       mode: policy&.mode,
       bridge_mode: policy&.bridge_mode,
-      effective_app_ref: native_sipuni ? nil : binding&.app_ref_for_policy(policy),
+      effective_app_ref: provider_owned_sip ? nil : binding&.app_ref_for_policy(policy),
       operator_agent_ref: policy&.operator_agent_ref,
       operator_agent_aor: policy&.resolved_operator_agent_aor,
       operator_distribution_mode: policy&.operator_distribution_mode,
@@ -410,16 +411,20 @@ class Telephony::VirtualPbx::ConfigBuilder
   def provider_sip_device_credentials_configured?(connection)
     connection.username.present? && (
       connection.password_secret_ref.present? ||
-      (!native_sipuni_connection?(connection) && connection.fonoster_credentials_ref.present?)
+      (!provider_owned_sip_connection?(connection) && connection.fonoster_credentials_ref.present?)
     )
   end
 
-  def native_sipuni_channel?(channel)
-    channel&.provider.to_s == 'sipuni'
+  def provider_owned_sip_channel?(channel)
+    provider_owned_sip_provider?(channel&.provider)
   end
 
-  def native_sipuni_connection?(connection)
-    connection&.provider_kind.to_s == 'sipuni'
+  def provider_owned_sip_connection?(connection)
+    connection&.provider_kind.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
+  end
+
+  def provider_owned_sip_provider?(provider)
+    provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def normalized_sip_identity(value)

@@ -103,7 +103,11 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
     end
 
     expect(conversation.messages.activity.where('source_id LIKE ?', "ai_voice_event:#{call_session.external_call_ref}:tool_%")).not_to exist
-    tool_steps = conversation.messages.outgoing.last.additional_attributes.dig('captain_trace', 'tool_steps')
+    stored_tool_events = call_session.reload.metadata.dig('ai_voice', 'control_events')
+    expect(stored_tool_events.first.dig('metadata', 'input', 'access_token')).to eq('[REDACTED]')
+    expect(stored_tool_events.third.dig('metadata', 'output', 'api_key')).to eq('[REDACTED]')
+    ai_message = conversation.messages.find_by!(source_id: "ai_voice_turn:#{call_session.external_call_ref}:0001:ai")
+    tool_steps = ai_message.additional_attributes.dig('captain_trace', 'tool_steps')
 
     expect(tool_steps).to contain_exactly(
       include(

@@ -50,7 +50,12 @@ const buildWrapper = () =>
     global: {
       stubs: {
         PageHeader: true,
-        ChannelSelector: true,
+        ChannelSelector: {
+          name: 'ChannelSelector',
+          props: ['title', 'description', 'icon', 'imageUrl'],
+          template:
+            '<button type="button" @click="$emit(\'click\')">{{ title }}</button>',
+        },
         Select: true,
         NextButton: {
           props: ['disabled', 'label'],
@@ -71,12 +76,49 @@ describe('Voice channel setup', () => {
     routeMock.query = { provider: 'kazakhstan' };
   });
 
-  it('does not expose the legacy direct Sipuni API setup form', () => {
+  it('renders direct Sipuni as a Virtual PBX setup form', () => {
     routeMock.query = { provider: 'sipuni' };
     const wrapper = buildWrapper();
 
-    expect(wrapper.find('form').exists()).toBe(false);
+    expect(wrapper.find('form').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('INBOX_MGMT.ADD.VOICE.SIPUNI');
+  });
+
+  it('lists Asterisk analog as a separate provider card', () => {
+    routeMock.query = {};
+    const wrapper = buildWrapper();
+
+    expect(
+      wrapper.vm.availableProviders.map(provider => provider.key)
+    ).toContain('asterisk_analog');
+
+    wrapper.vm.selectProvider('asterisk_analog');
+
+    expect(wrapper.vm.kazakhstanState.providerKind).toBe('asterisk_analog');
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'settings_inboxes_page_channel',
+      params: { accountId: 530 },
+      query: { provider: 'asterisk_analog' },
+    });
+  });
+
+  it('passes badge images to local voice provider cards', () => {
+    routeMock.query = {};
+    const wrapper = buildWrapper();
+    const cards = wrapper.findAllComponents({ name: 'ChannelSelector' });
+    const imageUrlByTitle = new Map(
+      cards.map(card => [card.props('title'), card.props('imageUrl')])
+    );
+
+    expect(imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.SIPUNI')).toBe(
+      '/integrations/channels/badges/sipuni.png'
+    );
+    expect(imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.BINOTEL')).toBe(
+      '/integrations/channels/badges/binotel.png'
+    );
+    expect(
+      imageUrlByTitle.get('INBOX_MGMT.ADD.VOICE.PROVIDERS.ASTERISK_ANALOG')
+    ).toBe('/integrations/channels/badges/Asterisk.png');
   });
 
   it('creates a Virtual PBX Sipuni channel without employee profiles', async () => {
@@ -95,10 +137,10 @@ describe('Voice channel setup', () => {
 
     expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
       expect.not.objectContaining({ profiles: expect.any(Array) }),
-      { dryRun: false, remoteCommit: true }
+      { dryRun: false, remoteCommit: false }
     );
     const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
-    expect(options).toEqual({ dryRun: false, remoteCommit: true });
+    expect(options).toEqual({ dryRun: false, remoteCommit: false });
     expect(payload).toMatchObject({
       provider_kind: 'sipuni',
       channel_name: 'Virtual PBX',
@@ -124,6 +166,43 @@ describe('Voice channel setup', () => {
       params: {
         accountId: 530,
         inbox_id: 202,
+      },
+    });
+  });
+
+  it('creates a direct Binotel Virtual PBX channel as a local native provider', async () => {
+    routeMock.query = { provider: 'binotel' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 4769 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+    const inputs = wrapper.findAll('input');
+
+    await inputs[0].setValue('Binotel');
+    await inputs[1].setValue('+7 700 078 1755');
+    await inputs[2].setValue('sip53.binotel.com');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(options).toEqual({ dryRun: false, remoteCommit: false });
+    expect(payload).toMatchObject({
+      provider_kind: 'binotel',
+      channel_name: 'Binotel',
+      connection: {
+        host: 'sip53.binotel.com',
+      },
+      routing: {
+        mode: 'operator',
+        fallback_mode: 'reject',
+        operator_distribution_mode: 'broadcast',
+      },
+    });
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inboxes_add_agents',
+      params: {
+        accountId: 530,
+        inbox_id: 4769,
       },
     });
   });
@@ -174,6 +253,46 @@ describe('Voice channel setup', () => {
     );
   });
 
+  it('creates a direct Asterisk analog channel from the provider card route', async () => {
+    routeMock.query = { provider: 'asterisk_analog' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 9098 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+    const inputs = wrapper.findAll('input');
+
+    await inputs[0].setValue('Asterisk analog 9098');
+    await inputs[1].setValue('+7 717 270 5175');
+    await inputs[2].setValue('10.77.0.5');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL'
+    );
+    const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(options).toEqual({ dryRun: false, remoteCommit: false });
+    expect(payload).toMatchObject({
+      provider_kind: 'asterisk_analog',
+      channel_name: 'Asterisk analog 9098',
+      display_phone_number: '+77172705175',
+      provider_account_number: '+77172705175',
+      ingress_number: '+77172705175',
+      connection: {
+        host: '10.77.0.5',
+        port: '5060',
+        transport: 'udp',
+      },
+    });
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inboxes_add_agents',
+      params: {
+        accountId: 530,
+        inbox_id: 9098,
+      },
+    });
+  });
+
   it('creates an Asterisk analog channel with configurable provider connection', async () => {
     routeMock.query = { provider: 'kazakhstan' };
     createVirtualPbxChannelMock.mockResolvedValue({
@@ -213,7 +332,7 @@ describe('Voice channel setup', () => {
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PASSWORD.LABEL'
     );
     const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
-    expect(options).toEqual({ dryRun: false, remoteCommit: true });
+    expect(options).toEqual({ dryRun: false, remoteCommit: false });
     expect(payload).toMatchObject({
       provider_kind: 'asterisk_analog',
       channel_name: 'Asterisk analog',

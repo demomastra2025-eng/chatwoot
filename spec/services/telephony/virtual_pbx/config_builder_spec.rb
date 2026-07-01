@@ -178,6 +178,44 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     expect(payload.to_json).not_to include('do-not-return-this-secret')
   end
 
+  it 'builds managed Binotel channels without Fonoster bridge resources' do
+    result = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator).create_channel(
+      {
+        provider_kind: 'binotel',
+        channel_name: 'Binotel managed line',
+        display_phone_number: '+77000781755',
+        provider_account_number: '+77000781755',
+        ingress_number: '+77000781755',
+        connection: { host: 'sip53.binotel.com' },
+        profiles: [
+          {
+            user_id: operator.id,
+            internal_extension: '901',
+            sip_username: 'pq4dyw5f',
+            sip_password: 'do-not-return-binotel-secret',
+            enabled: true
+          }
+        ]
+      },
+      dry_run: false
+    )
+
+    payload = described_class.new(account: account).for_inbox(result.dig(:ui_config, :inbox_id))
+
+    expect(payload).to include(
+      provider: 'binotel',
+      provider_kind: 'binotel',
+      ready: true
+    )
+    expect(payload.dig(:phone_numbers, :fonoster_tel_url)).to be_nil
+    expect(payload.dig(:resources, :app_ref)).to be_nil
+    expect(payload.dig(:resources, :runtime_app_ref)).to be_nil
+    expect(payload.dig(:resources, :trunk_ref)).to be_nil
+    expect(payload.dig(:routing, :effective_app_ref)).to be_nil
+    expect(payload.dig(:profiles, 0, 'availability_mode')).to eq('browser_webphone')
+    expect(payload.to_json).not_to include('do-not-return-binotel-secret')
+  end
+
   it 'exposes non-secret Asterisk analog connection details for settings edits' do
     service = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator)
     result = service.create_channel(

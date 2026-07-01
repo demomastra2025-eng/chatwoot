@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Telephony::OperatorIdentityResolver
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+
   Identity = Struct.new(:source, :record, keyword_init: true) do
     def agent_binding
       record if source == :agent_binding
@@ -12,7 +14,7 @@ class Telephony::OperatorIdentityResolver
 
     def agent_ref
       return agent_binding.agent_ref if agent_binding
-      return sip_profile.agent_ref if sip_profile&.inbox&.channel&.provider == 'sipuni'
+      return sip_profile.agent_ref if provider_owned_sip_provider?
 
       agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
     end
@@ -57,12 +59,19 @@ class Telephony::OperatorIdentityResolver
           internal_extension: sip_profile.internal_extension
         )
       end
-      unless provider == 'sipuni'
+      unless provider.to_s.in?(Telephony::OperatorIdentityResolver::PROVIDER_OWNED_SIP_PROVIDERS)
         attrs[:fonoster_agent_ref] = agent_ref
         attrs[:fonosterAgentRef] = agent_ref
       end
 
       attrs.compact
+    end
+
+    def provider_owned_sip_provider?
+      channel_provider = sip_profile&.inbox&.channel&.provider.to_s
+      return channel_provider.in?(Telephony::OperatorIdentityResolver::PROVIDER_OWNED_SIP_PROVIDERS) if channel_provider.present?
+
+      sip_profile&.provider_connection&.provider_kind.to_s.in?(Telephony::OperatorIdentityResolver::PROVIDER_OWNED_SIP_PROVIDERS)
     end
   end
 

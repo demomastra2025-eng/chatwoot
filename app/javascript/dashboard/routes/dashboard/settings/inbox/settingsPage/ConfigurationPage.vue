@@ -64,6 +64,8 @@ export default {
       virtualPbxProvisioningPlan: null,
       virtualPbxProvisioningRuns: [],
       virtualPbxReconcileResult: null,
+      sipuniWebhookToken: '',
+      isUpdatingSipuniWebhook: false,
       virtualPbxForm: {
         channelName: '',
         providerKind: 'sipuni',
@@ -100,8 +102,24 @@ export default {
     isVirtualPbxVoiceInbox() {
       return (
         this.inbox.channel_type === 'Channel::Voice' &&
-        ['fonoster', 'sipuni'].includes(this.inbox.provider)
+        ['fonoster', 'asterisk_analog', 'sipuni', 'binotel'].includes(
+          this.inbox.provider
+        )
       );
+    },
+    isSipuniVoiceInbox() {
+      return (
+        this.inbox.channel_type === 'Channel::Voice' &&
+        this.inbox.provider === 'sipuni'
+      );
+    },
+    sipuniWebhookUrl() {
+      const token = this.sipuniWebhookToken.trim();
+      if (!token) return '';
+
+      const baseUrl =
+        window.chatwootConfig?.hostURL || window.location.origin || '';
+      return `${baseUrl.replace(/\/$/, '')}/sipuni/events/${encodeURIComponent(token)}`;
     },
     virtualPbxLoadKey() {
       return [
@@ -153,16 +171,23 @@ export default {
       );
     },
     isVirtualPbxSipCredentialsVisible() {
+      return ['asterisk_analog', 'sipuni', 'binotel'].includes(
+        this.virtualPbxProviderKind
+      );
+    },
+    isVirtualPbxProviderOwnedSip() {
       return ['sipuni', 'binotel'].includes(this.virtualPbxProviderKind);
     },
-    isVirtualPbxSipuni() {
-      return this.virtualPbxProviderKind === 'sipuni';
+    isVirtualPbxLocalNativeProvider() {
+      return ['asterisk_analog', 'sipuni', 'binotel'].includes(
+        this.virtualPbxProviderKind
+      );
     },
     showVirtualPbxTechnicalSettings() {
-      return !this.isVirtualPbxSipuni;
+      return !this.isVirtualPbxProviderOwnedSip;
     },
     virtualPbxManagementLabel() {
-      if (this.isVirtualPbxSipuni) {
+      if (this.isVirtualPbxProviderOwnedSip) {
         return this.$t(
           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE'
         );
@@ -171,7 +196,7 @@ export default {
       return this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MANAGEMENT_TITLE');
     },
     virtualPbxManagementHelpText() {
-      if (this.isVirtualPbxSipuni) {
+      if (this.isVirtualPbxProviderOwnedSip) {
         return this.$t(
           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.HINT'
         );
@@ -309,6 +334,10 @@ export default {
         ? !!this.inbox.provider_config.calling_enabled
         : !!this.inbox.provider_config?.calling_capable;
       this.aiVoiceEnabled = !!this.inbox.provider_config?.ai_voice_enabled;
+      this.sipuniWebhookToken =
+        this.inbox.provider_config?.sipuni_events_webhook_token ||
+        this.inbox.provider_config?.sipuni_webhook_token ||
+        '';
       this.$nextTick(() => {
         this.isSettingDefaults = false;
       });
@@ -798,7 +827,7 @@ export default {
         const response = await VoiceAPI.updateVirtualPbxChannel(
           this.inbox.id,
           this.virtualPbxUpdatePayload(),
-          { dryRun: false, remoteCommit: true }
+          { dryRun: false, remoteCommit: !this.isVirtualPbxLocalNativeProvider }
         );
         const errors = response?.payload?.errors || [];
         if (errors.length) {
@@ -852,6 +881,50 @@ export default {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
       } catch (error) {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      }
+    },
+    generateSipuniWebhookToken() {
+      if (window.crypto?.getRandomValues) {
+        const bytes = new Uint8Array(24);
+        window.crypto.getRandomValues(bytes);
+        this.sipuniWebhookToken = Array.from(bytes, byte =>
+          byte.toString(16).padStart(2, '0')
+        ).join('');
+        return;
+      }
+
+      this.sipuniWebhookToken = `${Date.now()}${Math.random()
+        .toString(36)
+        .slice(2)}`;
+    },
+    async updateSipuniWebhookToken() {
+      const token = this.sipuniWebhookToken.trim();
+      if (!token) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_REQUIRED')
+        );
+        return;
+      }
+
+      this.isUpdatingSipuniWebhook = true;
+      try {
+        await this.$store.dispatch('inboxes/updateInbox', {
+          id: this.inbox.id,
+          formData: false,
+          channel: {
+            provider_config: {
+              ...this.inbox.provider_config,
+              sipuni_events_webhook_token: token,
+            },
+          },
+        });
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      } finally {
+        this.isUpdatingSipuniWebhook = false;
       }
     },
     async syncTemplates() {
@@ -962,6 +1035,57 @@ export default {
         "
       >
         <FonosterReadiness :key="fonosterReadinessKey" :inbox="inbox" />
+      </SettingsFieldSection>
+      <SettingsFieldSection
+        v-if="isSipuniVoiceInbox"
+        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TITLE')"
+        :help-text="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SUBTITLE')
+        "
+      >
+        <div class="flex flex-col gap-4">
+          <woot-code
+            v-if="sipuniWebhookUrl"
+            :script="sipuniWebhookUrl"
+            lang="html"
+          />
+          <div
+            v-else
+            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+          >
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_EMPTY') }}
+          </div>
+
+          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN') }}
+            <input
+              v-model="sipuniWebhookToken"
+              class="rounded-lg border border-n-weak py-2 text-sm"
+              type="password"
+              autocomplete="new-password"
+              :placeholder="
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_TOKEN_PLACEHOLDER'
+                )
+              "
+            />
+          </label>
+
+          <div class="flex flex-wrap gap-3">
+            <NextButton type="button" @click="generateSipuniWebhookToken">
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_GENERATE')
+              }}
+            </NextButton>
+            <NextButton
+              type="button"
+              :is-loading="isUpdatingSipuniWebhook"
+              @click="updateSipuniWebhookToken"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SAVE') }}
+            </NextButton>
+          </div>
+        </div>
       </SettingsFieldSection>
       <SettingsFieldSection
         :label="virtualPbxManagementLabel"
@@ -1155,7 +1279,9 @@ export default {
 
           <div
             :class="
-              isVirtualPbxSipuni ? '' : 'rounded-xl border border-n-weak p-4'
+              isVirtualPbxProviderOwnedSip
+                ? ''
+                : 'rounded-xl border border-n-weak p-4'
             "
           >
             <div class="mb-3 space-y-1">

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Telephony::VirtualPbx::DesiredStateBuilder
+  LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
+
   MANAGED_BY_ONELINK = 'onelink'
 
   def initialize(account:)
@@ -130,7 +132,7 @@ class Telephony::VirtualPbx::DesiredStateBuilder
   end
 
   def local_native_provider_kind?(provider_kind)
-    provider_kind.to_s == 'sipuni'
+    provider_kind.to_s.in?(LOCAL_NATIVE_PROVIDER_KINDS)
   end
 
   def ownership_payload(config, binding)

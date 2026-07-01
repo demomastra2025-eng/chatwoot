@@ -141,7 +141,7 @@ describe('AddAgents', () => {
           source: 'virtual_pbx_agents_step',
         },
       },
-      { dryRun: false, remoteCommit: true }
+      { dryRun: false, remoteCommit: false }
     );
     expect(alertMock).toHaveBeenCalledWith('INBOX_MGMT.AGENTS.SAVE_SUCCESS');
     expect(routerReplaceMock).toHaveBeenCalledWith({
@@ -154,7 +154,50 @@ describe('AddAgents', () => {
     });
   });
 
-  it('saves Asterisk analog employee internal extensions without SIP credentials', async () => {
+  it('saves Virtual PBX Binotel employee SIP credentials without remote commit', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          channel: { provider_kind: 'binotel' },
+          employees: [],
+        },
+      },
+    });
+    const wrapper = buildWrapper({
+      agents: [{ id: 7, name: 'Agent One' }],
+    });
+    await flushPromises();
+
+    wrapper.vm.selectedAgentIds = [7];
+    await wrapper.vm.$nextTick();
+    wrapper.vm.virtualPbxProfiles[7].internalExtension = '901';
+    wrapper.vm.virtualPbxProfiles[7].sipUsername = 'pq4dyw5f';
+    wrapper.vm.virtualPbxProfiles[7].sipPassword = 'secret-901';
+
+    await wrapper.vm.addAgents();
+    await flushPromises();
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
+      '4690',
+      {
+        profiles: [
+          {
+            user_id: 7,
+            internal_extension: '901',
+            sip_username: 'pq4dyw5f',
+            sip_password: 'secret-901',
+            enabled: true,
+          },
+        ],
+        metadata: {
+          source: 'virtual_pbx_agents_step',
+        },
+      },
+      { dryRun: false, remoteCommit: false }
+    );
+  });
+
+  it('saves Asterisk analog employee SIP credentials for direct browser webphone', async () => {
     getVirtualPbxStatusMock.mockResolvedValue({
       payload: {
         ui_config: {
@@ -171,8 +214,8 @@ describe('AddAgents', () => {
     wrapper.vm.selectedAgentIds = [7];
     await wrapper.vm.$nextTick();
     wrapper.vm.virtualPbxProfiles[7].internalExtension = '9098';
-    wrapper.vm.virtualPbxProfiles[7].sipUsername = 'must-not-send';
-    wrapper.vm.virtualPbxProfiles[7].sipPassword = 'must-not-send';
+    wrapper.vm.virtualPbxProfiles[7].sipUsername = '9098';
+    wrapper.vm.virtualPbxProfiles[7].sipPassword = 'sip-secret';
 
     await wrapper.vm.addAgents();
     await flushPromises();
@@ -184,6 +227,8 @@ describe('AddAgents', () => {
           {
             user_id: 7,
             internal_extension: '9098',
+            sip_username: '9098',
+            sip_password: 'sip-secret',
             enabled: true,
           },
         ],
@@ -191,12 +236,12 @@ describe('AddAgents', () => {
           source: 'virtual_pbx_agents_step',
         },
       },
-      { dryRun: false, remoteCommit: true }
+      { dryRun: false, remoteCommit: false }
     );
-    expect(wrapper.text()).not.toContain(
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
     );
-    expect(wrapper.text()).not.toContain(
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
     );
   });

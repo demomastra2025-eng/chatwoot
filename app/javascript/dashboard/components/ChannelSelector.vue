@@ -14,6 +14,10 @@ defineProps({
     type: String,
     required: true,
   },
+  imageUrl: {
+    type: String,
+    default: '',
+  },
   isComingSoon: {
     type: Boolean,
     default: false,
@@ -31,9 +35,16 @@ defineProps({
     }"
   >
     <div
-      class="flex size-10 items-center justify-center rounded-full bg-n-alpha-2"
+      class="flex size-10 items-center justify-center overflow-hidden bg-n-alpha-2"
+      :class="imageUrl ? 'rounded-lg' : 'rounded-full'"
     >
-      <Icon :icon="icon" class="text-n-slate-10 size-6" />
+      <img
+        v-if="imageUrl"
+        :src="imageUrl"
+        alt=""
+        class="size-10 object-contain"
+      />
+      <Icon v-else :icon="icon" class="text-n-slate-10 size-6" />
     </div>
 
     <div class="flex flex-col items-start gap-1.5">

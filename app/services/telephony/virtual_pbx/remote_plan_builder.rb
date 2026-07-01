@@ -7,7 +7,8 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   REMOTE_MUTATIONS_BLOCKED = 'blocked'
   REMOTE_MUTATIONS_REQUIRES_APPROVAL = 'requires_approval'
   DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
-  PROVIDER_OWNED_ROUTING_KINDS = %w[sipuni binotel].freeze
+  PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  LOCAL_NATIVE_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
 
   def initialize(account:)
@@ -311,7 +312,7 @@ class Telephony::VirtualPbx::RemotePlanBuilder
   end
 
   def local_native_provider?(state)
-    state[:provider].to_s == 'sipuni'
+    state[:provider].to_s.in?(LOCAL_NATIVE_PROVIDERS)
   end
 
   def connection_credentials_name(state, connection, credentials_ref)

@@ -153,7 +153,12 @@ const navigateToConversation = response => {
   }
 };
 
-const BROWSER_SIP_PROVIDERS = new Set(['fonoster', 'sipuni']);
+const BROWSER_SIP_PROVIDERS = new Set([
+  'fonoster',
+  'asterisk_analog',
+  'sipuni',
+  'binotel',
+]);
 
 const isBrowserSipInbox = inbox => BROWSER_SIP_PROVIDERS.has(inbox?.provider);
 
@@ -184,34 +189,47 @@ const prepareBrowserSipWebphone = async inbox => {
   if (!isBrowserSipInbox(inbox)) return true;
 
   const provider = inbox.provider;
-  const microphonePrewarm = WebphoneClient.prewarmMicrophone(provider).catch(
-    error => ({
+  const webphoneScope = { provider, inboxId: inbox.id };
+  const prewarmMicrophone = scope =>
+    WebphoneClient.prewarmMicrophone(scope).catch(error => ({
       provider,
       prewarmed: false,
       reason: error?.name || 'microphone_unavailable',
-    })
-  );
+    }));
+  const microphonePrewarm = prewarmMicrophone(webphoneScope);
+
+  const stopMicrophonePrewarm = scope =>
+    WebphoneClient.stopMicrophonePrewarm(scope);
+
   try {
     const session = await WebphoneClient.initializeDevice(inbox.id, {
       native: true,
     });
-    const microphone = await microphonePrewarm;
+    const sessionScope = {
+      provider,
+      inboxId: inbox.id,
+      sessionKey: session?.sessionKey || session?.session_key,
+      sipProfileId: session?.sipProfileId || session?.sip_profile_id,
+    };
+    let microphone = await microphonePrewarm;
     const browserJoinSupported =
       session?.browserJoinSupported ?? session?.browser_join_supported;
     if (browserJoinSupported === false) {
-      WebphoneClient.stopMicrophonePrewarm(provider);
+      stopMicrophonePrewarm(sessionScope);
       return true;
     }
+
+    if (!microphone) microphone = await prewarmMicrophone(sessionScope);
 
     const ready =
       session?.provider === provider &&
       session?.callingSupported !== false &&
       session?.registered !== false &&
       microphone?.prewarmed !== false;
-    if (!ready) WebphoneClient.stopMicrophonePrewarm(provider);
+    if (!ready) stopMicrophonePrewarm(sessionScope);
     return ready;
   } catch (error) {
-    WebphoneClient.stopMicrophonePrewarm(provider);
+    stopMicrophonePrewarm(webphoneScope);
     // eslint-disable-next-line no-console
     console.warn('Failed to prepare browser SIP webphone:', error);
     return false;
@@ -267,7 +285,10 @@ const startCall = async inbox => {
     navigateToConversation(response);
   } catch (error) {
     if (isBrowserSipInbox(inbox)) {
-      WebphoneClient.stopMicrophonePrewarm(inbox.provider);
+      WebphoneClient.stopMicrophonePrewarm({
+        provider: inbox.provider,
+        inboxId: inbox.id,
+      });
     }
     const apiError = error?.message;
     useAlert(apiError || t('CONTACT_PANEL.CALL_FAILED'));

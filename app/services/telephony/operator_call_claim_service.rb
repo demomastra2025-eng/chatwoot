@@ -1,4 +1,6 @@
 class Telephony::OperatorCallClaimService
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+
   def initialize(account:, user:, call_ref:)
     @account = account
     @user = user
@@ -295,9 +297,13 @@ class Telephony::OperatorCallClaimService
 
   def operator_agent_ref
     return operator_agent_binding.agent_ref if operator_agent_binding
-    return sip_profile.agent_ref if call_session.provider == 'sipuni'
+    return sip_profile.agent_ref if provider_owned_sip_provider?
 
     operator_agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
+  end
+
+  def provider_owned_sip_provider?
+    call_session.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def operator_agent_aor

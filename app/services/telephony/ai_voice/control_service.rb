@@ -41,7 +41,7 @@ class Telephony::AiVoice::ControlService
       ai_voice['control_events'] ||= []
       ai_voice['control_events'] << {
         'action' => action,
-        'metadata' => payload['metadata'].is_a?(Hash) ? payload['metadata'] : {},
+        'metadata' => control_metadata,
         'sequence' => @control_event_sequence,
         'at' => Time.current.iso8601
       }
@@ -51,9 +51,10 @@ class Telephony::AiVoice::ControlService
   end
 
   def sync_conversation_timeline_event!
+    call_session.reload
     Telephony::AiVoice::ConversationTimelineService.new(call_session: call_session).record_control_event!(
       action: action,
-      metadata: payload['metadata'].is_a?(Hash) ? payload['metadata'] : {},
+      metadata: control_metadata,
       sequence: @control_event_sequence
     )
   end
@@ -82,7 +83,14 @@ class Telephony::AiVoice::ControlService
   end
 
   def lifecycle_metadata
-    @lifecycle_metadata ||= payload['metadata'].is_a?(Hash) ? payload['metadata'].deep_stringify_keys : {}
+    @lifecycle_metadata ||= control_metadata.deep_stringify_keys
+  end
+
+  def control_metadata
+    @control_metadata ||= begin
+      metadata = payload['metadata'].is_a?(Hash) ? payload['metadata'] : {}
+      Captain::ToolTraceBuilder.sanitize_payload(metadata).presence || {}
+    end
   end
 
   def bridge_call_ref

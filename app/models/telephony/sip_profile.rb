@@ -53,6 +53,7 @@ class Telephony::SipProfile < ApplicationRecord
   encrypts :sip_password if Chatwoot.encryption_configured?
 
   AVAILABILITY_MODES = %w[browser_webphone external_extension provider_extension].freeze
+  PROVIDER_OWNED_SIP_KINDS = %w[asterisk_analog sipuni binotel].freeze
   STATUSES = %w[draft active disabled deleting failed].freeze
   OWNERSHIP_STATUSES = %w[local managed legacy_reference read_only deleting].freeze
   MANAGED_BY_ONELINK = 'onelink'
@@ -112,7 +113,7 @@ class Telephony::SipProfile < ApplicationRecord
       last_synced_at: last_synced_at,
       metadata: metadata
     }
-    unless native_sipuni_profile?
+    unless provider_owned_sip_profile?
       payload[:fonoster_agent_ref] = fonoster_agent_ref
       payload[:fonoster_credentials_ref] = fonoster_credentials_ref
     end
@@ -157,10 +158,12 @@ class Telephony::SipProfile < ApplicationRecord
 
   private
 
-  def native_sipuni_profile?
-    inbox&.channel&.provider.to_s == 'sipuni' ||
-      provider_connection&.provider_kind.to_s == 'sipuni' ||
-      metadata_value('provider_kind') == 'sipuni'
+  def provider_owned_sip_profile?
+    channel_provider = inbox&.channel&.provider.to_s
+    return channel_provider.in?(PROVIDER_OWNED_SIP_KINDS) if channel_provider.present?
+
+    provider_connection&.provider_kind.to_s.in?(PROVIDER_OWNED_SIP_KINDS) ||
+      metadata_value('provider_kind').to_s.in?(PROVIDER_OWNED_SIP_KINDS)
   end
 
   def normalize_values

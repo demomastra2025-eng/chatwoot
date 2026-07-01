@@ -19,6 +19,19 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
     )
   end
 
+  def incoming
+    inbox = Current.account.inboxes.find(params.require(:inbox_id))
+    authorize inbox, :show?
+
+    render_payload(
+      webphone_service.report_browser_sip_incoming!(
+        user: Current.user,
+        inbox: inbox,
+        params: incoming_params.to_h
+      )
+    )
+  end
+
   def claim
     render_payload(
       Telephony::OperatorCallClaimService.new(
@@ -45,5 +58,27 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
 
   def webphone_service
     @webphone_service ||= Telephony::WebphoneService.new(account: Current.account)
+  end
+
+  def incoming_params
+    params.permit(
+      :provider,
+      :call_ref,
+      :callRef,
+      :call_sid,
+      :callSid,
+      :from,
+      :from_number,
+      :fromNumber,
+      :to,
+      :to_number,
+      :toNumber,
+      :session_key,
+      :sessionKey,
+      :sip_profile_id,
+      :sipProfileId,
+      :internal_extension,
+      :internalExtension
+    )
   end
 end

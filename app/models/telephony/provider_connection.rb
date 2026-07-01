@@ -52,6 +52,7 @@ class Telephony::ProviderConnection < ApplicationRecord
   self.table_name = 'telephony_provider_connections'
 
   PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_OWNED_SIP_KINDS = %w[asterisk_analog sipuni binotel].freeze
   STATUSES = %w[draft active disabled deleting failed].freeze
   OWNERSHIP_STATUSES = %w[local managed legacy_reference read_only deleting].freeze
   MANAGED_BY_ONELINK = 'onelink'
@@ -106,7 +107,7 @@ class Telephony::ProviderConnection < ApplicationRecord
       remote_drift_summary: telephony_attribute(:remote_drift_summary),
       metadata: metadata
     }
-    unless provider_kind == 'sipuni'
+    unless provider_kind.in?(PROVIDER_OWNED_SIP_KINDS)
       payload.merge!(
         fonoster_trunk_ref: fonoster_trunk_ref,
         fonoster_credentials_ref: fonoster_credentials_ref,

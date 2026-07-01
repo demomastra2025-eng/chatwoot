@@ -10,6 +10,7 @@ const {
   joinClientCallMock,
   removeEventListenerMock,
   rejectBackendCallMock,
+  reportBrowserSipIncomingMock,
   rejectClientCallMock,
   routeMock,
   inboxGetterMock,
@@ -24,6 +25,7 @@ const {
   joinClientCallMock: vi.fn(),
   removeEventListenerMock: vi.fn(),
   rejectBackendCallMock: vi.fn(),
+  reportBrowserSipIncomingMock: vi.fn(),
   rejectClientCallMock: vi.fn(),
   routeMock: { params: {} },
   inboxGetterMock: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
     joinConference: vi.fn(),
     leaveConference: vi.fn(),
     rejectIncomingCall: rejectBackendCallMock,
+    reportBrowserSipIncoming: reportBrowserSipIncomingMock,
   },
 }));
 
@@ -109,6 +112,17 @@ describe('useCallSession', () => {
       answered: true,
     });
     rejectBackendCallMock.mockResolvedValue({ status: 'rejected' });
+    reportBrowserSipIncomingMock.mockResolvedValue({
+      callSid: 'binotel:janus:call-1',
+      status: 'ringing',
+      provider: 'binotel',
+      inbox_id: 4770,
+      call_direction: 'inbound',
+      from_number: '+77475318623',
+      operator_candidates: [{ sip_profile_id: 40, user_id: 179 }],
+      operator_internal_extension: '901',
+      sip_profile_id: 40,
+    });
     rejectClientCallMock.mockResolvedValue({
       provider: 'fonoster',
       declined: true,
@@ -138,7 +152,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(10_000);
 
@@ -153,8 +167,8 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
     expect(initializeDeviceMock).toHaveBeenCalledWith(4696, { native: true });
-    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
   });
 
   it('bootstraps browser calling for a Channel::Voice route inbox without provider metadata', async () => {
@@ -167,19 +181,19 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
     expect(initializeDeviceMock).toHaveBeenCalledWith(4704);
-    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
   });
 
-  it('does not request an unscoped webphone token while route inbox metadata is loading', async () => {
+  it('bootstraps a route inbox with the native token endpoint while inbox metadata is loading', async () => {
     routeMock.params = { inbox_id: '4698' };
     inboxGetterMock.mockReturnValue(null);
 
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(initializeDeviceMock).not.toHaveBeenCalled();
-    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalled();
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4698, { native: true });
   });
 
   it('bootstraps browser calling for an active communication thread voice channel', async () => {
@@ -198,8 +212,49 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
     expect(initializeDeviceMock).toHaveBeenCalledWith(4704);
-    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+  });
+
+  it('reports native Binotel Janus incoming calls so the backend creates a call session', async () => {
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const incomingHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:incoming'
+    )?.[1];
+    await incomingHandler({
+      detail: {
+        provider: 'binotel',
+        inboxId: 4770,
+        sipProfileId: 40,
+        sessionKey: 'sip_profile:40',
+        internalExtension: '901',
+        callRef: 'raw-janus-call-id',
+        from: 'sip:+77475318623@sip53.binotel.com',
+      },
+    });
+
+    expect(reportBrowserSipIncomingMock).toHaveBeenCalledWith({
+      provider: 'binotel',
+      inbox_id: 4770,
+      call_ref: 'raw-janus-call-id',
+      from: 'sip:+77475318623@sip53.binotel.com',
+      session_key: 'sip_profile:40',
+      sip_profile_id: 40,
+      internal_extension: '901',
+    });
+    expect(useCallsStore().calls).toEqual([
+      expect.objectContaining({
+        callSid: 'binotel:janus:call-1',
+        provider: 'binotel',
+        inboxId: 4770,
+        callDirection: 'inbound',
+        fromNumber: '+77475318623',
+        operatorInternalExtension: '901',
+        sipProfileId: 40,
+      }),
+    ]);
   });
 
   it('does not request an unscoped webphone token while a communication thread is loading', async () => {
@@ -225,6 +280,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4698, { native: true });
   });
 
@@ -238,7 +294,9 @@ describe('useCallSession', () => {
 
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
-    expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster' })
+    );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-server-side-reject',
       {
@@ -260,7 +318,9 @@ describe('useCallSession', () => {
 
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
-    expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster' })
+    );
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-no-sip-decline', {
       reason: 'operator_declined',
       status: 'rejected',
@@ -279,7 +339,9 @@ describe('useCallSession', () => {
 
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
-    expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster' })
+    );
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-release-failed', {
       reason: 'operator_declined',
       status: 'rejected',
@@ -305,7 +367,9 @@ describe('useCallSession', () => {
       callSid: 'call-active-bridge-release',
     });
 
-    expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster', inboxId: 4083 })
+    );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-active-bridge-release',
       {
@@ -427,7 +491,9 @@ describe('useCallSession', () => {
       callSid: 'call-local-hangup-failed',
     });
 
-    expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster', inboxId: 4083 })
+    );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-local-hangup-failed',
       {
@@ -543,7 +609,9 @@ describe('useCallSession', () => {
 
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
-    expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster' })
+    );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-local-decline-failed',
       {
@@ -778,12 +846,15 @@ describe('useCallSession', () => {
       waitingForAnswer: true,
     });
     expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
-    expect(joinClientCallMock).toHaveBeenCalledWith({
-      provider: 'fonoster',
-      conversationId: 6,
-      callRef: 'call-outbound-browser-join',
-      callDirection: 'outbound',
-    });
+    expect(joinClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'fonoster',
+        inboxId: 4083,
+        conversationId: 6,
+        callRef: 'call-outbound-browser-join',
+        callDirection: 'outbound',
+      })
+    );
     expect(callsStore.activeCall).toBeNull();
     expect(callsStore.calls).toEqual([
       expect.objectContaining({
@@ -872,7 +943,9 @@ describe('useCallSession', () => {
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
     expect(rejectClientCallMock).not.toHaveBeenCalled();
-    expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'fonoster' })
+    );
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-outbound-cancel', {
       reason: 'operator_cancelled',
       status: 'cancelled',

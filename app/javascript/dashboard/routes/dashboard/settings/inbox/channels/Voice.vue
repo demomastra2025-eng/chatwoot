@@ -23,8 +23,19 @@ const router = useRouter();
 
 const PROVIDER_TYPES = {
   KAZAKHSTAN: 'kazakhstan',
+  ASTERISK_ANALOG: 'asterisk_analog',
   SIPUNI: 'sipuni',
+  BINOTEL: 'binotel',
   TWILIO: 'twilio',
+};
+
+const channelBadgePath = fileName =>
+  `/integrations/channels/badges/${fileName}`;
+
+const PROVIDER_BADGES = {
+  [PROVIDER_TYPES.SIPUNI]: channelBadgePath('sipuni.png'),
+  [PROVIDER_TYPES.BINOTEL]: channelBadgePath('binotel.png'),
+  [PROVIDER_TYPES.ASTERISK_ANALOG]: channelBadgePath('Asterisk.png'),
 };
 
 const kazakhstanState = reactive({
@@ -69,11 +80,35 @@ const selectedProvider = computed(() => {
     : '';
 });
 
-const isAsteriskAnalogProvider = computed(
-  () => kazakhstanState.providerKind === 'asterisk_analog'
-);
 const isSipuniProvider = computed(
   () => selectedProvider.value === PROVIDER_TYPES.SIPUNI
+);
+const isBinotelProvider = computed(
+  () => selectedProvider.value === PROVIDER_TYPES.BINOTEL
+);
+const isAsteriskAnalogSelectedProvider = computed(
+  () => selectedProvider.value === PROVIDER_TYPES.ASTERISK_ANALOG
+);
+const isDirectProviderOwnedSipProvider = computed(
+  () =>
+    isSipuniProvider.value ||
+    isBinotelProvider.value ||
+    isAsteriskAnalogSelectedProvider.value
+);
+const selectedVirtualPbxProviderKind = computed(() => {
+  if (isSipuniProvider.value) return 'sipuni';
+  if (isBinotelProvider.value) return 'binotel';
+  if (isAsteriskAnalogSelectedProvider.value) return 'asterisk_analog';
+
+  return kazakhstanState.providerKind;
+});
+const isAsteriskAnalogProvider = computed(
+  () => selectedVirtualPbxProviderKind.value === 'asterisk_analog'
+);
+const isLocalNativeVirtualPbxProvider = computed(() =>
+  ['asterisk_analog', 'sipuni', 'binotel'].includes(
+    selectedVirtualPbxProviderKind.value
+  )
 );
 
 const showProviderSelection = computed(() => !selectedProvider.value);
@@ -90,6 +125,21 @@ const availableProviders = computed(() => [
     title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.SIPUNI'),
     description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.SIPUNI_DESC'),
     icon: 'i-ph-phone-call-fill channel-icon-voice',
+    imageUrl: PROVIDER_BADGES[PROVIDER_TYPES.SIPUNI],
+  },
+  {
+    key: PROVIDER_TYPES.ASTERISK_ANALOG,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.ASTERISK_ANALOG'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.ASTERISK_ANALOG_DESC'),
+    icon: 'i-ph-phone-call-fill channel-icon-voice',
+    imageUrl: PROVIDER_BADGES[PROVIDER_TYPES.ASTERISK_ANALOG],
+  },
+  {
+    key: PROVIDER_TYPES.BINOTEL,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.BINOTEL'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.BINOTEL_DESC'),
+    icon: 'i-ph-phone-call-fill channel-icon-voice',
+    imageUrl: PROVIDER_BADGES[PROVIDER_TYPES.BINOTEL],
   },
   {
     key: PROVIDER_TYPES.TWILIO,
@@ -189,6 +239,12 @@ function selectProvider(provider) {
   if (provider === PROVIDER_TYPES.SIPUNI) {
     kazakhstanState.providerKind = 'sipuni';
   }
+  if (provider === PROVIDER_TYPES.BINOTEL) {
+    kazakhstanState.providerKind = 'binotel';
+  }
+  if (provider === PROVIDER_TYPES.ASTERISK_ANALOG) {
+    kazakhstanState.providerKind = 'asterisk_analog';
+  }
 
   router.push({
     name: route.name,
@@ -206,9 +262,7 @@ function resetProviderSelection() {
 }
 
 function getVirtualPbxPayload() {
-  const providerKind = isSipuniProvider.value
-    ? 'sipuni'
-    : kazakhstanState.providerKind;
+  const providerKind = selectedVirtualPbxProviderKind.value;
   const displayPhoneNumber = kazakhstanState.phoneNumber.trim();
   const ingressNumber =
     kazakhstanState.ingressNumber.trim() || displayPhoneNumber;
@@ -276,7 +330,7 @@ async function createKazakhstanChannel() {
   try {
     const response = await VoiceAPI.createVirtualPbxChannel(
       getVirtualPbxPayload(),
-      { dryRun: false, remoteCommit: !isSipuniProvider.value }
+      { dryRun: false, remoteCommit: !isLocalNativeVirtualPbxProvider.value }
     );
     const provisioningError = provisioningErrorMessage(response);
     if (provisioningError) {
@@ -348,6 +402,7 @@ async function createTwilioChannel() {
           :title="provider.title"
           :description="provider.description"
           :icon="provider.icon"
+          :image-url="provider.imageUrl"
           @click="selectProvider(provider.key)"
         />
       </div>
@@ -377,7 +432,9 @@ async function createTwilioChannel() {
       <form
         v-if="
           selectedProvider === PROVIDER_TYPES.KAZAKHSTAN ||
-          selectedProvider === PROVIDER_TYPES.SIPUNI
+          selectedProvider === PROVIDER_TYPES.SIPUNI ||
+          selectedProvider === PROVIDER_TYPES.ASTERISK_ANALOG ||
+          selectedProvider === PROVIDER_TYPES.BINOTEL
         "
         class="flex flex-col gap-4 flex-wrap mx-0"
         @submit.prevent="createKazakhstanChannel"
@@ -402,7 +459,10 @@ async function createTwilioChannel() {
           @blur="kazakhstanV$.phoneNumber?.$touch"
         />
 
-        <div v-if="!isSipuniProvider" class="flex flex-col gap-2">
+        <div
+          v-if="!isDirectProviderOwnedSipProvider"
+          class="flex flex-col gap-2"
+        >
           <label class="text-sm font-medium text-n-slate-12">
             {{ t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.LABEL') }}
           </label>

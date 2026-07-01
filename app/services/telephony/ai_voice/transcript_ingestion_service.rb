@@ -70,7 +70,9 @@ class Telephony::AiVoice::TranscriptIngestionService
   def voice_message_transcript_items
     transcript = call_session.metadata.dig(TRANSCRIPT_METADATA_KEY, 'transcript') || {}
     items = Array.wrap(transcript['final_items']) + Array.wrap(transcript['partial_items'])
-    items.uniq { |item| item.slice('speaker', 'text', 'at', 'final') }.last(200)
+    items.uniq { |item| item.slice('speaker', 'text', 'at', 'final') }
+         .last(200)
+         .map { |item| Telephony::AiVoice::TranscriptItemNormalizer.presentation_item(item) }
   end
 
   def transcript_text(items)
@@ -139,12 +141,22 @@ class Telephony::AiVoice::TranscriptIngestionService
       text = item['text'].to_s.strip
       next if text.blank?
 
-      {
+      base_item = item.slice(
+        'raw_text',
+        'reasoning',
+        'artifact_ids',
+        'handoff_message',
+        'handoff_reason',
+        'handoff_status_reason',
+        'structured_response',
+        'normalized_from'
+      ).merge(
         'speaker' => normalized_speaker(item['speaker']),
         'text' => text,
         'final' => ActiveModel::Type::Boolean.new.cast(item['final'] || payload['final']),
         'at' => parse_time(item['at'] || item['occurred_at'] || item['occurredAt'])&.iso8601 || Time.current.iso8601
-      }
+      )
+      Telephony::AiVoice::TranscriptItemNormalizer.call(base_item)
     end
   end
 

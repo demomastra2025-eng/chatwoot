@@ -43,6 +43,141 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
     expect(call_session.reload.metadata.dig('ai_voice', 'transcript', 'partial_items').last['text']).to eq('алло')
   end
 
+  it 'normalizes structured Captain JSON from voice AI into spoken text and reasoning trace' do
+    now = Time.current
+    voice_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      source_id: "voice_call:#{call_session.external_call_ref}",
+      content_attributes: { data: { call_sid: call_session.external_call_ref, status: 'in_progress' } }
+    )
+    captain_json_text = {
+      reasoning: 'Greeting the caller before asking how to help.',
+      response: 'Здравствуйте! Чем могу помочь?',
+      artifact_ids: ['internal-doc-1'],
+      handoff_reason: 'internal only'
+    }.to_json
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/transcript',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             final: true,
+             items: [{ speaker: 'ai', text: captain_json_text, final: true, at: now.iso8601 }]
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    ai_message = conversation.messages.find_by!(source_id: "ai_voice_turn:#{call_session.external_call_ref}:0:ai")
+    expect(ai_message.content).to eq('Здравствуйте! Чем могу помочь?')
+    expect(ai_message.content_attributes.dig('data', 'items').first).to include('text' => 'Здравствуйте! Чем могу помочь?')
+    expect(ai_message.content_attributes.dig('data', 'items').first).not_to have_key('raw_text')
+    expect(ai_message.content_attributes.dig('data', 'items').first).not_to have_key('reasoning')
+    expect(ai_message.additional_attributes.dig('captain_trace', 'reasoning')).to eq('Greeting the caller before asking how to help.')
+
+    voice_data = voice_message.reload.content_attributes['data']
+    expect(voice_data['transcript']).to eq('ИИ: Здравствуйте! Чем могу помочь?')
+    expect(voice_data['transcript_items'].first).to include('text' => 'Здравствуйте! Чем могу помочь?')
+    expect(voice_data['transcript_items'].first).not_to have_key('raw_text')
+    expect(voice_data['transcript_items'].first).not_to have_key('reasoning')
+
+    stored_item = call_session.reload.metadata.dig('ai_voice', 'transcript', 'final_items').first
+    expect(stored_item).to include(
+      'text' => 'Здравствуйте! Чем могу помочь?',
+      'raw_text' => captain_json_text,
+      'reasoning' => 'Greeting the caller before asking how to help.',
+      'normalized_from' => 'captain_json_response'
+    )
+  end
+
+  it 'keeps sidecar-normalized AI metadata out of presentation while preserving trace storage' do
+    raw_text = { reasoning: 'Internal trace.', response: 'Добрый день!' }.to_json
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/transcript',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             final: true,
+             items: [
+               {
+                 speaker: 'ai',
+                 text: 'Добрый день!',
+                 final: true,
+                 raw_text: raw_text,
+                 reasoning: 'Internal trace.',
+                 normalized_from: 'captain_json_response'
+               }
+             ]
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    ai_message = conversation.messages.find_by!(source_id: "ai_voice_turn:#{call_session.external_call_ref}:0:ai")
+    expect(ai_message.content).to eq('Добрый день!')
+    expect(ai_message.content_attributes.dig('data', 'items').first).not_to have_key('reasoning')
+    expect(ai_message.additional_attributes.dig('captain_trace', 'reasoning')).to eq('Internal trace.')
+    final_item = call_session.reload.metadata.dig('ai_voice', 'transcript', 'final_items').first
+    expect(final_item).to include('raw_text' => raw_text, 'reasoning' => 'Internal trace.')
+  end
+
+  it 'attaches tool trace only to the latest AI transcript turn while preserving per-turn reasoning' do
+    call_session.update!(
+      metadata: {
+        'ai_voice' => {
+          'control_events' => [
+            {
+              'action' => 'tool_completed',
+              'metadata' => {
+                'tool_name' => 'faq_lookup',
+                'tool_call_id' => 'tool-turn-1',
+                'output' => { 'answer' => 'Found' }
+              },
+              'sequence' => 1,
+              'at' => Time.current.iso8601
+            }
+          ]
+        }
+      }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/transcript',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             final: true,
+             items: [
+               { speaker: 'ai', text: { reasoning: 'first', response: 'Первый ответ' }.to_json, final: true },
+               { speaker: 'caller', text: 'А дальше?', final: true },
+               { speaker: 'ai', text: { reasoning: 'second', response: 'Второй ответ' }.to_json, final: true }
+             ]
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    first_ai = conversation.messages.find_by!(source_id: "ai_voice_turn:#{call_session.external_call_ref}:0:ai")
+    second_ai = conversation.messages.find_by!(source_id: "ai_voice_turn:#{call_session.external_call_ref}:2:ai")
+
+    expect(first_ai.additional_attributes.dig('captain_trace', 'reasoning')).to eq('first')
+    expect(first_ai.additional_attributes.dig('captain_trace', 'tool_steps')).to be_blank
+    expect(second_ai.additional_attributes.dig('captain_trace', 'reasoning')).to eq('second')
+    expect(second_ai.additional_attributes.dig('captain_trace', 'tool_steps').first).to include(
+      'tool_name' => 'faq_lookup',
+      'event' => 'finish'
+    )
+  end
+
   it 'persists final transcript as native conversation messages and keeps the voice call summary in sync' do
     now = Time.current
     voice_message = create(

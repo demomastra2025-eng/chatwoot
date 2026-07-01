@@ -1,4 +1,6 @@
 class Voice::OutboundCallBuilder
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+
   attr_reader :account, :inbox, :user, :contact
 
   def self.perform!(account:, inbox:, user:, contact:)
@@ -69,12 +71,12 @@ class Voice::OutboundCallBuilder
     inbox.channel.provider == 'fonoster'
   end
 
-  def sipuni_provider?
-    inbox.channel.provider == 'sipuni'
+  def provider_owned_sip_provider?
+    inbox.channel.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def native_telephony_provider?
-    fonoster_provider? || sipuni_provider?
+    fonoster_provider? || provider_owned_sip_provider?
   end
 
   def initiate_call!(conversation)
@@ -116,8 +118,7 @@ class Voice::OutboundCallBuilder
     )
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     attrs['meta']['initiated_at'] = timestamp
-    attrs['fonoster_call_ref'] = call_sid if fonoster_provider?
-    attrs['sipuni_call_ref'] = call_sid if sipuni_provider?
+    attrs[provider_call_ref_key] = call_sid if native_telephony_provider?
 
     update_attrs = {
       additional_attributes: attrs,
@@ -156,8 +157,8 @@ class Voice::OutboundCallBuilder
   def reset_reused_fonoster_call_state!(attrs, call_sid)
     return unless native_telephony_provider?
 
-    provider_call_ref_key = fonoster_provider? ? 'fonoster_call_ref' : 'sipuni_call_ref'
-    return if attrs[provider_call_ref_key].present? && attrs[provider_call_ref_key] == call_sid
+    call_ref_key = provider_call_ref_key
+    return if attrs[call_ref_key].present? && attrs[call_ref_key] == call_sid
 
     %w[
       call_started_at
@@ -170,5 +171,11 @@ class Voice::OutboundCallBuilder
       from_number
       to_number
     ].each { |key| attrs.delete(key) }
+  end
+
+  def provider_call_ref_key
+    return 'fonoster_call_ref' if fonoster_provider?
+
+    "#{inbox.channel.provider}_call_ref"
   end
 end
