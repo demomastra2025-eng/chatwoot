@@ -114,7 +114,7 @@ class Telephony::WebphoneService
   def fallback_provider(inbox, operator_identity)
     return 'fonoster' if whatsapp_calling_inbox?(inbox)
 
-    inbox&.channel&.provider || operator_identity&.provider || 'fonoster'
+    inbox_voice_provider(inbox) || operator_identity&.provider || 'fonoster'
   end
 
   def whatsapp_calling_inbox?(inbox)
@@ -157,9 +157,9 @@ class Telephony::WebphoneService
     return false if profile.blank?
     return false unless profile.availability_mode == 'browser_webphone'
 
-    return inbox.channel.provider.to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS) if inbox.present?
+    return inbox_voice_provider(inbox).to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS) if inbox.present?
 
-    profile.inbox&.channel&.provider.to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
+    inbox_voice_provider(profile.inbox).to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
   end
 
   def janus_sip_webphone_payload(inbox, operator_identity)
@@ -292,6 +292,8 @@ class Telephony::WebphoneService
   def inbox_voice_provider(inbox)
     channel = inbox&.channel
     return if channel.blank?
+
+    return unless channel.respond_to?(:provider)
 
     channel.provider.presence
   end
@@ -429,7 +431,7 @@ class Telephony::WebphoneService
                channel&.provider_config
              end
 
-    config.to_h.with_indifferent_access[:provider_kind].presence || channel&.provider.to_s
+    config.to_h.with_indifferent_access[:provider_kind].presence || inbox_voice_provider(inbox).to_s
   end
 
   def apply_signaling_server_override(response)
@@ -586,7 +588,7 @@ class Telephony::WebphoneService
   end
 
   def browser_sip_incoming_provider!(inbox)
-    provider = inbox&.channel&.provider.to_s
+    provider = inbox_voice_provider(inbox).to_s
     return provider if provider.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
 
     raise Telephony::Error.new(code: 'UNSUPPORTED_WEBPHONE_PROVIDER', message: 'Inbox does not use native browser SIP',

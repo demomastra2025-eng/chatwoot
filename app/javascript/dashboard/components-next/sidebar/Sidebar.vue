@@ -189,6 +189,10 @@ const hasContactSettingsAccess = computed(() => {
   return checkPermissions(['administrator']);
 });
 
+const hasSettingsAccess = computed(() => {
+  return checkPermissions(['administrator']);
+});
+
 const hasCompanies = computed(() => {
   return isFeatureEnabledonAccount.value(
     accountId.value,
@@ -1777,30 +1781,34 @@ const menuItems = computed(() => {
             label: t('SIDEBAR.SCHEDULING_CALENDAR'),
             to: accountScopedRoute('scheduling_calendar'),
           },
-          {
-            name: 'Scheduling Resources',
-            visibilityKey: 'Scheduling:Resources',
-            label: t('SIDEBAR.SCHEDULING_RESOURCES'),
-            to: accountScopedRoute('scheduling_resources'),
-          },
-          {
-            name: 'Scheduling Services',
-            visibilityKey: 'Scheduling:Services',
-            label: t('SIDEBAR.SCHEDULING_SERVICES'),
-            to: accountScopedRoute('scheduling_services'),
-          },
-          {
-            name: 'Scheduling Exceptions',
-            visibilityKey: 'Scheduling:Exceptions',
-            label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
-            to: accountScopedRoute('scheduling_exceptions'),
-          },
-          {
-            name: 'Scheduling Kassa',
-            visibilityKey: 'Scheduling:Kassa',
-            label: t('SIDEBAR.SCHEDULING_KASSA'),
-            to: accountScopedRoute('scheduling_kassa'),
-          },
+          ...(hasSettingsAccess.value
+            ? [
+                {
+                  name: 'Scheduling Resources',
+                  visibilityKey: 'Scheduling:Resources',
+                  label: t('SIDEBAR.SCHEDULING_RESOURCES'),
+                  to: accountScopedRoute('scheduling_resources'),
+                },
+                {
+                  name: 'Scheduling Services',
+                  visibilityKey: 'Scheduling:Services',
+                  label: t('SIDEBAR.SCHEDULING_SERVICES'),
+                  to: accountScopedRoute('scheduling_services'),
+                },
+                {
+                  name: 'Scheduling Exceptions',
+                  visibilityKey: 'Scheduling:Exceptions',
+                  label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
+                  to: accountScopedRoute('scheduling_exceptions'),
+                },
+                {
+                  name: 'Scheduling Kassa',
+                  visibilityKey: 'Scheduling:Kassa',
+                  label: t('SIDEBAR.SCHEDULING_KASSA'),
+                  to: accountScopedRoute('scheduling_kassa'),
+                },
+              ]
+            : []),
         ],
       },
       ...(hasSmm.value
@@ -1966,55 +1974,59 @@ const menuItems = computed(() => {
           },
         ],
       },
-      {
-        name: 'Settings',
-        label: t('SIDEBAR.ADDITIONAL'),
-        icon: 'i-lucide-settings-2',
-        defaultChildName: 'Workspace',
-        children: [
-          ...myCompanySettingsMenuItems.value,
-          ...(hasAutomationRules.value
-            ? [
+      ...(hasSettingsAccess.value
+        ? [
+            {
+              name: 'Settings',
+              label: t('SIDEBAR.ADDITIONAL'),
+              icon: 'i-lucide-settings-2',
+              defaultChildName: 'Workspace',
+              children: [
+                ...myCompanySettingsMenuItems.value,
+                ...(hasAutomationRules.value
+                  ? [
+                      {
+                        name: 'Settings Automation',
+                        visibilityKey: 'Settings:Automation',
+                        label: t('SIDEBAR.AUTOMATION'),
+                        icon: 'i-lucide-repeat',
+                        activeOn: ['automation_list'],
+                        to: accountScopedRoute('automation_list'),
+                      },
+                    ]
+                  : []),
                 {
-                  name: 'Settings Automation',
-                  visibilityKey: 'Settings:Automation',
-                  label: t('SIDEBAR.AUTOMATION'),
-                  icon: 'i-lucide-repeat',
-                  activeOn: ['automation_list'],
-                  to: accountScopedRoute('automation_list'),
+                  name: 'Settings Agent Bots',
+                  visibilityKey: 'Settings:AgentBots',
+                  label: t('SIDEBAR.AGENT_BOTS'),
+                  icon: 'i-lucide-webhook',
+                  to: accountScopedRoute('agent_bots'),
                 },
-              ]
-            : []),
-          {
-            name: 'Settings Agent Bots',
-            visibilityKey: 'Settings:AgentBots',
-            label: t('SIDEBAR.AGENT_BOTS'),
-            icon: 'i-lucide-webhook',
-            to: accountScopedRoute('agent_bots'),
-          },
-          {
-            name: 'Settings Macros',
-            visibilityKey: 'Settings:Macros',
-            label: t('SIDEBAR.MACROS'),
-            icon: 'i-lucide-toy-brick',
-            to: accountScopedRoute('macros_wrapper'),
-          },
-          {
-            name: 'Settings Integrations',
-            visibilityKey: 'Settings:Integrations',
-            label: t('SIDEBAR.INTEGRATIONS'),
-            icon: 'i-lucide-blocks',
-            to: accountScopedRoute('settings_applications'),
-          },
-          {
-            name: 'Settings Billing',
-            visibilityKey: 'Settings:Billing',
-            label: t('SIDEBAR.BILLING'),
-            icon: 'i-lucide-credit-card',
-            to: accountScopedRoute('billing_settings_index'),
-          },
-        ],
-      },
+                {
+                  name: 'Settings Macros',
+                  visibilityKey: 'Settings:Macros',
+                  label: t('SIDEBAR.MACROS'),
+                  icon: 'i-lucide-toy-brick',
+                  to: accountScopedRoute('macros_wrapper'),
+                },
+                {
+                  name: 'Settings Integrations',
+                  visibilityKey: 'Settings:Integrations',
+                  label: t('SIDEBAR.INTEGRATIONS'),
+                  icon: 'i-lucide-blocks',
+                  to: accountScopedRoute('settings_applications'),
+                },
+                {
+                  name: 'Settings Billing',
+                  visibilityKey: 'Settings:Billing',
+                  label: t('SIDEBAR.BILLING'),
+                  icon: 'i-lucide-credit-card',
+                  to: accountScopedRoute('billing_settings_index'),
+                },
+              ],
+            },
+          ]
+        : []),
     ],
     effectiveSidebarVisibilitySettings.value
   );

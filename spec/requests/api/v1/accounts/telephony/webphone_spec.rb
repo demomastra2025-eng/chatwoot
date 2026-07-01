@@ -13,6 +13,24 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     account.enable_features!('channel_voice')
   end
 
+  it 'returns an unsupported payload instead of raising for non-voice inboxes' do
+    instagram_inbox = create(:channel_instagram, account: account).inbox
+
+    post path,
+         params: { inbox_id: instagram_inbox.id },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include(
+      'provider' => 'fonoster',
+      'calling_supported' => false,
+      'registered' => false,
+      'registered_for_routing' => false,
+      'reason' => 'agent_binding_missing'
+    )
+  end
+
   it 'returns a browser webphone contract without an inbox when the operator binding exists' do
     create(
       :telephony_agent_binding,

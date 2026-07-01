@@ -17,6 +17,8 @@ import {
   CRM_TASK_MANAGE_PERMISSIONS,
   CRM_TASK_VIEW_PERMISSION,
   CRM_TASK_VIEW_PERMISSIONS,
+  CRM_SETTINGS_MANAGE_PERMISSION,
+  CRM_SETTINGS_VIEW_PERMISSION,
   ROLES,
   SCHEDULING_ACCESS_PERMISSIONS,
 } from '../../constants/permissions';
@@ -210,5 +212,25 @@ describe('runtime access permission sets', () => {
       'agent',
       'custom_role',
     ]);
+  });
+
+  it('lets plain agents use main CRM and scheduling surfaces without CRM settings permissions', () => {
+    const agentPermissions = ['agent'];
+
+    expect(hasPermissions(CRM_DEAL_VIEW_PERMISSIONS, agentPermissions)).toBe(
+      true
+    );
+    expect(hasPermissions(CRM_TASK_VIEW_PERMISSIONS, agentPermissions)).toBe(
+      true
+    );
+    expect(
+      hasPermissions(SCHEDULING_ACCESS_PERMISSIONS, agentPermissions)
+    ).toBe(true);
+    expect(
+      hasPermissions(
+        [CRM_SETTINGS_VIEW_PERMISSION, CRM_SETTINGS_MANAGE_PERMISSION],
+        agentPermissions
+      )
+    ).toBe(false);
   });
 });
