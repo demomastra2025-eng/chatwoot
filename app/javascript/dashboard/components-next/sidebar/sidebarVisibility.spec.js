@@ -5,6 +5,8 @@ import {
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_ITEMS,
+  PERSONAL_SIDEBAR_VISIBILITY_ITEMS,
+  buildAccountScopedSidebarUISettings,
   buildEffectiveSidebarVisibilitySettings,
   buildSidebarVisibilityState,
   filterSidebarMenuItems,
@@ -134,6 +136,36 @@ describe('sidebarVisibility', () => {
     const smmItem = SIDEBAR_VISIBILITY_ITEMS.find(item => item.key === 'SMM');
     const smmChildKeys = smmItem.children.map(item => item.key);
     expect(smmChildKeys).toContain('SMM:LeadForms');
+  });
+
+  it('excludes account-controlled deal and appointment dialog visibility from personal settings menu', () => {
+    const conversationItem = PERSONAL_SIDEBAR_VISIBILITY_ITEMS.find(
+      item => item.key === 'Conversation'
+    );
+    const conversationChildKeys = conversationItem.children.map(
+      item => item.key
+    );
+
+    expect(conversationChildKeys).toContain('Conversation:Statuses');
+    expect(conversationChildKeys).not.toContain('Conversation:Pipelines');
+    expect(conversationChildKeys).not.toContain(
+      'Conversation:AppointmentStatuses'
+    );
+    expect(conversationChildKeys).not.toContain(
+      'Conversation:AppointmentStatus:scheduled'
+    );
+    expect(conversationChildKeys).not.toContain(
+      'Conversation:AppointmentStatus:confirmed'
+    );
+    expect(conversationChildKeys).not.toContain(
+      'Conversation:AppointmentStatus:completed'
+    );
+    expect(conversationChildKeys).not.toContain(
+      'Conversation:AppointmentStatus:cancelled'
+    );
+    expect(conversationChildKeys).not.toContain(
+      'Conversation:AppointmentStatus:no_show'
+    );
   });
 
   it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {
@@ -271,6 +303,49 @@ describe('sidebarVisibility', () => {
         uiSettings,
       })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
     ).toEqual(['Conversation:Statuses']);
+  });
+
+  it('ignores personal overrides for deal and appointment dialog visibility', () => {
+    const uiSettings = {
+      [SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]: {
+        1: [
+          'Conversation:Pipelines',
+          'Conversation:AppointmentStatuses',
+          'Conversation:AppointmentStatus:scheduled',
+          'Reports',
+        ],
+      },
+      [SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY]: {
+        1: SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      },
+    };
+
+    expect(getAccountScopedSidebarHiddenItems(uiSettings, 1)).toEqual([
+      'Reports',
+    ]);
+    expect(
+      buildAccountScopedSidebarUISettings({
+        accountId: 1,
+        hiddenItems: [
+          'Conversation:Pipelines',
+          'Conversation:AppointmentStatuses',
+          'Conversation:AppointmentStatus:scheduled',
+          'Reports',
+        ],
+        uiSettings: {},
+      })[SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]
+    ).toEqual({ 1: ['Reports'] });
+    expect(
+      buildEffectiveSidebarVisibilitySettings({
+        accountId: 1,
+        accountSettings: {
+          [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Pipelines'],
+          [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+            SIDEBAR_VISIBILITY_CURRENT_VERSION,
+        },
+        uiSettings,
+      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
+    ).toEqual(['Conversation:Pipelines', 'Reports']);
   });
 
   it('falls back to legacy personal sidebar visibility before account-scoped settings exist', () => {

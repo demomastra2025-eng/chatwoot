@@ -5,6 +5,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import ConversationSidebar from './ConversationSidebar.vue';
 
 const mocks = vi.hoisted(() => ({
+  currentAccount: null,
   uiSettings: null,
   width: null,
   updateUISettings: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock('vue-router', () => ({
 vi.mock('dashboard/composables/useAccount', () => ({
   useAccount: () => ({
     accountId: { value: 1 },
-    currentAccount: { value: { settings: {} } },
+    currentAccount: mocks.currentAccount,
     accountScopedRoute: mocks.accountScopedRoute,
   }),
 }));
@@ -66,6 +67,7 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
 
 describe('ConversationSidebar', () => {
   beforeEach(() => {
+    mocks.currentAccount = ref({ settings: {} });
     mocks.width = ref(390);
     mocks.updateUISettings.mockClear();
     mocks.routerPush.mockClear();
@@ -119,13 +121,17 @@ describe('ConversationSidebar', () => {
     expect(wrapper.classes()).not.toContain('xl:w-[30rem]');
   });
 
-  it('does not render hidden deals or appointments panels from visibility settings', () => {
+  it('does not render hidden deals or appointments panels from account visibility settings', () => {
+    mocks.currentAccount.value = {
+      settings: {
+        dashboard_sidebar_hidden_items: [
+          'Conversation:Pipelines',
+          'Conversation:AppointmentStatuses',
+        ],
+        dashboard_sidebar_hidden_items_version: 13,
+      },
+    };
     mocks.uiSettings = ref({
-      dashboard_sidebar_hidden_items: [
-        'Conversation:Pipelines',
-        'Conversation:AppointmentStatuses',
-      ],
-      dashboard_sidebar_hidden_items_version: 13,
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,
       is_scheduling_appointments_panel_open: true,

@@ -4,7 +4,10 @@ import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
 import ConversationBox from 'dashboard/components/widgets/conversation/ConversationBox.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
+import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 
@@ -25,13 +28,46 @@ const props = defineProps({
     type: [Number, String],
     default: '',
   },
+  contacts: {
+    type: Array,
+    default: () => [],
+  },
+  contactableInboxes: {
+    type: Array,
+    default: () => [],
+  },
+  selectedContactId: {
+    type: [Number, String],
+    default: '',
+  },
+  canManage: {
+    type: Boolean,
+    default: false,
+  },
+  isCreatingConversation: {
+    type: Boolean,
+    default: false,
+  },
+  isLoadingInboxes: {
+    type: Boolean,
+    default: false,
+  },
+  isLoadingCommunicationThread: {
+    type: Boolean,
+    default: false,
+  },
   visible: {
     type: Boolean,
     default: false,
   },
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits([
+  'addContact',
+  'close',
+  'createConversation',
+  'selectContact',
+]);
 
 const { t } = useI18n();
 const store = useStore();
@@ -44,6 +80,8 @@ const ui = reactive({
   isLoading: false,
 });
 const activationRequestId = ref(0);
+const selectedPlaceholderContactId = ref('');
+const selectedInboxId = ref('');
 
 const normalizePositiveNumber = value => {
   const normalizedValue = Number(String(value || '').replace(/[^\d]/g, ''));
@@ -81,6 +119,20 @@ const chatApiId = computed(() =>
   isCommunicationThreadTarget.value
     ? communicationThreadApiId.value
     : conversationApiId.value
+);
+const hasLinkedChat = computed(() => !!chatApiId.value);
+const contactOptions = computed(() =>
+  props.contacts.map(contact => ({
+    label: contact.label || contact.name || String(contact.id || ''),
+    value: contact.id || contact.value,
+  }))
+);
+const inboxOptions = computed(() =>
+  props.contactableInboxes.map(inbox => ({
+    icon: inbox.icon,
+    label: inbox.label || inbox.name || String(inbox.id || inbox.value || ''),
+    value: inbox.value || inbox.id,
+  }))
 );
 const conversationByDisplayId = computed(() => {
   if (!normalizedConversationDisplayId.value) return null;
@@ -188,6 +240,44 @@ const clearConversationState = () => {
 };
 
 const closePanel = () => emit('close');
+const selectedContact = computed(() =>
+  props.contacts.find(
+    contact =>
+      Number(contact.id || contact.value) ===
+      Number(selectedPlaceholderContactId.value)
+  )
+);
+const selectedInbox = computed(() =>
+  props.contactableInboxes.find(
+    inbox => Number(inbox.value || inbox.id) === Number(selectedInboxId.value)
+  )
+);
+const canCreateConversation = computed(
+  () =>
+    props.canManage &&
+    !!selectedPlaceholderContactId.value &&
+    !!selectedInboxId.value &&
+    !props.isCreatingConversation &&
+    !props.isLoadingInboxes &&
+    !props.isLoadingCommunicationThread
+);
+
+const updateSelectedContact = contactId => {
+  selectedPlaceholderContactId.value = contactId || '';
+  selectedInboxId.value = '';
+  emit('selectContact', selectedPlaceholderContactId.value);
+};
+
+const createConversation = () => {
+  if (!canCreateConversation.value) return;
+
+  emit('createConversation', {
+    contact: selectedContact.value,
+    contactId: selectedPlaceholderContactId.value,
+    inbox: selectedInbox.value,
+    inboxId: selectedInboxId.value,
+  });
+};
 
 const invalidateActivation = () => {
   activationRequestId.value += 1;
@@ -252,6 +342,43 @@ const handleAfterLeave = () => {
 };
 
 watch(
+  [contactOptions, () => props.selectedContactId],
+  ([options, nextSelectedContactId]) => {
+    if (hasLinkedChat.value) return;
+
+    const normalizedSelectedContactId = Number(nextSelectedContactId);
+    const currentContactId = Number(selectedPlaceholderContactId.value);
+    const optionIds = options.map(option => Number(option.value));
+    const fallbackContactId =
+      Number.isFinite(normalizedSelectedContactId) &&
+      normalizedSelectedContactId > 0 &&
+      optionIds.includes(normalizedSelectedContactId)
+        ? normalizedSelectedContactId
+        : optionIds[0] || '';
+
+    if (Number(fallbackContactId || 0) !== currentContactId) {
+      updateSelectedContact(fallbackContactId);
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  inboxOptions,
+  options => {
+    if (hasLinkedChat.value) return;
+
+    const currentInboxId = Number(selectedInboxId.value);
+    const optionIds = options.map(option => Number(option.value));
+
+    if (!optionIds.includes(currentInboxId)) {
+      selectedInboxId.value = optionIds[0] || '';
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   [() => props.visible, chatApiId],
   ([isVisible, apiId]) => {
     if (!isVisible || !apiId) {
@@ -288,15 +415,85 @@ onBeforeUnmount(() => {
     @after-leave="handleAfterLeave"
   >
     <div
-      v-if="visible && chatApiId"
+      v-if="visible"
       class="fixed inset-0 z-[120] bg-n-solid-2 md:static md:inset-auto md:z-auto md:h-full md:min-w-0 md:flex-1 md:bg-transparent"
     >
       <div class="flex h-full w-full justify-end">
         <aside
           class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:min-w-0 md:flex-1 md:bg-transparent"
         >
+          <div
+            v-if="!hasLinkedChat"
+            class="flex h-full flex-1 items-center justify-center px-6 py-8"
+          >
+            <div class="grid w-full max-w-md gap-5 text-center">
+              <div
+                class="mx-auto grid size-12 place-items-center rounded-full bg-n-alpha-black2 text-n-slate-11"
+              >
+                <Icon icon="i-lucide-message-square-plus" class="size-6" />
+              </div>
+
+              <div class="grid gap-2">
+                <h3 class="text-base font-semibold text-n-slate-12">
+                  {{ $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.TITLE') }}
+                </h3>
+                <p class="text-sm leading-6 text-n-slate-11">
+                  {{
+                    contactOptions.length
+                      ? $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.DESCRIPTION')
+                      : $t(
+                          'CRM.DEALS.CONVERSATION_PLACEHOLDER.NO_CONTACT_DESCRIPTION'
+                        )
+                  }}
+                </p>
+              </div>
+
+              <div v-if="!contactOptions.length" class="flex justify-center">
+                <Button
+                  :label="$t('CRM.DEALS.CONVERSATION_PLACEHOLDER.ADD_CONTACT')"
+                  icon="i-lucide-user-plus"
+                  :disabled="!canManage"
+                  @click="emit('addContact')"
+                />
+              </div>
+
+              <div v-else class="grid gap-3 text-left">
+                <SchedulingSelectField
+                  :label="$t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CONTACT')"
+                  :model-value="selectedPlaceholderContactId"
+                  :options="contactOptions"
+                  :disabled="isCreatingConversation"
+                  @update:model-value="updateSelectedContact"
+                />
+                <SchedulingSelectField
+                  :label="$t('CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOX')"
+                  :model-value="selectedInboxId"
+                  :options="inboxOptions"
+                  :disabled="
+                    isCreatingConversation ||
+                    isLoadingInboxes ||
+                    isLoadingCommunicationThread
+                  "
+                  :empty-state="
+                    $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.NO_INBOXES')
+                  "
+                  @update:model-value="selectedInboxId = $event"
+                />
+                <Button
+                  :label="
+                    $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATE_DIALOG')
+                  "
+                  icon="i-lucide-message-square-plus"
+                  :is-loading="isCreatingConversation"
+                  :disabled="!canCreateConversation"
+                  @click="createConversation"
+                />
+              </div>
+            </div>
+          </div>
+
           <SchedulingErrorState
-            v-if="ui.error"
+            v-else-if="ui.error"
             class="m-4"
             :title="$t('CRM.ERRORS.LOAD_TITLE')"
             :description="ui.error?.message || $t('CRM.ERRORS.LOAD_TITLE')"

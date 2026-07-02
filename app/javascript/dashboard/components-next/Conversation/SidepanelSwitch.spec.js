@@ -19,6 +19,7 @@ const testState = vi.hoisted(() => ({
       is_touch_sidebar_open: false,
     },
   },
+  currentAccount: { __v_isRef: true, value: { settings: {} } },
   updateUISettings: vi.fn(),
 }));
 
@@ -26,6 +27,12 @@ vi.mock('dashboard/composables/useUISettings', () => ({
   useUISettings: () => ({
     uiSettings: testState.uiSettings,
     updateUISettings: testState.updateUISettings,
+  }),
+}));
+
+vi.mock('dashboard/composables/useAccount', () => ({
+  useAccount: () => ({
+    currentAccount: testState.currentAccount,
   }),
 }));
 
@@ -74,6 +81,7 @@ describe('SidepanelSwitch', () => {
       is_touch_sidebar_open: false,
     };
     testState.isFeatureEnabledonAccount.value = () => true;
+    testState.currentAccount.value = { settings: {} };
     testState.currentUser.value = {
       accounts: [{ id: 530, permissions: ['crm_deal_manage'] }],
     };
@@ -115,11 +123,12 @@ describe('SidepanelSwitch', () => {
     });
   });
 
-  it('hides the CRM deals switch when conversation pipelines are hidden', () => {
-    testState.uiSettings.value = {
-      ...testState.uiSettings.value,
-      dashboard_sidebar_hidden_items: ['Conversation:Pipelines'],
-      dashboard_sidebar_hidden_items_version: 13,
+  it('hides the CRM deals switch when conversation pipelines are hidden by account policy', () => {
+    testState.currentAccount.value = {
+      settings: {
+        dashboard_sidebar_hidden_items: ['Conversation:Pipelines'],
+        dashboard_sidebar_hidden_items_version: 13,
+      },
     };
 
     const wrapper = mountComponent();
@@ -129,14 +138,15 @@ describe('SidepanelSwitch', () => {
     ).toBe(false);
   });
 
-  it('hides the scheduling switch when appointment statuses are hidden', () => {
+  it('hides the scheduling switch when appointment statuses are hidden by account policy', () => {
     testState.currentUser.value = {
       accounts: [{ id: 530, permissions: ['agent'] }],
     };
-    testState.uiSettings.value = {
-      ...testState.uiSettings.value,
-      dashboard_sidebar_hidden_items: ['Conversation:AppointmentStatuses'],
-      dashboard_sidebar_hidden_items_version: 13,
+    testState.currentAccount.value = {
+      settings: {
+        dashboard_sidebar_hidden_items: ['Conversation:AppointmentStatuses'],
+        dashboard_sidebar_hidden_items_version: 13,
+      },
     };
 
     const wrapper = mountComponent();

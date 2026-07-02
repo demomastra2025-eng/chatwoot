@@ -35,6 +35,11 @@ export const CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS = Object.freeze({
   cancelled: 'Conversation:AppointmentStatus:cancelled',
   no_show: 'Conversation:AppointmentStatus:no_show',
 });
+const ACCOUNT_CONTROLLED_CONVERSATION_VISIBILITY_KEYS = Object.freeze([
+  CONVERSATION_PIPELINES_VISIBILITY_KEY,
+  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+  ...Object.values(CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS),
+]);
 const LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY =
   'Conversation:DefaultPipeline';
 const REPORTS_DEALS_VISIBILITY_KEY = 'Reports:Deals';
@@ -179,6 +184,22 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   ]),
 ]);
 
+export const PERSONAL_SIDEBAR_VISIBILITY_ITEMS = Object.freeze(
+  SIDEBAR_VISIBILITY_ITEMS.map(visibilityItem => {
+    if (visibilityItem.key !== 'Conversation') {
+      return visibilityItem;
+    }
+
+    return {
+      ...visibilityItem,
+      children: visibilityItem.children.filter(
+        child =>
+          !ACCOUNT_CONTROLLED_CONVERSATION_VISIBILITY_KEYS.includes(child.key)
+      ),
+    };
+  })
+);
+
 const flattenSidebarVisibilityItems = items =>
   items.flatMap(({ key, children = [] }) => [
     key,
@@ -205,6 +226,11 @@ export const normalizeSidebarHiddenItems = hiddenItems => {
 
   return SIDEBAR_VISIBILITY_ITEM_KEYS.filter(key => hiddenItemsSet.has(key));
 };
+
+const normalizePersonalSidebarHiddenItems = hiddenItems =>
+  normalizeSidebarHiddenItems(hiddenItems).filter(
+    key => !ACCOUNT_CONTROLLED_CONVERSATION_VISIBILITY_KEYS.includes(key)
+  );
 
 const normalizeLegacyCaptainPromptsVisibility = (hiddenItems, version) => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
@@ -413,20 +439,24 @@ export const getAccountScopedSidebarHiddenItems = (uiSettings, accountId) => {
   );
 
   if (!Array.isArray(scopedHiddenItems)) {
-    return Array.isArray(uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY])
-      ? getSidebarHiddenItems(uiSettings)
-      : getSidebarHiddenItems({});
+    return normalizePersonalSidebarHiddenItems(
+      Array.isArray(uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY])
+        ? getSidebarHiddenItems(uiSettings)
+        : getSidebarHiddenItems({})
+    );
   }
 
-  return getSidebarHiddenItems({
-    [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: scopedHiddenItems,
-    [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
-      accountScopedValue(
-        uiSettings,
-        SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY,
-        accountId
-      ) || SIDEBAR_VISIBILITY_CURRENT_VERSION,
-  });
+  return normalizePersonalSidebarHiddenItems(
+    getSidebarHiddenItems({
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: scopedHiddenItems,
+      [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+        accountScopedValue(
+          uiSettings,
+          SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY,
+          accountId
+        ) || SIDEBAR_VISIBILITY_CURRENT_VERSION,
+    })
+  );
 };
 
 export const buildAccountScopedSidebarUISettings = ({
@@ -440,7 +470,7 @@ export const buildAccountScopedSidebarUISettings = ({
   return {
     [SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]: {
       ...(uiSettings?.[SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY] || {}),
-      [accountKey]: normalizeSidebarHiddenItems(hiddenItems),
+      [accountKey]: normalizePersonalSidebarHiddenItems(hiddenItems),
     },
     [SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY]: {
       ...(uiSettings?.[SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY] ||

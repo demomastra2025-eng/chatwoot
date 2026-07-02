@@ -168,6 +168,20 @@
         "WIN_PROBABILITY": "Win probability"
       },
       "LOAD_MORE": "Load more",
+      "CONVERSATION_PLACEHOLDER": {
+        "ADD_CONTACT": "Add contact",
+        "CONTACT": "Contact",
+        "CREATE_DIALOG": "Create dialog",
+        "CREATE_ERROR": "Could not create a dialog",
+        "CREATED": "Dialog created and linked to the deal",
+        "DESCRIPTION": "Select a contact and channel to create a dialog linked to this deal.",
+        "INBOX": "Channel",
+        "INBOXES_LOAD_ERROR": "Could not load contact channels",
+        "NO_CONTACT_DESCRIPTION": "Add a contact to this deal before creating a dialog.",
+        "NO_INBOXES": "No available channels for this contact",
+        "THREADS_LOAD_ERROR": "Could not load contact dialogs",
+        "TITLE": "No dialog linked"
+      },
       "NEW_DEAL": "New deal",
       "SIDEBAR_DESCRIPTION": "Open any contact deal and edit it inline without leaving the conversation.",
       "SIDEBAR_TITLE": "Deals",

@@ -15,6 +15,7 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 import CompanyAPI from 'dashboard/api/companies';
 import ContactAPI from 'dashboard/api/contacts';
+import ConversationAPI from 'dashboard/api/conversations';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
@@ -91,6 +92,10 @@ import {
 } from 'shared/helpers/CustomErrors';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
+import {
+  buildContactableInboxesList,
+  fetchContactableInboxes,
+} from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
 
 const CrmDealConversationPanel = defineAsyncComponent(
   () => import('dashboard/components-next/CRM/CrmDealConversationPanel.vue')
@@ -146,6 +151,16 @@ const boardSort = reactive({
 });
 const boardSortDirections = reactive({});
 const showLinkedConversationPanel = ref(false);
+const dealConversationDraft = reactive({
+  contactId: '',
+  contactableInboxes: [],
+  communicationThreadDisplayId: '',
+  isCreating: false,
+  isLoadingInboxes: false,
+  isLoadingCommunicationThread: false,
+});
+const contactableInboxesByContactId = ref({});
+const communicationThreadsByContactId = ref({});
 const hasRestoredPreferences = ref(false);
 const persistedPreferencesByAccount = useLocalStorage(
   DEALS_PREFERENCES_STORAGE_KEY,
@@ -270,6 +285,17 @@ const linkedCommunicationThreadDisplayId = computed(() =>
     /[^\d]/g,
     ''
   )
+);
+const effectiveLinkedCommunicationThreadId = computed(
+  () => linkedCommunicationThreadId.value
+);
+const effectiveLinkedCommunicationThreadDisplayId = computed(
+  () =>
+    linkedCommunicationThreadDisplayId.value ||
+    String(dealConversationDraft.communicationThreadDisplayId || '').replace(
+      /[^\d]/g,
+      ''
+    )
 );
 const canOpenLinkedConversation = computed(
   () =>
@@ -939,8 +965,13 @@ const buildContactOption = contact => {
     : '';
 
   return {
+    email: contact.email,
     href: contactHref(contact.id),
+    id: contact.id,
+    identifier: contact.identifier,
     label: [primaryLabel, secondaryLabel].filter(Boolean).join(' · '),
+    name: primaryLabel,
+    phoneNumber: contact.phoneNumber || contact.phone_number,
     thumbnail: {
       name: primaryLabel,
       src: contactAvatarSrc(contact),
@@ -1144,6 +1175,44 @@ const primaryContactOptions = computed(() =>
     form.contactIds.map(Number).includes(Number(option.value))
   )
 );
+const primaryDealContactId = computed(() => {
+  const primaryContactId = Number(form.primaryContactId);
+  if (Number.isFinite(primaryContactId) && primaryContactId > 0) {
+    return primaryContactId;
+  }
+
+  return Number(form.contactIds[0]) || '';
+});
+const dealConversationContacts = computed(() => {
+  const dealContactsById = new Map(
+    (selectedDeal.value?.dealContacts || []).map(contact => [
+      Number(contact.contactId),
+      contact,
+    ])
+  );
+
+  return form.contactIds.map(contactId => {
+    const normalizedContactId = Number(contactId);
+    const option = contactOptions.value.find(
+      item => Number(item.value) === normalizedContactId
+    );
+    const dealContact = dealContactsById.get(normalizedContactId);
+    const name =
+      dealContact?.name ||
+      option?.name ||
+      option?.label ||
+      t('CRM.GENERAL.EMPTY_VALUE');
+
+    return {
+      email: option?.email || dealContact?.email,
+      id: normalizedContactId,
+      label: option?.label || name,
+      name,
+      phoneNumber: option?.phoneNumber || dealContact?.phoneNumber,
+      value: normalizedContactId,
+    };
+  });
+});
 
 const shouldShowPrimaryContactSelect = computed(
   () => form.contactIds.length > 1
@@ -1363,6 +1432,126 @@ const ensureSelectedLookups = async deal => {
   }
 };
 
+const resetDealConversationDraft = () => {
+  dealConversationDraft.contactId = primaryDealContactId.value || '';
+  dealConversationDraft.contactableInboxes = [];
+  dealConversationDraft.communicationThreadDisplayId = '';
+  dealConversationDraft.isCreating = false;
+  dealConversationDraft.isLoadingInboxes = false;
+  dealConversationDraft.isLoadingCommunicationThread = false;
+};
+
+const waitForDealConversationThread = () =>
+  new Promise(resolve => {
+    window.setTimeout(resolve, 250);
+  });
+
+const setDealConversationContact = contactId => {
+  const normalizedContactId = Number(contactId);
+
+  dealConversationDraft.contactId =
+    Number.isFinite(normalizedContactId) && normalizedContactId > 0
+      ? normalizedContactId
+      : '';
+  dealConversationDraft.contactableInboxes = [];
+  dealConversationDraft.communicationThreadDisplayId = '';
+};
+
+const loadDealContactCommunicationThreads = async contactId => {
+  const cachedThreads = communicationThreadsByContactId.value[contactId];
+  if (cachedThreads) {
+    dealConversationDraft.communicationThreadDisplayId =
+      cachedThreads[0]?.id || '';
+    return cachedThreads;
+  }
+
+  dealConversationDraft.isLoadingCommunicationThread = true;
+
+  try {
+    const response = await ContactAPI.getCommunicationThreads(contactId);
+    const communicationThreads = normalizePayload(response.data).sort(
+      (a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0)
+    );
+
+    if (communicationThreads.length) {
+      communicationThreadsByContactId.value = {
+        ...communicationThreadsByContactId.value,
+        [contactId]: communicationThreads,
+      };
+    }
+    dealConversationDraft.communicationThreadDisplayId =
+      communicationThreads[0]?.id || '';
+    return communicationThreads;
+  } catch {
+    dealConversationDraft.communicationThreadDisplayId = '';
+    useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.THREADS_LOAD_ERROR'));
+    return [];
+  } finally {
+    dealConversationDraft.isLoadingCommunicationThread = false;
+  }
+};
+
+const loadDealConversationInboxes = async () => {
+  dealConversationDraft.contactableInboxes = [];
+
+  if (!dealConversationDraft.contactId) return;
+
+  const cachedInboxes =
+    contactableInboxesByContactId.value[dealConversationDraft.contactId];
+  if (cachedInboxes) {
+    dealConversationDraft.contactableInboxes = cachedInboxes;
+    return;
+  }
+
+  dealConversationDraft.isLoadingInboxes = true;
+
+  try {
+    const contactableInboxes = buildContactableInboxesList(
+      await fetchContactableInboxes(dealConversationDraft.contactId)
+    );
+    contactableInboxesByContactId.value = {
+      ...contactableInboxesByContactId.value,
+      [dealConversationDraft.contactId]: contactableInboxes,
+    };
+    dealConversationDraft.contactableInboxes = contactableInboxes;
+  } catch {
+    dealConversationDraft.contactableInboxes = [];
+    useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'));
+  } finally {
+    dealConversationDraft.isLoadingInboxes = false;
+  }
+};
+
+const loadDealConversationContext = async contactId => {
+  setDealConversationContact(contactId);
+
+  if (!dealConversationDraft.contactId) return [];
+
+  const communicationThreads = await loadDealContactCommunicationThreads(
+    dealConversationDraft.contactId
+  );
+
+  if (!communicationThreads.length) {
+    await loadDealConversationInboxes();
+  }
+
+  return communicationThreads;
+};
+
+const loadDealConversationContextWithRetry = async (
+  contactId,
+  attempts = 3
+) => {
+  await loadDealConversationContext(contactId);
+
+  if (dealConversationDraft.communicationThreadDisplayId || attempts <= 1) {
+    return;
+  }
+
+  await waitForDealConversationThread();
+  await loadDealConversationContextWithRetry(contactId, attempts - 1);
+};
+
 const resolveStageFilterId = (stageId, pipelineId) => {
   if (!stageId) return '';
 
@@ -1452,6 +1641,7 @@ const openCreateDrawer = async prefill => {
   hasVisitedDealTasksTab.value = false;
   timelineItems.value = [];
   showLinkedConversationPanel.value = false;
+  resetDealConversationDraft();
   await Promise.all([loadContacts(''), loadCompanies('')]);
 
   if (prefill) {
@@ -1470,9 +1660,14 @@ const openEditDrawer = async deal => {
   hasVisitedDealTasksTab.value = false;
   populateFormFromDeal(deal);
   drawerOpen.value = true;
-  showLinkedConversationPanel.value = canOpenLinkedConversation.value;
+  showLinkedConversationPanel.value = true;
+  resetDealConversationDraft();
   await Promise.all([loadContacts(''), loadCompanies('')]);
   await ensureSelectedLookups(deal);
+  resetDealConversationDraft();
+  if (!canOpenLinkedConversation.value) {
+    await loadDealConversationContext(dealConversationDraft.contactId);
+  }
   await loadTimeline(deal.id);
   captureFormBaseline();
 };
@@ -1486,6 +1681,7 @@ const closeDrawer = () => {
   dealActivityTab.value = 'history';
   hasVisitedDealTasksTab.value = false;
   timelineItems.value = [];
+  resetDealConversationDraft();
   resetForm();
   captureFormBaseline();
 };
@@ -1515,6 +1711,8 @@ const createContact = async contact => {
     useAlert(
       t('CONTACTS_LAYOUT.HEADER.ACTIONS.CONTACT_CREATION.SUCCESS_MESSAGE')
     );
+    showLinkedConversationPanel.value = !!selectedDeal.value;
+    await loadDealConversationContext(createdOption.value);
   } catch (error) {
     if (error instanceof DuplicateContactException) {
       if (error.data.includes('email')) {
@@ -1600,6 +1798,71 @@ const buildPayload = () => {
   });
 };
 
+const saveDealContactLink = async contactId => {
+  const normalizedContactId = Number(contactId);
+
+  if (!Number.isFinite(normalizedContactId) || normalizedContactId <= 0) {
+    return;
+  }
+
+  const contactIds = [
+    ...new Set([...form.contactIds, normalizedContactId].map(Number)),
+  ];
+  const primaryContactId =
+    form.primaryContactId || normalizedContactId || form.contactIds[0];
+  const {
+    closing_reasons: _closingReasons,
+    stage_id: _stageId,
+    ...payload
+  } = buildPayload();
+  const response = await CrmDealsAPI.update(selectedDeal.value.id, {
+    ...payload,
+    contact_ids: contactIds,
+    lock_version: selectedDeal.value.lockVersion,
+    primary_contact_id: primaryContactId ? Number(primaryContactId) : undefined,
+  });
+  const updatedDeal = normalizePayload(response.data);
+
+  upsertDeal(updatedDeal);
+  selectedDeal.value = updatedDeal;
+  populateFormFromDeal(updatedDeal);
+  captureFormBaseline();
+  await Promise.allSettled([
+    ensureSelectedLookups(updatedDeal),
+    loadTimeline(updatedDeal.id),
+  ]);
+};
+
+const createDealConversation = async ({ contactId, inbox }) => {
+  if (!canManageDeals.value || !selectedDeal.value || !inbox) return;
+
+  const normalizedContactId = Number(contactId);
+  if (!Number.isFinite(normalizedContactId) || normalizedContactId <= 0) {
+    return;
+  }
+
+  dealConversationDraft.isCreating = true;
+
+  try {
+    const conversationPayload = compactPayload({
+      assignee_id: currentUserId.value || undefined,
+      contact_id: normalizedContactId,
+      inbox_id: Number(inbox.value || inbox.id),
+      source_id: inbox.sourceId || undefined,
+    });
+    await ConversationAPI.create(conversationPayload);
+    await saveDealContactLink(normalizedContactId);
+    showLinkedConversationPanel.value = true;
+    await loadDealConversationContextWithRetry(normalizedContactId);
+
+    useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    dealConversationDraft.isCreating = false;
+  }
+};
+
 const saveDeal = async () => {
   if (!canManageDeals.value) return;
 
@@ -1670,6 +1933,13 @@ const saveDeal = async () => {
       ensureSelectedLookups(deal),
       loadTimeline(deal.id),
     ]);
+
+    if (!canOpenLinkedConversation.value && primaryDealContactId.value) {
+      showLinkedConversationPanel.value = true;
+      resetDealConversationDraft();
+      await loadDealConversationContext(primaryDealContactId.value);
+    }
+
     useAlert(
       wasEditingDeal
         ? t('CRM.DEALS.SUCCESS_UPDATED')
@@ -2364,7 +2634,8 @@ watch(
       !conversationId &&
       !communicationThreadId &&
       !conversationDisplayId &&
-      !communicationThreadDisplayId
+      !communicationThreadDisplayId &&
+      !selectedDeal.value
     ) {
       showLinkedConversationPanel.value = false;
     }
@@ -3233,14 +3504,26 @@ watch(
 
           <CrmDealConversationPanel
             v-if="drawerOpen && showLinkedConversationPanel"
-            :communication-thread-id="linkedCommunicationThreadId"
+            :communication-thread-id="effectiveLinkedCommunicationThreadId"
             :communication-thread-display-id="
-              linkedCommunicationThreadDisplayId
+              effectiveLinkedCommunicationThreadDisplayId
             "
             :conversation-id="linkedConversationId"
             :conversation-display-id="linkedConversationDisplayId"
+            :contacts="dealConversationContacts"
+            :contactable-inboxes="dealConversationDraft.contactableInboxes"
+            :selected-contact-id="dealConversationDraft.contactId"
+            :can-manage="canManageDeals"
+            :is-creating-conversation="dealConversationDraft.isCreating"
+            :is-loading-inboxes="dealConversationDraft.isLoadingInboxes"
+            :is-loading-communication-thread="
+              dealConversationDraft.isLoadingCommunicationThread
+            "
             visible
+            @add-contact="openCreateNewContactDialog"
             @close="showLinkedConversationPanel = false"
+            @create-conversation="createDealConversation"
+            @select-contact="loadDealConversationContext"
           />
         </div>
       </div>

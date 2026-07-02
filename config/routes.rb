@@ -385,6 +385,7 @@ Rails.application.routes.draw do
             end
             scope module: :contacts do
               resources :conversations, only: [:index]
+              resources :communication_threads, only: [:index]
               resources :contact_inboxes, only: [:create]
               resources :labels, only: [:create, :index]
               resources :notes

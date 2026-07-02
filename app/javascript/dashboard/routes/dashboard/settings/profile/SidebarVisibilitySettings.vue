@@ -7,7 +7,7 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import {
-  SIDEBAR_VISIBILITY_ITEMS,
+  PERSONAL_SIDEBAR_VISIBILITY_ITEMS,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
   buildSidebarVisibilityState,
   buildAccountScopedSidebarUISettings,
@@ -104,7 +104,7 @@ const saveSidebarVisibility = () => {
 
     <div class="grid grid-cols-1 gap-2 w-full">
       <div
-        v-for="item in SIDEBAR_VISIBILITY_ITEMS"
+        v-for="item in PERSONAL_SIDEBAR_VISIBILITY_ITEMS"
         :key="item.key"
         class="rounded-xl border border-n-weak overflow-hidden"
       >

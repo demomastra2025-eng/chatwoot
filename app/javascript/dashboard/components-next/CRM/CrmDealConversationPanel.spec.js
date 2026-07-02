@@ -13,24 +13,59 @@ vi.mock('vue-i18n', () => ({
 }));
 
 const mountPanel = ({
+  canManage = true,
   communicationThreadDisplayId = '',
   communicationThreadId = '',
+  contactableInboxes = [],
+  contacts = [],
   conversationId = 11963,
   conversationDisplayId = 185,
+  selectedContactId = '',
 } = {}) =>
   mount(CrmDealConversationPanel, {
     props: {
+      canManage,
       communicationThreadDisplayId,
       communicationThreadId,
+      contactableInboxes,
+      contacts,
       conversationDisplayId,
       conversationId,
+      selectedContactId,
       visible: true,
     },
     global: {
       stubs: {
-        Button: true,
+        Button: {
+          props: ['label'],
+          emits: ['click'],
+          template:
+            '<button type="button" @click="$emit(\'click\')">{{ label }}</button>',
+        },
         ConversationBox: true,
+        Icon: true,
         SchedulingErrorState: true,
+        SchedulingSelectField: {
+          props: ['label', 'modelValue', 'options'],
+          emits: ['update:modelValue'],
+          template: `
+            <label>
+              {{ label }}
+              <select
+                :value="modelValue"
+                @change="$emit('update:modelValue', Number($event.target.value))"
+              >
+                <option
+                  v-for="option in options"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+          `,
+        },
         Spinner: true,
         Transition: false,
       },
@@ -163,5 +198,51 @@ describe('CrmDealConversationPanel', () => {
         is_communication_thread: true,
       }),
     });
+  });
+
+  it('shows the add contact action when the deal has no linked chat or contacts', async () => {
+    const wrapper = mountPanel({
+      contacts: [],
+      conversationDisplayId: '',
+      conversationId: '',
+    });
+
+    await flushPromises();
+    await wrapper.find('button').trigger('click');
+
+    expect(wrapper.text()).toContain('No dialog linked');
+    expect(wrapper.emitted('addContact')).toHaveLength(1);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      'getConversation',
+      expect.anything()
+    );
+  });
+
+  it('emits createConversation with selected contact and inbox when no chat is linked', async () => {
+    const wrapper = mountPanel({
+      contactableInboxes: [
+        {
+          id: 9,
+          label: 'Support (email@example.com)',
+          sourceId: 'email@example.com',
+          value: 9,
+        },
+      ],
+      contacts: [{ id: 7, label: 'John', value: 7 }],
+      conversationDisplayId: '',
+      conversationId: '',
+      selectedContactId: 7,
+    });
+
+    await flushPromises();
+    await wrapper.find('button').trigger('click');
+
+    expect(wrapper.emitted('createConversation')?.[0]).toEqual([
+      expect.objectContaining({
+        contactId: 7,
+        inboxId: 9,
+        inbox: expect.objectContaining({ sourceId: 'email@example.com' }),
+      }),
+    ]);
   });
 });
