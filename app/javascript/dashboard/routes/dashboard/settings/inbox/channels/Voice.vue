@@ -47,6 +47,7 @@ const kazakhstanState = reactive({
   connectionHost: '',
   connectionPort: '5060',
   connectionTransport: 'udp',
+  outboundDialFormat: 'kz_trunk',
 });
 
 const twilioState = reactive({
@@ -196,6 +197,23 @@ const virtualPbxProviderOptions = computed(() => [
 
 const transportOptions = ['udp', 'tcp', 'tls'];
 
+const outboundDialFormatOptions = computed(() => [
+  {
+    value: 'kz_trunk',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.KZ_TRUNK'),
+  },
+  {
+    value: 'strip_plus',
+    label: t(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.STRIP_PLUS'
+    ),
+  },
+  {
+    value: 'e164',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.E164'),
+  },
+]);
+
 const kazakhstanFormErrors = computed(() => ({
   channelName: kazakhstanV$.value.channelName?.$error
     ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CHANNEL_NAME.REQUIRED')
@@ -294,6 +312,10 @@ function getVirtualPbxPayload() {
       source: 'virtual_pbx_ui',
     },
   };
+
+  if (isAsteriskAnalogProvider.value) {
+    payload.metadata.outbound_dial_format = kazakhstanState.outboundDialFormat;
+  }
 
   return payload;
 }
@@ -507,7 +529,7 @@ async function createTwilioChannel() {
 
         <div
           v-if="isVirtualPbxAdvancedVisible && isAsteriskAnalogProvider"
-          class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          class="grid grid-cols-1 gap-4 md:grid-cols-3"
         >
           <Input
             v-model="kazakhstanState.connectionPort"
@@ -538,6 +560,25 @@ async function createTwilioChannel() {
                 :value="option"
               >
                 {{ option.toUpperCase() }}
+              </option>
+            </Select>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{
+                t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL')
+              }}
+            </label>
+            <Select
+              v-model="kazakhstanState.outboundDialFormat"
+              class="w-full px-3 py-2"
+            >
+              <option
+                v-for="option in outboundDialFormatOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
               </option>
             </Select>
           </div>

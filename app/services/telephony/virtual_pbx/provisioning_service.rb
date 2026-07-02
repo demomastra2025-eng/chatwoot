@@ -12,6 +12,7 @@ class Telephony::VirtualPbx::ProvisioningService
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
   DEFAULT_SIPUNI_TRUNK_REF = 'trunk-sipuni-onelink-out'
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
+  DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT = 'kz_trunk'
   PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel].freeze
   LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
@@ -844,7 +845,16 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def normalize_metadata(source)
-    source.to_h.deep_stringify_keys.slice('environment', 'source', 'notes')
+    source = source.to_h.deep_stringify_keys
+    metadata = source.slice('environment', 'source', 'notes', 'outbound_dial_format')
+    outbound_dial_format = first_present(
+      metadata['outbound_dial_format'],
+      source['outboundDialFormat'],
+      source['dial_format'],
+      source['dialFormat']
+    )
+    metadata['outbound_dial_format'] = outbound_dial_format if outbound_dial_format.present?
+    metadata
   end
 
   def validation_errors(payload, require_profiles: true, profile_inbox_id: nil, check_duplicate_number_ref: true, exclude_inbox_id: nil)
@@ -1040,12 +1050,24 @@ class Telephony::VirtualPbx::ProvisioningService
       status: 'active',
       managed_by: MANAGED_BY_ONELINK,
       ownership_status: LOCAL_OWNERSHIP_STATUS,
-      metadata: payload[:metadata],
+      metadata: provider_connection_metadata(payload, connection),
       updated_by: current_user
     )
     connection.created_by ||= current_user if connection.new_record?
     connection.save!
     connection
+  end
+
+  def provider_connection_metadata(payload, connection)
+    metadata = (payload[:metadata] || {}).to_h.with_indifferent_access
+    return metadata unless payload[:provider_kind].to_s == 'asterisk_analog'
+
+    existing_metadata = connection.metadata.to_h.with_indifferent_access
+    if metadata[:outbound_dial_format].blank? && existing_metadata[:outbound_dial_format].present?
+      metadata[:outbound_dial_format] = existing_metadata[:outbound_dial_format]
+    end
+    metadata[:outbound_dial_format] = DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT if metadata[:outbound_dial_format].blank?
+    metadata
   end
 
   def provider_connection_credentials_ref(payload, refs)

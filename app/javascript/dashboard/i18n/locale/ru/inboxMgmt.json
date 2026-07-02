@@ -501,6 +501,12 @@
           "TRANSPORT": {
             "LABEL": "SIP transport"
           },
+          "OUTBOUND_DIAL_FORMAT": {
+            "LABEL": "Формат исходящего",
+            "KZ_TRUNK": "8XXXXXXXXXX",
+            "STRIP_PLUS": "7XXXXXXXXXX",
+            "E164": "E.164: +7XXXXXXXXXX"
+          },
           "CONNECTION_USERNAME": {
             "LABEL": "Общий SIP username",
             "PLACEHOLDER": "Необязательный общий SIP username"

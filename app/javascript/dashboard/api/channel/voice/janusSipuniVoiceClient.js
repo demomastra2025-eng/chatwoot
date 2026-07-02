@@ -222,6 +222,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
 
   static normalizeSessionConfig(sessionConfig = {}) {
     const sip = sessionConfig.sip || {};
+    const dialing = sessionConfig.dialing || sessionConfig.dialing_config || {};
     return {
       ...sessionConfig,
       provider: sessionConfig.provider || 'sipuni',
@@ -286,6 +287,13 @@ export class JanusSipuniVoiceClient extends EventTarget {
           sip.internal_extension ||
           sessionConfig.internalExtension ||
           sessionConfig.internal_extension,
+        outboundDialFormat:
+          sip.outboundDialFormat ||
+          sip.outbound_dial_format ||
+          dialing.outboundDialFormat ||
+          dialing.outbound_dial_format ||
+          sessionConfig.outboundDialFormat ||
+          sessionConfig.outbound_dial_format,
       },
     };
   }
@@ -306,10 +314,27 @@ export class JanusSipuniVoiceClient extends EventTarget {
     return `sip:${username}@${host}`;
   }
 
-  static dialTarget(toNumber, { provider = null } = {}) {
+  static dialTarget(
+    toNumber,
+    { provider = null, outboundDialFormat = null } = {}
+  ) {
     const target = String(toNumber || '')
       .replace(/^tel:/i, '')
       .replace(/[^\d+]/g, '');
+
+    if (
+      ['kazakhstan_trunk', 'kz_trunk', 'national_trunk_8'].includes(
+        outboundDialFormat
+      )
+    ) {
+      return target.replace(/^\+?7(?=\d{10}$)/, '8');
+    }
+
+    if (['e164', 'e164_plus', 'plus_e164'].includes(outboundDialFormat)) {
+      if (/^8(?=\d{10}$)/.test(target)) return target.replace(/^8/, '+7');
+      if (/^7(?=\d{10}$)/.test(target)) return `+${target}`;
+      return target;
+    }
 
     if (provider === 'asterisk_analog') {
       return target.replace(/^\+/, '');
@@ -318,8 +343,15 @@ export class JanusSipuniVoiceClient extends EventTarget {
     return target;
   }
 
-  static dialUri(toNumber, host, { provider = null } = {}) {
-    const target = JanusSipuniVoiceClient.dialTarget(toNumber, { provider });
+  static dialUri(
+    toNumber,
+    host,
+    { provider = null, outboundDialFormat = null } = {}
+  ) {
+    const target = JanusSipuniVoiceClient.dialTarget(toNumber, {
+      provider,
+      outboundDialFormat,
+    });
     if (!target || !host) return null;
     return `sip:${target}@${host}`;
   }
@@ -1238,6 +1270,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     const sip = this.sessionConfig.sip;
     const uri = JanusSipuniVoiceClient.dialUri(toNumber, sip.host, {
       provider: this.currentProvider(),
+      outboundDialFormat: sip.outboundDialFormat,
     });
     if (!uri) return Promise.resolve(null);
 

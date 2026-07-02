@@ -93,6 +93,7 @@ class Telephony::VirtualPbx::ConfigBuilder
     phone_numbers = (config[:phone_numbers] || {}).with_indifferent_access
     resources = (config[:resources] || {}).with_indifferent_access
     provider_connection = (resources[:provider_connection] || {}).with_indifferent_access
+    provider_connection_metadata = (provider_connection[:metadata] || {}).with_indifferent_access
     routing = (config[:routing] || {}).with_indifferent_access
     ownership = (config[:ownership] || {}).with_indifferent_access
     provider_template = template_for(config[:provider_kind])
@@ -115,6 +116,8 @@ class Telephony::VirtualPbx::ConfigBuilder
         host: provider_connection[:host],
         port: provider_connection[:port],
         transport: provider_connection[:transport],
+        outbound_dial_format: provider_connection_metadata[:outbound_dial_format],
+        outboundDialFormat: provider_connection_metadata[:outbound_dial_format],
         send_register: provider_connection[:send_register],
         configured: provider_connection.present? || phone_numbers[:ingress_number].present?,
         status: provider_connection[:status] || (config[:ready] ? 'ready' : 'action_required'),

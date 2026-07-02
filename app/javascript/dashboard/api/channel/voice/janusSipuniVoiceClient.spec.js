@@ -373,6 +373,64 @@ describe('janusSipuniVoiceClient', () => {
     );
   });
 
+  it('supports Kazakhstan trunk dialing for Asterisk analog profiles', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(
+      {
+        ...asteriskAnalogSession,
+        sip: {
+          ...asteriskAnalogSession.sip,
+          outboundDialFormat: 'kz_trunk',
+        },
+      },
+      {
+        inboxId: 4771,
+      }
+    );
+
+    await JanusSipuniVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      toNumber: '+77066318623',
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'call',
+          uri: 'sip:87066318623@10.77.0.2',
+        }),
+      })
+    );
+  });
+
+  it('supports E.164 dialing for Asterisk analog profiles', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(
+      {
+        ...asteriskAnalogSession,
+        sip: {
+          ...asteriskAnalogSession.sip,
+          outboundDialFormat: 'e164',
+        },
+      },
+      {
+        inboxId: 4771,
+      }
+    );
+
+    await JanusSipuniVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      toNumber: '87066318623',
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'call',
+          uri: 'sip:+77066318623@10.77.0.2',
+        }),
+      })
+    );
+  });
+
   it('records and uploads answered Asterisk analog browser SIP media', () => {
     const { MediaRecorderMock, restore } = installRecordingMocks();
     try {

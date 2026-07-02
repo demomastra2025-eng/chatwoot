@@ -501,6 +501,12 @@
           "TRANSPORT": {
             "LABEL": "SIP transport"
           },
+          "OUTBOUND_DIAL_FORMAT": {
+            "LABEL": "Outbound dial format",
+            "KZ_TRUNK": "Kazakhstan trunk: 8XXXXXXXXXX",
+            "STRIP_PLUS": "Digits without plus: 7XXXXXXXXXX",
+            "E164": "E.164: +7XXXXXXXXXX"
+          },
           "CONNECTION_USERNAME": {
             "LABEL": "SIP username",
             "PLACEHOLDER": "Optional SIP username"

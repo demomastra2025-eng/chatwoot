@@ -446,6 +446,28 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     end
   end
 
+  it 'returns provider-specific outbound dialing settings for native Janus SIP profiles' do
+    _sipuni_profile, _binotel_profile, asterisk_profile = create_native_janus_browser_profiles
+    asterisk_profile.provider_connection.update!(metadata: { outbound_dial_format: 'kz_trunk' })
+
+    with_modified_env(
+      TELEPHONY_ASTERISK_ANALOG_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-asterisk'
+    ) do
+      post path,
+           params: { inbox_id: asterisk_profile.inbox_id },
+           headers: headers,
+           as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['provider']).to eq('asterisk_analog')
+    expect(payload.dig('sip', 'outbound_dial_format')).to eq('kz_trunk')
+    expect(payload.dig('sip', 'outboundDialFormat')).to eq('kz_trunk')
+    expect(payload['outbound_dial_format']).to eq('kz_trunk')
+    expect(payload['outboundDialFormat']).to eq('kz_trunk')
+  end
+
   it 'returns all native Janus SIP browser profiles for no-inbox bootstrap' do
     profiles = create_native_janus_browser_profiles
 

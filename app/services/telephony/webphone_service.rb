@@ -434,6 +434,7 @@ class Telephony::WebphoneService
     username = credentials[:username]
     uri = sip_uri(username, host)
     proxy = sip_proxy_uri(host, credentials[:port], credentials[:transport])
+    dialing = janus_sip_dialing_contract(profile)
 
     {
       username: username,
@@ -449,7 +450,7 @@ class Telephony::WebphoneService
       internalExtension: profile.internal_extension,
       display_name: profile.user&.name,
       displayName: profile.user&.name
-    }.compact
+    }.merge(dialing).compact
   end
 
   def janus_sip_flat_contract(sip)
@@ -469,8 +470,35 @@ class Telephony::WebphoneService
       sipUri: sip[:uri],
       sip_uri: sip[:uri],
       sipProxy: sip[:proxy],
-      sip_proxy: sip[:proxy]
+      sip_proxy: sip[:proxy],
+      outboundDialFormat: sip[:outboundDialFormat],
+      outbound_dial_format: sip[:outbound_dial_format]
     }.compact
+  end
+
+  def janus_sip_dialing_contract(profile)
+    outbound_dial_format = janus_sip_dialing_metadata(profile).values_at(
+      :outbound_dial_format,
+      :outboundDialFormat,
+      :dial_format,
+      :dialFormat
+    ).find(&:present?)
+    return {} if outbound_dial_format.blank?
+
+    {
+      outbound_dial_format: outbound_dial_format,
+      outboundDialFormat: outbound_dial_format
+    }
+  end
+
+  def janus_sip_dialing_metadata(profile)
+    [
+      profile&.provider_connection&.metadata,
+      profile&.inbox&.telephony_number_binding&.metadata,
+      profile&.metadata
+    ].each_with_object({}.with_indifferent_access) do |metadata, merged|
+      merged.merge!(metadata.to_h.with_indifferent_access)
+    end
   end
 
   def sip_uri(username, host)

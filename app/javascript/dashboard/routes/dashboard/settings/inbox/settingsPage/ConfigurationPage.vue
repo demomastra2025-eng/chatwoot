@@ -76,6 +76,7 @@ export default {
         connectionHost: '',
         connectionPort: '5060',
         connectionTransport: 'udp',
+        outboundDialFormat: 'kz_trunk',
         connectionUsername: '',
         connectionPassword: '',
         routingMode: 'operator',
@@ -210,6 +211,28 @@ export default {
     },
     virtualPbxTransportOptions() {
       return ['udp', 'tcp', 'tls'];
+    },
+    virtualPbxOutboundDialFormatOptions() {
+      return [
+        {
+          value: 'kz_trunk',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.KZ_TRUNK'
+          ),
+        },
+        {
+          value: 'strip_plus',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.STRIP_PLUS'
+          ),
+        },
+        {
+          value: 'e164',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.E164'
+          ),
+        },
+      ];
     },
     virtualPbxProviderOptions() {
       return [
@@ -653,6 +676,7 @@ export default {
         ...connection,
         ...(config.resources?.provider_connection || {}),
       };
+      const providerConnectionMetadata = providerConnection.metadata || {};
       const routing = config.routing || {};
 
       this.virtualPbxForm = {
@@ -676,6 +700,10 @@ export default {
         connectionHost: providerConnection.host || '',
         connectionPort: String(providerConnection.port || 5060),
         connectionTransport: providerConnection.transport || 'udp',
+        outboundDialFormat:
+          providerConnection.outbound_dial_format ||
+          providerConnectionMetadata.outbound_dial_format ||
+          'kz_trunk',
         connectionUsername: providerConnection.username || '',
         connectionPassword: '',
         routingMode: routing.mode || 'operator',
@@ -803,6 +831,10 @@ export default {
           source: 'virtual_pbx_ui',
         },
       };
+
+      if (this.isVirtualPbxAsteriskAnalog) {
+        payload.metadata.outbound_dial_format = form.outboundDialFormat;
+      }
 
       payload.connection = {
         host: form.connectionHost.trim(),
@@ -1241,7 +1273,7 @@ export default {
                 {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_SUBTITLE') }}
               </p>
             </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
               <label class="flex flex-col gap-1 text-sm text-n-slate-12">
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL')
@@ -1295,6 +1327,29 @@ export default {
                     :value="option"
                   >
                     {{ option.toUpperCase() }}
+                  </option>
+                </select>
+              </label>
+              <label
+                v-if="isVirtualPbxAsteriskAnalog"
+                class="flex flex-col gap-1 text-sm text-n-slate-12"
+              >
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
+                  )
+                }}
+                <select
+                  v-model="virtualPbxForm.outboundDialFormat"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                >
+                  <option
+                    v-for="option in virtualPbxOutboundDialFormatOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
                   </option>
                 </select>
               </label>

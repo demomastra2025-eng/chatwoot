@@ -105,7 +105,7 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
       :tel_url,
       connection: %i[host port transport username password send_register],
       routing: %i[mode fallback_mode ai_enabled operator_agent_aor operator_distribution_mode],
-      metadata: %i[environment source notes],
+      metadata: %i[environment source notes outbound_dial_format outboundDialFormat dial_format dialFormat],
       profiles: %i[user_id internal_extension sip_username sip_password enabled availability_mode]
     ).to_h
   end

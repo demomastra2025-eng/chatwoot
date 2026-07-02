@@ -283,6 +283,10 @@ describe('Voice channel setup', () => {
         port: '5060',
         transport: 'udp',
       },
+      metadata: {
+        source: 'virtual_pbx_ui',
+        outbound_dial_format: 'kz_trunk',
+      },
     });
     expect(routerReplaceMock).toHaveBeenCalledWith({
       name: 'settings_inboxes_add_agents',
@@ -322,6 +326,9 @@ describe('Voice channel setup', () => {
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL'
     );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
+    );
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.LABEL'
     );
@@ -348,6 +355,7 @@ describe('Voice channel setup', () => {
       },
       metadata: {
         source: 'virtual_pbx_ui',
+        outbound_dial_format: 'kz_trunk',
       },
     });
     expect(payload.provider_account_number).toBe(payload.display_phone_number);

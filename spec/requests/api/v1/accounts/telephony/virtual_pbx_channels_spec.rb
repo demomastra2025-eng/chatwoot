@@ -464,6 +464,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       source: 'virtual_pbx_ui'
     ).merge(provider_kind: 'asterisk_analog', channel_name: 'Analog line 1001')
     first_payload[:connection].merge!(host: '10.77.0.5', port: 5070, transport: 'tcp')
+    first_payload[:metadata][:outbound_dial_format] = 'strip_plus'
     second_payload = create_payload_variant(
       display_phone_number: '+177' + '7000' + '1002',
       provider_account_number: 'analog-1002',
@@ -487,6 +488,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
                                                                                                         ['10.77.0.5', 5070, 'tcp'],
                                                                                                         ['10.88.0.5', 5060, 'udp']
                                                                                                       ])
+    expect(account.telephony_provider_connections.order(:name).pluck(:metadata)).to match([
+                                                                                            hash_including('outbound_dial_format' => 'strip_plus'),
+                                                                                            hash_including('outbound_dial_format' => 'kz_trunk')
+                                                                                          ])
     expect(account.telephony_number_bindings.order(:ingress_number).pluck(:trunk_ref)).to eq([nil, nil])
   end
 

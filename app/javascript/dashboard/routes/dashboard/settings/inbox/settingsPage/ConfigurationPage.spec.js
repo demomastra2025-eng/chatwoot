@@ -443,6 +443,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
             host: '10.77.0.5',
             port: 5070,
             transport: 'tcp',
+            outbound_dial_format: 'strip_plus',
           },
           employees: [
             {
@@ -471,6 +472,9 @@ describe('ConfigurationPage Virtual PBX management', () => {
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.LABEL'
     );
     expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
+    );
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
     );
     expect(wrapper.text()).toContain(
@@ -484,6 +488,10 @@ describe('ConfigurationPage Virtual PBX management', () => {
           host: '10.77.0.5',
           port: '5070',
           transport: 'tcp',
+        },
+        metadata: {
+          source: 'virtual_pbx_ui',
+          outbound_dial_format: 'strip_plus',
         },
         profiles: [
           {
