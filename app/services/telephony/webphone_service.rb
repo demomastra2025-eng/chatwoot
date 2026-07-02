@@ -846,7 +846,7 @@ class Telephony::WebphoneService
   def browser_sip_incoming_payload(call_session, decision, profile)
     route_metadata = browser_sip_incoming_route_metadata(call_session)
 
-    browser_sip_incoming_session_payload(call_session)
+    browser_sip_incoming_session_payload(call_session, route_metadata)
       .merge(browser_sip_incoming_operator_payload(route_metadata, profile))
       .merge(route_action: decision[:action] || decision['action'])
       .compact
@@ -857,7 +857,9 @@ class Telephony::WebphoneService
     metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
   end
 
-  def browser_sip_incoming_session_payload(call_session)
+  def browser_sip_incoming_session_payload(call_session, route_metadata = {})
+    sip_profile_id = route_metadata['telephony_sip_profile_id'] || route_metadata['target_sip_profile_id']
+
     {
       call_sid: call_session.external_call_ref,
       callSid: call_session.external_call_ref,
@@ -874,7 +876,15 @@ class Telephony::WebphoneService
       contact_id: call_session.contact_id,
       sender_id: call_session.contact_id,
       from_number: call_session.from_number,
-      to_number: call_session.to_number
+      to_number: call_session.to_number,
+      sip_profile_id: sip_profile_id,
+      sipProfileId: sip_profile_id,
+      janus_call_ref: route_metadata['janus_call_ref'],
+      janusCallRef: route_metadata['janus_call_ref'],
+      janus_session_key: route_metadata['janus_session_key'],
+      janusSessionKey: route_metadata['janus_session_key'],
+      sipuni_native_webphone_correlation: route_metadata['sipuni_native_webphone_correlation'],
+      sipuniNativeWebphoneCorrelation: route_metadata['sipuni_native_webphone_correlation']
     }
   end
 

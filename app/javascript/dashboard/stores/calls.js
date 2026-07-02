@@ -205,6 +205,12 @@ const buildCallState = (callData, existingCall = null) => {
     operatorClaim: displayValue('operatorClaim'),
     operatorCandidates: displayValue('operatorCandidates'),
     operatorInternalExtension: displayValue('operatorInternalExtension'),
+    sipProfileId: displayValue('sipProfileId'),
+    janusCallRef: displayValue('janusCallRef'),
+    janusSessionKey: displayValue('janusSessionKey'),
+    sipuniNativeWebphoneCorrelation: displayValue(
+      'sipuniNativeWebphoneCorrelation'
+    ),
     browserJoinUnsupportedReason: displayValue('browserJoinUnsupportedReason'),
     isActive: isSameProviderCall ? existingCall?.isActive || false : false,
     browserJoined: isSameProviderCall
@@ -264,6 +270,11 @@ export const useCallsStore = defineStore('calls', {
       operatorClaim,
       operatorCandidates,
       operatorInternalExtension,
+      sipProfileId,
+      janusCallRef,
+      janusSessionKey,
+      sipuniNativeWebphoneCorrelation,
+      browserJoinSupported,
       accountId,
       conversationDbId,
       conversationDisplayId,
@@ -288,6 +299,11 @@ export const useCallsStore = defineStore('calls', {
         numberRef,
         fromNumber,
         toNumber,
+        sipProfileId,
+        janusCallRef,
+        janusSessionKey,
+        sipuniNativeWebphoneCorrelation,
+        browserJoinSupported,
       };
 
       if (TERMINAL_STATUSES.includes(status)) {
@@ -334,6 +350,11 @@ export const useCallsStore = defineStore('calls', {
           operatorClaim,
           operatorCandidates,
           operatorInternalExtension,
+          sipProfileId,
+          janusCallRef,
+          janusSessionKey,
+          sipuniNativeWebphoneCorrelation,
+          browserJoinSupported,
         });
       }
 
@@ -367,6 +388,11 @@ export const useCallsStore = defineStore('calls', {
               operatorClaim,
               operatorCandidates,
               operatorInternalExtension,
+              sipProfileId,
+              janusCallRef,
+              janusSessionKey,
+              sipuniNativeWebphoneCorrelation,
+              browserJoinSupported,
             });
           }
           this.setCallActive(call?.callSid || callSid);

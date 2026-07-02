@@ -387,6 +387,14 @@ class ActionCableConnector extends BaseActionCableConnector {
         data.operator_candidates || data.operatorCandidates || null,
       operatorInternalExtension:
         data.operator_internal_extension || data.operatorInternalExtension,
+      sipProfileId: data.sip_profile_id || data.sipProfileId,
+      janusCallRef: data.janus_call_ref || data.janusCallRef,
+      janusSessionKey: data.janus_session_key || data.janusSessionKey,
+      sipuniNativeWebphoneCorrelation:
+        data.sipuni_native_webphone_correlation ??
+        data.sipuniNativeWebphoneCorrelation,
+      browserJoinSupported:
+        data.browser_join_supported ?? data.browserJoinSupported,
     });
   };
 
@@ -422,6 +430,14 @@ class ActionCableConnector extends BaseActionCableConnector {
         data.operator_candidates || data.operatorCandidates || null,
       operatorInternalExtension:
         data.operator_internal_extension || data.operatorInternalExtension,
+      sipProfileId: data.sip_profile_id || data.sipProfileId,
+      janusCallRef: data.janus_call_ref || data.janusCallRef,
+      janusSessionKey: data.janus_session_key || data.janusSessionKey,
+      sipuniNativeWebphoneCorrelation:
+        data.sipuni_native_webphone_correlation ??
+        data.sipuniNativeWebphoneCorrelation,
+      browserJoinSupported:
+        data.browser_join_supported ?? data.browserJoinSupported,
     });
   };
 

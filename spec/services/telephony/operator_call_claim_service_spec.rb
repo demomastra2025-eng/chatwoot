@@ -203,6 +203,55 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(call_session.metadata.dig('operator_claim', 'agent_aor')).to eq('sip:504@ats01.kz.sipuni.com')
   end
 
+  it 'marks provider-owned SIP claims answered because the browser Janus leg accepted the call' do
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: inbox,
+      user: winner_user,
+      internal_extension: '9098',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: '9098',
+      agent_aor: 'sip:9098@10.77.0.2',
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    call_session.update!(
+      provider: 'asterisk_analog',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_pool' => true,
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [winner_user.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref],
+          'operator_candidate_agent_aors' => [profile.agent_aor],
+          'operator_candidate_sources' => ['sip_profile']
+        }
+      }
+    )
+
+    payload = described_class.new(account: account, user: winner_user,
+                                  call_ref: call_session.external_call_ref).perform
+
+    expect(payload).to include(
+      claimed: true,
+      status: 'in_progress',
+      sip_profile_id: profile.id,
+      agent_ref: profile.agent_ref,
+      agent_aor: profile.agent_aor
+    )
+
+    call_session.reload
+    expect(call_session.status).to eq('in_progress')
+    expect(call_session.answered_at).to be_present
+    expect(call_session.metadata.dig('operator_claim', 'sip_profile_id')).to eq(profile.id)
+  end
+
   it 'claims a Sipuni internal gateway target route when explicit candidate arrays are absent' do
     profile = create(
       :telephony_sip_profile,

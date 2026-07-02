@@ -12,6 +12,8 @@ const {
   janusJoinMock,
   janusPrewarmMock,
   janusStopPrewarmMock,
+  janusHasPendingIncomingCallMock,
+  janusWaitForPendingIncomingCallMock,
   janusDestroyMock,
   janusClientFactoryMock,
   janusClientInstances,
@@ -20,6 +22,8 @@ const {
   const joinMock = vi.fn();
   const prewarmMock = vi.fn();
   const stopPrewarmMock = vi.fn();
+  const hasPendingIncomingCallMock = vi.fn();
+  const waitForPendingIncomingCallMock = vi.fn();
   const destroyMock = vi.fn();
   const clientInstances = [];
   const clientFactoryMock = vi.fn(() => {
@@ -27,6 +31,8 @@ const {
       addEventListener: vi.fn(),
       initializeDevice: initializeMock,
       joinClientCall: joinMock,
+      hasPendingIncomingCall: hasPendingIncomingCallMock,
+      waitForPendingIncomingCall: waitForPendingIncomingCallMock,
       prewarmMicrophone: prewarmMock,
       stopMicrophonePrewarm: stopPrewarmMock,
       rejectIncomingCall: vi.fn(),
@@ -49,6 +55,8 @@ const {
     janusJoinMock: joinMock,
     janusPrewarmMock: prewarmMock,
     janusStopPrewarmMock: stopPrewarmMock,
+    janusHasPendingIncomingCallMock: hasPendingIncomingCallMock,
+    janusWaitForPendingIncomingCallMock: waitForPendingIncomingCallMock,
     janusDestroyMock: destroyMock,
     janusClientInstances: clientInstances,
     janusClientFactoryMock: clientFactoryMock,
@@ -114,6 +122,8 @@ describe('webphoneClient', () => {
     janusJoinMock.mockReset();
     janusPrewarmMock.mockReset();
     janusStopPrewarmMock.mockReset();
+    janusHasPendingIncomingCallMock.mockReset();
+    janusWaitForPendingIncomingCallMock.mockReset();
     janusDestroyMock.mockReset();
     janusClientFactoryMock.mockClear();
     janusClientInstances.length = 0;
@@ -685,6 +695,64 @@ describe('webphoneClient', () => {
     expect(
       WebphoneClient.supportsBrowserCalling('binotel', { inboxId: 4769 })
     ).toBe(true);
+  });
+
+  it('waits for pending Janus incoming calls on the scoped native SIP session', async () => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      provider: 'sipuni',
+      calling_supported: true,
+      sip_profile_id: 501,
+      inbox_id: 4083,
+      janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+      sip: {
+        username: 'sip-agent',
+        password: 'sip-secret',
+        host: 'ats01.kz.sipuni.com',
+      },
+    });
+    janusInitializeMock.mockResolvedValue({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:501',
+      inboxId: 4083,
+      sipProfileId: 501,
+      callingSupported: true,
+      registered: true,
+    });
+    janusHasPendingIncomingCallMock.mockReturnValue(true);
+    janusWaitForPendingIncomingCallMock.mockResolvedValue({
+      callRef: 'janus-call-501',
+    });
+
+    await WebphoneClient.initializeDevice(4083, { native: true });
+
+    expect(
+      WebphoneClient.hasPendingIncomingCall({
+        provider: 'sipuni',
+        inboxId: 4083,
+        sipProfileId: 501,
+        janusCallRef: 'janus-call-501',
+      })
+    ).toBe(true);
+    expect(janusHasPendingIncomingCallMock).toHaveBeenCalledWith({
+      callRef: 'janus-call-501',
+      strict: true,
+    });
+
+    const pendingCall = await WebphoneClient.waitForPendingIncomingCall(
+      {
+        provider: 'sipuni',
+        inboxId: 4083,
+        sipProfileId: 501,
+        janusCallRef: 'janus-call-501',
+      },
+      { timeoutMs: 1234 }
+    );
+
+    expect(pendingCall).toEqual({ callRef: 'janus-call-501' });
+    expect(janusWaitForPendingIncomingCallMock).toHaveBeenCalledWith(1234, {
+      callRef: 'janus-call-501',
+      strict: true,
+    });
   });
 
   it('refreshes fonoster webphone token before expiry and keeps the inbox scope', async () => {

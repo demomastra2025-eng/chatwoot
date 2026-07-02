@@ -41,6 +41,9 @@ vi.mock('janus-gateway', () => {
         createOffer: ({ success } = {}) => {
           success?.({ type: 'offer', sdp: 'mock-sdp' });
         },
+        createAnswer: ({ success } = {}) => {
+          success?.({ type: 'answer', sdp: 'mock-answer-sdp' });
+        },
       });
     }
 
@@ -276,6 +279,58 @@ describe('janusSipuniVoiceClient', () => {
     expect(updatePresenceMock).toHaveBeenLastCalledWith(true, {
       inboxId: 4769,
     });
+  });
+
+  it('accepts only the matching pending Janus incoming call when a call ref is provided', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+
+    pluginState.options?.onmessage?.(
+      {
+        result: {
+          event: 'incomingcall',
+          call_id: 'janus-invite-1',
+          username: 'sip:+77010000000@ats01.kz.sipuni.com',
+        },
+      },
+      { type: 'offer', sdp: 'remote-offer-sdp' }
+    );
+
+    expect(
+      JanusSipuniVoiceClient.hasPendingIncomingCall({
+        callRef: 'other-invite',
+        strict: true,
+      })
+    ).toBe(false);
+    expect(
+      JanusSipuniVoiceClient.hasPendingIncomingCall({
+        callRef: 'janus-invite-1',
+        strict: true,
+      })
+    ).toBe(true);
+
+    const result = await JanusSipuniVoiceClient.joinClientCall({
+      callRef: 'sipuni:provider-session',
+      callDirection: 'inbound',
+      janusCallRef: 'janus-invite-1',
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        provider: 'sipuni',
+        answered: true,
+      })
+    );
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'accept',
+          autoaccept_reinvites: false,
+        }),
+        jsep: { type: 'answer', sdp: 'mock-answer-sdp' },
+      })
+    );
   });
 
   it('keeps E.164 outbound dial URIs for regular SIP providers', async () => {

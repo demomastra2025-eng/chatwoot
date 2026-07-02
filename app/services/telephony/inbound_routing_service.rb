@@ -259,6 +259,10 @@ class Telephony::InboundRoutingService
   def fast_incoming_call_payload(decision)
     conversation = existing_voice_conversation
     contact = conversation&.contact
+    route_metadata = route_lifecycle_metadata(decision)
+    sip_profile_id = primary_operator_candidate&.sip_profile_id ||
+                     route_metadata[:target_sip_profile_id] ||
+                     route_metadata[:telephony_sip_profile_id]
 
     {
       account_id: number_binding.account_id,
@@ -288,6 +292,16 @@ class Telephony::InboundRoutingService
       operator_pool_size: decision[:operator_pool_size] || decision['operator_pool_size'],
       operator_candidates: decision[:operator_candidates] || decision['operator_candidates'],
       operator_internal_extension: primary_operator_candidate&.sip_profile&.internal_extension,
+      sip_profile_id: sip_profile_id,
+      sipProfileId: sip_profile_id,
+      janus_call_ref: route_metadata[:janus_call_ref],
+      janusCallRef: route_metadata[:janus_call_ref],
+      janus_session_key: route_metadata[:janus_session_key],
+      janusSessionKey: route_metadata[:janus_session_key],
+      sipuni_native_webphone_correlation: route_metadata[:sipuni_native_webphone_correlation],
+      sipuniNativeWebphoneCorrelation: route_metadata[:sipuni_native_webphone_correlation],
+      browser_join_supported: route_metadata[:browser_join_supported],
+      browserJoinSupported: route_metadata[:browser_join_supported],
       created_at: Time.current.to_i
     }.compact
   end
@@ -329,6 +343,7 @@ class Telephony::InboundRoutingService
       logical_call_group_ref: logical_call_group_ref
     }
     metadata.merge!(sipuni_leg_metadata)
+    metadata.merge!(browser_sip_route_metadata)
 
     metadata.merge!(target_route_metadata) if target_operator_requested?
     metadata.merge!(operator_route_metadata(decision)) if operator_decision?(decision)
@@ -348,6 +363,46 @@ class Telephony::InboundRoutingService
       target_sip_profile_id: target_operator_candidate&.sip_profile_id,
       target_user_id: target_operator_candidate&.user_id
     }.compact
+  end
+
+  def browser_sip_route_metadata
+    metadata = {
+      janus_call_ref: metadata_value('janus_call_ref', 'janusCallRef'),
+      janus_session_key: metadata_value('janus_session_key', 'janusSessionKey'),
+      telephony_sip_profile_id: metadata_value(
+        'telephony_sip_profile_id',
+        'telephonySipProfileId'
+      ),
+      target_sip_profile_id: metadata_value(
+        'target_sip_profile_id',
+        'targetSipProfileId'
+      ),
+      target_user_id: metadata_value('target_user_id', 'targetUserId'),
+      target_extension: metadata_value('target_extension', 'targetExtension'),
+      operator_internal_extension: metadata_value(
+        'operator_internal_extension',
+        'operatorInternalExtension'
+      )
+    }.compact
+
+    if raw_metadata_key?('browser_join_supported', 'browserJoinSupported')
+      metadata[:browser_join_supported] =
+        ActiveModel::Type::Boolean.new.cast(
+          raw_metadata_value('browser_join_supported', 'browserJoinSupported')
+        )
+    end
+
+    if raw_metadata_key?('sipuni_native_webphone_correlation', 'sipuniNativeWebphoneCorrelation')
+      metadata[:sipuni_native_webphone_correlation] =
+        ActiveModel::Type::Boolean.new.cast(
+          raw_metadata_value(
+            'sipuni_native_webphone_correlation',
+            'sipuniNativeWebphoneCorrelation'
+          )
+        )
+    end
+
+    metadata
   end
 
   def operator_route_metadata(decision)

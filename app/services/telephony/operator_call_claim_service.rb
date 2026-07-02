@@ -262,11 +262,13 @@ class Telephony::OperatorCallClaimService
       )
     }
     attrs[:agent_binding] = operator_agent_binding if operator_agent_binding.present?
+    attrs[:answered_at] = call_session.answered_at || Time.current if provider_owned_sip_provider?
     call_session.update!(attrs)
   end
 
   def claim_status
     return call_session.status if call_session.status == 'in_progress' || call_session.status == 'completed'
+    return 'in_progress' if provider_owned_sip_provider?
 
     'connecting'
   end

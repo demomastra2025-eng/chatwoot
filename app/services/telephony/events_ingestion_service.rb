@@ -346,6 +346,10 @@ class Telephony::EventsIngestionService
     metadata = call_session.metadata.to_h.deep_stringify_keys
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
     contact = call_session.contact
+    sip_profile_id = route_metadata['telephony_sip_profile_id'] ||
+                     route_metadata['target_sip_profile_id'] ||
+                     Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).first
+    browser_join_supported = route_metadata['browser_join_supported']
 
     {
       account_id: call_session.account_id,
@@ -370,7 +374,17 @@ class Telephony::EventsIngestionService
       caller: realtime_call_status_caller_payload(contact, call_session),
       operator_claim: metadata['operator_claim'],
       operator_candidates: route_metadata['operator_candidates'],
-      operator_internal_extension: route_metadata['operator_internal_extension']
+      operator_internal_extension: route_metadata['operator_internal_extension'],
+      sip_profile_id: sip_profile_id,
+      sipProfileId: sip_profile_id,
+      janus_call_ref: route_metadata['janus_call_ref'],
+      janusCallRef: route_metadata['janus_call_ref'],
+      janus_session_key: route_metadata['janus_session_key'],
+      janusSessionKey: route_metadata['janus_session_key'],
+      sipuni_native_webphone_correlation: route_metadata['sipuni_native_webphone_correlation'],
+      sipuniNativeWebphoneCorrelation: route_metadata['sipuni_native_webphone_correlation'],
+      browser_join_supported: browser_join_supported,
+      browserJoinSupported: browser_join_supported
     }.compact
   end
 

@@ -8,6 +8,7 @@ const {
   endClientCallMock,
   initializeDeviceMock,
   joinClientCallMock,
+  waitForPendingIncomingCallMock,
   removeEventListenerMock,
   rejectBackendCallMock,
   reportBrowserSipIncomingMock,
@@ -23,6 +24,7 @@ const {
   endClientCallMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
   joinClientCallMock: vi.fn(),
+  waitForPendingIncomingCallMock: vi.fn(),
   removeEventListenerMock: vi.fn(),
   rejectBackendCallMock: vi.fn(),
   reportBrowserSipIncomingMock: vi.fn(),
@@ -67,6 +69,7 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
     endClientCall: endClientCallMock,
     initializeDevice: initializeDeviceMock,
     joinClientCall: joinClientCallMock,
+    waitForPendingIncomingCall: waitForPendingIncomingCallMock,
     rejectIncomingCall: rejectClientCallMock,
     removeEventListener: removeEventListenerMock,
     supportsBrowserCalling: supportsBrowserCallingMock,
@@ -111,6 +114,9 @@ describe('useCallSession', () => {
       provider: 'fonoster',
       answered: true,
     });
+    waitForPendingIncomingCallMock.mockResolvedValue({
+      callRef: 'raw-janus-call-id',
+    });
     rejectBackendCallMock.mockResolvedValue({ status: 'rejected' });
     reportBrowserSipIncomingMock.mockResolvedValue({
       callSid: 'binotel:janus:call-1',
@@ -122,6 +128,8 @@ describe('useCallSession', () => {
       operator_candidates: [{ sip_profile_id: 40, user_id: 179 }],
       operator_internal_extension: '901',
       sip_profile_id: 40,
+      janus_call_ref: 'raw-janus-call-id',
+      janus_session_key: 'sip_profile:40',
     });
     rejectClientCallMock.mockResolvedValue({
       provider: 'fonoster',
@@ -808,25 +816,23 @@ describe('useCallSession', () => {
     });
   });
 
-  it('releases a claimed Sipuni communication thread call when the SIP invite is not available', async () => {
+  it('does not claim a Sipuni communication thread call when the Janus INVITE is not available', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-claim-thread-waiting-for-invite',
       provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 724,
+      communicationThreadId: 25,
+      sipProfileId: 42,
     });
     initializeDeviceMock.mockResolvedValue({
       provider: 'sipuni',
       callingSupported: true,
       registered: true,
+      sipProfileId: 42,
     });
-    VoiceAPI.claimIncomingCall.mockResolvedValue({
-      claimed: true,
-      status: 'connecting',
-      communication_thread_id: 25,
-    });
-    joinClientCallMock.mockResolvedValue(null);
+    waitForPendingIncomingCallMock.mockResolvedValueOnce(null);
     const callSession = mountUseCallSession();
 
     const result = await callSession.joinCall({
@@ -843,36 +849,42 @@ describe('useCallSession', () => {
       reason: 'sip_invite_not_received',
       communicationThreadId: 25,
     });
-    expect(rejectBackendCallMock).toHaveBeenCalledWith(
-      'call-claim-thread-waiting-for-invite',
-      {
-        reason: 'sip_invite_not_received',
-        status: 'no_answer',
-      }
+    expect(waitForPendingIncomingCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'sipuni',
+        inboxId: 4769,
+        sipProfileId: 42,
+      }),
+      { timeoutMs: 2500 }
     );
-    expect(callsStore.calls).toEqual([]);
+    expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
+    expect(joinClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'call-claim-thread-waiting-for-invite',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'sip_invite_not_received',
+      }),
+    ]);
   });
 
-  it('keeps a claimed Sipuni call visible when releasing a missing SIP invite fails', async () => {
+  it('keeps a Sipuni call visible when Janus preflight fails before claim', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-release-missing-invite-failed',
       provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 724,
+      sipProfileId: 42,
     });
     initializeDeviceMock.mockResolvedValue({
       provider: 'sipuni',
       callingSupported: true,
       registered: true,
+      sipProfileId: 42,
     });
-    VoiceAPI.claimIncomingCall.mockResolvedValue({
-      claimed: true,
-      status: 'connecting',
-      communication_thread_id: 25,
-    });
-    joinClientCallMock.mockResolvedValue(null);
-    rejectBackendCallMock.mockRejectedValue(new Error('backend unavailable'));
+    waitForPendingIncomingCallMock.mockResolvedValueOnce(null);
     const callSession = mountUseCallSession();
 
     const result = await callSession.joinCall({
@@ -887,15 +899,10 @@ describe('useCallSession', () => {
       provider: 'sipuni',
       joinSupported: false,
       reason: 'sip_invite_not_received',
-      communicationThreadId: 25,
     });
-    expect(rejectBackendCallMock).toHaveBeenCalledWith(
-      'call-release-missing-invite-failed',
-      {
-        reason: 'sip_invite_not_received',
-        status: 'no_answer',
-      }
-    );
+    expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
+    expect(joinClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
     expect(callsStore.calls).toEqual([
       expect.objectContaining({
         callSid: 'call-release-missing-invite-failed',

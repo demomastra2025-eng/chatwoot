@@ -38,6 +38,11 @@ const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
   'sipuni',
   'binotel',
 ]);
+const JANUS_NATIVE_BROWSER_SIP_PROVIDERS = new Set([
+  'asterisk_analog',
+  'sipuni',
+  'binotel',
+]);
 const BROWSER_SIP_INCOMING_REPORT_PROVIDERS = new Set([
   'asterisk_analog',
   'binotel',
@@ -106,6 +111,19 @@ export function useCallSession() {
     inboxId: call?.inboxId || call?.inbox_id,
     sipProfileId: sipProfileIdForCall(call),
   });
+  const janusCallRefForCall = call =>
+    call?.janusCallRef ||
+    call?.janus_call_ref ||
+    call?.metadata?.janus_call_ref ||
+    call?.operatorClaim?.janus_call_ref ||
+    call?.operatorClaim?.janusCallRef;
+  const janusWebphoneCallScope = call => ({
+    ...webphoneCallScope(call),
+    janusCallRef: janusCallRefForCall(call),
+  });
+  const trackedCallForSid = callSid =>
+    callsStore.calls.find(call => String(call.callSid) === String(callSid)) ||
+    null;
   const isOutboundCallDirection = callDirection => callDirection === 'outbound';
   const routeInboxId = computed(() => {
     const value = route.params?.inbox_id || route.params?.inboxId;
@@ -331,6 +349,22 @@ export function useCallSession() {
     };
   };
 
+  const failNativeBrowserSipCallWithoutInvite = (
+    callSid,
+    { provider, communicationThreadId = null } = {}
+  ) => {
+    callsStore.markBrowserJoinUnsupported(callSid, provider, {
+      reason: 'sip_invite_not_received',
+    });
+
+    return {
+      provider,
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      ...(communicationThreadId ? { communicationThreadId } : {}),
+    };
+  };
+
   const failFonosterOutboundWithoutInvite = async callSid => {
     await releaseFonosterIncomingCall(callSid, {
       status: 'failed',
@@ -490,6 +524,19 @@ export function useCallSession() {
           detail.internal_extension,
         sipProfileId:
           call.sipProfileId || call.sip_profile_id || detail.sipProfileId,
+        janusCallRef:
+          call.janusCallRef ||
+          call.janus_call_ref ||
+          detail.callRef ||
+          detail.callSid,
+        janusSessionKey:
+          call.janusSessionKey ||
+          call.janus_session_key ||
+          detail.sessionKey ||
+          detail.session_key,
+        sipuniNativeWebphoneCorrelation:
+          call.sipuniNativeWebphoneCorrelation ??
+          call.sipuni_native_webphone_correlation,
         browserJoinSupported:
           call.browserJoinSupported ?? call.browser_join_supported ?? true,
       });
@@ -649,6 +696,9 @@ export function useCallSession() {
     provider,
     callDirection,
     toNumber,
+    sipProfileId,
+    janusCallRef,
+    janus_call_ref,
   }) => {
     if (isJoining.value) return null;
 
@@ -674,11 +724,50 @@ export function useCallSession() {
 
       if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)) {
         const isOutbound = isOutboundCallDirection(callDirection);
+        const trackedCall = trackedCallForSid(callSid) || {};
+        const joinCallData = {
+          ...trackedCall,
+          callSid,
+          provider: resolvedProvider,
+          inboxId: inboxId || trackedCall.inboxId || trackedCall.inbox_id,
+          callDirection: callDirection || trackedCall.callDirection,
+          sipProfileId: sipProfileId || trackedCall.sipProfileId,
+          sip_profile_id: sipProfileId || trackedCall.sip_profile_id,
+          janusCallRef:
+            janusCallRef || janus_call_ref || trackedCall.janusCallRef,
+          janus_call_ref:
+            janusCallRef || janus_call_ref || trackedCall.janus_call_ref,
+          janusSessionKey: trackedCall.janusSessionKey,
+          janus_session_key: trackedCall.janus_session_key,
+        };
         let communicationThreadId = null;
         let operatorSipProfileId =
-          webphoneSession.sipProfileId || webphoneSession.sip_profile_id;
+          webphoneSession.sipProfileId ||
+          webphoneSession.sip_profile_id ||
+          sipProfileIdForCall(joinCallData);
 
         if (!isOutbound) {
+          if (JANUS_NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)) {
+            const pendingIncomingCall =
+              await WebphoneClient.waitForPendingIncomingCall(
+                {
+                  ...janusWebphoneCallScope({
+                    ...joinCallData,
+                    sipProfileId: operatorSipProfileId,
+                  }),
+                },
+                { timeoutMs: 2500 }
+              );
+            if (!pendingIncomingCall) {
+              return failNativeBrowserSipCallWithoutInvite(callSid, {
+                provider: resolvedProvider,
+                communicationThreadId:
+                  trackedCall.communicationThreadId ||
+                  trackedCall.communication_thread_id,
+              });
+            }
+          }
+
           const claimResult = await claimFonosterIncomingCall(callSid);
           operatorSipProfileId =
             operatorSipProfileId ||
@@ -721,8 +810,11 @@ export function useCallSession() {
               communicationThreadId,
               inboxId,
               provider: resolvedProvider,
-              callDirection,
+              callDirection: joinCallData.callDirection,
               sipProfileId: operatorSipProfileId,
+              janusCallRef: janusCallRefForCall(joinCallData),
+              janusSessionKey:
+                joinCallData.janusSessionKey || joinCallData.janus_session_key,
             });
           }
         }
@@ -737,6 +829,7 @@ export function useCallSession() {
             callRef: callSid,
             callDirection,
             toNumber,
+            janusCallRef: janusCallRefForCall(joinCallData),
           });
         } catch (error) {
           // eslint-disable-next-line no-console

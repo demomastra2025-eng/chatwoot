@@ -252,6 +252,11 @@ describe('ActionCableConnector - Copilot Tests', () => {
             { user_id: 9, name: 'Ayan', internal_extension: '502' },
           ],
           operator_internal_extension: '502',
+          sip_profile_id: 42,
+          janus_call_ref: 'janus-invite-42',
+          janus_session_key: 'sip_profile:42',
+          sipuni_native_webphone_correlation: true,
+          browser_join_supported: true,
         },
       });
 
@@ -275,6 +280,11 @@ describe('ActionCableConnector - Copilot Tests', () => {
           { user_id: 9, name: 'Ayan', internal_extension: '502' },
         ],
         operatorInternalExtension: '502',
+        sipProfileId: 42,
+        janusCallRef: 'janus-invite-42',
+        janusSessionKey: 'sip_profile:42',
+        sipuniNativeWebphoneCorrelation: true,
+        browserJoinSupported: true,
       });
     });
 

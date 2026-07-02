@@ -752,6 +752,34 @@ class WebphoneClient extends EventTarget {
     return client.joinClientCall({ ...payload, sessionKey });
   }
 
+  hasPendingIncomingCall(payload = {}) {
+    const provider = payload.provider || this.activeProvider;
+    const sessionKey = this.resolveSessionKey(payload);
+    const client = this.getClient(provider, { ...payload, sessionKey });
+    if (!client || typeof client.hasPendingIncomingCall !== 'function') {
+      return false;
+    }
+
+    return client.hasPendingIncomingCall({
+      callRef: payload.janusCallRef || payload.janus_call_ref,
+      strict: Boolean(payload.janusCallRef || payload.janus_call_ref),
+    });
+  }
+
+  async waitForPendingIncomingCall(payload = {}, { timeoutMs = 2500 } = {}) {
+    const provider = payload.provider || this.activeProvider;
+    const sessionKey = this.resolveSessionKey(payload);
+    const client = this.getClient(provider, { ...payload, sessionKey });
+    if (!client || typeof client.waitForPendingIncomingCall !== 'function') {
+      return null;
+    }
+
+    return client.waitForPendingIncomingCall(timeoutMs, {
+      callRef: payload.janusCallRef || payload.janus_call_ref,
+      strict: Boolean(payload.janusCallRef || payload.janus_call_ref),
+    });
+  }
+
   prewarmMicrophone(providerOrPayload = this.activeProvider, options = {}) {
     const payload =
       typeof providerOrPayload === 'object'

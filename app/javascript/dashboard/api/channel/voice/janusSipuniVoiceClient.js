@@ -1143,24 +1143,71 @@ export class JanusSipuniVoiceClient extends EventTarget {
     return audio;
   }
 
-  async waitForPendingIncomingCall(timeoutMs = WEBPHONE_INCOMING_CALL_WAIT_MS) {
-    if (this.pendingIncomingCall) return this.pendingIncomingCall;
+  pendingIncomingCallRef(incomingCall = this.pendingIncomingCall) {
+    if (!incomingCall) return null;
+
+    return (
+      incomingCall.callId ||
+      incomingCall.result?.call_id ||
+      incomingCall.result?.callId ||
+      null
+    );
+  }
+
+  pendingIncomingCallMatches({ callRef = null, strict = false } = {}) {
+    const incomingCall = this.pendingIncomingCall;
+    if (!incomingCall) return null;
+    if (!callRef) return incomingCall;
+
+    const expectedRef = String(callRef);
+    const pendingRef = this.pendingIncomingCallRef(incomingCall);
+    const refs = [
+      pendingRef,
+      incomingCall.result?.call_id,
+      incomingCall.result?.callId,
+      this.currentCallRef,
+    ]
+      .filter(Boolean)
+      .map(String);
+
+    if (refs.includes(expectedRef)) return incomingCall;
+    if (strict) return null;
+
+    // Provider webhook call ids and Janus SIP call ids differ. Once the
+    // caller scoped us to this exact SIP profile, a single pending INVITE on
+    // the handle is the authoritative browser-answer candidate.
+    return incomingCall;
+  }
+
+  hasPendingIncomingCall(options = {}) {
+    return Boolean(this.pendingIncomingCallMatches(options));
+  }
+
+  async waitForPendingIncomingCall(
+    timeoutMs = WEBPHONE_INCOMING_CALL_WAIT_MS,
+    options = {}
+  ) {
+    const existing = this.pendingIncomingCallMatches(options);
+    if (existing) return existing;
 
     const deadline = Date.now() + timeoutMs;
-    while (!this.pendingIncomingCall && Date.now() < deadline) {
+    let incomingCall = null;
+    while (!incomingCall && Date.now() < deadline) {
       // eslint-disable-next-line no-await-in-loop
       await new Promise(resolve => {
         window.setTimeout(resolve, WEBPHONE_INCOMING_CALL_POLL_MS);
       });
+      incomingCall = this.pendingIncomingCallMatches(options);
     }
 
-    return this.pendingIncomingCall;
+    return incomingCall;
   }
 
   async joinClientCall({
     callRef = null,
     callDirection,
     toNumber = null,
+    janusCallRef = null,
   } = {}) {
     if (!this.sipHandle || !this.initialized) return null;
 
@@ -1172,7 +1219,13 @@ export class JanusSipuniVoiceClient extends EventTarget {
       return this.startOutboundCall(toNumber);
     }
 
-    const incomingCall = await this.waitForPendingIncomingCall();
+    const incomingCall = await this.waitForPendingIncomingCall(
+      WEBPHONE_INCOMING_CALL_WAIT_MS,
+      {
+        callRef: janusCallRef,
+        strict: Boolean(janusCallRef),
+      }
+    );
     if (!incomingCall) {
       this.stopMicrophonePrewarm();
       return null;
