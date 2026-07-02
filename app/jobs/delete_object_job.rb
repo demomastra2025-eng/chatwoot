@@ -121,6 +121,7 @@ class DeleteObjectJob < ApplicationJob
     nullify_records(Scheduling::Appointment.where(conversation_id: conversation_ids), conversation_id: nil)
     nullify_records(AssignmentQuotaUsage.where(conversation_id: conversation_ids), conversation_id: nil)
     delete_assignment_decision_logs(conversation_ids)
+    delete_conversation_status_transitions(conversation_ids)
   end
 
   def communication_thread_ids_for_conversations(conversation_ids)
@@ -154,6 +155,12 @@ class DeleteObjectJob < ApplicationJob
 
   def delete_assignment_decision_logs(conversation_ids)
     AssignmentDecisionLog
+      .where(conversation_id: conversation_ids)
+      .in_batches(of: BATCH_SIZE, &:delete_all)
+  end
+
+  def delete_conversation_status_transitions(conversation_ids)
+    ConversationStatusTransition
       .where(conversation_id: conversation_ids)
       .in_batches(of: BATCH_SIZE, &:delete_all)
   end

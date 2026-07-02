@@ -212,6 +212,24 @@ RSpec.describe DeleteObjectJob, type: :job do
         expect(AssignmentDecisionLog.exists?(decision_log.id)).to be(false)
       end
 
+      it 'deletes status transitions before destroying the conversation' do
+        transition_ids = Array.new(3) do |index|
+          ConversationStatusTransition.create!(
+            account: account,
+            conversation: conversation,
+            from_status: 'open',
+            to_status: 'resolved',
+            source: 'manual',
+            metadata: { index: index }
+          ).id
+        end
+
+        described_class.perform_now(conversation)
+
+        expect { conversation.reload }.to raise_error(ActiveRecord::RecordNotFound)
+        expect(ConversationStatusTransition.where(id: transition_ids)).to be_empty
+      end
+
       it 'removes the empty communication thread and detaches CRM deals after destroying the last conversation' do
         thread = create(:communication_thread, account: account, contact: conversation.contact)
         create(
