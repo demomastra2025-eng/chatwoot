@@ -246,6 +246,8 @@ export default {
           isCommunicationThread(selectedConversation) ===
             isCommunicationThread(this.currentChat);
         if (isSameActiveChat) {
+          const { messageId } = this.$route.query;
+          emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE, { messageId });
           return;
         }
         const { messageId } = this.$route.query;

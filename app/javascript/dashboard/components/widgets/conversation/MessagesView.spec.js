@@ -100,6 +100,80 @@ describe('MessagesView', () => {
       expect(context.scrollToBottom).toHaveBeenCalled();
       expect(context.makeMessagesRead).toHaveBeenCalled();
     });
+
+    it('does not mark messages read when unread messages are not mounted yet', () => {
+      const context = buildContext({
+        isNearConversationBottom: vi.fn(() => true),
+        scrollToBottom: vi.fn(() => false),
+      });
+
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(context.scrollToBottom).toHaveBeenCalled();
+      expect(context.makeMessagesRead).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('#scrollToBottom', () => {
+    const buildPanel = ({
+      unreadMessage = null,
+      labelSuggestion = null,
+    } = {}) => {
+      const panel = {
+        scrollHeight: 2000,
+        clientHeight: 500,
+        scrollTop: 300,
+        getBoundingClientRect: () => ({ top: 100, bottom: 600 }),
+        querySelector: vi.fn(selector => {
+          if (selector === '.message--unread') return unreadMessage;
+          if (selector === '.label-suggestion') return labelSuggestion;
+          return null;
+        }),
+      };
+      return panel;
+    };
+
+    it('scrolls to the first unread DOM message when unread messages are mounted', () => {
+      const unreadMessage = {
+        getBoundingClientRect: () => ({ top: 350, bottom: 430, height: 80 }),
+      };
+      const panel = buildPanel({ unreadMessage });
+      const context = {
+        conversationPanel: panel,
+        unreadMessageCount: 2,
+        isProgrammaticScroll: false,
+      };
+
+      expect(MessagesView.methods.scrollToBottom.call(context)).toBe(true);
+      expect(panel.querySelector).toHaveBeenCalledWith('.message--unread');
+      expect(panel.scrollTop).toBe(526);
+      expect(context.isProgrammaticScroll).toBe(true);
+    });
+
+    it('scrolls to newest mounted content but refuses read-marking if unread DOM is missing', () => {
+      const panel = buildPanel();
+      const context = {
+        conversationPanel: panel,
+        unreadMessageCount: 2,
+        isProgrammaticScroll: false,
+      };
+
+      expect(MessagesView.methods.scrollToBottom.call(context)).toBe(false);
+      expect(panel.scrollTop).toBe(1500);
+      expect(context.isProgrammaticScroll).toBe(true);
+    });
+
+    it('scrolls to the bottom when there are no unread messages', () => {
+      const panel = buildPanel();
+      const context = {
+        conversationPanel: panel,
+        unreadMessageCount: 0,
+        isProgrammaticScroll: false,
+      };
+
+      expect(MessagesView.methods.scrollToBottom.call(context)).toBe(true);
+      expect(panel.scrollTop).toBe(1500);
+    });
   });
 
   describe('unReadMessages', () => {

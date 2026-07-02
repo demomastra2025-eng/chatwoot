@@ -25,7 +25,10 @@ import inboxMixin, { INBOX_FEATURES } from 'shared/mixins/inboxMixin';
 // utils
 import { emitter } from 'shared/helpers/mitt';
 import { getTypingUsersText } from '../../../helper/commons';
-import { calculateScrollTop } from './helpers/scrollTopCalculationHelper';
+import {
+  scrollConversationPanelToBottom,
+  scrollElementIntoConversationPanel,
+} from './helpers/scrollTopCalculationHelper';
 import { LocalStorage } from 'shared/helpers/localStorage';
 import {
   filterDuplicateSourceMessages,
@@ -394,8 +397,10 @@ export default {
           (!hasExplicitMessageTarget &&
             (!this.hasUserScrolled || this.isNearConversationBottom()))
         ) {
-          this.scrollToBottom();
-          this.makeMessagesRead();
+          const didScrollToLoadedUnread = this.scrollToBottom();
+          if (didScrollToLoadedUnread !== false) {
+            this.makeMessagesRead();
+          }
         }
       });
     },
@@ -410,37 +415,46 @@ export default {
       this.conversationPanel.removeEventListener('scroll', this.handleScroll);
     },
     scrollToBottom() {
+      if (!this.conversationPanel) return false;
+
       this.isProgrammaticScroll = true;
-      let relevantMessages = [];
 
-      // label suggestions are not part of the messages list
-      // so we need to handle them separately
-      let labelSuggestions =
-        this.conversationPanel.querySelector('.label-suggestion');
-
-      // if there are unread messages, scroll to the first unread message
+      // Unread messages have the highest priority: scroll to the first
+      // concrete unread DOM node instead of estimating its position from the
+      // total unread height. This keeps imported/backfilled channels, date
+      // dividers, attachments, call cards, and channel dividers from shifting
+      // the viewport to the wrong part of the timeline.
       if (this.unreadMessageCount > 0) {
-        // capturing only the unread messages
-        relevantMessages =
-          this.conversationPanel.querySelectorAll('.message--unread');
-      } else if (labelSuggestions) {
-        // when scrolling to the bottom, the label suggestions is below the last message
-        // so we scroll there if there are no unread messages
-        // Unread messages always take the highest priority
-        relevantMessages = [labelSuggestions];
-      } else {
-        // if there are no unread messages or label suggestion, scroll to the last message
-        // capturing last message from the messages list
-        relevantMessages = Array.from(
-          this.conversationPanel.querySelectorAll('.message--read')
-        ).slice(-1);
+        const firstUnreadMessage =
+          this.conversationPanel.querySelector('.message--unread');
+
+        if (firstUnreadMessage) {
+          return scrollElementIntoConversationPanel(
+            this.conversationPanel,
+            firstUnreadMessage,
+            { block: 'start' }
+          );
+        }
+
+        // Backend says there is unread content, but it is not mounted in the
+        // current payload yet. Do not mark the conversation read in this state;
+        // keep the viewport at the newest mounted content while the missing
+        // unread page can be fetched/retried.
+        scrollConversationPanelToBottom(this.conversationPanel);
+        return false;
       }
 
-      this.conversationPanel.scrollTop = calculateScrollTop(
-        this.conversationPanel.scrollHeight,
-        this.$el.scrollHeight,
-        relevantMessages
-      );
+      const labelSuggestions =
+        this.conversationPanel.querySelector('.label-suggestion');
+      if (labelSuggestions) {
+        return scrollElementIntoConversationPanel(
+          this.conversationPanel,
+          labelSuggestions,
+          { block: 'end' }
+        );
+      }
+
+      return scrollConversationPanelToBottom(this.conversationPanel);
     },
     communicationThreadMessageLastSeenAt(message) {
       const conversationId = String(message?.conversation_id);
