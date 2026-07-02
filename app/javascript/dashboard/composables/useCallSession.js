@@ -41,6 +41,7 @@ const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
 const BROWSER_SIP_INCOMING_REPORT_PROVIDERS = new Set([
   'asterisk_analog',
   'binotel',
+  'sipuni',
 ]);
 
 const positiveNumber = value => {

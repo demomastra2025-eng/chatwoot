@@ -582,6 +582,61 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(binotel_profile.reload.registered_for_routing?).to be(true)
   end
 
+  it 'reuses a recent Sipuni webhook provider call when native Janus incoming arrives after the webhook' do
+    sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
+    binding = Telephony::NumberBinding.sync_from_voice_channel!(sipuni_profile.inbox.channel)
+    provider_call_ref = 'sipuni:1782935393.293686'
+    existing_call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: sipuni_profile.inbox,
+      conversation: create(:conversation, account: account, inbox: sipuni_profile.inbox),
+      number_binding: binding,
+      provider: 'sipuni',
+      provider_call_sid: '1782935393.293686',
+      external_call_ref: provider_call_ref,
+      status: 'ringing',
+      direction: 'inbound',
+      from_number: '+77475318623',
+      to_number: binding.phone_number,
+      started_at: 10.seconds.ago,
+      metadata: {
+        'metadata' => {
+          'source' => 'sipuni_http_api',
+          'operator_internal_extension' => sipuni_profile.internal_extension
+        }
+      }
+    )
+
+    post incoming_path,
+         params: {
+           inbox_id: sipuni_profile.inbox_id,
+           provider: 'sipuni',
+           call_ref: 'raw-sipuni-call-id@91.215.136.2:8217',
+           from: 'sip:+77475318623@91.215.136.2:8217',
+           session_key: "sip_profile:#{sipuni_profile.id}",
+           sip_profile_id: sipuni_profile.id,
+           internal_extension: sipuni_profile.internal_extension
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include(
+      'call_sid' => provider_call_ref,
+      'callSid' => provider_call_ref,
+      'provider' => 'sipuni',
+      'status' => 'ringing',
+      'inbox_id' => sipuni_profile.inbox_id
+    )
+    expect(account.telephony_call_sessions.where(provider: 'sipuni').count).to eq(1)
+    expect(account.telephony_call_sessions.where("external_call_ref LIKE 'sipuni:janus:%'")).to be_empty
+    expect(existing_call_session.reload.metadata.dig('metadata', 'janus_call_ref')).to eq('raw-sipuni-call-id@91.215.136.2:8217')
+    expect(existing_call_session.metadata.dig('metadata', 'target_sip_profile_id')).to eq(sipuni_profile.id)
+  end
+
   it 'returns an unsupported payload for provider-managed Sipuni extensions' do
     sipuni_channel = create(
       :channel_voice,

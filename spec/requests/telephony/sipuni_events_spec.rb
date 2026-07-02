@@ -34,11 +34,7 @@ RSpec.describe 'Sipuni events webhook', type: :request do
   let(:voice_inbox) { voice_channel.inbox }
   let(:number_binding) { Telephony::NumberBinding.sync_from_voice_channel!(voice_channel) }
   let(:token) { 'sipuni-webhook-token' }
-
-  before do
-    account.enable_features!('channel_voice')
-    create(:inbox_member, inbox: voice_inbox, user: operator)
-    number_binding
+  let(:sip_profile) do
     create(
       :telephony_sip_profile,
       account: account,
@@ -61,6 +57,13 @@ RSpec.describe 'Sipuni events webhook', type: :request do
         last_presence_event_at: Time.current.iso8601
       }
     )
+  end
+
+  before do
+    account.enable_features!('channel_voice')
+    create(:inbox_member, inbox: voice_inbox, user: operator)
+    number_binding
+    sip_profile
   end
 
   it 'ingests an inbound Sipuni start event through the public webhook' do
@@ -250,6 +253,29 @@ RSpec.describe 'Sipuni events webhook', type: :request do
         data: hash_including(callSid: 'sipuni:sipuni-repeat-call-1')
       )
     ).once
+  end
+
+  it 'attaches Sipuni webhook lifecycle to an active native Janus call instead of creating a duplicate provider call' do
+    allow(ActionCable.server).to receive(:broadcast)
+
+    started_at = Time.zone.at(1_782_846_659)
+    janus_call_ref, janus_call_session = create_native_janus_sipuni_call_session(started_at)
+
+    post_native_sipuni_webhook_event(started_at)
+
+    expect(response).to have_http_status(:ok)
+    expect(account.telephony_call_sessions.where(provider: 'sipuni').count).to eq(1)
+    expect(account.telephony_call_sessions.find_by(external_call_ref: 'sipuni:sipuni-native-race-1')).to be_nil
+    expect(janus_call_session.reload).to have_attributes(
+      provider_call_sid: 'sipuni-native-race-1',
+      status: 'ringing'
+    )
+    expect(janus_call_session.metadata.dig('metadata', 'sipuni_native_webphone_call_ref')).to eq(janus_call_ref)
+    expect(janus_call_session.metadata.dig('metadata', 'sipuni_native_webphone_correlation')).to be(true)
+    expect(ActionCable.server).not_to have_received(:broadcast).with(
+      operator.pubsub_token,
+      hash_including(event: 'voice_call.incoming')
+    )
   end
 
   it 'ingests an outbound Sipuni start event through the public webhook' do
@@ -464,5 +490,68 @@ RSpec.describe 'Sipuni events webhook', type: :request do
 
     expect(response).to have_http_status(:unauthorized)
     expect(response.parsed_body).to include('success' => false, 'error' => 'unauthorized')
+  end
+
+  def create_native_janus_sipuni_call_session(started_at)
+    janus_call_ref = "sipuni:janus:#{sip_profile.id}:raw-sipuni-call-id@91.215.136.2:8217"
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      conversation: create(:conversation, account: account, inbox: voice_inbox),
+      number_binding: number_binding,
+      provider: 'sipuni',
+      external_call_ref: janus_call_ref,
+      provider_call_sid: nil,
+      status: 'ringing',
+      direction: 'inbound',
+      from_number: '+77070001002',
+      to_number: '+77070001001',
+      started_at: started_at,
+      metadata: native_janus_sipuni_call_metadata(janus_call_ref)
+    )
+
+    [janus_call_ref, call_session]
+  end
+
+  def native_janus_sipuni_call_metadata(janus_call_ref)
+    {
+      'metadata' => {
+        'source' => 'browser_janus_sip',
+        'target_sip_profile_id' => sip_profile.id,
+        'operator_internal_extension' => '505'
+      },
+      'fast_incoming_broadcast' => {
+        'event_key' => "route_lookup:#{janus_call_ref}:session_started"
+      }
+    }
+  end
+
+  def post_native_sipuni_webhook_event(started_at)
+    with_modified_env(
+      SIPUNI_WEBHOOK_TOKEN: token,
+      SIPUNI_EXTERNAL_NUMBER: '+77070001001',
+      SIPUNI_INTERNAL_NUMBER: '505'
+    ) do
+      perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+        post "/sipuni/events/#{token}", params: native_sipuni_webhook_event_params(started_at)
+      end
+    end
+  end
+
+  def native_sipuni_webhook_event_params(started_at)
+    {
+      event: '1',
+      call_id: 'sipuni-native-race-1',
+      src_num: '77070001002',
+      src_type: '1',
+      dst_num: '015856505',
+      dst_type: '2',
+      short_dst_num: '505',
+      timestamp: started_at.to_i,
+      user_id: '015856',
+      is_inner_call: '1',
+      channel: 'SIP/990001000021-00000001'
+    }
   end
 end

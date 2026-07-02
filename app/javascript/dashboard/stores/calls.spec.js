@@ -142,7 +142,12 @@ describe('useCallsStore', () => {
       }),
     ]);
     await vi.waitFor(() => {
-      expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+      expect(endClientCallMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callSid: 'old-call-ref',
+          provider: 'fonoster',
+        })
+      );
     });
   });
 
@@ -395,7 +400,12 @@ describe('useCallsStore', () => {
     );
 
     expect(store.calls).toEqual([]);
-    expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callSid: 'operator-504-ref',
+        provider: 'fonoster',
+      })
+    );
   });
 
   it('ends an active Sipuni browser client when another operator claims the call', async () => {
@@ -429,7 +439,13 @@ describe('useCallsStore', () => {
     );
 
     expect(store.calls).toEqual([]);
-    expect(endClientCallMock).toHaveBeenCalledWith('sipuni');
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callSid: 'sipuni:operator-504-ref',
+        communicationThreadId: 72,
+        provider: 'sipuni',
+      })
+    );
   });
 
   it('does not match an unrelated call when a communication thread id equals another conversation id', async () => {
@@ -624,7 +640,12 @@ describe('useCallsStore', () => {
 
     expect(store.calls).toEqual([]);
     await vi.waitFor(() => {
-      expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+      expect(endClientCallMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callSid: 'call-without-terminal-ref',
+          provider: 'fonoster',
+        })
+      );
     });
   });
 

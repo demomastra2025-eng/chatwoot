@@ -8,6 +8,7 @@ class Telephony::WebphoneService
   JANUS_SIP_PROVIDER_RECORDING_API_PROVIDERS = %w[sipuni].freeze
   JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
   JANUS_SIP_SERVER_RECORDING_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  SIPUNI_PROVIDER_WEBHOOK_CORRELATION_WINDOW = 2.minutes
   BROWSER_SIP_INCOMING_SOURCE = 'browser_janus_sip'.freeze
 
   def initialize(account:, bridge_client: nil)
@@ -711,13 +712,14 @@ class Telephony::WebphoneService
 
   def browser_sip_incoming_context(provider:, user:, inbox:, params:)
     profile = browser_sip_incoming_profile!(user, inbox, params)
+    binding = ensure_voice_number_binding!(inbox)
     {
       provider: provider,
       inbox: inbox,
       params: params,
       profile: profile,
-      binding: ensure_voice_number_binding!(inbox),
-      call_ref: browser_sip_incoming_call_ref(provider, profile, params)
+      binding: binding,
+      call_ref: browser_sip_incoming_call_ref(provider, profile, binding, params)
     }
   end
 
@@ -753,13 +755,48 @@ class Telephony::WebphoneService
                                status: :unprocessable_content)
   end
 
-  def browser_sip_incoming_call_ref(provider, profile, params)
+  def browser_sip_incoming_call_ref(provider, profile, binding, params)
     raw_call_ref = params_value(params, 'call_ref', 'callRef', 'call_sid', 'callSid').to_s.strip
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if raw_call_ref.blank?
 
     return raw_call_ref if raw_call_ref.start_with?("#{provider}:")
 
+    provider_session = correlated_sipuni_provider_webhook_session(provider, profile, binding, params)
+    return provider_session.external_call_ref if provider_session.present?
+
     "#{provider}:janus:#{profile.id}:#{raw_call_ref}"
+  end
+
+  def correlated_sipuni_provider_webhook_session(provider, profile, binding, params)
+    return unless provider.to_s == 'sipuni'
+    return if profile.blank? || binding.blank?
+
+    from_values, to_values = sipuni_provider_webhook_lookup_values(profile, binding, params)
+    return if from_values.blank? || to_values.blank?
+
+    unique_sipuni_provider_webhook_session(profile, binding, from_values, to_values)
+  end
+
+  def sipuni_provider_webhook_lookup_values(profile, binding, params)
+    [
+      browser_sip_phone_lookup_values(browser_sip_incoming_from(params)),
+      browser_sip_phone_lookup_values(browser_sip_incoming_to(params, profile.inbox, binding))
+    ]
+  end
+
+  def unique_sipuni_provider_webhook_session(profile, binding, from_values, to_values)
+    sessions = sipuni_provider_webhook_session_scope(profile, binding, from_values, to_values).limit(3).to_a
+    sessions.one? ? sessions.first : nil
+  end
+
+  def sipuni_provider_webhook_session_scope(profile, binding, from_values, to_values)
+    account.telephony_call_sessions
+           .active
+           .where(provider: 'sipuni', direction: 'inbound', inbox_id: profile.inbox_id, number_binding_id: binding.id)
+           .where.not("external_call_ref LIKE 'sipuni:janus:%'")
+           .where('COALESCE(started_at, created_at) >= ?', SIPUNI_PROVIDER_WEBHOOK_CORRELATION_WINDOW.ago)
+           .where(from_number: from_values, to_number: to_values)
+           .order(created_at: :desc, id: :desc)
   end
 
   def browser_sip_incoming_route_payload(context)
@@ -867,6 +904,19 @@ class Telephony::WebphoneService
     return if raw_value.blank?
 
     raw_value[/\A<?sip:([^@;>]+)/i, 1].presence || raw_value
+  end
+
+  def browser_sip_phone_lookup_values(value)
+    raw_value = value.to_s.strip
+    normalized = Contacts::PhoneNumberNormalizer.normalize(raw_value) ||
+                 Contacts::PhoneNumberNormalizer.normalize(raw_value, default_country: 'KZ')
+
+    [
+      raw_value,
+      normalized,
+      normalized&.delete_prefix('+'),
+      raw_value.delete_prefix('+')
+    ].compact_blank.uniq
   end
 
   def params_value(params, *keys)

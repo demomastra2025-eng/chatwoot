@@ -257,6 +257,116 @@ describe('useCallSession', () => {
     ]);
   });
 
+  it('reports native Sipuni Janus incoming calls when no webhook call is tracked', async () => {
+    reportBrowserSipIncomingMock.mockResolvedValueOnce({
+      callSid: 'sipuni:janus:42:raw-sipuni-call-id',
+      status: 'ringing',
+      provider: 'sipuni',
+      inbox_id: 4772,
+      call_direction: 'inbound',
+      from_number: '+77017450000',
+      operator_candidates: [{ sip_profile_id: 42, user_id: 179 }],
+      operator_internal_extension: '207',
+      sip_profile_id: 42,
+    });
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const incomingHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:incoming'
+    )?.[1];
+    await incomingHandler({
+      detail: {
+        provider: 'sipuni',
+        inboxId: 4772,
+        sipProfileId: 42,
+        sessionKey: 'sip_profile:42',
+        internalExtension: '207',
+        callRef: 'raw-sipuni-call-id',
+        from: 'sip:+77017450000@ats01.kz.sipuni.com',
+      },
+    });
+
+    expect(reportBrowserSipIncomingMock).toHaveBeenCalledWith({
+      provider: 'sipuni',
+      inbox_id: 4772,
+      call_ref: 'raw-sipuni-call-id',
+      from: 'sip:+77017450000@ats01.kz.sipuni.com',
+      session_key: 'sip_profile:42',
+      sip_profile_id: 42,
+      internal_extension: '207',
+    });
+    expect(useCallsStore().calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni:janus:42:raw-sipuni-call-id',
+        provider: 'sipuni',
+        inboxId: 4772,
+        callDirection: 'inbound',
+        fromNumber: '+77017450000',
+        operatorInternalExtension: '207',
+        sipProfileId: 42,
+      }),
+    ]);
+  });
+
+  it('correlates Sipuni Janus incoming calls with tracked webhook calls through the backend', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:1782931413.293602',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 4772,
+      status: 'ringing',
+    });
+    reportBrowserSipIncomingMock.mockResolvedValueOnce({
+      callSid: 'sipuni:1782931413.293602',
+      status: 'ringing',
+      provider: 'sipuni',
+      inbox_id: 4772,
+      call_direction: 'inbound',
+      from_number: '+77017450000',
+      operator_internal_extension: '207',
+      sip_profile_id: 42,
+    });
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const incomingHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:incoming'
+    )?.[1];
+    await incomingHandler({
+      detail: {
+        provider: 'sipuni',
+        inboxId: 4772,
+        sipProfileId: 42,
+        sessionKey: 'sip_profile:42',
+        internalExtension: '207',
+        callRef: 'raw-sipuni-call-id',
+        from: 'sip:+77017450000@ats01.kz.sipuni.com',
+      },
+    });
+
+    expect(reportBrowserSipIncomingMock).toHaveBeenCalledWith({
+      provider: 'sipuni',
+      inbox_id: 4772,
+      call_ref: 'raw-sipuni-call-id',
+      from: 'sip:+77017450000@ats01.kz.sipuni.com',
+      session_key: 'sip_profile:42',
+      sip_profile_id: 42,
+      internal_extension: '207',
+    });
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni:1782931413.293602',
+        provider: 'sipuni',
+        inboxId: 4772,
+        fromNumber: '+77017450000',
+        operatorInternalExtension: '207',
+        sipProfileId: 42,
+      }),
+    ]);
+  });
+
   it('bootstraps unscoped browser calling while a communication thread is loading', async () => {
     routeMock.params = { communication_thread_id: '1' };
     selectedChatMock.value = {};

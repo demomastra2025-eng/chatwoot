@@ -24,6 +24,9 @@ class Telephony::Sipuni::EventAdapter
   INTERNAL_PARTY_TYPES = %w[2 internal employee user sip].freeze
   EXTERNAL_PARTY_TYPES = %w[1 external phone pstn].freeze
   MAX_INTERNAL_EXTENSION_LENGTH = 6
+  NATIVE_WEBPHONE_CORRELATION_WINDOW = 2.minutes
+  NATIVE_WEBPHONE_TERMINAL_CORRELATION_WINDOW = 30.minutes
+  NATIVE_WEBPHONE_CREATED_SKEW = 30.seconds
 
   def initialize(params)
     @raw = params.to_h.deep_stringify_keys
@@ -93,6 +96,7 @@ class Telephony::Sipuni::EventAdapter
 
   def call_ref
     existing_call_session&.external_call_ref ||
+      correlated_native_webphone_session&.external_call_ref ||
       correlated_outbound_session&.external_call_ref ||
       "sipuni:#{call_id}"
   end
@@ -119,6 +123,15 @@ class Telephony::Sipuni::EventAdapter
   end
 
   def metadata
+    provider_metadata
+      .merge(call_reference_metadata)
+      .merge(native_webphone_metadata)
+      .merge(sipuni_event_metadata)
+      .merge(operator_candidate_metadata)
+      .compact
+  end
+
+  def provider_metadata
     {
       source: 'sipuni_http_api',
       provider: 'sipuni',
@@ -127,11 +140,21 @@ class Telephony::Sipuni::EventAdapter
       chatwoot_account_id: account.id,
       chatwoot_inbox_id: number_binding&.inbox_id,
       direction: direction,
-      call_direction: direction,
+      call_direction: direction
+    }
+  end
+
+  def call_reference_metadata
+    {
       logical_call_key: "sipuni:#{call_id}",
       call_group_key: "sipuni:#{call_id}",
       number_ref: number_binding&.number_ref,
-      sipuni_call_id: call_id,
+      sipuni_call_id: call_id
+    }
+  end
+
+  def sipuni_event_metadata
+    {
       sipuni_event: event_code,
       sipuni_status: sipuni_status,
       sipuni_leg_kind: sipuni_leg_kind,
@@ -139,7 +162,15 @@ class Telephony::Sipuni::EventAdapter
       operator_internal_extension: internal_extension_for_candidates,
       outbound_target_number: outbound_target_number,
       raw_sipuni_payload: raw
-    }.merge(operator_candidate_metadata).compact
+    }
+  end
+
+  def native_webphone_metadata
+    session = correlated_native_webphone_session
+    {
+      sipuni_native_webphone_call_ref: session&.external_call_ref,
+      sipuni_native_webphone_correlation: session.present?
+    }
   end
 
   def operator_candidate_metadata
@@ -347,6 +378,56 @@ class Telephony::Sipuni::EventAdapter
       end
   end
 
+  def correlated_native_webphone_session
+    return @correlated_native_webphone_session if defined?(@correlated_native_webphone_session)
+
+    binding = number_binding
+    @correlated_native_webphone_session = if inbound? && binding.present?
+                                            sessions = native_webphone_session_scope(binding).limit(3).to_a
+                                            unique_record(sessions)
+                                          end
+  end
+
+  def native_webphone_session_scope(binding)
+    from_values, to_values = native_webphone_phone_values
+    return binding.account.telephony_call_sessions.none if from_values.blank? || to_values.blank?
+
+    scope = native_webphone_base_scope(binding)
+    scope = scope.where.not(status: Telephony::CallSession::TERMINAL_STATUS_VALUES) unless terminal_event?
+    scope.where(from_number: from_values, to_number: to_values)
+  end
+
+  def native_webphone_base_scope(binding)
+    lower_bound, upper_bound = native_webphone_time_bounds
+
+    binding.account.telephony_call_sessions
+           .where(provider: 'sipuni', direction: 'inbound', inbox_id: binding.inbox_id)
+           .where("external_call_ref LIKE 'sipuni:janus:%'")
+           .where('COALESCE(started_at, created_at) BETWEEN ? AND ?', lower_bound, upper_bound)
+           .order(created_at: :desc, id: :desc)
+  end
+
+  def native_webphone_time_bounds
+    reference_time = native_webphone_reference_time || Time.current
+    [
+      reference_time - native_webphone_correlation_window,
+      reference_time + NATIVE_WEBPHONE_CREATED_SKEW
+    ]
+  end
+
+  def native_webphone_phone_values
+    [phone_variants(from_number), phone_variants(to_number)]
+  end
+
+  def native_webphone_reference_time
+    parse_sipuni_time('call_start_timestamp') ||
+      parse_sipuni_time('timestamp')
+  end
+
+  def native_webphone_correlation_window
+    terminal_event? ? NATIVE_WEBPHONE_TERMINAL_CORRELATION_WINDOW : NATIVE_WEBPHONE_CORRELATION_WINDOW
+  end
+
   def scoped_binding_from_channel
     @scoped_binding_from_channel ||= binding_from_sip_username(Telephony::NumberBinding.where(provider: 'sipuni'))
   end
@@ -477,16 +558,20 @@ class Telephony::Sipuni::EventAdapter
   end
 
   def sipuni_time(*keys)
+    parse_sipuni_time(*keys)&.iso8601
+  end
+
+  def parse_sipuni_time(*keys)
     value = raw_value(*keys)
     return if value.blank?
 
     if value.to_s.match?(/\A\d+\z/)
       number = value.to_i
       number /= 1000 if number > 99_999_999_999
-      return Time.zone.at(number).iso8601
+      return Time.zone.at(number)
     end
 
-    Time.zone.parse(value.to_s)&.iso8601
+    Time.zone.parse(value.to_s)
   rescue ArgumentError, TypeError
     nil
   end

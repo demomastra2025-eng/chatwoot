@@ -899,19 +899,21 @@ export class JanusSipuniVoiceClient extends EventTarget {
   janusServerRecordingStartedEvent(result = {}) {
     const event = String(result.event || '').toLowerCase();
     const status = this.janusServerRecordingEventStatus(result);
-    return (
-      event === 'recording_started' ||
-      (['recording', 'recordingupdated'].includes(event) &&
-        [
-          'active',
-          'enabled',
-          'ok',
-          'on',
-          'recording',
-          'started',
-          'true',
-        ].includes(status))
-    );
+    if (event === 'recording_started') return true;
+    if (!['recording', 'recordingupdated'].includes(event)) return false;
+
+    // Janus SIP emits recordingupdated without a status on successful start/stop.
+    if (event === 'recordingupdated' && !status) return true;
+
+    return [
+      'active',
+      'enabled',
+      'ok',
+      'on',
+      'recording',
+      'started',
+      'true',
+    ].includes(status);
   }
 
   janusServerRecordingStoppedEvent(result = {}) {

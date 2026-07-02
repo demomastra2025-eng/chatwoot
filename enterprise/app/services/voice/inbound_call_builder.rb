@@ -1,4 +1,6 @@
 class Voice::InboundCallBuilder
+  PROVIDER_OWNED_SIP_PROVIDERS = Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS
+
   attr_reader :account, :inbox, :from_number, :call_sid
 
   def self.perform!(account:, inbox:, from_number:, call_sid:)
@@ -47,11 +49,11 @@ class Voice::InboundCallBuilder
     conversation = account.conversations.includes(:contact).find_by(identifier: call_sid) if call_sid.present?
     return conversation if conversation.present?
 
-    reusable_fonoster_conversation(contact)
+    reusable_native_telephony_conversation(contact)
   end
 
-  def reusable_fonoster_conversation(contact)
-    return unless fonoster_provider?
+  def reusable_native_telephony_conversation(contact)
+    return unless native_telephony_provider?
 
     account.conversations
            .where(inbox_id: inbox.id, contact_id: contact.id)
@@ -66,14 +68,14 @@ class Voice::InboundCallBuilder
       contact_id: contact.id,
       status: :open
     }
-    attrs[:identifier] = call_sid unless fonoster_provider?
+    attrs[:identifier] = call_sid unless native_telephony_provider?
 
     account.conversations.create!(attrs)
   end
 
   def update_conversation!(conversation, timestamp)
     attrs = (conversation.additional_attributes || {}).deep_dup
-    reset_reused_fonoster_call_state!(attrs)
+    reset_reused_call_state!(attrs)
     attrs.merge!(
       'call_direction' => 'inbound',
       'call_status' => 'ringing',
@@ -83,14 +85,14 @@ class Voice::InboundCallBuilder
     )
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     attrs['meta']['initiated_at'] = timestamp
-    attrs['fonoster_call_ref'] = call_sid if fonoster_provider?
+    attrs[provider_call_ref_key] = call_sid if native_telephony_provider?
 
     update_attrs = {
       additional_attributes: attrs,
       last_activity_at: current_time
     }
-    update_attrs[:identifier] = call_sid unless fonoster_provider?
-    update_attrs[:status] = :open if fonoster_provider?
+    update_attrs[:identifier] = call_sid unless native_telephony_provider? && conversation.identifier.present?
+    update_attrs[:status] = :open if native_telephony_provider?
 
     conversation.update!(update_attrs)
   end
@@ -128,9 +130,19 @@ class Voice::InboundCallBuilder
     inbox.channel&.provider == 'fonoster'
   end
 
-  def reset_reused_fonoster_call_state!(attrs)
-    return unless fonoster_provider?
-    return if attrs['fonoster_call_ref'].present? && attrs['fonoster_call_ref'] == call_sid
+  def provider_owned_sip_provider?
+    inbox.channel&.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
+  end
+
+  def native_telephony_provider?
+    fonoster_provider? || provider_owned_sip_provider?
+  end
+
+  def reset_reused_call_state!(attrs)
+    return unless native_telephony_provider?
+
+    call_ref_key = provider_call_ref_key
+    return if attrs[call_ref_key].present? && attrs[call_ref_key] == call_sid
 
     %w[
       agent_id
@@ -144,5 +156,11 @@ class Voice::InboundCallBuilder
       from_number
       to_number
     ].each { |key| attrs.delete(key) }
+  end
+
+  def provider_call_ref_key
+    return 'fonoster_call_ref' if fonoster_provider?
+
+    "#{inbox.channel.provider}_call_ref"
   end
 end

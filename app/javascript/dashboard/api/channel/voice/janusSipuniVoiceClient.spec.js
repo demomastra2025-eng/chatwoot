@@ -417,9 +417,7 @@ describe('janusSipuniVoiceClient', () => {
         })
       );
 
-      client.handleSipMessage({
-        result: { event: 'recordingupdated', recording: 'started' },
-      });
+      client.handleSipMessage({ result: { event: 'recordingupdated' } });
 
       expect(client.janusServerRecordingStarting).toBe(false);
       expect(client.janusServerRecordingStarted).toBe(true);
