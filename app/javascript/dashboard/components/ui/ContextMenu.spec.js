@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ContextMenu from './ContextMenu.vue';
 
@@ -25,6 +25,10 @@ const mountComponent = props =>
   });
 
 describe('ContextMenu', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders mobile context menus as a bottom sheet and closes on backdrop tap', async () => {
     const wrapper = mountComponent({ mobile: true });
 
@@ -54,5 +58,23 @@ describe('ContextMenu', () => {
     expect(wrapper.find('[tabindex="0"]').attributes('style')).toContain(
       'top: 24px'
     );
+  });
+
+  it('lets desktop submenu clicks run before closing after blur', async () => {
+    vi.useFakeTimers();
+    const wrapper = mountComponent();
+    const action = wrapper.find('[data-test-id="context-menu-content"]');
+    const onActionClick = vi.fn();
+    action.element.addEventListener('click', onActionClick);
+
+    await wrapper.find('[tabindex="0"]').trigger('focusout');
+
+    expect(wrapper.emitted('close')).toBeUndefined();
+
+    await action.trigger('click');
+    expect(onActionClick).toHaveBeenCalledTimes(1);
+
+    vi.runOnlyPendingTimers();
+    expect(wrapper.emitted('close')).toHaveLength(1);
   });
 });

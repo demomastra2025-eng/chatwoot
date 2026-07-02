@@ -6,6 +6,7 @@ import {
   onUnmounted,
   useTemplateRef,
   inject,
+  ref,
 } from 'vue';
 import { useWindowSize, useElementBounding, useScrollLock } from '@vueuse/core';
 
@@ -22,6 +23,14 @@ const emit = defineEmits(['close']);
 const elementToLock = inject('contextMenuElementTarget', null);
 
 const menuRef = useTemplateRef('menuRef');
+const closeTimer = ref(null);
+
+const clearCloseTimer = () => {
+  if (!closeTimer.value) return;
+
+  window.clearTimeout(closeTimer.value);
+  closeTimer.value = null;
+};
 
 const scrollLockElement = computed(() => {
   if (!elementToLock?.value) return null;
@@ -74,11 +83,27 @@ onMounted(() => {
 });
 
 const handleClose = () => {
+  clearCloseTimer();
   isLocked.value = false;
   emit('close');
 };
 
+const handleDesktopFocusOut = event => {
+  const nextTarget = event.relatedTarget;
+  if (nextTarget && menuRef.value?.contains(nextTarget)) return;
+
+  clearCloseTimer();
+  closeTimer.value = window.setTimeout(() => {
+    closeTimer.value = null;
+    const activeElement = document.activeElement;
+    if (activeElement && menuRef.value?.contains(activeElement)) return;
+
+    handleClose();
+  }, 0);
+};
+
 onUnmounted(() => {
+  clearCloseTimer();
   isLocked.value = false;
 });
 </script>
@@ -107,7 +132,7 @@ onUnmounted(() => {
       class="fixed outline-none z-[9999] cursor-pointer"
       :style="position"
       tabindex="0"
-      @blur="handleClose"
+      @focusout="handleDesktopFocusOut"
       @keydown.esc="handleClose"
     >
       <slot />
