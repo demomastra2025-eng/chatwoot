@@ -7,6 +7,11 @@ import MessageStatus from './MessageStatus.vue';
 import Icon from 'next/icon/Icon.vue';
 import Label from 'dashboard/components-next/label/Label.vue';
 import { useInbox } from 'dashboard/composables/useInbox';
+import {
+  buildMetaAdReferralTooltipText,
+  hasMetaAdReferral as hasMetaAdReferralDetails,
+  metaAdReferralSourceLabel,
+} from 'dashboard/helper/metaAdReferralHelper';
 import { useMessageContext } from './provider.js';
 import { useAudioPlaybackState } from './audioPlaybackState';
 
@@ -78,53 +83,17 @@ const metaReferral = computed(
     {}
 );
 
-const hasMetaAdReferral = computed(() => {
-  const referral = metaReferral.value;
-  return !!(
-    referral?.ctwaClid ||
-    referral?.ctwa_clid ||
-    referral?.adId ||
-    referral?.ad_id ||
-    referral?.sourceId ||
-    referral?.source_id ||
-    referral?.headline
-  );
-});
+const hasMetaAdReferral = computed(() =>
+  hasMetaAdReferralDetails(metaReferral.value)
+);
 
-const metaAdReferralLabel = computed(() => {
-  const provider = metaReferral.value?.provider;
-  const prefix = t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_META');
-  if (provider === 'whatsapp') {
-    return `${prefix} → ${t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_WHATSAPP')}`;
-  }
-  if (provider === 'instagram') {
-    return `${prefix} → ${t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_INSTAGRAM')}`;
-  }
-  if (provider === 'facebook') {
-    return `${prefix} → ${t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_FACEBOOK')}`;
-  }
-  return prefix;
-});
+const metaAdReferralLabel = computed(() =>
+  metaAdReferralSourceLabel(metaReferral.value, t)
+);
 
-const metaAdReferralTitle = computed(() => {
-  const referral = metaReferral.value;
-  return [
-    referral.headline,
-    referral.body,
-    referral.ctwaClid || referral.ctwa_clid
-      ? `ctwa_clid: ${referral.ctwaClid || referral.ctwa_clid}`
-      : '',
-    referral.adId || referral.ad_id
-      ? `ad_id: ${referral.adId || referral.ad_id}`
-      : '',
-    referral.sourceId || referral.source_id
-      ? `source_id: ${referral.sourceId || referral.source_id}`
-      : '',
-    referral.sourceUrl || referral.source_url,
-  ]
-    .filter(Boolean)
-    .join('\n');
-});
+const metaAdReferralTooltipText = computed(() =>
+  buildMetaAdReferralTooltipText(metaReferral.value, t)
+);
 
 const showStatusIndicator = computed(() => {
   if (isPrivate.value) return false;
@@ -261,7 +230,16 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
 
 <template>
   <div class="message-meta-root text-xs flex items-center gap-1.5">
-    <span v-if="hasMetaAdReferral" :title="metaAdReferralTitle">
+    <span
+      v-if="hasMetaAdReferral"
+      v-tooltip.top="{
+        content: metaAdReferralTooltipText,
+        delay: { show: 250, hide: 0 },
+      }"
+      :title="metaAdReferralTooltipText"
+      class="cursor-help"
+      data-testid="message-meta-ad-referral"
+    >
       <Label :label="metaAdReferralLabel" color="blue" compact />
     </span>
     <Label

@@ -37,6 +37,14 @@ import {
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import {
+  buildMetaAdReferralRows,
+  formatMetaAdReferralUrl,
+  getMetaAdReferralValue,
+  hasMetaAdReferral as hasMetaAdReferralDetails,
+  metaAdReferralProviderLabel as resolveMetaAdReferralProviderLabel,
+  sanitizeMetaAdReferralUrl,
+} from 'dashboard/helper/metaAdReferralHelper';
+import {
   buildDefaultCustomAttributes,
   mergeMissingDefaultCustomAttributes,
 } from 'dashboard/stores/crm/customFieldDefaults';
@@ -84,6 +92,7 @@ const ui = reactive({
   isInitializing: false,
 });
 const forms = reactive({});
+const metaAdReferralExpanded = ref(false);
 
 const currentDealSourceContext = computed(() =>
   buildCrmDealSourceContext(props.currentChat)
@@ -91,49 +100,35 @@ const currentDealSourceContext = computed(() =>
 const metaAdReferral = computed(
   () => currentDealSourceContext.value.metaAdReferral || {}
 );
-const metaAdReferralValue = (camelKey, snakeKey = camelKey) =>
-  metaAdReferral.value?.[camelKey] || metaAdReferral.value?.[snakeKey] || '';
-const hasMetaAdReferral = computed(
-  () =>
-    !!(
-      metaAdReferralValue('ctwaClid', 'ctwa_clid') ||
-      metaAdReferralValue('adId', 'ad_id') ||
-      metaAdReferralValue('sourceId', 'source_id') ||
-      metaAdReferral.value?.headline
-    )
+const hasMetaAdReferral = computed(() =>
+  hasMetaAdReferralDetails(metaAdReferral.value)
 );
-const metaAdReferralProviderLabel = computed(() => {
-  const provider = metaAdReferral.value?.provider;
-  if (provider === 'whatsapp') {
-    return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_WHATSAPP');
-  }
-  if (provider === 'instagram') {
-    return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_INSTAGRAM');
-  }
-  if (provider === 'facebook') {
-    return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_FACEBOOK');
-  }
-  return t('CRM.DEALS.META_AD_REFERRAL.PROVIDER_META');
-});
+const metaAdReferralProviderLabel = computed(() =>
+  resolveMetaAdReferralProviderLabel(metaAdReferral.value, t)
+);
 const metaAdReferralRows = computed(() =>
-  [
-    {
-      label: t('CRM.DEALS.META_AD_REFERRAL.CTWA_CLID'),
-      value: metaAdReferralValue('ctwaClid', 'ctwa_clid'),
-    },
-    {
-      label: t('CRM.DEALS.META_AD_REFERRAL.AD_ID'),
-      value: metaAdReferralValue('adId', 'ad_id'),
-    },
-    {
-      label: t('CRM.DEALS.META_AD_REFERRAL.SOURCE_ID'),
-      value: metaAdReferralValue('sourceId', 'source_id'),
-    },
-    {
-      label: t('CRM.DEALS.META_AD_REFERRAL.SOURCE_URL'),
-      value: metaAdReferralValue('sourceUrl', 'source_url'),
-    },
-  ].filter(row => row.value)
+  buildMetaAdReferralRows(metaAdReferral.value, t, {
+    exclude: ['headline', 'body', 'source_url'],
+  })
+);
+const metaAdReferralHeadline = computed(
+  () => metaAdReferral.value?.headline || ''
+);
+const metaAdReferralBody = computed(() => metaAdReferral.value?.body || '');
+const metaAdReferralSourceUrl = computed(() =>
+  sanitizeMetaAdReferralUrl(
+    getMetaAdReferralValue(metaAdReferral.value, 'sourceUrl', 'source_url')
+  )
+);
+const metaAdReferralDisplayUrl = computed(() =>
+  formatMetaAdReferralUrl(metaAdReferralSourceUrl.value)
+);
+const metaAdReferralSummary = computed(
+  () =>
+    metaAdReferralHeadline.value ||
+    metaAdReferralBody.value ||
+    getMetaAdReferralValue(metaAdReferral.value, 'sourceId', 'source_id') ||
+    getMetaAdReferralValue(metaAdReferral.value, 'adId', 'ad_id')
 );
 const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
@@ -771,39 +766,86 @@ watch(dealFieldDefinitions, definitions => {
       <div v-else class="border-t border-n-weak">
         <div
           v-if="hasMetaAdReferral"
-          class="m-3 rounded-lg border border-blue-500/30 bg-blue-50 p-3 text-xs text-blue-950 dark:bg-blue-950/30 dark:text-blue-100"
+          class="m-3 overflow-hidden rounded-xl border border-n-blue-4 bg-n-blue-2 text-xs text-n-blue-12 shadow-sm dark:border-n-blue-7/70 dark:bg-n-blue-3/25"
           data-test-id="crm-meta-ad-referral"
         >
-          <div class="mb-1 flex items-center gap-2 font-medium">
-            <span class="i-lucide-megaphone size-4" />
-            <span>{{ $t('CRM.DEALS.META_AD_REFERRAL.TITLE') }}</span>
-            <span
-              class="rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 dark:bg-blue-900 dark:text-blue-100"
-            >
-              {{ metaAdReferralProviderLabel }}
-            </span>
-          </div>
-          <div v-if="metaAdReferral.headline" class="font-medium">
-            {{ metaAdReferral.headline }}
-          </div>
-          <div
-            v-if="metaAdReferral.body"
-            class="mt-0.5 text-blue-800 dark:text-blue-200"
+          <button
+            type="button"
+            class="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-n-blue-3/60 rtl:text-right dark:hover:bg-n-blue-4/20"
+            :aria-expanded="metaAdReferralExpanded"
+            @click="metaAdReferralExpanded = !metaAdReferralExpanded"
           >
-            {{ metaAdReferral.body }}
-          </div>
-          <dl v-if="metaAdReferralRows.length" class="mt-2 grid gap-1">
-            <div
-              v-for="row in metaAdReferralRows"
-              :key="row.label"
-              class="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-2"
-            >
-              <dt class="text-blue-700 dark:text-blue-200">{{ row.label }}</dt>
-              <dd class="truncate font-mono text-[11px]" :title="row.value">
-                {{ row.value }}
-              </dd>
+            <span
+              class="i-lucide-megaphone mt-0.5 size-4 shrink-0 text-n-blue-9"
+              aria-hidden="true"
+            />
+            <span class="min-w-0 flex-1">
+              <span class="flex flex-wrap items-center gap-1.5 font-medium">
+                <span>{{ $t('CRM.DEALS.META_AD_REFERRAL.TITLE') }}</span>
+                <span
+                  class="rounded-full border border-n-blue-4 bg-n-blue-3 px-2 py-0.5 text-[11px] font-medium text-n-blue-11 dark:border-n-blue-6 dark:bg-n-blue-4/30"
+                >
+                  {{ metaAdReferralProviderLabel }}
+                </span>
+              </span>
+              <span
+                v-if="metaAdReferralSummary"
+                class="mt-0.5 block truncate text-[11px] text-n-blue-11"
+              >
+                {{ metaAdReferralSummary }}
+              </span>
+            </span>
+            <span
+              class="i-lucide-chevron-down mt-0.5 size-4 shrink-0 text-n-blue-9 transition-transform"
+              :class="{ 'rotate-180': metaAdReferralExpanded }"
+              aria-hidden="true"
+            />
+          </button>
+
+          <div
+            v-show="metaAdReferralExpanded"
+            class="border-t border-n-blue-4/70 px-3 pb-3 pt-2 dark:border-n-blue-7/60"
+          >
+            <p class="mb-2 text-[11px] leading-4 text-n-blue-11">
+              {{ $t('CRM.DEALS.META_AD_REFERRAL.HELP_TEXT') }}
+            </p>
+            <div v-if="metaAdReferralHeadline" class="font-medium">
+              {{ metaAdReferralHeadline }}
             </div>
-          </dl>
+            <div
+              v-if="metaAdReferralBody"
+              class="mt-0.5 leading-4 text-n-blue-11"
+            >
+              {{ metaAdReferralBody }}
+            </div>
+            <a
+              v-if="metaAdReferralSourceUrl"
+              :href="metaAdReferralSourceUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="mt-2 inline-flex max-w-full items-center gap-1 rounded-md border border-n-blue-4 bg-n-blue-1 px-2 py-1 text-[11px] font-medium text-n-blue-11 hover:bg-n-blue-3 dark:border-n-blue-7 dark:bg-transparent"
+            >
+              <span class="i-lucide-external-link size-3" aria-hidden="true" />
+              <span class="truncate">
+                {{ metaAdReferralDisplayUrl || metaAdReferralSourceUrl }}
+              </span>
+            </a>
+            <dl v-if="metaAdReferralRows.length" class="mt-2 grid gap-1.5">
+              <div
+                v-for="row in metaAdReferralRows"
+                :key="row.key"
+                class="grid grid-cols-[7rem_minmax(0,1fr)] gap-2"
+              >
+                <dt class="text-n-blue-10">{{ row.label }}</dt>
+                <dd
+                  class="break-words font-mono text-[11px] leading-4 text-n-blue-12"
+                  :title="row.value"
+                >
+                  {{ row.value }}
+                </dd>
+              </div>
+            </dl>
+          </div>
         </div>
 
         <section

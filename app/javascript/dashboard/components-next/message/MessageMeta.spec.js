@@ -154,9 +154,15 @@ describe('MessageMeta', () => {
     const metaAdsLabel = wrapper.findComponent({ name: 'Label' });
 
     expect(metaAdsLabel.props('label')).toBe('Meta Ads → WhatsApp');
-    expect(
-      wrapper.find('[title*="ctwa_clid: ARaD-ctwa-click-id-123"]').exists()
-    ).toBe(true);
+    const metaAdsTooltip = wrapper.find(
+      '[data-testid="message-meta-ad-referral"]'
+    );
+    expect(metaAdsTooltip.attributes('title')).toContain(
+      'CTWA click: ARaD-ctwa-click-id-123'
+    );
+    expect(metaAdsTooltip.attributes('title')).toContain(
+      'Source URL: https://fb.me/1AbCdEf'
+    );
   });
 
   it('shows a humanized subagent name when agentName is present', () => {

@@ -17,6 +17,138 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
 
+    context 'when message has Meta Ads referral attributes' do
+      let(:message) do
+        create(
+          :message,
+          content: 'Здравствуйте! Можно узнать? ',
+          content_attributes: {
+            meta_referral: {
+              provider: 'whatsapp',
+              attribution_type: 'click_to_whatsapp_ad',
+              headline: 'Напишите нам',
+              body: 'Для подробной информации напишите нам в Whatsapp',
+              source_url: 'https://www.instagram.com/p/DaKpBgpMIJU/',
+              ad_id: '120247627354820016',
+              ctwa_clid: 'very-long-click-id'
+            }
+          }
+        )
+      end
+
+      it 'includes a compact ad context for Captain without raw referral payloads' do
+        result = service.generate_content
+
+        expect(result).to include({ type: 'text', text: 'Здравствуйте! Можно узнать? ' })
+        context_part = result.find do |part|
+          part[:type] == 'text' && part[:text].include?('Meta Ads referral context')
+        end
+
+        expect(context_part[:text]).to include(
+          'Meta Ads referral context for this incoming lead:',
+          'channel: whatsapp',
+          'attribution: click_to_whatsapp_ad',
+          'headline: Напишите нам',
+          'ad text: Для подробной информации напишите нам в Whatsapp',
+          'source URL: https://www.instagram.com/p/DaKpBgpMIJU/',
+          'ad id: 120247627354820016',
+          'ctwa click id: present'
+        )
+        expect(context_part[:text]).not_to include('very-long-click-id')
+      end
+    end
+
+    context 'when Meta Ads referral attributes use frontend camelCase keys' do
+      let(:message) do
+        create(
+          :message,
+          content: 'Interested',
+          content_attributes: {
+            metaReferral: {
+              provider: 'instagram',
+              attributionType: 'click_to_direct_ad',
+              sourceUrl: 'https://www.instagram.com/p/lead/',
+              adId: 'ig-ad-1',
+              sourceId: 'ig-source-1',
+              mediaType: 'image',
+              ctwaClid: 'camel-click-id'
+            }
+          }
+        )
+      end
+
+      it 'normalizes camelCase details and keeps the click id bounded' do
+        context_part = service.generate_content.find do |part|
+          part[:type] == 'text' && part[:text].include?('Meta Ads referral context')
+        end
+
+        expect(context_part[:text]).to include(
+          'channel: instagram',
+          'attribution: click_to_direct_ad',
+          'source URL: https://www.instagram.com/p/lead/',
+          'ad id: ig-ad-1',
+          'source id: ig-source-1',
+          'media type: image',
+          'ctwa click id: present'
+        )
+        expect(context_part[:text]).not_to include('camel-click-id')
+      end
+    end
+
+    context 'when Meta Ads referral attributes are malformed' do
+      let(:message) do
+        create(
+          :message,
+          content: 'Hello world',
+          content_attributes: { meta_referral: 'not-a-hash' }
+        )
+      end
+
+      it 'ignores the malformed context without breaking message generation' do
+        expect(service.generate_content).to eq('Hello world')
+      end
+    end
+
+    context 'when Meta Ads referral has many fields plus a click id' do
+      let(:message) do
+        create(
+          :message,
+          content: 'Lead',
+          content_attributes: {
+            meta_referral: {
+              provider: 'facebook',
+              attribution_type: 'click_to_messenger_ad',
+              source: 'ADS',
+              source_type: 'ADS',
+              headline: 'Headline',
+              body: 'Body',
+              media_type: 'image',
+              source_url: 'https://example.com/ad',
+              ad_id: 'ad-1',
+              source_id: 'source-1',
+              post_id: 'post-1',
+              product_id: 'product-1',
+              flow_id: 'flow-1',
+              ref: 'ref-1',
+              referral_type: 'OPEN_THREAD',
+              received_at: '2026-07-02T00:00:00Z',
+              ctwa_clid: 'hidden-click-id'
+            }
+          }
+        )
+      end
+
+      it 'keeps the click-id presence signal inside the bounded context' do
+        context_part = service.generate_content.find do |part|
+          part[:type] == 'text' && part[:text].include?('Meta Ads referral context')
+        end
+
+        expect(context_part[:text].lines.drop(1).grep(/:/).size).to be <= 16
+        expect(context_part[:text]).to include('ctwa click id: present')
+        expect(context_part[:text]).not_to include('hidden-click-id')
+      end
+    end
+
     context 'when message has no content and no attachments' do
       let(:message) { create(:message, content: nil) }
 

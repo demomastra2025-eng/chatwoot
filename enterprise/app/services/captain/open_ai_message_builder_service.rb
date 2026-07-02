@@ -1,4 +1,23 @@
 class Captain::OpenAiMessageBuilderService
+  META_AD_REFERRAL_CONTEXT_FIELDS = [
+    ['channel', [:provider]],
+    ['attribution', %i[attribution_type attributionType]],
+    ['source', [:source]],
+    ['source type', %i[source_type sourceType]],
+    ['headline', [:headline]],
+    ['ad text', [:body]],
+    ['media type', %i[media_type mediaType]],
+    ['source URL', %i[source_url sourceUrl]],
+    ['ad id', %i[ad_id adId]],
+    ['source id', %i[source_id sourceId]],
+    ['post id', %i[post_id postId]],
+    ['product id', %i[product_id productId]],
+    ['flow id', %i[flow_id flowId]],
+    ['ref', [:ref]],
+    ['referral type', %i[referral_type referralType]],
+    ['received at', %i[received_at receivedAt]]
+  ].freeze
+
   pattr_initialize [:message!]
 
   # Extracts text and image URLs from multimodal content array (reverse of generate_content)
@@ -9,6 +28,8 @@ class Captain::OpenAiMessageBuilderService
   def generate_content
     parts = []
     parts << text_part(@message.content) if @message.content.present?
+    referral_context = meta_ad_referral_context
+    parts << text_part(referral_context) if referral_context.present?
     parts.concat(attachment_parts(@message.attachments)) if @message.attachments.any?
 
     return 'Message without content' if parts.blank?
@@ -21,6 +42,49 @@ class Captain::OpenAiMessageBuilderService
 
   def text_part(text)
     { type: 'text', text: text }
+  end
+
+  def meta_ad_referral_context
+    referral = meta_ad_referral_attributes
+    return if referral.blank?
+
+    lines = meta_ad_referral_context_lines(referral)
+    return if lines.blank?
+
+    "Meta Ads referral context for this incoming lead:\n#{lines.join("\n")}"
+  end
+
+  def meta_ad_referral_attributes
+    attributes = @message.content_attributes.to_h.with_indifferent_access
+    referral = attributes[:meta_referral].presence ||
+               attributes[:meta_ad_referral].presence ||
+               attributes[:metaReferral].presence
+    return {} unless referral.is_a?(Hash)
+
+    referral.with_indifferent_access
+  end
+
+  def meta_ad_referral_context_lines(referral)
+    lines = []
+    META_AD_REFERRAL_CONTEXT_FIELDS.each do |label, keys|
+      append_referral_line(lines, label, referral, *keys)
+    end
+
+    ctwa_click_id_present = referral_value(referral, :ctwa_clid, :ctwaClid).present?
+    lines = lines.first(ctwa_click_id_present ? 15 : 16)
+    lines << 'ctwa click id: present' if ctwa_click_id_present
+    lines
+  end
+
+  def append_referral_line(lines, label, referral, *keys)
+    value = referral_value(referral, *keys)
+    return if value.blank?
+
+    lines << "#{label}: #{value.to_s.squish.truncate(500)}"
+  end
+
+  def referral_value(referral, *keys)
+    keys.lazy.map { |key| referral[key] }.find(&:present?)
   end
 
   def image_description_part(attachment, image_url)
