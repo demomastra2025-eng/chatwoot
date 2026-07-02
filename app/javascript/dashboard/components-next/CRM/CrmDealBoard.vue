@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Draggable from 'vuedraggable';
 
+import Button from 'dashboard/components-next/button/Button.vue';
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import CrmDealOwnerMenu from './CrmDealOwnerMenu.vue';
 import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
@@ -25,6 +26,14 @@ const props = defineProps({
   fieldDefinitions: {
     type: Array,
     default: () => [],
+  },
+  hasMore: {
+    type: Boolean,
+    default: false,
+  },
+  isLoadingMore: {
+    type: Boolean,
+    default: false,
   },
   owners: {
     type: Array,
@@ -53,6 +62,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  stageCounts: {
+    type: Object,
+    default: () => ({}),
+  },
   sortValueResolver: {
     type: Function,
     default: null,
@@ -63,6 +76,7 @@ const emit = defineEmits([
   'changeOwner',
   'changeStage',
   'createDeal',
+  'loadMore',
   'selectDeal',
   'toggleSortDirection',
 ]);
@@ -158,6 +172,21 @@ const kanbanColumns = computed(() =>
   }))
 );
 
+const columnDealCount = column =>
+  Number(props.stageCounts?.[String(column.stageId)]) || column.deals.length;
+
+const handleBoardScroll = event => {
+  if (!props.hasMore || props.isLoadingMore) return;
+
+  const element = event.currentTarget;
+  const distanceToBottom =
+    element.scrollHeight - element.scrollTop - element.clientHeight;
+
+  if (distanceToBottom < 320) {
+    emit('loadMore');
+  }
+};
+
 const formatDateLabel = value => {
   if (!value) return t('CRM.GENERAL.EMPTY_VALUE');
 
@@ -225,7 +254,10 @@ const handleOwnerChange = (deal, ownerId) => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2">
+  <div
+    class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2"
+    @scroll.passive="handleBoardScroll"
+  >
     <div class="mx-auto flex w-max min-h-full items-start gap-2 py-1">
       <section
         v-for="column in kanbanColumns"
@@ -245,7 +277,7 @@ const handleOwnerChange = (deal, ownerId) => {
               <span
                 class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
               >
-                {{ column.deals.length }}
+                {{ columnDealCount(column) }}
               </span>
               <button
                 v-if="showSortToggle"
@@ -388,6 +420,17 @@ const handleOwnerChange = (deal, ownerId) => {
           </template>
         </Draggable>
       </section>
+    </div>
+    <div v-if="hasMore" class="flex justify-center px-4 py-3">
+      <Button
+        size="sm"
+        color="slate"
+        variant="ghost"
+        icon="i-lucide-plus"
+        :is-loading="isLoadingMore"
+        :label="$t('CRM.DEALS.LOAD_MORE')"
+        @click="emit('loadMore')"
+      />
     </div>
   </div>
 </template>

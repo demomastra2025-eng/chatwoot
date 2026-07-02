@@ -455,6 +455,31 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
   end
 
+  it 'paginates deal lists and returns total metadata' do
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline)
+    create_list(:crm_deal, 3, account: account, pipeline: pipeline, stage: stage)
+
+    get path,
+        params: { page: 1, per_page: 2, pipeline_id: pipeline.id },
+        headers: headers,
+        as: :json
+
+    meta = response.parsed_body['meta']
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].size).to eq(2)
+    expect(meta).to include(
+      'count' => 2,
+      'has_more' => true,
+      'page' => 1,
+      'per_page' => 2,
+      'total_count' => 3,
+      'total_pages' => 2
+    )
+    expect(meta.dig('stage_counts', stage.id.to_s)).to eq(3)
+  end
+
   it 'returns compact company and primary contact in the deal payload' do
     company = create(:company, account: account, name: 'Onelink LLC')
     contact = create(:contact, :with_email, account: account, company: company, name: 'Aruzhan')

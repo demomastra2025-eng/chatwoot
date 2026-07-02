@@ -1,4 +1,7 @@
 class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseController
+  DEFAULT_PER_PAGE = 100
+  MAX_PER_PAGE = 500
+
   CREATE_PARAM_KEYS = %i[
     pipeline_id
     stage_id
@@ -48,9 +51,11 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     authorize ::Crm::Deal
 
     deals = filtered_deals
+    paginated_deals = deals.offset(page_offset).limit(per_page_param)
+
     render_payload(
-      deals.map { |deal| ::Crm::PayloadBuilder.deal(deal) },
-      meta: { count: deals.size }
+      paginated_deals.map { |deal| ::Crm::PayloadBuilder.deal(deal) },
+      meta: pagination_meta(deals, paginated_deals)
     )
   end
 
@@ -224,6 +229,35 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
       entity_kind: 'deal',
       raw_filters: custom_attribute_filters_param
     ).apply(scope)
+  end
+
+  def page_param
+    value = params[:page].presence || 1
+    value.to_i.clamp(1, 10_000)
+  end
+
+  def per_page_param
+    value = params[:per_page].presence || params[:limit].presence || DEFAULT_PER_PAGE
+    value.to_i.clamp(1, MAX_PER_PAGE)
+  end
+
+  def page_offset
+    (page_param - 1) * per_page_param
+  end
+
+  def pagination_meta(scope, records)
+    total_count = scope.reorder(nil).count
+    total_pages = (total_count.to_f / per_page_param).ceil
+
+    {
+      count: records.size,
+      has_more: page_param < total_pages,
+      page: page_param,
+      per_page: per_page_param,
+      stage_counts: scope.reorder(nil).group(:stage_id).count.transform_keys(&:to_s),
+      total_count: total_count,
+      total_pages: total_pages
+    }
   end
 
   def idempotent_deal

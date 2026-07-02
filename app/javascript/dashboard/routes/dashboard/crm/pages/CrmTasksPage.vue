@@ -961,7 +961,11 @@ const buildPrefillTaskTitle = () => {
 };
 
 const loadDealOptions = async () => {
-  const { data } = await CrmDealsAPI.get({ archived: false });
+  const { data } = await CrmDealsAPI.get({
+    archived: false,
+    page: 1,
+    per_page: 100,
+  });
   dealOptions.value = normalizePayload(data).map(deal => ({
     label: deal.title,
     value: deal.id,

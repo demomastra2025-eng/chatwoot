@@ -78,6 +78,7 @@ import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 import {
   compactPayload,
   formatCrmErrorMessage,
+  normalizeMeta,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
 import {
@@ -115,6 +116,7 @@ const CRM_DEAL_ARCHIVE_EVENTS = new Set([
 ]);
 
 const deals = ref([]);
+const dealsMeta = ref({});
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
 const closingReasonDialogRef = ref(null);
@@ -151,6 +153,7 @@ const persistedPreferencesByAccount = useLocalStorage(
 );
 
 const LIST_PAGE_SIZE = 25;
+const DEALS_PAGE_SIZE = 100;
 
 const filters = reactive({
   aiOnly: false,
@@ -201,6 +204,7 @@ const form = reactive({
 const ui = reactive({
   error: null,
   isLoading: true,
+  isLoadingMore: false,
   isSaving: false,
   isSavingComment: false,
   isTimelineLoading: false,
@@ -880,6 +884,8 @@ const stripedDealRowIds = computed(
 const shouldShowListPagination = computed(
   () => sortedListDeals.value.length > LIST_PAGE_SIZE
 );
+const hasMoreDeals = computed(() => Boolean(dealsMeta.value.hasMore));
+const stageCounts = computed(() => dealsMeta.value.stageCounts || {});
 
 const dealListRowClass = row => [
   row.archivedAt ? 'opacity-75' : '',
@@ -1243,6 +1249,16 @@ const upsertDeal = deal => {
   const nextDeals = [...deals.value];
   nextDeals.splice(existingIndex, 1, deal);
   deals.value = nextDeals;
+};
+
+const mergeDealsById = (currentDeals, nextDeals) => {
+  const recordsById = new Map();
+
+  [...currentDeals, ...nextDeals].forEach(deal => {
+    recordsById.set(Number(deal.id), deal);
+  });
+
+  return [...recordsById.values()];
 };
 
 const removeDeal = dealId => {
@@ -1693,32 +1709,50 @@ const toggleArchived = async deal => {
   }
 };
 
-async function loadDeals() {
-  ui.isLoading = true;
+const buildDealsFetchParams = page =>
+  compactPayload({
+    ai_only: filters.aiOnly || undefined,
+    archived: filters.archived,
+    company_id: filters.companyId || undefined,
+    contact_id: filters.contactId || undefined,
+    custom_attribute_filters: customFieldFilters.value,
+    owner_id: filters.ownerId || undefined,
+    page,
+    per_page: DEALS_PAGE_SIZE,
+    pipeline_id: filters.pipelineId || undefined,
+    q: listQuickFilters.q || undefined,
+    stage_id: filters.stageId || undefined,
+    team_id: filters.teamId || undefined,
+  });
+
+async function loadDeals({ append = false, page = null } = {}) {
+  if (append && (ui.isLoadingMore || !hasMoreDeals.value)) return;
+
+  const nextPage = page || (append ? Number(dealsMeta.value.page || 1) + 1 : 1);
+
+  if (append) {
+    ui.isLoadingMore = true;
+  } else {
+    ui.isLoading = true;
+    listCurrentPage.value = 1;
+  }
   ui.error = null;
 
   try {
-    const { data } = await CrmDealsAPI.get(
-      compactPayload({
-        ai_only: filters.aiOnly || undefined,
-        archived: filters.archived,
-        company_id: filters.companyId || undefined,
-        contact_id: filters.contactId || undefined,
-        owner_id: filters.ownerId || undefined,
-        pipeline_id: filters.pipelineId || undefined,
-        stage_id: filters.stageId || undefined,
-        team_id: filters.teamId || undefined,
-        custom_attribute_filters: customFieldFilters.value,
-      })
-    );
-    deals.value = normalizePayload(data);
+    const { data } = await CrmDealsAPI.get(buildDealsFetchParams(nextPage));
+    const nextDeals = normalizePayload(data);
+    dealsMeta.value = normalizeMeta(data);
+    deals.value = append ? mergeDealsById(deals.value, nextDeals) : nextDeals;
     syncSelectedDeal(deals.value);
   } catch (error) {
     ui.error = error;
   } finally {
     ui.isLoading = false;
+    ui.isLoadingMore = false;
   }
 }
+
+const loadMoreDeals = () => loadDeals({ append: true });
 
 const scheduleDealsReload = useDebounceFn(() => {
   loadDeals();
@@ -1968,6 +2002,9 @@ watch(
   () => listQuickFilters.q,
   () => {
     listCurrentPage.value = 1;
+    if (!hasRestoredPreferences.value) return;
+
+    scheduleDealsReload();
   }
 );
 
@@ -2601,8 +2638,11 @@ watch(
             :can-reorder="!hasListSearchQuery"
             :deals="quickFilteredDeals"
             :field-definitions="dealFieldDefinitions"
+            :has-more="hasMoreDeals"
+            :is-loading-more="ui.isLoadingMore"
             :owners="ownerOptions"
             :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
+            :stage-counts="stageCounts"
             :stages="boardStages"
             :sort-direction-labels="boardSortDirectionLabels"
             :sort-directions="boardSortDirections"
@@ -2611,6 +2651,7 @@ watch(
             @change-owner="handleDealOwnerChange"
             @change-stage="handleDealStageChange"
             @create-deal="handleBoardCreateDeal"
+            @load-more="loadMoreDeals"
             @select-deal="openEditDrawer"
             @toggle-sort-direction="toggleBoardSortDirection"
           />
@@ -2798,6 +2839,20 @@ watch(
               :items-per-page="LIST_PAGE_SIZE"
               @update:current-page="listCurrentPage = $event"
             />
+            <div
+              v-if="hasMoreDeals"
+              class="flex justify-center border-t border-n-weak bg-n-surface-1/70 px-4 py-3"
+            >
+              <Button
+                size="sm"
+                color="slate"
+                variant="ghost"
+                icon="i-lucide-plus"
+                :is-loading="ui.isLoadingMore"
+                :label="$t('CRM.DEALS.LOAD_MORE')"
+                @click="loadMoreDeals"
+              />
+            </div>
           </div>
         </div>
       </div>
