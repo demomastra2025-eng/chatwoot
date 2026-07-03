@@ -136,6 +136,9 @@ const fakeAudioTrack = id => ({
 });
 
 const installRecordingMocks = ({ stopImmediately = true } = {}) => {
+  const createdDestinations = [];
+  const createdSources = [];
+  const createdGains = [];
   const original = {
     AudioContext: window.AudioContext,
     MediaRecorder: window.MediaRecorder,
@@ -158,13 +161,26 @@ const installRecordingMocks = ({ stopImmediately = true } = {}) => {
 
   AudioContextMock.prototype.createMediaStreamDestination =
     function createMediaStreamDestination() {
-      return { stream: new MediaStreamMock() };
+      const destination = { stream: new MediaStreamMock() };
+      createdDestinations.push(destination);
+      return destination;
     };
 
   AudioContextMock.prototype.createMediaStreamSource =
     function createMediaStreamSource() {
-      return { connect: vi.fn() };
+      const source = { connect: vi.fn() };
+      createdSources.push(source);
+      return source;
     };
+
+  AudioContextMock.prototype.createGain = function createGain() {
+    const gain = {
+      gain: { value: 1 },
+      connect: vi.fn(),
+    };
+    createdGains.push(gain);
+    return gain;
+  };
 
   AudioContextMock.prototype.close = function close() {
     return Promise.resolve();
@@ -203,6 +219,9 @@ const installRecordingMocks = ({ stopImmediately = true } = {}) => {
   window.MediaStream = MediaStreamMock;
 
   return {
+    createdDestinations,
+    createdGains,
+    createdSources,
     MediaRecorderMock,
     restore: () => {
       window.AudioContext = original.AudioContext;
@@ -570,6 +589,41 @@ describe('janusSipuniVoiceClient', () => {
           direction: 'outbound',
           reason: 'remote_hangup',
         })
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it('boosts the remote side in browser SIP recordings', () => {
+    const {
+      createdDestinations,
+      createdGains,
+      createdSources,
+      MediaRecorderMock,
+      restore,
+    } = installRecordingMocks();
+    try {
+      const client = createJanusSipuniVoiceClient();
+      client.sessionConfig = asteriskAnalogSession;
+      client.currentCallRef = 'asterisk_analog:local:call-gain';
+      client.currentCallDirection = 'inbound';
+      client.callMediaAccepted = true;
+      client.localTracks = { local: fakeAudioTrack('local') };
+      client.remoteTracks = { remote: fakeAudioTrack('remote') };
+
+      client.startRecordingIfReady();
+
+      expect(MediaRecorderMock.instances).toHaveLength(1);
+      expect(createdSources).toHaveLength(2);
+      expect(createdGains).toHaveLength(1);
+      expect(createdGains[0].gain.value).toBe(1.8);
+      expect(createdSources[0].connect).toHaveBeenCalledWith(
+        createdDestinations[0]
+      );
+      expect(createdSources[1].connect).toHaveBeenCalledWith(createdGains[0]);
+      expect(createdGains[0].connect).toHaveBeenCalledWith(
+        createdDestinations[0]
       );
     } finally {
       restore();

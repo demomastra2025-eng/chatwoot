@@ -644,6 +644,169 @@ RSpec.describe Telephony::CallReconciliationService do
       )
     end
 
+    it 'closes stale native Asterisk Janus ringing calls and syncs the voice bubble' do
+      provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'asterisk_analog')
+      voice_channel = create(
+        :channel_voice,
+        account: account,
+        provider: 'asterisk_analog',
+        phone_number: '+77172705175',
+        provider_config: {
+          provider_kind: 'asterisk_analog',
+          provider_connection_id: provider_connection.id,
+          number_ref: 'asterisk-main-line'
+        }
+      )
+      voice_inbox = voice_channel.inbox
+      number_binding = Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
+      contact = create(:contact, account: account, phone_number: '+77066318623')
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
+      call_ref = 'asterisk_analog:janus:41:deadbeef@10.77.0.2'
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        additional_attributes: {
+          'call_status' => 'ringing',
+          'call_direction' => 'inbound',
+          'asterisk_analog_call_ref' => call_ref
+        }
+      )
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: contact,
+        inbox: voice_inbox,
+        number_binding: number_binding,
+        provider: 'asterisk_analog',
+        external_call_ref: call_ref,
+        provider_call_sid: nil,
+        status: 'ringing',
+        direction: 'inbound',
+        from_number: contact.phone_number,
+        to_number: voice_channel.phone_number,
+        started_at: now - 10.minutes,
+        last_event_at: now - 10.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'asterisk_analog',
+            'route_action' => 'operator',
+            'operator_internal_extension' => '9098'
+          }
+        }
+      )
+      message = conversation.messages.create!(
+        account: account,
+        inbox: voice_inbox,
+        message_type: :incoming,
+        content_type: :voice_call,
+        content: 'Voice Call',
+        source_id: call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'call_sid' => call_session.external_call_ref,
+            'status' => 'ringing',
+            'call_direction' => 'inbound'
+          }
+        }
+      )
+
+      with_modified_env('TELEPHONY_NATIVE_SIP_PRE_ANSWER_STALE_AFTER_SECONDS' => '120') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      aggregate_failures do
+        expect(call_session.reload).to have_attributes(
+          status: 'no_answer',
+          ended_at: now,
+          ended_by: 'native_sip_reconciliation',
+          end_reason: 'native_sip_missing_operator_no_answer',
+          duration_seconds: 0
+        )
+        expect(call_session.metadata['native_sip_reconciliation']).to include(
+          'native_terminal_missing' => true,
+          'provider' => 'asterisk_analog',
+          'target_status' => 'no_answer',
+          'previous_status' => 'ringing'
+        )
+        expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
+        expect(conversation.reload.additional_attributes).to include(
+          'call_status' => 'no_answer',
+          'call_direction' => 'inbound'
+        )
+      end
+    end
+
+    it 'closes very stale native Binotel Janus in-progress calls as completed' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'binotel',
+        external_call_ref: 'binotel:janus:42:stale-active@pbx.example.test',
+        provider_call_sid: nil,
+        status: 'in_progress',
+        direction: 'outbound',
+        started_at: now - 5.hours,
+        answered_at: now - 4.hours - 15.minutes,
+        last_event_at: now - 4.hours - 15.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'binotel'
+          }
+        }
+      )
+
+      with_modified_env('TELEPHONY_NATIVE_SIP_IN_PROGRESS_STALE_AFTER_SECONDS' => '3600') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: now,
+        ended_by: 'native_sip_reconciliation',
+        end_reason: 'native_sip_missing_completed_call',
+        duration_seconds: 15_300
+      )
+    end
+
+    it 'does not close fresh native Janus calls' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'asterisk_analog',
+        external_call_ref: 'asterisk_analog:janus:41:fresh@10.77.0.2',
+        provider_call_sid: nil,
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: now - 30.seconds,
+        last_event_at: now - 30.seconds,
+        metadata: {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'asterisk_analog',
+            'route_action' => 'operator'
+          }
+        }
+      )
+
+      with_modified_env('TELEPHONY_NATIVE_SIP_PRE_ANSWER_STALE_AFTER_SECONDS' => '120') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 0, missing: 0, updated: 0, errors: 0)
+      end
+
+      expect(call_session.reload.status).to eq('ringing')
+    end
+
     it 'does not close missing non-operator inbound calls without terminal evidence' do
       call_session = create(
         :telephony_call_session,

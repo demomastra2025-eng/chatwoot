@@ -36,6 +36,9 @@ const WEBPHONE_RECORDING_MIME_TYPES = [
   'audio/ogg;codecs=opus',
   'audio/ogg',
 ];
+const WEBPHONE_RECORDING_LOCAL_GAIN = 1;
+const WEBPHONE_RECORDING_REMOTE_GAIN = 1.8;
+const WEBPHONE_RECORDING_MAX_GAIN = 3;
 
 const screenSharingExtension = {
   init: () => {},
@@ -893,8 +896,15 @@ export class JanusSipuniVoiceClient extends EventTarget {
       this.recordingAudioContext = new AudioContextConstructor();
       this.recordingDestination =
         this.recordingAudioContext.createMediaStreamDestination();
-      [...localTracks, ...remoteTracks].forEach(track =>
-        this.connectRecordingTrack(track)
+      localTracks.forEach(track =>
+        this.connectRecordingTrack(track, {
+          gain: this.recordingGainValue('local'),
+        })
+      );
+      remoteTracks.forEach(track =>
+        this.connectRecordingTrack(track, {
+          gain: this.recordingGainValue('remote'),
+        })
       );
       this.recordingMimeType = this.preferredRecordingMimeType(
         MediaRecorderConstructor
@@ -1154,7 +1164,26 @@ export class JanusSipuniVoiceClient extends EventTarget {
     );
   }
 
-  connectRecordingTrack(track) {
+  recordingGainValue(kind) {
+    const config =
+      this.sessionConfig?.recordingGain ||
+      this.sessionConfig?.recording_gain ||
+      {};
+    const key = kind === 'remote' ? 'remote' : 'local';
+    const configured = Number(
+      config[key] ?? config[`${key}Gain`] ?? config[`${key}_gain`]
+    );
+    const fallback =
+      key === 'remote'
+        ? WEBPHONE_RECORDING_REMOTE_GAIN
+        : WEBPHONE_RECORDING_LOCAL_GAIN;
+    const gain =
+      Number.isFinite(configured) && configured > 0 ? configured : fallback;
+
+    return Math.min(gain, WEBPHONE_RECORDING_MAX_GAIN);
+  }
+
+  connectRecordingTrack(track, { gain = 1 } = {}) {
     const MediaStreamConstructor = this.mediaStreamConstructor();
     if (!MediaStreamConstructor) {
       throw new Error('MediaStream is not available');
@@ -1162,6 +1191,18 @@ export class JanusSipuniVoiceClient extends EventTarget {
 
     const stream = new MediaStreamConstructor([track]);
     const source = this.recordingAudioContext.createMediaStreamSource(stream);
+    if (
+      gain !== 1 &&
+      typeof this.recordingAudioContext.createGain === 'function'
+    ) {
+      const gainNode = this.recordingAudioContext.createGain();
+      gainNode.gain.value = gain;
+      source.connect(gainNode);
+      gainNode.connect(this.recordingDestination);
+      this.recordingSources.push(source, gainNode);
+      return;
+    }
+
     source.connect(this.recordingDestination);
     this.recordingSources.push(source);
   }

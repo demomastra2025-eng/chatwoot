@@ -31,6 +31,7 @@ class Telephony::EventsIngestionService
   ].freeze
   RECONCILIATION_EVENT_SOURCES = %w[
     bridge_reconciliation
+    native_sip_reconciliation
     sipuni_local_outbound_reconciliation
     sipuni_provider_reconciliation
   ].freeze
@@ -1185,7 +1186,8 @@ class Telephony::EventsIngestionService
     attrs = (conversation.additional_attributes || {}).deep_dup
     reset_reused_fonoster_call_state!(attrs, call_session)
     attrs['telephony_provider'] = call_session.provider
-    attrs['call_direction'] = call_session.direction if fonoster_call_session?(call_session)
+    attrs['call_status'] = call_session.status if call_session.status.present?
+    attrs['call_direction'] = call_session.direction if call_session.direction.present?
     attrs['from_number'] = call_session.from_number if call_session.from_number.present?
     attrs['to_number'] = call_session.to_number if call_session.to_number.present?
     attrs['fonoster_call_ref'] = call_session.external_call_ref if fonoster_call_session?(call_session)
