@@ -362,6 +362,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       callSid: data.call_sid || data.callSid || data.call_ref,
       accountId: data.account_id || data.accountId,
       status: data.status || 'ringing',
+      startedAt: data.started_at || data.startedAt,
+      answeredAt: data.answered_at || data.answeredAt,
       callDirection: data.call_direction || data.direction || 'inbound',
       conversationId: data.conversation_id || data.conversation_display_id,
       conversationDisplayId:
@@ -405,6 +407,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       callSid: data.call_sid || data.callSid || data.call_ref,
       accountId: data.account_id || data.accountId,
       status: data.status,
+      startedAt: data.started_at || data.startedAt,
+      answeredAt: data.answered_at || data.answeredAt,
       callDirection: data.call_direction || data.direction,
       conversationId: data.conversation_id || data.conversation_display_id,
       conversationDisplayId:

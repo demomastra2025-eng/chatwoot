@@ -192,6 +192,8 @@ const buildCallState = (callData, existingCall = null) => {
     callEvent: stageValue('callEvent'),
     callLeg: stageValue('callLeg'),
     rawStatus: stageValue('rawStatus'),
+    startedAt: displayValue('startedAt'),
+    answeredAt: displayValue('answeredAt'),
     accountId: displayValue('accountId'),
     conversationDbId: displayValue('conversationDbId'),
     conversationDisplayId: displayValue('conversationDisplayId'),
@@ -264,6 +266,8 @@ export const useCallsStore = defineStore('calls', {
       callEvent,
       callLeg,
       rawStatus,
+      startedAt,
+      answeredAt,
       fromNumber,
       toNumber,
       caller,
@@ -299,6 +303,8 @@ export const useCallsStore = defineStore('calls', {
         numberRef,
         fromNumber,
         toNumber,
+        startedAt,
+        answeredAt,
         sipProfileId,
         janusCallRef,
         janusSessionKey,
@@ -346,6 +352,8 @@ export const useCallsStore = defineStore('calls', {
           rawStatus,
           fromNumber,
           toNumber,
+          startedAt,
+          answeredAt,
           caller,
           operatorClaim,
           operatorCandidates,
@@ -382,6 +390,8 @@ export const useCallsStore = defineStore('calls', {
               callEvent,
               callLeg,
               rawStatus,
+              startedAt,
+              answeredAt,
               fromNumber,
               toNumber,
               caller,
@@ -398,14 +408,41 @@ export const useCallsStore = defineStore('calls', {
           this.setCallActive(call?.callSid || callSid);
           return;
         }
-        if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)) {
-          this.dismissRelatedFonosterIncomingCalls({
-            ...callData,
-            provider: resolvedProvider,
-            callDirection: resolvedCallDirection || 'inbound',
-          });
-        }
-        if (call && !call.isActive) this.dismissCall(call.callSid);
+        this.addCall({
+          callSid: call?.callSid || callSid,
+          status,
+          accountId,
+          conversationId,
+          conversationDbId,
+          conversationDisplayId,
+          communicationThreadId,
+          inboxId,
+          provider: resolvedProvider,
+          callDirection: resolvedCallDirection || 'inbound',
+          senderId,
+          contactId,
+          logicalCallKey,
+          numberRef,
+          callEvent,
+          callLeg,
+          rawStatus,
+          startedAt,
+          answeredAt,
+          fromNumber,
+          toNumber,
+          caller,
+          operatorClaim,
+          operatorCandidates,
+          operatorInternalExtension,
+          sipProfileId,
+          janusCallRef,
+          janusSessionKey,
+          sipuniNativeWebphoneCorrelation,
+          browserJoinSupported: call?.isActive ? browserJoinSupported : false,
+          browserJoinUnsupportedReason: call?.isActive
+            ? call?.browserJoinUnsupportedReason
+            : 'CALL_IN_PROGRESS',
+        });
       }
     },
 
@@ -577,12 +614,18 @@ export const useCallsStore = defineStore('calls', {
         callSid: data?.call_sid || data?.callSid || data?.call_ref,
         provider: data?.provider || 'fonoster',
         callDirection: data?.call_direction || data?.direction || 'inbound',
+        status: 'in_progress',
         conversationId: data?.conversation_id || data?.conversation_display_id,
         conversationDisplayId:
           data?.conversation_display_id || data?.conversation_id,
         conversationDbId: data?.conversation_db_id || data?.conversationDbId,
         communicationThreadId:
           data?.communication_thread_id || data?.communicationThreadId,
+        startedAt: data?.started_at || data?.startedAt,
+        answeredAt: data?.answered_at || data?.answeredAt,
+        operatorClaim: data?.operator_claim || data?.operatorClaim || null,
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
         logicalCallKey:
           data?.logical_call_key ||
           data?.logicalCallKey ||
@@ -604,7 +647,7 @@ export const useCallsStore = defineStore('calls', {
         callSids.includes(String(call?.callSid)) ||
         isRelatedFonosterInbound(call, callData);
       const removedCalls = this.calls.filter(matchesClaimedCall);
-      if (!removedCalls.length) return;
+      const existingCall = removedCalls[0] || null;
 
       this.calls = this.calls.filter(call => !matchesClaimedCall(call));
 
@@ -616,6 +659,16 @@ export const useCallsStore = defineStore('calls', {
       if (removedBrowserCalls.length) {
         await Promise.all(removedBrowserCalls.map(call => endClientCall(call)));
       }
+
+      this.addCall({
+        ...(existingCall || {}),
+        ...callData,
+        callSid: callData.callSid || existingCall?.callSid,
+        provider: callData.provider || existingCall?.provider,
+        callDirection: callData.callDirection || existingCall?.callDirection,
+        isActive: false,
+        browserJoined: false,
+      });
     },
 
     dismissRelatedFonosterIncomingCalls(targetCall) {

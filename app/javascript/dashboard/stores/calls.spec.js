@@ -346,7 +346,7 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('removes related Fonoster inbound widgets when another operator claims the call', async () => {
+  it('keeps a related Fonoster inbound widget visible when another operator claims the call', async () => {
     const store = useCallsStore();
 
     store.addCall({
@@ -370,7 +370,14 @@ describe('useCallsStore', () => {
       7
     );
 
-    expect(store.calls).toEqual([]);
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'operator-505-ref',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+      }),
+    ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
@@ -399,7 +406,14 @@ describe('useCallsStore', () => {
       7
     );
 
-    expect(store.calls).toEqual([]);
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'operator-505-ref',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+      }),
+    ]);
     expect(endClientCallMock).toHaveBeenCalledWith(
       expect.objectContaining({
         callSid: 'operator-504-ref',
@@ -438,7 +452,15 @@ describe('useCallsStore', () => {
       7
     );
 
-    expect(store.calls).toEqual([]);
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni:operator-505-ref',
+        communicationThreadId: 72,
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+      }),
+    ]);
     expect(endClientCallMock).toHaveBeenCalledWith(
       expect.objectContaining({
         callSid: 'sipuni:operator-504-ref',
@@ -476,6 +498,14 @@ describe('useCallsStore', () => {
         callSid: 'sipuni:unrelated-call',
         conversationId: 72,
       }),
+      expect.objectContaining({
+        callSid: 'sipuni:claimed-call',
+        conversationId: 612,
+        communicationThreadId: 72,
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+      }),
     ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
@@ -508,6 +538,13 @@ describe('useCallsStore', () => {
       expect.objectContaining({
         callSid: 'operator-504-ref',
         logicalCallKey: 'fonoster-inbound:first-call',
+      }),
+      expect.objectContaining({
+        callSid: 'operator-505-ref',
+        logicalCallKey: 'fonoster-inbound:second-call',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
       }),
     ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
@@ -649,7 +686,7 @@ describe('useCallsStore', () => {
     });
   });
 
-  it('dismisses a non-active ringing widget when another operator moves the call in progress', () => {
+  it('keeps a non-active widget visible when another operator moves the call in progress', () => {
     const store = useCallsStore();
 
     store.addCall({ callSid: 'shared-call-1', provider: 'fonoster' });
@@ -658,7 +695,14 @@ describe('useCallsStore', () => {
       status: 'in_progress',
     });
 
-    expect(store.calls).toEqual([]);
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'shared-call-1',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+      }),
+    ]);
   });
 
   it('marks an outbound Fonoster call active when the backend reports in progress', () => {

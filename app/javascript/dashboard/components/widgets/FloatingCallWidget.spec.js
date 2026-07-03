@@ -241,6 +241,76 @@ describe('FloatingCallWidget', () => {
     wrapper.unmount();
   });
 
+  it('shows elapsed ringing time for a pending inbound call', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-03T06:00:00Z'));
+    mockSession.incomingCalls = [
+      {
+        callSid: 'asterisk_analog:janus:incoming-ringing',
+        conversationId: 724,
+        inboxId: 4771,
+        provider: 'asterisk_analog',
+        callDirection: 'inbound',
+        fromNumber: '+77066318623',
+        toNumber: '+77172705175',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4771,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4771,
+      name: 'Asterisk',
+      provider: 'asterisk_analog',
+    });
+
+    const wrapper = mountComponent();
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(wrapper.text()).toContain('00:05');
+    wrapper.unmount();
+  });
+
+  it('shows active duration for calls handled by another operator', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-03T06:00:00Z'));
+    mockSession.incomingCalls = [
+      {
+        callSid: 'fonoster:handled-by-other',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'fonoster',
+        callDirection: 'inbound',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        operatorClaim: { user_name: 'Ayan' },
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'fonoster',
+    });
+
+    const wrapper = mountComponent();
+
+    await vi.advanceTimersByTimeAsync(7000);
+
+    expect(wrapper.text()).toContain('Handled by: Ayan');
+    expect(wrapper.text()).toContain('00:07');
+    expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('opens a communication thread instead of the underlying voice inbox conversation', async () => {
     mockSession.incomingCalls = [
       {

@@ -348,7 +348,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
     });
 
-    it('removes native voice calls claimed by another operator', async () => {
+    it('keeps native voice calls visible when claimed by another operator', async () => {
       const callsStore = useCallsStore();
 
       callsStore.addCall({
@@ -375,7 +375,14 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
 
       await vi.waitFor(() => {
-        expect(callsStore.calls).toEqual([]);
+        expect(callsStore.calls).toEqual([
+          expect.objectContaining({
+            callSid: 'fonoster-inbound-2',
+            status: 'in_progress',
+            browserJoinSupported: false,
+            browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+          }),
+        ]);
       });
     });
 

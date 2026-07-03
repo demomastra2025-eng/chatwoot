@@ -9,6 +9,7 @@ import WindowVisibilityHelper from 'dashboard/helper/AudioAlerts/WindowVisibilit
 import {
   getOutboundCallStageLabelKey,
   OUTBOUND_CALL_STAGE_LABEL_KEYS,
+  outboundCallStageShowsDuration,
 } from 'dashboard/helper/voiceCallStage';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
@@ -29,6 +30,12 @@ const {
 } = useCallSession();
 
 const isOutboundCall = call => call?.callDirection === 'outbound';
+const ACTIVE_CALL_STATUSES = new Set([
+  'answered',
+  'accepted',
+  'in_progress',
+  'up',
+]);
 const hiddenCallSids = ref(new Set());
 const callSidFor = call => (call?.callSid ? String(call.callSid) : '');
 const elapsedNowMs = ref(Date.now());
@@ -223,6 +230,17 @@ const callIsActive = call =>
     activeCall.value?.callSid && activeCall.value.callSid === call?.callSid
   );
 
+const normalizeStatus = value =>
+  value?.toString?.().trim().toLowerCase().replaceAll('-', '_') || '';
+
+const callHasActiveRemoteState = call =>
+  ACTIVE_CALL_STATUSES.has(normalizeStatus(call?.status)) ||
+  Boolean(call?.answeredAt || call?.answered_at) ||
+  (isOutboundCall(call) && outboundCallStageShowsDuration(call));
+
+const callIsLiveActive = call =>
+  callIsActive(call) || callHasActiveRemoteState(call);
+
 const browserJoinSupportedForCall = call => {
   return canHandleCallInBrowser({
     ...call,
@@ -348,6 +366,13 @@ const getCallRouteParts = call => {
 
 const getCallTypeText = call => {
   if (!browserJoinSupportedForCall(call)) {
+    const operator = getOperatorName(call);
+    if (callHasActiveRemoteState(call)) {
+      return operator
+        ? t('CONVERSATION.VOICE_WIDGET.HANDLED_BY', { name: operator })
+        : t('CONVERSATION.VOICE_WIDGET.HANDLED_BY_UNKNOWN');
+    }
+
     return t('CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER');
   }
 
@@ -382,6 +407,25 @@ const getCallSecondaryText = call => {
 };
 
 const idleCallDuration = '00:00';
+const timestampMs = value => {
+  if (!value) return null;
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue > 0) {
+    return numericValue < 1_000_000_000_000
+      ? numericValue * 1000
+      : numericValue;
+  }
+
+  const parsedValue = Date.parse(value);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+};
+
+const firstTimestampMs = values => {
+  const timestamps = values.map(timestampMs).filter(Boolean);
+  return timestamps[0] || null;
+};
+
 const formatDuration = seconds => {
   const normalizedSeconds = Math.max(0, Number(seconds) || 0);
   const minutes = Math.floor(normalizedSeconds / 60);
@@ -389,16 +433,34 @@ const formatDuration = seconds => {
   return `${minutes.toString().padStart(2, '0')}:${restSeconds.toString().padStart(2, '0')}`;
 };
 
-const pendingCallDuration = call => {
+const remoteCallDuration = call => {
   const callSid = callSidFor(call);
-  const startedAt = callFirstSeenAtMs.value[callSid];
-  if (!startedAt) return idleCallDuration;
+  const firstSeenAt = callFirstSeenAtMs.value[callSid];
+  const startedAt = callHasActiveRemoteState(call)
+    ? firstTimestampMs([
+        call?.answeredAt,
+        call?.answered_at,
+        call?.startedAt,
+        call?.started_at,
+      ])
+    : firstTimestampMs([
+        call?.startedAt,
+        call?.started_at,
+        call?.ringingAt,
+        call?.ringing_at,
+        call?.createdAt,
+        call?.created_at,
+      ]);
+  const timerStartedAt = startedAt || firstSeenAt;
+  if (!timerStartedAt) return idleCallDuration;
 
-  return formatDuration(Math.floor((elapsedNowMs.value - startedAt) / 1000));
+  return formatDuration(
+    Math.floor((elapsedNowMs.value - timerStartedAt) / 1000)
+  );
 };
 
 const callDurationLabel = call =>
-  callIsActive(call) ? formattedCallDuration.value : pendingCallDuration(call);
+  callIsActive(call) ? formattedCallDuration.value : remoteCallDuration(call);
 
 const stopElapsedTimer = () => {
   if (!elapsedTimerId) return;
@@ -640,8 +702,8 @@ onUnmounted(stopElapsedTimer);
             <span
               class="inline-flex rounded-full"
               :class="{
-                'ring-2 ring-n-teal-9': callIsActive(call),
-                'animate-pulse ring-2 ring-n-teal-9': !callIsActive(call),
+                'ring-2 ring-n-teal-9': callIsLiveActive(call),
+                'animate-pulse ring-2 ring-n-teal-9': !callIsLiveActive(call),
               }"
             >
               <Avatar
@@ -701,7 +763,7 @@ onUnmounted(stopElapsedTimer);
               </button>
               <button
                 v-if="
-                  !callIsActive(call) &&
+                  !callIsLiveActive(call) &&
                   !isOutboundCall(call) &&
                   browserJoinSupportedForCall(call)
                 "
@@ -714,7 +776,7 @@ onUnmounted(stopElapsedTimer);
                 <i class="text-base i-ph-phone-bold" />
               </button>
               <button
-                v-if="!callIsActive(call)"
+                v-if="!callIsLiveActive(call)"
                 type="button"
                 class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
                 :title="$t('CONVERSATION.VOICE_WIDGET.REJECT_CALL')"
