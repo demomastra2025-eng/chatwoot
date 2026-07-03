@@ -373,6 +373,24 @@ describe('janusSipuniVoiceClient', () => {
     );
   });
 
+  it('refreshes SIP registration before Asterisk analog outbound calls', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(asteriskAnalogSession, {
+      inboxId: 4771,
+    });
+    pluginSendMock.mockClear();
+
+    await JanusSipuniVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      toNumber: '+77066318623',
+    });
+
+    const requests = pluginSendMock.mock.calls
+      .map(([payload]) => payload?.message?.request)
+      .filter(Boolean);
+    expect(requests).toEqual(expect.arrayContaining(['register', 'call']));
+    expect(requests.indexOf('register')).toBeLessThan(requests.indexOf('call'));
+  });
+
   it('supports Kazakhstan trunk dialing for Asterisk analog profiles', async () => {
     await JanusSipuniVoiceClient.initializeDevice(
       {
