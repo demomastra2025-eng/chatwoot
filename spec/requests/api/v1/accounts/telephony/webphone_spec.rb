@@ -604,6 +604,56 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(binotel_profile.reload.registered_for_routing?).to be(true)
   end
 
+  it 'creates a Sipuni operator call session from native Janus SIP incoming without requiring the webhook' do
+    sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
+    raw_call_ref = 'raw-sipuni-native-no-webhook@91.215.136.2:8217'
+    expected_call_ref = "sipuni:janus:#{sipuni_profile.id}:#{raw_call_ref}"
+
+    with_modified_env(
+      SIPUNI_WEBHOOK_TOKEN: nil,
+      TELEPHONY_SIPUNI_WEBHOOK_TOKEN: nil
+    ) do
+      post incoming_path,
+           params: {
+             inbox_id: sipuni_profile.inbox_id,
+             provider: 'sipuni',
+             call_ref: raw_call_ref,
+             from: 'sip:+15555550123@91.215.136.2:8217',
+             session_key: "sip_profile:#{sipuni_profile.id}",
+             sip_profile_id: sipuni_profile.id,
+             internal_extension: sipuni_profile.internal_extension
+           },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: expected_call_ref)
+    route_metadata = call_session.metadata.fetch('metadata')
+
+    expect(payload).to include(
+      'call_sid' => expected_call_ref,
+      'callSid' => expected_call_ref,
+      'provider' => 'sipuni',
+      'status' => 'ringing',
+      'direction' => 'inbound',
+      'inbox_id' => sipuni_profile.inbox_id,
+      'sip_profile_id' => sipuni_profile.id,
+      'browser_join_supported' => true,
+      'route_action' => 'operator'
+    )
+    expect(account.telephony_call_sessions.where(provider: 'sipuni').count).to eq(1)
+    expect(route_metadata).to include(
+      'source' => 'browser_janus_sip',
+      'target_sip_profile_id' => sipuni_profile.id,
+      'target_user_id' => administrator.id,
+      'operator_candidate_sip_profile_ids' => include(sipuni_profile.id),
+      'operator_candidate_user_ids' => include(administrator.id)
+    )
+  end
+
   it 'reuses a recent Sipuni webhook provider call when native Janus incoming arrives after the webhook' do
     sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
     incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"

@@ -300,6 +300,42 @@ describe('janusSipuniVoiceClient', () => {
     });
   });
 
+  it('ignores late Janus registration events after the registration timeout', async () => {
+    vi.useFakeTimers();
+    const client = createJanusSipuniVoiceClient();
+    const registeredHandler = vi.fn();
+    client.addEventListener('call:registered', registeredHandler);
+    pluginSendMock.mockImplementation(() => {});
+
+    try {
+      const result = client
+        .initializeDevice(binotelSession, { inboxId: 4769 })
+        .catch(error => error);
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(8000);
+
+      const error = await result;
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe('sip_registration_timeout');
+      expect(updatePresenceMock).toHaveBeenLastCalledWith(false, {
+        inboxId: 4769,
+      });
+
+      updatePresenceMock.mockClear();
+      pluginState.options?.onmessage?.({ result: { event: 'registered' } });
+
+      expect(client.sessionState().registered).toBe(false);
+      expect(registeredHandler).not.toHaveBeenCalled();
+      expect(updatePresenceMock).not.toHaveBeenCalledWith(true, {
+        inboxId: 4769,
+      });
+    } finally {
+      vi.useRealTimers();
+      await client.destroyDevice();
+    }
+  });
+
   it('accepts only the matching pending Janus incoming call when a call ref is provided', async () => {
     await JanusSipuniVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,
@@ -431,6 +467,49 @@ describe('janusSipuniVoiceClient', () => {
         }),
       })
     );
+  });
+
+  it('does not start a Sipuni outbound call when Janus registration is stale', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    pluginSendMock.mockImplementation(({ message } = {}) => {
+      if (message?.request === 'register' && message?.refresh) {
+        window.setTimeout(() => {
+          pluginState.options?.onmessage?.({
+            error: 'Wrong state (not registered)',
+          });
+        }, 0);
+      }
+    });
+    pluginSendMock.mockClear();
+    updatePresenceMock.mockClear();
+
+    await expect(
+      JanusSipuniVoiceClient.joinClientCall({
+        callDirection: 'outbound',
+        callRef: 'sipuni:local:stale-registration',
+        toNumber: '+77066318623',
+      })
+    ).rejects.toThrow('Wrong state (not registered)');
+
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'register',
+          refresh: true,
+        }),
+      })
+    );
+    expect(
+      pluginSendMock.mock.calls.some(
+        ([payload]) => payload?.message?.request === 'call'
+      )
+    ).toBe(false);
+    expect(JanusSipuniVoiceClient.currentCallRef).toBeNull();
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(false, {
+      inboxId: 4769,
+    });
   });
 
   it('sends Asterisk analog outbound calls in the PBX dialplan format', async () => {

@@ -64,22 +64,9 @@ class Telephony::SipuniEventsController < ActionController::API
       payload_value(payload, :event) == 'session_started'
   end
 
-  def fast_terminal_event?(payload)
-    payload_value(payload, :provider) == 'sipuni' &&
-      Telephony::CallSession::TERMINAL_STATUSES.include?(payload_value(payload, :status).to_s)
-  end
-
   def process_lifecycle_event(payload)
     return persist_reconciliation_only_event(payload) if sipuni_browser_webphone_unmatched?(payload)
-    return enqueue_lifecycle_event(payload) unless fast_terminal_event?(payload)
 
-    Telephony::EventsIngestionService.new(payload: payload).perform
-    'processed'
-  rescue StandardError => e
-    Rails.logger.warn(
-      "SIPUNI_INLINE_LIFECYCLE_FAILED request_id=#{request.request_id} " \
-      "call_ref=#{payload_value(payload, :call_ref)} error=#{e.class.name}: #{e.message}"
-    )
     enqueue_lifecycle_event(payload)
   end
 

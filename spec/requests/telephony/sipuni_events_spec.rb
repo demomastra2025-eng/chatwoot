@@ -197,7 +197,7 @@ RSpec.describe 'Sipuni events webhook', type: :request do
     expect(event.payload.dig('metadata', 'sipuni_webhook_mode')).to eq('reconciliation_only')
   end
 
-  it 'processes terminal Sipuni events inline against an existing native Janus call' do
+  it 'queues terminal Sipuni events and reconciles them against an existing native Janus call' do
     started_at = Time.zone.at(Time.current.to_i - 30)
     _janus_call_ref, janus_call_session = create_native_janus_sipuni_call_session(started_at)
 
@@ -211,11 +211,13 @@ RSpec.describe 'Sipuni events webhook', type: :request do
       expect do
         post "/sipuni/events/#{token}",
              params: native_sipuni_terminal_webhook_event_params(started_at)
-      end.not_to have_enqueued_job(Telephony::InboundRouteLifecycleJob)
-    end
+      end.to have_enqueued_job(Telephony::InboundRouteLifecycleJob).on_queue('telephony_realtime')
 
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body).to include('success' => true, 'status' => 'processed')
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('success' => true, 'status' => 'accepted')
+
+      perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob)
+    end
 
     call_session = janus_call_session.reload
     expect(account.telephony_call_sessions.where(provider: 'sipuni').count).to eq(1)

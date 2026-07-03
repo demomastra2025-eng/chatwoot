@@ -18,6 +18,7 @@ const createCallUnregisteredEvent = detail =>
   new CustomEvent('call:unregistered', { detail });
 
 const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
+const WEBPHONE_REGISTRATION_TIMEOUT_MS = 8_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 20_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
 const WEBPHONE_INCOMING_ACCEPT_TIMEOUT_MS = 10_000;
@@ -198,6 +199,8 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.registrationPromise = null;
     this.registrationResolve = null;
     this.registrationReject = null;
+    this.registrationTimer = null;
+    this.registrationTimedOut = false;
     this.pendingIncomingCall = null;
     this.incomingAcceptPromise = null;
     this.incomingAcceptResolve = null;
@@ -520,17 +523,42 @@ export class JanusSipuniVoiceClient extends EventTarget {
     };
     if (refresh) register.refresh = true;
 
+    this.registrationTimedOut = false;
+
     this.registrationPromise = new Promise((resolve, reject) => {
       this.registrationResolve = resolve;
       this.registrationReject = reject;
-      this.sipHandle.send({ message: register });
+      this.registrationTimer = window.setTimeout(() => {
+        this.registrationTimedOut = true;
+        this.registered = false;
+        this.stopPresenceHeartbeat();
+        this.reportPresence(false);
+        this.dispatchEvent(
+          createCallUnregisteredEvent(this.sessionEventDetail())
+        );
+        reject(new Error('sip_registration_timeout'));
+      }, WEBPHONE_REGISTRATION_TIMEOUT_MS);
+
+      try {
+        this.sipHandle.send({ message: register });
+      } catch (error) {
+        reject(error);
+      }
     }).finally(() => {
+      this.clearRegistrationTimer();
       this.registrationPromise = null;
       this.registrationResolve = null;
       this.registrationReject = null;
     });
 
     return this.registrationPromise;
+  }
+
+  clearRegistrationTimer() {
+    if (!this.registrationTimer) return;
+
+    window.clearTimeout(this.registrationTimer);
+    this.registrationTimer = null;
   }
 
   ensureRegistered({ refresh = false } = {}) {
@@ -551,6 +579,9 @@ export class JanusSipuniVoiceClient extends EventTarget {
 
       const normalizedError = String(error).toLowerCase();
       if (normalizedError.includes('already registered')) {
+        if (this.registrationTimedOut) return;
+
+        this.clearRegistrationTimer();
         this.markRegistered();
         this.registrationResolve?.(this.sessionState());
         this.dispatchEvent(
@@ -559,8 +590,12 @@ export class JanusSipuniVoiceClient extends EventTarget {
         return;
       }
 
-      if (normalizedError.includes('register first')) {
+      if (
+        normalizedError.includes('register first') ||
+        normalizedError.includes('not registered')
+      ) {
         this.registered = false;
+        this.stopPresenceHeartbeat();
         this.reportPresence(false);
         this.dispatchEvent(
           createCallUnregisteredEvent(this.sessionEventDetail())
@@ -597,7 +632,9 @@ export class JanusSipuniVoiceClient extends EventTarget {
 
     if (event === 'registration_failed') {
       this.registered = false;
+      this.stopPresenceHeartbeat();
       this.reportPresence(false);
+      this.clearRegistrationTimer();
       this.registrationReject?.(
         new Error(`${result.code || ''} ${result.reason || ''}`.trim())
       );
@@ -608,6 +645,9 @@ export class JanusSipuniVoiceClient extends EventTarget {
     }
 
     if (event === 'registered') {
+      if (this.registrationTimedOut) return;
+
+      this.clearRegistrationTimer();
       this.markRegistered();
       this.registrationResolve?.(this.sessionState());
       this.dispatchEvent(createCallRegisteredEvent(this.sessionEventDetail()));
@@ -1382,9 +1422,11 @@ export class JanusSipuniVoiceClient extends EventTarget {
   } = {}) {
     if (!this.sipHandle || !this.initialized) return null;
 
-    this.currentCallRef = callRef || this.currentCallRef;
-    this.currentCallDirection = callDirection || this.currentCallDirection;
+    const nextCallRef = callRef || this.currentCallRef;
+    const nextCallDirection = callDirection || this.currentCallDirection;
     await this.ensureRegistered({ refresh: callDirection === 'outbound' });
+    this.currentCallRef = nextCallRef;
+    this.currentCallDirection = nextCallDirection;
 
     if (callDirection === 'outbound') {
       return this.startOutboundCall(toNumber);
@@ -1422,14 +1464,23 @@ export class JanusSipuniVoiceClient extends EventTarget {
       this.sipHandle.createOffer({
         tracks: [{ type: 'audio', capture: true, recv: true }],
         success: jsep => {
-          this.sipHandle.send({
-            message: {
-              request: 'call',
-              uri,
-              autoaccept_reinvites: false,
-            },
-            jsep,
-          });
+          try {
+            this.sipHandle.send({
+              message: {
+                request: 'call',
+                uri,
+                autoaccept_reinvites: false,
+              },
+              jsep,
+            });
+          } catch (error) {
+            this.hasActiveCall = false;
+            this.clearOutboundSetupTimer();
+            this.stopLocalTracks();
+            this.resetCurrentCall();
+            reject(error);
+            return;
+          }
           this.scheduleOutboundSetupTimeout();
           resolve({ ...this.sessionEventDetail(), calling: true, uri });
         },
@@ -1437,6 +1488,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
           this.hasActiveCall = false;
           this.clearOutboundSetupTimer();
           this.stopLocalTracks();
+          this.resetCurrentCall();
           reject(error);
         },
       });
@@ -1705,6 +1757,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.registrationPromise = null;
     this.registrationResolve = null;
     this.registrationReject = null;
+    this.clearRegistrationTimer();
     this.stopPresenceHeartbeat();
     this.clearOutboundSetupTimer();
     if (shouldReportOffline) this.reportPresence(false);

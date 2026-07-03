@@ -379,6 +379,23 @@ export function useCallSession() {
     };
   };
 
+  const failNativeOutboundWithoutSipStart = async (
+    callSid,
+    { provider } = {}
+  ) => {
+    await releaseFonosterIncomingCall(callSid, {
+      status: 'failed',
+      reason: 'sip_invite_not_received',
+    });
+    callsStore.dismissCall(callSid);
+    return {
+      provider,
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      callSid,
+    };
+  };
+
   const unknownCallReleaseKey = Symbol('unknown_call');
   const callReleaseKey = callSid => callSid || unknownCallReleaseKey;
   const hasTrackedCall = callSid =>
@@ -848,6 +865,25 @@ export function useCallSession() {
         } catch (error) {
           // eslint-disable-next-line no-console
           console.warn('Failed to answer browser SIP call:', error);
+          if (isOutbound) {
+            if (!hasTrackedCall(callSid)) {
+              return {
+                provider: resolvedProvider,
+                joinSupported: false,
+                reason: 'call_closed',
+                callSid,
+              };
+            }
+
+            if (resolvedProvider === 'fonoster') {
+              return failFonosterOutboundWithoutInvite(callSid);
+            }
+
+            return failNativeOutboundWithoutSipStart(callSid, {
+              provider: resolvedProvider,
+            });
+          }
+
           const releaseResult = await releaseUnsupportedFonosterJoin(callSid, {
             includeReason: true,
             provider: resolvedProvider,
@@ -873,11 +909,9 @@ export function useCallSession() {
               return failFonosterOutboundWithoutInvite(callSid);
             }
 
-            return {
+            return failNativeOutboundWithoutSipStart(callSid, {
               provider: resolvedProvider,
-              joinSupported: false,
-              reason: 'sip_invite_not_received',
-            };
+            });
           }
 
           return releaseClaimedNativeBrowserSipCallWithoutInvite(callSid, {
@@ -943,6 +977,29 @@ export function useCallSession() {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to join call:', error);
+      const fallbackProvider = provider || trackedCallForSid(callSid)?.provider;
+      if (
+        isOutboundCallDirection(callDirection) &&
+        NATIVE_BROWSER_SIP_PROVIDERS.has(fallbackProvider)
+      ) {
+        if (!hasTrackedCall(callSid)) {
+          return {
+            provider: fallbackProvider,
+            joinSupported: false,
+            reason: 'call_closed',
+            callSid,
+          };
+        }
+
+        if (fallbackProvider === 'fonoster') {
+          return failFonosterOutboundWithoutInvite(callSid);
+        }
+
+        return failNativeOutboundWithoutSipStart(callSid, {
+          provider: fallbackProvider,
+        });
+      }
+
       return null;
     } finally {
       isJoining.value = false;

@@ -1137,7 +1137,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('does not use the inbound release endpoint for outbound non-Fonoster SIP calls without an invite', async () => {
+  it('releases outbound non-Fonoster SIP calls when Janus does not start the call', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'sipuni-outbound-no-invite',
@@ -1164,15 +1164,94 @@ describe('useCallSession', () => {
       provider: 'sipuni',
       joinSupported: false,
       reason: 'sip_invite_not_received',
+      callSid: 'sipuni-outbound-no-invite',
     });
     expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
-    expect(rejectBackendCallMock).not.toHaveBeenCalled();
-    expect(callsStore.calls).toEqual([
-      expect.objectContaining({
-        callSid: 'sipuni-outbound-no-invite',
-        isActive: false,
-      }),
-    ]);
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'sipuni-outbound-no-invite',
+      {
+        reason: 'sip_invite_not_received',
+        status: 'failed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('releases outbound Binotel calls when Janus registration fails before SIP INVITE', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'binotel-outbound-registration-timeout',
+      provider: 'binotel',
+      callDirection: 'outbound',
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'binotel',
+      callingSupported: true,
+      registered: false,
+    });
+    joinClientCallMock.mockRejectedValue(new Error('sip_registration_timeout'));
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 6,
+      inboxId: 4770,
+      callSid: 'binotel-outbound-registration-timeout',
+      provider: 'binotel',
+      callDirection: 'outbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'binotel',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      callSid: 'binotel-outbound-registration-timeout',
+    });
+    expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'binotel-outbound-registration-timeout',
+      {
+        reason: 'sip_invite_not_received',
+        status: 'failed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('releases outbound Binotel calls when browser SIP initialization fails before SIP INVITE', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'binotel-outbound-initialize-timeout',
+      provider: 'binotel',
+      callDirection: 'outbound',
+    });
+    initializeDeviceMock.mockRejectedValue(
+      new Error('sip_registration_timeout')
+    );
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      conversationId: 6,
+      inboxId: 4770,
+      callSid: 'binotel-outbound-initialize-timeout',
+      provider: 'binotel',
+      callDirection: 'outbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'binotel',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+      callSid: 'binotel-outbound-initialize-timeout',
+    });
+    expect(joinClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'binotel-outbound-initialize-timeout',
+      {
+        reason: 'sip_invite_not_received',
+        status: 'failed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
   });
 
   it('does not release an outbound Fonoster call again when it was already closed while waiting for SIP INVITE', async () => {
