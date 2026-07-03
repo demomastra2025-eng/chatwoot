@@ -520,9 +520,8 @@ export class JanusSipuniVoiceClient extends EventTarget {
     return this.registrationPromise;
   }
 
-  ensureRegistered({ force = false } = {}) {
-    if (this.registered && !force) return Promise.resolve();
-    if (force) this.registered = false;
+  ensureRegistered() {
+    if (this.registered) return Promise.resolve();
     return this.register();
   }
 
@@ -534,7 +533,17 @@ export class JanusSipuniVoiceClient extends EventTarget {
         return;
       }
 
-      if (String(error).toLowerCase().includes('register first')) {
+      const normalizedError = String(error).toLowerCase();
+      if (normalizedError.includes('already registered')) {
+        this.markRegistered();
+        this.registrationResolve?.(this.sessionState());
+        this.dispatchEvent(
+          createCallRegisteredEvent(this.sessionEventDetail())
+        );
+        return;
+      }
+
+      if (normalizedError.includes('register first')) {
         this.registered = false;
         this.reportPresence(false);
         this.dispatchEvent(
@@ -1262,7 +1271,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
 
     this.currentCallRef = callRef || this.currentCallRef;
     this.currentCallDirection = callDirection || this.currentCallDirection;
-    await this.ensureRegistered({ force: callDirection === 'outbound' });
+    await this.ensureRegistered();
 
     if (callDirection === 'outbound') {
       return this.startOutboundCall(toNumber);
