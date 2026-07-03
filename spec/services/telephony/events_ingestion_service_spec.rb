@@ -1138,6 +1138,66 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'keeps an outbound browser SIP call completed when prior recording_ready proved the customer answered' do
+      started_at = Time.zone.parse(60.seconds.ago.iso8601)
+      recording_ready_at = started_at + 18.seconds
+      ended_at = recording_ready_at + 1.second
+      existing_call_session.update!(
+        provider: 'asterisk_analog',
+        direction: 'outbound',
+        status: 'ringing',
+        started_at: started_at,
+        last_event_at: started_at,
+        to_number: '+77070001002'
+      )
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-browser-recording-callee-answered-1',
+          provider: 'asterisk_analog',
+          event: 'recording_ready',
+          direction: 'outbound',
+          occurred_at: recording_ready_at.iso8601,
+          duration_ms: 6445,
+          duration_seconds: 6,
+          callee_leg_answered: true,
+          recording_ref: 'voice-recordings/asterisk_analog/1/call.webm',
+          storage_key: 'voice-recordings/asterisk_analog/1/call.webm',
+          content_type: 'audio/webm',
+          sha256: 'abc123'
+        )
+      ).perform
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-browser-sip-remote-hangup-after-recording-answer-1',
+          provider: 'asterisk_analog',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'user:179',
+          end_reason: 'remote_hangup'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        ended_by: 'user:179',
+        end_reason: 'remote_hangup',
+        duration_seconds: 6
+      )
+      expect(result.legs).to include(
+        include(
+          'event_key' => 'evt-browser-recording-callee-answered-1',
+          'event_type' => 'recording_ready',
+          'callee_leg_answered' => true
+        )
+      )
+    end
+
     it 'repairs an already completed outbound terminal with a stale no-answer duration' do
       started_at = Time.zone.parse(60.seconds.ago.iso8601)
       answered_at = started_at + 12.seconds

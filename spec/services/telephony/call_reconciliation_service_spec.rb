@@ -778,6 +778,79 @@ RSpec.describe Telephony::CallReconciliationService do
       )
     end
 
+    it 'closes stale native Asterisk local outbound calls that never receive a terminal browser event' do
+      conversation = create(
+        :conversation,
+        account: account,
+        additional_attributes: {
+          'call_status' => 'created',
+          'call_direction' => 'outbound',
+          'asterisk_analog_call_ref' => 'asterisk_analog:local:stale-outbound-1'
+        }
+      )
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: conversation.contact,
+        inbox: conversation.inbox,
+        provider: 'asterisk_analog',
+        external_call_ref: 'asterisk_analog:local:stale-outbound-1',
+        provider_call_sid: nil,
+        status: 'created',
+        direction: 'outbound',
+        from_number: '+77172705175',
+        to_number: '+77070001002',
+        started_at: now - 2.minutes,
+        last_event_at: now - 2.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'asterisk_analog',
+            'route_action' => 'operator',
+            'direction' => 'outbound',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+      message = conversation.messages.create!(
+        account: account,
+        inbox: call_session.inbox,
+        message_type: :outgoing,
+        content_type: :voice_call,
+        content: 'Voice Call',
+        source_id: call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'call_sid' => call_session.external_call_ref,
+            'status' => 'created',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+
+      with_modified_env('TELEPHONY_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS' => '30') do
+        result = described_class.new(account: account, bridge_client: bridge_client, now: now, stale_after: 0.seconds).perform
+
+        expect(result).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      aggregate_failures do
+        expect(call_session.reload).to have_attributes(
+          status: 'no_answer',
+          ended_at: now,
+          ended_by: 'native_sip_reconciliation',
+          end_reason: 'native_sip_missing_outbound_no_answer',
+          duration_seconds: 0
+        )
+        expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
+        expect(conversation.reload.additional_attributes).to include(
+          'call_status' => 'no_answer',
+          'call_direction' => 'outbound'
+        )
+      end
+    end
+
     it 'does not close fresh native Janus calls' do
       call_session = create(
         :telephony_call_session,

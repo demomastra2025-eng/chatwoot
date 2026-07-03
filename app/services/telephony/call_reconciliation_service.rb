@@ -8,6 +8,7 @@ class Telephony::CallReconciliationService
   DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER = 4.hours
   DEFAULT_NATIVE_SIP_PRE_ANSWER_STALE_AFTER = 5.minutes
   DEFAULT_NATIVE_SIP_IN_PROGRESS_STALE_AFTER = 4.hours
+  DEFAULT_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
 
   SOURCE_BRIDGE_RECONCILIATION = 'bridge_reconciliation'.freeze
   SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION = 'sipuni_local_outbound_reconciliation'.freeze
@@ -17,6 +18,7 @@ class Telephony::CallReconciliationService
   SIPUNI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS = %w[asterisk_analog binotel].freeze
 
   BRIDGE_STATUS_MAP = {
     'queued' => 'created',
@@ -79,6 +81,10 @@ class Telephony::CallReconciliationService
       'TELEPHONY_NATIVE_SIP_IN_PROGRESS_STALE_AFTER_SECONDS',
       DEFAULT_NATIVE_SIP_IN_PROGRESS_STALE_AFTER.to_i
     ).to_i.seconds
+    @native_sip_local_outbound_missing_after = ENV.fetch(
+      'TELEPHONY_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS',
+      DEFAULT_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER.to_i
+    ).to_i.seconds
   end
 
   def perform
@@ -106,6 +112,7 @@ class Telephony::CallReconciliationService
 
     reconcile_missing_sipuni_local_outbound_sessions!(result)
     reconcile_missing_sipuni_provider_sessions!(result)
+    reconcile_missing_native_sip_local_outbound_sessions!(result)
     reconcile_missing_native_sip_sessions!(result)
 
     result
@@ -116,7 +123,7 @@ class Telephony::CallReconciliationService
   JANUS_NATIVE_SIP_REF_SQL = NATIVE_SIP_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:janus:%'" }.join(' OR ').freeze
 
   attr_reader :account, :bridge_client, :max_pages, :missing_after, :now, :page_size,
-              :native_sip_in_progress_stale_after, :native_sip_pre_answer_stale_after,
+              :native_sip_in_progress_stale_after, :native_sip_local_outbound_missing_after, :native_sip_pre_answer_stale_after,
               :sipuni_local_outbound_missing_after, :sipuni_provider_in_progress_stale_after,
               :sipuni_provider_ringing_stale_after, :stale_after
 
@@ -173,6 +180,18 @@ class Telephony::CallReconciliationService
       pre_answer_before: now - native_sip_pre_answer_stale_after,
       in_progress_status: 'in_progress',
       in_progress_before: now - native_sip_in_progress_stale_after
+    )
+  end
+
+  def native_sip_local_outbound_missing_scope
+    scope = Telephony::CallSession.active
+                                  .where(provider: NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS, direction: 'outbound', provider_call_sid: nil)
+                                  .where(status: NATIVE_SIP_PRE_ANSWER_STATUSES)
+    scope = scope.where(account_id: account.id) if account.present?
+    local_ref_sql = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:local:%'" }.join(' OR ')
+    scope.where(local_ref_sql).where(
+      'COALESCE(last_event_at, started_at, updated_at, created_at) <= ?',
+      now - native_sip_local_outbound_missing_after
     )
   end
 
@@ -269,6 +288,14 @@ class Telephony::CallReconciliationService
     end
   end
 
+  def reconcile_missing_native_sip_local_outbound_sessions!(result)
+    native_sip_local_outbound_missing_scope.find_each do |session|
+      result[:checked] += 1
+      result[:missing] += 1
+      result[:updated] += 1 if reconcile_missing_native_sip_local_outbound_session(session)
+    end
+  end
+
   def reconcile_missing_sipuni_local_outbound_session(session)
     return false if session.terminal?
     return false if session.provider_call_sid.present?
@@ -321,6 +348,27 @@ class Telephony::CallReconciliationService
       ended_at: ended_at,
       ended_by: SOURCE_NATIVE_SIP_RECONCILIATION,
       end_reason: missing_native_sip_end_reason(session, target_status),
+      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
+      last_event_at: ended_at,
+      metadata: missing_native_sip_metadata(session, target_status, previous_status),
+      legs: append_missing_native_sip_leg_snapshot(session, target_status, previous_status)
+    )
+    sync_reconciled_session!(session, target_status, source: SOURCE_NATIVE_SIP_RECONCILIATION)
+    true
+  end
+
+  def reconcile_missing_native_sip_local_outbound_session(session)
+    return false if session.terminal?
+    return false unless session.direction == 'outbound'
+
+    ended_at = now
+    previous_status = session.canonical_status
+    target_status = 'no_answer'
+    session.update!(
+      status: target_status,
+      ended_at: ended_at,
+      ended_by: SOURCE_NATIVE_SIP_RECONCILIATION,
+      end_reason: 'native_sip_missing_outbound_no_answer',
       duration_seconds: missing_duration_seconds(session, ended_at, target_status),
       last_event_at: ended_at,
       metadata: missing_native_sip_metadata(session, target_status, previous_status),

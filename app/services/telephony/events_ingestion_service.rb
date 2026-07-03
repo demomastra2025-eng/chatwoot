@@ -792,6 +792,7 @@ class Telephony::EventsIngestionService
   def outbound_customer_answered?(call_session)
     outbound_customer_answer_event? ||
       outbound_customer_answer_payload? ||
+      outbound_customer_answer_recording_evidence?(call_session) ||
       (call_session.answered_at.present? && !outbound_operator_only_answered?(call_session)) ||
       Array.wrap(call_session.legs).any? { |leg| outbound_customer_answer_leg?(leg) }
   end
@@ -821,6 +822,22 @@ class Telephony::EventsIngestionService
 
     truthy_payload_value?('calleeLegAnswered', 'callee_leg_answered', 'targetLegAnswered', 'target_leg_answered') ||
       (terminal_status?(resolved_status) && resolved_answered_at.present?)
+  end
+
+  def outbound_customer_answer_recording_evidence?(call_session)
+    return false if operator_leg_event?
+
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    last_payload = metadata['last_payload']
+    return true if truthy_hash_value?(last_payload, 'calleeLegAnswered', 'callee_leg_answered', 'targetLegAnswered', 'target_leg_answered')
+
+    Array.wrap(call_session.legs).any? do |leg|
+      next false unless leg.is_a?(Hash)
+
+      leg = leg.deep_stringify_keys
+      leg['event_type'].to_s == 'recording_ready' &&
+        truthy_hash_value?(leg, 'calleeLegAnswered', 'callee_leg_answered', 'targetLegAnswered', 'target_leg_answered')
+    end
   end
 
   def outbound_customer_answer_leg?(leg)
@@ -1980,6 +1997,8 @@ class Telephony::EventsIngestionService
       media_session_ref: payload_value('media_session_ref', 'mediaSessionRef'),
       stream_ref: payload_value('stream_ref', 'streamRef') || nested_payload_value('stream_ref', 'streamRef'),
       raw_status: payload_value('raw_status', 'rawStatus'),
+      callee_leg_answered: payload_value('calleeLegAnswered', 'callee_leg_answered'),
+      target_leg_answered: payload_value('targetLegAnswered', 'target_leg_answered'),
       answered_by: resolved_answered_by || resolved_agent_actor(status),
       ended_by: resolved_ended_by,
       end_reason: resolved_end_reason
@@ -2532,6 +2551,15 @@ class Telephony::EventsIngestionService
   def truthy_payload_value?(*keys)
     keys.any? do |key|
       value = payload[key.to_s]
+      value == true || value.to_s.strip.downcase.in?(%w[true 1 yes])
+    end
+  end
+
+  def truthy_hash_value?(source, *keys)
+    return false unless source.is_a?(Hash)
+
+    keys.any? do |key|
+      value = source[key.to_s]
       value == true || value.to_s.strip.downcase.in?(%w[true 1 yes])
     end
   end
