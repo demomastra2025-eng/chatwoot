@@ -8,6 +8,9 @@ const createCallDisconnectedEvent = detail =>
 const createCallIncomingEvent = detail =>
   new CustomEvent('call:incoming', { detail });
 
+const createCallConnectedEvent = detail =>
+  new CustomEvent('call:connected', { detail });
+
 const createCallRegisteredEvent = detail =>
   new CustomEvent('call:registered', { detail });
 
@@ -203,6 +206,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.outboundSetupTimer = null;
     this.destroyingDevice = false;
     this.callMediaAccepted = false;
+    this.callConnectedDispatched = false;
     this.mediaRecorder = null;
     this.recordedChunks = [];
     this.recordingAudioContext = null;
@@ -643,6 +647,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
       this.stopMicrophonePrewarm();
       this.playRemoteAudio();
       this.startRecordingIfReady();
+      this.dispatchCallConnected();
       return;
     }
 
@@ -788,6 +793,13 @@ export class JanusSipuniVoiceClient extends EventTarget {
     };
   }
 
+  dispatchCallConnected() {
+    if (this.callConnectedDispatched) return;
+
+    this.callConnectedDispatched = true;
+    this.dispatchEvent(createCallConnectedEvent(this.callEventDetail()));
+  }
+
   sessionEventDetail() {
     return {
       provider: this.currentProvider(),
@@ -802,6 +814,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.currentCallRef = null;
     this.currentCallDirection = null;
     this.callMediaAccepted = false;
+    this.callConnectedDispatched = false;
   }
 
   startRecordingIfReady() {
@@ -1308,6 +1321,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.hasActiveCall = true;
     this.currentCallDirection = 'outbound';
     this.callMediaAccepted = false;
+    this.callConnectedDispatched = false;
     return new Promise((resolve, reject) => {
       this.sipHandle.createOffer({
         tracks: [{ type: 'audio', capture: true, recv: true }],

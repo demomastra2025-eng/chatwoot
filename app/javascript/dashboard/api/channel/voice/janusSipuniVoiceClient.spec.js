@@ -373,6 +373,38 @@ describe('janusSipuniVoiceClient', () => {
     );
   });
 
+  it('notifies the UI when an outbound Asterisk analog call is accepted', async () => {
+    const connectedHandler = vi.fn();
+    JanusSipuniVoiceClient.addEventListener('call:connected', connectedHandler);
+    await JanusSipuniVoiceClient.initializeDevice(asteriskAnalogSession, {
+      inboxId: 4771,
+    });
+
+    await JanusSipuniVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'asterisk_analog:local:accepted-outbound',
+      toNumber: '+77066318623',
+    });
+    pluginState.options?.onmessage?.({
+      result: { event: 'accepted' },
+    });
+
+    expect(connectedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          provider: 'asterisk_analog',
+          callRef: 'asterisk_analog:local:accepted-outbound',
+          callDirection: 'outbound',
+          callMediaAccepted: true,
+        }),
+      })
+    );
+    JanusSipuniVoiceClient.removeEventListener(
+      'call:connected',
+      connectedHandler
+    );
+  });
+
   it('refreshes already registered Asterisk analog outbound calls with Janus refresh', async () => {
     await JanusSipuniVoiceClient.initializeDevice(asteriskAnalogSession, {
       inboxId: 4771,

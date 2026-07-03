@@ -625,6 +625,39 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('marks an outbound Asterisk call active when Janus reports it connected', async () => {
+    let connectedHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:connected') connectedHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'asterisk_analog:local:connected-outbound',
+      provider: 'asterisk_analog',
+      callDirection: 'outbound',
+    });
+
+    mountUseCallSession();
+    connectedHandler?.({
+      detail: {
+        provider: 'asterisk_analog',
+        callRef: 'asterisk_analog:local:connected-outbound',
+        callDirection: 'outbound',
+        callMediaAccepted: true,
+      },
+    });
+
+    expect(callsStore.activeCall?.callSid).toBe(
+      'asterisk_analog:local:connected-outbound'
+    );
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'asterisk_analog:local:connected-outbound',
+        isActive: true,
+      }),
+    ]);
+  });
+
   it('still releases an active Fonoster call when the local RTC hangup fails', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

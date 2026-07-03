@@ -10,6 +10,7 @@ const WEBPHONE_TOKEN_REFRESH_RETRY_MS = 30_000;
 const WEBPHONE_NATIVE_SIP_RETRY_MS = 30_000;
 
 const FORWARDED_EVENTS = [
+  'call:connected',
   'call:disconnected',
   'call:incoming',
   'call:registered',

@@ -254,6 +254,59 @@ describe('webphoneClient', () => {
     ).toBe(true);
   });
 
+  it('forwards native Janus SIP connected events with session context', async () => {
+    getWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [
+        {
+          provider: 'asterisk_analog',
+          sip_profile_id: 41,
+          inbox_id: 4771,
+          calling_supported: true,
+          janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+          sip: {
+            username: '9098',
+            password: 'asterisk-secret',
+            host: '10.77.0.2',
+          },
+        },
+      ],
+    });
+    janusInitializeMock.mockImplementation(async session => ({
+      provider: session.provider,
+      sessionKey: session.sessionKey,
+      inboxId: session.inbox_id,
+      sipProfileId: session.sip_profile_id,
+      callingSupported: true,
+      registered: true,
+    }));
+    const connectedHandler = vi.fn();
+    WebphoneClient.addEventListener('call:connected', connectedHandler);
+
+    await WebphoneClient.bootstrapIncomingSupport();
+    const [, forwardConnected] =
+      janusClientInstances[0].addEventListener.mock.calls.find(
+        ([eventName]) => eventName === 'call:connected'
+      );
+    forwardConnected({
+      detail: {
+        provider: 'asterisk_analog',
+        callRef: 'asterisk_analog:local:connected-outbound',
+      },
+    });
+
+    expect(connectedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          provider: 'asterisk_analog',
+          sessionKey: 'sip_profile:41',
+          callRef: 'asterisk_analog:local:connected-outbound',
+        }),
+      })
+    );
+    WebphoneClient.removeEventListener('call:connected', connectedHandler);
+  });
+
   it('bootstraps legacy Fonoster and native Janus SIP sessions from one multi-session token', async () => {
     getWebphoneTokenMock.mockResolvedValue({
       multi_session: true,

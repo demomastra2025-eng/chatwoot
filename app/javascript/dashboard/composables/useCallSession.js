@@ -425,6 +425,16 @@ export function useCallSession() {
     return null;
   };
 
+  const handleClientConnected = event => {
+    const detail = event?.detail || {};
+    if (!NATIVE_BROWSER_SIP_PROVIDERS.has(detail.provider)) return;
+
+    const call = findDisconnectedBrowserSipCall(event);
+    if (!call?.callSid) return;
+
+    callsStore.setCallActive(call.callSid);
+  };
+
   const browserSipDisconnectRelease = (call, detail = {}) => {
     if (call?.isActive || detail.callMediaAccepted) {
       return {
@@ -612,6 +622,7 @@ export function useCallSession() {
   );
 
   onMounted(() => {
+    WebphoneClient.addEventListener('call:connected', handleClientConnected);
     WebphoneClient.addEventListener(
       'call:disconnected',
       handleClientDisconnect
@@ -628,6 +639,7 @@ export function useCallSession() {
       'call:disconnected',
       handleClientDisconnect
     );
+    WebphoneClient.removeEventListener('call:connected', handleClientConnected);
     WebphoneClient.removeEventListener('call:incoming', handleClientIncoming);
   });
 
