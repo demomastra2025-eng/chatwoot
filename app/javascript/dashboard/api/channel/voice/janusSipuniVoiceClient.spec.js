@@ -373,7 +373,7 @@ describe('janusSipuniVoiceClient', () => {
     );
   });
 
-  it('does not re-register already registered Asterisk analog outbound calls', async () => {
+  it('refreshes already registered Asterisk analog outbound calls with Janus refresh', async () => {
     await JanusSipuniVoiceClient.initializeDevice(asteriskAnalogSession, {
       inboxId: 4771,
     });
@@ -387,7 +387,13 @@ describe('janusSipuniVoiceClient', () => {
     const requests = pluginSendMock.mock.calls
       .map(([payload]) => payload?.message?.request)
       .filter(Boolean);
-    expect(requests).toEqual(['call']);
+    expect(requests).toEqual(['register', 'call']);
+    expect(pluginSendMock.mock.calls[0][0]?.message).toEqual(
+      expect.objectContaining({
+        request: 'register',
+        refresh: true,
+      })
+    );
   });
 
   it('supports Kazakhstan trunk dialing for Asterisk analog profiles', async () => {

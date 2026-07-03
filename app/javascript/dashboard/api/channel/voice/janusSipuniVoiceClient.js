@@ -492,7 +492,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     });
   }
 
-  register() {
+  register({ refresh = false } = {}) {
     if (!this.sipHandle || !this.sessionConfig) return Promise.resolve();
     if (this.registrationPromise) return this.registrationPromise;
 
@@ -506,6 +506,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
       secret: sip.password,
       proxy: sip.proxy,
     };
+    if (refresh) register.refresh = true;
 
     this.registrationPromise = new Promise((resolve, reject) => {
       this.registrationResolve = resolve;
@@ -520,8 +521,11 @@ export class JanusSipuniVoiceClient extends EventTarget {
     return this.registrationPromise;
   }
 
-  ensureRegistered() {
-    if (this.registered) return Promise.resolve();
+  ensureRegistered({ refresh = false } = {}) {
+    if (this.registered) {
+      if (refresh) return this.register({ refresh: true });
+      return Promise.resolve();
+    }
     return this.register();
   }
 
@@ -1271,7 +1275,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
 
     this.currentCallRef = callRef || this.currentCallRef;
     this.currentCallDirection = callDirection || this.currentCallDirection;
-    await this.ensureRegistered();
+    await this.ensureRegistered({ refresh: callDirection === 'outbound' });
 
     if (callDirection === 'outbound') {
       return this.startOutboundCall(toNumber);
