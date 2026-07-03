@@ -466,6 +466,8 @@ describe('janusSipuniVoiceClient', () => {
     });
     try {
       const client = createJanusSipuniVoiceClient();
+      const disconnectedHandler = vi.fn();
+      client.addEventListener('call:disconnected', disconnectedHandler);
       client.sessionConfig = asteriskAnalogSession;
       client.currentCallRef = 'asterisk_analog:local:call-dup-cleanup';
       client.currentCallDirection = 'outbound';
@@ -479,6 +481,17 @@ describe('janusSipuniVoiceClient', () => {
 
       expect(MediaRecorderMock.instances).toHaveLength(1);
       expect(uploadRecordingMock).not.toHaveBeenCalled();
+      expect(disconnectedHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detail: expect.objectContaining({
+            provider: 'asterisk_analog',
+            callRef: 'asterisk_analog:local:call-dup-cleanup',
+            callDirection: 'outbound',
+            callMediaAccepted: true,
+            reason: 'remote_hangup',
+          }),
+        })
+      );
 
       MediaRecorderMock.instances[0].flushStop();
 

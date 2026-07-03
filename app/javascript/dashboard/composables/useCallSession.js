@@ -426,7 +426,7 @@ export function useCallSession() {
   };
 
   const browserSipDisconnectRelease = (call, detail = {}) => {
-    if (call?.isActive) {
+    if (call?.isActive || detail.callMediaAccepted) {
       return {
         status: 'completed',
         reason: detail.reason || 'remote_hangup',

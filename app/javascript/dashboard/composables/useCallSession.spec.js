@@ -592,6 +592,39 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('completes an accepted outbound Asterisk call when Janus disconnects by call ref', async () => {
+    let disconnectHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'asterisk_analog:local:accepted-outbound',
+      provider: 'asterisk_analog',
+      callDirection: 'outbound',
+    });
+
+    mountUseCallSession();
+    await disconnectHandler?.({
+      detail: {
+        provider: 'asterisk_analog',
+        callRef: 'asterisk_analog:local:accepted-outbound',
+        callDirection: 'outbound',
+        callMediaAccepted: true,
+        reason: 'remote_hangup',
+      },
+    });
+
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'asterisk_analog:local:accepted-outbound',
+      {
+        reason: 'remote_hangup',
+        status: 'completed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+  });
+
   it('still releases an active Fonoster call when the local RTC hangup fails', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

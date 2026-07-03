@@ -710,6 +710,13 @@ export class JanusSipuniVoiceClient extends EventTarget {
   }
 
   handlePeerCleanup() {
+    const hadCall =
+      this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef;
+    if (hadCall) {
+      this.handleCallDisconnected({ reason: 'remote_hangup' });
+      return;
+    }
+
     this.stopRecordings({ reason: 'peer_cleanup' });
     this.remoteTracks = {};
     this.rebuildRemoteStream();
@@ -755,6 +762,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
       ...this.sessionEventDetail(),
       callRef: this.currentCallRef,
       callDirection: this.currentCallDirection,
+      callMediaAccepted: this.callMediaAccepted,
     };
   }
 
