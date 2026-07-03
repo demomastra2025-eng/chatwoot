@@ -145,6 +145,26 @@ describe('VoiceCall bubble', () => {
     expect(wrapper.text()).toContain('00:01');
   });
 
+  it('uses recording duration for completed browser-recorded calls', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          duration: 28,
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/asterisk_analog%3Alocal%3Acall-1/recording',
+          recording: {
+            durationMs: 4797,
+            contentType: 'audio/webm',
+          },
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('00:05');
+    expect(wrapper.text()).not.toContain('00:28');
+  });
+
   it('expands the call bubble width for longer call recordings', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({

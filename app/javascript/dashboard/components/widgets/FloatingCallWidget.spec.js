@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSession = vi.hoisted(() => ({
   activeCall: null,
@@ -163,6 +163,10 @@ describe('FloatingCallWidget', () => {
     storeGetters.getSelectedChat = null;
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows outside-browser operator, direction, route, and close action', async () => {
     mockSession.incomingCalls = [
       {
@@ -200,6 +204,41 @@ describe('FloatingCallWidget', () => {
 
     expect(mockSession.dismissCall).not.toHaveBeenCalled();
     expect(wrapper.text()).not.toContain('Handled outside the browser');
+  });
+
+  it('shows elapsed ringing time for a pending outbound call', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-03T06:00:00Z'));
+    mockSession.incomingCalls = [
+      {
+        callSid: 'asterisk_analog:local:ringing-outbound',
+        conversationId: 724,
+        inboxId: 4771,
+        provider: 'asterisk_analog',
+        callDirection: 'outbound',
+        browserJoined: true,
+        fromNumber: '+77172705175',
+        toNumber: '+77066318623',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4771,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4771,
+      name: 'Asterisk',
+      provider: 'asterisk_analog',
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('00:00');
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(wrapper.text()).toContain('00:03');
+    wrapper.unmount();
   });
 
   it('opens a communication thread instead of the underlying voice inbox conversation', async () => {

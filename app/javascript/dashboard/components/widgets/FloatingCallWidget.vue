@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { useStore } from 'vuex';
@@ -31,6 +31,9 @@ const {
 const isOutboundCall = call => call?.callDirection === 'outbound';
 const hiddenCallSids = ref(new Set());
 const callSidFor = call => (call?.callSid ? String(call.callSid) : '');
+const elapsedNowMs = ref(Date.now());
+const callFirstSeenAtMs = ref({});
+let elapsedTimerId = null;
 const trackedCallSids = computed(() =>
   [callSidFor(activeCall.value), ...incomingCalls.value.map(callSidFor)].filter(
     Boolean
@@ -379,6 +382,38 @@ const getCallSecondaryText = call => {
 };
 
 const idleCallDuration = '00:00';
+const formatDuration = seconds => {
+  const normalizedSeconds = Math.max(0, Number(seconds) || 0);
+  const minutes = Math.floor(normalizedSeconds / 60);
+  const restSeconds = normalizedSeconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${restSeconds.toString().padStart(2, '0')}`;
+};
+
+const pendingCallDuration = call => {
+  const callSid = callSidFor(call);
+  const startedAt = callFirstSeenAtMs.value[callSid];
+  if (!startedAt) return idleCallDuration;
+
+  return formatDuration(Math.floor((elapsedNowMs.value - startedAt) / 1000));
+};
+
+const callDurationLabel = call =>
+  callIsActive(call) ? formattedCallDuration.value : pendingCallDuration(call);
+
+const stopElapsedTimer = () => {
+  if (!elapsedTimerId) return;
+
+  clearInterval(elapsedTimerId);
+  elapsedTimerId = null;
+};
+
+const ensureElapsedTimer = () => {
+  if (elapsedTimerId || !trackedCallSids.value.length) return;
+
+  elapsedTimerId = setInterval(() => {
+    elapsedNowMs.value = Date.now();
+  }, 1000);
+};
 
 const openConversation = call => {
   if (!call?.conversationId) return;
@@ -550,15 +585,35 @@ watch(
   { immediate: true }
 );
 
-watch(trackedCallSids, callSids => {
-  const activeCallSids = new Set(callSids);
-  const nextHiddenCallSids = new Set(
-    [...hiddenCallSids.value].filter(callSid => activeCallSids.has(callSid))
-  );
-  if (nextHiddenCallSids.size !== hiddenCallSids.value.size) {
-    hiddenCallSids.value = nextHiddenCallSids;
-  }
-});
+watch(
+  trackedCallSids,
+  callSids => {
+    const activeCallSids = new Set(callSids);
+    const nextHiddenCallSids = new Set(
+      [...hiddenCallSids.value].filter(callSid => activeCallSids.has(callSid))
+    );
+    if (nextHiddenCallSids.size !== hiddenCallSids.value.size) {
+      hiddenCallSids.value = nextHiddenCallSids;
+    }
+
+    const now = Date.now();
+    elapsedNowMs.value = now;
+    const nextFirstSeenAtMs = {};
+    callSids.forEach(callSid => {
+      nextFirstSeenAtMs[callSid] = callFirstSeenAtMs.value[callSid] || now;
+    });
+    callFirstSeenAtMs.value = nextFirstSeenAtMs;
+
+    if (callSids.length) {
+      ensureElapsedTimer();
+    } else {
+      stopElapsedTimer();
+    }
+  },
+  { immediate: true }
+);
+
+onUnmounted(stopElapsedTimer);
 </script>
 
 <template>
@@ -599,9 +654,7 @@ watch(trackedCallSids, callSids => {
             <span
               class="font-mono leading-4 tabular-nums text-xs font-medium text-n-teal-9"
             >
-              {{
-                callIsActive(call) ? formattedCallDuration : idleCallDuration
-              }}
+              {{ callDurationLabel(call) }}
             </span>
           </div>
           <div class="flex-1 min-w-0">

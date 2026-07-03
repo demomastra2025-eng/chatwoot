@@ -341,7 +341,31 @@ const hasRenderableRecordingStatus = computed(() =>
   TERMINAL_RECORDING_STATUSES.includes(status.value)
 );
 
+const recordingDurationInSeconds = computed(() => {
+  const recording = data.value?.recording || {};
+  const durationSeconds = Number(
+    recording.durationSeconds ?? recording.duration_seconds
+  );
+  if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
+    return durationSeconds;
+  }
+
+  const durationMs = Number(recording.durationMs ?? recording.duration_ms);
+  if (Number.isFinite(durationMs) && durationMs > 0) {
+    return Math.round(durationMs / 1000);
+  }
+
+  return null;
+});
+
 const durationInSeconds = computed(() => {
+  if (
+    status.value === VOICE_CALL_STATUS.COMPLETED &&
+    Number.isFinite(recordingDurationInSeconds.value)
+  ) {
+    return recordingDurationInSeconds.value;
+  }
+
   const explicitDuration = Number(
     data.value?.durationSeconds ?? data.value?.duration ?? meta.value?.duration
   );
