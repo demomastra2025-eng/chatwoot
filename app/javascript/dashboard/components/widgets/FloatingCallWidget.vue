@@ -714,7 +714,12 @@ onUnmounted(stopElapsedTimer);
               />
             </span>
             <span
-              class="font-mono leading-4 tabular-nums text-xs font-medium text-n-teal-9"
+              class="font-mono leading-4 tabular-nums text-xs"
+              :class="
+                callIsLiveActive(call)
+                  ? 'font-medium text-n-teal-9'
+                  : 'font-normal text-n-slate-11'
+              "
             >
               {{ callDurationLabel(call) }}
             </span>
