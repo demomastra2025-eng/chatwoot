@@ -817,7 +817,9 @@ export function useCallSession() {
           if (communicationThreadId) {
             callsStore.addCall({
               callSid,
-              status: claimResult.status,
+              status: JANUS_NATIVE_BROWSER_SIP_PROVIDERS.has(resolvedProvider)
+                ? 'connecting'
+                : claimResult.status,
               conversationId,
               communicationThreadId,
               inboxId,

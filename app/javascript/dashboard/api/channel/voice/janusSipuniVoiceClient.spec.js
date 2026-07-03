@@ -310,11 +310,21 @@ describe('janusSipuniVoiceClient', () => {
       })
     ).toBe(true);
 
-    const result = await JanusSipuniVoiceClient.joinClientCall({
+    const joinPromise = JanusSipuniVoiceClient.joinClientCall({
       callRef: 'sipuni:provider-session',
       callDirection: 'inbound',
       janusCallRef: 'janus-invite-1',
     });
+
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 200);
+    });
+
+    pluginState.options?.onmessage?.({
+      result: { event: 'accepted' },
+    });
+
+    const result = await joinPromise;
 
     expect(result).toEqual(
       expect.objectContaining({
@@ -329,6 +339,57 @@ describe('janusSipuniVoiceClient', () => {
           autoaccept_reinvites: false,
         }),
         jsep: { type: 'answer', sdp: 'mock-answer-sdp' },
+      })
+    );
+  });
+
+  it('waits for Janus accepted before resolving an inbound browser SIP call', async () => {
+    await JanusSipuniVoiceClient.initializeDevice(asteriskAnalogSession, {
+      inboxId: 4771,
+    });
+
+    pluginState.options?.onmessage?.(
+      {
+        result: {
+          event: 'incomingcall',
+          call_id: 'asterisk-invite-1',
+          username: 'sip:+77010000000@10.77.0.2',
+        },
+      },
+      { type: 'offer', sdp: 'remote-offer-sdp' }
+    );
+
+    let resolved = false;
+    const joinPromise = JanusSipuniVoiceClient.joinClientCall({
+      callRef: 'asterisk_analog:janus:41:asterisk-invite-1',
+      callDirection: 'inbound',
+      janusCallRef: 'asterisk-invite-1',
+    }).then(result => {
+      resolved = true;
+      return result;
+    });
+
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 200);
+    });
+
+    expect(resolved).toBe(false);
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({ request: 'accept' }),
+      })
+    );
+
+    pluginState.options?.onmessage?.({
+      result: { event: 'accepted' },
+    });
+
+    await expect(joinPromise).resolves.toEqual(
+      expect.objectContaining({
+        provider: 'asterisk_analog',
+        answered: true,
+        callRef: 'asterisk_analog:janus:41:asterisk-invite-1',
+        callDirection: 'inbound',
       })
     );
   });

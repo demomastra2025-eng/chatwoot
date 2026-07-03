@@ -852,7 +852,7 @@ describe('useCallSession', () => {
     });
     VoiceAPI.claimIncomingCall.mockResolvedValue({
       claimed: true,
-      status: 'connecting',
+      status: 'in_progress',
       communication_thread_id: 25,
     });
     joinClientCallMock.mockResolvedValue({
@@ -872,7 +872,9 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toMatchObject([
       {
         callSid: 'call-claim-thread',
+        status: 'connecting',
         communicationThreadId: 25,
+        isActive: true,
       },
     ]);
     expect(result).toMatchObject({

@@ -20,6 +20,7 @@ const createCallUnregisteredEvent = detail =>
 const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 20_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
+const WEBPHONE_INCOMING_ACCEPT_TIMEOUT_MS = 10_000;
 const WEBPHONE_MICROPHONE_PREWARM_TTL_MS = 90_000;
 const WEBPHONE_MICROPHONE_PREWARM_CANCEL_WAIT_MS = 500;
 const WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS = 150;
@@ -195,6 +196,10 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.registrationResolve = null;
     this.registrationReject = null;
     this.pendingIncomingCall = null;
+    this.incomingAcceptPromise = null;
+    this.incomingAcceptResolve = null;
+    this.incomingAcceptReject = null;
+    this.incomingAcceptTimer = null;
     this.hasActiveCall = false;
     this.presenceHeartbeatTimer = null;
     this.currentCallRef = null;
@@ -560,6 +565,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
       }
 
       this.registrationReject?.(new Error(String(error)));
+      this.rejectIncomingAccept(new Error(String(error)));
       if (this.hasActiveCall || this.pendingIncomingCall) {
         this.handleCallDisconnected();
       }
@@ -647,6 +653,12 @@ export class JanusSipuniVoiceClient extends EventTarget {
       this.stopMicrophonePrewarm();
       this.playRemoteAudio();
       this.startRecordingIfReady();
+      this.resolveIncomingAccept({
+        ...this.sessionEventDetail(),
+        callRef: this.currentCallRef,
+        callDirection: this.currentCallDirection,
+        answered: true,
+      });
       this.dispatchCallConnected();
       return;
     }
@@ -654,6 +666,9 @@ export class JanusSipuniVoiceClient extends EventTarget {
     if (event === 'hangup') {
       this.clearOutboundSetupTimer();
       this.sipHandle?.hangup();
+      this.rejectIncomingAccept(
+        new Error(result.reason || 'incoming_call_hangup_before_accept')
+      );
       this.handleCallDisconnected({
         code: result.code,
         reason: result.reason,
@@ -757,6 +772,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.registered = false;
     this.stopPresenceHeartbeat();
     this.clearOutboundSetupTimer();
+    this.rejectIncomingAccept(new Error('janus_destroyed'));
     if (!this.destroyingDevice) this.reportPresence(false);
     this.stopRecordings({ reason: 'janus_destroyed' });
     this.pendingIncomingCall = null;
@@ -774,6 +790,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.hasActiveCall = false;
     this.stopMicrophonePrewarm();
     this.clearOutboundSetupTimer();
+    this.rejectIncomingAccept(new Error(extra.reason || 'call_disconnected'));
     this.stopRecordings({
       reason: extra.reason || 'call_disconnected',
     });
@@ -815,6 +832,44 @@ export class JanusSipuniVoiceClient extends EventTarget {
     this.currentCallDirection = null;
     this.callMediaAccepted = false;
     this.callConnectedDispatched = false;
+  }
+
+  beginIncomingAcceptWait() {
+    this.clearIncomingAcceptWait();
+    this.incomingAcceptPromise = new Promise((resolve, reject) => {
+      this.incomingAcceptResolve = resolve;
+      this.incomingAcceptReject = reject;
+      this.incomingAcceptTimer = window.setTimeout(() => {
+        this.rejectIncomingAccept(new Error('incoming_accept_timeout'));
+      }, WEBPHONE_INCOMING_ACCEPT_TIMEOUT_MS);
+    });
+    return this.incomingAcceptPromise;
+  }
+
+  clearIncomingAcceptWait() {
+    if (this.incomingAcceptTimer) {
+      window.clearTimeout(this.incomingAcceptTimer);
+    }
+    this.incomingAcceptPromise = null;
+    this.incomingAcceptResolve = null;
+    this.incomingAcceptReject = null;
+    this.incomingAcceptTimer = null;
+  }
+
+  resolveIncomingAccept(detail) {
+    if (!this.incomingAcceptResolve) return;
+
+    const resolve = this.incomingAcceptResolve;
+    this.clearIncomingAcceptWait();
+    resolve(detail);
+  }
+
+  rejectIncomingAccept(error) {
+    if (!this.incomingAcceptReject) return;
+
+    const reject = this.incomingAcceptReject;
+    this.clearIncomingAcceptWait();
+    reject(error);
   }
 
   startRecordingIfReady() {
@@ -1352,6 +1407,7 @@ export class JanusSipuniVoiceClient extends EventTarget {
     const method = incomingCall.offerless
       ? this.sipHandle.createOffer.bind(this.sipHandle)
       : this.sipHandle.createAnswer.bind(this.sipHandle);
+    const accepted = this.beginIncomingAcceptWait();
 
     return new Promise((resolve, reject) => {
       method({
@@ -1364,13 +1420,14 @@ export class JanusSipuniVoiceClient extends EventTarget {
           });
           this.pendingIncomingCall = null;
           this.hasActiveCall = true;
-          this.callMediaAccepted = true;
-          this.startRecordingIfReady();
-          resolve({ ...this.sessionEventDetail(), answered: true });
+          resolve(accepted);
         },
-        error: reject,
+        error: error => {
+          this.rejectIncomingAccept(error);
+          reject(error);
+        },
       });
-    });
+    }).then(result => result);
   }
 
   answerUpdate(jsep) {
