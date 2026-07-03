@@ -1575,6 +1575,12 @@ export class JanusSipuniVoiceClient extends EventTarget {
     preserveMicrophonePrewarm = false,
     preserveSessionConfig = false,
   } = {}) {
+    const hadCall =
+      this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef;
+    if (hadCall) {
+      this.handleCallDisconnected({ reason: 'device_destroyed' });
+    }
+
     const currentHandle = this.sipHandle;
     const currentJanus = this.janus;
     const shouldReportOffline =

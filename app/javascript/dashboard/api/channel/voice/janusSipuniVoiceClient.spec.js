@@ -532,6 +532,47 @@ describe('janusSipuniVoiceClient', () => {
     }
   });
 
+  it('reports an active outbound call as disconnected when the SIP device is destroyed', async () => {
+    const client = createJanusSipuniVoiceClient();
+    const disconnectedHandler = vi.fn();
+    const sipSendMock = vi.fn();
+    const sipDetachMock = vi.fn();
+    client.addEventListener('call:disconnected', disconnectedHandler);
+    client.sessionConfig = asteriskAnalogSession;
+    client.sessionKey = 'sip_profile:41';
+    client.sipProfileId = 41;
+    client.inboxId = 4771;
+    client.initialized = true;
+    client.registered = true;
+    client.sipHandle = {
+      send: sipSendMock,
+      detach: sipDetachMock,
+    };
+    client.currentCallRef = 'asterisk_analog:local:destroyed-outbound';
+    client.currentCallDirection = 'outbound';
+    client.hasActiveCall = true;
+
+    await client.destroyDevice();
+
+    expect(disconnectedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          provider: 'asterisk_analog',
+          sessionKey: 'sip_profile:41',
+          sipProfileId: 41,
+          inboxId: 4771,
+          callRef: 'asterisk_analog:local:destroyed-outbound',
+          callDirection: 'outbound',
+          reason: 'device_destroyed',
+        }),
+      })
+    );
+    expect(sipSendMock).toHaveBeenCalledWith({
+      message: { request: 'unregister' },
+    });
+    expect(sipDetachMock).toHaveBeenCalled();
+  });
+
   it('uses Janus server recording before browser fallback when configured', () => {
     const { MediaRecorderMock, restore } = installRecordingMocks();
     try {
