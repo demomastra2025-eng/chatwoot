@@ -80,6 +80,7 @@ class Inbox < ApplicationRecord
   has_many :campaign_deliveries, dependent: :delete_all
   has_many :lead_forms, dependent: :nullify
   has_many :lead_submissions, dependent: :nullify
+  has_many :contact_channel_profiles, dependent: :destroy
   has_many :contact_inboxes, dependent: :destroy_async
   has_many :contacts, through: :contact_inboxes
 
