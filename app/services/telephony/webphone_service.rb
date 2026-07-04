@@ -29,6 +29,7 @@ class Telephony::WebphoneService
   def update_presence!(user:, registered:, inbox: nil)
     operator_identity = operator_identity_for(user: user, inbox: inbox)
     return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
+    return unsupported_webphone_payload(reason: 'ambiguous_sip_profile_presence') if ambiguous_no_inbox_sip_presence?(user, inbox, operator_identity)
 
     operator_identity.record.update_browser_registration!(registered: registered)
     operator_identity.record.to_telephony_h.merge(
@@ -612,6 +613,18 @@ class Telephony::WebphoneService
 
   def operator_identity_for(user:, inbox:)
     Telephony::OperatorIdentityResolver.new(account: account, inbox: inbox, user: user).resolve
+  end
+
+  def ambiguous_no_inbox_sip_presence?(user, inbox, operator_identity)
+    return false if inbox.present?
+    return false if user.blank?
+    return false if operator_identity&.sip_profile.blank?
+
+    account.telephony_sip_profiles
+           .where(user_id: user.id, availability_mode: 'browser_webphone', enabled: true)
+           .where.not(status: %w[disabled deleting failed])
+           .limit(2)
+           .count > 1
   end
 
   def bridge_identity_needs_binding_fallback?(response)

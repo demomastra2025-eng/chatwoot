@@ -1043,6 +1043,57 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
   end
 
+  it 'does not write no-inbox browser presence to an arbitrary SIP profile when multiple profiles exist' do
+    first_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '506',
+      agent_ref: 'local-profile-506',
+      fonoster_agent_ref: 'remote-profile-506',
+      agent_aor: 'sip:506@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone',
+      metadata: {
+        'registration_state' => 'registered',
+        'presence' => 'online',
+        'registered' => true,
+        'last_presence_source' => 'browser_webphone',
+        'last_presence_event_at' => Time.current.iso8601
+      }
+    )
+    second_voice_inbox = create(:inbox, account: account)
+    second_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: second_voice_inbox,
+      user: administrator,
+      internal_extension: '507',
+      agent_ref: 'local-profile-507',
+      fonoster_agent_ref: 'remote-profile-507',
+      agent_aor: 'sip:507@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone'
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: false },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(first_profile.reload.metadata).to include(
+      'registration_state' => 'registered',
+      'presence' => 'online',
+      'registered' => true
+    )
+    expect(second_profile.reload.metadata).not_to include('last_presence_source')
+    expect(response.parsed_body['payload']).to include(
+      'calling_supported' => false,
+      'registered_for_routing' => false,
+      'reason' => 'ambiguous_sip_profile_presence'
+    )
+  end
+
   it 'does not write browser presence to a hidden account binding for a managed inbox without a SIP profile' do
     legacy_binding = create(
       :telephony_agent_binding,
