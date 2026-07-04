@@ -31,6 +31,7 @@ const WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS = new Set([
   'sipuni',
   'binotel',
 ]);
+const WEBPHONE_FORCE_BROWSER_RECORDING = true;
 const WEBPHONE_RECORDING_MIME_TYPES = [
   'audio/webm;codecs=opus',
   'audio/webm',
@@ -982,9 +983,13 @@ export class JanusSipuniVoiceClient extends EventTarget {
       this.sessionConfig?.janus_recording?.fallbackStrategy ||
       this.sessionConfig?.janus_recording?.fallback_strategy;
     const browserFallbackRecording = recordingStrategy
-      ? recordingStrategy === 'browser_fallback' ||
+      ? this.shouldForceBrowserRecordingForCurrentCall() ||
+        recordingStrategy === 'browser_fallback' ||
         (recordingStrategy === 'janus_server' &&
           this.janusServerRecordingFailed &&
+          fallbackStrategy === 'browser_fallback') ||
+        (recordingStrategy === 'janus_server' &&
+          this.shouldSkipJanusServerRecordingForCurrentCall() &&
           fallbackStrategy === 'browser_fallback') ||
         (recordingStrategy === 'provider_api' &&
           fallbackStrategy === 'browser_fallback')
@@ -1007,9 +1012,25 @@ export class JanusSipuniVoiceClient extends EventTarget {
     return (
       recordingStrategy === 'janus_server' &&
       config.enabled !== false &&
+      !this.shouldForceBrowserRecordingForCurrentCall() &&
+      !this.shouldSkipJanusServerRecordingForCurrentCall() &&
       !this.janusServerRecordingFailed &&
       this.callMediaAccepted &&
       Boolean(this.currentCallRef)
+    );
+  }
+
+  shouldForceBrowserRecordingForCurrentCall() {
+    return (
+      WEBPHONE_FORCE_BROWSER_RECORDING &&
+      WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS.has(this.currentProvider())
+    );
+  }
+
+  shouldSkipJanusServerRecordingForCurrentCall() {
+    return (
+      this.currentProvider() === 'asterisk_analog' &&
+      this.currentCallDirection === 'inbound'
     );
   }
 

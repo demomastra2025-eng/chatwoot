@@ -778,6 +778,7 @@ class Telephony::EventsIngestionService
     return unless status == 'completed'
     return unless outbound_call_for?(call_session)
     return if webphone_operator_completed_release_event?
+    return if webphone_remote_completed_release_event?
     return if outbound_customer_answered?(call_session)
 
     outbound_operator_cancel_event? ? 'cancelled' : 'no_answer'
@@ -787,6 +788,12 @@ class Telephony::EventsIngestionService
     webphone_release_event? &&
       metadata_value('webphone_action').to_s == 'operator_release' &&
       resolved_end_reason.to_s == 'operator_hangup'
+  end
+
+  def webphone_remote_completed_release_event?
+    webphone_release_event? &&
+      metadata_value('webphone_action').to_s == 'operator_release' &&
+      resolved_end_reason.to_s == 'remote_hangup'
   end
 
   def outbound_customer_answered?(call_session)

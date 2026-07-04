@@ -799,7 +799,7 @@ describe('janusSipuniVoiceClient', () => {
     expect(sipDetachMock).toHaveBeenCalled();
   });
 
-  it('uses Janus server recording before browser fallback when configured', () => {
+  it('uses browser recording instead of Janus server recording when configured', () => {
     const { MediaRecorderMock, restore } = installRecordingMocks();
     try {
       const client = createJanusSipuniVoiceClient();
@@ -814,45 +814,34 @@ describe('janusSipuniVoiceClient', () => {
       pluginSendMock.mockClear();
 
       client.startRecordingIfReady();
+      client.handleCallDisconnected({ reason: 'remote_hangup' });
 
-      expect(MediaRecorderMock.instances).toHaveLength(0);
-      expect(client.janusServerRecordingStarting).toBe(true);
+      expect(MediaRecorderMock.instances).toHaveLength(1);
+      expect(client.janusServerRecordingStarting).toBe(false);
       expect(client.janusServerRecordingStarted).toBe(false);
-      expect(uploadRecordingMock).not.toHaveBeenCalled();
-      expect(pluginSendMock).toHaveBeenCalledWith(
+      expect(pluginSendMock).not.toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.objectContaining({
             request: 'recording',
             action: 'start',
-            audio: true,
-            peer_audio: true,
-            filename: expect.stringContaining(
-              'janus-prod_asterisk_account_530_profile_77_env_ZGVmYXVsdA_asterisk_analog_account_530_profile_77_call_'
-            ),
           }),
         })
       );
-
-      client.handleSipMessage({ result: { event: 'recordingupdated' } });
-
-      expect(client.janusServerRecordingStarting).toBe(false);
-      expect(client.janusServerRecordingStarted).toBe(true);
-
-      client.handleCallDisconnected({ reason: 'remote_hangup' });
-
-      expect(pluginSendMock).toHaveBeenCalledWith({
-        message: {
-          request: 'recording',
-          action: 'stop',
-        },
-      });
-      expect(uploadRecordingMock).not.toHaveBeenCalled();
+      expect(uploadRecordingMock).toHaveBeenCalledWith(
+        'asterisk_analog:local:server-recording-1',
+        expect.any(Blob),
+        expect.objectContaining({
+          provider: 'asterisk_analog',
+          direction: 'outbound',
+          reason: 'remote_hangup',
+        })
+      );
     } finally {
       restore();
     }
   });
 
-  it('falls back to browser recording when Janus server recording reports an async error', () => {
+  it('keeps browser recording when Janus server recording would have reported an async error', () => {
     const { MediaRecorderMock, restore } = installRecordingMocks();
     try {
       const client = createJanusSipuniVoiceClient();
@@ -874,8 +863,8 @@ describe('janusSipuniVoiceClient', () => {
 
       client.startRecordingIfReady();
 
-      expect(MediaRecorderMock.instances).toHaveLength(0);
-      expect(client.janusServerRecordingStarting).toBe(true);
+      expect(MediaRecorderMock.instances).toHaveLength(1);
+      expect(client.janusServerRecordingStarting).toBe(false);
 
       recordingStartError?.(new Error('Janus recorder unavailable'));
       client.handleCallDisconnected({ reason: 'remote_hangup' });
@@ -914,6 +903,45 @@ describe('janusSipuniVoiceClient', () => {
         expect.any(Blob),
         expect.objectContaining({
           provider: 'asterisk_analog',
+          reason: 'remote_hangup',
+        })
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it('uses browser fallback for inbound Asterisk server recording sessions', () => {
+    const { MediaRecorderMock, restore } = installRecordingMocks();
+    try {
+      const client = createJanusSipuniVoiceClient();
+      client.sessionConfig = asteriskServerRecordingSession;
+      client.sipHandle = { send: pluginSendMock };
+      client.currentCallRef = 'asterisk_analog:janus:61:inbound-call';
+      client.currentCallDirection = 'inbound';
+      client.callMediaAccepted = true;
+      client.localTracks = { local: fakeAudioTrack('local') };
+      client.remoteTracks = { remote: fakeAudioTrack('remote') };
+      pluginSendMock.mockClear();
+
+      client.startRecordingIfReady();
+      client.handleCallDisconnected({ reason: 'remote_hangup' });
+
+      expect(pluginSendMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            request: 'recording',
+            action: 'start',
+          }),
+        })
+      );
+      expect(MediaRecorderMock.instances).toHaveLength(1);
+      expect(uploadRecordingMock).toHaveBeenCalledWith(
+        'asterisk_analog:janus:61:inbound-call',
+        expect.any(Blob),
+        expect.objectContaining({
+          provider: 'asterisk_analog',
+          direction: 'inbound',
           reason: 'remote_hangup',
         })
       );

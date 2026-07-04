@@ -1198,6 +1198,66 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'keeps an outbound browser SIP call completed when the remote party hangs up' do
+      started_at = Time.zone.parse(45.seconds.ago.iso8601)
+      ended_at = started_at + 15.seconds
+      existing_call_session.update!(
+        provider: 'asterisk_analog',
+        direction: 'outbound',
+        status: 'ringing',
+        started_at: started_at,
+        last_event_at: started_at,
+        to_number: '+77070001002'
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: {
+          'data' => {
+            'call_sid' => 'call-retry-1',
+            'status' => 'ringing',
+            'call_direction' => 'outbound'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-browser-sip-remote-hangup-completed-1',
+          provider: 'asterisk_analog',
+          event: 'session_completed',
+          status: 'completed',
+          direction: 'outbound',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'user:179',
+          end_reason: 'remote_hangup',
+          metadata: {
+            webphone_action: 'operator_release',
+            release_reason: 'remote_hangup',
+            release_status: 'completed'
+          }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        ended_by: 'user:179',
+        end_reason: 'remote_hangup',
+        duration_seconds: 15
+      )
+      expect(message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(result.conversation.reload.additional_attributes).to include(
+        'call_status' => 'completed',
+        'to_number' => '+77070001002'
+      )
+    end
+
     it 'repairs an already completed outbound terminal with a stale no-answer duration' do
       started_at = Time.zone.parse(60.seconds.ago.iso8601)
       answered_at = started_at + 12.seconds
