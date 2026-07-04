@@ -243,9 +243,9 @@ class Telephony::WebphoneService
 
   def janus_sip_recording_strategy(provider, profile)
     provider = provider.to_s
+    return 'browser_fallback' if provider.in?(JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS)
     return 'janus_server' if provider.in?(JANUS_SIP_SERVER_RECORDING_PROVIDERS) && janus_sip_server_recording_enabled?(provider)
     return 'provider_api' if provider.in?(JANUS_SIP_PROVIDER_RECORDING_API_PROVIDERS) && provider_recording_api_configured?(provider, profile)
-    return 'browser_fallback' if provider.in?(JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS)
 
     nil
   end

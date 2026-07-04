@@ -232,6 +232,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     with_modified_env(
+      TELEPHONY_SIPUNI_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       TELEPHONY_JANUS_ICE_SERVERS_JSON: "'[{\"urls\":\"stun:stun.l.google.com:19302\"}]'"
     ) do
@@ -262,8 +263,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['browser_join_supported']).to be(true)
     expect(payload['calling_supported']).to be(true)
     expect(payload['registered_for_routing']).to be(true)
-    expect(payload['recording_strategy']).to eq('provider_api')
-    expect(payload['recording_fallback_strategy']).to eq('browser_fallback')
+    expect(payload['recording_strategy']).to eq('browser_fallback')
+    expect(payload['recording_fallback_strategy']).to be_nil
   end
 
   it 'falls back to browser recording for native Sipuni browser profiles without webhook/API recording' do
@@ -306,6 +307,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     with_modified_env(
+      TELEPHONY_SIPUNI_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       SIPUNI_WEBHOOK_TOKEN: nil,
       TELEPHONY_SIPUNI_WEBHOOK_TOKEN: nil,
@@ -400,10 +402,13 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['recording_strategy']).to eq('browser_fallback')
   end
 
-  it 'returns a Janus server recording contract when native SIP server recording is enabled' do
+  it 'keeps native SIP webphone calls on browser recording when Janus server recording is enabled' do
     sipuni_profile, _binotel_profile, asterisk_profile = create_native_janus_browser_profiles
 
     with_modified_env(
+      TELEPHONY_ASTERISK_ANALOG_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      TELEPHONY_SIPUNI_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       TELEPHONY_JANUS_SERVER_RECORDING_ENABLED: 'true',
       TELEPHONY_SIPUNI_JANUS_SERVER_RECORDING_ENABLED: 'true',
@@ -419,19 +424,9 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       payload = response.parsed_body.fetch('payload')
       expect(response).to have_http_status(:ok)
       expect(payload['provider']).to eq('asterisk_analog')
-      expect(payload['recording_strategy']).to eq('janus_server')
-      expect(payload['recording_fallback_strategy']).to eq('browser_fallback')
-      expect(payload['janus_recording']).to include(
-        'enabled' => true,
-        'recorder' => 'janus_sip',
-        'audio' => true,
-        'peer_audio' => true,
-        'recorded_by' => 'janus',
-        'layout' => 'dual_channel'
-      )
-      expect(payload.dig('janus_recording', 'filename_prefix')).to eq(
-        "janus-prod_asterisk_analog_account_#{account.id}_profile_#{asterisk_profile.id}"
-      )
+      expect(payload['recording_strategy']).to eq('browser_fallback')
+      expect(payload['recording_fallback_strategy']).to be_nil
+      expect(payload['janus_recording']).to be_nil
 
       post path,
            params: { inbox_id: sipuni_profile.inbox_id },
@@ -440,9 +435,9 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
       sipuni_payload = response.parsed_body.fetch('payload')
       expect(sipuni_payload['provider']).to eq('sipuni')
-      expect(sipuni_payload['recording_strategy']).to eq('janus_server')
-      expect(sipuni_payload['recording_fallback_strategy']).to eq('browser_fallback')
-      expect(sipuni_payload.dig('janus_recording', 'directory')).to eq('/recordings/incoming')
+      expect(sipuni_payload['recording_strategy']).to eq('browser_fallback')
+      expect(sipuni_payload['recording_fallback_strategy']).to be_nil
+      expect(sipuni_payload['janus_recording']).to be_nil
     end
   end
 
@@ -472,6 +467,9 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     profiles = create_native_janus_browser_profiles
 
     with_modified_env(
+      TELEPHONY_ASTERISK_ANALOG_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      TELEPHONY_SIPUNI_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
       SIPUNI_WEBHOOK_TOKEN: nil,
       TELEPHONY_SIPUNI_WEBHOOK_TOKEN: nil
