@@ -800,8 +800,31 @@ class Telephony::EventsIngestionService
     outbound_customer_answer_event? ||
       outbound_customer_answer_payload? ||
       outbound_customer_answer_recording_evidence?(call_session) ||
+      webphone_remote_completed_call_session?(call_session) ||
       (call_session.answered_at.present? && !outbound_operator_only_answered?(call_session)) ||
       Array.wrap(call_session.legs).any? { |leg| outbound_customer_answer_leg?(leg) }
+  end
+
+  def webphone_remote_completed_call_session?(call_session)
+    return false unless call_session.status == 'completed'
+
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    candidate_metadata_values(metadata).any? do |source|
+      next false unless source.is_a?(Hash)
+
+      source['webphone_action'].to_s == 'operator_release' &&
+        source['release_reason'].to_s == 'remote_hangup' &&
+        source['release_status'].to_s.in?(%w[completed])
+    end
+  end
+
+  def candidate_metadata_values(metadata)
+    [
+      metadata,
+      metadata['metadata'],
+      metadata['last_payload'],
+      metadata.dig('last_payload', 'metadata')
+    ].compact
   end
 
   def outbound_operator_only_answered?(call_session)

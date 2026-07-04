@@ -1256,6 +1256,25 @@ RSpec.describe Telephony::EventsIngestionService do
         'call_status' => 'completed',
         'to_number' => '+77070001002'
       )
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-browser-sip-remote-hangup-recording-ready-1',
+          provider: 'asterisk_analog',
+          event: 'recording_ready',
+          direction: 'outbound',
+          occurred_at: (ended_at + 3.seconds).iso8601,
+          recording_ref: 'voice-recordings/asterisk_analog/1/remote-hangup.webm',
+          storage_key: 'voice-recordings/asterisk_analog/1/remote-hangup.webm',
+          content_type: 'audio/webm',
+          duration_seconds: 5
+        )
+      ).perform
+
+      expect(message.reload.content_attributes.dig('data', 'recording_url')).to be_present
+      expect(message.content_attributes.dig('data', 'recording_ref')).to eq(
+        'voice-recordings/asterisk_analog/1/remote-hangup.webm'
+      )
     end
 
     it 'repairs an already completed outbound terminal with a stale no-answer duration' do
