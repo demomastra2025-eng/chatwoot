@@ -433,6 +433,8 @@ class Whatsapp::IncomingCallService
       inbox_id: call.inbox_id,
       conversation_id: call.conversation_id,
       conversation_display_id: call.conversation&.display_id,
+      communication_thread_id: communication_thread_display_id(call.conversation),
+      communicationThreadId: communication_thread_display_id(call.conversation),
       media_session_id: call.media_session_id,
       media_server_enabled: media_server_enabled,
       caller: {
@@ -467,11 +469,19 @@ class Whatsapp::IncomingCallService
       inbox_id: call.inbox_id,
       conversation_id: call.conversation_id,
       conversation_display_id: call.conversation&.display_id,
+      communication_thread_id: communication_thread_display_id(call.conversation),
+      communicationThreadId: communication_thread_display_id(call.conversation),
       routing_reason: routing_decision.reason,
       captain_assistant_id: routing_decision.assistant&.id
     }.compact
 
     ActionCable.server.broadcast("account_#{inbox.account_id}", { event: 'whatsapp_call.ai_accepting', data: data })
+  end
+
+  def communication_thread_display_id(conversation)
+    return if conversation.blank?
+
+    (conversation.communication_thread || conversation.refresh_communication_thread!)&.display_id
   end
 
   def broadcast_call_ended(call)

@@ -884,6 +884,11 @@ export async function acceptWhatsappCallById(callId) {
       conversationDisplayId:
         result.acceptData?.conversation_display_id ||
         call.conversationDisplayId,
+      communicationThreadId:
+        result.acceptData?.communication_thread_id ||
+        result.acceptData?.communicationThreadId ||
+        call.communicationThreadId ||
+        call.communication_thread_id,
       serverRelay,
       agentWebrtcConnected: preconnectedAgent,
       agentWebrtcConnecting: false,

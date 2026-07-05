@@ -16,6 +16,7 @@ RSpec.describe Whatsapp::CallService do
       allow(Whatsapp::CallMessageBuilder).to receive(:update_status!)
       allow(ActionCable.server).to receive(:broadcast)
       allow(Whatsapp::MediaServerClient).to receive(:new).and_return(media_client)
+      allow(Whatsapp::CallRecordingFetchJob).to receive(:perform_later)
     end
 
     after do
@@ -35,6 +36,7 @@ RSpec.describe Whatsapp::CallService do
       described_class.new(call: call, agent: agent).terminate
 
       expect(call.reload.status).to eq('completed')
+      expect(Whatsapp::CallRecordingFetchJob).to have_received(:perform_later).with(call.id)
       expect(ActionCable.server).to have_received(:broadcast).with(
         "account_#{account.id}",
         hash_including(event: 'whatsapp_call.ended', data: hash_including(account_id: account.id, call_id: call.provider_call_id))

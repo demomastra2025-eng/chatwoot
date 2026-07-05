@@ -21,6 +21,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       direction: @call.direction_label,
       conversation_id: @call.conversation_id,
       conversation_display_id: @call.conversation&.display_id,
+      communication_thread_id: communication_thread_display_id(@call),
+      communicationThreadId: communication_thread_display_id(@call),
       inbox_id: @call.inbox_id,
       message_id: @call.message_id,
       media_session_id: @call.media_session_id,
@@ -102,6 +104,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
         direction: call.direction_label,
         conversation_id: call.conversation_id,
         conversation_display_id: call.conversation&.display_id,
+        communication_thread_id: communication_thread_display_id(call),
+        communicationThreadId: communication_thread_display_id(call),
         inbox_id: call.inbox_id,
         status: call.status,
         elapsed_seconds: elapsed,
@@ -273,8 +277,17 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       media_session_id: call.media_session_id,
       conversation_id: call.conversation_id,
       conversation_display_id: call.conversation&.display_id,
+      communication_thread_id: communication_thread_display_id(call),
+      communicationThreadId: communication_thread_display_id(call),
       agent_offer: normalize_agent_offer(agent_offer)
     }.compact
+  end
+
+  def communication_thread_display_id(call)
+    conversation = call.conversation
+    return if conversation.blank?
+
+    (conversation.communication_thread || conversation.refresh_communication_thread!)&.display_id
   end
 
   def agent_offer_for_current_user(call)

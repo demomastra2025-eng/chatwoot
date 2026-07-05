@@ -193,6 +193,7 @@ RSpec.describe 'Media server callbacks', type: :request do
 
   it 'keeps answered sessions completed when bidirectional RTP counters are positive' do
     expect(provider).to receive(:terminate_call).with(call.provider_call_id).once.and_return(true)
+    expect(Whatsapp::CallRecordingFetchJob).to receive(:perform_later).with(call.id).once
     expect(ActionCable.server).to receive(:broadcast).once.with(
       "account_#{account.id}",
       hash_including(

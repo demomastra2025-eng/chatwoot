@@ -465,6 +465,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       inboxId: data.inbox_id,
       conversationId: data.conversation_id,
       conversationDisplayId: data.conversation_display_id,
+      communicationThreadId:
+        data.communication_thread_id || data.communicationThreadId,
       caller: data.caller,
       sdpOffer: data.sdp_offer || null,
       iceServers: data.ice_servers || null,

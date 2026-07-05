@@ -34,6 +34,7 @@ RSpec.describe Whatsapp::IncomingCallService do
 
   describe '#perform' do
     it 'creates an inbound ringing call from a connect offer' do
+      account.enable_features!('communication_threads')
       message = instance_double(Message, id: 123)
       allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(message)
 
@@ -60,7 +61,11 @@ RSpec.describe Whatsapp::IncomingCallService do
         "account_#{account.id}",
         hash_including(
           event: 'whatsapp_call.incoming',
-          data: hash_including(call_id: 'wa-inbound-1', conversation_display_id: call.conversation.display_id)
+          data: hash_including(
+            call_id: 'wa-inbound-1',
+            conversation_display_id: call.conversation.display_id,
+            communication_thread_id: call.conversation.communication_thread.display_id
+          )
         )
       )
     end

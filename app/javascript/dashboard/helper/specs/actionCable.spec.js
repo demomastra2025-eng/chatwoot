@@ -435,7 +435,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(callsStore.isReconnecting).toBe(false);
     });
 
-    it('stores incoming WhatsApp call conversation display id for native conversation routing', () => {
+    it('stores incoming WhatsApp call communication thread id for unified routing', () => {
       const callsStore = useWhatsappCallsStore();
 
       actionCable.onWhatsappCallIncoming({
@@ -445,6 +445,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
         inbox_id: 7,
         conversation_id: 13743,
         conversation_display_id: 481,
+        communication_thread_id: 25,
         caller: { name: 'Ahan' },
         media_server_enabled: true,
       });
@@ -452,6 +453,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(callsStore.incomingCalls[0]).toMatchObject({
         conversationId: 13743,
         conversationDisplayId: 481,
+        communicationThreadId: 25,
       });
     });
 

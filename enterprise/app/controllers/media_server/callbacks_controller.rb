@@ -58,6 +58,7 @@ class MediaServer::CallbacksController < ApplicationController
       update_conversation_call_status(call, mapped)
       broadcast_call_ended(call, final_status)
       terminate_on_provider(call)
+      Whatsapp::CallRecordingFetchJob.perform_later(call.id) if call.media_session_id.present?
     end
 
     head :ok
