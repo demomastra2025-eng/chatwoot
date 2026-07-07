@@ -17,9 +17,8 @@ class Telephony::InboundRoutingService
 
     def agent_ref
       return agent_binding.agent_ref if agent_binding
-      return sip_profile.agent_ref if provider_owned_sip_profile?
 
-      agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
+      sip_profile&.agent_ref
     end
 
     def agent_aor
@@ -111,6 +110,7 @@ class Telephony::InboundRoutingService
 
       fallback_decision(reason: primary_app_failure_reason)
     when 'ai'
+      return reject_decision(reason: 'voice_agent_sip_profile_missing') unless voice_agent_sip_route_available?
       return ai_decision(reason: 'ai_route') if resolved_ai_app_ref.present?
 
       fallback_decision(reason: ai_app_failure_reason)
@@ -135,6 +135,7 @@ class Telephony::InboundRoutingService
   end
 
   def pending_conversation_ai_decision
+    return reject_decision(reason: 'voice_agent_sip_profile_missing') unless voice_agent_sip_route_available?
     return ai_decision(reason: 'pending_conversation_ai_route') if resolved_ai_app_ref.present?
 
     fallback_decision(reason: ai_app_failure_reason)
@@ -210,7 +211,7 @@ class Telephony::InboundRoutingService
 
     number_binding.account.telephony_call_sessions.create!(
       external_call_ref: call_ref,
-      provider: number_binding.provider.presence || 'fonoster',
+      provider: number_binding.provider.presence,
       status: 'ringing',
       direction: 'inbound',
       started_at: Time.current,
@@ -231,7 +232,7 @@ class Telephony::InboundRoutingService
       contact: existing_voice_conversation&.contact || call_session.contact,
       inbox: inbox || call_session.inbox,
       number_binding: number_binding,
-      provider: number_binding.provider.presence || call_session.provider || 'fonoster',
+      provider: number_binding.provider.presence || call_session.provider,
       status: call_session.status.presence || 'ringing',
       direction: 'inbound',
       from_number: caller_number,
@@ -449,7 +450,7 @@ class Telephony::InboundRoutingService
         explicit_key
       else
         digest = Digest::SHA256.hexdigest(logical_call_key_parts.join('|'))[0, 32]
-        "fonoster-inbound:#{digest}"
+        "janus-inbound:#{digest}"
       end
     end
   end
@@ -512,6 +513,8 @@ class Telephony::InboundRoutingService
         return target_operator_decision(reason: reason) if target_operator_requested?
         return operator_decision(reason: reason) if operator_routable?
       when 'ai'
+        next unless voice_agent_sip_route_available?
+
         return ai_decision(reason: reason) if resolved_ai_app_ref.present?
       when 'app'
         return app_decision(reason: reason) if resolved_primary_app_ref.present?
@@ -589,15 +592,11 @@ class Telephony::InboundRoutingService
   end
 
   def resolved_operator_aor
-    primary_operator_candidate&.agent_aor.presence || operator_binding&.agent_aor.presence || routing_policy.operator_agent_aor
+    primary_operator_candidate&.agent_aor.presence || routing_policy.operator_agent_aor
   end
 
   def sip_operator_aor?(value)
     value.to_s.downcase.start_with?('sip:')
-  end
-
-  def operator_binding
-    @operator_binding ||= configured_operator_binding
   end
 
   def operator_decision(reason:)
@@ -689,29 +688,13 @@ class Telephony::InboundRoutingService
   end
 
   def operator_candidate_scope
-    profile_candidates = inbox_sip_profile_candidates
-    return profile_candidates if managed_number_binding?
-
-    profiled_user_ids = profile_candidates.filter_map(&:user_id).uniq
-
-    profile_candidates + account_agent_binding_candidates(excluding_user_ids: profiled_user_ids)
-  end
-
-  def managed_number_binding?
-    number_binding&.managed?
-  end
-
-  def account_agent_binding_candidates(excluding_user_ids: [])
-    scope = number_binding.account.telephony_agent_bindings.includes(:user)
-    scope = scope.where(user_id: inbox.members.select(:id)) if inbox.present? && inbox.inbox_members.exists?
-    scope = scope.where.not(user_id: excluding_user_ids) if excluding_user_ids.present?
-    scope.map { |binding| OperatorCandidate.new(source: :agent_binding, agent_binding: binding) }
+    inbox_sip_profile_candidates
   end
 
   def inbox_sip_profile_candidates
     return [] if inbox.blank? || !inbox.respond_to?(:telephony_sip_profiles)
 
-    scope = inbox.telephony_sip_profiles.includes(:user)
+    scope = inbox.telephony_sip_profiles.human_operator.includes(:user)
     scope = scope.where(user_id: inbox.members.select(:id)) if inbox.inbox_members.exists?
     return [] unless scope.exists?
 
@@ -755,18 +738,7 @@ class Telephony::InboundRoutingService
     return candidate.agent_ref.to_s == routing_policy.operator_agent_ref.to_s if routing_policy.operator_agent_ref.present?
     return candidate.agent_aor.to_s == routing_policy.operator_agent_aor.to_s if routing_policy.operator_agent_aor.present?
 
-    candidate.agent_binding_id == configured_operator_binding&.id
-  end
-
-  def configured_operator_binding
-    @configured_operator_binding ||= begin
-      scope = number_binding.account.telephony_agent_bindings
-      if routing_policy.operator_agent_ref.present?
-        scope.find_by(agent_ref: routing_policy.operator_agent_ref)
-      elsif routing_policy.operator_agent_aor.present?
-        scope.find_by(agent_aor: routing_policy.operator_agent_aor)
-      end
-    end
+    false
   end
 
   def operator_candidate_payload(candidate)
@@ -804,12 +776,14 @@ class Telephony::InboundRoutingService
   end
 
   def ai_decision(reason:)
-    {
+    decision = {
       action: 'ai',
       ai_mode: routing_policy.ai_deployment_mode,
       app_ref: resolved_ai_app_ref,
       reason: reason
     }.merge(shared_context(include_bridge_context: true))
+
+    attach_ai_context(decision)
   end
 
   def reject_decision(reason:, prefer_out_of_office_message: false, include_bridge_context: false)
@@ -818,6 +792,41 @@ class Telephony::InboundRoutingService
       message: reject_message(prefer_out_of_office_message: prefer_out_of_office_message),
       reason: reason
     }.merge(shared_context(include_bridge_context: include_bridge_context))
+  end
+
+  def attach_ai_context(decision)
+    return decision if existing_voice_conversation.blank?
+
+    decision.merge(ai_context: ai_context_payload(decision))
+  rescue StandardError => e
+    Rails.logger.warn(
+      'TELEPHONY_INBOUND_ROUTE_AI_CONTEXT_FAILED ' \
+      "call_ref=#{call_ref} account_id=#{number_binding&.account_id} error=#{e.class.name}: #{e.message}"
+    )
+    decision
+  end
+
+  def voice_agent_sip_route_available?
+    return true unless janus_sip_route?
+
+    voice_agent_sip_profile.present?
+  end
+
+  def ai_context_payload(decision)
+    Telephony::AiVoice::ContextBuilder.new(
+      params: {
+        call_ref: call_ref,
+        account_id: decision[:account_id],
+        number_ref: decision[:number_ref],
+        ingress_number: inbound_number || number_binding&.phone_number,
+        caller_number: caller_number,
+        bridge_call_ref: decision[:bridge_call_ref],
+        conversation_id: decision[:conversation_id],
+        provider: number_binding&.provider,
+        direction: 'inbound',
+        transport: 'janus_sip'
+      }.compact
+    ).perform
   end
 
   def reject_message(prefer_out_of_office_message: false)
@@ -843,6 +852,7 @@ class Telephony::InboundRoutingService
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
       number_ref: number_binding.number_ref,
+      voice_agent_sip_profile_id: voice_agent_sip_profile&.id,
       operator_distribution_mode: operator_distribution_mode,
       recording: recording_payload
     }
@@ -928,6 +938,27 @@ class Telephony::InboundRoutingService
 
   def inbox
     @inbox ||= number_binding&.inbox
+  end
+
+  def janus_sip_route?
+    transport = payload_value('transport') || metadata_value('transport')
+    return true if transport.to_s == 'janus_sip'
+    return true if metadata_value('janus_call_ref', 'janusCallRef').present?
+
+    call_ref.to_s.include?(':janus:')
+  end
+
+  def voice_agent_sip_profile
+    @voice_agent_sip_profile ||= begin
+      profile_id = metadata_value('voice_agent_sip_profile_id', 'voiceAgentSipProfileId', 'target_sip_profile_id', 'targetSipProfileId')
+      scope = number_binding&.inbox&.telephony_sip_profiles&.voice_agent&.enabled
+      scope = scope&.where&.not(status: %w[disabled deleting failed])
+      if profile_id.present?
+        scope&.find_by(id: profile_id)
+      else
+        scope&.recent&.first
+      end
+    end
   end
 
   def existing_voice_conversation

@@ -312,13 +312,13 @@ describe('#mutations', () => {
       });
     });
 
-    it('does not update current Fonoster call_status from an older call ref', () => {
+    it('does not update current telephony call_status from an older call ref', () => {
       const state = {
         allConversations: [
           {
             id: 1,
             additional_attributes: {
-              fonoster_call_ref: 'current-call',
+              telephony_call_ref: 'current-call',
               call_status: 'ringing',
             },
           },
@@ -330,7 +330,7 @@ describe('#mutations', () => {
         callStatus: 'completed',
       });
       expect(state.allConversations[0].additional_attributes).toEqual({
-        fonoster_call_ref: 'current-call',
+        telephony_call_ref: 'current-call',
         call_status: 'ringing',
       });
     });

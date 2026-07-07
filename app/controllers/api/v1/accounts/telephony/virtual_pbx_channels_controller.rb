@@ -101,12 +101,11 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
       :ingress_number,
       :sipuni_ingress_number,
       :provider_number,
-      :fonoster_tel_url,
       :tel_url,
       connection: %i[host port transport username password send_register],
       routing: %i[mode fallback_mode ai_enabled operator_agent_aor operator_distribution_mode],
       metadata: %i[environment source notes outbound_dial_format outboundDialFormat dial_format dialFormat],
-      profiles: %i[user_id internal_extension sip_username sip_password enabled availability_mode]
+      profiles: %i[id user_id profile_kind internal_extension sip_username sip_password enabled availability_mode]
     ).to_h
   end
 

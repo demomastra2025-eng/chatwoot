@@ -8,9 +8,6 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@fonoster/common": "^0.18.2",
-    "@fonoster/voice": "^0.18.2",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {}
+  }
 }

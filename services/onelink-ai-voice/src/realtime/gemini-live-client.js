@@ -117,7 +117,7 @@ class GeminiLiveClient {
         this.closed = true;
         this.socketOpen = false;
         this.setupComplete = false;
-        this.flushTranscriptBuffers({ final: false });
+        this.flushTranscriptBuffers({ final: true });
         if (!settled) {
           finish(reject, new Error(`Gemini Live connection closed before setup complete (${code || 'unknown'})`));
         }

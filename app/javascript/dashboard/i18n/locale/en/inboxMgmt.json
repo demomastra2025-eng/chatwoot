@@ -400,8 +400,8 @@
           "CHANGE_ACTION": "Change provider"
         },
         "PROVIDERS": {
-          "KAZAKHSTAN": "Fonoster",
-          "KAZAKHSTAN_DESC": "Use Fonoster for Kazakhstan numbers and telephony bridge routing.",
+          "KAZAKHSTAN": "Virtual PBX",
+          "KAZAKHSTAN_DESC": "Use OneLink Virtual PBX for Kazakhstan numbers through Janus SIP.",
           "SIPUNI": "Sipuni",
           "SIPUNI_DESC": "Connect Sipuni as a separate SIP provider through the browser webphone.",
           "ASTERISK_ANALOG": "Asterisk analog",
@@ -416,55 +416,6 @@
           "PLACEHOLDER": "Enter your phone number (e.g. +1234567890)",
           "ERROR": "Please provide a valid phone number in E.164 format (e.g. +1234567890)"
         },
-        "FONOSTER": {
-          "NUMBER_REF": {
-            "LABEL": "Number ref",
-            "PLACEHOLDER": "Enter the calling number reference",
-            "REQUIRED": "Number ref is required"
-          },
-          "APP_REF": {
-            "LABEL": "Primary app ref",
-            "PLACEHOLDER": "Routing or external app reference",
-            "REQUIRED": "Primary app ref is required when app routing is selected"
-          },
-          "TRUNK_REF": {
-            "LABEL": "Trunk ref",
-            "PLACEHOLDER": "Optional trunk reference"
-          },
-          "ROUTING": {
-            "LABEL": "Default Routing",
-            "MODE": {
-              "OPERATOR": "Operator",
-              "APP": "App",
-              "AI": "AI",
-              "REJECT": "Reject"
-            }
-          },
-          "AI_APP_REF": {
-            "LABEL": "AI App Ref",
-            "PLACEHOLDER": "Enter the AI app reference",
-            "REQUIRED": "AI app ref is required when AI routing is selected"
-          },
-          "OPERATOR_AGENT_AOR": {
-            "LABEL": "Operator target",
-            "PLACEHOLDER": "Enter sip:agent{'@'}domain or local username",
-            "REQUIRED": "Operator target is required when operator routing is selected"
-          },
-          "OPERATOR_AGENT_REF": {
-            "LABEL": "Operator agent ref",
-            "PLACEHOLDER": "Optional Fonoster agent reference"
-          },
-          "OPERATOR_DISTRIBUTION": {
-            "LABEL": "Operator distribution",
-            "BROADCAST": "Ring all available operators",
-            "TARGETED": "Route by employee extension"
-          },
-          "OPERATOR_TARGET_REQUIRED": "Operator agent ref or AOR is required when operator routing is selected",
-          "FALLBACK_MESSAGE": {
-            "LABEL": "Reject Message",
-            "PLACEHOLDER": "Optional message played when the call is rejected"
-          }
-        },
         "VIRTUAL_PBX": {
           "CHANNEL_NAME": {
             "LABEL": "Inbox name",
@@ -473,7 +424,8 @@
           },
           "PROVIDER_KIND": {
             "LABEL": "Virtual PBX provider",
-            "SIPUNI": "Sipuni / internal Asterisk",
+            "PLACEHOLDER": "Select provider",
+            "SIPUNI": "Sipuni",
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk analog"
           },
@@ -527,7 +479,11 @@
             "ADD": "Add employee extension",
             "REMOVE": "Remove employee {index}",
             "REQUIRED": "Select an employee and enter an internal extension for each row",
-            "SIP_PAIR_REQUIRED": "Employee SIP username/password must be filled together"
+            "SIP_PAIR_REQUIRED": "Employee SIP username/password must be filled together",
+            "VOICE_AGENT_LABEL": "Voice AI agent",
+            "VOICE_AGENT_HINT": "This SIP profile is not assigned to a OneLink employee. Only one voice agent profile is allowed per channel.",
+            "VOICE_AGENT_EMPLOYEE_DISABLED": "No employee is required for a voice AI agent",
+            "VOICE_AGENT_UNIQUE": "Only one voice AI agent SIP profile is allowed per channel"
           },
           "EMPLOYEE_SIP_USERNAME": {
             "LABEL": "Employee SIP username",
@@ -542,8 +498,23 @@
             "PLACEHOLDER": "1001",
             "REQUIRED": "Employee internal extension is required"
           },
+          "ROUTING": {
+            "LABEL": "Default routing",
+            "MODE": {
+              "OPERATOR": "Operator",
+              "APP": "App",
+              "AI": "AI",
+              "REJECT": "Reject"
+            }
+          },
+          "OPERATOR_DISTRIBUTION": {
+            "LABEL": "Call distribution",
+            "BROADCAST": "Ring all available operators",
+            "TARGETED": "Route by employee extension"
+          },
+          "OPERATOR_TARGET_REQUIRED": "SIP AOR or employee extension is required when operator routing is selected",
           "MANAGEMENT_TITLE": "Virtual PBX",
-          "MANAGEMENT_SUBTITLE": "OneLink manages the channel settings, employees, and SIP access. Fonoster/Routr are synchronized automatically.",
+          "MANAGEMENT_SUBTITLE": "OneLink manages the channel settings, employees, and SIP access through Janus SIP.",
           "CURRENT_USER_REQUIRED": "Current user is required to create an employee SIP profile",
           "REQUIRED_FIELDS": "Fill in inbox name and display phone",
           "READ_ONLY": "This channel uses legacy/read-only ownership and cannot be changed from OneLink.",
@@ -616,12 +587,14 @@
           "TWILIO_VOICE_URL_SUBTITLE": "Configure this URL as the Voice URL on your Twilio phone number and TwiML App.",
           "TWILIO_STATUS_URL_TITLE": "Twilio Status Callback URL",
           "TWILIO_STATUS_URL_SUBTITLE": "Configure this URL as the Status Callback URL on your Twilio phone number.",
-          "FONOSTER_TITLE": "Fonoster connection",
-          "FONOSTER_SUBTITLE": "This calls channel is managed through the Onelink telephony bridge and Fonoster routing.",
-          "FONOSTER_ROUTING_TITLE": "Call routing",
-          "FONOSTER_ROUTING_SUBTITLE": "Choose the active route for this number and the fallback used when the primary target is unavailable.",
-          "FONOSTER_READINESS_TITLE": "Fonoster readiness",
-          "FONOSTER_READINESS_SUBTITLE": "Checks the telephony bridge, inbox binding, and effective route for this voice inbox.",
+          "LEGACY_VOICE_TITLE": "Legacy voice channel",
+          "LEGACY_VOICE_SUBTITLE": "This channel uses the old calling configuration and should be moved to Janus SIP.",
+          "JANUS_SIP_TITLE": "Janus SIP connection",
+          "JANUS_SIP_SUBTITLE": "This calls channel runs through Janus SIP and employee SIP profiles.",
+          "JANUS_SIP_ROUTING_TITLE": "Call routing",
+          "JANUS_SIP_ROUTING_SUBTITLE": "Choose the active route for this number and the fallback used when the primary target is unavailable.",
+          "JANUS_SIP_READINESS_TITLE": "Janus SIP readiness",
+          "JANUS_SIP_READINESS_SUBTITLE": "Checks SIP profiles, inbox binding, and effective route for this voice inbox.",
           "ROUTING_MODE": "Routing mode",
           "FALLBACK_MODE": "Fallback mode",
           "PRIMARY_APP_REF": "Primary app ref",
@@ -641,7 +614,7 @@
           "LAST_SYNCED_AT": "Last synced at",
           "NOT_SYNCED": "Not synced yet",
           "LOADING": "Loading readiness checks...",
-          "LOAD_ERROR": "We were not able to load Fonoster readiness.",
+          "LOAD_ERROR": "We were not able to load Janus SIP readiness.",
           "REFRESH": "Refresh",
           "WARNINGS_TITLE": "Warnings",
           "NO_WARNINGS": "No blocking warnings detected.",
@@ -658,7 +631,7 @@
           "SIPUNI_WEBHOOK_SUCCESS": "Sipuni webhook has been saved",
           "SIPUNI_WEBHOOK_REQUIRED": "Webhook token is required",
           "VIRTUAL_PBX_DIAGNOSTICS": "Virtual PBX diagnostics",
-          "VIRTUAL_PBX_SAFE_MODE": "OneLink saves the configuration and synchronizes Fonoster/Routr automatically.",
+          "VIRTUAL_PBX_SAFE_MODE": "OneLink saves the local Janus SIP configuration.",
           "PROVIDER_KIND": "Provider kind",
           "PHONE_SPLIT": "Display → ingress",
           "OWNERSHIP": "Ownership",

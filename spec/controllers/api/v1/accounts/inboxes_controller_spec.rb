@@ -133,7 +133,7 @@ RSpec.describe 'Inboxes API', type: :request do
       end
 
       it 'does not expose legacy Sipuni webhook details for voice inboxes' do
-        voice_channel = create(:channel_voice, :fonoster, account: account)
+        voice_channel = create(:channel_voice, :sipuni, account: account)
         voice_inbox = voice_channel.inbox
         create(:inbox_member, user: agent, inbox: voice_inbox)
 
@@ -371,7 +371,7 @@ RSpec.describe 'Inboxes API', type: :request do
         ingress_number = '056124100666'
         voice_channel = create(
           :channel_voice,
-          :fonoster,
+          :sipuni,
           account: account,
           phone_number: display_phone_number,
           provider_config: {
@@ -423,7 +423,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
         replacement_channel = create(
           :channel_voice,
-          :fonoster,
+          :sipuni,
           account: account,
           phone_number: display_phone_number,
           provider_config: {
@@ -440,7 +440,7 @@ RSpec.describe 'Inboxes API', type: :request do
         ingress_number = '056124100667'
         voice_channel = create(
           :channel_voice,
-          :fonoster,
+          :sipuni,
           account: account,
           phone_number: display_phone_number,
           provider_config: {
@@ -467,16 +467,6 @@ RSpec.describe 'Inboxes API', type: :request do
           ingress_number: ingress_number,
           trunk_ref: 'trunk-sipuni-onelink-out'
         )
-        provisioner = instance_double(Telephony::VirtualPbx::RemoteProvisioner)
-        allow(Telephony::VirtualPbx::RemoteProvisioner).to receive(:new).and_return(provisioner)
-        expect(provisioner).to receive(:execute).with(
-          hash_including(operation: 'delete', remote_commit: true)
-        ).and_return(
-          status: 'succeeded',
-          remote_commit: true,
-          provisioning_run: { status: 'succeeded' },
-          executed_operations: []
-        )
         expect(DeleteObjectJob).not_to receive(:perform_later)
 
         delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}",
@@ -487,7 +477,7 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body).to include(
           'id' => voice_inbox.id,
           'deleted' => true,
-          'remote_commit' => true
+          'remote_commit' => false
         )
         expect(Inbox.exists?(voice_inbox.id)).to be(false)
         expect(Channel::Voice.exists?(voice_channel.id)).to be(false)
@@ -496,7 +486,7 @@ RSpec.describe 'Inboxes API', type: :request do
       it 'blocks reference Virtual PBX voice inbox deletion instead of queueing generic deletion' do
         voice_channel = create(
           :channel_voice,
-          :fonoster,
+          :sipuni,
           account: account,
           phone_number: '+17775550668',
           provider_config: {
@@ -668,58 +658,19 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.body).to include('API Inbox')
       end
 
-      it 'returns a telephony error when creating a Fonoster voice inbox without a bridge' do
-        account.enable_features!('channel_voice')
-
-        with_modified_env('TELEPHONY_BRIDGE_BASE_URL' => '') do
-          expect do
-            post "/api/v1/accounts/#{account.id}/inboxes",
-                 headers: admin.create_new_auth_token,
-                 params: {
-                   name: 'Fonoster Voice Inbox',
-                   channel: {
-                     type: 'voice',
-                     phone_number: '+15551234567',
-                     provider: 'fonoster',
-                     provider_config: {
-                       number_ref: 'number-ref-1',
-                       app_ref: 'runtime-app-ref-1',
-                       trunk_ref: 'trunk-ref-1',
-                       routing_mode: 'app',
-                       fallback_mode: 'reject'
-                     }
-                   }
-                 },
-                 as: :json
-          end.not_to change(Inbox, :count)
-        end
-
-        expect(response).to have_http_status(:service_unavailable)
-        expect(response.parsed_body).to include(
-          'code' => 'BRIDGE_NOT_CONFIGURED',
-          'error' => 'Telephony bridge is not configured'
-        )
-      end
-
-      it 'persists top-level Fonoster voice channel parameters for native voice inbox creation' do
+      it 'persists top-level Janus SIP voice channel parameters for native voice inbox creation' do
         account.enable_features!('channel_voice')
         phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
-        allow_any_instance_of(Telephony::RoutingService).to receive(:update_number_route!)
-          .and_wrap_original do |_method, number_binding:, attributes:|
-          number_binding.update!(metadata: number_binding.metadata.merge('last_route_attributes' => attributes.deep_stringify_keys))
-        end
 
         expect do
           post "/api/v1/accounts/#{account.id}/inboxes",
                headers: admin.create_new_auth_token,
                params: {
-                 name: 'Fonoster Voice Inbox',
+                 name: 'Sipuni Voice Inbox',
                  phone_number: phone_number,
-                 provider: 'fonoster',
+                 provider: 'sipuni',
                  provider_config: {
                    number_ref: 'number-ref-top-level',
-                   app_ref: 'runtime-app-ref-top-level',
-                   trunk_ref: 'trunk-ref-top-level',
                    routing_mode: 'operator',
                    operator_agent_aor: 'sip:1001@example.test',
                    fallback_mode: 'ai',
@@ -734,11 +685,9 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(response).to have_http_status(:success)
         voice_channel = Channel::Voice.find_by!(phone_number: phone_number)
-        expect(voice_channel).to have_attributes(provider: 'fonoster')
+        expect(voice_channel).to have_attributes(provider: 'sipuni')
         expect(voice_channel.provider_config).to include(
           'number_ref' => 'number-ref-top-level',
-          'app_ref' => 'runtime-app-ref-top-level',
-          'trunk_ref' => 'trunk-ref-top-level',
           'routing_mode' => 'operator',
           'operator_agent_aor' => 'sip:1001@example.test',
           'fallback_mode' => 'ai',
@@ -749,8 +698,8 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(number_binding).to have_attributes(
           number_ref: 'number-ref-top-level',
           phone_number: phone_number,
-          app_ref: 'runtime-app-ref-top-level',
-          trunk_ref: 'trunk-ref-top-level'
+          app_ref: nil,
+          trunk_ref: nil
         )
         expect(number_binding.routing_policy).to have_attributes(
           mode: 'operator',
@@ -761,21 +710,10 @@ RSpec.describe 'Inboxes API', type: :request do
         )
       end
 
-      it 'creates one Fonoster voice inbox that is ready for both operator and Captain routing' do
+      it 'creates one Janus SIP voice inbox that is ready for both operator and Captain routing' do
         account.enable_features!('channel_voice')
         assistant = create(:captain_assistant, account: account)
         phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
-        expect_any_instance_of(Telephony::RoutingService).to receive(:update_number_route!).with(
-          number_binding: an_instance_of(Telephony::NumberBinding),
-          attributes: hash_including(
-            mode: 'operator',
-            ai_enabled: true,
-            ai_deployment_mode: 'onelink_managed',
-            onelink_ai_app_ref: 'captain-ai-app-ref-unified',
-            fallback_mode: 'app',
-            captain_assistant_id: assistant.id
-          )
-        ).and_return({})
 
         expect do
           post "/api/v1/accounts/#{account.id}/inboxes",
@@ -783,12 +721,10 @@ RSpec.describe 'Inboxes API', type: :request do
                params: {
                  name: 'Unified Voice Inbox',
                  phone_number: phone_number,
-                 provider: 'fonoster',
+                 provider: 'sipuni',
                  provider_config: {
                    number_ref: 'number-ref-unified',
-                   app_ref: 'runtime-app-ref-unified',
                    app_route_app_ref: 'fallback-app-ref-unified',
-                   trunk_ref: 'trunk-ref-unified',
                    routing_mode: 'operator',
                    operator_agent_aor: 'sip:1001@example.test',
                    fallback_mode: 'app',

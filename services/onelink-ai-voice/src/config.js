@@ -21,7 +21,7 @@ function loadConfig(env = process.env) {
       env.CHATWOOT_INTERNAL_BASE_URL ||
       'http://127.0.0.1:3000'
     ).replace(/\/+$/, ''),
-    internalToken: env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET || env.ONELINK_AI_VOICE_INTERNAL_TOKEN || env.AI_VOICE_INTERNAL_TOKEN ||
+    internalToken: env.ONELINK_AI_VOICE_INTERNAL_TOKEN || env.AI_VOICE_INTERNAL_TOKEN || env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET ||
       env.VOICE_AGENT_INTERNAL_TOKEN || env.ONELINK_INTERNAL_SECRET || env.ONELINK_INTERNAL_TOKEN || '',
     bridgeToken: env.TELEPHONY_BRIDGE_ONELINK_ACCESS_TOKEN || env.TELEPHONY_BRIDGE_ACCESS_TOKEN || env.TELEPHONY_BRIDGE_SHARED_SECRET || '',
     contextPath: env.VOICE_AGENT_ONELINK_AI_CONTEXT_PATH || '/internal/voice/ai/context',
@@ -29,13 +29,33 @@ function loadConfig(env = process.env) {
     controlPath: env.VOICE_AGENT_ONELINK_AI_CONTROL_PATH || '/internal/voice/ai/control',
     eventPath: env.VOICE_AGENT_ONELINK_AI_EVENT_PATH || '/internal/voice/ai/event',
     finalizePath: env.VOICE_AGENT_ONELINK_AI_FINALIZE_PATH || '/internal/voice/ai/finalize',
-    grpcPort: parseInteger(env.VOICE_AGENT_GRPC_PORT || env.VOICE_AGENT_PORT, 50061),
-    skipIdentity: parseBoolean(env.VOICE_AGENT_SKIP_IDENTITY, false),
-    identityAddress: env.VOICE_AGENT_IDENTITY_ADDRESS || '',
     apiPort: parseInteger(env.VOICE_AGENT_API_PORT, 8081),
+    janusAttachPath: env.VOICE_AGENT_JANUS_ATTACH_PATH || env.ONELINK_AI_VOICE_JANUS_ATTACH_PATH || env.AI_VOICE_JANUS_ATTACH_PATH || '/internal/janus-sip/calls',
+    janusAllowedProviders: parseList(env.VOICE_AGENT_JANUS_ALLOWED_PROVIDERS || env.ONELINK_AI_VOICE_JANUS_ALLOWED_PROVIDERS || ''),
+    janusAdminUrl: env.VOICE_AGENT_JANUS_ADMIN_URL || env.ONELINK_AI_VOICE_JANUS_ADMIN_URL || env.JANUS_ADMIN_URL || '',
+    janusAdminSecret: env.VOICE_AGENT_JANUS_ADMIN_SECRET || env.ONELINK_AI_VOICE_JANUS_ADMIN_SECRET || env.JANUS_ADMIN_SECRET || '',
+    janusSipAdminKey: env.VOICE_AGENT_JANUS_SIP_ADMIN_KEY || env.ONELINK_AI_VOICE_JANUS_SIP_ADMIN_KEY || env.JANUS_SIP_ADMIN_KEY || '',
+    janusRtpForwardHost: env.VOICE_AGENT_JANUS_RTP_FORWARD_HOST || env.ONELINK_AI_VOICE_JANUS_RTP_FORWARD_HOST || '',
+    janusRtpForwardHostFamily: env.VOICE_AGENT_JANUS_RTP_FORWARD_HOST_FAMILY || env.ONELINK_AI_VOICE_JANUS_RTP_FORWARD_HOST_FAMILY || 'ipv4',
+    janusRtpForwardPeerAudioPort: parseInteger(env.VOICE_AGENT_JANUS_RTP_FORWARD_PEER_AUDIO_PORT || env.ONELINK_AI_VOICE_JANUS_RTP_FORWARD_PEER_AUDIO_PORT, 0),
+    janusRtpForwardAudioPort: parseInteger(env.VOICE_AGENT_JANUS_RTP_FORWARD_AUDIO_PORT || env.ONELINK_AI_VOICE_JANUS_RTP_FORWARD_AUDIO_PORT, 0),
+    janusRtpForwardPayloadType: parseInteger(env.VOICE_AGENT_JANUS_RTP_FORWARD_PAYLOAD_TYPE || env.ONELINK_AI_VOICE_JANUS_RTP_FORWARD_PAYLOAD_TYPE, 0),
+    janusRtpBridgeEnabled: parseBoolean(env.VOICE_AGENT_JANUS_RTP_BRIDGE_ENABLED || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_ENABLED, false),
+    janusRtpBridgeListenHost: env.VOICE_AGENT_JANUS_RTP_BRIDGE_LISTEN_HOST || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_LISTEN_HOST || '0.0.0.0',
+    janusRtpBridgeListenPort: parseInteger(env.VOICE_AGENT_JANUS_RTP_BRIDGE_LISTEN_PORT || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_LISTEN_PORT, 0),
+    janusRtpBridgePublicHost: env.VOICE_AGENT_JANUS_RTP_BRIDGE_PUBLIC_HOST || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_PUBLIC_HOST || env.VOICE_AGENT_JANUS_RTP_FORWARD_HOST || '',
+    janusRtpBridgeInputCodec: env.VOICE_AGENT_JANUS_RTP_BRIDGE_INPUT_CODEC || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_INPUT_CODEC || 'pcmu',
+    janusRtpBridgeOutputCodec: env.VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_CODEC || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_OUTPUT_CODEC || 'pcmu',
+    janusRtpBridgeOutputHost: env.VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_HOST || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_OUTPUT_HOST || '',
+    janusRtpBridgeOutputPort: parseInteger(env.VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PORT || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_OUTPUT_PORT, 0),
+    janusRtpBridgeOutputPayloadType: parseInteger(env.VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PAYLOAD_TYPE || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_OUTPUT_PAYLOAD_TYPE, 0),
+    janusBrowserBridgeEnabled: parseBoolean(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_ENABLED || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_ENABLED, false),
+    janusBrowserBridgePath: env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_PATH || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_PATH || '/ai-voice/janus-sip/browser-media',
+    janusBrowserBridgePublicBaseUrl: (env.VOICE_AGENT_PUBLIC_BASE_URL || env.ONELINK_AI_VOICE_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
     whatsappAttachPath: env.VOICE_AGENT_WHATSAPP_ATTACH_PATH || env.ONELINK_AI_VOICE_WHATSAPP_ATTACH_PATH || env.AI_VOICE_WHATSAPP_ATTACH_PATH || '/internal/whatsapp-cloud/calls',
     sessionTtlMs: parseInteger(env.VOICE_AGENT_SESSION_TTL_MS, 3_600_000),
     onelinkTimeoutMs: parseInteger(env.VOICE_AGENT_ONELINK_TIMEOUT_MS || env.VOICE_AGENT_ONELINK_AI_TIMEOUT_MS, 10_000),
+    contextBootstrapTimeoutMs: parseInteger(env.VOICE_AGENT_CONTEXT_BOOTSTRAP_TIMEOUT_MS || env.VOICE_AGENT_CONTEXT_TIMEOUT_MS, 2_500),
     toolTimeoutMs: parseInteger(env.VOICE_AGENT_TOOL_TIMEOUT_MS, 3_000),
     realtimeProvider: env.VOICE_AGENT_REALTIME_PROVIDER || 'gemini-live',
     geminiApiKey: env.VOICE_AGENT_REALTIME_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '',
@@ -60,3 +80,12 @@ function loadConfig(env = process.env) {
 }
 
 module.exports = { loadConfig, parseInteger, parseBoolean, parseFloatValue };
+
+function parseList(value) {
+  return String(value || '')
+    .split(',')
+    .map(item => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+module.exports.parseList = parseList;

@@ -910,7 +910,6 @@ Rails.application.routes.draw do
     end
   end
 
-  post 'telephony/internal/events', to: 'telephony/bridge_events#create'
   match 'sipuni/events/:token', to: 'telephony/sipuni_events#create', via: %i[get post]
   post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
   post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'

@@ -63,6 +63,7 @@
       "NEXT_SYNC": "Следующая синхронизация",
       "LAST_SYNC": "Последняя плановая синхронизация",
       "FREQUENCY": {
+        "EVERY_MINUTES": "Раз в {count} мин.",
         "HOURLY": "Каждый час",
         "EVERY_HOURS_RU": "Раз в {count} ч.",
         "DAILY": "Раз в день"

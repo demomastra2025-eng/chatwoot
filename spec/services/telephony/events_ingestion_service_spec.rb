@@ -232,13 +232,13 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'projects the logical call key into voice call message data and meta' do
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         status: 'ringing',
         metadata: {
           'metadata' => {
-            'logical_call_key' => 'fonoster-inbound:shared-key',
-            'call_group_key' => 'fonoster-inbound:shared-key'
+            'logical_call_key' => 'native-sip-inbound:shared-key',
+            'call_group_key' => 'native-sip-inbound:shared-key'
           }
         }
       )
@@ -246,7 +246,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-logical-call-key-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'operator_ringing',
           status: 'ringing'
         )
@@ -254,22 +254,22 @@ RSpec.describe Telephony::EventsIngestionService do
 
       message_data = result.voice_message_for_current_call.content_attributes['data']
       expect(message_data).to include(
-        'logical_call_key' => 'fonoster-inbound:shared-key',
-        'logicalCallKey' => 'fonoster-inbound:shared-key',
-        'call_group_key' => 'fonoster-inbound:shared-key',
-        'callGroupKey' => 'fonoster-inbound:shared-key'
+        'logical_call_key' => 'native-sip-inbound:shared-key',
+        'logicalCallKey' => 'native-sip-inbound:shared-key',
+        'call_group_key' => 'native-sip-inbound:shared-key',
+        'callGroupKey' => 'native-sip-inbound:shared-key'
       )
       expect(message_data['meta']).to include(
-        'logical_call_key' => 'fonoster-inbound:shared-key',
-        'call_group_key' => 'fonoster-inbound:shared-key'
+        'logical_call_key' => 'native-sip-inbound:shared-key',
+        'call_group_key' => 'native-sip-inbound:shared-key'
       )
     end
 
-    it 'does not create a second voice bubble for an unanswered linked Fonoster inbound branch' do
+    it 'does not create a second voice bubble for an unanswered linked native SIP inbound branch' do
       conversation = existing_call_session.conversation
       parent_session = existing_call_session
       parent_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'parent-operator-ref',
         status: 'completed'
@@ -296,7 +296,7 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: parent_session.contact,
         inbox: parent_session.inbox,
         number_binding: parent_session.number_binding,
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'missed-operator-ref',
         status: 'ringing',
@@ -310,7 +310,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-linked-missed-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           call_ref: child_session.external_call_ref,
           event: 'operator_no_answer',
           status: 'no_answer',
@@ -323,18 +323,18 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(parent_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
     end
 
-    it 'does not create a second voice bubble for an unanswered Fonoster fan-out branch with the same logical key' do
+    it 'does not create a second voice bubble for an unanswered native SIP fan-out branch with the same logical key' do
       conversation = existing_call_session.conversation
       parent_session = existing_call_session
       parent_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'answered-fanout-ref',
         status: 'completed',
         metadata: {
           'metadata' => {
-            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
-            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+            'logical_call_key' => 'native-sip-inbound:fanout-shared-key',
+            'call_group_key' => 'native-sip-inbound:fanout-shared-key'
           }
         }
       )
@@ -350,8 +350,8 @@ RSpec.describe Telephony::EventsIngestionService do
             'status' => 'completed',
             'call_sid' => 'answered-fanout-ref',
             'call_direction' => 'inbound',
-            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
-            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+            'logical_call_key' => 'native-sip-inbound:fanout-shared-key',
+            'call_group_key' => 'native-sip-inbound:fanout-shared-key'
           }
         }
       )
@@ -362,14 +362,14 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: parent_session.contact,
         inbox: parent_session.inbox,
         number_binding: parent_session.number_binding,
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'missed-fanout-ref',
         status: 'ringing',
         metadata: {
           'metadata' => {
-            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
-            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+            'logical_call_key' => 'native-sip-inbound:fanout-shared-key',
+            'call_group_key' => 'native-sip-inbound:fanout-shared-key'
           }
         }
       )
@@ -377,7 +377,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-fanout-missed-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           call_ref: child_session.external_call_ref,
           event: 'operator_no_answer',
           status: 'no_answer',
@@ -389,13 +389,13 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(conversation.messages.voice_calls.reload).to contain_exactly(parent_message)
     end
 
-    it 'collapses missed Fonoster fan-out branches with the same logical key into one voice bubble' do
+    it 'collapses missed native SIP fan-out branches with the same logical key into one voice bubble' do
       conversation = existing_call_session.conversation
-      logical_key = 'fonoster-inbound:fanout-all-missed-key'
+      logical_key = 'native-sip-inbound:fanout-all-missed-key'
       started_at = Time.current
       first_session = existing_call_session
       first_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'missed-fanout-505',
         status: 'missed',
@@ -420,7 +420,7 @@ RSpec.describe Telephony::EventsIngestionService do
         source_id: 'voice_call:missed-fanout-505',
         content_attributes: {
           'data' => {
-            'provider' => 'fonoster',
+            'provider' => 'sipuni',
             'status' => 'missed',
             'call_sid' => 'missed-fanout-505',
             'call_direction' => 'inbound',
@@ -438,7 +438,7 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: first_session.contact,
         inbox: first_session.inbox,
         number_binding: first_session.number_binding,
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'missed-fanout-504',
         status: 'ringing',
@@ -455,7 +455,7 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       conversation.update!(
         additional_attributes: {
-          'fonoster_call_ref' => first_session.external_call_ref,
+          'telephony_call_ref' => first_session.external_call_ref,
           'call_status' => 'missed',
           'call_direction' => 'inbound'
         }
@@ -464,7 +464,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-fanout-all-missed-504',
-          provider: 'fonoster',
+          provider: 'sipuni',
           call_ref: second_session.external_call_ref,
           event: 'session_completed',
           status: 'missed',
@@ -476,16 +476,16 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.reload).to have_attributes(status: 'missed')
       expect(conversation.messages.voice_calls.reload).to contain_exactly(first_message)
       expect(conversation.reload.additional_attributes).to include(
-        'fonoster_call_ref' => first_session.external_call_ref,
+        'telephony_call_ref' => first_session.external_call_ref,
         'call_status' => 'missed'
       )
     end
 
-    it 'does not create a second voice bubble for an unanswered Fonoster fan-out branch when logical keys differ at a bucket boundary' do
+    it 'does not create a second voice bubble for an unanswered native SIP fan-out branch when logical keys differ at a bucket boundary' do
       conversation = existing_call_session.conversation
       parent_session = existing_call_session
       parent_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'answered-context-ref',
         status: 'completed',
@@ -503,13 +503,13 @@ RSpec.describe Telephony::EventsIngestionService do
         created_at: parent_session.started_at,
         content_attributes: {
           'data' => {
-            'provider' => 'fonoster',
+            'provider' => 'sipuni',
             'status' => 'completed',
             'call_sid' => 'answered-context-ref',
             'call_direction' => 'inbound',
             'from_number' => '+77070001002',
             'to_number' => '+77070001001',
-            'logical_call_key' => 'fonoster-inbound:bucket-before'
+            'logical_call_key' => 'native-sip-inbound:bucket-before'
           }
         }
       )
@@ -520,7 +520,7 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: parent_session.contact,
         inbox: parent_session.inbox,
         number_binding: parent_session.number_binding,
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'missed-context-ref',
         status: 'ringing',
@@ -529,8 +529,8 @@ RSpec.describe Telephony::EventsIngestionService do
         started_at: parent_session.started_at + 3.seconds,
         metadata: {
           'metadata' => {
-            'logical_call_key' => 'fonoster-inbound:bucket-after',
-            'call_group_key' => 'fonoster-inbound:bucket-after'
+            'logical_call_key' => 'native-sip-inbound:bucket-after',
+            'call_group_key' => 'native-sip-inbound:bucket-after'
           }
         }
       )
@@ -538,7 +538,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-fanout-context-missed-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           call_ref: child_session.external_call_ref,
           event: 'operator_no_answer',
           status: 'no_answer',
@@ -550,12 +550,12 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(conversation.messages.voice_calls.reload).to contain_exactly(parent_message)
     end
 
-    it 'does not let an unanswered Fonoster fan-out branch overwrite the answered conversation state' do
+    it 'does not let an unanswered native SIP fan-out branch overwrite the answered conversation state' do
       conversation = existing_call_session.conversation
-      logical_key = 'fonoster-inbound:fanout-answered-key'
+      logical_key = 'native-sip-inbound:fanout-answered-key'
       answered_session = existing_call_session
       answered_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'answered-state-ref',
         status: 'completed',
@@ -582,7 +582,7 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: answered_session.contact,
         inbox: answered_session.inbox,
         number_binding: answered_session.number_binding,
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'missed-state-ref',
         status: 'no_answer',
@@ -599,7 +599,7 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       conversation.update!(
         additional_attributes: {
-          'fonoster_call_ref' => answered_session.external_call_ref,
+          'telephony_call_ref' => answered_session.external_call_ref,
           'call_status' => 'completed',
           'call_direction' => 'inbound',
           'from_number' => '+77070001002',
@@ -610,21 +610,21 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-fanout-no-answer-recording-ready',
-          provider: 'fonoster',
+          provider: 'sipuni',
           call_ref: child_session.external_call_ref,
           event: 'recording_ready',
-          recording_ref: 'voice-recordings/fonoster/1/missed-state-ref.wav',
-          storage_key: 'voice-recordings/fonoster/1/missed-state-ref.wav',
+          recording_ref: 'voice-recordings/janus/1/missed-state-ref.wav',
+          storage_key: 'voice-recordings/janus/1/missed-state-ref.wav',
           duration_seconds: 0
         )
       ).perform
 
       expect(result.reload).to have_attributes(
         status: 'no_answer',
-        recording_ref: 'voice-recordings/fonoster/1/missed-state-ref.wav'
+        recording_ref: 'voice-recordings/janus/1/missed-state-ref.wav'
       )
       expect(conversation.reload.additional_attributes).to include(
-        'fonoster_call_ref' => answered_session.external_call_ref,
+        'telephony_call_ref' => answered_session.external_call_ref,
         'call_status' => 'completed'
       )
       expect(
@@ -632,7 +632,7 @@ RSpec.describe Telephony::EventsIngestionService do
       ).to be_empty
     end
 
-    it 'removes an earlier unanswered Fonoster fan-out bubble when the answered branch completes' do
+    it 'removes an earlier unanswered native SIP fan-out bubble when the answered branch completes' do
       conversation = existing_call_session.conversation
       missed_message = create(
         :message,
@@ -646,19 +646,19 @@ RSpec.describe Telephony::EventsIngestionService do
             'status' => 'missed',
             'call_sid' => 'missed-fanout-before-answer',
             'call_direction' => 'inbound',
-            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
-            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+            'logical_call_key' => 'native-sip-inbound:fanout-shared-key',
+            'call_group_key' => 'native-sip-inbound:fanout-shared-key'
           }
         }
       )
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         status: 'in_progress',
         metadata: {
           'metadata' => {
-            'logical_call_key' => 'fonoster-inbound:fanout-shared-key',
-            'call_group_key' => 'fonoster-inbound:fanout-shared-key'
+            'logical_call_key' => 'native-sip-inbound:fanout-shared-key',
+            'call_group_key' => 'native-sip-inbound:fanout-shared-key'
           }
         }
       )
@@ -666,7 +666,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-fanout-completed-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'FROM_PSTN'
@@ -679,11 +679,11 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('completed')
     end
 
-    it 'removes an earlier rejected Fonoster fan-out bubble when the answered branch completes' do
+    it 'removes an earlier rejected native SIP fan-out bubble when the answered branch completes' do
       conversation = existing_call_session.conversation
       started_at = Time.current
       phone_attrs = {
-        'provider' => 'fonoster',
+        'provider' => 'sipuni',
         'call_direction' => 'inbound',
         'from_number' => '+77070001002',
         'to_number' => '+77070001001'
@@ -700,24 +700,24 @@ RSpec.describe Telephony::EventsIngestionService do
           'data' => phone_attrs.merge(
             'status' => 'rejected',
             'call_sid' => 'rejected-fanout-before-answer',
-            'logical_call_key' => 'fonoster-inbound:rejected-branch'
+            'logical_call_key' => 'native-sip-inbound:rejected-branch'
           )
         }
       )
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'inbound',
         status: 'in_progress',
         from_number: phone_attrs['from_number'],
         to_number: phone_attrs['to_number'],
         started_at: started_at + 1.second,
-        metadata: { 'metadata' => { 'logical_call_key' => 'fonoster-inbound:answered-branch' } }
+        metadata: { 'metadata' => { 'logical_call_key' => 'native-sip-inbound:answered-branch' } }
       )
 
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-fanout-completed-after-rejected-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'FROM_PSTN'
@@ -730,11 +730,11 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('completed')
     end
 
-    it 'uses the answered timestamp for active Fonoster conversation state' do
+    it 'uses the answered timestamp for active native SIP conversation state' do
       started_at = Time.zone.parse(30.seconds.ago.iso8601)
       answered_at = Time.zone.parse(10.seconds.ago.iso8601)
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         status: 'ringing',
         started_at: started_at,
         last_event_at: started_at
@@ -742,7 +742,7 @@ RSpec.describe Telephony::EventsIngestionService do
       existing_call_session.conversation.update!(
         additional_attributes: {
           'call_status' => 'ringing',
-          'fonoster_call_ref' => 'call-retry-1',
+          'telephony_call_ref' => 'call-retry-1',
           'call_started_at' => 100,
           'call_ended_at' => 120,
           'call_duration' => 20
@@ -752,7 +752,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-active-answered-timer-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'operator_answered',
           status: 'answered',
           occurred_at: answered_at.iso8601,
@@ -771,7 +771,7 @@ RSpec.describe Telephony::EventsIngestionService do
       end
     end
 
-    it 'keeps outbound CRM direction when a Fonoster operator leg reports inbound runtime direction' do
+    it 'keeps outbound CRM direction when a native SIP operator leg reports inbound runtime direction' do
       existing_call_session.update!(
         direction: 'outbound',
         status: 'ringing',
@@ -811,7 +811,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'exposes latest native leg metadata in the voice call message for outbound UI stages' do
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'ringing'
       )
@@ -819,7 +819,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-callee-ringing-stage-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'dial_status',
           status: 'ringing',
           raw_status: 'RINGING',
@@ -849,7 +849,7 @@ RSpec.describe Telephony::EventsIngestionService do
       answered_at = 30.seconds.ago
       stale_ringing_at = 45.seconds.ago
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'ringing',
         last_event_at: stale_ringing_at - 5.seconds
@@ -858,7 +858,7 @@ RSpec.describe Telephony::EventsIngestionService do
       described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-callee-answered-stage-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'callee_answered',
           status: 'answered',
           raw_status: 'UP',
@@ -873,7 +873,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-stale-ringing-stage-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'dial_status',
           status: 'ringing',
           raw_status: 'RINGING',
@@ -896,24 +896,24 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
-    it 'keeps outbound direction for OneLink initiated Fonoster calls without nested route metadata' do
+    it 'keeps outbound direction for OneLink initiated native SIP calls without nested route metadata' do
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'ringing',
         metadata: {
           'bridge_response' => {
-            'provider' => 'fonoster',
+            'provider' => 'sipuni',
             'call_ref' => existing_call_session.external_call_ref
           },
-          'fonoster_call_ref' => existing_call_session.external_call_ref
+          'telephony_call_ref' => existing_call_session.external_call_ref
         }
       )
 
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-operator-leg-answered-no-route-meta-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'operator_answered',
           status: 'answered',
           callDirection: 'inbound',
@@ -937,7 +937,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'preserves outbound customer number when operator-first events report the internal extension as to_number' do
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'ringing',
         from_number: '+77172705175',
@@ -948,14 +948,14 @@ RSpec.describe Telephony::EventsIngestionService do
             'to' => '+77070001002',
             'providerTo' => 'sip:1001@operator.cloud.vconsult.kz'
           },
-          'fonoster_call_ref' => existing_call_session.external_call_ref
+          'telephony_call_ref' => existing_call_session.external_call_ref
         }
       )
 
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-internal-extension-does-not-replace-target-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_started',
           status: 'ringing',
           direction: 'outbound',
@@ -982,7 +982,7 @@ RSpec.describe Telephony::EventsIngestionService do
       started_at = Time.zone.parse(45.seconds.ago.iso8601)
       ended_at = started_at + 18.seconds
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'ringing',
         started_at: started_at,
@@ -993,7 +993,7 @@ RSpec.describe Telephony::EventsIngestionService do
             'from' => '9098',
             'to' => '+77070001002'
           },
-          'fonoster_call_ref' => existing_call_session.external_call_ref
+          'telephony_call_ref' => existing_call_session.external_call_ref
         },
         legs: [
           {
@@ -1023,7 +1023,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-operator-hangup-before-customer-answer-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'outbound',
@@ -1044,7 +1044,7 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
       expect(result.conversation.reload.additional_attributes).to include(
         'call_status' => 'no_answer',
-        'fonoster_call_ref' => existing_call_session.external_call_ref,
+        'telephony_call_ref' => existing_call_session.external_call_ref,
         'to_number' => '+77070001002'
       )
     end
@@ -1054,7 +1054,7 @@ RSpec.describe Telephony::EventsIngestionService do
       answered_at = started_at + 10.seconds
       ended_at = answered_at + 4.seconds
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'ringing',
         started_at: started_at,
@@ -1065,7 +1065,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-terminal-callee-answered-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'outbound',
@@ -1096,7 +1096,7 @@ RSpec.describe Telephony::EventsIngestionService do
       final_ended_at = answered_at + 4.seconds
       later_event_at = Time.zone.parse(Time.current.iso8601)
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'no_answer',
         started_at: started_at,
@@ -1111,7 +1111,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-no-answer-repaired-by-completed-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'outbound',
@@ -1283,7 +1283,7 @@ RSpec.describe Telephony::EventsIngestionService do
       ended_at = answered_at + 4.seconds
       later_event_at = Time.zone.parse(Time.current.iso8601)
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'completed',
         started_at: started_at,
@@ -1299,7 +1299,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-completed-duration-repaired-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'outbound',
@@ -1331,7 +1331,7 @@ RSpec.describe Telephony::EventsIngestionService do
       answered_at = started_at + 8.seconds
       ended_at = answered_at + 22.seconds
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'ringing',
         started_at: started_at,
@@ -1342,7 +1342,7 @@ RSpec.describe Telephony::EventsIngestionService do
       described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-customer-answer-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'call_status',
           status: 'answered',
           direction: 'outbound',
@@ -1355,7 +1355,7 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-completed-after-customer-answer-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'outbound',
@@ -1374,8 +1374,8 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
-    it 'attaches a new Fonoster call event to the existing open contact conversation' do
-      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+15551230000')
+    it 'attaches a new native SIP call event to the existing open contact conversation' do
+      voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+15551230000')
       voice_inbox = voice_channel.inbox
       contact = create(:contact, account: account, phone_number: '+15550001111')
       contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: contact.phone_number)
@@ -1386,11 +1386,11 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: contact,
         contact_inbox: contact_inbox,
         status: :resolved,
-        identifier: 'fonoster-previous-call',
+        identifier: 'sipuni-previous-call',
         additional_attributes: {
           'call_direction' => 'outbound',
           'call_status' => 'completed',
-          'fonoster_call_ref' => 'fonoster-previous-call',
+          'telephony_call_ref' => 'sipuni-previous-call',
           'call_started_at' => 100,
           'call_ended_at' => 120,
           'call_duration' => 20,
@@ -1406,18 +1406,18 @@ RSpec.describe Telephony::EventsIngestionService do
         conversation: existing_conversation,
         inbox: voice_inbox,
         content_type: 'voice_call',
-        source_id: 'voice_call:fonoster-previous-call',
-        content_attributes: { 'data' => { 'call_sid' => 'fonoster-previous-call', 'status' => 'completed' } }
+        source_id: 'voice_call:sipuni-previous-call',
+        content_attributes: { 'data' => { 'call_sid' => 'sipuni-previous-call', 'status' => 'completed' } }
       )
 
       result = nil
       expect do
         result = described_class.new(
           payload: {
-            event_key: 'evt-fonoster-reuse-existing-conversation-1',
+            event_key: 'evt-native-sip-reuse-existing-conversation-1',
             account_id: account.id,
-            provider: 'fonoster',
-            call_ref: 'fonoster-new-outbound-call-1',
+            provider: 'sipuni',
+            call_ref: 'sipuni-new-outbound-call-1',
             event: 'call_created',
             status: 'ringing',
             direction: 'outbound',
@@ -1430,15 +1430,15 @@ RSpec.describe Telephony::EventsIngestionService do
       end.not_to(change { account.conversations.where(inbox_id: voice_inbox.id, contact_id: contact.id).count })
 
       existing_conversation.reload
-      new_message = existing_conversation.messages.voice_calls.find_by!(source_id: 'voice_call:fonoster-new-outbound-call-1')
+      new_message = existing_conversation.messages.voice_calls.find_by!(source_id: 'voice_call:sipuni-new-outbound-call-1')
 
       aggregate_failures do
         expect(result.reload.conversation_id).to eq(existing_conversation.id)
-        expect(existing_conversation.identifier).to eq('fonoster-previous-call')
+        expect(existing_conversation.identifier).to eq('sipuni-previous-call')
         expect(existing_conversation).to be_open
         expect(existing_conversation.additional_attributes).to include(
           'call_direction' => 'outbound',
-          'fonoster_call_ref' => 'fonoster-new-outbound-call-1',
+          'telephony_call_ref' => 'sipuni-new-outbound-call-1',
           'from_number' => voice_channel.phone_number,
           'to_number' => contact.phone_number
         )
@@ -1447,9 +1447,9 @@ RSpec.describe Telephony::EventsIngestionService do
         expect(existing_conversation.additional_attributes).not_to have_key('call_duration')
         expect(existing_conversation.additional_attributes).not_to have_key('recording_ref')
         expect(existing_conversation.additional_attributes).not_to have_key('recording')
-        expect(new_message.content_attributes.dig('data', 'call_sid')).to eq('fonoster-new-outbound-call-1')
+        expect(new_message.content_attributes.dig('data', 'call_sid')).to eq('sipuni-new-outbound-call-1')
         expect(new_message.content_attributes.dig('data', 'status')).to eq('ringing')
-        expect(new_message.content_attributes.dig('data', 'provider')).to eq('fonoster')
+        expect(new_message.content_attributes.dig('data', 'provider')).to eq('sipuni')
         expect(new_message.content_attributes.dig('data', 'inbox_id')).to eq(voice_inbox.id)
       end
     end
@@ -1547,7 +1547,7 @@ RSpec.describe Telephony::EventsIngestionService do
       final_ended_at = answered_at + 28.seconds
       expected_duration = final_ended_at.to_i - answered_at.to_i
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         status: 'completed',
         started_at: answered_at - 8.seconds,
         answered_at: answered_at,
@@ -1703,7 +1703,7 @@ RSpec.describe Telephony::EventsIngestionService do
           event_key: 'evt-inbound-operator-unanswered-recording-1',
           event: 'recording_ready',
           occurred_at: (occurred_at + 3.seconds).iso8601,
-          recording_ref: 'voice-recordings/fonoster/530/call-retry-1/empty.wav',
+          recording_ref: 'voice-recordings/janus/530/call-retry-1/empty.wav',
           duration: 2
         )
       ).perform
@@ -2616,13 +2616,13 @@ RSpec.describe Telephony::EventsIngestionService do
     it 'attaches an outbound recording to the existing call session when a technical ingress belongs to another channel' do
       other_account = create(:account)
       create(:telephony_number_binding, account: other_account, phone_number: '9098', ingress_number: '9098')
-      voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+77070001001')
+      voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+77070001001')
       voice_inbox = voice_channel.inbox
       number_binding = Telephony::NumberBinding.find_by!(account: account, inbox: voice_inbox)
       answered_at = Time.zone.parse(45.seconds.ago.iso8601)
       ended_at = answered_at + 12.seconds
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'completed',
         inbox: voice_inbox,
@@ -2652,15 +2652,15 @@ RSpec.describe Telephony::EventsIngestionService do
       result = described_class.new(
         payload: payload.merge(
           event_key: 'evt-outbound-recording-technical-ingress-1',
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'recording_ready',
           status: 'completed',
           direction: 'outbound',
           ingress_number: '9098',
           caller_number: '',
           occurred_at: ended_at.iso8601,
-          recording_ref: 'voice-recordings/fonoster/8/call-retry-1/audio.wav',
-          storage_key: 'voice-recordings/fonoster/8/call-retry-1/audio.wav',
+          recording_ref: 'voice-recordings/janus/8/call-retry-1/audio.wav',
+          storage_key: 'voice-recordings/janus/8/call-retry-1/audio.wav',
           byte_size: 195_884,
           duration_seconds: 12
         )
@@ -2669,7 +2669,7 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.reload).to have_attributes(
         inbox_id: voice_inbox.id,
         number_binding_id: number_binding.id,
-        recording_ref: 'voice-recordings/fonoster/8/call-retry-1/audio.wav',
+        recording_ref: 'voice-recordings/janus/8/call-retry-1/audio.wav',
         status: 'completed'
       )
       expect(message.reload.content_attributes.dig('data', 'recording_url')).to be_present
@@ -2677,7 +2677,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'does not expose or transcribe outbound recordings when the customer never answered' do
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'no_answer',
         answered_at: nil,
@@ -2703,7 +2703,7 @@ RSpec.describe Telephony::EventsIngestionService do
         result = described_class.new(
           payload: payload.merge(
             event_key: 'evt-outbound-no-answer-recording-ready-1',
-            provider: 'fonoster',
+            provider: 'sipuni',
             direction: 'outbound',
             call_direction: 'outbound',
             event: 'recording_ready',
@@ -2728,13 +2728,13 @@ RSpec.describe Telephony::EventsIngestionService do
       end
     end
 
-    it 'keeps newer Fonoster conversation state when an older call recording arrives late' do
+    it 'keeps newer native SIP conversation state when an older call recording arrives late' do
       conversation = existing_call_session.conversation
       old_started_at = Time.zone.parse(35.minutes.ago.iso8601)
       old_ended_at = old_started_at + 8.seconds
       new_started_at = Time.zone.parse(1.minute.ago.iso8601)
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         direction: 'outbound',
         status: 'no_answer',
         started_at: old_started_at,
@@ -2749,7 +2749,7 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: existing_call_session.contact,
         inbox: existing_call_session.inbox,
         number_binding: existing_call_session.number_binding,
-        provider: 'fonoster',
+        provider: 'sipuni',
         external_call_ref: 'call-current-1',
         direction: 'outbound',
         status: 'in_progress',
@@ -2759,10 +2759,10 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       conversation.update!(
         additional_attributes: {
-          'telephony_provider' => 'fonoster',
+          'telephony_provider' => 'sipuni',
           'call_direction' => 'outbound',
           'call_status' => 'in_progress',
-          'fonoster_call_ref' => new_call_session.external_call_ref,
+          'telephony_call_ref' => new_call_session.external_call_ref,
           'from_number' => new_call_session.from_number,
           'to_number' => new_call_session.to_number,
           'call_started_at' => new_call_session.answered_at.to_i,
@@ -2787,11 +2787,11 @@ RSpec.describe Telephony::EventsIngestionService do
 
       result = described_class.new(
         payload: payload.merge(
-          event_key: 'evt-late-old-fonoster-recording-ready-1',
-          provider: 'fonoster',
+          event_key: 'evt-late-old-native-sip-recording-ready-1',
+          provider: 'sipuni',
           event: 'recording_ready',
           occurred_at: Time.current.iso8601,
-          recording_ref: 'voice-recordings/fonoster/530/call-retry-1/late.wav',
+          recording_ref: 'voice-recordings/janus/530/call-retry-1/late.wav',
           duration: 1800
         )
       ).perform
@@ -2804,11 +2804,11 @@ RSpec.describe Telephony::EventsIngestionService do
           ended_at: old_ended_at,
           duration_seconds: 8,
           last_event_at: old_ended_at,
-          recording_ref: 'voice-recordings/fonoster/530/call-retry-1/late.wav'
+          recording_ref: 'voice-recordings/janus/530/call-retry-1/late.wav'
         )
         expect(attrs).to include(
           'call_status' => 'in_progress',
-          'fonoster_call_ref' => new_call_session.external_call_ref,
+          'telephony_call_ref' => new_call_session.external_call_ref,
           'from_number' => new_call_session.from_number,
           'to_number' => new_call_session.to_number
         )
@@ -2817,17 +2817,17 @@ RSpec.describe Telephony::EventsIngestionService do
         expect(old_message_data).to include(
           'status' => 'no_answer',
           'duration' => 8,
-          'recording_ref' => 'voice-recordings/fonoster/530/call-retry-1/late.wav'
+          'recording_ref' => 'voice-recordings/janus/530/call-retry-1/late.wav'
         )
       end
     end
 
-    it 'allows a newer Fonoster call to replace an older reusable conversation state' do
+    it 'allows a newer native SIP call to replace an older reusable conversation state' do
       conversation = existing_call_session.conversation
       old_started_at = Time.zone.parse(10.minutes.ago.iso8601)
       new_started_at = Time.zone.parse(30.seconds.ago.iso8601)
       existing_call_session.update!(
-        provider: 'fonoster',
+        provider: 'sipuni',
         external_call_ref: 'call-retry-1',
         status: 'completed',
         started_at: old_started_at,
@@ -2837,9 +2837,9 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       conversation.update!(
         additional_attributes: {
-          'telephony_provider' => 'fonoster',
+          'telephony_provider' => 'sipuni',
           'call_status' => 'completed',
-          'fonoster_call_ref' => 'call-retry-1',
+          'telephony_call_ref' => 'call-retry-1',
           'call_started_at' => old_started_at.to_i,
           'call_ended_at' => (old_started_at + 20.seconds).to_i,
           'call_duration' => 20,
@@ -2853,7 +2853,7 @@ RSpec.describe Telephony::EventsIngestionService do
         contact: existing_call_session.contact,
         inbox: existing_call_session.inbox,
         number_binding: existing_call_session.number_binding,
-        provider: 'fonoster',
+        provider: 'sipuni',
         external_call_ref: 'call-newer-terminal-1',
         direction: 'outbound',
         status: 'ringing',
@@ -2863,9 +2863,9 @@ RSpec.describe Telephony::EventsIngestionService do
 
       result = described_class.new(
         payload: payload.merge(
-          event_key: 'evt-newer-fonoster-terminal-replaces-old-state-1',
+          event_key: 'evt-newer-native-sip-terminal-replaces-old-state-1',
           call_ref: newer_call_session.external_call_ref,
-          provider: 'fonoster',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed',
           direction: 'outbound',
@@ -2881,7 +2881,7 @@ RSpec.describe Telephony::EventsIngestionService do
         expect(result.reload).to have_attributes(status: 'no_answer', duration_seconds: 12)
         expect(attrs).to include(
           'call_status' => 'no_answer',
-          'fonoster_call_ref' => newer_call_session.external_call_ref,
+          'telephony_call_ref' => newer_call_session.external_call_ref,
           'call_duration' => 12
         )
         expect(attrs['call_ended_at']).to eq((new_started_at + 12.seconds).to_i)
@@ -2957,7 +2957,7 @@ RSpec.describe Telephony::EventsIngestionService do
     it 'resolves bridge event ownership from number binding before unscoped call_ref lookup' do
       other_account = create(:account)
       other_session = create(:telephony_call_session, account: other_account, external_call_ref: 'shared-bridge-call-ref', status: 'ringing')
-      target_voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+1555889010')
+      target_voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+1555889010')
       Telephony::NumberBinding.sync_from_voice_channel!(target_voice_channel)
       target_binding = target_voice_channel.inbox.telephony_number_binding
       target_session = create(
@@ -3157,7 +3157,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'rejects an explicit account_id paired with another account number_ref' do
       other_account = create(:account)
-      other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889030')
+      other_voice_channel = create(:channel_voice, :sipuni, account: other_account, phone_number: '+1555889030')
       Telephony::NumberBinding.sync_from_voice_channel!(other_voice_channel)
 
       expect do

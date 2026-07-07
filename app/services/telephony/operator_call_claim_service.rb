@@ -262,13 +262,11 @@ class Telephony::OperatorCallClaimService
       )
     }
     attrs[:agent_binding] = operator_agent_binding if operator_agent_binding.present?
-    attrs[:answered_at] = call_session.answered_at || Time.current if provider_owned_sip_provider?
     call_session.update!(attrs)
   end
 
   def claim_status
     return call_session.status if call_session.status == 'in_progress' || call_session.status == 'completed'
-    return 'in_progress' if provider_owned_sip_provider?
 
     'connecting'
   end
@@ -299,9 +297,8 @@ class Telephony::OperatorCallClaimService
 
   def operator_agent_ref
     return operator_agent_binding.agent_ref if operator_agent_binding
-    return sip_profile.agent_ref if provider_owned_sip_provider?
 
-    operator_agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
+    sip_profile&.agent_ref
   end
 
   def provider_owned_sip_provider?
@@ -366,7 +363,7 @@ class Telephony::OperatorCallClaimService
     @related_claimed_call_sessions ||= begin
       target_started_at = call_session.started_at || call_session.created_at || Time.current
       candidates = account.telephony_call_sessions
-                          .where(provider: call_session.provider.presence || 'fonoster', direction: call_session.direction)
+                          .where(provider: call_session.provider, direction: call_session.direction)
                           .where(created_at: (target_started_at - 2.minutes)..(target_started_at + 2.minutes))
                           .to_a
 

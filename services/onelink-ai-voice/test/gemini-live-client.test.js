@@ -197,6 +197,32 @@ test('GeminiLiveClient buffers final-marked AI transcription chunks until turnCo
   ]);
 });
 
+test('GeminiLiveClient flushes buffered transcript as final when provider closes the stream', async () => {
+  FakeSocket.instances = [];
+  const transcripts = [];
+
+  const client = new GeminiLiveClient({
+    apiKey: 'secret-token-123',
+    model: 'gemini-live-test',
+    WebSocketImpl: FakeSocket,
+    onTranscript: item => transcripts.push(item)
+  });
+
+  const connectPromise = client.connect();
+  const socket = FakeSocket.instances[0];
+  socket.open();
+  socket.receive({ setupComplete: {} });
+  await connectPromise;
+
+  socket.receive({ serverContent: { inputTranscription: { text: 'Здравствуйте. Один раз ', finished: false } } });
+  socket.receive({ serverContent: { inputTranscription: { text: 'два.', finished: false } } });
+  socket.close();
+
+  assert.deepEqual(transcripts.map(item => [item.speaker, item.text, item.final]), [
+    ['caller', 'Здравствуйте. Один раз два.', true]
+  ]);
+});
+
 test('buildGeminiLiveUrl uses the base websocket endpoint and never includes API key or model query', () => {
   const url = buildGeminiLiveUrl('gemini-live-test', 'do-not-leak');
   assert.equal(url.includes('do-not-leak'), false);

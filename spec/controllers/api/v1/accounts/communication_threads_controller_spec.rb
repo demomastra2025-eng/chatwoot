@@ -969,7 +969,7 @@ RSpec.describe 'Communication Threads API', type: :request do
 
     it 'rejects public text delivery through voice call channels' do
       contact = create(:contact, phone_number: '+15550001234', account: account)
-      voice_inbox = create(:channel_voice, :fonoster, account: account).inbox
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
       conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
       create(:inbox_member, user: agent, inbox: voice_inbox)
@@ -987,7 +987,7 @@ RSpec.describe 'Communication Threads API', type: :request do
 
     it 'allows private notes while a voice call channel is selected' do
       contact = create(:contact, phone_number: '+15550001234', account: account)
-      voice_inbox = create(:channel_voice, :fonoster, account: account).inbox
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
       conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
       create(:inbox_member, user: agent, inbox: voice_inbox)

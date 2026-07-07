@@ -5,7 +5,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   let(:administrator) { create(:user, account: account, role: :administrator) }
   let(:headers) { administrator.create_new_auth_token }
   let(:voice_phone_number) { "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}" }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: voice_phone_number) }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: voice_phone_number) }
   let(:voice_inbox) { voice_channel.inbox }
   let(:path) { "/api/v1/accounts/#{account.id}/telephony/webphone/token" }
 
@@ -23,164 +23,12 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['payload']).to include(
-      'provider' => 'fonoster',
+      'provider' => nil,
       'calling_supported' => false,
       'registered' => false,
       'registered_for_routing' => false,
       'reason' => 'agent_binding_missing'
     )
-  end
-
-  it 'returns a browser webphone contract without an inbox when the operator binding exists' do
-    create(
-      :telephony_agent_binding,
-      account: account,
-      user: administrator,
-      provider: 'fonoster',
-      agent_ref: 'fonoster-agent-42'
-    )
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
-        .to_return(
-          status: 200,
-          body: {
-            token: 'test-token',
-            username: 'agent-42',
-            domain: 'agents.example.test',
-            displayName: 'Operator 42',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:agent-42@agents.example.test'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path, headers: headers, as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
-    expect(response.parsed_body.dig('payload', 'agent_ref')).to eq('fonoster-agent-42')
-  end
-
-  it 'normalizes test-grade bridge SIP identity to the current operator binding' do
-    create(
-      :telephony_agent_binding,
-      account: account,
-      user: administrator,
-      provider: 'fonoster',
-      agent_ref: 'fonoster-agent-1001',
-      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
-    )
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(
-          body: hash_including(
-            agent_ref: 'fonoster-agent-1001',
-            agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
-          ),
-          headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-        )
-        .to_return(
-          status: 200,
-          body: {
-            token: unsigned_jwt(
-              'username' => '1001',
-              'domain' => 'operator.cloud.vconsult.kz',
-              'targetAor' => 'sip:1001@operator.cloud.vconsult.kz',
-              'allowedMethods' => ['INVITE']
-            ),
-            username: '1001',
-            domain: 'operator.cloud.vconsult.kz',
-            displayName: 'Legacy Browser Agent',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:1001@operator.cloud.vconsult.kz'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
-    expect(response.parsed_body.dig('payload', 'username')).to eq('1001')
-    expect(response.parsed_body.dig('payload', 'domain')).to eq('operator.cloud.vconsult.kz')
-    expect(response.parsed_body.dig('payload', 'targetAor')).to eq('sip:1001@operator.cloud.vconsult.kz')
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
-  end
-
-  it 'uses the inbox SIP profile for the webphone contract when the user also has a legacy binding' do
-    create(
-      :telephony_agent_binding,
-      account: account,
-      user: administrator,
-      provider: 'fonoster',
-      agent_ref: 'legacy-agent-1001',
-      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
-    )
-    create(
-      :telephony_sip_profile,
-      account: account,
-      inbox: voice_inbox,
-      user: administrator,
-      internal_extension: '504',
-      agent_ref: 'local-profile-504',
-      fonoster_agent_ref: 'remote-profile-504',
-      agent_aor: 'sip:504@ats01.kz.sipuni.com',
-      availability_mode: 'external_extension'
-    )
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(
-          body: hash_including(
-            agent_ref: 'remote-profile-504',
-            agent_aor: 'sip:504@ats01.kz.sipuni.com'
-          ),
-          headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-        )
-        .to_return(
-          status: 200,
-          body: {
-            token: 'test-token',
-            username: 'internal',
-            domain: 'internal',
-            displayName: 'Test Call Agent',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:voice@default'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
-
-    payload = response.parsed_body['payload']
-    expect(payload['agent_ref']).to eq('remote-profile-504')
-    expect(payload['username']).to eq('504')
-    expect(payload['domain']).to eq('ats01.kz.sipuni.com')
-    expect(payload['targetAor']).to eq('sip:504@ats01.kz.sipuni.com')
-    expect(payload['browser_join_supported']).to be(false)
-    expect(payload['calling_supported']).to be(false)
   end
 
   it 'returns a Janus SIP webphone contract for native Sipuni browser profiles' do
@@ -220,7 +68,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       sip_password: 'test-sip-password',
       sip_host: 'operator.cloud.vconsult.kz',
       agent_ref: 'local-profile-501',
-      fonoster_agent_ref: nil,
       availability_mode: 'browser_webphone',
       status: 'active',
       agent_aor: 'sip:990001000021@ats01.kz.sipuni.com',
@@ -362,7 +209,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       sip_username: 'pq4dyw5f',
       sip_password: 'test-binotel-password',
       agent_ref: 'local-binotel-profile-901',
-      fonoster_agent_ref: nil,
       availability_mode: 'browser_webphone',
       status: 'active',
       agent_aor: 'sip:pq4dyw5f@sip53.binotel.com',
@@ -495,58 +341,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
-  it 'includes the legacy Fonoster binding alongside native Janus SIP profiles for no-inbox bootstrap' do
-    create(
-      :telephony_agent_binding,
-      account: account,
-      user: administrator,
-      provider: 'fonoster',
-      agent_ref: 'fonoster-agent-42',
-      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
-    )
-    profiles = create_native_janus_browser_profiles
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
-      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(
-          body: hash_including(
-            agent_ref: 'fonoster-agent-42',
-            agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
-          ),
-          headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-        )
-        .to_return(
-          status: 200,
-          body: {
-            token: 'test-token',
-            username: '1001',
-            domain: 'operator.cloud.vconsult.kz',
-            displayName: 'Legacy Browser Agent',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:1001@operator.cloud.vconsult.kz'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path, headers: headers, as: :json
-    end
-
-    payload = response.parsed_body.fetch('payload')
-    sessions = payload.fetch('sessions')
-    expect(response).to have_http_status(:ok)
-    expect(payload['multi_session']).to be(true)
-    expect(sessions.pluck('provider')).to match_array(%w[fonoster sipuni binotel asterisk_analog])
-    expect(sessions.pluck('sip_profile_id').compact).to match_array(profiles.map(&:id))
-    expect(sessions.find { |session| session['provider'] == 'fonoster' }).to include(
-      'username' => '1001',
-      'targetAor' => 'sip:1001@operator.cloud.vconsult.kz'
-    )
-  end
-
   it 'creates an operator call session from a native Janus SIP incoming event' do
     _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
     incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
@@ -652,6 +446,212 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'attaches a pending native Janus SIP incoming call to AI voice without creating an operator route' do
+    sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    voice_agent_profile = create(
+      :telephony_sip_profile,
+      :voice_agent,
+      account: account,
+      inbox: sipuni_profile.inbox,
+      provider_connection: sipuni_profile.provider_connection,
+      internal_extension: '9098',
+      sip_username: 'ai-agent-9098',
+      availability_mode: 'browser_webphone',
+      status: 'active'
+    )
+    incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
+    raw_call_ref = 'raw-sipuni-ai-pending@91.215.136.2:8217'
+    expected_call_ref = "sipuni:janus:#{voice_agent_profile.id}:#{raw_call_ref}"
+    binding = Telephony::NumberBinding.sync_from_voice_channel!(sipuni_profile.inbox.channel)
+    assistant = create(:captain_assistant, account: account)
+    binding.routing_policy.update!(
+      mode: 'operator',
+      ai_enabled: true,
+      ai_deployment_mode: 'onelink_managed',
+      onelink_ai_app_ref: 'onelink-managed-voice-agent',
+      captain_assistant: assistant
+    )
+    contact = create(:contact, account: account, phone_number: '+77475318623')
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: sipuni_profile.inbox, source_id: '+77475318623')
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: sipuni_profile.inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: 'pending'
+    )
+
+    with_modified_env(
+      ONELINK_AI_VOICE_BASE_URL: 'http://voice.internal:8083',
+      ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret'
+    ) do
+      runtime_stub = stub_request(:post, 'http://voice.internal:8083/internal/janus-sip/calls')
+                     .with(headers: { 'Authorization' => 'Bearer voice-secret', 'Content-Type' => 'application/json' }) do |request|
+                       body = JSON.parse(request.body)
+                       expect(body).to include(
+                         'call_ref' => expected_call_ref,
+                         'bridge_call_ref' => expected_call_ref,
+                         'account_id' => account.id.to_s,
+                         'inbox_id' => sipuni_profile.inbox_id.to_s,
+                         'conversation_id' => conversation.id.to_s,
+                         'provider' => 'sipuni',
+                         'transport' => 'janus_sip',
+                         'sip_profile_id' => voice_agent_profile.id.to_s
+                       )
+                       expect(body['sip_profile']).to include(
+                         'id' => voice_agent_profile.id,
+                         'profile_kind' => 'voice_agent',
+                         'voice_agent' => true,
+                         'internal_extension' => '9098',
+                         'sip_username' => 'ai-agent-9098'
+                       )
+                       expect(body.to_json).not_to include('voice-agent-secret')
+                       expect(body['routing']).to include(
+                         'action' => 'ai',
+                         'reason' => 'pending_conversation_ai_route',
+                         'conversation_status' => 'pending',
+                         'captain_assistant_id' => assistant.id
+                       )
+                       expect(body.dig('routing', 'ai_context')).to include(
+                         'call_ref' => expected_call_ref,
+                         'account_id' => account.id,
+                         'conversation_id' => conversation.id,
+                         'number_ref' => binding.number_ref
+                       )
+                       expect(body.dig('routing', 'ai_context', 'tools').pluck('name')).to include('faq_lookup')
+                       expect(body['ai_context']).to eq(body.dig('routing', 'ai_context'))
+                       expect(body['janus']).to include(
+                         'session_id' => 'janus-session-1',
+                         'handle_id' => 'janus-handle-1',
+                         'unique_id' => 'janus-unique-1',
+                         'master_id' => 'janus-master-1'
+                       )
+                     end
+                     .to_return(
+                       status: 202,
+                       body: { status: 'accepted', mode: 'accepted', call_ref: expected_call_ref, transport: 'janus_sip' }.to_json,
+                       headers: { 'Content-Type' => 'application/json' }
+                     )
+
+      post incoming_path,
+           params: {
+             inbox_id: sipuni_profile.inbox_id,
+             provider: 'sipuni',
+             call_ref: raw_call_ref,
+             from: 'sip:+77475318623@91.215.136.2:8217',
+             session_key: "sip_profile:#{voice_agent_profile.id}",
+             sip_profile_id: voice_agent_profile.id,
+             janus_session_id: 'janus-session-1',
+             janus_handle_id: 'janus-handle-1',
+             janus_unique_id: 'janus-unique-1',
+             janus_master_id: 'janus-master-1',
+             internal_extension: voice_agent_profile.internal_extension
+           },
+           headers: headers,
+           as: :json
+
+      expect(runtime_stub).to have_been_requested
+    end
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: expected_call_ref)
+    expect(payload).to include(
+      'call_sid' => expected_call_ref,
+      'provider' => 'sipuni',
+      'route_action' => 'ai'
+    )
+    expect(payload['sip_profile_id']).to eq(voice_agent_profile.id)
+    expect(payload['ai_voice']).to include(
+      'state' => 'attached',
+      'transport' => 'janus_sip',
+      'provider' => 'sipuni'
+    )
+    expect(call_session).to have_attributes(
+      conversation_id: conversation.id,
+      contact_id: contact.id,
+      status: 'ringing',
+      direction: 'inbound'
+    )
+    expect(call_session.metadata.dig('metadata', 'route_action')).to eq('ai')
+    expect(call_session.metadata.dig('metadata', 'voice_agent')).to be(true)
+    expect(call_session.metadata.dig('metadata', 'voice_agent_sip_profile_id')).to eq(voice_agent_profile.id)
+    expect(call_session.metadata.dig('metadata', 'janus_unique_id')).to eq('janus-unique-1')
+    expect(call_session.metadata.dig('ai_voice', 'state')).to eq('attached')
+  end
+
+  it 'rejects a native Janus SIP AI route when the explicit SIP profile is not a voice agent' do
+    sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
+    binding = Telephony::NumberBinding.sync_from_voice_channel!(sipuni_profile.inbox.channel)
+    assistant = create(:captain_assistant, account: account)
+    binding.routing_policy.update!(
+      mode: 'operator',
+      ai_enabled: true,
+      ai_deployment_mode: 'onelink_managed',
+      onelink_ai_app_ref: 'onelink-managed-voice-agent',
+      captain_assistant: assistant
+    )
+    create(
+      :telephony_sip_profile,
+      :voice_agent,
+      account: account,
+      inbox: sipuni_profile.inbox,
+      provider_connection: sipuni_profile.provider_connection,
+      internal_extension: '9099',
+      sip_username: 'ai-agent-9099',
+      availability_mode: 'browser_webphone',
+      status: 'active'
+    )
+    contact = create(:contact, account: account, phone_number: '+77475318624')
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: sipuni_profile.inbox, source_id: '+77475318624')
+    create(
+      :conversation,
+      account: account,
+      inbox: sipuni_profile.inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: 'pending'
+    )
+
+    with_modified_env(
+      ONELINK_AI_VOICE_BASE_URL: 'http://voice.internal:8083',
+      ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret'
+    ) do
+      runtime_stub = stub_request(:post, 'http://voice.internal:8083/internal/janus-sip/calls')
+
+      post incoming_path,
+           params: {
+             inbox_id: sipuni_profile.inbox_id,
+             provider: 'sipuni',
+             call_ref: 'raw-sipuni-ai-no-profile@91.215.136.2:8217',
+             from: 'sip:+77475318624@91.215.136.2:8217',
+             session_key: "sip_profile:#{sipuni_profile.id}",
+             sip_profile_id: sipuni_profile.id,
+             janus_session_id: 'janus-session-2',
+             janus_handle_id: 'janus-handle-2',
+             janus_unique_id: 'janus-unique-2',
+             janus_master_id: 'janus-master-2',
+             internal_extension: sipuni_profile.internal_extension
+           },
+           headers: headers,
+           as: :json
+
+      expect(runtime_stub).not_to have_been_requested
+    end
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: "sipuni:janus:#{sipuni_profile.id}:raw-sipuni-ai-no-profile@91.215.136.2:8217")
+    expect(payload).to include(
+      'route_action' => 'reject',
+      'browser_join_supported' => true
+    )
+    expect(call_session.metadata.dig('metadata', 'route_reason')).to eq('voice_agent_sip_profile_missing')
+    expect(call_session.metadata['ai_voice']).to be_blank
+  end
+
   it 'reuses a recent Sipuni webhook provider call when native Janus incoming arrives after the webhook' do
     sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
     incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
@@ -710,7 +710,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   it 'returns an unsupported payload for provider-managed Sipuni extensions' do
     sipuni_channel = create(
       :channel_voice,
-      :fonoster,
+      :sipuni,
       account: account,
       phone_number: '+15550129999',
       provider_config: { provider_kind: 'sipuni', number_ref: 'sipuni-number-ref' }
@@ -744,7 +744,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   it 'returns an unsupported payload for provider-managed Binotel extensions' do
     binotel_channel = create(
       :channel_voice,
-      :fonoster,
+      :sipuni,
       account: account,
       phone_number: '+15550001755',
       provider_config: { provider_kind: 'binotel', number_ref: 'binotel-number-ref' }
@@ -778,7 +778,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   it 'uses the latest browser SIP profile for no-inbox auto webphone bootstrap' do
     older_voice_channel = create(
       :channel_voice,
-      :fonoster,
+      :sipuni,
       account: account,
       phone_number: "+1556#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
     )
@@ -789,55 +789,37 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       user: administrator,
       internal_extension: '9098',
       agent_ref: 'local-profile-9098',
-      fonoster_agent_ref: 'remote-profile-9098',
       agent_aor: 'sip:9098@operator.cloud.vconsult.kz',
-      availability_mode: 'browser_webphone'
+      availability_mode: 'browser_webphone',
+      sip_password: 'older-profile-password'
     )
-    create(
+    latest_profile = create(
       :telephony_sip_profile,
       account: account,
       inbox: voice_inbox,
       user: administrator,
       internal_extension: '505',
       agent_ref: 'local-profile-505',
-      fonoster_agent_ref: 'remote-profile-505',
       agent_aor: 'sip:505@operator.cloud.vconsult.kz',
-      availability_mode: 'browser_webphone'
+      availability_mode: 'browser_webphone',
+      sip_password: 'latest-profile-password'
     )
 
     with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+      TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
     ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(
-          body: hash_including(
-            agent_ref: 'remote-profile-505',
-            agent_aor: 'sip:505@operator.cloud.vconsult.kz'
-          ),
-          headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-        )
-        .to_return(
-          status: 200,
-          body: {
-            token: 'test-token',
-            username: 'internal',
-            domain: 'internal',
-            displayName: 'Test Call Agent',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:voice@default'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
       post path, headers: headers, as: :json
     end
 
-    payload = response.parsed_body['payload']
-    expect(payload['agent_ref']).to eq('remote-profile-505')
-    expect(payload['username']).to eq('505')
-    expect(payload['domain']).to eq('operator.cloud.vconsult.kz')
-    expect(payload['targetAor']).to eq('sip:505@operator.cloud.vconsult.kz')
+    payload = response.parsed_body.fetch('payload')
+    expect(payload['provider']).to eq('sipuni')
+    expect(payload['sip_profile_id']).to eq(latest_profile.id)
+    expect(payload['agent_ref']).to eq('local-profile-505')
+    expect(payload['sip']).to include(
+      'username' => latest_profile.sip_username,
+      'password' => 'latest-profile-password',
+      'internal_extension' => '505'
+    )
     expect(payload['browser_join_supported']).to be(true)
     expect(payload['calling_supported']).to be(true)
   end
@@ -847,7 +829,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       :telephony_agent_binding,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       agent_ref: 'legacy-agent-1001',
       agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
     )
@@ -856,23 +838,14 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       ownership_status: 'local'
     )
 
-    token_request = nil
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
+    post path,
+         params: { inbox_id: voice_inbox.id },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(token_request).not_to have_been_requested
     expect(response.parsed_body['payload']).to include(
-      'provider' => 'fonoster',
+      'provider' => 'sipuni',
       'calling_supported' => false,
       'registered' => false,
       'registered_for_routing' => false,
@@ -880,61 +853,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
-  it 'disables browser calling when a signed Fonoster token still points at the test identity' do
-    create(
-      :telephony_agent_binding,
-      account: account,
-      user: administrator,
-      provider: 'fonoster',
-      agent_ref: 'fonoster-agent-1001',
-      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
-    )
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .to_return(
-          status: 200,
-          body: {
-            token: unsigned_jwt(
-              'username' => 'internal',
-              'domain' => 'internal',
-              'targetAor' => 'sip:voice@default',
-              'aorLink' => 'sip:voice@default',
-              'allowedMethods' => ['INVITE']
-            ),
-            username: 'internal',
-            domain: 'internal',
-            displayName: 'Test Call Agent',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:voice@default'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
-
-    payload = response.parsed_body['payload']
-    expect(payload['username']).to eq('1001')
-    expect(payload['domain']).to eq('operator.cloud.vconsult.kz')
-    expect(payload['targetAor']).to eq('sip:1001@operator.cloud.vconsult.kz')
-    expect(payload['calling_supported']).to be(false)
-    expect(payload.dig('diagnostics', 'token_identity_mismatch')).to be(true)
-    expect(payload.dig('diagnostics', 'actual_token_identity')).to include(
-      'username' => 'internal',
-      'domain' => 'internal',
-      'targetAor' => 'sip:voice@default'
-    )
-  end
-
-  it 'records browser registration presence on the agent binding' do
-    agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+  it 'does not record browser registration presence on a legacy agent binding without a SIP profile' do
+    agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'sipuni')
 
     post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
          params: { registered: true },
@@ -942,14 +862,14 @@ RSpec.describe 'Telephony Webphone API', type: :request do
          as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(agent_binding.reload.registered_for_routing?).to be(true)
-    expect(agent_binding.metadata).to include(
-      'registration_state' => 'registered',
-      'presence' => 'online',
-      'last_presence_source' => 'browser_webphone'
+    expect(agent_binding.reload.registered_for_routing?).to be(false)
+    expect(agent_binding.metadata).not_to include('last_presence_source')
+    expect(response.parsed_body['payload']).to include(
+      'provider' => nil,
+      'calling_supported' => false,
+      'registered_for_routing' => false,
+      'reason' => 'agent_binding_missing'
     )
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
-    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
   end
 
   it 'does not write browser presence to a disabled legacy binding without an inbox' do
@@ -957,7 +877,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       :telephony_agent_binding,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       enabled: false,
       metadata: {
         'disabled_reason' => 'managed_voice_inboxes_do_not_use_legacy_bindings',
@@ -987,7 +907,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       :telephony_agent_binding,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       agent_ref: 'legacy-agent-1001',
       agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
     )
@@ -998,7 +918,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       user: administrator,
       internal_extension: '504',
       agent_ref: 'local-profile-504',
-      fonoster_agent_ref: 'remote-profile-504',
       agent_aor: 'sip:504@operator.cloud.vconsult.kz',
       availability_mode: 'browser_webphone'
     )
@@ -1024,7 +943,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       user: administrator,
       internal_extension: '505',
       agent_ref: 'local-profile-505',
-      fonoster_agent_ref: 'remote-profile-505',
       agent_aor: 'sip:505@operator.cloud.vconsult.kz',
       availability_mode: 'browser_webphone'
     )
@@ -1049,7 +967,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       user: administrator,
       internal_extension: '506',
       agent_ref: 'local-profile-506',
-      fonoster_agent_ref: 'remote-profile-506',
       agent_aor: 'sip:506@operator.cloud.vconsult.kz',
       availability_mode: 'browser_webphone',
       metadata: {
@@ -1068,7 +985,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       user: administrator,
       internal_extension: '507',
       agent_ref: 'local-profile-507',
-      fonoster_agent_ref: 'remote-profile-507',
       agent_aor: 'sip:507@operator.cloud.vconsult.kz',
       availability_mode: 'browser_webphone'
     )
@@ -1097,7 +1013,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       :telephony_agent_binding,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       agent_ref: 'legacy-agent-1001',
       agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
     )
@@ -1115,7 +1031,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(legacy_binding.reload.metadata).not_to include('last_presence_source')
     expect(legacy_binding.registered_for_routing?).to be(false)
     expect(response.parsed_body['payload']).to include(
-      'provider' => 'fonoster',
+      'provider' => 'sipuni',
       'calling_supported' => false,
       'registered' => false,
       'registered_for_routing' => false,
@@ -1131,7 +1047,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['payload']).to include(
-      'provider' => 'fonoster',
+      'provider' => nil,
       'calling_supported' => false,
       'registered' => false,
       'registered_for_routing' => false,
@@ -1139,190 +1055,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
-  it 'does not advertise browser calling or call the bridge without an operator binding' do
-    token_request = nil
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-
-      post path, headers: headers, as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(token_request).not_to have_been_requested
-    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
-    expect(response.parsed_body.dig('payload', 'registered')).to be(false)
-    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(false)
-    expect(response.parsed_body.dig('payload', 'reason')).to eq('agent_binding_missing')
-  end
-
-  it 'does not advertise browser calling or call the bridge for a disabled legacy binding' do
-    create(
-      :telephony_agent_binding,
-      account: account,
-      user: administrator,
-      provider: 'fonoster',
-      agent_ref: 'disabled-legacy-agent-1001',
-      enabled: false
-    )
-    token_request = nil
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-
-      post path, headers: headers, as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(token_request).not_to have_been_requested
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
-    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(false)
-    expect(response.parsed_body.dig('payload', 'reason')).to eq('agent_binding_missing')
-  end
-
-  it 'does not advertise browser calling for fonoster without a complete browser contract' do
-    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
-        .to_return(
-          status: 200,
-          body: {
-            provider: 'fonoster',
-            calling_supported: true
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
-  end
-
-  it 'keeps browser calling disabled when the bridge sends callingSupported false' do
-    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
-        .to_return(
-          status: 200,
-          body: {
-            provider: 'fonoster',
-            callingSupported: false,
-            token: 'test-token',
-            username: 'agent-303',
-            domain: 'agents.example.test',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:agent-303@agents.example.test'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
-  end
-
-  it 'advertises browser calling for fonoster when the bridge returns the required SIP contract' do
-    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
-        .to_return(
-          status: 200,
-          body: {
-            token: 'test-token',
-            provider: 'fonoster',
-            username: 'agent-101',
-            domain: 'agents.example.test',
-            displayName: 'Operator 101',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:agent-101@agents.example.test'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
-    expect(response.parsed_body.dig('payload', 'targetAor')).to eq('sip:agent-101@agents.example.test')
-  end
-
-  it 'uses the configured public signaling server override for fonoster browser calls' do
-    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
-      TELEPHONY_WEBPHONE_SIGNALING_SERVER_URL: 'wss://app.example.test/telephony/sip-ws'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
-        .to_return(
-          status: 200,
-          body: {
-            token: 'test-token',
-            provider: 'fonoster',
-            username: 'agent-101',
-            domain: 'agents.example.test',
-            displayName: 'Operator 101',
-            signalingServer: 'ws://bridge.example:5062',
-            targetAor: 'sip:agent-101@agents.example.test'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: { inbox_id: voice_inbox.id },
-           headers: headers,
-           as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
-    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
-    expect(response.parsed_body.dig('payload', 'signalingServer')).to eq('wss://app.example.test/telephony/sip-ws')
-  end
-
   it 'claims an incoming operator pool call for the current registered candidate' do
-    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -1352,10 +1086,10 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'rejects the second operator when an incoming call was already claimed' do
-    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     loser_user = create(:user, account: account, role: :agent)
     loser_headers = loser_user.create_new_auth_token
-    loser = create(:telephony_agent_binding, :registered, account: account, user: loser_user, provider: 'fonoster')
+    loser = create(:telephony_agent_binding, :registered, account: account, user: loser_user, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -1387,7 +1121,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'rejects claim attempts from registered operators outside the route candidate pool' do
-    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -1416,7 +1150,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       :telephony_agent_binding,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       metadata: {
         registration_state: 'offline',
         registered: false,
@@ -1453,13 +1187,13 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(call_session.reload.agent_binding_id).to be_nil
   end
 
-  it 'terminates an operator call when the browser phone cannot decline the SIP leg' do
+  it 'marks an operator call rejected when the browser phone cannot decline the SIP leg' do
     agent_binding = create(
       :telephony_agent_binding,
       :registered,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
     )
     call_session = create(
@@ -1476,37 +1210,12 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       }
     )
 
-    bridge_seen_status = nil
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      terminate_request = stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/operator-browser-reject-1/reject'
-      ).with(
-        body: hash_including(
-          reason: 'operator_declined',
-          agent_aor: 'sip:1001@operator.cloud.vconsult.kz',
-          actor: 'operator'
-        ),
-        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-      ).to_return do |_request|
-        bridge_seen_status = call_session.reload.status
-        { status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' } }
-      end
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
-           headers: headers,
-           as: :json
-
-      expect(terminate_request).to have_been_requested
-    end
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(bridge_seen_status).to eq('rejected')
     expect(response.parsed_body.dig('payload', 'status')).to eq('rejected')
     expect(call_session.reload).to have_attributes(
       status: 'rejected',
@@ -1527,7 +1236,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       availability_mode: 'browser_webphone',
       status: 'active',
       agent_ref: 'profile-local-504',
-      fonoster_agent_ref: 'fonoster-profile-504',
       agent_aor: 'sip:504@operator.cloud.vconsult.kz',
       metadata: {
         registration_state: 'registered',
@@ -1556,29 +1264,10 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       }
     )
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      terminate_request = stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/sipuni-target-reject-1/reject'
-      ).with(
-        body: hash_including(
-          reason: 'operator_declined',
-          agent_aor: 'sip:504@operator.cloud.vconsult.kz',
-          actor: 'operator'
-        ),
-        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
-           headers: headers,
-           as: :json
-
-      expect(terminate_request).to have_been_requested
-    end
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:ok)
     expect(call_session.reload).to have_attributes(
@@ -1667,6 +1356,68 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'releases a Janus-backed Sipuni browser call without calling the Sipuni hangup API' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '507',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      provider_connection: provider_connection,
+      agent_ref: 'sipuni-profile-507',
+      agent_aor: 'sip:507@ats01.kz.sipuni.com',
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      conversation: create(:conversation, account: account, inbox: voice_inbox),
+      number_binding: Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id),
+      provider: 'sipuni',
+      provider_call_sid: nil,
+      external_call_ref: 'sipuni:janus:48:test-ref',
+      status: 'ringing',
+      direction: 'inbound',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref]
+        }
+      }
+    )
+
+    with_modified_env(
+      SIPUNI_INTEGRATION_USER: '015856',
+      SIPUNI_INTEGRATION_SECRET: 'sipuni-secret',
+      SIPUNI_API_BASE_URL: 'https://sipuni.com'
+    ) do
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'rejected', reason: 'operator_declined' },
+           headers: headers,
+           as: :json
+
+      expect(WebMock).not_to have_requested(:post, 'https://sipuni.com/api/events/call/hangup')
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'rejected',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'operator_declined'
+    )
+  end
+
   it 'still releases the local Sipuni call when the Sipuni hangup API fails' do
     create(:inbox_member, inbox: voice_inbox, user: administrator)
     profile = create(
@@ -1731,56 +1482,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(call_session.metadata.dig('last_payload', 'metadata', 'sipuni_termination_error')).to eq('SIPUNI_REQUEST_FAILED')
   end
 
-  it 'still releases the local operator call when bridge termination fails' do
-    agent_binding = create(
-      :telephony_agent_binding,
-      :registered,
-      account: account,
-      user: administrator,
-      provider: 'fonoster',
-      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
-    )
-    call_session = create(
-      :telephony_call_session,
-      account: account,
-      external_call_ref: 'operator-browser-reject-bridge-fails-1',
-      status: 'ringing',
-      metadata: {
-        'metadata' => {
-          'route_action' => 'operator',
-          'operator_candidate_user_ids' => [administrator.id],
-          'operator_candidate_agent_refs' => [agent_binding.agent_ref]
-        }
-      }
-    )
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/operator-browser-reject-bridge-fails-1/reject'
-      ).to_return(status: 502, body: { error: 'bridge unavailable' }.to_json, headers: { 'Content-Type' => 'application/json' })
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
-           headers: headers,
-           as: :json
-    end
-
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'status')).to eq('rejected')
-    expect(call_session.reload).to have_attributes(
-      status: 'rejected',
-      ended_by: "user:#{administrator.id}",
-      end_reason: 'operator_declined'
-    )
-    expect(call_session.metadata.dig('last_payload', 'metadata', 'bridge_termination_error')).to eq('BRIDGE_REQUEST_FAILED')
-  end
-
   it 'marks an operator call as no-answer when claim succeeded but browser SIP had no pending call' do
-    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -1799,28 +1502,10 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       }
     )
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      terminate_request = stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/operator-browser-no-answer-1/reject'
-      ).with(
-        body: hash_including(
-          reason: 'browser_webphone_not_ready',
-          actor: 'operator'
-        ),
-        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, status: 'no_answer', reason: 'browser_webphone_not_ready' },
-           headers: headers,
-           as: :json
-
-      expect(terminate_request).to have_been_requested
-    end
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'no_answer', reason: 'browser_webphone_not_ready' },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'status')).to eq('no_answer')
@@ -1832,7 +1517,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'marks an active operator call as completed when the browser hangup releases it' do
-    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -1851,28 +1536,10 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       }
     )
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      terminate_request = stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/operator-browser-hangup-1/reject'
-      ).with(
-        body: hash_including(
-          reason: 'operator_hangup',
-          actor: 'operator'
-        ),
-        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
-           headers: headers,
-           as: :json
-
-      expect(terminate_request).to have_been_requested
-    end
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
@@ -1884,7 +1551,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'treats repeated browser hangup release for a completed operator call as idempotent' do
-    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -1903,30 +1570,17 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       }
     )
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      terminate_request = stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/operator-browser-hangup-repeat-1/reject'
-      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+         headers: headers,
+         as: :json
 
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
-           headers: headers,
-           as: :json
+    expect(response).to have_http_status(:ok)
 
-      expect(response).to have_http_status(:ok)
-      expect(terminate_request).to have_been_requested.once
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'remote_hangup' },
-           headers: headers,
-           as: :json
-
-      expect(terminate_request).to have_been_requested.once
-    end
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'remote_hangup' },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
@@ -1937,13 +1591,13 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
-  it 'allows the current operator to hang up an outbound Fonoster operator-mode call' do
+  it 'allows the current operator to hang up an outbound native SIP operator-mode call' do
     agent_binding = create(
       :telephony_agent_binding,
       :registered,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       agent_ref: '1001',
       agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
     )
@@ -1967,29 +1621,10 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       }
     )
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      terminate_request = stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/outbound-operator-mode-hangup-1/reject'
-      ).with(
-        body: hash_including(
-          reason: 'operator_hangup',
-          agent_aor: 'sip:1001@operator.cloud.vconsult.kz',
-          actor: 'operator'
-        ),
-        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-      ).to_return(status: 202, body: { accepted: true }.to_json, headers: { 'Content-Type' => 'application/json' })
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
-           headers: headers,
-           as: :json
-
-      expect(terminate_request).to have_been_requested
-    end
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
@@ -2001,7 +1636,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
-  it 'allows an inbox member to cancel a pending outbound Fonoster call' do
+  it 'allows an inbox member to cancel a pending outbound native SIP call' do
     create(:inbox_member, inbox: voice_inbox, user: administrator)
     conversation = create(:conversation, account: account, inbox: voice_inbox)
     call_session = create(
@@ -2017,8 +1652,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       from_number: voice_channel.phone_number,
       to_number: conversation.contact.phone_number || '+15551230001',
       metadata: {
-        'bridge_response' => { 'status' => 'created' },
-        'fonoster_call_ref' => 'outbound-pending-cancel-1'
+        'telephony_call_ref' => 'outbound-pending-cancel-1'
       }
     )
     message = conversation.messages.create!(
@@ -2037,37 +1671,14 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       }
     )
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      terminate_request = stub_request(
-        :post,
-        'https://bridge.example/telephony/webphone/calls/outbound-pending-cancel-1/reject'
-      ).with(
-        body: hash_including(
-          reason: 'operator_cancelled',
-          actor: 'operator',
-          call_direction: 'outbound'
-        ),
-        headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-      ).to_return(
-        status: 202,
-        body: { accepted: true }.to_json,
-        headers: { 'Content-Type' => 'application/json' }
-      )
-
-      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-           params: {
-             call_ref: call_session.external_call_ref,
-             status: 'cancelled',
-             reason: 'operator_cancelled'
-           },
-           headers: headers,
-           as: :json
-
-      expect(terminate_request).to have_been_requested
-    end
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: {
+           call_ref: call_session.external_call_ref,
+           status: 'cancelled',
+           reason: 'operator_cancelled'
+         },
+         headers: headers,
+         as: :json
 
     aggregate_failures do
       expect(response).to have_http_status(:ok)
@@ -2084,13 +1695,13 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       expect(conversation.reload.additional_attributes).to include(
         'call_status' => 'cancelled',
         'call_direction' => 'outbound',
-        'fonoster_call_ref' => call_session.external_call_ref
+        'telephony_call_ref' => call_session.external_call_ref
       )
     end
   end
 
   it 'rejects browser release attempts from unregistered operators before a claim' do
-    agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+    agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -2115,11 +1726,42 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(call_session.reload.status).to eq('ringing')
   end
 
+  it 'ignores stale browser release attempts for AI voice calls' do
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'ai-browser-release-ignored-1',
+      status: 'in_progress',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'ai',
+          'route_reason' => 'pending_conversation_ai_route'
+        },
+        'ai_voice' => {
+          'state' => 'attached'
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, reason: 'operator_rejected_from_browser' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include(
+      'released' => false,
+      'ignored' => true,
+      'reason' => 'ai_voice_call'
+    )
+    expect(call_session.reload).to have_attributes(status: 'in_progress', ended_by: nil, end_reason: nil)
+  end
+
   it 'does not let a second operator release a call claimed by someone else' do
-    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     loser_user = create(:user, account: account, role: :agent)
     loser_headers = loser_user.create_new_auth_token
-    loser = create(:telephony_agent_binding, :registered, account: account, user: loser_user, provider: 'fonoster')
+    loser = create(:telephony_agent_binding, :registered, account: account, user: loser_user, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -2150,10 +1792,10 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'does not let stale operator claim metadata override a different claimed binding' do
-    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     stale_metadata_user = create(:user, account: account, role: :agent)
     stale_headers = stale_metadata_user.create_new_auth_token
-    stale_binding = create(:telephony_agent_binding, :registered, account: account, user: stale_metadata_user, provider: 'fonoster')
+    stale_binding = create(:telephony_agent_binding, :registered, account: account, user: stale_metadata_user, provider: 'sipuni')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -2181,12 +1823,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response).to have_http_status(:conflict)
     expect(response.parsed_body['code']).to eq('CALL_ALREADY_CLAIMED')
     expect(call_session.reload.status).to eq('connecting')
-  end
-
-  def unsigned_jwt(claims)
-    header = Base64.urlsafe_encode64({ alg: 'none', typ: 'JWT' }.to_json, padding: false)
-    payload = Base64.urlsafe_encode64(claims.to_json, padding: false)
-    "#{header}.#{payload}.signature"
   end
 
   def create_native_janus_browser_profiles

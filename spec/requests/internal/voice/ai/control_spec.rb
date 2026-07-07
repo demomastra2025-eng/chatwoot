@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Internal Voice AI Control API', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15550000004') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15550000004') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_session) do
@@ -40,7 +40,7 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
   end
 
   it 'accepts explicit AI voice terminal lifecycle reasons' do
-    %w[caller_hangup media_stream_closed provider_stream_closed provider_error fonoster_call_closed runtime_closed].each do |action|
+    %w[caller_hangup media_stream_closed provider_stream_closed provider_error provider_call_closed runtime_closed].each do |action|
       with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
         post '/internal/voice/ai/control',
              params: { call_ref: call_session.external_call_ref, account_id: account.id, action: action,
@@ -53,7 +53,7 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
     end
 
     expect(call_session.reload.metadata.dig('ai_voice', 'control_events').last(6).pluck('action')).to eq(
-      %w[caller_hangup media_stream_closed provider_stream_closed provider_error fonoster_call_closed runtime_closed]
+      %w[caller_hangup media_stream_closed provider_stream_closed provider_error provider_call_closed runtime_closed]
     )
   end
 

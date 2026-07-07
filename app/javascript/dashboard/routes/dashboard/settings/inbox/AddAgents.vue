@@ -273,6 +273,7 @@ export default {
         .filter(profile => profile && this.profileHasAnySipAssignment(profile))
         .map(profile => {
           const payload = {
+            profile_kind: 'human_operator',
             user_id: profile.userId,
             internal_extension: profile.internalExtension.trim(),
             enabled: profile.enabled !== false,
@@ -302,7 +303,7 @@ export default {
         },
         {
           dryRun: false,
-          remoteCommit: !this.isVirtualPbxLocalNativeProvider,
+          remoteCommit: false,
         }
       );
       const errors = response?.payload?.errors || [];

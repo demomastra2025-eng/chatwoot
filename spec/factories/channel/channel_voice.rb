@@ -19,16 +19,31 @@ FactoryBot.define do
       create(:inbox, channel: channel_voice, account: channel_voice.account)
     end
 
-    trait :fonoster do
-      provider { 'fonoster' }
+    trait :sipuni do
+      provider { 'sipuni' }
       provider_config do
         {
           number_ref: SecureRandom.uuid,
-          app_ref: SecureRandom.uuid,
-          trunk_ref: SecureRandom.uuid,
+          provider_kind: 'sipuni',
           routing_mode: 'operator',
           operator_agent_aor: "sip:agent-#{SecureRandom.hex(4)}@example.test"
         }
+      end
+
+      before(:create) do |channel_voice|
+        config = channel_voice.provider_config.to_h.with_indifferent_access
+        provider_kind = config[:provider_kind].presence || channel_voice.provider
+        next unless provider_kind.to_s.in?(%w[asterisk_analog sipuni binotel])
+        next if config[:provider_connection_id].present?
+
+        connection = create(
+          :telephony_provider_connection,
+          account: channel_voice.account,
+          provider_kind: provider_kind
+        )
+        config[:provider_connection_id] = connection.id
+        config[:number_ref] = SecureRandom.uuid if config[:number_ref].blank?
+        channel_voice.provider_config = config.to_h
       end
 
       after(:create) do |channel_voice|

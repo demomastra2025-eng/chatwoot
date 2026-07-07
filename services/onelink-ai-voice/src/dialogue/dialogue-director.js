@@ -53,6 +53,7 @@ class DialogueDirector {
   finishToolWait(toolCall = {}, toolResult = {}) {
     this.cancelToolWait('tool_finished');
     if (toolResult?.ok !== false) return;
+    if (toolResult?.pending) return;
     if (!this.sendText || !shouldPromptToolWait(normalizedToolName(toolCall.name))) return;
 
     this.sendPrompt('tool_wait_failed', pickPhrase(this.settings.tool_failure_phrases), {

@@ -18,8 +18,9 @@
 #  metadata                 :jsonb            not null
 #  ownership_status         :string           default("local"), not null
 #  password_secret_ref      :string
-#  sip_password             :text
+#  profile_kind             :string           default("human_operator"), not null
 #  sip_host                 :string
+#  sip_password             :text
 #  sip_username             :string
 #  status                   :string           default("draft"), not null
 #  created_at               :datetime         not null
@@ -27,7 +28,7 @@
 #  account_id               :bigint           not null
 #  inbox_id                 :bigint
 #  provider_connection_id   :bigint
-#  user_id                  :bigint           not null
+#  user_id                  :bigint
 #
 # Indexes
 #
@@ -35,6 +36,7 @@
 #  idx_tel_sip_profiles_account_agent_ref                  (account_id,agent_ref) UNIQUE WHERE (agent_ref IS NOT NULL)
 #  idx_tel_sip_profiles_account_inbox_ext                  (account_id,inbox_id,internal_extension) UNIQUE
 #  idx_tel_sip_profiles_account_provider_connection        (account_id,provider_connection_id)
+#  idx_tel_sip_profiles_one_voice_agent_per_inbox          (account_id,inbox_id) UNIQUE WHERE ((profile_kind)::text = 'voice_agent'::text)
 #  index_telephony_sip_profiles_on_account_id              (account_id)
 #  index_telephony_sip_profiles_on_inbox_id                (inbox_id)
 #  index_telephony_sip_profiles_on_provider_connection_id  (provider_connection_id)
@@ -53,24 +55,30 @@ class Telephony::SipProfile < ApplicationRecord
   encrypts :sip_password if Chatwoot.encryption_configured?
 
   AVAILABILITY_MODES = %w[browser_webphone external_extension provider_extension].freeze
-  PROVIDER_OWNED_SIP_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  PROFILE_KIND_HUMAN_OPERATOR = 'human_operator'
+  PROFILE_KIND_VOICE_AGENT = 'voice_agent'
+  PROFILE_KINDS = [PROFILE_KIND_HUMAN_OPERATOR, PROFILE_KIND_VOICE_AGENT].freeze
   STATUSES = %w[draft active disabled deleting failed].freeze
   OWNERSHIP_STATUSES = %w[local managed legacy_reference read_only deleting].freeze
   MANAGED_BY_ONELINK = 'onelink'
 
   belongs_to :account, class_name: '::Account'
   belongs_to :inbox, class_name: '::Inbox', optional: true
-  belongs_to :user, class_name: '::User'
+  belongs_to :user, class_name: '::User', optional: true
   belongs_to :provider_connection, class_name: '::Telephony::ProviderConnection', optional: true, inverse_of: :sip_profiles
 
   validates :internal_extension, presence: true
+  validates :profile_kind, presence: true, inclusion: { in: PROFILE_KINDS }
   validates :availability_mode, presence: true, inclusion: { in: AVAILABILITY_MODES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :managed_by, presence: true
   validates :ownership_status, presence: true, inclusion: { in: OWNERSHIP_STATUSES }
   validates :internal_extension, uniqueness: { scope: %i[account_id inbox_id] }
+  validates :profile_kind, uniqueness: { scope: %i[account_id inbox_id], conditions: -> { where(profile_kind: PROFILE_KIND_VOICE_AGENT) } },
+                           if: :voice_agent?
   validates :agent_ref, uniqueness: { scope: :account_id, allow_blank: true }
   validates :agent_aor, uniqueness: { scope: :account_id, allow_blank: true }
+  validate :validate_profile_kind_requirements
   validate :ensure_associations_belong_to_account
 
   before_validation :normalize_values
@@ -78,9 +86,19 @@ class Telephony::SipProfile < ApplicationRecord
   scope :enabled, -> { where(enabled: true) }
   scope :recent, -> { order(updated_at: :desc, id: :desc) }
   scope :managed, -> { where(managed_by: MANAGED_BY_ONELINK, ownership_status: %w[local managed]) }
+  scope :human_operator, -> { where(profile_kind: PROFILE_KIND_HUMAN_OPERATOR) }
+  scope :voice_agent, -> { where(profile_kind: PROFILE_KIND_VOICE_AGENT) }
 
   def managed?
     managed_by == MANAGED_BY_ONELINK && ownership_status.in?(%w[local managed])
+  end
+
+  def human_operator?
+    profile_kind == PROFILE_KIND_HUMAN_OPERATOR
+  end
+
+  def voice_agent?
+    profile_kind == PROFILE_KIND_VOICE_AGENT
   end
 
   def read_only?
@@ -91,6 +109,8 @@ class Telephony::SipProfile < ApplicationRecord
     payload = {
       id: id,
       inbox_id: inbox_id,
+      profile_kind: profile_kind,
+      voice_agent: voice_agent?,
       user_id: user_id,
       user_name: user&.name,
       provider_connection_id: provider_connection_id,
@@ -113,10 +133,6 @@ class Telephony::SipProfile < ApplicationRecord
       last_synced_at: last_synced_at,
       metadata: metadata
     }
-    unless provider_owned_sip_profile?
-      payload[:fonoster_agent_ref] = fonoster_agent_ref
-      payload[:fonoster_credentials_ref] = fonoster_credentials_ref
-    end
     payload.compact
   end
 
@@ -158,15 +174,8 @@ class Telephony::SipProfile < ApplicationRecord
 
   private
 
-  def provider_owned_sip_profile?
-    channel_provider = inbox&.channel&.provider.to_s
-    return channel_provider.in?(PROVIDER_OWNED_SIP_KINDS) if channel_provider.present?
-
-    provider_connection&.provider_kind.to_s.in?(PROVIDER_OWNED_SIP_KINDS) ||
-      metadata_value('provider_kind').to_s.in?(PROVIDER_OWNED_SIP_KINDS)
-  end
-
   def normalize_values
+    self.profile_kind = profile_kind.to_s.strip.downcase.presence || PROFILE_KIND_HUMAN_OPERATOR
     self.internal_extension = internal_extension.to_s.strip.presence
     self.sip_username = sip_username.to_s.strip.presence
     self.sip_password = sip_password.to_s.presence
@@ -177,6 +186,18 @@ class Telephony::SipProfile < ApplicationRecord
     self.managed_by = managed_by.to_s.strip.presence || MANAGED_BY_ONELINK
     self.ownership_status = ownership_status.to_s.strip.downcase.presence || 'local'
     self.metadata = (metadata || {}).deep_stringify_keys
+  end
+
+  def validate_profile_kind_requirements
+    errors.add(:user, 'is required for human operator SIP profiles') if human_operator? && user_id.blank?
+
+    return unless voice_agent?
+
+    errors.add(:user, 'must be blank for voice agent SIP profiles') if user_id.present?
+    errors.add(:sip_username, 'is required for voice agent SIP profiles') if sip_username.blank?
+    return if sip_password.present? || password_secret_ref.present? || credentials_ref.present?
+
+    errors.add(:sip_password, 'is required for voice agent SIP profiles')
   end
 
   def ensure_associations_belong_to_account

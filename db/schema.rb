@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_06_133000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2619,7 +2619,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
   create_table "telephony_agent_bindings", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "user_id", null: false
-    t.string "provider", default: "fonoster", null: false
+    t.string "provider", null: false
     t.string "agent_ref", null: false
     t.string "agent_aor"
     t.string "domain_ref"
@@ -2641,7 +2641,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
     t.bigint "inbox_id"
     t.bigint "number_binding_id"
     t.bigint "agent_binding_id"
-    t.string "provider", default: "fonoster", null: false
+    t.string "provider", null: false
     t.string "external_call_ref", null: false
     t.string "provider_call_sid"
     t.string "status", default: "ringing", null: false
@@ -2681,7 +2681,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
     t.bigint "contact_id", null: false
     t.bigint "inbox_id"
     t.bigint "number_binding_id"
-    t.string "provider", default: "fonoster", null: false
+    t.string "provider", null: false
     t.string "endpoint_type", null: false
     t.string "endpoint_value", null: false
     t.string "main_number"
@@ -2721,7 +2721,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
   create_table "telephony_number_bindings", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id", null: false
-    t.string "provider", default: "fonoster", null: false
+    t.string "provider", null: false
     t.string "number_ref", null: false
     t.string "phone_number"
     t.string "app_ref"
@@ -2835,7 +2835,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
     t.jsonb "settings", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.string "ai_deployment_mode", default: "fonoster_managed", null: false
+    t.string "ai_deployment_mode", default: "onelink_managed", null: false
     t.string "fonoster_ai_app_ref"
     t.string "onelink_ai_app_ref"
     t.string "fallback_ai_app_ref"
@@ -2851,7 +2851,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
   create_table "telephony_sip_profiles", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id"
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.bigint "provider_connection_id"
     t.string "internal_extension", null: false
     t.string "sip_username"
@@ -2872,9 +2872,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_30_143000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.text "sip_password"
+    t.string "profile_kind", default: "human_operator", null: false
     t.index ["account_id", "agent_aor"], name: "idx_tel_sip_profiles_account_agent_aor", unique: true, where: "(agent_aor IS NOT NULL)"
     t.index ["account_id", "agent_ref"], name: "idx_tel_sip_profiles_account_agent_ref", unique: true, where: "(agent_ref IS NOT NULL)"
     t.index ["account_id", "inbox_id", "internal_extension"], name: "idx_tel_sip_profiles_account_inbox_ext", unique: true
+    t.index ["account_id", "inbox_id"], name: "idx_tel_sip_profiles_one_voice_agent_per_inbox", unique: true, where: "((profile_kind)::text = 'voice_agent'::text)"
     t.index ["account_id", "provider_connection_id"], name: "idx_tel_sip_profiles_account_provider_connection"
     t.index ["account_id"], name: "index_telephony_sip_profiles_on_account_id"
     t.index ["inbox_id"], name: "index_telephony_sip_profiles_on_inbox_id"

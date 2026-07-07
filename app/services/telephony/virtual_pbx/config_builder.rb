@@ -1,10 +1,17 @@
 # frozen_string_literal: true
 
 class Telephony::VirtualPbx::ConfigBuilder
-  DEFAULT_PROVIDER_KIND = 'fonoster'
   MANAGED_BY_ONELINK = 'onelink'
   SECRET_KEY_PATTERN = /(password|secret|token|api[_-]?key|credential|auth)/i
   PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  UNKNOWN_PROVIDER_TEMPLATE = {
+    label: 'SIP provider',
+    default_transport: 'udp',
+    default_port: 5060,
+    allows_display_ingress_split: true,
+    default_route_mode: 'operator',
+    default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
+  }.freeze
 
   PROVIDER_TEMPLATES = {
     'asterisk_analog' => {
@@ -30,14 +37,6 @@ class Telephony::VirtualPbx::ConfigBuilder
       allows_display_ingress_split: true,
       default_route_mode: 'operator',
       default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
-    },
-    DEFAULT_PROVIDER_KIND => {
-      label: 'Fonoster',
-      default_transport: 'udp',
-      default_port: 5060,
-      allows_display_ingress_split: false,
-      default_route_mode: 'operator',
-      default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
     }
   }.freeze
 
@@ -52,7 +51,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       raise Telephony::Error.new(code: 'NOT_VOICE_CHANNEL', message: 'Inbox is not a voice channel',
                                  status: :unprocessable_content)
     end
-    unless channel.provider.in?(%w[fonoster asterisk_analog sipuni binotel])
+    unless channel.provider.in?(PROVIDER_OWNED_SIP_PROVIDERS)
       raise Telephony::Error.new(code: 'UNSUPPORTED_PROVIDER', message: 'Only native voice channels can be reconciled as Virtual PBX channels',
                                  status: :unprocessable_content)
     end
@@ -121,7 +120,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         send_register: provider_connection[:send_register],
         configured: provider_connection.present? || phone_numbers[:ingress_number].present?,
         status: provider_connection[:status] || (config[:ready] ? 'ready' : 'action_required'),
-        remote_mutations: remote_mutation_status(ownership),
+        remote_mutations: remote_mutation_status,
         last_synced_at: first_present(resources[:last_synced_at], provider_connection[:last_synced_at])
       }.compact,
       routing: {
@@ -134,7 +133,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       employees: ui_employees_payload(config[:profiles]),
       permissions: {
         editable: !ownership[:read_only],
-        remote_commit_allowed: !ownership[:read_only],
+        remote_commit_allowed: false,
         diagnostics_available: true
       },
       warnings: config[:warnings] || []
@@ -177,19 +176,19 @@ class Telephony::VirtualPbx::ConfigBuilder
       status: status,
       label: ui_status_label(status),
       read_only: ownership[:read_only],
-      remote_mutations: remote_mutation_status(ownership),
+      remote_mutations: remote_mutation_status,
       last_synced_at: resources[:last_synced_at]
     }.compact
   end
 
-  def remote_mutation_status(ownership)
-    ownership[:read_only] ? 'blocked' : 'requires_approval'
+  def remote_mutation_status
+    'disabled'
   end
 
   def ui_status_label(status)
     case status
-    when 'fonoster_synced'
-      'Синхронизировано с телефонией'
+    when 'local_only'
+      'Локальная конфигурация Janus SIP'
     when 'dry_run_valid'
       'Готов к синхронизации'
     when 'remote_failed'
@@ -206,6 +205,9 @@ class Telephony::VirtualPbx::ConfigBuilder
       attrs = profile.with_indifferent_access
       {
         id: attrs[:id],
+        profile_kind: attrs[:profile_kind],
+        voice_agent: ActiveModel::Type::Boolean.new.cast(attrs[:voice_agent]) ||
+          attrs[:profile_kind].to_s == Telephony::SipProfile::PROFILE_KIND_VOICE_AGENT,
         user_id: attrs[:user_id],
         user_name: attrs[:user_name],
         internal_extension: attrs[:internal_extension],
@@ -253,6 +255,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         provider_config[:provider_kind],
         metadata[:provider_kind],
         metadata[:source],
+        channel.provider,
         infer_provider_kind(provider_config: provider_config, binding: binding)
       )
     )
@@ -275,7 +278,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         metadata[:account_number]
       )
     )
-    fonoster_tel_url = normalize_tel_url(
+    ingress_tel_url = normalize_tel_url(
       first_present(
         binding&.fonoster_tel_url,
         provider_config[:fonoster_tel_url],
@@ -286,14 +289,14 @@ class Telephony::VirtualPbx::ConfigBuilder
     )
     ingress_number = normalize_technical_number(
       first_present(
-        binding&.ingress_number,
         provider_config[:ingress_number],
         metadata[:ingress_number],
         provider_config[:sipuni_ingress_number],
         metadata[:sipuni_ingress_number],
         provider_config[:binotel_ingress_number],
         metadata[:binotel_ingress_number],
-        tel_url_number(fonoster_tel_url),
+        tel_url_number(ingress_tel_url),
+        binding&.ingress_number,
         binding&.phone_number,
         provider_account_number,
         display_phone_number
@@ -311,7 +314,6 @@ class Telephony::VirtualPbx::ConfigBuilder
                                                  channel.phone_number != binding.phone_number,
       split_allowed: template_for(provider_kind)[:allows_display_ingress_split]
     }
-    phone_payload[:fonoster_tel_url] = fonoster_tel_url.presence || tel_url_for(ingress_number) unless provider_owned_sip_channel?(channel)
     phone_payload.compact
   end
 
@@ -379,6 +381,7 @@ class Telephony::VirtualPbx::ConfigBuilder
   def readiness_warnings(channel:, binding:, policy:, parts:)
     [].tap do |warnings|
       warnings << warning('missing_number_binding', 'Telephony number binding is missing', severity: 'blocking') if binding.blank?
+      warnings << warning('missing_provider_kind', 'Telephony provider kind is missing', severity: 'blocking') if parts[:provider_kind].blank?
       warnings << warning('missing_routing_policy', 'Telephony routing policy is missing', severity: 'blocking') if binding.present? && policy.blank?
       if binding.present? && binding.number_ref.blank?
         warnings << warning('missing_number_ref', 'Telephony number ref is missing',
@@ -406,16 +409,13 @@ class Telephony::VirtualPbx::ConfigBuilder
 
     warning(
       'missing_provider_sip_device_credentials',
-      'OneLink SIP device credentials are missing; configure SIP login and password before remote sync',
+      'OneLink SIP device credentials are missing; configure SIP login and password before SIP registration',
       severity: 'blocking'
     )
   end
 
   def provider_sip_device_credentials_configured?(connection)
-    connection.username.present? && (
-      connection.password_secret_ref.present? ||
-      (!provider_owned_sip_connection?(connection) && connection.fonoster_credentials_ref.present?)
-    )
+    connection.username.present? && connection.password_secret_ref.present?
   end
 
   def provider_owned_sip_channel?(channel)
@@ -481,7 +481,7 @@ class Telephony::VirtualPbx::ConfigBuilder
     return 'binotel' if key.include?('binotel')
     return 'sipuni' if key.include?('sipuni')
 
-    PROVIDER_TEMPLATES.key?(key) ? key : DEFAULT_PROVIDER_KIND
+    PROVIDER_TEMPLATES.key?(key) ? key : nil
   end
 
   def infer_provider_kind(provider_config:, binding:)
@@ -499,11 +499,11 @@ class Telephony::VirtualPbx::ConfigBuilder
     return 'sipuni' if values.include?('sipuni')
     return 'asterisk_analog' if values.include?('asterisk') || values.include?('analog')
 
-    DEFAULT_PROVIDER_KIND
+    nil
   end
 
   def template_for(provider_kind)
-    PROVIDER_TEMPLATES.fetch(provider_kind, PROVIDER_TEMPLATES.fetch(DEFAULT_PROVIDER_KIND))
+    PROVIDER_TEMPLATES.fetch(provider_kind.to_s, UNKNOWN_PROVIDER_TEMPLATE)
   end
 
   def tel_url_number(value)

@@ -1,87 +1,59 @@
 class Telephony::ReadinessService
-  def initialize(account:, bridge_client: nil)
+  JANUS_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+
+  def initialize(account:)
     @account = account
-    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def summary
-    inboxes = fonoster_inboxes.map { |inbox| build_inbox_payload(inbox) }
-    bridge = build_bridge_payload
+    inboxes = janus_sip_inboxes.map { |inbox| build_inbox_payload(inbox) }
     {
-      ready: bridge[:healthy] && inboxes.present? && inboxes.all? { |inbox| inbox[:ready] },
-      bridge: bridge,
+      ready: inboxes.present? && inboxes.all? { |inbox| inbox[:ready] },
+      janus_sip: build_janus_sip_payload(inboxes),
       account: build_account_payload(inboxes),
       inboxes: inboxes,
-      warnings: build_account_warnings(bridge, inboxes)
+      warnings: build_account_warnings(inboxes)
     }
   end
 
   private
 
-  attr_reader :account, :bridge_client
+  attr_reader :account
 
-  def fonoster_inboxes
-    @fonoster_inboxes ||= account.inboxes.includes(:channel, telephony_number_binding: :routing_policy).select do |inbox|
+  def janus_sip_inboxes
+    @janus_sip_inboxes ||= account.inboxes.includes(:channel, telephony_number_binding: :routing_policy).select do |inbox|
       channel = inbox.channel
-      channel.is_a?(Channel::Voice) && channel.provider == 'fonoster'
+      channel.is_a?(Channel::Voice) && channel.provider.in?(JANUS_SIP_PROVIDERS)
     end
   end
 
-  def build_bridge_payload
-    health = bridge_client.get('/healthz')
-    checks = bridge_checks(health)
+  def build_janus_sip_payload(inboxes)
     {
-      configured: bridge_configured?,
-      reachable: true,
-      healthy: checks.values.all?,
-      response_kind: health.is_a?(Hash) ? 'json' : 'non_json',
-      service: health.is_a?(Hash) ? health['service'] : nil,
-      checks: checks
-    }.compact
-  rescue Telephony::Error => e
-    {
-      configured: bridge_configured?,
-      reachable: false,
-      healthy: false,
-      error_code: e.code,
-      error: e.message
-    }
-  end
-
-  def bridge_checks(health)
-    return unsuccessful_bridge_checks unless health.is_a?(Hash)
-
-    {
-      healthz_ok: health['ok'] == true,
-      bridge_service: health['service'] == 'telephony-bridge',
-      fonoster_reachable: health.dig('fonoster', 'applicationsReachable') == true,
-      onelink_callback_configured: health.dig('legacyChatwootCompatibility', 'configured') == true
-    }
-  end
-
-  def unsuccessful_bridge_checks
-    {
-      healthz_ok: false,
-      bridge_service: false,
-      fonoster_reachable: false,
-      onelink_callback_configured: false
+      configured: ENV.fetch('TELEPHONY_JANUS_WS_URL', '').present? || ENV.fetch('JANUS_PUBLIC_WS_URL', '').present?,
+      healthy: inboxes.present? && inboxes.all? { |inbox| inbox[:ready] },
+      providers: JANUS_SIP_PROVIDERS,
+      mode: 'browser_webphone'
     }
   end
 
   def build_account_payload(inboxes)
     {
       feature_enabled: account.feature_enabled?('channel_voice'),
-      fonoster_inboxes_count: inboxes.size,
+      janus_sip_inboxes_count: inboxes.size,
       ready_inboxes_count: inboxes.count { |inbox| inbox[:ready] },
-      number_bindings_count: account.telephony_number_bindings.where(provider: 'fonoster').count,
-      agent_bindings_count: account.telephony_agent_bindings.where(provider: 'fonoster').count,
-      enabled_agent_bindings_count: account.telephony_agent_bindings.where(provider: 'fonoster', enabled: true).count
+      number_bindings_count: account.telephony_number_bindings.where(provider: JANUS_SIP_PROVIDERS).count,
+      sip_profiles_count: account.telephony_sip_profiles.joins(:inbox).where(inboxes: { id: janus_sip_inboxes.map(&:id) }).count,
+      enabled_browser_sip_profiles_count: account.telephony_sip_profiles.joins(:inbox).where(
+        inboxes: { id: janus_sip_inboxes.map(&:id) },
+        enabled: true,
+        availability_mode: 'browser_webphone'
+      ).count
     }
   end
 
-  def build_account_warnings(bridge, inboxes)
-    bridge_warnings(bridge).tap do |warnings|
-      warnings << warning('no_fonoster_inboxes', 'No Fonoster voice inboxes are configured for this account') if inboxes.empty?
+  def build_account_warnings(inboxes)
+    [].tap do |warnings|
+      warnings << warning('no_janus_sip_inboxes', 'No Janus SIP voice inboxes are configured for this account') if inboxes.empty?
       warnings.concat(unready_inboxes_warning(inboxes))
     end
   end
@@ -123,7 +95,6 @@ class Telephony::ReadinessService
 
     {
       mode: policy&.mode,
-      bridge_mode: policy&.bridge_mode,
       primary_app_ref: binding&.configured_app_ref,
       effective_app_ref: binding&.app_ref_for_policy(policy),
       ai_app_ref: policy&.ai_app_ref,
@@ -146,21 +117,11 @@ class Telephony::ReadinessService
 
   def warning(code, message) = { code: code, message: message }
 
-  def bridge_configured? = ENV.fetch('TELEPHONY_BRIDGE_BASE_URL', '').to_s.present?
-
-  def bridge_warnings(bridge)
-    [].tap do |warnings|
-      warnings << warning('bridge_not_configured', 'Telephony bridge base URL is not configured') unless bridge[:configured]
-      warnings << warning('bridge_unreachable', bridge[:error] || 'Telephony bridge is unreachable') if bridge[:configured] && !bridge[:reachable]
-      warnings << warning('bridge_unhealthy', 'Telephony bridge health checks are failing') if bridge[:reachable] && !bridge[:healthy]
-    end
-  end
-
   def unready_inboxes_warning(inboxes)
     unready_count = inboxes.count { |inbox| !inbox[:ready] }
     return [] unless unready_count.positive?
 
-    [warning('inboxes_not_ready', "#{unready_count} Fonoster inboxes have blocking warnings")]
+    [warning('inboxes_not_ready', "#{unready_count} Janus SIP inboxes have blocking warnings")]
   end
 
   def binding_warnings(channel, binding, virtual_pbx)
@@ -173,7 +134,7 @@ class Telephony::ReadinessService
   end
 
   def binding_provider_warning(binding)
-    return if binding.provider == 'fonoster'
+    return if binding.provider.in?(JANUS_SIP_PROVIDERS)
 
     warning('binding_provider_mismatch', 'Telephony number binding provider does not match inbox provider')
   end
@@ -203,13 +164,8 @@ class Telephony::ReadinessService
     nil
   end
 
-  def bridge_mode_downgrade_warning(policy)
-    return if policy.mode == policy.bridge_mode
-
-    warning(
-      'bridge_mode_downgraded',
-      "Stored mode #{policy.mode} is not executable on the bridge and will be sent as #{policy.bridge_mode}"
-    )
+  def bridge_mode_downgrade_warning(_policy)
+    nil
   end
 
   def app_route_warning(binding, policy)

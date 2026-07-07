@@ -378,7 +378,7 @@ class ActionCableConnector extends BaseActionCableConnector {
         data.logicalCallKey ||
         data.call_group_key ||
         data.callGroupKey,
-      provider: data.provider || 'fonoster',
+      provider: data.provider,
       contactId: data.contact_id || data.contactId,
       senderId: data.sender_id,
       caller: data.caller,
@@ -423,7 +423,7 @@ class ActionCableConnector extends BaseActionCableConnector {
         data.logicalCallKey ||
         data.call_group_key ||
         data.callGroupKey,
-      provider: data.provider || 'fonoster',
+      provider: data.provider,
       contactId: data.contact_id || data.contactId,
       senderId: data.sender_id,
       caller: data.caller,

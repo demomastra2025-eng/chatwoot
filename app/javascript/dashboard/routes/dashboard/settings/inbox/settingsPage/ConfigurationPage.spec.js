@@ -37,7 +37,7 @@ const baseInbox = {
   id: 42,
   name: 'Virtual PBX',
   channel_type: 'Channel::Voice',
-  provider: 'fonoster',
+  provider: 'sipuni',
   phone_number: virtualPbxDisplayNumber,
   provider_config: {},
   members: [
@@ -53,7 +53,7 @@ const statusPayload = {
       status: {
         ready: true,
         read_only: false,
-        remote_mutations: 'requires_approval',
+        remote_mutations: 'disabled',
       },
       channel: {
         name: 'Virtual PBX',
@@ -71,7 +71,7 @@ const statusPayload = {
         transport: 'udp',
         configured: true,
         status: 'draft',
-        remote_mutations: 'requires_approval',
+        remote_mutations: 'disabled',
       },
       routing: {
         mode: 'operator',
@@ -81,6 +81,7 @@ const statusPayload = {
       },
       employees: [
         {
+          id: 301,
           user_id: 7,
           user_name: 'Ada Agent',
           internal_extension: '100',
@@ -93,7 +94,7 @@ const statusPayload = {
       permissions: {
         editable: true,
         deletable: true,
-        remote_commit_allowed: true,
+        remote_commit_allowed: false,
       },
       warnings: [],
     },
@@ -126,8 +127,6 @@ const buildWrapper = ({ inbox = baseInbox } = {}) =>
         ImapSettings: true,
         SmtpSettings: true,
         WhatsappReauthorize: true,
-        FonosterReadiness: true,
-        FonosterRoutingForm: true,
         TextArea: true,
         'woot-code': true,
         'woot-input': true,
@@ -204,6 +203,8 @@ describe('ConfigurationPage Virtual PBX management', () => {
         },
         profiles: [
           {
+            id: 301,
+            profile_kind: 'human_operator',
             user_id: 7,
             internal_extension: '100',
             sip_username: 'agent-100',
@@ -251,6 +252,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
       expect.objectContaining({
         profiles: [
           {
+            profile_kind: 'human_operator',
             user_id: 8,
             internal_extension: '208',
             sip_username: 'agent-208',
@@ -260,6 +262,75 @@ describe('ConfigurationPage Virtual PBX management', () => {
         ],
       }),
       { dryRun: false, remoteCommit: false }
+    );
+  });
+
+  it('saves a voice agent SIP profile without a OneLink employee', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+
+    wrapper.vm.virtualPbxForm.profiles = [
+      {
+        clientId: 'voice-agent-row',
+        profileKind: 'voice_agent',
+        userId: '',
+        internalExtension: '9098',
+        sipUsername: 'ai-agent-9098',
+        sipPassword: 'secret-9098',
+        sipPasswordConfigured: false,
+        enabled: true,
+      },
+    ];
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        profiles: [
+          {
+            profile_kind: 'voice_agent',
+            internal_extension: '9098',
+            sip_username: 'ai-agent-9098',
+            sip_password: 'secret-9098',
+            enabled: true,
+          },
+        ],
+      }),
+      { dryRun: false, remoteCommit: false }
+    );
+  });
+
+  it('blocks multiple voice agent SIP profiles before save', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+    alertMock.mockClear();
+
+    wrapper.vm.virtualPbxForm.profiles = [
+      {
+        clientId: 'voice-agent-row-1',
+        profileKind: 'voice_agent',
+        internalExtension: '9098',
+        sipUsername: 'ai-agent-9098',
+        sipPassword: 'secret-9098',
+        enabled: true,
+      },
+      {
+        clientId: 'voice-agent-row-2',
+        profileKind: 'voice_agent',
+        internalExtension: '9099',
+        sipUsername: 'ai-agent-9099',
+        sipPassword: 'secret-9099',
+        enabled: true,
+      },
+    ];
+    await wrapper.vm.updateVirtualPbxChannel();
+
+    expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.VOICE_AGENT_UNIQUE'
     );
   });
 
@@ -495,6 +566,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
         },
         profiles: [
           {
+            profile_kind: 'human_operator',
             user_id: 7,
             internal_extension: '9098',
             sip_username: 'must-not-render',
@@ -670,7 +742,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(getVirtualPbxProvisioningRunsMock).not.toHaveBeenCalled();
   });
 
-  it('provisions the remote Fonoster/Routr resources through the product API', async () => {
+  it('runs the local Janus SIP provisioning action through the product API', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     alertMock.mockClear();
@@ -679,7 +751,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     await flushPromises();
 
     expect(provisionVirtualPbxChannelMock).toHaveBeenCalledWith(42, {
-      remoteCommit: true,
+      remoteCommit: false,
       includeDiagnostics: false,
     });
     expect(alertMock).toHaveBeenCalledWith(

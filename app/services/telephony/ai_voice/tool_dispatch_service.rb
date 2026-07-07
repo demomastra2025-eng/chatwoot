@@ -1,6 +1,9 @@
 class Telephony::AiVoice::ToolDispatchService
   class UnknownToolError < StandardError; end
 
+  REALTIME_FAQ_LOOKUP_TIMEOUT_MS = 1_500
+  REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 900
+
   VOICE_TOOL_CATALOG = [
     {
       name: 'find_contact',
@@ -102,12 +105,13 @@ class Telephony::AiVoice::ToolDispatchService
       {
         name: tool_id,
         title: tool[:title].presence || tool_id.humanize,
-        description: tool[:description].to_s,
+        description: captain_tool_description(tool_id, tool[:description]),
         source: 'captain',
         scope: Captain::ToolAccess::SCOPE_AGENT,
         enabled: true,
         realtime_safe: true,
-        timeout_ms: tool_id == 'faq_lookup' ? 6_000 : 1_000,
+        timeout_ms: tool_id == 'faq_lookup' ? REALTIME_FAQ_LOOKUP_TIMEOUT_MS : 1_000,
+        foreground_wait_ms: tool_id == 'faq_lookup' ? REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS : nil,
         risk_level: tool[:risk_level],
         parameters: captain_tool_parameters(captain_assistant, tool)
       }.compact.deep_stringify_keys
@@ -151,6 +155,14 @@ class Telephony::AiVoice::ToolDispatchService
     end
 
     []
+  end
+
+  def self.captain_tool_description(tool_id, description)
+    if tool_id == 'faq_lookup'
+      return 'Search approved FAQ and knowledge base before answering factual company, service, tariff, document, or slogan questions.'
+    end
+
+    description.to_s
   end
 
   def self.json_schema_type(type)
@@ -283,7 +295,7 @@ class Telephony::AiVoice::ToolDispatchService
     {
       action: 'captain_tool',
       tool_name: tool_name,
-      result: tool.execute(captain_tool_context, **captain_tool_arguments)
+      result: tool.execute(captain_tool_context, **captain_tool_execution_arguments)
     }
   rescue ArgumentError => e
     {
@@ -382,6 +394,12 @@ class Telephony::AiVoice::ToolDispatchService
 
   def captain_tool_arguments
     arguments.to_h.transform_keys(&:to_sym)
+  end
+
+  def captain_tool_execution_arguments
+    return captain_tool_arguments unless tool_name == 'faq_lookup'
+
+    captain_tool_arguments.merge(semantic: false, voice_realtime: true)
   end
 
   def terminate_transport_call

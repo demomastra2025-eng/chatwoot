@@ -43,7 +43,7 @@ class Telephony::AiVoice::ConversationTimelineService
     'media_stream_not_established' => 'Медиа-поток звонка не установился',
     'provider_stream_closed' => 'Провайдер закрыл realtime-поток',
     'provider_error' => 'Ошибка realtime-провайдера',
-    'fonoster_call_closed' => 'Fonoster закрыл звонок',
+    'provider_call_closed' => 'Провайдер закрыл звонок',
     'runtime_closed' => 'Voice runtime закрыл сессию',
     'tool_requested_end_call' => 'Инструмент запросил завершение звонка',
     'handoff_requested' => 'AI-агент запросил передачу оператору',
@@ -103,7 +103,7 @@ class Telephony::AiVoice::ConversationTimelineService
     message.additional_attributes = ai_additional_attributes(message, turn) if speaker == 'ai'
     message.created_at ||= turn_started_at(turn)
     message.skip_send_reply = true if speaker == 'ai'
-    message.save!
+    message.save! if message.new_record? || message.changed?
   end
 
   def upsert_activity_event!(action:, metadata:, sequence:)
@@ -141,7 +141,7 @@ class Telephony::AiVoice::ConversationTimelineService
     attrs = (message.additional_attributes || {}).deep_dup
     existing_trace = attrs['captain_trace'].is_a?(Hash) ? attrs['captain_trace'] : {}
     attrs['captain_trace'] = existing_trace.merge(trace)
-    message.update!(additional_attributes: attrs)
+    message.update!(additional_attributes: attrs) if message.additional_attributes != attrs
   end
 
   def latest_ai_transcript_message

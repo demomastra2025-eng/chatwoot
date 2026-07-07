@@ -232,13 +232,13 @@ describe('ActionCableConnector - Copilot Tests', () => {
         event: 'voice_call.incoming',
         data: {
           account_id: 1,
-          call_sid: 'fonoster-inbound-1',
+          call_sid: 'sipuni-inbound-1',
           status: 'ringing',
           call_direction: 'inbound',
-          provider: 'fonoster',
+          provider: 'sipuni',
           inbox_id: 4593,
           number_ref: 'voice-number-4593',
-          logical_call_key: 'fonoster-inbound:shared-key',
+          logical_call_key: 'sipuni-inbound:shared-key',
           conversation_id: 627,
           conversation_display_id: 627,
           conversation_db_id: 93627,
@@ -261,13 +261,13 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
 
       expect(callsStore.incomingCalls[0]).toMatchObject({
-        callSid: 'fonoster-inbound-1',
+        callSid: 'sipuni-inbound-1',
         status: 'ringing',
         callDirection: 'inbound',
-        provider: 'fonoster',
+        provider: 'sipuni',
         inboxId: 4593,
         numberRef: 'voice-number-4593',
-        logicalCallKey: 'fonoster-inbound:shared-key',
+        logicalCallKey: 'sipuni-inbound:shared-key',
         conversationId: 627,
         conversationDbId: 93627,
         communicationThreadId: 72,
@@ -352,24 +352,24 @@ describe('ActionCableConnector - Copilot Tests', () => {
       const callsStore = useCallsStore();
 
       callsStore.addCall({
-        callSid: 'fonoster-inbound-1',
+        callSid: 'sipuni-inbound-1',
         status: 'ringing',
         callDirection: 'inbound',
-        provider: 'fonoster',
+        provider: 'sipuni',
         conversationId: 627,
-        logicalCallKey: 'fonoster-inbound:shared-key',
+        logicalCallKey: 'sipuni-inbound:shared-key',
       });
 
       actionCable.onReceived({
         event: 'voice_call.claimed',
         data: {
           account_id: 1,
-          call_sid: 'fonoster-inbound-2',
-          provider: 'fonoster',
+          call_sid: 'sipuni-inbound-2',
+          provider: 'sipuni',
           call_direction: 'inbound',
           conversation_id: 627,
-          logical_call_key: 'fonoster-inbound:shared-key',
-          related_call_sids: ['fonoster-inbound-1', 'fonoster-inbound-2'],
+          logical_call_key: 'sipuni-inbound:shared-key',
+          related_call_sids: ['sipuni-inbound-1', 'sipuni-inbound-2'],
           claimed_by_user_id: 9,
         },
       });
@@ -377,7 +377,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       await vi.waitFor(() => {
         expect(callsStore.calls).toEqual([
           expect.objectContaining({
-            callSid: 'fonoster-inbound-2',
+            callSid: 'sipuni-inbound-2',
             status: 'in_progress',
             browserJoinSupported: false,
             browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',

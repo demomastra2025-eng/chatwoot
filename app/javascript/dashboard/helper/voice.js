@@ -153,7 +153,7 @@ export function handleVoiceCallCreated(message, currentUserId) {
   if (!isVoiceCallMessage(message)) return;
 
   // WhatsApp calls are managed by their own store (whatsappCalls),
-  // don't add them to the Twilio/Fonoster calls store.
+  // don't add them to the browser call store.
   if (isWhatsappCall(message)) return;
 
   const {
@@ -280,7 +280,7 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
   commit(types.UPDATE_CONVERSATION_CALL_STATUS, callInfo);
   commit(types.UPDATE_MESSAGE_CALL_STATUS, callInfo);
 
-  // Twilio/Fonoster store interactions are not used for WhatsApp Cloud calls.
+  // Browser call store interactions are not used for WhatsApp Cloud calls.
   if (isWhatsappCall(message)) return;
 
   const callsStore = useCallsStore();

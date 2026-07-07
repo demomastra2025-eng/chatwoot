@@ -57,7 +57,6 @@ const relatedCallSids = callData =>
     .map(value => String(value));
 
 const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
-  'fonoster',
   'asterisk_analog',
   'sipuni',
   'binotel',
@@ -72,7 +71,7 @@ const isInboundCall = call => {
   return direction === 'inbound';
 };
 
-const sameFonosterConversation = (
+const sameNativeSipConversation = (
   call,
   callData,
   { allowCallSidMismatch = false } = {}
@@ -103,7 +102,7 @@ const sameFonosterConversation = (
   return hasSharedConversationKey(call, callData);
 };
 
-const sameFonosterInboundBranch = (call, callData) => {
+const sameNativeSipInboundBranch = (call, callData) => {
   if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
     return false;
   }
@@ -113,7 +112,7 @@ const sameFonosterInboundBranch = (call, callData) => {
   return sameValue(callLogicalKey(call), callLogicalKey(callData));
 };
 
-const sameFonosterInboundConversation = (call, callData) => {
+const sameNativeSipInboundConversation = (call, callData) => {
   if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
     return false;
   }
@@ -126,8 +125,8 @@ const sameFonosterInboundConversation = (call, callData) => {
 
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData?.callSid) ||
-  sameFonosterInboundBranch(call, callData) ||
-  sameFonosterConversation(call, callData, { allowCallSidMismatch: true });
+  sameNativeSipInboundBranch(call, callData) ||
+  sameNativeSipConversation(call, callData, { allowCallSidMismatch: true });
 
 const terminalSuppressionKeys = call => {
   const provider = call?.provider;
@@ -147,9 +146,9 @@ const terminalSuppressionKeys = call => {
 
 const nonTerminalCallStatus = status => !TERMINAL_STATUSES.includes(status);
 
-const isRelatedFonosterInbound = (call, targetCall) =>
-  sameFonosterInboundBranch(call, targetCall) ||
-  sameFonosterInboundConversation(call, targetCall);
+const isRelatedNativeSipInbound = (call, targetCall) =>
+  sameNativeSipInboundBranch(call, targetCall) ||
+  sameNativeSipInboundConversation(call, targetCall);
 
 const visibleIncomingCalls = calls => {
   const activeCall = calls.find(call => call.isActive);
@@ -157,7 +156,7 @@ const visibleIncomingCalls = calls => {
     if (call.isActive) return false;
     if (!activeCall) return true;
 
-    return !sameFonosterInboundConversation(call, activeCall);
+    return !sameNativeSipInboundConversation(call, activeCall);
   });
 };
 
@@ -169,7 +168,7 @@ const buildCallState = (callData, existingCall = null) => {
   const preserveExistingCallSid =
     existingCall &&
     !isSameProviderCall &&
-    sameFonosterInboundBranch(existingCall, callData);
+    sameNativeSipInboundBranch(existingCall, callData);
   const hasStatusUpdate = hasOwn(callData, 'status');
   const stageValue = key => {
     if (hasOwn(callData, key)) return callData[key] ?? null;
@@ -464,9 +463,9 @@ export const useCallsStore = defineStore('calls', {
         if (
           existingCall?.isActive &&
           !sameCallSid(existingCall, callData.callSid) &&
-          isRelatedFonosterInbound(existingCall, callData)
+          isRelatedNativeSipInbound(existingCall, callData)
         ) {
-          this.dismissRelatedFonosterIncomingCalls(existingCall);
+          this.dismissRelatedNativeSipIncomingCalls(existingCall);
           return;
         }
         const replacedActiveCall =
@@ -487,8 +486,8 @@ export const useCallsStore = defineStore('calls', {
       }
 
       const activeCall = this.calls.find(call => call.isActive);
-      if (activeCall && isRelatedFonosterInbound(activeCall, callData)) {
-        this.dismissRelatedFonosterIncomingCalls(activeCall);
+      if (activeCall && isRelatedNativeSipInbound(activeCall, callData)) {
+        this.dismissRelatedNativeSipIncomingCalls(activeCall);
         return;
       }
 
@@ -566,12 +565,12 @@ export const useCallsStore = defineStore('calls', {
         logicalCallKey,
       };
       const matchesLogicalBranch = call =>
-        sameFonosterInboundBranch(call, target) &&
+        sameNativeSipInboundBranch(call, target) &&
         (!call.isActive || !isPresent(target.callSid));
       const matchesTarget = call =>
         sameCallSid(call, target.callSid) ||
         matchesLogicalBranch(call) ||
-        sameFonosterConversation(call, target);
+        sameNativeSipConversation(call, target);
       const callToRemove = this.calls.find(matchesTarget);
       this.calls = this.calls.filter(c => !matchesTarget(c));
 
@@ -586,8 +585,8 @@ export const useCallsStore = defineStore('calls', {
         ...call,
         isActive: call.callSid === callSid,
       }));
-      if (activeCall && sameFonosterInboundBranch(activeCall, activeCall)) {
-        this.dismissRelatedFonosterIncomingCalls(activeCall);
+      if (activeCall && sameNativeSipInboundBranch(activeCall, activeCall)) {
+        this.dismissRelatedNativeSipIncomingCalls(activeCall);
       }
     },
 
@@ -612,7 +611,7 @@ export const useCallsStore = defineStore('calls', {
         data?.userId;
       const callData = {
         callSid: data?.call_sid || data?.callSid || data?.call_ref,
-        provider: data?.provider || 'fonoster',
+        provider: data?.provider,
         callDirection: data?.call_direction || data?.direction || 'inbound',
         status: 'in_progress',
         conversationId: data?.conversation_id || data?.conversation_display_id,
@@ -638,14 +637,14 @@ export const useCallsStore = defineStore('calls', {
         isPresent(currentUserId) &&
         String(claimedByUserId) === String(currentUserId)
       ) {
-        this.dismissRelatedFonosterIncomingCalls(callData);
+        this.dismissRelatedNativeSipIncomingCalls(callData);
         return;
       }
 
       const callSids = relatedCallSids(data);
       const matchesClaimedCall = call =>
         callSids.includes(String(call?.callSid)) ||
-        isRelatedFonosterInbound(call, callData);
+        isRelatedNativeSipInbound(call, callData);
       const removedCalls = this.calls.filter(matchesClaimedCall);
       const existingCall = removedCalls[0] || null;
 
@@ -671,11 +670,11 @@ export const useCallsStore = defineStore('calls', {
       });
     },
 
-    dismissRelatedFonosterIncomingCalls(targetCall) {
+    dismissRelatedNativeSipIncomingCalls(targetCall) {
       this.calls = this.calls.filter(call => {
         if (call.isActive) return true;
         if (sameCallSid(call, targetCall?.callSid)) return true;
-        return !isRelatedFonosterInbound(call, targetCall);
+        return !isRelatedNativeSipInbound(call, targetCall);
       });
     },
   },

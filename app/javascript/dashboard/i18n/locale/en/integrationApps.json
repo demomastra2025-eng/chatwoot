@@ -63,6 +63,7 @@
       "NEXT_SYNC": "Next scheduled sync",
       "LAST_SYNC": "Last scheduled sync",
       "FREQUENCY": {
+        "EVERY_MINUTES": "Every {count} minutes",
         "HOURLY": "Every hour",
         "EVERY_HOURS": "Every {count} hours",
         "DAILY": "Once a day"

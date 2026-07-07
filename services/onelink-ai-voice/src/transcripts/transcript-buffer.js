@@ -32,6 +32,21 @@ class TranscriptBuffer {
     return this.items.filter((item) => item.final !== false);
   }
 
+  finalItemsWithPartials() {
+    const finals = this.finalItems();
+    const keys = new Set(finals.map(item => transcriptKey(item)));
+    const partials = this.items
+      .filter(item => item.final === false)
+      .map(item => ({ ...item, final: true, normalized_from: item.normalized_from || 'partial_transcript_fallback' }))
+      .filter(item => !keys.has(transcriptKey(item)));
+
+    return [...finals, ...partials];
+  }
+
+  hasPartialItems() {
+    return this.items.some((item) => item.final === false);
+  }
+
   allItems() {
     return [...this.items];
   }

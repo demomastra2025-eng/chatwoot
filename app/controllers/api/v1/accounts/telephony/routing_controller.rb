@@ -7,7 +7,7 @@ class Api::V1::Accounts::Telephony::RoutingController < Api::V1::Accounts::Telep
 
     render_payload(
       @number_binding.reload.to_telephony_h,
-      meta: { bridge: result[:response] }
+      meta: { janus_sip: result[:response] }
     )
   end
 
@@ -21,7 +21,7 @@ class Api::V1::Accounts::Telephony::RoutingController < Api::V1::Accounts::Telep
 
     render_payload(
       number_binding.reload.to_telephony_h,
-      meta: { bridge: result[:response] }
+      meta: { janus_sip: result[:response] }
     )
   end
 
@@ -41,7 +41,7 @@ class Api::V1::Accounts::Telephony::RoutingController < Api::V1::Accounts::Telep
 
   def routing_params
     params.permit(
-      :mode, :app_ref, :ai_app_ref, :ai_deployment_mode, :fonoster_ai_app_ref, :onelink_ai_app_ref,
+      :mode, :app_ref, :ai_app_ref, :ai_deployment_mode, :onelink_ai_app_ref,
       :fallback_ai_app_ref, :captain_assistant_id, :operator_agent_ref, :operator_agent_aor,
       :operator_distribution_mode, :fallback_mode, :fallback_message, ai_voice_settings: {}
     )

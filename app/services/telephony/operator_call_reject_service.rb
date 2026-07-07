@@ -1,6 +1,4 @@
 class Telephony::OperatorCallRejectService
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
-
   TERMINAL_STATUS_EVENT_TYPES = {
     'rejected' => 'rejected', 'completed' => 'session_completed',
     'no_answer' => 'operator_no_answer',
@@ -14,8 +12,6 @@ class Telephony::OperatorCallRejectService
     @call_ref = call_ref.to_s.strip
     @status = Telephony::CallSession.normalize_status(status.presence || 'rejected') || 'rejected'
     @reason = reason.presence || default_reason
-    @bridge_client = Telephony::BridgeClient.new(account_id: account.id)
-    @bridge_termination_error = nil
     @sipuni_termination_error = nil
   end
 
@@ -23,6 +19,7 @@ class Telephony::OperatorCallRejectService
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if call_ref.blank?
 
     raise_invalid_status! unless TERMINAL_STATUS_EVENT_TYPES.key?(status)
+    return ai_voice_release_ignored_payload if ai_voice_call?
 
     needs_ingestion = false
     should_terminate_remote = false
@@ -49,7 +46,7 @@ class Telephony::OperatorCallRejectService
 
   private
 
-  attr_reader :account, :bridge_client, :bridge_termination_error, :sipuni_termination_error, :user, :call_ref, :reason, :status
+  attr_reader :account, :sipuni_termination_error, :user, :call_ref, :reason, :status
 
   def call_session
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
@@ -84,9 +81,8 @@ class Telephony::OperatorCallRejectService
 
   def operator_agent_ref
     return operator_agent_binding.agent_ref if operator_agent_binding
-    return sip_profile.agent_ref if provider_owned_sip_provider?
 
-    operator_agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
+    sip_profile&.agent_ref
   end
 
   def operator_agent_aor
@@ -139,7 +135,8 @@ class Telephony::OperatorCallRejectService
 
   def outbound_originated_from_chatwoot?
     metadata = call_session.metadata.to_h.deep_stringify_keys
-    return true if metadata['bridge_response'].present? || metadata['fonoster_call_ref'].present? || metadata['sipuni_call_ref'].present?
+    return true if metadata['telephony_call_ref'].present?
+    return true if metadata['sipuni_call_ref'].present?
     return true if outbound_route_metadata?
     return true if outbound_conversation_metadata?
 
@@ -156,7 +153,13 @@ class Telephony::OperatorCallRejectService
   def outbound_conversation_metadata?
     attrs = (call_session.conversation&.additional_attributes || {}).deep_stringify_keys
     attrs['call_direction'].to_s == 'outbound' &&
-      [attrs['fonoster_call_ref'].to_s, attrs['sipuni_call_ref'].to_s].include?(call_session.external_call_ref.to_s)
+      [
+        attrs['telephony_call_ref'].to_s,
+        attrs['sipuni_call_ref'].to_s,
+        attrs['binotel_call_ref'].to_s,
+        attrs['asterisk_analog_call_ref'].to_s,
+        attrs['fonoster_call_ref'].to_s
+      ].include?(call_session.external_call_ref.to_s)
   end
 
   def outbound_release_allowed?
@@ -178,6 +181,16 @@ class Telephony::OperatorCallRejectService
       route_metadata['operator_candidate_agent_refs'].present? ||
       virtual_pbx_target_route? ||
       call_session.metadata.to_h['operator_claim'].present?
+  end
+
+  def ai_voice_call?
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    ai_metadata = metadata['ai_voice'].is_a?(Hash) ? metadata['ai_voice'] : {}
+
+    route_metadata['route_action'].to_s == 'ai' ||
+      route_metadata['routing_mode'].to_s == 'ai' ||
+      route_metadata['mode'].to_s == 'ai' ||
+      ai_metadata.present?
   end
 
   def inbox_member?
@@ -289,30 +302,8 @@ class Telephony::OperatorCallRejectService
     )
   end
 
-  def request_bridge_termination!
-    bridge_client.post(
-      "/telephony/webphone/calls/#{ERB::Util.url_encode(call_ref)}/reject",
-      {
-        reason: bridge_reason,
-        agent_aor: operator_agent_aor,
-        actor: 'operator',
-        call_direction: call_session.direction,
-        routing_mode: bridge_routing_mode
-      }.compact
-    )
-  rescue Telephony::Error => e
-    @bridge_termination_error = e.code
-    Rails.logger.warn(
-      'TELEPHONY_OPERATOR_REJECT_BRIDGE_TERMINATION_FAILED ' \
-      "account_id=#{account.id} call_ref=#{call_ref} error_code=#{e.code} message=#{e.message}"
-    )
-    nil
-  end
-
   def request_provider_termination!
-    return request_sipuni_hangup! if sipuni_hangup_required?
-
-    request_bridge_termination! if bridge_termination_required?
+    request_sipuni_hangup! if sipuni_hangup_required?
   end
 
   def request_sipuni_hangup!
@@ -332,28 +323,15 @@ class Telephony::OperatorCallRejectService
   end
 
   def sipuni_provider_call_id
-    call_session.provider_call_sid.presence || call_session.external_call_ref.to_s.match(/\Asipuni:(?!local:)(.+)\z/)&.[](1)
+    provider_call_sid = call_session.provider_call_sid.presence
+    return provider_call_sid if provider_call_sid.present?
+    return if janus_sip_call_ref?
+
+    call_session.external_call_ref.to_s.match(/\Asipuni:(?!local:)(.+)\z/)&.[](1)
   end
 
-  def bridge_termination_required?
-    !provider_owned_sip_provider?
-  end
-
-  def provider_owned_sip_provider?
-    call_session.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
-  end
-
-  def bridge_reason
-    return 'operator_declined' if status == 'rejected' && reason == 'operator_rejected_from_browser'
-
-    reason
-  end
-
-  def bridge_routing_mode
-    route_metadata['routing_mode'].presence ||
-      route_metadata['mode'].presence ||
-      route_metadata['route_action'].presence ||
-      'operator'
+  def janus_sip_call_ref?
+    call_session.external_call_ref.to_s.match?(/\A(?:asterisk_analog|binotel|sipuni):janus:/)
   end
 
   def reject_event_payload
@@ -384,7 +362,6 @@ class Telephony::OperatorCallRejectService
       webphone_action: 'operator_release',
       release_status: status,
       release_reason: reason,
-      bridge_termination_error: bridge_termination_error,
       sipuni_termination_error: sipuni_termination_error
     }.compact
   end
@@ -395,6 +372,17 @@ class Telephony::OperatorCallRejectService
       status: call_session.status,
       released: true,
       reason: reason,
+      user_id: user.id
+    }
+  end
+
+  def ai_voice_release_ignored_payload
+    {
+      call_ref: call_session.external_call_ref,
+      status: call_session.status,
+      released: false,
+      ignored: true,
+      reason: 'ai_voice_call',
       user_id: user.id
     }
   end

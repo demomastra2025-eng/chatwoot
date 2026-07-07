@@ -19,7 +19,7 @@ class Internal::Voice::RecordingsController < Internal::Voice::Ai::BaseControlle
 
   private
 
-  # Fonoster/bridge delivers operator recordings after the call; AI runtime recordings still use
+  # Janus delivers operator recordings after the call; AI runtime recordings still use
   # the voice token path. Accept both token families for this endpoint only.
   def internal_voice_tokens
     super + [

@@ -10,7 +10,7 @@
 #  enabled         :boolean          default(TRUE), not null
 #  last_synced_at  :datetime
 #  metadata        :jsonb            not null
-#  provider        :string           default("fonoster"), not null
+#  provider        :string           not null
 #  created_at      :datetime         not null
 #  updated_at      :datetime         not null
 #  account_id      :bigint           not null

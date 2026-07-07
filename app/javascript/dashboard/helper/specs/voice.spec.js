@@ -31,7 +31,7 @@ describe('voice helper', () => {
           data: {
             call_sid: 'call-123',
             call_direction: 'inbound',
-            provider: 'fonoster',
+            provider: 'sipuni',
             from_number: 'client-party',
             to_number: '+770****4321',
             meta: {
@@ -55,7 +55,7 @@ describe('voice helper', () => {
         inboxId: 42,
         isActive: false,
         operatorClaim: { user_id: 12, user_name: 'Ayan' },
-        provider: 'fonoster',
+        provider: 'sipuni',
         senderId: 7,
         toNumber: '+770****4321',
       }),
@@ -73,7 +73,7 @@ describe('voice helper', () => {
           data: {
             call_sid: 'completed-call-123',
             call_direction: 'inbound',
-            provider: 'fonoster',
+            provider: 'sipuni',
             status: 'completed',
           },
         },
@@ -103,7 +103,7 @@ describe('voice helper', () => {
           data: {
             call_sid: 'completed-call-123',
             call_direction: 'inbound',
-            provider: 'fonoster',
+            provider: 'sipuni',
             status: 'completed',
           },
         },
@@ -130,7 +130,7 @@ describe('voice helper', () => {
             status: 'ringing',
             meta: {
               chatwoot_inbox_id: 77,
-              provider: 'fonoster',
+              provider: 'sipuni',
               latest_event_type: 'dial_status',
               latest_leg: 'callee',
               latest_raw_status: 'RINGING',
@@ -165,14 +165,14 @@ describe('voice helper', () => {
         callLeg: 'callee',
         callSid: 'call-456',
         inboxId: 77,
-        provider: 'fonoster',
+        provider: 'sipuni',
         rawStatus: 'RINGING',
         status: 'ringing',
       })
     );
   });
 
-  it('restores an outbound Fonoster active call when an in-progress update arrives first', () => {
+  it('restores an outbound Janus SIP active call when an in-progress update arrives first', () => {
     const commit = vi.fn();
 
     handleVoiceCallUpdated(
@@ -184,9 +184,9 @@ describe('voice helper', () => {
         sender: { id: 7 },
         content_attributes: {
           data: {
-            call_sid: 'outbound-fonoster-1',
+            call_sid: 'outbound-sipuni-1',
             call_direction: 'outbound',
-            provider: 'fonoster',
+            provider: 'sipuni',
             status: 'in_progress',
           },
         },
@@ -199,11 +199,11 @@ describe('voice helper', () => {
     expect(callsStore.calls).toEqual([
       expect.objectContaining({
         callDirection: 'outbound',
-        callSid: 'outbound-fonoster-1',
+        callSid: 'outbound-sipuni-1',
         conversationId: 44,
         inboxId: 88,
         isActive: true,
-        provider: 'fonoster',
+        provider: 'sipuni',
       }),
     ]);
   });
@@ -217,9 +217,9 @@ describe('voice helper', () => {
         sender: { id: 7 },
         content_attributes: {
           data: {
-            call_sid: 'outbound-fonoster-answered',
+            call_sid: 'outbound-sipuni-answered',
             call_direction: 'outbound',
-            provider: 'fonoster',
+            provider: 'sipuni',
             status: 'in_progress',
             meta: {
               latest_event_type: 'dial_status',

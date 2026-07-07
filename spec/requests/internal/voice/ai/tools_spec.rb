@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Internal Voice AI Tools API', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230003') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15551230003') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_session) do
@@ -196,7 +196,7 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     expect(response.parsed_body['error']).to eq('tool_not_found')
   end
 
-  it 'runs faq_lookup through Captain semantic chunk retrieval for realtime voice calls' do
+  it 'runs faq_lookup through a realtime lexical fast path for voice calls' do
     assistant = create(
       :captain_assistant,
       account: account,
@@ -217,7 +217,7 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
       chunk_index: 0,
       content: 'Refund source says refunds are available in 14 days.'
     )
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: document_chunk.id))
+    allow(Captain::DocumentChunk).to receive(:search)
 
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/tools/faq_lookup',
@@ -232,7 +232,8 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
 
     expect(response).to have_http_status(:ok)
     result = JSON.parse(response.parsed_body.dig('result', 'result'))
-    expect(result).to include('lookup_strategy' => 'semantic_chunk', 'total_count' => 1)
+    expect(Captain::DocumentChunk).not_to have_received(:search)
+    expect(result).to include('lookup_strategy' => 'lexical_voice_realtime', 'total_count' => 1)
     expect(result['matches'].first).to include(
       'type' => 'document_chunk',
       'answer' => 'Refund source says refunds are available in 14 days.',
@@ -240,14 +241,15 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
       'document_chunk_id' => document_chunk.id
     )
     expect(result['retrieval_trace']).to include(
-      'strategy' => 'semantic_chunk',
-      'degraded' => false,
-      'semantic_attempted' => true,
+      'strategy' => 'lexical_voice_realtime',
+      'degraded' => true,
+      'semantic_attempted' => false,
+      'fallback_reason' => 'voice_realtime_fast_path',
       'document_chunk_ids' => [document_chunk.id]
     )
   end
 
-  it 'degrades faq_lookup to lexical fallback when voice semantic lookup is unavailable' do
+  it 'uses approved FAQ responses in the realtime lexical path' do
     assistant = create(
       :captain_assistant,
       account: account,
@@ -263,7 +265,6 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
     create(:captain_assistant_response, assistant: assistant, account: account, question: 'Refund?', answer: 'Refund in 14 days', status: 'approved')
     allow(Captain::DocumentChunk).to receive(:search)
-      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/tools/faq_lookup',
@@ -278,20 +279,21 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
 
     expect(response).to have_http_status(:ok)
     result = JSON.parse(response.parsed_body.dig('result', 'result'))
-    expect(result).to include('lookup_strategy' => 'lexical', 'total_count' => 1)
+    expect(Captain::DocumentChunk).not_to have_received(:search)
+    expect(result).to include('lookup_strategy' => 'lexical_voice_realtime', 'total_count' => 1)
     expect(result['matches'].first).to include('answer' => 'Refund in 14 days')
     expect(result['retrieval_trace']).to include(
-      'strategy' => 'lexical',
+      'strategy' => 'lexical_voice_realtime',
       'degraded' => true,
-      'semantic_attempted' => true,
-      'fallback_reason' => 'semantic_unavailable',
+      'semantic_attempted' => false,
+      'fallback_reason' => 'voice_realtime_fast_path',
       'match_count' => 1
     )
   end
 
   it 'scopes tool writes by account_id when call_ref collides across accounts' do
     other_account = create(:account)
-    other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889003')
+    other_voice_channel = create(:channel_voice, :sipuni, account: other_account, phone_number: '+1555889003')
     Telephony::NumberBinding.sync_from_voice_channel!(other_voice_channel)
     other_conversation = create(:conversation, account: other_account, inbox: other_voice_channel.inbox)
     create(

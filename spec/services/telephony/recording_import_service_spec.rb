@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Telephony::RecordingImportService do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15550100200') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15550100200') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_ref) { 'operator-direct-import-1' }

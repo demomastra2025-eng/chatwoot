@@ -34,12 +34,13 @@ class FakeVoiceStream extends EventEmitter {
   }
 }
 
-test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writes model audio back to the call', async () => {
+test('VoiceApplication bridges runtime stream audio to Gemini realtime and writes model audio back to the call', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
   const transcripts = [];
   const realtimeAudio = [];
   const sentTexts = [];
+  const events = [];
   const lifecycleOrder = [];
   let realtimeCallbacks;
 
@@ -76,6 +77,7 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
     },
     sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
     sendTranscript: async payload => { transcripts.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
     callTool: async (name, payload) => ({ name, payload, ok: true })
   };
 
@@ -88,7 +90,8 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
 
   const app = new VoiceApplication({
     client,
-    realtimeFactory: () => realtime
+    realtimeFactory: () => realtime,
+    realtimeAudioDiagnosticsEnabled: true
   });
 
   const result = await app.handleCall(call, {
@@ -99,7 +102,7 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
 
   assert.equal(result.mode, 'realtime');
   assert.equal(call.answerCount, 1);
-  assert.deepEqual(lifecycleOrder.slice(0, 3), ['answer', 'stream', 'context']);
+  assert.deepEqual(lifecycleOrder.slice(0, 3), ['context', 'answer', 'stream']);
   assert.equal(call.streamOptions.direction, 'BOTH');
   assert.equal(call.streamOptions.format, 'WAV');
   assert.equal(realtimeCallbacks.systemPrompt.includes('Здравствуйте'), true);
@@ -116,8 +119,14 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(handoffTool.parameters.properties.reason.type, 'string');
 
   stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-1', format: 'wav' });
-  assert.deepEqual(realtimeAudio[0].chunk, Buffer.from([1, 2]));
+  assert.equal(realtimeAudio[0].chunk.length, 2);
+  assert.notDeepEqual(realtimeAudio[0].chunk, Buffer.from([1, 2]));
   assert.equal(realtimeAudio[0].metadata.mimeType, 'audio/pcm;rate=16000');
+  const audioInEvent = events.find(payload => payload.event_type === 'realtime_audio_in');
+  assert.equal(audioInEvent.payload.bytes, 2);
+  assert.equal(audioInEvent.payload.samples, 1);
+  assert.equal(audioInEvent.payload.rms, 513);
+  assert.equal(audioInEvent.payload.non_zero_ratio, 1);
 
   const geminiPcm24 = Buffer.alloc(960);
   for (let index = 0; index < 480; index += 1) geminiPcm24.writeInt16LE(index, index * 2);
@@ -125,7 +134,7 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(stream.writes[0].type, 'AUDIO_OUT');
   assert.equal(stream.writes[0].data.length, 320);
   assert.equal(stream.writes[0].data.readInt16LE(0), 0);
-  assert.equal(stream.writes[0].data.readInt16LE(2), 3);
+  assert.equal(stream.writes[0].data.readInt16LE(2), 4);
   assert.equal(stream.writes[0].streamRef, 'stream-1');
   assert.equal(stream.writes[0].format, 'WAV');
   assert.equal(stream.writes[0].mimeType, undefined);
@@ -187,7 +196,8 @@ test('VoiceApplication emits one caller_hangup bridge event when caller disconne
       sendText: () => {},
       sendAudio: () => {},
       close: () => {}
-    })
+    }),
+    contextBootstrapTimeoutMs: 0
   });
 
   const resultPromise = app.handleCall(call, {
@@ -249,7 +259,8 @@ test('VoiceApplication can send initial silence keepalive before Gemini emits fi
       sendAudio: () => {},
       close: () => {}
     }),
-    initialMediaKeepaliveMs: 1_000
+    initialMediaKeepaliveMs: 1_000,
+    contextBootstrapTimeoutMs: 0
   });
 
   const resultPromise = app.handleCall(call, { call_ref: 'call-keepalive' });
@@ -267,20 +278,71 @@ test('VoiceApplication can send initial silence keepalive before Gemini emits fi
   for (let index = 0; index < 480; index += 1) geminiPcm24.writeInt16LE(index, index * 2);
   realtimeCallbacks.onAudio(geminiPcm24, { mimeType: 'audio/pcm;rate=24000' });
   const modelAudioWrite = stream.writes.at(-1);
-  assert.equal(modelAudioWrite.data.readInt16LE(2), 3);
+  assert.equal(modelAudioWrite.data.readInt16LE(2), 4);
 
   call.emit('end');
   await result.completion;
   assert.equal(events.some(payload => payload.event_type === 'media_keepalive_started'), true);
   assert.equal(events.some(payload => payload.event_type === 'media_keepalive_stopped'), true);
+  assert.equal(events.some(payload => payload.event_type === 'realtime_connect_started'), true);
+  assert.equal(events.some(payload => payload.event_type === 'realtime_connect_ready'), true);
+  assert.equal(events.some(payload => payload.event_type === 'initial_greeting_sent'), true);
 });
 
-test('VoiceApplication emits first_audio_out_write telemetry from the managed Fonoster write callback', async () => {
+test('VoiceApplication retries the initial greeting when Gemini stays silent after connect', async () => {
+  const stream = new FakeVoiceStream();
+  const events = [];
+  const sentTexts = [];
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream: () => stream
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'call-greeting-retry',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
+      tools: []
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; }
+  };
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({
+      connect: async () => {},
+      sendText: text => sentTexts.push(text),
+      sendAudio: () => {},
+      close: () => {}
+    }),
+    initialGreetingRetryMs: 5
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'call-greeting-retry' });
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(sentTexts.length, 2);
+  assert.equal(sentTexts[0].includes('стартовую фразу'), true);
+  assert.equal(sentTexts[1].includes('Немедленно'), true);
+  assert.equal(events.some(payload => payload.event_type === 'initial_greeting_sent'), true);
+  assert.equal(events.some(payload => payload.event_type === 'initial_greeting_retry_sent'), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication emits first_audio_out_write telemetry from the runtime write callback', async () => {
   const stream = new FakeVoiceStream();
   const events = [];
   let managedOptions;
   const call = Object.assign(new EventEmitter(), {
-    async answer() {}
+    async answer() {},
+    stream(options) {
+      managedOptions = options;
+      return stream;
+    }
   });
   const client = {
     routeInbound: async () => ({ action: 'ai', reason: 'ai_route', app_ref: 'ai-app-1' }),
@@ -296,10 +358,6 @@ test('VoiceApplication emits first_audio_out_write telemetry from the managed Fo
   };
   const app = new VoiceApplication({
     client,
-    managedStreamStarter: async (_call, options) => {
-      managedOptions = options;
-      return stream;
-    },
     realtimeFactory: () => ({
       connect: async () => {},
       sendText: () => {},
@@ -483,7 +541,7 @@ test('VoiceApplication passively records operator-routed calls through the OneLi
 
   const app = new VoiceApplication({
     client,
-    managedStreamStarter: async () => stream,
+    mediaStreamFactory: async () => stream,
     recordingWriterFactory: () => recordingWriter
   });
 
@@ -526,7 +584,7 @@ test('VoiceApplication passively records app-routed calls until the provider cal
 
   const app = new VoiceApplication({
     client,
-    managedStreamStarter: async () => stream,
+    mediaStreamFactory: async () => stream,
     recordingWriterFactory: () => recordingWriter
   });
 
@@ -540,9 +598,9 @@ test('VoiceApplication passively records app-routed calls until the provider cal
   assert.deepEqual(writes.map(([kind]) => kind), ['start', 'inbound', 'outbound', 'close']);
 });
 
-test('VoiceApplication can establish native managed media when provider call object has no call.stream helper', async () => {
+test('VoiceApplication can establish configured runtime media when provider call object has no call.stream helper', async () => {
   const stream = new FakeVoiceStream();
-  const starterCalls = [];
+  const factoryCalls = [];
   let realtimeCallbacks;
   const call = Object.assign(new EventEmitter(), {
     request: { callRef: 'runtime-native-only', mediaSessionRef: 'media-native-only' },
@@ -559,8 +617,8 @@ test('VoiceApplication can establish native managed media when provider call obj
   };
   const app = new VoiceApplication({
     client,
-    managedStreamStarter: async (providerCall, options) => {
-      starterCalls.push({ providerCall, options });
+    mediaStreamFactory: async providerCall => {
+      factoryCalls.push({ providerCall });
       return stream;
     },
     realtimeFactory: () => ({ connect: async options => { realtimeCallbacks = options; }, sendAudio: () => {}, close: () => {} })
@@ -569,8 +627,7 @@ test('VoiceApplication can establish native managed media when provider call obj
   const result = await app.handleCall(call, { call_ref: 'runtime-native-only' });
 
   assert.equal(result.mode, 'realtime');
-  assert.equal(starterCalls[0].providerCall, call);
-  assert.equal(starterCalls[0].options.direction, 'BOTH');
+  assert.equal(factoryCalls[0].providerCall, call);
   assert.equal(realtimeCallbacks.systemPrompt.length > 0, true);
 
   call.emit('end');
@@ -791,11 +848,14 @@ test('VoiceApplication fails and removes the session when app answer never resol
   assert.equal(registry.activeCount(), 0);
 });
 
-test('VoiceApplication closes the sidecar registry when context bootstrap falls back after media is established', async () => {
+test('VoiceApplication starts realtime with degraded context when context bootstrap fails after media is established', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
+  const events = [];
   const registry = new SessionRegistry();
   const greetings = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
   const call = Object.assign(new EventEmitter(), {
     async answer() {},
     stream() { return stream; }
@@ -803,27 +863,43 @@ test('VoiceApplication closes the sidecar registry when context bootstrap falls 
   const client = {
     routeInbound: async () => ({ action: 'ai', reason: 'ai_route', account_id: 42 }),
     sendBridgeEvent: async () => ({ status: 'ok' }),
-    getContext: async () => { throw new Error('request timed out after 5000ms'); },
+    getContext: async () => new Promise(resolve => setTimeout(() => resolve({
+      call_ref: 'call-context-timeout',
+      ai: { provider: 'gemini-live', first_message: 'Поздний контекст' }
+    }), 50)),
     sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
-    sendEvent: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
     sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
   };
 
   const app = new VoiceApplication({
     client,
     registry,
     fallbackResponder: { greet: async () => greetings.push('fallback') },
-    realtimeFactory: () => { throw new Error('realtime should not start without context'); }
+    realtimeFactory: () => realtime,
+    contextBootstrapTimeoutMs: 5
   });
 
   const result = await app.handleCall(call, { call_ref: 'call-context-timeout', number_ref: 'number-1' });
 
-  assert.equal(result.mode, 'fallback');
-  assert.equal(stream.closed, true);
-  assert.deepEqual(greetings, ['fallback']);
-  assert.equal(controls.at(-1).action, 'session_failed');
-  assert.equal(controls.at(-1).metadata.reason, 'request timed out after 5000ms');
-  assert.equal(registry.activeCount(), 0);
+  assert.equal(result.mode, 'realtime');
+  assert.equal(result.context.ai.context_degraded, true);
+  assert.equal(result.context.ai.provider, 'gemini-live');
+  assert.equal(stream.closed, false);
+  assert.deepEqual(greetings, []);
+  assert.equal(realtimeCallbacks.systemPrompt.includes('CRM-контекст временно недоступен'), true);
+  assert.equal(sentTexts[0].includes('Здравствуйте, я голосовой ассистент'), true);
+  assert.equal(controls.some(payload => payload.action === 'session_failed'), false);
+  assert.equal(controls.some(payload => payload.action === 'ai_answered' && payload.metadata.degraded === true), true);
+  assert.equal(events.some(payload => payload.event_type === 'context_fetch_failed' && payload.payload.reason === 'timeout'), true);
+  assert.equal(events.some(payload => payload.event_type === 'context_fetch_failed' && payload.payload.degraded === true), true);
+  assert.equal(registry.activeCount(), 1);
 });
 
 test('VoiceApplication refuses to write AUDIO_OUT before a real streamRef exists', async () => {
@@ -888,17 +964,17 @@ test('VoiceApplication records StartStream response timeout as media-not-establi
     sendTranscript: async () => ({ status: 'ok' }),
     finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
   };
-  const managedStreamStarter = async () => {
+  const mediaStreamFactory = async () => {
     const error = new Error('start_stream_response_timeout');
     error.reason = 'start_stream_response_timeout';
-    error.source = 'fonoster_start_stream';
+    error.source = 'media_stream_factory';
     error.timeoutMs = 7;
     throw error;
   };
 
   const app = new VoiceApplication({
     client,
-    managedStreamStarter,
+    mediaStreamFactory,
     realtimeFactory: () => { throw new Error('realtime should not start without media'); }
   });
   const result = await app.handleCall(call, { call_ref: 'call-start-timeout', number_ref: 'number-timeout' });
@@ -909,10 +985,10 @@ test('VoiceApplication records StartStream response timeout as media-not-establi
   assert.equal(finalizations.at(-1).status, 'failed');
   assert.equal(finalizations.at(-1).reason, 'media_stream_not_established');
   const timeoutEvent = events.find(event => event.event_type === 'start_stream_response_timeout');
-  assert.equal(timeoutEvent.payload.source, 'fonoster_start_stream');
+  assert.equal(timeoutEvent.payload.source, 'media_stream_factory');
   assert.equal(timeoutEvent.payload.timeout_ms, 7);
   const mediaFailureEvent = events.find(event => event.event_type === 'media_stream_not_established');
-  assert.equal(mediaFailureEvent.payload.source, 'fonoster_start_stream');
+  assert.equal(mediaFailureEvent.payload.source, 'media_stream_factory');
   assert.deepEqual(hangups, [{ reason: 'media_stream_not_established' }]);
 });
 
@@ -1232,7 +1308,7 @@ test('VoiceApplication treats provider interruption as telemetry by default and 
 
   assert.equal(stream.writes.length, 1);
   assert.equal(stream.writes[0].data.length, 320);
-  assert.equal(stream.writes[0].data.readInt16LE(2), 3);
+  assert.equal(stream.writes[0].data.readInt16LE(2), 4);
 
   const controlCountBeforeProviderInterrupt = controls.length;
   await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
@@ -2235,8 +2311,8 @@ test('VoiceApplication fans out operator pool and records the first answered can
       operator_timeout_ms: 1000,
       operator_pool: true,
       operator_candidates: [
-        { agent_ref: 'fonoster-agent-1', agent_aor: 'sip:1001@example.test', user_id: 11 },
-        { agent_ref: 'fonoster-agent-2', agent_aor: 'sip:1002@example.test', user_id: 12 }
+        { agent_ref: 'janus-agent-1', agent_aor: 'sip:1001@example.test', user_id: 11 },
+        { agent_ref: 'janus-agent-2', agent_aor: 'sip:1002@example.test', user_id: 12 }
       ]
     }),
     sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
@@ -2260,7 +2336,7 @@ test('VoiceApplication fans out operator pool and records the first answered can
   assert.equal(call.answerCount, 1);
   assert.deepEqual(dialCalls.map(target => target.agent_aor), ['sip:1001@example.test', 'sip:1002@example.test']);
   const answeredEvent = bridgeEvents.find(event => event.event === 'operator_answered');
-  assert.equal(answeredEvent.metadata.agent_ref, 'fonoster-agent-2');
+  assert.equal(answeredEvent.metadata.agent_ref, 'janus-agent-2');
   assert.equal(answeredEvent.metadata.user_id, 12);
   assert.deepEqual(answeredEvent.metadata.operator_candidate_agent_aors, ['sip:1001@example.test', 'sip:1002@example.test']);
   assert.deepEqual(loserHangups, [{ leg: 'primary', payload: { reason: 'answered_by_other_operator' } }]);
@@ -2588,6 +2664,131 @@ test('VoiceApplication treats direct AI app route decisions as local realtime se
   await result.completion;
 });
 
+test('VoiceApplication uses inline AI context from route decision without a second context request', async () => {
+  const stream = new FakeVoiceStream();
+  let realtimeCallbacks;
+  const events = [];
+  const client = {
+    routeInbound: async () => ({
+      action: 'ai',
+      app_ref: 'ai-app-inline',
+      reason: 'pending_conversation_ai_route',
+      account_id: 6,
+      number_ref: 'number-ai-inline',
+      ai_context: {
+        call_ref: 'call-inline-ai-context',
+        account_id: 6,
+        number_ref: 'number-ai-inline',
+        ai: {
+          provider: 'gemini-live',
+          model: 'gemini-live-test',
+          first_message: 'Я Айсулу, слушаю вас',
+          system_prompt: 'Ты Айсулу.'
+        },
+        tools: [{ name: 'faq_lookup', enabled: true, parameters: { type: 'object', properties: {} } }]
+      }
+    }),
+    getContext: async () => { throw new Error('inline AI context should avoid HTTP context fetch'); },
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const call = Object.assign(new EventEmitter(), {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    stream: () => stream
+  });
+  const sentTexts = [];
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({
+      connect: async options => { realtimeCallbacks = options; },
+      sendText: text => sentTexts.push(text),
+      close: () => {}
+    })
+  });
+
+  const result = await app.handleCall(call, {
+    call_ref: 'call-inline-ai-context',
+    from: '+155****1001',
+    to: '+155****7001',
+    app_ref: 'ai-app-inline'
+  });
+
+  assert.equal(result.mode, 'realtime');
+  assert.equal(call.answerCount, 1);
+  assert.equal(result.context.ai.first_message, 'Я Айсулу, слушаю вас');
+  assert.equal(realtimeCallbacks.systemPrompt.includes('Ты Айсулу.'), true);
+  assert.equal(realtimeCallbacks.tools.some(tool => tool.name === 'faq_lookup'), true);
+  assert.equal(sentTexts[0].includes('Я Айсулу'), true);
+  assert.equal(events.some(event => event.event_type === 'context_fetch_ready' && event.payload.inline === true), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication uses top-level Janus attach AI context with pre-routed routing', async () => {
+  const stream = new FakeVoiceStream();
+  let realtimeCallbacks;
+  const events = [];
+  const client = {
+    getContext: async () => { throw new Error('top-level attach AI context should avoid HTTP context fetch'); },
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const call = Object.assign(new EventEmitter(), {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    stream: () => stream
+  });
+  const sentTexts = [];
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({
+      connect: async options => { realtimeCallbacks = options; },
+      sendText: text => sentTexts.push(text),
+      close: () => {}
+    })
+  });
+
+  const result = await app.handleCall(call, {
+    call_ref: 'call-janus-attach-context',
+    from: '+155****1001',
+    to: '+155****7001',
+    routing: {
+      action: 'ai',
+      app_ref: 'ai-app-janus',
+      reason: 'pending_conversation_ai_route'
+    },
+    ai_context: {
+      call_ref: 'call-janus-attach-context',
+      account_id: 6,
+      number_ref: 'number-janus',
+      ai: {
+        provider: 'gemini-live',
+        model: 'gemini-live-test',
+        first_message: 'Я Айсулу, слушаю вас',
+        system_prompt: 'Ты Айсулу.'
+      },
+      tools: [{ name: 'faq_lookup', enabled: true, parameters: { type: 'object', properties: {} } }]
+    }
+  });
+
+  assert.equal(result.mode, 'realtime');
+  assert.equal(call.answerCount, 1);
+  assert.equal(result.context.ai.first_message, 'Я Айсулу, слушаю вас');
+  assert.equal(realtimeCallbacks.systemPrompt.includes('Ты Айсулу.'), true);
+  assert.equal(realtimeCallbacks.tools.some(tool => tool.name === 'faq_lookup'), true);
+  assert.equal(sentTexts[0].includes('Я Айсулу'), true);
+  assert.equal(events.some(event => event.event_type === 'context_fetch_ready' && event.payload.inline === true), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
 test('VoiceApplication hands app route decisions to the target app without AI bootstrap', async () => {
   const bridgeEvents = [];
   const handoffs = [];
@@ -2637,7 +2838,7 @@ test('VoiceApplication closes passive recording when app handoff fails', async (
   };
   const app = new VoiceApplication({
     client,
-    managedStreamStarter: async () => stream,
+    mediaStreamFactory: async () => stream,
     recordingWriterFactory: () => recordingWriter
   });
 

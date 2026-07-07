@@ -13,7 +13,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
   end
 
   it 'creates a daily cron from the selected Medelement time and timezone' do
-    hook = create(:integrations_hook, :medelement, account: account)
+    hook = build_stubbed(:integrations_hook, :medelement, account: account)
 
     described_class.new(hook: hook).sync!
 
@@ -31,7 +31,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
   end
 
   it 'creates a repeated cron anchored at the chosen time for shorter intervals' do
-    hook = create(
+    hook = build_stubbed(
       :integrations_hook,
       :medelement,
       account: account,
@@ -45,6 +45,60 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
 
     expect(Sidekiq::Cron::Job).to have_received(:create).with(
       hash_including(cron: '30 1,7,13,19 * * * Asia/Almaty')
+    )
+  end
+
+  it 'creates a 15 minute cron anchored at the selected minute' do
+    hook = build_stubbed(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: build(:integrations_hook, :medelement, account: account).settings.merge(
+        'sync_interval_hours' => 0.25,
+        'sync_time_of_day' => '06:15'
+      )
+    )
+
+    described_class.new(hook: hook).sync!
+
+    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+      hash_including(cron: '0,15,30,45 * * * * Asia/Almaty')
+    )
+  end
+
+  it 'creates a 30 minute cron anchored at the selected minute' do
+    hook = build_stubbed(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: build(:integrations_hook, :medelement, account: account).settings.merge(
+        'sync_interval_hours' => 0.5,
+        'sync_time_of_day' => '06:15'
+      )
+    )
+
+    described_class.new(hook: hook).sync!
+
+    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+      hash_including(cron: '15,45 * * * * Asia/Almaty')
+    )
+  end
+
+  it 'falls back to daily cron for removed interval values' do
+    hook = build_stubbed(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: build(:integrations_hook, :medelement, account: account).settings.merge(
+        'sync_interval_hours' => 3,
+        'sync_time_of_day' => '06:15'
+      )
+    )
+
+    described_class.new(hook: hook).sync!
+
+    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+      hash_including(cron: '15 6 * * * Asia/Almaty')
     )
   end
 

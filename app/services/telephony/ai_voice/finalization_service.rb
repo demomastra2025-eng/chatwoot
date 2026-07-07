@@ -35,6 +35,7 @@ class Telephony::AiVoice::FinalizationService
     ingest_final_transcript! unless already_finalized
     run_post_call_captain_features!
     sync_conversation!(already_finalized: already_finalized)
+    sync_voice_message! unless already_finalized
     response_payload(already_finalized: already_finalized, conflict: already_finalized && finalize_conflict?)
   end
 
@@ -129,6 +130,55 @@ class Telephony::AiVoice::FinalizationService
     attrs['summary'] = call_session.summary if call_session.summary.present?
     attrs['ai_voice_final_status'] = conversation_final_status(already_finalized: already_finalized)
     conversation.update!(additional_attributes: attrs, last_activity_at: Time.current)
+  end
+
+  def sync_voice_message!
+    message = call_session.voice_message_for_current_call
+    return if message.blank?
+
+    attrs = (message.content_attributes || {}).deep_dup
+    attrs['data'] ||= {}
+    attrs['data']['status'] = call_session.canonical_status
+    attrs['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
+    attrs['data']['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
+    sync_voice_message_recording!(attrs['data'])
+    sync_voice_message_ai_state!(attrs['data'])
+
+    message.update!(content_attributes: attrs) if attrs != message.content_attributes
+  end
+
+  def sync_voice_message_recording!(data)
+    metadata = call_recording_metadata
+    return if metadata.blank?
+
+    recording_ref = metadata['recording_ref'].presence || metadata['storage_key'].presence || call_session.recording_ref.presence
+    data['recording_ref'] = recording_ref if recording_ref.present?
+    data['recording'] = metadata.merge('recording_url' => data['recording_url'].presence || recording_playback_path)
+    data['recording_url'] ||= recording_playback_path
+  end
+
+  def sync_voice_message_ai_state!(data)
+    existing = data['ai_voice'].is_a?(Hash) ? data['ai_voice'] : {}
+    data['ai_voice'] = existing.merge(
+      'enabled' => true,
+      'answered' => call_session.canonical_status == 'completed',
+      'state' => call_session.terminal? ? 'completed' : call_session.canonical_status,
+      'updated_at' => Time.current.iso8601
+    )
+  end
+
+  def call_recording_metadata
+    metadata = call_session.metadata.to_h['recording']
+    return metadata.deep_stringify_keys if metadata.is_a?(Hash)
+    return if call_session.recording_ref.blank?
+
+    { 'recording_ref' => call_session.recording_ref }
+  end
+
+  def recording_playback_path
+    return if call_session.recording_ref.blank?
+
+    "/api/v1/accounts/#{account.id}/telephony/calls/#{ERB::Util.url_encode(call_session.external_call_ref)}/recording"
   end
 
   def conversation_final_status(already_finalized:)

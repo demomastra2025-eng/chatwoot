@@ -8,7 +8,7 @@ FactoryBot.define do
     transport { 'udp' }
     username { '056124100014' }
     credentials_ref { SecureRandom.uuid }
-    fonoster_trunk_ref { SecureRandom.uuid }
+    fonoster_trunk_ref { nil }
     send_register { false }
     status { 'draft' }
     managed_by { 'onelink' }

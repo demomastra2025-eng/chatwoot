@@ -30,7 +30,7 @@ describe('useCallsStore', () => {
     store.addCall({
       callSid: 'call-123',
       inboxId: 44,
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
 
     expect(store.calls).toEqual([
@@ -41,7 +41,7 @@ describe('useCallsStore', () => {
         conversationId: 8,
         inboxId: 44,
         isActive: false,
-        provider: 'fonoster',
+        provider: 'sipuni',
       }),
     ]);
   });
@@ -55,7 +55,7 @@ describe('useCallsStore', () => {
       conversationId: 21,
     });
     store.setCallActive('call-789');
-    store.markBrowserJoinUnsupported('call-789', 'fonoster');
+    store.markBrowserJoinUnsupported('call-789', 'sipuni');
 
     store.addCall({
       callSid: 'call-789',
@@ -67,7 +67,7 @@ describe('useCallsStore', () => {
         browserJoinSupported: false,
         inboxId: 99,
         isActive: true,
-        provider: 'fonoster',
+        provider: 'sipuni',
       })
     );
   });
@@ -78,9 +78,9 @@ describe('useCallsStore', () => {
     store.addCall({
       callSid: 'claimed-call-1',
       callDirection: 'inbound',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
-    store.markBrowserJoinUnsupported('claimed-call-1', 'fonoster', {
+    store.markBrowserJoinUnsupported('claimed-call-1', 'sipuni', {
       reason: 'CALL_ALREADY_CLAIMED',
       operatorClaim: { user_id: 7, user_name: 'Ayan' },
     });
@@ -100,27 +100,27 @@ describe('useCallsStore', () => {
     store.addCall({
       callSid: 'call-browser-joined',
       callDirection: 'outbound',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
-    store.markBrowserJoined('call-browser-joined', 'fonoster');
+    store.markBrowserJoined('call-browser-joined', 'sipuni');
 
     expect(store.calls).toEqual([
       expect.objectContaining({
         browserJoined: true,
         callSid: 'call-browser-joined',
         isActive: false,
-        provider: 'fonoster',
+        provider: 'sipuni',
       }),
     ]);
     expect(store.activeCall).toBeNull();
   });
 
-  it('replaces a stale Fonoster call for the same conversation instead of stacking widgets', async () => {
+  it('replaces a stale Janus SIP call for the same conversation instead of stacking widgets', async () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'old-call-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       conversationId: 612,
       callDirection: 'outbound',
     });
@@ -128,7 +128,7 @@ describe('useCallsStore', () => {
 
     store.addCall({
       callSid: 'new-call-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       conversationId: 612,
       callDirection: 'outbound',
     });
@@ -138,40 +138,40 @@ describe('useCallsStore', () => {
         callSid: 'new-call-ref',
         conversationId: 612,
         isActive: false,
-        provider: 'fonoster',
+        provider: 'sipuni',
       }),
     ]);
     await vi.waitFor(() => {
       expect(endClientCallMock).toHaveBeenCalledWith(
         expect.objectContaining({
           callSid: 'old-call-ref',
-          provider: 'fonoster',
+          provider: 'sipuni',
         })
       );
     });
   });
 
-  it('deduplicates Fonoster inbound branches by logical call key without replacing the actionable call ref', () => {
+  it('deduplicates Janus SIP inbound branches by logical call key without replacing the actionable call ref', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-505-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
       inboxId: 158,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
       fromNumber: '+77070001002',
       toNumber: '+77070001001',
     });
 
     store.addCall({
       callSid: 'operator-501-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
       inboxId: 158,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
       fromNumber: '+77070001002',
       toNumber: '+77070001001',
     });
@@ -179,89 +179,89 @@ describe('useCallsStore', () => {
     expect(store.calls).toEqual([
       expect.objectContaining({
         callSid: 'operator-505-ref',
-        logicalCallKey: 'fonoster-inbound:shared-key',
-        provider: 'fonoster',
+        logicalCallKey: 'sipuni-inbound:shared-key',
+        provider: 'sipuni',
       }),
     ]);
   });
 
-  it('removes a deduped Fonoster inbound card when a sibling branch terminates', () => {
+  it('removes a deduped Janus SIP inbound card when a sibling branch terminates', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-505-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
     store.addCall({
       callSid: 'operator-501-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
 
     store.handleCallStatusChanged({
       callSid: 'operator-501-ref',
       status: 'completed',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
 
     expect(store.calls).toEqual([]);
   });
 
-  it('keeps an active Fonoster inbound card when a sibling branch terminates', () => {
+  it('keeps an active Janus SIP inbound card when a sibling branch terminates', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-505-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
     store.setCallActive('operator-505-ref');
 
     store.handleCallStatusChanged({
       callSid: 'operator-501-ref',
       status: 'completed',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
 
     expect(store.calls).toEqual([
       expect.objectContaining({
         callSid: 'operator-505-ref',
         isActive: true,
-        logicalCallKey: 'fonoster-inbound:shared-key',
+        logicalCallKey: 'sipuni-inbound:shared-key',
       }),
     ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
-  it('keeps separate Fonoster inbound calls when logical call keys differ', () => {
+  it('keeps separate Janus SIP inbound calls when logical call keys differ', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'first-real-call',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
       inboxId: 158,
-      logicalCallKey: 'fonoster-inbound:first',
+      logicalCallKey: 'sipuni-inbound:first',
     });
     store.addCall({
       callSid: 'second-real-call',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
       inboxId: 158,
-      logicalCallKey: 'fonoster-inbound:second',
+      logicalCallKey: 'sipuni-inbound:second',
     });
 
     expect(store.calls).toHaveLength(2);
@@ -271,26 +271,26 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('clears sibling Fonoster inbound branches when one branch becomes active', () => {
+  it('clears sibling Janus SIP inbound branches when one branch becomes active', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-505-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
     store.addCall({
       callSid: 'other-call',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
-      logicalCallKey: 'fonoster-inbound:other-key',
+      logicalCallKey: 'sipuni-inbound:other-key',
     });
     store.calls.push({
       callSid: 'late-sibling-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
       isActive: false,
     });
 
@@ -308,22 +308,22 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('keeps Fonoster inbound calls separate in the same conversation when logical keys differ', () => {
+  it('keeps Janus SIP inbound calls separate in the same conversation when logical keys differ', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-504-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:first-leg',
+      logicalCallKey: 'sipuni-inbound:first-leg',
     });
     store.addCall({
       callSid: 'operator-505-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:second-leg',
+      logicalCallKey: 'sipuni-inbound:second-leg',
     });
 
     store.setCallActive('operator-504-ref');
@@ -341,29 +341,29 @@ describe('useCallsStore', () => {
     expect(store.incomingCalls).toEqual([
       expect.objectContaining({
         callSid: 'operator-505-ref',
-        logicalCallKey: 'fonoster-inbound:second-leg',
+        logicalCallKey: 'sipuni-inbound:second-leg',
       }),
     ]);
   });
 
-  it('keeps a related Fonoster inbound widget visible when another operator claims the call', async () => {
+  it('keeps a related Janus SIP inbound widget visible when another operator claims the call', async () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-504-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
 
     await store.handleCallClaimed(
       {
         call_sid: 'operator-505-ref',
-        provider: 'fonoster',
+        provider: 'sipuni',
         call_direction: 'inbound',
         conversation_id: 612,
-        logical_call_key: 'fonoster-inbound:shared-key',
+        logical_call_key: 'sipuni-inbound:shared-key',
         related_call_sids: ['operator-504-ref', 'operator-505-ref'],
         claimed_by_user_id: 9,
       },
@@ -381,25 +381,25 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
-  it('ends the browser client only when a claimed Fonoster call was active in this browser', async () => {
+  it('ends the browser client only when a claimed Janus SIP call was active in this browser', async () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-504-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
     store.setCallActive('operator-504-ref');
 
     await store.handleCallClaimed(
       {
         call_sid: 'operator-505-ref',
-        provider: 'fonoster',
+        provider: 'sipuni',
         call_direction: 'inbound',
         conversation_id: 612,
-        logical_call_key: 'fonoster-inbound:shared-key',
+        logical_call_key: 'sipuni-inbound:shared-key',
         related_call_sids: ['operator-504-ref', 'operator-505-ref'],
         claimed_by_user_id: 9,
       },
@@ -417,7 +417,7 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).toHaveBeenCalledWith(
       expect.objectContaining({
         callSid: 'operator-504-ref',
-        provider: 'fonoster',
+        provider: 'sipuni',
       })
     );
   });
@@ -510,24 +510,24 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
-  it('does not remove a different Fonoster inbound call with another logical key in the same conversation', async () => {
+  it('does not remove a different Janus SIP inbound call with another logical key in the same conversation', async () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'operator-504-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:first-call',
+      logicalCallKey: 'sipuni-inbound:first-call',
     });
 
     await store.handleCallClaimed(
       {
         call_sid: 'operator-505-ref',
-        provider: 'fonoster',
+        provider: 'sipuni',
         call_direction: 'inbound',
         conversation_id: 612,
-        logical_call_key: 'fonoster-inbound:second-call',
+        logical_call_key: 'sipuni-inbound:second-call',
         related_call_sids: ['operator-505-ref'],
         claimed_by_user_id: 9,
       },
@@ -537,11 +537,11 @@ describe('useCallsStore', () => {
     expect(store.calls).toEqual([
       expect.objectContaining({
         callSid: 'operator-504-ref',
-        logicalCallKey: 'fonoster-inbound:first-call',
+        logicalCallKey: 'sipuni-inbound:first-call',
       }),
       expect.objectContaining({
         callSid: 'operator-505-ref',
-        logicalCallKey: 'fonoster-inbound:second-call',
+        logicalCallKey: 'sipuni-inbound:second-call',
         status: 'in_progress',
         browserJoinSupported: false,
         browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
@@ -555,20 +555,20 @@ describe('useCallsStore', () => {
 
     store.addCall({
       callSid: 'operator-504-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 612,
-      logicalCallKey: 'fonoster-inbound:shared-key',
+      logicalCallKey: 'sipuni-inbound:shared-key',
     });
     store.setCallActive('operator-504-ref');
 
     await store.handleCallClaimed(
       {
         call_sid: 'operator-504-ref',
-        provider: 'fonoster',
+        provider: 'sipuni',
         call_direction: 'inbound',
         conversation_id: 612,
-        logical_call_key: 'fonoster-inbound:shared-key',
+        logical_call_key: 'sipuni-inbound:shared-key',
         related_call_sids: ['operator-504-ref', 'operator-505-ref'],
         claimed_by_user_id: 7,
       },
@@ -631,12 +631,12 @@ describe('useCallsStore', () => {
     expect(store.calls).toEqual([]);
   });
 
-  it('does not remove an active Fonoster call by conversation when a different terminal call ref arrives', async () => {
+  it('does not remove an active Janus SIP call by conversation when a different terminal call ref arrives', async () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'current-call-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       conversationId: 612,
     });
     store.setCallActive('current-call-ref');
@@ -645,7 +645,7 @@ describe('useCallsStore', () => {
       callSid: 'old-terminal-ref',
       status: 'completed',
       conversationId: 612,
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
 
     expect(store.calls).toEqual([
@@ -653,18 +653,18 @@ describe('useCallsStore', () => {
         callSid: 'current-call-ref',
         conversationId: 612,
         isActive: true,
-        provider: 'fonoster',
+        provider: 'sipuni',
       }),
     ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
-  it('removes a Fonoster call by conversation only when terminal event has no call ref', async () => {
+  it('removes a Janus SIP call by conversation only when terminal event has no call ref', async () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'call-without-terminal-ref',
-      provider: 'fonoster',
+      provider: 'sipuni',
       conversationId: 612,
     });
     store.setCallActive('call-without-terminal-ref');
@@ -672,7 +672,7 @@ describe('useCallsStore', () => {
     store.handleCallStatusChanged({
       status: 'completed',
       conversationId: 612,
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
 
     expect(store.calls).toEqual([]);
@@ -680,7 +680,7 @@ describe('useCallsStore', () => {
       expect(endClientCallMock).toHaveBeenCalledWith(
         expect.objectContaining({
           callSid: 'call-without-terminal-ref',
-          provider: 'fonoster',
+          provider: 'sipuni',
         })
       );
     });
@@ -689,7 +689,7 @@ describe('useCallsStore', () => {
   it('keeps a non-active widget visible when another operator moves the call in progress', () => {
     const store = useCallsStore();
 
-    store.addCall({ callSid: 'shared-call-1', provider: 'fonoster' });
+    store.addCall({ callSid: 'shared-call-1', provider: 'sipuni' });
     store.handleCallStatusChanged({
       callSid: 'shared-call-1',
       status: 'in_progress',
@@ -705,18 +705,18 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('marks an outbound Fonoster call active when the backend reports in progress', () => {
+  it('marks an outbound Janus SIP call active when the backend reports in progress', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'outbound-call-1',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
     store.handleCallStatusChanged({
       callSid: 'outbound-call-1',
       status: 'in_progress',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
 
     expect(store.calls).toEqual([
@@ -724,12 +724,12 @@ describe('useCallsStore', () => {
         callSid: 'outbound-call-1',
         callDirection: 'outbound',
         isActive: true,
-        provider: 'fonoster',
+        provider: 'sipuni',
       }),
     ]);
   });
 
-  it('creates an active outbound Fonoster call when in progress arrives before local ringing state', () => {
+  it('creates an active outbound Janus SIP call when in progress arrives before local ringing state', () => {
     const store = useCallsStore();
 
     store.handleCallStatusChanged({
@@ -737,7 +737,7 @@ describe('useCallsStore', () => {
       status: 'in_progress',
       conversationId: 44,
       inboxId: 88,
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
 
@@ -748,17 +748,17 @@ describe('useCallsStore', () => {
         conversationId: 44,
         inboxId: 88,
         isActive: true,
-        provider: 'fonoster',
+        provider: 'sipuni',
       }),
     ]);
   });
 
-  it('updates stage metadata for an existing outbound Fonoster call', () => {
+  it('updates stage metadata for an existing outbound Janus SIP call', () => {
     const store = useCallsStore();
 
     store.addCall({
       callSid: 'outbound-stage-1',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
       status: 'created',
     });
@@ -766,7 +766,7 @@ describe('useCallsStore', () => {
     store.handleCallStatusChanged({
       callSid: 'outbound-stage-1',
       status: 'ringing',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callEvent: 'dial_status',
       callLeg: 'callee',
       rawStatus: 'RINGING',
@@ -789,7 +789,7 @@ describe('useCallsStore', () => {
 
     store.addCall({
       callSid: 'outbound-stage-stale',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
       status: 'ringing',
       callEvent: 'dial_status',
@@ -800,7 +800,7 @@ describe('useCallsStore', () => {
     store.handleCallStatusChanged({
       callSid: 'outbound-stage-stale',
       status: 'in_progress',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
 
     expect(store.calls).toEqual([

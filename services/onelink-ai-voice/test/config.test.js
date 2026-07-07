@@ -11,6 +11,18 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.language, 'ru-KZ');
   assert.equal(config.toolTimeoutMs, 3_000);
   assert.equal(config.onelinkTimeoutMs, 10_000);
+  assert.equal(config.contextBootstrapTimeoutMs, 2_500);
+  assert.equal(config.janusAttachPath, '/internal/janus-sip/calls');
+  assert.deepEqual(config.janusAllowedProviders, []);
+  assert.equal(config.janusAdminUrl, '');
+  assert.equal(config.janusRtpForwardHostFamily, 'ipv4');
+  assert.equal(config.janusRtpForwardPeerAudioPort, 0);
+  assert.equal(config.janusRtpBridgeEnabled, false);
+  assert.equal(config.janusRtpBridgeListenHost, '0.0.0.0');
+  assert.equal(config.janusRtpBridgeListenPort, 0);
+  assert.equal(config.janusBrowserBridgeEnabled, false);
+  assert.equal(config.janusBrowserBridgePath, '/ai-voice/janus-sip/browser-media');
+  assert.equal(config.janusBrowserBridgePublicBaseUrl, '');
   assert.equal(config.outputMaxBufferedMs, 15_000);
   assert.equal(config.postToolContinuationMs, 4_000);
   assert.equal(config.clearAudioOnInterrupt, false);
@@ -24,7 +36,7 @@ test('loadConfig prefers AI voice internal token while preserving legacy fallbac
   );
   assert.equal(
     loadConfig({ VOICE_AGENT_ONELINK_AI_SHARED_SECRET: 'contract-token', ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-token' }).internalToken,
-    'contract-token'
+    'voice-token'
   );
   assert.equal(loadConfig({ AI_VOICE_INTERNAL_TOKEN: 'short-token' }).internalToken, 'short-token');
   assert.equal(loadConfig({ ONELINK_INTERNAL_TOKEN: 'legacy-token' }).internalToken, 'legacy-token');
@@ -43,13 +55,37 @@ test('loadConfig keeps bridge token separate from AI voice token', () => {
 test('loadConfig uses a longer bounded Onelink HTTP timeout for slow voice context bootstrap', () => {
   assert.equal(loadConfig({ VOICE_AGENT_ONELINK_TIMEOUT_MS: '12000' }).onelinkTimeoutMs, 12_000);
   assert.equal(loadConfig({ VOICE_AGENT_ONELINK_AI_TIMEOUT_MS: '9000' }).onelinkTimeoutMs, 9_000);
+  assert.equal(loadConfig({ VOICE_AGENT_CONTEXT_BOOTSTRAP_TIMEOUT_MS: '500' }).contextBootstrapTimeoutMs, 500);
+  assert.equal(loadConfig({ VOICE_AGENT_CONTEXT_TIMEOUT_MS: '600' }).contextBootstrapTimeoutMs, 600);
 });
 
-test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tuning', () => {
+test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', () => {
   const config = loadConfig({
     VOICE_AGENT_ONELINK_AI_BASE_URL: 'http://rails:3000/',
     VOICE_AGENT_ONELINK_AI_EVENT_PATH: '/custom/event',
     VOICE_AGENT_ONELINK_AI_FINALIZE_PATH: '/custom/finalize',
+    VOICE_AGENT_JANUS_ATTACH_PATH: '/custom/janus/calls',
+    VOICE_AGENT_JANUS_ALLOWED_PROVIDERS: 'sipuni, asterisk_analog',
+    VOICE_AGENT_JANUS_ADMIN_URL: 'http://janus:7088',
+    VOICE_AGENT_JANUS_ADMIN_SECRET: 'admin-secret',
+    VOICE_AGENT_JANUS_SIP_ADMIN_KEY: 'sip-admin-key',
+    VOICE_AGENT_JANUS_RTP_FORWARD_HOST: 'janus-ai-gateway',
+    VOICE_AGENT_JANUS_RTP_FORWARD_HOST_FAMILY: 'ipv6',
+    VOICE_AGENT_JANUS_RTP_FORWARD_PEER_AUDIO_PORT: '40000',
+    VOICE_AGENT_JANUS_RTP_FORWARD_AUDIO_PORT: '40002',
+    VOICE_AGENT_JANUS_RTP_FORWARD_PAYLOAD_TYPE: '8',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_ENABLED: 'true',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_LISTEN_HOST: '0.0.0.0',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_LISTEN_PORT: '40000',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_PUBLIC_HOST: 'onelink_ai_voice',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_INPUT_CODEC: 'pcma',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_CODEC: 'pcmu',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_HOST: 'janus-nostip-input',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PORT: '41000',
+    VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PAYLOAD_TYPE: '0',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_ENABLED: 'true',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_PATH: '/custom/browser-media',
+    VOICE_AGENT_PUBLIC_BASE_URL: 'wss://dev.one-link.kz/',
     VOICE_AGENT_WHATSAPP_ATTACH_PATH: '/custom/whatsapp/calls',
     VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS: '1500',
     VOICE_AGENT_REALTIME_POST_TOOL_CONTINUATION_MS: '2500',
@@ -64,6 +100,28 @@ test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tu
   assert.equal(config.railsBaseUrl, 'http://rails:3000');
   assert.equal(config.eventPath, '/custom/event');
   assert.equal(config.finalizePath, '/custom/finalize');
+  assert.equal(config.janusAttachPath, '/custom/janus/calls');
+  assert.deepEqual(config.janusAllowedProviders, ['sipuni', 'asterisk_analog']);
+  assert.equal(config.janusAdminUrl, 'http://janus:7088');
+  assert.equal(config.janusAdminSecret, 'admin-secret');
+  assert.equal(config.janusSipAdminKey, 'sip-admin-key');
+  assert.equal(config.janusRtpForwardHost, 'janus-ai-gateway');
+  assert.equal(config.janusRtpForwardHostFamily, 'ipv6');
+  assert.equal(config.janusRtpForwardPeerAudioPort, 40000);
+  assert.equal(config.janusRtpForwardAudioPort, 40002);
+  assert.equal(config.janusRtpForwardPayloadType, 8);
+  assert.equal(config.janusRtpBridgeEnabled, true);
+  assert.equal(config.janusRtpBridgeListenHost, '0.0.0.0');
+  assert.equal(config.janusRtpBridgeListenPort, 40000);
+  assert.equal(config.janusRtpBridgePublicHost, 'onelink_ai_voice');
+  assert.equal(config.janusRtpBridgeInputCodec, 'pcma');
+  assert.equal(config.janusRtpBridgeOutputCodec, 'pcmu');
+  assert.equal(config.janusRtpBridgeOutputHost, 'janus-nostip-input');
+  assert.equal(config.janusRtpBridgeOutputPort, 41000);
+  assert.equal(config.janusRtpBridgeOutputPayloadType, 0);
+  assert.equal(config.janusBrowserBridgeEnabled, true);
+  assert.equal(config.janusBrowserBridgePath, '/custom/browser-media');
+  assert.equal(config.janusBrowserBridgePublicBaseUrl, 'wss://dev.one-link.kz');
   assert.equal(config.whatsappAttachPath, '/custom/whatsapp/calls');
   assert.equal(config.outputMaxBufferedMs, 1500);
   assert.equal(config.postToolContinuationMs, 2500);

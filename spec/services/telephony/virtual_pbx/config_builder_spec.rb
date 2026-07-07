@@ -3,31 +3,33 @@ require 'rails_helper'
 RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
   let(:account) { create(:account) }
   let(:operator) { create(:user, account: account, role: :agent) }
+  let(:operator_agent_aor) { 'sip:9098@10.66.66.2' }
 
-  def create_fonoster_channel(phone_number:, provider_config: {})
+  def create_native_sip_channel(phone_number:, provider: 'sipuni', provider_config: {})
     create(
       :channel_voice,
-      :fonoster,
+      :sipuni,
       account: account,
       phone_number: phone_number,
+      provider: provider,
       provider_config: {
         number_ref: 'fonoster-number-ref',
         app_ref: 'runtime-app-ref',
         trunk_ref: 'trunk-ref',
         routing_mode: 'operator',
-        operator_agent_aor: Telephony::RoutingPolicy::CURRENT_FONOSTER_OPERATOR_AGENT_AOR
+        operator_agent_aor: operator_agent_aor
       }.merge(provider_config)
     )
   end
 
   it 'builds a split display/ingress bundle for legacy Asterisk analog resources' do
-    voice_channel = create_fonoster_channel(
+    voice_channel = create_native_sip_channel(
       phone_number: '+17715555175',
+      provider: 'asterisk_analog',
       provider_config: {
         provider_kind: 'asterisk_analog',
         display_phone_number: '+17715555175',
-        ingress_number: '9098',
-        fonoster_tel_url: 'tel:9098'
+        ingress_number: '9098'
       }
     )
     binding = voice_channel.inbox.telephony_number_binding
@@ -36,24 +38,22 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
       metadata: {
         provider_kind: 'asterisk_analog',
         source: 'asterisk-analog',
-        ingress_number: '9098',
-        fonoster_tel_url: 'tel:9098'
+        ingress_number: '9098'
       }
     )
     create(:telephony_agent_binding, :registered, account: account, user: operator,
-                                                  agent_aor: Telephony::RoutingPolicy::CURRENT_FONOSTER_OPERATOR_AGENT_AOR)
+                                                  agent_aor: operator_agent_aor)
 
     payload = described_class.new(account: account).for_inbox(voice_channel.inbox.id)
 
     expect(payload).to include(
-      provider: 'fonoster',
+      provider: 'asterisk_analog',
       provider_kind: 'asterisk_analog',
       ready: true
     )
     expect(payload.fetch(:phone_numbers)).to include(
       display_phone_number: '+17715555175',
       ingress_number: '9098',
-      fonoster_tel_url: 'tel:9098',
       split_allowed: true,
       legacy_channel_phone_differs_from_binding: true
     )
@@ -62,7 +62,7 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
   end
 
   it 'does not leak secret-like provider config or metadata values' do
-    voice_channel = create_fonoster_channel(
+    voice_channel = create_native_sip_channel(
       phone_number: '+17715550123',
       provider_config: {
         provider_kind: 'sipuni',
@@ -90,7 +90,7 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     expect(payload.dig(:metadata, 'webhook_secret')).to eq('[REDACTED]')
   end
 
-  it 'exposes remote commit permission for managed local channels without an env approval flag' do
+  it 'keeps remote commit disabled for managed local channels without an env approval flag' do
     result = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator).create_channel(
       {
         provider_kind: 'sipuni',
@@ -108,8 +108,8 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     with_modified_env(TELEPHONY_VIRTUAL_PBX_REMOTE_COMMIT_ENABLED: nil) do
       ui_config = builder.ui_config_for(inbox_id).with_indifferent_access
 
-      expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(true)
-      expect(ui_config.dig(:status, :remote_mutations)).to eq('requires_approval')
+      expect(ui_config.dig(:permissions, :remote_commit_allowed)).to be(false)
+      expect(ui_config.dig(:status, :remote_mutations)).to eq('disabled')
     end
   end
 
@@ -178,7 +178,7 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     expect(payload.to_json).not_to include('do-not-return-this-secret')
   end
 
-  it 'builds managed Binotel channels without Fonoster bridge resources' do
+  it 'builds managed Binotel channels without native SIP bridge resources' do
     result = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator).create_channel(
       {
         provider_kind: 'binotel',
@@ -207,7 +207,7 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
       provider_kind: 'binotel',
       ready: true
     )
-    expect(payload.dig(:phone_numbers, :fonoster_tel_url)).to be_nil
+    expect(payload.fetch(:phone_numbers)).not_to have_key(:fonoster_tel_url)
     expect(payload.dig(:resources, :app_ref)).to be_nil
     expect(payload.dig(:resources, :runtime_app_ref)).to be_nil
     expect(payload.dig(:resources, :trunk_ref)).to be_nil

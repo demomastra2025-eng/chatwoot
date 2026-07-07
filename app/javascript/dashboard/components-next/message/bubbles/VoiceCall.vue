@@ -465,7 +465,9 @@ const recordingExtension = computed(() => {
 const transcriptFallback = computed(() => {
   if (transcript.value) return transcript.value;
   return transcriptItems.value
-    .map(item => `${item.speaker === 'ai' ? 'ИИ' : 'Клиент'}: ${item.text}`)
+    .map(
+      item => `${item.speaker === 'ai' ? 'AI-агент' : 'Клиент'}: ${item.text}`
+    )
     .join('\n');
 });
 

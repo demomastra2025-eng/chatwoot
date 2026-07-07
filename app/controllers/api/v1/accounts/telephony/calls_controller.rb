@@ -22,7 +22,6 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   def show
     payload = @call_session.to_telephony_h
     payload[:recording_url] = recording_url_for_call_session if recording_available?
-    payload[:bridge] = calls_service.find_remote(@call_session.external_call_ref) if parse_boolean(params[:include_bridge], default: false)
     render_payload(payload)
   end
 

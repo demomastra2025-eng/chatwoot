@@ -77,6 +77,14 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       :sessionKey,
       :sip_profile_id,
       :sipProfileId,
+      :janus_session_id,
+      :janusSessionId,
+      :janus_handle_id,
+      :janusHandleId,
+      :janus_unique_id,
+      :janusUniqueId,
+      :janus_master_id,
+      :janusMasterId,
       :internal_extension,
       :internalExtension
     )

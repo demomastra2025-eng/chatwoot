@@ -129,7 +129,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
         :telephony_call_session,
         account: account,
         conversation: create(:conversation, account: account),
-        provider: 'fonoster',
+        provider: 'sipuni',
         external_call_ref: unrelated_provider_call_id,
         status: 'in_progress',
         metadata: {}

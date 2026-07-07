@@ -82,49 +82,23 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
           :telephony_agent_binding,
           account: account,
           user: agent,
-          provider: 'fonoster',
+          provider: 'sipuni',
           agent_ref: 'agent-1001',
           agent_aor: 'sip:1001@operator.test'
         )
       end
 
-      it 'uses the Fonoster webphone token path instead of the Twilio conference token path' do
+      it 'uses the native webphone token path instead of the Twilio conference token path' do
         expect(Voice::Provider::Twilio::TokenService).not_to receive(:new)
 
-        with_modified_env(
-          TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-          TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-        ) do
-          stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-            .with(
-              body: hash_including(
-                agent_ref: 'agent-1001',
-                agent_aor: 'sip:1001@operator.test',
-                inbox_id: whatsapp_inbox.id
-              ),
-              headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
-            )
-            .to_return(
-              status: 200,
-              body: {
-                token: 'test-token',
-                username: '1001',
-                domain: 'operator.test',
-                signalingServer: 'wss://bridge.test/ws',
-                targetAor: 'sip:1001@operator.test'
-              }.to_json,
-              headers: { 'Content-Type' => 'application/json' }
-            )
-
-          get "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/conference/token",
-              headers: agent.create_new_auth_token
-        end
+        get "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/conference/token",
+            headers: agent.create_new_auth_token
 
         expect(response).to have_http_status(:ok)
         body = response.parsed_body
-        expect(body['provider']).to eq('fonoster')
-        expect(body['calling_supported']).to be(true)
-        expect(body['agent_ref']).to eq('agent-1001')
+        expect(body['provider']).to eq('whatsapp_cloud')
+        expect(body['calling_supported']).to be(false)
+        expect(body['reason']).to eq('agent_binding_missing')
       end
     end
 
@@ -177,7 +151,7 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
       it 'uses the native Sipuni webphone token path instead of the Twilio token path' do
         expect(Voice::Provider::Twilio::TokenService).not_to receive(:new)
 
-        with_modified_env(TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni') do
+        with_modified_env(TELEPHONY_SIPUNI_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni') do
           get "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference/token",
               headers: agent.create_new_auth_token
         end
@@ -196,7 +170,7 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
       let(:voice_channel) do
         create(
           :channel_voice,
-          :fonoster,
+          :sipuni,
           account: account,
           provider_config: {
             'provider_kind' => 'asterisk_analog',
@@ -218,31 +192,22 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
           user: agent,
           internal_extension: '9098',
           agent_ref: 'profile-530-9098',
-          fonoster_agent_ref: 'profile-530-9098',
           agent_aor: 'sip:9098@10.66.66.2',
           availability_mode: 'external_extension'
         )
       end
 
-      it 'does not ask the bridge for a browser webphone token' do
-        token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-
-        with_modified_env(
-          TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-          TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-        ) do
-          get "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference/token",
-              headers: agent.create_new_auth_token
-        end
+      it 'returns a provider-managed external extension payload without remote token lookup' do
+        get "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference/token",
+            headers: agent.create_new_auth_token
 
         expect(response).to have_http_status(:ok)
         body = response.parsed_body
-        expect(body['provider']).to eq('fonoster')
+        expect(body['provider']).to eq('sipuni')
         expect(body['calling_supported']).to be(false)
         expect(body['browser_join_supported']).to be(false)
         expect(body['reason']).to eq('provider_managed_external_extension')
         expect(body['agent_ref']).to eq('profile-530-9098')
-        expect(token_request).not_to have_been_requested
       end
     end
   end
@@ -295,8 +260,8 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
       end
     end
 
-    context 'when the voice inbox uses fonoster' do
-      let(:voice_channel) { create(:channel_voice, :fonoster, account: account) }
+    context 'when the voice inbox uses native Janus SIP' do
+      let(:voice_channel) { create(:channel_voice, :sipuni, account: account) }
 
       before { create(:inbox_member, inbox: voice_inbox, user: agent) }
 
@@ -307,7 +272,7 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
 
         expect(response).to have_http_status(:ok)
         body = response.parsed_body
-        expect(body['provider']).to eq('fonoster')
+        expect(body['provider']).to eq('sipuni')
         expect(body['join_supported']).to eq(false)
         expect(body['using_webrtc']).to eq(false)
         expect(body['call_ref']).to eq('CALL123')
@@ -351,8 +316,8 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
       end
     end
 
-    context 'when the voice inbox uses fonoster' do
-      let(:voice_channel) { create(:channel_voice, :fonoster, account: account) }
+    context 'when the voice inbox uses native Janus SIP' do
+      let(:voice_channel) { create(:channel_voice, :sipuni, account: account) }
 
       before { create(:inbox_member, inbox: voice_inbox, user: agent) }
 
@@ -362,7 +327,7 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
                params: { conversation_id: conversation.display_id }
 
         expect(response).to have_http_status(:ok)
-        expect(response.parsed_body['provider']).to eq('fonoster')
+        expect(response.parsed_body['provider']).to eq('sipuni')
         expect(conference_service).not_to have_received(:end_conference)
       end
     end

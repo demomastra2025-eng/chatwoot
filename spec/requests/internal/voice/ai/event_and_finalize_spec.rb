@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230006') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15551230006') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_session) do
@@ -724,6 +724,60 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('text')).to include('Хотите')
     expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%").pluck(:content)).to include('Хотите')
+  end
+
+  it 'syncs the canonical voice bubble after AI finalization so recordings render' do
+    call_session.update!(
+      status: 'rejected',
+      recording_ref: 'voice-recordings/1/ai-call/recording.wav',
+      metadata: {
+        'recording' => {
+          'recording_ref' => 'voice-recordings/1/ai-call/recording.wav',
+          'storage_key' => 'voice-recordings/1/ai-call/recording.wav',
+          'recording_status' => 'ready',
+          'duration_ms' => 12_000,
+          'content_type' => 'audio/wav'
+        },
+        'ai_voice' => { 'state' => 'attached' }
+      }
+    )
+    voice_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      source_id: "voice_call:#{call_session.external_call_ref}",
+      content_attributes: {
+        data: {
+          call_sid: call_session.external_call_ref,
+          status: 'rejected',
+          ai_voice: { enabled: true, answered: false, state: 'attached' }
+        }
+      }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/finalize',
+           params: finalize_payload_for('evt-finalize-sync-bubble-1'),
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Idempotency-Key' => 'evt-finalize-sync-bubble-1'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload.status).to eq('completed')
+    data = voice_message.reload.content_attributes['data']
+    expect(data['status']).to eq('completed')
+    expect(data['recording_ref']).to eq('voice-recordings/1/ai-call/recording.wav')
+    expect(data['recording_url']).to include('/api/v1/accounts/')
+    expect(data.dig('recording', 'recording_status')).to eq('ready')
+    expect(data.dig('ai_voice', 'answered')).to be(true)
+    expect(data.dig('ai_voice', 'state')).to eq('completed')
   end
 
   def create_voice_call_message!

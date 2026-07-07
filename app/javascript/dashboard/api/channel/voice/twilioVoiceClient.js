@@ -24,7 +24,7 @@ class WebphoneClient extends EventTarget {
     const {
       token,
       account_id: accountId,
-      provider = 'fonoster',
+      provider = 'twilio',
       calling_supported: callingSupported = provider === 'twilio',
     } = response || {};
 

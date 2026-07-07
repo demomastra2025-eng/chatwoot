@@ -832,12 +832,13 @@ export const mutations = {
     const chat = getConversationById(_state)(conversationId, 'conversation');
     if (!chat) return;
 
-    const currentFonosterCallRef =
+    const currentCallRef =
+      chat.additional_attributes?.telephony_call_ref ||
       chat.additional_attributes?.fonoster_call_ref;
     if (
-      currentFonosterCallRef &&
+      currentCallRef &&
       callSid &&
-      String(currentFonosterCallRef) !== String(callSid)
+      String(currentCallRef) !== String(callSid)
     ) {
       return;
     }

@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Internal Voice AI Transcript API', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230002') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15551230002') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_session) do
@@ -84,7 +84,7 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
     expect(ai_message.additional_attributes.dig('captain_trace', 'reasoning')).to eq('Greeting the caller before asking how to help.')
 
     voice_data = voice_message.reload.content_attributes['data']
-    expect(voice_data['transcript']).to eq('ИИ: Здравствуйте! Чем могу помочь?')
+    expect(voice_data['transcript']).to eq('AI-агент: Здравствуйте! Чем могу помочь?')
     expect(voice_data['transcript_items'].first).to include('text' => 'Здравствуйте! Чем могу помочь?')
     expect(voice_data['transcript_items'].first).not_to have_key('raw_text')
     expect(voice_data['transcript_items'].first).not_to have_key('reasoning')
@@ -244,7 +244,7 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
 
     data = voice_message.reload.content_attributes['data']
     expect(data['transcript_ref']).to eq("ai_voice_transcript:#{call_session.external_call_ref}")
-    expect(data['transcript']).to eq("Клиент: Здравствуйте\nИИ: Здравствуйте, чем могу помочь?\nКлиент: Нужен оператор")
+    expect(data['transcript']).to eq("Клиент: Здравствуйте\nAI-агент: Здравствуйте, чем могу помочь?\nКлиент: Нужен оператор")
     expect(data['transcript_items'].pluck('text')).to include('Здравствуйте', 'могу помочь?', 'Нужен оператор')
     expect(data.dig('ai_voice', 'transcript_updated_at')).to be_present
     expect(data.dig('ai_voice', 'timeline_messages_enabled')).to be(true)
@@ -296,7 +296,7 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
 
   it 'scopes transcript writes by account_id when call_ref collides across accounts' do
     other_account = create(:account)
-    other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889002')
+    other_voice_channel = create(:channel_voice, :sipuni, account: other_account, phone_number: '+1555889002')
     Telephony::NumberBinding.sync_from_voice_channel!(other_voice_channel)
     other_conversation = create(:conversation, account: other_account, inbox: other_voice_channel.inbox)
     other_session = create(

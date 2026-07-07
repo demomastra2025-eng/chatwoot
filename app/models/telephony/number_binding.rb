@@ -14,7 +14,7 @@
 #  number_ref               :string           not null
 #  ownership_status         :string           default("legacy_reference"), not null
 #  phone_number             :string
-#  provider                 :string           default("fonoster"), not null
+#  provider                 :string           not null
 #  provider_account_number  :string
 #  provisioning_status      :string           default("local_only"), not null
 #  remote_drift_detected_at :datetime
@@ -100,7 +100,7 @@ class Telephony::NumberBinding < ApplicationRecord
   scope :managed, -> { where(managed_by: MANAGED_BY_ONELINK, ownership_status: MANAGED_OWNERSHIP_STATUSES) }
 
   def self.sync_from_voice_channel!(voice_channel)
-    return unless voice_channel&.provider.in?(%w[fonoster asterisk_analog sipuni binotel])
+    return unless voice_channel&.provider.in?(PROVIDER_OWNED_SIP_PROVIDERS)
     return unless voice_channel.inbox.present?
 
     config = voice_channel.provider_config_hash.with_indifferent_access
@@ -110,14 +110,14 @@ class Telephony::NumberBinding < ApplicationRecord
       phone_fields = phone_fields_from_config(config, voice_channel)
       binding.account = voice_channel.account
       binding.provider = voice_channel.provider
-      binding.number_ref = config[:number_ref] || config[:fonoster_number_ref]
+      binding.number_ref = config[:number_ref]
       binding.phone_number = phone_fields[:ingress_number] || voice_channel.phone_number
       binding.display_phone_number = phone_fields[:display_phone_number]
       binding.provider_account_number = phone_fields[:provider_account_number]
       binding.ingress_number = phone_fields[:ingress_number]
-      binding.fonoster_tel_url = provider_owned_sip_provider?(voice_channel.provider) ? nil : phone_fields[:fonoster_tel_url]
-      binding.app_ref = provider_owned_sip_provider?(voice_channel.provider) ? nil : config[:app_ref]
-      binding.trunk_ref = provider_owned_sip_provider?(voice_channel.provider) ? nil : config[:trunk_ref]
+      binding.fonoster_tel_url = nil
+      binding.app_ref = nil
+      binding.trunk_ref = nil
       binding.managed_by = config[:managed_by]
       binding.ownership_status = config[:ownership_status].presence || binding.ownership_status || 'legacy_reference'
       binding.metadata = normalized_metadata(config)
@@ -130,7 +130,7 @@ class Telephony::NumberBinding < ApplicationRecord
         ai_enabled: normalized_ai_enabled(config, policy),
         ai_app_ref: config[:ai_app_ref],
         ai_deployment_mode: normalized_ai_deployment_mode(config, policy),
-        fonoster_ai_app_ref: config[:fonoster_ai_app_ref],
+        fonoster_ai_app_ref: nil,
         onelink_ai_app_ref: config[:onelink_ai_app_ref],
         fallback_ai_app_ref: config[:fallback_ai_app_ref],
         captain_assistant_id: config[:captain_assistant_id],
@@ -231,10 +231,6 @@ class Telephony::NumberBinding < ApplicationRecord
     ingress_number.presence || metadata_value('ingress_number') || phone_number
   end
 
-  def effective_fonoster_tel_url
-    fonoster_tel_url.presence || metadata_value('fonoster_tel_url', 'tel_url') || tel_url_for(effective_ingress_number)
-  end
-
   def phone_split_allowed?
     effective_display_phone_number.present? &&
       effective_ingress_number.present? &&
@@ -265,7 +261,6 @@ class Telephony::NumberBinding < ApplicationRecord
       last_synced_at: last_synced_at,
       routing_policy: routing_policy&.to_telephony_h
     }
-    payload[:fonoster_tel_url] = effective_fonoster_tel_url unless provider_owned_sip_provider?(provider)
     payload.compact
   end
 
@@ -279,15 +274,26 @@ class Telephony::NumberBinding < ApplicationRecord
 
   def self.phone_fields_from_config(config, voice_channel)
     display_phone_number = first_present(config[:display_phone_number], voice_channel.phone_number)
-    provider_account_number = first_present(config[:provider_account_number], config[:account_number])
-    fonoster_tel_url = first_present(config[:fonoster_tel_url], config[:tel_url])
-    ingress_number = first_present(config[:ingress_number], tel_url_number(fonoster_tel_url), provider_account_number, display_phone_number)
+    provider_account_number = first_present(
+      config[:provider_account_number],
+      config[:sipuni_account_number],
+      config[:binotel_account_number],
+      config[:account_number]
+    )
+    ingress_tel_url = first_present(config[:tel_url], config[:fonoster_tel_url])
+    ingress_number = first_present(
+      config[:ingress_number],
+      config[:sipuni_ingress_number],
+      config[:binotel_ingress_number],
+      tel_url_number(ingress_tel_url),
+      provider_account_number,
+      display_phone_number
+    )
 
     {
       display_phone_number: display_phone_number,
       provider_account_number: provider_account_number,
-      ingress_number: ingress_number,
-      fonoster_tel_url: fonoster_tel_url.presence || tel_url_for(ingress_number)
+      ingress_number: ingress_number
     }
   end
 

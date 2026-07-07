@@ -4,7 +4,7 @@
 #
 #  id                   :bigint           not null, primary key
 #  ai_app_ref           :string
-#  ai_deployment_mode   :string           default("fonoster_managed"), not null
+#  ai_deployment_mode   :string           default("onelink_managed"), not null
 #  ai_enabled           :boolean          default(FALSE), not null
 #  ai_voice_settings    :jsonb            not null
 #  business_hours       :jsonb            not null
@@ -40,9 +40,6 @@
 class Telephony::RoutingPolicy < ApplicationRecord
   self.table_name = 'telephony_routing_policies'
 
-  CURRENT_FONOSTER_OPERATOR_AGENT_AOR = 'sip:1001@operator.cloud.vconsult.kz'.freeze
-  STALE_FONOSTER_OPERATOR_AGENT_AORS = ['sip:1001@company.example'].freeze
-
   VALID_MODES = %w[operator app ai reject voicemail ivr].freeze
   VALID_FALLBACK_MODES = %w[reject operator app ai voicemail].freeze
   BRIDGE_SUPPORTED_MODES = %w[operator app ai reject].freeze
@@ -52,9 +49,8 @@ class Telephony::RoutingPolicy < ApplicationRecord
     OPERATOR_DISTRIBUTION_BROADCAST,
     OPERATOR_DISTRIBUTION_TARGETED
   ].freeze
-  AI_DEPLOYMENT_FONOSTER_MANAGED = 'fonoster_managed'.freeze
   AI_DEPLOYMENT_ONELINK_MANAGED = 'onelink_managed'.freeze
-  AI_DEPLOYMENT_MODES = [AI_DEPLOYMENT_FONOSTER_MANAGED, AI_DEPLOYMENT_ONELINK_MANAGED].freeze
+  AI_DEPLOYMENT_MODES = [AI_DEPLOYMENT_ONELINK_MANAGED].freeze
 
   belongs_to :account, class_name: '::Account'
   belongs_to :number_binding, class_name: '::Telephony::NumberBinding'
@@ -122,11 +118,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   end
 
   def ai_app_ref_candidates
-    if ai_deployment_mode == AI_DEPLOYMENT_ONELINK_MANAGED
-      [onelink_ai_app_ref, ai_app_ref, fonoster_ai_app_ref, fallback_ai_app_ref, ENV.fetch('ONELINK_AI_VOICE_APP_REF', nil)]
-    else
-      [fonoster_ai_app_ref, ai_app_ref, fallback_ai_app_ref]
-    end
+    [onelink_ai_app_ref, ai_app_ref, fallback_ai_app_ref, ENV.fetch('ONELINK_AI_VOICE_APP_REF', nil)]
   end
 
   def to_telephony_h
@@ -135,7 +127,6 @@ class Telephony::RoutingPolicy < ApplicationRecord
       ai_enabled: ai_enabled,
       ai_app_ref: ai_app_ref,
       ai_deployment_mode: ai_deployment_mode,
-      fonoster_ai_app_ref: fonoster_ai_app_ref,
       onelink_ai_app_ref: onelink_ai_app_ref,
       fallback_ai_app_ref: fallback_ai_app_ref,
       effective_ai_app_ref: effective_ai_app_ref,
@@ -188,7 +179,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   end
 
   def normalize_ai_configuration
-    self.ai_deployment_mode = ai_deployment_mode.to_s.strip.downcase.presence || AI_DEPLOYMENT_FONOSTER_MANAGED
+    self.ai_deployment_mode = ai_deployment_mode.to_s.strip.downcase.presence || AI_DEPLOYMENT_ONELINK_MANAGED
     self.ai_enabled = explicit_ai_enabled? || ai_mode? || fallback_mode == 'ai'
     self.ai_voice_settings = (ai_voice_settings || {}).deep_stringify_keys
   end
@@ -204,7 +195,6 @@ class Telephony::RoutingPolicy < ApplicationRecord
   def normalize_operator_agent_aor(value)
     candidate = value.to_s.strip.presence
     return if candidate.blank?
-    return CURRENT_FONOSTER_OPERATOR_AGENT_AOR if STALE_FONOSTER_OPERATOR_AGENT_AORS.include?(candidate)
 
     candidate
   end

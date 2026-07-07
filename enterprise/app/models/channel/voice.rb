@@ -158,8 +158,6 @@ class Channel::Voice < ApplicationRecord
     case provider
     when 'twilio'
       Voice::Provider::Twilio::Adapter.new(self)
-    when 'fonoster'
-      Voice::Provider::Fonoster::Adapter.new(self)
     else
       raise "Unsupported voice provider: #{provider}"
     end
@@ -186,7 +184,7 @@ class Channel::Voice < ApplicationRecord
   end
 
   def native_telephony_provider?
-    provider == 'fonoster' || provider.in?(PROVIDER_OWNED_SIP_PROVIDERS)
+    provider.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def sync_telephony_binding

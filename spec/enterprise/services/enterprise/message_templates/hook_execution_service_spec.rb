@@ -202,7 +202,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       'sms' => [:channel_sms, {}],
       'email' => [:channel_email, {}],
       'voice' => [:channel_voice, {
-        provider: 'fonoster',
+        provider: 'sipuni',
         provider_config: {
           number_ref: SecureRandom.uuid,
           app_ref: SecureRandom.uuid,

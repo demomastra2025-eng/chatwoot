@@ -96,6 +96,12 @@ function formatFrequency(hours) {
     return '--';
   }
 
+  if (normalizedHours < 1) {
+    return t('INTEGRATION_APPS.MEDELEMENT.FREQUENCY.EVERY_MINUTES', {
+      count: normalizedHours * 60,
+    });
+  }
+
   if (normalizedHours === 24) {
     return t('INTEGRATION_APPS.MEDELEMENT.FREQUENCY.DAILY');
   }

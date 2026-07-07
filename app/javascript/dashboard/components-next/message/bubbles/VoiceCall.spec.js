@@ -530,7 +530,7 @@ describe('VoiceCall bubble', () => {
       wrapper
         .find('[data-testid="voice-call-recording"]')
         .attributes('data-transcribed-text')
-    ).toBe('Клиент: привет\nИИ: слушаю вас');
+    ).toBe('Клиент: привет\nAI-агент: слушаю вас');
   });
 
   it('renders the shared audio waveform chip for cancelled terminal calls with an authorized recording URL', () => {

@@ -94,9 +94,9 @@ RSpec.describe Voice::OutboundCallBuilder do
       )
     end
 
-    context 'with Fonoster provider' do
-      let(:channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230000') }
-      let(:call_sid) { 'fonoster-new-outbound-call-1' }
+    context 'with native SIP provider' do
+      let(:channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15551230000') }
+      let(:call_sid) { 'sipuni-new-outbound-call-1' }
       let!(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number) }
       let!(:existing_conversation) do
         create(
@@ -106,11 +106,11 @@ RSpec.describe Voice::OutboundCallBuilder do
           contact: contact,
           contact_inbox: contact_inbox,
           status: :resolved,
-          identifier: 'fonoster-previous-call',
+          identifier: 'sipuni-previous-call',
           additional_attributes: {
             'call_direction' => 'outbound',
             'call_status' => 'completed',
-            'fonoster_call_ref' => 'fonoster-previous-call',
+            'telephony_call_ref' => 'sipuni-previous-call',
             'call_started_at' => 100,
             'call_ended_at' => 120,
             'call_duration' => 20,
@@ -130,7 +130,7 @@ RSpec.describe Voice::OutboundCallBuilder do
           inbox: inbox,
           number_binding: inbox.telephony_number_binding,
           external_call_ref: call_sid,
-          provider: 'fonoster',
+          provider: 'sipuni',
           status: 'ringing',
           direction: 'outbound'
         )
@@ -146,8 +146,8 @@ RSpec.describe Voice::OutboundCallBuilder do
           message_type: :outgoing,
           content_type: :voice_call,
           sender: user,
-          source_id: 'voice_call:fonoster-previous-call',
-          content_attributes: { 'data' => { 'call_sid' => 'fonoster-previous-call', 'status' => 'completed' } }
+          source_id: 'voice_call:sipuni-previous-call',
+          content_attributes: { 'data' => { 'call_sid' => 'sipuni-previous-call', 'status' => 'completed' } }
         )
         allow(Telephony::CallsService).to receive(:new).with(account: account).and_return(calls_service)
         allow(calls_service).to receive(:create_outbound!).and_return(
@@ -173,12 +173,12 @@ RSpec.describe Voice::OutboundCallBuilder do
         voice_messages = existing_conversation.messages.voice_calls.order(:created_at, :id)
 
         aggregate_failures do
-          expect(existing_conversation.identifier).to eq('fonoster-previous-call')
+          expect(existing_conversation.identifier).to eq('sipuni-previous-call')
           expect(existing_conversation).to be_open
           expect(existing_conversation.additional_attributes).to include(
             'call_direction' => 'outbound',
             'call_status' => 'ringing',
-            'fonoster_call_ref' => call_sid,
+            'telephony_call_ref' => call_sid,
             'from_number' => channel.phone_number,
             'to_number' => contact.phone_number
           )
@@ -189,7 +189,7 @@ RSpec.describe Voice::OutboundCallBuilder do
           expect(existing_conversation.additional_attributes).not_to have_key('recording')
           expect(voice_messages.count).to eq(2)
           expect(voice_messages.last.source_id).to eq("voice_call:#{call_sid}")
-          expect(voice_messages.first.content_attributes.dig('data', 'call_sid')).to eq('fonoster-previous-call')
+          expect(voice_messages.first.content_attributes.dig('data', 'call_sid')).to eq('sipuni-previous-call')
         end
       end
     end

@@ -1,20 +1,23 @@
 class Telephony::AgentsService
-  def initialize(account:, bridge_client: nil)
+  def initialize(account:)
     @account = account
-    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def list_remote
-    bridge_client.get('/telephony/agents')
+    account.telephony_sip_profiles.includes(:user, :provider_connection).recent.map(&:to_telephony_h)
   end
 
   def set_enabled!(binding:, enabled:)
-    response = bridge_client.post("/telephony/agents/#{binding.agent_ref}/enabled", { enabled: enabled })
     binding.update!(enabled: enabled, last_synced_at: Time.current)
-    response
+    {
+      'provider' => 'janus_sip',
+      'remote_bridge' => false,
+      'agent_ref' => binding.agent_ref,
+      'enabled' => binding.enabled
+    }
   end
 
   private
 
-  attr_reader :account, :bridge_client
+  attr_reader :account
 end

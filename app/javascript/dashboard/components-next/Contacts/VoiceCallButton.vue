@@ -153,12 +153,7 @@ const navigateToConversation = response => {
   }
 };
 
-const BROWSER_SIP_PROVIDERS = new Set([
-  'fonoster',
-  'asterisk_analog',
-  'sipuni',
-  'binotel',
-]);
+const BROWSER_SIP_PROVIDERS = new Set(['asterisk_analog', 'sipuni', 'binotel']);
 
 const isBrowserSipInbox = inbox => BROWSER_SIP_PROVIDERS.has(inbox?.provider);
 

@@ -98,7 +98,7 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
 
     it 'marks voice channels as callable but not text-sendable' do
       contact = create(:contact, account: account)
-      voice_inbox = create(:channel_voice, :fonoster, account: account).inbox
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
       conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
       link = conversation.communication_thread_conversation
@@ -241,7 +241,7 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
     it 'returns unlinked voice channels as call-only capabilities when the contact has a phone number' do
       contact = create(:contact, :with_phone_number, account: account)
       conversation = create(:conversation, account: account, contact: contact)
-      voice_inbox = create(:channel_voice, :fonoster, account: account).inbox
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
 
       payload = described_class.new(
         links: [conversation.communication_thread_conversation],

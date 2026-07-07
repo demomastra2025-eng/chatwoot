@@ -60,21 +60,28 @@ test('VoiceSession flushes every transcript turn during the live call', async ()
   assert.ok(transcripts.every(payload => payload.final === true));
 });
 
-test('VoiceSession enters safe fallback when context is unavailable', async () => {
+test('VoiceSession continues with degraded realtime context when context is unavailable', async () => {
   const controls = [];
+  const events = [];
   const client = {
     getContext: async () => { throw Object.assign(new Error('context unavailable'), { code: 'context_unavailable' }); },
     sendControl: async (payload) => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async (payload) => { events.push(payload); return { status: 'ok' }; },
     sendTranscript: async () => ({ status: 'ok' })
   };
 
-  const session = new VoiceSession({ client, callRef: 'call-fallback' });
+  const session = new VoiceSession({ client, callRef: 'call-fallback', accountId: 42, numberRef: 'number-1' });
   const context = await session.bootstrap();
 
-  assert.equal(session.state, 'fallback');
-  assert.equal(context.ai.provider, 'scripted-fallback');
-  assert.equal(controls[0].action, 'session_failed');
-  assert.equal(controls[0].metadata.reason, 'context_unavailable');
+  assert.equal(session.state, 'active');
+  assert.equal(context.account_id, 42);
+  assert.equal(context.number_ref, 'number-1');
+  assert.equal(context.ai.provider, 'gemini-live');
+  assert.equal(context.ai.context_degraded, true);
+  assert.equal(context.ai.reason, 'context_unavailable');
+  assert.deepEqual(controls.map(payload => payload.action), ['ai_ringing', 'ai_answered']);
+  assert.equal(controls.every(payload => payload.metadata.degraded === true), true);
+  assert.equal(events.some(payload => payload.event_type === 'context_fetch_failed' && payload.payload.degraded === true), true);
 });
 
 test('VoiceSession applies timeout_ms from Rails tool catalog', async () => {
@@ -190,6 +197,29 @@ test('VoiceSession sends finalize once with stable correlation refs', async () =
   assert.equal(finalizes[0].runtime_call_ref, 'runtime-ref');
   assert.equal(finalizes[0].media_session_ref, 'media-ref');
   assert.equal(finalizes[0].stream_ref, 'stream-ref');
+});
+
+test('VoiceSession includes best-effort partial transcripts in finalize payload', async () => {
+  const finalizes = [];
+  const client = {
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizes.push(payload); return { status: 'ok' }; }
+  };
+  const session = new VoiceSession({ client, callRef: 'partial-runtime', accountId: 42 });
+
+  session.recordCallerTranscript('Здравствуйте. Один раз два.', { final: false, at: 't1' });
+  await session.transcriptFlushPromise;
+  await session.safeFinalize('session_completed');
+
+  assert.equal(finalizes.length, 1);
+  assert.equal(finalizes[0].incomplete_transcript, true);
+  assert.deepEqual(finalizes[0].final_transcript.map(item => [item.speaker, item.text, item.final]), [
+    ['caller', 'Здравствуйте. Один раз два.', true]
+  ]);
+  assert.equal(finalizes[0].final_transcript[0].normalized_from, 'partial_transcript_fallback');
+  assert.deepEqual(finalizes[0].partial_transcript.map(item => item.text), ['Здравствуйте. Один раз два.']);
 });
 
 test('VoiceSession retries finalize after a transient client failure', async () => {

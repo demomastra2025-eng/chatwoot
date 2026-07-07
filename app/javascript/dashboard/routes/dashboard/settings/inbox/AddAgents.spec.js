@@ -130,6 +130,7 @@ describe('AddAgents', () => {
       {
         profiles: [
           {
+            profile_kind: 'human_operator',
             user_id: 7,
             internal_extension: '207',
             sip_username: '056124100014',
@@ -182,6 +183,7 @@ describe('AddAgents', () => {
       {
         profiles: [
           {
+            profile_kind: 'human_operator',
             user_id: 7,
             internal_extension: '901',
             sip_username: 'pq4dyw5f',
@@ -225,6 +227,7 @@ describe('AddAgents', () => {
       {
         profiles: [
           {
+            profile_kind: 'human_operator',
             user_id: 7,
             internal_extension: '9098',
             sip_username: '9098',

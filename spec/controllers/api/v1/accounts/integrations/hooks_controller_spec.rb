@@ -125,6 +125,18 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(hook.settings['sync_time_of_day']).to eq('06:15')
         expect(response.parsed_body).not_to have_key('access_token')
       end
+
+      it 'creates a medelement hook with a 15 minute sync interval' do
+        account.enable_features!('scheduling')
+
+        post api_v1_account_integrations_hooks_url(account_id: account.id),
+             params: medelement_params.deep_merge(settings: { sync_interval_hours: 0.25 }),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(Integrations::Hook.last.settings['sync_interval_hours']).to eq(0.25)
+      end
     end
   end
 

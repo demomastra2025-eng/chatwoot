@@ -400,8 +400,8 @@
           "CHANGE_ACTION": "Провайдерді өзгерту"
         },
         "PROVIDERS": {
-          "KAZAKHSTAN": "Fonoster",
-          "KAZAKHSTAN_DESC": "Қазақстан нөмірлері мен telephony bridge маршрутизациясы үшін Fonoster қолданыңыз.",
+          "KAZAKHSTAN": "Virtual PBX",
+          "KAZAKHSTAN_DESC": "Қазақстан нөмірлері үшін OneLink Virtual PBX және Janus SIP қолданыңыз.",
           "SIPUNI": "Sipuni",
           "SIPUNI_DESC": "Sipuni провайдерін браузердегі вебфон арқылы жеке SIP-провайдер ретінде қосыңыз.",
           "ASTERISK_ANALOG": "Asterisk аналогтық",
@@ -415,55 +415,6 @@
           "LABEL": "Телефон нөмірі",
           "PLACEHOLDER": "Телефон нөмірін енгізіңіз (мысалы, +1234567890)",
           "ERROR": "E.164 форматындағы дұрыс телефон нөмірін енгізіңіз (мысалы, +1234567890)"
-        },
-        "FONOSTER": {
-          "NUMBER_REF": {
-            "LABEL": "Нөмір идентификаторы",
-            "PLACEHOLDER": "Қоңырау нөмірінің идентификаторын енгізіңіз",
-            "REQUIRED": "Нөмір идентификаторы міндетті"
-          },
-          "APP_REF": {
-            "LABEL": "Негізгі қосымша сілтемесі",
-            "PLACEHOLDER": "Маршрутизацияға немесе сыртқы қосымшаға арналған сілтеме",
-            "REQUIRED": "Қолданба маршруты таңдалса, негізгі қосымша сілтемесі міндетті"
-          },
-          "TRUNK_REF": {
-            "LABEL": "Транк сілтемесі",
-            "PLACEHOLDER": "Қосымша транк сілтемесі"
-          },
-          "ROUTING": {
-            "LABEL": "Әдепкі маршрутизация",
-            "MODE": {
-              "OPERATOR": "Оператор",
-              "APP": "Қолданба",
-              "AI": "AI",
-              "REJECT": "Қабылдамау"
-            }
-          },
-          "AI_APP_REF": {
-            "LABEL": "AI қосымшасының сілтемесі",
-            "PLACEHOLDER": "AI қосымшасының сілтемесін енгізіңіз",
-            "REQUIRED": "AI маршруты таңдалса, AI қосымшасының сілтемесі міндетті"
-          },
-          "OPERATOR_AGENT_AOR": {
-            "LABEL": "Оператор бағыты",
-            "PLACEHOLDER": "sip:agent{'@'}domain немесе жергілікті пайдаланушы атын енгізіңіз",
-            "REQUIRED": "Оператор маршруты таңдалса, оператор бағыты міндетті"
-          },
-          "OPERATOR_AGENT_REF": {
-            "LABEL": "Оператор агентінің идентификаторы",
-            "PLACEHOLDER": "Қосымша Fonoster agent ref"
-          },
-          "OPERATOR_DISTRIBUTION": {
-            "LABEL": "Қоңырауды бөлу",
-            "BROADCAST": "Барлық қолжетімді операторларға қоңырау шалу",
-            "TARGETED": "Қызметкердің ішкі нөмірі бойынша бағыттау"
-          },
-          "OPERATOR_TARGET_REQUIRED": "Оператор маршруты үшін оператор идентификаторы немесе AOR қажет",
-          "FALLBACK_MESSAGE": {
-            "LABEL": "Қабылдамау хабарламасы",
-            "PLACEHOLDER": "Қоңырау қабылданбағанда ойналатын қосымша хабарлама"
-          }
         },
         "VIRTUAL_PBX": {
           "CHANNEL_NAME": {
@@ -536,8 +487,23 @@
             "PLACEHOLDER": "1001",
             "REQUIRED": "Қызметкердің ішкі нөмірі міндетті"
           },
+          "ROUTING": {
+            "LABEL": "Әдепкі маршрутизация",
+            "MODE": {
+              "OPERATOR": "Оператор",
+              "APP": "Қолданба",
+              "AI": "AI",
+              "REJECT": "Қабылдамау"
+            }
+          },
+          "OPERATOR_DISTRIBUTION": {
+            "LABEL": "Қоңырауды бөлу",
+            "BROADCAST": "Барлық қолжетімді операторларға қоңырау шалу",
+            "TARGETED": "Қызметкердің ішкі нөмірі бойынша бағыттау"
+          },
+          "OPERATOR_TARGET_REQUIRED": "Оператор маршруты үшін SIP AOR немесе ішкі нөмір қажет",
           "MANAGEMENT_TITLE": "Virtual PBX",
-          "MANAGEMENT_SUBTITLE": "OneLink арна баптауларын, қызметкерлерді және SIP қолжетімдерін басқарады. Fonoster/Routr автоматты түрде синхрондалады.",
+          "MANAGEMENT_SUBTITLE": "OneLink арна баптауларын, қызметкерлерді және SIP қолжетімдерін Janus SIP арқылы басқарады.",
           "CURRENT_USER_REQUIRED": "Қызметкердің SIP профилін құру үшін ағымдағы пайдаланушы қажет",
           "REQUIRED_FIELDS": "Inbox атауын және көрсетілетін нөмірді толтырыңыз",
           "READ_ONLY": "Бұл арнада legacy/read-only иелік бар, оны OneLink арқылы өзгертуге болмайды.",
@@ -610,12 +576,14 @@
           "TWILIO_VOICE_URL_SUBTITLE": "Осы URL-ді Twilio телефон нөміріңіз бен TwiML қолданбасындағы Voice URL ретінде баптаңыз.",
           "TWILIO_STATUS_URL_TITLE": "Twilio Status Callback URL",
           "TWILIO_STATUS_URL_SUBTITLE": "Осы URL-ді Twilio телефон нөміріңіздегі Status Callback URL ретінде баптаңыз.",
-          "FONOSTER_TITLE": "Fonoster байланысы",
-          "FONOSTER_SUBTITLE": "Бұл қоңырау арнасы Onelink telephony bridge және Fonoster маршрутизациясы арқылы басқарылады.",
-          "FONOSTER_ROUTING_TITLE": "Қоңырау маршрутизациясы",
-          "FONOSTER_ROUTING_SUBTITLE": "Нөмір үшін белсенді маршрутты және негізгі бағыт қолжетімсіз болса қолданылатын fallback таңдаңыз.",
-          "FONOSTER_READINESS_TITLE": "Fonoster дайындығы",
-          "FONOSTER_READINESS_SUBTITLE": "Осы voice inbox үшін telephony bridge, нөмір binding-і және тиімді маршрут тексеріледі.",
+          "LEGACY_VOICE_TITLE": "Legacy voice channel",
+          "LEGACY_VOICE_SUBTITLE": "Бұл арна ескі қоңырау конфигурациясын қолданады және Janus SIP-ке ауыстырылуы керек.",
+          "JANUS_SIP_TITLE": "Janus SIP байланысы",
+          "JANUS_SIP_SUBTITLE": "Бұл қоңырау арнасы Janus SIP және қызметкерлердің SIP профильдері арқылы жұмыс істейді.",
+          "JANUS_SIP_ROUTING_TITLE": "Қоңырау маршрутизациясы",
+          "JANUS_SIP_ROUTING_SUBTITLE": "Нөмір үшін белсенді маршрутты және негізгі бағыт қолжетімсіз болса қолданылатын fallback таңдаңыз.",
+          "JANUS_SIP_READINESS_TITLE": "Janus SIP дайындығы",
+          "JANUS_SIP_READINESS_SUBTITLE": "SIP профильдері, inbox binding және тиімді маршрут тексеріледі.",
           "ROUTING_MODE": "Маршрутизация режимі",
           "FALLBACK_MODE": "Fallback режимі",
           "PRIMARY_APP_REF": "Негізгі қосымша сілтемесі",
@@ -635,7 +603,7 @@
           "LAST_SYNCED_AT": "Соңғы синхрондау",
           "NOT_SYNCED": "Әлі синхрондалмаған",
           "LOADING": "Дайындық тексерістері жүктелуде...",
-          "LOAD_ERROR": "Fonoster дайындығын жүктеу мүмкін болмады.",
+          "LOAD_ERROR": "Janus SIP дайындығын жүктеу мүмкін болмады.",
           "REFRESH": "Жаңарту",
           "WARNINGS_TITLE": "Ескертулер",
           "NO_WARNINGS": "Бұғаттайтын ескертулер жоқ.",
@@ -650,7 +618,7 @@
           "SIPUNI_WEBHOOK_SUCCESS": "Sipuni webhook сақталды",
           "SIPUNI_WEBHOOK_REQUIRED": "Webhook token міндетті",
           "VIRTUAL_PBX_DIAGNOSTICS": "Virtual PBX диагностикасы",
-          "VIRTUAL_PBX_SAFE_MODE": "OneLink конфигурацияны сақтап, Fonoster/Routr автоматты түрде синхрондайды.",
+          "VIRTUAL_PBX_SAFE_MODE": "OneLink жергілікті Janus SIP конфигурациясын сақтайды.",
           "PROVIDER_KIND": "Провайдер түрі",
           "PHONE_SPLIT": "Көрсетілетін → техникалық",
           "OWNERSHIP": "Иелік",

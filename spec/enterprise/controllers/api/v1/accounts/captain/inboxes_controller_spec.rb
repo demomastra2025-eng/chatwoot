@@ -119,7 +119,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
         account.enable_features!('channel_voice')
         voice_channel = create(
           :channel_voice,
-          :fonoster,
+          :sipuni,
           account: account,
           provider_config: {
             number_ref: SecureRandom.uuid,
@@ -155,7 +155,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
         account.enable_features!('channel_voice')
         voice_channel = create(
           :channel_voice,
-          :fonoster,
+          :sipuni,
           account: account,
           provider_config: {
             number_ref: SecureRandom.uuid,
@@ -174,7 +174,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
           operator_agent_aor: 'sip:1001@example.test',
           fallback_mode: 'reject',
           ai_enabled: false,
-          ai_deployment_mode: 'fonoster_managed',
+          ai_deployment_mode: 'onelink_managed',
           onelink_ai_app_ref: nil,
           captain_assistant_id: nil
         )

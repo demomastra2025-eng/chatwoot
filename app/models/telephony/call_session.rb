@@ -15,7 +15,7 @@
 #  last_event_at     :datetime
 #  legs              :jsonb            not null
 #  metadata          :jsonb            not null
-#  provider          :string           default("fonoster"), not null
+#  provider          :string           not null
 #  provider_call_sid :string
 #  recording_ref     :string
 #  started_at        :datetime

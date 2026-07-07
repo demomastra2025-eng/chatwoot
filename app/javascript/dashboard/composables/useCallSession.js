@@ -26,14 +26,12 @@ const RETRYABLE_CLAIM_FAILURE_REASONS = new Set([
   'sipuni_operator_leg_not_ready',
 ]);
 const BROWSER_CALLING_PROVIDERS = new Set([
-  'fonoster',
   'asterisk_analog',
   'sipuni',
   'binotel',
   'twilio',
 ]);
 const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
-  'fonoster',
   'asterisk_analog',
   'sipuni',
   'binotel',
@@ -111,6 +109,25 @@ export function useCallSession() {
     inboxId: call?.inboxId || call?.inbox_id,
     sipProfileId: sipProfileIdForCall(call),
   });
+  const routeActionForCall = call =>
+    (
+      call?.route_action ||
+      call?.routeAction ||
+      call?.metadata?.route_action ||
+      call?.metadata?.routeAction ||
+      ''
+    )
+      .toString()
+      .trim()
+      .toLowerCase();
+  const isAiVoiceCall = call =>
+    Boolean(
+      call?.ai_voice ||
+        call?.aiVoice ||
+        call?.aiBridge ||
+        call?.callMode === 'ai' ||
+        routeActionForCall(call) === 'ai'
+    );
   const janusCallRefForCall = call =>
     call?.janusCallRef ||
     call?.janus_call_ref ||
@@ -193,7 +210,7 @@ export function useCallSession() {
   const incomingVoiceInboxId = computed(() => {
     const call = incomingCalls.value.find(item => {
       return (
-        ['fonoster', 'asterisk_analog', 'sipuni', 'binotel', 'twilio'].includes(
+        ['asterisk_analog', 'sipuni', 'binotel', 'twilio'].includes(
           item?.provider
         ) &&
         Number.isFinite(Number(item?.inboxId)) &&
@@ -272,7 +289,7 @@ export function useCallSession() {
     return RETRYABLE_CLAIM_FAILURE_REASONS.has(reason);
   };
 
-  const claimFonosterIncomingCall = async callSid => {
+  const claimBrowserSipIncomingCall = async callSid => {
     try {
       const payload = await VoiceAPI.claimIncomingCall(callSid);
       return {
@@ -294,7 +311,7 @@ export function useCallSession() {
     }
   };
 
-  const releaseFonosterIncomingCall = async (
+  const releaseBrowserSipCall = async (
     callSid,
     { status = 'rejected', reason = 'operator_declined' } = {}
   ) => {
@@ -309,11 +326,11 @@ export function useCallSession() {
     }
   };
 
-  const releaseUnsupportedFonosterJoin = async (
+  const releaseUnsupportedBrowserSipJoin = async (
     callSid,
-    { includeReason = false, provider = 'fonoster' } = {}
+    { includeReason = false, provider } = {}
   ) => {
-    await releaseFonosterIncomingCall(callSid, {
+    await releaseBrowserSipCall(callSid, {
       status: 'no_answer',
       reason: 'browser_webphone_not_ready',
     });
@@ -330,7 +347,7 @@ export function useCallSession() {
     callSid,
     { provider, communicationThreadId = null } = {}
   ) => {
-    const releaseResult = await releaseFonosterIncomingCall(callSid, {
+    const releaseResult = await releaseBrowserSipCall(callSid, {
       status: 'no_answer',
       reason: 'sip_invite_not_received',
     });
@@ -365,25 +382,11 @@ export function useCallSession() {
     };
   };
 
-  const failFonosterOutboundWithoutInvite = async callSid => {
-    await releaseFonosterIncomingCall(callSid, {
-      status: 'failed',
-      reason: 'sip_invite_not_received',
-    });
-    callsStore.dismissCall(callSid);
-    return {
-      provider: 'fonoster',
-      joinSupported: false,
-      reason: 'sip_invite_not_received',
-      callSid,
-    };
-  };
-
   const failNativeOutboundWithoutSipStart = async (
     callSid,
     { provider } = {}
   ) => {
-    await releaseFonosterIncomingCall(callSid, {
+    await releaseBrowserSipCall(callSid, {
       status: 'failed',
       reason: 'sip_invite_not_received',
     });
@@ -413,7 +416,7 @@ export function useCallSession() {
     }
   };
 
-  const waitForFonosterOperatorReleaseHeadStart = releasePromise => {
+  const waitForOperatorReleaseHeadStart = releasePromise => {
     return Promise.race([
       releasePromise,
       new Promise(resolve => {
@@ -444,6 +447,7 @@ export function useCallSession() {
 
   const handleClientConnected = event => {
     const detail = event?.detail || {};
+    if (detail.aiBridge || detail.callMode === 'ai') return;
     if (!NATIVE_BROWSER_SIP_PROVIDERS.has(detail.provider)) return;
 
     const call = findDisconnectedBrowserSipCall(event);
@@ -487,7 +491,7 @@ export function useCallSession() {
 
     await runOnceForCall(endingCallSids, call.callSid, async () => {
       const release = browserSipDisconnectRelease(call, detail);
-      await releaseFonosterIncomingCall(call.callSid, {
+      await releaseBrowserSipCall(call.callSid, {
         status: release.status,
         reason: release.reason,
       });
@@ -495,6 +499,8 @@ export function useCallSession() {
   };
 
   const handleClientDisconnect = async event => {
+    if (event?.detail?.aiBridge || event?.detail?.callMode === 'ai') return;
+
     const detailProvider = event?.detail?.provider;
     const call = NATIVE_BROWSER_SIP_PROVIDERS.has(detailProvider)
       ? findDisconnectedBrowserSipCall(event)
@@ -508,6 +514,52 @@ export function useCallSession() {
     }
 
     await callsStore.clearActiveCall();
+  };
+
+  const browserSipAiStreamUrl = call => {
+    const aiVoice = call.ai_voice || call.aiVoice || {};
+    const runtimeResponse =
+      aiVoice.runtime_response || aiVoice.runtimeResponse || {};
+    const bridge =
+      runtimeResponse.browser_bridge ||
+      runtimeResponse.browserBridge ||
+      aiVoice.browser_bridge ||
+      aiVoice.browserBridge ||
+      {};
+    return bridge.stream_url || bridge.streamUrl;
+  };
+
+  const answerBrowserSipAiCall = async (call, detail = {}) => {
+    const streamUrl = browserSipAiStreamUrl(call);
+    if (!streamUrl) {
+      // eslint-disable-next-line no-console
+      console.warn('AI voice browser bridge stream URL is missing');
+      return;
+    }
+
+    try {
+      await WebphoneClient.answerAiIncomingCall({
+        provider: call.provider || detail.provider,
+        inboxId: call.inboxId || call.inbox_id || detail.inboxId,
+        sessionKey:
+          call.janusSessionKey ||
+          call.janus_session_key ||
+          detail.sessionKey ||
+          detail.session_key,
+        sipProfileId:
+          call.sipProfileId || call.sip_profile_id || detail.sipProfileId,
+        callRef: call.callSid || call.call_sid || call.call_ref,
+        janusCallRef:
+          call.janusCallRef ||
+          call.janus_call_ref ||
+          detail.callRef ||
+          detail.callSid,
+        streamUrl,
+      });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to answer browser SIP call with AI bridge:', error);
+    }
   };
 
   const handleClientIncoming = async event => {
@@ -524,9 +576,18 @@ export function useCallSession() {
         from: detail.from || detail.fromNumber || detail.from_number,
         session_key: detail.sessionKey || detail.session_key,
         sip_profile_id: detail.sipProfileId || detail.sip_profile_id,
+        janus_session_id: detail.janusSessionId || detail.janus_session_id,
+        janus_handle_id: detail.janusHandleId || detail.janus_handle_id,
+        janus_unique_id: detail.janusUniqueId || detail.janus_unique_id,
+        janus_master_id: detail.janusMasterId || detail.janus_master_id,
         internal_extension:
           detail.internalExtension || detail.internal_extension,
       });
+      if ((call.route_action || call.routeAction) === 'ai') {
+        await answerBrowserSipAiCall(call, detail);
+        return;
+      }
+
       callsStore.addCall({
         callSid: call.callSid || call.call_sid || call.call_ref,
         status: call.status || 'ringing',
@@ -663,12 +724,12 @@ export function useCallSession() {
   const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
     if (NATIVE_BROWSER_SIP_PROVIDERS.has(provider)) {
       return runOnceForCall(endingCallSids, callSid, async () => {
-        const releaseResult = releaseFonosterIncomingCall(callSid, {
+        const releaseResult = releaseBrowserSipCall(callSid, {
           status: 'completed',
           reason: 'operator_hangup',
         });
 
-        await waitForFonosterOperatorReleaseHeadStart(releaseResult);
+        await waitForOperatorReleaseHeadStart(releaseResult);
         try {
           await WebphoneClient.endClientCall({
             provider,
@@ -693,22 +754,22 @@ export function useCallSession() {
     return null;
   };
 
-  const cancelFonosterOutboundCall = async call => {
+  const cancelNativeOutboundCall = async call => {
     const callSid = call?.callSid;
     if (!callSid) return null;
 
     return runOnceForCall(releasingCallSids, callSid, async () => {
-      const releaseResult = releaseFonosterIncomingCall(callSid, {
+      const releaseResult = releaseBrowserSipCall(callSid, {
         status: 'cancelled',
         reason: 'operator_cancelled',
       });
 
-      await waitForFonosterOperatorReleaseHeadStart(releaseResult);
+      await waitForOperatorReleaseHeadStart(releaseResult);
       try {
         await WebphoneClient.endClientCall(webphoneCallScope(call));
       } catch (error) {
         // eslint-disable-next-line no-console
-        console.warn('Failed to cancel Fonoster browser call:', error);
+        console.warn('Failed to cancel browser SIP call:', error);
       }
 
       durationTimer.stop();
@@ -797,7 +858,7 @@ export function useCallSession() {
             }
           }
 
-          const claimResult = await claimFonosterIncomingCall(callSid);
+          const claimResult = await claimBrowserSipIncomingCall(callSid);
           operatorSipProfileId =
             operatorSipProfileId ||
             sipProfileIdForCall({
@@ -875,19 +936,18 @@ export function useCallSession() {
               };
             }
 
-            if (resolvedProvider === 'fonoster') {
-              return failFonosterOutboundWithoutInvite(callSid);
-            }
-
             return failNativeOutboundWithoutSipStart(callSid, {
               provider: resolvedProvider,
             });
           }
 
-          const releaseResult = await releaseUnsupportedFonosterJoin(callSid, {
-            includeReason: true,
-            provider: resolvedProvider,
-          });
+          const releaseResult = await releaseUnsupportedBrowserSipJoin(
+            callSid,
+            {
+              includeReason: true,
+              provider: resolvedProvider,
+            }
+          );
           return {
             ...releaseResult,
             ...(communicationThreadId ? { communicationThreadId } : {}),
@@ -903,10 +963,6 @@ export function useCallSession() {
                 reason: 'call_closed',
                 callSid,
               };
-            }
-
-            if (resolvedProvider === 'fonoster') {
-              return failFonosterOutboundWithoutInvite(callSid);
             }
 
             return failNativeOutboundWithoutSipStart(callSid, {
@@ -991,10 +1047,6 @@ export function useCallSession() {
           };
         }
 
-        if (fallbackProvider === 'fonoster') {
-          return failFonosterOutboundWithoutInvite(callSid);
-        }
-
         return failNativeOutboundWithoutSipStart(callSid, {
           provider: fallbackProvider,
         });
@@ -1011,7 +1063,12 @@ export function useCallSession() {
 
     if (NATIVE_BROWSER_SIP_PROVIDERS.has(provider)) {
       if (isOutboundCallDirection(call?.callDirection)) {
-        return cancelFonosterOutboundCall(call);
+        return cancelNativeOutboundCall(call);
+      }
+
+      if (isAiVoiceCall(call)) {
+        callsStore.dismissCall(call?.callSid);
+        return null;
       }
 
       const releaseResult = await runOnceForCall(
@@ -1025,7 +1082,7 @@ export function useCallSession() {
             console.warn('Failed to decline browser SIP call:', error);
           }
 
-          return releaseFonosterIncomingCall(call?.callSid, {
+          return releaseBrowserSipCall(call?.callSid, {
             status: 'rejected',
             reason: 'operator_declined',
           });

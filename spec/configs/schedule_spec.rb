@@ -45,12 +45,10 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('refresh_openrouter_model_catalog_job', 'queue')).to eq('scheduled_jobs')
   end
 
-  it 'reconciles obsolete legacy telephony bindings hourly' do
+  it 'does not schedule obsolete legacy telephony binding reconciliation' do
     schedule = YAML.safe_load(file.read)
 
-    expect(schedule.dig('telephony_legacy_agent_binding_reconciliation_job', 'cron')).to eq('37 * * * *')
-    expect(schedule.dig('telephony_legacy_agent_binding_reconciliation_job', 'class')).to eq('Telephony::ReconcileLegacyAgentBindingsJob')
-    expect(schedule.dig('telephony_legacy_agent_binding_reconciliation_job', 'queue')).to eq('scheduled_jobs')
+    expect(schedule).not_to have_key('telephony_legacy_agent_binding_reconciliation_job')
   end
 
   it 'refreshes cached OpenRouter key health before catalog refresh windows' do

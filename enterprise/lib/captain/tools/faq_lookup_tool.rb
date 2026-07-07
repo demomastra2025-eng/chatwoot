@@ -11,8 +11,9 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: 'string', desc: 'The question or topic to search for in the FAQ database'
 
-  def perform(_tool_context, query:, semantic: true)
+  def perform(_tool_context, query:, semantic: true, voice_realtime: false)
     log_tool_usage('searching', { query: query })
+    return JSON.pretty_generate(voice_realtime_payload(query)) if voice_realtime
 
     Timeout.timeout(TOTAL_LOOKUP_TIMEOUT_SECONDS, TotalLookupTimeout) do
       cache = answer_cache(query: query, semantic: semantic)
@@ -27,6 +28,18 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   private
+
+  def voice_realtime_payload(query)
+    responses = lexical_fallback_responses(query)
+    log_tool_usage('found_results', { query: query, count: responses.size, strategy: 'lexical_voice_realtime' })
+
+    faq_payload(
+      query: query,
+      responses: responses,
+      lookup_strategy: 'lexical_voice_realtime',
+      trace_context: trace_context(semantic_attempted: false, fallback_reason: 'voice_realtime_fast_path')
+    )
+  end
 
   def semantic_payload(query:, semantic:)
     responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(query, semantic: semantic)

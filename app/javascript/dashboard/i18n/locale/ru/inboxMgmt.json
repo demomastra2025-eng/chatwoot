@@ -416,55 +416,6 @@
           "PLACEHOLDER": "Введите ваш номер телефона (напр. +1234567890)",
           "ERROR": "Пожалуйста, введите правильный номер телефона в формате E.164 (например, +1234567890)"
         },
-        "FONOSTER": {
-          "NUMBER_REF": {
-            "LABEL": "Идентификатор номера",
-            "PLACEHOLDER": "Введите идентификатор номера для звонков",
-            "REQUIRED": "Идентификатор номера обязателен"
-          },
-          "APP_REF": {
-            "LABEL": "Ссылка на основное приложение",
-            "PLACEHOLDER": "Ссылка на маршрутизацию или внешнее приложение",
-            "REQUIRED": "Ссылка на основное приложение обязательна при выборе маршрутизации в приложение"
-          },
-          "TRUNK_REF": {
-            "LABEL": "Ссылка на транк",
-            "PLACEHOLDER": "Необязательная ссылка на транк"
-          },
-          "ROUTING": {
-            "LABEL": "Маршрутизация по умолчанию",
-            "MODE": {
-              "OPERATOR": "Оператор",
-              "APP": "Приложение",
-              "AI": "AI",
-              "REJECT": "Отклонить"
-            }
-          },
-          "AI_APP_REF": {
-            "LABEL": "Ссылка на AI-приложение",
-            "PLACEHOLDER": "Введите ссылку на AI-приложение",
-            "REQUIRED": "Ссылка на AI-приложение обязательна при выборе AI-маршрутизации"
-          },
-          "OPERATOR_AGENT_AOR": {
-            "LABEL": "SIP-адрес оператора",
-            "PLACEHOLDER": "Введите SIP AOR, например sip:1001{'@'}domain, или локальное имя пользователя",
-            "REQUIRED": "SIP-адрес оператора обязателен при маршрутизации на оператора"
-          },
-          "OPERATOR_AGENT_REF": {
-            "LABEL": "Fonoster agent ref оператора",
-            "PLACEHOLDER": "Необязательный идентификатор агента Fonoster"
-          },
-          "OPERATOR_DISTRIBUTION": {
-            "LABEL": "Распределение звонка",
-            "BROADCAST": "Звонить всем доступным операторам",
-            "TARGETED": "Маршрут по внутреннему номеру сотрудника"
-          },
-          "OPERATOR_TARGET_REQUIRED": "Для маршрута на оператора укажите Fonoster agent ref или SIP AOR",
-          "FALLBACK_MESSAGE": {
-            "LABEL": "Сообщение при отклонении",
-            "PLACEHOLDER": "Необязательное сообщение, которое проигрывается при отклонении звонка"
-          }
-        },
         "VIRTUAL_PBX": {
           "CHANNEL_NAME": {
             "LABEL": "Название канала",
@@ -473,6 +424,7 @@
           },
           "PROVIDER_KIND": {
             "LABEL": "Провайдер SIP trunk",
+            "PLACEHOLDER": "Выберите провайдера",
             "SIPUNI": "Sipuni",
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk аналоговый"
@@ -527,23 +479,42 @@
             "ADD": "Добавить сотрудника",
             "REMOVE": "Удалить сотрудника {index}",
             "REQUIRED": "В каждой строке выберите сотрудника и укажите внутренний номер",
-            "SIP_PAIR_REQUIRED": "SIP username/password сотрудника нужно заполнять вместе"
+            "SIP_PAIR_REQUIRED": "SIP username/password сотрудника нужно заполнять вместе",
+            "VOICE_AGENT_LABEL": "Голосовой ИИ-агент",
+            "VOICE_AGENT_HINT": "Для этого SIP-профиля сотрудник OneLink не выбирается. В канале может быть только один такой профиль.",
+            "VOICE_AGENT_EMPLOYEE_DISABLED": "Сотрудник не требуется для голосового ИИ-агента",
+            "VOICE_AGENT_UNIQUE": "В одном канале может быть только один SIP-профиль голосового ИИ-агента"
           },
           "EMPLOYEE_SIP_USERNAME": {
             "LABEL": "SIP username",
-            "PLACEHOLDER": "Необязательный SIP username сотрудника"
+            "PLACEHOLDER": "SIP username сотрудника"
           },
           "EMPLOYEE_SIP_PASSWORD": {
             "LABEL": "SIP password",
-            "PLACEHOLDER": "Необязательный SIP password сотрудника"
+            "PLACEHOLDER": "SIP password сотрудника"
           },
           "INTERNAL_EXTENSION": {
             "LABEL": "Внутренний номер",
             "PLACEHOLDER": "1001",
             "REQUIRED": "Внутренний номер сотрудника обязателен"
           },
+          "ROUTING": {
+            "LABEL": "Маршрутизация по умолчанию",
+            "MODE": {
+              "OPERATOR": "Оператор",
+              "APP": "Приложение",
+              "AI": "AI",
+              "REJECT": "Отклонить"
+            }
+          },
+          "OPERATOR_DISTRIBUTION": {
+            "LABEL": "Распределение звонка",
+            "BROADCAST": "Звонить всем доступным операторам",
+            "TARGETED": "Маршрут по внутреннему номеру сотрудника"
+          },
+          "OPERATOR_TARGET_REQUIRED": "Для маршрута на оператора укажите SIP AOR или внутренний номер",
           "MANAGEMENT_TITLE": "Виртуальная АТС",
-          "MANAGEMENT_SUBTITLE": "OneLink управляет настройками канала, сотрудниками и SIP-доступами. Fonoster/Routr синхронизируются автоматически.",
+          "MANAGEMENT_SUBTITLE": "OneLink управляет настройками канала, сотрудниками и SIP-доступами через Janus SIP.",
           "CURRENT_USER_REQUIRED": "Текущий пользователь нужен для создания SIP-профиля сотрудника",
           "REQUIRED_FIELDS": "Заполните название inbox и витринный номер",
           "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять из OneLink.",
@@ -616,12 +587,14 @@
           "TWILIO_VOICE_URL_SUBTITLE": "Настройте этот URL как Voice URL на вашем Twilio телефонном номере и TwiML приложения.",
           "TWILIO_STATUS_URL_TITLE": "Twilio Status Callback URL",
           "TWILIO_STATUS_URL_SUBTITLE": "Настройте этот URL как Status Callback URL на ваш Twilio номер телефона.",
-          "FONOSTER_TITLE": "Подключение Fonoster",
-          "FONOSTER_SUBTITLE": "Этот канал звонков работает через telephony bridge Onelink и маршрутизацию Fonoster.",
-          "FONOSTER_ROUTING_TITLE": "Маршрутизация звонков",
-          "FONOSTER_ROUTING_SUBTITLE": "Выберите активный маршрут для номера и fallback, если основная цель недоступна.",
-          "FONOSTER_READINESS_TITLE": "Готовность Fonoster",
-          "FONOSTER_READINESS_SUBTITLE": "Проверяет telephony bridge, binding номера и эффективный маршрут для этого voice inbox.",
+          "LEGACY_VOICE_TITLE": "Legacy voice channel",
+          "LEGACY_VOICE_SUBTITLE": "Этот канал использует старую конфигурацию звонков и должен быть переведен на Janus SIP.",
+          "JANUS_SIP_TITLE": "Подключение Janus SIP",
+          "JANUS_SIP_SUBTITLE": "Этот канал звонков работает через Janus SIP и SIP-профили сотрудников.",
+          "JANUS_SIP_ROUTING_TITLE": "Маршрутизация звонков",
+          "JANUS_SIP_ROUTING_SUBTITLE": "Выберите активный маршрут для номера и fallback, если основная цель недоступна.",
+          "JANUS_SIP_READINESS_TITLE": "Готовность Janus SIP",
+          "JANUS_SIP_READINESS_SUBTITLE": "Проверяет SIP-профили, binding номера и эффективный маршрут для этого voice inbox.",
           "ROUTING_MODE": "Режим маршрутизации",
           "FALLBACK_MODE": "Fallback-режим",
           "PRIMARY_APP_REF": "Ссылка на основное приложение",
@@ -641,7 +614,7 @@
           "LAST_SYNCED_AT": "Последняя синхронизация",
           "NOT_SYNCED": "Еще не синхронизировано",
           "LOADING": "Загружаем проверки готовности...",
-          "LOAD_ERROR": "Не удалось загрузить готовность Fonoster.",
+          "LOAD_ERROR": "Не удалось загрузить готовность Janus SIP.",
           "REFRESH": "Обновить",
           "WARNINGS_TITLE": "Предупреждения",
           "NO_WARNINGS": "Блокирующих предупреждений нет.",
@@ -658,7 +631,7 @@
           "SIPUNI_WEBHOOK_SUCCESS": "Sipuni webhook сохранён",
           "SIPUNI_WEBHOOK_REQUIRED": "Webhook token обязателен",
           "VIRTUAL_PBX_DIAGNOSTICS": "Диагностика Виртуальной АТС",
-          "VIRTUAL_PBX_SAFE_MODE": "OneLink сохраняет конфигурацию и синхронизирует Fonoster/Routr автоматически.",
+          "VIRTUAL_PBX_SAFE_MODE": "OneLink сохраняет локальную конфигурацию Janus SIP.",
           "PROVIDER_KIND": "Тип провайдера",
           "PHONE_SPLIT": "Витринный → технический",
           "OWNERSHIP": "Владение",
@@ -1482,7 +1455,7 @@
       "PRE_CHAT_FORM": "Форма",
       "BUSINESS_HOURS": "Время работы",
       "WIDGET_BUILDER": "Конструктор виджетов",
-      "BOT_CONFIGURATION": "Подключить ИИ-агента",
+      "BOT_CONFIGURATION": "Подключить AI-агента",
       "WHATSAPP_TEMPLATES": "Шаблоны",
       "ACCOUNT_HEALTH": "Здоровье аккаунта",
       "CSAT": "CSAT"
@@ -1629,7 +1602,7 @@
       "WHATSAPP_CALLING_SUBHEADER": "Разрешить операторам совершать и принимать WhatsApp Cloud звонки из этого канала.",
       "WHATSAPP_CALLING_LABEL": "Включить WhatsApp Calling",
       "WHATSAPP_AI_VOICE_TITLE": "WhatsApp Voice Agent",
-      "WHATSAPP_AI_VOICE_SUBHEADER": "Разрешить голосовому ИИ-агенту автоматически отвечать на WhatsApp звонки в pending-диалогах.",
+      "WHATSAPP_AI_VOICE_SUBHEADER": "Разрешить голосовому AI-агенту автоматически отвечать на WhatsApp звонки в pending-диалогах.",
       "WHATSAPP_AI_VOICE_LABEL": "Включить автоответ Voice Agent",
       "UPDATE_PRE_CHAT_FORM_SETTINGS": "Обновить настройки формы для чата",
       "ALLOW_MOBILE_WEBVIEW": {

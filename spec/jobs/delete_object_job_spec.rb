@@ -94,7 +94,7 @@ RSpec.describe DeleteObjectJob, type: :job do
       end
 
       it 'removes a voice inbox while preserving telephony call sessions and events as audit records' do
-        voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+15551239999')
+        voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+15551239999')
         voice_inbox = voice_channel.inbox
         number_binding = voice_inbox.telephony_number_binding
         routing_policy = number_binding.routing_policy

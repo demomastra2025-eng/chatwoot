@@ -194,7 +194,10 @@ export default {
 
         let value = this.values[key];
 
-        if (formItem?.value_type === 'integer' && value !== '') {
+        if (
+          ['integer', 'number'].includes(formItem?.value_type) &&
+          value !== ''
+        ) {
           value = Number(value);
         }
 

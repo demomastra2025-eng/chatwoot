@@ -173,7 +173,7 @@ describe('FloatingCallWidget', () => {
         callSid: 'call-claimed-1',
         conversationId: 42,
         inboxId: 7,
-        provider: 'fonoster',
+        provider: 'sipuni',
         callDirection: 'inbound',
         browserJoinSupported: false,
         fromNumber: 'client-party',
@@ -188,7 +188,7 @@ describe('FloatingCallWidget', () => {
     storeGetters.getInbox.mockReturnValue({
       id: 7,
       name: 'Sales',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
 
     const wrapper = mountComponent();
@@ -278,10 +278,10 @@ describe('FloatingCallWidget', () => {
     vi.setSystemTime(new Date('2026-07-03T06:00:00Z'));
     mockSession.incomingCalls = [
       {
-        callSid: 'fonoster:handled-by-other',
+        callSid: 'sipuni:handled-by-other',
         conversationId: 724,
         inboxId: 4769,
-        provider: 'fonoster',
+        provider: 'sipuni',
         callDirection: 'inbound',
         status: 'in_progress',
         browserJoinSupported: false,
@@ -297,7 +297,7 @@ describe('FloatingCallWidget', () => {
     storeGetters.getInbox.mockReturnValue({
       id: 4769,
       name: 'Sipuni',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
 
     const wrapper = mountComponent();

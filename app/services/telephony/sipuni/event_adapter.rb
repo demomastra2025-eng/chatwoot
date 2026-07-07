@@ -204,7 +204,7 @@ class Telephony::Sipuni::EventAdapter
     return Telephony::SipProfile.none if number_binding.blank? || number_binding.inbox.blank?
     return Telephony::SipProfile.none if inbound? && !operator_leg?
 
-    scope = number_binding.inbox.telephony_sip_profiles.enabled.includes(:user).where.not(status: %w[disabled deleting failed])
+    scope = number_binding.inbox.telephony_sip_profiles.human_operator.enabled.includes(:user).where.not(status: %w[disabled deleting failed])
     matching_extension = internal_extension_for_candidates
     scope = scope.where(internal_extension: matching_extension) if matching_extension.present?
     scope.order(:id).to_a

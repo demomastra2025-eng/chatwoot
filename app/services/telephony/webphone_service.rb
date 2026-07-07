@@ -1,4 +1,3 @@
-require 'base64'
 require 'uri'
 
 class Telephony::WebphoneService
@@ -11,9 +10,8 @@ class Telephony::WebphoneService
   SIPUNI_PROVIDER_WEBHOOK_CORRELATION_WINDOW = 2.minutes
   BROWSER_SIP_INCOMING_SOURCE = 'browser_janus_sip'.freeze
 
-  def initialize(account:, bridge_client: nil)
+  def initialize(account:)
     @account = account
-    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def token_for(user:, inbox: nil)
@@ -45,86 +43,36 @@ class Telephony::WebphoneService
     context[:profile].update_browser_registration!(registered: true)
 
     decision = perform_browser_sip_incoming_route(context)
-    call_session = account.telephony_call_sessions.find_by!(external_call_ref: context[:call_ref])
-    call_session = persist_browser_sip_incoming_metadata!(call_session, context[:profile], params)
+    call_session = ensure_browser_sip_incoming_call_session!(context, decision)
+    call_session = persist_browser_sip_incoming_metadata!(call_session, context, decision)
+    call_session = attach_browser_sip_ai_voice!(call_session, decision, context[:profile], params)
 
     browser_sip_incoming_payload(call_session, decision, context[:profile])
   end
 
   private
 
-  attr_reader :account, :bridge_client
+  attr_reader :account
 
   def webphone_bootstrap_payload_for(user, inbox)
     return if inbox.present?
 
     native_sessions = janus_sip_webphone_payloads_for(user)
-    bridge_session = legacy_bridge_webphone_payload_for(user, optional: native_sessions.present?)
-    return bridge_session if native_sessions.blank? && bridge_session.present?
-
-    sessions = [bridge_session, *native_sessions].compact
-    multi_webphone_payload(sessions) if sessions.present?
+    multi_webphone_payload(native_sessions) if native_sessions.present?
   end
 
-  def legacy_bridge_webphone_payload_for(user, optional:)
-    binding = account.telephony_agent_bindings.enabled.find_by(user_id: user&.id)
-    return if binding.blank?
+  def webphone_payload_for_identity(_user, inbox, operator_identity)
+    return unsupported_provider_extension_payload(inbox, operator_identity) if provider_managed_external_extension?(inbox, operator_identity)
+    return janus_sip_webphone_payload(inbox, operator_identity) if janus_sip_webphone?(inbox, operator_identity)
 
-    operator_identity = Telephony::OperatorIdentityResolver::Identity.new(source: :agent_binding, record: binding)
-    bridge_webphone_payload(user, nil, operator_identity)
-  rescue StandardError
-    raise unless optional
-
-    unsupported_webphone_payload(reason: 'fonoster_webphone_token_failed').merge(
-      provider: 'fonoster',
+    unsupported_webphone_payload(inbox: inbox, reason: 'janus_sip_profile_required').merge(
       browser_join_supported: false,
       browserJoinSupported: false
     )
   end
 
-  def webphone_payload_for_identity(user, inbox, operator_identity)
-    return unsupported_provider_extension_payload(inbox, operator_identity) if provider_managed_external_extension?(inbox, operator_identity)
-    return janus_sip_webphone_payload(inbox, operator_identity) if janus_sip_webphone?(inbox, operator_identity)
-
-    bridge_webphone_payload(user, inbox, operator_identity)
-  end
-
-  def bridge_webphone_payload(user, inbox, operator_identity)
-    response = bridge_client.post('/telephony/webphone/token', token_request_payload(user, inbox, operator_identity))
-    response = response.deep_dup
-    response['provider'] ||= fallback_provider(inbox, operator_identity)
-    response['agent_ref'] = operator_identity.agent_ref
-    response['browser_join_supported'] = operator_identity.browser_join_supported?
-    apply_operator_identity(response, operator_identity)
-    apply_signaling_server_override(response)
-    diagnostics = token_identity_diagnostics(response)
-    response['diagnostics'] = response_diagnostics(response, diagnostics)
-    response['calling_supported'] = operator_identity_usable?(operator_identity) &&
-                                    operator_identity.browser_join_supported? &&
-                                    bridge_calling_supported?(response) &&
-                                    !diagnostics['token_identity_mismatch']
-    response
-  end
-
-  def token_request_payload(user, inbox, operator_identity)
-    {
-      chatwoot_user_id: user.id,
-      agent_ref: operator_identity&.agent_ref,
-      agent_aor: operator_identity&.agent_aor,
-      inbox_id: inbox&.id,
-      number_ref: inbox&.telephony_number_binding&.number_ref
-    }.compact
-  end
-
   def fallback_provider(inbox, operator_identity)
-    return 'fonoster' if whatsapp_calling_inbox?(inbox)
-
-    inbox_voice_provider(inbox) || operator_identity&.provider || 'fonoster'
-  end
-
-  def whatsapp_calling_inbox?(inbox)
-    channel = inbox&.channel
-    channel.is_a?(Channel::Whatsapp) && channel.voice_enabled?
+    inbox_voice_provider(inbox) || operator_identity&.provider
   end
 
   def unsupported_webphone_payload(reason:, inbox: nil)
@@ -143,10 +91,6 @@ class Telephony::WebphoneService
       browser_join_supported: false,
       registered_for_routing: operator_identity.record.respond_to?(:registered_for_routing?) && operator_identity.record.registered_for_routing?
     )
-  end
-
-  def operator_identity_usable?(operator_identity)
-    operator_identity.present? && operator_identity.enabled?
   end
 
   def provider_managed_external_extension?(inbox, operator_identity)
@@ -219,8 +163,8 @@ class Telephony::WebphoneService
       registered_for_routing: profile.registered_for_routing?,
       janus_server: janus_server,
       janusServer: janus_server,
-      ice_servers: sipuni_ice_servers,
-      iceServers: sipuni_ice_servers,
+      ice_servers: janus_sip_ice_servers,
+      iceServers: janus_sip_ice_servers,
       agent_ref: operator_identity.agent_ref,
       agent_aor: operator_identity.agent_aor
     }.merge(janus_sip_recording_contract(provider, profile)).compact
@@ -401,8 +345,7 @@ class Telephony::WebphoneService
   def janus_sip_provider_for(inbox, profile)
     inbox_voice_provider(inbox) ||
       inbox_voice_provider(profile&.inbox) ||
-      profile&.provider_connection&.provider_kind.presence ||
-      'sipuni'
+      profile&.provider_connection&.provider_kind.presence
   end
 
   def inbox_voice_provider(inbox)
@@ -542,7 +485,7 @@ class Telephony::WebphoneService
     nil
   end
 
-  def sipuni_ice_servers
+  def janus_sip_ice_servers
     raw = ENV.fetch('TELEPHONY_JANUS_ICE_SERVERS_JSON', '').presence
     return [] if raw.blank?
 
@@ -578,39 +521,6 @@ class Telephony::WebphoneService
     config.to_h.with_indifferent_access[:provider_kind].presence || inbox_voice_provider(inbox).to_s
   end
 
-  def apply_signaling_server_override(response)
-    signaling_server_url = ENV.fetch('TELEPHONY_WEBPHONE_SIGNALING_SERVER_URL', '').presence
-    return if signaling_server_url.blank?
-
-    provider = response_value(response, 'provider').presence || 'fonoster'
-    return unless provider == 'fonoster'
-
-    response['signalingServer'] = signaling_server_url
-    response.delete('signaling_server')
-    response.delete(:signaling_server)
-  end
-
-  def apply_operator_identity(response, operator_identity)
-    return unless apply_operator_identity?(response, operator_identity)
-
-    username, domain = sip_aor_parts(operator_identity.agent_aor)
-    response['username'] = username if username.present?
-    response['domain'] = domain if domain.present?
-    response['targetAor'] = operator_identity.agent_aor
-    response.delete('target_aor')
-    response.delete(:target_aor)
-    response.delete('aor')
-    response.delete(:aor)
-  end
-
-  def apply_operator_identity?(response, operator_identity)
-    return false if operator_identity&.agent_aor.blank?
-
-    provider = response_value(response, 'provider').presence || operator_identity.provider
-    provider == 'fonoster' &&
-      (operator_identity.sip_profile.present? || bridge_identity_needs_binding_fallback?(response))
-  end
-
   def operator_identity_for(user:, inbox:)
     Telephony::OperatorIdentityResolver.new(account: account, inbox: inbox, user: user).resolve
   end
@@ -625,122 +535,6 @@ class Telephony::WebphoneService
            .where.not(status: %w[disabled deleting failed])
            .limit(2)
            .count > 1
-  end
-
-  def bridge_identity_needs_binding_fallback?(response)
-    target_aor = response_value(response, 'targetAor', 'target_aor', 'aor').to_s.strip
-    username = response_value(response, 'username').to_s.strip
-    domain = response_value(response, 'domain').to_s.strip
-
-    target_aor.blank? ||
-      target_aor == 'sip:voice@default' ||
-      username.blank? ||
-      username == 'internal' ||
-      domain.blank? ||
-      domain == 'internal'
-  end
-
-  def sip_aor_parts(agent_aor)
-    agent_aor.to_s.sub(/\Asip:/i, '').split('@', 2)
-  end
-
-  def response_diagnostics(response, token_diagnostics)
-    diagnostics = response['diagnostics'].is_a?(Hash) ? response['diagnostics'].deep_dup : {}
-    diagnostics.merge(token_diagnostics).compact
-  end
-
-  def token_identity_diagnostics(response)
-    claims = decoded_token_claims(response_value(response, 'token'))
-    return {} if claims.blank?
-
-    expected = expected_token_identity(response)
-    actual = actual_token_identity(claims)
-    mismatch = expected.any? { |key, value| value.present? && actual[key].present? && actual[key] != value }
-    mismatch ||= token_test_grade_identity?(actual)
-
-    return {} unless mismatch
-
-    {
-      'token_identity_mismatch' => true,
-      'expected_token_identity' => expected.compact,
-      'actual_token_identity' => actual.compact
-    }
-  end
-
-  def decoded_token_claims(token)
-    parts = token.to_s.split('.')
-    return {} unless parts.length >= 2
-
-    payload = parts[1]
-    payload += '=' * ((4 - (payload.length % 4)) % 4)
-    JSON.parse(Base64.urlsafe_decode64(payload))
-  rescue ArgumentError, JSON::ParserError
-    {}
-  end
-
-  def expected_token_identity(response)
-    {
-      'username' => response_value(response, 'username').to_s.presence,
-      'domain' => response_value(response, 'domain').to_s.presence,
-      'targetAor' => response_value(response, 'targetAor', 'target_aor', 'aor').to_s.presence
-    }
-  end
-
-  def actual_token_identity(claims)
-    {
-      'username' => claims['username'].to_s.presence,
-      'domain' => claims['domain'].to_s.presence,
-      'targetAor' => claims['targetAor'].to_s.presence || claims['target_aor'].to_s.presence,
-      'aorLink' => claims['aorLink'].to_s.presence || claims['aor_link'].to_s.presence,
-      'allowedMethods' => Array.wrap(claims['allowedMethods'] || claims['allowed_methods'])
-    }
-  end
-
-  def token_test_grade_identity?(identity)
-    identity['username'] == 'internal' ||
-      identity['domain'] == 'internal' ||
-      identity['targetAor'] == 'sip:voice@default' ||
-      identity['aorLink'] == 'sip:voice@default'
-  end
-
-  def bridge_calling_supported?(response)
-    provider = response_value(response, 'provider').presence || 'fonoster'
-    return fonoster_browser_calling_supported?(response) if provider == 'fonoster'
-
-    calling_supported = response_value(response, 'calling_supported', 'callingSupported')
-    return calling_supported unless calling_supported.nil?
-
-    provider == 'twilio'
-  end
-
-  def fonoster_browser_calling_supported?(response)
-    calling_supported = response_value(response, 'calling_supported', 'callingSupported')
-    return false if calling_supported == false
-
-    required_values_present?(
-      response,
-      %w[token username domain],
-      %w[signalingServer signaling_server],
-      %w[targetAor target_aor aor]
-    )
-  end
-
-  def required_values_present?(response, required_keys, *alternative_key_groups)
-    required_keys.all? { |key| response_value(response, key).present? } &&
-      alternative_key_groups.all? do |group|
-        group.any? { |key| response_value(response, key).present? }
-      end
-  end
-
-  def response_value(response, *keys)
-    keys.each do |key|
-      return response[key] if response.key?(key)
-
-      symbol_key = key.to_sym
-      return response[symbol_key] if response.key?(symbol_key)
-    end
-
-    nil
   end
 
   def browser_sip_incoming_provider!(inbox)
@@ -771,16 +565,33 @@ class Telephony::WebphoneService
   end
 
   def browser_sip_incoming_profile!(user, inbox, params)
-    scope = account.telephony_sip_profiles.enabled.where(
+    profile_id = params_value(params, 'sip_profile_id', 'sipProfileId')
+    if profile_id.present?
+      explicit_profile = browser_sip_incoming_profile_by_id!(profile_id, inbox)
+      return explicit_profile if explicit_profile.voice_agent?
+    end
+
+    scope = account.telephony_sip_profiles.human_operator.enabled.where(
       user_id: user&.id,
       inbox_id: inbox.id,
       availability_mode: 'browser_webphone'
     ).where.not(status: %w[disabled deleting failed])
 
-    profile_id = params_value(params, 'sip_profile_id', 'sipProfileId')
     scope = scope.where(id: profile_id) if profile_id.present?
 
     profile = scope.order(updated_at: :desc, id: :desc).first
+    return profile if profile.present?
+
+    raise Telephony::Error.new(code: 'WEBPHONE_SIP_PROFILE_NOT_FOUND', message: 'No browser SIP profile found for this inbox',
+                               status: :not_found)
+  end
+
+  def browser_sip_incoming_profile_by_id!(profile_id, inbox)
+    profile = account.telephony_sip_profiles.enabled.where(
+      id: profile_id,
+      inbox_id: inbox.id,
+      availability_mode: 'browser_webphone'
+    ).where.not(status: %w[disabled deleting failed]).first
     return profile if profile.present?
 
     raise Telephony::Error.new(code: 'WEBPHONE_SIP_PROFILE_NOT_FOUND', message: 'No browser SIP profile found for this inbox',
@@ -867,20 +678,87 @@ class Telephony::WebphoneService
       source: BROWSER_SIP_INCOMING_SOURCE,
       janus_call_ref: params_value(params, 'call_ref', 'callRef', 'call_sid', 'callSid'),
       janus_session_key: params_value(params, 'session_key', 'sessionKey'),
+      janus_session_id: params_value(params, 'janus_session_id', 'janusSessionId'),
+      janus_handle_id: params_value(params, 'janus_handle_id', 'janusHandleId'),
+      janus_unique_id: params_value(params, 'janus_unique_id', 'janusUniqueId'),
+      janus_master_id: params_value(params, 'janus_master_id', 'janusMasterId'),
       provider_connection_id: profile.provider_connection_id,
       telephony_sip_profile_id: profile.id,
+      telephony_sip_profile_kind: profile.profile_kind,
+      voice_agent_sip_profile_id: profile.voice_agent? ? profile.id : nil,
       target_sip_profile_id: profile.id,
       target_user_id: profile.user_id,
       target_extension: profile.internal_extension,
+      voice_agent: profile.voice_agent?,
       operator_internal_extension: profile.internal_extension
     }.compact
   end
 
-  def persist_browser_sip_incoming_metadata!(call_session, profile, params)
+  def persist_browser_sip_incoming_metadata!(call_session, context, decision)
     metadata = call_session.metadata.to_h.deep_dup.deep_stringify_keys
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_dup : {}
-    metadata['metadata'] = route_metadata.deep_merge(browser_sip_incoming_metadata(profile, params).deep_stringify_keys)
+    metadata['metadata'] = route_metadata.deep_merge(browser_sip_incoming_route_metadata_payload(context, decision))
     call_session.update!(metadata: metadata)
+    call_session.reload
+  end
+
+  def ensure_browser_sip_incoming_call_session!(context, decision)
+    existing = account.telephony_call_sessions.find_by(external_call_ref: context[:call_ref])
+    return existing if existing.present?
+
+    conversation = browser_sip_incoming_decision_conversation(decision)
+    binding = context.fetch(:binding)
+    params = context.fetch(:params)
+    account.telephony_call_sessions.create!(
+      external_call_ref: context.fetch(:call_ref),
+      account: account,
+      inbox: context.fetch(:inbox),
+      number_binding: binding,
+      provider: context.fetch(:provider),
+      status: 'ringing',
+      direction: 'inbound',
+      from_number: browser_sip_incoming_from(params),
+      to_number: browser_sip_incoming_to(params, context.fetch(:inbox), binding),
+      started_at: Time.current,
+      last_event_at: Time.current,
+      conversation: conversation,
+      contact: conversation&.contact,
+      metadata: browser_sip_incoming_initial_metadata(context, decision)
+    )
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless e.record&.errors&.of_kind?(:external_call_ref, :taken)
+
+    account.telephony_call_sessions.find_by!(external_call_ref: context[:call_ref])
+  end
+
+  def browser_sip_incoming_decision_conversation(decision)
+    conversation_id = decision[:conversation_id] || decision['conversation_id']
+    return if conversation_id.blank?
+
+    account.conversations.find_by(id: conversation_id)
+  end
+
+  def browser_sip_incoming_initial_metadata(context, decision)
+    { 'metadata' => browser_sip_incoming_route_metadata_payload(context, decision) }
+  end
+
+  def browser_sip_incoming_route_metadata_payload(context, decision)
+    browser_sip_incoming_metadata(context.fetch(:profile), context.fetch(:params)).deep_stringify_keys.merge(
+      'route_action' => decision[:action] || decision['action'],
+      'route_reason' => decision[:reason] || decision['reason'],
+      'chatwoot_conversation_id' => decision[:conversation_id] || decision['conversation_id'],
+      'chatwoot_conversation_status' => decision[:conversation_status] || decision['conversation_status'],
+      'number_ref' => context.fetch(:binding).number_ref
+    ).compact
+  end
+
+  def attach_browser_sip_ai_voice!(call_session, decision, profile, params)
+    Telephony::AiVoice::JanusSipAttachService.new(
+      call_session: call_session,
+      routing_decision: decision,
+      sip_profile: profile,
+      params: params
+    ).perform
     call_session.reload
   end
 
@@ -890,6 +768,7 @@ class Telephony::WebphoneService
     browser_sip_incoming_session_payload(call_session, route_metadata)
       .merge(browser_sip_incoming_operator_payload(route_metadata, profile))
       .merge(route_action: decision[:action] || decision['action'])
+      .merge(browser_sip_incoming_ai_voice_payload(call_session))
       .compact
   end
 
@@ -924,8 +803,26 @@ class Telephony::WebphoneService
       janusCallRef: route_metadata['janus_call_ref'],
       janus_session_key: route_metadata['janus_session_key'],
       janusSessionKey: route_metadata['janus_session_key'],
+      janus_session_id: route_metadata['janus_session_id'],
+      janusSessionId: route_metadata['janus_session_id'],
+      janus_handle_id: route_metadata['janus_handle_id'],
+      janusHandleId: route_metadata['janus_handle_id'],
+      janus_unique_id: route_metadata['janus_unique_id'],
+      janusUniqueId: route_metadata['janus_unique_id'],
+      janus_master_id: route_metadata['janus_master_id'],
+      janusMasterId: route_metadata['janus_master_id'],
       sipuni_native_webphone_correlation: route_metadata['sipuni_native_webphone_correlation'],
       sipuniNativeWebphoneCorrelation: route_metadata['sipuni_native_webphone_correlation']
+    }
+  end
+
+  def browser_sip_incoming_ai_voice_payload(call_session)
+    ai_voice = call_session.metadata.to_h.deep_stringify_keys['ai_voice']
+    return {} unless ai_voice.is_a?(Hash)
+
+    {
+      ai_voice: ai_voice,
+      aiVoice: ai_voice
     }
   end
 

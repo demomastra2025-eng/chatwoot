@@ -3,10 +3,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   rescue_from Telephony::Error, with: :render_telephony_error
 
   VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
-  VOICE_ROUTE_POLICY_ATTRIBUTES = %i[
-    mode ai_enabled ai_app_ref ai_deployment_mode fonoster_ai_app_ref onelink_ai_app_ref fallback_ai_app_ref
-    captain_assistant_id ai_voice_settings operator_agent_ref operator_agent_aor operator_distribution_mode fallback_mode fallback_message
-  ].freeze
 
   before_action :fetch_inbox, except: [:index, :create]
   before_action :fetch_agent_bot, only: [:set_agent_bot]
@@ -248,15 +244,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     return unless defined?(Channel::Voice) && channel.is_a?(Channel::Voice)
 
     sync_voice_captain_inbox!(channel)
-    return unless channel.provider == 'fonoster'
+    return unless channel.provider.in?(Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS)
 
-    binding = Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
-    return if binding.blank?
-
-    Telephony::RoutingService.new(account: Current.account).update_number_route!(
-      number_binding: binding,
-      attributes: binding.routing_policy.attributes.symbolize_keys.slice(*VOICE_ROUTE_POLICY_ATTRIBUTES)
-    )
+    Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
   end
 
   def sync_voice_captain_inbox!(channel)
@@ -339,7 +329,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def managed_virtual_pbx_remote_commit?
-    ActiveModel::Type::Boolean.new.cast(params.fetch(:remote_commit, true))
+    ActiveModel::Type::Boolean.new.cast(params.fetch(:remote_commit, false))
   end
 
   def managed_virtual_pbx_deletion_payload(inbox_id, payload)

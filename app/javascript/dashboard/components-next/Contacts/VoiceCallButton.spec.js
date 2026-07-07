@@ -61,7 +61,7 @@ const voiceInbox = (overrides = {}) => ({
   id: 4593,
   channel_type: 'Channel::Voice',
   name: '+77172705175',
-  provider: 'fonoster',
+  provider: 'sipuni',
   phone_number: '+77172705175',
   ...overrides,
 });
@@ -122,33 +122,33 @@ describe('VoiceCallButton', () => {
     routeMock.name = undefined;
     routeMock.params = routeParamsMock;
     initializeDeviceMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       callingSupported: true,
       registered: true,
     });
     prewarmMicrophoneMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       prewarmed: true,
     });
     stopMicrophonePrewarmMock.mockReturnValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       stopped: true,
     });
   });
 
-  it('prepares the Fonoster webphone and microphone before initiating an outbound call', async () => {
+  it('prepares the Janus SIP webphone and microphone before initiating an outbound call', async () => {
     const order = [];
     prewarmMicrophoneMock.mockImplementation(async () => {
       order.push('microphone');
       return {
-        provider: 'fonoster',
+        provider: 'sipuni',
         prewarmed: true,
       };
     });
     initializeDeviceMock.mockImplementation(async () => {
       order.push('webphone');
       return {
-        provider: 'fonoster',
+        provider: 'sipuni',
         callingSupported: true,
         registered: true,
       };
@@ -183,7 +183,7 @@ describe('VoiceCallButton', () => {
 
     expect(initializeDeviceMock).toHaveBeenCalledWith(4593, { native: true });
     expect(prewarmMicrophoneMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+      expect.objectContaining({ provider: 'sipuni', inboxId: 4593 })
     );
     expect(dispatch).toHaveBeenCalledWith('contacts/initiateCall', {
       contactId: 2179,
@@ -195,7 +195,7 @@ describe('VoiceCallButton', () => {
         callSid: 'call-ref-1',
         conversationId: 627,
         inboxId: 4593,
-        provider: 'fonoster',
+        provider: 'sipuni',
         callDirection: 'outbound',
         fromNumber: '+77070001001',
         toNumber: '+77070001002',
@@ -268,10 +268,10 @@ describe('VoiceCallButton', () => {
     expect(routerPushMock).not.toHaveBeenCalled();
   });
 
-  it('does not initiate a Fonoster outbound call when the webphone is unavailable', async () => {
+  it('does not initiate a Janus SIP outbound call when the webphone is unavailable', async () => {
     const { dispatchMock, wrapper } = mountComponent();
     initializeDeviceMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       callingSupported: false,
       registered: false,
     });
@@ -281,17 +281,17 @@ describe('VoiceCallButton', () => {
 
     expect(dispatchMock).not.toHaveBeenCalled();
     expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+      expect.objectContaining({ provider: 'sipuni', inboxId: 4593 })
     );
     expect(alertMock).toHaveBeenCalledWith(
       'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
     );
   });
 
-  it('does not initiate a Fonoster outbound call when the microphone is unavailable', async () => {
+  it('does not initiate a Janus SIP outbound call when the microphone is unavailable', async () => {
     const { dispatchMock, wrapper } = mountComponent();
     prewarmMicrophoneMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       prewarmed: false,
       reason: 'NotAllowedError',
     });
@@ -301,22 +301,22 @@ describe('VoiceCallButton', () => {
 
     expect(dispatchMock).not.toHaveBeenCalled();
     expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+      expect.objectContaining({ provider: 'sipuni', inboxId: 4593 })
     );
     expect(alertMock).toHaveBeenCalledWith(
       'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
     );
   });
 
-  it('initiates a Fonoster outbound call when the selected inbox uses an external SIP profile', async () => {
+  it('initiates a Janus SIP outbound call when the selected inbox uses an external SIP profile', async () => {
     initializeDeviceMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       callingSupported: false,
       browserJoinSupported: false,
       registered: false,
     });
     prewarmMicrophoneMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       prewarmed: false,
       reason: 'NotAllowedError',
     });
@@ -335,7 +335,7 @@ describe('VoiceCallButton', () => {
       inboxId: 4593,
     });
     expect(stopMicrophonePrewarmMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster', inboxId: 4593 })
+      expect.objectContaining({ provider: 'sipuni', inboxId: 4593 })
     );
     expect(useCallsStore().calls).toEqual([
       expect.objectContaining({
@@ -346,7 +346,7 @@ describe('VoiceCallButton', () => {
     expect(alertMock).toHaveBeenCalledWith('CONTACT_PANEL.CALL_INITIATED');
   });
 
-  it('does not prewarm webphone for non-Fonoster voice inboxes', async () => {
+  it('does not prewarm webphone for non-Janus SIP voice inboxes', async () => {
     const { dispatchMock, wrapper } = mountComponent({
       inboxes: [voiceInbox({ id: 4674, provider: 'twilio' })],
     });

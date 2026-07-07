@@ -100,7 +100,7 @@ class Telephony::AiVoice::TranscriptIngestionService
   end
 
   def speaker_label(speaker)
-    speaker == 'ai' ? 'ИИ' : 'Клиент'
+    speaker == 'ai' ? 'AI-агент' : 'Клиент'
   end
 
   def remove_legacy_transcript_messages!

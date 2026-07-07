@@ -3,7 +3,7 @@ require 'tempfile'
 
 RSpec.describe 'Telephony Bridge Routes', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: voice_phone_number) }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: voice_phone_number) }
   let(:voice_phone_number) { "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}" }
   let(:voice_inbox) { voice_channel.inbox }
   let(:number_binding) { voice_inbox.telephony_number_binding }
@@ -244,7 +244,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     other_account.enable_features!('channel_voice')
     other_channel = create(
       :channel_voice,
-      :fonoster,
+      :sipuni,
       account: other_account,
       phone_number: '+15550002222'
     )
@@ -376,7 +376,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       data: include(
         account_id: account.id,
         inbox_id: voice_inbox.id,
-        provider: 'fonoster',
+        provider: 'sipuni',
         call_sid: 'fast-inbound-route',
         logical_call_key: call_session.metadata.dig('metadata', 'logical_call_key'),
         logicalCallKey: call_session.metadata.dig('metadata', 'logical_call_key'),
@@ -1478,8 +1478,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       to_number: voice_channel.phone_number
     )
     expect(call_session.conversation).to be_present
-    expect(call_session.conversation.identifier).to be_blank
-    expect(call_session.conversation.additional_attributes['fonoster_call_ref']).to eq('inbound-route-lifecycle')
+    expect(call_session.conversation.identifier).to eq('inbound-route-lifecycle')
+    expect(call_session.conversation.additional_attributes['telephony_call_ref']).to eq('inbound-route-lifecycle')
     expect(call_session.conversation.messages.where(content_type: 'voice_call').count).to eq(1)
     expect(call_session.conversation.messages.voice_calls.find_by!(source_id: 'voice_call:inbound-route-lifecycle')).to be_present
   end
@@ -1746,12 +1746,14 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       external_call_ref: 'bridge-call-pending',
       status: 'in_progress'
     )
+    assistant = create(:captain_assistant, account: account)
 
     number_binding.routing_policy.update!(
       mode: 'ai',
       ai_app_ref: 'ai-status-aware-app-ref',
       operator_agent_aor: 'sip:status-aware-operator@example.test',
-      fallback_mode: 'operator'
+      fallback_mode: 'operator',
+      captain_assistant: assistant
     )
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
@@ -1774,6 +1776,13 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'reason' => 'pending_conversation_ai_route',
       'bridge_call_ref' => 'bridge-call-pending'
     )
+    expect(response.parsed_body['ai_context']).to include(
+      'call_ref' => 'bridge-call-pending',
+      'account_id' => account.id,
+      'number_ref' => number_binding.number_ref
+    )
+    expect(response.parsed_body.dig('ai_context', 'ai', 'provider')).to eq('gemini-live')
+    expect(response.parsed_body.dig('ai_context', 'tools').pluck('name')).to include('faq_lookup', 'request_transfer')
   end
 
   it 'keeps a recent terminal bridge call ref for the AI runtime leg correlation' do
@@ -2148,12 +2157,11 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('app_ref')
   end
 
-  it 'keeps legacy Fonoster AI app ref as fallback when OneLink app ref is not configured' do
+  it 'keeps legacy AI app ref as fallback when OneLink app ref is not configured' do
     number_binding.routing_policy.update!(
       mode: 'ai',
       ai_deployment_mode: 'onelink_managed',
-      ai_app_ref: 'legacy-fonoster-ai-app',
-      fonoster_ai_app_ref: 'legacy-fonoster-ai-app',
+      ai_app_ref: 'legacy-ai-app',
       onelink_ai_app_ref: nil,
       fallback_mode: 'reject'
     )
@@ -2174,7 +2182,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
       'action' => 'ai',
-      'app_ref' => 'legacy-fonoster-ai-app',
+      'app_ref' => 'legacy-ai-app',
       'reason' => 'ai_route'
     )
   end

@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Internal Voice Recording Import API', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15550100100') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15550100100') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_ref) { 'operator-direct-call-1' }
@@ -85,7 +85,7 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
     expect(call_session.reload.metadata.dig('recording_import', 'status')).to eq('queued')
   end
 
-  it 'accepts Fonoster bridge auth and aliases when source_id/account_id are omitted but call_ref is unique' do
+  it 'accepts native SIP bridge auth and aliases when source_id/account_id are omitted but call_ref is unique' do
     expect(Telephony::RecordingImportJob).to receive(:perform_later).once
 
     bridge_payload = payload.except(:account_id, :source_id, :download_url, :size_bytes, :duration_sec).merge(

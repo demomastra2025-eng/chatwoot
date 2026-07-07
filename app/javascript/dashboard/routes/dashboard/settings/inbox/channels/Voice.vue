@@ -41,7 +41,7 @@ const PROVIDER_BADGES = {
 const kazakhstanState = reactive({
   channelName: '',
   phoneNumber: '',
-  providerKind: 'sipuni',
+  providerKind: '',
   providerAccountNumber: '',
   ingressNumber: '',
   connectionHost: '',
@@ -106,12 +106,6 @@ const selectedVirtualPbxProviderKind = computed(() => {
 const isAsteriskAnalogProvider = computed(
   () => selectedVirtualPbxProviderKind.value === 'asterisk_analog'
 );
-const isLocalNativeVirtualPbxProvider = computed(() =>
-  ['asterisk_analog', 'sipuni', 'binotel'].includes(
-    selectedVirtualPbxProviderKind.value
-  )
-);
-
 const showProviderSelection = computed(() => !selectedProvider.value);
 
 const availableProviders = computed(() => [
@@ -352,7 +346,7 @@ async function createKazakhstanChannel() {
   try {
     const response = await VoiceAPI.createVirtualPbxChannel(
       getVirtualPbxPayload(),
-      { dryRun: false, remoteCommit: !isLocalNativeVirtualPbxProvider.value }
+      { dryRun: false, remoteCommit: false }
     );
     const provisioningError = provisioningErrorMessage(response);
     if (provisioningError) {
@@ -493,6 +487,11 @@ async function createTwilioChannel() {
             class="w-full px-3 py-2"
             @blur="kazakhstanV$.providerKind?.$touch"
           >
+            <option value="" disabled>
+              {{
+                t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.PLACEHOLDER')
+              }}
+            </option>
             <option
               v-for="option in virtualPbxProviderOptions"
               :key="option.value"

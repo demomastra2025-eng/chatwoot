@@ -4,7 +4,7 @@ class Integrations::Medelement::Configuration
   DEFAULT_THROTTLE_MS = 275
   DEFAULT_SYNC_INTERVAL_HOURS = 24
   DEFAULT_SYNC_TIME_OF_DAY = '06:15'.freeze
-  SUPPORTED_SYNC_INTERVAL_HOURS = [1, 2, 3, 4, 6, 8, 12, 24].freeze
+  SUPPORTED_SYNC_INTERVAL_HOURS = [0.25, 0.5, 1, 2, 4, 6, 12, 24].freeze
   TIME_OF_DAY_FORMAT = /\A([01]\d|2[0-3]):[0-5]\d\z/
 
   def initialize(hook:)
@@ -40,10 +40,9 @@ class Integrations::Medelement::Configuration
   end
 
   def sync_interval_hours
-    value = integer_setting('sync_interval_hours', DEFAULT_SYNC_INTERVAL_HOURS)
-    return value if SUPPORTED_SYNC_INTERVAL_HOURS.include?(value)
-
-    DEFAULT_SYNC_INTERVAL_HOURS
+    value = numeric_setting('sync_interval_hours', DEFAULT_SYNC_INTERVAL_HOURS)
+    SUPPORTED_SYNC_INTERVAL_HOURS.find { |supported_value| supported_value == value } ||
+      DEFAULT_SYNC_INTERVAL_HOURS
   end
 
   def sync_receptions?
@@ -62,9 +61,11 @@ class Integrations::Medelement::Configuration
   end
 
   def sync_cron_expression
-    minute, anchor_hour = sync_time_of_day.split(':').map(&:to_i)
-    hour_field = cron_hours(anchor_hour).join(',')
-    "#{minute} #{hour_field} * * * #{time_zone}"
+    anchor_hour, anchor_minute = sync_time_of_day.split(':').map(&:to_i)
+
+    return "#{cron_minutes(anchor_minute).join(',')} * * * * #{time_zone}" if sync_interval_hours < 1
+
+    "#{anchor_minute} #{cron_hours(anchor_hour).join(',')} * * * #{time_zone}"
   end
 
   def throttle_ms
@@ -96,6 +97,21 @@ class Integrations::Medelement::Configuration
     hours.sort
   end
 
+  def cron_minutes(anchor_minute)
+    interval_minutes = (sync_interval_hours * 60).to_i
+    minutes = []
+    minute = anchor_minute
+
+    loop do
+      break if minutes.include?(minute)
+
+      minutes << minute
+      minute = (minute + interval_minutes) % 60
+    end
+
+    minutes.sort
+  end
+
   def boolean_setting(key, default)
     return default unless hook.settings.key?(key)
 
@@ -111,6 +127,13 @@ class Integrations::Medelement::Configuration
     return default if value.blank?
 
     value.to_i
+  end
+
+  def numeric_setting(key, default)
+    value = hook.settings[key]
+    return default if value.blank?
+
+    Float(value, exception: false) || default
   end
 
   def setting(key, default = nil)

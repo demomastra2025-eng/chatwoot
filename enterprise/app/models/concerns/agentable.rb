@@ -15,7 +15,7 @@ module Concerns::Agentable
   def agent_instructions(context = nil)
     state = context&.context&.[](:state) || {}
     prompt_state = state[:prompt_context] || {}
-    enhanced_context = time_agent_phase('prompt_context') { prompt_context }.merge(default_prompt_runtime_context)
+    enhanced_context = time_agent_phase('prompt_context') { prompt_context_for_runtime_state(state) }.merge(default_prompt_runtime_context)
 
     if state.present?
       explicit_prompt_context = state.key?(:prompt_context)
@@ -125,6 +125,29 @@ module Concerns::Agentable
       task_custom_attribute_labels: {},
       appointment_custom_attribute_labels: {}
     }
+  end
+
+  def prompt_context_for_runtime_state(state = {})
+    return prompt_context unless voice_ai_runtime_state?(state)
+
+    Rails.cache.fetch(voice_prompt_context_cache_key, expires_in: 2.minutes) { prompt_context }
+  rescue StandardError
+    prompt_context
+  end
+
+  def voice_ai_runtime_state?(state)
+    state.to_h[:source].to_s == 'voice_ai' || state.to_h['source'].to_s == 'voice_ai'
+  end
+
+  def voice_prompt_context_cache_key
+    [
+      'captain',
+      'voice_prompt_context',
+      self.class.name,
+      respond_to?(:id) ? id : nil,
+      respond_to?(:cache_key_with_version) ? cache_key_with_version : nil,
+      respond_to?(:account_id) ? account_id : nil
+    ].compact.join(':')
   end
 
   def runtime_custom_attribute_label_context(explicit_prompt_context:, prompt_state:)

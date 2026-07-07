@@ -31,6 +31,26 @@ RSpec.describe Telephony::SipProfile do
 
       expect(profile).to be_valid
     end
+
+    it 'requires a user for human operator profiles' do
+      account = create(:account)
+      inbox = create(:inbox, account: account)
+      profile = build(:telephony_sip_profile, account: account, inbox: inbox, user: nil, sip_username: 'operator-without-user')
+
+      expect(profile).not_to be_valid
+      expect(profile.errors[:user]).to be_present
+    end
+
+    it 'allows one voice agent profile without a user per inbox' do
+      account = create(:account)
+      inbox = create(:inbox, account: account)
+      create(:telephony_sip_profile, :voice_agent, account: account, inbox: inbox)
+
+      duplicate = build(:telephony_sip_profile, :voice_agent, account: account, inbox: inbox, internal_extension: '9099')
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:profile_kind]).to be_present
+    end
   end
 
   describe '#registered_for_routing?' do

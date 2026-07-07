@@ -1,13 +1,12 @@
 require 'rails_helper'
 require 'tempfile'
 
-RSpec.describe 'Telephony Bridge Events', type: :request do
+RSpec.describe 'Internal voice inbound events', type: :request do
   let(:account) { create(:account) }
   let(:voice_phone_number) { "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}" }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: voice_phone_number) }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: voice_phone_number) }
   let(:voice_inbox) { voice_channel.inbox }
-  let(:path) { '/telephony/internal/events' }
-  let(:compatibility_path) { '/internal/voice/inbound/event' }
+  let(:path) { '/internal/voice/inbound/event' }
 
   before do
     account.enable_features!('channel_voice')
@@ -20,7 +19,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     end
   end
 
-  it 'creates inbound conversation state from bridge callback payloads' do
+  it 'creates inbound conversation state from internal voice event payloads' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       post path,
            params: {
@@ -55,7 +54,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(account.telephony_events.find_by!(event_key: 'evt-1')).to be_processed
   end
 
-  it 'normalizes Kazakhstan trunk-prefix caller numbers from bridge callbacks' do
+  it 'normalizes Kazakhstan trunk-prefix caller numbers from internal voice events' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       post path,
            params: {
@@ -82,7 +81,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(account.telephony_events.find_by!(event_key: 'evt-kz-trunk-prefix')).to be_processed
   end
 
-  it 'accepts camelCase bridge payloads from the voice runtime' do
+  it 'accepts camelCase payloads from the voice runtime' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       post path,
            params: {
@@ -119,9 +118,9 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(account.telephony_events.find_by!(event_key: 'evt-2')).to be_processed
   end
 
-  it 'supports the native bridge compatibility event path' do
+  it 'supports the internal voice inbound event path' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post compatibility_path,
+      post path,
            params: {
              event_key: 'evt-compat',
              call_ref: 'call-in-compat',
@@ -145,13 +144,14 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
 
   it 'acks and stores raw events even when CRM conversation side effects fail' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post compatibility_path,
+      post path,
            params: {
              event_key: 'evt-side-effect-failure-1',
              call_ref: 'call-side-effect-failure-1',
              event: 'session_started',
              status: 'ringing',
              direction: 'FROM_PSTN',
+             provider: voice_channel.provider,
              ingress_number: '+199****9999',
              caller_number: '+155****0002'
            },
@@ -180,7 +180,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
 
   it 'uses the idempotency header as the event key when the payload omits one' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post compatibility_path,
+      post path,
            params: {
              call_ref: 'call-in-header-idempotency',
              event: 'session_started',
@@ -215,7 +215,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     )
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post compatibility_path,
+      post path,
            params: {
              event_key: 'evt-outbound-meta',
              call_ref: 'call-outbound-meta',
@@ -252,7 +252,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
 
   it 'uses the account header when the payload includes blank account fields' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post compatibility_path,
+      post path,
            params: {
              event_key: 'evt-blank-account-1',
              call_ref: 'call-outbound-blank-account',
@@ -281,7 +281,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
 
   it 'handles repeated late bridge events for the same call without raising uniqueness errors' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post compatibility_path,
+      post path,
            params: {
              event_key: 'evt-dup-start-1',
              call_ref: 'call-in-dup-1',
@@ -306,7 +306,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
         account_id: account.id.to_s
       }
 
-      post compatibility_path,
+      post path,
            params: late_event_payload.merge(
              event_key: 'evt-dup-answered-1',
              event: 'answered',
@@ -320,7 +320,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
 
       expect(response).to have_http_status(:accepted)
 
-      post compatibility_path,
+      post path,
            params: late_event_payload.merge(
              event_key: 'evt-dup-answered-1',
              event: 'answered',
@@ -334,7 +334,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
 
       expect(response).to have_http_status(:accepted)
 
-      post compatibility_path,
+      post path,
            params: late_event_payload.merge(
              event_key: 'evt-dup-completed-1',
              event: 'session_completed',
@@ -348,7 +348,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
 
       expect(response).to have_http_status(:accepted)
 
-      post compatibility_path,
+      post path,
            params: late_event_payload.merge(
              event_key: 'evt-dup-completed-1',
              event: 'session_completed',
@@ -375,7 +375,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
       .and_raise(ActiveJob::EnqueueError, 'redis down')
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
-      post compatibility_path,
+      post path,
            params: {
              event_key: 'evt-queue-fallback-1',
              call_ref: 'call-queue-fallback-1',
@@ -411,7 +411,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
       TELEPHONY_DEBUG_LOGGING: 'true',
       TELEPHONY_BRIDGE_DEBUG_LOG_PATH: debug_log_file.path
     ) do
-      post compatibility_path,
+      post path,
            params: {
              event_key: 'evt-log-1',
              call_ref: 'call-in-log-1',
@@ -435,14 +435,14 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(written_events).to include(
       include(
         'event' => 'telephony_inbound_event_request',
-        'path' => compatibility_path,
+        'path' => path,
         'call_ref' => 'call-in-log-1',
         'account_id' => account.id.to_s,
         'event_type' => 'session_started'
       ),
       include(
         'event' => 'telephony_inbound_event_response',
-        'path' => compatibility_path,
+        'path' => path,
         'call_ref' => 'call-in-log-1',
         'response_payload' => include('status' => 'accepted', 'mode' => 'async', 'call_ref' => 'call-in-log-1')
       )

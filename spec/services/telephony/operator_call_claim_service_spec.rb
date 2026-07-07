@@ -115,14 +115,14 @@ RSpec.describe Telephony::OperatorCallClaimService do
     )
   end
 
-  it 'does not mark another Fonoster call with a different logical key as related by conversation fallback' do
+  it 'does not mark another native SIP call with a different logical key as related by conversation fallback' do
     call_session.update!(
       from_number: '+77011110101',
       to_number: '+77022220202',
       metadata: {
         'metadata' => route_metadata.merge(
-          'logical_call_key' => 'fonoster-inbound:first-real-call',
-          'call_group_key' => 'fonoster-inbound:first-real-call'
+          'logical_call_key' => 'native-sip-inbound:first-real-call',
+          'call_group_key' => 'native-sip-inbound:first-real-call'
         )
       }
     )
@@ -140,8 +140,8 @@ RSpec.describe Telephony::OperatorCallClaimService do
       to_number: call_session.to_number,
       metadata: {
         'metadata' => route_metadata.merge(
-          'logical_call_key' => 'fonoster-inbound:second-real-call',
-          'call_group_key' => 'fonoster-inbound:second-real-call'
+          'logical_call_key' => 'native-sip-inbound:second-real-call',
+          'call_group_key' => 'native-sip-inbound:second-real-call'
         )
       }
     )
@@ -176,7 +176,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
           'operator_pool' => true,
           'operator_candidate_sip_profile_ids' => [profile.id],
           'operator_candidate_user_ids' => [winner_user.id],
-          'operator_candidate_agent_refs' => [profile.fonoster_agent_ref],
+          'operator_candidate_agent_refs' => [profile.agent_ref],
           'operator_candidate_agent_aors' => [profile.agent_aor],
           'operator_candidate_sources' => ['sip_profile']
         }
@@ -189,7 +189,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
       call_ref: call_session.external_call_ref,
       status: 'connecting',
       claimed: true,
-      agent_ref: profile.fonoster_agent_ref,
+      agent_ref: profile.agent_ref,
       agent_aor: profile.agent_aor,
       sip_profile_id: profile.id,
       user_id: winner_user.id
@@ -203,7 +203,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(call_session.metadata.dig('operator_claim', 'agent_aor')).to eq('sip:504@ats01.kz.sipuni.com')
   end
 
-  it 'marks provider-owned SIP claims answered because the browser Janus leg accepted the call' do
+  it 'keeps provider-owned SIP claims connecting until the browser Janus leg answers the call' do
     profile = create(
       :telephony_sip_profile,
       account: account,
@@ -240,15 +240,15 @@ RSpec.describe Telephony::OperatorCallClaimService do
 
     expect(payload).to include(
       claimed: true,
-      status: 'in_progress',
+      status: 'connecting',
       sip_profile_id: profile.id,
       agent_ref: profile.agent_ref,
       agent_aor: profile.agent_aor
     )
 
     call_session.reload
-    expect(call_session.status).to eq('in_progress')
-    expect(call_session.answered_at).to be_present
+    expect(call_session.status).to eq('connecting')
+    expect(call_session.answered_at).to be_nil
     expect(call_session.metadata.dig('operator_claim', 'sip_profile_id')).to eq(profile.id)
   end
 
@@ -271,6 +271,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
       }
     )
     call_session.update!(
+      provider: 'sipuni',
       metadata: {
         'metadata' => {
           'source' => 'sipuni_internal_asterisk_gateway',
@@ -288,7 +289,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(payload).to include(
       claimed: true,
       sip_profile_id: profile.id,
-      agent_ref: 'fonoster-profile-504',
+      agent_ref: 'profile-local-504',
       agent_aor: 'sip:504@operator.cloud.vconsult.kz',
       user_id: winner_user.id
     )

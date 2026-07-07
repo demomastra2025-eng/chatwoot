@@ -124,7 +124,7 @@
         "TEMPLATE_PARAMS_INVALID": "Некорректный JSON параметров шаблона",
         "ACTION_TYPES": {
           "SEND_MESSAGE": "Отправить сообщение",
-          "AI_WAKEUP": "Разбудить AI агента"
+          "AI_WAKEUP": "Разбудить AI-агента"
         },
         "TEXT_AUTHORS": {
           "SELF": "Готовый текст"

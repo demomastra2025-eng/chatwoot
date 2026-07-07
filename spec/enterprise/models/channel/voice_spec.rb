@@ -96,6 +96,22 @@ RSpec.describe Channel::Voice do
       expect(binotel_channel).to be_valid
     end
 
+    it 'keeps legacy Fonoster provider config valid during native SIP rollout' do
+      fonoster_channel = build(
+        :channel_voice,
+        account: create(:account),
+        provider: 'fonoster',
+        provider_config: {
+          number_ref: 'legacy-fonoster-number',
+          routing_mode: 'operator',
+          operator_agent_aor: 'sip:1001@company.example'
+        }
+      )
+
+      expect(fonoster_channel).to be_valid
+      expect(fonoster_channel.provider_config.with_indifferent_access[:operator_agent_aor]).to eq('sip:1001@operator.cloud.vconsult.kz')
+    end
+
     it 'requires native Sipuni routing config' do
       sipuni_channel = build(:channel_voice, provider: 'sipuni', provider_config: { routing_mode: 'operator' })
 

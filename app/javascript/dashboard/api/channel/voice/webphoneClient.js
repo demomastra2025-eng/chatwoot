@@ -1,12 +1,9 @@
 import VoiceAPI from './voiceAPIClient';
 import TwilioVoiceClient from './twilioVoiceClient';
-import FonosterVoiceClient from './fonosterVoiceClient';
-import JanusSipuniVoiceClient, {
-  createJanusSipuniVoiceClient,
-} from './janusSipuniVoiceClient';
+import JanusSipVoiceClient, {
+  createJanusSipVoiceClient,
+} from './janusSipVoiceClient';
 
-const WEBPHONE_TOKEN_REFRESH_SAFETY_MS = 60_000;
-const WEBPHONE_TOKEN_REFRESH_RETRY_MS = 30_000;
 const WEBPHONE_NATIVE_SIP_RETRY_MS = 30_000;
 
 const FORWARDED_EVENTS = [
@@ -30,19 +27,6 @@ const looksLikeTwilioSession = response => {
       session.twiml_endpoint ||
       session.account_sid ||
       Object.prototype.hasOwnProperty.call(session, 'has_twiml_app')
-  );
-};
-
-const looksLikeFonosterSession = response => {
-  const session = response || {};
-  return Boolean(
-    session.username ||
-      session.domain ||
-      session.signalingServer ||
-      session.signaling_server ||
-      session.targetAor ||
-      session.target_aor ||
-      session.aor
   );
 };
 
@@ -73,19 +57,15 @@ class WebphoneClient extends EventTarget {
     this.nativeSessionConfigs = {};
     this.nativeSessionRetryTimers = {};
     this.nativeSessionRetryState = {};
-    this.tokenRefreshTimers = {};
-    this.tokenRefreshState = {};
-    this.janusSipClientFactory = createJanusSipuniVoiceClient;
+    this.janusSipClientFactory = createJanusSipVoiceClient;
     this.clients = {
       twilio: TwilioVoiceClient,
-      fonoster: FonosterVoiceClient,
-      asterisk_analog: JanusSipuniVoiceClient,
-      sipuni: JanusSipuniVoiceClient,
-      binotel: JanusSipuniVoiceClient,
+      asterisk_analog: JanusSipVoiceClient,
+      sipuni: JanusSipVoiceClient,
+      binotel: JanusSipVoiceClient,
     };
 
     this.subscribeClient('twilio', TwilioVoiceClient);
-    this.subscribeClient('fonoster', FonosterVoiceClient);
   }
 
   static isNativeSipProvider(provider) {
@@ -93,10 +73,17 @@ class WebphoneClient extends EventTarget {
   }
 
   static resolveProvider(response = {}) {
-    if (response?.provider) return response.provider;
+    const explicitProvider = firstPresent([
+      response?.provider,
+      response?.provider_kind,
+      response?.providerKind,
+      response?.sip?.provider,
+      response?.sip?.provider_kind,
+      response?.sip?.providerKind,
+    ]);
+    if (explicitProvider) return explicitProvider;
     if (looksLikeTwilioSession(response)) return 'twilio';
-    if (looksLikeJanusSipSession(response)) return 'sipuni';
-    if (looksLikeFonosterSession(response)) return 'fonoster';
+    if (looksLikeJanusSipSession(response)) return null;
 
     return null;
   }
@@ -173,68 +160,6 @@ class WebphoneClient extends EventTarget {
     return resolvedProvider ? `provider:${resolvedProvider}` : null;
   }
 
-  static parseAbsoluteExpiryMs(value) {
-    if (value === undefined || value === null || value === '') return null;
-
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) {
-      return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
-    }
-
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-
-  static parseDurationMs(value) {
-    if (value === undefined || value === null || value === '') return null;
-
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric * 1000 : null;
-  }
-
-  static decodeJwtPayload(token) {
-    const payload = token?.split?.('.')[1];
-    if (!payload || typeof window.atob !== 'function') return {};
-
-    try {
-      const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = normalized.padEnd(
-        Math.ceil(normalized.length / 4) * 4,
-        '='
-      );
-      return JSON.parse(window.atob(padded));
-    } catch {
-      return {};
-    }
-  }
-
-  static tokenExpiryMs(response = {}) {
-    const explicitExpiry = WebphoneClient.responseValue(
-      response,
-      'token_expires_at',
-      'tokenExpiresAt',
-      'expires_at',
-      'expiresAt',
-      'expires'
-    );
-    const explicitExpiryMs =
-      WebphoneClient.parseAbsoluteExpiryMs(explicitExpiry);
-    if (explicitExpiryMs !== null) return explicitExpiryMs;
-
-    const expiresIn = WebphoneClient.responseValue(
-      response,
-      'token_expires_in',
-      'tokenExpiresIn',
-      'expires_in',
-      'expiresIn'
-    );
-    const expiresInMs = WebphoneClient.parseDurationMs(expiresIn);
-    if (expiresInMs !== null) return Date.now() + expiresInMs;
-
-    const jwtExpiry = WebphoneClient.decodeJwtPayload(response.token)?.exp;
-    return WebphoneClient.parseAbsoluteExpiryMs(jwtExpiry);
-  }
-
   subscribeClient(provider, client, { sessionKey = null } = {}) {
     FORWARDED_EVENTS.forEach(eventName => {
       client.addEventListener(eventName, event => {
@@ -247,53 +172,6 @@ class WebphoneClient extends EventTarget {
         this.dispatchEvent(new CustomEvent(eventName, { detail }));
       });
     });
-  }
-
-  clearTokenRefresh(sessionKey) {
-    if (this.tokenRefreshTimers[sessionKey]) {
-      window.clearTimeout(this.tokenRefreshTimers[sessionKey]);
-    }
-    delete this.tokenRefreshTimers[sessionKey];
-  }
-
-  scheduleTokenRefresh(
-    sessionKey,
-    response = {},
-    { inboxId = null, native = false, provider = null } = {}
-  ) {
-    this.clearTokenRefresh(sessionKey);
-    delete this.tokenRefreshState[sessionKey];
-
-    if (provider !== 'fonoster') return;
-
-    const callingSupported =
-      response.callingSupported ?? response.calling_supported ?? true;
-    if (callingSupported === false) return;
-
-    const expiryMs = WebphoneClient.tokenExpiryMs(response);
-    if (!expiryMs) return;
-
-    const delayMs = Math.max(
-      0,
-      expiryMs - Date.now() - WEBPHONE_TOKEN_REFRESH_SAFETY_MS
-    );
-    this.tokenRefreshState[sessionKey] = { inboxId, native };
-    this.tokenRefreshTimers[sessionKey] = window.setTimeout(() => {
-      this.refreshProviderSession(sessionKey).catch(() => {
-        this.scheduleTokenRefreshRetry(sessionKey);
-      });
-    }, delayMs);
-  }
-
-  scheduleTokenRefreshRetry(sessionKey) {
-    this.clearTokenRefresh(sessionKey);
-    if (!this.tokenRefreshState[sessionKey]) return;
-
-    this.tokenRefreshTimers[sessionKey] = window.setTimeout(() => {
-      this.refreshProviderSession(sessionKey).catch(() => {
-        this.scheduleTokenRefreshRetry(sessionKey);
-      });
-    }, WEBPHONE_TOKEN_REFRESH_RETRY_MS);
   }
 
   clearNativeSessionRetry(sessionKey) {
@@ -371,18 +249,6 @@ class WebphoneClient extends EventTarget {
       this.scheduleNativeSessionRetry(sessionKey);
       return null;
     }
-  }
-
-  async refreshProviderSession(sessionKey) {
-    this.clearTokenRefresh(sessionKey);
-    const state = this.tokenRefreshState[sessionKey] || {};
-    const response = state.native
-      ? await VoiceAPI.getNativeWebphoneToken(state.inboxId || null)
-      : await VoiceAPI.getWebphoneToken(state.inboxId || null);
-    return this.initializeFromSession(response, {
-      inboxId: state.inboxId || null,
-      native: state.native || false,
-    });
   }
 
   nativeSipClientFor(provider, sessionKey) {
@@ -519,17 +385,14 @@ class WebphoneClient extends EventTarget {
   supportsBrowserCalling(provider, options = {}) {
     if (!provider) return false;
     const supportedProvider =
-      provider === 'twilio' ||
-      provider === 'fonoster' ||
-      WebphoneClient.isNativeSipProvider(provider);
+      provider === 'twilio' || WebphoneClient.isNativeSipProvider(provider);
     if (!supportedProvider) return false;
 
     const session = this.getSession(provider, options);
     if (session?.callingSupported === false) return false;
 
     if (
-      (provider === 'fonoster' ||
-        WebphoneClient.isNativeSipProvider(provider)) &&
+      WebphoneClient.isNativeSipProvider(provider) &&
       session?.registered === false
     ) {
       return false;
@@ -641,10 +504,7 @@ class WebphoneClient extends EventTarget {
     return session;
   }
 
-  async initializeFromSession(
-    response,
-    { inboxId = null, native = false } = {}
-  ) {
+  async initializeFromSession(response, { inboxId = null } = {}) {
     const provider = WebphoneClient.resolveProvider(response);
     if (!provider) {
       return {
@@ -685,8 +545,6 @@ class WebphoneClient extends EventTarget {
       this.rememberSession(resolvedSession);
       if (this.activeSessionKey === sessionKey) this.activeSessionKey = null;
       if (this.activeProvider === provider) this.activeProvider = null;
-      this.clearTokenRefresh(sessionKey);
-      delete this.tokenRefreshState[sessionKey];
       this.forgetNativeSessionConfig(sessionKey);
       return resolvedSession;
     }
@@ -728,12 +586,6 @@ class WebphoneClient extends EventTarget {
       this.clearNativeSessionRetry(sessionKey);
       delete this.nativeSessionRetryState[sessionKey];
     }
-    this.scheduleTokenRefresh(sessionKey, response, {
-      inboxId: resolvedInboxId,
-      native,
-      provider,
-    });
-
     if (resolvedSession.callingSupported) {
       this.activeProvider = provider;
       this.activeSessionKey = sessionKey;
@@ -751,6 +603,19 @@ class WebphoneClient extends EventTarget {
     this.activeProvider = provider;
     this.activeSessionKey = sessionKey;
     return client.joinClientCall({ ...payload, sessionKey });
+  }
+
+  async answerAiIncomingCall(payload = {}) {
+    const provider = payload.provider || this.activeProvider;
+    const sessionKey = this.resolveSessionKey(payload);
+    const client = this.getClient(provider, { ...payload, sessionKey });
+    if (!client || typeof client.answerAiIncomingCall !== 'function') {
+      return null;
+    }
+
+    this.activeProvider = provider;
+    this.activeSessionKey = sessionKey;
+    return client.answerAiIncomingCall({ ...payload, sessionKey });
   }
 
   hasPendingIncomingCall(payload = {}) {
@@ -849,8 +714,6 @@ class WebphoneClient extends EventTarget {
     this.forgetNativeSessionConfig(sessionKey);
     if (provider && this.providerSessions[provider]?.sessionKey === sessionKey)
       this.refreshProviderFallback(provider);
-    this.clearTokenRefresh(sessionKey);
-    delete this.tokenRefreshState[sessionKey];
     if (this.activeSessionKey === sessionKey) this.activeSessionKey = null;
     if (
       provider &&
@@ -899,8 +762,6 @@ class WebphoneClient extends EventTarget {
     delete this.sessions[sessionKey];
     delete this.providerSessions[provider];
     this.forgetNativeSessionConfig(sessionKey);
-    this.clearTokenRefresh(sessionKey);
-    delete this.tokenRefreshState[sessionKey];
     if (this.activeProvider === provider) this.activeProvider = null;
     return client.destroyDevice();
   }

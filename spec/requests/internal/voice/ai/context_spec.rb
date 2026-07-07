@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Internal Voice AI Context API', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230001') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15551230001') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:number_binding) { voice_inbox.telephony_number_binding }
   let(:assistant) do
@@ -132,6 +132,47 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(end_call_tool['timeout_ms']).to be >= 5000
   end
 
+  it 'preserves outbound provider and transport metadata for existing call sessions' do
+    contact = create(:contact, :with_phone_number, account: account)
+    conversation = create(:conversation, account: account, inbox: voice_inbox, contact: contact)
+    outbound_session = create(
+      :telephony_call_session,
+      account: account,
+      conversation: conversation,
+      contact: contact,
+      inbox: voice_inbox,
+      number_binding: number_binding,
+      external_call_ref: 'sipuni-ai-outbound-1',
+      provider: 'sipuni',
+      direction: 'outbound',
+      from_number: voice_channel.phone_number,
+      to_number: contact.phone_number,
+      metadata: { 'ai_voice' => { 'transport' => 'janus_sip' } }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: outbound_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body
+    expect(body).to include(
+      'call_ref' => 'sipuni-ai-outbound-1',
+      'provider' => 'sipuni',
+      'direction' => 'outbound',
+      'caller_number' => voice_channel.phone_number,
+      'ingress_number' => contact.phone_number
+    )
+    expect(body['transport']).to include(
+      'provider' => 'sipuni',
+      'direction' => 'outbound',
+      'media' => 'janus_sip'
+    )
+  end
+
   it 'adds a separate voice character prompt block to the generated voice prompt' do
     voice_character_prompt = 'Тембр: тёплый эксперт-наставник. Темп спокойный, без смеха.'
 
@@ -201,18 +242,39 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(scenarios.pluck('title')).not_to include('Disabled scenario')
   end
 
-  it 'builds the full Captain prompt once per voice context request' do
+  it 'uses the fast Captain voice prompt by default for low-latency calls' do
+    builder = Telephony::AiVoice::ContextBuilder.new(
+      params: { call_ref: call_session.external_call_ref, account_id: account.id }
+    )
+    resolved_assistant = builder.send(:captain_assistant)
+    expect(builder).not_to receive(:captain_runtime_state_for_prompt)
+    expect(resolved_assistant).not_to receive(:agent_instructions)
+
+    system_prompt = builder.send(:system_prompt)
+
+    expect(system_prompt).to include('Answer callers using OneLink account context.')
+    expect(system_prompt).to include('Answer shortly')
+    expect(system_prompt).to include('Do not reveal private data')
+    expect(system_prompt).to include('Current caller context')
+    expect(system_prompt).to include('ai-context-call-1')
+    expect(system_prompt).to include('Voice Response Contract')
+    expect(system_prompt).to include('Ты голосовой ассистент в телефонном звонке')
+  end
+
+  it 'builds the full Captain prompt once per voice context request when explicitly enabled' do
     builder = Telephony::AiVoice::ContextBuilder.new(
       params: { call_ref: call_session.external_call_ref, account_id: account.id }
     )
     resolved_assistant = builder.send(:captain_assistant)
     expect(resolved_assistant).to receive(:agent_instructions).once.and_call_original
 
-    first_prompt = builder.send(:system_prompt)
-    second_prompt = builder.send(:system_prompt)
+    with_modified_env(VOICE_AGENT_FULL_CAPTAIN_PROMPT: 'true') do
+      first_prompt = builder.send(:system_prompt)
+      second_prompt = builder.send(:system_prompt)
 
-    expect(first_prompt).to eq(second_prompt)
-    expect(first_prompt).to include('Ты голосовой ассистент в телефонном звонке')
+      expect(first_prompt).to eq(second_prompt)
+      expect(first_prompt).to include('Ты голосовой ассистент в телефонном звонке')
+    end
   end
 
   it 'allows voice recording to be disabled explicitly for a route' do
@@ -370,7 +432,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(booking_tool.dig('parameters', 'properties', 'booking_code', 'type')).to eq('string')
   end
 
-  it 'returns a longer timeout for realtime FAQ lookup in the tool catalog' do
+  it 'returns a bounded realtime timeout for FAQ lookup in the tool catalog' do
     faq_assistant = create(
       :captain_assistant,
       account: account,
@@ -394,7 +456,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     faq_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'faq_lookup' }
-    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 6000)
+    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 1500, 'foreground_wait_ms' => 900)
   end
 
   it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do
@@ -504,7 +566,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
   it 'rejects context requests with a number_ref from another account' do
     other_account = create(:account)
-    other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889020')
+    other_voice_channel = create(:channel_voice, :sipuni, account: other_account, phone_number: '+1555889020')
     Telephony::NumberBinding.sync_from_voice_channel!(other_voice_channel)
 
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
@@ -549,7 +611,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(response.parsed_body['conversation_id']).to eq(session.conversation_id)
   end
 
-  it 'accepts the Fonoster contract shared secret alias' do
+  it 'accepts the native SIP contract shared secret alias' do
     with_modified_env(VOICE_AGENT_ONELINK_AI_SHARED_SECRET: 'contract-secret') do
       post '/internal/voice/ai/context',
            params: { call_ref: call_session.external_call_ref, account_id: account.id },

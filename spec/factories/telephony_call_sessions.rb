@@ -5,7 +5,7 @@ FactoryBot.define do
     contact { conversation.contact }
     inbox { conversation.inbox }
     number_binding { create(:telephony_number_binding, account: account, inbox: inbox) }
-    provider { 'fonoster' }
+    provider { 'sipuni' }
     external_call_ref { SecureRandom.uuid }
     status { 'ringing' }
     direction { 'outbound' }

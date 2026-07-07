@@ -4,7 +4,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
   let(:account) { create(:account) }
   let(:administrator) { create(:user, account: account, role: :administrator) }
   let(:headers) { administrator.create_new_auth_token }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230000') }
+  let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15551230000') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:contact) { create(:contact, account: account, phone_number: '+15551239999', name: 'Voice Contact') }
   let(:path) { "/api/v1/accounts/#{account.id}/telephony/calls/outbound" }
@@ -13,71 +13,37 @@ RSpec.describe 'Telephony Calls API', type: :request do
     account.enable_features!('channel_voice')
   end
 
-  it 'creates an outbound call through the telephony bridge and persists local call session' do
-    voice_inbox.telephony_number_binding.routing_policy.update!(
-      mode: 'ai',
-      ai_app_ref: 'ai-app-ref'
-    )
+  it 'creates a local Janus SIP outbound call session' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/calls/outbound')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
-        .with do |request|
-          body = JSON.parse(request.body)
-          expect(body['from_number_ref']).to eq(voice_inbox.telephony_number_binding.number_ref)
-          expect(body['to']).to eq(contact.phone_number)
-          expect(body['app_ref']).to eq('ai-app-ref')
-          expect(body['appRef']).to eq('ai-app-ref')
-          expect(body['recording_enabled']).to be(true)
-          expect(body['operator_agent_ref']).to be_nil
-          expect(body['operator_agent_aor']).to be_nil
-          expect(body.dig('metadata', 'chatwoot_inbox_id')).to eq(voice_inbox.id)
-          expect(body.dig('metadata', 'recording_enabled')).to be(true)
-          expect(body.dig('metadata', 'browser_join_supported')).to be(false)
-          true
-        end
-        .to_return(
-          status: 200,
-          body: {
-            call_ref: 'call-123',
-            status: 'ringing'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: {
-             inbox_id: voice_inbox.id,
-             contact_id: contact.id
-           },
-           headers: headers,
-           as: :json
-    end
+    post path,
+         params: {
+           inbox_id: voice_inbox.id,
+           contact_id: contact.id
+         },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:created)
-    expect(response.parsed_body['call_sid']).to eq('call-123')
+    expect(response.parsed_body['call_sid']).to start_with('sipuni:local:')
 
-    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-123')
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: response.parsed_body['call_sid'])
     expect(call_session.conversation).to be_present
     expect(call_session.contact_id).to eq(contact.id)
     expect(call_session.inbox_id).to eq(voice_inbox.id)
     expect(call_session.number_binding.number_ref).to eq(voice_inbox.telephony_number_binding.number_ref)
-    expect(call_session.status).to eq('ringing')
+    expect(call_session.status).to eq('created')
     expect(call_session.direction).to eq('outbound')
-    expect(call_session.conversation.identifier).to eq('call-123')
-    expect(call_session.metadata['fonoster_call_ref']).to eq('call-123')
-    expect(call_session.conversation.additional_attributes['fonoster_call_ref']).to eq('call-123')
+    expect(call_session.metadata['telephony_call_ref']).to eq(call_session.external_call_ref)
+    expect(call_session.conversation.additional_attributes['telephony_call_ref']).to eq(call_session.external_call_ref)
   end
 
-  it 'uses the inbox SIP profile instead of a legacy user agent binding for Fonoster outbound calls' do
+  it 'uses the inbox SIP profile instead of a legacy user agent binding for native SIP outbound calls' do
     create(
       :telephony_agent_binding,
       account: account,
       user: administrator,
-      provider: 'fonoster',
+      provider: 'sipuni',
       agent_ref: 'legacy-agent-1001',
       agent_aor: 'sip:1001@operator.example.test'
     )
@@ -89,85 +55,26 @@ RSpec.describe 'Telephony Calls API', type: :request do
       internal_extension: '504',
       sip_username: '015856100014',
       agent_ref: 'local-profile-530-179-504',
-      fonoster_agent_ref: 'remote-profile-uuid',
       agent_aor: 'sip:504@ats01.kz.sipuni.com',
-      availability_mode: 'external_extension'
+      availability_mode: 'browser_webphone'
     )
 
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/calls/outbound')
-        .with do |request|
-          body = JSON.parse(request.body)
-          expect(body['operator_agent_ref']).to eq('remote-profile-uuid')
-          expect(body['operator_agent_aor']).to eq('sip:504@ats01.kz.sipuni.com')
-          expect(body.dig('metadata', 'fonoster_agent_ref')).to eq('remote-profile-uuid')
-          expect(body.dig('metadata', 'operator_agent_aor')).to eq('sip:504@ats01.kz.sipuni.com')
-          expect(body.dig('metadata', 'browser_join_supported')).to be(false)
-          true
-        end
-        .to_return(
-          status: 200,
-          body: { call_ref: 'call-sip-profile-1', status: 'ringing' }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: {
-             inbox_id: voice_inbox.id,
-             contact_id: contact.id
-           },
-           headers: headers,
-           as: :json
-    end
+    post path,
+         params: {
+           inbox_id: voice_inbox.id,
+           contact_id: contact.id
+         },
+         headers: headers,
+         as: :json
 
     expect(response).to have_http_status(:created)
-    expect(response.parsed_body['browser_join_supported']).to be(false)
+    expect(response.parsed_body['browser_join_supported']).to be(true)
 
-    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-sip-profile-1')
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: response.parsed_body['call_sid'])
     expect(call_session.agent_binding_id).to be_nil
-    expect(call_session.metadata['browser_join_supported']).to be(false)
+    expect(call_session.metadata['browser_join_supported']).to be(true)
     expect(call_session.metadata.dig('operator_identity', 'operator_identity_source')).to eq('sip_profile')
-    expect(call_session.metadata.dig('operator_identity', 'operator_agent_ref')).to eq('remote-profile-uuid')
-  end
-
-  it 'falls back to the OneLink runtime app ref for managed Fonoster outbound calls with older local data' do
-    provider_config = voice_channel.provider_config_hash.with_indifferent_access.except(:app_ref, :runtime_app_ref)
-    voice_channel.update!(provider_config: provider_config)
-    voice_inbox.telephony_number_binding.update!(app_ref: nil)
-
-    with_modified_env(
-      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
-      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
-      TELEPHONY_BRIDGE_RUNTIME_APP_REF: 'onelink-runtime-app-ref',
-      TELEPHONY_BRIDGE_DEFAULT_APP_REF: nil
-    ) do
-      stub_request(:post, 'https://bridge.example/telephony/calls/outbound')
-        .with do |request|
-          body = JSON.parse(request.body)
-          expect(body['app_ref']).to eq('onelink-runtime-app-ref')
-          expect(body['appRef']).to eq('onelink-runtime-app-ref')
-          true
-        end
-        .to_return(
-          status: 200,
-          body: { call_ref: 'call-runtime-app-ref', status: 'ringing' }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
-
-      post path,
-           params: {
-             inbox_id: voice_inbox.id,
-             contact_id: contact.id
-           },
-           headers: headers,
-           as: :json
-    end
-
-    expect(response).to have_http_status(:created)
-    expect(response.parsed_body['call_sid']).to eq('call-runtime-app-ref')
+    expect(call_session.metadata.dig('operator_identity', 'operator_agent_ref')).to eq('local-profile-530-179-504')
   end
 
   it 'streams a stored OneLink runtime recording through an account-scoped route' do
@@ -390,7 +297,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
-  it 'returns and redirects to an account-scoped external Fonoster recording URL' do
+  it 'returns and redirects to an account-scoped external provider recording URL' do
     external_url = 'https://cloud.vconsult.kz/api/recordings/operator-call.wav'
     call_session = create_recorded_call_session(
       'external-recording-call',
@@ -557,7 +464,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.rm_f(outside_path) if defined?(outside_path) && outside_path.present?
   end
 
-  def create_recorded_call_session(call_ref, metadata = recording_metadata, recording_ref: metadata['storage_key'], provider: 'fonoster')
+  def create_recorded_call_session(call_ref, metadata = recording_metadata, recording_ref: metadata['storage_key'], provider: 'sipuni')
     conversation = create(:conversation, account: account, inbox: voice_inbox, contact: contact)
     create(
       :telephony_call_session,

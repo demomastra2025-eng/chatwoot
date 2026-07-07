@@ -12,7 +12,9 @@ class Telephony::AiVoice::ContextBuilder
     Задавай только один вопрос за раз.
     Если пользователь перебивает, сразу остановись и слушай.
     Если не уверен, уточни коротким вопросом.
+    На вопросы о твоем имени, роли или кто ты отвечай из настроек ассистента и голосовых инструкций, без базы знаний.
     Для действий с заказами, клиентами, переводом звонка или завершением звонка используй инструменты.
+    Для вопросов о компании, услугах, тарифах, документах, FAQ или слогане сначала используй доступный инструмент базы знаний, не отвечай из памяти.
   PROMPT
   VOICE_RESPONSE_CONTRACT = <<~PROMPT.squish.freeze
     # Voice Response Contract
@@ -42,6 +44,9 @@ class Telephony::AiVoice::ContextBuilder
       contact_id: session.contact_id,
       inbox_id: session.inbox_id,
       number_ref: number_binding&.number_ref,
+      provider: session.provider,
+      direction: session.direction,
+      transport: transport_payload(session),
       caller_number: session.from_number || caller_number,
       ingress_number: session.to_number || ingress_number,
       ai: ai_payload,
@@ -68,17 +73,17 @@ class Telephony::AiVoice::ContextBuilder
     conversation = ensure_conversation
     account.telephony_call_sessions.create!(
       external_call_ref: call_ref,
-      provider: 'fonoster',
+      provider: provider,
       status: 'ringing',
-      direction: 'inbound',
-      from_number: caller_number,
-      to_number: ingress_number,
+      direction: direction,
+      from_number: from_number_for_session,
+      to_number: to_number_for_session,
       started_at: Time.current,
       conversation: conversation,
       contact: conversation&.contact || contact,
       inbox: inbox,
       number_binding: number_binding,
-      metadata: { 'ai_voice' => { 'context_created' => true } }
+      metadata: { 'ai_voice' => { 'context_created' => true, 'transport' => transport_name } }
     )
   rescue ActiveRecord::RecordNotUnique
     account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
@@ -90,6 +95,8 @@ class Telephony::AiVoice::ContextBuilder
 
   def ensure_conversation
     return call_session.conversation if call_session&.conversation.present?
+    return explicit_conversation if explicit_conversation.present?
+    return unless direction == 'inbound'
     return unless inbox.present? && caller_number.present?
 
     Voice::InboundCallBuilder.perform!(
@@ -112,7 +119,7 @@ class Telephony::AiVoice::ContextBuilder
 
   def ai_payload
     payload = ai_settings.except('system_prompt', 'voice_character_prompt', 'recording_enabled').merge(
-      deployment_mode: routing_policy&.ai_deployment_mode || Telephony::RoutingPolicy::AI_DEPLOYMENT_FONOSTER_MANAGED,
+      deployment_mode: routing_policy&.ai_deployment_mode || Telephony::RoutingPolicy::AI_DEPLOYMENT_ONELINK_MANAGED,
       app_ref: routing_policy&.effective_ai_app_ref,
       system_prompt: system_prompt
     )
@@ -193,11 +200,103 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def captain_agent_instructions
-    @captain_agent_instructions ||= begin
-      state = captain_runtime_state_for_prompt
-      context_wrapper = Struct.new(:context).new({ state: state })
-      voice_agent_instructions(captain_assistant.agent_instructions(context_wrapper))
+    @captain_agent_instructions ||= if fast_captain_voice_prompt?
+                                      voice_agent_instructions(fast_captain_voice_prompt)
+                                    else
+                                      state = captain_runtime_state_for_prompt
+                                      context_wrapper = Struct.new(:context).new({ state: state })
+                                      voice_agent_instructions(captain_assistant.agent_instructions(context_wrapper))
+                                    end
+  end
+
+  def fast_captain_voice_prompt?
+    !ActiveModel::Type::Boolean.new.cast(ENV.fetch('VOICE_AGENT_FULL_CAPTAIN_PROMPT', nil))
+  end
+
+  def fast_captain_voice_prompt
+    sections = []
+    sections << "Captain assistant: #{captain_assistant.name}" if captain_assistant.name.present?
+    sections << captain_assistant.description.to_s.strip if captain_assistant.description.present?
+    sections.concat(Array(captain_assistant.system_rule_contents).map { |rule| rule.to_s.strip })
+    sections << titled_lines('Response guidelines', captain_assistant.response_guidelines)
+    sections << titled_lines('Guardrails', captain_assistant.guardrails)
+    sections << titled_scenarios
+    sections << titled_context('Current caller context', fast_voice_prompt_context)
+    sections.compact_blank.join("\n\n")
+  end
+
+  def fast_voice_prompt_context
+    {
+      conversation: fast_voice_conversation_context,
+      contact: fast_voice_contact_context,
+      call_session: fast_voice_call_session_context
+    }.compact_blank
+  end
+
+  def fast_voice_conversation_context
+    conversation = session_for_prompt&.conversation
+    return if conversation.blank?
+
+    {
+      id: conversation.id,
+      display_id: conversation.display_id,
+      status: conversation.status,
+      inbox_id: conversation.inbox_id
+    }.compact
+  end
+
+  def fast_voice_contact_context
+    resolved_contact = session_for_prompt&.contact || contact
+    return if resolved_contact.blank?
+
+    {
+      id: resolved_contact.id,
+      name: resolved_contact.name,
+      phone_number: resolved_contact.phone_number
+    }.compact_blank
+  end
+
+  def fast_voice_call_session_context
+    session = session_for_prompt
+    return if session.blank?
+
+    {
+      id: session.id,
+      external_call_ref: session.external_call_ref,
+      provider: session.provider,
+      direction: session.direction,
+      from_number: session.from_number,
+      to_number: session.to_number
+    }.compact_blank
+  end
+
+  def titled_lines(title, values)
+    lines = Array(values).map { |value| value.to_s.strip }.compact_blank
+    return if lines.blank?
+
+    "#{title}:\n#{lines.join("\n")}"
+  end
+
+  def titled_scenarios
+    scenarios = captain_scenarios_payload
+    return if scenarios.blank?
+
+    lines = scenarios.map do |scenario|
+      [scenario[:title], scenario[:key], scenario[:description]].compact_blank.join(' - ')
     end
+    titled_lines('Enabled scenarios', lines)
+  end
+
+  def titled_context(title, prompt_context)
+    entries = %i[conversation contact call_session deal task appointment communication_thread].filter_map do |key|
+      value = prompt_context[key]
+      next if value.blank?
+
+      "#{key}: #{value.to_json}"
+    end
+    return if entries.blank?
+
+    "#{title}:\n#{entries.join("\n")}"
   end
 
   def voice_agent_instructions(prompt)
@@ -359,6 +458,16 @@ class Telephony::AiVoice::ContextBuilder
     @inbox ||= number_binding&.inbox || call_session&.inbox
   end
 
+  def explicit_conversation
+    @explicit_conversation ||= begin
+      raw_id = params['conversation_id'].presence || params['conversationId'].presence
+      if raw_id.present?
+        conversation = account.conversations.find_by(id: raw_id)
+        conversation || account.conversations.find_by(display_id: raw_id)
+      end
+    end
+  end
+
   def contact
     @contact ||= if call_session&.contact.present?
                    call_session.contact
@@ -375,6 +484,48 @@ class Telephony::AiVoice::ContextBuilder
 
   def call_ref
     params['call_ref'].presence || params['callRef'].presence || params['provider_call_id'].presence || params['providerCallId'].presence
+  end
+
+  def provider
+    @provider ||= begin
+      value = params['provider'].presence || params['telephony_provider'].presence || call_session&.provider || number_binding&.provider
+      value.to_s.strip.presence
+    end
+  end
+
+  def direction
+    @direction ||= begin
+      value = params['direction'].presence || params['call_direction'].presence || params['callDirection'].presence || call_session&.direction
+      value.to_s.presence_in(Telephony::CallSession::ALLOWED_DIRECTIONS) || 'inbound'
+    end
+  end
+
+  def from_number_for_session
+    return caller_number if direction == 'inbound'
+
+    ingress_number || number_binding&.phone_number
+  end
+
+  def to_number_for_session
+    return ingress_number if direction == 'inbound'
+
+    caller_number
+  end
+
+  def transport_name
+    @transport_name ||= begin
+      explicit = params['transport'].presence || params['media_transport'].presence || params['mediaTransport'].presence
+      stored = call_session&.metadata.to_h.dig('ai_voice', 'transport')
+      explicit.presence || stored.presence || (provider == 'whatsapp_cloud' ? 'whatsapp_cloud' : 'janus_sip')
+    end
+  end
+
+  def transport_payload(session)
+    {
+      provider: session.provider,
+      direction: session.direction,
+      media: transport_name
+    }.compact
   end
 
   def explicit_account

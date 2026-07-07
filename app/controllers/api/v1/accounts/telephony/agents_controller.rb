@@ -18,7 +18,7 @@ class Api::V1::Accounts::Telephony::AgentsController < Api::V1::Accounts::Teleph
       enabled: parse_boolean(params.require(:enabled))
     )
 
-    render_payload(@agent_binding.reload.to_telephony_h, meta: { bridge: response })
+    render_payload(@agent_binding.reload.to_telephony_h, meta: { janus_sip: response })
   end
 
   private

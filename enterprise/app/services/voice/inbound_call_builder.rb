@@ -85,7 +85,7 @@ class Voice::InboundCallBuilder
     )
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     attrs['meta']['initiated_at'] = timestamp
-    attrs[provider_call_ref_key] = call_sid if native_telephony_provider?
+    attrs['telephony_call_ref'] = call_sid if native_telephony_provider?
 
     update_attrs = {
       additional_attributes: attrs,
@@ -126,23 +126,18 @@ class Voice::InboundCallBuilder
     @current_time ||= Time.zone.now
   end
 
-  def fonoster_provider?
-    inbox.channel&.provider == 'fonoster'
-  end
-
   def provider_owned_sip_provider?
     inbox.channel&.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def native_telephony_provider?
-    fonoster_provider? || provider_owned_sip_provider?
+    provider_owned_sip_provider?
   end
 
   def reset_reused_call_state!(attrs)
     return unless native_telephony_provider?
 
-    call_ref_key = provider_call_ref_key
-    return if attrs[call_ref_key].present? && attrs[call_ref_key] == call_sid
+    return if current_call_ref(attrs) == call_sid
 
     %w[
       agent_id
@@ -155,12 +150,19 @@ class Voice::InboundCallBuilder
       summary
       from_number
       to_number
+      telephony_call_ref
+      sipuni_call_ref
+      binotel_call_ref
+      asterisk_analog_call_ref
+      fonoster_call_ref
     ].each { |key| attrs.delete(key) }
   end
 
-  def provider_call_ref_key
-    return 'fonoster_call_ref' if fonoster_provider?
-
-    "#{inbox.channel.provider}_call_ref"
+  def current_call_ref(attrs)
+    attrs['telephony_call_ref'].presence ||
+      attrs['sipuni_call_ref'].presence ||
+      attrs['binotel_call_ref'].presence ||
+      attrs['asterisk_analog_call_ref'].presence ||
+      attrs['fonoster_call_ref'].presence
   end
 end

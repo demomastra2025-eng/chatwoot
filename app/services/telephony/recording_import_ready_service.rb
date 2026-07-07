@@ -1,6 +1,6 @@
 class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLength
   SUPPORTED_OPERATOR_MODES = %w[operator operator_direct_bridge operator_bridge inbound_operator outbound_operator].freeze
-  SUPPORTED_RECORDED_BY = %w[fonoster janus].freeze
+  SUPPORTED_RECORDED_BY = %w[janus].freeze
   SUPPORTED_LAYOUTS = %w[mixed_mono mono mixed_stereo stereo dual_channel].freeze
   DEFAULT_BLOCKED_APP_REFS = %w[f2498e07-2bb5-45a1-8c8c-6fecdb4c791a].freeze
 
@@ -44,9 +44,7 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
     raise_error!('UNSUPPORTED_RECORDING_MODE', 'Only operator recording import is accepted') unless operator_mode?
     raise_error!('UNSUPPORTED_RECORDED_BY', 'recorded_by is not supported') unless supported_recorded_by?
     raise_error!('UNSUPPORTED_RECORDING_LAYOUT', 'layout is not supported') unless supported_layout?
-    if ai_app_ref? || ai_mode?
-      raise_error!('AI_RECORDING_IMPORT_REJECTED', 'AI recordings must be written by OneLink runtime, not imported from Fonoster')
-    end
+    raise_error!('AI_RECORDING_IMPORT_REJECTED', 'AI recordings must be written by OneLink runtime, not imported') if ai_app_ref? || ai_mode?
     unless Telephony::RecordingImportDownloadPolicy.allowed?(parsed_download_url)
       raise_error!('INVALID_DOWNLOAD_URL', 'download_url must be an allowed HTTPS recording URL')
     end
@@ -256,7 +254,6 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
       ENV.fetch('ONELINK_AI_VOICE_APP_REF', nil),
       ENV.fetch('TELEPHONY_BRIDGE_ONELINK_AI_APP_REF', nil),
       ENV.fetch('TELEPHONY_BRIDGE_DEFAULT_AI_APP_REF', nil),
-      ENV.fetch('TELEPHONY_BRIDGE_FONOSTER_AI_APP_REF', nil),
       ENV.fetch('TELEPHONY_RECORDING_IMPORT_BLOCKED_APP_REFS', nil)
     ].compact.flat_map { |value| value.to_s.split(',') } + DEFAULT_BLOCKED_APP_REFS).map(&:strip).reject(&:blank?).uniq
   end

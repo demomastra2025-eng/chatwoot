@@ -4,6 +4,7 @@ import { createApp } from 'vue';
 
 const {
   addEventListenerMock,
+  answerAiIncomingCallMock,
   bootstrapIncomingSupportMock,
   endClientCallMock,
   initializeDeviceMock,
@@ -20,6 +21,7 @@ const {
   supportsBrowserCallingMock,
 } = vi.hoisted(() => ({
   addEventListenerMock: vi.fn(),
+  answerAiIncomingCallMock: vi.fn(),
   bootstrapIncomingSupportMock: vi.fn(),
   endClientCallMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
 vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
   default: {
     addEventListener: addEventListenerMock,
+    answerAiIncomingCall: answerAiIncomingCallMock,
     bootstrapIncomingSupport: bootstrapIncomingSupportMock,
     endClientCall: endClientCallMock,
     initializeDevice: initializeDeviceMock,
@@ -105,13 +108,13 @@ describe('useCallSession', () => {
     selectedChatMock.value = {};
     inboxGetterMock.mockReturnValue(null);
     conversationByIdGetterMock.mockReturnValue(null);
-    bootstrapIncomingSupportMock.mockResolvedValue({ provider: 'fonoster' });
+    bootstrapIncomingSupportMock.mockResolvedValue({ provider: 'sipuni' });
     initializeDeviceMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       callingSupported: true,
     });
     joinClientCallMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       answered: true,
     });
     waitForPendingIncomingCallMock.mockResolvedValue({
@@ -132,8 +135,12 @@ describe('useCallSession', () => {
       janus_session_key: 'sip_profile:40',
     });
     rejectClientCallMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       declined: true,
+    });
+    answerAiIncomingCallMock.mockResolvedValue({
+      provider: 'sipuni',
+      answered: true,
     });
     supportsBrowserCallingMock.mockReturnValue(true);
     VoiceAPI.claimIncomingCall.mockResolvedValue({ claimed: true });
@@ -155,7 +162,7 @@ describe('useCallSession', () => {
       .mockImplementation(() => {});
     bootstrapIncomingSupportMock
       .mockRejectedValueOnce(new Error('bridge unavailable'))
-      .mockResolvedValueOnce({ provider: 'fonoster' });
+      .mockResolvedValueOnce({ provider: 'sipuni' });
 
     mountUseCallSession();
     await Promise.resolve();
@@ -170,7 +177,7 @@ describe('useCallSession', () => {
 
   it('bootstraps browser calling for the active voice inbox route', async () => {
     routeMock.params = { inbox_id: '4696' };
-    inboxGetterMock.mockReturnValue({ id: 4696, provider: 'fonoster' });
+    inboxGetterMock.mockReturnValue({ id: 4696, provider: 'sipuni' });
 
     mountUseCallSession();
     await Promise.resolve();
@@ -317,6 +324,139 @@ describe('useCallSession', () => {
     ]);
   });
 
+  it('answers Sipuni Janus AI-routed incoming calls without showing operator UI', async () => {
+    reportBrowserSipIncomingMock.mockResolvedValueOnce({
+      callSid: 'sipuni:janus:42:raw-sipuni-ai-call-id',
+      provider: 'sipuni',
+      inbox_id: 4772,
+      route_action: 'ai',
+      janus_call_ref: 'raw-sipuni-ai-call-id',
+      janus_session_key: 'sip_profile:42',
+      sip_profile_id: 42,
+      ai_voice: {
+        browser_bridge: {
+          stream_url: 'ws://127.0.0.1:8082/v1/voice/sessions/1/stream',
+        },
+      },
+    });
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const incomingHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:incoming'
+    )?.[1];
+    await incomingHandler({
+      detail: {
+        provider: 'sipuni',
+        inboxId: 4772,
+        sipProfileId: 42,
+        sessionKey: 'sip_profile:42',
+        internalExtension: '207',
+        callRef: 'raw-sipuni-ai-call-id',
+        from: 'sip:+77017450000@ats01.kz.sipuni.com',
+      },
+    });
+
+    expect(answerAiIncomingCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'sipuni',
+        inboxId: 4772,
+        sessionKey: 'sip_profile:42',
+        sipProfileId: 42,
+        callRef: 'sipuni:janus:42:raw-sipuni-ai-call-id',
+        janusCallRef: 'raw-sipuni-ai-call-id',
+        streamUrl: 'ws://127.0.0.1:8082/v1/voice/sessions/1/stream',
+      })
+    );
+    expect(useCallsStore().calls).toEqual([]);
+  });
+
+  it('ignores AI bridge connected and disconnected events for operator call state', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:operator-call',
+      provider: 'sipuni',
+      status: 'ringing',
+      callDirection: 'inbound',
+    });
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const connectedHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:connected'
+    )?.[1];
+    const disconnectedHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:disconnected'
+    )?.[1];
+
+    connectedHandler({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'sipuni:janus:42:ai-call',
+        aiBridge: true,
+      },
+    });
+    await disconnectedHandler({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'sipuni:janus:42:ai-call',
+        aiBridge: true,
+        callMediaAccepted: true,
+      },
+    });
+
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni:operator-call',
+        isActive: false,
+      }),
+    ]);
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores AI mode Janus events even when the legacy aiBridge flag is missing', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:operator-call',
+      provider: 'sipuni',
+      status: 'ringing',
+      callDirection: 'inbound',
+    });
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const connectedHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:connected'
+    )?.[1];
+    const disconnectedHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:disconnected'
+    )?.[1];
+
+    connectedHandler({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'sipuni:janus:42:ai-call',
+        callMode: 'ai',
+      },
+    });
+    await disconnectedHandler({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'sipuni:janus:42:ai-call',
+        callMode: 'ai',
+        callMediaAccepted: true,
+      },
+    });
+
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni:operator-call',
+        isActive: false,
+      }),
+    ]);
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+  });
+
   it('correlates Sipuni Janus incoming calls with tracked webhook calls through the backend', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
@@ -386,11 +526,11 @@ describe('useCallSession', () => {
     expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
   });
 
-  it('bootstraps browser calling for an incoming Fonoster call inbox before answer', async () => {
+  it('bootstraps browser calling for an incoming browser SIP call inbox before answer', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-cold-incoming-bootstrap',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
       inboxId: 4698,
     });
@@ -402,18 +542,18 @@ describe('useCallSession', () => {
     expect(initializeDeviceMock).toHaveBeenCalledWith(4698, { native: true });
   });
 
-  it('always asks the backend to reject Fonoster calls after the local SIP decline attempt', async () => {
+  it('always asks the backend to reject browser SIP calls after the local SIP decline attempt', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-server-side-reject',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     const callSession = mountUseCallSession();
 
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
     expect(rejectClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster' })
+      expect.objectContaining({ provider: 'sipuni' })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-server-side-reject',
@@ -425,11 +565,31 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('still asks the backend to reject when the Fonoster SIP client has no pending call to decline', async () => {
+  it('does not release AI-routed Janus calls as operator declined calls', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:janus:42:ai-call',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      route_action: 'ai',
+      ai_voice: {
+        state: 'attached',
+      },
+    });
+    const callSession = mountUseCallSession();
+
+    await callSession.rejectIncomingCall(callsStore.calls[0]);
+
+    expect(rejectClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('still asks the backend to reject when the browser SIP client has no pending call to decline', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-no-sip-decline',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     rejectClientCallMock.mockResolvedValue(null);
     const callSession = mountUseCallSession();
@@ -437,7 +597,7 @@ describe('useCallSession', () => {
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
     expect(rejectClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster' })
+      expect.objectContaining({ provider: 'sipuni' })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-no-sip-decline', {
       reason: 'operator_declined',
@@ -446,11 +606,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('keeps a Fonoster call visible when backend release fails', async () => {
+  it('keeps a browser SIP call visible when backend release fails', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-release-failed',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     rejectBackendCallMock.mockRejectedValue(new Error('backend unavailable'));
     const callSession = mountUseCallSession();
@@ -458,7 +618,7 @@ describe('useCallSession', () => {
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
     expect(rejectClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster' })
+      expect.objectContaining({ provider: 'sipuni' })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-release-failed', {
       reason: 'operator_declined',
@@ -469,11 +629,11 @@ describe('useCallSession', () => {
     ]);
   });
 
-  it('terminates active Fonoster calls through backend bridge release instead of local hangup only', async () => {
+  it('terminates active browser SIP calls through backend bridge release instead of local hangup only', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-active-bridge-release',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     callsStore.setCallActive('call-active-bridge-release');
     const callSession = mountUseCallSession();
@@ -481,12 +641,12 @@ describe('useCallSession', () => {
     await callSession.endCall({
       conversationId: 6,
       inboxId: 4083,
-      provider: 'fonoster',
+      provider: 'sipuni',
       callSid: 'call-active-bridge-release',
     });
 
     expect(endClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster', inboxId: 4083 })
+      expect.objectContaining({ provider: 'sipuni', inboxId: 4083 })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-active-bridge-release',
@@ -502,7 +662,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('releases the backend Fonoster call when the SIP client reports a remote disconnect', async () => {
+  it('releases the backend browser SIP call when the SIP client reports a remote disconnect', async () => {
     let disconnectHandler;
     addEventListenerMock.mockImplementation((eventName, handler) => {
       if (eventName === 'call:disconnected') disconnectHandler = handler;
@@ -510,7 +670,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-remote-disconnect',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     callsStore.setCallActive('call-remote-disconnect');
 
@@ -527,7 +687,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('clears the active Fonoster call immediately on remote disconnect while backend release is pending', async () => {
+  it('clears the active browser SIP call immediately on remote disconnect while backend release is pending', async () => {
     let disconnectHandler;
     let resolveRelease;
     addEventListenerMock.mockImplementation((eventName, handler) => {
@@ -541,7 +701,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-remote-disconnect-pending',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     callsStore.setCallActive('call-remote-disconnect-pending');
 
@@ -561,7 +721,7 @@ describe('useCallSession', () => {
     );
   });
 
-  it('removes a pending outbound Fonoster call when the SIP client disconnects by call ref', async () => {
+  it('removes a pending outbound browser SIP call when the SIP client disconnects by call ref', async () => {
     let disconnectHandler;
     addEventListenerMock.mockImplementation((eventName, handler) => {
       if (eventName === 'call:disconnected') disconnectHandler = handler;
@@ -569,14 +729,14 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-pending-outbound-disconnect',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
 
     mountUseCallSession();
     await disconnectHandler?.({
       detail: {
-        provider: 'fonoster',
+        provider: 'sipuni',
         callRef: 'call-pending-outbound-disconnect',
         callDirection: 'outbound',
       },
@@ -658,11 +818,11 @@ describe('useCallSession', () => {
     ]);
   });
 
-  it('still releases an active Fonoster call when the local RTC hangup fails', async () => {
+  it('still releases an active browser SIP call when the local RTC hangup fails', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-local-hangup-failed',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     callsStore.setCallActive('call-local-hangup-failed');
     endClientCallMock.mockRejectedValue(new Error('rtc hangup failed'));
@@ -671,12 +831,12 @@ describe('useCallSession', () => {
     await callSession.endCall({
       conversationId: 6,
       inboxId: 4083,
-      provider: 'fonoster',
+      provider: 'sipuni',
       callSid: 'call-local-hangup-failed',
     });
 
     expect(endClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster', inboxId: 4083 })
+      expect.objectContaining({ provider: 'sipuni', inboxId: 4083 })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-local-hangup-failed',
@@ -688,11 +848,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('ignores duplicate active Fonoster hangup clicks while release is in flight', async () => {
+  it('ignores duplicate active browser SIP hangup clicks while release is in flight', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-double-hangup',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     callsStore.setCallActive('call-double-hangup');
     let resolveRelease;
@@ -705,7 +865,7 @@ describe('useCallSession', () => {
     const payload = {
       conversationId: 6,
       inboxId: 4083,
-      provider: 'fonoster',
+      provider: 'sipuni',
       callSid: 'call-double-hangup',
     };
 
@@ -721,10 +881,10 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('does not block a different Fonoster call while another hangup release is in flight', async () => {
+  it('does not block a different browser SIP call while another hangup release is in flight', async () => {
     const callsStore = useCallsStore();
-    callsStore.addCall({ callSid: 'call-first-hangup', provider: 'fonoster' });
-    callsStore.addCall({ callSid: 'call-second-hangup', provider: 'fonoster' });
+    callsStore.addCall({ callSid: 'call-first-hangup', provider: 'sipuni' });
+    callsStore.addCall({ callSid: 'call-second-hangup', provider: 'sipuni' });
     const releaseResolvers = {};
     rejectBackendCallMock.mockImplementation(
       callSid =>
@@ -737,13 +897,13 @@ describe('useCallSession', () => {
     const firstRelease = callSession.endCall({
       conversationId: 6,
       inboxId: 4083,
-      provider: 'fonoster',
+      provider: 'sipuni',
       callSid: 'call-first-hangup',
     });
     const secondRelease = callSession.endCall({
       conversationId: 7,
       inboxId: 4083,
-      provider: 'fonoster',
+      provider: 'sipuni',
       callSid: 'call-second-hangup',
     });
     await Promise.resolve();
@@ -757,11 +917,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('ignores duplicate incoming Fonoster reject clicks while release is in flight', async () => {
+  it('ignores duplicate incoming browser SIP reject clicks while release is in flight', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-double-reject',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     let resolveRelease;
     rejectBackendCallMock.mockReturnValue(
@@ -782,11 +942,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('still releases an incoming Fonoster call when local SIP decline throws', async () => {
+  it('still releases an incoming browser SIP call when local SIP decline throws', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-local-decline-failed',
-      provider: 'fonoster',
+      provider: 'sipuni',
     });
     rejectClientCallMock.mockRejectedValue(new Error('sip decline failed'));
     const callSession = mountUseCallSession();
@@ -794,7 +954,7 @@ describe('useCallSession', () => {
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
     expect(rejectClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster' })
+      expect.objectContaining({ provider: 'sipuni' })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-local-decline-failed',
@@ -806,11 +966,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('releases a claimed inbound Fonoster call when no SIP incoming call is available to answer', async () => {
+  it('releases a claimed inbound browser SIP call when no SIP incoming call is available to answer', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-no-sip-answer',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
     joinClientCallMock.mockResolvedValue(null);
@@ -818,12 +978,12 @@ describe('useCallSession', () => {
 
     const result = await callSession.joinCall({
       callSid: 'call-no-sip-answer',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: false,
       reason: 'sip_invite_not_received',
     });
@@ -984,11 +1144,11 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-sip-answer-failed',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
     initializeDeviceMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       callingSupported: true,
       registered: true,
     });
@@ -999,12 +1159,12 @@ describe('useCallSession', () => {
 
     const result = await callSession.joinCall({
       callSid: 'call-sip-answer-failed',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: false,
       reason: 'browser_webphone_not_ready',
     });
@@ -1021,15 +1181,15 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('releases a registered Fonoster call when the delayed SIP INVITE never arrives', async () => {
+  it('releases a registered browser SIP call when the delayed SIP INVITE never arrives', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-registered-waiting-for-invite',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
     initializeDeviceMock.mockResolvedValue({
-      provider: 'fonoster',
+      provider: 'sipuni',
       callingSupported: true,
       registered: true,
     });
@@ -1038,12 +1198,12 @@ describe('useCallSession', () => {
 
     const result = await callSession.joinCall({
       callSid: 'call-registered-waiting-for-invite',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: false,
       reason: 'sip_invite_not_received',
     });
@@ -1060,11 +1220,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('joins outbound Fonoster calls in the browser without claiming an incoming call first', async () => {
+  it('joins outbound browser SIP calls in the browser without claiming an incoming call first', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-outbound-browser-join',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
     const callSession = mountUseCallSession();
@@ -1073,19 +1233,19 @@ describe('useCallSession', () => {
       conversationId: 6,
       inboxId: 4083,
       callSid: 'call-outbound-browser-join',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: true,
       waitingForAnswer: true,
     });
     expect(VoiceAPI.claimIncomingCall).not.toHaveBeenCalled();
     expect(joinClientCallMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: 'fonoster',
+        provider: 'sipuni',
         inboxId: 4083,
         conversationId: 6,
         callRef: 'call-outbound-browser-join',
@@ -1102,11 +1262,11 @@ describe('useCallSession', () => {
     ]);
   });
 
-  it('fails and dismisses outbound Fonoster calls when the operator SIP INVITE never arrives', async () => {
+  it('fails and dismisses outbound browser SIP calls when the operator SIP INVITE never arrives', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-outbound-no-sip-invite',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
     joinClientCallMock.mockResolvedValue(null);
@@ -1116,12 +1276,12 @@ describe('useCallSession', () => {
       conversationId: 6,
       inboxId: 4083,
       callSid: 'call-outbound-no-sip-invite',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: false,
       reason: 'sip_invite_not_received',
       callSid: 'call-outbound-no-sip-invite',
@@ -1137,7 +1297,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('releases outbound non-Fonoster SIP calls when Janus does not start the call', async () => {
+  it('releases outbound non-browser SIP calls when Janus does not start the call', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'sipuni-outbound-no-invite',
@@ -1254,11 +1414,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('does not release an outbound Fonoster call again when it was already closed while waiting for SIP INVITE', async () => {
+  it('does not release an outbound browser SIP call again when it was already closed while waiting for SIP INVITE', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-outbound-closed-before-invite',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
     joinClientCallMock.mockImplementation(async () => {
@@ -1271,12 +1431,12 @@ describe('useCallSession', () => {
       conversationId: 6,
       inboxId: 4083,
       callSid: 'call-outbound-closed-before-invite',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: false,
       reason: 'call_closed',
       callSid: 'call-outbound-closed-before-invite',
@@ -1285,11 +1445,11 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('cancels pending outbound Fonoster calls without using incoming SIP decline', async () => {
+  it('cancels pending outbound browser SIP calls without using incoming SIP decline', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-outbound-cancel',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'outbound',
     });
     const callSession = mountUseCallSession();
@@ -1298,7 +1458,7 @@ describe('useCallSession', () => {
 
     expect(rejectClientCallMock).not.toHaveBeenCalled();
     expect(endClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'fonoster' })
+      expect.objectContaining({ provider: 'sipuni' })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-outbound-cancel', {
       reason: 'operator_cancelled',
@@ -1311,7 +1471,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-operator-not-registered',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
     VoiceAPI.claimIncomingCall.mockRejectedValue({
@@ -1326,12 +1486,12 @@ describe('useCallSession', () => {
 
     const result = await callSession.joinCall({
       callSid: 'call-operator-not-registered',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: false,
       reason: 'operator_not_registered',
     });
@@ -1392,11 +1552,11 @@ describe('useCallSession', () => {
     ]);
   });
 
-  it('dismisses an inbound Fonoster call when backend claim says it is already terminal', async () => {
+  it('dismisses an inbound browser SIP call when backend claim says it is already terminal', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-terminal-before-claim',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
     VoiceAPI.claimIncomingCall.mockRejectedValue({
@@ -1412,12 +1572,12 @@ describe('useCallSession', () => {
 
     const result = await callSession.joinCall({
       callSid: 'call-terminal-before-claim',
-      provider: 'fonoster',
+      provider: 'sipuni',
       callDirection: 'inbound',
     });
 
     expect(result).toEqual({
-      provider: 'fonoster',
+      provider: 'sipuni',
       joinSupported: false,
       reason: 'CALL_NOT_CLAIMABLE',
     });

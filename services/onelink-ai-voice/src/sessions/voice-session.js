@@ -1,7 +1,7 @@
 const { TranscriptBuffer } = require('../transcripts/transcript-buffer');
 const { normalizeAiResponseText } = require('../transcripts/ai-response-normalizer');
 const { ToolExecutor } = require('../tools/tool-executor');
-const { safeReason } = require('../utils/timeout');
+const { safeReason, withTimeout } = require('../utils/timeout');
 const { randomUUID } = require('node:crypto');
 
 class VoiceSession {
@@ -37,26 +37,58 @@ class VoiceSession {
     });
   }
 
-  async bootstrap() {
+  async bootstrap({ timeoutMs = null, context = null, source = 'onelink_context' } = {}) {
+    const startedAt = Date.now();
+    const effectiveTimeoutMs = timeoutMs ?? this.client.timeoutMs;
     try {
-      this.context = await this.client.getContext({
+      const inlineContext = normalizeInlineContext(context);
+      const contextRequest = inlineContext ? Promise.resolve(inlineContext) : Promise.resolve(this.client.getContext({
         call_ref: this.callRef,
         ingress_number: this.ingressNumber,
         caller_number: this.callerNumber,
         number_ref: this.numberRef,
         account_id: this.accountId
+      }));
+      void this.safeEvent('context_fetch_started', {
+        timeout_ms: effectiveTimeoutMs,
+        source: inlineContext ? source : 'onelink_context',
+        inline: Boolean(inlineContext)
       });
+      this.context = await withTimeout(contextRequest, effectiveTimeoutMs, 'voice context bootstrap');
       this.accountId = this.context.account_id || this.context.accountId || this.accountId;
       this.numberRef = this.context.number_ref || this.context.numberRef || this.numberRef;
       this.state = 'active';
-      await this.safeControl('ai_ringing', { provider: this.context.ai?.provider, model: this.context.ai?.model });
-      await this.safeControl('ai_answered', { provider: this.context.ai?.provider, model: this.context.ai?.model });
+      void this.safeEvent('context_fetch_ready', {
+        duration_ms: Date.now() - startedAt,
+        source: inlineContext ? source : 'onelink_context',
+        inline: Boolean(inlineContext),
+        provider: this.context.ai?.provider,
+        model: this.context.ai?.model
+      });
+      void this.safeControl('ai_ringing', { provider: this.context.ai?.provider, model: this.context.ai?.model });
+      void this.safeControl('ai_answered', { provider: this.context.ai?.provider, model: this.context.ai?.model });
       return this.context;
     } catch (error) {
-      this.state = 'fallback';
       const reason = safeReason(error, 'context_unavailable');
-      this.context = buildFallbackContext(this.callRef, reason);
-      await this.safeControl('session_failed', { reason });
+      this.context = buildFallbackContext({
+        callRef: this.callRef,
+        reason,
+        accountId: this.accountId,
+        numberRef: this.numberRef,
+        ingressNumber: this.ingressNumber,
+        callerNumber: this.callerNumber,
+        bridgeCallRef: this.bridgeCallRef
+      });
+      this.state = 'active';
+      void this.safeEvent('context_fetch_failed', {
+        duration_ms: Date.now() - startedAt,
+        reason,
+        degraded: true,
+        fallback_provider: this.context.ai?.provider,
+        fallback_model: this.context.ai?.model
+      });
+      void this.safeControl('ai_ringing', { provider: this.context.ai?.provider, model: this.context.ai?.model, degraded: true, reason });
+      void this.safeControl('ai_answered', { provider: this.context.ai?.provider, model: this.context.ai?.model, degraded: true, reason });
       return this.context;
     }
   }
@@ -131,7 +163,14 @@ class VoiceSession {
     this.finalizeInFlight = true;
 
     try {
-      const includePartialTranscript = Boolean(metadata.include_partial_transcript || metadata.incomplete_transcript);
+      const includePartialTranscript = Boolean(
+        metadata.include_partial_transcript ||
+        metadata.incomplete_transcript ||
+        this.transcripts.hasPartialItems()
+      );
+      const finalTranscript = includePartialTranscript
+        ? this.transcripts.finalItemsWithPartials()
+        : this.transcripts.finalItems();
       await this.client.finalizeCall(this.scopedPayload({
         event_id: `finalize:${this.callRef}:${action}`,
         event_seq: this.nextEventSeq(),
@@ -150,7 +189,7 @@ class VoiceSession {
         reason: metadata.reason || action,
         ended_at: new Date().toISOString(),
         duration_ms: Math.max(0, Date.now() - this.startedAt.getTime()),
-        final_transcript: includePartialTranscript ? this.transcripts.allItems() : this.transcripts.finalItems(),
+        final_transcript: finalTranscript,
         partial_transcript: this.transcripts.allItems().filter(item => item.final === false),
         incomplete_transcript: includePartialTranscript || undefined,
         summary: metadata.summary,
@@ -194,7 +233,7 @@ class VoiceSession {
       event_id: `evt:${this.callRef}:${seq}:${eventType}`,
       event_seq: seq,
       event_type: eventType,
-      provider: 'fonoster',
+      provider: eventPayload.provider || this.context?.ai?.provider || 'onelink_ai_voice',
       provider_call_id: this.callRef,
       ai_session_id: this.aiSessionId,
       conversation_id: this.context?.conversation_id || this.context?.conversationId,
@@ -235,7 +274,7 @@ function finalStatusForAction(action) {
   if (normalized.includes('failed')) return 'failed';
   if (normalized.includes('caller_hangup')) return 'caller_hung_up';
   if (normalized.includes('provider_error') || normalized.includes('provider_stream_closed') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_framing_error') || normalized.includes('media_stream_not_established')) return 'failed';
-  if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
+  if (normalized.includes('provider_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
   if (normalized.includes('operator_unavailable') || normalized.includes('operator_no_answer')) return 'operator_unavailable';
   if (normalized.includes('transfer')) return 'transferred';
   return 'completed';
@@ -251,7 +290,7 @@ function terminalLifecycleAction(action) {
     normalized.includes('media_stream_closed') ||
     normalized.includes('media_stream_framing_error') ||
     normalized.includes('media_stream_not_established') ||
-    normalized.includes('fonoster_call_closed') ||
+    normalized.includes('provider_call_closed') ||
     normalized.includes('runtime_closed') ||
     normalized.includes('transfer_completed');
 }
@@ -264,13 +303,34 @@ function compactPayload(payload = {}) {
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
-function buildFallbackContext(callRef, reason) {
+function normalizeInlineContext(context) {
+  if (!context || typeof context !== 'object') return null;
+  const callRef = context.call_ref || context.callRef;
+  if (!callRef && !context.ai && !context.captain) return null;
+  return context;
+}
+
+function buildFallbackContext(options = {}, legacyReason = null) {
+  const input = typeof options === 'string' ? { callRef: options, reason: legacyReason } : (options || {});
+  const callRef = input.callRef || input.call_ref;
+  const reason = input.reason || 'context_unavailable';
   return {
     call_ref: callRef,
+    account_id: input.accountId || input.account_id,
+    number_ref: input.numberRef || input.number_ref,
+    ingress_number: input.ingressNumber || input.ingress_number,
+    caller_number: input.callerNumber || input.caller_number,
+    bridge_call_ref: input.bridgeCallRef || input.bridge_call_ref,
     ai: {
-      provider: 'scripted-fallback',
-      model: 'local-scripted',
-      first_message: 'Извините, голосовой ассистент временно недоступен. Сейчас попробую соединить вас со специалистом.',
+      provider: 'gemini-live',
+      first_message: 'Здравствуйте, я голосовой ассистент. Слушаю вас.',
+      system_prompt: [
+        'Ты голосовой ассистент OneLink.',
+        'CRM-контекст временно недоступен, поэтому отвечай коротко, не выдумывай факты о клиенте и задавай уточняющие вопросы.',
+        'Если нужна информация из CRM или действие в системе, честно скажи, что уточнишь детали и попроси клиента сформулировать вопрос.'
+      ].join('\n'),
+      degraded: true,
+      context_degraded: true,
       reason
     },
     tools: [],

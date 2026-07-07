@@ -1,10 +1,10 @@
 class Telephony::RoutingService
+  JANUS_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
   ROUTE_CONFIG_KEYS = {
     mode: :routing_mode,
     app_ref: :app_route_app_ref,
     ai_app_ref: :ai_app_ref,
     ai_deployment_mode: :ai_deployment_mode,
-    fonoster_ai_app_ref: :fonoster_ai_app_ref,
     onelink_ai_app_ref: :onelink_ai_app_ref,
     fallback_ai_app_ref: :fallback_ai_app_ref,
     captain_assistant_id: :captain_assistant_id,
@@ -16,37 +16,47 @@ class Telephony::RoutingService
     fallback_message: :fallback_message
   }.freeze
 
-  def initialize(account:, bridge_client: nil)
+  def initialize(account:)
     @account = account
-    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def capabilities
-    bridge_client.get('/telephony/capabilities')
+    {
+      provider: 'janus_sip',
+      providers: JANUS_SIP_PROVIDERS,
+      browser_calling: true,
+      remote_bridge: false
+    }
   end
 
   def resources_summary
-    bridge_client.get('/telephony/resources/summary')
+    {
+      provider: 'janus_sip',
+      remote_bridge: false,
+      numbers_count: account.telephony_number_bindings.count,
+      sip_profiles_count: account.telephony_sip_profiles.count,
+      voice_inboxes_count: janus_voice_inboxes.count
+    }
   end
 
   def applications
-    bridge_client.get('/telephony/applications')
+    []
   end
 
   def numbers
-    bridge_client.get('/telephony/numbers')
+    account.telephony_number_bindings.recent.map(&:to_telephony_h)
   end
 
   def number(number_ref)
-    bridge_client.get("/telephony/numbers/#{number_ref}")
+    account.telephony_number_bindings.find_by!(number_ref: number_ref).to_telephony_h
   end
 
   def trunks
-    bridge_client.get('/telephony/trunks')
+    []
   end
 
   def agents
-    bridge_client.get('/telephony/agents')
+    account.telephony_sip_profiles.includes(:user, :provider_connection).recent.map(&:to_telephony_h)
   end
 
   def update_number_route!(number_binding:, attributes:)
@@ -57,7 +67,6 @@ class Telephony::RoutingService
     policy.assign_attributes(policy_attributes(attributes, policy))
     policy.save!
 
-    response = bridge_client.post("/telephony/numbers/#{number_binding.number_ref}/route", number_binding.bridge_route_payload)
     number_binding.update!(
       app_ref: number_binding.runtime_app_ref,
       last_synced_at: Time.current
@@ -65,7 +74,7 @@ class Telephony::RoutingService
 
     {
       routing_policy: policy,
-      response: response
+      response: local_sync_response(number_binding)
     }
   end
 
@@ -78,8 +87,6 @@ class Telephony::RoutingService
     policy.settings = settings
     policy.save!
 
-    response = bridge_client.post('/telephony/ai/toggle', toggle_ai_payload(number_binding, policy, enabled: enabled))
-
     number_binding.update!(
       app_ref: number_binding.runtime_app_ref,
       last_synced_at: Time.current
@@ -87,13 +94,19 @@ class Telephony::RoutingService
 
     {
       routing_policy: policy,
-      response: response
+      response: local_sync_response(number_binding, ai_enabled: enabled)
     }
   end
 
   private
 
-  attr_reader :account, :bridge_client
+  attr_reader :account
+
+  def janus_voice_inboxes
+    account.inboxes.where(channel_type: 'Channel::Voice').includes(:channel).select do |inbox|
+      inbox.channel&.provider.in?(JANUS_SIP_PROVIDERS)
+    end
+  end
 
   def normalized_route_attributes(attributes)
     attributes.to_h.with_indifferent_access
@@ -112,7 +125,7 @@ class Telephony::RoutingService
 
   def sync_voice_channel_route_config!(number_binding, attributes)
     channel = number_binding.voice_channel
-    return unless channel&.provider == 'fonoster'
+    return unless channel&.provider.in?(JANUS_SIP_PROVIDERS)
 
     config = channel.provider_config_hash.with_indifferent_access
     ROUTE_CONFIG_KEYS.each do |attribute_key, config_key|
@@ -133,18 +146,6 @@ class Telephony::RoutingService
     return normalized_value unless attribute_key == :mode && normalized_value.present?
 
     Telephony::RoutingPolicy::BRIDGE_SUPPORTED_MODES.include?(normalized_value) ? normalized_value : 'reject'
-  end
-
-  def toggle_ai_payload(number_binding, policy, enabled:)
-    payload = {
-      number_ref: number_binding.number_ref,
-      enabled: enabled,
-      ai_app_ref: policy.effective_ai_app_ref
-    }.compact
-
-    return payload if enabled
-
-    payload.merge(number_binding.bridge_fallback_route(policy))
   end
 
   def apply_ai_route!(number_binding, policy, settings, enabled:, ai_app_ref:)
@@ -193,5 +194,14 @@ class Telephony::RoutingService
     return true unless policy.targeted_operator_distribution?
 
     policy.resolved_operator_agent_aor.to_s.downcase.start_with?('sip:')
+  end
+
+  def local_sync_response(number_binding, ai_enabled: nil)
+    {
+      'provider' => 'janus_sip',
+      'remote_bridge' => false,
+      'number_ref' => number_binding.number_ref,
+      'ai_enabled' => ai_enabled
+    }.compact
   end
 end

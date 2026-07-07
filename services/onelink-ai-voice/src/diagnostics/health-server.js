@@ -1,6 +1,6 @@
 const { createServer } = require('node:http');
 
-function createHealthServer({ registry = null, port = 8081, handlers = [] } = {}) {
+function createHealthServer({ registry = null, port = 8081, handlers = [], upgradeHandlers = [] } = {}) {
   const server = createServer((req, res) => {
     for (const handler of handlers) {
       if (typeof handler === 'function' && handler(req, res)) return;
@@ -16,6 +16,13 @@ function createHealthServer({ registry = null, port = 8081, handlers = [] } = {}
     }
     res.statusCode = 404;
     res.end(JSON.stringify({ error: 'not_found' }));
+  });
+  server.on('upgrade', (req, socket, head) => {
+    for (const handler of upgradeHandlers) {
+      if (typeof handler === 'function' && handler(req, socket, head)) return;
+    }
+    socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+    socket.destroy();
   });
 
   return {

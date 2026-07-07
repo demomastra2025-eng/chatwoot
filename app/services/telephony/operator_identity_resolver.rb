@@ -14,9 +14,8 @@ class Telephony::OperatorIdentityResolver
 
     def agent_ref
       return agent_binding.agent_ref if agent_binding
-      return sip_profile.agent_ref if provider_owned_sip_provider?
 
-      agent_binding&.agent_ref || sip_profile&.fonoster_agent_ref.presence || sip_profile&.agent_ref
+      sip_profile&.agent_ref
     end
 
     def agent_aor
@@ -26,8 +25,7 @@ class Telephony::OperatorIdentityResolver
     def provider
       agent_binding&.provider ||
         sip_profile&.inbox&.channel&.provider ||
-        sip_profile&.provider_connection&.provider_kind ||
-        'fonoster'
+        sip_profile&.provider_connection&.provider_kind
     end
 
     def enabled?
@@ -59,11 +57,6 @@ class Telephony::OperatorIdentityResolver
           internal_extension: sip_profile.internal_extension
         )
       end
-      unless provider.to_s.in?(Telephony::OperatorIdentityResolver::PROVIDER_OWNED_SIP_PROVIDERS)
-        attrs[:fonoster_agent_ref] = agent_ref
-        attrs[:fonosterAgentRef] = agent_ref
-      end
-
       attrs.compact
     end
 
@@ -82,7 +75,7 @@ class Telephony::OperatorIdentityResolver
   end
 
   def resolve
-    sip_profile_identity || agent_binding_identity
+    sip_profile_identity
   end
 
   private
@@ -110,28 +103,5 @@ class Telephony::OperatorIdentityResolver
     scope.where(user_id: user.id, enabled: true)
          .where.not(status: %w[disabled deleting failed])
          .order(Arel.sql("CASE availability_mode WHEN 'browser_webphone' THEN 0 ELSE 1 END"), updated_at: :desc, id: :desc)
-  end
-
-  def agent_binding_identity
-    return if managed_number_binding?
-
-    binding = account.telephony_agent_bindings.enabled.find_by(user_id: user&.id)
-    return if binding.blank?
-
-    Identity.new(source: :agent_binding, record: binding)
-  end
-
-  def managed_number_binding?
-    number_binding&.managed?
-  end
-
-  def number_binding
-    return @number_binding if defined?(@number_binding)
-
-    @number_binding = if inbox.respond_to?(:telephony_number_binding)
-                        inbox.telephony_number_binding
-                      elsif inbox.present?
-                        Telephony::NumberBinding.find_by(account_id: account.id, inbox_id: inbox.id)
-                      end
   end
 end

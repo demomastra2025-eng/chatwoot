@@ -19,7 +19,7 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     conversation = fetch_conversation_by_display_id
     ensure_call_sid!(conversation)
 
-    return render_fonoster_join_response(conversation) unless twilio_conference_inbox?
+    return render_unsupported_native_join_response(conversation) unless twilio_conference_inbox?
 
     conference_service = Voice::Provider::Twilio::ConferenceService.new(conversation: conversation)
     conference_sid = conference_service.ensure_conference_sid
@@ -34,7 +34,10 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
   end
 
   def destroy
-    return render json: { status: 'success', id: params[:conversation_id], provider: 'fonoster' } unless twilio_conference_inbox?
+    unless twilio_conference_inbox?
+      return render json: { status: 'success', id: params[:conversation_id], provider: native_voice_provider,
+                            join_supported: false }
+    end
 
     conversation = fetch_conversation_by_display_id
     Voice::Provider::Twilio::ConferenceService.new(conversation: conversation).end_conference
@@ -70,12 +73,16 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     conversation
   end
 
-  def render_fonoster_join_response(conversation)
+  def native_voice_provider
+    @voice_inbox.channel&.provider || 'janus_sip'
+  end
+
+  def render_unsupported_native_join_response(conversation)
     render json: {
       status: 'success',
       id: conversation.display_id,
       call_ref: conversation.identifier,
-      provider: 'fonoster',
+      provider: native_voice_provider,
       using_webrtc: false,
       join_supported: false
     }

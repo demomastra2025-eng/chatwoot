@@ -1,14 +1,15 @@
 const { VoiceSession } = require('../sessions/voice-session');
 const { ScriptedFallbackResponder } = require('../realtime/scripted-fallback');
-const { startManagedVoiceStream } = require('../fonoster/managed-stream');
 const { RecordingWriter } = require('../recordings/recording-writer');
 const { DialogueDirector } = require('../dialogue/dialogue-director');
 
 const streamConstants = loadStreamConstants();
-const FONOSTER_INPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_INPUT_RATE, 16_000);
-const FONOSTER_CALL_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_CALL_RATE, 8_000);
+const TELEPHONY_INPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_INPUT_RATE, 16_000);
+const TELEPHONY_OUTPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_CALL_RATE, 8_000);
 const GEMINI_OUTPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_OUTPUT_RATE, 24_000);
 const RECORDING_SAMPLE_RATE = parseStreamRate(process.env.VOICE_AGENT_RECORDING_SAMPLE_RATE, 16_000);
+const REALTIME_INPUT_GAIN = parseAudioGain(process.env.VOICE_AGENT_REALTIME_INPUT_GAIN, 0.75);
+const REALTIME_OUTPUT_GAIN = parseAudioGain(process.env.VOICE_AGENT_REALTIME_OUTPUT_GAIN, 0.9);
 
 class VoiceApplication {
   constructor({
@@ -17,7 +18,6 @@ class VoiceApplication {
     realtimeFactory = null,
     fallbackResponder = new ScriptedFallbackResponder(),
     mediaStreamFactory = null,
-    managedStreamStarter = startManagedVoiceStream,
     recordingWriterFactory = null,
     recordingEnabled = envFlag('VOICE_AGENT_RECORDING_ENABLED'),
     toolTimeoutMs = 3_000,
@@ -28,7 +28,10 @@ class VoiceApplication {
     ordinaryAnswerContinuationMs = 2_500,
     incompleteAnswerContinuationMs = 1_200,
     initialMediaKeepaliveMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_MEDIA_KEEPALIVE_MS, 0),
-    answerTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_ANSWER_TIMEOUT_MS, 5_000)
+    initialGreetingRetryMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_GREETING_RETRY_MS, 2_500),
+    answerTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_ANSWER_TIMEOUT_MS, 5_000),
+    contextBootstrapTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_CONTEXT_BOOTSTRAP_TIMEOUT_MS, 2_500),
+    realtimeAudioDiagnosticsEnabled = envFlag('VOICE_AGENT_REALTIME_AUDIO_DIAGNOSTICS_ENABLED')
   } = {}) {
     if (!client) throw new Error('client is required');
     this.client = client;
@@ -36,7 +39,6 @@ class VoiceApplication {
     this.realtimeFactory = realtimeFactory;
     this.fallbackResponder = fallbackResponder;
     this.mediaStreamFactory = mediaStreamFactory;
-    this.managedStreamStarter = managedStreamStarter;
     this.recordingWriterFactory = recordingWriterFactory;
     this.recordingEnabled = recordingEnabled;
     this.toolTimeoutMs = toolTimeoutMs;
@@ -47,7 +49,10 @@ class VoiceApplication {
     this.ordinaryAnswerContinuationMs = ordinaryAnswerContinuationMs;
     this.incompleteAnswerContinuationMs = incompleteAnswerContinuationMs;
     this.initialMediaKeepaliveMs = initialMediaKeepaliveMs;
+    this.initialGreetingRetryMs = initialGreetingRetryMs;
     this.answerTimeoutMs = answerTimeoutMs;
+    this.contextBootstrapTimeoutMs = contextBootstrapTimeoutMs;
+    this.realtimeAudioDiagnosticsEnabled = realtimeAudioDiagnosticsEnabled;
   }
 
   async handleCall(call, payload = {}) {
@@ -96,10 +101,19 @@ class VoiceApplication {
     activeRouteDecision = routeDecision;
     applyRouteScope(session, routeDecision);
     if (callerHangupTracker.emitted()) return callerHangupResult();
+    const routeAction = normalizeRouteAction(routeDecision);
+    const handleLocallyAsAi = shouldHandleAppRouteLocally(routeDecision, requestPayload);
+    const aiContextPromise = shouldBootstrapAiContext(routeAction, handleLocallyAsAi)
+      ? session.bootstrap({
+        timeoutMs: this.contextBootstrapTimeoutMs,
+        context: routeAiContext(routeDecision),
+        source: 'route_decision'
+      })
+      : null;
     this.registry?.update?.(callRef, { routeDecision, accountId: session.accountId, state: 'received' });
     void session.safeEvent('app_received_call', correlationPayload(session, requestPayload, routeDecision));
     await this.safeBridgeEvent('session_started', session, requestPayload, routeDecision);
-    await session.safeEvent('call_started', {
+    void session.safeEvent('call_started', {
       route_action: routeDecision.action || routeDecision.mode,
       route_reason: routeDecision.reason,
       app_ref: selectedAppRef(requestPayload, routeDecision),
@@ -110,8 +124,6 @@ class VoiceApplication {
       direction: requestPayload.direction || 'inbound'
     });
     if (callerHangupTracker.emitted()) return callerHangupResult();
-    const routeAction = normalizeRouteAction(routeDecision);
-    const handleLocallyAsAi = shouldHandleAppRouteLocally(routeDecision, requestPayload);
 
     if (routeAction === 'operator') {
       const answerFailure = await this.answerCallOrFail({ call, session, requestPayload, routeDecision });
@@ -223,7 +235,7 @@ class VoiceApplication {
       const mediaStreamEstablishedAt = Date.now();
       mediaStream.__onelinkEstablishedAt = new Date(mediaStreamEstablishedAt).toISOString();
       mediaStream.__onelinkEstablishmentMs = Math.max(0, mediaStreamEstablishedAt - mediaStreamRequestedAt);
-      await session.safeEvent('media_stream_established', {
+      void session.safeEvent('media_stream_established', {
         ...correlationPayload(session, requestPayload, routeDecision),
         stream_ref: mediaStream.streamRef || mediaStream.stream_ref || requestPayload.stream_ref || requestPayload.streamRef,
         media_session_ref: mediaStream.mediaSessionRef || mediaStream.media_session_ref || requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef,
@@ -254,7 +266,7 @@ class VoiceApplication {
       });
     }
 
-    const context = await session.bootstrap();
+    const context = await aiContextPromise;
     this.registry?.update?.(callRef, { context, state: session.state });
     if (callerHangupTracker.emitted()) {
       initialMediaKeepalive?.stop?.('caller_hangup');
@@ -318,11 +330,14 @@ class VoiceApplication {
   }
 
   routeInbound(requestPayload, callRef) {
+    const providedDecision = providedRouteDecision(requestPayload);
+    if (providedDecision) return providedDecision;
+
     if (!this.client || typeof this.client.routeInbound !== 'function') {
       throw new Error('client.routeInbound is required');
     }
 
-    return providedRouteDecision(requestPayload) || this.client.routeInbound(routePayload(requestPayload, callRef));
+    return this.client.routeInbound(routePayload(requestPayload, callRef));
   }
 
   async safeBridgeEvent(event, session, requestPayload, routeDecision = {}, metadata = {}) {
@@ -385,6 +400,7 @@ class VoiceApplication {
     initialMediaKeepalive?.updateRefs?.({ streamRef, mediaSessionRef });
     let acceptingInput = true;
     let lastAudioOutLogAt = 0;
+    let lastAudioInLogAt = 0;
     let lastToolWaitFillerTranscriptAt = 0;
     let lastCallerTranscriptAt = null;
     let lastConfirmedCallerInterruptAt = null;
@@ -393,6 +409,7 @@ class VoiceApplication {
     let lastAiAudioAt = null;
     let aiOutputActiveUntilMs = 0;
     let lastMediaWriteAt = null;
+    let initialGreetingWatchdog = null;
     const clearOutputOnInterrupt = context.ai?.clear_audio_on_interrupt ?? context.ai?.clearAudioOnInterrupt ?? this.clearOutputOnInterrupt;
     const postToolWatchdog = createPostToolWatchdog({
       timeoutMs: context.ai?.post_tool_continuation_ms ?? context.ai?.postToolContinuationMs ?? this.postToolContinuationMs,
@@ -424,7 +441,7 @@ class VoiceApplication {
       foregroundTimeoutMs: toolName => foregroundToolWaitMs(context, toolName),
       sendContinuation: text => realtime?.sendText?.(text)
     });
-    const mediaFrameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, 20);
+    const mediaFrameBytes = pcm16FrameBytes(TELEPHONY_OUTPUT_RATE, 20);
     const recordingWriter = this.createRecordingWriter(session, requestPayload, context);
     const degradedRecordingDirections = new Set();
     const writeRecordingAudio = (direction, data, metadata = {}) => {
@@ -455,12 +472,12 @@ class VoiceApplication {
     if (recordingWriter) {
       void recordingWriter.start({ sampleRate: RECORDING_SAMPLE_RATE });
     }
-    await session.safeEvent('stream_started', {
+    void session.safeEvent('stream_started', {
       stream_ref: streamRef,
       media_session_ref: mediaSessionRef,
       direction: streamConstants.bothDirection,
-      input_rate: FONOSTER_INPUT_RATE,
-      output_rate: FONOSTER_CALL_RATE,
+      input_rate: TELEPHONY_INPUT_RATE,
+      output_rate: TELEPHONY_OUTPUT_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
       recording_sample_rate: RECORDING_SAMPLE_RATE,
       gemini_model: context.ai?.model,
@@ -470,7 +487,7 @@ class VoiceApplication {
       expected_frame_bytes: mediaFrameBytes
     });
     const establishedAtMs = Date.parse(mediaStream.__onelinkEstablishedAt || '');
-    await session.safeEvent('media_stream_started', {
+    void session.safeEvent('media_stream_started', {
       ...correlationPayload(session, requestPayload, context),
       stream_ref: streamRef,
       media_stream_id: streamRef,
@@ -478,8 +495,8 @@ class VoiceApplication {
       media_stream_established_at: mediaStream.__onelinkEstablishedAt,
       media_stream_establishment_ms: mediaStream.__onelinkEstablishmentMs,
       established_to_media_started_ms: Number.isNaN(establishedAtMs) ? undefined : Math.max(0, Date.now() - establishedAtMs),
-      input_rate: FONOSTER_INPUT_RATE,
-      telephony_output_rate: FONOSTER_CALL_RATE,
+      input_rate: TELEPHONY_INPUT_RATE,
+      telephony_output_rate: TELEPHONY_OUTPUT_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
       recording_sample_rate: RECORDING_SAMPLE_RATE,
       output_format: streamConstants.wavFormat,
@@ -497,7 +514,7 @@ class VoiceApplication {
         reason,
         output_format: streamConstants.wavFormat,
         output_encoding: 'pcm_s16le',
-        telephony_output_rate: FONOSTER_CALL_RATE,
+        telephony_output_rate: TELEPHONY_OUTPUT_RATE,
         frame_ms: 20,
         expected_frame_bytes: mediaFrameBytes,
         stream_ref: streamRef,
@@ -508,7 +525,7 @@ class VoiceApplication {
       void completion?.finish?.('media_stream_framing_error', payload);
     };
     const outputPacer = mediaStream ? new Pcm16FramePacer({
-      sampleRate: FONOSTER_CALL_RATE,
+      sampleRate: TELEPHONY_OUTPUT_RATE,
       frameMs: 20,
       maxBufferedMs: this.outputMaxBufferedMs,
       onDrop: payload => {
@@ -532,7 +549,7 @@ class VoiceApplication {
             media_session_ref: mediaSessionRef,
             output_format: streamConstants.wavFormat,
             output_encoding: 'pcm_s16le',
-            telephony_output_rate: FONOSTER_CALL_RATE,
+            telephony_output_rate: TELEPHONY_OUTPUT_RATE,
             frame_ms: 20,
             frame_bytes: frame.length
           });
@@ -606,8 +623,10 @@ class VoiceApplication {
       tools: normalizeContextTools(context.tools),
       onAudio: (chunk, metadata = {}) => {
         initialMediaKeepalive?.stop?.('model_audio');
+        initialGreetingWatchdog?.cancel?.('model_audio');
         if (!outputPacer || !chunk) return;
-        const data = fonosterAudioChunk(chunk, metadata);
+        const conditionedOutput = conditionPcm16(Buffer.from(chunk), REALTIME_OUTPUT_GAIN);
+        const data = telephonyAudioChunk(conditionedOutput, metadata);
         if (!data.length) return;
         const now = Date.now();
         lastAiAudioAt = new Date(now).toISOString();
@@ -617,7 +636,7 @@ class VoiceApplication {
         }
         ordinaryAnswerWatchdog.cancel('model_audio');
         incompleteAnswerWatchdog.cancel('model_audio');
-        if (now - lastAudioOutLogAt >= 1_000) {
+        if (this.realtimeAudioDiagnosticsEnabled && now - lastAudioOutLogAt >= 1_000) {
           lastAudioOutLogAt = now;
           void session.safeEvent('realtime_audio_out', {
             provider: metadata.provider || 'gemini-live',
@@ -626,7 +645,7 @@ class VoiceApplication {
           });
         }
         const sourceRate = audioRateFromMimeType(metadata.mimeType) || GEMINI_OUTPUT_RATE;
-        const recordingOutput = resamplePcm16(Buffer.from(chunk), sourceRate, RECORDING_SAMPLE_RATE);
+        const recordingOutput = resamplePcm16(conditionedOutput, sourceRate, RECORDING_SAMPLE_RATE);
         writeRecordingAudio('outbound', recordingOutput, {
           stream_ref: streamRef,
           media_session_ref: mediaSessionRef,
@@ -649,6 +668,7 @@ class VoiceApplication {
           }
         } else {
           lastAiTranscriptAt = item.at || new Date().toISOString();
+          if (String(item.text || '').trim()) initialGreetingWatchdog?.cancel?.('model_transcript');
           if (isToolWaitFillerTranscript(item.text, context.ai)) {
             lastToolWaitFillerTranscriptAt = Date.now();
           } else if (String(item.text || '').trim()) {
@@ -778,9 +798,25 @@ class VoiceApplication {
       lastCallerAudioAt = new Date().toISOString();
       streamRef = payload.streamRef || payload.stream_ref || streamRef;
       session.streamRef = streamRef || session.streamRef;
-      const sourceRate = audioRateFromMimeType(mimeTypeForStreamPayload(payload)) || FONOSTER_INPUT_RATE;
+      const inputBuffer = Buffer.from(payload.data);
+      const inputMimeType = mimeTypeForStreamPayload(payload);
+      const sourceRate = audioRateFromMimeType(inputMimeType) || TELEPHONY_INPUT_RATE;
+      const now = Date.now();
+      if (this.realtimeAudioDiagnosticsEnabled && now - lastAudioInLogAt >= 1_000) {
+        lastAudioInLogAt = now;
+        void session.safeEvent('realtime_audio_in', {
+          provider: 'gemini-live',
+          bytes: inputBuffer.length,
+          mime_type: inputMimeType,
+          source_rate: sourceRate,
+          stream_ref: payload.streamRef || payload.stream_ref || streamRef,
+          media_session_ref: mediaSessionRef,
+          ...pcm16AudioStats(inputBuffer)
+        });
+      }
+      const conditionedInput = conditionPcm16(inputBuffer, REALTIME_INPUT_GAIN);
       const recordingInput = resamplePcm16(
-        Buffer.from(payload.data),
+        conditionedInput,
         sourceRate,
         RECORDING_SAMPLE_RATE
       );
@@ -791,8 +827,8 @@ class VoiceApplication {
         source_rate: sourceRate,
         recording_sample_rate: RECORDING_SAMPLE_RATE
       });
-      realtime.sendAudio(Buffer.from(payload.data), {
-        mimeType: mimeTypeForStreamPayload(payload)
+      realtime.sendAudio(conditionedInput, {
+        mimeType: inputMimeType
       });
     });
 
@@ -826,6 +862,7 @@ class VoiceApplication {
       },
       onFinish: () => {
         initialMediaKeepalive?.stop?.('completion');
+        initialGreetingWatchdog?.cancel?.('completion');
         postToolWatchdog.cancel('completion');
         ordinaryAnswerWatchdog.cancel('completion');
         incompleteAnswerWatchdog.cancel('completion');
@@ -834,9 +871,59 @@ class VoiceApplication {
       }
     });
     try {
+      void session.safeEvent('realtime_connect_started', compactPayload({
+        ...correlationPayload(session, requestPayload, context),
+        provider: 'gemini-live',
+        model: context.ai?.model,
+        stream_ref: streamRef,
+        media_session_ref: mediaSessionRef
+      }));
       await realtime.connect(callbacks);
-      sendInitialGreeting(realtime, context);
+      void session.safeEvent('realtime_connect_ready', compactPayload({
+        ...correlationPayload(session, requestPayload, context),
+        provider: 'gemini-live',
+        model: context.ai?.model,
+        stream_ref: streamRef,
+        media_session_ref: mediaSessionRef
+      }));
+      const greetingResult = sendInitialGreeting(realtime, context);
+      if (greetingResult.sent) {
+        void session.safeEvent('initial_greeting_sent', compactPayload({
+          ...correlationPayload(session, requestPayload, context),
+          provider: 'gemini-live',
+          greeting_length: greetingResult.greeting.length,
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef
+        }));
+        initialGreetingWatchdog = createInitialGreetingWatchdog({
+          timeoutMs: context.ai?.initial_greeting_retry_ms ?? context.ai?.initialGreetingRetryMs ?? this.initialGreetingRetryMs,
+          session,
+          requestPayload,
+          context,
+          streamRef,
+          mediaSessionRef,
+          getLastAiAudioAt: () => lastAiAudioAt,
+          sendRetry: () => sendInitialGreeting(realtime, context, { retry: true })
+        });
+        initialGreetingWatchdog.arm();
+      } else {
+        void session.safeEvent('initial_greeting_missing', compactPayload({
+          ...correlationPayload(session, requestPayload, context),
+          provider: 'gemini-live',
+          has_send_text: typeof realtime?.sendText === 'function',
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef
+        }));
+      }
     } catch (error) {
+      await session.safeEvent('realtime_connect_failed', compactPayload({
+        ...correlationPayload(session, requestPayload, context),
+        provider: 'gemini-live',
+        error_message: sanitizeReason(error?.message || error?.reason || 'realtime_connect_failed'),
+        stream_ref: streamRef,
+        media_session_ref: mediaSessionRef
+      }));
+      initialGreetingWatchdog?.cancel?.('realtime_connect_failed');
       try {
         dialogueDirector?.close?.();
       } catch (_closeError) {
@@ -863,7 +950,8 @@ class VoiceApplication {
   }
 
   async handleMediaStreamEstablishmentFailure({ error, call, session, requestPayload = {}, routeDecision = {}, context = {} }) {
-    const reason = sanitizeReason(error?.upstreamReason || error?.reason || error?.message || 'media_stream_not_established');
+    const upstreamReason = sanitizeReason(error?.upstreamReason || error?.reason || error?.message || 'media_stream_not_established');
+    const reason = upstreamReason;
     const eventContext = context || routeDecision;
 
     if (!session.context) {
@@ -874,10 +962,10 @@ class VoiceApplication {
       });
     }
 
-    if (error.upstreamReason === 'start_stream_response_timeout') {
+    if (upstreamReason === 'start_stream_response_timeout') {
       await session.safeEvent('start_stream_response_timeout', {
         reason: 'start_stream_response_timeout',
-        source: error.source || 'fonoster_start_stream',
+        source: error.source || 'media_stream_factory',
         timeout_ms: error.timeoutMs,
         ...correlationPayload(session, requestPayload, eventContext)
       });
@@ -930,14 +1018,22 @@ class VoiceApplication {
         const mediaStream = await this.mediaStreamFactory(call);
         if (mediaStream) return mediaStream;
       } catch (error) {
-        throw mediaStreamEstablishmentError(error?.message || 'media stream factory failed', 'mediaStreamFactory');
+        const upstreamReason = error?.reason || error?.code || sanitizeReason(error?.message || '');
+        const wrapped = mediaStreamEstablishmentError(
+          upstreamReason || 'media stream factory failed',
+          error?.source || 'mediaStreamFactory'
+        );
+        wrapped.upstreamReason = upstreamReason;
+        wrapped.timeoutMs = error?.timeoutMs;
+        throw wrapped;
       }
     }
-    if (!call) {
-      throw mediaStreamEstablishmentError('call is unavailable', 'call');
+    if (typeof call?.stream !== 'function') {
+      throw mediaStreamEstablishmentError('runtime media stream is unavailable', 'mediaStreamFactory');
     }
+
     try {
-      return await this.managedStreamStarter(call, {
+      return await call.stream({
         direction: streamConstants.bothDirection,
         format: streamConstants.wavFormat,
         onAudioOutWrite: firstAudioOutWriteReporter(session, requestPayload, routeDecision)
@@ -963,7 +1059,7 @@ class VoiceApplication {
       if (!mediaStream) return null;
 
       const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
-      await recordingWriter.start({ sampleRate: FONOSTER_CALL_RATE });
+      await recordingWriter.start({ sampleRate: TELEPHONY_OUTPUT_RATE });
       wirePassiveRecording(mediaStream, recordingWriter, { mediaSessionRef });
       return { mediaStream, recordingWriter };
     } catch (error) {
@@ -1204,8 +1300,8 @@ function wirePassiveRecording(mediaStream, recordingWriter, { mediaSessionRef } 
 
 function recordingChunkForPayload(payload = {}) {
   const buffer = Buffer.from(payload.data || []);
-  const sourceRate = audioRateFromMimeType(payload.mimeType) || (isAudioOut(payload.type) ? FONOSTER_CALL_RATE : FONOSTER_INPUT_RATE);
-  return resamplePcm16(buffer, sourceRate, FONOSTER_CALL_RATE);
+  const sourceRate = audioRateFromMimeType(payload.mimeType) || (isAudioOut(payload.type) ? TELEPHONY_OUTPUT_RATE : TELEPHONY_INPUT_RATE);
+  return resamplePcm16(buffer, sourceRate, TELEPHONY_OUTPUT_RATE);
 }
 
 async function closePassiveRecording(passiveRecording) {
@@ -1248,7 +1344,7 @@ function startInitialMediaKeepalive({ mediaStream, session, requestPayload = {},
   let mediaSessionRef = String(mediaStream.mediaSessionRef || mediaStream.media_session_ref || requestPayload.media_session_ref || requestPayload.mediaSessionRef || session?.callRef || '').trim();
   if (!streamRef) return null;
 
-  const frameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, frameMs);
+  const frameBytes = pcm16FrameBytes(TELEPHONY_OUTPUT_RATE, frameMs);
   const silenceFrame = Buffer.alloc(frameBytes);
   const startedAt = Date.now();
   let stopped = false;
@@ -1305,7 +1401,7 @@ function startInitialMediaKeepalive({ mediaStream, session, requestPayload = {},
           media_session_ref: mediaSessionRef,
           output_format: streamConstants.wavFormat,
           output_encoding: 'pcm_s16le',
-          telephony_output_rate: FONOSTER_CALL_RATE,
+          telephony_output_rate: TELEPHONY_OUTPUT_RATE,
           frame_ms: frameMs,
           frame_bytes: frameBytes,
           max_duration_ms: maxDurationMs
@@ -1332,6 +1428,73 @@ function startInitialMediaKeepalive({ mediaStream, session, requestPayload = {},
       mediaSessionRef = String(refs.mediaSessionRef || refs.media_session_ref || mediaSessionRef || '').trim();
     }
   };
+}
+
+function createInitialGreetingWatchdog({
+  timeoutMs = 0,
+  session,
+  requestPayload = {},
+  context = {},
+  streamRef,
+  mediaSessionRef,
+  getLastAiAudioAt,
+  sendRetry
+} = {}) {
+  const delayMs = Number(timeoutMs) || 0;
+  if (delayMs <= 0 || typeof sendRetry !== 'function') {
+    return { arm: () => {}, cancel: () => {} };
+  }
+
+  let timer = null;
+  let cancelled = false;
+
+  const cancel = reason => {
+    if (cancelled) return;
+    cancelled = true;
+    clearTimer(timer);
+    timer = null;
+    if (reason !== 'completion') {
+      void session?.safeEvent?.('initial_greeting_watchdog_cancelled', compactPayload({
+        ...correlationPayload(session, requestPayload, context),
+        provider: 'gemini-live',
+        reason,
+        stream_ref: streamRef,
+        media_session_ref: mediaSessionRef
+      }));
+    }
+  };
+
+  const arm = () => {
+    clearTimer(timer);
+    timer = setTimeout(() => {
+      if (cancelled || getLastAiAudioAt?.()) return;
+      try {
+        const result = sendRetry();
+        void session?.safeEvent?.(result?.sent ? 'initial_greeting_retry_sent' : 'initial_greeting_retry_skipped', compactPayload({
+          ...correlationPayload(session, requestPayload, context),
+          provider: 'gemini-live',
+          reason: result?.sent ? 'first_audio_timeout' : 'send_text_unavailable',
+          timeout_ms: delayMs,
+          greeting_length: result?.greeting?.length,
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef
+        }));
+      } catch (error) {
+        void session?.safeEvent?.('initial_greeting_retry_failed', compactPayload({
+          ...correlationPayload(session, requestPayload, context),
+          provider: 'gemini-live',
+          reason: 'send_text_failed',
+          error_message: sanitizeReason(error?.message || error?.reason || 'send_text_failed'),
+          timeout_ms: delayMs,
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef
+        }));
+      }
+    }, delayMs);
+    timer.unref?.();
+  };
+
+  return { arm, cancel };
 }
 
 function buildPassiveRecordingCompletion({ call, passiveRecording }) {
@@ -2086,7 +2249,7 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
 }
 
 function completionAction(session, action) {
-  if (session?.transferState?.connected && ['session_completed', 'caller_hangup', 'fonoster_call_closed'].includes(action)) return 'transfer_completed';
+  if (session?.transferState?.connected && ['session_completed', 'caller_hangup', 'provider_call_closed'].includes(action)) return 'transfer_completed';
   return action || 'session_completed';
 }
 
@@ -2120,7 +2283,7 @@ function finalStatusForCompletionAction(action) {
   if (normalized.includes('caller_hangup')) return 'caller_hung_up';
   if (normalized.includes('media_stream_not_established')) return 'failed';
   if (normalized.includes('media_stream_closed') || normalized.includes('media_stream_framing_error') || normalized.includes('provider_stream_closed') || normalized.includes('provider_error')) return 'failed';
-  if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
+  if (normalized.includes('provider_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
   if (normalized.includes('failed')) return 'failed';
   if (normalized.includes('transfer')) return 'transferred';
   return 'completed';
@@ -2128,7 +2291,7 @@ function finalStatusForCompletionAction(action) {
 
 function shouldDrainOutput(action) {
   const normalized = String(action || '').toLowerCase();
-  if (normalized.includes('caller_hangup') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_framing_error') || normalized.includes('media_stream_not_established') || normalized.includes('fonoster_call_closed')) return false;
+  if (normalized.includes('caller_hangup') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_framing_error') || normalized.includes('media_stream_not_established') || normalized.includes('provider_call_closed')) return false;
   if (normalized.includes('provider_error') || normalized.includes('session_failed') || normalized.includes('transfer')) return false;
   return true;
 }
@@ -2220,7 +2383,7 @@ function mediaWriteFailureReason(error, fallback) {
 function callCompletionAction(eventName) {
   const normalized = String(eventName || '').toLowerCase();
   if (normalized.includes('hangup') || ['end', 'close', 'disconnect', 'disconnected', 'bye'].includes(normalized)) return 'caller_hangup';
-  return 'fonoster_call_closed';
+  return 'provider_call_closed';
 }
 
 function registerOnce(target, eventName, handler) {
@@ -2243,24 +2406,11 @@ function registerOnce(target, eventName, handler) {
 
 function callEndEvents() {
   const events = ['end', 'close', 'hangup', 'disconnect', 'disconnected', 'bye', 'completed', 'END', 'CLOSE', 'DISCONNECT', 'DISCONNECTED', 'BYE'];
-  try {
-    const common = require('@fonoster/common');
-    if (common.StreamEvent?.END) events.unshift(common.StreamEvent.END);
-  } catch (_error) {
-    // @fonoster/common is optional in tests
-  }
   return [...new Set(events)];
 }
 
 function callErrorEvents() {
-  const events = ['error', 'failed', 'ERROR', 'FAILED'];
-  try {
-    const common = require('@fonoster/common');
-    if (common.StreamEvent?.ERROR) events.unshift(common.StreamEvent.ERROR);
-  } catch (_error) {
-    // @fonoster/common is optional in tests
-  }
-  return [...new Set(events)];
+  return ['error', 'failed', 'ERROR', 'FAILED'];
 }
 
 function buildSystemPrompt(context = {}) {
@@ -2276,12 +2426,15 @@ function buildSystemPrompt(context = {}) {
   return pieces.join('\n\n');
 }
 
-function sendInitialGreeting(realtime, context = {}) {
+function sendInitialGreeting(realtime, context = {}, { retry = false } = {}) {
   const greeting = initialGreetingText(context);
-  if (!greeting || typeof realtime?.sendText !== 'function') return false;
+  if (!greeting || typeof realtime?.sendText !== 'function') return { sent: false, greeting };
 
-  realtime.sendText(`Произнеси клиенту стартовую фразу дословно, без дополнительных комментариев: ${greeting}`);
-  return true;
+  const prefix = retry
+    ? 'Клиент уже на линии и ждет. Немедленно произнеси стартовую фразу дословно, без дополнительных комментариев:'
+    : 'Произнеси клиенту стартовую фразу дословно, без дополнительных комментариев:';
+  realtime.sendText(`${prefix} ${greeting}`);
+  return { sent: true, greeting };
 }
 
 function initialGreetingText(context = {}) {
@@ -2365,14 +2518,14 @@ function isAudioOut(type) {
 
 function mimeTypeForStreamPayload(payload) {
   if (payload.mimeType) return payload.mimeType;
-  return `audio/pcm;rate=${FONOSTER_INPUT_RATE}`;
+  return `audio/pcm;rate=${TELEPHONY_INPUT_RATE}`;
 }
 
-function fonosterAudioChunk(chunk, metadata = {}) {
+function telephonyAudioChunk(chunk, metadata = {}) {
   const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk || []);
   if (buffer.length < 2) return Buffer.alloc(0);
   const sourceRate = audioRateFromMimeType(metadata.mimeType) || GEMINI_OUTPUT_RATE;
-  return resamplePcm16(buffer, sourceRate, FONOSTER_CALL_RATE);
+  return resamplePcm16(buffer, sourceRate, TELEPHONY_OUTPUT_RATE);
 }
 
 function pcm16FrameBytes(sampleRate, frameMs) {
@@ -2401,9 +2554,59 @@ function audioRateFromMimeType(mimeType) {
   return Number.isFinite(rate) && rate > 0 ? rate : null;
 }
 
+function pcm16AudioStats(buffer) {
+  const data = Buffer.from(buffer || []);
+  const samples = Math.floor(data.length / 2);
+  if (samples <= 0) {
+    return { samples: 0, rms: 0, peak: 0, non_zero_ratio: 0 };
+  }
+
+  let sumSquares = 0;
+  let peak = 0;
+  let nonZero = 0;
+  for (let offset = 0; offset + 1 < data.length; offset += 2) {
+    const sample = data.readInt16LE(offset);
+    const abs = Math.abs(sample);
+    if (abs > 0) nonZero += 1;
+    if (abs > peak) peak = abs;
+    sumSquares += sample * sample;
+  }
+
+  return {
+    samples,
+    rms: Math.round(Math.sqrt(sumSquares / samples)),
+    peak,
+    non_zero_ratio: Number((nonZero / samples).toFixed(4))
+  };
+}
+
+function conditionPcm16(buffer, gain = 1) {
+  const input = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+  if (input.length < 2) return Buffer.alloc(0);
+
+  const output = Buffer.alloc(input.length - (input.length % 2));
+  const normalizedGain = Number.isFinite(Number(gain)) && Number(gain) > 0 ? Number(gain) : 1;
+  const drive = 1.15;
+  const driveNorm = Math.tanh(drive);
+
+  for (let offset = 0; offset + 1 < output.length; offset += 2) {
+    const sample = input.readInt16LE(offset);
+    const normalized = Math.max(-1, Math.min(1, (sample * normalizedGain) / 32768));
+    const limited = Math.tanh(normalized * drive) / driveNorm;
+    output.writeInt16LE(clampPcm16(Math.round(limited * 32767)), offset);
+  }
+
+  return output;
+}
+
 function parseStreamRate(value, fallback) {
   const rate = Number.parseInt(value, 10);
   return Number.isFinite(rate) && rate > 0 ? rate : fallback;
+}
+
+function parseAudioGain(value, fallback) {
+  const gain = Number.parseFloat(value);
+  return Number.isFinite(gain) && gain > 0 && gain <= 2 ? gain : fallback;
 }
 
 function parsePositiveInt(value, fallback = 0) {
@@ -2569,10 +2772,12 @@ function providedRouteDecision(requestPayload = {}) {
   const candidate = requestPayload.routing || requestPayload.route_decision || requestPayload.routeDecision;
   if (!candidate || typeof candidate !== 'object') return null;
   const action = candidate.action || candidate.mode || 'ai';
+  const aiContext = candidate.ai_context || candidate.aiContext || requestPayload.ai_context || requestPayload.aiContext;
   return {
     ...candidate,
     action,
     mode: candidate.mode || action,
+    ...(aiContext ? { ai_context: aiContext } : {}),
     reason: candidate.reason || 'whatsapp_cloud_pre_routed'
   };
 }
@@ -2629,6 +2834,14 @@ function applyRouteScope(session, routeDecision = {}) {
 function shouldHandleAppRouteLocally(routeDecision = {}, _requestPayload = {}) {
   if (normalizeRouteAction(routeDecision) !== 'app') return false;
   return String(routeDecision.reason || '').toLowerCase() === 'recursive_runtime_app_ref';
+}
+
+function shouldBootstrapAiContext(routeAction, handleLocallyAsAi) {
+  return routeAction === 'ai' || handleLocallyAsAi;
+}
+
+function routeAiContext(routeDecision = {}) {
+  return routeDecision.ai_context || routeDecision.aiContext || null;
 }
 
 function normalizeRouteAction(routeDecision = {}) {
@@ -2799,7 +3012,7 @@ function outputPlaybackDurationMs(outputPacer, data) {
   const dataBytes = Buffer.isBuffer(data) ? data.length : Buffer.byteLength(Buffer.from(data || []));
   const bytes = Math.max(0, bufferedBytes + dataBytes);
   if (!bytes) return 0;
-  return Math.max(20, Math.ceil((bytes / (FONOSTER_CALL_RATE * 2)) * 1000));
+  return Math.max(20, Math.ceil((bytes / (TELEPHONY_OUTPUT_RATE * 2)) * 1000));
 }
 
 function meaningfulCallerTranscript(value) {
@@ -2834,7 +3047,6 @@ function correlationPayload(session, requestPayload = {}, data = {}) {
   const source = data || {};
   return compactPayload({
     bridge_call_ref: session?.bridgeCallRef || bridgeCallRefCandidate(requestPayload) || bridgeCallRefCandidate(source),
-    fonoster_call_ref: session?.callRef || requestPayload.call_ref || requestPayload.callRef,
     ai_runtime_call_ref: session?.callRef,
     runtime_call_ref: session?.callRef,
     conversation_id: source.conversation_id || source.conversationId || session?.context?.conversation_id || session?.context?.conversationId,
@@ -2901,8 +3113,8 @@ function normalizeCallPayload(call, payload = {}) {
 }
 
 function bridgeCallRefCandidate(payload = {}) {
-  return payload.bridge_call_ref || payload.bridgeCallRef || payload.fonoster_bridge_call_ref || payload.fonosterBridgeCallRef ||
-    payload.parent_call_ref || payload.parentCallRef || payload.original_call_ref || payload.originalCallRef;
+  return payload.bridge_call_ref || payload.bridgeCallRef || payload.parent_call_ref || payload.parentCallRef ||
+    payload.original_call_ref || payload.originalCallRef;
 }
 
 function answerCall(call, { timeoutMs = 0 } = {}) {
@@ -2932,22 +3144,12 @@ function sanitizeReason(message) {
 }
 
 function loadStreamConstants() {
-  try {
-    const common = require('@fonoster/common');
-    return {
-      audioIn: common.StreamMessageType?.AUDIO_IN || 'AUDIO_IN',
-      audioOut: common.StreamMessageType?.AUDIO_OUT || 'AUDIO_OUT',
-      wavFormat: common.StreamAudioFormat?.WAV || 'WAV',
-      bothDirection: common.StreamDirection?.BOTH || 'BOTH'
-    };
-  } catch (_error) {
-    return {
-      audioIn: 'AUDIO_IN',
-      audioOut: 'AUDIO_OUT',
-      wavFormat: 'WAV',
-      bothDirection: 'BOTH'
-    };
-  }
+  return {
+    audioIn: 'AUDIO_IN',
+    audioOut: 'AUDIO_OUT',
+    wavFormat: 'WAV',
+    bothDirection: 'BOTH'
+  };
 }
 
 module.exports = { VoiceApplication, buildSystemPrompt, normalizeContextTools, normalizeCallPayload };

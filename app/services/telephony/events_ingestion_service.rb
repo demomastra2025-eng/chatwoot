@@ -35,6 +35,11 @@ class Telephony::EventsIngestionService
     sipuni_local_outbound_reconciliation
     sipuni_provider_reconciliation
   ].freeze
+  NATIVE_SIP_PROVIDERS = %w[
+    asterisk_analog
+    sipuni
+    binotel
+  ].freeze
 
   EVENT_STATUS_MAP = {
     'created' => 'created',
@@ -275,7 +280,7 @@ class Telephony::EventsIngestionService
       call_session.reload
       ensure_conversation!(call_session, account)
       call_session.reload
-      apply_call_status!(call_session) unless suppress_fonoster_conversation_update?(call_session)
+      apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session)
       sync_voice_message!(call_session)
       linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
       enqueue_external_recording_cache(call_session)
@@ -472,8 +477,21 @@ class Telephony::EventsIngestionService
       return existing_by_provider_sid if existing_by_provider_sid.present?
     end
 
-    account.telephony_call_sessions.find_by(external_call_ref: call_ref) ||
-      account.telephony_call_sessions.create_or_find_by!(external_call_ref: call_ref)
+    existing_call_session = account.telephony_call_sessions.find_by(external_call_ref: call_ref)
+    return existing_call_session if existing_call_session.present?
+
+    provider = resolved_provider(account)
+    if provider.blank?
+      raise Telephony::Error.new(
+        code: 'PROVIDER_NOT_FOUND',
+        message: 'Unable to resolve telephony provider for call event',
+        status: :unprocessable_content
+      )
+    end
+
+    account.telephony_call_sessions.create_or_find_by!(external_call_ref: call_ref) do |call_session|
+      call_session.provider = provider
+    end
   rescue ActiveRecord::RecordInvalid => e
     raise unless uniqueness_conflict?(e.record, :external_call_ref)
 
@@ -519,6 +537,36 @@ class Telephony::EventsIngestionService
       end
     end
     reconciled_call_sessions
+  end
+
+  def resolved_provider(account = nil, call_session = nil, inbox: nil, number_binding: nil)
+    first_present(
+      payload_value('provider', 'provider_kind', 'providerKind'),
+      metadata_value('provider', 'provider_kind', 'providerKind'),
+      call_session&.provider,
+      number_binding&.provider,
+      inbox&.telephony_number_binding&.provider,
+      inbox&.channel&.try(:provider),
+      provider_from_resolved_number_binding(account, call_session),
+      provider_from_resolved_inbox(account, call_session)
+    )
+  end
+
+  def provider_from_resolved_number_binding(account, call_session)
+    return if number_ref.blank? && inbound_number.blank? && call_session&.number_binding.blank?
+
+    resolve_number_binding(account, call_session)&.provider
+  end
+
+  def provider_from_resolved_inbox(account, call_session)
+    return if account.blank?
+
+    resolved_inbox = resolve_inbox(account, call_session)
+    resolved_inbox&.telephony_number_binding&.provider || resolved_inbox&.channel&.try(:provider)
+  end
+
+  def first_present(*values)
+    values.find { |value| value.present? }
   end
 
   def linked_runtime_child_attributes(parent_call_session, child_call_session)
@@ -605,7 +653,7 @@ class Telephony::EventsIngestionService
       inbox: inbox || call_session.inbox,
       number_binding: number_binding || call_session.number_binding,
       agent_binding: agent_binding,
-      provider: payload_value('provider') || call_session.provider || 'fonoster',
+      provider: resolved_provider(account, call_session, inbox: inbox, number_binding: number_binding),
       provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id',
                                        'providerCallId') || call_session.provider_call_sid,
       status: status,
@@ -895,7 +943,7 @@ class Telephony::EventsIngestionService
 
   def outbound_origin_metadata?(call_session)
     metadata = call_session.metadata.to_h.deep_stringify_keys
-    return true if metadata['bridge_response'].present? || metadata['fonoster_call_ref'].present?
+    return true if metadata['telephony_call_ref'].present? || metadata['fonoster_call_ref'].present?
 
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_stringify_keys : {}
     outbound_values = %w[outbound to_pstn outbound_api outbound-dial outbound_api_call]
@@ -1158,7 +1206,7 @@ class Telephony::EventsIngestionService
     contact = ensure_call_contact!(account, contact_number)
     contact_inbox = ensure_call_contact_inbox!(contact, inbox, contact_number)
     conversation = account.conversations.find_by(identifier: call_ref) ||
-                   reusable_fonoster_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session) ||
+                   reusable_native_sip_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session) ||
                    create_outbound_conversation!(account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox,
                                                  call_session: call_session)
 
@@ -1173,7 +1221,7 @@ class Telephony::EventsIngestionService
       contact_id: contact.id,
       status: :open
     }
-    attrs[:identifier] = call_ref unless fonoster_call_session?(call_session)
+    attrs[:identifier] = call_ref unless native_sip_call_session?(call_session)
 
     account.conversations.create!(attrs)
   end
@@ -1193,20 +1241,20 @@ class Telephony::EventsIngestionService
   def update_outbound_conversation!(conversation, call_session)
     timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i
     attrs = (conversation.additional_attributes || {}).deep_dup
-    reset_reused_fonoster_call_state!(attrs, call_session)
+    reset_reused_native_sip_call_state!(attrs, call_session)
     attrs['call_direction'] = 'outbound'
     attrs['call_status'] = call_session.status
     attrs['conference_sid'] ||= Voice::Conference::Name.for(conversation)
     attrs['telephony_provider'] = call_session.provider
     attrs['from_number'] = call_session.from_number if call_session.from_number.present?
     attrs['to_number'] = call_session.to_number if call_session.to_number.present?
-    attrs['fonoster_call_ref'] = call_session.external_call_ref if fonoster_call_session?(call_session)
+    attrs['telephony_call_ref'] = call_session.external_call_ref if native_sip_call_session?(call_session)
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     attrs['meta']['initiated_at'] = timestamp
 
     update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
-    update_attrs[:identifier] = call_session.external_call_ref unless fonoster_call_session?(call_session)
-    update_attrs[:status] = :open if fonoster_call_session?(call_session)
+    update_attrs[:identifier] = call_session.external_call_ref unless native_sip_call_session?(call_session)
+    update_attrs[:status] = :open if native_sip_call_session?(call_session)
 
     conversation.update!(update_attrs)
   end
@@ -1215,7 +1263,7 @@ class Telephony::EventsIngestionService
     conversation = call_session.conversation
     return if conversation.blank?
 
-    prepare_reused_fonoster_conversation_for_call!(conversation, call_session)
+    prepare_reused_native_sip_conversation_for_call!(conversation, call_session)
 
     if resolved_status.present?
       timestamp = call_status_timestamp(call_session)
@@ -1231,68 +1279,68 @@ class Telephony::EventsIngestionService
 
     conversation.reload if resolved_status.present?
     attrs = (conversation.additional_attributes || {}).deep_dup
-    reset_reused_fonoster_call_state!(attrs, call_session)
+    reset_reused_native_sip_call_state!(attrs, call_session)
     attrs['telephony_provider'] = call_session.provider
     attrs['call_status'] = call_session.status if call_session.status.present?
     attrs['call_direction'] = call_session.direction if call_session.direction.present?
     attrs['from_number'] = call_session.from_number if call_session.from_number.present?
     attrs['to_number'] = call_session.to_number if call_session.to_number.present?
-    attrs['fonoster_call_ref'] = call_session.external_call_ref if fonoster_call_session?(call_session)
+    attrs['telephony_call_ref'] = call_session.external_call_ref if native_sip_call_session?(call_session)
     recording_metadata = presentation_recording_metadata(call_session)
     attrs['recording_ref'] = recording_metadata['recording_ref'] if recording_metadata['recording_ref'].present?
     attrs['recording'] = recording_metadata if recording_metadata.present?
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
     update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
-    update_attrs[:status] = :open if fonoster_call_session?(call_session)
+    update_attrs[:status] = :open if native_sip_call_session?(call_session)
     conversation.update!(update_attrs)
   end
 
-  def prepare_reused_fonoster_conversation_for_call!(conversation, call_session)
-    return unless fonoster_call_session?(call_session)
+  def prepare_reused_native_sip_conversation_for_call!(conversation, call_session)
+    return unless native_sip_call_session?(call_session)
 
     attrs = (conversation.additional_attributes || {}).deep_dup
-    previous_call_ref = attrs['fonoster_call_ref']
+    previous_call_ref = native_sip_conversation_call_ref(attrs)
     return if previous_call_ref.blank? || previous_call_ref == call_session.external_call_ref
 
-    reset_reused_fonoster_call_state!(attrs, call_session)
+    reset_reused_native_sip_call_state!(attrs, call_session)
     attrs['telephony_provider'] = call_session.provider
     attrs['call_direction'] = call_session.direction
     attrs['from_number'] = call_session.from_number if call_session.from_number.present?
     attrs['to_number'] = call_session.to_number if call_session.to_number.present?
-    attrs['fonoster_call_ref'] = call_session.external_call_ref
+    attrs['telephony_call_ref'] = call_session.external_call_ref
     conversation.update!(additional_attributes: attrs)
     conversation.reload
   end
 
-  def superseded_fonoster_conversation_call?(call_session)
-    return false unless fonoster_call_session?(call_session)
+  def superseded_native_sip_conversation_call?(call_session)
+    return false unless native_sip_call_session?(call_session)
 
     conversation = call_session.conversation
     return false if conversation.blank?
 
     attrs = (conversation.additional_attributes || {}).deep_stringify_keys
-    current_call_ref = attrs['fonoster_call_ref'].presence
+    current_call_ref = native_sip_conversation_call_ref(attrs)
     return false if current_call_ref.blank? || current_call_ref == call_session.external_call_ref
 
-    current_call_started_at = fonoster_conversation_call_started_at(conversation, current_call_ref, attrs)
+    current_call_started_at = native_sip_conversation_call_started_at(conversation, current_call_ref, attrs)
     call_session_started_at = call_session.started_at || call_session.created_at
     return false if current_call_started_at.blank? || call_session_started_at.blank?
 
     current_call_started_at > call_session_started_at
   end
 
-  def suppress_fonoster_conversation_update?(call_session)
-    superseded_fonoster_conversation_call?(call_session) ||
-      unanswered_linked_fonoster_branch?(call_session)
+  def suppress_native_sip_conversation_update?(call_session)
+    superseded_native_sip_conversation_call?(call_session) ||
+      unanswered_linked_native_sip_branch?(call_session)
   end
 
-  def fonoster_conversation_call_started_at(conversation, call_ref, attrs)
+  def native_sip_conversation_call_started_at(conversation, call_ref, attrs)
     current_session = conversation.account.telephony_call_sessions.find_by(external_call_ref: call_ref)
-    current_session&.started_at || current_session&.created_at || fonoster_conversation_attrs_started_at(attrs)
+    current_session&.started_at || current_session&.created_at || native_sip_conversation_attrs_started_at(attrs)
   end
 
-  def fonoster_conversation_attrs_started_at(attrs)
+  def native_sip_conversation_attrs_started_at(attrs)
     meta = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     timestamp = meta['initiated_at'] || attrs['call_started_at']
     return if timestamp.blank?
@@ -1307,10 +1355,10 @@ class Telephony::EventsIngestionService
     call_session.started_at&.to_i
   end
 
-  def reset_reused_fonoster_call_state!(attrs, call_session)
-    return unless fonoster_call_session?(call_session)
+  def reset_reused_native_sip_call_state!(attrs, call_session)
+    return unless native_sip_call_session?(call_session)
 
-    previous_call_ref = attrs['fonoster_call_ref']
+    previous_call_ref = native_sip_conversation_call_ref(attrs)
     return if previous_call_ref.blank? || previous_call_ref == call_session.external_call_ref
 
     %w[
@@ -1324,14 +1372,16 @@ class Telephony::EventsIngestionService
       summary
       from_number
       to_number
+      telephony_call_ref
+      fonoster_call_ref
     ].each { |key| attrs.delete(key) }
   end
 
   def sync_voice_message!(call_session)
     message = voice_message_for(call_session)
     return if message.blank? && (
-      superseded_fonoster_conversation_call?(call_session) ||
-      suppress_linked_unanswered_fonoster_branch!(call_session)
+      superseded_native_sip_conversation_call?(call_session) ||
+      suppress_linked_unanswered_native_sip_branch!(call_session)
     )
 
     message ||= build_voice_message!(call_session)
@@ -1383,7 +1433,7 @@ class Telephony::EventsIngestionService
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
     message.source_id ||= call_session.voice_call_source_id
     message.update!(content_attributes: data)
-    remove_fonoster_group_duplicate_messages!(call_session, message)
+    remove_native_sip_group_duplicate_messages!(call_session, message)
     mark_linked_runtime_duplicate_message!(call_session, message)
   end
 
@@ -1448,37 +1498,37 @@ class Telephony::EventsIngestionService
 
   def voice_message_for(call_session)
     return if call_session.conversation.blank?
-    return exact_voice_message_for(call_session) if superseded_fonoster_conversation_call?(call_session)
-    return if unanswered_linked_fonoster_branch?(call_session)
+    return exact_voice_message_for(call_session) if superseded_native_sip_conversation_call?(call_session)
+    return if unanswered_linked_native_sip_branch?(call_session)
 
     call_session.voice_message_for_current_call
   end
 
-  def unanswered_linked_fonoster_branch?(call_session)
-    return false unless fonoster_call_session?(call_session)
+  def unanswered_linked_native_sip_branch?(call_session)
+    return false unless native_sip_call_session?(call_session)
     return false unless call_session.direction == 'inbound'
     return false unless unanswered_terminal_status?(call_session.status)
 
     linked_parent_voice_message_for(call_session).present? ||
-      linked_answered_fonoster_call_session_for(call_session).present? ||
+      linked_answered_native_sip_call_session_for(call_session).present? ||
       linked_logical_group_voice_message_for(call_session).present? ||
-      linked_unanswered_fonoster_voice_message_for(call_session).present? ||
+      linked_unanswered_native_sip_voice_message_for(call_session).present? ||
       linked_recent_context_voice_message_for(call_session).present?
   end
 
-  def suppress_linked_unanswered_fonoster_branch!(call_session)
-    return false unless unanswered_linked_fonoster_branch?(call_session)
+  def suppress_linked_unanswered_native_sip_branch!(call_session)
+    return false unless unanswered_linked_native_sip_branch?(call_session)
 
     exact_voice_message_for(call_session)&.destroy!
     true
   end
 
-  def linked_answered_fonoster_call_session_for(call_session)
+  def linked_answered_native_sip_call_session_for(call_session)
     return if call_session.conversation.blank?
 
     event_start = call_session.started_at || call_session.created_at
     scope = call_session.conversation.account.telephony_call_sessions
-                        .where(conversation_id: call_session.conversation_id, provider: 'fonoster', direction: 'inbound')
+                        .where(conversation_id: call_session.conversation_id, provider: NATIVE_SIP_PROVIDERS, direction: 'inbound')
                         .where.not(id: call_session.id)
     scope = scope.where(created_at: event_start - 2.minutes..event_start + 2.minutes) if event_start.present?
 
@@ -1487,11 +1537,11 @@ class Telephony::EventsIngestionService
       next false if unanswered_terminal_status?(candidate.status)
       next false unless candidate.answered_at.present? || %w[in_progress completed].include?(candidate.status)
 
-      linked_fonoster_call_session_matches?(candidate, call_session, current_key, event_start)
+      linked_native_sip_call_session_matches?(candidate, call_session, current_key, event_start)
     end
   end
 
-  def linked_fonoster_call_session_matches?(candidate, call_session, current_key, event_start)
+  def linked_native_sip_call_session_matches?(candidate, call_session, current_key, event_start)
     candidate_key = session_logical_call_key(candidate)
     return true if current_key.present? && candidate_key.to_s == current_key.to_s
 
@@ -1541,14 +1591,14 @@ class Telephony::EventsIngestionService
     end
   end
 
-  def linked_unanswered_fonoster_voice_message_for(call_session)
+  def linked_unanswered_native_sip_voice_message_for(call_session)
     logical_key = logical_call_key(call_session)
     return if logical_key.blank? || call_session.conversation.blank?
 
     call_session.conversation.messages.voice_calls.order(:created_at, :id).detect do |message|
       data = normalized_content_attributes(message).fetch('data', {})
       next false if data['call_sid'].to_s == call_session.external_call_ref
-      next false unless data['provider'].to_s == 'fonoster'
+      next false unless native_sip_provider?(data['provider'])
       next false unless data['call_direction'].to_s == 'inbound'
       next false unless unanswered_terminal_status?(data['status'].to_s)
 
@@ -1556,8 +1606,8 @@ class Telephony::EventsIngestionService
     end
   end
 
-  def remove_fonoster_group_duplicate_messages!(call_session, canonical_message)
-    return unless fonoster_call_session?(call_session)
+  def remove_native_sip_group_duplicate_messages!(call_session, canonical_message)
+    return unless native_sip_call_session?(call_session)
     return unless call_session.direction == 'inbound'
     return if call_session.conversation.blank? || canonical_message.blank?
 
@@ -1565,7 +1615,7 @@ class Telephony::EventsIngestionService
 
     call_session.conversation.messages.voice_calls.where.not(id: canonical_message.id).find_each do |message|
       data = normalized_content_attributes(message).fetch('data', {})
-      next unless duplicate_fonoster_group_message?(data, call_session, logical_key)
+      next unless duplicate_native_sip_group_message?(data, call_session, logical_key)
       next unless data['call_sid'].present? && data['call_sid'] != call_session.external_call_ref
       next unless unanswered_terminal_status?(data['status'].to_s)
 
@@ -1581,18 +1631,18 @@ class Telephony::EventsIngestionService
       next false if data['call_sid'].to_s == call_session.external_call_ref
       next false if unanswered_terminal_status?(data['status'].to_s)
 
-      duplicate_fonoster_context_message?(data, call_session, message)
+      duplicate_native_sip_context_message?(data, call_session, message)
     end
   end
 
-  def duplicate_fonoster_group_message?(data, call_session, logical_key)
+  def duplicate_native_sip_group_message?(data, call_session, logical_key)
     return true if logical_key.present? && logical_group_key_matches?(data, logical_key)
 
-    duplicate_fonoster_context_message?(data, call_session)
+    duplicate_native_sip_context_message?(data, call_session)
   end
 
-  def duplicate_fonoster_context_message?(data, call_session, message = nil)
-    return false unless data['provider'].to_s == 'fonoster'
+  def duplicate_native_sip_context_message?(data, call_session, message = nil)
+    return false unless native_sip_provider?(data['provider'])
     return false unless data['call_direction'].to_s == 'inbound'
     return false unless same_phone_value?(data['from_number'], call_session.from_number)
     return false unless same_phone_value?(data['to_number'], call_session.to_number)
@@ -1899,21 +1949,21 @@ class Telephony::EventsIngestionService
     conversation = account.conversations.find_by(identifier: call_ref)
     return conversation if conversation.present?
 
-    resolve_reusable_fonoster_conversation(account, call_session)
+    resolve_reusable_native_sip_conversation(account, call_session)
   end
 
-  def resolve_reusable_fonoster_conversation(account, call_session)
-    return unless fonoster_call_session?(call_session)
+  def resolve_reusable_native_sip_conversation(account, call_session)
+    return unless native_sip_call_session?(call_session)
 
     inbox = call_session.inbox || resolve_inbox(account)
     contact = call_session.contact || resolve_contact(account, nil)
     return if inbox.blank? || contact.blank?
 
-    reusable_fonoster_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session)
+    reusable_native_sip_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session)
   end
 
-  def reusable_fonoster_conversation(account:, inbox:, contact:, call_session:)
-    return unless fonoster_call_session?(call_session)
+  def reusable_native_sip_conversation(account:, inbox:, contact:, call_session:)
+    return unless native_sip_call_session?(call_session)
 
     account.conversations
            .where(inbox_id: inbox.id, contact_id: contact.id)
@@ -1921,9 +1971,17 @@ class Telephony::EventsIngestionService
            .first
   end
 
-  def fonoster_call_session?(call_session)
-    provider = payload_value('provider') || call_session&.provider || 'fonoster'
-    provider.to_s == 'fonoster'
+  def native_sip_call_session?(call_session)
+    provider = payload_value('provider') || call_session&.provider
+    native_sip_provider?(provider)
+  end
+
+  def native_sip_provider?(provider)
+    provider.to_s.in?(NATIVE_SIP_PROVIDERS)
+  end
+
+  def native_sip_conversation_call_ref(attrs)
+    attrs['telephony_call_ref'].presence || attrs['fonoster_call_ref'].presence
   end
 
   def normalized_phone(value)
