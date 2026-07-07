@@ -13,6 +13,24 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     account.enable_features!('channel_voice')
   end
 
+  def sip_presence_params(profile)
+    {
+      sip_profile_id: profile.id,
+      account_id: profile.account_id,
+      inbox_id: profile.inbox_id,
+      internal_extension: profile.internal_extension,
+      sip_username: profile.sip_username,
+      sip_host: profile.sip_host,
+      agent_aor: profile.agent_aor,
+      registration_config_version: profile.registration_config_version,
+      session_key: "sip_profile:#{profile.id}"
+    }
+  end
+
+  def mark_sip_profile_registered!(profile)
+    profile.update_browser_registration!(registered: true, registration_context: sip_presence_params(profile))
+  end
+
   it 'returns an unsupported payload instead of raising for non-voice inboxes' do
     instagram_inbox = create(:channel_instagram, account: account).inbox
 
@@ -57,7 +75,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
     sipuni_inbox = sipuni_channel.inbox
     create(:inbox_member, inbox: sipuni_inbox, user: administrator)
-    create(
+    sip_profile = create(
       :telephony_sip_profile,
       account: account,
       inbox: sipuni_inbox,
@@ -70,13 +88,9 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       agent_ref: 'local-profile-501',
       availability_mode: 'browser_webphone',
       status: 'active',
-      agent_aor: 'sip:990001000021@ats01.kz.sipuni.com',
-      metadata: {
-        registration_state: 'registered',
-        registered: true,
-        last_presence_event_at: Time.current.iso8601
-      }
+      agent_aor: 'sip:990001000021@ats01.kz.sipuni.com'
     )
+    mark_sip_profile_registered!(sip_profile)
 
     with_modified_env(
       TELEPHONY_SIPUNI_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
@@ -199,7 +213,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
     binotel_inbox = binotel_channel.inbox
     create(:inbox_member, inbox: binotel_inbox, user: administrator)
-    create(
+    sip_profile = create(
       :telephony_sip_profile,
       account: account,
       inbox: binotel_inbox,
@@ -211,13 +225,9 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       agent_ref: 'local-binotel-profile-901',
       availability_mode: 'browser_webphone',
       status: 'active',
-      agent_aor: 'sip:pq4dyw5f@sip53.binotel.com',
-      metadata: {
-        registration_state: 'registered',
-        registered: true,
-        last_presence_event_at: Time.current.iso8601
-      }
+      agent_aor: 'sip:pq4dyw5f@sip53.binotel.com'
     )
+    mark_sip_profile_registered!(sip_profile)
 
     with_modified_env(
       TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
@@ -356,7 +366,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
            session_key: "sip_profile:#{binotel_profile.id}",
            sip_profile_id: binotel_profile.id,
            internal_extension: binotel_profile.internal_extension
-         },
+         }.merge(sip_presence_params(binotel_profile)),
          headers: headers,
          as: :json
 
@@ -415,7 +425,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
              session_key: "sip_profile:#{sipuni_profile.id}",
              sip_profile_id: sipuni_profile.id,
              internal_extension: sipuni_profile.internal_extension
-           },
+           }.merge(sip_presence_params(sipuni_profile)),
            headers: headers,
            as: :json
     end
@@ -547,7 +557,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
              janus_unique_id: 'janus-unique-1',
              janus_master_id: 'janus-master-1',
              internal_extension: voice_agent_profile.internal_extension
-           },
+           }.merge(sip_presence_params(voice_agent_profile)),
            headers: headers,
            as: :json
 
@@ -634,7 +644,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
              janus_unique_id: 'janus-unique-2',
              janus_master_id: 'janus-master-2',
              internal_extension: sipuni_profile.internal_extension
-           },
+           }.merge(sip_presence_params(sipuni_profile)),
            headers: headers,
            as: :json
 
@@ -688,7 +698,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
            session_key: "sip_profile:#{sipuni_profile.id}",
            sip_profile_id: sipuni_profile.id,
            internal_extension: sipuni_profile.internal_extension
-         },
+         }.merge(sip_presence_params(sipuni_profile)),
          headers: headers,
          as: :json
 
@@ -923,7 +933,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
-         params: { registered: true, inbox_id: voice_inbox.id },
+         params: { registered: true, inbox_id: voice_inbox.id }.merge(sip_presence_params(sip_profile)),
          headers: headers,
          as: :json
 
@@ -933,6 +943,74 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'id')).to eq(sip_profile.id)
     expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
+  end
+
+  it 'rejects stale browser registration context after SIP profile changes' do
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '504',
+      sip_username: 'old-login',
+      sip_host: 'ats01.kz.sipuni.com',
+      agent_ref: 'local-profile-504',
+      agent_aor: 'sip:old-login@ats01.kz.sipuni.com',
+      availability_mode: 'browser_webphone'
+    )
+    stale_context = sip_presence_params(sip_profile)
+
+    sip_profile.update!(
+      sip_username: 'new-login',
+      agent_aor: 'sip:new-login@ats01.kz.sipuni.com'
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, inbox_id: voice_inbox.id }.merge(stale_context),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(sip_profile.reload.registered_for_routing?).to be(false)
+    expect(response.parsed_body['payload']).to include(
+      'registered_for_routing' => false,
+      'reason' => 'sip_profile_registration_context_mismatch'
+    )
+  end
+
+  it 'ignores an offline event from a replaced Janus registration instance' do
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '504',
+      sip_username: 'current-login',
+      sip_host: 'ats01.kz.sipuni.com',
+      agent_ref: 'local-profile-504',
+      agent_aor: 'sip:current-login@ats01.kz.sipuni.com',
+      availability_mode: 'browser_webphone'
+    )
+    current_context = sip_presence_params(sip_profile).merge(registration_instance_id: 'current-registration')
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, inbox_id: voice_inbox.id }.merge(current_context),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(sip_profile.reload.registered_for_routing?).to be(true)
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: false, inbox_id: voice_inbox.id }.merge(
+           current_context.merge(registration_instance_id: 'stale-registration')
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(sip_profile.reload.registered_for_routing?).to be(true)
+    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
   end
 
   it 'records no-inbox browser registration presence on the only browser SIP profile' do
@@ -948,7 +1026,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
-         params: { registered: true },
+         params: { registered: true }.merge(sip_presence_params(sip_profile)),
          headers: headers,
          as: :json
 
@@ -977,6 +1055,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         'last_presence_event_at' => Time.current.iso8601
       }
     )
+    mark_sip_profile_registered!(first_profile)
     second_voice_inbox = create(:inbox, account: account)
     second_profile = create(
       :telephony_sip_profile,
@@ -1000,7 +1079,10 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       'presence' => 'online',
       'registered' => true
     )
-    expect(second_profile.reload.metadata).not_to include('last_presence_source')
+    expect(second_profile.reload.metadata).to include(
+      'last_presence_source' => 'profile_config',
+      'registered' => false
+    )
     expect(response.parsed_body['payload']).to include(
       'calling_supported' => false,
       'registered_for_routing' => false,
@@ -1243,6 +1325,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         last_presence_event_at: Time.current.iso8601
       }
     )
+    mark_sip_profile_registered!(profile)
     number_binding = Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id)
     call_session = create(
       :telephony_call_session,
@@ -1295,6 +1378,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         last_presence_event_at: Time.current.iso8601
       }
     )
+    mark_sip_profile_registered!(profile)
     call_id = '1234567890.54321'
     call_session = create(
       :telephony_call_session,
@@ -1376,6 +1460,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         last_presence_event_at: Time.current.iso8601
       }
     )
+    mark_sip_profile_registered!(profile)
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -1436,6 +1521,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         last_presence_event_at: Time.current.iso8601
       }
     )
+    mark_sip_profile_registered!(profile)
     call_id = '1234567890.54322'
     call_session = create(
       :telephony_call_session,

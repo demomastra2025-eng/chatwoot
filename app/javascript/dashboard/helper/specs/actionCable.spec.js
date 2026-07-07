@@ -288,6 +288,28 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
     });
 
+    it('emits browser SIP config change events to the dashboard bus', () => {
+      actionCable.onReceived({
+        event: 'telephony.webphone_config_changed',
+        data: {
+          account_id: 1,
+          provider: 'sipuni',
+          inbox_id: 4776,
+          sip_profile_ids: [48],
+        },
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED,
+        {
+          account_id: 1,
+          provider: 'sipuni',
+          inbox_id: 4776,
+          sip_profile_ids: [48],
+        }
+      );
+    });
+
     it('keeps communication thread ids from native voice status updates', () => {
       const callsStore = useCallsStore();
 

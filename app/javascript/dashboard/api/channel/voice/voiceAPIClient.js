@@ -49,10 +49,11 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data.payload || r.data);
   }
 
-  updateWebphonePresence(registered, { inboxId = null } = {}) {
+  updateWebphonePresence(registered, { inboxId = null, context = {} } = {}) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/presence`, {
         registered,
+        ...context,
         ...(inboxId ? { inbox_id: inboxId } : {}),
       })
       .then(r => r.data.payload || r.data);

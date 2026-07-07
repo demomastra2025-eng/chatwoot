@@ -29,6 +29,8 @@ const WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS = 150;
 const WEBPHONE_OUTBOUND_SETUP_TIMEOUT_MS = 45_000;
 const WEBPHONE_POST_CALL_REGISTRATION_REFRESH_DELAY_MS = 250;
 const WEBPHONE_DEVICE_RECOVERY_DELAY_MS = 1_000;
+const WEBPHONE_PRESENCE_CONTEXT_MISMATCH_REASON =
+  'sip_profile_registration_context_mismatch';
 const WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
@@ -200,6 +202,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.inboxId = null;
     this.janusUniqueId = null;
     this.janusMasterId = null;
+    this.registrationInstanceId = null;
     this.initialized = false;
     this.initializationPromise = null;
     this.registered = false;
@@ -216,6 +219,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.hasActiveCall = false;
     this.presenceHeartbeatTimer = null;
     this.presenceRefreshPromise = null;
+    this.presenceReportPromise = null;
     this.currentCallRef = null;
     this.currentCallDirection = null;
     this.microphonePrewarmStream = null;
@@ -273,6 +277,10 @@ export class JanusSipVoiceClient extends EventTarget {
         sessionConfig.webphone_session_key,
       sipProfileId:
         sessionConfig.sipProfileId || sessionConfig.sip_profile_id || null,
+      registrationConfigVersion:
+        sessionConfig.registrationConfigVersion ||
+        sessionConfig.registration_config_version ||
+        null,
       accountId: sessionConfig.accountId || sessionConfig.account_id || null,
       inboxId: sessionConfig.inboxId || sessionConfig.inbox_id || null,
       recordingStrategy:
@@ -417,6 +425,7 @@ export class JanusSipVoiceClient extends EventTarget {
       provider: normalized.provider,
       sessionKey: normalized.sessionKey,
       sipProfileId: normalized.sipProfileId,
+      registrationConfigVersion: normalized.registrationConfigVersion,
       inboxId: this.inboxId || normalized.inboxId,
       callingSupported: normalized.callingSupported !== false,
       registered: this.registered,
@@ -475,6 +484,7 @@ export class JanusSipVoiceClient extends EventTarget {
       inboxId: resolvedInboxId,
       sessionKey: normalized.sessionKey,
       sipProfileId: normalized.sipProfileId,
+      registrationConfigVersion: normalized.registrationConfigVersion,
       internalExtension: normalized.sip.internalExtension,
     });
 
@@ -916,12 +926,21 @@ export class JanusSipVoiceClient extends EventTarget {
       provider: this.currentProvider(),
       sessionKey: this.sessionKey,
       sipProfileId: this.sipProfileId,
+      registrationConfigVersion: this.sessionConfig?.registrationConfigVersion,
       inboxId: this.inboxId,
       janusSessionId: this.janusSessionId(),
       janusHandleId: this.janusHandleId(),
       janusUniqueId: this.janusUniqueId,
       janusMasterId: this.janusMasterId,
       internalExtension: this.sessionConfig?.sip?.internalExtension,
+      sipUsername: this.sessionConfig?.sip?.username,
+      sipHost: this.sessionConfig?.sip?.host,
+      agentAor:
+        this.sessionConfig?.sip?.uri ||
+        JanusSipVoiceClient.sipUri(
+          this.sessionConfig?.sip?.username,
+          this.sessionConfig?.sip?.host
+        ),
     };
   }
 
@@ -951,6 +970,7 @@ export class JanusSipVoiceClient extends EventTarget {
   clearRegistrationIdentifiers() {
     this.janusUniqueId = null;
     this.janusMasterId = null;
+    this.registrationInstanceId = null;
   }
 
   resetCurrentCall() {
@@ -2014,13 +2034,93 @@ export class JanusSipVoiceClient extends EventTarget {
     return { ...this.sessionEventDetail(), stopped: true };
   }
 
-  reportPresence(registered) {
-    VoiceAPI.updateWebphonePresence(registered, {
-      inboxId: this.inboxId,
-    }).catch(() => {});
+  reportPresence(
+    registered,
+    { context = this.presenceContext(), inboxId = this.inboxId } = {}
+  ) {
+    const report = () =>
+      VoiceAPI.updateWebphonePresence(registered, {
+        inboxId,
+        context,
+      })
+        .then(payload => {
+          if (
+            registered &&
+            JanusSipVoiceClient.isPresenceInvalidationPayload(payload) &&
+            this.isCurrentPresenceContext(context)
+          ) {
+            this.registered = false;
+            this.clearRegistrationIdentifiers();
+            this.stopPresenceHeartbeat();
+            this.dispatchEvent(
+              createCallUnregisteredEvent({
+                ...this.sessionEventDetail(),
+                reason: WEBPHONE_PRESENCE_CONTEXT_MISMATCH_REASON,
+              })
+            );
+            return this.destroyDevice({
+              preserveMicrophonePrewarm: true,
+            }).then(() => payload);
+          }
+
+          return payload;
+        })
+        .catch(() => null);
+
+    const reportPromise = this.presenceReportPromise
+      ? this.presenceReportPromise.then(report)
+      : report();
+    const reportTail = reportPromise.catch(() => null);
+    this.presenceReportPromise = reportTail;
+    reportTail.finally(() => {
+      if (this.presenceReportPromise === reportTail) {
+        this.presenceReportPromise = null;
+      }
+    });
+
+    return reportPromise;
+  }
+
+  presenceContext() {
+    const sip = this.sessionConfig?.sip || {};
+    return {
+      sip_profile_id: this.sipProfileId,
+      registration_config_version:
+        this.sessionConfig?.registrationConfigVersion,
+      registration_instance_id: this.registrationInstanceId,
+      account_id: this.sessionConfig?.accountId,
+      inbox_id: this.inboxId || this.sessionConfig?.inboxId,
+      internal_extension: sip.internalExtension,
+      sip_username: sip.username,
+      sip_host: sip.host,
+      agent_aor: sip.uri || JanusSipVoiceClient.sipUri(sip.username, sip.host),
+      session_key: this.sessionKey,
+      janus_session_id: this.janusSessionId(),
+      janus_handle_id: this.janusHandleId(),
+      janus_unique_id: this.janusUniqueId,
+      janus_master_id: this.janusMasterId,
+    };
+  }
+
+  static isPresenceInvalidationPayload(payload = {}) {
+    return (
+      payload?.reason === WEBPHONE_PRESENCE_CONTEXT_MISMATCH_REASON ||
+      payload?.registered === false ||
+      payload?.callingSupported === false ||
+      payload?.calling_supported === false ||
+      payload?.registeredForRouting === false ||
+      payload?.registered_for_routing === false
+    );
+  }
+
+  isCurrentPresenceContext(context = {}) {
+    return JSON.stringify(this.presenceContext()) === JSON.stringify(context);
   }
 
   markRegistered() {
+    this.registrationInstanceId ||=
+      window.crypto?.randomUUID?.() ||
+      `webphone-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     this.registered = true;
     this.reportPresence(true);
     this.startPresenceHeartbeat();
@@ -2088,6 +2188,7 @@ export class JanusSipVoiceClient extends EventTarget {
 
     const currentHandle = this.sipHandle;
     const currentJanus = this.janus;
+    const offlinePresenceContext = this.presenceContext();
     const shouldReportOffline =
       this.initialized || this.registered || Boolean(currentHandle);
 
@@ -2095,6 +2196,9 @@ export class JanusSipVoiceClient extends EventTarget {
     this.janus = null;
     this.initialized = false;
     this.registered = false;
+    if (shouldReportOffline) {
+      this.reportPresence(false, { context: offlinePresenceContext });
+    }
     this.clearRegistrationIdentifiers();
     this.registrationPromise = null;
     this.registrationResolve = null;
@@ -2104,7 +2208,6 @@ export class JanusSipVoiceClient extends EventTarget {
     this.clearDeviceRecoveryTimer();
     this.stopPresenceHeartbeat();
     this.clearOutboundSetupTimer();
-    if (shouldReportOffline) this.reportPresence(false);
     this.pendingIncomingCall = null;
     this.hasActiveCall = false;
     this.stopRecordings({ reason: 'device_destroyed' });

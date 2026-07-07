@@ -40,6 +40,26 @@ class Telephony::EventsIngestionService
     sipuni
     binotel
   ].freeze
+  ACCOUNT_METADATA_KEYS = %w[
+    onelink_account_id
+    chatwoot_account_id
+    account_id
+    accountId
+    chatwootAccountId
+  ].freeze
+  INBOX_METADATA_KEYS = %w[
+    onelink_inbox_id
+    chatwoot_inbox_id
+    inbox_id
+    inboxId
+    chatwootInboxId
+  ].freeze
+  NUMBER_BINDING_METADATA_KEYS = %w[
+    onelink_number_binding_id
+    chatwoot_number_binding_id
+    number_binding_id
+    numberBindingId
+  ].freeze
 
   EVENT_STATUS_MAP = {
     'created' => 'created',
@@ -442,7 +462,8 @@ class Telephony::EventsIngestionService
   end
 
   def resolve_account!
-    account_id = payload_value('account_id', 'accountId') || metadata_value('chatwoot_account_id', 'account_id', 'accountId')
+    account_id = payload_value('account_id', 'accountId', 'chatwoot_account_id', 'chatwootAccountId') ||
+                 metadata_value(*ACCOUNT_METADATA_KEYS)
     return Account.find(account_id) if account_id.present?
 
     conversation = resolve_metadata_conversation
@@ -1057,9 +1078,22 @@ class Telephony::EventsIngestionService
 
   def stale_event?(call_session)
     occurred_at = resolved_occurred_at
+    return false if webphone_terminal_completion_event?(call_session)
     return false if fresh_terminal_event?(call_session, occurred_at)
 
     occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
+  end
+
+  def webphone_terminal_completion_event?(call_session)
+    return false unless webphone_release_event?
+    return false unless terminal_status?(resolved_status)
+    return false unless resolved_status == 'completed'
+    return false unless resolved_event_type.to_s == 'session_completed'
+    return false unless resolved_end_reason.to_s.in?(%w[remote_hangup operator_hangup])
+    return false unless call_session.terminal?
+    return false unless answered_terminal_evidence?(call_session)
+
+    call_session.status.in?(%w[no_answer missed cancelled rejected failed])
   end
 
   def fresh_terminal_event?(call_session, occurred_at)
@@ -2008,7 +2042,8 @@ class Telephony::EventsIngestionService
   def resolve_inbox(account, call_session = nil)
     return call_session.inbox if post_finalize_recording_event? && call_session&.inbox.present?
 
-    inbox_id = payload_value('inbox_id', 'inboxId') || metadata_value('chatwoot_inbox_id', 'inbox_id', 'inboxId')
+    inbox_id = payload_value('inbox_id', 'inboxId', 'chatwoot_inbox_id', 'chatwootInboxId') ||
+               metadata_value(*INBOX_METADATA_KEYS)
     return account.inboxes.find_by(id: inbox_id) if inbox_id.present?
 
     binding = resolve_number_binding(account, call_session)
@@ -2032,7 +2067,10 @@ class Telephony::EventsIngestionService
 
     scope = Telephony::NumberBinding.includes(:inbox, :account)
     scope = scope.where(account_id: account.id) if account.present?
-    binding = if number_ref.present?
+    number_binding_id = metadata_value(*NUMBER_BINDING_METADATA_KEYS)
+    binding = if number_binding_id.present?
+                scope.find_by(id: number_binding_id)
+              elsif number_ref.present?
                 scope.find_by(number_ref: number_ref)
               elsif inbound_number.present?
                 scope.find_by(phone_number: inbound_number)
@@ -2614,7 +2652,7 @@ class Telephony::EventsIngestionService
   end
 
   def resolve_metadata_inbox
-    inbox_id = metadata_value('chatwoot_inbox_id', 'inbox_id', 'inboxId')
+    inbox_id = metadata_value(*INBOX_METADATA_KEYS)
     return if inbox_id.blank?
 
     ::Inbox.find_by(id: inbox_id)

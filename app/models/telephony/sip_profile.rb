@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'digest'
+require 'securerandom'
+
 # == Schema Information
 #
 # Table name: telephony_sip_profiles
@@ -82,6 +85,7 @@ class Telephony::SipProfile < ApplicationRecord
   validate :ensure_associations_belong_to_account
 
   before_validation :normalize_values
+  before_save :refresh_registration_config_version, if: :registration_config_changed?
 
   scope :enabled, -> { where(enabled: true) }
   scope :recent, -> { order(updated_at: :desc, id: :desc) }
@@ -136,7 +140,118 @@ class Telephony::SipProfile < ApplicationRecord
     payload.compact
   end
 
-  def update_browser_registration!(registered:, occurred_at: Time.current)
+  DEFAULT_REGISTRATION_TTL = 5.minutes
+  DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
+  REGISTRATION_CONFIG_VERSION_KEY = 'registration_config_version'
+  REGISTRATION_CONTEXT_SIGNATURE_KEY = 'registration_context_signature'
+  REGISTRATION_CONTEXT_KEYS = %w[
+    id
+    account_id
+    inbox_id
+    user_id
+    profile_kind
+    internal_extension
+    sip_username
+    sip_host
+    agent_aor
+    credentials_ref
+    password_secret_ref
+    availability_mode
+    enabled
+    status
+    registration_config_version
+  ].freeze
+  REGISTRATION_INSTANCE_CONTEXT_KEYS = %w[
+    registration_instance_id
+    janus_session_id
+    janus_handle_id
+    janus_unique_id
+    janus_master_id
+  ].freeze
+  REGISTRATION_CONFIG_ATTRIBUTES = %w[
+    account_id
+    inbox_id
+    user_id
+    profile_kind
+    internal_extension
+    sip_username
+    sip_host
+    agent_aor
+    credentials_ref
+    password_secret_ref
+    availability_mode
+    enabled
+    status
+    sip_password
+  ].freeze
+
+  def registration_config_version
+    metadata_value(REGISTRATION_CONFIG_VERSION_KEY, 'registrationConfigVersion')
+  end
+
+  def ensure_registration_config_version!
+    return registration_config_version if registration_config_version.present?
+
+    with_lock do
+      reload
+      next if registration_config_version.present?
+
+      update!(metadata: (metadata || {}).merge(REGISTRATION_CONFIG_VERSION_KEY => SecureRandom.uuid))
+    end
+
+    registration_config_version
+  end
+
+  def registration_context_payload
+    {
+      id: id,
+      account_id: account_id,
+      inbox_id: inbox_id,
+      user_id: user_id,
+      profile_kind: profile_kind,
+      internal_extension: internal_extension,
+      sip_username: sip_username,
+      sip_host: sip_host,
+      agent_aor: agent_aor,
+      credentials_ref: credentials_ref,
+      password_secret_ref: password_secret_ref,
+      availability_mode: availability_mode,
+      enabled: enabled,
+      status: status,
+      registration_config_version: registration_config_version
+    }.stringify_keys
+  end
+
+  def registration_context_signature
+    Digest::SHA256.hexdigest(JSON.generate(registration_context_payload))
+  end
+
+  def registration_context_matches?(context)
+    source = context.to_h.with_indifferent_access
+    expected = registration_context_payload.with_indifferent_access
+
+    REGISTRATION_CONTEXT_KEYS.all? do |key|
+      source_value = first_present(source[key], source[key.camelize(:lower)])
+      expected_value = expected[key]
+      expected_value.present? ? source_value.to_s == expected_value.to_s : source_value.blank?
+    end
+  end
+
+  def browser_registration_context_matches?(context)
+    registered_context = metadata_value('registration_context', 'registrationContext').to_h.with_indifferent_access
+    return true if registered_context.blank?
+
+    source = context.to_h.with_indifferent_access
+    comparable_keys = REGISTRATION_INSTANCE_CONTEXT_KEYS.select { |key| registered_context[key].present? }
+    return true if comparable_keys.blank?
+
+    comparable_keys.all? do |key|
+      source_value = first_present(source[key], source[key.camelize(:lower)])
+      source_value.to_s == registered_context[key].to_s
+    end
+  end
+
+  def update_browser_registration!(registered:, occurred_at: Time.current, registration_context: nil)
     registration_metadata = (metadata || {}).deep_dup
     registration_metadata['registration_state'] = registered ? 'registered' : 'offline'
     registration_metadata['presence'] = registered ? 'online' : 'offline'
@@ -145,12 +260,16 @@ class Telephony::SipProfile < ApplicationRecord
     registration_metadata['last_presence_source'] = 'browser_webphone'
     registration_metadata['last_presence_event_at'] = occurred_at.iso8601
     registration_metadata['last_unregistered_event_at'] = occurred_at.iso8601 unless registered
+    if registered
+      registration_metadata[REGISTRATION_CONTEXT_SIGNATURE_KEY] = registration_context_signature
+      registration_metadata['registration_context'] = registration_context_payload.merge(registration_context.to_h).compact
+    else
+      registration_metadata.delete(REGISTRATION_CONTEXT_SIGNATURE_KEY)
+      registration_metadata.delete('registration_context')
+    end
 
     update!(metadata: registration_metadata, last_synced_at: occurred_at)
   end
-
-  DEFAULT_REGISTRATION_TTL = 5.minutes
-  DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
 
   def registered_for_routing?
     return false unless enabled?
@@ -169,7 +288,7 @@ class Telephony::SipProfile < ApplicationRecord
                    %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
                  end
 
-    registered && registration_fresh? && registration_stable?
+    registered && registration_fresh? && registration_stable? && registration_context_current?
   end
 
   private
@@ -186,6 +305,24 @@ class Telephony::SipProfile < ApplicationRecord
     self.managed_by = managed_by.to_s.strip.presence || MANAGED_BY_ONELINK
     self.ownership_status = ownership_status.to_s.strip.downcase.presence || 'local'
     self.metadata = (metadata || {}).deep_stringify_keys
+  end
+
+  def refresh_registration_config_version
+    registration_metadata = (metadata || {}).deep_dup
+    registration_metadata[REGISTRATION_CONFIG_VERSION_KEY] = SecureRandom.uuid
+    registration_metadata['registration_state'] = 'offline'
+    registration_metadata['presence'] = 'offline'
+    registration_metadata['registered'] = false
+    registration_metadata['available'] = false
+    registration_metadata['last_presence_source'] = 'profile_config'
+    registration_metadata['last_unregistered_event_at'] = Time.current.iso8601 if persisted?
+    registration_metadata.delete(REGISTRATION_CONTEXT_SIGNATURE_KEY)
+    registration_metadata.delete('registration_context')
+    self.metadata = registration_metadata
+  end
+
+  def registration_config_changed?
+    new_record? || REGISTRATION_CONFIG_ATTRIBUTES.any? { |attr_name| public_send("will_save_change_to_#{attr_name}?") }
   end
 
   def validate_profile_kind_requirements
@@ -210,6 +347,13 @@ class Telephony::SipProfile < ApplicationRecord
 
   def registration_state
     metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state')
+  end
+
+  def registration_context_current?
+    signature = metadata_value(REGISTRATION_CONTEXT_SIGNATURE_KEY, 'registrationContextSignature')
+    return registration_config_version.blank? if signature.blank?
+
+    signature == registration_context_signature
   end
 
   def registration_fresh?
@@ -258,6 +402,10 @@ class Telephony::SipProfile < ApplicationRecord
 
   def truthy_metadata?(*keys)
     keys.any? { |key| ActiveModel::Type::Boolean.new.cast(metadata_value(key)) }
+  end
+
+  def first_present(*values)
+    values.find(&:present?)
   end
 
   def sip_password_configured?

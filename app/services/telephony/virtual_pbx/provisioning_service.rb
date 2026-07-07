@@ -161,14 +161,17 @@ class Telephony::VirtualPbx::ProvisioningService
                              steps: create_steps(normalized), include_diagnostics: include_diagnostics)
     end
 
-    mutation_payload(
+    mutation_result = create_local_channel!(normalized)
+    payload = mutation_payload(
       'create',
-      create_local_channel!(normalized),
+      mutation_result,
       normalized,
       create_steps(normalized),
       remote_commit: remote_commit,
       include_diagnostics: include_diagnostics
     )
+    broadcast_webphone_config_changed!('create', mutation_result, normalized)
+    payload
   end
 
   def update_channel(inbox_id:, payload:, dry_run: true, remote_commit: false, include_diagnostics: false)
@@ -194,15 +197,18 @@ class Telephony::VirtualPbx::ProvisioningService
                              steps: update_steps(normalized, existing_config), include_diagnostics: include_diagnostics)
     end
 
-    mutation_payload(
+    mutation_result = update_local_channel!(inbox_id, normalized)
+    payload = mutation_payload(
       'update',
-      update_local_channel!(inbox_id, normalized),
+      mutation_result,
       normalized,
       update_steps(normalized, existing_config),
       remote_commit: remote_commit,
       include_diagnostics: include_diagnostics,
       existing_config: existing_config
     )
+    broadcast_webphone_config_changed!('update', mutation_result, normalized)
+    payload
   end
 
   def delete_channel(inbox_id:, confirm: false, dry_run: true, remote_commit: false, include_diagnostics: false)
@@ -225,9 +231,10 @@ class Telephony::VirtualPbx::ProvisioningService
 
     plan = local_provisioning_plan(steps: delete_steps(existing_config))
 
-    mutation_payload(
+    mutation_result = delete_local_channel!(inbox_id)
+    payload = mutation_payload(
       'delete',
-      delete_local_channel!(inbox_id),
+      mutation_result,
       { inbox_id: inbox_id, confirm: confirm },
       delete_steps(existing_config),
       existing_config: existing_config,
@@ -236,6 +243,8 @@ class Telephony::VirtualPbx::ProvisioningService
       remote_commit: remote_commit,
       include_diagnostics: include_diagnostics
     )
+    broadcast_webphone_config_changed!('delete', mutation_result, existing_config)
+    payload
   end
 
   private
@@ -694,7 +703,13 @@ class Telephony::VirtualPbx::ProvisioningService
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)
       upsert_routing_policy!(binding, payload)
       stale_sip_profiles = upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
-      result = { inbox_id: inbox.id, stale_sip_profiles: stale_sip_profiles }
+      result = {
+        inbox_id: inbox.id,
+        provider: channel.provider,
+        sip_profile_ids: inbox.telephony_sip_profiles.pluck(:id),
+        webphone_config_changed_user_ids: inbox.telephony_sip_profiles.pluck(:user_id).compact,
+        stale_sip_profiles: stale_sip_profiles
+      }
     end
     result
   end
@@ -705,6 +720,8 @@ class Telephony::VirtualPbx::ProvisioningService
       inbox = account.inboxes.find(inbox_id)
       channel = inbox.channel
       binding = inbox.telephony_number_binding
+      previous_user_ids = inbox.telephony_sip_profiles.pluck(:user_id).compact
+      previous_sip_profile_ids = inbox.telephony_sip_profiles.pluck(:id)
       existing_config = config_builder.for_inbox(inbox_id)
       refs = generated_refs_for(payload, existing_config)
       provider_connection = upsert_provider_connection!(payload, existing: binding&.provider_connection, refs: refs)
@@ -716,7 +733,13 @@ class Telephony::VirtualPbx::ProvisioningService
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)
       upsert_routing_policy!(binding, payload)
       upsert_sip_profiles!(inbox, provider_connection, payload) if payload[:profiles_supplied]
-      result = { inbox_id: inbox.id }
+      current_user_ids = inbox.telephony_sip_profiles.pluck(:user_id).compact
+      result = {
+        inbox_id: inbox.id,
+        provider: channel.provider,
+        sip_profile_ids: (previous_sip_profile_ids + inbox.telephony_sip_profiles.pluck(:id)).uniq,
+        webphone_config_changed_user_ids: (previous_user_ids + current_user_ids).uniq
+      }
     end
     result
   end
@@ -728,6 +751,9 @@ class Telephony::VirtualPbx::ProvisioningService
       binding = inbox.telephony_number_binding
       provider_connection = binding&.provider_connection
       deleted_inbox_id = inbox.id
+      provider = inbox.channel&.provider
+      affected_user_ids = inbox.telephony_sip_profiles.pluck(:user_id).compact
+      sip_profile_ids = inbox.telephony_sip_profiles.pluck(:id)
 
       nullify_provisioning_run_links!(inbox: inbox, binding: binding)
       delete_assignment_decision_logs_for_inbox!(inbox)
@@ -735,9 +761,39 @@ class Telephony::VirtualPbx::ProvisioningService
       inbox.telephony_sip_profiles.destroy_all
       inbox.destroy!
       destroy_provider_connection_if_orphaned!(provider_connection)
-      result = { deleted: true, deleted_inbox_id: deleted_inbox_id }
+      result = {
+        deleted: true,
+        deleted_inbox_id: deleted_inbox_id,
+        provider: provider,
+        sip_profile_ids: sip_profile_ids,
+        webphone_config_changed_user_ids: affected_user_ids
+      }
     end
     result
+  end
+
+  def broadcast_webphone_config_changed!(operation, mutation_result, config)
+    tokens = account.users.where(id: mutation_result[:webphone_config_changed_user_ids]).filter_map(&:pubsub_token).uniq
+    return if tokens.blank?
+
+    payload = {
+      event: 'telephony.webphone_config_changed',
+      data: {
+        account_id: account.id,
+        operation: operation,
+        inbox_id: mutation_result[:inbox_id] || mutation_result[:deleted_inbox_id],
+        provider: mutation_result[:provider] || config&.dig(:provider_kind),
+        sip_profile_ids: mutation_result[:sip_profile_ids],
+        reason: 'virtual_pbx_channel_changed'
+      }.compact
+    }
+
+    tokens.each { |token| ActionCable.server.broadcast(token, payload) }
+  rescue StandardError => e
+    Rails.logger.warn(
+      'TELEPHONY_WEBPHONE_CONFIG_CHANGED_BROADCAST_FAILED ' \
+      "account_id=#{account.id} operation=#{operation} error=#{e.class.name}: #{e.message}"
+    )
   end
 
   def upsert_provider_connection!(payload, existing: nil, refs: generated_refs(payload))

@@ -82,6 +82,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       'voice_call.incoming': this.onVoiceCallIncoming,
       'voice_call.status_changed': this.onVoiceCallStatusChanged,
       'voice_call.claimed': this.onVoiceCallClaimed,
+      'telephony.webphone_config_changed':
+        this.onTelephonyWebphoneConfigChanged,
       'whatsapp_call.incoming': this.onWhatsappCallIncoming,
       'whatsapp_call.accepted': this.onWhatsappCallAccepted,
       'whatsapp_call.ended': this.onWhatsappCallEnded,
@@ -450,6 +452,11 @@ class ActionCableConnector extends BaseActionCableConnector {
     const callsStore = useCallsStore();
     const currentUserId = this.app.$store.getters.getCurrentUserID;
     callsStore.handleCallClaimed(data, currentUserId);
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onTelephonyWebphoneConfigChanged = data => {
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, data);
   };
 
   // eslint-disable-next-line class-methods-use-this

@@ -287,9 +287,10 @@ describe('janusSipVoiceClient', () => {
       inboxId: 4769,
     });
 
-    expect(updatePresenceMock).toHaveBeenLastCalledWith(true, {
-      inboxId: 4769,
-    });
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      true,
+      expect.objectContaining({ inboxId: 4769 })
+    );
     updatePresenceMock.mockClear();
 
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
@@ -297,11 +298,189 @@ describe('janusSipVoiceClient', () => {
     });
 
     expect(updatePresenceMock.mock.calls).toEqual([
-      [false, { inboxId: 4769 }],
-      [true, { inboxId: 4770 }],
+      [
+        false,
+        expect.objectContaining({
+          inboxId: 4769,
+          context: expect.objectContaining({
+            registration_instance_id: expect.any(String),
+          }),
+        }),
+      ],
+      [true, expect.objectContaining({ inboxId: 4770 })],
     ]);
     expect(janusDestroyMock).toHaveBeenCalledTimes(1);
     expect(pluginDetachMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends offline presence only after an in-flight online report settles', async () => {
+    const client = createJanusSipVoiceClient();
+    let resolveOnlinePresence;
+    updatePresenceMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveOnlinePresence = resolve;
+        })
+    );
+
+    await client.initializeDevice(sipuniSession, { inboxId: 4769 });
+    await client.destroyDevice();
+
+    expect(updatePresenceMock).toHaveBeenCalledTimes(1);
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      true,
+      expect.objectContaining({ inboxId: 4769 })
+    );
+
+    resolveOnlinePresence?.({ registered_for_routing: true });
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 0);
+    });
+
+    expect(updatePresenceMock).toHaveBeenCalledTimes(2);
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      false,
+      expect.objectContaining({
+        inboxId: 4769,
+        context: expect.objectContaining({
+          registration_instance_id: expect.any(String),
+        }),
+      })
+    );
+  });
+
+  it('recreates the Janus SIP registration when the profile registration version changes', async () => {
+    await JanusSipVoiceClient.initializeDevice(
+      { ...sipuniSession, registrationConfigVersion: 'version-1' },
+      {
+        inboxId: 4769,
+      }
+    );
+
+    attachMock.mockClear();
+    janusDestroyMock.mockClear();
+    pluginDetachMock.mockClear();
+    pluginSendMock.mockClear();
+    updatePresenceMock.mockClear();
+
+    await JanusSipVoiceClient.initializeDevice(
+      { ...sipuniSession, registrationConfigVersion: 'version-2' },
+      {
+        inboxId: 4769,
+      }
+    );
+
+    const requests = pluginSendMock.mock.calls.map(
+      ([payload]) => payload?.message?.request
+    );
+    expect(requests).toEqual(['unregister', 'register']);
+    expect(janusDestroyMock).toHaveBeenCalledTimes(1);
+    expect(pluginDetachMock).toHaveBeenCalledTimes(1);
+    expect(attachMock).toHaveBeenCalledTimes(1);
+    expect(updatePresenceMock).toHaveBeenCalledWith(
+      false,
+      expect.objectContaining({
+        inboxId: 4769,
+        context: expect.objectContaining({
+          registration_config_version: 'version-1',
+        }),
+      })
+    );
+    expect(updatePresenceMock).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        inboxId: 4769,
+        context: expect.objectContaining({
+          registration_config_version: 'version-2',
+        }),
+      })
+    );
+  });
+
+  it('unregisters the browser SIP device when backend rejects a stale registration context', async () => {
+    const client = createJanusSipVoiceClient();
+    const unregisteredHandler = vi.fn();
+    let resolvePresence;
+    updatePresenceMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolvePresence = resolve;
+        })
+    );
+    client.addEventListener('call:unregistered', unregisteredHandler);
+
+    await client.initializeDevice(
+      { ...sipuniSession, registrationConfigVersion: 'version-1' },
+      {
+        inboxId: 4769,
+      }
+    );
+
+    pluginSendMock.mockClear();
+    resolvePresence?.({
+      reason: 'sip_profile_registration_context_mismatch',
+      registered_for_routing: false,
+    });
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 0);
+    });
+
+    expect(client.registered).toBe(false);
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({ request: 'unregister' }),
+      })
+    );
+    expect(pluginDetachMock).toHaveBeenCalledTimes(1);
+    expect(janusDestroyMock).toHaveBeenCalledTimes(1);
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      false,
+      expect.objectContaining({ inboxId: 4769 })
+    );
+    expect(unregisteredHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          reason: 'sip_profile_registration_context_mismatch',
+        }),
+      })
+    );
+  });
+
+  it('unregisters the browser SIP device when backend no longer routes the presence', async () => {
+    const client = createJanusSipVoiceClient();
+    let resolvePresence;
+    updatePresenceMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolvePresence = resolve;
+        })
+    );
+
+    await client.initializeDevice(
+      { ...sipuniSession, registrationConfigVersion: 'version-1' },
+      {
+        inboxId: 4769,
+      }
+    );
+
+    pluginSendMock.mockClear();
+    resolvePresence?.({
+      reason: 'agent_binding_missing',
+      calling_supported: false,
+      registered_for_routing: false,
+    });
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 0);
+    });
+
+    expect(client.registered).toBe(false);
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({ request: 'unregister' }),
+      })
+    );
+    expect(pluginDetachMock).toHaveBeenCalledTimes(1);
+    expect(janusDestroyMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Binotel as the active provider for Janus SIP sessions', async () => {
@@ -317,9 +496,10 @@ describe('janusSipVoiceClient', () => {
         internalExtension: '901',
       })
     );
-    expect(updatePresenceMock).toHaveBeenLastCalledWith(true, {
-      inboxId: 4769,
-    });
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      true,
+      expect.objectContaining({ inboxId: 4769 })
+    );
   });
 
   it('deduplicates parallel Janus SIP initialization for the same profile', async () => {
@@ -364,9 +544,10 @@ describe('janusSipVoiceClient', () => {
         }),
       })
     );
-    expect(updatePresenceMock).toHaveBeenCalledWith(true, {
-      inboxId: 4769,
-    });
+    expect(updatePresenceMock).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ inboxId: 4769 })
+    );
   });
 
   it('falls back to a full Janus SIP registration when refresh finds a stale state', async () => {
@@ -409,9 +590,10 @@ describe('janusSipVoiceClient', () => {
         }),
       })
     );
-    expect(updatePresenceMock).toHaveBeenLastCalledWith(true, {
-      inboxId: 4769,
-    });
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      true,
+      expect.objectContaining({ inboxId: 4769 })
+    );
   });
 
   it('ignores late Janus registration events after the registration timeout', async () => {
@@ -432,18 +614,20 @@ describe('janusSipVoiceClient', () => {
       const error = await result;
       expect(error).toBeInstanceOf(Error);
       expect(error.message).toBe('sip_registration_timeout');
-      expect(updatePresenceMock).toHaveBeenLastCalledWith(false, {
-        inboxId: 4769,
-      });
+      expect(updatePresenceMock).toHaveBeenLastCalledWith(
+        false,
+        expect.objectContaining({ inboxId: 4769 })
+      );
 
       updatePresenceMock.mockClear();
       pluginState.options?.onmessage?.({ result: { event: 'registered' } });
 
       expect(client.sessionState().registered).toBe(false);
       expect(registeredHandler).not.toHaveBeenCalled();
-      expect(updatePresenceMock).not.toHaveBeenCalledWith(true, {
-        inboxId: 4769,
-      });
+      expect(updatePresenceMock).not.toHaveBeenCalledWith(
+        true,
+        expect.objectContaining({ inboxId: 4769 })
+      );
     } finally {
       vi.useRealTimers();
       await client.destroyDevice();
@@ -621,9 +805,10 @@ describe('janusSipVoiceClient', () => {
       )
     ).toBe(false);
     expect(JanusSipVoiceClient.currentCallRef).toBeNull();
-    expect(updatePresenceMock).toHaveBeenLastCalledWith(false, {
-      inboxId: 4769,
-    });
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      false,
+      expect.objectContaining({ inboxId: 4769 })
+    );
   });
 
   it('refreshes SIP registration after a completed native browser call', async () => {
@@ -744,9 +929,10 @@ describe('janusSipVoiceClient', () => {
 
     client.handleJanusDestroyed();
 
-    expect(updatePresenceMock).toHaveBeenCalledWith(false, {
-      inboxId: 4769,
-    });
+    expect(updatePresenceMock).toHaveBeenCalledWith(
+      false,
+      expect.objectContaining({ inboxId: 4769 })
+    );
 
     await vi.advanceTimersByTimeAsync(1_000);
     await vi.runOnlyPendingTimersAsync();
@@ -754,9 +940,10 @@ describe('janusSipVoiceClient', () => {
     await client.deviceRecoveryPromise;
 
     expect(attachMock).toHaveBeenCalled();
-    expect(updatePresenceMock).toHaveBeenCalledWith(true, {
-      inboxId: 4769,
-    });
+    expect(updatePresenceMock).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ inboxId: 4769 })
+    );
   });
 
   it('does not recover the Janus SIP device during intentional destroy', async () => {

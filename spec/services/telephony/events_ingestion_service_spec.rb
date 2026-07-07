@@ -1601,6 +1601,51 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(message.reload.content_attributes.dig('data', 'duration')).to eq(expected_duration)
     end
 
+    it 'keeps a webphone session_completed release authoritative even when it arrives slightly behind the latest terminal timestamp' do
+      ended_at = Time.zone.parse(4.seconds.ago.iso8601)
+      later_last_event_at = ended_at + 0.5.seconds
+
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'outbound',
+        status: 'no_answer',
+        started_at: ended_at - 17.seconds,
+        answered_at: ended_at - 7.seconds,
+        ended_at: ended_at,
+        ended_by: 'user:179',
+        end_reason: 'remote_hangup',
+        duration_seconds: 17,
+        last_event_at: later_last_event_at
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'webphone:completed-call-repair-1',
+          event: 'session_completed',
+          status: 'completed',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'user:179',
+          reason: 'remote_hangup',
+          metadata: {
+            'webphone_action' => 'operator_release',
+            'release_status' => 'completed',
+            'release_reason' => 'remote_hangup',
+            'chatwoot_user_id' => 179
+          }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        ended_by: 'user:179',
+        end_reason: 'remote_hangup',
+        duration_seconds: 7,
+        last_event_at: later_last_event_at
+      )
+    end
+
     it 'preserves distinct native terminal reasons instead of collapsing them to failed or no-answer' do
       answered_at = Time.zone.parse(2.minutes.ago.iso8601)
       ended_at = Time.zone.parse(30.seconds.ago.iso8601)
@@ -2982,6 +3027,41 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-shared-bridge-call-ref').call_session).to eq(target_session)
       expect(other_account.telephony_events.find_by(event_key: 'evt-shared-bridge-call-ref')).to be_nil
       expect(other_session.reload.status).to eq('ringing')
+    end
+
+    it 'resolves native SIP runtime events from OneLink metadata when top-level account context is blank' do
+      target_voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+1555889011')
+      Telephony::NumberBinding.sync_from_voice_channel!(target_voice_channel)
+      target_binding = target_voice_channel.inbox.telephony_number_binding
+
+      result = described_class.new(
+        payload: {
+          event_key: 'evt-onelink-runtime-metadata-context',
+          call_ref: 'runtime-call-with-onelink-metadata',
+          accountId: '',
+          inboxId: '',
+          provider: 'sipuni',
+          event: 'session_started',
+          status: 'ringing',
+          direction: 'FROM_PSTN',
+          callerNumber: '+15558890001',
+          metadata: {
+            onelink_account_id: account.id,
+            onelink_inbox_id: target_voice_channel.inbox.id,
+            onelink_number_binding_id: target_binding.id,
+            provider_kind: 'sipuni'
+          }
+        }
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        account_id: account.id,
+        inbox_id: target_voice_channel.inbox.id,
+        number_binding_id: target_binding.id,
+        provider: 'sipuni',
+        status: 'ringing'
+      )
+      expect(account.telephony_events.find_by!(event_key: 'evt-onelink-runtime-metadata-context')).to be_processed
     end
 
     it 'resolves bridge event ownership from a unique existing call_ref when late events omit account context' do

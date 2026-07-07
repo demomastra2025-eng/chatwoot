@@ -14,7 +14,8 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       webphone_service.update_presence!(
         user: Current.user,
         registered: ActiveModel::Type::Boolean.new.cast(params.require(:registered)),
-        inbox: inbox
+        inbox: inbox,
+        registration_context: presence_params.to_h
       )
     )
   end
@@ -86,7 +87,60 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       :janus_master_id,
       :janusMasterId,
       :internal_extension,
-      :internalExtension
+      :internalExtension,
+      :sip_username,
+      :sipUsername,
+      :sip_host,
+      :sipHost,
+      :agent_aor,
+      :agentAor,
+      :registration_config_version,
+      :registrationConfigVersion
+    )
+  end
+
+  def presence_params
+    params.permit(
+      :sip_profile_id,
+      :sipProfileId,
+      :account_id,
+      :accountId,
+      :inbox_id,
+      :inboxId,
+      :user_id,
+      :userId,
+      :profile_kind,
+      :profileKind,
+      :internal_extension,
+      :internalExtension,
+      :sip_username,
+      :sipUsername,
+      :sip_host,
+      :sipHost,
+      :agent_aor,
+      :agentAor,
+      :credentials_ref,
+      :credentialsRef,
+      :password_secret_ref,
+      :passwordSecretRef,
+      :availability_mode,
+      :availabilityMode,
+      :enabled,
+      :status,
+      :registration_config_version,
+      :registrationConfigVersion,
+      :registration_instance_id,
+      :registrationInstanceId,
+      :session_key,
+      :sessionKey,
+      :janus_session_id,
+      :janusSessionId,
+      :janus_handle_id,
+      :janusHandleId,
+      :janus_unique_id,
+      :janusUniqueId,
+      :janus_master_id,
+      :janusMasterId
     )
   end
 end

@@ -7,8 +7,11 @@ import { useCallsStore } from 'dashboard/stores/calls';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import Timer from 'dashboard/helper/Timer';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
+const INCOMING_BOOTSTRAP_REFRESH_MS = 300_000;
 const TERMINAL_CLAIM_FAILURE_CODES = new Set(['CALL_NOT_CLAIMABLE']);
 const TERMINAL_CLAIM_FAILURE_STATUSES = new Set([
   'completed',
@@ -46,6 +49,7 @@ const BROWSER_SIP_INCOMING_REPORT_PROVIDERS = new Set([
   'binotel',
   'sipuni',
 ]);
+const STALE_BROWSER_SIP_INCOMING_STATUSES = new Set([404, 422]);
 
 const positiveNumber = value => {
   const numericValue = Number(value);
@@ -85,9 +89,13 @@ export function useCallSession() {
   const route = useRoute();
   const store = useStore();
   const isJoining = ref(false);
+  const pendingWebphoneConfigRefresh = ref(null);
+  const isRefreshingWebphoneConfig = ref(false);
   const endingCallSids = ref(new Set());
   const releasingCallSids = ref(new Set());
   let bootstrapRetryTimer = null;
+  let bootstrapRefreshTimer = null;
+  let webphoneConfigRefreshVersion = 0;
   const callDuration = ref(0);
   const durationTimer = new Timer(elapsed => {
     callDuration.value = elapsed;
@@ -510,10 +518,14 @@ export function useCallSession() {
 
     if (NATIVE_BROWSER_SIP_PROVIDERS.has(resolveCallProvider(call))) {
       await handleBrowserSipClientDisconnect(call, event?.detail || {});
+      // eslint-disable-next-line no-use-before-define
+      await flushPendingWebphoneConfigRefresh();
       return;
     }
 
     await callsStore.clearActiveCall();
+    // eslint-disable-next-line no-use-before-define
+    await flushPendingWebphoneConfigRefresh();
   };
 
   const browserSipAiStreamUrl = call => {
@@ -576,12 +588,18 @@ export function useCallSession() {
         from: detail.from || detail.fromNumber || detail.from_number,
         session_key: detail.sessionKey || detail.session_key,
         sip_profile_id: detail.sipProfileId || detail.sip_profile_id,
+        registration_config_version:
+          detail.registrationConfigVersion ||
+          detail.registration_config_version,
         janus_session_id: detail.janusSessionId || detail.janus_session_id,
         janus_handle_id: detail.janusHandleId || detail.janus_handle_id,
         janus_unique_id: detail.janusUniqueId || detail.janus_unique_id,
         janus_master_id: detail.janusMasterId || detail.janus_master_id,
         internal_extension:
           detail.internalExtension || detail.internal_extension,
+        sip_username: detail.sipUsername || detail.sip_username,
+        sip_host: detail.sipHost || detail.sip_host,
+        agent_aor: detail.agentAor || detail.agent_aor,
       });
       if ((call.route_action || call.routeAction) === 'ai') {
         await answerBrowserSipAiCall(call, detail);
@@ -629,9 +647,130 @@ export function useCallSession() {
           call.browserJoinSupported ?? call.browser_join_supported ?? true,
       });
     } catch (error) {
+      if (STALE_BROWSER_SIP_INCOMING_STATUSES.has(error?.response?.status)) {
+        await WebphoneClient.destroyDevice({
+          provider,
+          inboxId: detail.inboxId || detail.inbox_id,
+          sessionKey: detail.sessionKey || detail.session_key,
+          sipProfileId: detail.sipProfileId || detail.sip_profile_id,
+        });
+      }
       // eslint-disable-next-line no-console
       console.warn('Failed to report browser SIP incoming call:', error);
     }
+  };
+
+  const normalizeWebphoneConfigRefresh = (data = {}) => ({
+    provider: data?.provider || data?.provider_kind || data?.providerKind,
+    inboxId: data?.inbox_id || data?.inboxId || null,
+    sipProfileId: data?.sip_profile_id || data?.sipProfileId,
+    sessionKey: data?.session_key || data?.sessionKey,
+  });
+
+  const mergeWebphoneConfigRefresh = (current = null, next = {}) => ({
+    provider: next.provider || current?.provider || null,
+    inboxId: next.inboxId || current?.inboxId || null,
+    sipProfileId: next.sipProfileId || current?.sipProfileId || null,
+    sessionKey: next.sessionKey || current?.sessionKey || null,
+  });
+
+  const sameWebphoneConfigRefresh = (left, right) => {
+    if (!left && !right) return true;
+    if (!left || !right) return false;
+
+    return (
+      left.provider === right.provider &&
+      left.inboxId === right.inboxId &&
+      left.sipProfileId === right.sipProfileId &&
+      left.sessionKey === right.sessionKey
+    );
+  };
+
+  const hasBusyWebphoneState = payload => {
+    if (isJoining.value) return true;
+    if (hasActiveCall.value) return true;
+    if (incomingCalls.value.length > 0) return true;
+
+    return WebphoneClient.hasPendingIncomingCall(payload);
+  };
+
+  const refreshWebphoneConfig = async payload => {
+    await WebphoneClient.destroyDevice(payload);
+    // eslint-disable-next-line no-use-before-define
+    await bootstrapIncomingSupport(payload.inboxId);
+  };
+
+  const runWebphoneConfigRefresh = async (payload, refreshVersion) => {
+    if (isRefreshingWebphoneConfig.value) return;
+
+    isRefreshingWebphoneConfig.value = true;
+    let succeeded = false;
+    try {
+      await refreshWebphoneConfig(payload);
+      succeeded = true;
+      if (
+        pendingWebphoneConfigRefresh.value === payload &&
+        webphoneConfigRefreshVersion === refreshVersion
+      ) {
+        pendingWebphoneConfigRefresh.value = null;
+      }
+    } finally {
+      isRefreshingWebphoneConfig.value = false;
+      if (
+        succeeded &&
+        pendingWebphoneConfigRefresh.value &&
+        !hasBusyWebphoneState(pendingWebphoneConfigRefresh.value)
+      ) {
+        // eslint-disable-next-line no-use-before-define
+        flushPendingWebphoneConfigRefresh();
+      }
+    }
+  };
+
+  async function flushPendingWebphoneConfigRefresh() {
+    const payload = pendingWebphoneConfigRefresh.value;
+    if (!payload) return;
+    if (hasBusyWebphoneState(payload)) return;
+
+    try {
+      await runWebphoneConfigRefresh(payload, webphoneConfigRefreshVersion);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to refresh browser SIP config:', error);
+    }
+  }
+
+  async function requestWebphoneConfigRefresh(data) {
+    webphoneConfigRefreshVersion += 1;
+    const current = pendingWebphoneConfigRefresh.value;
+    const next = normalizeWebphoneConfigRefresh(data);
+    const hasRefreshContext = Boolean(
+      next.provider || next.inboxId || next.sipProfileId || next.sessionKey
+    );
+    const payload = hasRefreshContext
+      ? mergeWebphoneConfigRefresh(current, next)
+      : current || mergeWebphoneConfigRefresh(null, next);
+    pendingWebphoneConfigRefresh.value =
+      current && sameWebphoneConfigRefresh(current, payload)
+        ? current
+        : payload;
+    const refreshPayload = pendingWebphoneConfigRefresh.value;
+
+    if (hasBusyWebphoneState(refreshPayload)) return;
+
+    try {
+      await runWebphoneConfigRefresh(
+        refreshPayload,
+        webphoneConfigRefreshVersion
+      );
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to refresh browser SIP config:', error);
+    }
+  }
+
+  const handleWebphoneConfigChanged = data => {
+    requestWebphoneConfigRefresh(data);
   };
 
   function clearBootstrapRetry() {
@@ -641,11 +780,25 @@ export function useCallSession() {
     bootstrapRetryTimer = null;
   }
 
-  const bootstrapIncomingSupport = async (
+  function clearBootstrapRefresh() {
+    if (!bootstrapRefreshTimer) return;
+
+    window.clearInterval(bootstrapRefreshTimer);
+    bootstrapRefreshTimer = null;
+  }
+
+  function startBootstrapRefresh() {
+    clearBootstrapRefresh();
+    bootstrapRefreshTimer = window.setInterval(() => {
+      requestWebphoneConfigRefresh();
+    }, INCOMING_BOOTSTRAP_REFRESH_MS);
+  }
+
+  async function bootstrapIncomingSupport(
     inboxId = routeVoiceInboxId.value ||
       routeCommunicationThreadVoiceInboxId.value ||
       incomingVoiceInboxId.value
-  ) => {
+  ) {
     try {
       await WebphoneClient.bootstrapIncomingSupport();
 
@@ -668,7 +821,7 @@ export function useCallSession() {
         INCOMING_BOOTSTRAP_RETRY_MS
       );
     }
-  };
+  }
 
   watch(routeVoiceInboxId, (inboxId, previousInboxId) => {
     if (!inboxId || String(inboxId) === String(previousInboxId)) return;
@@ -699,6 +852,16 @@ export function useCallSession() {
     { immediate: true }
   );
 
+  watch(
+    () => [hasActiveCall.value, incomingCalls.value.length, isJoining.value],
+    ([active, incomingCount, joining]) => {
+      if (active || incomingCount > 0 || joining) return;
+
+      flushPendingWebphoneConfigRefresh();
+    },
+    { immediate: true }
+  );
+
   onMounted(() => {
     WebphoneClient.addEventListener('call:connected', handleClientConnected);
     WebphoneClient.addEventListener(
@@ -706,13 +869,24 @@ export function useCallSession() {
       handleClientDisconnect
     );
     WebphoneClient.addEventListener('call:incoming', handleClientIncoming);
+    emitter.on(
+      BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED,
+      handleWebphoneConfigChanged
+    );
 
     bootstrapIncomingSupport();
+    startBootstrapRefresh();
   });
 
   onUnmounted(() => {
     durationTimer.stop();
     clearBootstrapRetry();
+    clearBootstrapRefresh();
+    pendingWebphoneConfigRefresh.value = null;
+    emitter.off(
+      BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED,
+      handleWebphoneConfigChanged
+    );
     WebphoneClient.removeEventListener(
       'call:disconnected',
       handleClientDisconnect
@@ -743,6 +917,7 @@ export function useCallSession() {
         durationTimer.stop();
         callDuration.value = 0;
         callsStore.dismissCall(callSid);
+        flushPendingWebphoneConfigRefresh();
         return releaseResult;
       });
     }
@@ -751,6 +926,7 @@ export function useCallSession() {
     await WebphoneClient.endClientCall(provider);
     durationTimer.stop();
     callsStore.clearActiveCall();
+    flushPendingWebphoneConfigRefresh();
     return null;
   };
 
@@ -775,6 +951,7 @@ export function useCallSession() {
       durationTimer.stop();
       callDuration.value = 0;
       callsStore.dismissCall(callSid);
+      flushPendingWebphoneConfigRefresh();
       return releaseResult;
     });
   };

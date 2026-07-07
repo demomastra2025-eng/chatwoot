@@ -6,7 +6,9 @@ const {
   addEventListenerMock,
   answerAiIncomingCallMock,
   bootstrapIncomingSupportMock,
+  destroyDeviceMock,
   endClientCallMock,
+  hasPendingIncomingCallMock,
   initializeDeviceMock,
   joinClientCallMock,
   waitForPendingIncomingCallMock,
@@ -23,7 +25,9 @@ const {
   addEventListenerMock: vi.fn(),
   answerAiIncomingCallMock: vi.fn(),
   bootstrapIncomingSupportMock: vi.fn(),
+  destroyDeviceMock: vi.fn(),
   endClientCallMock: vi.fn(),
+  hasPendingIncomingCallMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
   joinClientCallMock: vi.fn(),
   waitForPendingIncomingCallMock: vi.fn(),
@@ -69,7 +73,9 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
     addEventListener: addEventListenerMock,
     answerAiIncomingCall: answerAiIncomingCallMock,
     bootstrapIncomingSupport: bootstrapIncomingSupportMock,
+    destroyDevice: destroyDeviceMock,
     endClientCall: endClientCallMock,
+    hasPendingIncomingCall: hasPendingIncomingCallMock,
     initializeDevice: initializeDeviceMock,
     joinClientCall: joinClientCallMock,
     waitForPendingIncomingCall: waitForPendingIncomingCallMock,
@@ -81,6 +87,8 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
 
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 import { useCallSession } from './useCallSession';
 
 let mountedApps = [];
@@ -109,6 +117,7 @@ describe('useCallSession', () => {
     inboxGetterMock.mockReturnValue(null);
     conversationByIdGetterMock.mockReturnValue(null);
     bootstrapIncomingSupportMock.mockResolvedValue({ provider: 'sipuni' });
+    destroyDeviceMock.mockResolvedValue({ provider: 'sipuni' });
     initializeDeviceMock.mockResolvedValue({
       provider: 'sipuni',
       callingSupported: true,
@@ -138,6 +147,7 @@ describe('useCallSession', () => {
       provider: 'sipuni',
       declined: true,
     });
+    hasPendingIncomingCallMock.mockReturnValue(false);
     answerAiIncomingCallMock.mockResolvedValue({
       provider: 'sipuni',
       answered: true,
@@ -184,6 +194,132 @@ describe('useCallSession', () => {
 
     expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
     expect(initializeDeviceMock).toHaveBeenCalledWith(4696, { native: true });
+  });
+
+  it('periodically refreshes browser calling bootstrap for open dashboards', async () => {
+    vi.useFakeTimers();
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const initialBootstrapCalls =
+      bootstrapIncomingSupportMock.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(300_000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bootstrapIncomingSupportMock.mock.calls.length).toBeGreaterThan(
+      initialBootstrapCalls
+    );
+  });
+
+  it('refreshes browser SIP registration from realtime config events when idle', async () => {
+    inboxGetterMock.mockReturnValue({ id: 4776, provider: 'sipuni' });
+    mountUseCallSession();
+    await Promise.resolve();
+    const initialDestroyCalls = destroyDeviceMock.mock.calls.length;
+
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, {
+      account_id: 530,
+      provider: 'sipuni',
+      inbox_id: 4776,
+      sip_profile_ids: [48],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(destroyDeviceMock.mock.calls.length).toBeGreaterThan(
+      initialDestroyCalls
+    );
+    expect(destroyDeviceMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        provider: 'sipuni',
+        inboxId: 4776,
+        sipProfileId: null,
+        sessionKey: null,
+      })
+    );
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4776, { native: true });
+  });
+
+  it('replays an identical config event received during an in-flight refresh', async () => {
+    let resolveFirstRefresh;
+    const firstRefresh = new Promise(resolve => {
+      resolveFirstRefresh = resolve;
+    });
+    inboxGetterMock.mockReturnValue({ id: 4776, provider: 'sipuni' });
+    mountUseCallSession();
+    await Promise.resolve();
+    bootstrapIncomingSupportMock.mockImplementationOnce(() => firstRefresh);
+    const initialDestroyCalls = destroyDeviceMock.mock.calls.length;
+    const configEvent = {
+      account_id: 530,
+      provider: 'sipuni',
+      inbox_id: 4776,
+      sip_profile_ids: [48],
+    };
+
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, configEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, configEvent);
+    resolveFirstRefresh({ provider: 'sipuni' });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(destroyDeviceMock.mock.calls.length).toBe(initialDestroyCalls + 2);
+  });
+
+  it('defers browser SIP refresh while a call is active and applies it after the call ends', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:operator-call',
+      provider: 'sipuni',
+      inboxId: 4776,
+      status: 'ringing',
+      callDirection: 'inbound',
+    });
+    callsStore.setCallActive('sipuni:operator-call');
+    inboxGetterMock.mockReturnValue({ id: 4776, provider: 'sipuni' });
+
+    mountUseCallSession();
+    await Promise.resolve();
+    const initialDestroyCalls = destroyDeviceMock.mock.calls.length;
+
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, {
+      account_id: 530,
+      provider: 'sipuni',
+      inbox_id: 4776,
+      sip_profile_ids: [48],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(destroyDeviceMock.mock.calls.length).toBe(initialDestroyCalls);
+    expect(bootstrapIncomingSupportMock.mock.calls.length).toBeGreaterThan(0);
+
+    callsStore.dismissCall('sipuni:operator-call');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(destroyDeviceMock.mock.calls.length).toBeGreaterThan(
+      initialDestroyCalls
+    );
+    expect(destroyDeviceMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        provider: 'sipuni',
+        inboxId: 4776,
+        sipProfileId: null,
+        sessionKey: null,
+      })
+    );
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4776, { native: true });
   });
 
   it('bootstraps browser calling for a Channel::Voice route inbox without provider metadata', async () => {
@@ -322,6 +458,41 @@ describe('useCallSession', () => {
         sipProfileId: 42,
       }),
     ]);
+  });
+
+  it('destroys a stale browser SIP device when incoming reporting is rejected', async () => {
+    const consoleWarnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => {});
+    reportBrowserSipIncomingMock.mockRejectedValueOnce({
+      response: { status: 404 },
+    });
+    mountUseCallSession();
+    await Promise.resolve();
+
+    const incomingHandler = addEventListenerMock.mock.calls.find(
+      ([eventName]) => eventName === 'call:incoming'
+    )?.[1];
+    await incomingHandler({
+      detail: {
+        provider: 'sipuni',
+        inboxId: 4772,
+        sipProfileId: 42,
+        sessionKey: 'sip_profile:42',
+        internalExtension: '207',
+        callRef: 'stale-sipuni-call-id',
+        from: 'sip:+77017450000@ats01.kz.sipuni.com',
+      },
+    });
+
+    expect(destroyDeviceMock).toHaveBeenCalledWith({
+      provider: 'sipuni',
+      inboxId: 4772,
+      sessionKey: 'sip_profile:42',
+      sipProfileId: 42,
+    });
+    expect(useCallsStore().calls).toEqual([]);
+    consoleWarnSpy.mockRestore();
   });
 
   it('answers Sipuni Janus AI-routed incoming calls without showing operator UI', async () => {

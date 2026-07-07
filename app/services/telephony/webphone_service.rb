@@ -24,23 +24,38 @@ class Telephony::WebphoneService
     webphone_payload_for_identity(user, inbox, operator_identity)
   end
 
-  def update_presence!(user:, registered:, inbox: nil)
+  def update_presence!(user:, registered:, inbox: nil, registration_context: {})
     operator_identity = operator_identity_for(user: user, inbox: inbox)
     return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
     return unsupported_webphone_payload(reason: 'ambiguous_sip_profile_presence') if ambiguous_no_inbox_sip_presence?(user, inbox, operator_identity)
 
-    operator_identity.record.update_browser_registration!(registered: registered)
-    operator_identity.record.to_telephony_h.merge(
-      provider: fallback_provider(inbox, operator_identity),
-      calling_supported: operator_identity.enabled? && operator_identity.browser_join_supported?,
-      registered_for_routing: operator_identity.record.registered_for_routing?
+    unless registration_context_matches?(
+      operator_identity.record, registration_context
     )
+      return unsupported_webphone_payload(inbox: inbox,
+                                          reason: 'sip_profile_registration_context_mismatch')
+    end
+
+    if !registered && !browser_registration_context_matches?(operator_identity.record, registration_context)
+      return presence_payload(inbox, operator_identity)
+    end
+
+    operator_identity.record.update_browser_registration!(registered: registered, registration_context: registration_context)
+    presence_payload(inbox, operator_identity)
   end
 
   def report_browser_sip_incoming!(user:, inbox:, params:)
     provider = browser_sip_incoming_provider!(inbox)
     context = browser_sip_incoming_context(provider: provider, user: user, inbox: inbox, params: params)
-    context[:profile].update_browser_registration!(registered: true)
+    unless registration_context_matches?(context[:profile], params)
+      raise Telephony::Error.new(
+        code: 'WEBPHONE_SIP_REGISTRATION_CONTEXT_MISMATCH',
+        message: 'Browser SIP registration context does not match current SIP profile',
+        status: :unprocessable_content
+      )
+    end
+
+    context[:profile].update_browser_registration!(registered: true, registration_context: params)
 
     decision = perform_browser_sip_incoming_route(context)
     call_session = ensure_browser_sip_incoming_call_session!(context, decision)
@@ -113,6 +128,7 @@ class Telephony::WebphoneService
 
   def janus_sip_webphone_payload(inbox, operator_identity)
     profile = operator_identity.sip_profile
+    profile.ensure_registration_config_version!
     provider = janus_sip_provider_for(inbox, profile)
     credentials = janus_sip_credentials_for(profile)
     janus_server = janus_sip_server_url(provider)
@@ -287,6 +303,8 @@ class Telephony::WebphoneService
       sessionKey: session_key,
       sip_profile_id: profile.id,
       sipProfileId: profile.id,
+      registration_config_version: profile.registration_config_version,
+      registrationConfigVersion: profile.registration_config_version,
       account_id: account.id,
       accountId: account.id,
       inbox_id: profile.inbox_id,
@@ -296,6 +314,47 @@ class Telephony::WebphoneService
       internal_extension: profile.internal_extension,
       internalExtension: profile.internal_extension
     }
+  end
+
+  def registration_context_matches?(record, context)
+    return true unless record.is_a?(Telephony::SipProfile)
+
+    record.registration_context_matches?(registration_context_for(record, context))
+  end
+
+  def browser_registration_context_matches?(record, context)
+    return true unless record.is_a?(Telephony::SipProfile)
+
+    record.browser_registration_context_matches?(context)
+  end
+
+  def presence_payload(inbox, operator_identity)
+    operator_identity.record.to_telephony_h.merge(
+      provider: fallback_provider(inbox, operator_identity),
+      calling_supported: operator_identity.enabled? && operator_identity.browser_join_supported?,
+      registered_for_routing: operator_identity.record.registered_for_routing?
+    )
+  end
+
+  def registration_context_for(record, context)
+    source = context.to_h.with_indifferent_access
+    {
+      id: first_present(source[:sip_profile_id], source[:sipProfileId], source[:id], record.id),
+      account_id: first_present(source[:account_id], source[:accountId], record.account_id),
+      inbox_id: first_present(source[:inbox_id], source[:inboxId], record.inbox_id),
+      user_id: record.user_id,
+      profile_kind: record.profile_kind,
+      internal_extension: first_present(source[:internal_extension], source[:internalExtension], record.internal_extension),
+      sip_username: first_present(source[:sip_username], source[:sipUsername], record.sip_username),
+      sip_host: first_present(source[:sip_host], source[:sipHost], record.sip_host),
+      agent_aor: record.agent_aor,
+      credentials_ref: record.credentials_ref,
+      password_secret_ref: record.password_secret_ref,
+      availability_mode: record.availability_mode,
+      enabled: record.enabled,
+      status: record.status,
+      registration_config_version: first_present(source[:registration_config_version], source[:registrationConfigVersion])
+    }.compact
   end
 
   def janus_sip_webphone_payloads_for(user)
@@ -501,6 +560,10 @@ class Telephony::WebphoneService
     value.length >= 2 &&
       ((value.start_with?("'") && value.end_with?("'")) ||
         (value.start_with?('"') && value.end_with?('"')))
+  end
+
+  def first_present(*values)
+    values.find(&:present?)
   end
 
   def janus_sip_unsupported_reason(missing, provider)
