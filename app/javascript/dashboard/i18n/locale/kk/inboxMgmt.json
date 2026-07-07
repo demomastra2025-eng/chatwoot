@@ -472,7 +472,9 @@
             "ADD": "Қызметкер қосу",
             "REMOVE": "Қызметкерді өшіру {index}",
             "REQUIRED": "Әр жолда қызметкерді таңдап, ішкі нөмірді енгізіңіз",
-            "SIP_PAIR_REQUIRED": "Қызметкердің SIP username/password бірге толтырылуы керек"
+            "SIP_PAIR_REQUIRED": "Қызметкердің SIP username/password бірге толтырылуы керек",
+            "VOICE_AGENT_LABEL": "AI қызметкер",
+            "VOICE_AGENT_UNIQUE": "Бір арнада тек бір дауыстық AI SIP профилі болуы мүмкін"
           },
           "EMPLOYEE_SIP_USERNAME": {
             "LABEL": "Қызметкердің SIP username",

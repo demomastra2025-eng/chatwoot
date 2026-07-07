@@ -667,6 +667,24 @@ export default {
     removeVirtualPbxProfile(index) {
       this.virtualPbxForm.profiles.splice(index, 1);
     },
+    hasAnotherVirtualPbxVoiceAgentProfile(index) {
+      return this.virtualPbxForm.profiles.some(
+        (profile, profileIndex) =>
+          profileIndex !== index && profile.profileKind === 'voice_agent'
+      );
+    },
+    isVirtualPbxVoiceAgentToggleDisabled(profile, index) {
+      return (
+        this.isVirtualPbxReadOnly ||
+        (profile.profileKind !== 'voice_agent' &&
+          this.hasAnotherVirtualPbxVoiceAgentProfile(index))
+      );
+    },
+    onVirtualPbxProfileKindChange(profile) {
+      if (profile.profileKind === 'voice_agent') {
+        profile.userId = '';
+      }
+    },
     prefillVirtualPbxForm() {
       const config = this.virtualPbxConfig;
       if (!config) return;
@@ -1403,42 +1421,15 @@ export default {
                 class="grid grid-cols-1 gap-3 rounded-lg border border-n-weak p-3 md:grid-cols-2"
               >
                 <label
-                  class="flex items-start gap-2 rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12 md:col-span-2"
+                  v-if="profile.profileKind !== 'voice_agent'"
+                  class="flex flex-col gap-1 text-sm text-n-slate-12"
                 >
-                  <input
-                    v-model="profile.profileKind"
-                    class="mt-1"
-                    :disabled="isVirtualPbxReadOnly"
-                    type="checkbox"
-                    true-value="voice_agent"
-                    false-value="human_operator"
-                  />
-                  <span class="flex min-w-0 flex-col">
-                    <span class="font-medium">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.VOICE_AGENT_LABEL'
-                        )
-                      }}
-                    </span>
-                    <span class="text-xs text-n-slate-11">
-                      {{
-                        $t(
-                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.VOICE_AGENT_HINT'
-                        )
-                      }}
-                    </span>
-                  </span>
-                </label>
-
-                <label class="flex flex-col gap-1 text-sm text-n-slate-12">
                   {{
                     $t(
                       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.EMPLOYEE_LABEL'
                     )
                   }}
                   <select
-                    v-if="profile.profileKind !== 'voice_agent'"
                     v-model.number="profile.userId"
                     class="rounded-lg border border-n-weak py-2 text-sm"
                     :disabled="isVirtualPbxReadOnly"
@@ -1458,16 +1449,6 @@ export default {
                       {{ option.label }}
                     </option>
                   </select>
-                  <div
-                    v-else
-                    class="rounded-lg border border-n-weak bg-n-alpha-2 px-3 py-2 text-sm text-n-slate-11"
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.VOICE_AGENT_EMPLOYEE_DISABLED'
-                      )
-                    }}
-                  </div>
                 </label>
 
                 <label class="flex flex-col gap-1 text-sm text-n-slate-12">
@@ -1528,6 +1509,28 @@ export default {
                     autocomplete="new-password"
                     :placeholder="virtualPbxSipPasswordPlaceholder(profile)"
                   />
+                </label>
+
+                <label
+                  class="flex items-center gap-2 rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12 md:col-span-2"
+                >
+                  <input
+                    v-model="profile.profileKind"
+                    :disabled="
+                      isVirtualPbxVoiceAgentToggleDisabled(profile, index)
+                    "
+                    type="checkbox"
+                    true-value="voice_agent"
+                    false-value="human_operator"
+                    @change="onVirtualPbxProfileKindChange(profile)"
+                  />
+                  <span class="font-medium">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.VOICE_AGENT_LABEL'
+                      )
+                    }}
+                  </span>
                 </label>
 
                 <div class="md:col-span-2">

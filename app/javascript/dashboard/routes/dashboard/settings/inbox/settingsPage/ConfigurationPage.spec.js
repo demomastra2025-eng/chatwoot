@@ -334,6 +334,53 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
+  it('disables voice agent selection on other SIP profiles when one is already selected', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+
+    wrapper.vm.virtualPbxForm.profiles = [
+      {
+        clientId: 'voice-agent-row',
+        profileKind: 'voice_agent',
+        internalExtension: '9098',
+        sipUsername: 'ai-agent-9098',
+        sipPassword: 'secret-9098',
+        enabled: true,
+      },
+      {
+        clientId: 'operator-row',
+        profileKind: 'human_operator',
+        userId: 8,
+        internalExtension: '208',
+        sipUsername: 'agent-208',
+        sipPassword: 'secret-208',
+        enabled: true,
+      },
+    ];
+
+    expect(
+      wrapper.vm.isVirtualPbxVoiceAgentToggleDisabled(
+        wrapper.vm.virtualPbxForm.profiles[0],
+        0
+      )
+    ).toBe(false);
+    expect(
+      wrapper.vm.isVirtualPbxVoiceAgentToggleDisabled(
+        wrapper.vm.virtualPbxForm.profiles[1],
+        1
+      )
+    ).toBe(true);
+
+    wrapper.vm.virtualPbxForm.profiles[0].profileKind = 'human_operator';
+
+    expect(
+      wrapper.vm.isVirtualPbxVoiceAgentToggleDisabled(
+        wrapper.vm.virtualPbxForm.profiles[1],
+        1
+      )
+    ).toBe(false);
+  });
+
   it('saves a Sipuni webhook token on the inbox provider config', async () => {
     const wrapper = buildWrapper({
       inbox: {
