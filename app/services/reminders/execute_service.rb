@@ -31,12 +31,13 @@ class Reminders::ExecuteService
     delivery_policy = ensure_delivery_allowed!(conversation, content_kind: reminder.content_kind, template_params: reminder.template_params,
                                                              attachments: reminder.attachments)
     generated_payload = reminder.agent? ? generate_captain_message(conversation, mode: :touch) : {}
+    sender = reminder.agent? && generated_payload[:assistant].present? ? generated_payload[:assistant] : reminder.message_sender
     message = materialize_message(
       conversation: conversation,
-      sender: reminder.message_sender,
+      sender: sender,
       content: generated_payload[:content].presence || reminder.renderable_body(
         conversation: conversation,
-        sender: reminder.message_sender
+        sender: sender
       ),
       captain_trace: generated_payload[:captain_trace],
       delivery_policy: delivery_policy

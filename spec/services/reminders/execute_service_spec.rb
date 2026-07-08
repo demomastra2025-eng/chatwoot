@@ -54,6 +54,54 @@ RSpec.describe Reminders::ExecuteService do
       expect(touch.reload).to be_completed
       expect(message.content).to eq('Generated follow-up')
       expect(message.additional_attributes['captain_trace']).to eq({ 'steps' => [] })
+      expect(message.sender).to eq(assistant)
+    end
+
+    it 'sends an agent touch from the Captain assistant, not the human message_sender' do
+      conversation = create(:conversation)
+      assistant = create(:captain_assistant, account: conversation.account)
+      human = create(:user, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        text_mode: :agent,
+        body: nil,
+        instructions: 'Write a short follow-up reminder',
+        owner: human,
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+
+      allow_any_instance_of(Reminders::CaptainGeneratedMessageService)
+        .to receive(:perform)
+        .and_return(content: 'Generated follow-up', assistant: assistant, captain_trace: {})
+
+      described_class.new(reminder: touch).perform
+
+      message = conversation.messages.outgoing.last
+      expect(message.sender).to eq(assistant)
+      expect(message.sender).not_to eq(human)
+    end
+
+    it 'sends a non-agent touch from the human message_sender' do
+      conversation = create(:conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        body: 'Plain reminder'
+      )
+
+      described_class.new(reminder: touch).perform
+
+      message = conversation.messages.outgoing.last
+      expect(message.sender).to eq(touch.reload.message_sender)
     end
 
     it 'wakes up Captain and creates an assistant message for ai_agent_wakeup touches' do
