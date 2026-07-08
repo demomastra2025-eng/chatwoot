@@ -212,6 +212,7 @@ const installRecordingMocks = ({ stopImmediately = true } = {}) => {
   function MediaRecorderMock(stream, options = {}) {
     this.stream = stream;
     this.mimeType = options.mimeType || 'audio/webm';
+    this.audioBitsPerSecond = options.audioBitsPerSecond;
     this.state = 'inactive';
     MediaRecorderMock.instances.push(this);
   }
@@ -1105,6 +1106,7 @@ describe('janusSipVoiceClient', () => {
       client.handleCallDisconnected({ reason: 'remote_hangup' });
 
       expect(MediaRecorderMock.instances).toHaveLength(1);
+      expect(MediaRecorderMock.instances[0].audioBitsPerSecond).toBe(128_000);
       expect(uploadRecordingMock).toHaveBeenCalledWith(
         'asterisk_analog:local:call-1',
         expect.any(Blob),
@@ -1119,7 +1121,7 @@ describe('janusSipVoiceClient', () => {
     }
   });
 
-  it('boosts the remote side in browser SIP recordings', () => {
+  it('records both browser SIP sides without fixed gain that can clip speech', () => {
     const {
       createdDestinations,
       createdGains,
@@ -1140,13 +1142,11 @@ describe('janusSipVoiceClient', () => {
 
       expect(MediaRecorderMock.instances).toHaveLength(1);
       expect(createdSources).toHaveLength(2);
-      expect(createdGains).toHaveLength(1);
-      expect(createdGains[0].gain.value).toBe(1.8);
+      expect(createdGains).toHaveLength(0);
       expect(createdSources[0].connect).toHaveBeenCalledWith(
         createdDestinations[0]
       );
-      expect(createdSources[1].connect).toHaveBeenCalledWith(createdGains[0]);
-      expect(createdGains[0].connect).toHaveBeenCalledWith(
+      expect(createdSources[1].connect).toHaveBeenCalledWith(
         createdDestinations[0]
       );
     } finally {
@@ -1244,7 +1244,7 @@ describe('janusSipVoiceClient', () => {
     expect(sipDetachMock).toHaveBeenCalled();
   });
 
-  it('uses browser recording instead of Janus server recording when configured', () => {
+  it('starts Janus server recording and a concurrent browser safety copy', () => {
     const { MediaRecorderMock, restore } = installRecordingMocks();
     try {
       const client = createJanusSipVoiceClient();
@@ -1259,17 +1259,29 @@ describe('janusSipVoiceClient', () => {
       pluginSendMock.mockClear();
 
       client.startRecordingIfReady();
-      client.handleCallDisconnected({ reason: 'remote_hangup' });
 
       expect(MediaRecorderMock.instances).toHaveLength(1);
-      expect(client.janusServerRecordingStarting).toBe(false);
+      expect(client.janusServerRecordingStarting).toBe(true);
       expect(client.janusServerRecordingStarted).toBe(false);
-      expect(pluginSendMock).not.toHaveBeenCalledWith(
+      expect(pluginSendMock).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.objectContaining({
             request: 'recording',
             action: 'start',
           }),
+        })
+      );
+
+      client.handleCallDisconnected({ reason: 'remote_hangup' });
+
+      expect(pluginSendMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: {
+            request: 'recording',
+            action: 'stop',
+            audio: true,
+            peer_audio: true,
+          },
         })
       );
       expect(uploadRecordingMock).toHaveBeenCalledWith(
@@ -1309,7 +1321,7 @@ describe('janusSipVoiceClient', () => {
       client.startRecordingIfReady();
 
       expect(MediaRecorderMock.instances).toHaveLength(1);
-      expect(client.janusServerRecordingStarting).toBe(false);
+      expect(client.janusServerRecordingStarting).toBe(true);
 
       recordingStartError?.(new Error('Janus recorder unavailable'));
       client.handleCallDisconnected({ reason: 'remote_hangup' });
@@ -1356,7 +1368,7 @@ describe('janusSipVoiceClient', () => {
     }
   });
 
-  it('uses browser fallback for inbound Asterisk server recording sessions', () => {
+  it('server-records inbound Asterisk calls with a browser safety copy', () => {
     const { MediaRecorderMock, restore } = installRecordingMocks();
     try {
       const client = createJanusSipVoiceClient();
@@ -1372,7 +1384,7 @@ describe('janusSipVoiceClient', () => {
       client.startRecordingIfReady();
       client.handleCallDisconnected({ reason: 'remote_hangup' });
 
-      expect(pluginSendMock).not.toHaveBeenCalledWith(
+      expect(pluginSendMock).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.objectContaining({
             request: 'recording',

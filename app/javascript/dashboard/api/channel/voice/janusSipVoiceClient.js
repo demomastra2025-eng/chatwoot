@@ -36,16 +36,23 @@ const WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS = new Set([
   'sipuni',
   'binotel',
 ]);
-const WEBPHONE_FORCE_BROWSER_RECORDING = true;
 const WEBPHONE_RECORDING_MIME_TYPES = [
   'audio/webm;codecs=opus',
   'audio/webm',
   'audio/ogg;codecs=opus',
   'audio/ogg',
 ];
+const WEBPHONE_RECORDING_AUDIO_BITS_PER_SECOND = 128_000;
 const WEBPHONE_RECORDING_LOCAL_GAIN = 1;
-const WEBPHONE_RECORDING_REMOTE_GAIN = 1.8;
+const WEBPHONE_RECORDING_REMOTE_GAIN = 1;
 const WEBPHONE_RECORDING_MAX_GAIN = 3;
+const WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS = {
+  autoGainControl: true,
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  sampleRate: 48_000,
+};
 
 const screenSharingExtension = {
   init: () => {},
@@ -1129,8 +1136,7 @@ export class JanusSipVoiceClient extends EventTarget {
 
   startRecordingIfReady() {
     if (this.shouldUseJanusServerRecording()) {
-      const serverRecordingStarted = this.startJanusServerRecordingIfReady();
-      if (serverRecordingStarted) return;
+      this.startJanusServerRecordingIfReady();
     }
 
     if (!this.shouldRecordCurrentCall()) return;
@@ -1161,9 +1167,10 @@ export class JanusSipVoiceClient extends EventTarget {
       this.recordingMimeType = this.preferredRecordingMimeType(
         MediaRecorderConstructor
       );
-      const options = this.recordingMimeType
-        ? { mimeType: this.recordingMimeType }
-        : {};
+      const options = {
+        audioBitsPerSecond: WEBPHONE_RECORDING_AUDIO_BITS_PER_SECOND,
+        ...(this.recordingMimeType ? { mimeType: this.recordingMimeType } : {}),
+      };
       this.recordedChunks = [];
       this.recordingCallRef = this.currentCallRef;
       this.recordingProvider = this.currentProvider();
@@ -1194,13 +1201,8 @@ export class JanusSipVoiceClient extends EventTarget {
       this.sessionConfig?.janus_recording?.fallbackStrategy ||
       this.sessionConfig?.janus_recording?.fallback_strategy;
     const browserFallbackRecording = recordingStrategy
-      ? this.shouldForceBrowserRecordingForCurrentCall() ||
-        recordingStrategy === 'browser_fallback' ||
+      ? recordingStrategy === 'browser_fallback' ||
         (recordingStrategy === 'janus_server' &&
-          this.janusServerRecordingFailed &&
-          fallbackStrategy === 'browser_fallback') ||
-        (recordingStrategy === 'janus_server' &&
-          this.shouldSkipJanusServerRecordingForCurrentCall() &&
           fallbackStrategy === 'browser_fallback') ||
         (recordingStrategy === 'provider_api' &&
           fallbackStrategy === 'browser_fallback')
@@ -1223,25 +1225,9 @@ export class JanusSipVoiceClient extends EventTarget {
     return (
       recordingStrategy === 'janus_server' &&
       config.enabled !== false &&
-      !this.shouldForceBrowserRecordingForCurrentCall() &&
-      !this.shouldSkipJanusServerRecordingForCurrentCall() &&
       !this.janusServerRecordingFailed &&
       this.callMediaAccepted &&
       Boolean(this.currentCallRef)
-    );
-  }
-
-  shouldForceBrowserRecordingForCurrentCall() {
-    return (
-      WEBPHONE_FORCE_BROWSER_RECORDING &&
-      WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS.has(this.currentProvider())
-    );
-  }
-
-  shouldSkipJanusServerRecordingForCurrentCall() {
-    return (
-      this.currentProvider() === 'asterisk_analog' &&
-      this.currentCallDirection === 'inbound'
     );
   }
 
@@ -1413,6 +1399,8 @@ export class JanusSipVoiceClient extends EventTarget {
         message: {
           request: 'recording',
           action: 'stop',
+          audio: true,
+          peer_audio: true,
         },
       });
     } catch {
@@ -1737,7 +1725,13 @@ export class JanusSipVoiceClient extends EventTarget {
     this.callConnectedDispatched = false;
     return new Promise((resolve, reject) => {
       this.sipHandle.createOffer({
-        tracks: [{ type: 'audio', capture: true, recv: true }],
+        tracks: [
+          {
+            type: 'audio',
+            capture: WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
+            recv: true,
+          },
+        ],
         success: jsep => {
           try {
             this.sipHandle.send({
@@ -1780,7 +1774,13 @@ export class JanusSipVoiceClient extends EventTarget {
     return new Promise((resolve, reject) => {
       method({
         jsep: incomingCall.jsep,
-        tracks: [{ type: 'audio', capture: true, recv: true }],
+        tracks: [
+          {
+            type: 'audio',
+            capture: WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
+            recv: true,
+          },
+        ],
         success: jsep => {
           this.sipHandle.send({
             message: { request: 'accept', autoaccept_reinvites: false },
@@ -1849,7 +1849,13 @@ export class JanusSipVoiceClient extends EventTarget {
   answerUpdate(jsep) {
     this.sipHandle?.createAnswer({
       jsep,
-      tracks: [{ type: 'audio', capture: true, recv: true }],
+      tracks: [
+        {
+          type: 'audio',
+          capture: WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
+          recv: true,
+        },
+      ],
       success: answer => {
         this.sipHandle?.send({
           message: { request: 'update' },
@@ -1976,7 +1982,10 @@ export class JanusSipVoiceClient extends EventTarget {
 
     const generation = this.microphonePrewarmGeneration;
     this.microphonePrewarmPromise = mediaDevices
-      .getUserMedia({ audio: true, video: false })
+      .getUserMedia({
+        audio: WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
+        video: false,
+      })
       .then(stream => {
         if (generation !== this.microphonePrewarmGeneration) {
           stopMediaStream(stream);
