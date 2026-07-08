@@ -126,6 +126,26 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saved', 'update:modelValue', 'viewAll']);
 
+const SUPPORTED_OUTBOUND_CHANNEL_TYPES = [
+  'Channel::TwitterProfile',
+  'Channel::TwilioSms',
+  'Channel::Line',
+  'Channel::Telegram',
+  'Channel::TelegramPersonal',
+  'Channel::LinkedinPersonal',
+  'Channel::Weixin',
+  'Channel::Whatsapp',
+  'Channel::WhatsappWeb',
+  'Channel::VkCommunity',
+  'Channel::Sms',
+  'Channel::Instagram',
+  'Channel::Tiktok',
+  'Channel::Email',
+  'Channel::WebWidget',
+  'Channel::Api',
+  'Channel::FacebookPage',
+];
+
 const { t } = useI18n();
 const store = useStore();
 const currentAccountId = useMapGetter('getCurrentAccountId');
@@ -348,6 +368,15 @@ const resolvedInbox = computed(() => {
 const resolvedChannelType = computed(
   () =>
     resolvedInbox.value?.channel_type || resolvedInbox.value?.channelType || ''
+);
+const isOutboundChannelSupported = computed(() => {
+  if (!resolvedChannelType.value) return true;
+  return SUPPORTED_OUTBOUND_CHANNEL_TYPES.includes(resolvedChannelType.value);
+});
+const unsupportedChannelWarning = computed(() =>
+  isOutboundChannelSupported.value
+    ? ''
+    : t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.UNSUPPORTED_CHANNEL_WARNING')
 );
 const resolvedInboxMedium = computed(() => resolvedInbox.value?.medium || '');
 const isWhatsAppTemplateCapable = computed(() =>
@@ -1478,6 +1507,15 @@ watch(
     @confirm="saveTouch"
   >
     <div class="grid gap-5">
+      <div
+        v-if="unsupportedChannelWarning"
+        class="rounded-xl bg-n-amber-2 px-4 py-3 outline outline-1 outline-n-amber-6"
+      >
+        <p class="mb-0 text-sm leading-6 text-n-amber-12">
+          {{ unsupportedChannelWarning }}
+        </p>
+      </div>
+
       <div
         v-if="!isSidebarMode && !isTargetSelectionMode"
         class="rounded-xl bg-n-brand/5 px-4 py-4 outline outline-1 outline-n-brand/10"
