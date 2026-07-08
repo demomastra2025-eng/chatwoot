@@ -167,5 +167,25 @@ RSpec.describe Outbound::DeliveryPolicy do
       expect(result.delivery_mode).to eq('channel_template')
       expect(result.template[:content_sid]).to eq('HX123')
     end
+
+    it 'denies delivery for channels without an outbound send service' do
+      allow_any_instance_of(Channel::Voice).to receive(:provision_twilio_on_create)
+      voice_inbox = create(:channel_voice, account: account).inbox
+      conversation = conversation_for(voice_inbox)
+
+      result = described_class.evaluate(conversation: conversation, content_kind: 'free_text')
+
+      expect(result).not_to be_allowed
+      expect(result.reason).to eq(Outbound::DeliveryPolicy::OUTBOUND_CHANNEL_UNSUPPORTED_REASON)
+    end
+
+    it 'allows delivery for channels with an outbound send service' do
+      telegram_inbox = create(:channel_telegram, account: account).inbox
+      conversation = conversation_for(telegram_inbox)
+
+      result = described_class.evaluate(conversation: conversation, content_kind: 'free_text')
+
+      expect(result).to be_allowed
+    end
   end
 end

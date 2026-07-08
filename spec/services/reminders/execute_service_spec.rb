@@ -324,5 +324,19 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.additional_attributes['template_params']).to include('name' => 'sample_shipping_confirmation')
       expect(message.additional_attributes['delivery_policy']).to include('delivery_mode' => 'channel_template', 'requires_template' => true)
     end
+
+    it 'fails a touch whose channel has no outbound send service instead of silently not delivering' do
+      account = create(:account)
+      allow_any_instance_of(Channel::Voice).to receive(:provision_twilio_on_create)
+      voice_inbox = create(:channel_voice, account: account).inbox
+      contact = create(:contact, account: account)
+      voice_conversation = create(:conversation, account: account, inbox: voice_inbox, contact: contact)
+      reminder = build(:reminder, account: account, conversation: voice_conversation, remindable: voice_conversation,
+                                  body: 'Should not silently fail')
+
+      expect do
+        described_class.new(reminder: reminder).perform
+      end.to raise_error(ArgumentError, /does not support outbound message delivery/)
+    end
   end
 end

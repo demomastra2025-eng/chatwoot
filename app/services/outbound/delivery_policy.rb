@@ -4,6 +4,7 @@ class Outbound::DeliveryPolicy
                                       'when the 24-hour customer service window is closed'.freeze
   TEMPLATE_ATTACHMENTS_UNSUPPORTED_REASON = 'Native attachments cannot be combined with channel_template messages; ' \
                                             'use template header/media parameters instead'.freeze
+  OUTBOUND_CHANNEL_UNSUPPORTED_REASON = 'This channel does not support outbound message delivery'.freeze
 
   Result = Struct.new(
     :allowed,
@@ -65,6 +66,7 @@ class Outbound::DeliveryPolicy
     return allowed_result(delivery_mode: 'private_note') if private_note?
     return denied_result('Target inbox is required') if inbox.blank?
     return denied_result("Unsupported content_kind: #{content_kind}") unless VALID_CONTENT_KINDS.include?(content_kind)
+    return denied_result(OUTBOUND_CHANNEL_UNSUPPORTED_REASON) unless outbound_channel_supported?
 
     channel_template? ? evaluate_channel_template : evaluate_free_text
   end
@@ -190,6 +192,10 @@ class Outbound::DeliveryPolicy
 
   def channel
     inbox&.channel
+  end
+
+  def outbound_channel_supported?
+    Reminders::OutboundChannelSupport.supported?(channel)
   end
 
   def private_note?
