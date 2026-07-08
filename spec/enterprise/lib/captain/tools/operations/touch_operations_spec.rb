@@ -69,6 +69,102 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       expect(keep_scheduled_touch.metadata['auto_cancel_on_incoming_explicit']).to be(false)
     end
 
+    describe 'scheduling modes' do
+      it 'creates a recurring daily touch when repeat_mode and repeat_until_at are provided on an absolute schedule' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+        touch = operation.create_touch(
+          body: 'Daily nudge',
+          scheduled_at: 1.day.from_now.iso8601,
+          repeat_mode: 'daily',
+          repeat_until_at: 30.days.from_now.iso8601
+        )
+
+        expect(touch).to be_persisted
+        expect(touch.repeat_mode).to eq('daily')
+        expect(touch.recurring?).to be(true)
+        expect(touch.repeat_until_at).to be_within(5.seconds).of(30.days.from_now)
+        expect(touch.timing_mode).to eq('absolute')
+      end
+
+      it 'creates an absolute scheduled touch from scheduled_at' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+        future = 2.days.from_now
+
+        touch = operation.create_touch(
+          body: 'Absolute reminder',
+          scheduled_at: future.iso8601
+        )
+
+        expect(touch).to be_persisted
+        expect(touch.timing_mode).to eq('absolute')
+        expect(touch.scheduled_at).to be_within(1.second).of(future)
+        expect(touch.relative_offset_seconds).to eq(0)
+      end
+
+      it 'creates a relative fixed-time-of-day touch' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+        create(:message, account: account, conversation: conversation, inbox: conversation.inbox, message_type: :incoming, created_at: 5.minutes.ago)
+
+        touch = operation.create_touch(
+          body: 'Morning nudge',
+          relative_offset_minutes: 1440,
+          relative_time_mode: 'fixed_time_of_day',
+          relative_time_of_day: '10:00'
+        )
+
+        expect(touch).to be_persisted
+        expect(touch.relative_time_mode).to eq('fixed_time_of_day')
+        expect(touch.relative_time_of_day).to eq('10:00')
+        expect(touch.scheduled_at.hour).to eq(10)
+        expect(touch.scheduled_at.min).to eq(0)
+      end
+
+      it 'rejects recurring absolute touches without repeat_until_at' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+        expect do
+          operation.create_touch(body: 'x', scheduled_at: 1.day.from_now.iso8601, repeat_mode: 'weekly')
+        end.to raise_error(ArgumentError, /repeat_until_at is required/)
+      end
+
+      it 'rejects an invalid repeat_mode' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+        expect do
+          operation.create_touch(body: 'x', relative_offset_minutes: 60, repeat_mode: 'yearly')
+        end.to raise_error(ArgumentError, /repeat_mode must be one of/)
+      end
+
+      it 'rejects a past scheduled_at' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+        expect do
+          operation.create_touch(body: 'x', scheduled_at: 1.day.ago.iso8601)
+        end.to raise_error(ArgumentError, /scheduled_at must be in the future/)
+      end
+
+      it 'requires relative_time_of_day for fixed_time_of_day mode' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+        expect do
+          operation.create_touch(
+            body: 'x',
+            relative_offset_minutes: 60,
+            relative_time_mode: 'fixed_time_of_day'
+          )
+        end.to raise_error(ArgumentError, /relative_time_of_day is required/)
+      end
+
+      it 'rejects an invalid relative_time_of_day format' do
+        operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+        expect do
+          operation.create_touch(
+            body: 'x',
+            relative_offset_minutes: 60,
+            relative_time_mode: 'fixed_time_of_day',
+            relative_time_of_day: '25:00'
+          )
+        end.to raise_error(ArgumentError, /HH:MM format/)
+      end
+    end
+
     it 'supports relative scheduling for linked deal context' do
       deal = create(:crm_deal, account: account, expected_close_on: Date.current + 3.days)
       create(:crm_deal_contact, deal: deal, contact: conversation.contact, account: account)
@@ -117,20 +213,20 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       end
     end
 
-    it 'rejects absolute scheduled_at for Captain create_touch' do
-      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
-
-      expect do
-        operation.create_touch(body: 'Absolute follow-up', scheduled_at: 1.day.from_now.iso8601)
-      end.to raise_error(ArgumentError, 'scheduled_at is not supported for create_touch; use relative_offset_minutes and relative_anchor')
-    end
-
-    it 'rejects ambiguous absolute plus relative scheduling' do
+    it 'rejects supplying both scheduled_at and relative_offset_minutes' do
       operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
 
       expect do
         operation.create_touch(body: 'Ambiguous follow-up', scheduled_at: 1.day.from_now.iso8601, relative_offset_minutes: 3)
-      end.to raise_error(ArgumentError, 'scheduled_at is not supported for create_touch; use relative_offset_minutes and relative_anchor')
+      end.to raise_error(ArgumentError, /provide either scheduled_at or relative_offset_minutes/)
+    end
+
+    it 'rejects recurring mode without absolute scheduled_at' do
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      expect do
+        operation.create_touch(body: 'Recurring follow-up', repeat_mode: 'weekly')
+      end.to raise_error(ArgumentError, /recurring touches require absolute scheduled_at/)
     end
 
     it 'rejects missing relative_offset_minutes so immediate touches cannot be created' do

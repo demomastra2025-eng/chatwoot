@@ -8,6 +8,10 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     template_params: nil,
     remindable_kind: nil,
     scheduled_at: nil,
+    repeat_mode: nil,
+    repeat_until_at: nil,
+    relative_time_mode: nil,
+    relative_time_of_day: nil,
     relative_anchor: nil,
     relative_offset_minutes: nil,
     timezone: nil,
@@ -34,6 +38,10 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
       scheduled_at: scheduled_at,
       relative_anchor: relative_anchor,
       relative_offset_minutes: relative_offset_minutes,
+      repeat_mode: repeat_mode,
+      repeat_until_at: repeat_until_at,
+      relative_time_mode: relative_time_mode,
+      relative_time_of_day: relative_time_of_day,
       timezone: timezone,
       target_inbox_id: target_inbox_id,
       auto_cancel_on_incoming: auto_cancel_on_incoming,
@@ -162,9 +170,21 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     target_inbox_id:,
     auto_cancel_on_incoming:,
     attachment_ids:,
-    artifact_ids:
+    artifact_ids:,
+    repeat_mode:,
+    repeat_until_at:,
+    relative_time_mode:,
+    relative_time_of_day:
   )
     selected_attachment_ids = materialized_attachment_ids(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
+    normalized_repeat = normalized_repeat_mode(repeat_mode)
+    recurring = normalized_repeat != 'once'
+    if scheduled_at.present? && relative_offset_minutes.present?
+      raise ArgumentError,
+            'provide either scheduled_at or relative_offset_minutes, not both'
+    end
+    raise ArgumentError, 'recurring touches require absolute scheduled_at' if recurring && scheduled_at.blank?
+
     params = {
       action_type: 'send_message',
       content_kind: content_kind,
@@ -179,29 +199,96 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
       attachments: selected_attachment_ids,
       auto_cancel_on_incoming: normalized_auto_cancel_on_incoming(auto_cancel_on_incoming),
       target_inbox_id: target_inbox_id,
+      repeat_mode: normalized_repeat,
+      relative_time_mode: normalized_relative_time_mode(relative_time_mode),
+      relative_time_of_day: normalized_relative_time_of_day(relative_time_of_day),
       metadata: {
         'touch_source' => 'captain',
         'captain_assistant_id' => assistant.id,
         'captain_actor_id' => actor&.id
       }.compact
     }
+    if params[:relative_time_mode] == Reminder::RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY && params[:relative_time_of_day].blank?
+      raise ArgumentError,
+            'relative_time_of_day is required when relative_time_mode is fixed_time_of_day'
+    end
 
-    effective_relative_anchor = normalized_relative_anchor(
-      relative_anchor,
-      remindable: remindable,
-      relative_offset_minutes: relative_offset_minutes,
-      scheduled_at: scheduled_at
-    )
+    if scheduled_at.present?
+      params[:timing_mode] = 'absolute'
+      params[:scheduled_at] = parse_absolute_scheduled_at(scheduled_at)
+      params[:repeat_until_at] = parse_repeat_until_at(repeat_until_at) if repeat_until_at.present?
+      raise ArgumentError, 'repeat_until_at is required when repeat_mode is not once' if recurring && repeat_until_at.blank?
 
-    validate_relative_anchor!(effective_relative_anchor, remindable)
-    params.merge!(
-      timing_mode: 'relative',
-      relative_anchor: effective_relative_anchor,
-      relative_offset_seconds: parse_relative_offset_minutes(relative_offset_minutes)
-    )
-    ensure_relative_schedule_materializes!(params, remindable: remindable)
+    else
+      raise ArgumentError, 'repeat_until_at requires absolute scheduled_at' if repeat_until_at.present?
+
+      effective_relative_anchor = normalized_relative_anchor(
+        relative_anchor,
+        remindable: remindable,
+        relative_offset_minutes: relative_offset_minutes,
+        scheduled_at: scheduled_at
+      )
+      validate_relative_anchor!(effective_relative_anchor, remindable)
+      params.merge!(
+        timing_mode: 'relative',
+        relative_anchor: effective_relative_anchor,
+        relative_offset_seconds: parse_relative_offset_minutes(relative_offset_minutes)
+      )
+      ensure_relative_schedule_materializes!(params, remindable: remindable)
+    end
 
     params.compact
+  end
+
+  REPEAT_MODES = %w[once daily weekly monthly weekdays].freeze
+
+  def normalized_repeat_mode(value)
+    mode = (value || 'once').to_s.strip
+    return 'once' if mode.blank?
+
+    raise ArgumentError, "repeat_mode must be one of: #{REPEAT_MODES.join(', ')}" unless REPEAT_MODES.include?(mode)
+
+    mode
+  end
+
+  def normalized_relative_time_mode(value)
+    mode = (value || Reminder::RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME).to_s.strip
+    return Reminder::RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME if mode.blank?
+
+    unless Reminder::RELATIVE_TIME_MODES.include?(mode)
+      raise ArgumentError,
+            "relative_time_mode must be one of: #{Reminder::RELATIVE_TIME_MODES.join(', ')}"
+    end
+
+    mode
+  end
+
+  def normalized_relative_time_of_day(value)
+    return nil if value.blank?
+
+    raise ArgumentError, 'relative_time_of_day must be in HH:MM format (e.g. 10:00)' unless Reminder::RELATIVE_TIME_OF_DAY_FORMAT.match?(value.to_s)
+
+    value.to_s
+  end
+
+  def parse_absolute_scheduled_at(value)
+    time = parse_iso_time(value)
+    raise ArgumentError, 'scheduled_at must be in the future' unless time.future?
+
+    time
+  end
+
+  def parse_repeat_until_at(value)
+    time = parse_iso_time(value)
+    raise ArgumentError, 'repeat_until_at must be in the future' unless time.future?
+
+    time
+  end
+
+  def parse_iso_time(value)
+    Time.iso8601(value.to_s)
+  rescue ArgumentError
+    raise ArgumentError, 'invalid ISO8601 time'
   end
 
   def find_touch!(touch_id)
@@ -415,7 +502,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
   end
 
   def normalized_relative_anchor(relative_anchor, remindable:, relative_offset_minutes:, scheduled_at:)
-    raise ArgumentError, 'scheduled_at is not supported for create_touch; use relative_offset_minutes and relative_anchor' if scheduled_at.present?
+    return nil if scheduled_at.present?
 
     raise ArgumentError, 'relative_offset_minutes is required for create_touch' if relative_offset_minutes.blank?
 
