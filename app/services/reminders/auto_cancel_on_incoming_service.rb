@@ -17,6 +17,7 @@ class Reminders::AutoCancelOnIncomingService
       next unless explicitly_auto_cancelled?(reminder)
 
       reminder.cancel!(CANCELLED_AFTER_INCOMING_REPLY)
+      reminder.update_column(:processing_started_at, nil) if reminder.processing_started_at.present?
       cancelled_count += 1
     end
     cancelled_count
