@@ -28,6 +28,7 @@ class Captain::ContextFields
     service_name_snapshot service_type_snapshot service_duration_min_snapshot service_amount
     compensation_type_snapshot compensation_value_snapshot compensation_percent_snapshot
     prepaid_amount prepaid_payment_method settlement_amount settlement_payment_method
+    start_date start_time end_date end_time
     custom_attributes
   ].freeze
   COMMUNICATION_THREAD_CHANNEL_KEYS = %i[
@@ -109,9 +110,13 @@ class Captain::ContextFields
     { key: 'company_id', title: 'Company ID', description: 'appointment.company_id' },
     { key: 'conversation_id', title: 'Conversation ID', description: 'appointment.conversation_id' },
     { key: 'created_by_id', title: 'Created By User ID', description: 'appointment.created_by_id' },
-    { key: 'starts_at', title: 'Start Time', description: 'appointment.starts_at' },
-    { key: 'ends_at', title: 'End Time', description: 'appointment.ends_at' },
+    { key: 'starts_at', title: 'Start Timestamp', description: 'appointment.starts_at (full timestamp with timezone)' },
+    { key: 'ends_at', title: 'End Timestamp', description: 'appointment.ends_at (full timestamp with timezone)' },
     { key: 'duration_min', title: 'Duration (minutes)', description: 'appointment.duration_min' },
+    { key: 'start_date', title: 'Start Date (dd.mm.yyyy)', description: 'appointment.start_date (local calendar date of the appointment)' },
+    { key: 'start_time', title: 'Start Time (HH:MM)', description: 'appointment.start_time (local time only, e.g. 14:30)' },
+    { key: 'end_date', title: 'End Date (dd.mm.yyyy)', description: 'appointment.end_date (local calendar date of the appointment end)' },
+    { key: 'end_time', title: 'End Time (HH:MM)', description: 'appointment.end_time (local time only, e.g. 15:00)' },
     { key: 'status', title: 'Status', description: 'appointment.status' },
     { key: 'appointment_type', title: 'Appointment Type', description: 'appointment.appointment_type' },
     { key: 'client_name', title: 'Client Name', description: 'appointment.client_name' },
@@ -203,7 +208,14 @@ class Captain::ContextFields
 
     def appointment_state_for(account:, conversation:)
       appointment = appointment_for(account: account, conversation: conversation)
-      appointment&.attributes&.symbolize_keys&.slice(*APPOINTMENT_STATE_ATTRIBUTES)
+      return if appointment.blank?
+
+      appointment.attributes.symbolize_keys.slice(*APPOINTMENT_STATE_ATTRIBUTES).merge(
+        start_date: appointment.starts_at&.strftime('%d.%m.%Y'),
+        start_time: appointment.starts_at&.strftime('%H:%M'),
+        end_date: appointment.ends_at&.strftime('%d.%m.%Y'),
+        end_time: appointment.ends_at&.strftime('%H:%M')
+      ).slice(*APPOINTMENT_STATE_ATTRIBUTES)
     end
 
     def deal_state_for(account:, conversation:)

@@ -352,6 +352,40 @@ RSpec.describe Captain::ContextFields do
     end
   end
 
+  describe '.appointment_state_for' do
+    let(:conversation_record) { create(:conversation, account: account) }
+    let!(:appointment_record) do
+      create(
+        :scheduling_appointment,
+        account: account,
+        conversation: conversation_record,
+        starts_at: '2026-03-29T10:00:00Z',
+        ends_at: '2026-03-29T10:30:00Z'
+      )
+    end
+
+    it 'formats start/end date and time in the appointment timezone' do
+      Time.use_zone('Asia/Almaty') do
+        state = described_class.appointment_state_for(account: account, conversation: conversation_record)
+
+        expect(state[:starts_at]).to be_present
+        expect(state[:start_time]).to eq('15:00')
+        expect(state[:start_date]).to eq('29.03.2026')
+        expect(state[:end_time]).to eq('15:30')
+        expect(state[:end_date]).to eq('29.03.2026')
+      end
+    end
+
+    it 'exposes the formatted fields in the field definitions picker' do
+      ids = described_class.definitions_for(account).map { |field| field[:id] }
+
+      expect(ids).to include(
+        'appointment.start_date', 'appointment.start_time',
+        'appointment.end_date', 'appointment.end_time'
+      )
+    end
+  end
+
   describe '.task_state_for' do
     let(:conversation_record) { create(:conversation, account: account) }
     let!(:older_open_task) do
