@@ -1,6 +1,5 @@
 <script setup>
 import { computed, defineAsyncComponent } from 'vue';
-import { useRouter } from 'vue-router';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useWindowSize } from '@vueuse/core';
@@ -31,12 +30,11 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
       'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue'
     )
 );
-const TouchEditorDrawer = defineAsyncComponent(
-  () => import('dashboard/components-next/Outbound/TouchEditorDrawer.vue')
+const EntityTouchesCard = defineAsyncComponent(
+  () => import('dashboard/components-next/Outbound/EntityTouchesCard.vue')
 );
 
-const router = useRouter();
-const { accountId, accountScopedRoute, currentAccount } = useAccount();
+const { accountId, currentAccount } = useAccount();
 
 const { uiSettings, updateUISettings } = useUISettings();
 const { width: windowWidth } = useWindowSize();
@@ -151,33 +149,6 @@ const closeAppointmentsSidebar = () => {
     is_touch_sidebar_open: false,
   });
 };
-
-const closeTouchSidebar = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_copilot_panel_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-    is_touch_sidebar_open: false,
-  });
-};
-
-const openTouchesWorkspace = () => {
-  router.push(
-    accountScopedRoute(
-      'outbound_touches_index',
-      {},
-      {
-        conversation_id: activeConversationId.value,
-        remindable_id: remindableId.value,
-        remindable_type: remindableType.value,
-        ...(isCommunicationThread.value
-          ? { communication_thread_id: remindableId.value }
-          : {}),
-      }
-    )
-  );
-};
 </script>
 
 <template>
@@ -214,17 +185,10 @@ const openTouchesWorkspace = () => {
         />
       </div>
       <div v-if="activeTab === 'touch'" class="min-w-0 flex-1">
-        <TouchEditorDrawer
-          :model-value="activeTab === 'touch'"
-          display-mode="sidebar"
+        <EntityTouchesCard
           :conversation-id="activeConversationId"
           :remindable-type="remindableType"
           :remindable-id="remindableId"
-          show-all-touches-action
-          @close="closeTouchSidebar"
-          @saved="closeTouchSidebar"
-          @update:model-value="value => !value && closeTouchSidebar()"
-          @view-all="openTouchesWorkspace"
         />
       </div>
     </div>
