@@ -81,6 +81,9 @@ class Telephony::InboundRoutingService
     recursive_runtime_decision = recursive_runtime_call_active_decision
     return recursive_runtime_decision if recursive_runtime_decision.present?
 
+    server_voice_agent_decision = server_voice_agent_runtime_decision
+    return server_voice_agent_decision if server_voice_agent_decision.present?
+
     status_decision = status_aware_conversation_decision
     return status_decision if status_decision.present?
 
@@ -90,6 +93,21 @@ class Telephony::InboundRoutingService
     return duplicate_broadcast_decision if duplicate_broadcast_decision.present?
 
     primary_decision
+  end
+
+  def server_voice_agent_runtime_decision
+    return unless server_voice_agent_runtime_request?
+    return reject_decision(reason: 'voice_agent_sip_profile_missing') unless voice_agent_sip_route_available?
+    return ai_decision(reason: 'voice_agent_sip_profile_route') if server_voice_agent_app_ref.present?
+
+    fallback_decision(reason: ai_app_failure_reason, prefer_ai: true)
+  end
+
+  def server_voice_agent_runtime_request?
+    metadata_value('source').to_s == 'server_janus_sip' ||
+      ActiveModel::Type::Boolean.new.cast(payload.dig('janus', 'server_runtime')) ||
+      ActiveModel::Type::Boolean.new.cast(metadata_value('server_runtime', 'serverRuntime')) ||
+      call_ref.to_s.include?(':janus-server:')
   end
 
   def out_of_office_decision
@@ -816,6 +834,7 @@ class Telephony::InboundRoutingService
     Telephony::AiVoice::ContextBuilder.new(
       params: {
         call_ref: call_ref,
+        prefer_exact_call_ref: server_voice_agent_runtime_request?,
         account_id: decision[:account_id],
         number_ref: decision[:number_ref],
         ingress_number: inbound_number || number_binding&.phone_number,
@@ -839,6 +858,7 @@ class Telephony::InboundRoutingService
 
   def recursive_runtime_call_active_decision
     return unless direct_onelink_ai_runtime_request?
+    return if server_voice_agent_runtime_request?
     return if existing_voice_conversation.blank?
     return if active_bridge_call_ref_for_context.blank?
 
@@ -859,7 +879,7 @@ class Telephony::InboundRoutingService
 
     return context.compact unless include_bridge_context
 
-    context[:bridge_call_ref] = bridge_call_ref_for_context
+    context[:bridge_call_ref] = route_bridge_call_ref_for_context
 
     if existing_voice_conversation.present?
       context[:conversation_id] = existing_voice_conversation.id
@@ -903,11 +923,17 @@ class Telephony::InboundRoutingService
   end
 
   def resolved_ai_app_ref
-    @resolved_ai_app_ref ||= if direct_onelink_ai_runtime_request?
+    @resolved_ai_app_ref ||= if server_voice_agent_runtime_request?
+                               server_voice_agent_app_ref
+                             elsif direct_onelink_ai_runtime_request?
                                routing_policy.effective_ai_app_ref
                              else
                                routable_app_ref(routing_policy&.effective_ai_app_ref)
                              end
+  end
+
+  def server_voice_agent_app_ref
+    @server_voice_agent_app_ref ||= routing_policy&.effective_ai_app_ref.presence || runtime_app_ref
   end
 
   def direct_onelink_ai_runtime_request?
@@ -922,6 +948,8 @@ class Telephony::InboundRoutingService
   end
 
   def ai_app_failure_reason
+    return 'ai_app_ref_missing' if server_voice_agent_runtime_request? && server_voice_agent_app_ref.blank?
+
     routing_policy&.effective_ai_app_ref.present? ? 'recursive_runtime_app_ref' : 'ai_app_ref_missing'
   end
 
@@ -945,7 +973,7 @@ class Telephony::InboundRoutingService
     return true if transport.to_s == 'janus_sip'
     return true if metadata_value('janus_call_ref', 'janusCallRef').present?
 
-    call_ref.to_s.include?(':janus:')
+    call_ref.to_s.include?(':janus:') || call_ref.to_s.include?(':janus-server:')
   end
 
   def voice_agent_sip_profile
@@ -970,6 +998,12 @@ class Telephony::InboundRoutingService
 
     @bridge_call_ref_for_context ||= active_bridge_call_ref_for_context ||
                                      recent_bridge_call_session_scope.order(created_at: :desc, id: :desc).pick(:external_call_ref)
+  end
+
+  def route_bridge_call_ref_for_context
+    return call_ref if server_voice_agent_runtime_request?
+
+    bridge_call_ref_for_context
   end
 
   def active_bridge_call_ref_for_context

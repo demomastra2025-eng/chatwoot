@@ -647,21 +647,31 @@ class Telephony::VirtualPbx::ProvisioningService
   def existing_sip_profile_password_configured?(profile, inbox_id: nil)
     return false if inbox_id.blank? || profile[:internal_extension].blank?
 
-    existing_profile = if voice_agent_profile?(profile)
-                         account.telephony_sip_profiles.find_by(inbox_id: inbox_id, profile_kind: Telephony::SipProfile::PROFILE_KIND_VOICE_AGENT)
-                       else
-                         return false if profile[:user_id].blank?
-
-                         account.telephony_sip_profiles.find_by(
-                           inbox_id: inbox_id,
-                           user_id: profile[:user_id],
-                           internal_extension: profile[:internal_extension]
-                         )
-                       end
+    existing_profile = existing_sip_profile_for_credentials(profile, inbox_id: inbox_id)
     existing_profile ||= reusable_sip_profile_credentials_for(profile, inbox_id: inbox_id)
     return false if existing_profile.blank? || existing_profile.password_secret_ref.blank?
 
     existing_profile.sip_username.to_s == profile[:sip_username].to_s
+  end
+
+  def existing_sip_profile_for_credentials(profile, inbox_id:)
+    explicit_profile = sip_profile_record_by_id(account.inboxes.find_by(id: inbox_id), profile[:id])
+    return explicit_profile if explicit_profile.present?
+
+    if voice_agent_profile?(profile)
+      voice_agent_profile_for_inbox(inbox_id) ||
+        account.telephony_sip_profiles.find_by(
+          inbox_id: inbox_id,
+          internal_extension: profile[:internal_extension],
+          sip_username: profile[:sip_username]
+        )
+    elsif profile[:user_id].present?
+      account.telephony_sip_profiles.find_by(
+        inbox_id: inbox_id,
+        user_id: profile[:user_id],
+        internal_extension: profile[:internal_extension]
+      )
+    end
   end
 
   def reusable_sip_profile_credentials_for(profile, inbox_id:)
@@ -968,7 +978,8 @@ class Telephony::VirtualPbx::ProvisioningService
     return explicit_profile if explicit_profile.present?
 
     if voice_agent_profile?(profile)
-      return account.telephony_sip_profiles.find_by(inbox: inbox, profile_kind: Telephony::SipProfile::PROFILE_KIND_VOICE_AGENT) ||
+      return voice_agent_profile_for_inbox(inbox.id) ||
+             voice_agent_convertible_profile_for(inbox, profile) ||
              account.telephony_sip_profiles.new(inbox: inbox, profile_kind: Telephony::SipProfile::PROFILE_KIND_VOICE_AGENT)
     end
 
@@ -1000,6 +1011,28 @@ class Telephony::VirtualPbx::ProvisioningService
     return if inbox.blank? || profile_id.blank?
 
     account.telephony_sip_profiles.find_by(id: profile_id, inbox: inbox)
+  end
+
+  def voice_agent_profile_for_inbox(inbox_id)
+    account.telephony_sip_profiles.find_by(
+      inbox_id: inbox_id,
+      profile_kind: Telephony::SipProfile::PROFILE_KIND_VOICE_AGENT
+    )
+  end
+
+  def voice_agent_convertible_profile_for(inbox, profile)
+    by_extension = account.telephony_sip_profiles.find_by(
+      inbox: inbox,
+      internal_extension: profile[:internal_extension]
+    )
+    return by_extension if by_extension.present?
+
+    return if profile[:sip_username].blank?
+
+    account.telephony_sip_profiles.find_by(
+      inbox: inbox,
+      sip_username: profile[:sip_username]
+    )
   end
 
   def reassignable_sip_profile_for(inbox, profile)

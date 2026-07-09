@@ -393,12 +393,27 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def call_session
-    @call_session ||= if call_ref.blank?
-                        nil
-                      else
-                        scoped_payload = params.merge('account_id' => account_id.presence || explicit_number_binding&.account_id)
-                        Telephony::AiVoice::CallSessionResolver.new(payload: scoped_payload).call_session
-                      end
+    return @call_session if defined?(@call_session)
+
+    @call_session = if call_ref.blank?
+                      nil
+                    elsif prefer_exact_call_ref?
+                      exact_call_session_for_call_ref
+                    else
+                      scoped_payload = params.merge('account_id' => account_id.presence || explicit_number_binding&.account_id)
+                      Telephony::AiVoice::CallSessionResolver.new(payload: scoped_payload).call_session
+                    end
+  end
+
+  def exact_call_session_for_call_ref
+    scoped_account = explicit_account || explicit_number_binding&.account
+    return scoped_account.telephony_call_sessions.find_by(external_call_ref: call_ref) if scoped_account.present?
+
+    Telephony::CallSession.find_by(external_call_ref: call_ref)
+  end
+
+  def prefer_exact_call_ref?
+    ActiveModel::Type::Boolean.new.cast(params['prefer_exact_call_ref'] || params['preferExactCallRef'])
   end
 
   def account

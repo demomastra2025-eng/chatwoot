@@ -1212,6 +1212,7 @@ class Telephony::EventsIngestionService
                    else
                      ensure_outbound_conversation!(account: account, inbox: inbox, call_session: call_session)
                    end
+    conversation.update!(status: :pending) if ai_voice_inbound_call?(call_session) && !conversation.pending?
 
     call_session.update!(
       conversation: conversation,
@@ -1288,7 +1289,7 @@ class Telephony::EventsIngestionService
 
     update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
     update_attrs[:identifier] = call_session.external_call_ref unless native_sip_call_session?(call_session)
-    update_attrs[:status] = :open if native_sip_call_session?(call_session)
+    update_attrs[:status] = native_sip_conversation_status(call_session) if native_sip_call_session?(call_session)
 
     conversation.update!(update_attrs)
   end
@@ -1326,8 +1327,22 @@ class Telephony::EventsIngestionService
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
     update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
-    update_attrs[:status] = :open if native_sip_call_session?(call_session)
+    update_attrs[:status] = native_sip_conversation_status(call_session) if native_sip_call_session?(call_session)
     conversation.update!(update_attrs)
+  end
+
+  def native_sip_conversation_status(call_session)
+    ai_voice_inbound_call?(call_session) ? :pending : :open
+  end
+
+  def ai_voice_inbound_call?(call_session)
+    return false unless call_session.direction.to_s == 'inbound'
+
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+    route_metadata['route_action'].to_s == 'ai' ||
+      route_metadata['routing_mode'].to_s == 'ai' ||
+      metadata['ai_voice'].is_a?(Hash)
   end
 
   def prepare_reused_native_sip_conversation_for_call!(conversation, call_session)
