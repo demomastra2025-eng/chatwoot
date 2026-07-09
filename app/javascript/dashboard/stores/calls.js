@@ -212,6 +212,7 @@ const buildCallState = (callData, existingCall = null) => {
     sipuniNativeWebphoneCorrelation: displayValue(
       'sipuniNativeWebphoneCorrelation'
     ),
+    serverManagedVoiceCall: displayValue('serverManagedVoiceCall'),
     browserJoinUnsupportedReason: displayValue('browserJoinUnsupportedReason'),
     isActive: isSameProviderCall ? existingCall?.isActive || false : false,
     browserJoined: isSameProviderCall
@@ -278,6 +279,8 @@ export const useCallsStore = defineStore('calls', {
       janusSessionKey,
       sipuniNativeWebphoneCorrelation,
       browserJoinSupported,
+      browserJoinUnsupportedReason,
+      serverManagedVoiceCall,
       accountId,
       conversationDbId,
       conversationDisplayId,
@@ -309,6 +312,8 @@ export const useCallsStore = defineStore('calls', {
         janusSessionKey,
         sipuniNativeWebphoneCorrelation,
         browserJoinSupported,
+        browserJoinUnsupportedReason,
+        serverManagedVoiceCall,
       };
 
       if (TERMINAL_STATUSES.includes(status)) {
@@ -362,6 +367,8 @@ export const useCallsStore = defineStore('calls', {
           janusSessionKey,
           sipuniNativeWebphoneCorrelation,
           browserJoinSupported,
+          browserJoinUnsupportedReason,
+          serverManagedVoiceCall,
         });
       }
 
@@ -402,6 +409,8 @@ export const useCallsStore = defineStore('calls', {
               janusSessionKey,
               sipuniNativeWebphoneCorrelation,
               browserJoinSupported,
+              browserJoinUnsupportedReason,
+              serverManagedVoiceCall,
             });
           }
           this.setCallActive(call?.callSid || callSid);
@@ -440,7 +449,8 @@ export const useCallsStore = defineStore('calls', {
           browserJoinSupported: call?.isActive ? browserJoinSupported : false,
           browserJoinUnsupportedReason: call?.isActive
             ? call?.browserJoinUnsupportedReason
-            : 'CALL_IN_PROGRESS',
+            : (browserJoinUnsupportedReason || 'CALL_IN_PROGRESS'),
+          serverManagedVoiceCall,
         });
       }
     },

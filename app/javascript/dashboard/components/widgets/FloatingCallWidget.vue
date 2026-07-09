@@ -366,6 +366,14 @@ const getCallRouteParts = call => {
 
 const getCallTypeText = call => {
   if (!browserJoinSupportedForCall(call)) {
+    if (
+      call?.serverManagedVoiceCall ||
+      call?.browserJoinUnsupportedReason === 'AI_AGENT_HANDLING' ||
+      call?.browser_join_unsupported_reason === 'AI_AGENT_HANDLING'
+    ) {
+      return t('CONVERSATION.VOICE_WIDGET.HANDLED_BY_AI_AGENT');
+    }
+
     const operator = getOperatorName(call);
     if (callHasActiveRemoteState(call)) {
       return operator

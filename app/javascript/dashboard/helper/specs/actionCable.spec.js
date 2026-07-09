@@ -288,6 +288,66 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
     });
 
+    it('stores server-managed Janus voice calls as AI-handled outside-browser calls', () => {
+      const callsStore = useCallsStore();
+
+      actionCable.onReceived({
+        event: 'voice_call.status_changed',
+        data: {
+          account_id: 1,
+          call_sid: 'sipuni:janus-server:49:server-ai-call',
+          status: 'in_progress',
+          call_direction: 'inbound',
+          provider: 'sipuni',
+          inbox_id: 4593,
+          from_number: '+77000000000',
+          to_number: '+77017450000',
+          browser_join_supported: false,
+          metadata: {
+            source: 'server_janus_sip',
+            server_runtime: true,
+          },
+        },
+      });
+
+      expect(callsStore.calls).toEqual([
+        expect.objectContaining({
+          callSid: 'sipuni:janus-server:49:server-ai-call',
+          status: 'in_progress',
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
+          serverManagedVoiceCall: true,
+        }),
+      ]);
+    });
+
+    it('keeps normal browser Janus voice calls visible in the operator widget', () => {
+      const callsStore = useCallsStore();
+
+      actionCable.onReceived({
+        event: 'voice_call.status_changed',
+        data: {
+          account_id: 1,
+          call_sid: 'sipuni:janus:49:operator-call',
+          status: 'in_progress',
+          call_direction: 'inbound',
+          provider: 'sipuni',
+          inbox_id: 4593,
+          from_number: '+77000000001',
+          to_number: '+77017450000',
+          browser_join_supported: false,
+        },
+      });
+
+      expect(callsStore.calls).toEqual([
+        expect.objectContaining({
+          callSid: 'sipuni:janus:49:operator-call',
+          status: 'in_progress',
+          browserJoinSupported: false,
+        }),
+      ]);
+    });
+
     it('emits browser SIP config change events to the dashboard bus', () => {
       actionCable.onReceived({
         event: 'telephony.webphone_config_changed',

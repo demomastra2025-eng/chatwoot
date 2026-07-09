@@ -44,6 +44,22 @@ const notifyAudioOnNewMessage = data => {
 
 const { isImpersonating } = useImpersonation();
 
+const voiceCallMetadata = data => data?.metadata || data?.route_metadata || {};
+
+const isServerManagedVoiceCall = data => {
+  const metadata = voiceCallMetadata(data);
+  const callRef = data?.call_ref || data?.callSid || data?.call_sid;
+  return (
+    metadata.source === 'server_janus_sip' ||
+    metadata.server_runtime === true ||
+    metadata.serverRuntime === true ||
+    data?.server_runtime === true ||
+    data?.serverRuntime === true ||
+    data?.janus?.server_runtime === true ||
+    String(callRef || '').includes(':janus-server:')
+  );
+};
+
 class ActionCableConnector extends BaseActionCableConnector {
   constructor(app, pubsubToken, authClientId = null) {
     const { websocketURL = '' } = window.chatwootConfig || {};
@@ -359,6 +375,8 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   // eslint-disable-next-line class-methods-use-this
   onVoiceCallIncoming = data => {
+    const serverManagedVoiceCall = isServerManagedVoiceCall(data);
+
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: data.call_sid || data.callSid || data.call_ref,
@@ -399,11 +417,18 @@ class ActionCableConnector extends BaseActionCableConnector {
         data.sipuniNativeWebphoneCorrelation,
       browserJoinSupported:
         data.browser_join_supported ?? data.browserJoinSupported,
+      browserJoinUnsupportedReason: serverManagedVoiceCall
+        ? 'AI_AGENT_HANDLING'
+        : data.browser_join_unsupported_reason ||
+          data.browserJoinUnsupportedReason,
+      serverManagedVoiceCall,
     });
   };
 
   // eslint-disable-next-line class-methods-use-this
   onVoiceCallStatusChanged = data => {
+    const serverManagedVoiceCall = isServerManagedVoiceCall(data);
+
     const callsStore = useCallsStore();
     callsStore.handleCallStatusChanged({
       callSid: data.call_sid || data.callSid || data.call_ref,
@@ -444,6 +469,11 @@ class ActionCableConnector extends BaseActionCableConnector {
         data.sipuniNativeWebphoneCorrelation,
       browserJoinSupported:
         data.browser_join_supported ?? data.browserJoinSupported,
+      browserJoinUnsupportedReason: serverManagedVoiceCall
+        ? 'AI_AGENT_HANDLING'
+        : data.browser_join_unsupported_reason ||
+          data.browserJoinUnsupportedReason,
+      serverManagedVoiceCall,
     });
   };
 

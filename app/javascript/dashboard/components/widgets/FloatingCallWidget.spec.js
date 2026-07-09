@@ -44,6 +44,7 @@ const t = (key, params = {}) => {
     'CONVERSATION.VOICE_WIDGET.CALL_DIRECTION_ROUTE': `${params.direction} · ${params.route}`,
     'CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER':
       'Handled outside the browser',
+    'CONVERSATION.VOICE_WIDGET.HANDLED_BY_AI_AGENT': 'Handled by AI agent',
     'CONVERSATION.VOICE_WIDGET.HANDLED_BY': `Handled by: ${params.name}`,
     'CONVERSATION.VOICE_WIDGET.HANDLED_BY_UNKNOWN':
       'Handled by another operator',
@@ -305,6 +306,45 @@ describe('FloatingCallWidget', () => {
     await vi.advanceTimersByTimeAsync(7000);
 
     expect(wrapper.text()).toContain('Handled by: Ayan');
+    expect(wrapper.text()).toContain('00:07');
+    expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows active duration for calls handled by the AI agent', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-03T06:00:00Z'));
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:janus-server:49:ai-call',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
+        serverManagedVoiceCall: true,
+        fromNumber: '+77070001002',
+        toNumber: '+77070001001',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    await vi.advanceTimersByTimeAsync(7000);
+
+    expect(wrapper.text()).toContain('Handled by AI agent');
     expect(wrapper.text()).toContain('00:07');
     expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
