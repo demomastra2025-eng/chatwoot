@@ -480,7 +480,7 @@
             "REMOVE": "Удалить сотрудника {index}",
             "REQUIRED": "В каждой строке выберите сотрудника и укажите внутренний номер",
             "SIP_PAIR_REQUIRED": "SIP username/password сотрудника нужно заполнять вместе",
-            "VOICE_AGENT_LABEL": "ИИ-сотрудник",
+            "VOICE_AGENT_LABEL": "AI-агент",
             "VOICE_AGENT_UNIQUE": "В одном канале может быть только один SIP-профиль голосового ИИ-агента"
           },
           "EMPLOYEE_SIP_USERNAME": {

@@ -480,7 +480,7 @@
             "REMOVE": "Remove employee {index}",
             "REQUIRED": "Select an employee and enter an internal extension for each row",
             "SIP_PAIR_REQUIRED": "Employee SIP username/password must be filled together",
-            "VOICE_AGENT_LABEL": "AI employee",
+            "VOICE_AGENT_LABEL": "AI agent",
             "VOICE_AGENT_UNIQUE": "Only one voice AI agent SIP profile is allowed per channel"
           },
           "EMPLOYEE_SIP_USERNAME": {

@@ -402,6 +402,7 @@
       "CALL_ROUTE": "{from} → {to}",
       "CALL_DIRECTION_ROUTE": "{direction} · {route}",
       "HANDLED_OUTSIDE_BROWSER": "Обрабатывается вне браузера",
+      "HANDLED_BY_AI_AGENT": "Общается AI-агент",
       "HANDLED_BY": "Общается: {name}",
       "HANDLED_BY_UNKNOWN": "Общается другой оператор",
       "CALL_IN_PROGRESS": "Идёт звонок",

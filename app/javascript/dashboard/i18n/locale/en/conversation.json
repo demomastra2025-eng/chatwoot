@@ -405,6 +405,7 @@
       "CALL_ROUTE": "{from} → {to}",
       "CALL_DIRECTION_ROUTE": "{direction} · {route}",
       "HANDLED_OUTSIDE_BROWSER": "Handled outside the browser",
+      "HANDLED_BY_AI_AGENT": "Handled by AI agent",
       "HANDLED_BY": "Handled by: {name}",
       "HANDLED_BY_UNKNOWN": "Handled by another operator",
       "CALL_IN_PROGRESS": "Call in progress",
