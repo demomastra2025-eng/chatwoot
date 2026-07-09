@@ -788,6 +788,102 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
   end
 
+  it 'converts an existing employee SIP profile to a voice agent without requiring the saved SIP password again' do
+    post base_path,
+         params: valid_create_payload.merge(
+           dry_run: false,
+           remote_commit: false,
+           profiles: [
+             {
+               profile_kind: 'human_operator',
+               user_id: agent.id,
+               internal_extension: '9098',
+               sip_username: 'agent-9098',
+               sip_password: 'raw-agent-profile-password',
+               enabled: true
+             }
+           ]
+         ),
+         headers: headers,
+         as: :json
+    inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
+    profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
+
+    put "#{base_path}/#{inbox.id}",
+        params: {
+          dry_run: false,
+          remote_commit: false,
+          profiles: [
+            {
+              id: profile.id,
+              profile_kind: 'voice_agent',
+              internal_extension: '9098',
+              sip_username: 'agent-9098',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    expect(profile.reload).to have_attributes(
+      profile_kind: 'voice_agent',
+      user_id: nil,
+      sip_username: 'agent-9098'
+    )
+    expect(profile.sip_password).to eq('raw-agent-profile-password')
+  end
+
+  it 'reuses an existing SIP profile when the form recreates the voice agent row with the same extension' do
+    post base_path,
+         params: valid_create_payload.merge(
+           dry_run: false,
+           remote_commit: false,
+           profiles: [
+             {
+               profile_kind: 'human_operator',
+               user_id: agent.id,
+               internal_extension: '207',
+               sip_username: 'agent-207',
+               sip_password: 'raw-agent-profile-password',
+               enabled: true
+             }
+           ]
+         ),
+         headers: headers,
+         as: :json
+    inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
+    old_profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
+
+    put "#{base_path}/#{inbox.id}",
+        params: {
+          dry_run: false,
+          remote_commit: false,
+          profiles: [
+            {
+              profile_kind: 'voice_agent',
+              internal_extension: '207',
+              sip_username: 'agent-207',
+              enabled: true
+            }
+          ]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'errors')).to eq([])
+    expect(inbox.telephony_sip_profiles.reload.pluck(:id)).to eq([old_profile.id])
+    expect(old_profile.reload).to have_attributes(
+      profile_kind: 'voice_agent',
+      user_id: nil,
+      internal_extension: '207',
+      sip_username: 'agent-207'
+    )
+  end
+
   it 'rejects multiple voice agent SIP profiles in the same virtual PBX channel' do
     post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')

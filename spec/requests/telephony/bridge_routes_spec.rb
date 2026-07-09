@@ -1785,6 +1785,176 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body.dig('ai_context', 'tools').pluck('name')).to include('faq_lookup', 'request_transfer')
   end
 
+  it 'routes a trusted server Janus AI profile to AI independently of the operator primary mode' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'sipuni',
+      host: 'sip.example.test'
+    )
+    profile = create(
+      :telephony_sip_profile,
+      :voice_agent,
+      account: account,
+      inbox: voice_inbox,
+      provider_connection: provider_connection,
+      status: 'active'
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      ai_app_ref: 'server-janus-ai-runtime',
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'sipuni:janus-server:ai-profile:call-1',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15551230011',
+             app_ref: 'server-janus-ai-runtime',
+             transport: 'janus_sip',
+             janus: { server_runtime: true },
+             metadata: {
+               source: 'server_janus_sip',
+               voice_agent_sip_profile_id: profile.id
+             }
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'server-janus-ai-runtime',
+      'reason' => 'voice_agent_sip_profile_route',
+      'voice_agent_sip_profile_id' => profile.id
+    )
+  end
+
+  it 'keeps server Janus AI context on the current call ref when reusing a pending conversation' do
+    caller_number = '+15551230012'
+    current_call_ref = 'sipuni:janus-server:ai-profile:fresh-call'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :pending
+    )
+    old_call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      number_binding: number_binding,
+      conversation: conversation,
+      external_call_ref: 'bridge-call-stale',
+      status: 'in_progress'
+    )
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'sipuni',
+      host: 'sip.example.test'
+    )
+    profile = create(
+      :telephony_sip_profile,
+      :voice_agent,
+      account: account,
+      inbox: voice_inbox,
+      provider_connection: provider_connection,
+      status: 'active'
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      ai_app_ref: 'server-janus-ai-runtime',
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: current_call_ref,
+             bridge_call_ref: current_call_ref,
+             ingress_number: voice_channel.phone_number,
+             caller_number: caller_number,
+             app_ref: 'server-janus-ai-runtime',
+             transport: 'janus_sip',
+             janus: { server_runtime: true },
+             metadata: {
+               source: 'server_janus_sip',
+               voice_agent_sip_profile_id: profile.id
+             }
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'reason' => 'voice_agent_sip_profile_route',
+      'bridge_call_ref' => current_call_ref
+    )
+    expect(response.parsed_body.dig('ai_context', 'call_ref')).to eq(current_call_ref)
+    expect(response.parsed_body.dig('ai_context', 'conversation_id')).to eq(conversation.id)
+    expect(response.parsed_body.dig('ai_context', 'call_ref')).not_to eq(old_call_session.external_call_ref)
+  end
+
+  it 'routes a trusted server Janus call to the runtime app ref even when older payloads omit server metadata' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'sipuni',
+      host: 'sip.example.test'
+    )
+    profile = create(
+      :telephony_sip_profile,
+      :voice_agent,
+      account: account,
+      inbox: voice_inbox,
+      provider_connection: provider_connection,
+      status: 'active'
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      ai_app_ref: nil,
+      onelink_ai_app_ref: nil,
+      fallback_ai_app_ref: nil,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret', ONELINK_AI_VOICE_APP_REF: nil) do
+      post path,
+           params: {
+             call_ref: "sipuni:janus-server:#{profile.id}:call-1",
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15551230012',
+             app_ref: 'server-janus-ai-runtime'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'server-janus-ai-runtime',
+      'reason' => 'voice_agent_sip_profile_route',
+      'voice_agent_sip_profile_id' => profile.id
+    )
+  end
+
   it 'keeps a recent terminal bridge call ref for the AI runtime leg correlation' do
     caller_number = '+15550000002'
     contact = create(:contact, account: account, phone_number: caller_number)

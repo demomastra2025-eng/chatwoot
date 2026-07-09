@@ -130,6 +130,39 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'keeps native SIP AI conversations pending while operator conversations remain open' do
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
+        status: 'ringing',
+        metadata: {}
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-native-ai-pending-1',
+          provider: 'sipuni',
+          event: 'session_started',
+          status: 'ringing',
+          metadata: { route_action: 'ai' }
+        )
+      ).perform
+
+      expect(result.conversation.reload).to be_pending
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-native-operator-open-1',
+          provider: 'sipuni',
+          event: 'operator_ringing',
+          status: 'ringing',
+          metadata: { route_action: 'operator' }
+        )
+      ).perform
+
+      expect(result.conversation.reload).to be_open
+    end
+
     it 'broadcasts lightweight realtime status updates without waiting for message broadcasts' do
       operator = create(:user, account: account)
       create(:inbox_member, inbox: existing_call_session.inbox, user: operator)
