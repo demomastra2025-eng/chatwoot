@@ -52,6 +52,29 @@ function loadConfig(env = process.env) {
     janusBrowserBridgeEnabled: parseBoolean(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_ENABLED || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_ENABLED, false),
     janusBrowserBridgePath: env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_PATH || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_PATH || '/ai-voice/janus-sip/browser-media',
     janusBrowserBridgePublicBaseUrl: (env.VOICE_AGENT_PUBLIC_BASE_URL || env.ONELINK_AI_VOICE_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+    janusServerRuntimeEnabled: parseBoolean(env.VOICE_AGENT_JANUS_SERVER_RUNTIME_ENABLED || env.ONELINK_AI_VOICE_JANUS_SERVER_RUNTIME_ENABLED, false),
+    janusServerWsUrl: env.VOICE_AGENT_JANUS_SERVER_WS_URL || env.ONELINK_AI_VOICE_JANUS_SERVER_WS_URL || env.VOICE_AGENT_JANUS_WS_URL || '',
+    janusServerProfiles: parseJsonList(env.VOICE_AGENT_JANUS_SERVER_PROFILES_JSON || env.ONELINK_AI_VOICE_JANUS_SERVER_PROFILES_JSON || ''),
+    janusServerProfilesPath: env.VOICE_AGENT_JANUS_SERVER_PROFILES_PATH || env.ONELINK_AI_VOICE_JANUS_SERVER_PROFILES_PATH || '/internal/voice/ai/janus-sip/profiles',
+    janusServerProfileSyncIntervalMs: parseInteger(
+      env.VOICE_AGENT_JANUS_SERVER_PROFILE_SYNC_INTERVAL_MS || env.ONELINK_AI_VOICE_JANUS_SERVER_PROFILE_SYNC_INTERVAL_MS,
+      15_000
+    ),
+    janusServerMaxCallsPerProfile: parseInteger(
+      env.VOICE_AGENT_JANUS_SERVER_MAX_CALLS_PER_PROFILE || env.ONELINK_AI_VOICE_JANUS_SERVER_MAX_CALLS_PER_PROFILE,
+      4
+    ),
+    janusServerRegistrationConcurrency: parseInteger(
+      env.VOICE_AGENT_JANUS_SERVER_REGISTRATION_CONCURRENCY || env.ONELINK_AI_VOICE_JANUS_SERVER_REGISTRATION_CONCURRENCY,
+      10
+    ),
+    janusServerProviderWsUrls: {
+      sipuni: env.VOICE_AGENT_JANUS_SERVER_SIPUNI_WS_URL || env.ONELINK_AI_VOICE_JANUS_SERVER_SIPUNI_WS_URL || '',
+      binotel: env.VOICE_AGENT_JANUS_SERVER_BINOTEL_WS_URL || env.ONELINK_AI_VOICE_JANUS_SERVER_BINOTEL_WS_URL || '',
+      asterisk_analog: env.VOICE_AGENT_JANUS_SERVER_ASTERISK_ANALOG_WS_URL || env.ONELINK_AI_VOICE_JANUS_SERVER_ASTERISK_ANALOG_WS_URL || ''
+    },
+    janusMediaServerUrl: (env.VOICE_AGENT_JANUS_MEDIA_SERVER_URL || env.ONELINK_AI_VOICE_JANUS_MEDIA_SERVER_URL || env.MEDIA_SERVER_URL || '').replace(/\/+$/, ''),
+    janusMediaServerToken: env.VOICE_AGENT_JANUS_MEDIA_SERVER_TOKEN || env.ONELINK_AI_VOICE_JANUS_MEDIA_SERVER_TOKEN || env.MEDIA_SERVER_AUTH_TOKEN || env.AUTH_TOKEN || '',
     whatsappAttachPath: env.VOICE_AGENT_WHATSAPP_ATTACH_PATH || env.ONELINK_AI_VOICE_WHATSAPP_ATTACH_PATH || env.AI_VOICE_WHATSAPP_ATTACH_PATH || '/internal/whatsapp-cloud/calls',
     sessionTtlMs: parseInteger(env.VOICE_AGENT_SESSION_TTL_MS, 3_600_000),
     onelinkTimeoutMs: parseInteger(env.VOICE_AGENT_ONELINK_TIMEOUT_MS || env.VOICE_AGENT_ONELINK_AI_TIMEOUT_MS, 10_000),
@@ -89,3 +112,16 @@ function parseList(value) {
 }
 
 module.exports.parseList = parseList;
+
+function parseJsonList(value) {
+  const text = String(value || '').trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch (_error) {
+    return [];
+  }
+}
+
+module.exports.parseJsonList = parseJsonList;

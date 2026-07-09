@@ -23,6 +23,14 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.janusBrowserBridgeEnabled, false);
   assert.equal(config.janusBrowserBridgePath, '/ai-voice/janus-sip/browser-media');
   assert.equal(config.janusBrowserBridgePublicBaseUrl, '');
+  assert.equal(config.janusServerRuntimeEnabled, false);
+  assert.equal(config.janusServerWsUrl, '');
+  assert.deepEqual(config.janusServerProfiles, []);
+  assert.equal(config.janusServerProfilesPath, '/internal/voice/ai/janus-sip/profiles');
+  assert.equal(config.janusServerProfileSyncIntervalMs, 15_000);
+  assert.deepEqual(config.janusServerProviderWsUrls, { sipuni: '', binotel: '', asterisk_analog: '' });
+  assert.equal(config.janusMediaServerUrl, '');
+  assert.equal(config.janusMediaServerToken, '');
   assert.equal(config.outputMaxBufferedMs, 15_000);
   assert.equal(config.postToolContinuationMs, 4_000);
   assert.equal(config.clearAudioOnInterrupt, false);
@@ -85,6 +93,18 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
     VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PAYLOAD_TYPE: '0',
     VOICE_AGENT_JANUS_BROWSER_BRIDGE_ENABLED: 'true',
     VOICE_AGENT_JANUS_BROWSER_BRIDGE_PATH: '/custom/browser-media',
+    VOICE_AGENT_JANUS_SERVER_RUNTIME_ENABLED: 'true',
+    VOICE_AGENT_JANUS_SERVER_WS_URL: 'ws://janus:8188',
+    VOICE_AGENT_JANUS_SERVER_PROFILES_JSON: '[{"id":12,"provider":"sipuni"}]',
+    VOICE_AGENT_JANUS_SERVER_PROFILES_PATH: '/custom/janus/profiles',
+    VOICE_AGENT_JANUS_SERVER_PROFILE_SYNC_INTERVAL_MS: '5000',
+    VOICE_AGENT_JANUS_SERVER_MAX_CALLS_PER_PROFILE: '6',
+    VOICE_AGENT_JANUS_SERVER_REGISTRATION_CONCURRENCY: '12',
+    VOICE_AGENT_JANUS_SERVER_SIPUNI_WS_URL: 'ws://janus-sipuni:8188',
+    VOICE_AGENT_JANUS_SERVER_BINOTEL_WS_URL: 'ws://janus-binotel:8188',
+    VOICE_AGENT_JANUS_SERVER_ASTERISK_ANALOG_WS_URL: 'ws://janus-asterisk:8189',
+    VOICE_AGENT_JANUS_MEDIA_SERVER_URL: 'http://media-server:4000/',
+    VOICE_AGENT_JANUS_MEDIA_SERVER_TOKEN: 'media-token',
     VOICE_AGENT_PUBLIC_BASE_URL: 'wss://dev.one-link.kz/',
     VOICE_AGENT_WHATSAPP_ATTACH_PATH: '/custom/whatsapp/calls',
     VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS: '1500',
@@ -122,6 +142,20 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
   assert.equal(config.janusBrowserBridgeEnabled, true);
   assert.equal(config.janusBrowserBridgePath, '/custom/browser-media');
   assert.equal(config.janusBrowserBridgePublicBaseUrl, 'wss://dev.one-link.kz');
+  assert.equal(config.janusServerRuntimeEnabled, true);
+  assert.equal(config.janusServerWsUrl, 'ws://janus:8188');
+  assert.deepEqual(config.janusServerProfiles, [{ id: 12, provider: 'sipuni' }]);
+  assert.equal(config.janusServerProfilesPath, '/custom/janus/profiles');
+  assert.equal(config.janusServerProfileSyncIntervalMs, 5000);
+  assert.equal(config.janusServerMaxCallsPerProfile, 6);
+  assert.equal(config.janusServerRegistrationConcurrency, 12);
+  assert.deepEqual(config.janusServerProviderWsUrls, {
+    sipuni: 'ws://janus-sipuni:8188',
+    binotel: 'ws://janus-binotel:8188',
+    asterisk_analog: 'ws://janus-asterisk:8189'
+  });
+  assert.equal(config.janusMediaServerUrl, 'http://media-server:4000');
+  assert.equal(config.janusMediaServerToken, 'media-token');
   assert.equal(config.whatsappAttachPath, '/custom/whatsapp/calls');
   assert.equal(config.outputMaxBufferedMs, 1500);
   assert.equal(config.postToolContinuationMs, 2500);

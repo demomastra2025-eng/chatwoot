@@ -273,6 +273,7 @@ class VoiceApplication {
       closeMediaStreamSafely(mediaStream);
       return callerHangupResult();
     }
+    void session.safeControl('ai_answered', aiAnsweredControlMetadata(context, routeDecision));
 
     if (session.state === 'fallback') {
       callerHangupTracker.disarm();
@@ -2763,7 +2764,15 @@ function routePayload(requestPayload = {}, callRef) {
     caller_number: requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from_number || requestPayload.from,
     number_ref: requestPayload.number_ref || requestPayload.numberRef,
     account_id: requestPayload.account_id || requestPayload.accountId,
+    inbox_id: requestPayload.inbox_id || requestPayload.inboxId,
     app_ref: requestPayload.app_ref || requestPayload.appRef,
+    provider: requestPayload.provider,
+    direction: requestPayload.direction,
+    transport: requestPayload.transport,
+    sip_profile: requestPayload.sip_profile || requestPayload.sipProfile,
+    janus: requestPayload.janus,
+    metadata: requestPayload.metadata,
+    stream_ref: requestPayload.stream_ref || requestPayload.streamRef,
     media_session_ref: requestPayload.media_session_ref || requestPayload.mediaSessionRef
   });
 }
@@ -2842,6 +2851,17 @@ function shouldBootstrapAiContext(routeAction, handleLocallyAsAi) {
 
 function routeAiContext(routeDecision = {}) {
   return routeDecision.ai_context || routeDecision.aiContext || null;
+}
+
+function aiAnsweredControlMetadata(context = {}, routeDecision = {}) {
+  const source = context || {};
+  const ai = source.ai || routeDecision.ai || routeDecision.ai_context?.ai || routeDecision.aiContext?.ai || {};
+  return compactPayload({
+    provider: ai.provider || routeDecision.provider || 'gemini-live',
+    model: ai.model || routeDecision.model,
+    degraded: ai.degraded || ai.context_degraded,
+    reason: ai.reason || source.reason
+  });
 }
 
 function normalizeRouteAction(routeDecision = {}) {

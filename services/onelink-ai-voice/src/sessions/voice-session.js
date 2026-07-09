@@ -66,7 +66,6 @@ class VoiceSession {
         model: this.context.ai?.model
       });
       void this.safeControl('ai_ringing', { provider: this.context.ai?.provider, model: this.context.ai?.model });
-      void this.safeControl('ai_answered', { provider: this.context.ai?.provider, model: this.context.ai?.model });
       return this.context;
     } catch (error) {
       const reason = safeReason(error, 'context_unavailable');
@@ -88,7 +87,6 @@ class VoiceSession {
         fallback_model: this.context.ai?.model
       });
       void this.safeControl('ai_ringing', { provider: this.context.ai?.provider, model: this.context.ai?.model, degraded: true, reason });
-      void this.safeControl('ai_answered', { provider: this.context.ai?.provider, model: this.context.ai?.model, degraded: true, reason });
       return this.context;
     }
   }

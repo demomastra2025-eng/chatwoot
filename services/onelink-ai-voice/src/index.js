@@ -9,6 +9,7 @@ const { createJanusRuntimeMediaStreamFactory } = require('./janus/runtime-stream
 const { JanusRtpRuntimeBridgeManager, createJanusRtpBridgeMediaStreamFactory } = require('./janus/rtp-runtime-bridge');
 const { JanusBrowserBridgeManager, createJanusBrowserBridgeMediaStreamFactory } = require('./janus/browser-bridge');
 const { JanusSipRtpForwardController } = require('./janus/rtp-forward');
+const { JanusMediaServerClient, JanusSipServerRuntimeManager } = require('./janus/server-runtime');
 const { createWhatsappInternalHandler } = require('./whatsapp/internal-server');
 const { createWhatsappRuntimeMediaStreamFactory } = require('./whatsapp/runtime-stream');
 const { loadConfig } = require('./config');
@@ -66,9 +67,13 @@ async function main() {
     })
   });
 
+  const janusServerRuntime = createJanusServerRuntimeManager({ config, app, client });
   const health = createHealthServer({
     registry,
     port: config.apiPort,
+    diagnostics: () => ({
+      janus_server_runtime: janusServerRuntimeDiagnostics(janusServerRuntime)
+    }),
     handlers: [
       createJanusInternalHandler({
         app,
@@ -89,11 +94,20 @@ async function main() {
       janusBrowserBridgeManager ? janusBrowserBridgeManager.handleUpgrade.bind(janusBrowserBridgeManager) : null
     ].filter(Boolean)
   });
+  const runtime = { app, registry, health, janusServerRuntime };
+  if (require.main === module) installShutdownHandlers(runtime);
   await health.listen();
+  try {
+    if (janusServerRuntime) await janusServerRuntime.start();
+  } catch (error) {
+    await health.close();
+    throw error;
+  }
+  if (janusServerRuntime?.closed) return runtime;
 
   console.log(JSON.stringify({ event: 'voice_service_started', apiPort: config.apiPort }));
 
-  return { app, registry, health };
+  return runtime;
 }
 
 if (require.main === module) {
@@ -162,3 +176,59 @@ function createJanusBrowserBridgeManager(config = {}) {
 }
 
 module.exports.createJanusBrowserBridgeManager = createJanusBrowserBridgeManager;
+
+function createJanusServerRuntimeManager({ config = {}, app, client } = {}) {
+  if (!config.janusServerRuntimeEnabled) return null;
+  const staticProfiles = Array.isArray(config.janusServerProfiles) ? config.janusServerProfiles : [];
+  return new JanusSipServerRuntimeManager({
+    app,
+    profiles: staticProfiles,
+    janusUrl: config.janusServerWsUrl,
+    mediaServerClient: new JanusMediaServerClient({
+      baseUrl: config.janusMediaServerUrl,
+      token: config.janusMediaServerToken,
+      timeoutMs: config.onelinkTimeoutMs
+    }),
+    profileProvider: config.janusServerProfilesPath && client
+      ? async () => applyJanusServerProviderUrls(await client.getJanusSipProfiles({ path: config.janusServerProfilesPath }), config)
+      : null,
+    syncIntervalMs: config.janusServerProfileSyncIntervalMs,
+    maxCallsPerProfile: config.janusServerMaxCallsPerProfile,
+    registrationConcurrency: config.janusServerRegistrationConcurrency
+  });
+}
+
+module.exports.createJanusServerRuntimeManager = createJanusServerRuntimeManager;
+
+function applyJanusServerProviderUrls(profiles = [], config = {}) {
+  const providerUrls = config.janusServerProviderWsUrls || {};
+  return profiles.map(profile => {
+    const provider = String(profile.provider || '').trim().toLowerCase();
+    const janusUrl = profile.janus_url || profile.janusUrl || providerUrls[provider] || config.janusServerWsUrl;
+    return janusUrl ? { ...profile, janus_url: janusUrl } : profile;
+  });
+}
+
+module.exports.applyJanusServerProviderUrls = applyJanusServerProviderUrls;
+
+function janusServerRuntimeDiagnostics(runtime) {
+  if (!runtime) return { enabled: false };
+  return runtime.diagnostics();
+}
+
+module.exports.janusServerRuntimeDiagnostics = janusServerRuntimeDiagnostics;
+
+function installShutdownHandlers(runtime = {}) {
+  let stopping = false;
+  const shutdown = async signal => {
+    if (stopping) return;
+    stopping = true;
+    console.log(JSON.stringify({ event: 'voice_service_stopping', signal }));
+    await runtime.janusServerRuntime?.close?.();
+    await runtime.health?.close?.();
+  };
+  process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.once('SIGINT', () => { void shutdown('SIGINT'); });
+}
+
+module.exports.installShutdownHandlers = installShutdownHandlers;

@@ -2280,7 +2280,17 @@ test('VoiceApplication asks Rails for a route first and dials operator without A
     from: '+155****4321',
     to: '+155****4567',
     number_ref: 'number-1',
-    app_ref: 'runtime-app-1'
+    account_id: 42,
+    inbox_id: 4776,
+    app_ref: 'runtime-app-1',
+    provider: 'sipuni',
+    direction: 'inbound',
+    transport: 'janus_sip',
+    sip_profile: { id: 49, profile_kind: 'voice_agent', provider: 'sipuni' },
+    janus: { server_runtime: true, profile_id: 49, master_id: 501 },
+    metadata: { source: 'server_janus_sip', server_runtime: true },
+    stream_ref: 'stream-server-janus-1',
+    media_session_ref: 'media-server-janus-1'
   });
 
   assert.equal(result.mode, 'operator');
@@ -2288,6 +2298,16 @@ test('VoiceApplication asks Rails for a route first and dials operator without A
   assert.equal(routeCalls.length, 1);
   assert.equal(routeCalls[0].call_ref, 'call-operator-1');
   assert.equal(routeCalls[0].app_ref, 'runtime-app-1');
+  assert.equal(routeCalls[0].account_id, 42);
+  assert.equal(routeCalls[0].inbox_id, 4776);
+  assert.equal(routeCalls[0].provider, 'sipuni');
+  assert.equal(routeCalls[0].direction, 'inbound');
+  assert.equal(routeCalls[0].transport, 'janus_sip');
+  assert.deepEqual(routeCalls[0].sip_profile, { id: 49, profile_kind: 'voice_agent', provider: 'sipuni' });
+  assert.deepEqual(routeCalls[0].janus, { server_runtime: true, profile_id: 49, master_id: 501 });
+  assert.deepEqual(routeCalls[0].metadata, { source: 'server_janus_sip', server_runtime: true });
+  assert.equal(routeCalls[0].stream_ref, 'stream-server-janus-1');
+  assert.equal(routeCalls[0].media_session_ref, 'media-server-janus-1');
   assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing']);
   assert.equal(dialCalls[0].agent_aor, 'sip:1001@example.test');
   await result.completion;

@@ -73,6 +73,62 @@ Optional Janus Admin API env:
 - `VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_HOST`
 - `VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PORT`
 
+Server-side Janus SIP voice-agent runtime is separate from the operator browser
+webphone. It is disabled by default. When enabled, it reads managed voice-agent
+SIP profiles from Chatwoot through the internal
+`/internal/voice/ai/janus-sip/profiles` endpoint and keeps Janus registrations in
+sync with inbox configuration changes. `VOICE_AGENT_JANUS_SERVER_PROFILES_JSON`
+is only a local fallback for isolated tests.
+
+When enabled, `onelink-ai-voice` connects to Janus WebSocket, registers only the
+configured `voice_agent` SIP profiles, accepts incoming SIP calls by creating a
+Pion WebRTC session in `chatwoot_media_server`, and then uses the existing
+runtime stream path for Gemini Live audio.
+
+Required server-side Janus env:
+
+- `VOICE_AGENT_JANUS_SERVER_RUNTIME_ENABLED=true`
+- `VOICE_AGENT_JANUS_SERVER_WS_URL=ws://janus_gateway:8188`
+- `VOICE_AGENT_JANUS_SERVER_SIPUNI_WS_URL=ws://janus_gateway:8188`
+- `VOICE_AGENT_JANUS_SERVER_BINOTEL_WS_URL=ws://janus_gateway:8188`
+- `VOICE_AGENT_JANUS_SERVER_ASTERISK_ANALOG_WS_URL=ws://host.docker.internal:8189`
+- `VOICE_AGENT_JANUS_MEDIA_SERVER_URL=http://chatwoot_media_server:4000`
+- `VOICE_AGENT_JANUS_MEDIA_SERVER_TOKEN=<MEDIA_SERVER_AUTH_TOKEN>`
+- `VOICE_AGENT_JANUS_SERVER_PROFILES_PATH=/internal/voice/ai/janus-sip/profiles`
+- `VOICE_AGENT_JANUS_SERVER_PROFILE_SYNC_INTERVAL_MS=15000`
+- `VOICE_AGENT_JANUS_SERVER_MAX_CALLS_PER_PROFILE=4`
+- `VOICE_AGENT_JANUS_SERVER_REGISTRATION_CONCURRENCY=10`
+
+Each profile uses one registered Janus SIP master handle and a bounded pool of
+native helper handles. Routing-only configuration changes are applied to new
+calls without dropping calls already in progress. SIP credential, transport,
+or pool-size changes rebuild only the affected profile session.
+
+Provider-specific Janus URLs are optional overrides. If a provider URL is blank,
+the runtime falls back to `VOICE_AGENT_JANUS_SERVER_WS_URL`. This lets
+Sipuni/Binotel use the default Janus gateway while Asterisk analog uses the
+separate Asterisk Janus gateway.
+
+Fallback profile JSON for isolated local tests:
+
+```json
+[
+  {
+    "id": 12,
+    "account_id": 42,
+    "inbox_id": 9,
+    "number_ref": "sipuni-main",
+    "provider": "sipuni",
+    "phone_number": "+77001234567",
+    "internal_extension": "9098",
+    "sip_username": "ai-agent-9098",
+    "sip_password": "secret",
+    "sip_host": "sip.example.kz",
+    "sip_transport": "udp"
+  }
+]
+```
+
 Scripts:
 
 - `npm test`

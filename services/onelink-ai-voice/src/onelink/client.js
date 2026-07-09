@@ -67,6 +67,17 @@ class OnelinkClient {
     });
   }
 
+  async getJanusSipProfiles({ path = '/internal/voice/ai/janus-sip/profiles' } = {}) {
+    const response = await this.request(path, { method: 'GET' });
+    if (!Array.isArray(response.profiles)) {
+      throw new OnelinkApiError('invalid Janus SIP profiles response', {
+        status: 502,
+        code: 'invalid_janus_sip_profiles_contract'
+      });
+    }
+    return response.profiles;
+  }
+
   routeInbound(payload = {}) {
     return this.request('/internal/voice/inbound/route', { method: 'POST', body: normalizeKeys(payload), token: this.bridgeToken });
   }

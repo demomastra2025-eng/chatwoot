@@ -1,0 +1,1077 @@
+const { EventEmitter } = require('node:events');
+const crypto = require('node:crypto');
+const WebSocket = require('ws');
+const { createJanusRuntimeMediaStreamFactory } = require('./runtime-stream');
+
+const DEFAULT_PLUGIN = 'janus.plugin.sip';
+const DEFAULT_PROTOCOL = 'janus-protocol';
+
+class JanusWebSocketClient extends EventEmitter {
+  constructor({
+    url,
+    WebSocketImpl = WebSocket,
+    protocol = DEFAULT_PROTOCOL,
+    apiSecret = '',
+    transactionPrefix = 'onelink-ai-sip',
+    requestTimeoutMs = 8000
+  } = {}) {
+    super();
+    this.url = String(url || '').trim();
+    this.WebSocketImpl = WebSocketImpl;
+    this.protocol = protocol;
+    this.apiSecret = apiSecret;
+    this.transactionPrefix = transactionPrefix;
+    this.requestTimeoutMs = requestTimeoutMs;
+    this.ws = null;
+    this.pending = new Map();
+  }
+
+  async connect() {
+    if (!this.url) throw new Error('janus server WebSocket URL is required');
+    if (this.ws) return this;
+
+    this.ws = new this.WebSocketImpl(this.url, this.protocol);
+    wireWebSocket(this.ws, {
+      onOpen: () => this.emit('open'),
+      onMessage: message => this.handleMessage(message),
+      onClose: () => this.handleClose(),
+      onError: error => this.emit('error', error)
+    });
+
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        this.off('open', onOpen);
+        this.off('error', onError);
+        this.off('close', onClose);
+      };
+      const onOpen = () => {
+        cleanup();
+        resolve(this);
+      };
+      const onError = error => {
+        cleanup();
+        reject(error);
+      };
+      const onClose = () => {
+        cleanup();
+        reject(new Error('janus websocket closed before open'));
+      };
+      this.once('open', onOpen);
+      this.once('error', onError);
+      this.once('close', onClose);
+    });
+  }
+
+  async createSession() {
+    const response = await this.request({ janus: 'create' });
+    return response?.data?.id || response?.id;
+  }
+
+  async attachPlugin({ sessionId, plugin = DEFAULT_PLUGIN, opaqueId = '' } = {}) {
+    const response = await this.request({
+      janus: 'attach',
+      plugin,
+      opaque_id: opaqueId || undefined
+    }, { sessionId });
+    return response?.data?.id || response?.id;
+  }
+
+  async detachPlugin({ sessionId, handleId } = {}) {
+    return this.request({ janus: 'detach' }, { sessionId, handleId });
+  }
+
+  async destroySession(sessionId) {
+    return this.request({ janus: 'destroy' }, { sessionId });
+  }
+
+  async keepalive(sessionId) {
+    return this.request({ janus: 'keepalive' }, { sessionId });
+  }
+
+  async pluginMessage({ sessionId, handleId, body, jsep = null } = {}) {
+    return this.request({
+      janus: 'message',
+      body,
+      jsep: jsep || undefined
+    }, { sessionId, handleId });
+  }
+
+  async request(message = {}, { sessionId = null, handleId = null } = {}) {
+    if (!this.ws) await this.connect();
+    const transaction = `${this.transactionPrefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const payload = compact({
+      ...message,
+      transaction,
+      apisecret: this.apiSecret || undefined,
+      session_id: sessionId || undefined,
+      handle_id: handleId || undefined
+    });
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(transaction);
+        reject(new Error(`janus request timed out: ${message.janus || 'unknown'}`));
+      }, this.requestTimeoutMs);
+      this.pending.set(transaction, { resolve, reject, timer });
+      try {
+        if (this.ws.readyState !== undefined && this.ws.readyState !== this.WebSocketImpl.OPEN) {
+          throw new Error('janus websocket is not open');
+        }
+        this.ws.send(JSON.stringify(payload));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(transaction);
+        reject(error);
+      }
+    });
+  }
+
+  handleMessage(message) {
+    const payload = parseJson(message);
+    if (!payload) return;
+
+    const transaction = payload.transaction;
+    if (transaction && this.pending.has(transaction)) {
+      const pending = this.pending.get(transaction);
+      this.pending.delete(transaction);
+      clearTimeout(pending.timer);
+      if (payload.janus === 'error' || payload.error) {
+        pending.reject(new Error(payload?.error?.reason || payload.error || 'janus error'));
+      } else {
+        pending.resolve(payload);
+      }
+      return;
+    }
+
+    this.emit('event', payload);
+  }
+
+  handleClose() {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('janus websocket closed'));
+    }
+    this.pending.clear();
+    this.ws = null;
+    this.emit('close');
+  }
+
+  close() {
+    this.ws?.close?.();
+    this.ws = null;
+  }
+}
+
+class JanusMediaServerClient {
+  constructor({
+    baseUrl,
+    token,
+    fetchImpl = globalThis.fetch,
+    timeoutMs = 10000
+  } = {}) {
+    this.baseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+    this.token = token || '';
+    this.fetchImpl = fetchImpl;
+    this.timeoutMs = timeoutMs;
+  }
+
+  async createSession({ callId, accountId, sdpOffer, iceServers = [] } = {}) {
+    return this.post('/sessions', {
+      call_id: callId,
+      account_id: String(accountId ?? ''),
+      direction: 'incoming',
+      meta_sdp_offer: sdpOffer,
+      ice_servers: iceServers
+    });
+  }
+
+  async createRuntimeAgent(sessionId, payload = {}) {
+    return this.post(`/sessions/${encodeURIComponent(sessionId)}/runtime-agent`, payload);
+  }
+
+  async terminateSession(sessionId, reason = 'janus_server_runtime_closed') {
+    if (!sessionId) return null;
+    return this.post(`/sessions/${encodeURIComponent(sessionId)}/terminate`, { reason });
+  }
+
+  async post(path, body) {
+    if (!this.baseUrl) throw new Error('janus media server URL is required');
+    if (!this.token) throw new Error('janus media server token is required');
+    if (typeof this.fetchImpl !== 'function') throw new Error('fetch implementation is required');
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), this.timeoutMs) : null;
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.token}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(body || {}),
+        signal: controller?.signal
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok) {
+        throw new Error(payload?.error || `media server request failed: ${response.status}`);
+      }
+      return payload;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+}
+
+class JanusSipServerRuntimeManager {
+  constructor({
+    app,
+    profiles = [],
+    janusUrl,
+    mediaServerClient,
+    WebSocketImpl = WebSocket,
+    runtimeMediaStreamFactory = createJanusRuntimeMediaStreamFactory(),
+    profileProvider = null,
+    syncIntervalMs = 15000,
+    maxCallsPerProfile = 4,
+    registrationConcurrency = 10,
+    logger = console
+  } = {}) {
+    if (!app || typeof app.handleCall !== 'function') throw new Error('voice app is required');
+    this.app = app;
+    this.profiles = profiles.map(normalizeServerProfile).filter(Boolean);
+    this.janusUrl = janusUrl;
+    this.mediaServerClient = mediaServerClient;
+    this.WebSocketImpl = WebSocketImpl;
+    this.runtimeMediaStreamFactory = runtimeMediaStreamFactory;
+    this.profileProvider = profileProvider;
+    this.syncIntervalMs = syncIntervalMs;
+    this.maxCallsPerProfile = positiveInteger(maxCallsPerProfile, 4);
+    this.registrationConcurrency = positiveInteger(registrationConcurrency, 10);
+    this.logger = logger;
+    this.sessions = new Map();
+    this.syncTimer = null;
+    this.syncPromise = null;
+    this.lastSyncAt = null;
+    this.lastSyncError = null;
+    this.closed = false;
+    this.desiredProfileCount = 0;
+    this.failedProfiles = new Map();
+  }
+
+  async start() {
+    if (!this.mediaServerClient) throw new Error('janus media server client is required');
+    this.closed = false;
+
+    if (this.profileProvider) {
+      await this.syncProfiles().catch(error => this.log('janus_server_profile_sync_failed', { error: error.message }));
+    } else {
+      await this.syncProfiles();
+    }
+    if (!this.closed && this.profileProvider && this.syncIntervalMs > 0) {
+      this.syncTimer = setInterval(() => {
+        this.syncProfiles().catch(error => this.log('janus_server_profile_sync_failed', { error: error.message }));
+      }, this.syncIntervalMs);
+    }
+    return this;
+  }
+
+  async syncProfiles(profiles = null) {
+    if (this.closed) return [];
+    if (this.syncPromise) return this.syncPromise;
+    this.syncPromise = this.performSyncProfiles(profiles);
+    try {
+      const result = await this.syncPromise;
+      this.lastSyncAt = new Date().toISOString();
+      this.lastSyncError = null;
+      return result;
+    } catch (error) {
+      this.lastSyncError = error.message;
+      throw error;
+    } finally {
+      this.syncPromise = null;
+    }
+  }
+
+  async performSyncProfiles(profiles = null) {
+    const sourceProfiles = profiles || await this.fetchProfiles();
+    const desired = sourceProfiles.map(normalizeServerProfile).filter(Boolean);
+    const desiredByKey = new Map(desired.map(profile => [profileKey(profile), profile]));
+    this.desiredProfileCount = desiredByKey.size;
+    for (const key of this.failedProfiles.keys()) {
+      if (!desiredByKey.has(key)) this.failedProfiles.delete(key);
+    }
+
+    for (const [key, session] of this.sessions.entries()) {
+      const desiredProfile = desiredByKey.get(key);
+      if (!desiredProfile || registrationSignature(desiredProfile) !== session.registrationSignature || !session.isHealthy()) {
+        await session.close();
+        this.sessions.delete(key);
+        this.log('janus_server_profile_unregistered', { profile_id: session.profile.id, account_id: session.profile.account_id, inbox_id: session.profile.inbox_id });
+      } else {
+        session.updateProfile(desiredProfile);
+      }
+    }
+
+    const pendingProfiles = Array.from(desiredByKey.entries()).filter(([key]) => !this.sessions.has(key));
+    await mapWithConcurrency(pendingProfiles, this.registrationConcurrency, async ([key, profile]) => {
+      const session = new JanusSipServerProfileSession({
+        app: this.app,
+        profile,
+        janusUrl: profile.janus_url || this.janusUrl,
+        mediaServerClient: this.mediaServerClient,
+        WebSocketImpl: this.WebSocketImpl,
+        runtimeMediaStreamFactory: this.runtimeMediaStreamFactory,
+        maxCalls: profile.max_concurrent_calls || this.maxCallsPerProfile,
+        logger: this.logger
+      });
+      try {
+        await session.start();
+        if (this.closed) {
+          await session.close();
+        } else {
+          this.sessions.set(key, session);
+          this.failedProfiles.delete(key);
+        }
+      } catch (error) {
+        await session.close();
+        this.failedProfiles.set(key, error.message);
+        this.log('janus_server_profile_register_failed', {
+          profile_id: profile.id,
+          account_id: profile.account_id,
+          inbox_id: profile.inbox_id,
+          error: error.message
+        });
+      }
+    });
+
+    return Array.from(this.sessions.values());
+  }
+
+  async fetchProfiles() {
+    if (this.profileProvider) {
+      return await this.profileProvider();
+    }
+    return this.profiles;
+  }
+
+  async close() {
+    this.closed = true;
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.syncTimer = null;
+    await this.syncPromise?.catch?.(() => {});
+    await Promise.allSettled(Array.from(this.sessions.values(), session => session.close()));
+    this.sessions.clear();
+  }
+
+  diagnostics() {
+    const sessions = Array.from(this.sessions.values());
+    return {
+      enabled: true,
+      configured_profiles: this.desiredProfileCount,
+      healthy_profiles: sessions.filter(session => session.isHealthy()).length,
+      failed_profiles: this.failedProfiles.size,
+      registered_handles: sessions.reduce((total, session) => total + session.handles.size, 0),
+      active_calls: sessions.reduce((total, session) => total + session.activeCalls.size, 0),
+      last_sync_at: this.lastSyncAt,
+      last_sync_error: this.lastSyncError
+    };
+  }
+
+  log(event, payload = {}) {
+    this.logger?.log?.(JSON.stringify({ event, ...compact(payload) }));
+  }
+}
+
+class JanusSipServerProfileSession {
+  constructor({
+    app,
+    profile,
+    janusUrl,
+    mediaServerClient,
+    WebSocketImpl,
+    runtimeMediaStreamFactory,
+    maxCalls = 4,
+    logger
+  }) {
+    this.app = app;
+    this.profile = profile;
+    this.client = new JanusWebSocketClient({ url: janusUrl, WebSocketImpl });
+    this.mediaServerClient = mediaServerClient;
+    this.runtimeMediaStreamFactory = runtimeMediaStreamFactory;
+    this.maxCalls = positiveInteger(maxCalls, 4);
+    this.logger = logger;
+    this.sessionId = null;
+    this.handleId = null;
+    this.masterId = null;
+    this.handles = new Map();
+    this.keepaliveTimer = null;
+    this.activeCalls = new Map();
+    this.registrationWaiters = new Map();
+    this.unregistrationWaiter = null;
+    this.registered = false;
+    this.connected = false;
+    this.closed = false;
+    this.closePromise = null;
+    this.registrationSignature = registrationSignature(profile);
+  }
+
+  async start() {
+    this.closed = false;
+    await this.client.connect();
+    this.client.on('event', event => this.handleJanusEvent(event));
+    this.client.on('error', error => {
+      this.connected = false;
+      this.log('janus_server_socket_error', { error: error.message });
+    });
+    this.client.on('close', () => {
+      this.connected = false;
+      this.registered = false;
+      if (!this.closed) this.log('janus_server_socket_closed', { profile_id: this.profile.id });
+      for (const call of this.activeCalls.values()) call.handleJanusEvent('hangup', { reason: 'janus_socket_closed' });
+      this.activeCalls.clear();
+    });
+    this.sessionId = await this.client.createSession();
+    this.handleId = await this.client.attachPlugin({
+      sessionId: this.sessionId,
+      plugin: DEFAULT_PLUGIN,
+      opaqueId: `onelink-ai-sip-${this.profile.id || this.profile.internal_extension || Date.now()}`
+    });
+    this.handles.set(String(this.handleId), { id: this.handleId, master: true, activeCallId: null });
+    this.masterId = await this.register(this.handleId);
+    await mapWithConcurrency(Array.from({ length: this.maxCalls - 1 }), 4, async () => {
+      try {
+        await this.attachHelper();
+      } catch (error) {
+        this.log('janus_server_helper_register_failed', { profile_id: this.profile.id, error: error.message });
+      }
+    });
+    this.connected = true;
+    this.keepaliveTimer = setInterval(() => {
+      this.client.keepalive(this.sessionId).catch(error => {
+        this.connected = false;
+        this.log('janus_server_keepalive_failed', { error: error.message });
+      });
+    }, this.profile.keepalive_ms || 25000);
+    this.log('janus_server_profile_registered', {
+      profile_id: this.profile.id,
+      account_id: this.profile.account_id,
+      inbox_id: this.profile.inbox_id,
+      registered_handles: this.handles.size
+    });
+  }
+
+  async register(handleId, { helper = false } = {}) {
+    const sip = this.profile.sip;
+    const registration = this.waitForRegistration(handleId);
+    const body = helper
+      ? { request: 'register', type: 'helper', username: sip.uri, master_id: this.masterId }
+      : compact({
+        request: 'register',
+        username: sip.uri,
+        authuser: sip.auth_username || sip.username,
+        secret: sip.password,
+        proxy: sip.proxy,
+        display_name: sip.display_name || this.profile.display_name,
+        force_udp: sip.transport !== 'tcp' && sip.transport !== 'tls',
+        force_tcp: sip.transport === 'tcp',
+        register_ttl: this.profile.register_ttl
+      });
+    try {
+      await this.client.pluginMessage({ sessionId: this.sessionId, handleId, body });
+    } catch (error) {
+      this.registrationWaiters.get(String(handleId))?.reject(error);
+      await registration.catch(() => {});
+      throw error;
+    }
+    const result = await registration;
+    return result.master_id || result.masterId || this.masterId;
+  }
+
+  async attachHelper() {
+    const handleId = await this.client.attachPlugin({
+      sessionId: this.sessionId,
+      plugin: DEFAULT_PLUGIN,
+      opaqueId: `onelink-ai-sip-${this.profile.id}-helper-${crypto.randomBytes(3).toString('hex')}`
+    });
+    this.handles.set(String(handleId), { id: handleId, master: false, activeCallId: null });
+    try {
+      await this.register(handleId, { helper: true });
+    } catch (error) {
+      this.handles.delete(String(handleId));
+      await this.client.detachPlugin({ sessionId: this.sessionId, handleId }).catch(() => {});
+      throw error;
+    }
+  }
+
+  waitForRegistration(handleId, timeoutMs = 10000) {
+    const key = String(handleId);
+    if (this.registrationWaiters.has(key)) return this.registrationWaiters.get(key).promise;
+
+    let resolveWaiter;
+    let rejectWaiter;
+    const timer = setTimeout(() => {
+      this.registrationWaiters.delete(key);
+      rejectWaiter(new Error('janus SIP registration timed out'));
+    }, timeoutMs);
+    const promise = new Promise((resolve, reject) => {
+      resolveWaiter = resolve;
+      rejectWaiter = reject;
+    });
+    const waiter = {
+      promise,
+      resolve: value => {
+        clearTimeout(timer);
+        this.registrationWaiters.delete(key);
+        resolveWaiter(value);
+      },
+      reject: error => {
+        clearTimeout(timer);
+        this.registrationWaiters.delete(key);
+        rejectWaiter(error);
+      }
+    };
+    this.registrationWaiters.set(key, waiter);
+    return promise;
+  }
+
+  handleJanusEvent(event) {
+    if (String(event.session_id || '') !== String(this.sessionId || '')) return;
+    const handle = this.handles.get(String(event.sender || ''));
+    if (!handle) return;
+
+    const data = event?.plugindata?.data || {};
+    const result = data.result || data;
+    if (data.error_code || data.error) {
+      const reason = [data.error_code, data.error].filter(Boolean).join(' ');
+      this.registrationWaiters.get(String(handle.id))?.reject(new Error(reason || 'Janus SIP plugin error'));
+      this.activeCalls.get(handle.activeCallId)?.handleJanusEvent('plugin_error', data);
+      this.log('janus_server_plugin_error', { profile_id: this.profile.id, handle_id: handle.id, error: reason });
+      return;
+    }
+    const sipEvent = result.event || data.sip || data.event;
+    if (sipEvent === 'registered') {
+      if (handle.master) this.registered = true;
+      this.registrationWaiters.get(String(handle.id))?.resolve(result);
+    } else if (sipEvent === 'registration_failed') {
+      if (handle.master) this.registered = false;
+      const reason = [result.code, result.reason].filter(Boolean).join(' ') || 'janus SIP registration failed';
+      this.registrationWaiters.get(String(handle.id))?.reject(new Error(reason));
+    } else if (sipEvent === 'unregistered') {
+      if (handle.master) this.registered = false;
+      this.unregistrationWaiter?.resolve(true);
+    } else if (sipEvent === 'incomingcall') {
+      this.handleIncomingCall({ event, result, handle }).catch(error => {
+        this.log('janus_server_incoming_failed', { error: error.message });
+      });
+    } else if (sipEvent === 'hangup') {
+      const callId = janusCallId(event, result);
+      const resolvedCallId = callId || handle.activeCallId;
+      this.activeCalls.get(resolvedCallId)?.handleJanusEvent(sipEvent, result);
+      this.activeCalls.delete(resolvedCallId);
+      handle.activeCallId = null;
+    } else {
+      const callId = janusCallId(event, result);
+      this.activeCalls.get(callId || handle.activeCallId)?.handleJanusEvent(sipEvent, result);
+    }
+  }
+
+  async handleIncomingCall({ event, result, handle }) {
+    const jsep = event.jsep;
+    if (!jsep?.sdp) {
+      await this.client.pluginMessage({
+        sessionId: this.sessionId,
+        handleId: handle.id,
+        body: { request: 'decline', code: 488 }
+      });
+      this.log('janus_server_incoming_without_jsep', { profile_id: this.profile.id });
+      return;
+    }
+    if (handle.activeCallId && !this.activeCalls.get(handle.activeCallId)?.ended) {
+      await this.client.pluginMessage({
+        sessionId: this.sessionId,
+        handleId: handle.id,
+        body: { request: 'decline', code: 486 }
+      });
+      this.log('janus_server_incoming_busy', { profile_id: this.profile.id });
+      return;
+    }
+    const providerCallId = janusCallId(event, result) || crypto.randomUUID();
+    const facade = new JanusSipServerCallFacade({
+      profile: this.profile,
+      providerCallId,
+      caller: result.username || result.displayname || result.display_name,
+      janus: {
+        client: this.client,
+        sessionId: this.sessionId,
+        handleId: handle.id,
+        jsep
+      },
+      mediaServerClient: this.mediaServerClient,
+      runtimeMediaStreamFactory: this.runtimeMediaStreamFactory
+    });
+    this.activeCalls.set(providerCallId, facade);
+    handle.activeCallId = providerCallId;
+    facade.once('end', () => {
+      this.activeCalls.delete(providerCallId);
+      if (handle.activeCallId === providerCallId) handle.activeCallId = null;
+    });
+    let run;
+    try {
+      run = this.app.handleCall(facade, facade.request);
+    } catch (error) {
+      this.log('janus_server_handle_call_failed', { error: error.message });
+      await facade.hangup().catch(() => {});
+      return;
+    }
+    Promise.resolve(run)
+      .then(result => result?.completion?.catch?.(async error => {
+        this.log('janus_server_call_completion_failed', { error: error.message });
+        await facade.hangup().catch(() => {});
+      }))
+      .catch(async error => {
+        this.log('janus_server_handle_call_failed', { error: error.message });
+        await facade.hangup().catch(() => {});
+      });
+  }
+
+  updateProfile(profile) {
+    this.profile = profile;
+  }
+
+  async close() {
+    if (this.closePromise) return this.closePromise;
+    this.closePromise = this.performClose();
+    return this.closePromise;
+  }
+
+  async performClose() {
+    this.closed = true;
+    if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
+    this.keepaliveTimer = null;
+    for (const waiter of this.registrationWaiters.values()) waiter.reject(new Error('janus SIP profile session closed'));
+    this.registrationWaiters.clear();
+    this.registered = false;
+    await Promise.allSettled(Array.from(this.activeCalls.values(), call => call.hangup()));
+    this.activeCalls.clear();
+    if (this.connected && this.handleId) {
+      const unregistered = this.waitForUnregistration();
+      await this.client.pluginMessage({
+        sessionId: this.sessionId,
+        handleId: this.handleId,
+        body: { request: 'unregister' }
+      }).then(() => unregistered).catch(() => {});
+    }
+    this.handles.clear();
+    if (this.sessionId && this.client.ws) await this.client.destroySession(this.sessionId).catch(() => {});
+    this.client.close();
+  }
+
+  waitForUnregistration(timeoutMs = 2000) {
+    if (this.unregistrationWaiter) return this.unregistrationWaiter.promise;
+    let resolveWaiter;
+    const promise = new Promise(resolve => { resolveWaiter = resolve; });
+    const timer = setTimeout(() => this.unregistrationWaiter?.resolve(false), timeoutMs);
+    this.unregistrationWaiter = {
+      promise,
+      resolve: value => {
+        clearTimeout(timer);
+        this.unregistrationWaiter = null;
+        resolveWaiter(value);
+      }
+    };
+    return promise;
+  }
+
+  isHealthy() {
+    return !this.closed && this.connected && this.registered && this.handles.size > 0 && Boolean(this.client.ws);
+  }
+
+  log(event, payload = {}) {
+    this.logger?.log?.(JSON.stringify({ event, ...compact(payload) }));
+  }
+}
+
+class JanusSipServerCallFacade extends EventEmitter {
+  constructor({
+    profile,
+    providerCallId,
+    caller,
+    janus,
+    mediaServerClient,
+    runtimeMediaStreamFactory
+  }) {
+    super();
+    this.profile = profile;
+    this.providerCallId = providerCallId;
+    this.janus = janus;
+    this.mediaServerClient = mediaServerClient;
+    this.runtimeMediaStreamFactory = runtimeMediaStreamFactory;
+    this.mediaSessionId = null;
+    this.answerPromise = null;
+    this.terminationPromise = null;
+    this.answered = false;
+    this.ended = false;
+    this.transferLeg = null;
+    this.request = buildIncomingRequest({ profile, providerCallId, caller, janus });
+  }
+
+  async answer() {
+    if (this.answered) return true;
+    if (this.answerPromise) return this.answerPromise;
+    this.answerPromise = this.performAnswer();
+    try {
+      return await this.answerPromise;
+    } finally {
+      this.answerPromise = null;
+    }
+  }
+
+  async performAnswer() {
+    const session = await this.mediaServerClient.createSession({
+      callId: this.request.call_ref,
+      accountId: this.request.account_id,
+      sdpOffer: this.janus.jsep.sdp,
+      iceServers: this.profile.ice_servers || []
+    });
+    if (!session?.session_id || !session?.meta_sdp_answer) {
+      throw new Error('media server returned an invalid Janus session response');
+    }
+    this.mediaSessionId = session.session_id;
+    try {
+      const runtime = await this.mediaServerClient.createRuntimeAgent(this.mediaSessionId, {
+        call_ref: this.request.call_ref,
+        account_id: String(this.request.account_id || ''),
+        conversation_id: String(this.request.conversation_id || ''),
+        inbox_id: String(this.request.inbox_id || '')
+      });
+      if (!runtime?.runtime_session_id || !runtime?.stream_url) {
+        throw new Error('media server returned an invalid runtime-agent response');
+      }
+      this.request.runtime_stream = {
+        runtime_session_id: runtime.runtime_session_id,
+        stream_url: runtime.stream_url,
+        codec: runtime.codec,
+        input_sample_rate: runtime.input_sample_rate,
+        output_sample_rate: runtime.output_sample_rate,
+        input_mime_type: 'audio/pcm;rate=16000',
+        output_mime_type: 'audio/pcm;rate=8000'
+      };
+      this.request.stream_ref = runtime.runtime_session_id;
+      this.request.media_session_ref = this.mediaSessionId;
+      this.request.janus.media_session_id = this.mediaSessionId;
+
+      await this.janus.client.pluginMessage({
+        sessionId: this.janus.sessionId,
+        handleId: this.janus.handleId,
+        body: { request: 'accept', autoaccept_reinvites: true },
+        jsep: { type: 'answer', sdp: session.meta_sdp_answer }
+      });
+      this.answered = true;
+      return true;
+    } catch (error) {
+      await this.terminateMediaSession('janus_answer_failed');
+      throw error;
+    }
+  }
+
+  async stream() {
+    return this.runtimeMediaStreamFactory({ request: this.request });
+  }
+
+  async dial(payload = {}) {
+    return this.transfer(payload);
+  }
+
+  async transfer(payload = {}) {
+    const uri = payload.agent_aor || payload.agentAor || payload.destination || payload.to || payload.target;
+    if (!String(uri || '').trim()) return false;
+
+    const leg = new EventEmitter();
+    this.transferLeg = leg;
+    this.once('end', () => leg.emit('end'));
+    try {
+      await this.janus.client.pluginMessage({
+        sessionId: this.janus.sessionId,
+        handleId: this.janus.handleId,
+        body: { request: 'transfer', uri: String(uri).trim() }
+      });
+      return leg;
+    } catch (error) {
+      this.transferLeg = null;
+      throw error;
+    }
+  }
+
+  async reject({ code = 486 } = {}) {
+    if (this.ended) return true;
+    await this.janus.client.pluginMessage({
+      sessionId: this.janus.sessionId,
+      handleId: this.janus.handleId,
+      body: { request: 'decline', code }
+    });
+    this.emitEnd();
+    return true;
+  }
+
+  async hangup() {
+    if (this.ended) return true;
+    try {
+      await this.janus.client.pluginMessage({
+        sessionId: this.janus.sessionId,
+        handleId: this.janus.handleId,
+        body: { request: 'hangup' }
+      });
+    } finally {
+      await this.terminateMediaSession();
+      this.emitEnd();
+    }
+    return true;
+  }
+
+  emitEnd() {
+    if (this.ended) return;
+    this.ended = true;
+    this.transferLeg = null;
+    this.emit('end');
+  }
+
+  handleJanusEvent(eventName, result = {}) {
+    if (eventName === 'hangup') {
+      this.terminateMediaSession().catch(() => {});
+      this.emitEnd();
+      return;
+    }
+    if (eventName === 'plugin_error') {
+      if (this.transferLeg) this.transferLeg.emit('failed', result);
+      else this.emit('failed', result);
+      this.terminateMediaSession('janus_plugin_error').catch(() => {});
+      this.emitEnd();
+      return;
+    }
+    if (!this.transferLeg) return;
+    if (eventName === 'transferring') {
+      this.transferLeg.emit('ringing', result);
+      return;
+    }
+    if (eventName !== 'notify') return;
+
+    const status = sipNotifyStatus(result.content);
+    if (status >= 200 && status < 300) {
+      this.transferLeg.emit('answered', result);
+    } else if (status === 486) {
+      this.transferLeg.emit('busy', result);
+    } else if (status === 408 || status === 480) {
+      this.transferLeg.emit('no_answer', result);
+    } else if (status >= 300) {
+      this.transferLeg.emit('failed', result);
+    }
+  }
+
+  async terminateMediaSession(reason = 'janus_server_runtime_closed') {
+    if (!this.mediaSessionId) return null;
+    if (!this.terminationPromise) {
+      this.terminationPromise = this.mediaServerClient.terminateSession(this.mediaSessionId, reason).catch(() => null);
+    }
+    return this.terminationPromise;
+  }
+}
+
+function buildIncomingRequest({ profile, providerCallId, caller, janus }) {
+  const callRef = profile.call_ref_prefix
+    ? `${profile.call_ref_prefix}${providerCallId}`
+    : `${profile.provider}:janus-server:${profile.id || profile.internal_extension}:${providerCallId}`;
+  const callerNumber = sipUserPart(caller);
+  return compact({
+    call_ref: callRef,
+    bridge_call_ref: callRef,
+    account_id: profile.account_id,
+    inbox_id: profile.inbox_id,
+    number_ref: profile.number_ref,
+    provider: profile.provider,
+    app_ref: profile.app_ref,
+    direction: 'inbound',
+    transport: 'janus_sip',
+    caller_number: callerNumber,
+    ingress_number: profile.ingress_number || profile.phone_number || profile.number_ref,
+    sip_profile: profile.sip_profile,
+    janus: {
+      plugin: DEFAULT_PLUGIN,
+      session_id: janus.sessionId,
+      handle_id: janus.handleId,
+      call_ref: providerCallId,
+      server_runtime: true
+    },
+    metadata: {
+      source: 'server_janus_sip',
+      transport: 'janus_sip',
+      janus_call_ref: providerCallId,
+      voice_agent_sip_profile_id: profile.sip_profile?.id,
+      telephony_sip_profile_id: profile.sip_profile?.id,
+      target_sip_profile_id: profile.sip_profile?.id,
+      browser_join_supported: false
+    }
+  });
+}
+
+function janusCallId(event = {}, result = {}) {
+  return result.call_id || result['call-id'] || result.callid ||
+    event.call_id || event['call-id'] || event.callid;
+}
+
+function sipNotifyStatus(content) {
+  const match = String(content || '').match(/SIP\/2\.0\s+(\d{3})/i);
+  return match ? Number.parseInt(match[1], 10) : 0;
+}
+
+function normalizeServerProfile(profile) {
+  const source = typeof profile === 'string' ? parseJson(profile) : profile;
+  if (!source || typeof source !== 'object') return null;
+  const sipProfile = {
+    ...(source.sip_profile || source.sipProfile || {}),
+    id: source.sip_profile_id || source.sipProfileId || source.id || source.sip_profile?.id || source.sipProfile?.id,
+    profile_kind: 'voice_agent',
+    voice_agent: true,
+    internal_extension: source.internal_extension || source.internalExtension || source.sip_profile?.internal_extension || source.sipProfile?.internalExtension,
+    sip_username: source.sip_username || source.sipUsername || source.sip_profile?.sip_username || source.sipProfile?.sipUsername
+  };
+  const sip = normalizeSipContract(source.sip || source, sipProfile);
+  if (!sip.uri || !sip.password) return null;
+
+  return compact({
+    ...source,
+    id: sipProfile.id,
+    account_id: source.account_id || source.accountId,
+    inbox_id: source.inbox_id || source.inboxId,
+    number_ref: source.number_ref || source.numberRef,
+    provider: source.provider || 'sipuni',
+    ingress_number: source.ingress_number || source.ingressNumber || source.phone_number || source.phoneNumber,
+    display_name: source.display_name || source.displayName || 'OneLink AI Voice',
+    call_ref_prefix: source.call_ref_prefix || source.callRefPrefix,
+    janus_url: source.janus_url || source.janusUrl,
+    ice_servers: source.ice_servers || source.iceServers || [],
+    keepalive_ms: source.keepalive_ms || source.keepaliveMs,
+    register_ttl: source.register_ttl || source.registerTtl,
+    max_concurrent_calls: source.max_concurrent_calls || source.maxConcurrentCalls,
+    sip_profile: sipProfile,
+    sip
+  });
+}
+
+function normalizeSipContract(source, sipProfile = {}) {
+  const username = source.sip_username || source.sipUsername || source.username || sipProfile.sip_username;
+  const password = source.sip_password || source.sipPassword || source.password || source.secret;
+  const host = source.sip_host || source.sipHost || source.host;
+  const port = source.sip_port || source.sipPort || source.port || 5060;
+  const transport = String(source.sip_transport || source.sipTransport || source.transport || 'udp').toLowerCase();
+  const uri = source.uri || (username && host ? `sip:${username}@${host}` : '');
+  let proxy = source.proxy;
+  if (!proxy && host) {
+    proxy = `sip:${host}${port ? `:${port}` : ''}`;
+    if (transport === 'tcp' || transport === 'tls') proxy += `;transport=${transport}`;
+  }
+  return compact({
+    username,
+    auth_username: source.auth_username || source.authUsername || username,
+    password,
+    host,
+    port,
+    transport,
+    uri,
+    proxy,
+    display_name: source.display_name || source.displayName
+  });
+}
+
+function parseServerProfilesJson(value) {
+  const text = String(value || '').trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.map(normalizeServerProfile).filter(Boolean) : [normalizeServerProfile(parsed)].filter(Boolean);
+  } catch (_error) {
+    return [];
+  }
+}
+
+function profileKey(profile) {
+  return String(profile.id || profile.sip_profile?.id || `${profile.account_id || ''}:${profile.inbox_id || ''}:${profile.internal_extension || profile.sip?.username || ''}`);
+}
+
+function profileSignature(profile) {
+  return crypto.createHash('sha256').update(JSON.stringify(profile)).digest('hex');
+}
+
+function registrationSignature(profile) {
+  return profileSignature({
+    id: profile.id,
+    janus_url: profile.janus_url,
+    keepalive_ms: profile.keepalive_ms,
+    register_ttl: profile.register_ttl,
+    max_concurrent_calls: profile.max_concurrent_calls,
+    sip: profile.sip
+  });
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const queue = Array.from(items);
+  const workers = Array.from({ length: Math.min(positiveInteger(concurrency, 1), queue.length) }, async () => {
+    while (queue.length > 0) await worker(queue.shift());
+  });
+  await Promise.all(workers);
+}
+
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function parseResponse(response) {
+  const text = await response.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return { raw: text.slice(0, 500) };
+  }
+}
+
+function parseJson(message) {
+  const text = Buffer.isBuffer(message) ? message.toString('utf8') : String(message || '');
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function wireWebSocket(ws, { onOpen, onMessage, onClose, onError }) {
+  ws.once?.('open', onOpen);
+  ws.on?.('message', onMessage);
+  ws.on?.('close', onClose);
+  ws.on?.('error', onError);
+}
+
+function sipUserPart(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/sip:([^@;>]+)/i);
+  return match?.[1] || raw;
+}
+
+function compact(object = {}) {
+  return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined && value !== null && value !== ''));
+}
+
+module.exports = {
+  JanusMediaServerClient,
+  JanusSipServerCallFacade,
+  JanusSipServerRuntimeManager,
+  JanusSipServerProfileSession,
+  JanusWebSocketClient,
+  normalizeServerProfile,
+  parseServerProfilesJson,
+  profileKey,
+  profileSignature,
+  registrationSignature
+};

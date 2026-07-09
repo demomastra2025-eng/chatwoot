@@ -110,6 +110,48 @@ test('OnelinkClient accepts contract base URL, token and endpoint path overrides
   }
 });
 
+test('OnelinkClient fetches Janus SIP profile configuration from Rails', async () => {
+  const seen = await withServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/internal/voice/ai/janus-sip/profiles') {
+      res.end(JSON.stringify({ version: 'v1', profiles: [{ id: 12, provider: 'binotel' }] }));
+    } else {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'not_found' }));
+    }
+  });
+
+  try {
+    const client = new OnelinkClient({ baseUrl: seen.baseUrl, token: 'internal-token', timeoutMs: 1_000 });
+    const profiles = await client.getJanusSipProfiles();
+
+    assert.deepEqual(profiles, [{ id: 12, provider: 'binotel' }]);
+    assert.equal(seen.requests[0].method, 'GET');
+    assert.equal(seen.requests[0].url, '/internal/voice/ai/janus-sip/profiles');
+    assert.equal(seen.requests[0].headers.authorization, 'Bearer internal-token');
+  } finally {
+    await seen.close();
+  }
+});
+
+test('OnelinkClient rejects malformed Janus SIP profile configuration', async () => {
+  const seen = await withServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ version: 'empty' }));
+  });
+
+  try {
+    const client = new OnelinkClient({ baseUrl: seen.baseUrl, token: 'internal-token', timeoutMs: 1_000 });
+
+    await assert.rejects(
+      () => client.getJanusSipProfiles(),
+      error => error.code === 'invalid_janus_sip_profiles_contract'
+    );
+  } finally {
+    await seen.close();
+  }
+});
+
 test('OnelinkClient calls Rails inbound route and bridge lifecycle event APIs', async () => {
   const seen = await withServer((req, res, body) => {
     res.setHeader('content-type', 'application/json');

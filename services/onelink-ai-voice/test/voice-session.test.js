@@ -28,7 +28,7 @@ test('VoiceSession bootstraps Rails context, records lifecycle and flushes trans
   assert.equal(toolResult.result.action, 'transfer');
   assert.deepEqual(
     calls.filter(([kind]) => kind === 'control').map(([, payload]) => payload.action),
-    ['ai_ringing', 'ai_answered', 'tool_started', 'tool_completed', 'session_completed']
+    ['ai_ringing', 'tool_started', 'tool_completed', 'session_completed']
   );
   const transcriptCall = calls.find(([kind]) => kind === 'transcript');
   assert.equal(transcriptCall[1].account_id, 42);
@@ -79,7 +79,7 @@ test('VoiceSession continues with degraded realtime context when context is unav
   assert.equal(context.ai.provider, 'gemini-live');
   assert.equal(context.ai.context_degraded, true);
   assert.equal(context.ai.reason, 'context_unavailable');
-  assert.deepEqual(controls.map(payload => payload.action), ['ai_ringing', 'ai_answered']);
+  assert.deepEqual(controls.map(payload => payload.action), ['ai_ringing']);
   assert.equal(controls.every(payload => payload.metadata.degraded === true), true);
   assert.equal(events.some(payload => payload.event_type === 'context_fetch_failed' && payload.payload.degraded === true), true);
 });
