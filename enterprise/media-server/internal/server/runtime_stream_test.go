@@ -121,6 +121,42 @@ func TestRuntimeDecodeFFmpegArgsEnableLowLatencyOpusRTP(t *testing.T) {
 	}
 }
 
+func TestRuntimeFFmpegArgsSupportSipG711Codecs(t *testing.T) {
+	pcmuArgs := runtimeFFmpegArgsForCodec(49152, "audio/PCMU")
+	mustContainInOrder(t, pcmuArgs,
+		"-acodec", "pcm_mulaw",
+		"-ar", "8000",
+		"-payload_type", "0",
+		"-f", "rtp",
+		"rtp://127.0.0.1:49152",
+	)
+
+	pcmaArgs := runtimeFFmpegArgsForCodec(49153, "audio/PCMA")
+	mustContainInOrder(t, pcmaArgs,
+		"-acodec", "pcm_alaw",
+		"-ar", "8000",
+		"-payload_type", "8",
+		"-f", "rtp",
+		"rtp://127.0.0.1:49153",
+	)
+}
+
+func TestRuntimeInputSDPSupportsSipG711Codecs(t *testing.T) {
+	pcmuSDP := runtimeInputSDPForCodec(54321, "audio/PCMU")
+	for _, want := range []string{"m=audio 54321 RTP/AVP 0", "a=rtpmap:0 PCMU/8000"} {
+		if !strings.Contains(pcmuSDP, want) {
+			t.Fatalf("expected PCMU SDP to contain %q, got %q", want, pcmuSDP)
+		}
+	}
+
+	pcmaSDP := runtimeInputSDPForCodec(54322, "audio/PCMA")
+	for _, want := range []string{"m=audio 54322 RTP/AVP 8", "a=rtpmap:8 PCMA/8000"} {
+		if !strings.Contains(pcmaSDP, want) {
+			t.Fatalf("expected PCMA SDP to contain %q, got %q", want, pcmaSDP)
+		}
+	}
+}
+
 func TestRuntimeInputProducerQueuesOnlyCustomerAudio(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

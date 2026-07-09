@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ type MetaPeer struct {
 	pc         *webrtc.PeerConnection
 	audioTrack *webrtc.TrackRemote
 	localTrack *webrtc.TrackLocalStaticRTP
+	localCodec webrtc.RTPCodecCapability
 	sender     *webrtc.RTPSender
 
 	// onTrackReady is called when the remote audio track from Meta is available.
@@ -87,7 +89,7 @@ func NewMetaPeer(cfg *config.Config, sdpOffer string, iceServers []webrtc.ICESer
 		se.SetNAT1To1IPs([]string{cfg.PublicIP}, webrtc.ICECandidateTypeSrflx)
 	}
 
-	// Build the WebRTC API with a media engine that supports Opus audio.
+	// Build the WebRTC API with a media engine that supports WebRTC audio.
 	me := &webrtc.MediaEngine{}
 	if err := me.RegisterDefaultCodecs(); err != nil {
 		return nil, "", fmt.Errorf("register codecs: %w", err)
@@ -113,8 +115,11 @@ func NewMetaPeer(cfg *config.Config, sdpOffer string, iceServers []webrtc.ICESer
 	}
 
 	// Create a local audio track that will carry the agent's audio to Meta.
+	// WhatsApp/Meta offers Opus. Janus SIP trunks often offer only G.711, so
+	// choose a codec that exists in the remote offer before creating the answer.
+	localCodec := selectMetaLocalAudioCodec(sdpOffer)
 	localTrack, err := webrtc.NewTrackLocalStaticRTP(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
+		localCodec,
 		"audio-to-meta",
 		"chatwoot-media-server",
 	)
@@ -148,6 +153,7 @@ func NewMetaPeer(cfg *config.Config, sdpOffer string, iceServers []webrtc.ICESer
 	mp := &MetaPeer{
 		pc:         pc,
 		localTrack: localTrack,
+		localCodec: localCodec,
 		sender:     sender,
 	}
 
@@ -287,6 +293,13 @@ func (mp *MetaPeer) LocalTrack() *webrtc.TrackLocalStaticRTP {
 	return mp.localTrack
 }
 
+// LocalCodec returns the codec used by the local RTP track sent to Meta/SIP.
+func (mp *MetaPeer) LocalCodec() webrtc.RTPCodecCapability {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	return mp.localCodec
+}
+
 // OnTrackReady sets a callback that fires when the remote audio track from
 // Meta becomes available. If the track arrived before the callback was wired
 // (possible for fast inbound offers), replay it so session-level forwarding is
@@ -343,4 +356,77 @@ func (mp *MetaPeer) Close() error {
 
 	slog.Info("meta peer: closing peer connection (explicit)", "stack", string(debug.Stack()))
 	return mp.pc.Close()
+}
+
+func selectMetaLocalAudioCodec(sdpOffer string) webrtc.RTPCodecCapability {
+	switch strings.ToLower(offeredAudioCodec(sdpOffer)) {
+	case strings.ToLower(webrtc.MimeTypePCMU):
+		return webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypePCMU, ClockRate: 8000}
+	case strings.ToLower(webrtc.MimeTypePCMA):
+		return webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypePCMA, ClockRate: 8000}
+	default:
+		return webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2}
+	}
+}
+
+func offeredAudioCodec(sdpOffer string) string {
+	payloadTypes := audioPayloadTypes(sdpOffer)
+	if len(payloadTypes) == 0 {
+		return webrtc.MimeTypeOpus
+	}
+
+	rtpmap := map[string]string{
+		"0": webrtc.MimeTypePCMU,
+		"8": webrtc.MimeTypePCMA,
+	}
+	for _, line := range strings.Split(sdpOffer, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(strings.ToLower(line), "a=rtpmap:") {
+			continue
+		}
+		fields := strings.Fields(strings.TrimPrefix(line, "a=rtpmap:"))
+		if len(fields) < 2 {
+			continue
+		}
+		codecName := strings.ToLower(strings.Split(fields[1], "/")[0])
+		switch codecName {
+		case "opus":
+			rtpmap[fields[0]] = webrtc.MimeTypeOpus
+		case "pcmu":
+			rtpmap[fields[0]] = webrtc.MimeTypePCMU
+		case "pcma":
+			rtpmap[fields[0]] = webrtc.MimeTypePCMA
+		}
+	}
+
+	for _, payloadType := range payloadTypes {
+		if codec := rtpmap[payloadType]; isSupportedRuntimeAudioCodec(codec) {
+			return codec
+		}
+	}
+	return webrtc.MimeTypeOpus
+}
+
+func audioPayloadTypes(sdpOffer string) []string {
+	for _, line := range strings.Split(sdpOffer, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(strings.ToLower(line), "m=audio ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) <= 3 {
+			return nil
+		}
+		return fields[3:]
+	}
+	return nil
+}
+
+func isSupportedRuntimeAudioCodec(codec string) bool {
+	switch strings.ToLower(codec) {
+	case strings.ToLower(webrtc.MimeTypeOpus), strings.ToLower(webrtc.MimeTypePCMU), strings.ToLower(webrtc.MimeTypePCMA):
+		return true
+	default:
+		return false
+	}
 }

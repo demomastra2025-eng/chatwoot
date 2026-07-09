@@ -278,6 +278,7 @@ type runtimeAudioInputProducer struct {
 	udp       net.Conn
 	cmd       *exec.Cmd
 	sdpPath   string
+	codec     string
 	frames    uint64
 	pkts      uint64
 	dropped   uint64
@@ -291,6 +292,7 @@ func newRuntimeAudioInputProducer(parentCtx context.Context, sess *session.Sessi
 		grant:     grant,
 		ws:        ws,
 		input:     make(chan []byte, runtimeInputBufferDepth),
+		codec:     runtimeCodecFromSession(sess),
 	}
 }
 
@@ -314,7 +316,7 @@ func (p *runtimeAudioInputProducer) Start() error {
 		return fmt.Errorf("create runtime input sdp: %w", err)
 	}
 	p.sdpPath = sdpFile.Name()
-	if _, err := sdpFile.WriteString(runtimeInputSDP(udpAddr.Port)); err != nil {
+	if _, err := sdpFile.WriteString(runtimeInputSDPForCodec(udpAddr.Port, p.codec)); err != nil {
 		_ = sdpFile.Close()
 		_ = os.Remove(p.sdpPath)
 		return fmt.Errorf("write runtime input sdp: %w", err)
@@ -356,6 +358,7 @@ func (p *runtimeAudioInputProducer) Start() error {
 	slog.Info("handler: runtime audio input decoder started",
 		"session_id", p.grant.SessionID,
 		"runtime_session_id", p.grant.RuntimeSessionID,
+		"codec", p.codec,
 		"output_rate", runtimeInputRate,
 	)
 	return nil
@@ -381,7 +384,7 @@ func (p *runtimeAudioInputProducer) OnAudioFrame(_ string, source string, packet
 		return
 	}
 	decoderPacket := *packet
-	decoderPacket.PayloadType = 111
+	decoderPacket.PayloadType = runtimePayloadTypeForCodec(p.codec)
 	raw, err := decoderPacket.Marshal()
 	if err != nil {
 		slog.Debug("handler: runtime audio input RTP marshal failed",
@@ -550,6 +553,33 @@ func (p *runtimeAudioInputProducer) Close() {
 }
 
 func runtimeInputSDP(port int) string {
+	return runtimeInputSDPForCodec(port, "audio/opus")
+}
+
+func runtimeInputSDPForCodec(port int, codec string) string {
+	switch canonicalRuntimeCodec(codec) {
+	case "audio/pcmu":
+		return fmt.Sprintf("v=0\n"+
+			"o=- 0 0 IN IP4 127.0.0.1\n"+
+			"s=Chatwoot Runtime Input\n"+
+			"c=IN IP4 127.0.0.1\n"+
+			"t=0 0\n"+
+			"m=audio %d RTP/AVP 0\n"+
+			"a=rtpmap:0 PCMU/8000\n", port)
+	case "audio/pcma":
+		return fmt.Sprintf("v=0\n"+
+			"o=- 0 0 IN IP4 127.0.0.1\n"+
+			"s=Chatwoot Runtime Input\n"+
+			"c=IN IP4 127.0.0.1\n"+
+			"t=0 0\n"+
+			"m=audio %d RTP/AVP 8\n"+
+			"a=rtpmap:8 PCMA/8000\n", port)
+	default:
+		return runtimeInputOpusSDP(port)
+	}
+}
+
+func runtimeInputOpusSDP(port int) string {
 	return fmt.Sprintf("v=0\n"+
 		"o=- 0 0 IN IP4 127.0.0.1\n"+
 		"s=Chatwoot Runtime Input\n"+
@@ -577,7 +607,11 @@ func runtimeDecodeFFmpegArgs(sdpPath string) []string {
 }
 
 func runtimeFFmpegArgs(port int) []string {
-	return []string{
+	return runtimeFFmpegArgsForCodec(port, "audio/opus")
+}
+
+func runtimeFFmpegArgsForCodec(port int, codec string) []string {
+	args := []string{
 		"-hide_banner",
 		"-loglevel", "error",
 		"-analyzeduration", "0",
@@ -587,16 +621,39 @@ func runtimeFFmpegArgs(port int) []string {
 		"-ar", runtimeOutputRate,
 		"-ac", "1",
 		"-i", "pipe:0",
-		"-acodec", "libopus",
-		"-ar", "48000",
-		"-ac", "1",
-		"-application", "voip",
-		"-frame_duration", "20",
-		"-payload_type", "111",
+	}
+
+	switch canonicalRuntimeCodec(codec) {
+	case "audio/pcmu":
+		args = append(args,
+			"-acodec", "pcm_mulaw",
+			"-ar", "8000",
+			"-ac", "1",
+			"-payload_type", "0",
+		)
+	case "audio/pcma":
+		args = append(args,
+			"-acodec", "pcm_alaw",
+			"-ar", "8000",
+			"-ac", "1",
+			"-payload_type", "8",
+		)
+	default:
+		args = append(args,
+			"-acodec", "libopus",
+			"-ar", "48000",
+			"-ac", "1",
+			"-application", "voip",
+			"-frame_duration", "20",
+			"-payload_type", "111",
+		)
+	}
+
+	return append(args,
 		"-flush_packets", "1",
 		"-f", "rtp",
 		fmt.Sprintf("rtp://127.0.0.1:%d", port),
-	}
+	)
 }
 
 func (w *runtimeAudioWriter) startLocked() error {
@@ -615,7 +672,8 @@ func (w *runtimeAudioWriter) startLocked() error {
 	}
 
 	ctx, cancel := context.WithCancel(w.ctx)
-	cmd := exec.CommandContext(ctx, "ffmpeg", runtimeFFmpegArgs(udpAddr.Port)...)
+	codec := runtimeCodecFromSession(w.sess)
+	cmd := exec.CommandContext(ctx, "ffmpeg", runtimeFFmpegArgsForCodec(udpAddr.Port, codec)...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
@@ -686,7 +744,44 @@ func (w *runtimeAudioWriter) startLocked() error {
 	slog.Info("handler: runtime audio encoder started",
 		"session_id", w.grant.SessionID,
 		"runtime_session_id", w.grant.RuntimeSessionID,
+		"codec", codec,
 		"input_rate", runtimeOutputRate,
 	)
 	return nil
+}
+
+func runtimeCodecFromSession(sess *session.Session) string {
+	if sess == nil || sess.MetaPeer == nil {
+		return "audio/opus"
+	}
+	codec := sess.MetaPeer.LocalCodec()
+	if strings.TrimSpace(codec.MimeType) != "" {
+		return codec.MimeType
+	}
+	if track := sess.MetaPeer.LocalTrack(); track != nil {
+		return track.Codec().MimeType
+	}
+	return "audio/opus"
+}
+
+func canonicalRuntimeCodec(codec string) string {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "audio/pcmu", "pcmu":
+		return "audio/pcmu"
+	case "audio/pcma", "pcma":
+		return "audio/pcma"
+	default:
+		return "audio/opus"
+	}
+}
+
+func runtimePayloadTypeForCodec(codec string) uint8 {
+	switch canonicalRuntimeCodec(codec) {
+	case "audio/pcmu":
+		return 0
+	case "audio/pcma":
+		return 8
+	default:
+		return 111
+	}
 }
