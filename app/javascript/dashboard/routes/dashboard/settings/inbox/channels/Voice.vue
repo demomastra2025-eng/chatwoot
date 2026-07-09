@@ -155,7 +155,7 @@ const selectedProviderCard = computed(() => {
 const kazakhstanValidationRules = computed(() => ({
   channelName: { required },
   phoneNumber: { required, isPhoneE164 },
-  providerKind: { required },
+  providerKind: isDirectProviderOwnedSipProvider.value ? {} : { required },
   connectionHost: { required },
   connectionPort: { required, isValidSipPort },
 }));
