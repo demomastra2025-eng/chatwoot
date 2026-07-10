@@ -61,7 +61,18 @@ class Voice::CallMessageBuilder
       source_id: source_id,
       content_attributes: { 'data' => base_payload }
     }
-    Messages::MessageBuilder.new(sender, conversation, params).perform
+    return Messages::MessageBuilder.new(sender, conversation, params).perform unless direction == 'outbound'
+
+    message = conversation.messages.build(
+      params.merge(
+        account: conversation.account,
+        inbox: conversation.inbox,
+        sender: sender
+      )
+    )
+    message.skip_send_reply = true
+    message.save!
+    message
   end
 
   def base_payload

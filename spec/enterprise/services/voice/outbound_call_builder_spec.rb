@@ -16,6 +16,7 @@ RSpec.describe Voice::OutboundCallBuilder do
     allow(inbox).to receive(:channel).and_return(channel)
     allow(channel).to receive(:initiate_call).and_return({ call_sid: call_sid })
     allow(Voice::Conference::Name).to receive(:for).and_call_original
+    allow(SendReplyJob).to receive(:perform_later)
   end
 
   describe '.perform!' do
@@ -45,6 +46,11 @@ RSpec.describe Voice::OutboundCallBuilder do
 
         voice_message = conversation.messages.voice_calls.last
         expect(voice_message.message_type).to eq('outgoing')
+        expect(voice_message).to have_attributes(
+          account_id: account.id,
+          inbox_id: inbox.id,
+          sender: user
+        )
 
         message_data = voice_message.content_attributes['data']
         expect(message_data).to include(
@@ -53,6 +59,7 @@ RSpec.describe Voice::OutboundCallBuilder do
           'from_number' => channel.phone_number,
           'to_number' => contact.phone_number
         )
+        expect(SendReplyJob).not_to have_received(:perform_later)
       end
     end
 
@@ -138,7 +145,7 @@ RSpec.describe Voice::OutboundCallBuilder do
       let(:calls_service) { instance_double(Telephony::CallsService) }
 
       before do
-        create(
+        previous_message = build(
           :message,
           account: account,
           inbox: inbox,
@@ -149,6 +156,8 @@ RSpec.describe Voice::OutboundCallBuilder do
           source_id: 'voice_call:sipuni-previous-call',
           content_attributes: { 'data' => { 'call_sid' => 'sipuni-previous-call', 'status' => 'completed' } }
         )
+        previous_message.skip_send_reply = true
+        previous_message.save!
         allow(Telephony::CallsService).to receive(:new).with(account: account).and_return(calls_service)
         allow(calls_service).to receive(:create_outbound!).and_return(
           call_ref: call_sid,
@@ -190,6 +199,7 @@ RSpec.describe Voice::OutboundCallBuilder do
           expect(voice_messages.count).to eq(2)
           expect(voice_messages.last.source_id).to eq("voice_call:#{call_sid}")
           expect(voice_messages.first.content_attributes.dig('data', 'call_sid')).to eq('sipuni-previous-call')
+          expect(SendReplyJob).not_to have_received(:perform_later)
         end
       end
     end
