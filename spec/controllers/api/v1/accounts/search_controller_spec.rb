@@ -44,6 +44,23 @@ RSpec.describe 'Search', type: :request do
         expect(response_data[:payload][:contacts].length).to eq 1
         expect(response_data[:payload][:articles].length).to eq 1
       end
+
+      it 'returns a conversation without messages with a null message' do
+        matching_contact = create(:contact, account: account)
+        matching_conversation = create(:conversation, account: account, contact: matching_contact)
+        create(:inbox_member, user: agent, inbox: matching_conversation.inbox)
+
+        get "/api/v1/accounts/#{account.id}/search",
+            headers: agent.create_new_auth_token,
+            params: { q: matching_conversation.display_id },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        response_data = JSON.parse(response.body, symbolize_names: true)
+        result = response_data[:payload][:conversations].find { |conversation| conversation[:id] == matching_conversation.display_id }
+
+        expect(result).to include(message: nil)
+      end
     end
   end
 
@@ -190,6 +207,23 @@ RSpec.describe 'Search', type: :request do
         response_data = JSON.parse(response.body, symbolize_names: true)
 
         expect(response_data[:payload][:conversations].pluck(:id)).to include(matching_conversation.display_id)
+      end
+
+      it 'returns a conversation without messages with a null message' do
+        matching_contact = create(:contact, account: account)
+        matching_conversation = create(:conversation, account: account, contact: matching_contact)
+        create(:inbox_member, user: agent, inbox: matching_conversation.inbox)
+
+        get "/api/v1/accounts/#{account.id}/search/conversations",
+            headers: agent.create_new_auth_token,
+            params: { q: matching_conversation.display_id },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        response_data = JSON.parse(response.body, symbolize_names: true)
+        result = response_data[:payload][:conversations].find { |conversation| conversation[:id] == matching_conversation.display_id }
+
+        expect(result).to include(message: nil)
       end
 
       context 'with advanced_search feature enabled', :opensearch do

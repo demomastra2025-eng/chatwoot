@@ -1,8 +1,13 @@
 json.id conversation.display_id
 json.account_id conversation.account_id
 json.created_at conversation.created_at.to_i
-json.message do
-  json.partial! 'message', formats: [:json], message: conversation.messages.try(:first)
+message = conversation.messages.first
+if message
+  json.message do
+    json.partial! 'message', formats: [:json], message: message
+  end
+else
+  json.message nil
 end
 json.contact do
   json.partial! 'contact', formats: [:json], contact: conversation.contact if conversation.try(:contact).present?
