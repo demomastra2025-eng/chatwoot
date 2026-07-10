@@ -97,6 +97,13 @@ func (s *Session) Done() <-chan struct{} {
 	return s.ctx.Done()
 }
 
+// CurrentStatus returns the session status under the session lock.
+func (s *Session) CurrentStatus() Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Status
+}
+
 // Info is the JSON-serializable representation of a session's current state,
 // returned by the GET /sessions/:id endpoint.
 type Info struct {

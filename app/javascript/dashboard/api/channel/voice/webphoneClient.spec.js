@@ -354,10 +354,27 @@ describe('webphoneClient', () => {
       expect(
         WebphoneClient.nativeSessionRetryTimers['sip_profile:41']
       ).toBeDefined();
+      getWebphoneTokenMock.mockResolvedValueOnce({
+        provider: 'asterisk_analog',
+        sip_profile_id: 41,
+        inbox_id: 4771,
+        calling_supported: true,
+        janusServer:
+          'wss://app.one-link.kz/janus-asterisk?janus_ticket=fresh-ticket',
+        sip: {
+          username: '9098',
+          password: 'asterisk-secret',
+          host: '10.77.0.2',
+        },
+      });
 
       await vi.advanceTimersByTimeAsync(30_000);
 
+      expect(getWebphoneTokenMock).toHaveBeenCalledTimes(2);
       expect(janusInitializeMock).toHaveBeenCalledTimes(2);
+      expect(janusInitializeMock.mock.calls[1][0].janusServer).toContain(
+        'janus_ticket=fresh-ticket'
+      );
       expect(WebphoneClient.sessions['sip_profile:41']).toEqual(
         expect.objectContaining({
           provider: 'asterisk_analog',

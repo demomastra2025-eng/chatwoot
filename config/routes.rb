@@ -913,6 +913,7 @@ Rails.application.routes.draw do
   match 'sipuni/events/:token', to: 'telephony/sipuni_events#create', via: %i[get post]
   post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
   post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'
+  get 'internal/voice/janus-ws/authorize', to: 'internal/voice/janus_websocket_authorizations#show'
   get 'internal/voice/ai/context', to: 'internal/voice/ai/context#show'
   post 'internal/voice/ai/context', to: 'internal/voice/ai/context#create'
   post 'internal/voice/ai/transcript', to: 'internal/voice/ai/transcripts#create'

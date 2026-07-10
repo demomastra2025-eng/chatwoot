@@ -214,6 +214,56 @@ test('Janus server call facade tears down media when runtime-agent setup fails',
   assert.deepEqual(terminated, [['media-failed', 'janus_answer_failed']]);
 });
 
+test('Janus server call facade tears down a late media session after caller hangup', async () => {
+  let resolveCreateSession;
+  let runtimeAgentCalls = 0;
+  const terminated = [];
+  const janusMessages = [];
+  const facade = new JanusSipServerCallFacade({
+    profile: normalizeServerProfile({
+      id: 19,
+      account_id: 42,
+      inbox_id: 9,
+      provider: 'sipuni',
+      sip_username: 'ai-agent',
+      sip_password: 'secret',
+      sip_host: 'sip.example.test'
+    }),
+    providerCallId: 'provider-call-late-answer',
+    caller: 'sip:+770****0101@sip.example.test',
+    janus: {
+      sessionId: 100,
+      handleId: 200,
+      jsep: { type: 'offer', sdp: 'v=0' },
+      client: {
+        async pluginMessage(payload) {
+          janusMessages.push(payload);
+        }
+      }
+    },
+    mediaServerClient: {
+      createSession: async () => new Promise(resolve => { resolveCreateSession = resolve; }),
+      async createRuntimeAgent() {
+        runtimeAgentCalls += 1;
+        return {};
+      },
+      async terminateSession(sessionId, reason) {
+        terminated.push([sessionId, reason]);
+      }
+    },
+    runtimeMediaStreamFactory: async () => ({})
+  });
+
+  const answer = facade.answer();
+  facade.handleJanusEvent('hangup');
+  resolveCreateSession({ session_id: 'media-late', meta_sdp_answer: 'v=0' });
+
+  await assert.rejects(answer, /call ended/);
+  assert.equal(runtimeAgentCalls, 0);
+  assert.deepEqual(janusMessages, []);
+  assert.deepEqual(terminated, [['media-late', 'janus_answer_failed']]);
+});
+
 test('Janus server profile rejects offerless INVITEs that media-server cannot negotiate', async () => {
   const messages = [];
   let handled = false;
@@ -251,6 +301,97 @@ test('Janus server profile rejects offerless INVITEs that media-server cannot ne
 
   assert.equal(handled, false);
   assert.deepEqual(messages[0].body, { request: 'decline', code: 488 });
+});
+
+test('Janus server profile close rejects pending SIP registration waiters', async () => {
+  const session = new JanusSipServerProfileSession({
+    app: { async handleCall() {} },
+    profile: normalizeServerProfile({
+      id: 17,
+      account_id: 42,
+      inbox_id: 9,
+      provider: 'sipuni',
+      sip_username: 'ai-agent',
+      sip_password: 'secret',
+      sip_host: 'sip.example.test'
+    }),
+    janusUrl: 'ws://janus.test/ws',
+    mediaServerClient: {},
+    WebSocketImpl: class {},
+    runtimeMediaStreamFactory: async () => ({}),
+    maxCalls: 1,
+    logger: { log() {} }
+  });
+  session.client = { close() {} };
+  const registration = session.waitForRegistration(20000);
+
+  await session.close();
+
+  await assert.rejects(registration, /profile session closed/);
+  assert.equal(session.registrationWaiters.size, 0);
+});
+
+test('Janus server socket close rejects pending SIP registration waiters immediately', async () => {
+  const session = new JanusSipServerProfileSession({
+    app: { async handleCall() {} },
+    profile: normalizeServerProfile({
+      id: 18,
+      account_id: 42,
+      inbox_id: 9,
+      provider: 'sipuni',
+      sip_username: 'ai-agent',
+      sip_password: 'secret',
+      sip_host: 'sip.example.test'
+    }),
+    janusUrl: 'ws://janus.test/ws',
+    mediaServerClient: {},
+    WebSocketImpl: class {},
+    runtimeMediaStreamFactory: async () => ({}),
+    maxCalls: 1,
+    logger: { log() {} }
+  });
+  const registration = session.waitForRegistration(20000);
+
+  session.handleSocketClose();
+
+  await assert.rejects(registration, /websocket closed/);
+  assert.equal(session.registrationWaiters.size, 0);
+});
+
+test('Janus server helper recovery runs another pass when dirtied in flight', async () => {
+  const session = new JanusSipServerProfileSession({
+    app: { async handleCall() {} },
+    profile: normalizeServerProfile({
+      id: 20,
+      account_id: 42,
+      inbox_id: 9,
+      provider: 'sipuni',
+      sip_username: 'ai-agent',
+      sip_password: 'secret',
+      sip_host: 'sip.example.test'
+    }),
+    janusUrl: 'ws://janus.test/ws',
+    mediaServerClient: {},
+    WebSocketImpl: class {},
+    runtimeMediaStreamFactory: async () => ({}),
+    maxCalls: 2,
+    logger: { log() {} }
+  });
+  session.client.ws = {};
+  let recoveryPasses = 0;
+  let releaseFirstPass;
+  const firstPassBlocked = new Promise(resolve => { releaseFirstPass = resolve; });
+  session.performEnsureDesiredHandles = async () => {
+    recoveryPasses += 1;
+    if (recoveryPasses === 1) await firstPassBlocked;
+  };
+
+  const firstRecovery = session.ensureDesiredHandles();
+  const secondRecovery = session.ensureDesiredHandles();
+  releaseFirstPass();
+  await Promise.all([firstRecovery, secondRecovery]);
+
+  assert.equal(recoveryPasses, 2);
 });
 
 test('Janus server runtime syncs profiles from provider and unregisters removed profiles', async () => {
@@ -335,9 +476,21 @@ test('Janus server runtime syncs profiles from provider and unregisters removed 
   });
 
   providerProfiles = [{ ...providerProfiles[0], app_ref: 'updated-runtime', routing_mode: 'ai' }];
+  const healthySession = manager.sessions.get('12');
+  const helperKey = Array.from(healthySession.handles.keys()).find(key => key !== String(healthySession.handleId));
+  sockets[0].emit('message', JSON.stringify({
+    janus: 'detached',
+    session_id: healthySession.sessionId,
+    sender: Number(helperKey)
+  }));
+  for (let index = 0; index < 5; index += 1) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
   await manager.syncProfiles();
   assert.equal(sockets.length, 1);
   assert.equal(manager.sessions.get('12').profile.app_ref, 'updated-runtime');
+  assert.equal(manager.sessions.get('12').handles.size, 3);
+  assert.equal(sockets[0].registerMessages.length, 4);
 
   providerProfiles = [{ ...providerProfiles[0], version: 'v2', app_ref: 'updated-runtime', sip_username: 'ai-agent-9099' }];
   await manager.syncProfiles();

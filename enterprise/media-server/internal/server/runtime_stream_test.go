@@ -2,19 +2,136 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/pion/rtp"
 )
+
+type blockingWriteCloser struct {
+	started   chan struct{}
+	closed    chan struct{}
+	startOnce sync.Once
+	closeOnce sync.Once
+}
+
+func (w *blockingWriteCloser) Write(_ []byte) (int, error) {
+	w.startOnce.Do(func() { close(w.started) })
+	<-w.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (w *blockingWriteCloser) Close() error {
+	w.closeOnce.Do(func() { close(w.closed) })
+	return nil
+}
+
+func TestRuntimeStreamRejectsOversizedWebSocketMessages(t *testing.T) {
+	readErr := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := runtimeStreamUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			readErr <- err
+			return
+		}
+		defer conn.Close()
+		configureRuntimeStreamConnection(conn)
+		_, _, err = conn.ReadMessage()
+		readErr <- err
+	}))
+	defer server.Close()
+
+	url := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	payload := make([]byte, runtimeStreamMaxMessageBytes+1)
+	if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+		t.Fatalf("write oversized websocket message: %v", err)
+	}
+
+	select {
+	case err := <-readErr:
+		if err == nil || !strings.Contains(err.Error(), "read limit") {
+			t.Fatalf("expected websocket read-limit error, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for oversized message rejection")
+	}
+}
+
+func TestDecodeRuntimeAudioFrameEnforcesDecodedAudioLimit(t *testing.T) {
+	atLimit := make([]byte, runtimeStreamMaxAudioBytes)
+	decoded, err := decodeRuntimeAudioFrame(runtimeStreamFrame{
+		Type: runtimeAudioOutType,
+		Data: base64.StdEncoding.EncodeToString(atLimit),
+	})
+	if err != nil {
+		t.Fatalf("decode frame at limit: %v", err)
+	}
+	if len(decoded) != runtimeStreamMaxAudioBytes {
+		t.Fatalf("decoded bytes = %d, want %d", len(decoded), runtimeStreamMaxAudioBytes)
+	}
+
+	overLimit := make([]byte, runtimeStreamMaxAudioBytes+1)
+	_, err = decodeRuntimeAudioFrame(runtimeStreamFrame{
+		Type: runtimeAudioOutType,
+		Data: base64.StdEncoding.EncodeToString(overLimit),
+	})
+	if err != errRuntimeAudioFrameTooLarge {
+		t.Fatalf("oversized frame error = %v, want %v", err, errRuntimeAudioFrameTooLarge)
+	}
+}
+
+func TestRuntimeAudioWriterCloseInterruptsBlockedWrite(t *testing.T) {
+	pipe := &blockingWriteCloser{started: make(chan struct{}), closed: make(chan struct{})}
+	writer := &runtimeAudioWriter{stdin: pipe}
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- writer.WritePCM([]byte{1, 2, 3})
+	}()
+
+	select {
+	case <-pipe.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for blocking audio write")
+	}
+
+	closeDone := make(chan struct{})
+	go func() {
+		writer.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+	case <-time.After(time.Second):
+		t.Fatal("writer close blocked behind stdin write")
+	}
+	select {
+	case err := <-writeDone:
+		if err == nil {
+			t.Fatal("expected interrupted write to return an error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stdin write did not unblock after writer close")
+	}
+}
 
 func TestRuntimeFFmpegArgsEnableLowLatencyRawPcm(t *testing.T) {
 	args := runtimeFFmpegArgs(49152)

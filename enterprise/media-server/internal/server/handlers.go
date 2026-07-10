@@ -233,7 +233,7 @@ func (h *Handlers) CreateSession(w http.ResponseWriter, r *http.Request) {
 
 	resp := CreateSessionResponse{
 		SessionID: sess.ID,
-		Status:    string(sess.Status),
+		Status:    string(sess.CurrentStatus()),
 	}
 	if req.Direction == "incoming" {
 		resp.MetaSDPAnswer = sdpResult

@@ -24,10 +24,16 @@ type Manager struct {
 	config      *config.Config
 	railsClient *callback.RailsClient
 
-	mu             sync.RWMutex
-	sessionCounter atomic.Int64
-	cleanupTicker  *time.Ticker
-	cleanupStopCh  chan struct{}
+	mu                  sync.RWMutex
+	pendingSessions     int
+	terminatingSessions int
+	closing             bool
+	sessionCounter      atomic.Int64
+	cleanupTicker       *time.Ticker
+	cleanupStopCh       chan struct{}
+	createWG            sync.WaitGroup
+	teardownWG          sync.WaitGroup
+	shutdownOnce        sync.Once
 }
 
 // Metrics holds observable counters for the session manager, used by the
@@ -61,16 +67,16 @@ func NewManager(cfg *config.Config, railsClient *callback.RailsClient) *Manager 
 // string is the SDP answer. For outgoing calls, metaSDPOffer is empty and
 // the returned string is the SDP offer to send to Meta.
 func (m *Manager) CreateSession(callID, accountID, direction, metaSDPOffer string, iceServers []webrtc.ICEServer) (*Session, string, error) {
-	// Check capacity limit.
-	if m.config.MaxConcurrentSessions > 0 {
-		m.mu.RLock()
-		activeCount := len(m.sessions)
-		m.mu.RUnlock()
-
-		if activeCount >= m.config.MaxConcurrentSessions {
-			return nil, "", fmt.Errorf("max concurrent sessions (%d) reached", m.config.MaxConcurrentSessions)
-		}
+	if err := m.reserveSessionSlot(); err != nil {
+		return nil, "", err
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.releaseSessionSlot()
+		}
+		m.createWG.Done()
+	}()
 
 	// Generate a unique session ID.
 	counter := m.sessionCounter.Add(1)
@@ -81,9 +87,11 @@ func (m *Manager) CreateSession(callID, accountID, direction, metaSDPOffer strin
 		return nil, "", fmt.Errorf("create session: %w", err)
 	}
 
-	m.mu.Lock()
-	m.sessions[sessionID] = sess
-	m.mu.Unlock()
+	if err := m.commitSessionSlot(sessionID, sess); err != nil {
+		sess.Terminate("server_shutdown")
+		return nil, "", err
+	}
+	committed = true
 
 	slog.Info("manager: session created",
 		"session_id", sessionID,
@@ -94,6 +102,42 @@ func (m *Manager) CreateSession(callID, accountID, direction, metaSDPOffer strin
 	return sess, sdpResult, nil
 }
 
+func (m *Manager) reserveSessionSlot() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closing {
+		return fmt.Errorf("session manager is shutting down")
+	}
+	if m.config.MaxConcurrentSessions > 0 &&
+		len(m.sessions)+m.pendingSessions+m.terminatingSessions >= m.config.MaxConcurrentSessions {
+		return fmt.Errorf("max concurrent sessions (%d) reached", m.config.MaxConcurrentSessions)
+	}
+	m.pendingSessions++
+	m.createWG.Add(1)
+	return nil
+}
+
+func (m *Manager) commitSessionSlot(sessionID string, sess *Session) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closing {
+		return fmt.Errorf("session manager is shutting down")
+	}
+	if m.pendingSessions > 0 {
+		m.pendingSessions--
+	}
+	m.sessions[sessionID] = sess
+	return nil
+}
+
+func (m *Manager) releaseSessionSlot() {
+	m.mu.Lock()
+	if m.pendingSessions > 0 {
+		m.pendingSessions--
+	}
+	m.mu.Unlock()
+}
+
 // GetSession returns the session with the given ID, or nil if not found.
 func (m *Manager) GetSession(sessionID string) *Session {
 	m.mu.RLock()
@@ -102,16 +146,13 @@ func (m *Manager) GetSession(sessionID string) *Session {
 }
 
 // TerminateSession terminates the session with the given ID and removes it
-// from the active sessions map.
+// from the active sessions map after teardown releases its media resources.
 func (m *Manager) TerminateSession(sessionID, reason string) error {
-	m.mu.Lock()
-	sess, ok := m.sessions[sessionID]
-	if !ok {
-		m.mu.Unlock()
-		return fmt.Errorf("session %s not found", sessionID)
+	sess, err := m.beginSessionTermination(sessionID)
+	if err != nil {
+		return err
 	}
-	delete(m.sessions, sessionID)
-	m.mu.Unlock()
+	defer m.finishSessionTermination()
 
 	sess.Terminate(reason)
 	return nil
@@ -119,16 +160,11 @@ func (m *Manager) TerminateSession(sessionID, reason string) error {
 
 // DeleteSession removes a session and cleans up its recording files.
 func (m *Manager) DeleteSession(sessionID string) error {
-	m.mu.Lock()
-	sess, ok := m.sessions[sessionID]
-	if ok {
-		delete(m.sessions, sessionID)
+	sess, err := m.beginSessionTermination(sessionID)
+	if err != nil {
+		return err
 	}
-	m.mu.Unlock()
-
-	if !ok {
-		return fmt.Errorf("session %s not found", sessionID)
-	}
+	defer m.finishSessionTermination()
 
 	sess.Terminate("deleted")
 
@@ -138,6 +174,31 @@ func (m *Manager) DeleteSession(sessionID string) error {
 	}
 
 	return nil
+}
+
+func (m *Manager) beginSessionTermination(sessionID string) (*Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closing {
+		return nil, fmt.Errorf("session manager is shutting down")
+	}
+	sess, ok := m.sessions[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("session %s not found", sessionID)
+	}
+	delete(m.sessions, sessionID)
+	m.terminatingSessions++
+	m.teardownWG.Add(1)
+	return sess, nil
+}
+
+func (m *Manager) finishSessionTermination() {
+	m.mu.Lock()
+	if m.terminatingSessions > 0 {
+		m.terminatingSessions--
+	}
+	m.mu.Unlock()
+	m.teardownWG.Done()
 }
 
 // CreateAgentPeer creates a new agent-side peer for the specified session.
@@ -178,7 +239,7 @@ func (m *Manager) GetMetrics() Metrics {
 	}
 
 	for _, sess := range m.sessions {
-		switch sess.Status {
+		switch sess.CurrentStatus() {
 		case StatusTerminated:
 			metrics.TerminatedCount++
 		case StatusMetaConnected:
@@ -247,24 +308,37 @@ func (m *Manager) RecoverOrphanedRecordings() {
 }
 
 // Shutdown gracefully terminates all active sessions and stops the cleanup
-// goroutine. It should be called during server shutdown.
+// goroutine. It is safe to call more than once.
 func (m *Manager) Shutdown() {
-	close(m.cleanupStopCh)
-	m.cleanupTicker.Stop()
+	m.shutdownOnce.Do(func() {
+		m.mu.Lock()
+		m.closing = true
+		m.mu.Unlock()
 
-	m.mu.Lock()
-	sessions := make([]*Session, 0, len(m.sessions))
-	for _, sess := range m.sessions {
-		sessions = append(sessions, sess)
-	}
-	m.sessions = make(map[string]*Session)
-	m.mu.Unlock()
+		if m.cleanupStopCh != nil {
+			close(m.cleanupStopCh)
+		}
+		if m.cleanupTicker != nil {
+			m.cleanupTicker.Stop()
+		}
 
-	for _, sess := range sessions {
-		sess.Terminate("server_shutdown")
-	}
+		m.createWG.Wait()
+		m.teardownWG.Wait()
 
-	slog.Info("manager: all sessions terminated", "count", len(sessions))
+		m.mu.Lock()
+		sessions := make([]*Session, 0, len(m.sessions))
+		for _, sess := range m.sessions {
+			sessions = append(sessions, sess)
+		}
+		m.sessions = make(map[string]*Session)
+		m.mu.Unlock()
+
+		for _, sess := range sessions {
+			sess.Terminate("server_shutdown")
+		}
+
+		slog.Info("manager: all sessions terminated", "count", len(sessions))
+	})
 }
 
 // cleanupLoop runs periodically to remove terminated sessions from the map.
@@ -284,7 +358,7 @@ func (m *Manager) cleanup() {
 	defer m.mu.Unlock()
 
 	for id, sess := range m.sessions {
-		if sess.Status == StatusTerminated {
+		if sess.CurrentStatus() == StatusTerminated {
 			delete(m.sessions, id)
 			slog.Debug("manager: cleaned up terminated session", "session_id", id)
 		}

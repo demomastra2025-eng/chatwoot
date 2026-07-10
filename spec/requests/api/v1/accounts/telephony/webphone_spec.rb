@@ -40,6 +40,21 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['janus_recording']).to include('audio' => true, 'peer_audio' => true, 'layout' => 'dual_channel')
   end
 
+  def expect_authorized_janus_url(url, server_url:, profile:)
+    uri = URI.parse(url)
+    ticket = URI.decode_www_form(uri.query.to_s).to_h.fetch('janus_ticket')
+
+    expect("#{uri.scheme}://#{uri.host}#{uri.path}").to eq(server_url)
+    expect(
+      Telephony::JanusWebsocketTicket.valid?(
+        ticket: ticket,
+        origin: "https://#{uri.host}",
+        path: uri.path
+      )
+    ).to be(true)
+    expect(profile.reload).to be_enabled
+  end
+
   it 'returns an unsupported payload instead of raising for non-voice inboxes' do
     instagram_inbox = create(:channel_instagram, account: account).inbox
 
@@ -117,7 +132,12 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     payload = response.parsed_body.fetch('payload')
     expect(response).to have_http_status(:ok)
     expect(payload['provider']).to eq('sipuni')
-    expect(payload['janus_server']).to eq('wss://dev.one-link.kz/janus-sipuni')
+    expect_authorized_janus_url(
+      payload['janus_server'],
+      server_url: 'wss://dev.one-link.kz/janus-sipuni',
+      profile: sip_profile
+    )
+    expect(payload['janusServer']).to eq(payload['janus_server'])
     expect(payload['sip']).to include(
       'username' => '990001000021',
       'auth_username' => '990001000021',
@@ -256,7 +276,12 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     payload = response.parsed_body.fetch('payload')
     expect(response).to have_http_status(:ok)
     expect(payload['provider']).to eq('binotel')
-    expect(payload['janus_server']).to eq('wss://dev.one-link.kz/janus-sipuni')
+    expect_authorized_janus_url(
+      payload['janus_server'],
+      server_url: 'wss://dev.one-link.kz/janus-sipuni',
+      profile: sip_profile
+    )
+    expect(payload['janusServer']).to eq(payload['janus_server'])
     expect(payload['sip']).to include(
       'username' => 'pq4dyw5f',
       'auth_username' => 'pq4dyw5f',
@@ -361,7 +386,13 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(sessions.pluck('provider')).to match_array(%w[sipuni binotel asterisk_analog])
     expect(sessions.pluck('sip_profile_id')).to match_array(profiles.map(&:id))
     expect(sessions.map { |session| session.dig('sip', 'username') }).to match_array(profiles.map(&:sip_username))
-    expect(sessions).to all(include('janus_server' => 'wss://dev.one-link.kz/janus-sipuni'))
+    sessions.each do |session|
+      expect_authorized_janus_url(
+        session.fetch('janus_server'),
+        server_url: 'wss://dev.one-link.kz/janus-sipuni',
+        profile: profiles.find { |profile| profile.id == session.fetch('sip_profile_id') }
+      )
+    end
     recording_strategies =
       sessions.index_by { |session| session['provider'] }
               .transform_values { |session| session['recording_strategy'] }

@@ -1,6 +1,14 @@
 package media
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/pion/rtp"
+)
+
+type testAudioConsumer struct{}
+
+func (*testAudioConsumer) OnAudioFrame(string, string, *rtp.Packet) {}
 
 func TestBridgeSnapshotTracksBidirectionalRTP(t *testing.T) {
 	bridge := NewBridge("sess-test", nil, nil)
@@ -54,6 +62,18 @@ func TestBridgeSnapshotRequiresBothRTPDirectionsForReadiness(t *testing.T) {
 	stats = BridgeSnapshot{AgentToMetaPackets: 0, MetaToAgentPackets: 10}
 	if stats.BidirectionalReady() {
 		t.Fatal("expected missing agent->Meta RTP to fail readiness")
+	}
+}
+
+func TestBridgeRemovesRuntimeAudioConsumer(t *testing.T) {
+	bridge := NewBridge("sess-test", nil, nil)
+	consumer := &testAudioConsumer{}
+
+	bridge.AddConsumer(consumer)
+	bridge.RemoveConsumer(consumer)
+
+	if len(bridge.consumers) != 0 {
+		t.Fatalf("consumer count = %d, want 0", len(bridge.consumers))
 	}
 }
 

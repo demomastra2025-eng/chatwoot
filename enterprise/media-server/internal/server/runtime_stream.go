@@ -23,13 +23,17 @@ import (
 )
 
 const (
-	runtimeAudioOutType     = "AUDIO_OUT"
-	runtimeAudioInType      = "AUDIO_IN"
-	runtimeOutputRate       = "8000"
-	runtimeInputRate        = "16000"
-	runtimeInputFrameBytes  = 640 // 20ms PCM16 mono at 16kHz
-	runtimeInputBufferDepth = 256
+	runtimeAudioOutType          = "AUDIO_OUT"
+	runtimeAudioInType           = "AUDIO_IN"
+	runtimeOutputRate            = "8000"
+	runtimeInputRate             = "16000"
+	runtimeInputFrameBytes       = 640 // 20ms PCM16 mono at 16kHz
+	runtimeInputBufferDepth      = 256
+	runtimeStreamMaxMessageBytes = 128 << 10
+	runtimeStreamMaxAudioBytes   = 64 << 10
 )
+
+var errRuntimeAudioFrameTooLarge = errors.New("runtime audio frame exceeds maximum size")
 
 var runtimeStreamUpgrader = websocket.Upgrader{
 	CheckOrigin: func(_ *http.Request) bool { return true },
@@ -63,6 +67,7 @@ func (h *Handlers) serveRuntimeStream(w http.ResponseWriter, r *http.Request, gr
 		return
 	}
 	defer conn.Close()
+	configureRuntimeStreamConnection(conn)
 
 	consumedGrant, ok, status, message := h.consumeRuntimeStreamGrant(grant.SessionID, grant.Token)
 	if !ok {
@@ -87,28 +92,28 @@ func (h *Handlers) serveRuntimeStream(w http.ResponseWriter, r *http.Request, gr
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	stopRuntimeCloseWatcher := closeRuntimeStreamOnSessionDone(ctx, sess, conn, grant)
-	defer stopRuntimeCloseWatcher()
 	writer := newRuntimeAudioWriter(ctx, sess, grant)
 	defer writer.Close()
+	stopRuntimeCloseWatcher := closeRuntimeStreamOnSessionDone(ctx, sess, conn, grant, writer.Close)
+	defer stopRuntimeCloseWatcher()
 	inputProducer := newRuntimeAudioInputProducer(ctx, sess, grant, conn)
+	defer inputProducer.Close()
 	if err := inputProducer.Start(); err != nil {
 		slog.Warn("handler: runtime audio input producer unavailable",
 			"session_id", grant.SessionID,
 			"runtime_session_id", grant.RuntimeSessionID,
 			"error", err,
 		)
-	} else {
-		defer inputProducer.Close()
-		if sess.Bridge != nil {
-			sess.Bridge.AddConsumer(inputProducer)
-		} else {
-			slog.Warn("handler: runtime audio input bridge unavailable",
-				"session_id", grant.SessionID,
-				"runtime_session_id", grant.RuntimeSessionID,
-			)
-		}
+		deadline := time.Now().Add(200 * time.Millisecond)
+		_ = conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "runtime audio input unavailable"),
+			deadline,
+		)
+		return
 	}
+	sess.Bridge.AddConsumer(inputProducer)
+	defer sess.Bridge.RemoveConsumer(inputProducer)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
@@ -132,11 +137,20 @@ func (h *Handlers) serveRuntimeStream(w http.ResponseWriter, r *http.Request, gr
 			)
 			continue
 		}
-		if !strings.EqualFold(strings.TrimSpace(frame.Type), runtimeAudioOutType) || strings.TrimSpace(frame.Data) == "" {
-			continue
+		pcm, err := decodeRuntimeAudioFrame(frame)
+		if errors.Is(err, errRuntimeAudioFrameTooLarge) {
+			slog.Warn("handler: runtime stream oversized audio frame",
+				"session_id", grant.SessionID,
+				"runtime_session_id", grant.RuntimeSessionID,
+			)
+			deadline := time.Now().Add(200 * time.Millisecond)
+			_ = conn.WriteControl(
+				websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "runtime audio frame too large"),
+				deadline,
+			)
+			break
 		}
-
-		pcm, err := base64.StdEncoding.DecodeString(frame.Data)
 		if err != nil {
 			slog.Warn("handler: runtime stream invalid audio frame",
 				"session_id", grant.SessionID,
@@ -165,7 +179,31 @@ func (h *Handlers) serveRuntimeStream(w http.ResponseWriter, r *http.Request, gr
 	)
 }
 
-func closeRuntimeStreamOnSessionDone(ctx context.Context, sess *session.Session, conn *websocket.Conn, grant runtimeStreamGrant) func() {
+func decodeRuntimeAudioFrame(frame runtimeStreamFrame) ([]byte, error) {
+	if !strings.EqualFold(strings.TrimSpace(frame.Type), runtimeAudioOutType) || strings.TrimSpace(frame.Data) == "" {
+		return nil, nil
+	}
+	pcm, err := base64.StdEncoding.DecodeString(frame.Data)
+	if err != nil {
+		return nil, err
+	}
+	if len(pcm) > runtimeStreamMaxAudioBytes {
+		return nil, errRuntimeAudioFrameTooLarge
+	}
+	return pcm, nil
+}
+
+func configureRuntimeStreamConnection(conn *websocket.Conn) {
+	conn.SetReadLimit(runtimeStreamMaxMessageBytes)
+}
+
+func closeRuntimeStreamOnSessionDone(
+	ctx context.Context,
+	sess *session.Session,
+	conn *websocket.Conn,
+	grant runtimeStreamGrant,
+	onSessionDone func(),
+) func() {
 	done := sess.Done()
 	if done == nil {
 		return func() {}
@@ -183,6 +221,9 @@ func closeRuntimeStreamOnSessionDone(ctx context.Context, sess *session.Session,
 		case <-done:
 		}
 
+		if onSessionDone != nil {
+			onSessionDone()
+		}
 		slog.Info("handler: runtime stream closing after media session termination",
 			"session_id", grant.SessionID,
 			"runtime_session_id", grant.RuntimeSessionID,
@@ -196,15 +237,16 @@ func closeRuntimeStreamOnSessionDone(ctx context.Context, sess *session.Session,
 }
 
 type runtimeAudioWriter struct {
-	ctx    context.Context
-	sess   *session.Session
-	grant  runtimeStreamGrant
-	mu     sync.Mutex
-	stdin  io.WriteCloser
-	conn   net.PacketConn
-	cmd    *exec.Cmd
-	pkts   uint64
-	closed bool
+	ctx     context.Context
+	sess    *session.Session
+	grant   runtimeStreamGrant
+	mu      sync.Mutex
+	writeMu sync.Mutex
+	stdin   io.WriteCloser
+	conn    net.PacketConn
+	cmd     *exec.Cmd
+	pkts    uint64
+	closed  bool
 }
 
 func newRuntimeAudioWriter(ctx context.Context, sess *session.Session, grant runtimeStreamGrant) *runtimeAudioWriter {
@@ -212,17 +254,24 @@ func newRuntimeAudioWriter(ctx context.Context, sess *session.Session, grant run
 }
 
 func (w *runtimeAudioWriter) WritePCM(pcm []byte) error {
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closed {
+		w.mu.Unlock()
 		return errors.New("runtime audio writer closed")
 	}
 	if w.stdin == nil {
 		if err := w.startLocked(); err != nil {
+			w.mu.Unlock()
 			return err
 		}
 	}
-	_, err := w.stdin.Write(pcm)
+	stdin := w.stdin
+	w.mu.Unlock()
+
+	_, err := stdin.Write(pcm)
 	return err
 }
 

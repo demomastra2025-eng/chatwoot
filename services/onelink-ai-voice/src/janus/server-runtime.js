@@ -255,6 +255,7 @@ class JanusSipServerRuntimeManager {
     this.lastSyncError = null;
     this.closed = false;
     this.desiredProfileCount = 0;
+    this.desiredHandleCount = 0;
     this.failedProfiles = new Map();
   }
 
@@ -297,6 +298,10 @@ class JanusSipServerRuntimeManager {
     const desired = sourceProfiles.map(normalizeServerProfile).filter(Boolean);
     const desiredByKey = new Map(desired.map(profile => [profileKey(profile), profile]));
     this.desiredProfileCount = desiredByKey.size;
+    this.desiredHandleCount = desired.reduce(
+      (total, profile) => total + positiveInteger(profile.max_concurrent_calls, this.maxCallsPerProfile),
+      0
+    );
     for (const key of this.failedProfiles.keys()) {
       if (!desiredByKey.has(key)) this.failedProfiles.delete(key);
     }
@@ -309,6 +314,7 @@ class JanusSipServerRuntimeManager {
         this.log('janus_server_profile_unregistered', { profile_id: session.profile.id, account_id: session.profile.account_id, inbox_id: session.profile.inbox_id });
       } else {
         session.updateProfile(desiredProfile);
+        await session.ensureDesiredHandles();
       }
     }
 
@@ -368,9 +374,11 @@ class JanusSipServerRuntimeManager {
     return {
       enabled: true,
       configured_profiles: this.desiredProfileCount,
-      healthy_profiles: sessions.filter(session => session.isHealthy()).length,
+      healthy_profiles: sessions.filter(session => session.isHealthy() && session.handles.size >= session.maxCalls).length,
+      degraded_profiles: sessions.filter(session => session.isHealthy() && session.handles.size < session.maxCalls).length,
       failed_profiles: this.failedProfiles.size,
       registered_handles: sessions.reduce((total, session) => total + session.handles.size, 0),
+      desired_handles: this.desiredHandleCount,
       active_calls: sessions.reduce((total, session) => total + session.activeCalls.size, 0),
       last_sync_at: this.lastSyncAt,
       last_sync_error: this.lastSyncError
@@ -412,24 +420,22 @@ class JanusSipServerProfileSession {
     this.connected = false;
     this.closed = false;
     this.closePromise = null;
+    this.ensureHandlesPromise = null;
+    this.ensureHandlesDirty = false;
+    this.lifecycleGeneration = 0;
     this.registrationSignature = registrationSignature(profile);
   }
 
   async start() {
     this.closed = false;
+    const generation = ++this.lifecycleGeneration;
     await this.client.connect();
     this.client.on('event', event => this.handleJanusEvent(event));
     this.client.on('error', error => {
       this.connected = false;
       this.log('janus_server_socket_error', { error: error.message });
     });
-    this.client.on('close', () => {
-      this.connected = false;
-      this.registered = false;
-      if (!this.closed) this.log('janus_server_socket_closed', { profile_id: this.profile.id });
-      for (const call of this.activeCalls.values()) call.handleJanusEvent('hangup', { reason: 'janus_socket_closed' });
-      this.activeCalls.clear();
-    });
+    this.client.on('close', () => this.handleSocketClose());
     this.sessionId = await this.client.createSession();
     this.handleId = await this.client.attachPlugin({
       sessionId: this.sessionId,
@@ -438,13 +444,8 @@ class JanusSipServerProfileSession {
     });
     this.handles.set(String(this.handleId), { id: this.handleId, master: true, activeCallId: null });
     this.masterId = await this.register(this.handleId);
-    await mapWithConcurrency(Array.from({ length: this.maxCalls - 1 }), 4, async () => {
-      try {
-        await this.attachHelper();
-      } catch (error) {
-        this.log('janus_server_helper_register_failed', { profile_id: this.profile.id, error: error.message });
-      }
-    });
+    await this.ensureDesiredHandles();
+    this.assertActiveGeneration(generation);
     this.connected = true;
     this.keepaliveTimer = setInterval(() => {
       this.client.keepalive(this.sessionId).catch(error => {
@@ -487,19 +488,83 @@ class JanusSipServerProfileSession {
     return result.master_id || result.masterId || this.masterId;
   }
 
-  async attachHelper() {
+  async attachHelper(generation = this.lifecycleGeneration) {
     const handleId = await this.client.attachPlugin({
       sessionId: this.sessionId,
       plugin: DEFAULT_PLUGIN,
       opaqueId: `onelink-ai-sip-${this.profile.id}-helper-${crypto.randomBytes(3).toString('hex')}`
     });
+    if (!this.isActiveGeneration(generation)) {
+      await this.client.detachPlugin({ sessionId: this.sessionId, handleId }).catch(() => {});
+      throw new Error('janus SIP profile lifecycle changed during helper attach');
+    }
     this.handles.set(String(handleId), { id: handleId, master: false, activeCallId: null });
     try {
       await this.register(handleId, { helper: true });
+      this.assertActiveGeneration(generation);
     } catch (error) {
       this.handles.delete(String(handleId));
       await this.client.detachPlugin({ sessionId: this.sessionId, handleId }).catch(() => {});
       throw error;
+    }
+  }
+
+  async ensureDesiredHandles() {
+    this.ensureHandlesDirty = true;
+    if (this.ensureHandlesPromise) return this.ensureHandlesPromise;
+    const generation = this.lifecycleGeneration;
+    this.ensureHandlesPromise = (async () => {
+      while (this.ensureHandlesDirty && this.isActiveGeneration(generation)) {
+        this.ensureHandlesDirty = false;
+        await this.performEnsureDesiredHandles(generation);
+      }
+    })();
+    try {
+      return await this.ensureHandlesPromise;
+    } finally {
+      this.ensureHandlesPromise = null;
+      if (this.ensureHandlesDirty && this.isActiveGeneration(generation)) {
+        await this.ensureDesiredHandles();
+      }
+    }
+  }
+
+  async performEnsureDesiredHandles(generation) {
+    if (!this.isActiveGeneration(generation) || !this.sessionId || !this.masterId) return;
+    const missingHandles = Math.max(0, this.maxCalls - this.handles.size);
+    if (missingHandles === 0) return;
+
+    await mapWithConcurrency(Array.from({ length: missingHandles }), 4, async () => {
+      try {
+        await this.attachHelper(generation);
+      } catch (error) {
+        this.log('janus_server_helper_register_failed', { profile_id: this.profile.id, error: error.message });
+      }
+    });
+  }
+
+  handleSocketClose() {
+    this.lifecycleGeneration += 1;
+    this.connected = false;
+    this.registered = false;
+    const error = new Error('janus websocket closed during SIP registration');
+    for (const waiter of this.registrationWaiters.values()) waiter.reject(error);
+    this.registrationWaiters.clear();
+    this.unregistrationWaiter?.resolve(false);
+    if (!this.closed) this.log('janus_server_socket_closed', { profile_id: this.profile.id });
+    for (const call of this.activeCalls.values()) call.handleJanusEvent('hangup', { reason: 'janus_socket_closed' });
+    this.activeCalls.clear();
+  }
+
+  isActiveGeneration(generation) {
+    const ws = this.client.ws;
+    const open = Boolean(ws) && (ws.readyState === undefined || ws.readyState === this.client.WebSocketImpl.OPEN);
+    return !this.closed && generation === this.lifecycleGeneration && open;
+  }
+
+  assertActiveGeneration(generation) {
+    if (!this.isActiveGeneration(generation)) {
+      throw new Error('janus websocket closed while starting SIP profile');
     }
   }
 
@@ -539,6 +604,11 @@ class JanusSipServerProfileSession {
     const handle = this.handles.get(String(event.sender || ''));
     if (!handle) return;
 
+    if (event.janus === 'detached') {
+      this.handleDetachedHandle(handle);
+      return;
+    }
+
     const data = event?.plugindata?.data || {};
     const result = data.result || data;
     if (data.error_code || data.error) {
@@ -572,6 +642,25 @@ class JanusSipServerProfileSession {
     } else {
       const callId = janusCallId(event, result);
       this.activeCalls.get(callId || handle.activeCallId)?.handleJanusEvent(sipEvent, result);
+    }
+  }
+
+  handleDetachedHandle(handle) {
+    this.handles.delete(String(handle.id));
+    this.registrationWaiters.get(String(handle.id))?.reject(new Error('janus SIP handle detached'));
+    if (handle.activeCallId) {
+      this.activeCalls.get(handle.activeCallId)?.handleJanusEvent('hangup', { reason: 'janus_handle_detached' });
+      this.activeCalls.delete(handle.activeCallId);
+    }
+    if (handle.master) {
+      this.registered = false;
+      this.connected = false;
+      return;
+    }
+    if (!this.closed) {
+      this.ensureDesiredHandles().catch(error => {
+        this.log('janus_server_helper_recovery_failed', { profile_id: this.profile.id, error: error.message });
+      });
     }
   }
 
@@ -646,6 +735,7 @@ class JanusSipServerProfileSession {
 
   async performClose() {
     this.closed = true;
+    this.lifecycleGeneration += 1;
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
     this.keepaliveTimer = null;
     for (const waiter of this.registrationWaiters.values()) waiter.reject(new Error('janus SIP profile session closed'));
@@ -727,23 +817,29 @@ class JanusSipServerCallFacade extends EventEmitter {
   }
 
   async performAnswer() {
+    this.ensureAnswerActive('media session creation');
     const session = await this.mediaServerClient.createSession({
       callId: this.request.call_ref,
       accountId: this.request.account_id,
       sdpOffer: this.janus.jsep.sdp,
       iceServers: this.profile.ice_servers || []
     });
-    if (!session?.session_id || !session?.meta_sdp_answer) {
+    if (!session?.session_id) {
       throw new Error('media server returned an invalid Janus session response');
     }
     this.mediaSessionId = session.session_id;
     try {
+      if (!session.meta_sdp_answer) {
+        throw new Error('media server returned an invalid Janus session response');
+      }
+      this.ensureAnswerActive('runtime agent creation');
       const runtime = await this.mediaServerClient.createRuntimeAgent(this.mediaSessionId, {
         call_ref: this.request.call_ref,
         account_id: String(this.request.account_id || ''),
         conversation_id: String(this.request.conversation_id || ''),
         inbox_id: String(this.request.inbox_id || '')
       });
+      this.ensureAnswerActive('Janus accept');
       if (!runtime?.runtime_session_id || !runtime?.stream_url) {
         throw new Error('media server returned an invalid runtime-agent response');
       }
@@ -766,11 +862,18 @@ class JanusSipServerCallFacade extends EventEmitter {
         body: { request: 'accept', autoaccept_reinvites: true },
         jsep: { type: 'answer', sdp: session.meta_sdp_answer }
       });
+      this.ensureAnswerActive('Janus accept acknowledgement');
       this.answered = true;
       return true;
     } catch (error) {
       await this.terminateMediaSession('janus_answer_failed');
       throw error;
+    }
+  }
+
+  ensureAnswerActive(stage) {
+    if (this.ended) {
+      throw new Error(`Janus call ended during ${stage}`);
     }
   }
 

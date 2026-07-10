@@ -76,9 +76,9 @@ class Telephony::WebphoneService
     multi_webphone_payload(native_sessions) if native_sessions.present?
   end
 
-  def webphone_payload_for_identity(_user, inbox, operator_identity)
+  def webphone_payload_for_identity(user, inbox, operator_identity)
     return unsupported_provider_extension_payload(inbox, operator_identity) if provider_managed_external_extension?(inbox, operator_identity)
-    return janus_sip_webphone_payload(inbox, operator_identity) if janus_sip_webphone?(inbox, operator_identity)
+    return janus_sip_webphone_payload(inbox, operator_identity, user) if janus_sip_webphone?(inbox, operator_identity)
 
     unsupported_webphone_payload(inbox: inbox, reason: 'janus_sip_profile_required').merge(
       browser_join_supported: false,
@@ -126,13 +126,14 @@ class Telephony::WebphoneService
     inbox_voice_provider(profile.inbox).to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
   end
 
-  def janus_sip_webphone_payload(inbox, operator_identity)
+  def janus_sip_webphone_payload(inbox, operator_identity, user)
     profile = operator_identity.sip_profile
     profile.ensure_registration_config_version!
     provider = janus_sip_provider_for(inbox, profile)
     credentials = janus_sip_credentials_for(profile)
-    janus_server = janus_sip_server_url(provider)
-    support = janus_sip_support_state(provider, operator_identity, credentials, janus_server)
+    raw_janus_server = janus_sip_server_url(provider)
+    support = janus_sip_support_state(provider, operator_identity, credentials, raw_janus_server)
+    janus_server = authorized_janus_server_url(raw_janus_server, user, profile)
     sip = janus_sip_contract(credentials, profile)
 
     payload = janus_sip_base_payload(provider, operator_identity, profile, janus_server, support).merge(
@@ -370,8 +371,19 @@ class Telephony::WebphoneService
       next unless provider.to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
 
       operator_identity = Telephony::OperatorIdentityResolver::Identity.new(source: :sip_profile, record: profile)
-      janus_sip_webphone_payload(profile.inbox, operator_identity)
+      janus_sip_webphone_payload(profile.inbox, operator_identity, user)
     end
+  end
+
+  def authorized_janus_server_url(server_url, user, profile)
+    return server_url if server_url.blank?
+
+    Telephony::JanusWebsocketTicket.url_for(
+      server_url: server_url,
+      account: account,
+      user: user,
+      sip_profile: profile
+    )
   end
 
   def multi_webphone_payload(sessions)

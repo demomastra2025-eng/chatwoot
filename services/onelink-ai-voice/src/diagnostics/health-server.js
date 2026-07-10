@@ -12,7 +12,9 @@ function createHealthServer({ registry = null, port = 8081, handlers = [], upgra
         ? (typeof registry.activeCount === 'function' ? registry.activeCount() : registry.sessions.size)
         : 0;
       const details = typeof diagnostics === 'function' ? diagnostics() : {};
-      res.end(JSON.stringify({ status: 'ok', sessions, ...details }));
+      const ready = req.url !== '/ready' || janusRuntimeReady(details);
+      res.statusCode = ready ? 200 : 503;
+      res.end(JSON.stringify({ status: ready ? 'ok' : 'not_ready', sessions, ...details }));
       return;
     }
     res.statusCode = 404;
@@ -46,6 +48,15 @@ function createHealthServer({ registry = null, port = 8081, handlers = [], upgra
       return server.close(error => (error ? reject(error) : resolve()));
     })
   };
+}
+
+function janusRuntimeReady(details = {}) {
+  const runtime = details.janus_server_runtime;
+  if (!runtime?.enabled || Number(runtime.configured_profiles || 0) === 0) return true;
+
+  const operationalProfiles =
+    Number(runtime.healthy_profiles || 0) + Number(runtime.degraded_profiles || 0);
+  return operationalProfiles > 0;
 }
 
 module.exports = { createHealthServer };

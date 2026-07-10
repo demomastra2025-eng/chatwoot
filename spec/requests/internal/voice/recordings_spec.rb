@@ -48,7 +48,7 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
       size_bytes: 123,
       duration_sec: 7,
       sha256: sha256,
-      recorded_by: 'fonoster',
+      recorded_by: 'janus',
       layout: 'mixed_mono',
       mode: 'operator_direct_bridge'
     }

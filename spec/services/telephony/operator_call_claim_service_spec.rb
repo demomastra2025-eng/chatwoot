@@ -49,6 +49,24 @@ RSpec.describe Telephony::OperatorCallClaimService do
     )
   end
 
+  def mark_browser_profile_registered!(profile)
+    profile.ensure_registration_config_version!
+    profile.update_browser_registration!(
+      registered: true,
+      registration_context: {
+        sip_profile_id: profile.id,
+        account_id: profile.account_id,
+        inbox_id: profile.inbox_id,
+        internal_extension: profile.internal_extension,
+        sip_username: profile.sip_username,
+        sip_host: profile.sip_host,
+        agent_aor: profile.agent_aor,
+        registration_config_version: profile.registration_config_version,
+        session_key: "sip_profile:#{profile.id}"
+      }
+    )
+  end
+
   it 'claims an operator pool call for an eligible registered candidate' do
     payload = described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
 
@@ -220,6 +238,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
         last_presence_event_at: Time.current.iso8601
       }
     )
+    mark_browser_profile_registered!(profile)
     call_session.update!(
       provider: 'asterisk_analog',
       metadata: {
@@ -270,6 +289,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
         last_presence_event_at: Time.current.iso8601
       }
     )
+    mark_browser_profile_registered!(profile)
     call_session.update!(
       provider: 'sipuni',
       metadata: {

@@ -223,14 +223,44 @@ class WebphoneClient extends EventTarget {
     }, WEBPHONE_NATIVE_SIP_RETRY_MS);
   }
 
+  static async refreshNativeSessionState(sessionKey, state) {
+    const response = await VoiceAPI.getWebphoneToken(state.inboxId);
+    const candidates = WebphoneClient.responseSessions(response);
+    const fallback = response?.payload || response;
+    const freshResponse =
+      candidates.find(
+        candidate =>
+          WebphoneClient.responseSessionKey(candidate, {
+            inboxId: WebphoneClient.responseInboxId(candidate, state.inboxId),
+            provider: WebphoneClient.resolveProvider(candidate),
+          }) === sessionKey
+      ) || fallback;
+    const freshSessionKey = WebphoneClient.responseSessionKey(freshResponse, {
+      inboxId: WebphoneClient.responseInboxId(freshResponse, state.inboxId),
+      provider: WebphoneClient.resolveProvider(freshResponse),
+    });
+    if (freshSessionKey !== sessionKey) {
+      throw new Error('webphone_session_refresh_mismatch');
+    }
+
+    return {
+      ...state,
+      response: freshResponse,
+      inboxId: WebphoneClient.responseInboxId(freshResponse, state.inboxId),
+      provider: WebphoneClient.resolveProvider(freshResponse),
+    };
+  }
+
   async retryNativeSession(sessionKey) {
     this.clearNativeSessionRetry(sessionKey);
-    const state =
+    let state =
       this.nativeSessionRetryState[sessionKey] ||
       this.nativeSessionConfigs[sessionKey];
     if (!state) return null;
 
     try {
+      state = await WebphoneClient.refreshNativeSessionState(sessionKey, state);
+      this.nativeSessionRetryState[sessionKey] = state;
       const session = await this.initializeFromSession(state.response, {
         inboxId: state.inboxId,
         native: true,

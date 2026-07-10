@@ -21,6 +21,32 @@ test('health server exposes runtime diagnostics', async () => {
   }
 });
 
+test('ready endpoint fails when every configured Janus profile is unavailable', async () => {
+  const health = createHealthServer({
+    port: 0,
+    diagnostics: () => ({
+      janus_server_runtime: {
+        enabled: true,
+        configured_profiles: 2,
+        healthy_profiles: 0,
+        degraded_profiles: 0,
+        failed_profiles: 2
+      }
+    })
+  });
+
+  try {
+    const server = await health.listen();
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/ready`);
+    const payload = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.equal(payload.status, 'not_ready');
+  } finally {
+    await health.close();
+  }
+});
+
 test('health server rejects a bind failure instead of emitting an unhandled error', async () => {
   const first = createHealthServer({ port: 0 });
   const firstServer = await first.listen();

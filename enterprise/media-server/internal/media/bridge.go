@@ -104,6 +104,18 @@ func (b *Bridge) AddConsumer(c AudioConsumer) {
 	b.consumers = append(b.consumers, c)
 }
 
+// RemoveConsumer unregisters a previously added AudioConsumer.
+func (b *Bridge) RemoveConsumer(c AudioConsumer) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for index, consumer := range b.consumers {
+		if consumer == c {
+			b.consumers = append(b.consumers[:index], b.consumers[index+1:]...)
+			return
+		}
+	}
+}
+
 // Start begins forwarding audio between the Meta peer and all agent peers.
 // It spawns goroutines for each direction of audio flow. The bridge runs
 // until Stop is called or the provided context is cancelled.
