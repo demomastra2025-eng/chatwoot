@@ -79,6 +79,14 @@ class Reminder < ApplicationRecord
   include AccountStorageLimitable
 
   OPEN_STATUSES = %w[draft pending processing].freeze
+  PROCESSING_CLAIM_KEY = 'processing_claim_token'.freeze
+  DELIVERY_MATERIALIZED_MESSAGE_ID_KEY = 'delivery_materialized_message_id'.freeze
+  DELIVERY_DISPATCHED_MESSAGE_ID_KEY = 'delivery_dispatched_message_id'.freeze
+  INTERNAL_METADATA_KEYS = [
+    PROCESSING_CLAIM_KEY,
+    DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
+    DELIVERY_DISPATCHED_MESSAGE_ID_KEY
+  ].freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
   RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY = 'fixed_time_of_day'.freeze
   RELATIVE_TIME_MODES = [
@@ -166,6 +174,7 @@ class Reminder < ApplicationRecord
   validate :validate_open_duplicate_absence
 
   before_validation :normalize_json_fields
+  before_validation :preserve_internal_metadata
   before_validation :normalize_text_mode
   before_validation :sync_account_from_associations
   before_validation :hydrate_target_defaults
@@ -187,29 +196,80 @@ class Reminder < ApplicationRecord
   end
 
   def approve!
-    raise_invalid_record! unless ready_for_pending?
+    return approve_unsaved! unless persisted?
 
-    update!(
-      status: :pending,
-      cancelled_at: nil,
-      last_error: nil
-    )
+    with_lock do
+      reload
+      next unless draft? || failed?
+
+      raise_invalid_record! unless ready_for_pending?
+      with_internal_metadata_write do
+        update!(
+          status: :pending,
+          cancelled_at: nil,
+          processing_started_at: nil,
+          last_error: nil,
+          metadata: metadata.to_h.except(*INTERNAL_METADATA_KEYS)
+        )
+      end
+    end
+    self
   end
 
   def cancel!(reason = nil)
-    update!(
-      status: :cancelled,
-      cancelled_at: Time.current,
-      last_error: reason.presence || last_error
-    )
+    return cancel_unsaved!(reason) unless persisted?
+
+    with_lock do
+      reload
+      next unless OPEN_STATUSES.include?(status)
+      next if delivery_materialized?
+
+      update!(
+        status: :cancelled,
+        cancelled_at: Time.current,
+        processing_started_at: nil,
+        last_error: reason.presence || last_error
+      )
+    end
+    self
   end
 
   def mark_processing!
-    update!(
-      status: :processing,
-      processing_started_at: Time.current,
-      last_error: nil
-    )
+    claim_token = SecureRandom.uuid
+    claim_metadata = metadata.to_h.except(*INTERNAL_METADATA_KEYS)
+    with_internal_metadata_write do
+      update!(
+        status: :processing,
+        processing_started_at: Time.current,
+        last_error: nil,
+        metadata: claim_metadata.merge(PROCESSING_CLAIM_KEY => claim_token)
+      )
+    end
+    claim_token
+  end
+
+  def processing_claim_token
+    metadata.to_h[PROCESSING_CLAIM_KEY].presence
+  end
+
+  def delivery_materialized?
+    processing? && metadata.to_h[DELIVERY_MATERIALIZED_MESSAGE_ID_KEY].present?
+  end
+
+  def mark_delivery_materialized!(message_id)
+    with_internal_metadata_write do
+      update!(metadata: metadata.to_h.merge(DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => message_id))
+    end
+  end
+
+  def delivery_dispatched_for?(message_id)
+    metadata.to_h[DELIVERY_DISPATCHED_MESSAGE_ID_KEY].to_s == message_id.to_s
+  end
+
+  def mark_delivery_dispatched!(message_id)
+    with_internal_metadata_write do
+      update!(metadata: metadata.to_h.merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id))
+    end
   end
 
   def complete!
@@ -225,6 +285,33 @@ class Reminder < ApplicationRecord
       last_error: message,
       attempts_count: attempts_count.to_i + 1
     )
+  end
+
+  def update_if_editable!
+    updated = false
+    with_lock do
+      next unless editable?
+
+      update!(yield)
+      approve! if draft? && ready_for_pending?
+      updated = true
+    end
+    updated
+  end
+
+  def destroy_if_allowed!
+    destroyed = false
+    with_lock do
+      next unless destroyable?
+
+      destroy!
+      destroyed = true
+    end
+    destroyed
+  end
+
+  def editable?
+    OPEN_STATUSES.include?(status) && !delivery_materialized?
   end
 
   def destroyable?
@@ -262,6 +349,23 @@ class Reminder < ApplicationRecord
   end
 
   private
+
+  def approve_unsaved!
+    raise_invalid_record! unless ready_for_pending?
+
+    update!(status: :pending, cancelled_at: nil, processing_started_at: nil, last_error: nil)
+    self
+  end
+
+  def cancel_unsaved!(reason)
+    update!(
+      status: :cancelled,
+      cancelled_at: Time.current,
+      processing_started_at: nil,
+      last_error: reason.presence || last_error
+    )
+    self
+  end
 
   # rubocop:disable Metrics/CyclomaticComplexity
   def assign_default_status
@@ -338,6 +442,22 @@ class Reminder < ApplicationRecord
     self.attachments = Array(attachments).compact
     self.template_params = (template_params || {}).to_h
     self.metadata = (metadata || {}).to_h
+  end
+
+  def preserve_internal_metadata
+    return if @internal_metadata_write
+
+    visible_metadata = metadata.to_h.except(*INTERNAL_METADATA_KEYS)
+    stored_metadata = persisted? ? metadata_in_database.to_h.slice(*INTERNAL_METADATA_KEYS) : {}
+    self.metadata = visible_metadata.merge(stored_metadata)
+  end
+
+  def with_internal_metadata_write
+    previous_value = @internal_metadata_write
+    @internal_metadata_write = true
+    yield
+  ensure
+    @internal_metadata_write = previous_value
   end
 
   def retain_attachment_blobs

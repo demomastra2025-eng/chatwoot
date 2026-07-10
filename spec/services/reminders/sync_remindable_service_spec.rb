@@ -35,6 +35,38 @@ RSpec.describe Reminders::SyncRemindableService do
       expect(touch.schedule_revision).to be >= 2
     end
 
+    it 'does not mutate a processing touch after its message was materialized' do
+      zone = Time.find_zone!('Asia/Almaty')
+      appointment = create(
+        :scheduling_appointment,
+        starts_at: zone.parse('2026-07-10 15:00'),
+        ends_at: zone.parse('2026-07-10 15:30')
+      )
+      touch = create(
+        :reminder,
+        account: appointment.account,
+        remindable: appointment,
+        timing_mode: :relative,
+        relative_anchor: 'appointment.starts_at',
+        relative_offset_seconds: -1.day.to_i,
+        timezone: 'Asia/Almaty',
+        body: 'Already materialized'
+      )
+      touch.mark_processing!
+      touch.mark_delivery_materialized!(123)
+      original_scheduled_at = touch.scheduled_at
+
+      appointment.update!(
+        starts_at: zone.parse('2026-07-12 18:00'),
+        ends_at: zone.parse('2026-07-12 18:30')
+      )
+      described_class.new(remindable: appointment).perform
+
+      expect(touch.reload).to be_processing
+      expect(touch.scheduled_at).to eq(original_scheduled_at)
+      expect(touch.metadata[Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY]).to eq(123)
+    end
+
     it 'does not recalculate manually overridden relative touches' do
       zone = Time.find_zone!('Asia/Almaty')
       appointment = create(

@@ -22,21 +22,22 @@ class Reminders::RecurrenceService
   def next_occurrence_at
     return if reminder.scheduled_at.blank?
 
+    local_scheduled_at = reminder.scheduled_at.in_time_zone(reminder.timezone.presence || 'UTC')
     case reminder.repeat_mode
     when 'daily'
-      reminder.scheduled_at + 1.day
+      local_scheduled_at.advance(days: 1)
     when 'weekly'
-      reminder.scheduled_at + 1.week
+      local_scheduled_at.advance(weeks: 1)
     when 'monthly'
-      reminder.scheduled_at.advance(months: 1)
+      local_scheduled_at.advance(months: 1)
     when 'weekdays'
-      next_weekday_occurrence(reminder.scheduled_at)
+      next_weekday_occurrence(local_scheduled_at)
     end
   end
 
   def next_weekday_occurrence(time)
-    candidate = time + 1.day
-    candidate += 1.day while candidate.saturday? || candidate.sunday?
+    candidate = time.advance(days: 1)
+    candidate = candidate.advance(days: 1) while candidate.saturday? || candidate.sunday?
     candidate
   end
 
@@ -60,7 +61,7 @@ class Reminders::RecurrenceService
       instructions: reminder.instructions,
       attachments: reminder.attachments,
       template_params: reminder.template_params,
-      metadata: reminder.metadata,
+      metadata: reminder.metadata.except(*Reminder::INTERNAL_METADATA_KEYS),
       auto_cancel_on_incoming: reminder.auto_cancel_on_incoming,
       target_inbox: reminder.target_inbox,
       target_contact: reminder.target_contact,

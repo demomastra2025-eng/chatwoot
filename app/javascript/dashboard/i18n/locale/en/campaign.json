@@ -859,6 +859,7 @@
       },
       "CONTEXT_TITLE": "Touch context: {entity}",
       "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
+      "UNSUPPORTED_CHANNEL_WARNING": "This channel does not support outbound message delivery. The touch will fail at execution time instead of sending.",
       "ANCHORS": {
         "TOUCH_CREATED_AT": "Delayed message created",
         "APPOINTMENT_STARTS_AT": "Appointment starts",

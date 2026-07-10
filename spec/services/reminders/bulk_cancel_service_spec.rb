@@ -111,6 +111,21 @@ RSpec.describe Reminders::BulkCancelService do
       expect(other_conversation_touch.reload).to be_pending
     end
 
+    it 'does not cancel a processing touch after its outgoing message was materialized' do
+      processing_touch.mark_delivery_materialized!(123)
+
+      cancelled_count = described_class.new(
+        account: account,
+        remindable: conversation,
+        reminder_group: touch_plan,
+        reason: 'Customer replied'
+      ).perform
+
+      expect(cancelled_count).to eq(2)
+      expect(processing_touch.reload).to be_processing
+      expect(processing_touch.processing_started_at).to be_present
+    end
+
     it 'rejects remindables outside of the account boundary' do
       other_account = create(:account)
       other_account_conversation = create(:conversation, account: other_account)

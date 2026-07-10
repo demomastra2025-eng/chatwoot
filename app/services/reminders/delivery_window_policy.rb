@@ -24,10 +24,37 @@ class Reminders::DeliveryWindowPolicy
     @now = now
   end
 
-  def self.apply!(reminder:, conversation: nil, now: Time.current)
-    result = new(reminder: reminder, conversation: conversation, now: now).call
-    return result if result.allowed?
+  def self.apply!(reminder:, conversation: nil, now: Time.current, processing_claim: reminder.processing_claim_token)
+    result = nil
+    reminder.with_lock do
+      reminder.reload
+      result = execution_result(
+        reminder: reminder,
+        conversation: conversation,
+        now: now,
+        processing_claim: processing_claim
+      )
+      reschedule!(reminder, result) if current_execution?(reminder, processing_claim) && result.blocked?
+    end
+    result
+  end
 
+  def self.execution_result(reminder:, conversation:, now:, processing_claim:)
+    return new(reminder: reminder, conversation: conversation, now: now).call if current_execution?(reminder, processing_claim)
+
+    Result.new(
+      allowed: false,
+      scheduled_at: reminder.scheduled_at,
+      inbox: conversation&.inbox || reminder.target_inbox,
+      reason: 'execution_state_changed'
+    )
+  end
+
+  def self.current_execution?(reminder, processing_claim)
+    reminder.processing? && reminder.processing_claim_token == processing_claim
+  end
+
+  def self.reschedule!(reminder, result)
     reminder.update!(
       status: :pending,
       scheduled_at: result.scheduled_at,
@@ -35,8 +62,8 @@ class Reminders::DeliveryWindowPolicy
       last_error: nil,
       metadata: reschedule_metadata(reminder, result)
     )
-    result
   end
+  private_class_method :execution_result, :current_execution?, :reschedule!
 
   def call
     inbox = resolved_inbox

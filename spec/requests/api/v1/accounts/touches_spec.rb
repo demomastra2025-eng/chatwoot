@@ -58,6 +58,64 @@ RSpec.describe 'Touches API', type: :request do
     expect(account.reminders.count).to eq(1)
   end
 
+  it 'does not allow generic updates to mutate touch status' do
+    touch = create(:reminder, account: account, touch_conversation: conversation, body: 'Before')
+
+    patch "#{path}/#{touch.id}",
+          params: { status: 'completed', body: 'After' },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(touch.reload).to be_pending
+    expect(touch.body).to eq('After')
+  end
+
+  it 'rejects updates to terminal touches' do
+    touch = create(
+      :reminder,
+      account: account,
+      touch_conversation: conversation,
+      status: :completed,
+      completed_at: Time.current,
+      body: 'Already sent'
+    )
+
+    patch "#{path}/#{touch.id}", params: { body: 'Mutated' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(touch.reload).to be_completed
+    expect(touch.body).to eq('Already sent')
+  end
+
+  it 'preserves internal metadata while updating a processing touch' do
+    touch = create(:reminder, account: account, touch_conversation: conversation)
+    active_claim = touch.mark_processing!
+
+    patch "#{path}/#{touch.id}",
+          params: { metadata: { visible: 'updated', processing_claim_token: 'forged' } },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(touch.reload).to be_processing
+    expect(touch.processing_claim_token).to eq(active_claim)
+    expect(touch.metadata['visible']).to eq('updated')
+  end
+
+  it 'rejects updates after a processing touch message was materialized' do
+    touch = create(:reminder, account: account, touch_conversation: conversation)
+    active_claim = touch.mark_processing!
+    touch.mark_delivery_materialized!(123)
+
+    patch "#{path}/#{touch.id}", params: { body: 'Too late' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(touch.reload).to be_processing
+    expect(touch.processing_claim_token).to eq(active_claim)
+    expect(touch.body).not_to eq('Too late')
+  end
+
   it 'creates and filters a communication-thread touch using display identifiers' do
     communication_thread = create(
       :communication_thread,
@@ -142,6 +200,22 @@ RSpec.describe 'Touches API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'status')).to eq('pending')
     expect(touch.reload).to be_pending
+  end
+
+  it 'does not reopen a completed touch through approve' do
+    touch = create(
+      :reminder,
+      account: account,
+      touch_conversation: conversation,
+      status: :completed,
+      completed_at: Time.current
+    )
+
+    post "#{path}/#{touch.id}/approve", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
+    expect(touch.reload).to be_completed
   end
 
   it 'cancels a touch' do

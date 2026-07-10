@@ -99,6 +99,33 @@ RSpec.describe Reminders::CampaignConflictPolicy do
       expect(described_class.new(reminder: reminder, conversation: conversation)).not_to be_conflict
     end
 
+    it 'does not let an older worker cancel a newer processing claim' do
+      create(:campaign_delivery, campaign: campaign, account: account, inbox: inbox, contact: contact, status: :pending)
+      current_claim = reminder.mark_processing!
+
+      result = described_class.new(
+        reminder: reminder,
+        conversation: conversation,
+        processing_claim: 'stale-claim'
+      ).cancel_if_conflict!
+
+      expect(result).to be(false)
+      expect(reminder.reload).to be_processing
+      expect(reminder.processing_claim_token).to eq(current_claim)
+    end
+
+    it 'does not override a reminder that another cancellation path already finalized' do
+      create(:campaign_delivery, campaign: campaign, account: account, inbox: inbox, contact: contact, status: :pending)
+      reminder.update!(status: :processing)
+      reminder.cancel!('cancelled by incoming reply')
+
+      result = described_class.new(reminder: reminder, conversation: conversation).cancel_if_conflict!
+
+      expect(result).to be(false)
+      expect(reminder.reload).to be_cancelled
+      expect(reminder.last_error).to eq('cancelled by incoming reply')
+    end
+
     it 'does not block campaign deliveries for a different contact in the same inbox' do
       other_contact = create(:contact, account: account)
       create(:campaign_delivery, campaign: campaign, account: account, inbox: inbox, contact: other_contact, status: :pending)

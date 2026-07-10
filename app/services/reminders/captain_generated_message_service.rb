@@ -22,13 +22,14 @@ class Reminders::CaptainGeneratedMessageService
   def perform
     raise ArgumentError, 'Captain runtime is not available' unless captain_runtime_available?
 
-    assistant = generation_assistant(resolve_base_assistant!)
-    response = with_executor(assistant) do
+    base_assistant = resolve_base_assistant!
+    runtime_assistant = generation_assistant(base_assistant)
+    response = with_executor(runtime_assistant) do
       Captain::Assistant::AgentRunnerService.new(
-        assistant: assistant,
+        assistant: runtime_assistant,
         conversation: conversation,
         source: source_name
-      ).generate_response(message_history: generation_message_history(assistant))
+      ).generate_response(message_history: generation_message_history(runtime_assistant))
     end.with_indifferent_access
 
     content = response[:response].to_s.strip
@@ -36,7 +37,7 @@ class Reminders::CaptainGeneratedMessageService
     raise ArgumentError, 'Captain generated blank touch content' if content.blank?
 
     {
-      assistant: assistant,
+      assistant: base_assistant,
       content: content,
       captain_trace: response[:captain_trace]
     }.compact

@@ -27,6 +27,7 @@ class Reminders::BulkCancelService
     active_scope.find_each do |reminder|
       collect_result(result, reminder)
     end
+    result[:cancellable_count] = result[:cancelled_count] + result[:failed_count]
     result[:remaining_open_count] = active_scope.count
     result[:skipped_count] = result[:skipped_touches].size
 
@@ -123,10 +124,11 @@ class Reminders::BulkCancelService
   end
 
   def cancellable_status?(reminder)
-    CANCELLABLE_STATUSES.include?(reminder.status)
+    CANCELLABLE_STATUSES.include?(reminder.status) && !reminder.delivery_materialized?
   end
 
   def skip_reason_for(reminder)
+    return 'delivery_already_materialized' if reminder.delivery_materialized?
     return 'already_cancelled' if reminder.cancelled?
     return 'already_completed' if reminder.completed?
     return 'already_failed' if reminder.failed?

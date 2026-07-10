@@ -57,6 +57,283 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.sender).to eq(assistant)
     end
 
+    it 'does not materialize an agent touch when an incoming reply cancels it during Captain generation' do
+      conversation = create(:conversation)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        text_mode: :agent,
+        body: nil,
+        instructions: 'Write a short follow-up reminder',
+        auto_cancel_on_incoming: true,
+        metadata: {
+          'captain_assistant_id' => assistant.id,
+          'auto_cancel_on_incoming_explicit' => true
+        }
+      )
+
+      generator = instance_double(Reminders::CaptainGeneratedMessageService)
+      allow(Reminders::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
+      allow(generator).to receive(:perform) do
+        incoming = create(
+          :message,
+          account: conversation.account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: conversation.contact,
+          message_type: :incoming,
+          private: false
+        )
+        Reminders::AutoCancelOnIncomingService.new(message: incoming).perform
+        { content: 'Generated too late', assistant: assistant, captain_trace: {} }
+      end
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(touch.reload).to be_cancelled
+      expect(touch.last_error).to eq(Reminders::AutoCancelOnIncomingService::CANCELLED_AFTER_INCOMING_REPLY)
+    end
+
+    it 'does not transition a wakeup conversation after an incoming reply cancels the touch during generation' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        action_type: :ai_agent_wakeup,
+        auto_cancel_on_incoming: true,
+        metadata: {
+          'captain_assistant_id' => assistant.id,
+          'auto_cancel_on_incoming_explicit' => true
+        }
+      )
+      generator = instance_double(Reminders::CaptainGeneratedMessageService)
+      allow(Reminders::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
+      allow(generator).to receive(:perform) do
+        incoming = create(
+          :message,
+          account: conversation.account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: conversation.contact,
+          message_type: :incoming,
+          private: false
+        )
+        Reminders::AutoCancelOnIncomingService.new(message: incoming).perform
+        { content: 'Generated too late', assistant: assistant, captain_trace: {} }
+      end
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(touch.reload).to be_cancelled
+      expect(conversation.reload).to be_open
+    end
+
+    it 'does not mark a reminder failed after a concurrent reschedule wins during generation' do
+      conversation = create(:conversation)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        text_mode: :agent,
+        instructions: 'Generate a follow-up',
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      generator = instance_double(Reminders::CaptainGeneratedMessageService)
+      allow(Reminders::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
+      allow(generator).to receive(:perform) do
+        Reminder.where(id: touch.id).update_all(
+          status: Reminder.statuses[:pending],
+          processing_started_at: nil,
+          updated_at: 1.second.from_now
+        )
+        raise 'generation failed after reschedule'
+      end
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to raise_error(RuntimeError, 'generation failed after reschedule')
+
+      expect(touch.reload).to be_pending
+      expect(touch.last_error).to be_nil
+    end
+
+    it 'does not send a stale generated payload after the processing reminder is edited concurrently' do
+      conversation = create(:conversation)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        text_mode: :agent,
+        instructions: 'Generate the original follow-up',
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      generator = instance_double(Reminders::CaptainGeneratedMessageService)
+      allow(Reminders::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
+      allow(generator).to receive(:perform) do
+        Reminder.where(id: touch.id).update_all(
+          instructions: 'Generate the edited follow-up instead',
+          updated_at: 1.second.from_now
+        )
+        { content: 'Stale generated content', assistant: assistant, captain_trace: {} }
+      end
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(touch.reload).to be_pending
+      expect(touch.processing_started_at).to be_nil
+    end
+
+    it 'does not reset a newer processing claim when an older worker finishes generation' do
+      conversation = create(:conversation)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: conversation,
+        status: :pending,
+        text_mode: :agent,
+        instructions: 'Generate the original follow-up',
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      touch.mark_processing!
+      newer_claim = 1.second.from_now
+      generator = instance_double(Reminders::CaptainGeneratedMessageService)
+      allow(Reminders::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
+      allow(generator).to receive(:perform) do
+        Reminder.where(id: touch.id).update_all(
+          status: Reminder.statuses[:processing],
+          processing_started_at: newer_claim,
+          metadata: touch.metadata.merge('processing_claim_token' => 'newer-claim'),
+          updated_at: newer_claim
+        )
+        { content: 'Old worker content', assistant: assistant, captain_trace: {} }
+      end
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      touch.reload
+      expect(touch).to be_processing
+      expect(touch.processing_claim_token).to eq('newer-claim')
+      expect(touch.processing_started_at).to be_within(1.second).of(newer_claim)
+    end
+
+    it 'resumes an already materialized message without creating a duplicate' do
+      conversation = create(:conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: conversation,
+        status: :pending,
+        body: 'Resume this message'
+      )
+      active_claim = touch.mark_processing!
+      message = create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        skip_send_reply: true,
+        additional_attributes: { 'touch_id' => touch.id, 'touch_source' => 'touch' }
+      )
+      touch.mark_delivery_materialized!(message.id)
+      allow(Reminders::MessageMaterializer).to receive(:new).and_call_original
+      expect(Reminders::DeliverMaterializedMessageJob)
+        .to receive(:perform_later)
+        .with(touch.id, message.id, active_claim)
+        .once
+        .and_call_original
+
+      expect do
+        described_class.new(reminder: touch, processing_claim: active_claim).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(Reminders::MessageMaterializer).not_to have_received(:new)
+      expect(touch.reload).to be_completed
+    end
+
+    it 'resumes under the final lock when another worker materialized the same claim' do
+      conversation = create(:conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: conversation,
+        status: :pending,
+        body: 'Parallel same-claim message'
+      )
+      active_claim = touch.mark_processing!
+      second_worker = described_class.new(reminder: touch, processing_claim: active_claim)
+      message = create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        skip_send_reply: true,
+        additional_attributes: { 'touch_id' => touch.id, 'touch_source' => 'touch' }
+      )
+      touch.mark_delivery_materialized!(message.id)
+      allow(Reminders::MessageMaterializer).to receive(:new).and_call_original
+
+      expect do
+        second_worker.perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(Reminders::MessageMaterializer).not_to have_received(:new)
+      expect(touch.reload).to be_completed
+    end
+
+    it 'marks the touch failed when delivery enqueue fails after message materialization' do
+      conversation = create(:conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        body: 'Queue this message'
+      )
+      allow(Reminders::DeliverMaterializedMessageJob).to receive(:perform_later).and_raise(StandardError, 'redis unavailable')
+      allow(SendReplyJob).to receive(:perform_later).and_call_original
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to raise_error(StandardError, 'redis unavailable')
+
+      expect(touch.reload).to be_failed
+      expect(touch).not_to be_completed
+      expect(conversation.messages.outgoing.count).to eq(1)
+      expect(touch.metadata['delivery_materialized_message_id']).to eq(conversation.messages.outgoing.last.id)
+      expect(SendReplyJob).not_to have_received(:perform_later)
+    end
+
     it 'sends an agent touch from the Captain assistant, not the human message_sender' do
       conversation = create(:conversation)
       assistant = create(:captain_assistant, account: conversation.account)

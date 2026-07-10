@@ -14,11 +14,20 @@ class Reminders::AutoCancelOnIncomingService
 
     cancelled_count = 0
     cancellable_scope.find_each do |reminder|
-      next unless explicitly_auto_cancelled?(reminder)
+      reminder.with_lock do
+        reminder.reload
+        next unless Reminder::OPEN_STATUSES.include?(reminder.status)
+        next if reminder.delivery_materialized?
+        next unless explicitly_auto_cancelled?(reminder)
 
-      reminder.cancel!(CANCELLED_AFTER_INCOMING_REPLY)
-      reminder.update_column(:processing_started_at, nil) if reminder.processing_started_at.present?
-      cancelled_count += 1
+        reminder.update!(
+          status: :cancelled,
+          cancelled_at: Time.current,
+          last_error: CANCELLED_AFTER_INCOMING_REPLY,
+          processing_started_at: nil
+        )
+        cancelled_count += 1
+      end
     end
     cancelled_count
   end

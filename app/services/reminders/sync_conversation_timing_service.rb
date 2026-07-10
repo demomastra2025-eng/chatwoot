@@ -38,8 +38,13 @@ class Reminders::SyncConversationTimingService
   end
 
   def sync_touch!(touch)
-    touch.scheduled_at_will_change!
-    touch.save!
-    touch.approve! if touch.reload.draft? && touch.ready_for_pending?
+    touch.with_lock do
+      touch.reload
+      next unless touch.editable?
+
+      touch.scheduled_at_will_change!
+      touch.save!
+      touch.approve! if touch.draft? && touch.ready_for_pending?
+    end
   end
 end

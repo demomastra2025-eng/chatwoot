@@ -588,6 +588,81 @@ RSpec.describe Reminder do
     end
   end
 
+  describe 'processing claim integrity' do
+    it 'strips reserved internal metadata during ordinary creation' do
+      reminder = create(
+        :reminder,
+        metadata: {
+          'visible' => 'kept',
+          'processing_claim_token' => 'forged-claim',
+          'delivery_materialized_message_id' => 123,
+          'delivery_dispatched_message_id' => 123
+        }
+      )
+
+      expect(reminder.reload.metadata).to eq('visible' => 'kept')
+    end
+
+    it 'preserves the reserved claim token when metadata is replaced during processing' do
+      reminder = create(:reminder, status: :pending, metadata: { 'visible' => 'old' })
+      active_claim = reminder.mark_processing!
+
+      reminder.update!(
+        metadata: { 'processing_claim_token' => 'attacker-claim', 'visible' => 'updated' }
+      )
+
+      expect(reminder.reload.metadata).to include(
+        'processing_claim_token' => active_claim,
+        'visible' => 'updated'
+      )
+    end
+  end
+
+  describe '#approve!' do
+    it 'does not reopen a completed touch' do
+      reminder = create(:reminder, status: :completed, completed_at: Time.current)
+
+      reminder.approve!
+
+      expect(reminder.reload).to be_completed
+    end
+
+    it 'clears old delivery state when retrying a failed touch' do
+      reminder = create(:reminder, status: :pending)
+      reminder.mark_processing!
+      reminder.mark_delivery_materialized!(123)
+      reminder.mark_delivery_dispatched!(123)
+      reminder.fail!('retry me')
+
+      reminder.approve!
+
+      expect(reminder.reload).to be_pending
+      expect(reminder.metadata.keys & Reminder::INTERNAL_METADATA_KEYS).to be_empty
+    end
+  end
+
+  describe '#cancel!' do
+    it 'does not overwrite a completed touch' do
+      reminder = create(:reminder, status: :completed, completed_at: Time.current, last_error: nil)
+
+      reminder.cancel!('too late')
+
+      expect(reminder.reload).to be_completed
+      expect(reminder.last_error).to be_nil
+    end
+
+    it 'does not cancel a processing touch after its message was materialized' do
+      reminder = create(:reminder, status: :pending)
+      reminder.mark_processing!
+      reminder.mark_delivery_materialized!(123)
+
+      reminder.cancel!('too late')
+
+      expect(reminder.reload).to be_processing
+      expect(reminder.last_error).to be_nil
+    end
+  end
+
   describe 'repeat validation' do
     it 'rejects recurring relative touches' do
       conversation = create(:conversation)

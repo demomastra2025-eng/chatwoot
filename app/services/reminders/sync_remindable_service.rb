@@ -18,12 +18,17 @@ class Reminders::SyncRemindableService
   private
 
   def sync_touch!(touch)
-    touch.assign_attributes(sync_attributes_for(touch))
-    touch.scheduled_at_will_change! if touch.relative? && !touch.manual_schedule_override?
-    return unless touch.changed?
+    touch.with_lock do
+      touch.reload
+      next unless touch.editable?
 
-    touch.save!
-    touch.approve! if touch.reload.draft? && touch.ready_for_pending?
+      touch.assign_attributes(sync_attributes_for(touch))
+      touch.scheduled_at_will_change! if touch.relative? && !touch.manual_schedule_override?
+      next unless touch.changed?
+
+      touch.save!
+      touch.approve! if touch.draft? && touch.ready_for_pending?
+    end
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity

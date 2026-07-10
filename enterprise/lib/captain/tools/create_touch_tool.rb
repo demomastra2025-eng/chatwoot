@@ -1,8 +1,8 @@
 class Captain::Tools::CreateTouchTool < Captain::Tools::BasePublicTool
   description(
     'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
-    'Supports three scheduling modes: relative (relative_offset_minutes + optional relative_anchor), ' \
-    'absolute (scheduled_at as ISO8601), and recurring (repeat_mode daily/weekly/monthly/weekdays with repeat_until_at). ' \
+    'Supports relative scheduling (relative_offset_minutes + optional relative_anchor) and absolute scheduling (scheduled_at as ISO8601). ' \
+    'Recurrence (repeat_mode daily/weekly/monthly/weekdays) is available only with absolute scheduled_at and requires repeat_until_at. ' \
     'For a fixed wall-clock time on relative touches use relative_time_mode=fixed_time_of_day with relative_time_of_day HH:MM. ' \
     'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
   )
@@ -14,9 +14,11 @@ class Captain::Tools::CreateTouchTool < Captain::Tools::BasePublicTool
   param :remindable_kind, type: 'string', desc: 'Target entity: conversation, deal, task, appointment. Defaults to conversation', required: false
   param :relative_anchor, type: 'string',
                           desc: 'Optional relative anchor: touch.created_at, conversation.created_at, conversation.last_incoming_message_at, conversation.last_activity_at, conversation.last_outgoing_message_at, conversation.waiting_since, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at. Defaults to conversation.last_incoming_message_at for conversation touches, falling back to touch.created_at when no incoming customer message exists.', required: false
-  param :relative_offset_minutes, type: 'number', desc: 'positive offset in minutes for relative scheduling', required: true
+  param :relative_offset_minutes, type: 'number',
+                                  desc: 'Positive offset in minutes for relative scheduling. Omit when scheduled_at is provided', required: false
   param :repeat_mode, type: 'string',
-                      desc: 'Recurrence mode: once (default), daily, weekly, monthly, weekdays. Requires repeat_until_at when not once.', required: false
+                      desc: 'Recurrence mode: once (default), daily, weekly, monthly, weekdays. ' \
+                            'Modes other than once require both absolute scheduled_at and repeat_until_at.', required: false
   param :repeat_until_at, type: 'string', desc: 'ISO8601 stop time for recurring touches, e.g. 2026-08-01T18:00:00+03:00.', required: false
   param :scheduled_at, type: 'string',
                        desc: 'Absolute send time as ISO8601, e.g. 2026-07-10T15:00:00+03:00. Use instead of relative_offset_minutes for absolute scheduling.', required: false

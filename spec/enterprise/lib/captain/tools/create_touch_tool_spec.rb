@@ -70,6 +70,26 @@ RSpec.describe Captain::Tools::CreateTouchTool, type: :model do
     expect(payload.dig('touch', 'template_params')).to include('name' => 'sample_shipping_confirmation')
   end
 
+  it 'creates an absolute recurring touch without a relative offset' do
+    scheduled_at = 1.day.from_now.change(usec: 0)
+    repeat_until_at = 30.days.from_now.change(usec: 0)
+
+    payload = JSON.parse(tool.perform(
+                           tool_context,
+                           body: 'Daily follow-up',
+                           scheduled_at: scheduled_at.iso8601,
+                           repeat_mode: 'daily',
+                           repeat_until_at: repeat_until_at.iso8601
+                         ))
+    touch = Reminder.last
+
+    expect(payload['timing_mode']).to eq('absolute')
+    expect(Time.zone.parse(payload['scheduled_at'])).to be_within(1.second).of(scheduled_at)
+    expect(touch.timing_mode).to eq('absolute')
+    expect(touch.repeat_mode).to eq('daily')
+    expect(touch.repeat_until_at).to be_within(1.second).of(repeat_until_at)
+  end
+
   it 'passes selected attachments to the reminder pipeline' do
     signed_blob_id = account_owned_blob.signed_id
 

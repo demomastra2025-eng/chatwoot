@@ -84,10 +84,14 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
 
   def delete_touch(touch_id:)
     touch = find_touch!(touch_id)
-    raise ArgumentError, 'Only draft, pending, failed, or cancelled touches can be deleted' unless touch.destroyable?
+    payload = nil
 
-    payload = ::Outbound::PayloadBuilder.touch_payload(touch)
-    touch.destroy!
+    touch.with_lock do
+      raise ArgumentError, 'Only draft, pending, failed, or cancelled touches can be deleted' unless touch.destroyable?
+
+      payload = ::Outbound::PayloadBuilder.touch_payload(touch)
+      touch.destroy!
+    end
     payload
   end
 

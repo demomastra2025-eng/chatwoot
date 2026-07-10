@@ -7,8 +7,9 @@ class Messages::MessageBuilder
 
   attr_reader :message
 
-  def initialize(user, conversation, params)
+  def initialize(user, conversation, params, skip_send_reply: false)
     @params = params
+    @skip_send_reply = skip_send_reply
     @private = params[:private] || false
     @conversation = conversation
     @user = user
@@ -27,6 +28,7 @@ class Messages::MessageBuilder
     validate_delivery_policy!
     @message = @conversation.messages.build(message_params)
     @message.preserve_waiting_since = preserve_waiting_since?
+    @message.skip_send_reply = @skip_send_reply
     process_attachments
     process_emails
     # When the message has no quoted content, it will just be rendered as a regular message

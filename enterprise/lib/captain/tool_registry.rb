@@ -918,8 +918,11 @@ class Captain::ToolRegistry
           id: 'create_touch',
           title: 'Create Touch',
           description: 'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
-                       'Only relative scheduling is supported: provide a positive relative_offset_minutes; ' \
-                       'scheduled_at/absolute/immediate sends are rejected. For official WhatsApp outside the 24-hour window, ' \
+                       'Supports relative scheduling (relative_offset_minutes + optional relative_anchor) and absolute scheduling ' \
+                       '(scheduled_at as ISO8601). Recurrence (repeat_mode daily/weekly/monthly/weekdays) is available only with ' \
+                       'absolute scheduled_at and requires repeat_until_at. For a fixed wall-clock time on relative touches use ' \
+                       'relative_time_mode=fixed_time_of_day with relative_time_of_day HH:MM. ' \
+                       'For official WhatsApp outside the 24-hour window, ' \
                        'use channel_template instead of free_text or AI-generated text.',
           group_name: 'Outbound',
           icon: 'clock-plus',

@@ -1,13 +1,31 @@
 class Reminders::ExecuteService
   attr_reader :reminder
 
-  def initialize(reminder:)
+  def initialize(reminder:, processing_claim: reminder.processing_claim_token)
     @reminder = reminder
+    @processing_claim = processing_claim
   end
 
   def perform
-    return reminder if reminder.cancelled? || reminder.completed? || reminder.failed?
+    reload_reminder
+    return reminder if execution_ineligible?
+    return finish_execution if reminder.delivery_materialized?
 
+    execute_action
+  rescue StandardError => e
+    fail_reminder!(e.message)
+    raise
+  end
+
+  private
+
+  def execution_ineligible?
+    return true if reminder.cancelled? || reminder.completed? || reminder.failed?
+
+    reminder.persisted? && (!reminder.processing? || !current_execution_claim?)
+  end
+
+  def execute_action
     case reminder.action_type
     when 'send_message'
       execute_send_message
@@ -16,80 +34,164 @@ class Reminders::ExecuteService
     else
       raise ArgumentError, "Unsupported touch action: #{reminder.action_type}"
     end
-  rescue StandardError => e
-    reminder.fail!(e.message)
-    raise
   end
-
-  private
 
   def execute_send_message
     conversation = Reminders::ConversationResolver.new(reminder: reminder).perform
-    return reminder if cancel_due_to_campaign_conflict(conversation)
-    return reminder if reschedule_outside_delivery_window(conversation)
+    return reminder if execution_blocked?(conversation)
 
-    delivery_policy = ensure_delivery_allowed!(conversation, content_kind: reminder.content_kind, template_params: reminder.template_params,
-                                                             attachments: reminder.attachments)
-    generated_payload = reminder.agent? ? generate_captain_message(conversation, mode: :touch) : {}
-    sender = reminder.agent? && generated_payload[:assistant].present? ? generated_payload[:assistant] : reminder.message_sender
-    message = materialize_message(
-      conversation: conversation,
-      sender: sender,
-      content: generated_payload[:content].presence || reminder.renderable_body(
-        conversation: conversation,
-        sender: sender
-      ),
-      captain_trace: generated_payload[:captain_trace],
-      delivery_policy: delivery_policy
+    delivery_policy = send_message_delivery_policy(conversation)
+    payload = send_message_payload(conversation)
+    message = finalize_send_message(conversation, payload, delivery_policy)
+
+    finish_execution(message)
+  end
+
+  def send_message_delivery_policy(conversation)
+    ensure_delivery_allowed!(
+      conversation,
+      content_kind: reminder.content_kind,
+      template_params: reminder.template_params,
+      attachments: reminder.attachments
     )
+  end
 
+  def send_message_payload(conversation)
+    generated_payload = reminder.agent? ? generate_captain_message(conversation, mode: :touch) : {}
+    sender = generated_payload[:assistant].presence || reminder.message_sender
+
+    {
+      sender: sender,
+      content: generated_payload[:content].presence || reminder.renderable_body(conversation: conversation, sender: sender),
+      captain_trace: generated_payload[:captain_trace]
+    }
+  end
+
+  def finalize_send_message(conversation, payload, delivery_policy)
+    with_execution_lock do
+      message = Reminders::MessageMaterializer.new(reminder: reminder).perform(
+        conversation: conversation,
+        sender: payload[:sender],
+        content: payload[:content],
+        captain_trace: payload[:captain_trace],
+        delivery_policy: delivery_policy
+      )
+      update_resolved_targets!(conversation)
+      @execution_updated_at = reminder.updated_at
+      message
+    end
+  end
+
+  def update_resolved_targets!(conversation)
     updates = {}
     updates[:target_conversation] = conversation if reminder.target_conversation_id != conversation.id
     updates[:target_contact_inbox] = conversation.contact_inbox if reminder.target_contact_inbox_id != conversation.contact_inbox_id
     reminder.update!(updates) if updates.present?
-    reminder.complete!
-    schedule_next_occurrence
-    message
   end
 
   def execute_ai_agent_wakeup
     conversation = reminder.target_conversation || reminder.conversation
     raise ArgumentError, 'AI wakeup touches require a conversation target' if conversation.blank?
-
-    return reminder if cancel_due_to_campaign_conflict(conversation)
-    return reminder if reschedule_outside_delivery_window(conversation)
+    return reminder if execution_blocked?(conversation)
 
     delivery_policy = ensure_delivery_allowed!(conversation, content_kind: 'free_text', template_params: {}, attachments: [])
-
-    if conversation.respond_to?(:with_captain_activity_context)
-      conversation.with_captain_activity_context(reason: 'touch_ai_wakeup', reason_type: :touch) do
-        transition_conversation_status!(conversation, 'pending') unless conversation.pending?
-      end
-    else
-      transition_conversation_status!(conversation, 'pending') unless conversation.pending?
-    end
-
     generated_payload = generate_captain_message(conversation, mode: :wakeup)
-    message = materialize_message(
-      conversation: conversation,
-      sender: generated_payload[:assistant],
-      content: generated_payload[:content],
-      captain_trace: generated_payload[:captain_trace],
-      delivery_policy: delivery_policy
-    )
+    message = finalize_ai_agent_wakeup(conversation, generated_payload, delivery_policy)
 
-    reminder.update!(target_conversation: conversation) if reminder.target_conversation_id != conversation.id
-    reminder.complete!
-    schedule_next_occurrence
-    message
+    finish_execution(message)
   end
 
-  def transition_conversation_status!(conversation, status)
-    Conversations::StatusTransitionService.new(
+  def finalize_ai_agent_wakeup(conversation, generated_payload, delivery_policy)
+    with_execution_lock do
+      Reminders::WakeupConversationPreparer.new(conversation: conversation).perform
+      message = Reminders::MessageMaterializer.new(reminder: reminder).perform(
+        conversation: conversation,
+        sender: generated_payload[:assistant],
+        content: generated_payload[:content],
+        captain_trace: generated_payload[:captain_trace],
+        delivery_policy: delivery_policy
+      )
+      reminder.update!(target_conversation: conversation) if reminder.target_conversation_id != conversation.id
+      @execution_updated_at = reminder.updated_at
+      message
+    end
+  end
+
+  def finish_execution(message = nil)
+    Reminders::ExecutionFinisher.new(
+      reminder: reminder,
+      processing_claim: @processing_claim
+    ).perform(message)
+  end
+
+  def execution_blocked?(conversation)
+    return false unless reminder.persisted?
+
+    campaign_policy = Reminders::CampaignConflictPolicy.new(
+      reminder: reminder,
       conversation: conversation,
-      params: { status: status },
-      source: 'system'
-    ).perform
+      processing_claim: @processing_claim
+    )
+    return true if campaign_policy.cancel_if_conflict!
+
+    Reminders::DeliveryWindowPolicy.apply!(
+      reminder: reminder,
+      conversation: conversation,
+      processing_claim: @processing_claim
+    ).blocked?
+  end
+
+  def with_execution_lock
+    return yield unless reminder.persisted?
+
+    result = nil
+    reminder.with_lock do
+      reminder.reload
+      next unless reminder.processing?
+      next unless current_execution_claim?
+
+      if reminder.delivery_materialized?
+        result = Reminders::ExecutionFinisher.materialized_message_for(reminder)
+        next
+      end
+
+      if stale_execution?
+        reset_stale_execution!
+        next
+      end
+
+      result = yield
+    end
+    result
+  end
+
+  def reload_reminder
+    reminder.reload if reminder.persisted?
+    @execution_updated_at = reminder.updated_at
+  end
+
+  def current_execution_claim?
+    reminder.processing_claim_token == @processing_claim
+  end
+
+  def stale_execution?
+    @execution_updated_at.present? && reminder.updated_at != @execution_updated_at
+  end
+
+  def reset_stale_execution!
+    reminder.update!(status: :pending, processing_started_at: nil)
+  end
+
+  def fail_reminder!(message)
+    return reminder.fail!(message) unless reminder.persisted?
+
+    reminder.with_lock do
+      reminder.reload
+      next unless reminder.processing?
+      next unless current_execution_claim?
+
+      stale_execution? ? reset_stale_execution! : reminder.fail!(message)
+    end
   end
 
   def generate_captain_message(conversation, mode:)
@@ -100,43 +202,6 @@ class Reminders::ExecuteService
     ).perform
   end
 
-  def materialize_message(conversation:, sender:, content:, captain_trace: nil, delivery_policy: nil)
-    message = Messages::MessageBuilder.new(
-      sender,
-      conversation,
-      ActionController::Parameters.new(message_params(content: content))
-    ).perform
-
-    additional_attributes = (message.additional_attributes || {}).merge(
-      'touch_id' => reminder.id,
-      'touch_source' => 'touch'
-    )
-    additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
-    additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
-
-    message.update!(additional_attributes: additional_attributes)
-    message
-  end
-
-  def message_params(content:)
-    {
-      content: content,
-      template_params: reminder.template_params.presence,
-      attachments: reminder.attachments.presence,
-      content_attributes: {
-        touch_id: reminder.id,
-        touch_source: 'touch'
-      }
-    }.compact
-  end
-
-  def schedule_next_occurrence
-    Reminders::RecurrenceService.new(reminder: reminder).schedule_next!
-  rescue StandardError => e
-    ChatwootExceptionTracker.new(e, account: reminder.account).capture_exception
-    Rails.logger.error("[Touches] Failed to schedule next recurring touch for ##{reminder.id}: #{e.message}")
-  end
-
   def ensure_delivery_allowed!(conversation, content_kind:, template_params:, attachments:)
     ::Outbound::DeliveryPolicy.ensure!(
       conversation: conversation,
@@ -145,14 +210,5 @@ class Reminders::ExecuteService
       attachments: attachments,
       scheduled_at: Time.current
     )
-  end
-
-  def reschedule_outside_delivery_window(conversation)
-    result = Reminders::DeliveryWindowPolicy.apply!(reminder: reminder, conversation: conversation)
-    result.blocked?
-  end
-
-  def cancel_due_to_campaign_conflict(conversation)
-    Reminders::CampaignConflictPolicy.new(reminder: reminder, conversation: conversation).cancel_if_conflict!
   end
 end

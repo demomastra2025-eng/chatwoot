@@ -21,6 +21,20 @@ describe Messages::MessageBuilder do
       expect(message.content).to eq params[:content]
     end
 
+    it 'ignores an untrusted skip_send_reply request param' do
+      params[:skip_send_reply] = true
+
+      message = message_builder
+
+      expect(message.skip_send_reply).to be(false)
+    end
+
+    it 'accepts skip_send_reply only through the trusted constructor keyword' do
+      message = described_class.new(user, conversation, params, skip_send_reply: true).perform
+
+      expect(message.skip_send_reply).to be(true)
+    end
+
     context 'when official WhatsApp public outbound content is blank' do
       let(:whatsapp_channel) { create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false) }
       let(:inbox) { whatsapp_channel.inbox }

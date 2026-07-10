@@ -58,6 +58,27 @@ RSpec.describe Reminders::AutoCancelOnIncomingService do
     expect(touch.processing_started_at).to be_nil
   end
 
+  it 'does not cancel a processing touch after its outgoing message was materialized' do
+    touch = create(
+      :reminder,
+      account: account,
+      conversation: conversation,
+      remindable: conversation,
+      status: :pending,
+      processing_started_at: nil,
+      auto_cancel_on_incoming: true,
+      metadata: { 'auto_cancel_on_incoming_explicit' => true }
+    )
+    touch.mark_processing!
+    touch.mark_delivery_materialized!(123)
+    incoming_message
+
+    described_class.new(message: conversation.messages.incoming.last).perform
+
+    expect(touch.reload).to be_processing
+    expect(touch.processing_started_at).to be_present
+  end
+
   it 'does not cancel touches without explicit auto-cancel opt-in' do
     touch = create(
       :reminder,

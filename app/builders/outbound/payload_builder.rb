@@ -28,7 +28,7 @@ module Outbound::PayloadBuilder
       instructions: reminder.instructions,
       attachments: reminder.attachments,
       template_params: reminder.template_params,
-      metadata: reminder.metadata,
+      metadata: reminder.metadata.except(*Reminder::INTERNAL_METADATA_KEYS),
       auto_cancel_on_incoming: reminder.auto_cancel_on_incoming,
       attempts_count: reminder.attempts_count,
       last_error: reminder.last_error,

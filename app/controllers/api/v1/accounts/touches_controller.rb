@@ -31,20 +31,22 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
   def update
     authorize @touch
 
-    @touch.update!(touch_attributes)
-    @touch.approve! if @touch.draft? && @touch.ready_for_pending?
+    unless @touch.update_if_editable! { touch_attributes }
+      render json: { error: 'Only unsent open touches can be updated.' }, status: :unprocessable_entity
+      return
+    end
+
     render_payload(Outbound::PayloadBuilder.touch_payload(@touch))
   end
 
   def destroy
     authorize @touch, :destroy?
 
-    unless @touch.destroyable?
+    unless @touch.destroy_if_allowed!
       render json: { error: 'Only unsent delayed messages can be deleted.' }, status: :unprocessable_entity
       return
     end
 
-    @touch.destroy!
     head :ok
   end
 
@@ -181,7 +183,6 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
       :remindable_type,
       :remindable_id,
       :reminder_group_id,
-      :status,
       :action_type,
       :content_kind,
       :text_mode,

@@ -67,6 +67,39 @@ RSpec.describe Reminders::DeliveryWindowPolicy do
   end
 
   describe '.apply!' do
+    it 'does not reopen a reminder that was cancelled before rescheduling acquires the lock' do
+      reminder.cancel!('cancelled concurrently')
+
+      result = described_class.apply!(
+        reminder: reminder,
+        conversation: conversation,
+        now: Time.zone.parse('2026-05-02 23:00:00 UTC')
+      )
+
+      expect(result).to be_blocked
+      expect(reminder.reload).to be_cancelled
+      expect(reminder.last_error).to eq('cancelled concurrently')
+    end
+
+    it 'does not reschedule a newer processing claim from an older worker' do
+      current_claim = reminder.mark_processing!
+      original_scheduled_at = reminder.scheduled_at
+
+      result = described_class.apply!(
+        reminder: reminder,
+        conversation: conversation,
+        now: Time.zone.parse('2026-05-02 23:00:00 UTC'),
+        processing_claim: 'stale-claim'
+      )
+
+      expect(result).to be_blocked
+      expect(result.reason).to eq('execution_state_changed')
+      reminder.reload
+      expect(reminder).to be_processing
+      expect(reminder.processing_claim_token).to eq(current_claim)
+      expect(reminder.scheduled_at).to eq(original_scheduled_at)
+    end
+
     it 'keeps the reminder pending and stores audit metadata when rescheduled' do
       travel_to(Time.zone.parse('2026-05-02 23:00:00 UTC')) do
         result = described_class.apply!(reminder: reminder, conversation: conversation)

@@ -1,13 +1,15 @@
 require 'rails_helper'
 
 RSpec.describe 'Captain tool schema metadata' do
-  it 'keeps create_touch public and assistant schemas aligned on relative scheduling fields' do
+  it 'keeps create_touch public and assistant schemas aligned across relative, absolute, and recurring scheduling' do
     public_params = Captain::Tools::CreateTouchTool.parameters
     assistant_params = Captain::Tools::Copilot::CreateTouchService.parameters
 
     expected_create_touch_description =
       'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
-      'Only relative scheduling is supported: provide a positive relative_offset_minutes; scheduled_at/absolute/immediate sends are rejected. ' \
+      'Supports relative scheduling (relative_offset_minutes + optional relative_anchor) and absolute scheduling (scheduled_at as ISO8601). ' \
+      'Recurrence (repeat_mode daily/weekly/monthly/weekdays) is available only with absolute scheduled_at and requires repeat_until_at. ' \
+      'For a fixed wall-clock time on relative touches use relative_time_mode=fixed_time_of_day with relative_time_of_day HH:MM. ' \
       'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
     expected_relative_anchor_description =
       'Optional relative anchor: touch.created_at, conversation.created_at, ' \
@@ -32,14 +34,21 @@ RSpec.describe 'Captain tool schema metadata' do
     expect(assistant_params[:attachment_ids].type).to eq(:array)
     expect(public_params[:artifact_ids].type).to eq('array')
     expect(assistant_params[:artifact_ids].type).to eq(:array)
-    expect(public_params).not_to have_key(:scheduled_at)
-    expect(assistant_params).not_to have_key(:scheduled_at)
+    expect(public_params.keys).to match_array(assistant_params.keys)
+    expect(public_params[:scheduled_at].required).to be(false)
+    expect(assistant_params[:scheduled_at].required).to be(false)
     expect(public_params).not_to have_key(:timing_mode)
     expect(assistant_params).not_to have_key(:timing_mode)
-    expect(public_params[:relative_offset_minutes].required).to be(true)
-    expect(assistant_params[:relative_offset_minutes].required).to be(true)
-    expect(public_params[:relative_offset_minutes].description).to include('positive')
-    expect(assistant_params[:relative_offset_minutes].description).to include('positive')
+    expect(public_params[:relative_offset_minutes].required).to be(false)
+    expect(assistant_params[:relative_offset_minutes].required).to be(false)
+    expect(public_params[:relative_offset_minutes].description).to include('Positive')
+    expect(assistant_params[:relative_offset_minutes].description).to include('Positive')
+    expect(public_params[:repeat_mode].description).to include('daily, weekly, monthly, weekdays')
+    expect(assistant_params[:repeat_mode].description).to include('daily, weekly, monthly, weekdays')
+    expect(public_params[:repeat_mode].description).to include('require both absolute scheduled_at and repeat_until_at')
+    expect(assistant_params[:repeat_mode].description).to include('require both absolute scheduled_at and repeat_until_at')
+    expect(public_params[:relative_time_mode].description).to include('fixed_time_of_day')
+    expect(assistant_params[:relative_time_mode].description).to include('fixed_time_of_day')
     expect(public_params[:content_kind].required).to be(false)
     expect(assistant_params[:content_kind].required).to be(false)
     expect(public_params[:template_params].required).to be(false)

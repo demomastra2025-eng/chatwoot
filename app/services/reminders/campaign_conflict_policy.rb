@@ -5,12 +5,15 @@ class Reminders::CampaignConflictPolicy
   NOT_SENT_STATUSES = %w[pending submitted].freeze
   SENT_BLOCKING_STATUSES = %w[sent delivered read].freeze
   BLOCKING_STATUSES = (NOT_SENT_STATUSES + SENT_BLOCKING_STATUSES).freeze
+  UNSCOPED_PROCESSING_CLAIM = Object.new.freeze
 
-  attr_reader :reminder, :conversation
+  attr_reader :reminder, :conversation, :processing_claim
 
-  def initialize(reminder:, conversation: nil)
+  def initialize(reminder:, conversation: nil, processing_claim: UNSCOPED_PROCESSING_CLAIM)
     @reminder = reminder
     @conversation = conversation
+    @execution_scoped = !processing_claim.equal?(UNSCOPED_PROCESSING_CLAIM)
+    @processing_claim = @execution_scoped ? processing_claim : nil
   end
 
   def conflict?
@@ -18,17 +21,24 @@ class Reminders::CampaignConflictPolicy
   end
 
   def cancel_if_conflict!
-    delivery = blocking_delivery
-    return false if delivery.blank?
+    cancelled = false
+    reminder.with_lock do
+      reminder.reload
+      next unless cancellable_state?
 
-    reminder.update!(
-      status: :cancelled,
-      cancelled_at: Time.current,
-      processing_started_at: nil,
-      last_error: CANCEL_REASON,
-      metadata: conflict_metadata(delivery)
-    )
-    true
+      delivery = blocking_delivery
+      next if delivery.blank?
+
+      reminder.update!(
+        status: :cancelled,
+        cancelled_at: Time.current,
+        processing_started_at: nil,
+        last_error: CANCEL_REASON,
+        metadata: conflict_metadata(delivery)
+      )
+      cancelled = true
+    end
+    cancelled
   end
 
   def blocking_delivery
@@ -39,6 +49,12 @@ class Reminders::CampaignConflictPolicy
   end
 
   private
+
+  def cancellable_state?
+    return reminder.draft? || reminder.pending? unless @execution_scoped
+
+    reminder.processing? && reminder.processing_claim_token == processing_claim
+  end
 
   def automation_touch?
     metadata = reminder.metadata.to_h
