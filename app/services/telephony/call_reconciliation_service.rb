@@ -1,15 +1,24 @@
 class Telephony::CallReconciliationService
+  DEFAULT_GENERIC_PRE_ANSWER_STALE_AFTER = 1.hour
   DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
   DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER = 5.minutes
-  DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER = 4.hours
+  DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER = 1.hour
   DEFAULT_NATIVE_SIP_PRE_ANSWER_STALE_AFTER = 5.minutes
-  DEFAULT_NATIVE_SIP_IN_PROGRESS_STALE_AFTER = 4.hours
+  DEFAULT_NATIVE_SIP_IN_PROGRESS_STALE_AFTER = 1.hour
   DEFAULT_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
 
   SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION = 'sipuni_local_outbound_reconciliation'.freeze
   SOURCE_SIPUNI_PROVIDER_RECONCILIATION = 'sipuni_provider_reconciliation'.freeze
   SOURCE_NATIVE_SIP_RECONCILIATION = 'native_sip_reconciliation'.freeze
+  SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION = 'generic_pre_answer_reconciliation'.freeze
+  RETRYABLE_RECONCILIATION_SOURCES = [
+    SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION,
+    SOURCE_SIPUNI_PROVIDER_RECONCILIATION,
+    SOURCE_NATIVE_SIP_RECONCILIATION,
+    SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION
+  ].freeze
 
+  GENERIC_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   SIPUNI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
@@ -21,43 +30,60 @@ class Telephony::CallReconciliationService
     'connecting' => 2,
     'in_progress' => 3
   }.freeze
+  ANSWER_EVIDENCE_EVENT_TYPES = %w[
+    answer
+    answered
+    callee_answered
+    call_status
+    customer_answered
+    dial_status
+    ai_answered
+    operator_answered
+    transfer_answered
+  ].freeze
 
   def initialize(account: nil, now: Time.current)
     @account = account
     @now = now
-    @sipuni_local_outbound_missing_after = ENV.fetch(
+    @generic_pre_answer_stale_after = positive_env_duration(
+      'TELEPHONY_GENERIC_PRE_ANSWER_STALE_AFTER_SECONDS',
+      DEFAULT_GENERIC_PRE_ANSWER_STALE_AFTER
+    )
+    @sipuni_local_outbound_missing_after = positive_env_duration(
       'TELEPHONY_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS',
-      DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER.to_i
-    ).to_i.seconds
-    @sipuni_provider_ringing_stale_after = ENV.fetch(
+      DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER
+    )
+    @sipuni_provider_ringing_stale_after = positive_env_duration(
       'TELEPHONY_SIPUNI_PROVIDER_RINGING_STALE_AFTER_SECONDS',
-      DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER.to_i
-    ).to_i.seconds
-    @sipuni_provider_in_progress_stale_after = ENV.fetch(
+      DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER
+    )
+    @sipuni_provider_in_progress_stale_after = positive_env_duration(
       'TELEPHONY_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER_SECONDS',
-      DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER.to_i
-    ).to_i.seconds
-    @native_sip_pre_answer_stale_after = ENV.fetch(
+      DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER
+    )
+    @native_sip_pre_answer_stale_after = positive_env_duration(
       'TELEPHONY_NATIVE_SIP_PRE_ANSWER_STALE_AFTER_SECONDS',
-      DEFAULT_NATIVE_SIP_PRE_ANSWER_STALE_AFTER.to_i
-    ).to_i.seconds
-    @native_sip_in_progress_stale_after = ENV.fetch(
+      DEFAULT_NATIVE_SIP_PRE_ANSWER_STALE_AFTER
+    )
+    @native_sip_in_progress_stale_after = positive_env_duration(
       'TELEPHONY_NATIVE_SIP_IN_PROGRESS_STALE_AFTER_SECONDS',
-      DEFAULT_NATIVE_SIP_IN_PROGRESS_STALE_AFTER.to_i
-    ).to_i.seconds
-    @native_sip_local_outbound_missing_after = ENV.fetch(
+      DEFAULT_NATIVE_SIP_IN_PROGRESS_STALE_AFTER
+    )
+    @native_sip_local_outbound_missing_after = positive_env_duration(
       'TELEPHONY_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS',
-      DEFAULT_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER.to_i
-    ).to_i.seconds
+      DEFAULT_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER
+    )
   end
 
   def perform
     result = { checked: 0, updated: 0, missing: 0, errors: 0 }
 
+    retry_failed_reconciliation_events!(result)
     reconcile_missing_sipuni_local_outbound_sessions!(result)
     reconcile_missing_sipuni_provider_sessions!(result)
     reconcile_missing_native_sip_local_outbound_sessions!(result)
     reconcile_missing_native_sip_sessions!(result)
+    reconcile_generic_pre_answer_sessions!(result)
 
     result
   end
@@ -65,8 +91,16 @@ class Telephony::CallReconciliationService
   private
 
   JANUS_NATIVE_SIP_REF_SQL = NATIVE_SIP_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:janus:%'" }.join(' OR ').freeze
+  NATIVE_SIP_LOCAL_REF_SQL = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:local:%'" }.join(' OR ').freeze
+  SPECIFIC_RECONCILIATION_SCOPE_SQL = [
+    "(provider = 'sipuni' AND direction = 'outbound' AND provider_call_sid IS NULL AND external_call_ref LIKE 'sipuni:local:%')",
+    "(provider = 'sipuni' AND provider_call_sid IS NOT NULL)",
+    "(#{JANUS_NATIVE_SIP_REF_SQL})",
+    "(provider IN ('asterisk_analog', 'binotel') AND direction = 'outbound' AND provider_call_sid IS NULL AND (#{NATIVE_SIP_LOCAL_REF_SQL}))"
+  ].join(' OR ').freeze
 
   attr_reader :account, :now,
+              :generic_pre_answer_stale_after,
               :native_sip_in_progress_stale_after, :native_sip_local_outbound_missing_after, :native_sip_pre_answer_stale_after,
               :sipuni_local_outbound_missing_after, :sipuni_provider_in_progress_stale_after, :sipuni_provider_ringing_stale_after
 
@@ -127,11 +161,21 @@ class Telephony::CallReconciliationService
     )
   end
 
+  def generic_pre_answer_missing_scope
+    scope = Telephony::CallSession.active.where(status: GENERIC_PRE_ANSWER_STATUSES)
+    scope = scope.where(account_id: account.id) if account.present?
+
+    scope.where(
+      'COALESCE(last_event_at, started_at, updated_at, created_at) <= ?',
+      now - generic_pre_answer_stale_after
+    ).where.not(SPECIFIC_RECONCILIATION_SCOPE_SQL)
+  end
+
   def reconcile_missing_sipuni_local_outbound_sessions!(result)
     sipuni_local_outbound_missing_scope.find_each do |session|
       result[:checked] += 1
       result[:missing] += 1
-      result[:updated] += 1 if reconcile_missing_sipuni_local_outbound_session(session)
+      apply_reconciliation_outcome!(result, reconcile_missing_sipuni_local_outbound_session(session))
     end
   end
 
@@ -139,7 +183,7 @@ class Telephony::CallReconciliationService
     sipuni_provider_missing_scope.find_each do |session|
       result[:checked] += 1
       result[:missing] += 1
-      result[:updated] += 1 if reconcile_missing_sipuni_provider_session(session)
+      apply_reconciliation_outcome!(result, reconcile_missing_sipuni_provider_session(session))
     end
   end
 
@@ -147,7 +191,7 @@ class Telephony::CallReconciliationService
     native_sip_missing_scope.find_each do |session|
       result[:checked] += 1
       result[:missing] += 1
-      result[:updated] += 1 if reconcile_missing_native_sip_session(session)
+      apply_reconciliation_outcome!(result, reconcile_missing_native_sip_session(session))
     end
   end
 
@@ -155,96 +199,213 @@ class Telephony::CallReconciliationService
     native_sip_local_outbound_missing_scope.find_each do |session|
       result[:checked] += 1
       result[:missing] += 1
-      result[:updated] += 1 if reconcile_missing_native_sip_local_outbound_session(session)
+      apply_reconciliation_outcome!(result, reconcile_missing_native_sip_local_outbound_session(session))
+    end
+  end
+
+  def reconcile_generic_pre_answer_sessions!(result)
+    generic_pre_answer_missing_scope.find_each do |session|
+      result[:checked] += 1
+      result[:missing] += 1
+      apply_reconciliation_outcome!(result, reconcile_generic_pre_answer_session(session))
     end
   end
 
   def reconcile_missing_sipuni_local_outbound_session(session)
-    return false if session.terminal?
-    return false if session.provider_call_sid.present?
+    reconciled = reconcile_stale_session(
+      session,
+      statuses: nil,
+      stale_after: sipuni_local_outbound_missing_after,
+      guard: method(:sipuni_local_outbound_session?)
+    ) do |locked_session|
+      ended_at = now
+      target_status = 'failed'
+      locked_session.update!(
+        status: target_status,
+        ended_at: ended_at,
+        ended_by: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION,
+        end_reason: 'sipuni_provider_event_missing',
+        duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
+        last_event_at: ended_at,
+        metadata: missing_sipuni_local_outbound_metadata(locked_session, target_status),
+        legs: append_missing_sipuni_local_outbound_leg_snapshot(locked_session, target_status)
+      )
+    end
+    return false unless reconciled
 
-    ended_at = now
-    target_status = 'failed'
-    session.update!(
-      status: target_status,
-      ended_at: ended_at,
-      ended_by: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION,
-      end_reason: 'sipuni_provider_event_missing',
-      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
-      last_event_at: ended_at,
-      metadata: missing_sipuni_local_outbound_metadata(session, target_status),
-      legs: append_missing_sipuni_local_outbound_leg_snapshot(session, target_status)
+    reconciliation_outcome(
+      session,
+      'failed',
+      source: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION
     )
-    sync_reconciled_session!(session, target_status, source: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION)
-    true
   end
 
   def reconcile_missing_sipuni_provider_session(session)
-    return false if session.terminal?
-    return false if session.provider_call_sid.blank?
+    target_status = nil
+    reconciled = reconcile_stale_session(
+      session,
+      statuses: SIPUNI_PRE_ANSWER_STATUSES + ['in_progress'],
+      stale_after: lambda do |locked_session|
+        status_stale_after(locked_session, sipuni_provider_ringing_stale_after, sipuni_provider_in_progress_stale_after)
+      end,
+      guard: method(:sipuni_provider_session?)
+    ) do |locked_session|
+      ended_at = now
+      previous_status = locked_session.canonical_status
+      target_status = missing_sipuni_provider_status(locked_session)
+      locked_session.update!(
+        status: target_status,
+        ended_at: ended_at,
+        ended_by: SOURCE_SIPUNI_PROVIDER_RECONCILIATION,
+        end_reason: missing_sipuni_provider_end_reason(locked_session, target_status),
+        duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
+        last_event_at: ended_at,
+        metadata: missing_sipuni_provider_metadata(locked_session, target_status, previous_status),
+        legs: append_missing_sipuni_provider_leg_snapshot(locked_session, target_status, previous_status)
+      )
+    end
+    return false unless reconciled
 
-    ended_at = now
-    previous_status = session.canonical_status
-    target_status = missing_sipuni_provider_status(session)
-    session.update!(
-      status: target_status,
-      ended_at: ended_at,
-      ended_by: SOURCE_SIPUNI_PROVIDER_RECONCILIATION,
-      end_reason: missing_sipuni_provider_end_reason(session, target_status),
-      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
-      last_event_at: ended_at,
-      metadata: missing_sipuni_provider_metadata(session, target_status, previous_status),
-      legs: append_missing_sipuni_provider_leg_snapshot(session, target_status, previous_status)
-    )
-    sync_reconciled_session!(session, target_status, source: SOURCE_SIPUNI_PROVIDER_RECONCILIATION)
-    true
+    reconciliation_outcome(session, target_status, source: SOURCE_SIPUNI_PROVIDER_RECONCILIATION)
   end
 
   def reconcile_missing_native_sip_session(session)
-    return false if session.terminal?
+    target_status = nil
+    reconciled = reconcile_stale_session(
+      session,
+      statuses: NATIVE_SIP_PRE_ANSWER_STATUSES + ['in_progress'],
+      stale_after: ->(locked_session) { status_stale_after(locked_session, native_sip_pre_answer_stale_after, native_sip_in_progress_stale_after) },
+      guard: method(:native_sip_session?)
+    ) do |locked_session|
+      ended_at = now
+      previous_status = locked_session.canonical_status
+      target_status = missing_native_sip_status(locked_session)
+      locked_session.update!(
+        status: target_status,
+        ended_at: ended_at,
+        ended_by: SOURCE_NATIVE_SIP_RECONCILIATION,
+        end_reason: missing_native_sip_end_reason(locked_session, target_status),
+        duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
+        last_event_at: ended_at,
+        metadata: missing_native_sip_metadata(locked_session, target_status, previous_status),
+        legs: append_missing_native_sip_leg_snapshot(locked_session, target_status, previous_status)
+      )
+    end
+    return false unless reconciled
 
-    ended_at = now
-    previous_status = session.canonical_status
-    target_status = missing_native_sip_status(session)
-    session.update!(
-      status: target_status,
-      ended_at: ended_at,
-      ended_by: SOURCE_NATIVE_SIP_RECONCILIATION,
-      end_reason: missing_native_sip_end_reason(session, target_status),
-      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
-      last_event_at: ended_at,
-      metadata: missing_native_sip_metadata(session, target_status, previous_status),
-      legs: append_missing_native_sip_leg_snapshot(session, target_status, previous_status)
-    )
-    sync_reconciled_session!(session, target_status, source: SOURCE_NATIVE_SIP_RECONCILIATION)
-    true
+    reconciliation_outcome(session, target_status, source: SOURCE_NATIVE_SIP_RECONCILIATION)
   end
 
   def reconcile_missing_native_sip_local_outbound_session(session)
-    return false if session.terminal?
-    return false unless session.direction == 'outbound'
-
-    ended_at = now
-    previous_status = session.canonical_status
     target_status = 'no_answer'
-    session.update!(
-      status: target_status,
-      ended_at: ended_at,
-      ended_by: SOURCE_NATIVE_SIP_RECONCILIATION,
-      end_reason: 'native_sip_missing_outbound_no_answer',
-      duration_seconds: missing_duration_seconds(session, ended_at, target_status),
-      last_event_at: ended_at,
-      metadata: missing_native_sip_metadata(session, target_status, previous_status),
-      legs: append_missing_native_sip_leg_snapshot(session, target_status, previous_status)
-    )
-    sync_reconciled_session!(session, target_status, source: SOURCE_NATIVE_SIP_RECONCILIATION)
-    true
+    reconciled = reconcile_stale_session(
+      session,
+      statuses: NATIVE_SIP_PRE_ANSWER_STATUSES,
+      stale_after: native_sip_local_outbound_missing_after,
+      guard: method(:native_sip_local_outbound_session?)
+    ) do |locked_session|
+      ended_at = now
+      previous_status = locked_session.canonical_status
+      locked_session.update!(
+        status: target_status,
+        ended_at: ended_at,
+        ended_by: SOURCE_NATIVE_SIP_RECONCILIATION,
+        end_reason: 'native_sip_missing_outbound_no_answer',
+        duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
+        last_event_at: ended_at,
+        metadata: missing_native_sip_metadata(locked_session, target_status, previous_status),
+        legs: append_missing_native_sip_leg_snapshot(locked_session, target_status, previous_status)
+      )
+    end
+    return false unless reconciled
+
+    reconciliation_outcome(session, target_status, source: SOURCE_NATIVE_SIP_RECONCILIATION)
+  end
+
+  def reconcile_generic_pre_answer_session(session)
+    target_status = nil
+    reconciled = reconcile_stale_session(
+      session,
+      stale_after: generic_pre_answer_stale_after,
+      statuses: GENERIC_PRE_ANSWER_STATUSES,
+      guard: method(:generic_pre_answer_session?),
+      skip: method(:generic_answer_evidence?)
+    ) do |locked_session|
+      previous_status = locked_session.canonical_status
+      target_status = generic_pre_answer_status(locked_session)
+      ended_at = now
+      locked_session.update!(
+        status: target_status,
+        ended_at: ended_at,
+        ended_by: SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION,
+        end_reason: generic_pre_answer_end_reason(locked_session, target_status),
+        duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
+        last_event_at: ended_at,
+        metadata: generic_pre_answer_metadata(locked_session, target_status, previous_status),
+        legs: append_generic_pre_answer_leg_snapshot(locked_session, target_status, previous_status)
+      )
+    end
+    return false unless reconciled
+
+    reconciliation_outcome(session, target_status, source: SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION)
+  end
+
+  def reconcile_stale_session(session, stale_after:, statuses:, guard: nil, skip: nil)
+    reconciled = false
+    session.with_lock do
+      session.reload
+      next if session.terminal?
+      next if statuses.present? && statuses.exclude?(session.canonical_status)
+      next if guard.present? && !guard.call(session)
+
+      threshold = stale_after.respond_to?(:call) ? stale_after.call(session) : stale_after
+      next unless stale_call_session?(session, threshold)
+      next if skip.present? && skip.call(session)
+
+      yield(session)
+      reconciled = true
+    end
+    reconciled
+  end
+
+  def stale_call_session?(session, stale_after)
+    reference_time = reconciliation_reference_time(session)
+    reference_time.present? && reference_time <= now - stale_after
+  end
+
+  def reconciliation_reference_time(session)
+    session.last_event_at || session.started_at || session.updated_at || session.created_at
+  end
+
+  def positive_env_duration(key, default)
+    value = ENV[key].to_i
+    value.positive? ? value.seconds : default
+  end
+
+  def status_stale_after(session, pre_answer_after, in_progress_after)
+    session.canonical_status == 'in_progress' ? in_progress_after : pre_answer_after
+  end
+
+  def apply_reconciliation_outcome!(result, outcome)
+    return unless outcome
+
+    result[:updated] += 1
+    result[:errors] += 1 if outcome == :side_effect_failed
+  end
+
+  def reconciliation_outcome(session, status, source:)
+    sync_reconciled_session!(session, status, source: source) ? true : :side_effect_failed
   end
 
   def sync_reconciled_session!(session, status, source: SOURCE_NATIVE_SIP_RECONCILIATION)
     return unless Telephony::CallSession::TERMINAL_STATUSES.include?(status)
 
-    Telephony::EventsIngestionService.new(payload: reconciliation_event_payload(session, status, source: source)).perform
+    payload = reconciliation_event_payload(session, status, source: source)
+    Telephony::EventsIngestionService.new(payload: payload).perform
+    event = Telephony::Event.find_by(account_id: session.account_id, event_key: payload[:event_key])
+    return false if event&.failed?
+
+    true
   rescue StandardError => e
     Rails.logger.warn(
       event: 'telephony_call_reconciliation_side_effect_failed',
@@ -253,6 +414,34 @@ class Telephony::CallReconciliationService
       status: status,
       error_class: e.class.name,
       error_message: e.message
+    )
+    false
+  end
+
+  def retry_failed_reconciliation_events!(result)
+    scope = Telephony::Event.where(status: 'failed')
+    scope = scope.where(account_id: account.id) if account.present?
+    scope.where("payload -> 'metadata' ->> 'source' IN (?)", RETRYABLE_RECONCILIATION_SOURCES).find_each do |event|
+      Telephony::EventsIngestionService.new(payload: event.payload).perform
+      event.reload
+      next unless event.failed?
+
+      result[:errors] += 1
+      log_failed_reconciliation_retry(event)
+    rescue StandardError => e
+      result[:errors] += 1
+      log_failed_reconciliation_retry(event, e)
+    end
+  end
+
+  def log_failed_reconciliation_retry(event, error = nil)
+    Rails.logger.warn(
+      event: 'telephony_call_reconciliation_retry_failed',
+      event_id: event.id,
+      account_id: event.account_id,
+      call_ref: event.payload.to_h['call_ref'],
+      error_class: error&.class&.name || 'Telephony::EventFailed',
+      error_message: error&.message || event.error_message
     )
   end
 
@@ -442,6 +631,103 @@ class Telephony::CallReconciliationService
     return 'native_sip_missing_outbound_no_answer' if target_status == 'no_answer'
 
     'native_sip_terminal_missing'
+  end
+
+  def generic_pre_answer_status(session)
+    return 'no_answer' if session.direction == 'outbound'
+    return 'no_answer' if route_action(session) == 'operator'
+
+    'missed'
+  end
+
+  def generic_pre_answer_end_reason(session, target_status)
+    return 'generic_pre_answer_stale_outbound_no_answer' if target_status == 'no_answer' && session.direction == 'outbound'
+    return 'generic_pre_answer_stale_operator_no_answer' if target_status == 'no_answer'
+
+    'generic_pre_answer_stale_inbound_missed'
+  end
+
+  def generic_pre_answer_metadata(session, target_status, previous_status)
+    metadata = session.metadata.to_h.deep_dup
+    metadata['generic_pre_answer_reconciliation'] = {
+      'source' => SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION,
+      'target_status' => target_status,
+      'previous_status' => previous_status,
+      'pre_answer_stale' => true,
+      'stale_after_seconds' => generic_pre_answer_stale_after.to_i,
+      'stale_reference_at' => reconciliation_reference_time(session)&.iso8601,
+      'provider' => session.provider,
+      'provider_call_sid' => session.provider_call_sid,
+      'route_action' => route_action(session),
+      'route_reason' => route_reason(session),
+      'reconciled_at' => now.iso8601
+    }.compact
+    metadata
+  end
+
+  def append_generic_pre_answer_leg_snapshot(session, status, previous_status)
+    legs = Array(session.legs).map { |leg| leg.respond_to?(:to_h) ? leg.to_h : leg }
+    legs << {
+      'source' => SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION,
+      'status' => status,
+      'previous_status' => previous_status,
+      'end_reason' => generic_pre_answer_end_reason(session, status),
+      'pre_answer_stale' => true,
+      'provider' => session.provider,
+      'provider_call_sid' => session.provider_call_sid,
+      'stale_reference_at' => reconciliation_reference_time(session)&.iso8601,
+      'occurred_at' => now.iso8601
+    }.compact
+    legs.last(20)
+  end
+
+  def sipuni_local_outbound_session?(session)
+    session.provider == 'sipuni' &&
+      session.direction == 'outbound' &&
+      session.provider_call_sid.blank? &&
+      session.external_call_ref.to_s.start_with?('sipuni:local:')
+  end
+
+  def sipuni_provider_session?(session)
+    session.provider == 'sipuni' && session.provider_call_sid.present?
+  end
+
+  def native_sip_session?(session)
+    NATIVE_SIP_PROVIDERS.include?(session.provider) &&
+      session.external_call_ref.to_s.start_with?("#{session.provider}:janus:")
+  end
+
+  def native_sip_local_outbound_session?(session)
+    NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.include?(session.provider) &&
+      session.direction == 'outbound' &&
+      session.provider_call_sid.blank? &&
+      session.external_call_ref.to_s.start_with?("#{session.provider}:local:")
+  end
+
+  def generic_pre_answer_session?(session)
+    !specific_reconciliation_session?(session)
+  end
+
+  def specific_reconciliation_session?(session)
+    sipuni_local_outbound_session?(session) ||
+      sipuni_provider_session?(session) ||
+      native_sip_session?(session) ||
+      native_sip_local_outbound_session?(session)
+  end
+
+  def generic_answer_evidence?(session)
+    return true if session.answered_at.present?
+
+    Array.wrap(session.legs).any? do |leg|
+      next false unless leg.is_a?(Hash)
+
+      leg = leg.deep_stringify_keys
+      next false unless leg['status'].to_s == 'in_progress'
+
+      ANSWER_EVIDENCE_EVENT_TYPES.include?(leg['event_type'].to_s) ||
+        leg['answered_at'].present? ||
+        leg['answered_by'].present?
+    end
   end
 
   def route_action(session)

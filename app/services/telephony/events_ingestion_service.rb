@@ -32,6 +32,7 @@ class Telephony::EventsIngestionService
   RECONCILIATION_EVENT_SOURCES = %w[
     bridge_reconciliation
     native_sip_reconciliation
+    generic_pre_answer_reconciliation
     sipuni_local_outbound_reconciliation
     sipuni_provider_reconciliation
   ].freeze
