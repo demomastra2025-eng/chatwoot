@@ -33,20 +33,6 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
     }
   end
 
-  it 'creates the employee membership and SIP profile in the initial local transaction' do
-    result = service.create_channel(sipuni_channel_payload(operator), dry_run: false, remote_commit: false)
-    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
-    profile = inbox.telephony_sip_profiles.find_by!(user_id: operator.id)
-
-    expect(inbox.inbox_members.exists?(user_id: operator.id)).to be(true)
-    expect(profile).to have_attributes(
-      internal_extension: '505',
-      sip_username: '015856100021',
-      sip_password: 'profile-secret',
-      enabled: true
-    )
-  end
-
   it 'deletes contact channel profiles before deleting a managed voice inbox' do
     result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
     inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))

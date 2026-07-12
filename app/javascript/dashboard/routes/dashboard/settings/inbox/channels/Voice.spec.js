@@ -11,8 +11,6 @@ const routeMock = vi.hoisted(() => ({
 const routerReplaceMock = vi.hoisted(() => vi.fn());
 const routerPushMock = vi.hoisted(() => vi.fn());
 const createVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
-const alertMock = vi.hoisted(() => vi.fn());
-const agentListMock = vi.hoisted(() => []);
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -29,7 +27,7 @@ vi.mock('vue-router', () => ({
 }));
 
 vi.mock('dashboard/composables', () => ({
-  useAlert: alertMock,
+  useAlert: vi.fn(),
 }));
 
 vi.mock('dashboard/composables/store', () => ({
@@ -37,8 +35,7 @@ vi.mock('dashboard/composables/store', () => ({
     dispatch: dispatchMock,
   }),
   useMapGetter: getter => ({
-    value:
-      getter === 'inboxes/getUIFlags' ? { isCreating: false } : agentListMock,
+    value: getter === 'inboxes/getUIFlags' ? { isCreating: false } : {},
   }),
 }));
 
@@ -60,7 +57,6 @@ const buildWrapper = () =>
             '<button type="button" @click="$emit(\'click\')">{{ title }}</button>',
         },
         Select: true,
-        TagInput: true,
         NextButton: {
           props: ['disabled', 'label'],
           template:
@@ -76,8 +72,6 @@ describe('Voice channel setup', () => {
     routerReplaceMock.mockReset();
     routerPushMock.mockReset();
     createVirtualPbxChannelMock.mockReset();
-    alertMock.mockReset();
-    agentListMock.splice(0);
     dispatchMock.mockResolvedValue({ id: 101 });
     routeMock.query = { provider: 'kazakhstan' };
   });
@@ -374,124 +368,18 @@ describe('Voice channel setup', () => {
     expect(payload.connection).not.toHaveProperty('password');
   });
 
-  it('shows employee extension and SIP credential fields during channel creation', async () => {
-    routeMock.query = { provider: 'sipuni' };
-    agentListMock.push({ id: 179, name: 'Agent One' });
+  it('points employee SIP assignment to settings instead of create', () => {
+    routeMock.query = { provider: 'kazakhstan' };
     const wrapper = buildWrapper();
 
-    wrapper.vm.handleEmployeeAdd({ value: 179 });
-    await wrapper.vm.$nextTick();
-
     expect(wrapper.text()).toContain(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
-    );
-  });
-
-  it('omits blank optional SIP credentials from an employee profile', () => {
-    routeMock.query = { provider: 'sipuni' };
-    const wrapper = buildWrapper();
-    wrapper.vm.employeeProfiles = [
-      {
-        userId: 179,
-        name: 'Agent One',
-        internalExtension: '505',
-        sipUsername: '',
-        sipPassword: '',
-        enabled: true,
-      },
-    ];
-
-    expect(wrapper.vm.getVirtualPbxPayload().profiles).toEqual([
-      {
-        profile_kind: 'human_operator',
-        user_id: 179,
-        internal_extension: '505',
-        enabled: true,
-      },
-    ]);
-  });
-
-  it('creates Sipuni employee membership and SIP profile in the initial request', async () => {
-    routeMock.query = { provider: 'sipuni' };
-    createVirtualPbxChannelMock.mockResolvedValue({
-      payload: { ui_config: { inbox_id: 4778 }, errors: [] },
-    });
-    const wrapper = buildWrapper();
-    Object.assign(wrapper.vm.kazakhstanState, {
-      channelName: 'Sipuni with operator',
-      phoneNumber: '+7 700 000 0088',
-      connectionHost: 'ats01.kz.sipuni.com',
-    });
-    wrapper.vm.employeeProfiles = [
-      {
-        userId: 179,
-        name: 'Agent One',
-        internalExtension: '505',
-        sipUsername: 'employee-505',
-        sipPassword: 'profile-secret',
-        enabled: true,
-      },
-    ];
-
-    await wrapper.find('form').trigger('submit');
-    await flushPromises();
-
-    expect(createVirtualPbxChannelMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider_kind: 'sipuni',
-        profiles: [
-          {
-            profile_kind: 'human_operator',
-            user_id: 179,
-            internal_extension: '505',
-            sip_username: 'employee-505',
-            sip_password: 'profile-secret',
-            enabled: true,
-          },
-        ],
-      }),
-      { dryRun: false, remoteCommit: false }
-    );
-    expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inbox_finish',
-      params: {
-        accountId: 530,
-        inbox_id: 4778,
-      },
-    });
-  });
-
-  it('does not create a channel when a selected employee has no extension', async () => {
-    routeMock.query = { provider: 'sipuni' };
-    const wrapper = buildWrapper();
-    Object.assign(wrapper.vm.kazakhstanState, {
-      channelName: 'Sipuni invalid operator',
-      phoneNumber: '+7 700 000 0099',
-      connectionHost: 'ats01.kz.sipuni.com',
-    });
-    wrapper.vm.employeeProfiles = [
-      {
-        userId: 179,
-        name: 'Agent One',
-        internalExtension: '',
-        sipUsername: 'employee-505',
-        sipPassword: 'profile-secret',
-        enabled: true,
-      },
-    ];
-
-    await wrapper.find('form').trigger('submit');
-    await flushPromises();
-
-    expect(createVirtualPbxChannelMock).not.toHaveBeenCalled();
-    expect(alertMock).toHaveBeenCalledWith(
-      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.REQUIRED'
     );
   });
 });
