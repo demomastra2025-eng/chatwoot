@@ -206,16 +206,13 @@ class Captain::ContextFields
       definitions_for(account).map { |field| field[:id] }
     end
 
-    def appointment_state_for(account:, conversation:)
-      appointment = appointment_for(account: account, conversation: conversation)
-      return if appointment.blank?
+    def appointment_state_for(account:, conversation: nil, appointment: nil)
+      return if account.blank? || !appointment_context_enabled?(account)
 
-      appointment.attributes.symbolize_keys.slice(*APPOINTMENT_STATE_ATTRIBUTES).merge(
-        start_date: appointment.starts_at&.strftime('%d.%m.%Y'),
-        start_time: appointment.starts_at&.strftime('%H:%M'),
-        end_date: appointment.ends_at&.strftime('%d.%m.%Y'),
-        end_time: appointment.ends_at&.strftime('%H:%M')
-      ).slice(*APPOINTMENT_STATE_ATTRIBUTES)
+      appointment ||= appointment_for(account: account, conversation: conversation)
+      return if appointment.blank? || appointment.account_id != account.id
+
+      build_appointment_state(appointment, account)
     end
 
     def deal_state_for(account:, conversation:)
@@ -503,6 +500,20 @@ class Captain::ContextFields
     end
 
     private
+
+    def build_appointment_state(appointment, account)
+      timezone = ActiveSupport::TimeZone[appointment.resource&.timezone] ||
+                 ActiveSupport::TimeZone[account.reporting_timezone] || Time.zone
+      starts_at = appointment.starts_at&.in_time_zone(timezone)
+      ends_at = appointment.ends_at&.in_time_zone(timezone)
+
+      appointment.attributes.symbolize_keys.slice(*APPOINTMENT_STATE_ATTRIBUTES).merge(
+        start_date: starts_at&.strftime('%d.%m.%Y'),
+        start_time: starts_at&.strftime('%H:%M'),
+        end_date: ends_at&.strftime('%d.%m.%Y'),
+        end_time: ends_at&.strftime('%H:%M')
+      ).slice(*APPOINTMENT_STATE_ATTRIBUTES)
+    end
 
     def visible_communication_thread_links(links, account:, conversation:, assistant:, actor:, accessible_inboxes:)
       inboxes = communication_thread_accessible_inboxes(

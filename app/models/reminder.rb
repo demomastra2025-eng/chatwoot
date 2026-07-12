@@ -319,14 +319,19 @@ class Reminder < ApplicationRecord
   end
 
   def renderable_body(conversation: nil, sender: nil)
-    Outbound::RenderedTextService.new(
-      content: body,
-      conversation: conversation || target_conversation || self.conversation,
-      contact: target_contact,
-      inbox: target_inbox,
-      account: account,
-      sender: sender || message_sender
-    ).render
+    render_text(body, conversation: conversation, sender: sender)
+  end
+
+  def renderable_template_params(conversation: nil, sender: nil)
+    params = template_params.deep_stringify_keys
+    return params if params['processed_params'].blank?
+
+    params['processed_params'] = render_template_param_value(
+      params['processed_params'],
+      conversation: conversation,
+      sender: sender
+    )
+    params
   end
 
   def recurring?
@@ -349,6 +354,35 @@ class Reminder < ApplicationRecord
   end
 
   private
+
+  def render_template_param_value(value, conversation:, sender:)
+    case value
+    when Hash
+      value.transform_values { |item| render_template_param_value(item, conversation: conversation, sender: sender) }
+    when Array
+      value.map { |item| render_template_param_value(item, conversation: conversation, sender: sender) }
+    when String
+      render_text(value, conversation: conversation, sender: sender)
+    else
+      value
+    end
+  end
+
+  def render_text(content, conversation:, sender:)
+    Outbound::RenderedTextService.new(
+      content: content,
+      conversation: conversation || target_conversation || self.conversation,
+      contact: target_contact || remindable.try(:contact),
+      inbox: target_inbox,
+      account: account,
+      sender: sender || message_sender,
+      appointment: appointment_context
+    ).render
+  end
+
+  def appointment_context
+    remindable if remindable.is_a?(Scheduling::Appointment)
+  end
 
   def approve_unsaved!
     raise_invalid_record! unless ready_for_pending?

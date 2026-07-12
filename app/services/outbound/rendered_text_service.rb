@@ -1,15 +1,16 @@
 class Outbound::RenderedTextService
   RAW_CODE_REGEX = /`(.*?)`/m.freeze
 
-  attr_reader :content, :conversation, :contact, :inbox, :account, :sender
+  attr_reader :content, :conversation, :contact, :inbox, :account, :sender, :appointment
 
-  def initialize(content:, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil)
+  def initialize(content:, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil, appointment: nil)
     @content = content.to_s
     @conversation = conversation
     @contact = contact
     @inbox = inbox
     @account = account
     @sender = sender
+    @appointment = appointment
   end
 
   def render
@@ -45,23 +46,26 @@ class Outbound::RenderedTextService
       'account' => account_drop
     }
 
-    if defined?(Captain::ContextFields) && resolved_conversation.present?
-      drops['deal'] = build_runtime_state_drop(
-        Captain::ContextFields.deal_state_for(
-          account: resolved_account,
-          conversation: resolved_conversation
+    if defined?(Captain::ContextFields)
+      if resolved_conversation.present?
+        drops['deal'] = build_runtime_state_drop(
+          Captain::ContextFields.deal_state_for(
+            account: resolved_account,
+            conversation: resolved_conversation
+          )
         )
-      )
-      drops['task'] = build_runtime_state_drop(
-        Captain::ContextFields.task_state_for(
-          account: resolved_account,
-          conversation: resolved_conversation
+        drops['task'] = build_runtime_state_drop(
+          Captain::ContextFields.task_state_for(
+            account: resolved_account,
+            conversation: resolved_conversation
+          )
         )
-      )
+      end
       drops['appointment'] = build_runtime_state_drop(
         Captain::ContextFields.appointment_state_for(
           account: resolved_account,
-          conversation: resolved_conversation
+          conversation: resolved_conversation,
+          appointment: appointment
         )
       )
     end
@@ -101,7 +105,8 @@ class Outbound::RenderedTextService
       contact: resolved_contact,
       inbox: resolved_inbox,
       account: resolved_account,
-      sender: sender
+      sender: sender,
+      appointment: appointment
     )
   end
 

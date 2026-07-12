@@ -40,18 +40,18 @@ class Reminders::ExecuteService
     conversation = Reminders::ConversationResolver.new(reminder: reminder).perform
     return reminder if execution_blocked?(conversation)
 
-    delivery_policy = send_message_delivery_policy(conversation)
     payload = send_message_payload(conversation)
+    delivery_policy = send_message_delivery_policy(conversation, template_params: payload[:template_params])
     message = finalize_send_message(conversation, payload, delivery_policy)
 
     finish_execution(message)
   end
 
-  def send_message_delivery_policy(conversation)
+  def send_message_delivery_policy(conversation, template_params:)
     ensure_delivery_allowed!(
       conversation,
       content_kind: reminder.content_kind,
-      template_params: reminder.template_params,
+      template_params: template_params,
       attachments: reminder.attachments
     )
   end
@@ -59,17 +59,22 @@ class Reminders::ExecuteService
   def send_message_payload(conversation)
     generated_payload = reminder.agent? ? generate_captain_message(conversation, mode: :touch) : {}
     sender = generated_payload[:assistant].presence || reminder.message_sender
+    template_params = rendered_template_params(conversation, sender)
 
     {
       sender: sender,
       content: generated_payload[:content].presence || reminder.renderable_body(conversation: conversation, sender: sender),
-      captain_trace: generated_payload[:captain_trace]
+      captain_trace: generated_payload[:captain_trace],
+      template_params: template_params
     }
   end
 
   def finalize_send_message(conversation, payload, delivery_policy)
     with_execution_lock do
-      message = Reminders::MessageMaterializer.new(reminder: reminder).perform(
+      message = Reminders::MessageMaterializer.new(
+        reminder: reminder,
+        template_params: payload[:template_params]
+      ).perform(
         conversation: conversation,
         sender: payload[:sender],
         content: payload[:content],
@@ -200,6 +205,14 @@ class Reminders::ExecuteService
       conversation: conversation,
       mode: mode
     ).perform
+  end
+
+  def rendered_template_params(conversation, sender)
+    return reminder.template_params unless reminder.channel_template?
+
+    params = reminder.renderable_template_params(conversation: conversation, sender: sender)
+    Campaigns::TemplateParamsValidator.validate!(inbox: conversation.inbox, template_params: params)
+    params
   end
 
   def ensure_delivery_allowed!(conversation, content_kind:, template_params:, attachments:)

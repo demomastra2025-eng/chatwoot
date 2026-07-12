@@ -47,6 +47,29 @@ RSpec.describe Outbound::RenderedTextService do
       expect(rendered).to include(conversation.display_id.to_s)
     end
 
+    it 'renders appointment fields without a conversation in the resource timezone' do
+      resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        resource: resource,
+        contact: contact,
+        conversation: nil,
+        starts_at: Time.utc(2026, 7, 13, 4, 5),
+        ends_at: Time.utc(2026, 7, 13, 4, 35)
+      )
+
+      rendered = described_class.new(
+        content: '[Дата](field://appointment.start_date) [Время](field://appointment.start_time)',
+        appointment: appointment,
+        contact: contact,
+        account: account,
+        sender: agent
+      ).render
+
+      expect(rendered).to eq('13.07.2026 09:05')
+    end
+
     it 'does not resolve field references inside code blocks' do
       inbox = create(:inbox, account: account)
       contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number)

@@ -1,8 +1,9 @@
 class Reminders::MessageMaterializer
-  attr_reader :reminder
+  attr_reader :reminder, :template_params
 
-  def initialize(reminder:)
+  def initialize(reminder:, template_params: reminder.template_params.presence)
     @reminder = reminder
+    @template_params = template_params
   end
 
   def perform(conversation:, sender:, content:, captain_trace: nil, delivery_policy: nil)
@@ -30,7 +31,7 @@ class Reminders::MessageMaterializer
   def message_params(content:)
     {
       content: content,
-      template_params: reminder.template_params.presence,
+      template_params: template_params,
       attachments: reminder.attachments.presence,
       content_attributes: {
         touch_id: reminder.id,

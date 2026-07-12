@@ -13,13 +13,14 @@ class FieldReferences::RendererService
   ACCOUNT_STATE_ATTRIBUTES = %i[id name custom_attributes].freeze
   AGENT_STATE_ATTRIBUTES = %i[id name email available_name custom_attributes].freeze
 
-  def initialize(message: nil, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil)
+  def initialize(message: nil, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil, appointment: nil)
     @message = message
     @conversation = conversation
     @contact = contact
     @inbox = inbox
     @account = account
     @sender = sender
+    @appointment = appointment
   end
 
   def render(text)
@@ -35,7 +36,7 @@ class FieldReferences::RendererService
 
   private
 
-  attr_reader :message, :contact, :account
+  attr_reader :message, :contact, :account, :appointment
 
   def conversation
     @conversation || message&.conversation
@@ -78,6 +79,8 @@ class FieldReferences::RendererService
   end
 
   def conversation_state
+    return if conversation.blank?
+
     conversation.attributes.symbolize_keys.slice(*CONVERSATION_STATE_ATTRIBUTES).merge(
       display_id: conversation.display_id,
       label_list: conversation.label_list
@@ -137,17 +140,24 @@ class FieldReferences::RendererService
 
   def appointment_state
     return unless defined?(Captain::ContextFields)
-    return if conversation.blank?
+
+    context_account = appointment_context_account
+    return if context_account.blank?
     return unless Captain::ContextFields.scope_visible_for_user?(
       scope: :appointment,
-      account: conversation.account,
+      account: context_account,
       user: sender_user
     )
 
     Captain::ContextFields.appointment_state_for(
-      account: conversation.account,
-      conversation: conversation
+      account: context_account,
+      conversation: conversation,
+      appointment: appointment
     )
+  end
+
+  def appointment_context_account
+    account || appointment&.account || conversation&.account
   end
 
   def value_for(state, path)

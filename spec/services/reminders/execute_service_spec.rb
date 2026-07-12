@@ -602,6 +602,113 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.additional_attributes['delivery_policy']).to include('delivery_mode' => 'channel_template', 'requires_template' => true)
     end
 
+    context 'when a channel template uses appointment fields' do
+      let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
+      let(:whatsapp_channel) do
+        create(
+          :channel_whatsapp,
+          account: account,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+      end
+      let(:contact) { create(:contact, account: account) }
+      let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox) }
+      let(:conversation) do
+        create(
+          :conversation,
+          account: account,
+          inbox: whatsapp_channel.inbox,
+          contact: contact,
+          contact_inbox: contact_inbox
+        )
+      end
+      let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
+      let(:appointment) do
+        create(
+          :scheduling_appointment,
+          account: account,
+          resource: resource,
+          contact: contact,
+          conversation: nil,
+          starts_at: Time.utc(2026, 7, 13, 4, 5),
+          ends_at: Time.utc(2026, 7, 13, 4, 35)
+        )
+      end
+      let(:second_param) { '[Время](field://appointment.start_time)' }
+      let(:appointment_reminder) do
+        create(
+          :reminder,
+          account: account,
+          target_conversation: conversation,
+          target_inbox: whatsapp_channel.inbox,
+          target_contact: contact,
+          remindable: appointment,
+          status: :processing,
+          content_kind: :channel_template,
+          body: nil,
+          template_params: {
+            name: 'appointment_scheduled_confirmation',
+            language: 'ru',
+            processed_params: {
+              body: {
+                '1' => '[Дата](field://appointment.start_date)',
+                '2' => second_param,
+                '3' => '14:00'
+              }
+            }
+          }
+        )
+      end
+
+      before do
+        account.enable_features!('scheduling')
+        whatsapp_channel.update!(
+          message_templates: [
+            {
+              'name' => 'appointment_scheduled_confirmation',
+              'language' => 'ru',
+              'status' => 'APPROVED',
+              'parameter_format' => 'POSITIONAL',
+              'components' => [{ 'type' => 'BODY', 'text' => 'Запись {{1}} в {{2}}, результат до {{3}}' }]
+            }
+          ]
+        )
+      end
+
+      it 'renders the template params without appointment conversation context' do
+        described_class.new(reminder: appointment_reminder).perform
+
+        message = conversation.messages.outgoing.last
+        expect(message.additional_attributes.dig('template_params', 'processed_params', 'body')).to eq(
+          '1' => '13.07.2026',
+          '2' => '09:05',
+          '3' => '14:00'
+        )
+
+        _, _, _, meta_components = Whatsapp::TemplateProcessorService.new(
+          channel: whatsapp_channel,
+          template_params: message.additional_attributes['template_params'],
+          message: message
+        ).call
+        expect(meta_components.dig(0, :parameters).pluck(:text)).to eq(['13.07.2026', '09:05', '14:00'])
+      end
+
+      context 'when a rendered required param is blank' do
+        let(:second_param) { '[Пусто](field://appointment.custom_attributes.unknown)' }
+
+        it 'fails before message materialization' do
+          expect do
+            described_class.new(reminder: appointment_reminder).perform
+          end.to raise_error(ArgumentError, /Template params missing required values: body.2/)
+
+          expect(appointment_reminder.reload).to be_failed
+          expect(conversation.messages.outgoing.count).to eq(0)
+        end
+      end
+    end
+
     it 'fails a touch whose channel has no outbound send service instead of silently not delivering' do
       account = create(:account)
       allow_any_instance_of(Channel::Voice).to receive(:provision_twilio_on_create)
