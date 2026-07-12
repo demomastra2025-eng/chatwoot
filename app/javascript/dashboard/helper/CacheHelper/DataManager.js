@@ -41,8 +41,14 @@ export class DataManager {
   async replace({ modelName, data }) {
     this.validateModel(modelName);
 
-    await this.db.clear(modelName);
-    return this.push({ modelName, data });
+    const tx = this.db.transaction(modelName, 'readwrite');
+    const items = Array.isArray(data) ? data : [data];
+    const requests = [
+      tx.store.clear(),
+      ...items.map(item => tx.store.put(item)),
+    ];
+    await Promise.all(requests);
+    await tx.done;
   }
 
   async push({ modelName, data }) {
@@ -50,12 +56,10 @@ export class DataManager {
 
     if (Array.isArray(data)) {
       const tx = this.db.transaction(modelName, 'readwrite');
-      data.forEach(item => {
-        tx.store.add(item);
-      });
+      await Promise.all(data.map(item => tx.store.put(item)));
       await tx.done;
     } else {
-      await this.db.add(modelName, data);
+      await this.db.put(modelName, data);
     }
   }
 

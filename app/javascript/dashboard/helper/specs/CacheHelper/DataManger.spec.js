@@ -66,6 +66,25 @@ describe('DataManager', () => {
       const result = await dataManager.get({ modelName: 'inbox' });
       expect(result).toEqual(newData);
     });
+
+    it('keeps concurrent replacements atomic without duplicate-key errors', async () => {
+      const firstData = [
+        { id: 1, name: 'first-1' },
+        { id: 2, name: 'first-2' },
+      ];
+      const secondData = [
+        { id: 1, name: 'second-1' },
+        { id: 3, name: 'second-3' },
+      ];
+
+      await Promise.all([
+        dataManager.replace({ modelName: 'inbox', data: firstData }),
+        dataManager.replace({ modelName: 'inbox', data: secondData }),
+      ]);
+
+      const result = await dataManager.get({ modelName: 'inbox' });
+      expect([firstData, secondData]).toContainEqual(result);
+    });
   });
 
   describe('push', () => {
@@ -75,6 +94,20 @@ describe('DataManager', () => {
       await dataManager.push({ modelName: 'inbox', data: inboxData });
       const result = await dataManager.get({ modelName: 'inbox' });
       expect(result).toEqual([inboxData]);
+    });
+
+    it('should upsert an existing key instead of aborting the transaction', async () => {
+      await dataManager.push({
+        modelName: 'inbox',
+        data: { id: 1, name: 'old-name' },
+      });
+      await dataManager.push({
+        modelName: 'inbox',
+        data: { id: 1, name: 'new-name' },
+      });
+
+      const result = await dataManager.get({ modelName: 'inbox' });
+      expect(result).toEqual([{ id: 1, name: 'new-name' }]);
     });
 
     it('should add multiple items to the specified model if an array of data is provided', async () => {
