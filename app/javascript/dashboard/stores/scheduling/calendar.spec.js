@@ -117,6 +117,21 @@ describe('useSchedulingCalendarStore', () => {
     );
   });
 
+  it('resets all appointment filters without changing calendar navigation', () => {
+    const store = useSchedulingCalendarStore();
+    store.setStatusFilters(['confirmed']);
+    store.setPaymentStatusFilters(['paid']);
+    store.setCustomAttributeFilters({ visit_reason: ['follow_up'] });
+    store.setView('month');
+
+    store.resetFilters();
+
+    expect(store.statusFilters).toEqual([]);
+    expect(store.paymentStatusFilters).toEqual([]);
+    expect(store.customAttributeFilters).toEqual({});
+    expect(store.currentView).toBe('month');
+  });
+
   it('does not expose all specialists when no resource is selected', () => {
     const store = useSchedulingCalendarStore();
 

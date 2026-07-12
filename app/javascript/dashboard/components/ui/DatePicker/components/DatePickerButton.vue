@@ -6,6 +6,18 @@ import Icon from 'dashboard/components-next/icon/Icon.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
 const props = defineProps({
+  active: {
+    type: Boolean,
+    default: true,
+  },
+  inactiveLabel: {
+    type: String,
+    default: '',
+  },
+  ranges: {
+    type: Array,
+    default: () => dateRanges,
+  },
   selectedStartDate: Date,
   selectedEndDate: Date,
   selectedRange: {
@@ -48,7 +60,9 @@ const formatDateRange = computed(() => {
 });
 
 const activeDateRange = computed(
-  () => dateRanges.find(range => range.value === props.selectedRange).label
+  () =>
+    props.ranges?.find(range => range.value === props.selectedRange)?.label ||
+    ''
 );
 
 const openDatePicker = () => {
@@ -59,6 +73,7 @@ const openDatePicker = () => {
 <template>
   <div class="inline-flex items-center gap-1">
     <button
+      type="button"
       class="inline-flex relative items-center rounded-lg gap-2 py-1.5 px-3 h-8 bg-n-alpha-2 hover:bg-n-alpha-1 active:bg-n-alpha-1 flex-shrink-0"
       @click="openDatePicker"
     >
@@ -67,9 +82,13 @@ const openDatePicker = () => {
         class="text-n-slate-11 size-3.5 flex-shrink-0"
       />
       <span class="text-sm font-medium text-n-slate-12 truncate">
-        {{ navigationLabel || $t(activeDateRange) }}
+        {{
+          active
+            ? navigationLabel || $t(activeDateRange)
+            : inactiveLabel || $t('DATE_PICKER.DATE_RANGE_OPTIONS.ALL_TIME')
+        }}
       </span>
-      <span class="text-sm font-medium text-n-slate-11 truncate">
+      <span v-if="active" class="text-sm font-medium text-n-slate-11 truncate">
         {{ formatDateRange }}
       </span>
       <Icon

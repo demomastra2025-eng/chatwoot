@@ -864,6 +864,48 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'appointments').pluck('id')).to eq([matching_appointment.id])
   end
 
+  it 'filters calendar appointments by status and payment status' do
+    attributes = { account: account, contact: contact, resource: resource, service: service }
+    matching_appointment = create(
+      :scheduling_appointment,
+      **attributes,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes,
+      status: 'confirmed',
+      payment_status: 'paid'
+    )
+    create(
+      :scheduling_appointment,
+      **attributes,
+      starts_at: booking_day + 1.hour,
+      ends_at: booking_day + 90.minutes,
+      status: 'scheduled',
+      payment_status: 'paid'
+    )
+    create(
+      :scheduling_appointment,
+      **attributes,
+      starts_at: booking_day + 2.hours,
+      ends_at: booking_day + 150.minutes,
+      status: 'confirmed',
+      payment_status: 'awaiting_payment'
+    )
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          status: 'confirmed',
+          payment_status: 'paid'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'appointments').pluck('id')).to eq([matching_appointment.id])
+  end
+
   it 'keeps non-matching appointments as slot blockers in the calendar availability payload' do
     create(
       :crm_field_definition,

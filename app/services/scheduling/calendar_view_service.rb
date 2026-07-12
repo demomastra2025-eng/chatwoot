@@ -1,13 +1,16 @@
 class Scheduling::CalendarViewService
-  def initialize(account:, view:, from:, to:, resource_ids: nil, include_slots: false, duration_min: nil, custom_attribute_filters: nil)
+  def initialize(account:, **options)
     @account = account
-    @view = view
-    @from = from
-    @to = to
-    @resource_ids = Array(resource_ids).compact_blank
-    @include_slots = ActiveModel::Type::Boolean.new.cast(include_slots)
-    @duration_min = duration_min.presence&.to_i
-    @custom_attribute_filters = custom_attribute_filters
+    @view = options.fetch(:view)
+    @from = options.fetch(:from)
+    @to = options.fetch(:to)
+    @requested_resource_ids = Array(options[:resource_ids]).compact_blank
+    filters = options.fetch(:filters, {})
+    @statuses = Array(filters[:statuses]).compact_blank
+    @payment_statuses = Array(filters[:payment_statuses]).compact_blank
+    @include_slots = ActiveModel::Type::Boolean.new.cast(options[:include_slots])
+    @duration_min = options[:duration_min].presence&.to_i
+    @custom_attribute_filters = options[:custom_attribute_filters]
   end
 
   def perform
@@ -33,7 +36,12 @@ class Scheduling::CalendarViewService
   private
 
   def appointments
-    @appointments ||= appointment_custom_field_filter_set.apply(base_appointments_scope).to_a
+    @appointments ||= begin
+      scope = appointment_custom_field_filter_set.apply(base_appointments_scope)
+      scope = scope.where(status: @statuses) if @statuses.present?
+      scope = scope.where(payment_status: @payment_statuses) if @payment_statuses.present?
+      scope.to_a
+    end
   end
 
   def break_rules
@@ -61,13 +69,13 @@ class Scheduling::CalendarViewService
   end
 
   def resource_ids
-    @resource_ids_list ||= resources.map(&:id)
+    @resource_ids ||= resources.map(&:id)
   end
 
   def resources
     @resources ||= begin
       scope = account.scheduling_resources.not_deleted_from_scheduling.includes(:work_rules, :break_rules).ordered
-      scope = scope.where(id: @resource_ids) if @resource_ids.present?
+      scope = scope.where(id: @requested_resource_ids) if @requested_resource_ids.present?
       scope.to_a
     end
   end

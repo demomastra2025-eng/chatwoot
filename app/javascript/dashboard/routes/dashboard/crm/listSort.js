@@ -62,10 +62,17 @@ export const createDealListSortValueResolver = ({
   };
 };
 
+const taskPriorityRank = {
+  none: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  urgent: 4,
+};
+
 export const createTaskListSortValueResolver = ({
   activityTypeLabelByValue = {},
   assigneeNameById = {},
-  priorityLabelByValue = {},
   statusNameById = {},
 } = {}) => {
   return (task, key) => {
@@ -81,9 +88,7 @@ export const createTaskListSortValueResolver = ({
       case 'id':
         return Number(task.id);
       case 'priority':
-        return normalizeSortText(
-          priorityLabelByValue[task.priority] || task.priority
-        );
+        return taskPriorityRank[task.priority] ?? null;
       case 'status':
         return normalizeSortText(statusNameById[task.statusId]);
       case 'title':

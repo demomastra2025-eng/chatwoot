@@ -32,6 +32,7 @@ import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_VALUES,
+  PAYMENT_STATUS_VALUES,
 } from '../constants';
 import {
   formatSchedulingErrorMessage,
@@ -104,14 +105,6 @@ const numericQueryValue = key => {
   const value = Number(queryValue(key));
   return Number.isFinite(value) && value > 0 ? value : '';
 };
-
-const currentView = computed({
-  get: () => calendarStore.currentView,
-  set: async value => {
-    calendarStore.setView(value);
-    await calendarStore.fetchCalendar();
-  },
-});
 
 const viewLabels = computed(() => ({
   day: t('SCHEDULING.VIEWS.DAY'),
@@ -327,6 +320,13 @@ const appointmentStatusOptions = computed(() =>
   }))
 );
 
+const appointmentPaymentStatusOptions = computed(() =>
+  PAYMENT_STATUS_VALUES.map(value => ({
+    label: t(`SCHEDULING.PAYMENT_STATUS.${value}`),
+    value,
+  }))
+);
+
 const genderOptions = computed(() => [
   { label: t('SCHEDULING.CONTACT.GENDER.MALE'), value: 'male' },
   { label: t('SCHEDULING.CONTACT.GENDER.FEMALE'), value: 'female' },
@@ -335,6 +335,9 @@ const genderOptions = computed(() => [
 ]);
 
 const selectedStatusFilters = computed(() => calendarStore.statusFilters);
+const selectedPaymentStatusFilters = computed(
+  () => calendarStore.paymentStatusFilters
+);
 const hasSelectedResources = computed(
   () => calendarStore.selectedResourceIds.length > 0
 );
@@ -384,6 +387,18 @@ const visibleAppointments = computed(() => {
       customFieldFilters.value
     )
   );
+});
+
+function fetchCalendar() {
+  return calendarStore.fetchCalendar();
+}
+
+const currentView = computed({
+  get: () => calendarStore.currentView,
+  set: async value => {
+    calendarStore.setView(value);
+    await fetchCalendar();
+  },
 });
 
 const drawerTitle = computed(() =>
@@ -610,7 +625,7 @@ const updateCustomFieldFilter = (definitionKey, values) => {
 
 const handleCustomFieldFilterChange = async (definitionKey, values) => {
   updateCustomFieldFilter(definitionKey, values);
-  await calendarStore.fetchCalendar();
+  await fetchCalendar();
 };
 
 const syncSelectedResources = () => {
@@ -637,7 +652,7 @@ const loadPage = async () => {
     referencesStore.loadServices({ include_inactive: true }),
   ]);
   syncSelectedResources();
-  await calendarStore.fetchCalendar();
+  await fetchCalendar();
 };
 
 const openCreateAppointment = (slot, defaults = {}) => {
@@ -667,7 +682,7 @@ const handleAnchorDateSelect = async nextDate => {
   if (!nextDate) return;
 
   calendarStore.setAnchorDate(nextDate.toISOString());
-  await calendarStore.fetchCalendar();
+  await fetchCalendar();
 };
 
 const openNewAppointment = (defaults = {}) => {
@@ -927,7 +942,21 @@ const ensureSelectedCompanyOption = async companyId => {
 
 const handleStatusFiltersChange = async values => {
   calendarStore.setStatusFilters(values);
-  await calendarStore.fetchCalendar();
+  await fetchCalendar();
+};
+
+const handlePaymentStatusFiltersChange = async values => {
+  calendarStore.setPaymentStatusFilters(values);
+  await fetchCalendar();
+};
+
+const resetAppointmentFilters = async () => {
+  calendarStore.resetFilters();
+  customFieldFilters.value = {};
+  calendarStore.setSelectedResources(
+    filterableResources.value.map(resource => resource.id)
+  );
+  await fetchCalendar();
 };
 
 const handleAppointmentSubmit = async () => {
@@ -1050,15 +1079,15 @@ onMounted(async () => {
       :views="calendarTypeViews"
       @previous="
         calendarStore.shiftAnchor(-1);
-        calendarStore.fetchCalendar();
+        fetchCalendar();
       "
       @next="
         calendarStore.shiftAnchor(1);
-        calendarStore.fetchCalendar();
+        fetchCalendar();
       "
       @today="
         calendarStore.setAnchorDate(new Date().toISOString());
-        calendarStore.fetchCalendar();
+        fetchCalendar();
       "
       @select-date="handleAnchorDateSelect"
     >
@@ -1085,7 +1114,7 @@ onMounted(async () => {
           :model-value="calendarStore.selectedResourceIds"
           @update:model-value="
             calendarStore.setSelectedResources($event);
-            calendarStore.fetchCalendar();
+            fetchCalendar();
           "
         />
         <SchedulingMultiSelectFilter
@@ -1093,6 +1122,12 @@ onMounted(async () => {
           :options="appointmentStatusOptions"
           :placeholder="$t('SCHEDULING.TOOLBAR.STATUS')"
           @update:model-value="handleStatusFiltersChange"
+        />
+        <SchedulingMultiSelectFilter
+          :model-value="selectedPaymentStatusFilters"
+          :options="appointmentPaymentStatusOptions"
+          :placeholder="$t('SCHEDULING.TOOLBAR.PAYMENT_STATUS')"
+          @update:model-value="handlePaymentStatusFiltersChange"
         />
         <SchedulingMultiSelectFilter
           v-for="definition in discreteAppointmentFieldDefinitions"
@@ -1119,6 +1154,14 @@ onMounted(async () => {
           @update:model-value="
             handleCustomFieldFilterChange(definition.key, $event)
           "
+        />
+        <Button
+          size="sm"
+          color="slate"
+          variant="ghost"
+          icon="i-lucide-rotate-ccw"
+          :label="$t('SCHEDULING.TOOLBAR.RESET_FILTERS')"
+          @click="resetAppointmentFilters"
         />
       </div>
     </div>

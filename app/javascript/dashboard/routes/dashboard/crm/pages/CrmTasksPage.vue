@@ -34,6 +34,7 @@ import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/Schedu
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
+import SchedulingEntityDateRangeFilter from 'dashboard/components-next/Scheduling/SchedulingEntityDateRangeFilter.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingMultiSelectFilter from 'dashboard/components-next/Scheduling/SchedulingMultiSelectFilter.vue';
@@ -144,6 +145,7 @@ const filters = reactive({
   activityType: '',
   archived: false,
   assigneeId: '',
+  dateRange: { from: '', to: '', type: '' },
   dealId: '',
   outcome: '',
   priority: '',
@@ -154,6 +156,7 @@ const filterDraft = reactive({
   activityType: '',
   archived: false,
   assigneeId: '',
+  dateRange: { from: '', to: '', type: '' },
   dealId: '',
   outcome: '',
   priority: '',
@@ -473,13 +476,6 @@ const priorityMetaByValue = computed(() => ({
   },
 }));
 
-const priorityLabelByValue = computed(() =>
-  Object.entries(priorityMetaByValue.value).reduce((result, [value, meta]) => {
-    result[value] = meta.label;
-    return result;
-  }, {})
-);
-
 const statusMetaById = computed(() =>
   referencesStore.taskStatuses.reduce((result, status) => {
     const categoryMeta =
@@ -684,7 +680,6 @@ const resolveTaskSortValue = computed(() =>
   createTaskListSortValueResolver({
     activityTypeLabelByValue: activityTypeLabelByValue.value,
     assigneeNameById: assigneeNameById.value,
-    priorityLabelByValue: priorityLabelByValue.value,
     statusNameById: statusNameById.value,
   })
 );
@@ -742,6 +737,7 @@ const defaultTasksPreferences = () => ({
     activityType: '',
     archived: false,
     assigneeId: '',
+    dateRange: { from: '', to: '', type: '' },
     dealId: '',
     outcome: '',
     priority: '',
@@ -773,6 +769,10 @@ const sanitizeTasksPreferences = preferences => {
     filters: {
       ...defaults.filters,
       ...(preferences?.filters || {}),
+      dateRange: {
+        ...defaults.filters.dateRange,
+        ...(preferences?.filters?.dateRange || {}),
+      },
     },
     listQuickFilters: {
       ...defaults.listQuickFilters,
@@ -1192,6 +1192,8 @@ const loadTasks = async () => {
       assignee_id: effectiveTaskAssigneeId.value || undefined,
       custom_attribute_filters: customFieldFilters.value,
       deal_id: filters.dealId || undefined,
+      due_from: filters.dateRange.from || undefined,
+      due_to: filters.dateRange.to || undefined,
       outcome: filters.outcome || undefined,
       priority: filters.priority || undefined,
       status_id: filters.statusId || undefined,
@@ -1203,9 +1205,19 @@ const loadTasks = async () => {
         currentCalendarView.value,
         calendarAnchorDate.value
       );
+      const calendarTo = new Date(to.getTime() + 1);
+      const selectedFrom = query.due_from ? new Date(query.due_from) : null;
+      const selectedTo = query.due_to ? new Date(query.due_to) : null;
 
-      query.due_from = from.toISOString();
-      query.due_to = new Date(to.getTime() + 1).toISOString();
+      query.due_from = new Date(
+        Math.max(from.getTime(), selectedFrom?.getTime() || from.getTime())
+      ).toISOString();
+      query.due_to = new Date(
+        Math.min(
+          calendarTo.getTime(),
+          selectedTo?.getTime() || calendarTo.getTime()
+        )
+      ).toISOString();
     }
 
     const { data } = await CrmTasksAPI.get(query);
@@ -1347,6 +1359,7 @@ const syncFilterDraft = () => {
     activityType: filters.activityType,
     archived: filters.archived,
     assigneeId: filters.assigneeId,
+    dateRange: { ...filters.dateRange },
     dealId: filters.dealId,
     outcome: filters.outcome,
     priority: filters.priority,
@@ -1390,6 +1403,7 @@ const applyFilters = async () => {
     activityType: filterDraft.activityType,
     archived: filterDraft.archived,
     assigneeId: filterDraft.assigneeId,
+    dateRange: { ...filterDraft.dateRange },
     dealId: filterDraft.dealId,
     outcome: filterDraft.outcome,
     priority: filterDraft.priority,
@@ -1401,6 +1415,22 @@ const applyFilters = async () => {
     customFieldFilterDraft.value,
     customFieldFilterLabels.value
   );
+  filterDialogRef.value?.close();
+  await loadTasks();
+};
+
+const resetFilters = async () => {
+  const defaults = defaultTasksPreferences();
+  Object.assign(filters, {
+    ...defaults.filters,
+    dateRange: { ...defaults.filters.dateRange },
+  });
+  customFieldFilters.value = {};
+  customFieldFilterDraft.value = {};
+  listQuickFilters.q = '';
+  currentTaskScope.value = defaults.currentTaskScope;
+  listCurrentPage.value = 1;
+  syncFilterDraft();
   filterDialogRef.value?.close();
   await loadTasks();
 };
@@ -2515,98 +2545,112 @@ watch(
 
     <Dialog
       ref="filterDialogRef"
-      width="xl"
+      width="5xl"
+      position="top"
       :title="$t('CRM.FILTERS.TITLE')"
       :description="$t('CRM.FILTERS.DESCRIPTION')"
       :confirm-button-label="$t('CRM.FILTERS.APPLY')"
       @confirm="applyFilters"
     >
-      <div class="grid gap-4 md:grid-cols-2">
-        <SchedulingSelectField
-          :label="$t('CRM.TASKS.FORM.STATUS')"
-          :model-value="filterDraft.statusId"
-          :options="taskStatusOptions"
-          :placeholder="$t('CRM.TASKS.FORM.STATUS')"
-          @update:model-value="filterDraft.statusId = $event"
-        />
+      <div class="grid gap-4">
+        <div class="w-full">
+          <SchedulingEntityDateRangeFilter
+            v-model="filterDraft.dateRange"
+            :label="$t('CRM.FILTERS.DUE_AT_RANGE')"
+          />
+        </div>
 
-        <SchedulingSelectField
-          :label="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
-          :model-value="filterDraft.activityType"
-          :options="activityTypeOptions"
-          :placeholder="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
-          @update:model-value="filterDraft.activityType = $event"
-        />
+        <div class="grid gap-4 md:grid-cols-3">
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.FORM.STATUS')"
+            :model-value="filterDraft.statusId"
+            :options="taskStatusOptions"
+            :placeholder="$t('CRM.TASKS.FORM.STATUS')"
+            @update:model-value="filterDraft.statusId = $event"
+          />
 
-        <SchedulingSelectField
-          :label="$t('CRM.TASKS.FORM.OUTCOME')"
-          :model-value="filterDraft.outcome"
-          :options="filterOutcomeOptions"
-          :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
-          @update:model-value="filterDraft.outcome = $event"
-        />
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
+            :model-value="filterDraft.activityType"
+            :options="activityTypeOptions"
+            :placeholder="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
+            @update:model-value="filterDraft.activityType = $event"
+          />
 
-        <SchedulingSelectField
-          :label="$t('CRM.TASKS.FORM.ASSIGNEE')"
-          :model-value="filterDraft.assigneeId"
-          :options="assigneeOptions"
-          :placeholder="$t('CRM.TASKS.FORM.ASSIGNEE')"
-          @update:model-value="filterDraft.assigneeId = $event"
-        />
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.FORM.OUTCOME')"
+            :model-value="filterDraft.outcome"
+            :options="filterOutcomeOptions"
+            :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
+            @update:model-value="filterDraft.outcome = $event"
+          />
+        </div>
 
-        <SchedulingSelectField
-          :label="$t('CRM.TASKS.FORM.DEAL')"
-          :model-value="filterDraft.dealId"
-          :options="dealOptions"
-          :placeholder="$t('CRM.TASKS.FORM.DEAL')"
-          @update:model-value="filterDraft.dealId = $event"
-        />
+        <div class="grid gap-4 md:grid-cols-4">
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.FORM.ASSIGNEE')"
+            :model-value="filterDraft.assigneeId"
+            :options="assigneeOptions"
+            :placeholder="$t('CRM.TASKS.FORM.ASSIGNEE')"
+            @update:model-value="filterDraft.assigneeId = $event"
+          />
 
-        <SchedulingSelectField
-          :label="$t('CRM.TASKS.FORM.PRIORITY')"
-          :model-value="filterDraft.priority"
-          :options="priorityOptions"
-          :placeholder="$t('CRM.TASKS.FORM.PRIORITY')"
-          @update:model-value="filterDraft.priority = $event"
-        />
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.FORM.DEAL')"
+            :model-value="filterDraft.dealId"
+            :options="dealOptions"
+            :placeholder="$t('CRM.TASKS.FORM.DEAL')"
+            @update:model-value="filterDraft.dealId = $event"
+          />
 
-        <SchedulingSelectField
-          :label="$t('CRM.TASKS.FORM.TEAM')"
-          :model-value="filterDraft.teamId"
-          :options="teamOptions"
-          :placeholder="$t('CRM.TASKS.FORM.TEAM')"
-          @update:model-value="filterDraft.teamId = $event"
-        />
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.FORM.PRIORITY')"
+            :model-value="filterDraft.priority"
+            :options="priorityOptions"
+            :placeholder="$t('CRM.TASKS.FORM.PRIORITY')"
+            @update:model-value="filterDraft.priority = $event"
+          />
 
-        <SchedulingMultiSelectFilter
-          v-for="definition in discreteTaskFieldDefinitions"
-          :key="definition.key"
-          :model-value="customFieldFilterDraft[definition.key] || []"
-          :options="customFieldFilterOptions(definition)"
-          :placeholder="definition.label"
-          :show-trigger-icon="false"
-          @update:model-value="
-            updateTaskCustomFieldFilterDraft(definition.key, $event)
-          "
-        />
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.FORM.TEAM')"
+            :model-value="filterDraft.teamId"
+            :options="teamOptions"
+            :placeholder="$t('CRM.TASKS.FORM.TEAM')"
+            @update:model-value="filterDraft.teamId = $event"
+          />
+        </div>
 
-        <SchedulingCustomFieldAdvancedFilter
-          v-for="definition in advancedTaskFieldDefinitions"
-          :key="definition.key"
-          :definition="definition"
-          :model-value="customFieldFilterDraft[definition.key] || null"
-          :operator-options="customFieldAdvancedOperatorOptions(definition)"
-          :placeholder="definition.label"
-          :summary-label="customFieldAdvancedFilterSummary(definition)"
-          :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
-          :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
-          :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
-          @update:model-value="
-            updateTaskCustomFieldFilterDraft(definition.key, $event)
-          "
-        />
+        <div class="grid gap-4 md:grid-cols-3">
+          <SchedulingMultiSelectFilter
+            v-for="definition in discreteTaskFieldDefinitions"
+            :key="definition.key"
+            :model-value="customFieldFilterDraft[definition.key] || []"
+            :options="customFieldFilterOptions(definition)"
+            :placeholder="definition.label"
+            :show-trigger-icon="false"
+            @update:model-value="
+              updateTaskCustomFieldFilterDraft(definition.key, $event)
+            "
+          />
 
-        <div class="flex items-center gap-3 pt-6">
+          <SchedulingCustomFieldAdvancedFilter
+            v-for="definition in advancedTaskFieldDefinitions"
+            :key="definition.key"
+            :definition="definition"
+            :model-value="customFieldFilterDraft[definition.key] || null"
+            :operator-options="customFieldAdvancedOperatorOptions(definition)"
+            :placeholder="definition.label"
+            :summary-label="customFieldAdvancedFilterSummary(definition)"
+            :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
+            :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
+            :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
+            @update:model-value="
+              updateTaskCustomFieldFilterDraft(definition.key, $event)
+            "
+          />
+        </div>
+
+        <div class="flex items-center gap-3">
           <Checkbox
             :model-value="filterDraft.archived"
             @update:model-value="filterDraft.archived = $event"
@@ -2616,6 +2660,32 @@ watch(
           </span>
         </div>
       </div>
+      <template #footer>
+        <div class="flex w-full flex-wrap items-center justify-between gap-3">
+          <Button
+            type="button"
+            color="slate"
+            variant="ghost"
+            :label="$t('CRM.FILTERS.RESET')"
+            @click="resetFilters"
+          />
+          <div class="flex items-center gap-3">
+            <Button
+              type="button"
+              color="slate"
+              variant="faded"
+              :label="$t('CRM.GENERAL.CANCEL')"
+              @click="filterDialogRef?.close()"
+            />
+            <Button
+              type="button"
+              :is-loading="ui.isLoading"
+              :label="$t('CRM.FILTERS.APPLY')"
+              @click="applyFilters"
+            />
+          </div>
+        </div>
+      </template>
     </Dialog>
   </section>
 </template>

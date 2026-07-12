@@ -70,6 +70,7 @@
       "ALL_RESOURCES": "All specialists",
       "FILTERS": "Filters",
       "PAYMENT_STATUS": "Payment status",
+      "RESET_FILTERS": "Reset filters",
       "RESOURCES": "Specialists",
       "RESOURCES_SELECTED": "{count} selected",
       "RESOURCE_SEARCH": "Search specialists",

@@ -8,6 +8,8 @@ import {
   isLastDayOfMonth,
   dayIsInRange,
   getActiveDateRange,
+  entityDateRanges,
+  DATE_RANGE_TYPES,
   isHoveringDayInRange,
   isHoveringNextDayInRange,
   moveCalendarDate,
@@ -229,7 +231,7 @@ describe('isHoveringNextDayInRange', () => {
 });
 
 describe('getActiveDateRange', () => {
-  const currentDate = new Date(2020, 5, 15, 12, 0); // May 15, 2020, at noon
+  const currentDate = new Date(2020, 5, 15, 12, 0); // June 15, 2020, at noon
 
   beforeEach(() => {
     // Mocking the current date to ensure consistency in tests
@@ -238,6 +240,42 @@ describe('getActiveDateRange', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('exposes the complete entity filter preset set', () => {
+    expect(entityDateRanges.map(range => range.value)).toEqual([
+      DATE_RANGE_TYPES.TODAY,
+      DATE_RANGE_TYPES.YESTERDAY,
+      DATE_RANGE_TYPES.LAST_24_HOURS,
+      DATE_RANGE_TYPES.LAST_7_DAYS,
+      DATE_RANGE_TYPES.LAST_30_DAYS,
+      DATE_RANGE_TYPES.LAST_3_MONTHS,
+      DATE_RANGE_TYPES.THIS_WEEK,
+      DATE_RANGE_TYPES.MONTH_TO_DATE,
+      DATE_RANGE_TYPES.CUSTOM_RANGE,
+    ]);
+  });
+
+  it('returns calendar-day boundaries for today and yesterday', () => {
+    expect(getActiveDateRange(DATE_RANGE_TYPES.TODAY, currentDate)).toEqual({
+      start: new Date(2020, 5, 15, 0, 0, 0, 0),
+      end: new Date(2020, 5, 15, 23, 59, 59, 999),
+    });
+    expect(getActiveDateRange(DATE_RANGE_TYPES.YESTERDAY, currentDate)).toEqual(
+      {
+        start: new Date(2020, 5, 14, 0, 0, 0, 0),
+        end: new Date(2020, 5, 14, 23, 59, 59, 999),
+      }
+    );
+  });
+
+  it('returns an exact rolling window for the last 24 hours', () => {
+    expect(
+      getActiveDateRange(DATE_RANGE_TYPES.LAST_24_HOURS, currentDate)
+    ).toEqual({
+      start: new Date(2020, 5, 14, 12, 0, 0, 0),
+      end: currentDate,
+    });
   });
 
   it('returns the correct range for "last7days"', () => {

@@ -70,6 +70,7 @@
       "ALL_RESOURCES": "Все специалисты",
       "FILTERS": "Фильтры",
       "PAYMENT_STATUS": "Статус оплаты",
+      "RESET_FILTERS": "Сбросить фильтры",
       "RESOURCES": "Специалисты",
       "RESOURCES_SELECTED": "Выбрано: {count}",
       "RESOURCE_SEARCH": "Поиск специалиста",

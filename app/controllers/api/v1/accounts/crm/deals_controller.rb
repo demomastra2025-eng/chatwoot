@@ -183,6 +183,17 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope.where(field_name => params[field_name])
   end
 
+  def filter_by_created_range(scope)
+    from = parse_datetime_param!(params[:created_from], field_name: 'created_from', required: false)
+    to = parse_datetime_param!(params[:created_to], field_name: 'created_to', required: false)
+    return scope if from.blank? && to.blank?
+
+    scoped = scope
+    scoped = scoped.where('crm_deals.created_at >= ?', from) if from.present?
+    scoped = scoped.where('crm_deals.created_at <= ?', to) if to.present?
+    scoped
+  end
+
   def filter_by_originating_conversation(scope)
     return scope if params[:originating_conversation_id].blank?
 
@@ -222,7 +233,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope = filter_by_originating_conversation(scope)
     scope = filter_by_ai_only(filter_by_originating_communication_thread(scope))
     scope = filter_by_contact(scope)
-    scope = filter_by_query(scope)
+    scope = filter_by_query(filter_by_created_range(scope))
 
     ::Crm::CustomFieldFilterSet.new(
       account: Current.account,

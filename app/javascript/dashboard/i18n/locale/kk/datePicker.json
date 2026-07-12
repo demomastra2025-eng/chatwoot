@@ -10,7 +10,11 @@
       "END": "End Date"
     },
     "DATE_RANGE_OPTIONS": {
-      "TITLE": "DATE RANGE",
+      "TITLE": "КҮН АРАЛЫҒЫ",
+      "ALL_TIME": "Барлық уақыт",
+      "TODAY": "Бүгін",
+      "YESTERDAY": "Кеше",
+      "LAST_24_HOURS": "Соңғы 24 сағат",
       "LAST_7_DAYS": "Last 7 days",
       "LAST_30_DAYS": "Last 30 days",
       "LAST_3_MONTHS": "Last 3 months",

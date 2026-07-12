@@ -139,6 +139,23 @@ RSpec.describe 'CRM Deals API', type: :request do
     )
   end
 
+  it 'filters deals by creation date range' do
+    matching_deal = create(:crm_deal, account: account, created_at: Time.zone.now)
+    create(:crm_deal, account: account, created_at: 10.days.ago)
+    create(:crm_deal, account: account, created_at: 2.days.from_now)
+
+    get path,
+        params: {
+          created_from: 1.day.ago.beginning_of_day.iso8601,
+          created_to: 1.day.from_now.end_of_day.iso8601
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].pluck('id')).to eq([matching_deal.id])
+  end
+
   it 'creates a standalone deal without contacts or company' do
     post path,
          params: {

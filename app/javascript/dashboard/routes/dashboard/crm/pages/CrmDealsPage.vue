@@ -45,6 +45,7 @@ import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/Schedu
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
 import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
+import SchedulingEntityDateRangeFilter from 'dashboard/components-next/Scheduling/SchedulingEntityDateRangeFilter.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingMultiSelectFilter from 'dashboard/components-next/Scheduling/SchedulingMultiSelectFilter.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
@@ -175,6 +176,7 @@ const filters = reactive({
   archived: false,
   companyId: '',
   contactId: '',
+  dateRange: { from: '', to: '', type: '' },
   ownerId: '',
   pipelineId: '',
   stageId: '',
@@ -184,6 +186,7 @@ const filterDraft = reactive({
   archived: false,
   companyId: '',
   contactId: '',
+  dateRange: { from: '', to: '', type: '' },
   ownerId: '',
   pipelineId: '',
   stageId: '',
@@ -800,6 +803,7 @@ const defaultDealsPreferences = () => ({
     archived: false,
     companyId: '',
     contactId: '',
+    dateRange: { from: '', to: '', type: '' },
     ownerId: '',
     pipelineId: '',
     stageId: '',
@@ -830,6 +834,10 @@ const sanitizeDealsPreferences = preferences => {
     filters: {
       ...defaults.filters,
       ...(preferences?.filters || {}),
+      dateRange: {
+        ...defaults.filters.dateRange,
+        ...(preferences?.filters?.dateRange || {}),
+      },
     },
     listQuickFilters: {
       ...defaults.listQuickFilters,
@@ -1985,6 +1993,8 @@ const buildDealsFetchParams = page =>
     archived: filters.archived,
     company_id: filters.companyId || undefined,
     contact_id: filters.contactId || undefined,
+    created_from: filters.dateRange.from || undefined,
+    created_to: filters.dateRange.to || undefined,
     custom_attribute_filters: customFieldFilters.value,
     owner_id: filters.ownerId || undefined,
     page,
@@ -2208,6 +2218,7 @@ const syncFilterDraft = () => {
     archived: filters.archived,
     companyId: filters.companyId,
     contactId: filters.contactId,
+    dateRange: { ...filters.dateRange },
     ownerId: filters.ownerId,
     pipelineId: filters.pipelineId,
     stageId: resolveStageFilterId(filters.stageId, filters.pipelineId),
@@ -2228,6 +2239,7 @@ const applyFilters = async () => {
     archived: filterDraft.archived,
     companyId: filterDraft.companyId,
     contactId: filterDraft.contactId,
+    dateRange: { ...filterDraft.dateRange },
     ownerId: filterDraft.ownerId,
     pipelineId: resolvePipelineFilterId(filterDraft.pipelineId),
     stageId: resolveStageFilterId(
@@ -2241,6 +2253,22 @@ const applyFilters = async () => {
     customFieldFilterDraft.value,
     customFieldFilterLabels.value
   );
+  filterDialogRef.value?.close();
+  await loadDeals();
+};
+
+const resetFilters = async () => {
+  const defaults = defaultDealsPreferences();
+  Object.assign(filters, {
+    ...defaults.filters,
+    dateRange: { ...defaults.filters.dateRange },
+    pipelineId: resolvePipelineFilterId(defaults.filters.pipelineId),
+  });
+  customFieldFilters.value = {};
+  customFieldFilterDraft.value = {};
+  listQuickFilters.q = '';
+  listCurrentPage.value = 1;
+  syncFilterDraft();
   filterDialogRef.value?.close();
   await loadDeals();
 };
@@ -2823,7 +2851,7 @@ watch(
             type="search"
             :model-value="listQuickFilters.q"
             :placeholder="$t('CRM.DEALS.LIST.SEARCH_PLACEHOLDER')"
-            class="w-full sm:w-72"
+            class="w-full sm:w-36"
             custom-input-class="ltr:!pr-8 rtl:!pl-8"
             @update:model-value="listQuickFilters.q = $event"
           >
@@ -3539,92 +3567,105 @@ watch(
 
     <Dialog
       ref="filterDialogRef"
-      width="xl"
+      width="5xl"
       :title="$t('CRM.FILTERS.TITLE')"
       :description="$t('CRM.FILTERS.DESCRIPTION')"
       :confirm-button-label="$t('CRM.FILTERS.APPLY')"
       @confirm="applyFilters"
     >
-      <div class="grid gap-4 md:grid-cols-2">
-        <SchedulingSelectField
-          :label="$t('CRM.DEALS.FORM.OWNER')"
-          :model-value="filterDraft.ownerId"
-          :options="ownerOptions"
-          :placeholder="$t('CRM.DEALS.FORM.OWNER')"
-          @update:model-value="filterDraft.ownerId = $event"
-        />
+      <div class="grid gap-4">
+        <div class="w-full">
+          <SchedulingEntityDateRangeFilter
+            v-model="filterDraft.dateRange"
+            :label="$t('CRM.FILTERS.CREATED_AT_RANGE')"
+          />
+        </div>
 
-        <SchedulingSelectField
-          :label="$t('CRM.DEALS.FORM.STAGE')"
-          :model-value="filterDraft.stageId"
-          :options="filterStageOptions"
-          :placeholder="$t('CRM.DEALS.FORM.STAGE')"
-          @update:model-value="filterDraft.stageId = $event"
-        />
+        <div class="grid gap-4 md:grid-cols-4">
+          <SchedulingSelectField
+            :label="$t('CRM.DEALS.FORM.OWNER')"
+            :model-value="filterDraft.ownerId"
+            :options="ownerOptions"
+            :placeholder="$t('CRM.DEALS.FORM.OWNER')"
+            @update:model-value="filterDraft.ownerId = $event"
+          />
 
-        <SchedulingSelectField
-          v-if="shouldShowTeamField"
-          :label="$t('CRM.DEALS.FORM.TEAM')"
-          :model-value="filterDraft.teamId"
-          :options="teamOptions"
-          :placeholder="$t('CRM.DEALS.FORM.TEAM')"
-          @update:model-value="filterDraft.teamId = $event"
-        />
+          <SchedulingSelectField
+            :label="$t('CRM.DEALS.FORM.STAGE')"
+            :model-value="filterDraft.stageId"
+            :options="filterStageOptions"
+            :placeholder="$t('CRM.DEALS.FORM.STAGE')"
+            @update:model-value="filterDraft.stageId = $event"
+          />
 
-        <SchedulingSelectField
-          v-if="companiesEnabled"
-          :label="$t('CRM.DEALS.FORM.COMPANY')"
-          :model-value="filterDraft.companyId"
-          :options="companyOptions"
-          use-api-results
-          :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
-          @open="loadCompanies('')"
-          @search="loadCompanies"
-          @update:model-value="filterDraft.companyId = $event"
-        />
+          <SchedulingSelectField
+            :label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+            :model-value="filterDraft.contactId"
+            :options="contactOptions"
+            use-api-results
+            :placeholder="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+            :search-placeholder="
+              $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
+            "
+            :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
+            @open="loadContacts('')"
+            @search="loadContacts"
+            @update:model-value="filterDraft.contactId = $event"
+          />
 
-        <SchedulingSelectField
-          :label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
-          :model-value="filterDraft.contactId"
-          :options="contactOptions"
-          use-api-results
-          :placeholder="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
-          :search-placeholder="$t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')"
-          :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
-          @open="loadContacts('')"
-          @search="loadContacts"
-          @update:model-value="filterDraft.contactId = $event"
-        />
+          <SchedulingSelectField
+            v-if="companiesEnabled"
+            :label="$t('CRM.DEALS.FORM.COMPANY')"
+            :model-value="filterDraft.companyId"
+            :options="companyOptions"
+            use-api-results
+            :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
+            @open="loadCompanies('')"
+            @search="loadCompanies"
+            @update:model-value="filterDraft.companyId = $event"
+          />
+        </div>
 
-        <SchedulingMultiSelectFilter
-          v-for="definition in discreteDealFieldDefinitions"
-          :key="definition.key"
-          :model-value="customFieldFilterDraft[definition.key] || []"
-          :options="customFieldFilterOptions(definition)"
-          :placeholder="definition.label"
-          :show-trigger-icon="false"
-          @update:model-value="
-            updateDealCustomFieldFilterDraft(definition.key, $event)
-          "
-        />
+        <div class="grid gap-4 md:grid-cols-3">
+          <SchedulingSelectField
+            v-if="shouldShowTeamField"
+            :label="$t('CRM.DEALS.FORM.TEAM')"
+            :model-value="filterDraft.teamId"
+            :options="teamOptions"
+            :placeholder="$t('CRM.DEALS.FORM.TEAM')"
+            @update:model-value="filterDraft.teamId = $event"
+          />
 
-        <SchedulingCustomFieldAdvancedFilter
-          v-for="definition in advancedDealFieldDefinitions"
-          :key="definition.key"
-          :definition="definition"
-          :model-value="customFieldFilterDraft[definition.key] || null"
-          :operator-options="customFieldAdvancedOperatorOptions(definition)"
-          :placeholder="definition.label"
-          :summary-label="customFieldAdvancedFilterSummary(definition)"
-          :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
-          :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
-          :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
-          @update:model-value="
-            updateDealCustomFieldFilterDraft(definition.key, $event)
-          "
-        />
+          <SchedulingMultiSelectFilter
+            v-for="definition in discreteDealFieldDefinitions"
+            :key="definition.key"
+            :model-value="customFieldFilterDraft[definition.key] || []"
+            :options="customFieldFilterOptions(definition)"
+            :placeholder="definition.label"
+            :show-trigger-icon="false"
+            @update:model-value="
+              updateDealCustomFieldFilterDraft(definition.key, $event)
+            "
+          />
 
-        <div class="flex items-center gap-3 pt-6">
+          <SchedulingCustomFieldAdvancedFilter
+            v-for="definition in advancedDealFieldDefinitions"
+            :key="definition.key"
+            :definition="definition"
+            :model-value="customFieldFilterDraft[definition.key] || null"
+            :operator-options="customFieldAdvancedOperatorOptions(definition)"
+            :placeholder="definition.label"
+            :summary-label="customFieldAdvancedFilterSummary(definition)"
+            :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
+            :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
+            :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
+            @update:model-value="
+              updateDealCustomFieldFilterDraft(definition.key, $event)
+            "
+          />
+        </div>
+
+        <div class="flex items-center gap-3">
           <Checkbox
             :model-value="filterDraft.archived"
             @update:model-value="filterDraft.archived = $event"
@@ -3634,6 +3675,32 @@ watch(
           </span>
         </div>
       </div>
+      <template #footer>
+        <div class="flex w-full flex-wrap items-center justify-between gap-3">
+          <Button
+            type="button"
+            color="slate"
+            variant="ghost"
+            :label="$t('CRM.FILTERS.RESET')"
+            @click="resetFilters"
+          />
+          <div class="flex items-center gap-3">
+            <Button
+              type="button"
+              color="slate"
+              variant="faded"
+              :label="$t('CRM.GENERAL.CANCEL')"
+              @click="filterDialogRef?.close()"
+            />
+            <Button
+              type="button"
+              :is-loading="ui.isLoading"
+              :label="$t('CRM.FILTERS.APPLY')"
+              @click="applyFilters"
+            />
+          </div>
+        </div>
+      </template>
     </Dialog>
   </section>
 </template>

@@ -1,6 +1,7 @@
 import {
   startOfDay,
   subDays,
+  subHours,
   endOfDay,
   subMonths,
   addMonths,
@@ -59,7 +60,45 @@ export const dateRanges = [
   },
 ];
 
+// Entity filters intentionally use the same focused presets across deals,
+// tasks, and appointments without changing the report picker defaults.
+export const entityDateRanges = [
+  { label: 'DATE_PICKER.DATE_RANGE_OPTIONS.TODAY', value: 'today' },
+  { label: 'DATE_PICKER.DATE_RANGE_OPTIONS.YESTERDAY', value: 'yesterday' },
+  {
+    label: 'DATE_PICKER.DATE_RANGE_OPTIONS.LAST_24_HOURS',
+    value: 'last24hours',
+  },
+  {
+    label: 'DATE_PICKER.DATE_RANGE_OPTIONS.LAST_7_DAYS',
+    value: 'last7days',
+    separator: true,
+  },
+  { label: 'DATE_PICKER.DATE_RANGE_OPTIONS.LAST_30_DAYS', value: 'last30days' },
+  {
+    label: 'DATE_PICKER.DATE_RANGE_OPTIONS.LAST_3_MONTHS',
+    value: 'last3months',
+  },
+  {
+    label: 'DATE_PICKER.DATE_RANGE_OPTIONS.THIS_WEEK',
+    value: 'thisWeek',
+    separator: true,
+  },
+  {
+    label: 'DATE_PICKER.DATE_RANGE_OPTIONS.MONTH_TO_DATE',
+    value: 'monthToDate',
+  },
+  {
+    label: 'DATE_PICKER.DATE_RANGE_OPTIONS.CUSTOM_RANGE',
+    value: 'custom',
+    separator: true,
+  },
+];
+
 export const DATE_RANGE_TYPES = {
+  TODAY: 'today',
+  YESTERDAY: 'yesterday',
+  LAST_24_HOURS: 'last24hours',
   LAST_7_DAYS: 'last7days',
   LAST_30_DAYS: 'last30days',
   LAST_3_MONTHS: 'last3months',
@@ -208,6 +247,21 @@ export const isHoveringNextDayInRange = (
 // Helper func to determine active date ranges based on user selection
 export const getActiveDateRange = (range, currentDate) => {
   const ranges = {
+    today: () => ({
+      start: startOfDay(currentDate),
+      end: endOfDay(currentDate),
+    }),
+    yesterday: () => {
+      const yesterday = subDays(currentDate, 1);
+      return {
+        start: startOfDay(yesterday),
+        end: endOfDay(yesterday),
+      };
+    },
+    last24hours: () => ({
+      start: subHours(currentDate, 24),
+      end: currentDate,
+    }),
     last7days: () => ({
       start: startOfDay(subDays(currentDate, 6)),
       end: endOfDay(currentDate),

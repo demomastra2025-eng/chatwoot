@@ -27,6 +27,10 @@
     },
     "FILTERS": {
       "APPLY": "Apply filters",
+      "RESET": "Reset filters",
+      "CLEAR_DATE_RANGE": "Clear date range",
+      "CREATED_AT_RANGE": "Created date",
+      "DUE_AT_RANGE": "Due date",
       "DESCRIPTION": "Refine runtime records without leaving the native dashboard workflow.",
       "INCLUDE_ARCHIVED": "Include archived",
       "SEARCH": "Search",

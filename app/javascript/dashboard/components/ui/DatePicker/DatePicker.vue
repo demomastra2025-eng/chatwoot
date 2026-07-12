@@ -26,6 +26,7 @@ import {
   getWeek,
 } from 'date-fns';
 import { useAlert } from 'dashboard/composables';
+import { vOnClickOutside } from '@vueuse/components';
 import DatePickerButton from './components/DatePickerButton.vue';
 import CalendarDateInput from './components/CalendarDateInput.vue';
 import CalendarDateRange from './components/CalendarDateRange.vue';
@@ -33,6 +34,21 @@ import CalendarYear from './components/CalendarYear.vue';
 import CalendarMonth from './components/CalendarMonth.vue';
 import CalendarWeek from './components/CalendarWeek.vue';
 import CalendarFooter from './components/CalendarFooter.vue';
+
+const props = defineProps({
+  active: {
+    type: Boolean,
+    default: true,
+  },
+  inactiveLabel: {
+    type: String,
+    default: '',
+  },
+  presetRanges: {
+    type: Array,
+    default: undefined,
+  },
+});
 
 const emit = defineEmits(['dateRangeChanged']);
 const { t } = useI18n();
@@ -46,23 +62,33 @@ const rangeType = defineModel('rangeType', {
   type: String,
   default: undefined,
 });
-const { LAST_7_DAYS, CUSTOM_RANGE } = DATE_RANGE_TYPES;
+const { LAST_7_DAYS, LAST_24_HOURS, CUSTOM_RANGE } = DATE_RANGE_TYPES;
 const { START_CALENDAR, END_CALENDAR } = CALENDAR_TYPES;
 const { WEEK, MONTH, YEAR } = CALENDAR_PERIODS;
 
+const normalizeSelectedDate = (
+  value,
+  boundary,
+  selectedRangeType = rangeType.value
+) => {
+  if (selectedRangeType === LAST_24_HOURS) return new Date(value);
+  return boundary === 'start' ? startOfDay(value) : endOfDay(value);
+};
+
 const showDatePicker = ref(false);
+const hasPendingSelection = ref(false);
 const calendarViews = ref({ start: WEEK, end: WEEK });
 const currentDate = ref(new Date());
 
 // Use dates from v-model if provided, otherwise default to last 7 days
 const selectedStartDate = ref(
   dateRange.value?.[0]
-    ? startOfDay(dateRange.value[0])
+    ? normalizeSelectedDate(dateRange.value[0], 'start')
     : startOfDay(subDays(currentDate.value, 6)) // LAST_7_DAYS
 );
 const selectedEndDate = ref(
   dateRange.value?.[1]
-    ? endOfDay(dateRange.value[1])
+    ? normalizeSelectedDate(dateRange.value[1], 'end')
     : endOfDay(currentDate.value)
 );
 // Calendar month positioning (left and right calendars)
@@ -112,11 +138,36 @@ const navigationLabel = computed(() => {
 const manualStartDate = ref(selectedStartDate.value);
 const manualEndDate = ref(selectedEndDate.value);
 
+function resetDatePicker() {
+  // Calculate Last 7 days from today
+  const startDate = startOfDay(subDays(currentDate.value, 6));
+  const endDate = endOfDay(currentDate.value);
+
+  selectedStartDate.value = startDate;
+  selectedEndDate.value = endDate;
+
+  // Position calendar to show the months of Last 7 days
+  // Example: If today is Feb 5, Last 7 days = Jan 30 - Feb 5, so show Jan + Feb
+  startCurrentDate.value = startOfMonth(startDate);
+  endCurrentDate.value = isSameMonth(startDate, endDate)
+    ? startOfMonth(addMonths(startDate, 1))
+    : startOfMonth(endDate);
+  selectingEndDate.value = false;
+  selectedRange.value = LAST_7_DAYS;
+  monthOffset.value = 0;
+  calendarViews.value = { start: WEEK, end: WEEK };
+}
+
 // Watcher 1: Sync v-model props from parent component
 // Handles: URL params, parent component updates, rangeType changes
 watch(
-  [rangeType, dateRange],
-  ([newRangeType, newDateRange]) => {
+  [rangeType, dateRange, () => props.active],
+  ([newRangeType, newDateRange, isActive]) => {
+    if (!isActive && !newDateRange) {
+      resetDatePicker();
+      return;
+    }
+
     if (newRangeType && newRangeType !== selectedRange.value) {
       selectedRange.value = newRangeType;
       monthOffset.value = 0;
@@ -134,8 +185,16 @@ watch(
     // When parent provides new dateRange (e.g., from URL params)
     // Skip if navigating with arrows — offset controls dates in that case
     if (newDateRange?.[0] && newDateRange?.[1] && monthOffset.value === 0) {
-      selectedStartDate.value = startOfDay(newDateRange[0]);
-      selectedEndDate.value = endOfDay(newDateRange[1]);
+      selectedStartDate.value = normalizeSelectedDate(
+        newDateRange[0],
+        'start',
+        newRangeType
+      );
+      selectedEndDate.value = normalizeSelectedDate(
+        newDateRange[1],
+        'end',
+        newRangeType
+      );
 
       // Update calendar to show the months of the new date range
       startCurrentDate.value = startOfMonth(newDateRange[0]);
@@ -185,6 +244,7 @@ watch(
 );
 
 const setDateRange = range => {
+  hasPendingSelection.value = true;
   selectedRange.value = range.value;
   monthOffset.value = 0;
   const { start, end } = getActiveDateRange(range.value, currentDate.value);
@@ -245,6 +305,7 @@ const moveCalendar = (calendar, direction, period = MONTH) => {
 };
 
 const selectDate = day => {
+  hasPendingSelection.value = true;
   selectedRange.value = CUSTOM_RANGE;
   monthOffset.value = 0;
   if (!selectingEndDate.value || day < selectedStartDate.value) {
@@ -280,6 +341,7 @@ const openCalendar = (index, calendarType, period = MONTH) => {
 };
 
 const updateManualInput = (newDate, calendarType) => {
+  hasPendingSelection.value = true;
   if (calendarType === START_CALENDAR) {
     selectedStartDate.value = newDate;
     startCurrentDate.value = startOfMonth(newDate);
@@ -294,31 +356,12 @@ const handleManualInputError = message => {
   useAlert(message);
 };
 
-const resetDatePicker = () => {
-  // Calculate Last 7 days from today
-  const startDate = startOfDay(subDays(currentDate.value, 6));
-  const endDate = endOfDay(currentDate.value);
-
-  selectedStartDate.value = startDate;
-  selectedEndDate.value = endDate;
-
-  // Position calendar to show the months of Last 7 days
-  // Example: If today is Feb 5, Last 7 days = Jan 30 - Feb 5, so show Jan + Feb
-  startCurrentDate.value = startOfMonth(startDate);
-  endCurrentDate.value = isSameMonth(startDate, endDate)
-    ? startOfMonth(addMonths(startDate, 1))
-    : startOfMonth(endDate);
-  selectingEndDate.value = false;
-  selectedRange.value = LAST_7_DAYS;
-  monthOffset.value = 0;
-  calendarViews.value = { start: WEEK, end: WEEK };
-};
-
 const emitDateRange = () => {
   if (!isValid(selectedStartDate.value) || !isValid(selectedEndDate.value)) {
     useAlert('Please select a valid time range');
   } else {
     showDatePicker.value = false;
+    hasPendingSelection.value = false;
     emit('dateRangeChanged', [
       selectedStartDate.value,
       selectedEndDate.value,
@@ -343,10 +386,20 @@ const initializeCalendarMonths = () => {
 
 const toggleDatePicker = () => {
   showDatePicker.value = !showDatePicker.value;
-  if (showDatePicker.value) initializeCalendarMonths();
+  if (showDatePicker.value) {
+    hasPendingSelection.value = false;
+    initializeCalendarMonths();
+  }
 };
 
 const closeDatePicker = () => {
+  if (!showDatePicker.value) return;
+
+  if (!hasPendingSelection.value) {
+    showDatePicker.value = false;
+    return;
+  }
+
   if (isValid(selectedStartDate.value) && isValid(selectedEndDate.value)) {
     emitDateRange();
   } else {
@@ -356,8 +409,14 @@ const closeDatePicker = () => {
 </script>
 
 <template>
-  <div class="relative flex-shrink-0 font-inter">
+  <div
+    v-on-click-outside="closeDatePicker"
+    class="relative flex-shrink-0 font-inter"
+  >
     <DatePickerButton
+      :active="props.active"
+      :inactive-label="props.inactiveLabel"
+      :ranges="props.presetRanges"
       :selected-start-date="selectedStartDate"
       :selected-end-date="selectedEndDate"
       :selected-range="selectedRange"
@@ -369,11 +428,11 @@ const closeDatePicker = () => {
     />
     <div
       v-if="showDatePicker"
-      v-on-clickaway="closeDatePicker"
       class="flex absolute top-9 ltr:left-0 rtl:right-0 z-30 shadow-md select-none w-[880px] rounded-2xl bg-n-alpha-3 backdrop-blur-[100px] border-0 outline outline-1 outline-n-container"
     >
       <CalendarDateRange
         :selected-range="selectedRange"
+        :ranges="props.presetRanges"
         @set-range="setDateRange"
       />
       <div

@@ -10,13 +10,21 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
       resource_ids: parse_csv_ids(params[:resource_ids]),
       include_slots: parse_boolean(params[:include_slots]),
       duration_min: params[:duration_min],
-      custom_attribute_filters: custom_attribute_filters_param
+      custom_attribute_filters: custom_attribute_filters_param,
+      filters: appointment_filters
     ).perform
 
     render_payload(Scheduling::PayloadBuilder.calendar(result))
   end
 
   private
+
+  def appointment_filters
+    {
+      statuses: parse_csv_ids(params[:status]),
+      payment_statuses: parse_csv_ids(params[:payment_status])
+    }
+  end
 
   def resolved_view
     view = params[:view].presence || 'week'

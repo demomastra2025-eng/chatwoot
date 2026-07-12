@@ -59,6 +59,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     anchorDate: new Date().toISOString(),
     customAttributeFilters: {},
     currentView: 'week',
+
     initialized: false,
     paymentStatusFilters: [],
     payload: defaultPayload(),
@@ -111,6 +112,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         const parsed = JSON.parse(rawPreferences);
         this.anchorDate = parsed.anchorDate || this.anchorDate;
         this.currentView = parsed.currentView || this.currentView;
+
         this.selectedResourceIds = Array.isArray(parsed.selectedResourceIds)
           ? parsed.selectedResourceIds.map(Number)
           : [];
@@ -129,6 +131,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         JSON.stringify({
           anchorDate: this.anchorDate,
           currentView: this.currentView,
+
           selectedResourceIds: this.selectedResourceIds,
         })
       );
@@ -187,6 +190,11 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     clearQuickFilters() {
       this.statusFilters = [];
       this.paymentStatusFilters = [];
+    },
+
+    resetFilters() {
+      this.clearQuickFilters();
+      this.setCustomAttributeFilters({});
     },
 
     async fetchCalendar(options = {}) {

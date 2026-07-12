@@ -2,6 +2,10 @@
 import { dateRanges } from '../helpers/DatePickerHelper';
 
 defineProps({
+  ranges: {
+    type: Array,
+    default: () => dateRanges,
+  },
   selectedRange: {
     type: String,
     default: '',
@@ -23,9 +27,10 @@ const setDateRange = range => {
       {{ $t('DATE_PICKER.DATE_RANGE_OPTIONS.TITLE') }}
     </h4>
     <div class="flex flex-col items-start w-full">
-      <template v-for="range in dateRanges" :key="range.label">
+      <template v-for="range in ranges" :key="range.label">
         <div v-if="range.separator" class="w-full border-t border-n-strong" />
         <button
+          type="button"
           class="w-full px-5 py-3 text-sm font-medium truncate border-none rounded-none text-start hover:bg-n-alpha-2 dark:hover:bg-n-solid-3"
           :class="
             range.value === selectedRange

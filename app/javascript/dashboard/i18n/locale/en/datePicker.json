@@ -11,6 +11,10 @@
     },
     "DATE_RANGE_OPTIONS": {
       "TITLE": "DATE RANGE",
+      "ALL_TIME": "Any date",
+      "TODAY": "Today",
+      "YESTERDAY": "Yesterday",
+      "LAST_24_HOURS": "Last 24 hours",
       "LAST_7_DAYS": "Last 7 days",
       "LAST_30_DAYS": "Last 30 days",
       "LAST_3_MONTHS": "Last 3 months",

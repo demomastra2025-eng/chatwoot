@@ -96,8 +96,24 @@ describe('createTaskListSortValueResolver', () => {
   const resolveValue = createTaskListSortValueResolver({
     activityTypeLabelByValue: { meeting: 'Meeting' },
     assigneeNameById: { 7: 'Nina Assignee' },
-    priorityLabelByValue: { high: 'High' },
     statusNameById: { 8: 'In Progress' },
+  });
+
+  it('sorts task priorities by business rank instead of translated labels', () => {
+    const tasks = [
+      { id: 1, priority: 'urgent' },
+      { id: 2, priority: 'low' },
+      { id: 3, priority: 'high' },
+      { id: 4, priority: 'none' },
+    ];
+
+    const result = sortListRecords(
+      tasks,
+      { direction: 'asc', key: 'priority' },
+      resolveValue
+    );
+
+    expect(result.map(task => task.id)).toEqual([4, 2, 3, 1]);
   });
 
   it('resolves every visible task list column', () => {
@@ -115,7 +131,7 @@ describe('createTaskListSortValueResolver', () => {
     expect(resolveValue(task, 'activityType')).toBe('meeting');
     expect(resolveValue(task, 'title')).toBe('call client');
     expect(resolveValue(task, 'status')).toBe('in progress');
-    expect(resolveValue(task, 'priority')).toBe('high');
+    expect(resolveValue(task, 'priority')).toBe(3);
     expect(resolveValue(task, 'assignee')).toBe('nina assignee');
     expect(resolveValue(task, 'dueAt')).toBe(
       new Date('2026-03-04T10:00:00Z').getTime()
