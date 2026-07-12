@@ -91,6 +91,7 @@ export default {
         this.virtualPbxConfig?.channel?.provider_kind ||
         this.virtualPbxConfig?.connection?.provider_kind ||
         this.virtualPbxStatusPayload?.provider_kind ||
+        this.$route.query.provider ||
         ''
       );
     },
@@ -322,6 +323,8 @@ export default {
       };
     },
     async addAgents() {
+      if (this.isLoadingVirtualPbx) return;
+
       const isValid = await this.v$.$validate();
       if (!isValid || !this.validateVirtualPbxProfiles()) return;
 
@@ -500,7 +503,8 @@ export default {
         <div class="w-full">
           <NextButton
             type="submit"
-            :is-loading="isCreating"
+            :is-loading="isCreating || isLoadingVirtualPbx"
+            :disabled="isLoadingVirtualPbx"
             solid
             blue
             :label="submitButtonLabel"

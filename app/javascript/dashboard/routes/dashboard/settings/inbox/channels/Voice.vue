@@ -14,6 +14,7 @@ import PageHeader from '../../SettingsSubPageHeader.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
+import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
 
 const { t } = useI18n();
@@ -72,8 +73,12 @@ const isValidSipPort = value => {
 };
 
 const uiFlags = useMapGetter('inboxes/getUIFlags');
+const agentList = useMapGetter('agents/getAgents');
 const isCreatingVirtualPbx = ref(false);
 const isVirtualPbxAdvancedVisible = ref(false);
+const employeeProfiles = ref([]);
+
+store.dispatch('agents/get');
 
 const selectedProvider = computed(() => {
   return Object.values(PROVIDER_TYPES).includes(route.query.provider)
@@ -107,6 +112,29 @@ const isAsteriskAnalogProvider = computed(
   () => selectedVirtualPbxProviderKind.value === 'asterisk_analog'
 );
 const showProviderSelection = computed(() => !selectedProvider.value);
+
+const selectedEmployeeIds = computed(() =>
+  employeeProfiles.value.map(profile => profile.userId)
+);
+
+const selectedEmployeeNames = computed(() =>
+  employeeProfiles.value.map(profile => profile.name)
+);
+
+const employeeMenuItems = computed(() =>
+  (agentList.value || [])
+    .filter(agent => !selectedEmployeeIds.value.includes(Number(agent.id)))
+    .map(agent => ({
+      label:
+        agent.name || agent.available_name || agent.email || `#${agent.id}`,
+      value: Number(agent.id),
+      action: 'select',
+      thumbnail: {
+        name: agent.name,
+        src: agent.thumbnail || agent.avatar_url || '',
+      },
+    }))
+);
 
 const availableProviders = computed(() => [
   {
@@ -273,6 +301,67 @@ function resetProviderSelection() {
   });
 }
 
+function handleEmployeeAdd({ value }) {
+  const userId = Number(value);
+  if (!userId || selectedEmployeeIds.value.includes(userId)) return;
+
+  const agent = (agentList.value || []).find(
+    item => Number(item.id) === userId
+  );
+  employeeProfiles.value.push({
+    userId,
+    name: agent?.name || agent?.available_name || agent?.email || `#${userId}`,
+    internalExtension: '',
+    sipUsername: '',
+    sipPassword: '',
+    enabled: true,
+  });
+}
+
+function handleEmployeeRemove(index) {
+  employeeProfiles.value.splice(index, 1);
+}
+
+function employeeProfilesPayload() {
+  return employeeProfiles.value.map(profile => {
+    const payload = {
+      profile_kind: 'human_operator',
+      user_id: profile.userId,
+      internal_extension: profile.internalExtension.trim(),
+      enabled: profile.enabled !== false,
+    };
+    const sipUsername = profile.sipUsername.trim();
+    const sipPassword = profile.sipPassword.trim();
+    if (sipUsername) payload.sip_username = sipUsername;
+    if (sipPassword) payload.sip_password = sipPassword;
+    return payload;
+  });
+}
+
+function validateEmployeeProfiles() {
+  const missingExtension = employeeProfiles.value.some(
+    profile => !profile.internalExtension.trim()
+  );
+  if (missingExtension) {
+    useAlert(t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.REQUIRED'));
+    return false;
+  }
+
+  const invalidSipPair = employeeProfiles.value.some(profile => {
+    const hasUsername = !!profile.sipUsername.trim();
+    const hasPassword = !!profile.sipPassword.trim();
+    return hasUsername !== hasPassword;
+  });
+  if (invalidSipPair) {
+    useAlert(
+      t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SIP_PAIR_REQUIRED')
+    );
+    return false;
+  }
+
+  return true;
+}
+
 function getVirtualPbxPayload() {
   const providerKind = selectedVirtualPbxProviderKind.value;
   const displayPhoneNumber = kazakhstanState.phoneNumber.trim();
@@ -311,6 +400,10 @@ function getVirtualPbxPayload() {
     payload.metadata.outbound_dial_format = kazakhstanState.outboundDialFormat;
   }
 
+  if (employeeProfiles.value.length) {
+    payload.profiles = employeeProfilesPayload();
+  }
+
   return payload;
 }
 
@@ -340,7 +433,7 @@ async function createKazakhstanChannel() {
   kazakhstanState.phoneNumber = normalizeE164Input(kazakhstanState.phoneNumber);
 
   const isFormValid = await kazakhstanV$.value.$validate();
-  if (!isFormValid) return;
+  if (!isFormValid || !validateEmployeeProfiles()) return;
 
   isCreatingVirtualPbx.value = true;
   try {
@@ -363,9 +456,13 @@ async function createKazakhstanChannel() {
     }
 
     useAlert(t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CREATE_SUCCESS'));
+    const nextStep = employeeProfiles.value.length ? 'finish' : 'agents';
     router.replace({
-      name: getInboxFlowRouteName(route, 'agents'),
+      name: getInboxFlowRouteName(route, nextStep),
       params: agentsRouteParams(inboxId),
+      ...(nextStep === 'agents'
+        ? { query: { provider: selectedVirtualPbxProviderKind.value } }
+        : {}),
     });
   } catch (error) {
     handleCreateError(error);
@@ -583,11 +680,103 @@ async function createTwilioChannel() {
           </div>
         </div>
 
-        <p class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11">
-          {{
-            t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT')
-          }}
-        </p>
+        <div class="rounded-xl border border-n-weak p-4 space-y-4">
+          <div class="space-y-1">
+            <h3 class="text-sm font-medium text-n-slate-12">
+              {{
+                t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE')
+              }}
+            </h3>
+            <p class="text-sm text-n-slate-11">
+              {{
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT'
+                )
+              }}
+            </p>
+          </div>
+
+          <div
+            class="rounded-xl outline outline-1 -outline-offset-1 outline-n-weak hover:outline-n-strong px-2 py-2"
+          >
+            <TagInput
+              :model-value="selectedEmployeeNames"
+              :placeholder="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.SELECT_PLACEHOLDER'
+                )
+              "
+              :menu-items="employeeMenuItems"
+              show-dropdown
+              skip-label-dedup
+              @add="handleEmployeeAdd"
+              @remove="handleEmployeeRemove"
+            />
+          </div>
+
+          <div v-if="employeeProfiles.length" class="flex flex-col gap-3">
+            <div
+              v-for="profile in employeeProfiles"
+              :key="profile.userId"
+              class="grid grid-cols-1 gap-3 rounded-lg border border-n-weak p-3 md:grid-cols-4"
+            >
+              <div class="flex flex-col gap-1 text-sm text-n-slate-12">
+                <span class="font-medium">
+                  {{
+                    t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.EMPLOYEE_LABEL'
+                    )
+                  }}
+                </span>
+                <span class="min-h-[38px] rounded-lg bg-n-slate-2 px-3 py-2">
+                  {{ profile.name }}
+                </span>
+              </div>
+
+              <Input
+                v-model="profile.internalExtension"
+                :label="
+                  t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL')
+                "
+                :placeholder="
+                  t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.PLACEHOLDER'
+                  )
+                "
+              />
+
+              <Input
+                v-model="profile.sipUsername"
+                :label="
+                  t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+                  )
+                "
+                :placeholder="
+                  t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.PLACEHOLDER'
+                  )
+                "
+              />
+
+              <Input
+                v-model="profile.sipPassword"
+                type="password"
+                autocomplete="new-password"
+                :label="
+                  t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+                  )
+                "
+                :placeholder="
+                  t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.PLACEHOLDER'
+                  )
+                "
+              />
+            </div>
+          </div>
+        </div>
 
         <div>
           <NextButton

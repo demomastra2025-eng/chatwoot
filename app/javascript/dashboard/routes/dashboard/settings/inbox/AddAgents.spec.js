@@ -33,7 +33,7 @@ vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
 }));
 
-const buildWrapper = ({ agents = [] } = {}) =>
+const buildWrapper = ({ agents = [], routeQuery = {} } = {}) =>
   shallowMount(AddAgents, {
     global: {
       mocks: {
@@ -41,7 +41,7 @@ const buildWrapper = ({ agents = [] } = {}) =>
         $route: {
           name: 'settings_inboxes_add_agents',
           params: { accountId: '530', inbox_id: '4690' },
-          query: {},
+          query: routeQuery,
         },
         $store: {
           dispatch: vi.fn(),
@@ -246,6 +246,31 @@ describe('AddAgents', () => {
     );
     expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
+    );
+  });
+
+  it('uses the create-flow provider while status is unavailable and rejects an empty profile', async () => {
+    const wrapper = buildWrapper({
+      agents: [{ id: 7, name: 'Agent One' }],
+      routeQuery: { provider: 'sipuni' },
+    });
+    await flushPromises();
+
+    wrapper.vm.selectedAgentIds = [7];
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.vm.isVirtualPbxProfileAssignmentInbox).toBe(true);
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
+    );
+
+    await wrapper.vm.addAgents();
+    await flushPromises();
+
+    expect(inboxMembersUpdateMock).not.toHaveBeenCalled();
+    expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.REQUIRED'
     );
   });
 });
