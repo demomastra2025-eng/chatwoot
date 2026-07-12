@@ -1,5 +1,9 @@
 type: object
 properties:
+  source_id:
+    type: string
+    description: Stable external contact identifier used during creation. Reusing it makes contact creation idempotent.
+    example: 'salebot-contact-123'
   identifier:
     type: string
     description: External identifier of the contact

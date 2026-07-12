@@ -35,6 +35,20 @@ RSpec.describe Contacts::ChannelProfileUpsertService do
     )
   end
 
+  it 'accepts ActionController::Parameters from public API controllers' do
+    profile = described_class.new(
+      contact_inbox: contact_inbox,
+      profile_attributes: ActionController::Parameters.new(
+        identifier: 'external-contact-1',
+        name: 'API Contact'
+      ).permit(:identifier, :name)
+    ).perform
+
+    expect(profile).to be_persisted
+    expect(profile.identifier).to eq('external-contact-1')
+    expect(profile.display_name).to eq('API Contact')
+  end
+
   it 'updates the same profile without clearing existing values when a partial payload arrives' do
     described_class.new(
       contact_inbox: contact_inbox,

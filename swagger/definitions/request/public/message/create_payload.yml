@@ -8,3 +8,7 @@ properties:
     type: string
     description: Temporary identifier which will be passed back via websockets
     example: '1234567890'
+  source_id:
+    type: string
+    description: Stable external message identifier. Reusing it in the same conversation returns the existing message.
+    example: 'salebot-message-123'

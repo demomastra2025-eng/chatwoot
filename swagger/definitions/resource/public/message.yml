@@ -23,6 +23,15 @@ properties:
   conversation_id:
     type: integer
     description: Display Id of the conversation the message belongs to
+  source_id:
+    type:
+      - string
+      - 'null'
+    description: External source identifier of the message
+  status:
+    type: string
+    enum: [sent, delivered, read, failed]
+    description: Delivery status of the message
   attachments:
     type: array
     description: Attachments if any

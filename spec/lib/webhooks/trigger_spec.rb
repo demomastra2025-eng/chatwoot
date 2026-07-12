@@ -79,20 +79,26 @@ describe Webhooks::Trigger do
       end
     end
 
-    it 'updates message status if webhook fails for message-created event' do
+    it 'raises retryable API inbox errors without failing a message immediately' do
       payload = { event: 'message_created', conversation: { id: conversation.id }, id: message.id }
       error = SafeFetch::HttpError.new('500 Internal Server Error')
       expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
 
-      expect { trigger.execute(url, payload, webhook_type) }.to change { message.reload.status }.from('sent').to('failed')
+      expect { trigger.execute(url, payload, webhook_type) }.to raise_error(Webhooks::Trigger::RetryableError) do |raised|
+        expect(raised.status).to eq(500)
+      end
+      expect(message.reload.status).to eq('sent')
     end
 
-    it 'updates message status if webhook fails for message-updated event' do
+    it 'retries API inbox network failures' do
       payload = { event: 'message_updated', conversation: { id: conversation.id }, id: message.id }
-      error = SafeFetch::HttpError.new('500 Internal Server Error')
+      error = SafeFetch::FetchError.new('network failure')
       expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
 
-      expect { trigger.execute(url, payload, webhook_type) }.to change { message.reload.status }.from('sent').to('failed')
+      expect { trigger.execute(url, payload, webhook_type) }.to raise_error(Webhooks::Trigger::RetryableError) do |raised|
+        expect(raised.status).to be_nil
+      end
+      expect(message.reload.status).to eq('sent')
     end
 
     context 'when webhook type is agent bot' do
@@ -168,21 +174,34 @@ describe Webhooks::Trigger do
       end
     end
 
-    it 'handles 500 without raising for non-agent webhooks' do
+    it 'fails fast for non-retryable API inbox errors' do
       payload = { event: 'message_created', conversation: { id: conversation.id }, id: message.id }
-      error = SafeFetch::HttpError.new('500 Internal Server Error')
+      error = SafeFetch::HttpError.new('400 Bad Request')
       expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
 
       expect { trigger.execute(url, payload, webhook_type) }.not_to raise_error
       expect(message.reload.status).to eq('failed')
     end
 
-    it 'does not update message status if webhook fails for other events' do
+    it 'does not rewrite an already failed message after a message-updated webhook failure' do
+      message.update!(status: :failed, external_error: 'original failure')
+      original_updated_at = message.reload.updated_at
+      payload = { event: 'message_updated', conversation: { id: conversation.id }, id: message.id }
+      error = SafeFetch::HttpError.new('400 Bad Request')
+
+      described_class.new(url, payload, webhook_type).handle_failure(error)
+
+      expect(message.reload.updated_at).to eq(original_updated_at)
+      expect(message.external_error).to eq('original failure')
+    end
+
+    it 'retries failures for other API inbox events without changing message status' do
       payload = { event: 'conversation_created', conversation: { id: conversation.id }, id: message.id }
       error = SafeFetch::FetchError.new('network failure')
       expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
 
-      expect { trigger.execute(url, payload, webhook_type) }.not_to(change { message.reload.status })
+      expect { trigger.execute(url, payload, webhook_type) }.to raise_error(Webhooks::Trigger::RetryableError)
+      expect(message.reload.status).to eq('sent')
     end
   end
 

@@ -1,10 +1,19 @@
 require 'rails_helper'
 
 RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request do
-  let!(:api_channel) { create(:channel_api) }
-  let!(:contact) { create(:contact, phone_number: '+324234324', email: 'dfsadf@sfsda.com') }
+  let!(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
+  let!(:api_channel) { create(:channel_api, account: account) }
+  let!(:contact) { create(:contact, account: account, phone_number: '+324234324', email: 'dfsadf@sfsda.com') }
   let!(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: api_channel.inbox) }
-  let!(:conversation)  { create(:conversation, contact: contact, contact_inbox: contact_inbox) }
+  let!(:conversation) do
+    create(
+      :conversation,
+      account: account,
+      inbox: api_channel.inbox,
+      contact: contact,
+      contact_inbox: contact_inbox
+    )
+  end
 
   describe 'GET /public/api/v1/inboxes/{identifier}/contact/{source_id}/conversations/{conversation_id}/messages' do
     it 'return the messages for that conversation' do
@@ -26,6 +35,50 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
       expect(response).to have_http_status(:success)
       data = response.parsed_body
       expect(data['content']).to eq('hello')
+      expect(data['status']).to eq('sent')
+    end
+
+    it 'persists source id and reuses the same message when the request is retried' do
+      path = "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{contact_inbox.source_id}/conversations/" \
+             "#{conversation.display_id}/messages"
+      params = { content: 'hello', source_id: 'salebot-message-1' }
+
+      expect do
+        post path, params: params
+        expect(response).to have_http_status(:success)
+        first_response = response.parsed_body
+
+        post path, params: params
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['id']).to eq(first_response['id'])
+        expect(response.parsed_body['source_id']).to eq('salebot-message-1')
+      end.to change(conversation.messages, :count).by(1)
+    end
+
+    it 'rejects a source id already used by another conversation in the inbox' do
+      other_contact_inbox = create(:contact_inbox, inbox: api_channel.inbox)
+      other_conversation = create(
+        :conversation,
+        account: api_channel.account,
+        inbox: api_channel.inbox,
+        contact: other_contact_inbox.contact,
+        contact_inbox: other_contact_inbox
+      )
+      create(
+        :message,
+        account: api_channel.account,
+        conversation: other_conversation,
+        inbox: api_channel.inbox,
+        source_id: 'salebot-message-2'
+      )
+
+      expect do
+        post "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{contact_inbox.source_id}/conversations/" \
+             "#{conversation.display_id}/messages",
+             params: { content: 'hello', source_id: 'salebot-message-2' }
+      end.not_to change(conversation.messages, :count)
+
+      expect(response).to have_http_status(:conflict)
     end
 
     it 'does not create the message' do

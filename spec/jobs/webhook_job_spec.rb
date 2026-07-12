@@ -27,5 +27,36 @@ RSpec.describe WebhookJob do
       expect(Webhooks::Trigger).to receive(:execute).with(url, payload, webhook_type, secret: nil, delivery_id: nil)
       perform_enqueued_jobs { job }
     end
+
+    it 'retries transient failures and handles failure after retries are exhausted' do
+      retryable_error = Webhooks::Trigger::RetryableError.new(status: 500, message: '500 Internal Server Error')
+      expect(Webhooks::Trigger).to receive(:execute).with(
+        url,
+        payload,
+        webhook_type,
+        secret: 'webhook-secret',
+        delivery_id: 'delivery-1'
+      ).exactly(5).times.and_raise(retryable_error)
+      trigger_instance = instance_double(Webhooks::Trigger, handle_failure: true)
+      expect(Webhooks::Trigger).to receive(:new).with(
+        url,
+        payload,
+        webhook_type,
+        secret: 'webhook-secret',
+        delivery_id: 'delivery-1'
+      ).and_return(trigger_instance)
+
+      expect(trigger_instance).to receive(:handle_failure).with(instance_of(Webhooks::Trigger::RetryableError)).once
+
+      perform_enqueued_jobs do
+        described_class.perform_later(
+          url,
+          payload,
+          webhook_type,
+          secret: 'webhook-secret',
+          delivery_id: 'delivery-1'
+        )
+      end
+    end
   end
 end

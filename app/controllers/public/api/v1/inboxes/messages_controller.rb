@@ -6,11 +6,19 @@ class Public::Api::V1::Inboxes::MessagesController < Public::Api::V1::InboxesCon
   end
 
   def create
+    @message = message_by_source_id
+    return handle_existing_source_id if @message
+
     @message = @conversation.messages.new(message_params)
     return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?
 
     build_attachment
     @message.save!
+  rescue ActiveRecord::RecordNotUnique
+    @message = message_by_source_id
+    return handle_existing_source_id if @message
+
+    raise
   end
 
   def update
@@ -58,7 +66,7 @@ class Public::Api::V1::Inboxes::MessagesController < Public::Api::V1::InboxesCon
   end
 
   def permitted_params
-    params.permit(:content, :echo_id)
+    params.permit(:content, :echo_id, :source_id)
   end
 
   def set_message
@@ -72,8 +80,22 @@ class Public::Api::V1::Inboxes::MessagesController < Public::Api::V1::InboxesCon
       content: permitted_params[:content],
       inbox_id: @conversation.inbox_id,
       echo_id: permitted_params[:echo_id],
+      source_id: permitted_params[:source_id].presence,
       message_type: :incoming
     }
+  end
+
+  def message_by_source_id
+    source_id = permitted_params[:source_id].presence
+    return if source_id.blank?
+
+    @conversation.inbox.messages.find_by(source_id: source_id)
+  end
+
+  def handle_existing_source_id
+    return if @message.conversation_id == @conversation.id
+
+    render json: { error: 'source_id is already used by another conversation' }, status: :conflict
   end
 
   def check_csat_locked

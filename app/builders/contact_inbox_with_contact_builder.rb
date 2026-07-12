@@ -23,9 +23,9 @@ class ContactInboxWithContactBuilder
 
     ActiveRecord::Base.transaction(requires_new: true) do
       build_contact_with_contact_inbox
+      upsert_channel_profile
     end
     update_contact_avatar(@contact) unless skip_runtime_events || @contact.avatar.attached?
-    upsert_channel_profile
     @contact_inbox
   end
 

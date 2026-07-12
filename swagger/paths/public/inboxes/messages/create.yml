@@ -23,3 +23,9 @@ responses:
       application/json:
         schema:
           $ref: '#/components/schemas/bad_request_error'
+  '409':
+    description: The source_id is already used by another conversation in this inbox
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/bad_request_error'

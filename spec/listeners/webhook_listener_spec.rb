@@ -1,7 +1,7 @@
 require 'rails_helper'
 describe WebhookListener do
   let(:listener) { described_class.instance }
-  let!(:account) { create(:account) }
+  let!(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
   let(:report_identity) { Reports::UpdateAccountIdentity.new(account, Time.zone.now) }
   let!(:user) { create(:user, account: account) }
   let!(:inbox) { create(:inbox, account: account) }

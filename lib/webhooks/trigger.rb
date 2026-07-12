@@ -1,6 +1,7 @@
 class Webhooks::Trigger
   SUPPORTED_ERROR_HANDLE_EVENTS = %w[message_created message_updated].freeze
   RETRYABLE_AGENT_BOT_STATUSES = [429, 500].freeze
+  RETRYABLE_API_INBOX_STATUSES = [408, 425, 429].freeze
 
   class RetryableError < StandardError
     attr_reader :status
@@ -26,7 +27,7 @@ class Webhooks::Trigger
   def execute
     perform_request
   rescue StandardError => e
-    raise RetryableError.new(status: http_status(e), message: e.message) if retryable_agent_bot_error?(e)
+    raise RetryableError.new(status: http_status(e), message: e.message) if retryable_webhook_error?(e)
 
     handle_failure(e)
   end
@@ -106,6 +107,8 @@ class Webhooks::Trigger
   end
 
   def update_message_status(error)
+    return if message.failed?
+
     Messages::StatusUpdateService.new(message, 'failed', error.message).perform
   end
 
@@ -142,6 +145,18 @@ class Webhooks::Trigger
 
   def retryable_agent_bot_error?(error)
     @webhook_type == :agent_bot_webhook && RETRYABLE_AGENT_BOT_STATUSES.include?(http_status(error))
+  end
+
+  def retryable_api_inbox_error?(error)
+    return false unless @webhook_type == :api_inbox_webhook
+    return true if error.is_a?(SafeFetch::FetchError)
+
+    status = http_status(error)
+    status.present? && (RETRYABLE_API_INBOX_STATUSES.include?(status) || status >= 500)
+  end
+
+  def retryable_webhook_error?(error)
+    retryable_agent_bot_error?(error) || retryable_api_inbox_error?(error)
   end
 
   def http_status(error)

@@ -532,6 +532,12 @@ RSpec.describe Message do
   end
 
   context 'with webhook_data' do
+    it 'includes the delivery status' do
+      message = create(:message, status: :delivered)
+
+      expect(message.webhook_data[:status]).to eq('delivered')
+    end
+
     it 'contains the message attachment when attachment is present' do
       message = create(:message)
       attachment = message.attachments.new(account_id: message.account_id, file_type: :image)

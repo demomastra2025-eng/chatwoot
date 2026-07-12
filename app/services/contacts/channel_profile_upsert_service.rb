@@ -13,7 +13,7 @@ class Contacts::ChannelProfileUpsertService
   private
 
   def attributes
-    @attributes ||= (profile_attributes || {}).with_indifferent_access
+    @attributes ||= (profile_attributes || {}).to_h.with_indifferent_access
   end
 
   def profile_attributes_for(profile)
