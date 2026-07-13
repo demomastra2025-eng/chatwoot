@@ -13,6 +13,7 @@ const {
   routeMock,
   routeParamsMock,
   routerPushMock,
+  startOutboundBrowserCallMock,
   stopMicrophonePrewarmMock,
   storeMock,
 } = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const {
   routeMock: { name: undefined, params: { accountId: 530 } },
   routeParamsMock: { accountId: 530 },
   routerPushMock: vi.fn(),
+  startOutboundBrowserCallMock: vi.fn(),
   stopMicrophonePrewarmMock: vi.fn(),
   storeMock: {
     getters: {},
@@ -61,6 +63,10 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
     prewarmMicrophone: prewarmMicrophoneMock,
     stopMicrophonePrewarm: stopMicrophonePrewarmMock,
   },
+}));
+
+vi.mock('dashboard/api/channel/voice/outboundCallCoordinator', () => ({
+  startOutboundBrowserCall: startOutboundBrowserCallMock,
 }));
 
 const voiceInbox = (overrides = {}) => ({
@@ -139,6 +145,11 @@ describe('VoiceCallButton', () => {
     stopMicrophonePrewarmMock.mockReturnValue({
       provider: 'sipuni',
       stopped: true,
+    });
+    startOutboundBrowserCallMock.mockImplementation(async ({ onJoined }) => {
+      const result = { calling: true, stage: 'calling' };
+      await onJoined?.(result);
+      return result;
     });
   });
 
@@ -223,6 +234,42 @@ describe('VoiceCallButton', () => {
         }),
       ],
     ]);
+  });
+
+  it('starts the browser SIP attempt directly with the prepared session scope', async () => {
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:17',
+      sipProfileId: 17,
+      callingSupported: true,
+      registered: true,
+    });
+    const { wrapper } = mountComponent();
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(startOutboundBrowserCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call: expect.objectContaining({
+          callSid: 'call-ref-1',
+          browserStartState: 'preparing',
+          janusSessionKey: 'sip_profile:17',
+          sipProfileId: 17,
+        }),
+        sessionScope: expect.objectContaining({
+          sessionKey: 'sip_profile:17',
+          sipProfileId: 17,
+        }),
+      })
+    );
+    expect(useCallsStore().calls[0]).toEqual(
+      expect.objectContaining({
+        callSid: 'call-ref-1',
+        browserJoined: true,
+        browserStartState: 'calling',
+      })
+    );
   });
 
   it('emits success when local post-processing fails after API initiation', async () => {

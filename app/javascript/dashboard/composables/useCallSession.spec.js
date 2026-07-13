@@ -989,6 +989,38 @@ describe('useCallSession', () => {
     ]);
   });
 
+  it('maps Janus outbound stages to the existing customer-leg UI model', async () => {
+    let stageHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:stage') stageHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:local:staged-outbound',
+      provider: 'sipuni',
+      callDirection: 'outbound',
+      browserStartState: 'preparing',
+    });
+
+    mountUseCallSession();
+    stageHandler?.({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'sipuni:local:staged-outbound',
+        stage: 'progress',
+      },
+    });
+
+    expect(callsStore.calls[0]).toEqual(
+      expect.objectContaining({
+        browserStartState: 'ringing',
+        callEvent: 'callee_ringing',
+        callLeg: 'callee',
+        rawStatus: 'ringing',
+      })
+    );
+  });
+
   it('still releases an active browser SIP call when the local RTC hangup fails', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

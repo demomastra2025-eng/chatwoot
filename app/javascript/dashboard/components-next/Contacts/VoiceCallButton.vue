@@ -9,6 +9,7 @@ import { useAlert } from 'dashboard/composables';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import { useCallsStore } from 'dashboard/stores/calls';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
+import { startOutboundBrowserCall } from 'dashboard/api/channel/voice/outboundCallCoordinator';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -30,6 +31,7 @@ const attrs = useAttrs();
 const route = useRoute();
 const router = useRouter();
 const store = useStore();
+const callsStore = useCallsStore();
 
 const { t } = useI18n();
 
@@ -66,8 +68,23 @@ const shouldRender = computed(() => hasVoiceInboxes.value && !!props.phone);
 const isInitiatingCall = computed(() => {
   return contactsUiFlags.value?.isInitiatingCall || false;
 });
+const hasOngoingBrowserCall = computed(() =>
+  callsStore.calls.some(call => {
+    const startState = call.browserStartState || call.browser_start_state;
+    return (
+      call.isActive ||
+      (call.callDirection === 'outbound' &&
+        (call.browserJoined ||
+          ['preparing', 'calling', 'ringing'].includes(startState)))
+    );
+  })
+);
 const isCallButtonBusy = computed(
-  () => props.disabled || isPreparingCall.value || isInitiatingCall.value
+  () =>
+    props.disabled ||
+    isPreparingCall.value ||
+    isInitiatingCall.value ||
+    hasOngoingBrowserCall.value
 );
 
 const sameValue = (left, right) =>
@@ -183,7 +200,7 @@ const callSessionOperatorInternalExtension = callSession => {
 };
 
 const prepareBrowserSipWebphone = async inbox => {
-  if (!isBrowserSipInbox(inbox)) return true;
+  if (!isBrowserSipInbox(inbox)) return { ready: true };
 
   const provider = inbox.provider;
   const webphoneScope = { provider, inboxId: inbox.id };
@@ -213,7 +230,7 @@ const prepareBrowserSipWebphone = async inbox => {
       session?.browserJoinSupported ?? session?.browser_join_supported;
     if (browserJoinSupported === false) {
       stopMicrophonePrewarm(sessionScope);
-      return true;
+      return { ready: true, browserJoinSupported: false, sessionScope };
     }
 
     if (!microphone) microphone = await prewarmMicrophone(sessionScope);
@@ -224,12 +241,12 @@ const prepareBrowserSipWebphone = async inbox => {
       session?.registered !== false &&
       microphone?.prewarmed !== false;
     if (!ready) stopMicrophonePrewarm(sessionScope);
-    return ready;
+    return { ready, browserJoinSupported: true, sessionScope };
   } catch (error) {
     stopMicrophonePrewarm(webphoneScope);
     // eslint-disable-next-line no-console
     console.warn('Failed to prepare browser SIP webphone:', error);
-    return false;
+    return { ready: false, sessionScope: webphoneScope };
   }
 };
 
@@ -239,8 +256,8 @@ const startCall = async inbox => {
   isPreparingCall.value = true;
   let callInitiated = false;
   try {
-    const webphoneReady = await prepareBrowserSipWebphone(inbox);
-    if (!webphoneReady) {
+    const webphonePreparation = await prepareBrowserSipWebphone(inbox);
+    if (!webphonePreparation.ready) {
       useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'));
       return;
     }
@@ -259,10 +276,12 @@ const startCall = async inbox => {
     const callSession = response?.call_session || response?.callSession || {};
     const browserJoinSupported =
       response?.browser_join_supported ?? response?.browserJoinSupported;
-
-    // Add call to store immediately so widget shows
-    const callsStore = useCallsStore();
-    callsStore.addCall({
+    const shouldStartBrowserSip =
+      isBrowserSipInbox(inbox) &&
+      webphonePreparation.browserJoinSupported !== false &&
+      browserJoinSupported !== false;
+    const sessionScope = webphonePreparation.sessionScope || {};
+    const call = {
       callSid,
       status: 'created',
       callEvent: 'created',
@@ -273,16 +292,41 @@ const startCall = async inbox => {
       provider: inbox.provider,
       callDirection: 'outbound',
       browserJoinSupported,
+      browserStartState: shouldStartBrowserSip ? 'preparing' : null,
+      janusSessionKey: sessionScope.sessionKey,
+      sipProfileId: sessionScope.sipProfileId,
       fromNumber:
         callSession.from_number || callSession.fromNumber || inbox.phone_number,
       toNumber: callSession.to_number || callSession.toNumber || props.phone,
       operatorCandidates: callSessionOperatorCandidates(callSession),
       operatorInternalExtension:
         callSessionOperatorInternalExtension(callSession),
-    });
+    };
 
+    callsStore.addCall(call);
     useAlert(t('CONTACT_PANEL.CALL_INITIATED'));
     navigateToConversation(response);
+
+    if (shouldStartBrowserSip) {
+      try {
+        await startOutboundBrowserCall({
+          call,
+          sessionScope,
+          onJoined: result => {
+            callsStore.markBrowserJoined(callSid, inbox.provider);
+            callsStore.addCall({
+              ...call,
+              browserStartState:
+                result?.stage === 'progress' ? 'ringing' : 'calling',
+            });
+          },
+          onFailed: () => callsStore.dismissCall(callSid),
+        });
+      } catch (error) {
+        Sentry.captureException(error);
+        useAlert(t('CONVERSATION.VOICE_WIDGET.OUTGOING_START_FAILED'));
+      }
+    }
   } catch (error) {
     if (callInitiated) {
       Sentry.captureException(error);

@@ -218,6 +218,23 @@ describe('FloatingCallWidget', () => {
     wrapper.unmount();
   });
 
+  it('does not auto-join an outbound call card', async () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:outbound-direct-start',
+        callDirection: 'outbound',
+        status: 'created',
+        browserJoined: false,
+      },
+    ];
+
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(mockSession.joinCall).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it('shows outside-browser operator, direction, route, and close action', async () => {
     mockSession.incomingCalls = [
       {

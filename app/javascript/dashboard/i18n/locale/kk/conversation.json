@@ -354,7 +354,7 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Кіріс қоңырау",
       "OUTGOING_CALL": "Шығыс қоңырау",
-      "OUTGOING_CONNECTING_OPERATOR": "Connecting the operator",
+      "OUTGOING_CONNECTING_OPERATOR": "Телефонды қосып жатырмыз",
       "OUTGOING_CALLING_CUSTOMER": "Calling the customer",
       "OUTGOING_CLIENT_RINGING": "Customer is ringing",
       "INBOUND_DIRECTION": "Кіріс",
@@ -372,6 +372,8 @@
       "NOT_ANSWERED_YET": "Әлі жауап берілген жоқ",
       "HANDLED_IN_ANOTHER_TAB": "Басқа қойындыда өңделіп жатыр",
       "BROWSER_CALLING_UNAVAILABLE": "Бұл желі үшін браузердегі қоңырау қолжетімсіз. Диалог ашылады.",
+      "OUTGOING_START_FAILED": "Қоңырауды бастау мүмкін болмады. Телефон қайта қосылуда — бірнеше секундтан кейін қайталап көріңіз.",
+      "CANCEL_CALL": "Қоңырауды болдырмау",
       "REJECT_CALL": "Қабылдамау",
       "CALL": "Қоңырау шалу",
       "JOIN_CALL": "Қоңырауға қосылу",

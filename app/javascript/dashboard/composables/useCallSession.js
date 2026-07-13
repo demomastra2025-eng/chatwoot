@@ -390,19 +390,24 @@ export function useCallSession() {
     };
   };
 
-  const failNativeOutboundWithoutSipStart = async (
+  const failNativeOutboundStart = async (
     callSid,
-    { provider } = {}
+    { provider, error = null } = {}
   ) => {
+    const reason =
+      error?.reason ||
+      (error?.sipCallSent
+        ? 'sip_outbound_start_failed'
+        : 'sip_invite_not_received');
     await releaseBrowserSipCall(callSid, {
       status: 'failed',
-      reason: 'sip_invite_not_received',
+      reason,
     });
     callsStore.dismissCall(callSid);
     return {
       provider,
       joinSupported: false,
-      reason: 'sip_invite_not_received',
+      reason,
       callSid,
     };
   };
@@ -462,6 +467,38 @@ export function useCallSession() {
     if (!call?.callSid) return;
 
     callsStore.setCallActive(call.callSid);
+  };
+
+  const handleClientStage = event => {
+    const detail = event?.detail || {};
+    if (detail.aiBridge || detail.callMode === 'ai') return;
+
+    const call = findDisconnectedBrowserSipCall(event);
+    if (!call?.callSid || !isOutboundCallDirection(call.callDirection)) return;
+
+    const stage = detail.stage;
+    const updates = {
+      callSid: call.callSid,
+      browserStartState: stage,
+    };
+    if (['call_sent', 'calling'].includes(stage)) {
+      Object.assign(updates, { callEvent: 'operator_answered' });
+    } else if (stage === 'progress') {
+      Object.assign(updates, {
+        callEvent: 'callee_ringing',
+        callLeg: 'callee',
+        rawStatus: 'ringing',
+        browserStartState: 'ringing',
+      });
+    } else if (stage === 'accepted') {
+      Object.assign(updates, {
+        callEvent: 'callee_answered',
+        callLeg: 'callee',
+        rawStatus: 'answered',
+        browserStartState: 'connected',
+      });
+    }
+    callsStore.addCall(updates);
   };
 
   const browserSipDisconnectRelease = (call, detail = {}) => {
@@ -869,6 +906,7 @@ export function useCallSession() {
       handleClientDisconnect
     );
     WebphoneClient.addEventListener('call:incoming', handleClientIncoming);
+    WebphoneClient.addEventListener('call:stage', handleClientStage);
     emitter.on(
       BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED,
       handleWebphoneConfigChanged
@@ -893,6 +931,7 @@ export function useCallSession() {
     );
     WebphoneClient.removeEventListener('call:connected', handleClientConnected);
     WebphoneClient.removeEventListener('call:incoming', handleClientIncoming);
+    WebphoneClient.removeEventListener('call:stage', handleClientStage);
   });
 
   const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
@@ -1113,8 +1152,9 @@ export function useCallSession() {
               };
             }
 
-            return failNativeOutboundWithoutSipStart(callSid, {
+            return failNativeOutboundStart(callSid, {
               provider: resolvedProvider,
+              error,
             });
           }
 
@@ -1142,7 +1182,7 @@ export function useCallSession() {
               };
             }
 
-            return failNativeOutboundWithoutSipStart(callSid, {
+            return failNativeOutboundStart(callSid, {
               provider: resolvedProvider,
             });
           }
@@ -1224,8 +1264,9 @@ export function useCallSession() {
           };
         }
 
-        return failNativeOutboundWithoutSipStart(callSid, {
+        return failNativeOutboundStart(callSid, {
           provider: fallbackProvider,
+          error,
         });
       }
 

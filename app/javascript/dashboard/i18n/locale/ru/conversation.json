@@ -390,7 +390,7 @@
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Входящий звонок",
       "OUTGOING_CALL": "Исходящий звонок",
-      "OUTGOING_CONNECTING_OPERATOR": "Подключаем оператора",
+      "OUTGOING_CONNECTING_OPERATOR": "Подключаем телефон",
       "OUTGOING_CALLING_CUSTOMER": "Звоним клиенту",
       "OUTGOING_CLIENT_RINGING": "Клиенту идёт вызов",
       "INBOUND_DIRECTION": "Входящий",
@@ -409,6 +409,8 @@
       "NOT_ANSWERED_YET": "Пока нет ответа",
       "HANDLED_IN_ANOTHER_TAB": "Обрабатывается в другой вкладке",
       "BROWSER_CALLING_UNAVAILABLE": "Для этой линии звонок в браузере недоступен. Открываем диалог.",
+      "OUTGOING_START_FAILED": "Не удалось начать звонок. Телефон переподключается — повторите через несколько секунд.",
+      "CANCEL_CALL": "Отменить звонок",
       "REJECT_CALL": "Отклонить",
       "CALL": "Позвонить",
       "JOIN_CALL": "Присоединиться к звонку",

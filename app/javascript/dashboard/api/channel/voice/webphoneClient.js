@@ -11,6 +11,7 @@ const FORWARDED_EVENTS = [
   'call:disconnected',
   'call:incoming',
   'call:registered',
+  'call:stage',
   'call:unregistered',
 ];
 

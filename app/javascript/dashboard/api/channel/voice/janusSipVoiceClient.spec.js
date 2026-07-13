@@ -6,7 +6,9 @@ const {
   janusDestroyMock,
   pluginDetachMock,
   pluginSendMock,
+  pluginHangupMock,
   pluginState,
+  pluginHandleState,
   janusAiMediaBridgeInstances,
   uploadRecordingMock,
   updatePresenceMock,
@@ -15,7 +17,9 @@ const {
   janusDestroyMock: vi.fn(),
   pluginDetachMock: vi.fn(),
   pluginSendMock: vi.fn(),
+  pluginHangupMock: vi.fn(),
   pluginState: { options: null },
+  pluginHandleState: { createOfferImplementation: null },
   janusAiMediaBridgeInstances: [],
   uploadRecordingMock: vi.fn(() => Promise.resolve({})),
   updatePresenceMock: vi.fn(() => Promise.resolve()),
@@ -40,9 +44,13 @@ vi.mock('janus-gateway', () => {
       options.success?.({
         send: pluginSendMock,
         detach: pluginDetachMock,
-        hangup: vi.fn(),
-        createOffer: ({ success } = {}) => {
-          success?.({ type: 'offer', sdp: 'mock-sdp' });
+        hangup: pluginHangupMock,
+        createOffer: offerOptions => {
+          if (pluginHandleState.createOfferImplementation) {
+            pluginHandleState.createOfferImplementation(offerOptions);
+            return;
+          }
+          offerOptions?.success?.({ type: 'offer', sdp: 'mock-sdp' });
         },
         createAnswer: ({ success } = {}) => {
           success?.({ type: 'answer', sdp: 'mock-answer-sdp' });
@@ -266,12 +274,21 @@ describe('janusSipVoiceClient', () => {
           pluginState.options?.onmessage?.({ result: { event: 'registered' } });
         }, 0);
       }
+      if (message?.request === 'call') {
+        window.setTimeout(() => {
+          pluginState.options?.onmessage?.({
+            result: { event: 'calling', call_id: 'outbound-call-id' },
+          });
+        }, 0);
+      }
     });
     await JanusSipVoiceClient.destroyDevice();
     attachMock.mockClear();
     janusDestroyMock.mockClear();
     pluginDetachMock.mockClear();
     pluginSendMock.mockClear();
+    pluginHangupMock.mockClear();
+    pluginHandleState.createOfferImplementation = null;
     janusAiMediaBridgeInstances.length = 0;
     uploadRecordingMock.mockClear();
     updatePresenceMock.mockClear();
@@ -766,6 +783,155 @@ describe('janusSipVoiceClient', () => {
         }),
       })
     );
+  });
+
+  it('transfers the live prewarmed microphone track into the Janus offer', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    const track = fakeAudioTrack('prewarmed-track');
+    JanusSipVoiceClient.microphonePrewarmStream = {
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    };
+    let createOfferOptions;
+    pluginHandleState.createOfferImplementation = options => {
+      createOfferOptions = options;
+      options.success?.({ type: 'offer', sdp: 'mock-sdp' });
+    };
+
+    await JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'sipuni:local:prewarmed',
+      toNumber: '+77066318623',
+    });
+
+    expect(createOfferOptions.tracks[0].capture).toBe(track);
+    expect(track.stop).not.toHaveBeenCalled();
+    expect(JanusSipVoiceClient.microphonePrewarmStream).toBeNull();
+  });
+
+  it('settles a cancelled pending offer and ignores its late success', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    let lateOffer;
+    pluginHandleState.createOfferImplementation = options => {
+      lateOffer = options;
+    };
+
+    const firstJoin = JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'sipuni:local:first',
+      toNumber: '+77066318623',
+    });
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 0);
+    });
+    await JanusSipVoiceClient.endClientCall();
+
+    await expect(firstJoin).rejects.toMatchObject({
+      reason: 'operator_cancelled',
+      sipCallSent: false,
+    });
+    lateOffer.success?.({ type: 'offer', sdp: 'late-offer' });
+    expect(
+      pluginSendMock.mock.calls.filter(
+        ([payload]) => payload?.message?.request === 'call'
+      )
+    ).toHaveLength(0);
+
+    const recovery = JanusSipVoiceClient.sipHandleRecoveryPromise;
+    expect(recovery).toBeTruthy();
+    await recovery;
+    expect(pluginDetachMock).toHaveBeenCalled();
+
+    pluginHandleState.createOfferImplementation = null;
+    const secondJoin = await JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'sipuni:local:second',
+      toNumber: '+77066318623',
+    });
+
+    expect(secondJoin).toEqual(
+      expect.objectContaining({ calling: true, callRef: 'sipuni:local:second' })
+    );
+    expect(
+      pluginSendMock.mock.calls.filter(
+        ([payload]) => payload?.message?.request === 'call'
+      )
+    ).toHaveLength(1);
+  });
+
+  it('times out before a SIP call when createOffer never settles', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    vi.useFakeTimers();
+    pluginHandleState.createOfferImplementation = () => {};
+
+    const join = JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'sipuni:local:offer-timeout',
+      toNumber: '+77066318623',
+    });
+    const rejection = expect(join).rejects.toMatchObject({
+      reason: 'sip_outbound_offer_timeout',
+      sipCallSent: false,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    await rejection;
+    expect(
+      pluginSendMock.mock.calls.some(
+        ([payload]) => payload?.message?.request === 'call'
+      )
+    ).toBe(false);
+    expect(
+      pluginSendMock.mock.calls.some(
+        ([payload]) => payload?.message?.request === 'hangup'
+      )
+    ).toBe(false);
+    expect(pluginHangupMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('classifies a missing Janus calling event after the SIP call was sent', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    vi.useFakeTimers();
+    pluginSendMock.mockImplementation(({ message } = {}) => {
+      if (message?.request === 'register') {
+        window.setTimeout(() => {
+          pluginState.options?.onmessage?.({ result: { event: 'registered' } });
+        }, 0);
+      }
+    });
+
+    const join = JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'sipuni:local:calling-timeout',
+      toNumber: '+77066318623',
+    });
+    const rejection = expect(join).rejects.toMatchObject({
+      reason: 'sip_outbound_calling_timeout',
+      sipCallSent: true,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    await rejection;
+    expect(
+      pluginSendMock.mock.calls.filter(
+        ([payload]) => payload?.message?.request === 'call'
+      )
+    ).toHaveLength(1);
+    expect(
+      pluginSendMock.mock.calls.filter(
+        ([payload]) => payload?.message?.request === 'hangup'
+      )
+    ).toHaveLength(1);
   });
 
   it('does not start a Sipuni outbound call when Janus registration is stale', async () => {

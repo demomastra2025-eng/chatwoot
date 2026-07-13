@@ -6,7 +6,6 @@ import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useCallSession } from 'dashboard/composables/useCallSession';
 import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
-import WindowVisibilityHelper from 'dashboard/helper/AudioAlerts/WindowVisibilityHelper';
 import { isVoiceCallRingtoneEligible } from 'dashboard/helper/AudioAlerts/ringtone';
 import {
   getOutboundCallStageLabelKey,
@@ -32,6 +31,10 @@ const {
 } = useCallSession();
 
 const isOutboundCall = call => call?.callDirection === 'outbound';
+const callCancelLabel = call =>
+  isOutboundCall(call)
+    ? t('CONVERSATION.VOICE_WIDGET.CANCEL_CALL')
+    : t('CONVERSATION.VOICE_WIDGET.REJECT_CALL');
 const ACTIVE_CALL_STATUSES = new Set([
   'answered',
   'accepted',
@@ -646,22 +649,6 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   }
 };
 
-// Auto-join outbound calls when window is visible
-watch(
-  () => incomingCalls.value[0],
-  call => {
-    if (
-      call?.callDirection === 'outbound' &&
-      !call?.browserJoined &&
-      !hasActiveCall.value &&
-      WindowVisibilityHelper.isWindowVisible()
-    ) {
-      handleJoinCall(call, { notifyOnUnavailable: false });
-    }
-  },
-  { immediate: true }
-);
-
 watch(
   trackedCallSids,
   callSids => {
@@ -799,8 +786,8 @@ onUnmounted(stopElapsedTimer);
                 v-if="!callIsLiveActive(call)"
                 type="button"
                 class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
-                :title="$t('CONVERSATION.VOICE_WIDGET.REJECT_CALL')"
-                :aria-label="$t('CONVERSATION.VOICE_WIDGET.REJECT_CALL')"
+                :title="callCancelLabel(call)"
+                :aria-label="callCancelLabel(call)"
                 @click="rejectIncomingCall(call)"
               >
                 <i class="text-base i-ph-phone-x-bold" />

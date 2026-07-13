@@ -18,14 +18,19 @@ const createCallRegisteredEvent = detail =>
 const createCallUnregisteredEvent = detail =>
   new CustomEvent('call:unregistered', { detail });
 
+const createCallStageEvent = detail =>
+  new CustomEvent('call:stage', { detail });
+
 const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
 const WEBPHONE_REGISTRATION_TIMEOUT_MS = 8_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 20_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
 const WEBPHONE_INCOMING_ACCEPT_TIMEOUT_MS = 10_000;
 const WEBPHONE_MICROPHONE_PREWARM_TTL_MS = 90_000;
+const WEBPHONE_MICROPHONE_PREWARM_TIMEOUT_MS = 10_000;
 const WEBPHONE_MICROPHONE_PREWARM_CANCEL_WAIT_MS = 500;
 const WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS = 150;
+const WEBPHONE_OUTBOUND_START_TIMEOUT_MS = 20_000;
 const WEBPHONE_OUTBOUND_SETUP_TIMEOUT_MS = 45_000;
 const WEBPHONE_POST_CALL_REGISTRATION_REFRESH_DELAY_MS = 250;
 const WEBPHONE_DEVICE_RECOVERY_DELAY_MS = 1_000;
@@ -197,7 +202,10 @@ export class JanusSipVoiceClient extends EventTarget {
   constructor() {
     super();
     this.janus = null;
+    this.janusGeneration = 0;
     this.sipHandle = null;
+    this.sipHandleGeneration = 0;
+    this.sipHandleRecoveryPromise = null;
     this.remoteAudioElement = null;
     this.remoteStream = null;
     this.remoteTracks = {};
@@ -233,6 +241,9 @@ export class JanusSipVoiceClient extends EventTarget {
     this.microphonePrewarmPromise = null;
     this.microphonePrewarmTimer = null;
     this.microphonePrewarmGeneration = 0;
+    this.outboundAttempt = null;
+    this.outboundAttemptSequence = 0;
+    this.retiredOutboundJanusCallIds = new Set();
     this.outboundSetupTimer = null;
     this.aiMediaBridge = null;
     this.currentCallHandledByAi = false;
@@ -444,6 +455,9 @@ export class JanusSipVoiceClient extends EventTarget {
   }
 
   async initializeDevice(sessionConfig, { inboxId = null } = {}) {
+    if (this.sipHandleRecoveryPromise) {
+      await this.sipHandleRecoveryPromise;
+    }
     if (this.initializationPromise) return this.initializationPromise;
 
     this.initializationPromise = this.performInitializeDevice(sessionConfig, {
@@ -524,33 +538,62 @@ export class JanusSipVoiceClient extends EventTarget {
   }
 
   createJanusSession(sessionConfig) {
+    this.janusGeneration += 1;
+    const generation = this.janusGeneration;
     return new Promise((resolve, reject) => {
       const janus = new Janus({
         server: sessionConfig.janusServer,
         iceServers: sessionConfig.iceServers,
         success: () => resolve(janus),
         error: error => reject(error),
-        destroyed: () => this.handleJanusDestroyed(),
+        destroyed: () => {
+          if (generation === this.janusGeneration) {
+            this.handleJanusDestroyed();
+          }
+        },
       });
     });
   }
 
   attachSipPlugin() {
+    const janusGeneration = this.janusGeneration;
+    this.sipHandleGeneration += 1;
+    const sipHandleGeneration = this.sipHandleGeneration;
+    const isCurrent = () =>
+      janusGeneration === this.janusGeneration &&
+      sipHandleGeneration === this.sipHandleGeneration;
+    const ifCurrent =
+      callback =>
+      (...args) => {
+        if (isCurrent()) callback(...args);
+      };
     return new Promise((resolve, reject) => {
       this.janus.attach({
         plugin: 'janus.plugin.sip',
         opaqueId: `janus-sip-${Date.now()}`,
-        success: pluginHandle => resolve(pluginHandle),
-        error: error => reject(error),
-        onmessage: (msg, jsep) => this.handleSipMessage(msg, jsep),
-        onlocaltrack: (track, on) => this.handleLocalTrack(track, on),
-        onremotetrack: (track, mid, on) =>
-          this.handleRemoteTrack(track, mid, on),
-        oncleanup: () => this.handlePeerCleanup(),
-        mediaState: (medium, on) => this.handleMediaState(medium, on),
-        webrtcState: on => {
-          if (!on && this.hasActiveCall) this.handleCallDisconnected();
+        success: pluginHandle => {
+          if (isCurrent()) {
+            resolve(pluginHandle);
+            return;
+          }
+          pluginHandle?.detach?.();
+          reject(new Error('stale_sip_handle'));
         },
+        error: error => reject(error),
+        onmessage: ifCurrent((msg, jsep) => this.handleSipMessage(msg, jsep)),
+        onlocaltrack: ifCurrent((track, on) =>
+          this.handleLocalTrack(track, on)
+        ),
+        onremotetrack: ifCurrent((track, mid, on) =>
+          this.handleRemoteTrack(track, mid, on)
+        ),
+        oncleanup: ifCurrent(() => this.handlePeerCleanup()),
+        mediaState: ifCurrent((medium, on) =>
+          this.handleMediaState(medium, on)
+        ),
+        webrtcState: ifCurrent(on => {
+          if (!on && this.hasActiveCall) this.handleCallDisconnected();
+        }),
       });
     });
   }
@@ -572,7 +615,7 @@ export class JanusSipVoiceClient extends EventTarget {
 
     this.registrationTimedOut = false;
 
-    this.registrationPromise = new Promise((resolve, reject) => {
+    const registrationPromise = new Promise((resolve, reject) => {
       this.registrationResolve = resolve;
       this.registrationReject = reject;
       this.registrationTimer = window.setTimeout(() => {
@@ -592,14 +635,18 @@ export class JanusSipVoiceClient extends EventTarget {
       } catch (error) {
         reject(error);
       }
-    }).finally(() => {
+    });
+    const trackedRegistrationPromise = registrationPromise.finally(() => {
+      if (this.registrationPromise !== trackedRegistrationPromise) return;
+
       this.clearRegistrationTimer();
       this.registrationPromise = null;
       this.registrationResolve = null;
       this.registrationReject = null;
     });
+    this.registrationPromise = trackedRegistrationPromise;
 
-    return this.registrationPromise;
+    return trackedRegistrationPromise;
   }
 
   clearRegistrationTimer() {
@@ -609,12 +656,70 @@ export class JanusSipVoiceClient extends EventTarget {
     this.registrationTimer = null;
   }
 
-  ensureRegistered({ refresh = false } = {}) {
+  async ensureRegistered({ refresh = false } = {}) {
+    if (this.sipHandleRecoveryPromise) {
+      await this.sipHandleRecoveryPromise;
+    }
     if (this.registered) {
       if (refresh) return this.register({ refresh: true });
-      return Promise.resolve();
+      return undefined;
     }
     return this.register();
+  }
+
+  recoverSipHandleAfterOutboundFailure() {
+    if (this.sipHandleRecoveryPromise) return this.sipHandleRecoveryPromise;
+    if (
+      !this.janus ||
+      !this.sessionConfig ||
+      this.destroyingDevice ||
+      !JanusSipVoiceClient.hasCompleteContract(this.sessionConfig)
+    ) {
+      return Promise.resolve(false);
+    }
+
+    const currentJanus = this.janus;
+    const currentHandle = this.sipHandle;
+    const recoveryPromise = (async () => {
+      this.sipHandleGeneration += 1;
+      this.sipHandle = null;
+      this.registered = false;
+      this.clearRegistrationIdentifiers();
+      this.clearRegistrationTimer();
+      this.registrationPromise = null;
+      this.registrationResolve = null;
+      this.registrationReject = null;
+      this.stopPresenceHeartbeat();
+      this.reportPresence(false);
+
+      try {
+        currentHandle?.detach?.();
+      } catch {
+        // The failed handle is already unusable; replacement remains authoritative.
+      }
+
+      if (this.janus !== currentJanus || this.destroyingDevice) return false;
+
+      this.sipHandle = await this.attachSipPlugin();
+      await this.register();
+      this.initialized = true;
+      return true;
+    })().catch(() => {
+      this.sipHandle = null;
+      this.registered = false;
+      if (this.janus === currentJanus && !this.destroyingDevice) {
+        this.scheduleDeviceRecovery();
+      }
+      return false;
+    });
+
+    const trackedRecoveryPromise = recoveryPromise.finally(() => {
+      if (this.sipHandleRecoveryPromise === trackedRecoveryPromise) {
+        this.sipHandleRecoveryPromise = null;
+      }
+    });
+    this.sipHandleRecoveryPromise = trackedRecoveryPromise;
+    return trackedRecoveryPromise;
   }
 
   handleSipMessage(msg = {}, jsep = null) {
@@ -653,6 +758,14 @@ export class JanusSipVoiceClient extends EventTarget {
 
       this.registrationReject?.(new Error(String(error)));
       this.rejectIncomingAccept(new Error(String(error)));
+      if (this.outboundAttempt && !this.outboundAttempt.startSettled) {
+        this.failOutboundAttempt(
+          this.outboundAttemptError('sip_outbound_call_failed', {
+            cause: error,
+          })
+        );
+        return;
+      }
       if (this.hasActiveCall || this.pendingIncomingCall) {
         this.handleCallDisconnected();
       }
@@ -706,6 +819,11 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     if (event === 'incomingcall') {
+      if (this.outboundAttempt && !this.outboundAttempt.sipCallSent) {
+        this.failOutboundAttempt(
+          this.outboundAttemptError('incoming_call_preempted')
+        );
+      }
       this.pendingIncomingCall = {
         jsep,
         result,
@@ -726,19 +844,45 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     if (event === 'calling') {
+      if (!this.outboundAttempt || this.currentCallDirection !== 'outbound') {
+        return;
+      }
+      if (!this.isCurrentOutboundJanusEvent(callId)) return;
+
+      this.captureOutboundJanusCallId(callId);
       this.hasActiveCall = true;
+      this.resolveOutboundAttemptStart('calling');
+      this.scheduleOutboundSetupTimeout();
+      this.dispatchCallStage('calling', { janusCallId: callId });
       return;
     }
 
     if (event === 'progress') {
+      if (!this.outboundAttempt || this.currentCallDirection !== 'outbound') {
+        return;
+      }
+      if (!this.isCurrentOutboundJanusEvent(callId)) return;
+
+      this.captureOutboundJanusCallId(callId);
       this.clearOutboundSetupTimer();
       if (jsep) this.handleRemoteJsep(jsep);
       this.hasActiveCall = true;
+      this.resolveOutboundAttemptStart('progress');
+      this.dispatchCallStage('progress', { janusCallId: callId });
       this.playRemoteAudio();
       return;
     }
 
     if (event === 'accepted') {
+      const isOutboundAccept =
+        this.currentCallDirection === 'outbound' && this.outboundAttempt;
+      const isInboundAccept =
+        this.currentCallDirection === 'inbound' &&
+        (this.pendingIncomingCall || this.incomingAcceptPromise);
+      if (!isOutboundAccept && !isInboundAccept) return;
+      if (isOutboundAccept && !this.isCurrentOutboundJanusEvent(callId)) return;
+
+      this.captureOutboundJanusCallId(callId);
       this.clearOutboundSetupTimer();
       if (jsep) this.handleRemoteJsep(jsep);
       this.pendingIncomingCall = null;
@@ -747,6 +891,8 @@ export class JanusSipVoiceClient extends EventTarget {
       this.stopMicrophonePrewarm();
       this.playRemoteAudio();
       this.startRecordingIfReady();
+      this.resolveOutboundAttemptStart('accepted');
+      this.dispatchCallStage('accepted', { janusCallId: callId });
       this.resolveIncomingAccept({
         ...this.sessionEventDetail(),
         callRef: this.currentCallRef,
@@ -758,6 +904,13 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     if (event === 'hangup') {
+      if (this.currentCallDirection === 'outbound') {
+        if (!this.outboundAttempt) return;
+        if (!this.isCurrentOutboundJanusEvent(callId)) return;
+      } else if (this.currentCallDirection !== 'inbound') {
+        return;
+      }
+
       this.clearOutboundSetupTimer();
       this.sipHandle?.hangup();
       this.rejectIncomingAccept(
@@ -877,6 +1030,8 @@ export class JanusSipVoiceClient extends EventTarget {
     this.clearRegistrationIdentifiers();
     this.stopPresenceHeartbeat();
     this.clearOutboundSetupTimer();
+    this.registrationReject?.(new Error('janus_destroyed'));
+    this.finishOutboundAttempt(this.outboundAttemptError('janus_destroyed'));
     this.rejectIncomingAccept(new Error('janus_destroyed'));
     if (shouldRecoverDevice) this.reportPresence(false);
     this.stopRecordings({ reason: 'janus_destroyed' });
@@ -893,6 +1048,9 @@ export class JanusSipVoiceClient extends EventTarget {
     const hadCall =
       this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef;
     const detail = { ...this.callEventDetail(), ...extra };
+    this.finishOutboundAttempt(
+      this.outboundAttemptError(extra.reason || 'call_disconnected')
+    );
     this.pendingIncomingCall = null;
     this.hasActiveCall = false;
     this.stopMicrophonePrewarm();
@@ -1710,6 +1868,204 @@ export class JanusSipVoiceClient extends EventTarget {
     });
   }
 
+  outboundAttemptError(reason, extra = {}) {
+    return Object.assign(new Error(reason), {
+      reason,
+      sipCallSent: Boolean(this.outboundAttempt?.sipCallSent),
+      ...extra,
+    });
+  }
+
+  clearOutboundAttemptTimer(attempt = this.outboundAttempt) {
+    if (!attempt?.timer) return;
+
+    window.clearTimeout(attempt.timer);
+    attempt.timer = null;
+  }
+
+  createOutboundAttempt({ handle, uri, audioTrack = null }) {
+    let resolveStart;
+    let rejectStart;
+    const startPromise = new Promise((resolve, reject) => {
+      resolveStart = resolve;
+      rejectStart = reject;
+    });
+    const attempt = {
+      token: (this.outboundAttemptSequence += 1),
+      callRef: this.currentCallRef,
+      handle,
+      uri,
+      audioTrack,
+      trackAttached: false,
+      janusCallId: null,
+      sipCallSent: false,
+      startSettled: false,
+      state: 'creating_offer',
+      timer: null,
+      resolveStart,
+      rejectStart,
+      startPromise,
+    };
+
+    attempt.timer = window.setTimeout(() => {
+      if (this.outboundAttempt !== attempt) return;
+
+      const reason = attempt.sipCallSent
+        ? 'sip_outbound_calling_timeout'
+        : 'sip_outbound_offer_timeout';
+      this.failOutboundAttempt(
+        this.outboundAttemptError(reason, {
+          sipCallSent: attempt.sipCallSent,
+        }),
+        { sendSipHangup: attempt.sipCallSent }
+      );
+    }, WEBPHONE_OUTBOUND_START_TIMEOUT_MS);
+    this.outboundAttempt = attempt;
+    return attempt;
+  }
+
+  isCurrentOutboundAttempt(attempt) {
+    return Boolean(
+      attempt &&
+        this.outboundAttempt === attempt &&
+        attempt.handle === this.sipHandle &&
+        attempt.callRef === this.currentCallRef
+    );
+  }
+
+  isCurrentOutboundJanusEvent(callId = null) {
+    if (callId && this.retiredOutboundJanusCallIds.has(String(callId))) {
+      return false;
+    }
+    const attempt = this.outboundAttempt;
+    if (!attempt) return true;
+    if (this.currentCallDirection !== 'outbound') return false;
+    if (!callId || !attempt.janusCallId) return true;
+    return String(callId) === String(attempt.janusCallId);
+  }
+
+  captureOutboundJanusCallId(callId = null) {
+    if (!this.outboundAttempt || !callId) return;
+
+    this.outboundAttempt.janusCallId =
+      this.outboundAttempt.janusCallId || callId;
+  }
+
+  resolveOutboundAttemptStart(stage) {
+    const attempt = this.outboundAttempt;
+    if (!attempt || attempt.startSettled) return;
+
+    this.clearOutboundAttemptTimer(attempt);
+    attempt.startSettled = true;
+    attempt.state = stage;
+    attempt.audioTrack = null;
+    attempt.resolveStart({
+      ...this.sessionEventDetail(),
+      calling: true,
+      stage,
+      uri: attempt.uri,
+      callRef: attempt.callRef,
+      janusCallId: attempt.janusCallId,
+    });
+  }
+
+  finishOutboundAttempt(error = null) {
+    const attempt = this.outboundAttempt;
+    if (!attempt) return null;
+
+    this.clearOutboundAttemptTimer(attempt);
+    if (!attempt.startSettled) {
+      attempt.startSettled = true;
+      attempt.rejectStart(
+        error || this.outboundAttemptError('call_disconnected')
+      );
+    }
+    if (attempt.audioTrack && !attempt.trackAttached) {
+      attempt.audioTrack.stop?.();
+    }
+    if (attempt.janusCallId) {
+      this.retiredOutboundJanusCallIds.add(String(attempt.janusCallId));
+      if (this.retiredOutboundJanusCallIds.size > 20) {
+        const oldestCallId = this.retiredOutboundJanusCallIds
+          .values()
+          .next().value;
+        this.retiredOutboundJanusCallIds.delete(oldestCallId);
+      }
+    }
+    attempt.audioTrack = null;
+    attempt.state = error ? 'failed' : 'ended';
+    if (this.outboundAttempt === attempt) this.outboundAttempt = null;
+    return attempt;
+  }
+
+  failOutboundAttempt(error, { sendSipHangup = false } = {}) {
+    const attempt = this.outboundAttempt;
+    if (!attempt) return false;
+
+    const detail = {
+      ...this.callEventDetail(),
+      reason: error?.reason || error?.message || 'sip_outbound_start_failed',
+      sipCallSent: attempt.sipCallSent,
+    };
+    this.finishOutboundAttempt(error);
+    this.clearOutboundSetupTimer();
+
+    try {
+      if (sendSipHangup && attempt.sipCallSent) {
+        attempt.handle?.send?.({ message: { request: 'hangup' } });
+      }
+      attempt.handle?.hangup?.();
+    } catch {
+      // The attempt is already terminal; local cleanup remains authoritative.
+    }
+
+    this.hasActiveCall = false;
+    this.stopLocalTracks();
+    this.remoteTracks = {};
+    this.rebuildRemoteStream();
+    this.resetCurrentCall();
+    if (detail.reason !== 'incoming_call_preempted') {
+      this.recoverSipHandleAfterOutboundFailure();
+    }
+    this.dispatchEvent(createCallStageEvent({ ...detail, stage: 'failed' }));
+    return true;
+  }
+
+  cancelOutboundAttempt(reason = 'operator_cancelled') {
+    const attempt = this.outboundAttempt;
+    if (!attempt) return false;
+
+    return this.failOutboundAttempt(this.outboundAttemptError(reason), {
+      sendSipHangup: attempt.sipCallSent,
+    });
+  }
+
+  dispatchCallStage(stage, extra = {}) {
+    this.dispatchEvent(
+      createCallStageEvent({ ...this.callEventDetail(), ...extra, stage })
+    );
+  }
+
+  takeMicrophonePrewarmTrack() {
+    if (!hasLiveAudioTrack(this.microphonePrewarmStream)) return null;
+
+    const stream = this.microphonePrewarmStream;
+    const audioTrack = stream
+      .getAudioTracks()
+      .find(track => track.readyState !== 'ended');
+    if (!audioTrack) return null;
+
+    this.microphonePrewarmGeneration += 1;
+    this.clearMicrophonePrewarmTimer();
+    stream
+      .getTracks()
+      .filter(track => track !== audioTrack)
+      .forEach(track => track.stop());
+    this.microphonePrewarmStream = null;
+    this.microphonePrewarmPromise = null;
+    return audioTrack;
+  }
+
   async startOutboundCall(toNumber) {
     const sip = this.sessionConfig.sip;
     const uri = JanusSipVoiceClient.dialUri(toNumber, sip.host, {
@@ -1717,51 +2073,95 @@ export class JanusSipVoiceClient extends EventTarget {
       outboundDialFormat: sip.outboundDialFormat,
     });
     if (!uri) return Promise.resolve(null);
+    if (this.outboundAttempt) {
+      throw this.outboundAttemptError('sip_outbound_call_in_progress');
+    }
 
-    await this.releaseMicrophonePrewarm({ settle: true });
-    this.hasActiveCall = true;
+    const handle = this.sipHandle;
+    if (!handle) throw new Error('sip_handle_unavailable');
+
+    const audioTrack = this.takeMicrophonePrewarmTrack();
+    if (!audioTrack) await this.releaseMicrophonePrewarm({ settle: true });
+
     this.currentCallDirection = 'outbound';
     this.callMediaAccepted = false;
     this.callConnectedDispatched = false;
-    return new Promise((resolve, reject) => {
-      this.sipHandle.createOffer({
+    const attempt = this.createOutboundAttempt({ handle, uri, audioTrack });
+    this.dispatchCallStage('preparing');
+
+    try {
+      handle.createOffer({
         tracks: [
           {
             type: 'audio',
-            capture: WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
+            capture: audioTrack || WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
             recv: true,
           },
         ],
         success: jsep => {
+          if (!this.isCurrentOutboundAttempt(attempt)) {
+            if (!attempt.trackAttached) attempt.audioTrack?.stop?.();
+            if (
+              !this.outboundAttempt ||
+              this.outboundAttempt.handle !== attempt.handle
+            ) {
+              attempt.handle?.hangup?.();
+            }
+            return;
+          }
+
+          attempt.trackAttached = true;
+          attempt.audioTrack = null;
+          attempt.state = 'call_sent';
+          attempt.sipCallSent = true;
           try {
-            this.sipHandle.send({
+            handle.send({
               message: {
                 request: 'call',
                 uri,
                 autoaccept_reinvites: false,
               },
               jsep,
+              error: error => {
+                if (!this.isCurrentOutboundAttempt(attempt)) return;
+                this.failOutboundAttempt(
+                  this.outboundAttemptError('sip_outbound_call_failed', {
+                    cause: error,
+                    sipCallSent: true,
+                  }),
+                  { sendSipHangup: true }
+                );
+              },
             });
+            this.dispatchCallStage('call_sent');
           } catch (error) {
-            this.hasActiveCall = false;
-            this.clearOutboundSetupTimer();
-            this.stopLocalTracks();
-            this.resetCurrentCall();
-            reject(error);
-            return;
+            this.failOutboundAttempt(
+              this.outboundAttemptError('sip_outbound_call_failed', {
+                cause: error,
+                sipCallSent: true,
+              }),
+              { sendSipHangup: true }
+            );
           }
-          this.scheduleOutboundSetupTimeout();
-          resolve({ ...this.sessionEventDetail(), calling: true, uri });
         },
         error: error => {
-          this.hasActiveCall = false;
-          this.clearOutboundSetupTimer();
-          this.stopLocalTracks();
-          this.resetCurrentCall();
-          reject(error);
+          if (!this.isCurrentOutboundAttempt(attempt)) return;
+          this.failOutboundAttempt(
+            this.outboundAttemptError('sip_outbound_offer_failed', {
+              cause: error,
+            })
+          );
         },
       });
-    });
+    } catch (error) {
+      this.failOutboundAttempt(
+        this.outboundAttemptError('sip_outbound_offer_failed', {
+          cause: error,
+        })
+      );
+    }
+
+    return attempt.startPromise;
   }
 
   async acceptIncomingCall(incomingCall) {
@@ -1895,7 +2295,11 @@ export class JanusSipVoiceClient extends EventTarget {
     this.stopMicrophonePrewarm();
     this.clearOutboundSetupTimer();
     const hadCall =
-      this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef;
+      this.pendingIncomingCall ||
+      this.hasActiveCall ||
+      this.currentCallRef ||
+      this.outboundAttempt;
+    const cancelledOutboundAttempt = this.cancelOutboundAttempt();
 
     if (!this.sipHandle) {
       this.stopRecordings({ reason: 'client_hangup' });
@@ -1904,12 +2308,14 @@ export class JanusSipVoiceClient extends EventTarget {
       return null;
     }
 
-    try {
-      const request = this.pendingIncomingCall ? 'decline' : 'hangup';
-      this.sipHandle.send({ message: { request } });
-      this.sipHandle.hangup();
-    } catch {
-      // Hangup is best-effort; browser tracks must still be released.
+    if (!cancelledOutboundAttempt) {
+      try {
+        const request = this.pendingIncomingCall ? 'decline' : 'hangup';
+        this.sipHandle.send({ message: { request } });
+        this.sipHandle.hangup();
+      } catch {
+        // Hangup is best-effort; browser tracks must still be released.
+      }
     }
     this.pendingIncomingCall = null;
     this.hasActiveCall = false;
@@ -1924,13 +2330,21 @@ export class JanusSipVoiceClient extends EventTarget {
 
   scheduleOutboundSetupTimeout() {
     this.clearOutboundSetupTimer();
+    const attempt = this.outboundAttempt;
+    if (!attempt?.sipCallSent) return;
+
     this.outboundSetupTimer = window.setTimeout(() => {
       this.outboundSetupTimer = null;
-      if (this.currentCallDirection !== 'outbound') return;
+      if (
+        this.outboundAttempt !== attempt ||
+        this.currentCallDirection !== 'outbound'
+      ) {
+        return;
+      }
 
       try {
-        this.sipHandle?.send?.({ message: { request: 'hangup' } });
-        this.sipHandle?.hangup?.();
+        attempt.handle?.send?.({ message: { request: 'hangup' } });
+        attempt.handle?.hangup?.();
       } catch {
         // Local cleanup below is authoritative for the browser media state.
       }
@@ -1981,7 +2395,8 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     const generation = this.microphonePrewarmGeneration;
-    this.microphonePrewarmPromise = mediaDevices
+    let timeoutId = null;
+    const mediaRequest = mediaDevices
       .getUserMedia({
         audio: WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
         video: false,
@@ -2006,12 +2421,29 @@ export class JanusSipVoiceClient extends EventTarget {
         reason: error?.name || 'microphone_unavailable',
       }))
       .finally(() => {
-        if (generation === this.microphonePrewarmGeneration) {
-          this.microphonePrewarmPromise = null;
-        }
+        if (timeoutId) window.clearTimeout(timeoutId);
       });
+    const timeout = new Promise(resolve => {
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        if (generation === this.microphonePrewarmGeneration) {
+          this.microphonePrewarmGeneration += 1;
+        }
+        resolve({
+          ...this.sessionEventDetail(),
+          prewarmed: false,
+          reason: 'microphone_timeout',
+        });
+      }, WEBPHONE_MICROPHONE_PREWARM_TIMEOUT_MS);
+    });
+    const prewarmPromise = Promise.race([mediaRequest, timeout]).finally(() => {
+      if (this.microphonePrewarmPromise === prewarmPromise) {
+        this.microphonePrewarmPromise = null;
+      }
+    });
+    this.microphonePrewarmPromise = prewarmPromise;
 
-    return this.microphonePrewarmPromise;
+    return prewarmPromise;
   }
 
   stopMicrophonePrewarm() {
@@ -2189,11 +2621,14 @@ export class JanusSipVoiceClient extends EventTarget {
     preserveMicrophonePrewarm = false,
     preserveSessionConfig = false,
   } = {}) {
+    const destroyError = new Error('device_destroyed');
     const hadCall =
       this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef;
     if (hadCall) {
       this.handleCallDisconnected({ reason: 'device_destroyed' });
     }
+    this.registrationReject?.(destroyError);
+    this.finishOutboundAttempt(this.outboundAttemptError('device_destroyed'));
 
     const currentHandle = this.sipHandle;
     const currentJanus = this.janus;
@@ -2201,6 +2636,10 @@ export class JanusSipVoiceClient extends EventTarget {
     const shouldReportOffline =
       this.initialized || this.registered || Boolean(currentHandle);
 
+    this.janusGeneration += 1;
+    this.sipHandleGeneration += 1;
+    this.sipHandleRecoveryPromise = null;
+    this.retiredOutboundJanusCallIds.clear();
     this.sipHandle = null;
     this.janus = null;
     this.initialized = false;
