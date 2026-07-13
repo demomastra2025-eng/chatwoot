@@ -811,6 +811,75 @@ describe('janusSipVoiceClient', () => {
     expect(JanusSipVoiceClient.microphonePrewarmStream).toBeNull();
   });
 
+  it('cancels an outbound join while refreshed registration is still pending', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    vi.useFakeTimers();
+    pluginSendMock.mockImplementation(() => {});
+
+    const join = JanusSipVoiceClient.joinClientCall({
+      provider: 'sipuni',
+      inboxId: 4769,
+      callRef: 'call-cancel-during-registration',
+      callDirection: 'outbound',
+      toNumber: '77015550006',
+    });
+    const rejection = expect(join).rejects.toMatchObject({
+      reason: 'operator_cancelled',
+      sipCallSent: false,
+    });
+
+    await JanusSipVoiceClient.endClientCall({
+      provider: 'sipuni',
+      inboxId: 4769,
+    });
+    await rejection;
+
+    pluginState.options?.onmessage?.({ result: { event: 'registered' } });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(
+      pluginSendMock.mock.calls.filter(
+        ([payload]) => payload?.message?.request === 'call'
+      )
+    ).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it('does not create an offer after cancellation during microphone release', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    vi.useFakeTimers();
+    const createOffer = vi.fn();
+    pluginHandleState.createOfferImplementation = createOffer;
+    JanusSipVoiceClient.microphonePrewarmPromise = new Promise(() => {});
+
+    const join = JanusSipVoiceClient.joinClientCall({
+      provider: 'sipuni',
+      inboxId: 4769,
+      callRef: 'call-cancel-during-microphone-release',
+      callDirection: 'outbound',
+      toNumber: '77015550007',
+    });
+    const rejection = expect(join).rejects.toMatchObject({
+      reason: 'operator_cancelled',
+      sipCallSent: false,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await JanusSipVoiceClient.endClientCall({
+      provider: 'sipuni',
+      inboxId: 4769,
+    });
+    await rejection;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(createOffer).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it('settles a cancelled pending offer and ignores its late success', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,

@@ -243,6 +243,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.microphonePrewarmGeneration = 0;
     this.outboundAttempt = null;
     this.outboundAttemptSequence = 0;
+    this.pendingOutboundJoin = null;
     this.retiredOutboundJanusCallIds = new Set();
     this.outboundSetupTimer = null;
     this.aiMediaBridge = null;
@@ -819,6 +820,9 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     if (event === 'incomingcall') {
+      if (this.cancelPendingOutboundJoin('incoming_call_preempted')) {
+        this.resetCurrentCall();
+      }
       if (this.outboundAttempt && !this.outboundAttempt.sipCallSent) {
         this.failOutboundAttempt(
           this.outboundAttemptError('incoming_call_preempted')
@@ -1030,6 +1034,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.clearRegistrationIdentifiers();
     this.stopPresenceHeartbeat();
     this.clearOutboundSetupTimer();
+    this.cancelPendingOutboundJoin('janus_destroyed');
     this.registrationReject?.(new Error('janus_destroyed'));
     this.finishOutboundAttempt(this.outboundAttemptError('janus_destroyed'));
     this.rejectIncomingAccept(new Error('janus_destroyed'));
@@ -1048,6 +1053,7 @@ export class JanusSipVoiceClient extends EventTarget {
     const hadCall =
       this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef;
     const detail = { ...this.callEventDetail(), ...extra };
+    this.cancelPendingOutboundJoin(extra.reason || 'call_disconnected');
     this.finishOutboundAttempt(
       this.outboundAttemptError(extra.reason || 'call_disconnected')
     );
@@ -1821,13 +1827,40 @@ export class JanusSipVoiceClient extends EventTarget {
 
     const nextCallRef = callRef || this.currentCallRef;
     const nextCallDirection = callDirection || this.currentCallDirection;
-    await this.ensureRegistered({ refresh: callDirection === 'outbound' });
+    if (callDirection === 'outbound') {
+      const pendingJoin = this.beginPendingOutboundJoin();
+      this.currentCallRef = nextCallRef;
+      this.currentCallDirection = nextCallDirection;
+      try {
+        await Promise.race([
+          this.ensureRegistered({ refresh: true }),
+          pendingJoin.cancellationPromise,
+        ]);
+        if (this.pendingOutboundJoin !== pendingJoin) {
+          throw this.outboundAttemptError('operator_cancelled', {
+            sipCallSent: false,
+          });
+        }
+        this.pendingOutboundJoin = null;
+        return await this.startOutboundCall(toNumber);
+      } catch (error) {
+        if (this.pendingOutboundJoin === pendingJoin) {
+          this.pendingOutboundJoin = null;
+        }
+        if (
+          !this.pendingOutboundJoin &&
+          !this.outboundAttempt &&
+          this.currentCallRef === nextCallRef
+        ) {
+          this.resetCurrentCall();
+        }
+        throw error;
+      }
+    }
+
+    await this.ensureRegistered();
     this.currentCallRef = nextCallRef;
     this.currentCallDirection = nextCallDirection;
-
-    if (callDirection === 'outbound') {
-      return this.startOutboundCall(toNumber);
-    }
 
     const incomingCall = await this.waitForPendingIncomingCall(
       WEBPHONE_INCOMING_CALL_WAIT_MS,
@@ -1866,6 +1899,34 @@ export class JanusSipVoiceClient extends EventTarget {
       callRef,
       streamUrl: streamUrl || stream_url,
     });
+  }
+
+  beginPendingOutboundJoin() {
+    if (this.pendingOutboundJoin) {
+      throw this.outboundAttemptError('sip_outbound_call_in_progress');
+    }
+
+    let rejectCancellation;
+    const cancellationPromise = new Promise((_, reject) => {
+      rejectCancellation = reject;
+    });
+    const pendingJoin = {
+      cancellationPromise,
+      rejectCancellation,
+    };
+    this.pendingOutboundJoin = pendingJoin;
+    return pendingJoin;
+  }
+
+  cancelPendingOutboundJoin(reason = 'operator_cancelled') {
+    const pendingJoin = this.pendingOutboundJoin;
+    if (!pendingJoin) return false;
+
+    this.pendingOutboundJoin = null;
+    pendingJoin.rejectCancellation(
+      this.outboundAttemptError(reason, { sipCallSent: false })
+    );
+    return true;
   }
 
   outboundAttemptError(reason, extra = {}) {
@@ -2081,8 +2142,6 @@ export class JanusSipVoiceClient extends EventTarget {
     if (!handle) throw new Error('sip_handle_unavailable');
 
     const audioTrack = this.takeMicrophonePrewarmTrack();
-    if (!audioTrack) await this.releaseMicrophonePrewarm({ settle: true });
-
     this.currentCallDirection = 'outbound';
     this.callMediaAccepted = false;
     this.callConnectedDispatched = false;
@@ -2090,6 +2149,16 @@ export class JanusSipVoiceClient extends EventTarget {
     this.dispatchCallStage('preparing');
 
     try {
+      if (!audioTrack) {
+        await Promise.race([
+          this.releaseMicrophonePrewarm({ settle: true }),
+          attempt.startPromise,
+        ]);
+        if (!this.isCurrentOutboundAttempt(attempt)) {
+          return attempt.startPromise;
+        }
+      }
+
       handle.createOffer({
         tracks: [
           {
@@ -2154,6 +2223,9 @@ export class JanusSipVoiceClient extends EventTarget {
         },
       });
     } catch (error) {
+      if (!this.isCurrentOutboundAttempt(attempt)) {
+        return attempt.startPromise;
+      }
       this.failOutboundAttempt(
         this.outboundAttemptError('sip_outbound_offer_failed', {
           cause: error,
@@ -2298,8 +2370,12 @@ export class JanusSipVoiceClient extends EventTarget {
       this.pendingIncomingCall ||
       this.hasActiveCall ||
       this.currentCallRef ||
+      this.pendingOutboundJoin ||
       this.outboundAttempt;
+    const cancelledPendingJoin = this.cancelPendingOutboundJoin();
     const cancelledOutboundAttempt = this.cancelOutboundAttempt();
+    const cancelledOutboundStart =
+      cancelledPendingJoin || cancelledOutboundAttempt;
 
     if (!this.sipHandle) {
       this.stopRecordings({ reason: 'client_hangup' });
@@ -2308,7 +2384,7 @@ export class JanusSipVoiceClient extends EventTarget {
       return null;
     }
 
-    if (!cancelledOutboundAttempt) {
+    if (!cancelledOutboundStart) {
       try {
         const request = this.pendingIncomingCall ? 'decline' : 'hangup';
         this.sipHandle.send({ message: { request } });
