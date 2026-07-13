@@ -2,6 +2,7 @@
 import { computed, ref, useAttrs } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import * as Sentry from '@sentry/vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useAlert } from 'dashboard/composables';
@@ -22,6 +23,7 @@ const props = defineProps({
   inboxId: { type: [String, Number], default: null },
   disabled: { type: Boolean, default: false },
 });
+const emit = defineEmits(['callInitiated']);
 
 defineOptions({ inheritAttrs: false });
 const attrs = useAttrs();
@@ -235,6 +237,7 @@ const startCall = async inbox => {
   if (isCallButtonBusy.value) return;
 
   isPreparingCall.value = true;
+  let callInitiated = false;
   try {
     const webphoneReady = await prepareBrowserSipWebphone(inbox);
     if (!webphoneReady) {
@@ -246,6 +249,8 @@ const startCall = async inbox => {
       contactId: props.contactId,
       inboxId: inbox.id,
     });
+    callInitiated = true;
+    emit('callInitiated', response);
     const {
       call_sid: callSid,
       conversation_id: conversationId,
@@ -279,6 +284,10 @@ const startCall = async inbox => {
     useAlert(t('CONTACT_PANEL.CALL_INITIATED'));
     navigateToConversation(response);
   } catch (error) {
+    if (callInitiated) {
+      Sentry.captureException(error);
+      return;
+    }
     if (isBrowserSipInbox(inbox)) {
       WebphoneClient.stopMicrophonePrewarm({
         provider: inbox.provider,

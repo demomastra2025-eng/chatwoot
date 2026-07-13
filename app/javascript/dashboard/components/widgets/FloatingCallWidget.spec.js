@@ -26,6 +26,11 @@ const routerMock = vi.hoisted(() => ({
   push: vi.fn(),
 }));
 
+const ringtoneState = vi.hoisted(() => ({
+  sourceId: null,
+  isActive: null,
+}));
+
 const t = (key, params = {}) => {
   const translations = {
     'CONVERSATION.VOICE_WIDGET.INCOMING_CALL': 'Incoming call',
@@ -127,6 +132,13 @@ vi.mock('dashboard/composables/useCallSession', async () => {
   };
 });
 
+vi.mock('dashboard/composables/useIncomingCallRingtone', () => ({
+  useIncomingCallRingtone: (sourceId, isActive) => {
+    ringtoneState.sourceId = sourceId;
+    ringtoneState.isActive = isActive;
+  },
+}));
+
 import FloatingCallWidget from './FloatingCallWidget.vue';
 
 const mountComponent = () =>
@@ -162,10 +174,48 @@ describe('FloatingCallWidget', () => {
     storeGetters.getInbox.mockReset();
     storeGetters.getAgentById.mockReset();
     storeGetters.getSelectedChat = null;
+    ringtoneState.sourceId = null;
+    ringtoneState.isActive = null;
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('rings for a visible pending inbound voice call', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:incoming-ringtone',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+    ];
+
+    const wrapper = mountComponent();
+
+    expect(ringtoneState.sourceId).toBe('voice');
+    expect(ringtoneState.isActive.value).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('does not ring for outbound or remotely handled voice calls', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:outbound-ringtone',
+        callDirection: 'outbound',
+        status: 'ringing',
+      },
+      {
+        callSid: 'sipuni:handled-ringtone',
+        callDirection: 'inbound',
+        status: 'in_progress',
+      },
+    ];
+
+    const wrapper = mountComponent();
+
+    expect(ringtoneState.isActive.value).toBe(false);
+    wrapper.unmount();
   });
 
   it('shows outside-browser operator, direction, route, and close action', async () => {
@@ -194,6 +244,7 @@ describe('FloatingCallWidget', () => {
 
     const wrapper = mountComponent();
 
+    expect(ringtoneState.isActive.value).toBe(false);
     expect(wrapper.text()).toContain('Handled outside the browser');
     expect(wrapper.text()).toContain('client-party→support-line');
     expect(wrapper.text()).toContain('Ayan');

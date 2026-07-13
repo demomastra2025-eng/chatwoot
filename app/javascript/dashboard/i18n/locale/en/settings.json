@@ -173,6 +173,15 @@
           "ASSIGNED": "Assigned Conversations",
           "ALL_CONVERSATIONS": "All Conversations"
         },
+        "RINGTONE": {
+          "TITLE": "Call ringtone",
+          "OPTIONS": {
+            "MYSTERIOUS_02": "Melody 1",
+            "RINGTONE_028": "Melody 2",
+            "RINGTONE_066": "Melody 3",
+            "RINGTONE_091": "Melody 4"
+          }
+        },
         "DEFAULT_TONE": {
           "TITLE": "Alert tone:"
         },

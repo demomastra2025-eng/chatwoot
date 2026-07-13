@@ -155,6 +155,19 @@ RSpec.describe 'Profile API', type: :request do
         expect(json_response['ui_settings']['is_contact_sidebar_open']).to be(false)
       end
 
+      it 'persists the incoming call ringtone in ui settings' do
+        ringtone = 'universfield-ringtone-091-496417.mp3'
+
+        put '/api/v1/profile',
+            params: { profile: { ui_settings: { incoming_call_ringtone: ringtone } } },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('ui_settings', 'incoming_call_ringtone')).to eq(ringtone)
+        expect(agent.reload.ui_settings['incoming_call_ringtone']).to eq(ringtone)
+      end
+
       it 'updates sidebar visibility preferences in ui settings' do
         put '/api/v1/profile',
             params: {

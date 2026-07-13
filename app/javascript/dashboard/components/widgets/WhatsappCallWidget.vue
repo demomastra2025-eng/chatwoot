@@ -2,6 +2,7 @@
 import { computed, ref, watch, onUnmounted, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useWhatsappCallSession } from 'dashboard/composables/useWhatsappCallSession';
+import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import { useI18n } from 'vue-i18n';
 import { emitter } from 'shared/helpers/mitt';
@@ -46,6 +47,14 @@ const visibleIncomingCalls = computed(() =>
 const showActiveCall = computed(
   () => hasActiveCall.value && !isCallHidden(activeCall.value)
 );
+const shouldPlayIncomingCallRingtone = computed(
+  () =>
+    !hasActiveCall.value &&
+    !isAccepting.value &&
+    visibleIncomingCalls.value.length > 0
+);
+
+useIncomingCallRingtone('whatsapp', shouldPlayIncomingCallRingtone);
 
 // In server-relay mode, the timer starts when the Peer B WebRTC handshake
 // completes (not when the agent clicks accept). Listen for this event.

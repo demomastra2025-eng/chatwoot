@@ -173,6 +173,15 @@
           "ASSIGNED": "Назначенные беседы",
           "ALL_CONVERSATIONS": "Диалоги"
         },
+        "RINGTONE": {
+          "TITLE": "Мелодия звонка",
+          "OPTIONS": {
+            "MYSTERIOUS_02": "Мелодия 1",
+            "RINGTONE_028": "Мелодия 2",
+            "RINGTONE_066": "Мелодия 3",
+            "RINGTONE_091": "Мелодия 4"
+          }
+        },
         "DEFAULT_TONE": {
           "TITLE": "Звук уведомления:"
         },

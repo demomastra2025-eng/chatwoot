@@ -11,6 +11,11 @@ import { useI18n } from 'vue-i18n';
 import camelcaseKeys from 'camelcase-keys';
 import { initializeAudioAlerts } from 'dashboard/helper/scriptHelpers';
 import { useStoreGetters } from 'dashboard/composables/store';
+import {
+  DEFAULT_INCOMING_CALL_RINGTONE,
+  INCOMING_CALL_RINGTONES,
+  resolveIncomingCallRingtone,
+} from 'dashboard/helper/AudioAlerts/ringtone';
 
 const getters = useStoreGetters();
 const currentUser = computed(() => getters.getCurrentUser.value);
@@ -21,9 +26,36 @@ const { t } = useI18n();
 const audioAlert = ref('');
 const playAudioWhenTabIsInactive = ref(false);
 const alertIfUnreadConversationExist = ref(false);
+const incomingCallRingtone = ref(DEFAULT_INCOMING_CALL_RINGTONE);
 const alertTone = ref('ding');
 const audioAlertConditions = ref([]);
 const i18nKeyPrefix = 'PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION';
+const incomingCallRingtoneOptions = computed(() => [
+  {
+    value: INCOMING_CALL_RINGTONES[0],
+    label: t(
+      'PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.RINGTONE.OPTIONS.MYSTERIOUS_02'
+    ),
+  },
+  {
+    value: INCOMING_CALL_RINGTONES[1],
+    label: t(
+      'PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.RINGTONE.OPTIONS.RINGTONE_028'
+    ),
+  },
+  {
+    value: INCOMING_CALL_RINGTONES[2],
+    label: t(
+      'PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.RINGTONE.OPTIONS.RINGTONE_066'
+    ),
+  },
+  {
+    value: INCOMING_CALL_RINGTONES[3],
+    label: t(
+      'PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.RINGTONE.OPTIONS.RINGTONE_091'
+    ),
+  },
+]);
 
 const initializeNotificationUISettings = newUISettings => {
   const updatedUISettings = camelcaseKeys(newUISettings);
@@ -46,6 +78,9 @@ const initializeNotificationUISettings = newUISettings => {
       value: 'conversations_are_read',
     },
   ];
+  incomingCallRingtone.value = resolveIncomingCallRingtone(
+    updatedUISettings.incomingCallRingtone
+  );
   alertTone.value = updatedUISettings.notificationTone || 'ding';
 };
 
@@ -87,12 +122,30 @@ const handleAudioAlertConditions = (id, value) => {
 const handleAudioToneChange = value => {
   handleAudioConfigChange({ notification_tone: value });
 };
+const handleIncomingCallRingtoneChange = value => {
+  handleAudioConfigChange({
+    incoming_call_ringtone: resolveIncomingCallRingtone(value),
+  });
+};
 </script>
 
 <template>
   <div id="profile-settings-notifications" class="flex flex-col gap-6">
     <AudioAlertTone
+      :value="incomingCallRingtone"
+      name="incomingCallRingtone"
+      audio-path="/audio/ringtone"
+      :tones="incomingCallRingtoneOptions"
+      :label="
+        $t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.RINGTONE.TITLE')
+      "
+      @change="handleIncomingCallRingtoneChange"
+    />
+
+    <AudioAlertTone
       :value="alertTone"
+      name="alertTone"
+      audio-path="/audio/dashboard"
       :label="$t(`${i18nKeyPrefix}.DEFAULT_TONE.TITLE`)"
       @change="handleAudioToneChange"
     />

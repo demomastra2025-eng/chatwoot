@@ -11,6 +11,7 @@ import FileUpload from 'vue-upload-component';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 
 import Button from 'dashboard/components-next/button/Button.vue';
+import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
 import WhatsAppOptions from './WhatsAppOptions.vue';
 import ContentTemplateSelector from './ContentTemplateSelector.vue';
 
@@ -28,7 +29,9 @@ const props = defineProps({
   hasNoInbox: { type: Boolean, default: false },
   isDropdownActive: { type: Boolean, default: false },
   messageSignature: { type: String, default: '' },
-  inboxId: { type: Number, default: null },
+  inboxId: { type: [String, Number], default: null },
+  contactId: { type: [String, Number], default: null },
+  contactPhone: { type: String, default: '' },
 });
 
 const emit = defineEmits([
@@ -36,6 +39,7 @@ const emit = defineEmits([
   'sendMessage',
   'sendWhatsappMessage',
   'sendTwilioMessage',
+  'voiceCallStarted',
   'insertEmoji',
   'addSignature',
   'removeSignature',
@@ -78,12 +82,19 @@ const showTwilioContentTemplates = computed(() => {
 
 const shouldShowEmojiButton = computed(() => {
   return (
-    !props.isWhatsappInbox && !props.isTwilioWhatsAppInbox && !props.hasNoInbox
+    !props.isWhatsappInbox &&
+    !props.isTwilioWhatsAppInbox &&
+    !isVoiceInbox.value &&
+    !props.hasNoInbox
   );
 });
 
 const isRegularMessageMode = computed(() => {
-  return !props.isWhatsappInbox && !props.isTwilioWhatsAppInbox;
+  return (
+    !props.isWhatsappInbox &&
+    !props.isTwilioWhatsAppInbox &&
+    !isVoiceInbox.value
+  );
 });
 
 const shouldShowSignatureButton = computed(() => {
@@ -268,8 +279,28 @@ useEventListener(document, 'paste', onPaste);
         class="!text-xs font-medium"
         @click="emit('discard')"
       />
+      <VoiceCallButton
+        v-if="isVoiceInbox && contactId && contactPhone"
+        data-testid="new-conversation-call-button"
+        :contact-id="contactId"
+        :phone="contactPhone"
+        :inbox-id="inboxId"
+        :label="t('CONTACT_PANEL.CALL')"
+        icon="i-ph-phone"
+        size="sm"
+        :disabled="isLoading || disableSendButton"
+        @call-initiated="emit('voiceCallStarted', $event)"
+      />
       <Button
-        v-if="isRegularMessageMode"
+        v-else-if="isVoiceInbox"
+        data-testid="new-conversation-call-button-disabled"
+        :label="t('CONTACT_PANEL.CALL')"
+        icon="i-ph-phone"
+        size="sm"
+        disabled
+      />
+      <Button
+        v-else-if="isRegularMessageMode"
         :label="sendButtonLabel"
         size="sm"
         class="!text-xs font-medium"

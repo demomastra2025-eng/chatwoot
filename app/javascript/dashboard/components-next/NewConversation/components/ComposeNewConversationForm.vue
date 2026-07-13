@@ -75,6 +75,7 @@ const state = props.formState || {
 
 const inboxTypes = computed(() => ({
   isEmail: props.targetInbox?.channelType === INBOX_TYPES.EMAIL,
+  isVoice: props.targetInbox?.channelType === INBOX_TYPES.VOICE,
   isTwilio: props.targetInbox?.channelType === INBOX_TYPES.TWILIO,
   isWhatsapp: props.targetInbox?.channelType === INBOX_TYPES.WHATSAPP,
   isWebWidget: props.targetInbox?.channelType === INBOX_TYPES.WEB,
@@ -100,6 +101,13 @@ const inboxChannelType = computed(() => props.targetInbox?.channelType || '');
 
 const inboxMedium = computed(() => props.targetInbox?.medium || '');
 
+const selectedContactPhone = computed(
+  () =>
+    props.selectedContact?.phone_number ||
+    props.selectedContact?.phoneNumber ||
+    ''
+);
+
 const effectiveChannelType = computed(() =>
   getEffectiveChannelType(inboxChannelType.value, inboxMedium.value)
 );
@@ -107,7 +115,11 @@ const effectiveChannelType = computed(() =>
 const validationRules = computed(() => ({
   selectedContact: { required },
   targetInbox: { required },
-  message: { required: requiredIf(!inboxTypes.value.isWhatsapp) },
+  message: {
+    required: requiredIf(
+      !inboxTypes.value.isWhatsapp && !inboxTypes.value.isVoice
+    ),
+  },
   subject: { required: requiredIf(inboxTypes.value.isEmail) },
 }));
 
@@ -335,6 +347,7 @@ const handleSendTwilioMessage = async ({ message, templateParams }) => {
 const shouldShowMessageEditor = computed(() => {
   return (
     !inboxTypes.value.isWhatsapp &&
+    !inboxTypes.value.isVoice &&
     !showNoInboxAlert.value &&
     !inboxTypes.value.isTwilioWhatsapp
   );
@@ -420,14 +433,14 @@ useKeyboardEvents({
       />
 
       <AttachmentPreviews
-        v-if="state.attachedFiles.length > 0"
+        v-if="!inboxTypes.isVoice && state.attachedFiles.length > 0"
         :attachments="state.attachedFiles"
         @update:attachments="state.attachedFiles = $event"
       />
     </div>
 
     <CopilotReplyBottomPanel
-      v-if="isCopilotActive"
+      v-if="isCopilotActive && !inboxTypes.isVoice"
       :is-generating-content="copilot.isButtonDisabled.value"
       class="h-[3.25rem] !px-4 !py-2"
       @submit="onSubmitCopilotReply"
@@ -446,6 +459,8 @@ useKeyboardEvents({
       :disable-send-button="isCreating"
       :has-selected-inbox="!!targetInbox"
       :inbox-id="targetInbox?.id"
+      :contact-id="selectedContact?.id"
+      :contact-phone="selectedContactPhone"
       :has-no-inbox="showNoInboxAlert"
       :is-dropdown-active="isAnyDropdownActive"
       :message-signature="messageSignature"
@@ -457,6 +472,7 @@ useKeyboardEvents({
       @send-message="handleSendMessage"
       @send-whatsapp-message="handleSendWhatsappMessage"
       @send-twilio-message="handleSendTwilioMessage"
+      @voice-call-started="$emit('discard')"
     />
   </div>
 </template>

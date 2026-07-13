@@ -7,6 +7,7 @@ import VoiceCallButton from './VoiceCallButton.vue';
 
 const {
   alertMock,
+  captureExceptionMock,
   initializeDeviceMock,
   prewarmMicrophoneMock,
   routeMock,
@@ -16,6 +17,7 @@ const {
   storeMock,
 } = vi.hoisted(() => ({
   alertMock: vi.fn(),
+  captureExceptionMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
   prewarmMicrophoneMock: vi.fn(),
   routeMock: { name: undefined, params: { accountId: 530 } },
@@ -26,6 +28,10 @@ const {
     getters: {},
     dispatch: vi.fn(),
   },
+}));
+
+vi.mock('@sentry/vue', () => ({
+  captureException: captureExceptionMock,
 }));
 
 vi.mock('vue-router', () => ({
@@ -209,6 +215,31 @@ describe('VoiceCallButton', () => {
         operatorInternalExtension: '502',
       }),
     ]);
+    expect(wrapper.emitted('callInitiated')).toEqual([
+      [
+        expect.objectContaining({
+          call_sid: 'call-ref-1',
+          conversation_id: 627,
+        }),
+      ],
+    ]);
+  });
+
+  it('emits success when local post-processing fails after API initiation', async () => {
+    const postProcessingError = new Error('local call store failed');
+    vi.spyOn(useCallsStore(), 'addCall').mockImplementationOnce(() => {
+      throw postProcessingError;
+    });
+    const { wrapper } = mountComponent();
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.emitted('callInitiated')).toEqual([
+      [expect.objectContaining({ call_sid: 'call-ref-1' })],
+    ]);
+    expect(captureExceptionMock).toHaveBeenCalledWith(postProcessingError);
+    expect(alertMock).not.toHaveBeenCalledWith('CONTACT_PANEL.CALL_FAILED');
   });
 
   it('prewarms the microphone again after native SIP initialization when the scoped client was not ready yet', async () => {

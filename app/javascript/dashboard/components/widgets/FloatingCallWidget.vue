@@ -5,7 +5,9 @@ import { useRouter } from 'vue-router';
 import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useCallSession } from 'dashboard/composables/useCallSession';
+import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
 import WindowVisibilityHelper from 'dashboard/helper/AudioAlerts/WindowVisibilityHelper';
+import { isVoiceCallRingtoneEligible } from 'dashboard/helper/AudioAlerts/ringtone';
 import {
   getOutboundCallStageLabelKey,
   OUTBOUND_CALL_STAGE_LABEL_KEYS,
@@ -56,6 +58,11 @@ const visibleCalls = computed(() =>
     : incomingCalls.value
   ).filter(call => !isCallHidden(call))
 );
+const shouldPlayIncomingCallRingtone = computed(
+  () => !isJoining.value && visibleCalls.value.some(isVoiceCallRingtoneEligible)
+);
+
+useIncomingCallRingtone('voice', shouldPlayIncomingCallRingtone);
 
 const firstPresent = values => values.find(value => Boolean(value));
 

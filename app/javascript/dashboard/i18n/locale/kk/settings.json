@@ -173,6 +173,15 @@
           "ASSIGNED": "Assigned Conversations",
           "ALL_CONVERSATIONS": "All Conversations"
         },
+        "RINGTONE": {
+          "TITLE": "Қоңырау әуені",
+          "OPTIONS": {
+            "MYSTERIOUS_02": "Әуен 1",
+            "RINGTONE_028": "Әуен 2",
+            "RINGTONE_066": "Әуен 3",
+            "RINGTONE_091": "Әуен 4"
+          }
+        },
         "DEFAULT_TONE": {
           "TITLE": "Alert tone:"
         },
