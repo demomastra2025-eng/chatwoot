@@ -1,4 +1,6 @@
 class Campaigns::TemplateParamsValidator
+  COMPONENT_KEYS = %w[body header footer buttons].freeze
+
   def self.validate!(inbox:, template_params:)
     new(inbox: inbox, template_params: template_params).validate!
   end
@@ -30,16 +32,17 @@ class Campaigns::TemplateParamsValidator
   end
 
   def missing_required_params(template)
+    processed_params = normalized_processed_params(template)
+
     Array(template[:required_params]).filter_map do |param|
       component = param[:component].to_s
       name = param[:name].to_s
-      "#{component}.#{name}" if missing_param?(component, name)
+      "#{component}.#{name}" if missing_param?(processed_params, component, name)
     end
   end
 
-  def missing_param?(component, name)
-    processed = normalized_hash(template_params['processed_params'] || template_params[:processed_params])
-    component_values = processed[component] || processed[component.to_sym]
+  def missing_param?(processed_params, component, name)
+    component_values = processed_params[component] || processed_params[component.to_sym]
 
     case component_values
     when Hash
@@ -66,6 +69,37 @@ class Campaigns::TemplateParamsValidator
   def button_parameter_present?(item)
     values = normalized_hash(item)
     values['parameter'].present? || values[:parameter].present?
+  end
+
+  def normalized_processed_params(template)
+    processed_params = template_params['processed_params'] || template_params[:processed_params]
+    return normalized_hash(processed_params) unless template[:transport].to_s == 'whatsapp_cloud'
+    return normalized_hash(processed_params) if component_params?(processed_params)
+
+    normalized = Whatsapp::TemplateParameterConverterService.new(
+      template_params.deep_dup,
+      template[:raw] || template
+    ).normalize_to_enhanced
+    normalized_hash(normalized['processed_params'])
+  end
+
+  def component_params?(value)
+    return false unless value.is_a?(Hash)
+
+    params = value.with_indifferent_access
+    component_key_present?(params) && hash_components_valid?(params) && buttons_component_valid?(params)
+  end
+
+  def component_key_present?(params)
+    COMPONENT_KEYS.any? { |key| params.key?(key) }
+  end
+
+  def hash_components_valid?(params)
+    %w[body header footer].all? { |key| params[key].nil? || params[key].is_a?(Hash) }
+  end
+
+  def buttons_component_valid?(params)
+    params['buttons'].nil? || params['buttons'].is_a?(Array)
   end
 
   def normalized_hash(value)

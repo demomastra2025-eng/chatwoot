@@ -30,6 +30,13 @@ RSpec.describe Campaigns::TemplateParamsValidator do
               ]
             }
           ]
+        },
+        {
+          'name' => 'legacy_body_variable',
+          'status' => 'approved',
+          'category' => 'MARKETING',
+          'language' => 'en',
+          'components' => [{ 'type' => 'BODY', 'text' => 'Message: {{body}}' }]
         }
       ]
     )
@@ -46,6 +53,45 @@ RSpec.describe Campaigns::TemplateParamsValidator do
         }
       )
     end.not_to raise_error
+  end
+
+  it 'accepts legacy flat WhatsApp template params' do
+    expect do
+      described_class.validate!(
+        inbox: whatsapp_inbox,
+        template_params: {
+          name: 'ticket_status_updated',
+          language: 'en',
+          processed_params: { name: 'John', ticket_id: '123' }
+        }
+      )
+    end.not_to raise_error
+  end
+
+  it 'accepts a legacy flat parameter named like a component' do
+    expect do
+      described_class.validate!(
+        inbox: whatsapp_inbox,
+        template_params: {
+          name: 'legacy_body_variable',
+          language: 'en',
+          processed_params: { body: 'Hello' }
+        }
+      )
+    end.not_to raise_error
+  end
+
+  it 'rejects legacy flat WhatsApp params when a required value is missing' do
+    expect do
+      described_class.validate!(
+        inbox: whatsapp_inbox,
+        template_params: {
+          name: 'ticket_status_updated',
+          language: 'en',
+          processed_params: { name: 'John' }
+        }
+      )
+    end.to raise_error(ArgumentError, /body.ticket_id/)
   end
 
   it 'rejects unknown or unapproved templates' do

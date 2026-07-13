@@ -48,6 +48,7 @@ RSpec.describe Outbound::RenderedTextService do
     end
 
     it 'renders appointment fields without a conversation in the resource timezone' do
+      account.enable_features!('scheduling')
       resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
       appointment = create(
         :scheduling_appointment,
